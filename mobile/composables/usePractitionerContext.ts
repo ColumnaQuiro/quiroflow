@@ -87,5 +87,12 @@ export function usePractitionerContext() {
     return !!context.value && !context.value.isOwner && context.value.permissions[key] === true
   }
 
-  return { context, loading, can, restricted }
+  // calendar_scope 'own': RLS returns this person only the appointments in
+  // their own diary. Anything counted or searched across appointments --
+  // free slots, "nothing booked", which visit of a care plan this is --
+  // silently leaves out every colleague's. One rule, read by every screen
+  // that has to say so or work around it.
+  const ownDiaryOnly = computed(() => !!context.value && !context.value.isOwner && context.value.permissions.calendar_scope === 'own')
+
+  return { context, loading, can, restricted, ownDiaryOnly }
 }

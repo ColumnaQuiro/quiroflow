@@ -70,6 +70,8 @@ interface RescheduleTarget {
 }
 
 const supabase = useSupabaseClient()
+const t = useT()
+const locale = computed(() => t('en-GB', 'es-ES'))
 
 // Reached as /book?reschedule=<id> from the visits screen. The slot picker is
 // identical either way -- only the RPC at the end differs -- so this reuses
@@ -114,7 +116,7 @@ const effectivePrice = computed(() =>
 )
 
 function formatPrice(cents: number) {
-  return (cents / 100).toLocaleString(undefined, { style: 'currency', currency: 'EUR' })
+  return (cents / 100).toLocaleString(locale.value, { style: 'currency', currency: 'EUR' })
 }
 
 // "Patient doesn't choose a practitioner" -- pages/book/[slug].vue shows no
@@ -201,7 +203,7 @@ function isSameDay(a: Date, b: Date) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
 }
 
-const monthLabel = computed(() => viewMonth.value.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }))
+const monthLabel = computed(() => viewMonth.value.toLocaleDateString(locale.value, { month: 'long', year: 'numeric' }))
 
 // How far ahead this type can be booked: its own limit, else the clinic's --
 // the same fallback pages/book/[slug].vue uses, and the one
@@ -343,7 +345,7 @@ async function submitBooking() {
     })
     submitting.value = false
     if (error) {
-      submitError.value = error.message
+      submitError.value = bookingErrorMessage(error.message, t)
       return
     }
     confirmation.value = data as unknown as { starts_at: string }
@@ -360,7 +362,7 @@ async function submitBooking() {
   })
   submitting.value = false
   if (error) {
-    submitError.value = error.message
+    submitError.value = bookingErrorMessage(error.message, t)
     return
   }
   confirmation.value = data as unknown as { starts_at: string }
@@ -371,30 +373,30 @@ async function submitBooking() {
 <template>
   <div class="flex h-full flex-col p-4">
     <div class="mb-4 flex items-center gap-2">
-      <NuxtLink to="/" class="text-[13px] font-medium text-brand-text">&larr; Back</NuxtLink>
-      <h1 class="ml-auto text-[15px] font-semibold text-ink-900">New appointment</h1>
+      <NuxtLink to="/" class="text-[13px] font-medium text-brand-text">&larr; {{ t('Back', 'Atrás') }}</NuxtLink>
+      <h1 class="ml-auto text-[15px] font-semibold text-ink-900">{{ t('New appointment', 'Nueva cita') }}</h1>
     </div>
 
-    <div v-if="phase === 'loading'" class="flex flex-1 items-center justify-center text-sm text-ink-faint">Loading…</div>
+    <div v-if="phase === 'loading'" class="flex flex-1 items-center justify-center text-sm text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
     <div v-else-if="phase === 'not_available'" class="flex flex-1 items-center justify-center px-6 text-center text-sm text-ink-muted">
-      <template v-if="rescheduleId">This appointment can't be moved from the app — please contact the clinic.</template>
-      <template v-else>Online booking isn't available for your clinic right now — please contact them directly.</template>
+      <template v-if="rescheduleId">{{ t("This appointment can't be moved from the app — please contact the clinic.", 'Esta cita no se puede cambiar desde la app: contacta con la clínica.') }}</template>
+      <template v-else>{{ t("Online booking isn't available for your clinic right now — please contact them directly.", 'Ahora mismo tu clínica no tiene disponible la reserva online: contacta directamente con ella.') }}</template>
     </div>
 
     <div v-else-if="phase === 'select'" class="space-y-4">
       <div v-if="info!.clinics.length > 1">
-        <label class="block text-[12.5px] font-medium text-ink-700">Clinic</label>
+        <label class="block text-[12.5px] font-medium text-ink-700">{{ t('Clinic', 'Clínica') }}</label>
         <select v-model="clinicId" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-[13.5px]" @change="onClinicChange">
           <option v-for="c in info!.clinics" :key="c.id" :value="c.id">{{ c.name }}</option>
         </select>
       </div>
 
       <div>
-        <label class="block text-[12.5px] font-medium text-ink-700">Appointment type</label>
+        <label class="block text-[12.5px] font-medium text-ink-700">{{ t('Appointment type', 'Tipo de cita') }}</label>
         <select v-if="info!.appointment_types.length > 0" v-model="appointmentTypeId" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-[13.5px]">
-          <option v-for="t in info!.appointment_types" :key="t.id" :value="t.id">{{ t.name }} ({{ t.duration_minutes }} min)</option>
+          <option v-for="type in info!.appointment_types" :key="type.id" :value="type.id">{{ type.name }} ({{ type.duration_minutes }} min)</option>
         </select>
-        <p v-else class="mt-1 text-[12.5px] text-ink-muted">None of this clinic's appointments can be booked from the app.</p>
+        <p v-else class="mt-1 text-[12.5px] text-ink-muted">{{ t("None of this clinic's appointments can be booked from the app.", 'Ninguna de las citas de esta clínica se puede reservar desde la app.') }}</p>
       </div>
 
       <!-- Types the clinic takes payment for when they are booked. The app
@@ -402,44 +404,48 @@ async function submitBooking() {
            booking page can. -->
       <div v-if="onlinePaymentTypes.length > 0" class="rounded-card border border-line bg-surface-subtle p-3 text-[12.5px] text-ink-muted">
         <p>
-          These appointments are paid online when you book them, which the app can't do yet:
+          {{ t("These appointments are paid online when you book them, which the app can't do yet:", 'Estas citas se pagan online al reservarlas, y la app todavía no puede hacerlo:') }}
         </p>
         <ul class="mt-1 list-disc pl-4">
-          <li v-for="t in onlinePaymentTypes" :key="t.id">
-            {{ t.name }}<template v-if="t.online_deposit_cents"> ({{ formatPrice(t.online_deposit_cents) }} deposit)</template>
+          <li v-for="type in onlinePaymentTypes" :key="type.id">
+            {{ type.name }}<template v-if="type.online_deposit_cents"> ({{ t(`${formatPrice(type.online_deposit_cents)} deposit`, `${formatPrice(type.online_deposit_cents)} de señal`) }})</template>
           </li>
         </ul>
         <p class="mt-1">
           <template v-if="webBookingUrl">
-            Book them on the
-            <a :href="webBookingUrl" target="_blank" rel="noopener" class="font-medium text-brand-text">clinic's booking page</a>
-            or contact the clinic.
+            {{ t('Book them on the', 'Resérvalas en la') }}
+            <a :href="webBookingUrl" target="_blank" rel="noopener" class="font-medium text-brand-text">{{ t("clinic's booking page", 'página de reservas de la clínica') }}</a>
+            {{ t('or contact the clinic.', 'o contacta con la clínica.') }}
           </template>
-          <template v-else>Contact the clinic to book them.</template>
+          <template v-else>{{ t('Contact the clinic to book them.', 'Contacta con la clínica para reservarlas.') }}</template>
         </p>
       </div>
 
       <!-- As on the web page: a type the clinic assigns the practitioner for
            offers no choice. -->
       <div v-if="!bypassPractitioner">
-        <label class="block text-[12.5px] font-medium text-ink-700">Practitioner</label>
+        <label class="block text-[12.5px] font-medium text-ink-700">{{ t('Practitioner', 'Profesional') }}</label>
         <select v-model="teamMemberId" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-[13.5px]">
           <option v-for="m in availablePractitioners" :key="m.id" :value="m.id">{{ m.full_name }}</option>
         </select>
       </div>
-      <p v-else-if="!teamMemberId" class="text-[12.5px] text-ink-muted">No practitioner can be booked for this at this clinic.</p>
+      <p v-else-if="!teamMemberId" class="text-[12.5px] text-ink-muted">{{ t('No practitioner can be booked for this at this clinic.', 'En esta clínica no hay ningún profesional con quien reservar esto.') }}</p>
 
-      <UiBtn variant="primary" class="w-full" :disabled="!canContinueFromSelect" @click="phase = 'datetime'">Continue</UiBtn>
+      <UiBtn variant="primary" class="w-full" :disabled="!canContinueFromSelect" @click="phase = 'datetime'">{{ t('Continue', 'Continuar') }}</UiBtn>
     </div>
 
     <div v-else-if="phase === 'datetime'" class="space-y-4">
       <div class="flex items-center justify-between">
-        <button type="button" class="px-2 text-[13px] text-ink-muted disabled:opacity-30" :disabled="!canGoToPrevMonth" @click="prevMonth">&lsaquo;</button>
-        <p class="text-[13.5px] font-medium text-ink-900">{{ monthLabel }}</p>
-        <button type="button" class="px-2 text-[13px] text-ink-muted disabled:opacity-30" :disabled="!canGoToNextMonth" @click="nextMonth">&rsaquo;</button>
+        <button type="button" class="px-2 text-[13px] text-ink-muted disabled:opacity-30" :disabled="!canGoToPrevMonth" :aria-label="t('Previous month', 'Mes anterior')" @click="prevMonth">&lsaquo;</button>
+        <p class="text-[13.5px] font-medium text-ink-900 first-letter:uppercase">{{ monthLabel }}</p>
+        <button type="button" class="px-2 text-[13px] text-ink-muted disabled:opacity-30" :disabled="!canGoToNextMonth" :aria-label="t('Next month', 'Mes siguiente')" @click="nextMonth">&rsaquo;</button>
       </div>
       <p class="text-[12px] text-ink-faint">
-        {{ typeName }} can be {{ rescheduleTarget ? 'moved' : 'booked' }} up to {{ maxDaysAhead }} days ahead.
+        {{
+          rescheduleTarget
+            ? t(`${typeName} can be moved up to ${maxDaysAhead} days ahead.`, `${typeName} se puede mover a una fecha de hasta ${maxDaysAhead} días vista.`)
+            : t(`${typeName} can be booked up to ${maxDaysAhead} days ahead.`, `${typeName} se puede reservar con hasta ${maxDaysAhead} días de antelación.`)
+        }}
       </p>
       <div class="grid grid-cols-7 gap-1 text-center text-[12px]">
         <button
@@ -459,8 +465,8 @@ async function submitBooking() {
       </div>
 
       <div v-if="selectedDate">
-        <div v-if="slotsLoading" class="text-[13px] text-ink-faint">Loading times…</div>
-        <div v-else-if="daySlots.length === 0" class="text-[13px] text-ink-faint">No times available this day.</div>
+        <div v-if="slotsLoading" class="text-[13px] text-ink-faint">{{ t('Loading times…', 'Cargando horas…') }}</div>
+        <div v-else-if="daySlots.length === 0" class="text-[13px] text-ink-faint">{{ t('No times available this day.', 'No hay horas disponibles este día.') }}</div>
         <div v-else class="grid grid-cols-3 gap-2">
           <button
             v-for="slot in daySlots"
@@ -469,7 +475,7 @@ async function submitBooking() {
             class="rounded-ctl border border-line-control py-2 text-[12.5px] text-ink-700 hover:border-brand hover:text-brand-text"
             @click="pickSlot(slot)"
           >
-            {{ slot.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: clinicTimeZone }) }}
+            {{ slot.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', timeZone: clinicTimeZone }) }}
           </button>
         </div>
       </div>
@@ -478,26 +484,26 @@ async function submitBooking() {
     <div v-else-if="phase === 'confirm'" class="space-y-4">
       <div class="rounded-card border border-line bg-surface p-4">
         <p class="text-[13.5px] font-medium text-ink-900">{{ typeName }}</p>
-        <p v-if="practitionerName" class="mt-1 text-[12.5px] text-ink-muted">with {{ practitionerName }}</p>
-        <p class="mt-1 text-[12.5px] text-ink-muted">{{ selectedSlot?.toLocaleString([], { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: clinicTimeZone }) }}</p>
+        <p v-if="practitionerName" class="mt-1 text-[12.5px] text-ink-muted">{{ t('with', 'con') }} {{ practitionerName }}</p>
+        <p class="mt-1 text-[12.5px] text-ink-muted first-letter:uppercase">{{ selectedSlot?.toLocaleString(locale, { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: clinicTimeZone }) }}</p>
         <p v-if="appointmentType && !rescheduleTarget" class="mt-1 text-[12.5px] text-ink-muted">{{ formatPrice(effectivePrice) }}</p>
       </div>
       <!-- The reschedule RPC moves the existing appointment and takes no
            note, so asking for one here would quietly discard it. -->
       <div v-if="!rescheduleId">
-        <label class="block text-[12.5px] font-medium text-ink-700">Note (optional)</label>
+        <label class="block text-[12.5px] font-medium text-ink-700">{{ t('Note (optional)', 'Nota (opcional)') }}</label>
         <textarea v-model="note" rows="3" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-[13.5px]" />
       </div>
-      <p v-else class="text-[12.5px] text-ink-muted">This will move your existing appointment to the time above.</p>
+      <p v-else class="text-[12.5px] text-ink-muted">{{ t('This will move your existing appointment to the time above.', 'Tu cita actual se moverá a la hora de arriba.') }}</p>
       <p v-if="submitError" class="text-[12.5px] text-danger-text">{{ submitError }}</p>
-      <UiBtn variant="primary" class="w-full" :disabled="submitting" @click="submitBooking">{{ submitting ? 'Booking…' : 'Confirm booking' }}</UiBtn>
-      <button type="button" class="w-full text-center text-[12.5px] text-ink-muted" @click="phase = 'datetime'">&larr; Choose a different time</button>
+      <UiBtn variant="primary" class="w-full" :disabled="submitting" @click="submitBooking">{{ submitting ? t('Booking…', 'Reservando…') : t('Confirm booking', 'Confirmar reserva') }}</UiBtn>
+      <button type="button" class="w-full text-center text-[12.5px] text-ink-muted" @click="phase = 'datetime'">&larr; {{ t('Choose a different time', 'Elegir otra hora') }}</button>
     </div>
 
     <div v-else-if="phase === 'success'" class="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-      <p class="text-[15px] font-semibold text-ink-900">Appointment booked</p>
-      <p class="text-[13px] text-ink-muted">{{ confirmation && new Date(confirmation.starts_at).toLocaleString([], { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: clinicTimeZone }) }}</p>
-      <NuxtLink to="/" class="mt-2 text-[13px] font-medium text-brand-text">Back to home</NuxtLink>
+      <p class="text-[15px] font-semibold text-ink-900">{{ t('Appointment booked', 'Cita reservada') }}</p>
+      <p class="text-[13px] text-ink-muted first-letter:uppercase">{{ confirmation && new Date(confirmation.starts_at).toLocaleString(locale, { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: clinicTimeZone }) }}</p>
+      <NuxtLink to="/" class="mt-2 text-[13px] font-medium text-brand-text">{{ t('Back to home', 'Volver al inicio') }}</NuxtLink>
     </div>
   </div>
 </template>

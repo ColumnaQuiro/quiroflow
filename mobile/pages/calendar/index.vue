@@ -21,6 +21,8 @@ interface Appointment {
 }
 
 const supabase = useSupabaseClient()
+const t = useT()
+const locale = computed(() => t('en-GB', 'es-ES'))
 const { context, loading: contextLoading } = usePractitionerContext()
 const appointments = ref<Appointment[]>([])
 const loading = ref(true)
@@ -71,23 +73,23 @@ function isToday() {
   return startOfDay(anchorDate.value).getTime() === startOfDay(new Date()).getTime()
 }
 function formatTime(iso: string) {
-  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return new Date(iso).toLocaleTimeString(locale.value, { hour: '2-digit', minute: '2-digit' })
 }
 </script>
 
 <template>
   <div class="flex h-full min-h-0 flex-col">
     <div class="flex shrink-0 items-center justify-between border-b border-line bg-surface px-3 py-2.5">
-      <button type="button" class="flex h-9 w-9 items-center justify-center text-[16px] text-ink-muted" @click="shiftDay(-1)">&larr;</button>
+      <button type="button" class="flex h-9 w-9 items-center justify-center text-[16px] text-ink-muted" :aria-label="t('Previous day', 'Día anterior')" @click="shiftDay(-1)">&larr;</button>
       <div class="text-center">
-        <p class="text-[14px] font-[600] text-ink-900">{{ anchorDate.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' }) }}</p>
-        <button v-if="!isToday()" type="button" class="text-[11.5px] text-brand-text" @click="anchorDate = new Date()">Today</button>
+        <p class="text-[14px] font-[600] text-ink-900">{{ anchorDate.toLocaleDateString(locale, { weekday: 'long', month: 'long', day: 'numeric' }) }}</p>
+        <button v-if="!isToday()" type="button" class="text-[11.5px] text-brand-text" @click="anchorDate = new Date()">{{ t('Today', 'Hoy') }}</button>
       </div>
-      <button type="button" class="flex h-9 w-9 items-center justify-center text-[16px] text-ink-muted" @click="shiftDay(1)">&rarr;</button>
+      <button type="button" class="flex h-9 w-9 items-center justify-center text-[16px] text-ink-muted" :aria-label="t('Next day', 'Día siguiente')" @click="shiftDay(1)">&rarr;</button>
     </div>
 
-    <div v-if="contextLoading || loading" class="flex flex-1 items-center justify-center text-sm text-ink-faint">Loading…</div>
-    <p v-else-if="appointments.length === 0" class="flex flex-1 items-center justify-center px-6 text-center text-sm text-ink-muted">No appointments this day.</p>
+    <div v-if="contextLoading || loading" class="flex flex-1 items-center justify-center text-sm text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+    <p v-else-if="appointments.length === 0" class="flex flex-1 items-center justify-center px-6 text-center text-sm text-ink-muted">{{ t('No appointments this day.', 'No hay citas este día.') }}</p>
 
     <div v-else class="flex-1 space-y-2 overflow-y-auto px-3 py-3">
       <NuxtLink
@@ -102,7 +104,7 @@ function formatTime(iso: string) {
             {{ formatTime(a.starts_at) }} · {{ a.patients?.first_name }} {{ a.patients?.last_name ?? '' }}
           </p>
           <p class="truncate text-[12px] text-ink-muted2">
-            {{ a.appointment_types?.name ?? 'Appointment' }}<template v-if="a.team_members"> · {{ a.team_members.full_name }}</template>
+            {{ a.appointment_types?.name ?? t('Appointment', 'Cita') }}<template v-if="a.team_members"> · {{ a.team_members.full_name }}</template>
           </p>
         </div>
       </NuxtLink>

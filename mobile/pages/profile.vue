@@ -5,6 +5,7 @@ const user = useSupabaseUser()
 watch(user, (u) => { if (!u) navigateTo('/login') }, { immediate: true })
 
 const supabase = useSupabaseClient()
+const t = useT()
 const { context, loading } = usePractitionerContext()
 const { unregister: unregisterPush } = usePushNotifications()
 const authedFetch = useAuthedFetch()
@@ -27,13 +28,21 @@ async function onPhotoUploaded() {
 
 const deletingAccount = ref(false)
 async function deleteAccount() {
-  if (!confirm("Delete your account? This signs you out and revokes your login immediately. This can't be undone by you -- an owner would need to re-invite you to come back.")) return
+  if (
+    !confirm(
+      t(
+        "Delete your account? This signs you out and revokes your login immediately. This can't be undone by you — an owner would need to re-invite you to come back.",
+        '¿Eliminar tu cuenta? Se cerrará tu sesión y se revocará tu acceso de inmediato. No podrás deshacerlo tú: un propietario tendría que volver a invitarte.',
+      ),
+    )
+  )
+    return
   deletingAccount.value = true
   try {
     await authedFetch('/api/account/delete', { method: 'POST' })
   } catch (err: any) {
     deletingAccount.value = false
-    alert(err?.data?.statusMessage ?? 'Failed to delete account.')
+    alert(err?.data?.statusMessage ?? t('Failed to delete account.', 'No se pudo eliminar la cuenta.'))
     return
   }
   await unregisterPush()
@@ -45,10 +54,10 @@ async function deleteAccount() {
 <template>
   <div class="flex h-full min-h-0 flex-col">
     <div class="shrink-0 border-b border-line bg-surface px-4 py-3">
-      <h1 class="text-[17px] font-semibold text-ink-900">Profile</h1>
+      <h1 class="text-[17px] font-semibold text-ink-900">{{ t('Profile', 'Perfil') }}</h1>
     </div>
 
-    <div v-if="loading" class="flex flex-1 items-center justify-center text-sm text-ink-faint">Loading…</div>
+    <div v-if="loading" class="flex flex-1 items-center justify-center text-sm text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
 
     <div v-else class="flex-1 space-y-4 overflow-y-auto px-4 py-4">
       <div v-if="context" class="flex items-center gap-3">
@@ -63,23 +72,27 @@ async function deleteAccount() {
         />
         <div class="min-w-0">
           <p class="truncate text-[17px] font-semibold text-ink-900">{{ context?.fullName }}</p>
-          <p class="text-[12.5px] text-ink-muted2">{{ context?.isOwner ? 'Owner' : 'Team member' }}</p>
+          <p class="text-[12.5px] text-ink-muted2">{{ context?.isOwner ? t('Owner', 'Propietario') : t('Team member', 'Miembro del equipo') }}</p>
         </div>
       </div>
-      <p v-if="photoError" class="text-[13px] font-semibold text-danger-text">Could not change your photo: {{ photoError }}</p>
+      <p v-if="photoError" class="text-[13px] font-semibold text-danger-text">{{ t('Could not change your photo:', 'No se ha podido cambiar tu foto:') }} {{ photoError }}</p>
 
       <button
         type="button"
         class="w-full rounded-ctl border border-line-control px-4 py-2.5 text-center text-[14px] font-medium text-danger-text active:bg-surface-subtle"
         @click="signOut"
       >
-        Sign out
+        {{ t('Sign out', 'Cerrar sesión') }}
       </button>
 
       <div class="mt-2 space-y-2 rounded-ctl border border-danger-border bg-danger-bg p-3">
         <p class="text-[12.5px] text-ink-muted">
-          Deleting your account removes your login from this clinic immediately. Your name stays on past appointments
-          for the clinic's own records -- it isn't erased, just your access.
+          {{
+            t(
+              "Deleting your account removes your login from this clinic immediately. Your name stays on past appointments for the clinic's own records — it isn't erased, just your access.",
+              'Eliminar tu cuenta quita tu acceso a esta clínica de inmediato. Tu nombre se mantiene en las citas pasadas para los registros de la clínica: no se borra, solo tu acceso.',
+            )
+          }}
         </p>
         <button
           type="button"
@@ -87,7 +100,7 @@ async function deleteAccount() {
           :disabled="deletingAccount"
           @click="deleteAccount"
         >
-          {{ deletingAccount ? 'Deleting…' : 'Delete Account' }}
+          {{ deletingAccount ? t('Deleting…', 'Eliminando…') : t('Delete account', 'Eliminar cuenta') }}
         </button>
       </div>
     </div>

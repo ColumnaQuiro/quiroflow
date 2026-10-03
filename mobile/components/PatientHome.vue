@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { formatEur } from '../../utils/billing'
+
 // The patient's home screen: the two things the app gets opened for --
 // when am I next in, what do I have left -- and a way through to the rest.
 //
@@ -8,6 +10,7 @@
 const props = defineProps<{ patientId: string; patientFirstName: string }>()
 
 const t = useT()
+const locale = computed(() => t('en-GB', 'es-ES'))
 const { settings } = usePatientAppInfo()
 
 const { upcoming, loading: apptLoading } = usePatientAppointments(
@@ -22,10 +25,10 @@ const amountDueCents = computed(() => (balanceCents.value < 0 ? -balanceCents.va
 const sessionsLeft = computed(() => activePackages.value.reduce((sum, p) => sum + Math.max(0, p.sessions_total - p.sessions_used), 0))
 
 function longWhen(iso: string) {
-  return new Date(iso).toLocaleString(undefined, { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })
+  return new Date(iso).toLocaleString(locale.value, { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })
 }
 function eur(cents: number) {
-  return `€${(cents / 100).toFixed(2)}`
+  return formatEur(cents)
 }
 </script>
 

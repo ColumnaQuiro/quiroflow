@@ -1,4 +1,5 @@
 <script setup lang="ts">
+const t = useT()
 const { pingAppOpen } = useAppOpenPing()
 const code = ref('')
 const error = ref('')
@@ -11,7 +12,7 @@ async function onSubmit() {
   const { error: rpcError } = await pingAppOpen(slug)
   loading.value = false
   if (rpcError) {
-    error.value = 'Clinic code not found -- check with your clinic.'
+    error.value = t('Clinic code not found — check with your clinic.', 'No se encuentra ese código de clínica: consúltalo con tu clínica.')
     return
   }
   localStorage.setItem('clinic_slug', slug)
@@ -34,13 +35,18 @@ function skipAsTeamMember() {
   <div class="flex h-full items-center justify-center bg-surface-page px-6">
     <div class="w-full max-w-sm rounded-card border border-line bg-surface p-8 shadow-card">
       <img src="/logo/quiroflow-mark.svg" alt="" class="h-8 w-8" />
-      <h1 class="mt-4 text-xl font-semibold text-ink-900">Join your clinic</h1>
+      <h1 class="mt-4 text-xl font-semibold text-ink-900">{{ t('Join your clinic', 'Únete a tu clínica') }}</h1>
       <p class="mt-1 text-sm text-ink-muted">
-        Enter the code your clinic gave you, then sign up with the same email your clinic has on file for you -- both have to match.
+        {{
+          t(
+            'Enter the code your clinic gave you, then sign up with the same email your clinic has on file for you — both have to match.',
+            'Introduce el código que te dio tu clínica y regístrate con el mismo correo que tiene en tu ficha: los dos tienen que coincidir.',
+          )
+        }}
       </p>
       <form class="mt-6 space-y-4" @submit.prevent="onSubmit">
         <div>
-          <label class="block text-sm font-medium text-ink-700" for="code">Clinic code</label>
+          <label class="block text-sm font-medium text-ink-700" for="code">{{ t('Clinic code', 'Código de la clínica') }}</label>
           <input
             id="code"
             v-model="code"
@@ -53,11 +59,11 @@ function skipAsTeamMember() {
         </div>
         <p v-if="error" class="text-sm text-danger-text">{{ error }}</p>
         <UiBtn type="submit" variant="primary" class="w-full" :disabled="loading || !code.trim()">
-          {{ loading ? 'Checking…' : 'Continue' }}
+          {{ loading ? t('Checking…', 'Comprobando…') : t('Continue', 'Continuar') }}
         </UiBtn>
       </form>
       <button type="button" class="mt-4 block w-full text-center text-sm text-ink-muted hover:text-ink-700" @click="skipAsTeamMember">
-        I'm on the clinic's team &rarr;
+        {{ t("I'm on the clinic's team", 'Soy del equipo de la clínica') }} &rarr;
       </button>
     </div>
   </div>

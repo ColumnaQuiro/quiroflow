@@ -39,7 +39,7 @@ interface Appointment {
 }
 
 const supabase = useSupabaseClient()
-const { context, loading: contextLoading, can, restricted } = usePractitionerContext()
+const { context, loading: contextLoading, can, restricted, ownDiaryOnly } = usePractitionerContext()
 const { fire } = useAutomations()
 const { keyboardHeight } = useKeyboardInset()
 
@@ -94,8 +94,7 @@ const showMoney = computed(() => can('billing_history_view'))
 // calendar_scope 'own': RLS returns only this person's own appointments, so
 // a count of the plan's completed visits would leave out every one another
 // practitioner saw -- "visit 1 of 12" on a plan half done. The plan's length
-// is shown instead of a number that is wrong.
-const ownDiaryOnly = computed(() => !!context.value && !context.value.isOwner && context.value.permissions.calendar_scope === 'own')
+// is shown instead of a number that is wrong (ownDiaryOnly).
 
 // -- Status --------------------------------------------------------------------
 const statusChip = computed<{ label: string; cls: string } | null>(() => {

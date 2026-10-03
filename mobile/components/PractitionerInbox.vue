@@ -33,6 +33,7 @@ interface Conversation {
 
 const supabase = useSupabaseClient()
 const t = useT()
+const locale = computed(() => t('en-GB', 'es-ES'))
 const authedFetch = useAuthedFetch()
 const { keyboardHeight } = useKeyboardInset()
 const messagesEl = ref<HTMLElement>()
@@ -186,7 +187,7 @@ const conversations = computed<Conversation[]>(() => {
       // any message in the thread, not only the newest: that may be an
       // in-app message or this device's own pending bubble.
       externalContactId: msgs.find((m) => m.external_contact_id)?.external_contact_id ?? null,
-      name: (last.patient_id && patientNames.value[last.patient_id]) || last.phone_number || (last.external_contact_id ? 'Instagram user' : 'Unknown'),
+      name: (last.patient_id && patientNames.value[last.patient_id]) || last.phone_number || (last.external_contact_id ? t('Instagram user', 'Usuario de Instagram') : t('Unknown', 'Desconocido')),
       channel: last.channel,
       lastMessage: last,
       unread: last.direction === 'inbound' && (!readTimestamps.value[key] || readTimestamps.value[key] < last.created_at),
@@ -591,7 +592,7 @@ async function performTextSend(tempId: string, text: string, channel: string, ta
     settlePending(tempId, messages.value)
     delete retryPayloads.value[tempId]
   } catch (err: any) {
-    sendError.value = err?.data?.statusMessage ?? 'Failed to send'
+    sendError.value = err?.data?.statusMessage ?? t('Failed to send', 'Error al enviar')
     pendingMessages.value = pendingMessages.value.map((m) => (m.id === tempId ? { ...m, pending: false, status: 'failed' } : m))
   } finally {
     sending.value = false
@@ -665,7 +666,7 @@ async function performMediaSend(
     settlePending(tempId, messages.value)
     delete retryPayloads.value[tempId]
   } catch (err: any) {
-    sendError.value = err?.data?.statusMessage ?? 'Failed to send'
+    sendError.value = err?.data?.statusMessage ?? t('Failed to send', 'Error al enviar')
     pendingMessages.value = pendingMessages.value.map((m) => (m.id === tempId ? { ...m, pending: false, status: 'failed' } : m))
   } finally {
     sending.value = false
@@ -725,7 +726,7 @@ async function onFileChosen(e: Event) {
     return
   }
   if (file.size > MAX_MEDIA_BYTES) {
-    sendError.value = 'File is too large (max 16 MB).'
+    sendError.value = t('File is too large (max 16 MB).', 'El archivo es demasiado grande (máx. 16 MB).')
     input.value = ''
     return
   }
@@ -736,7 +737,7 @@ async function onFileChosen(e: Event) {
       const base64 = await blobToBase64(blob)
       await sendMedia(base64, mimeType, file.name.replace(/\.\w+$/, '.jpg'), 'image')
     } catch (err: any) {
-      sendError.value = err?.message ?? 'Could not process this image.'
+      sendError.value = err?.message ?? t('Could not process this image.', 'No se pudo procesar esta imagen.')
     }
   } else {
     const base64 = await blobToBase64(file)
@@ -759,7 +760,7 @@ async function toggleAudioRecording() {
     try {
       await startAudioRecording()
     } catch {
-      sendError.value = 'Could not access the microphone -- check permissions.'
+      sendError.value = t('Could not access the microphone — check permissions.', 'No se pudo acceder al micrófono; comprueba los permisos.')
     }
   }
 }
@@ -774,7 +775,7 @@ function recordingLabel(secs: number) {
 const lightboxUrl = ref<string | null>(null)
 
 function shortTime(iso: string) {
-  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return new Date(iso).toLocaleTimeString(locale.value, { hour: '2-digit', minute: '2-digit' })
 }
 // Same day-divider label as the web inbox (pages/inbox.vue) -- kept as its
 // own copy rather than a shared util since mobile already duplicates the
@@ -783,9 +784,9 @@ function relativeDay(iso: string) {
   const d = new Date(iso)
   const today = new Date()
   const diffDays = Math.round((new Date(today.toDateString()).getTime() - new Date(d.toDateString()).getTime()) / 86400000)
-  if (diffDays === 0) return 'Today'
-  if (diffDays === 1) return 'Yesterday'
-  return d.toLocaleDateString([], { day: 'numeric', month: 'short' })
+  if (diffDays === 0) return t('Today', 'Hoy')
+  if (diffDays === 1) return t('Yesterday', 'Ayer')
+  return d.toLocaleDateString(locale.value, { day: 'numeric', month: 'short' })
 }
 // The conversation list's timestamp, WhatsApp-style: a bare hour today loses
 // meaning for anything older, so it steps down in precision the further back
@@ -797,13 +798,25 @@ function listTime(iso: string) {
   const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
   const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / 86400000)
   if (diffDays === 0) return shortTime(iso)
-  if (diffDays === 1) return 'Yesterday'
-  if (diffDays > 1 && diffDays < 7) return d.toLocaleDateString([], { weekday: 'long' })
+  if (diffDays === 1) return t('Yesterday', 'Ayer')
+  if (diffDays > 1 && diffDays < 7) return d.toLocaleDateString(locale.value, { weekday: 'long' })
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
 }
+// The web Inbox's words for each kind of attachment (pages/inbox.vue).
+const MEDIA_TYPE_LABELS: Record<string, [string, string]> = {
+  image: ['Image', 'Imagen'],
+  video: ['Video', 'Vídeo'],
+  audio: ['Audio', 'Audio'],
+  document: ['Document', 'Documento'],
+  sticker: ['Sticker', 'Sticker'],
+}
+function mediaTypeLabel(mediaType: string): string {
+  const pair = MEDIA_TYPE_LABELS[mediaType]
+  return pair ? t(pair[0], pair[1]) : mediaType
+}
 function previewText(m: Message) {
-  if (m.media_type) return `📎 ${m.media_type}${m.body_preview ? ` — ${m.body_preview}` : ''}`
-  if (m.template_name) return m.body_preview ?? `Template: ${m.template_name}`
+  if (m.media_type) return `📎 ${mediaTypeLabel(m.media_type)}${m.body_preview ? ` — ${m.body_preview}` : ''}`
+  if (m.template_name) return m.body_preview ?? `${t('Template', 'Plantilla')}: ${m.template_name}`
   return m.body_preview ?? '—'
 }
 // What actually renders as the bubble's text, distinct from previewText
@@ -811,7 +824,7 @@ function previewText(m: Message) {
 // caption, since there's nothing to attach the inline time+status to.
 function bubbleText(m: Message): string {
   if (m.media_type) return m.body_preview ?? ''
-  if (m.template_name) return m.body_preview ?? `Template: ${m.template_name}`
+  if (m.template_name) return m.body_preview ?? `${t('Template', 'Plantilla')}: ${m.template_name}`
   return m.body_preview ?? ''
 }
 
@@ -869,14 +882,14 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
         <input
           v-model="search"
           type="search"
-          placeholder="Search name, number, messages…"
+          :placeholder="t('Search name, number, messages…', 'Nombre, nº o mensaje')"
           class="h-9 flex-1 rounded-ctl border border-line-control bg-surface-subtle px-3 text-[14px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none"
         />
         <button
           type="button"
           class="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl border"
           :class="view === 'archived' ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted'"
-          :title="view === 'archived' ? 'Show active conversations' : 'Show archived conversations'"
+          :title="view === 'archived' ? t('Show active conversations', 'Mostrar conversaciones activas') : t('Show archived conversations', 'Mostrar conversaciones archivadas')"
           @click="view = view === 'archived' ? 'active' : 'archived'"
         >
           <svg viewBox="0 0 16 16" class="h-[18px] w-[18px]" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
@@ -889,34 +902,38 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
           type="button"
           class="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl border"
           :class="unreadOnly || replyFilter !== 'all' || labelFilter ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted'"
-          title="Filter"
+          :title="t('Filter', 'Filtrar')"
           @click="filterSheetOpen = true"
         >
           <svg viewBox="0 0 16 16" class="h-[18px] w-[18px]" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
             <path d="M2 4h12M4.5 8h7M7 12h2" />
           </svg>
         </button>
-        <button type="button" class="shrink-0 px-1 text-[13px] font-medium text-brand-text" @click="selectionMode = true">Select</button>
+        <button type="button" class="shrink-0 px-1 text-[13px] font-medium text-brand-text" @click="selectionMode = true">{{ t('Select', 'Seleccionar') }}</button>
       </div>
       <div v-else class="flex shrink-0 items-center justify-between gap-2 border-b border-line bg-surface px-3 py-2">
-        <button type="button" class="shrink-0 px-1 text-[13px] text-ink-muted2" @click="exitSelectionMode">Cancel</button>
-        <p class="truncate text-[13px] text-ink-700">{{ selectedKeys.size }} selected</p>
+        <button type="button" class="shrink-0 px-1 text-[13px] text-ink-muted2" @click="exitSelectionMode">{{ t('Cancel', 'Cancelar') }}</button>
+        <p class="truncate text-[13px] text-ink-700">{{ t(`${selectedKeys.size} selected`, `${selectedKeys.size} seleccionadas`) }}</p>
         <div class="flex shrink-0 items-center gap-3">
-          <InboxLabelPicker
-            :labels="labels"
-            :applied-ids="[]"
-            @toggle-label="(id: string) => toggleLabelForKeys(id, [...selectedKeys])"
-            @create-label="(name: string, color: string) => createLabel(name, color, [...selectedKeys])"
-          />
           <button
             type="button"
             class="text-[13px] font-medium text-brand-text disabled:opacity-40"
             :disabled="selectedKeys.size === 0"
             @click="bulkArchiveSelected(view !== 'archived')"
           >
-            {{ view === 'archived' ? 'Unarchive' : 'Archive' }}
+            {{ view === 'archived' ? t('Unarchive', 'Desarchivar') : t('Archive', 'Archivar') }}
           </button>
-          <button type="button" class="text-[13px] font-medium text-brand-text disabled:opacity-40" :disabled="selectedKeys.size === 0" @click="bulkMarkUnreadSelected">Unread</button>
+          <button type="button" class="text-[13px] font-medium text-brand-text disabled:opacity-40" :disabled="selectedKeys.size === 0" @click="bulkMarkUnreadSelected">{{ t('Unread', 'No leídas') }}</button>
+          <!-- Last, at the right edge: its menu is 256px wide and opens leftwards
+               from the button, so anything after it pushed the menu off the
+               left of a phone screen -- by ~17px in Spanish, where "Archivar"
+               and "No leídas" are wider than "Archive" and "Unread". -->
+          <InboxLabelPicker
+            :labels="labels"
+            :applied-ids="[]"
+            @toggle-label="(id: string) => toggleLabelForKeys(id, [...selectedKeys])"
+            @create-label="(name: string, color: string) => createLabel(name, color, [...selectedKeys])"
+          />
         </div>
       </div>
       <div
@@ -936,17 +953,17 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             <path d="M17.5 3v5h-5M6.5 21v-5h5" />
           </svg>
         </div>
-        <div v-if="loading" class="p-6 text-center text-[13px] text-ink-faint">Loading…</div>
+        <div v-if="loading" class="p-6 text-center text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
         <p v-else-if="filteredConversations.length === 0" class="p-6 text-center text-[13px] text-ink-faint">
-          {{ view === 'archived' ? 'No archived conversations.' : 'No conversations yet.' }}
+          {{ view === 'archived' ? t('No archived conversations.', 'No hay conversaciones archivadas.') : t('No conversations yet.', 'Aún no hay conversaciones.') }}
         </p>
         <div v-for="c in filteredConversations" :key="c.key" class="relative overflow-hidden border-b border-line-row">
           <div class="absolute inset-y-0 right-0 flex">
             <button type="button" class="flex w-[76px] items-center justify-center bg-brand text-[12px] font-medium text-white" @click="toggleUnread(c)">
-              {{ c.unread ? 'Read' : 'Unread' }}
+              {{ c.unread ? t('Read', 'Leída') : t('Unread', 'No leída') }}
             </button>
             <button type="button" class="flex w-[76px] items-center justify-center bg-ink-muted text-[12px] font-medium text-white" @click="toggleArchive(c)">
-              {{ archivedKeys.has(c.key) ? 'Unarchive' : 'Archive' }}
+              {{ archivedKeys.has(c.key) ? t('Unarchive', 'Desarchivar') : t('Archive', 'Archivar') }}
             </button>
           </div>
           <button
@@ -975,7 +992,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             <span v-if="c.channel === 'whatsapp'" class="absolute -bottom-0.5 -right-0.5 flex h-[15px] w-[15px] items-center justify-center rounded-full border border-surface bg-[#25D366]" title="WhatsApp">
               <svg viewBox="0 0 24 24" class="h-[9px] w-[9px] fill-white"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm5.6 14.2c-.2.6-1.2 1.1-1.7 1.2-.4.1-1 .1-1.6-.1-.4-.1-.9-.3-1.5-.6-2.6-1.1-4.3-3.8-4.4-4-.1-.2-1-1.4-1-2.6 0-1.2.6-1.8.9-2.1.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .5.4.2.5.7 1.7.7 1.8.1.1.1.3 0 .4-.1.2-.1.3-.3.4-.1.2-.3.4-.4.5-.1.1-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.4 2.5 1.5.3.1.5.1.6-.1.2-.2.7-.8.9-1.1.2-.3.4-.2.6-.1.2.1 1.5.7 1.8.8.3.1.4.2.5.3.1.2.1.7-.1 1.3z" /></svg>
             </span>
-            <span v-else class="absolute -bottom-0.5 -right-0.5 flex h-[15px] w-[15px] items-center justify-center rounded-full border border-surface bg-brand" title="In-app message">
+            <span v-else class="absolute -bottom-0.5 -right-0.5 flex h-[15px] w-[15px] items-center justify-center rounded-full border border-surface bg-brand" :title="t('In-app message', 'Mensaje en la app')">
               <svg viewBox="0 0 24 24" class="h-[9px] w-[9px] fill-white"><path d="M4 4h16v12H7l-3 3z" /></svg>
             </span>
           </span>
@@ -988,7 +1005,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
               <span class="shrink-0 text-[12px] text-ink-faint">{{ listTime(c.lastMessage.created_at) }}</span>
             </div>
             <p class="truncate text-[13px]" :class="c.unread ? 'font-medium text-ink-800' : 'text-ink-muted2'">
-              {{ c.lastMessage.direction === 'outbound' ? 'You: ' : '' }}{{ previewText(c.lastMessage) }}
+              {{ c.lastMessage.direction === 'outbound' ? t('You: ', 'Tú: ') : '' }}{{ previewText(c.lastMessage) }}
             </p>
             <div v-if="myLabelsByKey[c.key]?.length" class="mt-1 flex flex-wrap gap-1">
               <span
@@ -1010,7 +1027,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
     <!-- Filter bottom sheet -->
     <div v-if="filterSheetOpen" class="absolute inset-0 z-40 flex items-end bg-black/30" @click="filterSheetOpen = false">
       <div class="w-full rounded-t-card border-t border-line bg-surface p-4 pb-[calc(env(safe-area-inset-bottom)+16px)]" @click.stop>
-        <p class="mb-3 text-[13px] font-[600] text-ink-900">Filter conversations</p>
+        <p class="mb-3 text-[13px] font-[600] text-ink-900">{{ t('Filter conversations', 'Filtrar conversaciones') }}</p>
         <div class="flex flex-col gap-1">
           <button
             type="button"
@@ -1018,7 +1035,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             :class="unreadOnly ? 'bg-brand-tint text-brand-text' : 'text-ink-700'"
             @click="unreadOnly = !unreadOnly"
           >
-            Unread
+            {{ t('Unread', 'No leídas') }}
             <svg v-if="unreadOnly" viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l3.5 3.5L13 5" /></svg>
           </button>
           <button
@@ -1027,7 +1044,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             :class="replyFilter === 'awaiting_us' ? 'bg-brand-tint text-brand-text' : 'text-ink-700'"
             @click="replyFilter = replyFilter === 'awaiting_us' ? 'all' : 'awaiting_us'"
           >
-            Awaiting us
+            {{ t('Awaiting us', 'Esperan respuesta') }}
             <svg v-if="replyFilter === 'awaiting_us'" viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l3.5 3.5L13 5" /></svg>
           </button>
           <button
@@ -1036,7 +1053,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             :class="replyFilter === 'awaiting_patient' ? 'bg-brand-tint text-brand-text' : 'text-ink-700'"
             @click="replyFilter = replyFilter === 'awaiting_patient' ? 'all' : 'awaiting_patient'"
           >
-            Awaiting patient
+            {{ t('Awaiting patient', 'Esperan al paciente') }}
             <svg v-if="replyFilter === 'awaiting_patient'" viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l3.5 3.5L13 5" /></svg>
           </button>
           <div v-if="labels.length > 0" class="my-1.5 border-t border-line-divider" />
@@ -1076,7 +1093,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
           <p class="truncate text-[14px] font-[600] text-ink-900">{{ selected.name }}</p>
           <p class="truncate text-[12px] text-ink-muted2">
             <span v-if="selected.channel === 'whatsapp'" class="rounded-pill bg-[#25D366]/10 px-1.5 py-px font-medium text-[#128C4B]">WhatsApp</span>
-            <span v-else class="rounded-pill bg-brand-tint px-1.5 py-px font-medium text-brand-text">In-app</span>
+            <span v-else class="rounded-pill bg-brand-tint px-1.5 py-px font-medium text-brand-text">{{ t('In-app', 'App') }}</span>
             <span v-if="selected.phoneNumber" class="ml-1.5">{{ selected.phoneNumber }}</span>
           </p>
         </div>
@@ -1114,14 +1131,14 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
               class="flex items-center gap-2 text-[13px] underline"
               :class="m.direction === 'outbound' ? 'text-white' : 'text-brand-text'"
             >
-              📄 {{ m.media_filename ?? 'Document' }}
+              📄 {{ m.media_filename ?? t('Document', 'Documento') }}
             </a>
             <img
               v-else-if="m.media_type === 'sticker' && m.media_storage_path && mediaUrls[m.media_storage_path]"
               :src="mediaUrls[m.media_storage_path]"
               class="h-24 w-24"
             />
-            <p v-else-if="m.media_type" class="text-[12.5px] italic opacity-70">{{ m.pending ? 'Uploading…' : 'Media unavailable' }}</p>
+            <p v-else-if="m.media_type" class="text-[12.5px] italic opacity-70">{{ m.pending ? t('Uploading…', 'Subiendo…') : t('Media unavailable', 'Contenido no disponible') }}</p>
 
             <!-- Text (or a caption/template fallback) carries its own trailing
                  time+status inline, WhatsApp-style: same line as the last word
@@ -1134,13 +1151,13 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
                 class="ml-1.5 inline-flex translate-y-[2px] items-center gap-1 whitespace-nowrap text-[10.5px]"
                 :class="m.direction === 'outbound' ? 'text-white/70' : 'text-ink-faint'"
               >
-                <span v-if="m.status === 'failed'" class="underline">Tap to retry</span>
+                <span v-if="m.status === 'failed'" class="underline">{{ t('Tap to retry', 'Toca para reintentar') }}</span>
                 <span v-else>{{ shortTime(m.created_at) }}</span>
                 <InboxMessageStatus v-if="m.direction === 'outbound'" :status="m.status" />
               </span>
             </p>
             <p v-else class="mt-1 flex items-center justify-end gap-1.5 text-right text-[10.5px]" :class="m.direction === 'outbound' ? 'text-white/70' : 'text-ink-faint'">
-              <span v-if="m.status === 'failed'" class="underline">Tap to retry</span>
+              <span v-if="m.status === 'failed'" class="underline">{{ t('Tap to retry', 'Toca para reintentar') }}</span>
               <span v-else>{{ shortTime(m.created_at) }}</span>
               <InboxMessageStatus v-if="m.direction === 'outbound'" :status="m.status" />
             </p>
@@ -1160,14 +1177,23 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
           }}
         </p>
         <p v-else-if="!within24h" class="rounded-ctl border border-warning-border bg-warning-bg px-3 py-2 text-[12.5px] text-warning-text">
-          More than 24h since {{ selected.name }} last messaged — free-form replies are blocked by
-          {{ replyChannel === 'instagram' ? 'Instagram' : 'WhatsApp' }}.
+          {{
+            replyChannel === 'instagram'
+              ? t(
+                  `More than 24h since ${selected.name} last messaged — free-form replies are blocked by Instagram.`,
+                  `Han pasado más de 24h desde que ${selected.name} escribió por última vez — Instagram bloquea las respuestas libres.`,
+                )
+              : t(
+                  `More than 24h since ${selected.name} last messaged — free-form replies are blocked by WhatsApp.`,
+                  `Han pasado más de 24h desde que ${selected.name} escribió por última vez — WhatsApp bloquea las respuestas libres.`,
+                )
+          }}
         </p>
         <div v-else-if="audioRecording" class="flex items-center gap-3 rounded-ctl border border-line-control bg-surface-subtle px-3 py-2.5">
           <span class="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-danger-text" />
-          <span class="flex-1 text-[14px] text-ink-700">Recording… {{ recordingLabel(audioSeconds) }}</span>
-          <button type="button" class="shrink-0 px-1.5 text-[12.5px] text-ink-faint" @click="cancelAudioRecording">Cancel</button>
-          <UiBtn variant="primary" size="sm" @click="toggleAudioRecording">Send</UiBtn>
+          <span class="flex-1 text-[14px] text-ink-700">{{ t('Recording…', 'Grabando…') }} {{ recordingLabel(audioSeconds) }}</span>
+          <button type="button" class="shrink-0 px-1.5 text-[12.5px] text-ink-faint" @click="cancelAudioRecording">{{ t('Cancel', 'Cancelar') }}</button>
+          <UiBtn variant="primary" size="sm" @click="toggleAudioRecording">{{ t('Send', 'Enviar') }}</UiBtn>
         </div>
         <div v-else class="flex items-end gap-2">
           <InboxSavedRepliesPicker size="lg" @insert="insertReply" />
@@ -1182,7 +1208,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             type="button"
             class="flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-muted disabled:opacity-50"
             :disabled="sending"
-            title="Attach a file"
+            :title="t('Attach a file', 'Adjuntar archivo')"
             @click="fileInput?.click()"
           >
             <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
@@ -1198,7 +1224,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             v-model="composerText"
             rows="1"
             enterkeyhint="send"
-            placeholder="Type a message…"
+            :placeholder="t('Type a message…', 'Mensaje…')"
             class="max-h-24 min-h-11 flex-1 resize-none rounded-ctl border border-line-control bg-surface px-3 py-2.5 text-[14px] text-ink-700 focus:border-brand focus:outline-none"
             @keydown.enter.exact.prevent="sendText"
           />
@@ -1208,7 +1234,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             type="button"
             class="flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-muted disabled:opacity-50"
             :disabled="sending"
-            title="Take a photo"
+            :title="t('Take a photo', 'Hacer una foto')"
             @click="cameraInput?.click()"
           >
             <svg width="19" height="19" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
@@ -1221,7 +1247,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             type="button"
             class="flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-muted disabled:opacity-50"
             :disabled="sending"
-            title="Record a voice note"
+            :title="t('Record a voice note', 'Grabar una nota de voz')"
             @click="toggleAudioRecording"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
@@ -1237,12 +1263,12 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
     <div v-if="lightboxUrl" class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-6" @click="lightboxUrl = null">
       <img :src="lightboxUrl" class="max-h-full max-w-full rounded-ctl object-contain" @click.stop />
       <div class="absolute right-4 flex gap-2" style="top: calc(env(safe-area-inset-top) + 12px)">
-        <a :href="lightboxUrl" download target="_blank" class="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white" title="Download" @click.stop>
+        <a :href="lightboxUrl" download target="_blank" class="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white" :title="t('Download', 'Descargar')" @click.stop>
           <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
             <path d="M8 1.5v9M4.5 7 8 10.5 11.5 7M2 12.5v1a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-1" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
         </a>
-        <button type="button" class="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white" title="Close" @click="lightboxUrl = null">
+        <button type="button" class="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white" :title="t('Close', 'Cerrar')" @click="lightboxUrl = null">
           <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
             <path d="M3 3l10 10M13 3 3 13" stroke-linecap="round" />
           </svg>

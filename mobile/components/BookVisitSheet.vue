@@ -42,7 +42,7 @@ const emit = defineEmits<{
 const supabase = useSupabaseClient()
 const authedFetch = useAuthedFetch()
 const t = useT()
-const { context } = usePractitionerContext()
+const { context, ownDiaryOnly } = usePractitionerContext()
 
 interface TypeRow { id: string; name: string; duration_minutes: number; sort_order: number | null }
 interface PractitionerRow { id: string; full_name: string; business_hours: BusinessHours | null }
@@ -71,8 +71,8 @@ const changing = ref(false)
 
 // calendar_scope 'own': this person sees, and may book, only their own
 // diary. Offering anyone else's free times would read them through an RLS
-// filter that hides that person's appointments -- every slot would look free.
-const ownDiaryOnly = computed(() => !!context.value && !context.value.isOwner && context.value.permissions.calendar_scope === 'own')
+// filter that hides that person's appointments -- every slot would look free
+// (ownDiaryOnly, from usePractitionerContext).
 
 const practitioners = computed(() => {
   if (!context.value) return []

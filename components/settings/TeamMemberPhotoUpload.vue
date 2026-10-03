@@ -21,6 +21,7 @@ const props = withDefaults(
 const emit = defineEmits<{ uploaded: []; failed: [message: string] }>()
 
 const supabase = useSupabaseClient()
+const t = useT()
 
 const photoUrl = computed(() => {
   if (!props.photoStoragePath) return null
@@ -66,7 +67,7 @@ function onFileChosen(event: Event) {
     class="relative flex shrink-0 items-center justify-center overflow-hidden rounded-full font-bold text-white disabled:opacity-50"
     :style="{ width: `${size}px`, height: `${size}px`, fontSize: `${Math.max(9, size * 0.32)}px`, backgroundColor: photoUrl ? undefined : color }"
     :disabled="uploading"
-    title="Change photo"
+    :title="t('Change photo', 'Cambiar foto')"
     @click="pick"
   >
     <img v-if="photoUrl" :src="photoUrl" class="h-full w-full object-cover" alt="" />

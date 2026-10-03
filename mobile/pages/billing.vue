@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { formatEur } from '../../utils/billing'
+
 // Bonos, balance and invoices -- one question, one screen.
 definePageMeta({ layout: 'patient' })
 
@@ -6,6 +8,7 @@ const user = useSupabaseUser()
 watch(user, (u) => { if (!u) navigateTo('/login') }, { immediate: true })
 
 const t = useT()
+const locale = computed(() => t('en-GB', 'es-ES'))
 const { patient } = useIdentity()
 const patientId = computed(() => patient.value?.id ?? '')
 
@@ -21,7 +24,7 @@ const PREVIEW = 8
 const visibleInvoices = computed(() => (showAll.value ? invoices.value : invoices.value.slice(0, PREVIEW)))
 
 function eur(cents: number) {
-  return `€${(cents / 100).toFixed(2)}`
+  return formatEur(cents)
 }
 </script>
 
@@ -72,7 +75,7 @@ function eur(cents: number) {
             <div class="min-w-0 flex-1">
               <p class="text-[13.5px] font-medium text-ink-900">{{ eur(inv.total_cents) }}</p>
               <p class="text-[12px] text-ink-faint">
-                {{ new Date(inv.created_at).toLocaleDateString() }}
+                {{ new Date(inv.created_at).toLocaleDateString(locale) }}
                 <template v-if="inv.invoice_number"> &middot; {{ inv.invoice_number }}</template>
               </p>
             </div>

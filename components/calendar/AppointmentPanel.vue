@@ -452,28 +452,14 @@ const history = computed(() => {
 // The missed-appointment fee from Settings > Scheduling Policies, as before:
 // the configured fee, confirmed once. (Cancelling asks about its own fee in
 // the cancel step.)
-async function maybeApplyStatusFee(kind: 'no_show') {
-  const column = 'missed_appointment_fee_cents'
-  const { data: account } = await supabase.from('accounts').select(column).eq('id', store.accountId!).maybeSingle()
-  const feeCents = (account as Record<string, number | null> | null)?.[column]
+// The charge itself is utils/missedAppointmentFee, which the staff app's
+// visit screen raises too.
+async function maybeApplyMissedFee() {
+  const feeCents = await missedAppointmentFeeCents(supabase, store.accountId!)
   if (!feeCents) return
   const question = t(`Add the ${formatEur(feeCents)} missed-appointment fee to this patient's balance?`, `¿Añadir el cargo por no presentarse de ${formatEur(feeCents)} a su saldo?`)
   if (!confirm(question)) return
-  const { data: invoiceNumber } = await supabase.rpc('next_invoice_number', { p_account_id: store.accountId! })
-  if (!invoiceNumber) return
-  const { data: invoice } = await supabase
-    .from('invoices')
-    .insert({ account_id: store.accountId!, patient_id: props.appointment.patient_id, invoice_number: invoiceNumber, status: 'unpaid', total_cents: feeCents })
-    .select('id')
-    .single()
-  if (!invoice) return
-  await supabase.from('invoice_line_items').insert({
-    account_id: store.accountId!,
-    invoice_id: invoice.id,
-    description: 'Missed appointment fee',
-    quantity: 1,
-    price_cents: feeCents,
-  })
+  await chargeMissedAppointmentFee(supabase, { accountId: store.accountId!, patientId: props.appointment.patient_id, feeCents })
 }
 function cancelAppointment() {
   step.value = 'cancel'
@@ -485,7 +471,7 @@ function onCancelled() {
 async function markNoShow() {
   if (!(await update({ status: 'no_show' }))) return
   fire('appointment.no_show', { patientId: props.appointment.patient_id, appointmentId: props.appointment.id })
-  await maybeApplyStatusFee('no_show')
+  await maybeApplyMissedFee()
 }
 const deleteOpen = ref(false)
 async function remove() {

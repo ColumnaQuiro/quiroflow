@@ -1,4 +1,5 @@
 import { logRunEvent, stopRun } from '~/server/utils/leadSequences'
+import { fetchAllRows } from '~/composables/useFetchAllRows'
 import { hasGrowth } from '~/server/utils/requireGrowth'
 import { tryFetchWhatsAppTemplates } from '~/server/utils/whatsappTemplates'
 import { EXIT_EVENTS, isLeadTrigger, triggerDef } from '~/utils/automationCatalog'
@@ -233,12 +234,18 @@ export async function saveRuleTree(opts: {
   const removedIds = new Set(removed.map((s) => s.id))
   let runs: RunRow[] = []
   if (opts.ruleId) {
-    const { data } = await service
-      .from('automation_sequence_runs')
-      .select('id, account_id, rule_id, status, current_action_id, next_position, waiting_for')
-      .eq('rule_id', opts.ruleId)
-      .in('status', ['running', 'failed'])
-    runs = (data ?? []) as RunRow[]
+    // Every page: past 1000 people an unpaged read miscounted who was on a
+    // removed step, and the ones it never read had their place nulled by the
+    // foreign key instead of being moved on or taken out as chosen.
+    runs = await fetchAllRows<RunRow>((from, to) =>
+      service
+        .from('automation_sequence_runs')
+        .select('id, account_id, rule_id, status, current_action_id, next_position, waiting_for')
+        .eq('rule_id', opts.ruleId)
+        .in('status', ['running', 'failed'])
+        .order('id')
+        .range(from, to),
+    )
   }
   const points = new Map(runs.map((r) => [r.id, resumePoint(r, oldSteps)]))
   const onRemoved = runs.filter((r) => {

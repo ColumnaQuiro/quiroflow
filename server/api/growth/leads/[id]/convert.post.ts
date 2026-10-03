@@ -2,6 +2,8 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { requireGrowth } from '~/server/utils/requireGrowth'
 import { automationEvent } from '~/server/utils/automationEngine'
+import { fetchAllRows } from '~/composables/useFetchAllRows'
+import { leadPhoneAsContactNumber, phoneMatches, whatsappDigits } from '~/utils/phone'
 
 interface Body {
   /** Attach the lead to this existing patient instead of creating one. */
@@ -27,7 +29,9 @@ interface Body {
  * 3. Phone numbers live in patient_contact_numbers, not on `patients` -- a
  *    trigger there is what flips patients.has_phone, which is what the
  *    recalls and WhatsApp screens filter on. Setting patients.phone alone
- *    would produce a patient the clinic cannot message.
+ *    would produce a patient the clinic cannot message. And they live there
+ *    in a different shape: local number plus country, where the lead's is
+ *    international (leadPhoneAsContactNumber).
  *
  * Permission: Growth access gets you here, but the patients RLS policy is
  * what actually allows the insert -- it requires patients_scope != 'none'.
@@ -74,6 +78,9 @@ export default defineEventHandler(async (event) => {
   const linkPatientId = typeof body.linkPatientId === 'string' ? body.linkPatientId : null
   let patientId = linkPatientId
 
+  const { data: account } = await supabase.from('accounts').select('default_phone_country').eq('id', teamMember.account_id).maybeSingle()
+  const defaultCountry = account?.default_phone_country ?? 'ES'
+
   if (!patientId) {
     // Look for someone who is plainly already a patient. Phone and email
     // only -- matching on name alone would flag every second Garcia in
@@ -113,11 +120,13 @@ export default defineEventHandler(async (event) => {
     }
     patientId = patient.id
 
-    if (lead.phone) {
+    const contact = lead.phone ? leadPhoneAsContactNumber(lead.phone, defaultCountry) : null
+    if (contact) {
       await supabase.from('patient_contact_numbers').insert({
         account_id: teamMember.account_id,
         patient_id: patientId,
-        number: lead.phone,
+        number: contact.number,
+        country_code: contact.countryCode,
         is_whatsapp: true,
       })
     }
@@ -164,17 +173,27 @@ type Supa = Awaited<ReturnType<typeof requireGrowth>>['supabase']
 async function findLikelyExistingPatients(supabase: Supa, accountId: string, phone: string | null, email: string | null) {
   const found = new Map<string, { id: string; name: string; reason: string }>()
 
-  if (phone) {
-    const { data } = await supabase
-      .from('patient_contact_numbers')
-      .select('patients(id, first_name, last_name)')
-      .eq('account_id', accountId)
-      .eq('number', phone)
-      .limit(5)
+  // Compared as E.164, not as text: a patient's number is stored local
+  // ("611732681") and the lead's international ("34611732681"), so an exact
+  // match on the column never found anyone -- a returning patient converted
+  // from an ad sailed past this check by phone. Every number, paged: the
+  // first 1000 alone would miss the rest of a clinic's patients.
+  const leadDigits = phone ? whatsappDigits(phone) : ''
+  if (leadDigits) {
+    const numbers = await fetchAllRows((from, to) =>
+      supabase
+        .from('patient_contact_numbers')
+        .select('number, country_code, patients(id, first_name, last_name)')
+        .eq('account_id', accountId)
+        .order('id')
+        .range(from, to),
+    )
 
-    for (const row of data ?? []) {
+    for (const row of numbers) {
       const p = row.patients
-      if (p) found.set(p.id, { id: p.id, name: [p.first_name, p.last_name].filter(Boolean).join(' '), reason: 'Same phone number' })
+      if (p && phoneMatches(row.number, row.country_code, leadDigits)) {
+        found.set(p.id, { id: p.id, name: [p.first_name, p.last_name].filter(Boolean).join(' '), reason: 'Same phone number' })
+      }
     }
   }
 

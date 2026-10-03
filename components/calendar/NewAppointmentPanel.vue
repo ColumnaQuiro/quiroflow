@@ -581,9 +581,14 @@ async function bookingPatientId(): Promise<string | null> {
   if (patientMode.value === 'existing') return selectedPatient.value?.id ?? null
   const firstName = newPatientFirstName.value.trim()
   const lastName = newPatientLastName.value.trim() || null
-  const { data: newPatient, error: patientError } = await supabase
+  // A client-made id, not `.select('id')`: an 'own'-scope practitioner
+  // cannot read back, in the inserting statement itself, a patient who only
+  // becomes theirs with that insert (see AddPatientModal).
+  const newPatient = { id: crypto.randomUUID() }
+  const { error: patientError } = await supabase
     .from('patients')
     .insert({
+      id: newPatient.id,
       account_id: store.accountId!,
       clinic_id: store.currentClinicId || null,
       first_name: firstName,
@@ -595,10 +600,8 @@ async function bookingPatientId(): Promise<string | null> {
       // treated thirteen. A default, not a verdict: Overview can change it.
       default_practitioner_id: practitionerId.value || null,
     })
-    .select('id')
-    .single()
-  if (patientError || !newPatient) {
-    error.value = patientError?.message ?? t('Could not create patient.', 'No se ha podido crear el paciente.')
+  if (patientError) {
+    error.value = patientError.message || t('Could not create patient.', 'No se ha podido crear el paciente.')
     return null
   }
   if (newPatientPhone.value.trim()) {

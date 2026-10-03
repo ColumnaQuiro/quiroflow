@@ -10,6 +10,7 @@ import { formatEur } from '~/utils/billing'
 // PracticeHub records most of a bono patient's payments -- and such a row
 // simply matches no invoice here.
 import { normalizeSearchTerm } from '~/utils/searchText'
+import { isReceipt } from '~/utils/paymentReceipts'
 
 interface InvoiceRow {
   id: string
@@ -30,6 +31,8 @@ interface CreditRow { id: string; amount_cents: number; reason: string | null; m
 
 const props = defineProps<{
   patientId: string
+  /** Under age or "do not contact": the statement is not emailed to them. */
+  contactBlocked?: boolean
   invoices: InvoiceRow[]
   lineItemDescriptions: Record<string, string[]>
   payments: PaymentRow[]
@@ -183,10 +186,19 @@ const rows = computed<LedgerRow[]>(() => {
     // refunds_invoice_id as well as refunds_payment_id precisely so this sum
     // keeps working. Refund EUR 20 against the card payment and the receipt's
     // own refundable total drops by EUR 20 with it.
+    //
+    // Only money that came in, which is the rule a single payment already
+    // followed: a write-off settles a receipt without collecting anything, and
+    // a 'credit' row spends a balance paid in (and refundable) elsewhere.
+    // Summing every payment let a written-off receipt be refunded in cash --
+    // money out of the till for a debt that was forgiven, not paid.
     const alreadyRefunded = props.invoices
       .filter((r) => r.is_refund && r.refunds_invoice_id === inv.id)
       .reduce((sum, r) => sum + Math.abs(r.total_cents), 0)
-    const refundableCents = inv.status === 'void' ? 0 : Math.max(0, paidForInvoice - alreadyRefunded)
+    const receivedForInvoice = props.payments
+      .filter((p) => p.invoice_id === inv.id && isReceipt(p.method))
+      .reduce((sum, p) => sum + p.amount_cents, 0)
+    const refundableCents = inv.status === 'void' ? 0 : Math.max(0, receivedForInvoice - alreadyRefunded)
 
     // A negative total_cents invoice that isn't flagged is_refund happens
     // for imported data (e.g. a PracticeHub refund record) rather than one
@@ -248,7 +260,11 @@ const rows = computed<LedgerRow[]>(() => {
     // voided receipt offers no Refund action there either.
     if (!invoice || invoice.status === 'void') return 0
 
-    const paidForInvoice = props.payments.filter((q) => q.invoice_id === p.invoice_id).reduce((sum, q) => sum + q.amount_cents, 0)
+    // The receipt's room counts received money only, as the receipt-level
+    // cap above does -- a write-off beside this payment must not widen it.
+    const paidForInvoice = props.payments
+      .filter((q) => q.invoice_id === p.invoice_id && isReceipt(q.method))
+      .reduce((sum, q) => sum + q.amount_cents, 0)
     const refundedAgainstInvoice = props.invoices
       .filter((r) => r.is_refund && r.refunds_invoice_id === p.invoice_id)
       .reduce((sum, r) => sum + Math.abs(r.total_cents), 0)
@@ -609,7 +625,7 @@ async function sendStatement() {
     await useStaffFetch(`/api/patients/${props.patientId}/statement/send`, { method: 'POST' })
     statementMessage.value = t('Statement emailed.', 'Extracto enviado por correo.')
   } catch (e: any) {
-    statementMessage.value = e?.data?.message ?? t('Failed to send statement.', 'No se pudo enviar el extracto.')
+    statementMessage.value = e?.data?.statusMessage ?? e?.data?.message ?? t('Failed to send statement.', 'No se pudo enviar el extracto.')
   }
   statementSending.value = false
   setTimeout(() => (statementMessage.value = ''), 4000)
@@ -634,7 +650,7 @@ async function sendStatement() {
         </NuxtLink>
         <span v-if="statementMessage" class="text-[12px] text-ink-faint">{{ statementMessage }}</span>
         <div class="relative">
-          <button type="button" class="rounded-ctlSm px-1.5 py-1 text-ink-faint hover:bg-surface-subtle hover:text-ink-700" @click="menuOpen = !menuOpen">
+          <button type="button" class="rounded-ctlSm px-1.5 py-1 text-ink-faint hover:bg-surface-subtle hover:text-ink-700" data-cy="ledger-menu" :aria-label="t('More actions', 'Más acciones')" @click="menuOpen = !menuOpen">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>
           </button>
           <div v-if="menuOpen" class="absolute right-0 z-10 mt-1 w-44 rounded-ctl border border-line bg-surface py-1 shadow-popover">
@@ -649,7 +665,9 @@ async function sendStatement() {
             <button
               type="button"
               class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle disabled:opacity-50"
-              :disabled="statementSending"
+              data-cy="send-statement"
+              :disabled="statementSending || contactBlocked"
+              :title="contactBlocked ? t('Not sent to a patient who is under age or marked do not contact', 'No se envía a un paciente menor de edad o marcado como no contactar') : undefined"
               @click="sendStatement"
             >
               {{ statementSending ? t('Sending…', 'Enviando…') : t('Send Statement', 'Enviar extracto') }}

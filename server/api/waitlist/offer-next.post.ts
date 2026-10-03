@@ -24,8 +24,17 @@ export default defineEventHandler(async (event) => {
   // stale/racing call shouldn't offer a slot that's actually still booked.
   if (!appt || appt.status !== 'cancelled') return { offered: false }
 
+  // The offer itself runs on the service role, as the expiry sweep's does.
+  // The slot goes to the oldest matching entry on the clinic's waitlist and
+  // is checked free against every booking in the room -- neither of which is
+  // the same as what the person who cancelled may read: a practitioner who
+  // sees only their own patients and calendar cannot read other patients'
+  // waitlist rows (or, before, read them but not the patient to notify), nor
+  // a colleague's booking in the same room. Reading the appointment above
+  // through their own client is what establishes they may free this slot.
+  const service = serverSupabaseServiceRole<Database>(event)
   const origin = getRequestURL(event).origin
-  const offered = await offerNextWaitlistEntry(supabase, origin, {
+  const offered = await offerNextWaitlistEntry(service, origin, {
     accountId: appt.account_id,
     clinicId: appt.clinic_id,
     roomId: appt.room_id,
@@ -33,7 +42,7 @@ export default defineEventHandler(async (event) => {
     appointmentTypeId: appt.appointment_type_id,
     startsAt: appt.starts_at,
     endsAt: appt.ends_at,
-  }, serverSupabaseServiceRole<Database>(event))
+  })
 
   return { offered }
 })

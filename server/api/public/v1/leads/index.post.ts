@@ -3,7 +3,7 @@ import { ApiError, defineApiHandler, badRequest } from '~/server/utils/publicApi
 import { assertBelongsToAccount, loose } from '~/server/utils/publicApiHandlers'
 import { bool, definedOnly, email as emailField, enumValue, integer, isoDateTime, readApiBody, rejectUnknownFields, str, uuid } from '~/server/utils/publicApiBody'
 import { LEAD_CHANNELS, insertLead } from '~/server/utils/leads'
-import { startLeadSequence } from '~/server/utils/automationEngine'
+import { sequenceRunForSamePerson, startLeadSequence } from '~/server/utils/automationEngine'
 import { hasGrowth } from '~/server/utils/requireGrowth'
 
 // Where an enquiry gets in from outside.
@@ -354,12 +354,26 @@ export default defineApiHandler({ scope: 'leads:write' }, async ({ event, supaba
   try {
     const { data: rules } = await loose(supabase)
       .from('automation_rules')
-      .select('id')
+      .select('id, name')
       .eq('account_id', accountId)
       .eq('trigger_event', 'lead.created')
       .eq('enabled', true)
 
-    for (const rule of (rules ?? []) as { id: string }[]) {
+    for (const rule of (rules ?? []) as { id: string; name: string | null }[]) {
+      // The same person filling in the form again is a second lead, kept --
+      // but not a second copy of a drip they are already part-way through.
+      // Said on the new lead's timeline, so nobody wonders why it got nothing.
+      const already = await sequenceRunForSamePerson(supabase, accountId, rule.id, { id: lead.id, phone: normalisedPhone, email })
+      if (already) {
+        await loose(supabase).from('lead_events').insert({
+          account_id: accountId,
+          lead_id: lead.id,
+          kind: 'note',
+          title: 'Automation not started again',
+          detail: `"${rule.name ?? 'Automation'}" is already running for this person as ${already.reference ?? 'another lead'}.`,
+        } as never)
+        continue
+      }
       await startLeadSequence(supabase, accountId, rule.id, lead.id, getRequestURL(event).origin)
     }
   } catch (err) {

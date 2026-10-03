@@ -13,7 +13,14 @@ import type { VisitPayment } from '~/utils/visitPayment'
 // The four counters at the top used to be a KPI strip on Overview, where
 // they sat above a patient's contact details answering a question nobody
 // had asked yet. They belong to this tab, which is the one about visits.
-const props = defineProps<{ patientId: string; firstName?: string; lastName?: string | null; preferredLanguage?: string }>()
+const props = defineProps<{
+  patientId: string
+  firstName?: string
+  lastName?: string | null
+  preferredLanguage?: string
+  /** Under age or "do not contact": the history is not sent to them, by any channel. */
+  contactBlocked?: boolean
+}>()
 
 interface AppointmentRow {
   id: string
@@ -248,7 +255,14 @@ const stats = computed(() => [
           <div v-else class="flex items-center gap-2">
             <span v-if="sendMessage" class="text-[12px] text-ink-faint">{{ sendMessage }}</span>
             <div class="relative">
-              <UiBtn variant="secondary" size="sm" :disabled="sending" @click="sendMenuOpen = !sendMenuOpen">
+              <UiBtn
+                variant="secondary"
+                size="sm"
+                data-cy="send-history"
+                :disabled="sending || contactBlocked"
+                :title="contactBlocked ? t('Not sent to a patient who is under age or marked do not contact', 'No se envía a un paciente menor de edad o marcado como no contactar') : undefined"
+                @click="sendMenuOpen = !sendMenuOpen"
+              >
                 {{ sending ? t('Sending…', 'Enviando…') : t('Send history', 'Enviar historial') }}
               </UiBtn>
               <div v-if="sendMenuOpen" class="absolute right-0 z-10 mt-1 w-36 rounded-ctl border border-line bg-surface py-1 shadow-popover">

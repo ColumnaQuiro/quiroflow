@@ -17,6 +17,7 @@ import {
   SIF_VERSION,
   sifInstallationNumber,
 } from './sifIdentity'
+import { validSpanishTaxId } from './spanishTaxId'
 
 /** L15. The schema version, not ours. */
 const ID_VERSION = '1.0'
@@ -340,9 +341,19 @@ export function buildRegistroAlta(input: RegistroAltaInput): string {
     : capped((factura.recipientName || factura.patientName || '').trim(), 120)
   // The stand-in identifies itself with the OBLIGADO's own NIF -- see
   // TEST_DESTINATARIO_NAME for why nothing else survives.
+  //
+  // Only a VALID Spanish NIF, normalised, ever reaches <NIF>. national_id is
+  // whatever reception typed: "12.345.678-Z" is not NIFType (nine characters)
+  // and was a 4102 schema fault that sent the WHOLE envelope back, every
+  // other record with it; a wrong check letter is 1239 for the record; a
+  // passport number is not a NIF at all. Anything that fails the check is
+  // treated exactly like no NIF on file -- the block below is left out and
+  // the AEAT answers that one record -- rather than sent and allowed to take
+  // the batch down. A foreign recipient would go as IDOtro, which needs a
+  // country and an ID type the patient record does not hold.
   const recipientNif = input.anonymiseRecipient
     ? record.issuerNif
-    : (factura.recipientNif || factura.patientNif || '').trim()
+    : (validSpanishTaxId(factura.recipientNif || factura.patientNif) ?? '')
 
   // NombreRazon then ONE of NIF or IDOtro -- PersonaFisicaJuridicaType is a
   // choice, so sending both is refused by the schema.

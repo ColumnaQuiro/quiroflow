@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { formatEur } from '~/utils/billing'
 import type { Tables } from '~/types/database.types'
+import { isReceipt } from '~/utils/paymentReceipts'
 
 const emit = defineEmits<{ close: [] }>()
 const supabase = useSupabaseClient()
@@ -13,6 +14,8 @@ const opening = ref(false)
 
 const invoicedCents = ref(0)
 const paidByMethod = ref<{ method: string; cents: number }[]>([])
+// Settlements that moved no money this shift: credit spent, debts written off.
+const settledWithoutMoney = ref<{ method: string; cents: number }[]>([])
 const unprocessed = ref<{ appointmentId: string; patientId: string; patientName: string; startsAt: string }[]>([])
 
 const cashPaymentsCents = ref(0)
@@ -88,7 +91,8 @@ async function load() {
   const openedAt = shift.value.opened_at
 
   const [{ data: invoices }, { data: payments }, { data: appointments }, { data: moves }] = await Promise.all([
-    supabase.from('invoices').select('total_cents').eq('account_id', store.accountId!).gte('created_at', openedAt),
+    // A void receipt was cancelled: it charges nobody anything.
+    supabase.from('invoices').select('total_cents').eq('account_id', store.accountId!).neq('status', 'void').gte('created_at', openedAt),
     supabase.from('payments').select('amount_cents, method, invoice_id').eq('account_id', store.accountId!).gte('paid_at', openedAt),
     supabase
       .from('appointments')
@@ -101,9 +105,15 @@ async function load() {
 
   invoicedCents.value = (invoices ?? []).reduce((sum, i) => sum + i.total_cents, 0)
 
+  // "Collected" is money that came in -- utils/paymentReceipts. A 'credit'
+  // row spends a balance paid in (and counted) earlier, and a 'write_off'
+  // forgives a debt; both settle receipts, neither is takings. They are listed
+  // apart below so the shift's settlements still add up.
   const methodTotals = new Map<string, number>()
   for (const p of payments ?? []) methodTotals.set(p.method, (methodTotals.get(p.method) ?? 0) + p.amount_cents)
-  paidByMethod.value = [...methodTotals.entries()].map(([method, cents]) => ({ method, cents })).sort((a, b) => b.cents - a.cents)
+  const byMethod = [...methodTotals.entries()].map(([method, cents]) => ({ method, cents })).sort((a, b) => b.cents - a.cents)
+  paidByMethod.value = byMethod.filter((m) => isReceipt(m.method))
+  settledWithoutMoney.value = byMethod.filter((m) => !isReceipt(m.method))
 
   cashPaymentsCents.value = methodTotals.get('cash') ?? 0
 
@@ -238,6 +248,13 @@ async function addMovement() {
 
         <div v-if="paidByMethod.length > 0" class="mt-3 space-y-1 text-sm">
           <div v-for="m in paidByMethod" :key="m.method" class="flex justify-between text-gray-500">
+            <span>{{ METHOD_LABEL[m.method] ?? m.method }}</span>
+            <span>{{ fmt(m.cents) }}</span>
+          </div>
+        </div>
+        <div v-if="settledWithoutMoney.length > 0" data-cy="shift-settled-without-money" class="mt-2 space-y-1 border-t border-gray-100 pt-2 text-xs text-gray-400">
+          <p>{{ t('Settled without money coming in (not in the total):', 'Saldado sin entrada de dinero (no incluido en el total):') }}</p>
+          <div v-for="m in settledWithoutMoney" :key="m.method" class="flex justify-between">
             <span>{{ METHOD_LABEL[m.method] ?? m.method }}</span>
             <span>{{ fmt(m.cents) }}</span>
           </div>

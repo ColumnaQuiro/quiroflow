@@ -351,6 +351,8 @@ async function createPatient(opts: {
   referralSource?: string
   /** As an import leaves it: the other system's patient number. */
   externalReference?: string
+  /** DNI/NIE, which a protected document is locked with. */
+  nationalId?: string
 }) {
   const { accountId, clinicId, firstName, lastName, email, dateOfBirth, defaultPractitionerId } = opts
   const patient = unwrap(
@@ -367,6 +369,7 @@ async function createPatient(opts: {
         ...(opts.invoiceEmailEnabled === undefined ? {} : { invoice_email_enabled: opts.invoiceEmailEnabled }),
         ...(opts.referralSource === undefined ? {} : { referral_source: opts.referralSource }),
         ...(opts.externalReference === undefined ? {} : { external_reference: opts.externalReference }),
+        ...(opts.nationalId === undefined ? {} : { national_id: opts.nationalId }),
       })
       .select('id, first_name, last_name')
       .single(),

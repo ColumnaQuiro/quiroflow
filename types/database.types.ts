@@ -1429,6 +1429,7 @@ export type Database = {
           appointment_id: string | null
           attempts: number
           branch_taken: string | null
+          claimed_until: string | null
           context: Json
           current_action_id: string | null
           id: string
@@ -1450,6 +1451,7 @@ export type Database = {
           appointment_id?: string | null
           attempts?: number
           branch_taken?: string | null
+          claimed_until?: string | null
           context?: Json
           current_action_id?: string | null
           id?: string
@@ -1471,6 +1473,7 @@ export type Database = {
           appointment_id?: string | null
           attempts?: number
           branch_taken?: string | null
+          claimed_until?: string | null
           context?: Json
           current_action_id?: string | null
           id?: string

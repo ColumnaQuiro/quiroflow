@@ -2895,12 +2895,15 @@ async function practiceHubStubLastKeyOf() {
   return practiceHubStubLastKey
 }
 
-async function startPracticeHubStub(opts: { totalEntries?: number; emails?: string[] }) {
+async function startPracticeHubStub(opts: { totalEntries?: number; emails?: string[]; delayMs?: number }) {
   await stopPracticeHubStub()
   const { createServer } = await import('node:http')
   const emails = opts.emails ?? []
-  const server = createServer((req, res) => {
+  const server = createServer(async (req, res) => {
     practiceHubStubLastKey = String(req.headers['x-practicehub-key'] ?? '')
+    // A slow PracticeHub holds a run inside its pre-send check, which is
+    // what widens a race between two processes walking the same run.
+    if (opts.delayMs) await new Promise((resolve) => setTimeout(resolve, opts.delayMs))
     res.setHeader('content-type', 'application/json')
     res.end(
       JSON.stringify({

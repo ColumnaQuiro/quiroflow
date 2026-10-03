@@ -27,6 +27,7 @@ import { evaluateBranch, fieldsUsed, type BranchConfig, type ConditionFacts } fr
 import { isValidQuietHours, nextAllowedSendTime, segmentIsDue, type QuietHours, type SegmentSchedule } from '~/utils/automationTiming'
 import { automationFieldValue, type MergeContext } from '~/utils/automationFields'
 import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
+import { fetchAllRows } from '~/composables/useFetchAllRows'
 
 // The automation engine: walks one run of a rule through its steps.
 //
@@ -188,6 +189,10 @@ export async function startPatientRun(
       rule_id: opts.ruleId,
       patient_id: opts.patientId,
       appointment_id: opts.appointmentId ?? null,
+      // Set here rather than left to the column's now(): the claim that walks
+      // it compares against this server's clock, and a database clock a few
+      // milliseconds ahead would make a run started now look not yet due.
+      resume_at: new Date().toISOString(),
       context: {
         triggerBody: opts.triggerBody ?? null,
         extraContext: opts.extraContext ?? null,
@@ -215,7 +220,8 @@ export async function startPatientRun(
 export async function startLeadSequence(supabase: any, accountId: string, ruleId: string, leadId: string, origin: string) {
   const { data: run } = await supabase
     .from('automation_sequence_runs')
-    .insert({ account_id: accountId, rule_id: ruleId, lead_id: leadId })
+    // resume_at from this clock for the same reason as startPatientRun.
+    .insert({ account_id: accountId, rule_id: ruleId, lead_id: leadId, resume_at: new Date().toISOString() })
     .select(RUN_COLUMNS)
     .maybeSingle()
 
@@ -226,6 +232,76 @@ export async function startLeadSequence(supabase: any, accountId: string, ruleId
   await logRunEvent(supabase, run, { outcome: 'started' })
   await advanceRun(supabase, run as SequenceRun, origin)
   return run.id as string
+}
+
+/**
+ * How long a drip still in flight on one lead counts against starting the same
+ * drip for another lead who is the same person. Long enough to cover any
+ * welcome sequence; short enough that a run left 'failed' and forgotten does
+ * not block somebody enquiring again months later.
+ */
+export const SAME_PERSON_WINDOW_DAYS = 30
+
+/**
+ * A run of this rule already in flight for the same person under another lead
+ * -- same phone number or same email -- or null.
+ *
+ * Somebody who fills in the same Meta form twice is two leads, deliberately:
+ * each submission is an enquiry, with its own answers and attribution, and
+ * the newest is the one a reply attaches to. But it is one person, and two
+ * leads used to mean two welcome drips, every message of it twice over.
+ *
+ * "In flight" is running or failed (a failed run is waiting for a person's
+ * Retry, not finished), started within SAME_PERSON_WINDOW_DAYS. A drip that
+ * has finished does not count: somebody who went through it and comes back is
+ * enquiring again, and gets it again. Two submissions landing in the same
+ * instant can both pass this; a person cannot fill in a form twice that fast.
+ */
+export async function sequenceRunForSamePerson(
+  supabase: any,
+  accountId: string,
+  ruleId: string,
+  lead: { id: string; phone: string | null | undefined; email: string | null | undefined },
+): Promise<{ leadId: string; reference: string | null } | null> {
+  const since = new Date(Date.now() - SAME_PERSON_WINDOW_DAYS * 24 * 3600 * 1000).toISOString()
+  const live = () =>
+    supabase
+      .from('automation_sequence_runs')
+      .select('lead_id, leads!inner(reference)')
+      .eq('account_id', accountId)
+      .eq('rule_id', ruleId)
+      .in('status', ['running', 'failed'])
+      .gte('started_at', since)
+      .neq('lead_id', lead.id)
+      .is('leads.deleted_at', null)
+      .limit(1)
+
+  const found = (data: any[] | null) => {
+    const row = (data ?? [])[0]
+    if (!row) return null
+    const other = Array.isArray(row.leads) ? row.leads[0] : row.leads
+    return { leadId: row.lead_id as string, reference: (other?.reference as string | undefined) ?? null }
+  }
+
+  const digits = (lead.phone ?? '').replace(/\D/g, '')
+  if (digits) {
+    // Stored as bare international digits by every ingest path; the "+" form
+    // as well, for a lead somebody typed in by hand.
+    const { data } = await live().in('leads.phone', [digits, `+${digits}`])
+    const match = found(data)
+    if (match) return match
+  }
+
+  const email = (lead.email ?? '').trim()
+  if (email) {
+    // ilike for case only: the wildcards in it are escaped, so an address
+    // with an underscore matches itself and nothing else.
+    const { data } = await live().ilike('leads.email', email.replace(/[\\%_]/g, (c) => `\\${c}`))
+    const match = found(data)
+    if (match) return match
+  }
+
+  return null
 }
 
 /**
@@ -274,6 +350,63 @@ export const advanceSequenceRun = (supabase: any, run: SequenceRun, origin: stri
  * timeout chain, and one whose deadline has not is left where it is.
  */
 export async function advanceRun(supabase: any, run: SequenceRun, origin: string, opts: { resume?: 'met' } = {}) {
+  const claim = await claimRun(supabase, run.id, { due: opts.resume !== 'met' })
+  if (!claim) return
+  try {
+    await walkRun(supabase, claim.run, origin, opts)
+  } finally {
+    await releaseRun(supabase, run.id, claim.until)
+  }
+}
+
+/**
+ * How long a claim on a run lasts. Far longer than any walk (a function is
+ * killed long before), and short enough that a process that died holding one
+ * costs a run one tick at most.
+ */
+const CLAIM_MINUTES = 10
+
+/**
+ * Takes a run for this process, or says somebody else has it.
+ *
+ * Every path that walks a run comes through here: the inline start of a drip
+ * or a patient rule, the tick, an event waking a wait, a person's Retry or
+ * Skip. Until this existed nothing made them take turns -- a lead's run is
+ * inserted due and walked in the same request, and a tick that read it in
+ * that window walked it too, from the same step, and sent the first message
+ * twice (four times, with three ticks in the window).
+ *
+ * One conditional update: still running, nobody else's claim live, and -- for
+ * everything except an event wake, whose run is deliberately parked in the
+ * future -- actually due. It returns the row as it is NOW, and that is what is
+ * walked rather than whatever the caller read: a tick's batch is read before
+ * any of it is walked, and walking a stale copy of a run another process has
+ * since moved on is the same double send by a slower route.
+ */
+async function claimRun(supabase: any, runId: string, opts: { due: boolean }): Promise<{ run: SequenceRun; until: string } | null> {
+  const now = new Date()
+  const until = new Date(now.getTime() + CLAIM_MINUTES * 60_000).toISOString()
+  let claim = supabase
+    .from('automation_sequence_runs')
+    .update({ claimed_until: until })
+    .eq('id', runId)
+    .eq('status', 'running')
+    .or(`claimed_until.is.null,claimed_until.lt.${now.toISOString()}`)
+  if (opts.due) claim = claim.lte('resume_at', now.toISOString())
+  const { data, error } = await claim.select(RUN_COLUMNS).maybeSingle()
+  if (error) {
+    console.error('[automationEngine] could not claim run', runId, error.message)
+    return null
+  }
+  return data ? { run: data as SequenceRun, until } : null
+}
+
+/** Lets the run go -- only if the claim is still ours, not one taken after ours ran out. */
+async function releaseRun(supabase: any, runId: string, until: string) {
+  await supabase.from('automation_sequence_runs').update({ claimed_until: null }).eq('id', runId).eq('claimed_until', until)
+}
+
+async function walkRun(supabase: any, run: SequenceRun, origin: string, opts: { resume?: 'met' }) {
   const subject = await loadSubject(supabase, run)
   if (!subject) return
 
@@ -992,11 +1125,20 @@ export async function enrolDueSegments(supabase: any, origin: string, now = new 
       const { data: claimed } = await claim.select('id').maybeSingle()
       if (!claimed) continue
 
-      const { data: patients } = await supabase
-        .from('patients')
-        .select('id, is_minor, do_not_contact, marketing_channels')
-        .eq('account_id', rule.account_id)
-      let candidates = (patients ?? []).filter(
+      // Every page, not the first 1000: an unpaged select stops there without
+      // an error, and a clinic past it had a segment enrol whoever came back
+      // first and skip the rest, every time. Ordered by id so pages neither
+      // overlap nor skip. A failed read throws, and the rule waits for the
+      // next occurrence rather than enrolling half its audience.
+      const patients = await fetchAllRows<{ id: string; is_minor: boolean; do_not_contact: boolean; marketing_channels: string[] | null }>((from, to) =>
+        supabase
+          .from('patients')
+          .select('id, is_minor, do_not_contact, marketing_channels')
+          .eq('account_id', rule.account_id)
+          .order('id')
+          .range(from, to),
+      )
+      let candidates = patients.filter(
         (p: { is_minor: boolean; do_not_contact: boolean; marketing_channels: string[] | null }) =>
           !p.is_minor && !p.do_not_contact && (!rule.is_marketing || (p.marketing_channels ?? []).length > 0),
       )
@@ -1004,8 +1146,12 @@ export async function enrolDueSegments(supabase: any, origin: string, now = new 
       const reentryDays = Number(segment.reentry_days)
       if (Number.isFinite(reentryDays) && reentryDays > 0) {
         const since = new Date(now.getTime() - reentryDays * 24 * 3600 * 1000).toISOString()
-        const { data: recent } = await supabase.from('automation_sequence_runs').select('patient_id').eq('rule_id', rule.id).gte('started_at', since)
-        const recentIds = new Set((recent ?? []).map((r: { patient_id: string }) => r.patient_id))
+        // Paged for the same reason: reading only the first 1000 runs let
+        // everybody enrolled after them straight back in, inside the window.
+        const recent = await fetchAllRows<{ patient_id: string }>((from, to) =>
+          supabase.from('automation_sequence_runs').select('patient_id').eq('rule_id', rule.id).gte('started_at', since).order('id').range(from, to),
+        )
+        const recentIds = new Set(recent.map((r) => r.patient_id))
         candidates = candidates.filter((p: { id: string }) => !recentIds.has(p.id))
       }
 

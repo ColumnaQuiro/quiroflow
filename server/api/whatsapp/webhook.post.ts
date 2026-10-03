@@ -39,6 +39,7 @@ interface MetaMessage {
 }
 import type { InstagramMessagingEvent } from '~/server/utils/instagramWebhook'
 import { leadForWhatsAppSender } from '~/server/utils/whatsappLeads'
+import { receptionistDraftsFor } from '~/server/utils/receptionist'
 import { findLeadIdByPhone, findPatientIdsByPhone } from '~/server/utils/whatsappOwner'
 
 interface MetaChangeValue {
@@ -436,9 +437,7 @@ export default defineEventHandler(async (event) => {
         // A lead writing back is the thing the whole acquisition funnel is
         // trying to cause, and until now it left no trace anywhere except an
         // unattributed row. Recorded on the lead's own timeline so the drawer
-        // shows it, and flagged as needing a person: the AI receptionist does
-        // not answer real enquiries yet, so nobody is replying unless a human
-        // does.
+        // shows it.
         if (leadId) {
           await supabase.from('lead_events').insert({
             account_id: account.id,
@@ -447,13 +446,25 @@ export default defineEventHandler(async (event) => {
             title: 'Replied',
             detail: insert.body_preview?.slice(0, 500) ?? null,
           })
-          // Only lifts a lead the AI was handling, so a lead a person has
-          // already taken over is left where that person put it.
-          await supabase
-            .from('leads')
-            .update({ ai_state: 'needs_human' })
-            .eq('id', leadId)
-            .eq('ai_state', 'handling')
+          // A lead the AI is handling stays the AI's when the receptionist
+          // will draft for it: this message is precisely what the drafting
+          // tick looks for, and it only looks at 'handling'. Lifting every
+          // such lead to 'needs_human' on arrival -- which this did, from
+          // before the receptionist drafted anything -- meant the one event
+          // that should produce a draft was the one that guaranteed none
+          // ever would, for every WhatsApp lead in every clinic.
+          //
+          // When nothing will draft (switched off, or Growth lapsed), it goes
+          // to a person, since otherwise nobody is reading it. The tick hands
+          // over too, when the model cannot answer. Only from 'handling', so
+          // a lead a person already took over stays where they put it.
+          if (!(await receptionistDraftsFor(supabase, account.id))) {
+            await supabase
+              .from('leads')
+              .update({ ai_state: 'needs_human' })
+              .eq('id', leadId)
+              .eq('ai_state', 'handling')
+          }
         }
 
         let senderName = msg.from

@@ -59,10 +59,19 @@ describe('Saving patient details', { scrollBehavior: 'center' }, () => {
           cy.task('db:setPatientContactFlags', { patientId: minor.id, isMinor: true })
           cy.task('db:setPatientTutor', { patientId: minor.id, tutorPatientId: tutor.id })
 
+          // The tutor's name is looked up when the editor opens. Held back
+          // here, so Remove is clicked before it arrives: a slow lookup used
+          // to land afterwards and put the tutor back (CI found it).
+          cy.intercept({ method: 'GET', url: `**/rest/v1/patients*id=eq.${tutor.id}*` }, (req) => {
+            req.on('response', (res) => {
+              res.setDelay(1500)
+            })
+          })
           cy.login(account.email, account.password)
           cy.visit(`/patients/${minor.id}`)
           cy.contains('button', 'Edit all details', { timeout: 15000 }).click()
           cy.get('[data-cy=tutor-remove]').scrollIntoView().should('be.visible').click()
+          cy.wait(2000)
           cy.contains('button', /^Save$/).click()
           cy.contains('Patient saved').should('be.visible')
 

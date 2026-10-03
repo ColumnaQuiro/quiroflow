@@ -65,11 +65,13 @@ onMounted(async () => {
   referralSources.value = sources ?? []
   if (props.patient.tutor_patient_id) {
     const { data } = await supabase.from('patients').select('id, first_name, last_name').eq('id', props.patient.tutor_patient_id).maybeSingle()
-    if (data) selectedTutor.value = data
+    // Only if they have not already changed it: a Remove (or another pick)
+    // made while this lookup was on its way must not be undone by it.
+    if (data && !tutorChanged.value) selectedTutor.value = data
   }
   if (props.patient.referred_by_patient_id) {
     const { data } = await supabase.from('patients').select('id, first_name, last_name').eq('id', props.patient.referred_by_patient_id).maybeSingle()
-    if (data) selectedReferredBy.value = data
+    if (data && !referredByChanged.value) selectedReferredBy.value = data
   }
   await loadReferredPatients()
 })
@@ -211,12 +213,14 @@ async function startEditing() {
   referredByChanged.value = false
   if (props.patient.tutor_patient_id) {
     const { data } = await supabase.from('patients').select('id, first_name, last_name').eq('id', props.patient.tutor_patient_id).maybeSingle()
-    if (data) selectedTutor.value = data
+    // Only if they have not already changed it: a Remove (or another pick)
+    // made while this lookup was on its way must not be undone by it.
+    if (data && !tutorChanged.value) selectedTutor.value = data
   }
   selectedReferredBy.value = null
   if (props.patient.referred_by_patient_id) {
     const { data } = await supabase.from('patients').select('id, first_name, last_name').eq('id', props.patient.referred_by_patient_id).maybeSingle()
-    if (data) selectedReferredBy.value = data
+    if (data && !referredByChanged.value) selectedReferredBy.value = data
   }
   editing.value = true
 }

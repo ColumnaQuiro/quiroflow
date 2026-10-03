@@ -2,6 +2,7 @@
 import { formatShortDate } from '~/utils/billing'
 import type { Tables } from '~/types/database.types'
 import { sanitizeStorageFilename } from '~/utils/storageFilename'
+import { MIN_DOCUMENT_PASSWORD_LENGTH, captionRevealsPassword, defaultProtectedCaption, documentPassword, isSpanishId } from '~/utils/protectedDocument'
 
 const props = defineProps<{ patientId: string }>()
 
@@ -9,6 +10,7 @@ const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
 const { can } = usePermission()
+const { showToast } = useToast()
 
 // `visibility` isn't in the generated Supabase types yet -- merge it in
 // locally rather than editing the generated file by hand.
@@ -186,6 +188,71 @@ function download(file: Tables<'patient_files'>) {
   })
 }
 
+// Sends the file into the patient's WhatsApp chat as a PDF that opens only
+// with their DNI/NIE -- or a password the clinic tells them when there is no
+// DNI on file (88 of 1,598 Columnaquiro patients had one on 3 Oct 2026).
+// utils/protectedDocument.ts and /api/patients/files/[id]/send-protected
+// have the rest. PDFs and photos only: those are what a phone opens.
+function canSendProtected(file: PatientFile) {
+  return !!file.storage_path && can('inbox_access') && (isPdf(file) || ['image/jpeg', 'image/png', 'image/webp'].includes(file.file_type ?? ''))
+}
+
+const protecting = ref<PatientFile | null>(null)
+const protectPatient = ref<{ national_id: string | null; preferred_language: string } | null>(null)
+const protectPassword = ref('')
+const protectSaveId = ref(false)
+const protectCaption = ref('')
+const protectCaptionEdited = ref(false)
+const protectBusy = ref(false)
+const protectError = ref('')
+
+const protectNormalised = computed(() => documentPassword(protectPassword.value))
+const storedNationalId = computed(() => (protectPatient.value?.national_id ? documentPassword(protectPatient.value.national_id) : null))
+const protectUsesNationalId = computed(() => isSpanishId(protectNormalised.value) && (protectNormalised.value === storedNationalId.value || protectSaveId.value))
+const protectCanSaveId = computed(() => !protectPatient.value?.national_id && isSpanishId(protectNormalised.value))
+const protectLeaksPassword = computed(() => captionRevealsPassword(protectCaption.value, protectNormalised.value))
+const protectReady = computed(() => protectNormalised.value.length >= MIN_DOCUMENT_PASSWORD_LENGTH && !!protectCaption.value.trim() && !protectLeaksPassword.value)
+
+function suggestedCaption() {
+  if (!protecting.value) return ''
+  return defaultProtectedCaption({ fileName: protecting.value.file_name, passwordIsNationalId: protectUsesNationalId.value, english: protectPatient.value?.preferred_language === 'en' })
+}
+// The suggested message follows the password (DNI or not) until someone
+// writes their own.
+watch(protectUsesNationalId, () => {
+  if (!protectCaptionEdited.value) protectCaption.value = suggestedCaption()
+})
+
+async function openProtect(file: PatientFile) {
+  protecting.value = file
+  protectError.value = ''
+  protectSaveId.value = false
+  protectCaptionEdited.value = false
+  const { data } = await supabase.from('patients').select('national_id, preferred_language').eq('id', props.patientId).maybeSingle()
+  protectPatient.value = data
+  protectPassword.value = data?.national_id ? documentPassword(data.national_id) : ''
+  protectCaption.value = suggestedCaption()
+}
+
+async function sendProtected() {
+  const file = protecting.value
+  if (!file || !protectReady.value) return
+  protectBusy.value = true
+  protectError.value = ''
+  try {
+    await useStaffFetch(`/api/patients/files/${file.id}/send-protected`, {
+      method: 'POST',
+      body: { password: protectPassword.value, caption: protectCaption.value, saveAsNationalId: protectCanSaveId.value && protectSaveId.value },
+    })
+    protecting.value = null
+    showToast(t('Sent to the patient on WhatsApp, password-protected.', 'Enviado al paciente por WhatsApp, protegido con contraseña.'))
+  } catch (err: any) {
+    protectError.value = err?.data?.statusMessage ?? t('Could not send the document.', 'No se pudo enviar el documento.')
+  } finally {
+    protectBusy.value = false
+  }
+}
+
 // The row first, then the file. It was the other way round, with neither
 // result checked: storage lets any member remove an object, but the row needs
 // patient_files_delete (and, under own-docs scope, to be theirs) -- so a role
@@ -296,6 +363,7 @@ async function confirmRemove() {
             <div class="flex shrink-0 items-center gap-2">
               <button v-if="file.storage_path" type="button" class="text-[11px] font-medium text-brand-text outline-none hover:text-brand-hover focus-visible:shadow-focus touch:min-h-10 touch:px-1" @click="view(file)">{{ t('Preview', 'Vista previa') }}</button>
               <button v-if="file.storage_path" type="button" class="text-[11px] font-medium text-brand-text outline-none hover:text-brand-hover focus-visible:shadow-focus touch:min-h-10 touch:px-1" @click="download(file)">{{ t('Download', 'Descargar') }}</button>
+              <UiIconBtn v-if="canSendProtected(file)" icon="lock" data-cy="file-send-protected" :label="t('Send protected by WhatsApp', 'Enviar protegido por WhatsApp')" @click="openProtect(file)" />
               <UiIconBtn v-if="can('patient_files_delete')" icon="trash" tone="danger" data-cy="file-delete" :label="t('Delete', 'Eliminar')" @click="deleting = file" />
             </div>
           </div>
@@ -318,6 +386,57 @@ async function confirmRemove() {
       </span>
       <input type="file" multiple class="hidden" :disabled="uploading" @change="(e) => uploadFiles((e.target as HTMLInputElement).files!)" />
     </label>
+    <UiConfirmDialog
+      v-if="protecting"
+      :title="t('Send protected by WhatsApp', 'Enviar protegido por WhatsApp')"
+      :confirm-label="protectBusy ? t('Sending…', 'Enviando…') : t('Send', 'Enviar')"
+      :cancel-label="t('Cancel', 'Cancelar')"
+      :busy="protectBusy"
+      :disabled="!protectReady"
+      @confirm="sendProtected"
+      @cancel="protecting = null"
+    >
+      <div class="space-y-3 text-[13.5px] text-ink-700" data-cy="send-protected-dialog">
+        <p class="leading-snug">
+          {{ t(`${protecting.file_name} goes to the patient's WhatsApp as a PDF that only opens with this password.`, `${protecting.file_name} se envía al WhatsApp del paciente como un PDF que solo se abre con esta contraseña.`) }}
+        </p>
+        <label class="block">
+          <span class="text-[12.5px] font-medium text-ink-700">{{ t('Password', 'Contraseña') }}</span>
+          <input
+            v-model="protectPassword"
+            type="text"
+            autocomplete="off"
+            spellcheck="false"
+            data-cy="send-protected-password"
+            class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 font-mono text-[13.5px] text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+          />
+          <span class="mt-1 block text-[12px] text-ink-muted2">
+            <template v-if="storedNationalId && protectNormalised === storedNationalId">{{ t('Their DNI/NIE on file.', 'Su DNI/NIE guardado.') }}</template>
+            <template v-else-if="!protectPatient?.national_id">{{ t('No DNI/NIE saved for this patient. Type it, or a password you will tell them in person or by phone.', 'Este paciente no tiene DNI/NIE guardado. Escríbelo, o una contraseña que le dirás en persona o por teléfono.') }}</template>
+            <template v-else>{{ t('Not the DNI/NIE on file: tell the patient this password yourself.', 'No es el DNI/NIE guardado: dile tú esta contraseña al paciente.') }}</template>
+          </span>
+        </label>
+        <label v-if="protectCanSaveId" class="flex items-center gap-2 text-[12.5px]">
+          <input v-model="protectSaveId" type="checkbox" class="h-4 w-4 rounded border-line-control text-brand focus:ring-brand" />
+          {{ t("Save it as this patient's DNI/NIE", 'Guardarlo como DNI/NIE del paciente') }}
+        </label>
+        <label class="block">
+          <span class="text-[12.5px] font-medium text-ink-700">{{ t('Message', 'Mensaje') }}</span>
+          <textarea
+            v-model="protectCaption"
+            rows="3"
+            data-cy="send-protected-caption"
+            class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13.5px] text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            @input="protectCaptionEdited = true"
+          ></textarea>
+          <span v-if="protectLeaksPassword" class="mt-1 block text-[12px] text-danger-text">{{ t('The message must not contain the password.', 'El mensaje no puede incluir la contraseña.') }}</span>
+        </label>
+        <p class="text-[12px] leading-snug text-ink-muted2">
+          {{ t('WhatsApp only allows this within 24 hours of the patient\'s last message to you.', 'WhatsApp solo lo permite en las 24 horas siguientes al último mensaje del paciente.') }}
+        </p>
+        <p v-if="protectError" class="text-[12.5px] text-danger-text" data-cy="send-protected-error">{{ protectError }}</p>
+      </div>
+    </UiConfirmDialog>
     <UiConfirmDialog
       v-if="deleting"
       tone="danger"

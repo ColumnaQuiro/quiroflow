@@ -624,12 +624,19 @@ watch(
   },
   { immediate: true },
 )
+// A Growth lead's own thread is not offered one: the web sends a lead nothing
+// through this route either (its thread is GrowthInboxLeadThread), and a send
+// to the bare number would be filed under the number, not the lead.
+const templateTarget = computed(() => {
+  const c = selected.value
+  if (!c || replyChannel.value !== 'whatsapp' || (c.leadId && !c.patientId)) return false
+  return !!(c.patientId || c.phoneNumber)
+})
 const templateAllowed = computed(() => {
   const c = selected.value
-  if (!c || replyChannel.value !== 'whatsapp' || (!c.patientId && !c.phoneNumber)) return false
-  return can('communication_config') && can(c.patientId ? 'recalls_access' : 'inbox_access')
+  return !!c && can('communication_config') && can(c.patientId ? 'recalls_access' : 'inbox_access')
 })
-const canSendTemplate = computed(() => templateAllowed.value && !contactBlocked.value)
+const canSendTemplate = computed(() => templateTarget.value && templateAllowed.value && !contactBlocked.value)
 async function onTemplateSent() {
   templateSheetOpen.value = false
   sendError.value = ''
@@ -1299,10 +1306,10 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
                       `Han pasado más de 24h desde que ${selected.name} escribió por última vez — WhatsApp bloquea las respuestas libres; solo se puede enviar una plantilla aprobada.`,
                     )
             }}
-            <template v-if="replyChannel === 'whatsapp' && contactBlocked">
+            <template v-if="templateTarget && contactBlocked">
               {{ t('This patient cannot be contacted (under age or marked do not contact).', 'A este paciente no se le puede contactar (menor de edad o marcado como no contactar).') }}
             </template>
-            <template v-else-if="replyChannel === 'whatsapp' && !templateAllowed">
+            <template v-else-if="templateTarget && !templateAllowed">
               {{ t("Your role can't send templates.", 'Tu rol no puede enviar plantillas.') }}
             </template>
           </p>

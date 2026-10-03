@@ -10,6 +10,7 @@ import { formatEur } from '~/utils/billing'
 // PracticeHub records most of a bono patient's payments -- and such a row
 // simply matches no invoice here.
 import { normalizeSearchTerm } from '~/utils/searchText'
+import { isReceipt } from '~/utils/paymentReceipts'
 
 interface InvoiceRow {
   id: string
@@ -185,10 +186,19 @@ const rows = computed<LedgerRow[]>(() => {
     // refunds_invoice_id as well as refunds_payment_id precisely so this sum
     // keeps working. Refund EUR 20 against the card payment and the receipt's
     // own refundable total drops by EUR 20 with it.
+    //
+    // Only money that came in, which is the rule a single payment already
+    // followed: a write-off settles a receipt without collecting anything, and
+    // a 'credit' row spends a balance paid in (and refundable) elsewhere.
+    // Summing every payment let a written-off receipt be refunded in cash --
+    // money out of the till for a debt that was forgiven, not paid.
     const alreadyRefunded = props.invoices
       .filter((r) => r.is_refund && r.refunds_invoice_id === inv.id)
       .reduce((sum, r) => sum + Math.abs(r.total_cents), 0)
-    const refundableCents = inv.status === 'void' ? 0 : Math.max(0, paidForInvoice - alreadyRefunded)
+    const receivedForInvoice = props.payments
+      .filter((p) => p.invoice_id === inv.id && isReceipt(p.method))
+      .reduce((sum, p) => sum + p.amount_cents, 0)
+    const refundableCents = inv.status === 'void' ? 0 : Math.max(0, receivedForInvoice - alreadyRefunded)
 
     // A negative total_cents invoice that isn't flagged is_refund happens
     // for imported data (e.g. a PracticeHub refund record) rather than one
@@ -250,7 +260,11 @@ const rows = computed<LedgerRow[]>(() => {
     // voided receipt offers no Refund action there either.
     if (!invoice || invoice.status === 'void') return 0
 
-    const paidForInvoice = props.payments.filter((q) => q.invoice_id === p.invoice_id).reduce((sum, q) => sum + q.amount_cents, 0)
+    // The receipt's room counts received money only, as the receipt-level
+    // cap above does -- a write-off beside this payment must not widen it.
+    const paidForInvoice = props.payments
+      .filter((q) => q.invoice_id === p.invoice_id && isReceipt(q.method))
+      .reduce((sum, q) => sum + q.amount_cents, 0)
     const refundedAgainstInvoice = props.invoices
       .filter((r) => r.is_refund && r.refunds_invoice_id === p.invoice_id)
       .reduce((sum, r) => sum + Math.abs(r.total_cents), 0)

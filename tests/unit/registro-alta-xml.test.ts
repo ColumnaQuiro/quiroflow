@@ -193,6 +193,37 @@ describe('The RegistroAlta the AEAT will read', () => {
     expect(fromPatient).to.contain('<sum1:NIF>12345678Z</sum1:NIF>')
   })
 
+  it('puts only a valid Spanish NIF in <NIF>, normalised, and nothing else', () => {
+    const f1 = (patientNif: string) =>
+      buildRegistroAlta({
+        ...base,
+        record: { ...base.record, invoiceType: 'F1' },
+        factura: { ...base.factura, recipientName: null, recipientNif: null, patientName: 'Ana Ruiz', patientNif },
+      })
+
+    // Typed with dots and a dash: the schema's NIFType is nine characters, so
+    // this was a 4102 fault that sent the whole envelope back.
+    expect(f1('12.345.678-z')).to.contain('<sum1:NIF>12345678Z</sum1:NIF>')
+
+    // A wrong check letter (1239 per record), a passport, a foreign ID: none
+    // of them is a NIF, and an IDDestinatario with no identifier is itself a
+    // fault. So the block goes, exactly as it does for a patient with no ID on
+    // file -- the record is answered on its own, and nothing else is.
+    for (const bad of ['12345678A', 'AB1234567', 'P-123 456 789']) {
+      const xml = f1(bad)
+      expect(xml, bad).to.not.contain('Destinatarios')
+      expect(xml, bad).to.not.contain(`>${bad}<`)
+    }
+
+    // A frozen recipient NIF follows the same rule.
+    const frozen = buildRegistroAlta({
+      ...base,
+      record: { ...base.record, invoiceType: 'F1' },
+      factura: { ...base.factura, recipientName: 'Quien Sea', recipientNif: 'x 1234567 l' },
+    })
+    expect(frozen).to.contain('<sum1:NIF>X1234567L</sum1:NIF>')
+  })
+
   it('sends a stand-in destinatario when it is not talking to production', () => {
     // "Test environment" and "test data" were not the same thing: environment
     // picks the endpoint and nothing else, so the document was built

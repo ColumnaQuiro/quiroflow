@@ -14,6 +14,7 @@
 import { formatEur } from '~/utils/billing'
 import type { Tables } from '~/types/database.types'
 import { normalizeSearchTerm } from '~/utils/searchText'
+import { checkSpanishTaxId } from '~/utils/spanishTaxId'
 
 const props = defineProps<{ patient: Tables<'patients'> }>()
 const emit = defineEmits<{ updated: []; close: [] }>()
@@ -225,6 +226,32 @@ async function startEditing() {
   editing.value = true
 }
 
+// The DNI/NIE is what a full factura sends to the AEAT as the recipient's
+// NIF, so it is checked here, where it is typed, rather than discovered there.
+// A wrong check letter is refused: it is always a typo, and the AEAT refuses
+// the record it lands on. Anything that is not a Spanish identifier at all --
+// a passport, a foreign ID card -- is allowed and flagged: the form has no ID
+// type to declare it foreign, and the record is still the right place for it.
+// Such a patient's full facturas go to the AEAT without a recipient NIF.
+const nationalIdCheck = computed(() => checkSpanishTaxId(nationalId.value))
+const nationalIdUnchanged = computed(() => (nationalId.value || '').trim() === (props.patient.national_id ?? '').trim())
+const nationalIdMessage = computed(() => {
+  const c = nationalIdCheck.value
+  if (c.kind === 'invalid') {
+    return t(
+      `This ${c.type} is not valid: the check letter does not match. Check it against the document.`,
+      `Este ${c.type} no es válido: la letra de control no coincide. Revísalo con el documento.`,
+    )
+  }
+  if (c.kind === 'other') {
+    return t(
+      'Not a Spanish DNI/NIE/NIF. It is kept, but full facturas will go to Hacienda without a recipient NIF.',
+      'No es un DNI/NIE/NIF español. Se guarda, pero las facturas completas irán a Hacienda sin NIF del destinatario.',
+    )
+  }
+  return ''
+})
+
 const { fire } = useAutomations()
 
 async function save() {
@@ -250,6 +277,17 @@ async function save() {
     }
   }
 
+  // Refused only when it was typed now: a stored ID that fails the check is
+  // flagged, not allowed to block saving an unrelated field.
+  if (nationalIdCheck.value.kind === 'invalid' && !nationalIdUnchanged.value) {
+    error.value = nationalIdMessage.value
+    saving.value = false
+    return
+  }
+  // Stored in the form the AEAT reads: "12.345.678-z" becomes 12345678Z.
+  const nationalIdToSave =
+    nationalIdCheck.value.kind === 'valid' ? nationalIdCheck.value.normalized : nationalId.value.trim() || null
+
   // Unchecking "under age", or moving the referral source off "Patient", is
   // a change the person made, and clears the link as it always has. Inside
   // those, the link is written only if they picked or removed someone.
@@ -271,7 +309,7 @@ async function save() {
       postal_code: postalCode.value || null,
       city: city.value || null,
       country: country.value || null,
-      national_id: nationalId.value || null,
+      national_id: nationalIdToSave,
       clinic_id: clinicId.value || null,
       tags,
       occupation: occupation.value || null,
@@ -481,7 +519,10 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
           </div>
           <div>
             <label :class="labelClass">{{ t('National ID', 'DNI/NIE') }}</label>
-            <input v-model="nationalId" type="text" :class="inputClass" />
+            <input v-model="nationalId" type="text" data-cy="patient-national-id" :class="inputClass" />
+            <p v-if="nationalIdMessage" data-cy="patient-national-id-warning" class="mt-1 text-[12px]" :class="nationalIdCheck.kind === 'invalid' ? 'text-danger-text' : 'text-warning-text'">
+              {{ nationalIdMessage }}
+            </p>
           </div>
           <div>
             <label :class="labelClass">{{ t('Occupation', 'Profesión') }}</label>

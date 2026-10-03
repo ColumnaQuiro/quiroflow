@@ -1,7 +1,6 @@
 import { invoiceDueCents, settleInvoiceIfCovered } from '../utils/settleInvoice'
-import { bonoVisitChargeStatus } from '../utils/bonoVisitCharge'
-import { bonoSessionDescription } from '../utils/billingDescriptions'
-import { bonoPerSessionCents, creditExceedsLedger, isVisitUpcoming, lineItemsTotalCents, planInvoiceUnderBono } from '../utils/visitCharging'
+import { chargeBonoVisit } from '../utils/bonoVisitInvoice'
+import { bonoPerSessionCents, creditExceedsLedger, isVisitUpcoming, lineItemsTotalCents } from '../utils/visitCharging'
 import { completeVisit } from '../utils/completeVisit'
 
 // Charging one visit: raising its invoice, adding and removing lines, drawing
@@ -108,7 +107,7 @@ export function useVisitCharging(ctx: VisitChargingContext) {
    * Nothing is due on an invoice already marked paid, even with no payment rows
    * against it.
    *
-   * A visit drawn from a prepaid bono is exactly that shape: chargeTheVisit()
+   * A visit drawn from a prepaid bono is exactly that shape: chargeBonoVisit()
    * raises the charge and marks it paid because the balance already covers it --
    * the money went in when the bono was bought -- so no payment row is ever
    * created. settle_imported_invoices() left the whole migrated history looking
@@ -138,15 +137,41 @@ export function useVisitCharging(ctx: VisitChargingContext) {
     appointmentIsUpcoming.value = isVisitUpcoming(data)
   }
 
+  // Other receipts on this appointment, beside the one the panel shows. Set
+  // when there is more than one, so the panel can say so rather than leave
+  // them invisible.
+  const otherReceipts = ref<{ id: string; invoice_number: string; status: string; total_cents: number }[]>([])
+
   // Reads the invoice for this appointment, if someone has raised one. Opening
   // billing is a read -- see ensureInvoice() for why it must never write.
+  //
+  // One appointment can carry more than one receipt: a visit with extras that
+  // is then drawn from a bono keeps the extras on their receipt and charges the
+  // session on its own (utils/bonoVisitInvoice), and older data has the odd
+  // pair too. This read was .maybeSingle(), which ERRORS on two rows -- the
+  // error was dropped, data came back null, and the receipt still open for the
+  // extras vanished from the tab. So: every receipt, and the one shown is the
+  // one reception may still have to act on -- not void, not a refund, still
+  // open before settled, newest first -- with the rest named beside it.
   async function findInvoice(): Promise<VisitInvoice | null> {
-    const { data } = await supabase
+    const { data, error: readError } = await supabase
       .from('invoices')
-      .select('id, invoice_number, status, total_cents')
+      .select('id, invoice_number, status, total_cents, is_refund, created_at')
       .eq('appointment_id', appointmentId())
-      .maybeSingle()
-    return data ?? null
+      .order('created_at', { ascending: false })
+    if (readError) {
+      error.value = readError.message
+      otherReceipts.value = []
+      return null
+    }
+    const candidates = (data ?? []).filter((i) => i.status !== 'void' && !i.is_refund)
+    const chosen = candidates.find((i) => i.status !== 'paid') ?? candidates[0] ?? null
+    otherReceipts.value = chosen
+      ? candidates
+          .filter((i) => i.id !== chosen.id)
+          .map((i) => ({ id: i.id, invoice_number: i.invoice_number, status: i.status, total_cents: i.total_cents }))
+      : []
+    return chosen ? { id: chosen.id, invoice_number: chosen.invoice_number, status: chosen.status, total_cents: chosen.total_cents } : null
   }
 
   // Set when this visit has already been drawn from a bono. Doubles as the
@@ -448,81 +473,24 @@ export function useVisitCharging(ctx: VisitChargingContext) {
 
     // The visit's charge, at the bono's per-session rate rather than the
     // appointment type's walk-in price -- that rate is what the patient actually
-    // paid per visit when they bought the bono.
+    // paid per visit when they bought the bono. Marked paid when the (family)
+    // balance already covers it, the rule settle_imported_invoices() applied to
+    // the imported history.
     //
-    // Marked paid when the patient's balance already covers it, which for a
-    // prepaid bono it does. That is the same rule settle_imported_invoices()
-    // applied to the imported history, so a visit taken today is recorded the
-    // way every visit before it was.
-    //
-    // The line says so in Spanish whatever language the screen is in (see
-    // bonoSessionDescription) and names the bono it came off -- the app's copy
-    // wrote "<bono> — session" with no package_purchase_id, which the income
-    // report then could not attribute.
-    // Captured out here: TypeScript loses the null-narrowing on `bono` inside a
-    // closure, and the name and id are all the charge needs.
-    const bonoName = bono.package_name
-    const bonoPurchaseId = bono.id
-    async function chargeTheVisit(): Promise<void> {
-      const { data: chargeNumber } = await supabase.rpc('next_invoice_number', { p_account_id: accountId() })
-      if (!chargeNumber) {
-        error.value = t('Could not allocate a receipt number.', 'No se ha podido asignar un número de recibo.')
-        return
-      }
-      const { data: created } = await supabase
-        .from('invoices')
-        .insert({
-          account_id: accountId(),
-          patient_id: patientId(),
-          appointment_id: appointmentId(),
-          invoice_number: chargeNumber,
-          // The FAMILY's balance, not this patient's: on a shared bono the money
-          // sits on the owner's record. See bonoVisitChargeStatus().
-          status: await bonoVisitChargeStatus(supabase, patientId(), perSessionCents, balanceCents.value),
-          total_cents: perSessionCents,
-        })
-        .select('id')
-        .single()
-      if (created) {
-        await supabase.from('invoice_line_items').insert({
-          account_id: accountId(),
-          invoice_id: created.id,
-          description: bonoSessionDescription(bonoName),
-          package_purchase_id: bonoPurchaseId,
-          quantity: 1,
-          price_cents: perSessionCents,
-        })
-      }
-    }
-
-    // An invoice this visit already carries. Since ensureInvoice() stopped
-    // firing on open there is usually none -- but there are two ways to get here
-    // with one: an appointment invoiced before that change, and a visit
-    // deliberately charged at the walk-in price and then settled with the bono
-    // after all. Either way the walk-in price is the wrong number now -- see
-    // planInvoiceUnderBono for what stays.
-    if (invoice.value) {
-      const plan = planInvoiceUnderBono(lineItems.value, payments.value.length)
-      if (plan.action === 'delete') {
-        // Safe only because there are no payments: they cascade on invoice
-        // delete. planInvoiceUnderBono is what guarantees that.
-        await supabase.from('invoices').delete().eq('id', invoice.value.id)
-        invoice.value = null
-        lineItems.value = []
-      } else {
-        // Something stays billable. Drop the covered visit line and reprice, so
-        // the patient is charged for the extras only.
-        if (plan.removeLineId) {
-          const removeId = plan.removeLineId
-          await supabase.from('invoice_line_items').delete().eq('id', removeId)
-          lineItems.value = lineItems.value.filter((l) => l.id !== removeId)
-        }
-        await supabase.from('invoices').update({ total_cents: plan.totalCents }).eq('id', invoice.value.id)
-        invoice.value.total_cents = plan.totalCents
-      }
-    }
-
-    await chargeTheVisit()
+    // On the receipt this visit already has, when it has one: see
+    // utils/bonoVisitInvoice for what is reused, what stays owed, and why a
+    // receipt with extras keeps them on their own. This used to reprice that
+    // receipt and then insert the session's charge as a second receipt for the
+    // same appointment, which made the first one disappear from this tab.
+    const { error: chargeError } = await chargeBonoVisit(supabase, {
+      accountId: accountId(),
+      patientId: patientId(),
+      appointmentId: appointmentId(),
+      perSessionCents,
+      bonoName: bono.package_name,
+      bonoPurchaseId: bono.id,
+      ownBalanceCents: balanceCents.value,
+    })
 
     // Completing the visit is unchanged -- it happened, whatever paid for it.
     // No 'invoice.paid' event and no auto-send: with the visit covered by the
@@ -536,6 +504,14 @@ export function useVisitCharging(ctx: VisitChargingContext) {
     saving.value = false
     await loadInvoice()
     await refreshSummary()
+    // After the reload, which clears the panel's error. The session is taken
+    // and the visit recorded; it is the charge that needs looking at.
+    if (chargeError) {
+      error.value = t(
+        `The session was taken, but its charge could not be recorded: ${chargeError}`,
+        `La sesión se ha usado, pero no se ha podido registrar su cargo: ${chargeError}`,
+      )
+    }
   }
 
   async function recordPayment() {
@@ -550,7 +526,7 @@ export function useVisitCharging(ctx: VisitChargingContext) {
     }
     saving.value = true
 
-    const { data: insertedPayments } = await supabase
+    const { data: insertedPayments, error: insertError } = await supabase
       .from('payments')
       .insert(
         rows.map((r) => ({
@@ -563,6 +539,16 @@ export function useVisitCharging(ctx: VisitChargingContext) {
         })),
       )
       .select('id, amount_cents, method')
+    // One insert for every row, so all or nothing -- and nothing means nothing
+    // else is written either. The credit rows below restate these payments;
+    // written alone they take credit off the patient for money that never
+    // reached the receipt. The same rule BillingTab's takePayment follows.
+    if (insertError || !insertedPayments?.length) {
+      error.value =
+        t('The payment could not be recorded', 'No se pudo registrar el pago') + (insertError?.message ? `: ${insertError.message}` : '.')
+      saving.value = false
+      return
+    }
 
     // A factura for the money that actually came in, through useFacturas so it
     // carries the account's tax breakdown -- the app's copy inserted its own
@@ -570,9 +556,10 @@ export function useVisitCharging(ctx: VisitChargingContext) {
     // moves no money and was already documented when that credit was paid in,
     // so issuing a second document would count one payment twice in the
     // fiscal series.
+    let facturaMissing = false
     for (const p of insertedPayments ?? []) {
       if (p.method === 'credit') continue
-      await issueFactura({
+      const issued = await issueFactura({
         accountId: accountId(),
         patientId: patientId(),
         paymentId: p.id,
@@ -580,6 +567,7 @@ export function useVisitCharging(ctx: VisitChargingContext) {
         purpose: 'visit',
         serviceName: toValue(ctx.appointmentTypeName) ?? undefined,
       })
+      if (!issued) facturaMissing = true
     }
     const creditRows = rows.filter((r) => r.method === 'credit')
     if (creditRows.length > 0) {
@@ -619,6 +607,13 @@ export function useVisitCharging(ctx: VisitChargingContext) {
     saving.value = false
     await loadInvoice()
     await refreshSummary()
+    // After the reload, which clears the panel's error.
+    if (facturaMissing) {
+      error.value = t(
+        'The payment was recorded, but its factura could not be issued. The payment has no factura yet.',
+        'El pago se ha registrado, pero no se ha podido emitir su factura. El pago aún no tiene factura.',
+      )
+    }
   }
 
   return {
@@ -632,6 +627,7 @@ export function useVisitCharging(ctx: VisitChargingContext) {
     loadingInvoice,
     appointmentIsUpcoming,
     packageCoverage,
+    otherReceipts,
     saving,
     error,
     paidCents,

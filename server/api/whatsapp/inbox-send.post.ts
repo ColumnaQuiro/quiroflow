@@ -1,6 +1,6 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
-import { toE164, toE164Loose } from '~/utils/phone'
+import { toE164, toE164Loose, whatsappDigits } from '~/utils/phone'
 import { sanitizeStorageFilename } from '~/utils/storageFilename'
 import { isWithin24hWindow, sendWhatsAppText, sendWhatsAppMedia, uploadMediaToMeta, type MediaKind } from '~/server/utils/whatsappSend'
 import { findLeadIdByPhone, findPatientIdsByPhone } from '~/server/utils/whatsappOwner'
@@ -91,12 +91,42 @@ export default defineEventHandler(async (event) => {
     if (patient.is_minor || patient.do_not_contact) {
       throw createError({ statusCode: 400, statusMessage: 'This patient cannot be contacted (under age or marked do not contact).' })
     }
-    const { data: numbers } = await supabase.from('patient_contact_numbers').select('number, country_code, is_whatsapp').eq('patient_id', body.patientId)
-    const target = numbers?.find((n) => n.is_whatsapp) ?? numbers?.[0]
-    if (!target) throw createError({ statusCode: 400, statusMessage: 'This patient has no phone number on file' })
-    const e164 = toE164(target.number, target.country_code)
-    if (!e164) throw createError({ statusCode: 400, statusMessage: "This patient's phone number could not be formatted for WhatsApp" })
-    to = e164
+    // A reply goes back to the number they wrote from. It used to go to
+    // "the WhatsApp number, else the first one", read in no particular order
+    // -- so a patient with a work and a personal phone, writing from the
+    // second, was answered on the first. And the 24h check below looked at
+    // that first number, where they had not written, so the reply was
+    // refused as outside the window while their message sat unanswered.
+    // WhatsApp's window belongs to the number, so the number they last wrote
+    // from is the only one a free-form reply can go to anyway.
+    const { data: lastFromThem } = await supabase
+      .from('whatsapp_messages')
+      .select('phone_number')
+      .eq('account_id', account.id)
+      .eq('patient_id', body.patientId)
+      .eq('direction', 'inbound')
+      .eq('channel', 'whatsapp')
+      .not('phone_number', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (lastFromThem?.phone_number) {
+      to = whatsappDigits(lastFromThem.phone_number)
+    } else {
+      // They have never written: the window check below refuses this anyway,
+      // and the number is only named in its message. Oldest first, so the
+      // choice is at least the same one every time.
+      const { data: numbers } = await supabase
+        .from('patient_contact_numbers')
+        .select('number, country_code, is_whatsapp')
+        .eq('patient_id', body.patientId)
+        .order('created_at')
+      const target = numbers?.find((n) => n.is_whatsapp) ?? numbers?.[0]
+      if (!target) throw createError({ statusCode: 400, statusMessage: 'This patient has no phone number on file' })
+      const e164 = toE164(target.number, target.country_code)
+      if (!e164) throw createError({ statusCode: 400, statusMessage: "This patient's phone number could not be formatted for WhatsApp" })
+      to = e164
+    }
   }
 
   const { data: lastInbound } = await supabase
@@ -135,7 +165,6 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  let wamid: string | null = null
   const insert: Record<string, unknown> = {
     account_id: account.id,
     patient_id: body.patientId ?? null,
@@ -146,22 +175,29 @@ export default defineEventHandler(async (event) => {
     purpose: 'other',
   }
 
+  // The row is stored the moment Meta answers with its wamid, and the copy
+  // of a file for the thread is uploaded only after that. The other way
+  // round, a status callback could arrive while up to 16 MB was still
+  // uploading, find no row, and be lost -- a message refused within seconds
+  // then showed as sent for good. (A callback that still beats the insert is
+  // held for it in the database: see record_whatsapp_status.)
+  let upload: { path: string; buffer: Buffer; contentType: string } | null = null
   try {
     if (body.mediaBase64 && body.mediaMimeType && body.mediaKind) {
       const buffer = Buffer.from(body.mediaBase64, 'base64')
       const filename = body.mediaFilename ?? 'file'
       const mediaId = await uploadMediaToMeta(waAccount, buffer, body.mediaMimeType, filename)
-      wamid = await sendWhatsAppMedia(waAccount, to, body.mediaKind, mediaId, { caption: body.caption, filename })
+      insert.wamid = await sendWhatsAppMedia(waAccount, to, body.mediaKind, mediaId, { caption: body.caption, filename })
 
       const path = `${account.id}/out-${Date.now()}-${sanitizeStorageFilename(filename)}`
-      await supabase.storage.from('whatsapp-media').upload(path, buffer, { contentType: body.mediaMimeType, upsert: true })
+      upload = { path, buffer, contentType: body.mediaMimeType }
       insert.media_type = body.mediaKind
       insert.media_storage_path = path
       insert.media_mime_type = body.mediaMimeType
       insert.media_filename = body.mediaFilename ?? null
       insert.body_preview = body.caption?.slice(0, 2000) ?? null
     } else if (body.text) {
-      wamid = await sendWhatsAppText(waAccount, to, body.text)
+      insert.wamid = await sendWhatsAppText(waAccount, to, body.text)
       insert.body_preview = body.text.slice(0, 2000)
     }
   } catch (err: any) {
@@ -173,8 +209,10 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 502, statusMessage: metaMessage ?? 'WhatsApp send failed' })
   }
 
-  insert.wamid = wamid
   await supabase.from('whatsapp_messages').insert(insert as never)
+  if (upload) {
+    await supabase.storage.from('whatsapp-media').upload(upload.path, upload.buffer, { contentType: upload.contentType, upsert: true })
+  }
 
   return { success: true }
 })

@@ -7,7 +7,10 @@
 // phone number. Folding them together would mean a function whose every line
 // is an if.
 
-const GRAPH_BASE = 'https://graph.facebook.com/v21.0'
+// Read per call from runtime config (NUXT_META_GRAPH_BASE_URL), never a
+// constant: tests point it at a local stub, and a hard-coded host kept every
+// send made from here out of reach of the e2e suite.
+const graphBase = (): string => useRuntimeConfig().metaGraphBaseUrl
 
 export interface InstagramAccount {
   instagram_user_id: string
@@ -33,7 +36,7 @@ export function instagramWindowOpen(lastInboundAt: string | null): boolean {
  * way a wamid is so a delivery callback can find the row again.
  */
 export async function sendInstagramText(account: InstagramAccount, recipientId: string, text: string): Promise<string | null> {
-  const response = await $fetch<{ message_id?: string }>(`${GRAPH_BASE}/${account.instagram_user_id}/messages`, {
+  const response = await $fetch<{ message_id?: string }>(`${graphBase()}/${account.instagram_user_id}/messages`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${account.instagram_access_token}` },
     body: {

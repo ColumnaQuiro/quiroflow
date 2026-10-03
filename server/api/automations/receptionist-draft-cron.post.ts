@@ -57,47 +57,68 @@ export default defineEventHandler(async (event) => {
   )
   if (entitled.size === 0) return { drafted: 0, considered: 0, consideredLeadIds: [] as string[] }
 
-  // Leads the receptionist is handling, for those accounts. The "has anything
-  // been said since we drafted" test needs the messages, so it happens below
-  // rather than in SQL -- but the set being scanned is already small: leads
-  // being handled by the AI, for accounts paying for it.
-  const { data: candidates } = await supabase
-    .from('leads')
-    .select('id, account_id, ai_drafted_through_at')
-    .in('account_id', Array.from(entitled))
-    .eq('ai_state', 'handling')
-    .is('deleted_at', null)
-    // A draft already sitting there is somebody's to deal with, not ours to
-    // replace. Overwriting it would discard an edit in progress.
-    .is('ai_draft_body', null)
-    .limit(200)
-
+  // Who is due a draft: a lead the receptionist is handling, with no draft
+  // waiting, whose newest inbound message is one drafting has not read yet
+  // and is still inside WhatsApp's 24-hour window.
+  //
+  // Read from the messages end, newest first, rather than from the leads. The
+  // leads end used to take 200 'handling' leads in no particular order and
+  // only then ask each one whether it had written -- and the AI is on every
+  // form lead from the moment it arrives, most of whom never write back. Past
+  // 200 of those, a lead who had just asked a question was simply not in the
+  // set, tick after tick. Starting from what was said in the last 24 hours
+  // means a lead who has said nothing is never read at all, and the newest
+  // question is the first one answered.
+  //
+  // The first row seen for a lead is its newest inbound message, which is the
+  // only one the "read past it already?" test needs. Paged because one chatty
+  // lead can fill a page on their own; stops as soon as the tick is full.
+  const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString()
   const due: { id: string; accountId: string }[] = []
+  const seen = new Set<string>()
+  const PAGE = 500
 
-  for (const lead of candidates ?? []) {
-    const { data: lastInbound } = await supabase
+  for (let from = 0; due.length < MAX_PER_TICK; from += PAGE) {
+    // Untyped: the filters on the embedded lead are what make it an inner
+    // join, and the generated types do not model filtering through one.
+    const { data: page, error } = await (supabase as any)
       .from('whatsapp_messages')
-      .select('created_at')
-      .eq('lead_id', lead.id)
+      .select('id, lead_id, created_at, leads!inner(id, account_id, ai_drafted_through_at)')
+      .in('account_id', Array.from(entitled))
       .eq('direction', 'inbound')
+      .not('lead_id', 'is', null)
+      // WhatsApp refuses a free-form reply more than 24h after the last
+      // inbound message, so a draft nobody could send is a draft not worth
+      // paying a model to write.
+      .gt('created_at', since)
+      .eq('leads.ai_state', 'handling')
+      .is('leads.deleted_at', null)
+      // A draft already sitting there is somebody's to deal with, not ours to
+      // replace. Overwriting it would discard an edit in progress.
+      .is('leads.ai_draft_body', null)
       .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
+      .order('id', { ascending: false })
+      .range(from, from + PAGE - 1)
+    if (error) {
+      console.error('[receptionist-draft-cron] could not read waiting leads:', error.message)
+      break
+    }
 
-    if (!lastInbound) continue
+    const rows = (page ?? []) as { lead_id: string; created_at: string; leads: { id: string; account_id: string; ai_drafted_through_at: string | null } }[]
+    for (const message of rows) {
+      if (seen.has(message.lead_id)) continue
+      seen.add(message.lead_id)
 
-    // Nothing new since the last draft. This is what stops a discarded draft
-    // being rewritten on the next tick, over and over, with the clinic unable
-    // to get rid of it.
-    if (lead.ai_drafted_through_at && lastInbound.created_at <= lead.ai_drafted_through_at) continue
+      // Nothing new since the last draft. This is what stops a discarded draft
+      // being rewritten on the next tick, over and over, with the clinic unable
+      // to get rid of it.
+      const draftedThrough = message.leads.ai_drafted_through_at
+      if (draftedThrough && new Date(message.created_at).getTime() <= new Date(draftedThrough).getTime()) continue
 
-    // WhatsApp refuses a free-form reply more than 24h after the last inbound
-    // message, so a draft nobody could send is a draft not worth paying a
-    // model to write.
-    if (Date.now() - new Date(lastInbound.created_at).getTime() >= 24 * 3600 * 1000) continue
-
-    due.push({ id: lead.id, accountId: lead.account_id })
-    if (due.length >= MAX_PER_TICK) break
+      due.push({ id: message.lead_id, accountId: message.leads.account_id })
+      if (due.length >= MAX_PER_TICK) break
+    }
+    if (rows.length < PAGE) break
   }
 
   let drafted = 0
@@ -108,6 +129,14 @@ export default defineEventHandler(async (event) => {
       batch.map(async (lead) => {
         try {
           const outcome = await draftLeadReply(supabase, lead.accountId, lead.id)
+          // The AI cannot answer this one: the model declined, or this
+          // deployment has no model to ask. Left on 'handling' the lead would
+          // sit there as the AI's, waiting on a draft that is never coming, so
+          // it goes to a person -- the one other way it gets an answer. Only
+          // from 'handling', so a person who took it over meanwhile keeps it.
+          if (outcome.status === 'refused' || outcome.status === 'unavailable') {
+            await supabase.from('leads').update({ ai_state: 'needs_human' }).eq('id', lead.id).eq('ai_state', 'handling')
+          }
           return outcome.status === 'drafted'
         } catch (err) {
           // One lead's model call failing must not cost the rest of the tick.

@@ -42,6 +42,22 @@ describe('What the anon key can reach', () => {
     })
   })
 
+  it('cannot issue a factura', () => {
+    cy.seedStaffAccount().then((account) => {
+      refused('issue_factura', {
+        p_account_id: account.accountId,
+        p_patient_id: account.accountId,
+        p_payment_id: null,
+        p_kind: 'simplified',
+        p_description: 'x',
+        p_amount_cents: 1,
+        p_tax_base_cents: 1,
+        p_tax_rate_bp: 0,
+        p_tax_amount_cents: 0,
+      })
+    })
+  })
+
   it('cannot rebuild the VeriFactu chain', () => {
     cy.seedStaffAccount().then((account) => {
       refused('rebuild_factura_huellas', { p_account_id: account.accountId, p_spec_version: 'v1' })

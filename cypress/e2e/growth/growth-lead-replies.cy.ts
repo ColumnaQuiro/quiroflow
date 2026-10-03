@@ -112,8 +112,10 @@ describe('A lead writes back', () => {
       deliver(leadPhone, '¿Cuánto cuesta?')
 
       cy.task('db:leadById', { id: lead.id }).then((row) => {
-        // Nothing answers real enquiries yet, so a reply to the AI is a
-        // reply nobody is reading until this says so.
+        // The receptionist is switched off on this account, so nothing will
+        // draft a reply: left on the AI, it is a reply nobody is reading.
+        // (Switched on, the lead stays the AI's and is drafted for -- see
+        // growth-receptionist-autodraft.cy.ts.)
         expect((row as { ai_state: string }).ai_state).to.eq('needs_human')
       })
     })

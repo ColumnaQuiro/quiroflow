@@ -429,18 +429,20 @@ async function recallState(opts: { patientId: string }) {
  * in last-name order, which is `Crowd 000`, `Crowd 001`, ...
  */
 async function seedManyPatients(opts: { accountId: string; clinicId: string; count: number; creditCount?: number }) {
-  const patients = unwrap(
-    await admin
-      .from('patients')
-      .insert(Array.from({ length: opts.count }, (_, i) => ({ account_id: opts.accountId, clinic_id: opts.clinicId, first_name: 'Crowd', last_name: String(i).padStart(3, '0') })))
-      .select('id, last_name'),
-  ) as { id: string; last_name: string }[]
+  // In chunks: one statement inserting a thousand patients (each firing the
+  // patients triggers) can outlast the local statement timeout when the
+  // machine is busy, and the spec then fails before it has tested anything.
+  const CHUNK = 250
+  const rows = Array.from({ length: opts.count }, (_, i) => ({ account_id: opts.accountId, clinic_id: opts.clinicId, first_name: 'Crowd', last_name: String(i).padStart(3, '0') }))
+  const patients: { id: string; last_name: string }[] = []
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    patients.push(...(unwrap(await admin.from('patients').insert(rows.slice(i, i + CHUNK)).select('id, last_name')) as { id: string; last_name: string }[]))
+  }
   patients.sort((a, b) => a.last_name.localeCompare(b.last_name))
-  assertOk(
-    await admin
-      .from('patient_contact_numbers')
-      .insert(patients.map((p, i) => ({ account_id: opts.accountId, patient_id: p.id, number: `6${String(i).padStart(8, '0')}`, country_code: 'ES' }))),
-  )
+  const numbers = patients.map((p, i) => ({ account_id: opts.accountId, patient_id: p.id, number: `6${String(i).padStart(8, '0')}`, country_code: 'ES' }))
+  for (let i = 0; i < numbers.length; i += CHUNK) {
+    assertOk(await admin.from('patient_contact_numbers').insert(numbers.slice(i, i + CHUNK)))
+  }
   if (opts.creditCount) {
     assertOk(
       await admin
@@ -559,6 +561,38 @@ async function chargeService(opts: { accountId: string; invoiceId: string; servi
     }),
   )
   return null
+}
+
+/** A line on a receipt, with or without a service -- a visit's own line has none. */
+async function addInvoiceLine(opts: { accountId: string; invoiceId: string; description: string; priceCents: number; serviceId?: string | null }) {
+  assertOk(
+    await admin.from('invoice_line_items').insert({
+      account_id: opts.accountId,
+      invoice_id: opts.invoiceId,
+      service_id: opts.serviceId ?? null,
+      description: opts.description,
+      quantity: 1,
+      price_cents: opts.priceCents,
+    }),
+  )
+  return null
+}
+
+/** A receipt's total, as adding or removing a line leaves it. */
+async function setInvoiceTotal(opts: { invoiceId: string; totalCents: number }) {
+  assertOk(await admin.from('invoices').update({ total_cents: opts.totalCents }).eq('id', opts.invoiceId))
+  return null
+}
+
+/** Every receipt raised against one appointment, with its lines, oldest first. */
+async function invoicesForAppointment(opts: { appointmentId: string }) {
+  const { data, error } = await admin
+    .from('invoices')
+    .select('id, invoice_number, status, total_cents, invoice_line_items(description, price_cents, service_id, package_purchase_id), payments!payments_invoice_id_fkey(amount_cents, method)')
+    .eq('appointment_id', opts.appointmentId)
+    .order('created_at')
+  if (error) throw error
+  return data
 }
 
 /** The balance the patient list shows: positive is credit. */
@@ -2941,12 +2975,15 @@ async function practiceHubStubLastKeyOf() {
   return practiceHubStubLastKey
 }
 
-async function startPracticeHubStub(opts: { totalEntries?: number; emails?: string[] }) {
+async function startPracticeHubStub(opts: { totalEntries?: number; emails?: string[]; delayMs?: number }) {
   await stopPracticeHubStub()
   const { createServer } = await import('node:http')
   const emails = opts.emails ?? []
-  const server = createServer((req, res) => {
+  const server = createServer(async (req, res) => {
     practiceHubStubLastKey = String(req.headers['x-practicehub-key'] ?? '')
+    // A slow PracticeHub holds a run inside its pre-send check, which is
+    // what widens a race between two processes walking the same run.
+    if (opts.delayMs) await new Promise((resolve) => setTimeout(resolve, opts.delayMs))
     res.setHeader('content-type', 'application/json')
     res.end(
       JSON.stringify({
@@ -3768,6 +3805,11 @@ export const dbTasks = {
   'db:liveBalance': liveBalance,
   'db:deleteServiceProduct': deleteServiceProduct,
   'db:chargeService': chargeService,
+  'db:addInvoiceLine': addInvoiceLine,
+  'db:invoicesForAppointment': invoicesForAppointment,
+  'db:setInvoiceTotal': setInvoiceTotal,
+  // Any signed-in user, staff included: the name is historical.
+  'db:callRpcAs': callRpcAsPatient,
   'db:enableOnlineBooking': enableOnlineBooking,
   'db:enableEmailConfirmations': enableEmailConfirmations,
   'db:createInvoice': createInvoice,

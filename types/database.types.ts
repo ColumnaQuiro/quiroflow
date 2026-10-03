@@ -1429,6 +1429,7 @@ export type Database = {
           appointment_id: string | null
           attempts: number
           branch_taken: string | null
+          claimed_until: string | null
           context: Json
           current_action_id: string | null
           id: string
@@ -1450,6 +1451,7 @@ export type Database = {
           appointment_id?: string | null
           attempts?: number
           branch_taken?: string | null
+          claimed_until?: string | null
           context?: Json
           current_action_id?: string | null
           id?: string
@@ -1471,6 +1473,7 @@ export type Database = {
           appointment_id?: string | null
           attempts?: number
           branch_taken?: string | null
+          claimed_until?: string | null
           context?: Json
           current_action_id?: string | null
           id?: string
@@ -6455,6 +6458,22 @@ export type Database = {
       factura_submission_ready_at: { Args: { p_account_id: string }; Returns: string }
       sif_indicador_multiples_ot: { Args: Record<string, never>; Returns: string }
       next_factura_number: { Args: { p_account_id: string; p_series?: string }; Returns: string }
+      issue_factura: {
+        Args: {
+          p_account_id: string
+          p_patient_id: string
+          p_payment_id: string | null
+          p_kind: string
+          p_description: string
+          p_amount_cents: number
+          p_tax_base_cents: number
+          p_tax_rate_bp: number
+          p_tax_amount_cents: number
+          p_tax_exemption_code?: string | null
+          p_rectifies_factura_id?: string | null
+        }
+        Returns: { id: string; number: string }[]
+      }
       verifactu_fee_locations: { Args: { p_account_id: string; p_at?: string }; Returns: number }
       verifactu_fee_out_of_sync: {
         Args: { p_limit?: number }

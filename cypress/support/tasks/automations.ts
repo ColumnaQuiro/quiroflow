@@ -42,6 +42,8 @@ async function patient(opts: {
   isMinor?: boolean
   doNotContact?: boolean
   dateOfBirth?: string
+  /** 'inactive' is how the record's Archive leaves a patient. */
+  status?: 'active' | 'inactive'
 }) {
   const row = check(
     await admin
@@ -57,6 +59,7 @@ async function patient(opts: {
         is_minor: opts.isMinor ?? false,
         do_not_contact: opts.doNotContact ?? false,
         date_of_birth: opts.dateOfBirth ?? null,
+        status: opts.status ?? 'active',
       })
       .select('id')
       .single(),

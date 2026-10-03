@@ -35,6 +35,7 @@ const {
   loadingInvoice,
   appointmentIsUpcoming,
   packageCoverage,
+  otherReceipts,
   saving: savingPayment,
   error,
   paidCents,
@@ -294,6 +295,16 @@ const chargeLabel = computed(() =>
       <ul v-if="payments.length > 0" class="mt-2 space-y-0.5 text-xs text-ink-muted2">
         <li v-for="p in payments" :key="p.id">{{ new Date(p.paid_at).toLocaleDateString() }} &middot; {{ p.method }} &middot; {{ formatEur(p.amount_cents) }}</li>
       </ul>
+      <!-- More than one receipt on this visit -- the extras on one, a bono
+      session's charge on another. Named, so neither is invisible. -->
+      <p v-if="otherReceipts.length > 0" data-cy="appt-other-receipts" class="mt-2 border-t border-line-divider pt-2 text-xs text-ink-muted2">
+        {{ t('Also on this visit:', 'También en esta visita:') }}
+        <template v-for="(r, i) in otherReceipts" :key="r.id">
+          <span v-if="i > 0">, </span>
+          <NuxtLink :to="`/billing/${r.id}`" class="font-medium text-brand-text hover:text-brand-hover">{{ r.invoice_number }}</NuxtLink>
+          ({{ formatEur(r.total_cents) }}, {{ r.status === 'paid' ? t('paid', 'pagado') : t('unpaid', 'sin pagar') }})
+        </template>
+      </p>
 
     </div>
     <p v-if="error" class="text-danger-text">{{ error }}</p>

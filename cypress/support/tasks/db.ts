@@ -563,6 +563,38 @@ async function chargeService(opts: { accountId: string; invoiceId: string; servi
   return null
 }
 
+/** A line on a receipt, with or without a service -- a visit's own line has none. */
+async function addInvoiceLine(opts: { accountId: string; invoiceId: string; description: string; priceCents: number; serviceId?: string | null }) {
+  assertOk(
+    await admin.from('invoice_line_items').insert({
+      account_id: opts.accountId,
+      invoice_id: opts.invoiceId,
+      service_id: opts.serviceId ?? null,
+      description: opts.description,
+      quantity: 1,
+      price_cents: opts.priceCents,
+    }),
+  )
+  return null
+}
+
+/** A receipt's total, as adding or removing a line leaves it. */
+async function setInvoiceTotal(opts: { invoiceId: string; totalCents: number }) {
+  assertOk(await admin.from('invoices').update({ total_cents: opts.totalCents }).eq('id', opts.invoiceId))
+  return null
+}
+
+/** Every receipt raised against one appointment, with its lines, oldest first. */
+async function invoicesForAppointment(opts: { appointmentId: string }) {
+  const { data, error } = await admin
+    .from('invoices')
+    .select('id, invoice_number, status, total_cents, invoice_line_items(description, price_cents, service_id, package_purchase_id), payments!payments_invoice_id_fkey(amount_cents, method)')
+    .eq('appointment_id', opts.appointmentId)
+    .order('created_at')
+  if (error) throw error
+  return data
+}
+
 /** The balance the patient list shows: positive is credit. */
 async function liveBalance(opts: { patientId: string }) {
   const row = unwrap(await admin.from('patients').select('live_balance_cents').eq('id', opts.patientId).single()) as unknown as { live_balance_cents: number }
@@ -793,7 +825,8 @@ async function createPayment(opts: {
  * `count` completed visits for one patient, one a day going back from
  * `endingAt`, in a single insert -- a history longer than one unpaged
  * select() returns (PostgREST stops at 1000 rows). With `carePlanVisits`,
- * also a care plan of that many visits, so the list shows its progress.
+ * also a care plan of that many visits, started on the day of the first of
+ * them -- progress counts only the visits since a plan started.
  */
 async function seedCompletedVisits(opts: { accountId: string; clinicId: string; patientId: string; count: number; endingAt: string; carePlanVisits?: number }) {
   const end = new Date(opts.endingAt).getTime()
@@ -813,9 +846,29 @@ async function seedCompletedVisits(opts: { accountId: string; clinicId: string; 
     ),
   )
   if (opts.carePlanVisits) {
-    assertOk(await admin.from('care_plans').insert({ account_id: opts.accountId, patient_id: opts.patientId, name: 'Plan largo', total_visits: opts.carePlanVisits }))
+    const firstVisit = new Date(end - (opts.count - 1) * 86400000).toISOString().slice(0, 10)
+    assertOk(await admin.from('care_plans').insert({ account_id: opts.accountId, patient_id: opts.patientId, name: 'Plan largo', total_visits: opts.carePlanVisits, started_at: firstVisit }))
   }
   return { ok: true }
+}
+
+/** A care plan, started on `startedAt` (a date; today when left out). */
+async function createCarePlan(opts: { accountId: string; patientId: string; totalVisits: number; startedAt?: string; name?: string; frequencyValue?: number; frequencyUnit?: 'week' | 'month' }) {
+  return unwrap(
+    await admin
+      .from('care_plans')
+      .insert({
+        account_id: opts.accountId,
+        patient_id: opts.patientId,
+        name: opts.name ?? 'Plan de tratamiento',
+        total_visits: opts.totalVisits,
+        frequency_value: opts.frequencyValue ?? 1,
+        frequency_unit: opts.frequencyUnit ?? 'week',
+        ...(opts.startedAt ? { started_at: opts.startedAt } : {}),
+      })
+      .select('id')
+      .single(),
+  ) as { id: string }
 }
 
 async function seedManyPayments(opts: { accountId: string; patientId: string; count: number; amountCents?: number }) {
@@ -1710,7 +1763,18 @@ async function issueReceiptNumber(opts: { accountId: string }) {
   return data as string
 }
 
-/** A patient file with real content in storage, as an upload leaves it. */
+/**
+ * A patient file with real content in storage, as an upload leaves it.
+ *
+ * As an upload leaves it means visibility 'generic' (the column default):
+ * staff-only, and invisible to the patient app's Documents screen. A file is
+ * shared with the patient only by the web's Attachments tab setting it to
+ * 'Custom' (visibility = 'custom'), which is all the "patients view own custom
+ * patient_files" policy (0162) and /api/patient-files/signed-url look at --
+ * there is no 'patient' value, and the check constraint refuses one. A spec
+ * that expects the patient to see this file has to update visibility to
+ * 'custom' itself; one that did not read a "missing" document as a bug.
+ */
 async function storePatientFile(opts: { accountId: string; patientId: string; fileName: string }) {
   const path = `${opts.accountId}/${opts.patientId}/${Date.now()}-${opts.fileName}`
   const { error: uploadError } = await admin.storage.from('patient-files').upload(path, Buffer.from('%PDF-1.4 test'), { contentType: 'application/pdf' })
@@ -2069,6 +2133,42 @@ async function readAsStaff(opts: { email: string; password: string; table: strin
 
   const { data, error } = await userClient.from(opts.table as never).select(opts.columns ?? '*')
   return { rows: (data as unknown[] | null)?.length ?? 0, error: error ? error.message : null }
+}
+
+/**
+ * Rows a signed-in staff member gets back from a table or view, with the
+ * browser's own key -- optionally narrowed to some ids, so a spec can ask
+ * "which of these two patients' rows can this person see" without the rest of
+ * a shared database getting in the way.
+ */
+async function selectAsStaff(opts: { email: string; password: string; table: string; columns?: string; inColumn?: string; inValues?: string[] }) {
+  const userClient = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+  const { error: signInErr } = await userClient.auth.signInWithPassword({ email: opts.email, password: opts.password })
+  if (signInErr) throw signInErr
+  let query = (userClient.from(opts.table as never) as any).select(opts.columns ?? '*')
+  if (opts.inColumn) query = query.in(opts.inColumn, opts.inValues ?? [])
+  const { data, error } = await query
+  return { rows: (data as unknown[] | null) ?? [], error: error ? error.message : null }
+}
+
+/** An RPC as a signed-in staff member, with the browser's own key. */
+async function rpcAsStaff(opts: { email: string; password: string; fn: string; args?: Record<string, unknown> }) {
+  const userClient = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+  const { error: signInErr } = await userClient.auth.signInWithPassword({ email: opts.email, password: opts.password })
+  if (signInErr) throw signInErr
+  const { data, error } = await (userClient.rpc as any)(opts.fn, opts.args ?? {})
+  return { data: data ?? null, error: error ? error.message : null }
+}
+
+/** Seeds rows into any table with the service role, returning them. */
+async function insertRows(opts: { table: string; rows: Record<string, unknown>[] }) {
+  return unwrap(await (admin.from(opts.table as never) as any).insert(opts.rows).select('*')) as Record<string, unknown>[]
+}
+
+/** Sets columns on the rows matching `match`, with the service role. */
+async function updateRows(opts: { table: string; values: Record<string, unknown>; match: Record<string, unknown> }) {
+  assertOk(await (admin.from(opts.table as never) as any).update(opts.values).match(opts.match))
+  return null
 }
 
 /**
@@ -3773,12 +3873,18 @@ export const dbTasks = {
   'db:liveBalance': liveBalance,
   'db:deleteServiceProduct': deleteServiceProduct,
   'db:chargeService': chargeService,
+  'db:addInvoiceLine': addInvoiceLine,
+  'db:invoicesForAppointment': invoicesForAppointment,
+  'db:setInvoiceTotal': setInvoiceTotal,
+  // Any signed-in user, staff included: the name is historical.
+  'db:callRpcAs': callRpcAsPatient,
   'db:enableOnlineBooking': enableOnlineBooking,
   'db:enableEmailConfirmations': enableEmailConfirmations,
   'db:createInvoice': createInvoice,
   'db:createPayment': createPayment,
   'db:seedManyPayments': seedManyPayments,
   'db:seedCompletedVisits': seedCompletedVisits,
+  'db:createCarePlan': createCarePlan,
   'db:nextInvoiceNumber': nextInvoiceNumber,
   'db:deleteInvoice': deleteInvoice,
   'db:paymentById': paymentById,
@@ -3903,6 +4009,10 @@ export const dbTasks = {
   'db:rolePermissions': rolePermissions,
   'db:writeAsStaff': writeAsStaff,
   'db:settingsWriteAsStaff': settingsWriteAsStaff,
+  'db:selectAsStaff': selectAsStaff,
+  'db:rpcAsStaff': rpcAsStaff,
+  'db:insertRows': insertRows,
+  'db:updateRows': updateRows,
   'db:practiceHubStubLastKey': practiceHubStubLastKeyOf,
   'db:practiceHubKeyColumn': practiceHubKeyColumnOf,
   'db:roleByName': roleByName,

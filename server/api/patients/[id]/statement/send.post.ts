@@ -7,6 +7,14 @@ export default defineEventHandler(async (event) => {
   if (!data) {
     throw createError({ statusCode: 404, statusMessage: 'Patient not found' })
   }
+  // The same refusal as every other way of reaching a patient -- the
+  // WhatsApp version of this send, the email composer, the automations: a
+  // minor is not written to directly, and "do not contact" means no channel.
+  const { data: flags } = await supabase.from('patients').select('is_minor, do_not_contact').eq('id', patientId!).maybeSingle()
+  if (!flags) throw createError({ statusCode: 404, statusMessage: 'Patient not found' })
+  if (flags.is_minor || flags.do_not_contact) {
+    throw createError({ statusCode: 400, statusMessage: 'This patient cannot be contacted (under age or marked do not contact).' })
+  }
   if (!data.patient.email) {
     throw createError({ statusCode: 400, statusMessage: 'Patient has no email address' })
   }

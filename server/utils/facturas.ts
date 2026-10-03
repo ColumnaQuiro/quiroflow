@@ -8,7 +8,10 @@ import { facturaTaxFor } from '~/utils/facturaTax'
 // that is simply short.
 //
 // Same rules as the client: what the money bought, a full invoice for a bono or
-// membership, and never blocking the payment if the document fails.
+// membership, and never blocking the payment if the document fails -- but a
+// failure is logged with the payment it belongs to, not dropped. Numbered and
+// written in one call (issue_factura) so a refused write does not spend a
+// number; see 20261003135743_issue_factura_atomically.sql.
 export async function issueFacturaServer(
   supabase: SupabaseClient<Database>,
   input: {
@@ -21,9 +24,6 @@ export async function issueFacturaServer(
     serviceName?: string
   },
 ): Promise<string | null> {
-  const { data: number } = await supabase.rpc('next_factura_number', { p_account_id: input.accountId })
-  if (!number) return null
-
   const money = (cents: number) => `€${(cents / 100).toFixed(2)}`
 
   let description: string
@@ -53,19 +53,22 @@ export async function issueFacturaServer(
     .maybeSingle()
   const tax = facturaTaxFor(input.amountCents, taxDefaults)
 
-  const { error } = await supabase.from('facturas').insert({
-    account_id: input.accountId,
-    patient_id: input.patientId,
-    payment_id: input.paymentId,
-    number,
-    kind,
-    description,
-    amount_cents: input.amountCents,
-    tax_base_cents: tax.taxBaseCents,
-    tax_rate_bp: tax.taxRateBp,
-    tax_amount_cents: tax.taxAmountCents,
-    tax_exemption_code: tax.taxExemptionCode,
+  const { data, error } = await supabase.rpc('issue_factura', {
+    p_account_id: input.accountId,
+    p_patient_id: input.patientId,
+    p_payment_id: input.paymentId,
+    p_kind: kind,
+    p_description: description,
+    p_amount_cents: input.amountCents,
+    p_tax_base_cents: tax.taxBaseCents,
+    p_tax_rate_bp: tax.taxRateBp,
+    p_tax_amount_cents: tax.taxAmountCents,
+    p_tax_exemption_code: tax.taxExemptionCode,
   })
-  if (error) return null
-  return number
+  const issued = Array.isArray(data) ? data[0] : data
+  if (error || !issued?.number) {
+    console.error('[facturas] could not issue a factura for payment', input.paymentId, error?.message ?? 'no row returned')
+    return null
+  }
+  return issued.number
 }

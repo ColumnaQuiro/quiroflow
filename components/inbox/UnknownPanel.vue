@@ -9,6 +9,7 @@ const props = defineProps<{ phoneNumber: string }>()
 const emit = defineEmits<{ linked: [patientId: string] }>()
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const { scope } = usePermission()
 const t = useT()
 const { showToast } = useToast()
 
@@ -101,12 +102,21 @@ const lastName = ref('')
 async function createAndLink() {
   if (!firstName.value.trim() || !store.accountId) return
   busy.value = true
-  const { data: patient, error } = await supabase
+  // A client-made id rather than reading the row back: see AddPatientModal.
+  const patient = { id: crypto.randomUUID() }
+  const { error } = await supabase
     .from('patients')
-    .insert({ account_id: store.accountId, clinic_id: store.currentClinicId, first_name: firstName.value.trim(), last_name: lastName.value.trim() || null })
-    .select('id')
-    .single()
-  if (error || !patient) {
+    .insert({
+      id: patient.id,
+      account_id: store.accountId,
+      clinic_id: store.currentClinicId,
+      first_name: firstName.value.trim(),
+      last_name: lastName.value.trim() || null,
+      // Someone who sees only their own patients could not see (or file a
+      // number against) a patient who is nobody's -- as on the Patients page.
+      default_practitioner_id: scope('patients_scope') === 'own' ? (store.teamMember?.id ?? null) : null,
+    })
+  if (error) {
     busy.value = false
     showToast(error?.message ?? t('Could not create the patient.', 'No se pudo crear el paciente.'), 'error')
     return

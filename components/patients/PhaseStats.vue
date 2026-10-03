@@ -40,7 +40,7 @@ const frequencyLabel = computed(() => {
 async function load() {
   loading.value = true
   const [{ data: appts }, { data: plans }] = await Promise.all([
-    supabase.from('appointments').select('status, starts_at').eq('patient_id', props.patientId),
+    supabase.from('appointments').select('status, starts_at').eq('patient_id', props.patientId).is('deleted_at', null),
     supabase
       .from('care_plans')
       .select('id, name, frequency_value, frequency_unit, total_visits, started_at')

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { requireGrowth } from '~/server/utils/requireGrowth'
@@ -98,9 +99,18 @@ export default defineEventHandler(async (event) => {
     }
 
     const [firstName, ...rest] = lead.full_name.trim().split(/\s+/)
-    const { data: patient, error } = await supabase
+    // The id is made here and the row is not read back in the same statement.
+    // RLS checks a returned row against the SELECT policy using the snapshot
+    // the INSERT started with, and for someone who sees only their own
+    // patients that policy asks my_own_patient_ids() -- which cannot yet
+    // contain the patient being inserted. So `.insert().select('id')` was a
+    // row-level-security error for every 'own'-scope converter. The same fix
+    // as AddPatientModal's.
+    const newPatientId = randomUUID()
+    const { error } = await supabase
       .from('patients')
       .insert({
+        id: newPatientId,
         account_id: teamMember.account_id,
         clinic_id: lead.clinic_id,
         first_name: firstName || lead.full_name,
@@ -109,16 +119,18 @@ export default defineEventHandler(async (event) => {
         // Where they came from, kept on the patient so the acquisition story
         // survives on the record itself and not only on the lead.
         referral_source: lead.source,
+        // Someone who sees only their own patients has to be this patient's
+        // practitioner, or the record they have just created is one they
+        // cannot open -- and the phone number below would be refused with it.
+        default_practitioner_id: scope === 'own' ? teamMember.id : null,
       })
-      .select('id')
-      .single()
 
     if (error) {
       // The RLS policy is the real gate; this is what it looks like when the
       // explicit check above has been outgrown by a policy change.
       throw createError({ statusCode: 403, statusMessage: `Could not create the patient record: ${error.message}` })
     }
-    patientId = patient.id
+    patientId = newPatientId
 
     const contact = lead.phone ? leadPhoneAsContactNumber(lead.phone, defaultCountry) : null
     if (contact) {

@@ -4,8 +4,10 @@
 // "Finish visit" -> book the next one.
 //
 // Everything follows the person's role, the way the web does:
-//   - notes with visit_notes_access; writing today's needs visit_notes_edit
-//     too (useVisitNoteDraft explains why), otherwise they are read-only;
+//   - notes with visit_notes_access; writing today's as you type needs
+//     visit_notes_edit too (useVisitNoteDraft explains why). Without it the
+//     role can still add one note with "Save note", as the web's Add note
+//     allows, and the notes are otherwise read-only;
 //   - bono sessions left with billing_history_view (the patient record's key
 //     for money); charging with billing_access, as before;
 //   - check-in, no-show and finish not on a read-only calendar
@@ -89,6 +91,7 @@ const canBook = computed(() => {
 })
 const canReadNotes = computed(() => can('visit_notes_access'))
 const canWriteNotes = computed(() => can('visit_notes_access') && can('visit_notes_edit'))
+const canAddNote = computed(() => can('visit_notes_access') && !can('visit_notes_edit'))
 const notesScopeAll = computed(() => !!context.value && (context.value.isOwner || context.value.permissions.visit_notes_scope === 'all'))
 const showMoney = computed(() => can('billing_history_view'))
 // calendar_scope 'own': RLS returns only this person's own appointments, so
@@ -183,6 +186,7 @@ const {
   loadingInvoice,
   appointmentIsUpcoming,
   packageCoverage,
+  otherReceipts,
   saving,
   error,
   paidCents,
@@ -260,10 +264,28 @@ const note = useVisitNoteDraft({
   teamMemberId: () => context.value?.teamMemberId,
   canRead: () => canReadNotes.value,
   canWrite: () => canWriteNotes.value,
+  canAdd: () => canAddNote.value,
   scopeAll: () => notesScopeAll.value,
 })
 const noteDraft = note.draft
 const noteBox = ref<HTMLTextAreaElement | null>(null)
+// Add mode (no visit_notes_edit): nothing is saved until "Save note".
+const addComposing = computed(() => canAddNote.value && note.addOpen.value)
+const addedAtLabel = computed(() => (note.savedAt.value ? clinicTimeLabel(note.savedAt.value, timeZone.value) : ''))
+const addStatus = computed(() => {
+  switch (note.state.value) {
+    case 'saving':
+      return { text: t('Saving…', 'Guardando…'), cls: 'text-ink-muted2' }
+    case 'dirty':
+      return { text: t('Not saved yet · kept on this phone', 'Aún sin guardar · se queda en el móvil'), cls: 'text-ink-muted2' }
+    case 'error':
+      if (note.errorKind.value === 'offline') return { text: t('Offline · kept on this phone, saves when back online', 'Sin conexión · guardada en el móvil, se subirá al volver la conexión'), cls: 'text-warning-text' }
+      if (note.errorKind.value === 'refused') return { text: t("Not saved: your role can't add notes. Kept on this phone.", 'No guardada: tu rol no puede añadir notas. Se queda en el móvil.'), cls: 'text-danger-text' }
+      return { text: t('Not saved yet · kept on this phone, retrying', 'Aún sin guardar · se queda en el móvil, reintentando'), cls: 'text-warning-text' }
+    default:
+      return { text: t("Your role can't edit a note once it is saved.", 'Tu rol no puede editar una nota una vez guardada.'), cls: 'text-ink-faint' }
+  }
+})
 const noteStatus = computed(() => {
   switch (note.state.value) {
     case 'dirty':
@@ -550,7 +572,7 @@ watch(
         <section v-if="canReadNotes" class="rounded-[13px] border border-line bg-surface px-3.5 py-3" data-cy="visit-note">
           <div class="mb-1.5 flex items-center justify-between">
             <h2 class="text-[10.5px] font-semibold uppercase tracking-[.05em] text-ink-faint">{{ t("Today's note", 'Nota de hoy') }}</h2>
-            <span v-if="!canWriteNotes" class="text-[11.5px] text-ink-faint">{{ t('Read only', 'Solo lectura') }}</span>
+            <span v-if="!canWriteNotes && !addComposing" class="text-[11.5px] text-ink-faint" data-cy="visit-note-read-only">{{ t('Read only', 'Solo lectura') }}</span>
           </div>
 
           <div v-if="note.loading.value" class="space-y-1.5">
@@ -568,7 +590,40 @@ watch(
                 <p class="mt-0.5 whitespace-pre-wrap text-[13.5px] leading-snug text-ink-900">{{ noteText(n.body) }}</p>
               </li>
             </ul>
-            <p v-else-if="!canWriteNotes" class="text-[13px] text-ink-faint">{{ t('No note for this visit yet.', 'Aún no hay nota de esta visita.') }}</p>
+            <p v-else-if="!canWriteNotes && !addComposing" class="text-[13px] text-ink-faint">{{ t('No note for this visit yet.', 'Aún no hay nota de esta visita.') }}</p>
+            <p v-if="canAddNote && !addComposing && note.savedAt.value" class="-mt-1 mb-1 text-[12.5px] text-ink-muted2" role="status" data-cy="visit-note-status">
+              {{ t('Saved', 'Guardada') }} · {{ addedAtLabel }}
+            </p>
+
+            <!-- Add mode: written once, saved by the button, then read-only -->
+            <template v-if="addComposing">
+              <textarea
+                ref="noteBox"
+                v-model="noteDraft"
+                rows="5"
+                :readonly="note.state.value === 'saving'"
+                :placeholder="t('Type, or tap the microphone on the keyboard to dictate…', 'Escribe, o pulsa el micrófono del teclado para dictar…')"
+                class="block min-h-[118px] w-full resize-none rounded-[10px] border border-line-control bg-surface px-2.5 py-2 text-[15px] leading-[1.45] text-ink-900 placeholder:text-ink-faint focus:border-brand-tintBorder focus:outline-none focus:ring-[3px] focus:ring-brand-tint"
+                data-cy="visit-note-input"
+                @input="note.onInput()"
+              ></textarea>
+              <div class="mt-1.5 flex items-start justify-between gap-3">
+                <p class="text-[12.5px] leading-snug" :class="addStatus.cls" role="status" data-cy="visit-note-status">
+                  {{ addStatus.text }}
+                  <button v-if="note.state.value === 'error' && note.errorKind.value !== 'refused'" type="button" class="ml-1 font-medium text-brand-text" @click="note.save()">{{ t('Retry now', 'Reintentar') }}</button>
+                </p>
+                <UiBtn
+                  size="sm"
+                  variant="primary"
+                  class="shrink-0"
+                  :disabled="!noteDraft.trim() || note.state.value === 'saving' || (note.state.value === 'error' && note.errorKind.value !== 'refused')"
+                  data-cy="visit-note-save"
+                  @click="note.submit()"
+                >
+                  {{ note.state.value === 'saving' ? t('Saving…', 'Guardando…') : t('Save note', 'Guardar nota') }}
+                </UiBtn>
+              </div>
+            </template>
 
             <template v-if="canWriteNotes">
               <textarea
@@ -693,6 +748,10 @@ watch(
                 {{ p.package_name }} ({{ t(`${p.sessions_total - p.sessions_used} left`, `quedan ${p.sessions_total - p.sessions_used}`) }})
               </button>
             </div>
+            <p v-if="otherReceipts.length > 0" class="mt-2 border-t border-line-divider pt-2 text-[12px] text-ink-muted2">
+              {{ t('Also on this visit:', 'También en esta visita:') }}
+              {{ otherReceipts.map((r) => `${r.invoice_number} (${euros(r.total_cents)}, ${r.status === 'paid' ? t('paid', 'pagado') : t('unpaid', 'sin pagar')})`).join(', ') }}
+            </p>
           </template>
           <p v-if="error" class="mt-2 text-[12.5px] text-danger-text">{{ error }}</p>
         </div>

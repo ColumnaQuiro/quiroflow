@@ -9,6 +9,11 @@
 // practitioner's other visits, any block for the whole clinic or for that
 // practitioner, and -- when the visit has a room -- that room's other visits
 // and its own blocks.
+//
+// The practitioner's own blocks count at EVERY clinic: somebody who works at
+// two is one person, and a morning blocked off at the other one keeps them
+// away from this one too. A block for the whole of another clinic, or for one
+// of its rooms, is that clinic's business and never counts here.
 
 export interface ClashCandidateAppointment {
   id: string
@@ -27,6 +32,8 @@ export interface ClashCandidateBlock {
   practitioner_id: string | null
   room_id: string | null
   note?: string | null
+  /** Where the block is. Left out, it is taken to be at the visit's clinic. */
+  clinic_id?: string | null
 }
 
 export interface MoveTarget {
@@ -34,6 +41,8 @@ export interface MoveTarget {
   appointmentId: string
   practitionerId: string | null
   roomId: string | null
+  /** The visit's clinic: only the practitioner's own blocks count anywhere else. */
+  clinicId?: string | null
   startsAt: Date | string
   endsAt: Date | string
 }
@@ -59,10 +68,11 @@ export function moveClashes(target: MoveTarget, appointments: ClashCandidateAppo
   }
   for (const b of blocks) {
     if (!overlaps(s, e, b)) continue
+    const elsewhere = !!b.clinic_id && !!target.clinicId && b.clinic_id !== target.clinicId
     const clinicWide = b.practitioner_id === null && b.room_id === null
     const practitioners = !!target.practitionerId && b.practitioner_id === target.practitionerId
     const room = !!target.roomId && b.practitioner_id === null && b.room_id === target.roomId
-    if (!clinicWide && !practitioners && !room) continue
+    if (elsewhere ? !practitioners : !clinicWide && !practitioners && !room) continue
     out.push({ kind: 'block', note: b.note?.trim() || null, startsAt: b.starts_at, endsAt: b.ends_at })
   }
   return out.sort((x, y) => ms(x.startsAt) - ms(y.startsAt))

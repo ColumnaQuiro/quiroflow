@@ -155,7 +155,11 @@ describe('Opening a visit', () => {
       cy.get('[data-cy=appt-sheet]').within(() => {
         cy.get('[data-cy=appt-tab-history]').click()
         cy.contains('[data-cy=appt-history] li', 'Marked no-show').should('contain.text', 'Test Owner')
-        cy.contains('[data-cy=appt-history] li', 'Time changed').should('contain.text', 'Test Owner')
+        // An inline time change is logged as a move (appointment_reschedules),
+        // so the history gives its exact times -- and the audit row still
+        // says who made it.
+        cy.contains('[data-cy=appt-history] li', 'Moved from').should('contain.text', 'Test Owner')
+        cy.contains('[data-cy=appt-history] li', 'Time changed').should('not.exist')
         cy.contains('[data-cy=appt-history] li', 'Booked').should('contain.text', 'System')
         // Confirming and arriving are not audited fields: no owner is claimed for them.
         cy.contains('[data-cy=appt-history] li', 'Reminder sent').find('[data-cy=appt-history-who]').should('not.exist')

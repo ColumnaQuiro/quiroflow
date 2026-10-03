@@ -164,8 +164,9 @@ async function save() {
     color: f.color,
     role_id: f.role_id,
     is_practitioner: f.is_practitioner,
-    // Nobody is bookable online who does not see patients.
-    online_booking_enabled: f.is_practitioner && f.online_booking_enabled,
+    // Nobody is bookable online who does not see patients, or who has left
+    // (the database holds that too).
+    online_booking_enabled: f.is_practitioner && f.online_booking_enabled && !deletedAt.value,
     business_hours: f.business_hours,
   }
   // .select().single() so a write RLS refuses errors instead of "succeeding"
@@ -458,9 +459,10 @@ const card = 'flex scroll-mt-4 flex-col gap-4 rounded-card border border-line bg
                 <div class="flex items-start gap-3.5 border-t border-line-row pt-4">
                   <div class="flex min-w-0 flex-1 flex-col gap-1">
                     <span class="text-[14.5px] font-semibold text-ink-900">{{ t('Bookable online', 'Se puede reservar online') }}</span>
-                    <span :class="hint">{{ t('Patients can pick them on your booking page.', 'Los pacientes pueden elegirle en tu página de reservas.') }}</span>
+                    <span v-if="deletedAt" :class="hint" data-cy="member-online-departed">{{ t('Not while they are deactivated: nobody who has left is offered for booking. Reactivate them first.', 'No mientras esté desactivado: a quien ya no está no se le ofrece para reservar. Reactívalo primero.') }}</span>
+                    <span v-else :class="hint">{{ t('Patients can pick them on your booking page.', 'Los pacientes pueden elegirle en tu página de reservas.') }}</span>
                   </div>
-                  <SettingsToggle v-model="form.online_booking_enabled" data-cy="member-online" :aria-label="t('Bookable online', 'Se puede reservar online')" />
+                  <SettingsToggle v-if="!deletedAt" v-model="form.online_booking_enabled" data-cy="member-online" :aria-label="t('Bookable online', 'Se puede reservar online')" />
                 </div>
                 <div v-if="activeClinics.length > 1 || noClinic" class="flex flex-col gap-2 border-t border-line-row pt-4">
                   <span class="text-[14.5px] font-semibold text-ink-900">{{ t('Clinics', 'Sedes') }}</span>

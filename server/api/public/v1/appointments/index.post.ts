@@ -1,7 +1,7 @@
 import { ApiError, badRequest, defineApiHandler } from '~/server/utils/publicApi'
 import { definedOnly, enumValue, isoDateTime, readApiBody, rejectUnknownFields, str, uuid } from '~/server/utils/publicApiBody'
 import { assertBelongsToAccount, loose } from '~/server/utils/publicApiHandlers'
-import { APPOINTMENT_STATUSES, assertTypeBookable, resolveWindow, saveAppointmentIfFree } from '~/server/utils/publicApiAppointments'
+import { APPOINTMENT_STATUSES, assertPractitionerWorksAt, assertTypeBookable, resolveWindow, saveAppointmentIfFree } from '~/server/utils/publicApiAppointments'
 import { appointmentsResource } from '~/server/utils/publicApiResources'
 
 const FIELDS = [
@@ -35,6 +35,7 @@ export default defineApiHandler({ scope: 'appointments:write' }, async ({ event,
     // to, so the appointment still reads sensibly after a practitioner
     // leaves and their row is deactivated.
     practitionerName = practitioner.full_name as string
+    await assertPractitionerWorksAt(supabase, practitionerId, clinicId)
   }
 
   // The same guard the WhatsApp endpoint applies before contacting someone.

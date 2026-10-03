@@ -4,7 +4,10 @@
 // for is ads_read for that reason -- a token that can only look is a token
 // that cannot cost anybody money if it leaks.
 
-const GRAPH_BASE = 'https://graph.facebook.com/v21.0'
+// Read per call from runtime config (NUXT_META_GRAPH_BASE_URL), never a
+// constant: tests point it at a local stub, and a hard-coded host kept every
+// send made from here out of reach of the e2e suite.
+const graphBase = (): string => useRuntimeConfig().metaGraphBaseUrl
 
 export interface MetaAdSpend {
   /** In cents, to match channel_spend.amount_cents. */
@@ -35,12 +38,12 @@ export async function fetchMetaAdSpend(adAccountId: string, accessToken: string,
   const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`
   const { since, until } = monthRange(month)
 
-  const account = await $fetch<{ currency?: string }>(`${GRAPH_BASE}/${actId}`, {
+  const account = await $fetch<{ currency?: string }>(`${graphBase()}/${actId}`, {
     query: { fields: 'currency', access_token: accessToken },
     timeout: 10_000,
   })
 
-  const insights = await $fetch<{ data?: { spend?: string }[] }>(`${GRAPH_BASE}/${actId}/insights`, {
+  const insights = await $fetch<{ data?: { spend?: string }[] }>(`${graphBase()}/${actId}/insights`, {
     query: {
       fields: 'spend',
       level: 'account',

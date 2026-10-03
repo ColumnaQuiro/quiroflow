@@ -171,7 +171,8 @@ let busyRun = 0
 async function fetchBusy(fromIso: string, toIso: string, practId: string) {
   if (!clinic.value) return { appts: [] as ClashCandidateAppointment[], blocks: [] as ClashCandidateBlock[], error: null as string | null }
   // By practitioner across the account, not the clinic: someone who works at
-  // two clinics is still one person (useMoveClashCheck).
+  // two clinics is still one person (useMoveClashCheck). Their own blocks
+  // too; another clinic's closure is that clinic's.
   const [appts, blocks] = await Promise.all([
     supabase
       .from('appointments')
@@ -181,7 +182,12 @@ async function fetchBusy(fromIso: string, toIso: string, practId: string) {
       .is('deleted_at', null)
       .lt('starts_at', toIso)
       .gt('ends_at', fromIso),
-    supabase.from('availability_blocks').select('starts_at, ends_at, practitioner_id, room_id, note').eq('clinic_id', clinic.value.id).lt('starts_at', toIso).gt('ends_at', fromIso),
+    supabase
+      .from('availability_blocks')
+      .select('starts_at, ends_at, practitioner_id, room_id, note, clinic_id')
+      .or(`clinic_id.eq.${clinic.value.id},practitioner_id.eq.${practId}`)
+      .lt('starts_at', toIso)
+      .gt('ends_at', fromIso),
   ])
   return {
     appts: (appts.data as unknown as ClashCandidateAppointment[] | null) ?? [],
@@ -334,7 +340,7 @@ async function book() {
     // Asked again now: someone at the desk may have taken the time since the
     // slots were drawn.
     const fresh = await fetchBusy(start.toISOString(), end.toISOString(), practitionerId.value)
-    const clashes = moveClashes({ appointmentId: '', practitionerId: practitionerId.value, roomId: null, startsAt: start, endsAt: end }, fresh.appts, fresh.blocks)
+    const clashes = moveClashes({ appointmentId: '', practitionerId: practitionerId.value, roomId: null, clinicId: clinic.value.id, startsAt: start, endsAt: end }, fresh.appts, fresh.blocks)
     if (clashes.length > 0) {
       bookError.value = t('That time has just been taken. Pick another.', 'Esa hora se acaba de ocupar. Elige otra.')
       await loadBusy()

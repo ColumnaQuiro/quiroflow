@@ -2,7 +2,7 @@ import { ApiError, defineApiHandler, notFound } from '~/server/utils/publicApi'
 import { assertUuid } from '~/server/utils/publicApiQuery'
 import { definedOnly, enumValue, isoDateTime, readApiBody, rejectUnknownFields, str, uuid } from '~/server/utils/publicApiBody'
 import { assertBelongsToAccount, loose } from '~/server/utils/publicApiHandlers'
-import { APPOINTMENT_STATUSES, assertTypeBookable, resolveWindow, saveAppointmentIfFree } from '~/server/utils/publicApiAppointments'
+import { APPOINTMENT_STATUSES, assertPractitionerWorksAt, assertTypeBookable, resolveWindow, saveAppointmentIfFree } from '~/server/utils/publicApiAppointments'
 import { appointmentsResource } from '~/server/utils/publicApiResources'
 
 const FIELDS = ['practitioner_id', 'appointment_type_id', 'room_id', 'starts_at', 'ends_at', 'status', 'note', 'external_reference']
@@ -17,7 +17,7 @@ export default defineApiHandler({ scope: 'appointments:write' }, async ({ event,
 
   const { data: existing } = await loose(supabase)
     .from('appointments')
-    .select('id, practitioner_id, appointment_type_id, starts_at, ends_at, status')
+    .select('id, clinic_id, practitioner_id, appointment_type_id, starts_at, ends_at, status')
     .eq('account_id', accountId)
     .eq('id', id)
     .is('deleted_at', null)
@@ -35,6 +35,8 @@ export default defineApiHandler({ scope: 'appointments:write' }, async ({ event,
       is_practitioner: true,
     })
     practitionerName = practitioner.full_name as string
+    // Only a practitioner being given now: one the visit already has keeps it.
+    if (practitionerId !== existing.practitioner_id) await assertPractitionerWorksAt(supabase, practitionerId, existing.clinic_id)
   }
   if (roomId) await assertBelongsToAccount(supabase, 'calendar_resources', roomId, accountId, 'room_id')
   // Only a type being given now; keeping the one it has is always allowed.

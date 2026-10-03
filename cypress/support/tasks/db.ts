@@ -1462,11 +1462,19 @@ async function requestConcurrently(opts: { url: string; method: string; headers?
 }
 
 /** Time blocked off on the calendar: the whole clinic, or one practitioner's. */
-async function createAvailabilityBlock(opts: { accountId: string; clinicId: string; startsAt: string; endsAt: string; practitionerId?: string | null }) {
+async function createAvailabilityBlock(opts: { accountId: string; clinicId: string; startsAt: string; endsAt: string; practitionerId?: string | null; roomId?: string | null; note?: string | null }) {
   const row = unwrap(
     await admin
       .from('availability_blocks')
-      .insert({ account_id: opts.accountId, clinic_id: opts.clinicId, starts_at: opts.startsAt, ends_at: opts.endsAt, practitioner_id: opts.practitionerId ?? null })
+      .insert({
+        account_id: opts.accountId,
+        clinic_id: opts.clinicId,
+        starts_at: opts.startsAt,
+        ends_at: opts.endsAt,
+        practitioner_id: opts.practitionerId ?? null,
+        room_id: opts.roomId ?? null,
+        note: opts.note ?? null,
+      })
       .select('id')
       .single(),
   )
@@ -1927,6 +1935,26 @@ async function seedWhatsappReplyScenario(opts: {
 // message -- every inbound message is stored before any intent is applied.
 // A test asserting a status STAYED put passes just as happily when the
 // endpoint silently no-opped, so the negative cases check this too.
+/** One more number on a patient, as the patient form adds a second phone. */
+async function addPatientContactNumber(opts: { accountId: string; patientId: string; number: string; countryCode?: string; isWhatsapp?: boolean }) {
+  assertOk(
+    await admin.from('patient_contact_numbers').insert({
+      account_id: opts.accountId,
+      patient_id: opts.patientId,
+      number: opts.number,
+      country_code: opts.countryCode ?? 'ES',
+      is_whatsapp: opts.isWhatsapp ?? false,
+    }),
+  )
+  return { ok: true }
+}
+
+/** A patient's numbers, as stored: local part and country. */
+async function patientContactNumbers(opts: { patientId: string }) {
+  const rows = unwrap(await admin.from('patient_contact_numbers').select('number, country_code, is_whatsapp').eq('patient_id', opts.patientId).order('created_at'))
+  return rows as { number: string; country_code: string; is_whatsapp: boolean }[]
+}
+
 async function inboundMessages(opts: { patientId: string }) {
   const rows = unwrap(
     await admin.from('whatsapp_messages').select('id, body_preview').eq('patient_id', opts.patientId).eq('direction', 'inbound'),
@@ -2795,6 +2823,13 @@ async function startMetaGraphStub(opts: {
   templates?: { name: string; language: string; status: string; body: string }[]
   /** Refuse template sends, as Meta does for a paused template. */
   failSends?: boolean
+  /**
+   * What the message ids Meta answers with start with. Unique per run by
+   * default, because whatsapp_messages.wamid is unique and the database is
+   * shared across runs; a spec sets it to know an id before the send that
+   * gets it -- which is how a status that beats its own message is staged.
+   */
+  wamidPrefix?: string
 }) {
   await stopMetaGraphStub()
   const { createServer } = await import('node:http')
@@ -2802,6 +2837,7 @@ async function startMetaGraphStub(opts: {
   const wabaId = opts.wabaId ?? '102290129340398'
   const phoneNumberId = opts.phoneNumberId ?? '387933511072949'
   const seen: string[] = []
+  const wamidPrefix = opts.wamidPrefix ?? `wamid.STUB.${Date.now()}.`
 
   const server = createServer((req, res) => {
     const path = (req.url ?? '').split('?')[0]
@@ -2856,8 +2892,15 @@ async function startMetaGraphStub(opts: {
           metaGraphStubSends.push(raw)
         }
         if (opts.failSends) return send(400, { error: { message: 'Template is paused.', code: 132015 } })
-        send(200, { messages: [{ id: `wamid.STUB${metaGraphStubSends.length}` }] })
+        send(200, { messages: [{ id: `${wamidPrefix}${metaGraphStubSends.length}` }] })
       })
+      return
+    }
+    // A media upload, before a media send can name it. The body is multipart
+    // and nothing here needs to read it.
+    if (path.endsWith('/media') && req.method === 'POST') {
+      req.resume()
+      req.on('end', () => send(200, { id: `media.STUB.${Date.now()}` }))
       return
     }
     if (path.endsWith('/phone_numbers')) {
@@ -3841,6 +3884,8 @@ export const dbTasks = {
   'db:setWhatsappAppSecret': setWhatsappAppSecret,
   'db:createApiToken': createApiToken,
   'db:signWhatsappBody': signWhatsappBody,
+  'db:addPatientContactNumber': addPatientContactNumber,
+  'db:patientContactNumbers': patientContactNumbers,
   'db:clearWhatsappAppSecret': clearWhatsappAppSecret,
   'db:setAccountSecret': setAccountSecret,
   'db:accountWhatsappConnection': accountWhatsappConnection,

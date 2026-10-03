@@ -32,6 +32,7 @@ interface Conversation {
 }
 
 const supabase = useSupabaseClient()
+const t = useT()
 const authedFetch = useAuthedFetch()
 const { keyboardHeight } = useKeyboardInset()
 const messagesEl = ref<HTMLElement>()
@@ -242,7 +243,51 @@ function exitSelectionMode() {
 }
 
 const selectedKey = ref<string | null>(null)
-const selected = computed(() => conversations.value.find((c) => c.key === selectedKey.value) ?? null)
+// A patient opened from their record (WhatsApp on the patient screen) who has
+// never exchanged a message has no conversation to find, and the thread view
+// rendered nothing at all. This stands in for it until a message exists: the
+// patient's name and an empty thread, under the same 24-hour rule as any
+// other -- with no inbound message there is no window, so the composer
+// explains that rather than offering a send WhatsApp would refuse.
+const draftConversation = ref<Conversation | null>(null)
+const selected = computed(
+  () => conversations.value.find((c) => c.key === selectedKey.value) ??
+    // Not while the messages are still loading: a real thread would flash up as an empty one first.
+    (!loading.value && draftConversation.value?.key === selectedKey.value ? draftConversation.value : null),
+)
+async function prepareDraftConversation(patientId: string) {
+  if (!/^[0-9a-f-]{36}$/i.test(patientId)) return
+  const { data } = await supabase.from('patients').select('id, first_name, last_name').eq('id', patientId).maybeSingle()
+  if (!data) return
+  const now = new Date().toISOString()
+  draftConversation.value = {
+    key: patientId,
+    patientId,
+    phoneNumber: null,
+    externalContactId: null,
+    name: `${data.first_name} ${data.last_name ?? ''}`.trim(),
+    channel: 'whatsapp',
+    // Never listed, so never read as a preview; present only because a
+    // conversation always has one.
+    lastMessage: {
+      id: `draft-${patientId}`,
+      patient_id: patientId,
+      phone_number: null,
+      external_contact_id: null,
+      direction: 'outbound',
+      status: 'sent',
+      body_preview: null,
+      template_name: null,
+      media_type: null,
+      media_storage_path: null,
+      media_mime_type: null,
+      media_filename: null,
+      channel: 'whatsapp',
+      created_at: now,
+    },
+    unread: false,
+  }
+}
 const thread = computed(() =>
   selectedKey.value ? allMessages.value.filter((m) => keyOf(m) === selectedKey.value).slice().reverse() : [],
 )
@@ -266,6 +311,7 @@ watch(
     selectedKey.value = key
     markRead(key)
     pendingConversationKey.value = null
+    prepareDraftConversation(key)
   },
   { immediate: true },
 )
@@ -1105,7 +1151,15 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
 
       <div class="shrink-0 border-t border-line bg-surface p-3">
         <p v-if="sendError" class="mb-2 text-[12.5px] text-danger-text">{{ sendError }}</p>
-        <p v-if="!within24h" class="rounded-ctl border border-warning-border bg-warning-bg px-3 py-2 text-[12.5px] text-warning-text">
+        <p v-if="thread.length === 0" class="rounded-ctl border border-warning-border bg-warning-bg px-3 py-2 text-[12.5px] text-warning-text">
+          {{
+            t(
+              `No messages with ${selected.name} yet. WhatsApp only lets a clinic start a conversation with an approved template — send one from the patient's record on the web.`,
+              `Aún no hay mensajes con ${selected.name}. WhatsApp solo permite a una clínica iniciar una conversación con una plantilla aprobada: envíala desde la ficha del paciente en la web.`,
+            )
+          }}
+        </p>
+        <p v-else-if="!within24h" class="rounded-ctl border border-warning-border bg-warning-bg px-3 py-2 text-[12.5px] text-warning-text">
           More than 24h since {{ selected.name }} last messaged — free-form replies are blocked by
           {{ replyChannel === 'instagram' ? 'Instagram' : 'WhatsApp' }}.
         </p>

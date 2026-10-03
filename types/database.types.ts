@@ -6284,6 +6284,10 @@ export type Database = {
         Args: { p_phone_number: string; p_patient_id: string }
         Returns: number
       }
+      record_whatsapp_status: {
+        Args: { p_account_id: string; p_wamid: string; p_status: string; p_error_code: string | null; p_error_message: string | null }
+        Returns: string
+      }
       clinic_location_allowance: {
         Args: { target_account_id: string }
         Returns: number
@@ -6403,6 +6407,7 @@ export type Database = {
       get_my_bootstrap: { Args: never; Returns: Json }
       get_my_two_factor_gate: { Args: never; Returns: string }
       inbox_unread_count: { Args: never; Returns: number }
+      inbox_growth_account_ids: { Args: never; Returns: string[] }
       patient_list_visit_summary: {
         Args: { p_patient_ids: string[] }
         Returns: { patient_id: string; last_visit_at: string | null; completed_count: number; next_visit_at: string | null }[]

@@ -6,7 +6,10 @@ interface WhatsAppAccount {
   whatsapp_access_token: string
 }
 
-const GRAPH_BASE = 'https://graph.facebook.com/v21.0'
+// Read per call from runtime config (NUXT_META_GRAPH_BASE_URL), never a
+// constant: tests point it at a local stub, and a hard-coded host kept every
+// send made from here out of reach of the e2e suite.
+const graphBase = (): string => useRuntimeConfig().metaGraphBaseUrl
 
 // WhatsApp only allows free-form (non-template) messages within 24h of the
 // customer's last inbound message; outside that window Meta rejects
@@ -17,7 +20,7 @@ export function isWithin24hWindow(lastInboundAt: string | null): boolean {
 }
 
 async function metaSend(account: WhatsAppAccount, payload: Record<string, unknown>): Promise<string | null> {
-  const response = await $fetch<{ messages?: { id: string }[] }>(`${GRAPH_BASE}/${account.whatsapp_phone_number_id}/messages`, {
+  const response = await $fetch<{ messages?: { id: string }[] }>(`${graphBase()}/${account.whatsapp_phone_number_id}/messages`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${account.whatsapp_access_token}` },
     body: { messaging_product: 'whatsapp', ...payload },
@@ -76,7 +79,7 @@ export async function uploadMediaToMeta(account: WhatsAppAccount, fileBuffer: Bu
   const form = new FormData()
   form.append('messaging_product', 'whatsapp')
   form.append('file', new Blob([fileBuffer], { type: normalizeMimeTypeForMeta(mimeType) }), filename)
-  const response = await $fetch<{ id: string }>(`${GRAPH_BASE}/${account.whatsapp_phone_number_id}/media`, {
+  const response = await $fetch<{ id: string }>(`${graphBase()}/${account.whatsapp_phone_number_id}/media`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${account.whatsapp_access_token}` },
     body: form,
@@ -87,7 +90,7 @@ export async function uploadMediaToMeta(account: WhatsAppAccount, fileBuffer: Bu
 // Downloads inbound media: Meta's webhook only ever gives a media id, never
 // the bytes, so this is a two-step resolve-url-then-fetch.
 export async function downloadMetaMedia(account: WhatsAppAccount, mediaId: string): Promise<{ buffer: Buffer; mimeType: string }> {
-  const info = await $fetch<{ url: string; mime_type: string }>(`${GRAPH_BASE}/${mediaId}`, {
+  const info = await $fetch<{ url: string; mime_type: string }>(`${graphBase()}/${mediaId}`, {
     headers: { Authorization: `Bearer ${account.whatsapp_access_token}` },
   })
   const arrayBuffer = await $fetch<ArrayBuffer>(info.url, {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { splitDialPrefix } from '~/utils/phone'
+import { leadPhoneAsContactNumber, phoneMatches, whatsappDigits } from '~/utils/phone'
 import { normalizeSearchTerm } from '~/utils/searchText'
 
 // Beside a thread from a number no patient has: attach it to one. Linking
@@ -44,15 +44,53 @@ watch(query, (q) => {
   }, 250)
 })
 
+// The number as a patient stores it: local part plus country. What the
+// thread holds is Meta's international digits with no "+" ("34612345678"),
+// and reading that as a local number -- which splitDialPrefix does with
+// anything not starting with "+" -- stored "34612345678" under Spain, which
+// every later send turned into 3434612345678. The same reading a converted
+// lead's phone gets, because it is the same shape of number.
+function numberToStore() {
+  return leadPhoneAsContactNumber(props.phoneNumber, store.defaultPhoneCountry)
+}
+
+// Linking moves the messages, but it is the patient's numbers that the next
+// inbound message is matched against. Without adding this one, the patient's
+// very next WhatsApp arrived as a stranger again -- a new lead, or a new
+// "number without a patient" -- straight after somebody had said who it was.
+async function rememberNumberOn(patientId: string): Promise<boolean> {
+  const contact = numberToStore()
+  if (!contact || !store.accountId) return false
+  const digits = whatsappDigits(props.phoneNumber)
+  const { data: existing } = await supabase.from('patient_contact_numbers').select('number, country_code').eq('patient_id', patientId)
+  if ((existing ?? []).some((n) => phoneMatches(n.number, n.country_code, digits))) return true
+  const { error } = await supabase
+    .from('patient_contact_numbers')
+    .insert({ account_id: store.accountId, patient_id: patientId, country_code: contact.countryCode, number: contact.number, is_whatsapp: true })
+  return !error
+}
+
 async function link(patientId: string) {
   busy.value = true
   const { error } = await supabase.rpc('link_inbox_conversation', { p_phone_number: props.phoneNumber, p_patient_id: patientId })
-  busy.value = false
   if (error) {
+    busy.value = false
     showToast(error.message, 'error')
     return
   }
-  showToast(t('Linked. The conversation is now on the patient.', 'Vinculado. La conversación ya está en su ficha.'))
+  const remembered = await rememberNumberOn(patientId)
+  busy.value = false
+  if (remembered) {
+    showToast(t('Linked. The conversation is now on the patient.', 'Vinculado. La conversación ya está en su ficha.'))
+  } else {
+    showToast(
+      t(
+        'Linked, but the number could not be added to the patient -- add it on their record so their next message finds them.',
+        'Vinculado, pero no se pudo añadir el número al paciente: añádelo en su ficha para que su próximo mensaje le encuentre.',
+      ),
+      'error',
+    )
+  }
   emit('linked', patientId)
 }
 
@@ -73,8 +111,7 @@ async function createAndLink() {
     showToast(error?.message ?? t('Could not create the patient.', 'No se pudo crear el paciente.'), 'error')
     return
   }
-  const { countryCode, number } = splitDialPrefix(props.phoneNumber, store.defaultPhoneCountry)
-  await supabase.from('patient_contact_numbers').insert({ account_id: store.accountId, patient_id: patient.id, country_code: countryCode, number, is_whatsapp: true })
+  // link() stores the number on the new patient, the same as on an existing one.
   await link(patient.id)
 }
 </script>

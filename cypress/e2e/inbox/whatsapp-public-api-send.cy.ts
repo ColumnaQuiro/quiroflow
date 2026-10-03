@@ -7,8 +7,9 @@
 // entirely, missed the 24h window (inbound rows hold Meta's digits), and
 // stored the outbound row under a number no thread is keyed by.
 //
-// Only the refusals are exercised here: a send that gets past them goes to
-// graph.facebook.com, which whatsappSend.ts does not route to the local stub.
+// Only the refusals are exercised here. A send that gets past them now goes
+// to the local Graph stub like every other Meta call (whatsapp-send-routing
+// covers sends end to end).
 // The normalisation itself is pinned in tests/unit/whatsapp-digits.test.ts.
 
 interface Account {

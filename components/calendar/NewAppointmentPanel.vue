@@ -131,26 +131,34 @@ const whenLabel = computed(() => (validTime.value ? `${formatWeekdayDate(startsA
 
 // -- Who else is booked: the day asked for and two weeks after it -----------
 interface BookedRow { id: string; starts_at: string; ends_at: string; practitioner_id: string | null; room_id: string | null; patients: { first_name: string; last_name: string | null } | null }
-interface BlockRow { starts_at: string; ends_at: string; practitioner_id: string | null; room_id: string | null }
+interface BlockRow { starts_at: string; ends_at: string; practitioner_id: string | null; room_id: string | null; clinic_id: string }
 const booked = ref<BookedRow[]>([])
 const blocks = ref<BlockRow[]>([])
 const SEARCH_DAYS = 14
+// This clinic's visits and blocks, and those of the practitioners on offer
+// wherever they are: somebody who works at two clinics is one person, so a
+// visit or their own blocked time at the other one keeps them away from this
+// one too (as useMoveClashCheck reads them).
+function clinicOrPractitioners(clinicId: string, practIds: string[]) {
+  return [`clinic_id.eq.${clinicId}`, ...(practIds.length ? [`practitioner_id.in.(${practIds.join(',')})`] : [])].join(',')
+}
 async function loadBooked() {
   if (!store.currentClinicId || !validTime.value) return
   const from = new Date(startsAt.value)
   from.setHours(0, 0, 0, 0)
   const to = new Date(from)
   to.setDate(to.getDate() + SEARCH_DAYS)
+  const where = clinicOrPractitioners(store.currentClinicId, props.teamMembers.map((m) => m.id))
   const [{ data: appts }, { data: blk }] = await Promise.all([
     supabase
       .from('appointments')
       .select('id, starts_at, ends_at, practitioner_id, room_id, patients(first_name, last_name)')
-      .eq('clinic_id', store.currentClinicId)
+      .or(where)
       .neq('status', 'cancelled')
       .is('deleted_at', null)
       .gte('starts_at', from.toISOString())
       .lt('starts_at', to.toISOString()),
-    supabase.from('availability_blocks').select('starts_at, ends_at, practitioner_id, room_id').eq('clinic_id', store.currentClinicId).lt('starts_at', to.toISOString()).gt('ends_at', from.toISOString()),
+    supabase.from('availability_blocks').select('starts_at, ends_at, practitioner_id, room_id, clinic_id').or(where).lt('starts_at', to.toISOString()).gt('ends_at', from.toISOString()),
   ])
   booked.value = (appts as unknown as BookedRow[]) ?? []
   blocks.value = blk ?? []
@@ -160,21 +168,27 @@ watch(date, loadBooked, { immediate: true })
 const nameOf = (p: { first_name: string; last_name: string | null } | null) => `${p?.first_name ?? ''} ${p?.last_name ?? ''}`.trim()
 // Over the rows given, so the whole-series check at save time can ask the
 // same question of a range the two-week load above does not cover.
+const blockBusy = (b: BlockRow): Busy => ({ start: new Date(b.starts_at).getTime(), end: new Date(b.ends_at).getTime(), label: t('a block', 'un bloqueo') })
+// The rules of utils/moveClash: their own block at any clinic, a block for
+// this whole clinic -- not another clinic's.
 function practitionerBusyIn(practId: string, appts: BookedRow[], blks: BlockRow[]): Busy[] {
   if (!practId) return []
   return [
     ...appts.filter((a) => a.practitioner_id === practId).map((a) => ({ start: new Date(a.starts_at).getTime(), end: new Date(a.ends_at).getTime(), label: nameOf(a.patients) })),
-    ...blks
-      .filter((b) => b.practitioner_id === practId || (b.practitioner_id === null && b.room_id === null))
-      .map((b) => ({ start: new Date(b.starts_at).getTime(), end: new Date(b.ends_at).getTime(), label: t('a block', 'un bloqueo') })),
+    ...blks.filter((b) => b.practitioner_id === practId || (b.practitioner_id === null && b.room_id === null && b.clinic_id === store.currentClinicId)).map(blockBusy),
   ]
 }
-function roomBusyIn(room: string, appts: BookedRow[]): Busy[] {
+// The room's visits and the room's own blocks -- a block on a room and no
+// practitioner, which a move into that room already counts.
+function roomBusyIn(room: string, appts: BookedRow[], blks: BlockRow[]): Busy[] {
   if (!room) return []
-  return appts.filter((a) => a.room_id === room).map((a) => ({ start: new Date(a.starts_at).getTime(), end: new Date(a.ends_at).getTime(), label: nameOf(a.patients) }))
+  return [
+    ...appts.filter((a) => a.room_id === room).map((a) => ({ start: new Date(a.starts_at).getTime(), end: new Date(a.ends_at).getTime(), label: nameOf(a.patients) })),
+    ...blks.filter((b) => b.practitioner_id === null && b.room_id === room).map(blockBusy),
+  ]
 }
 const busyFor = (practId: string) => practitionerBusyIn(practId, booked.value, blocks.value)
-const roomBusy = (room: string) => roomBusyIn(room, booked.value)
+const roomBusy = (room: string) => roomBusyIn(room, booked.value, blocks.value)
 function windowsFor(practId: string, day: Date): [string, string][] | null {
   const clinicHours = store.currentClinic?.business_hours as BusinessHours | null | undefined
   const hours = (props.teamMembers.find((m) => m.id === practId)?.business_hours ?? null) as BusinessHours | null
@@ -436,13 +450,14 @@ async function busyOverSeries(starts: Date[]): Promise<Busy[]> {
   if ((!pid && !rid) || !store.currentClinicId) return []
   const from = starts[0].toISOString()
   const to = new Date(starts[starts.length - 1].getTime() + duration.value * 60000).toISOString()
+  // By practitioner or room, at any clinic: a room belongs to one clinic
+  // anyway, and the practitioner is one person wherever they are.
   const who = [pid ? `practitioner_id.eq.${pid}` : '', rid ? `room_id.eq.${rid}` : ''].filter(Boolean).join(',')
   const [appts, { data: blk, error: blkError }] = await Promise.all([
     fetchAllRows<BookedRow>((f, l) =>
       supabase
         .from('appointments')
         .select('id, starts_at, ends_at, practitioner_id, room_id, patients(first_name, last_name)')
-        .eq('clinic_id', store.currentClinicId!)
         .neq('status', 'cancelled')
         .is('deleted_at', null)
         .or(who)
@@ -452,10 +467,15 @@ async function busyOverSeries(starts: Date[]): Promise<Busy[]> {
         .order('id')
         .range(f, l) as unknown as PromiseLike<{ data: BookedRow[] | null; error: unknown }>,
     ),
-    supabase.from('availability_blocks').select('starts_at, ends_at, practitioner_id, room_id').eq('clinic_id', store.currentClinicId).lt('starts_at', to).gt('ends_at', from),
+    supabase
+      .from('availability_blocks')
+      .select('starts_at, ends_at, practitioner_id, room_id, clinic_id')
+      .or(clinicOrPractitioners(store.currentClinicId, pid ? [pid] : []))
+      .lt('starts_at', to)
+      .gt('ends_at', from),
   ])
   if (blkError) throw blkError
-  return [...practitionerBusyIn(pid, appts, blk ?? []), ...roomBusyIn(rid, appts)]
+  return [...practitionerBusyIn(pid, appts, blk ?? []), ...roomBusyIn(rid, appts, blk ?? [])]
 }
 
 // A series with dates that do not fit waits here for the desk's answer:

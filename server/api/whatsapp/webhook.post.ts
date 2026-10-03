@@ -39,7 +39,7 @@ interface MetaMessage {
 }
 import type { InstagramMessagingEvent } from '~/server/utils/instagramWebhook'
 import { leadForWhatsAppSender } from '~/server/utils/whatsappLeads'
-import { findLeadIdByPhone, findPatientIdsByPhone } from '~/server/utils/whatsappOwner'
+import { findLeadIdByPhone, findPatientIdsByPhone, pickInboundPatientId } from '~/server/utils/whatsappOwner'
 
 interface MetaChangeValue {
   metadata?: { phone_number_id: string }
@@ -338,16 +338,22 @@ export default defineEventHandler(async (event) => {
         // diagnosable failure and a guess next time one happens.
         const error = status.errors?.[0]
         const errorMessage = error ? [error.title, error.error_data?.details].filter(Boolean).join(' -- ') : null
-        const { error: updateError } = await supabase
-          .from('whatsapp_messages')
-          .update({
-            status: status.status,
-            error_code: error?.code != null ? String(error.code) : null,
-            error_message: errorMessage,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('wamid', status.id)
-          .in('status', replaceable)
+        // Through record_whatsapp_status rather than a plain update, because
+        // the row may not exist YET: every sender asks Meta first and stores
+        // the row with the wamid it gets back, and a fast refusal (131026,
+        // 131047) can beat that insert here -- for a media reply, by a whole
+        // storage upload. A plain update matched nothing, and the insert that
+        // followed wrote 'sent' over a message that had already failed. The
+        // function applies the same forward-only rule as above, and holds a
+        // status for an unknown wamid briefly so the insert picks it up
+        // (20261003134857_whatsapp_status_before_its_message.sql).
+        const { error: updateError } = await supabase.rpc('record_whatsapp_status', {
+          p_account_id: account.id,
+          p_wamid: status.id,
+          p_status: status.status,
+          p_error_code: error?.code != null ? String(error.code) : null,
+          p_error_message: errorMessage,
+        })
         if (updateError) console.error(`[whatsapp] could not record status ${status.status} for ${status.id}: ${updateError.message}`)
       }
 
@@ -363,7 +369,10 @@ export default defineEventHandler(async (event) => {
         if (await alreadyStored(supabase, msg.id)) continue
 
         const patientIds = await findPatientIdsByPhone(supabase, account.id, msg.from)
-        const patientId = patientIds[0] ?? null
+        // One of them, chosen by a fixed rule rather than by whichever row
+        // the query returned first -- which for a family phone was usually a
+        // child's record. See chooseInboundOwner (utils/inboundOwner.ts).
+        const patientId = await pickInboundPatientId(supabase, account.id, msg.from, patientIds)
         // Three ways to belong to somebody, in descending confidence: a
         // patient, a lead already on the board, or nobody -- which used to
         // mean the message attached to nothing and the person who sent it

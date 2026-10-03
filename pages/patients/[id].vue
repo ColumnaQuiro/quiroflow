@@ -275,7 +275,7 @@ function onTabKeydown(event: KeyboardEvent) {
         :tutor="tutor"
         @photo-updated="loadPatient"
         @message="whatsAppOpen = true"
-        @book="navigateTo('/calendar')"
+        @book="navigateTo({ path: '/calendar', query: { patient: patientId } })"
         @charge="handleCharge"
         @archive="toggleArchived"
         @merge="mergeOpen = true"

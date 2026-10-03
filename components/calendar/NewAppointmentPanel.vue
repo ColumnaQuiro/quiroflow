@@ -43,6 +43,8 @@ const props = defineProps<{
   prefillTime?: string
   prefillRoomId?: string
   prefillPractitionerId?: string
+  /** Booking from a patient's page: start with them chosen, no search. */
+  prefillPatientId?: string
   /** The clinic's slot size, for the next-free-times search. */
   slotMinutes?: number
 }>()
@@ -252,6 +254,36 @@ interface PatientResult extends PatientOption {
   sub: string
   flags: string[]
 }
+// What a result row says about the patient: last visit (or a phone), an
+// open bono, the waitlist. Shared by the search and by a patient handed
+// in from their own page, so both read the same.
+async function describePatients(rows: PatientOption[]): Promise<PatientResult[]> {
+  const ids = rows.map((r) => r.id)
+  const [{ data: waiting }, { data: packs }, { data: visits }, { data: phones }] = ids.length
+    ? await Promise.all([
+        supabase.from('waitlist_entries').select('patient_id').in('patient_id', ids).eq('status', 'waiting'),
+        supabase.from('package_purchases').select('patient_id, sessions_total, sessions_used, is_closed').in('patient_id', ids),
+        supabase.from('appointments').select('patient_id, starts_at, appointment_types(name)').in('patient_id', ids).eq('status', 'completed').order('starts_at', { ascending: false }).limit(200),
+        supabase.from('patient_contact_numbers').select('patient_id, number').in('patient_id', ids),
+      ])
+    : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }]
+  const waitingIds = new Set((waiting ?? []).map((w: { patient_id: string }) => w.patient_id))
+  return rows.map((r) => {
+    const last = (visits as { patient_id: string; starts_at: string; appointment_types: { name: string } | null }[] | null)?.find((v) => v.patient_id === r.id)
+    const pack = (packs as { patient_id: string; sessions_total: number; sessions_used: number; is_closed: boolean }[] | null)?.find(
+      (p) => p.patient_id === r.id && !p.is_closed && p.sessions_used < p.sessions_total,
+    )
+    const phone = (phones as { patient_id: string; number: string }[] | null)?.find((p) => p.patient_id === r.id)?.number
+    const flags: string[] = []
+    if (waitingIds.has(r.id)) flags.push(t('On waitlist', 'En espera'))
+    if (pack) flags.push(`Bono ${pack.sessions_total - pack.sessions_used}/${pack.sessions_total}`)
+    const sub = last
+      ? t(`Last visit ${formatShortDate(last.starts_at)}${last.appointment_types ? ` · ${last.appointment_types.name}` : ''}`, `Última visita ${formatShortDate(last.starts_at)}${last.appointment_types ? ` · ${last.appointment_types.name}` : ''}`)
+      : (phone ?? t('No visits yet', 'Sin visitas todavía'))
+    return { ...r, sub, flags }
+  })
+}
+
 const searchResults = ref<PatientResult[]>([])
 const searching = ref(false)
 let searchTimer: ReturnType<typeof setTimeout>
@@ -276,32 +308,9 @@ watch(patientQuery, (q) => {
       .or(`search_name.ilike.%${normalizeSearchTerm(token)}%,email.ilike.%${token}%${idClause}`)
       .order('first_name')
       .limit(20)
-    const rows = data ?? []
-    const ids = rows.map((r) => r.id)
-    const [{ data: waiting }, { data: packs }, { data: visits }, { data: phones }] = ids.length
-      ? await Promise.all([
-          supabase.from('waitlist_entries').select('patient_id').in('patient_id', ids).eq('status', 'waiting'),
-          supabase.from('package_purchases').select('patient_id, sessions_total, sessions_used, is_closed').in('patient_id', ids),
-          supabase.from('appointments').select('patient_id, starts_at, appointment_types(name)').in('patient_id', ids).eq('status', 'completed').order('starts_at', { ascending: false }).limit(200),
-          supabase.from('patient_contact_numbers').select('patient_id, number').in('patient_id', ids),
-        ])
-      : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }]
+    const described = await describePatients(data ?? [])
     if (patientQuery.value !== q) return
-    const waitingIds = new Set((waiting ?? []).map((w: { patient_id: string }) => w.patient_id))
-    searchResults.value = rows.map((r) => {
-      const last = (visits as { patient_id: string; starts_at: string; appointment_types: { name: string } | null }[] | null)?.find((v) => v.patient_id === r.id)
-      const pack = (packs as { patient_id: string; sessions_total: number; sessions_used: number; is_closed: boolean }[] | null)?.find(
-        (p) => p.patient_id === r.id && !p.is_closed && p.sessions_used < p.sessions_total,
-      )
-      const phone = (phones as { patient_id: string; number: string }[] | null)?.find((p) => p.patient_id === r.id)?.number
-      const flags: string[] = []
-      if (waitingIds.has(r.id)) flags.push(t('On waitlist', 'En espera'))
-      if (pack) flags.push(`Bono ${pack.sessions_total - pack.sessions_used}/${pack.sessions_total}`)
-      const sub = last
-        ? t(`Last visit ${formatShortDate(last.starts_at)}${last.appointment_types ? ` · ${last.appointment_types.name}` : ''}`, `Última visita ${formatShortDate(last.starts_at)}${last.appointment_types ? ` · ${last.appointment_types.name}` : ''}`)
-        : (phone ?? t('No visits yet', 'Sin visitas todavía'))
-      return { ...r, sub, flags }
-    })
+    searchResults.value = described
     searching.value = false
   }, 250)
 })
@@ -312,6 +321,15 @@ function selectPatient(p: PatientResult) {
   searchResults.value = []
   loadCarePlan(p.id)
 }
+// From a patient's page the patient is already known: choose them at once,
+// exactly as picking them from the search would.
+onMounted(async () => {
+  if (!props.prefillPatientId) return
+  const { data } = await supabase.from('patients').select('id, first_name, last_name').eq('id', props.prefillPatientId).maybeSingle()
+  if (!data || selectedPatient.value) return
+  const [described] = await describePatients([data])
+  if (described && !selectedPatient.value) selectPatient(described)
+})
 function clearPatient() {
   selectedPatient.value = null
   patientMode.value = 'existing'

@@ -5,6 +5,7 @@ const supabase = useSupabaseClient()
 const authPasswordError = useAuthPasswordError()
 const user = useSupabaseUser()
 const route = useRoute()
+const t = useT()
 
 // Where a successful reset sends them. This used to be a hardcoded
 // '/dashboard', which is the STAFF dashboard -- a patient resetting their
@@ -24,7 +25,12 @@ const destination = computed(() => {
   if (patient.value) return '/portal'
   return route.query.portal ? '/portal' : '/dashboard'
 })
-const destinationLabel = computed(() => (destination.value === '/portal' ? 'your portal' : 'your dashboard'))
+// Which side's header and preview the page wears; the destination above is
+// still decided by identity.
+const isPortal = computed(() => !!route.query.portal)
+const destinationLabel = computed(() =>
+  destination.value === '/portal' ? t('your portal', 'tu espacio de paciente') : t('your dashboard', 'tu panel'),
+)
 
 const password = ref('')
 const confirmPassword = ref('')
@@ -35,11 +41,11 @@ const done = ref(false)
 async function onSubmit() {
   error.value = ''
   if (password.value.length < 8) {
-    error.value = 'Password must be at least 8 characters.'
+    error.value = t('Password must be at least 8 characters.', 'La contraseña debe tener al menos 8 caracteres.')
     return
   }
   if (password.value !== confirmPassword.value) {
-    error.value = 'Passwords do not match.'
+    error.value = t('Passwords do not match.', 'Las contraseñas no coinciden.')
     return
   }
   loading.value = true
@@ -55,45 +61,37 @@ async function onSubmit() {
 </script>
 
 <template>
-  <div class="flex min-h-screen items-center justify-center bg-surface-page px-4">
-    <div class="w-full max-w-sm rounded-card border border-line bg-surface p-8 shadow-card">
-      <h1 class="text-xl font-semibold text-ink-900">Set a new password</h1>
+  <AuthShell :portal="isPortal">
+    <template #heading>
+      <h1 class="text-[25px] font-semibold leading-[1.18] tracking-tightTitle text-ink-900 lg:text-[30px]">
+        {{ t('Set a new password', 'Elige una contraseña nueva') }}
+      </h1>
+    </template>
 
-      <div v-if="done" class="mt-6 text-sm text-success-text">Password updated. Taking you to {{ destinationLabel }}…</div>
+    <template #form>
+      <p v-if="done" class="mt-5 text-[14px] font-medium text-success-text" role="status">
+        {{ t(`Password updated. Taking you to ${destinationLabel}…`, `Contraseña cambiada. Te llevamos a ${destinationLabel}…`) }}
+      </p>
 
-      <div v-else-if="!user" class="mt-6 text-sm text-ink-muted">
-        This link is invalid or has expired.
-        <NuxtLink :to="route.query.portal ? '/forgot-password?portal=1' : '/forgot-password'" class="font-medium text-brand hover:text-brand-hover">Request a new one</NuxtLink>.
-      </div>
+      <p v-else-if="!user" class="mt-4 text-[14.5px] leading-[1.55] text-ink-muted">
+        {{ t('This link is invalid or has expired.', 'Este enlace no es válido o ha caducado.') }}
+        <NuxtLink :to="isPortal ? '/forgot-password?portal=1' : '/forgot-password'" class="font-semibold text-brand-text hover:text-brand-hover">{{
+          t('Request a new one', 'Pide uno nuevo')
+        }}</NuxtLink>.
+      </p>
 
-      <form v-else class="mt-6 space-y-4" @submit.prevent="onSubmit">
-        <div>
-          <label class="block text-sm font-medium text-ink-700" for="password">New password</label>
-          <input
-            id="password"
-            v-model="password"
-            type="password"
-            required
-            minlength="8"
-            class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-          />
-        </div>
-        <div>
-          <label class="block text-sm font-medium text-ink-700" for="confirm">Confirm new password</label>
-          <input
-            id="confirm"
-            v-model="confirmPassword"
-            type="password"
-            required
-            minlength="8"
-            class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-          />
-        </div>
-        <p v-if="error" class="text-sm text-danger-text">{{ error }}</p>
-        <UiBtn type="submit" variant="primary" class="w-full" :disabled="loading">
-          {{ loading ? 'Saving…' : 'Update password' }}
-        </UiBtn>
+      <form v-else class="mt-5 flex flex-col gap-[18px] lg:mt-[26px]" @submit.prevent="onSubmit">
+        <OnboardingFormField id="password" :label="t('New password', 'Contraseña nueva')">
+          <OnboardingPasswordInput id="password" v-model="password" :min-length="8" :readonly="loading" />
+        </OnboardingFormField>
+        <OnboardingFormField id="confirm" :label="t('Confirm new password', 'Repite la contraseña nueva')">
+          <OnboardingTextInput id="confirm" v-model="confirmPassword" type="password" autocomplete="new-password" required :readonly="loading" />
+        </OnboardingFormField>
+        <p v-if="error" role="alert" class="text-[13px] text-danger-text">{{ error }}</p>
+        <OnboardingPrimaryButton class="mt-1" :loading="loading" :loading-label="t('Saving…', 'Guardando…')">
+          {{ t('Update password', 'Cambiar contraseña') }}
+        </OnboardingPrimaryButton>
       </form>
-    </div>
-  </div>
+    </template>
+  </AuthShell>
 </template>

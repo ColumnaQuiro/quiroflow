@@ -29,7 +29,9 @@ export interface PreviewAppointment {
   /** 0 = 09:00, 4 = 13:00. */
   slot: number
   patient: string
+  patientEs?: string
   detail: string
+  detailEs: string
   tone: PreviewTone
 }
 
@@ -46,15 +48,15 @@ export const PREVIEW_DAYS = [
 export const PREVIEW_SLOTS = ['09:00', '10:00', '11:00', '12:00', '13:00']
 
 export const PREVIEW_APPOINTMENTS: PreviewAppointment[] = [
-  { day: 0, slot: 0, patient: 'Lucía Ferrer', detail: 'Adjustment · Sala 1', tone: 'brand' },
-  { day: 2, slot: 0, patient: 'Paula Marín', detail: 'Initial Assessment · Sala 2', tone: 'success' },
-  { day: 1, slot: 1, patient: 'Nerea Sanz', detail: 'Adjustment · Sala 1', tone: 'brand' },
-  { day: 4, slot: 1, patient: 'Hugo Peris', detail: 'Adjustment · Sala 2', tone: 'brand' },
-  { day: 0, slot: 2, patient: 'Marc Oliver', detail: 'Initial Assessment · Sala 2', tone: 'success' },
-  { day: 3, slot: 2, patient: 'Clara Vidal', detail: 'Adjustment · Sala 1', tone: 'brand' },
-  { day: 1, slot: 3, patient: 'David Roca', detail: 'Follow-up · Sala 1', tone: 'neutral' },
-  { day: 4, slot: 3, patient: 'Blocked', detail: 'Clinic admin', tone: 'neutral' },
-  { day: 2, slot: 4, patient: 'Iván Torres', detail: 'Adjustment · Sala 1', tone: 'brand' },
+  { day: 0, slot: 0, patient: 'Lucía Ferrer', detail: 'Adjustment · Sala 1', detailEs: 'Ajuste · Sala 1', tone: 'brand' },
+  { day: 2, slot: 0, patient: 'Paula Marín', detail: 'Initial Assessment · Sala 2', detailEs: 'Primera visita · Sala 2', tone: 'success' },
+  { day: 1, slot: 1, patient: 'Nerea Sanz', detail: 'Adjustment · Sala 1', detailEs: 'Ajuste · Sala 1', tone: 'brand' },
+  { day: 4, slot: 1, patient: 'Hugo Peris', detail: 'Adjustment · Sala 2', detailEs: 'Ajuste · Sala 2', tone: 'brand' },
+  { day: 0, slot: 2, patient: 'Marc Oliver', detail: 'Initial Assessment · Sala 2', detailEs: 'Primera visita · Sala 2', tone: 'success' },
+  { day: 3, slot: 2, patient: 'Clara Vidal', detail: 'Adjustment · Sala 1', detailEs: 'Ajuste · Sala 1', tone: 'brand' },
+  { day: 1, slot: 3, patient: 'David Roca', detail: 'Follow-up · Sala 1', detailEs: 'Revisión · Sala 1', tone: 'neutral' },
+  { day: 4, slot: 3, patient: 'Blocked', patientEs: 'Bloqueado', detail: 'Clinic admin', detailEs: 'Gestión de la clínica', tone: 'neutral' },
+  { day: 2, slot: 4, patient: 'Iván Torres', detail: 'Adjustment · Sala 1', detailEs: 'Ajuste · Sala 1', tone: 'brand' },
 ]
 
 export const PREVIEW_PATIENT = {

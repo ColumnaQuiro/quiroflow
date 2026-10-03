@@ -33,10 +33,17 @@ const t = useT()
       style="padding-bottom: max(env(safe-area-inset-bottom), 1.25rem)"
     >
       <div class="mx-auto flex w-full max-w-[515px] flex-1 flex-col">
-        <!-- Brand first: the mark is what tells a clinic whose signup this is. -->
-        <div class="flex items-center gap-[9px]">
-          <img src="/logo/quiroflow-mark.svg" alt="" class="h-[26px] w-[26px]" />
-          <span class="text-[16px] font-semibold tracking-tightTitle text-ink-900">QuiroFlow</span>
+        <!-- Brand first: the mark is what tells a clinic whose signup this is.
+             The patient sign-in replaces it with the clinic's own name, and
+             the sign-in pages put a language switch beside it. -->
+        <div class="flex items-center justify-between gap-3">
+          <slot name="brand">
+            <div class="flex items-center gap-[9px]">
+              <img src="/logo/quiroflow-mark.svg" alt="" class="h-[26px] w-[26px]" />
+              <span class="text-[16px] font-semibold tracking-tightTitle text-ink-900">QuiroFlow</span>
+            </div>
+          </slot>
+          <slot name="brand-aside" />
         </div>
 
         <div class="mt-6 lg:mt-10">

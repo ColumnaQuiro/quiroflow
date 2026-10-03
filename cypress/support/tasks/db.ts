@@ -563,6 +563,38 @@ async function chargeService(opts: { accountId: string; invoiceId: string; servi
   return null
 }
 
+/** A line on a receipt, with or without a service -- a visit's own line has none. */
+async function addInvoiceLine(opts: { accountId: string; invoiceId: string; description: string; priceCents: number; serviceId?: string | null }) {
+  assertOk(
+    await admin.from('invoice_line_items').insert({
+      account_id: opts.accountId,
+      invoice_id: opts.invoiceId,
+      service_id: opts.serviceId ?? null,
+      description: opts.description,
+      quantity: 1,
+      price_cents: opts.priceCents,
+    }),
+  )
+  return null
+}
+
+/** A receipt's total, as adding or removing a line leaves it. */
+async function setInvoiceTotal(opts: { invoiceId: string; totalCents: number }) {
+  assertOk(await admin.from('invoices').update({ total_cents: opts.totalCents }).eq('id', opts.invoiceId))
+  return null
+}
+
+/** Every receipt raised against one appointment, with its lines, oldest first. */
+async function invoicesForAppointment(opts: { appointmentId: string }) {
+  const { data, error } = await admin
+    .from('invoices')
+    .select('id, invoice_number, status, total_cents, invoice_line_items(description, price_cents, service_id, package_purchase_id), payments!payments_invoice_id_fkey(amount_cents, method)')
+    .eq('appointment_id', opts.appointmentId)
+    .order('created_at')
+  if (error) throw error
+  return data
+}
+
 /** The balance the patient list shows: positive is credit. */
 async function liveBalance(opts: { patientId: string }) {
   const row = unwrap(await admin.from('patients').select('live_balance_cents').eq('id', opts.patientId).single()) as unknown as { live_balance_cents: number }
@@ -3773,6 +3805,11 @@ export const dbTasks = {
   'db:liveBalance': liveBalance,
   'db:deleteServiceProduct': deleteServiceProduct,
   'db:chargeService': chargeService,
+  'db:addInvoiceLine': addInvoiceLine,
+  'db:invoicesForAppointment': invoicesForAppointment,
+  'db:setInvoiceTotal': setInvoiceTotal,
+  // Any signed-in user, staff included: the name is historical.
+  'db:callRpcAs': callRpcAsPatient,
   'db:enableOnlineBooking': enableOnlineBooking,
   'db:enableEmailConfirmations': enableEmailConfirmations,
   'db:createInvoice': createInvoice,

@@ -791,7 +791,8 @@ async function createPayment(opts: {
  * `count` completed visits for one patient, one a day going back from
  * `endingAt`, in a single insert -- a history longer than one unpaged
  * select() returns (PostgREST stops at 1000 rows). With `carePlanVisits`,
- * also a care plan of that many visits, so the list shows its progress.
+ * also a care plan of that many visits, started on the day of the first of
+ * them -- progress counts only the visits since a plan started.
  */
 async function seedCompletedVisits(opts: { accountId: string; clinicId: string; patientId: string; count: number; endingAt: string; carePlanVisits?: number }) {
   const end = new Date(opts.endingAt).getTime()
@@ -811,9 +812,29 @@ async function seedCompletedVisits(opts: { accountId: string; clinicId: string; 
     ),
   )
   if (opts.carePlanVisits) {
-    assertOk(await admin.from('care_plans').insert({ account_id: opts.accountId, patient_id: opts.patientId, name: 'Plan largo', total_visits: opts.carePlanVisits }))
+    const firstVisit = new Date(end - (opts.count - 1) * 86400000).toISOString().slice(0, 10)
+    assertOk(await admin.from('care_plans').insert({ account_id: opts.accountId, patient_id: opts.patientId, name: 'Plan largo', total_visits: opts.carePlanVisits, started_at: firstVisit }))
   }
   return { ok: true }
+}
+
+/** A care plan, started on `startedAt` (a date; today when left out). */
+async function createCarePlan(opts: { accountId: string; patientId: string; totalVisits: number; startedAt?: string; name?: string; frequencyValue?: number; frequencyUnit?: 'week' | 'month' }) {
+  return unwrap(
+    await admin
+      .from('care_plans')
+      .insert({
+        account_id: opts.accountId,
+        patient_id: opts.patientId,
+        name: opts.name ?? 'Plan de tratamiento',
+        total_visits: opts.totalVisits,
+        frequency_value: opts.frequencyValue ?? 1,
+        frequency_unit: opts.frequencyUnit ?? 'week',
+        ...(opts.startedAt ? { started_at: opts.startedAt } : {}),
+      })
+      .select('id')
+      .single(),
+  ) as { id: string }
 }
 
 async function seedManyPayments(opts: { accountId: string; patientId: string; count: number; amountCents?: number }) {
@@ -3739,6 +3760,7 @@ export const dbTasks = {
   'db:createPayment': createPayment,
   'db:seedManyPayments': seedManyPayments,
   'db:seedCompletedVisits': seedCompletedVisits,
+  'db:createCarePlan': createCarePlan,
   'db:nextInvoiceNumber': nextInvoiceNumber,
   'db:deleteInvoice': deleteInvoice,
   'db:paymentById': paymentById,

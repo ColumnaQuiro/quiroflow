@@ -160,12 +160,14 @@ async function loadPatients() {
     balanceByPatient.value = balByPatient
 
     const nextByPatient: Record<string, string> = {}
+    // Completed since the newest plan started -- a plan's progress, not the
+    // patient's whole history (see 20261003155748).
     const completedByPatient: Record<string, number> = {}
     const lastByPatient: Record<string, string> = {}
     for (const v of visitSummary ?? []) {
       if (v.next_visit_at) nextByPatient[v.patient_id] = v.next_visit_at
       if (v.last_visit_at) lastByPatient[v.patient_id] = v.last_visit_at
-      completedByPatient[v.patient_id] = v.completed_count
+      completedByPatient[v.patient_id] = v.completed_in_plan
     }
     nextAppointmentByPatient.value = nextByPatient
     lastVisitByPatient.value = lastByPatient

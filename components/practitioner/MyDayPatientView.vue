@@ -32,7 +32,7 @@ const showRate = computed(() => {
 })
 async function loadAttendance() {
   attendanceLoading.value = true
-  const { data } = await supabase.from('appointments').select('status').eq('patient_id', props.appointment.patient_id)
+  const { data } = await supabase.from('appointments').select('status').eq('patient_id', props.appointment.patient_id).is('deleted_at', null)
   const next = { completed: 0, cancelled: 0, no_show: 0 }
   for (const a of data ?? []) {
     if (a.status in next) (next as Record<string, number>)[a.status]++
@@ -53,6 +53,7 @@ async function loadVisitNumber() {
     .select('id', { count: 'exact', head: true })
     .eq('patient_id', props.appointment.patient_id)
     .neq('status', 'cancelled')
+    .is('deleted_at', null)
     .lte('starts_at', props.appointment.starts_at)
   visitNumber.value = count ?? null
 }

@@ -111,8 +111,13 @@ async function load() {
   const invoiceByAppointment = new Map<string, { status: string }>()
   if (appointmentIds.length > 0) {
     const { data: apptInvoices } = await supabase.from('invoices').select('appointment_id, status').in('appointment_id', appointmentIds)
+    // A visit can carry more than one receipt (one voided and raised again).
+    // The one that stands decides, not whichever came back last: paid over
+    // open, and either over void.
+    const weight = (status: string) => (status === 'paid' ? 2 : status === 'void' ? 0 : 1)
     for (const inv of apptInvoices ?? []) {
-      if (inv.appointment_id) invoiceByAppointment.set(inv.appointment_id, { status: inv.status })
+      const seen = inv.appointment_id ? invoiceByAppointment.get(inv.appointment_id) : undefined
+      if (inv.appointment_id && (!seen || weight(inv.status) > weight(seen.status))) invoiceByAppointment.set(inv.appointment_id, { status: inv.status })
     }
   }
   unprocessed.value = (appointments ?? [])

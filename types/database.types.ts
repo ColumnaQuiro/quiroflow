@@ -6405,7 +6405,7 @@ export type Database = {
       inbox_unread_count: { Args: never; Returns: number }
       patient_list_visit_summary: {
         Args: { p_patient_ids: string[] }
-        Returns: { patient_id: string; last_visit_at: string | null; completed_count: number; next_visit_at: string | null }[]
+        Returns: { patient_id: string; last_visit_at: string | null; completed_count: number; next_visit_at: string | null; completed_in_plan: number }[]
       }
       team_two_factor_status: {
         Args: { p_account_id: string }

@@ -1,5 +1,6 @@
 // Supabase Auth's refusals on the sign-in and sign-up screens, in the app's
-// language. Both printed error.message straight at the person -- "Invalid
+// language -- web and mobile both (it lived in mobile/ until the web sign-in
+// pages were translated too). Both printed error.message straight at the person -- "Invalid
 // login credentials" to a Spanish clinic's front desk and its patients.
 //
 // Matched on auth-js's `code`, never on the sentence, for the reason
@@ -32,7 +33,7 @@ export function useAuthErrorMessage() {
         return t('New accounts cannot be created right now.', 'Ahora mismo no se pueden crear cuentas nuevas.')
     }
 
-    // No response at all: the phone is offline or the server unreachable.
+    // No response at all: the device is offline or the server unreachable.
     if (err.name === 'AuthRetryableFetchError' || err.status === 0) {
       return t('Could not connect. Check your internet connection and try again.', 'No se ha podido conectar. Comprueba tu conexión a internet e inténtalo de nuevo.')
     }

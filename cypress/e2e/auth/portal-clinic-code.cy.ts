@@ -23,9 +23,14 @@ describe('The portal sign-in clinic code', () => {
     })
   })
 
-  it('prefills the code from a clinic link on the sign-up page', () => {
+  // A known code is shown as the clinic rather than as a field to fill in;
+  // "Change" brings the field back with the code in it.
+  it('shows the clinic from a clinic link on the sign-up page', () => {
     cy.seedStaffAccount().then((account) => {
       cy.visit(`/portal/signup?clinic=${account.accountSlug}`)
+      cy.get('[data-testid=clinic-chip]').should('contain', account.accountName).and('contain', account.accountSlug)
+      cy.get('#clinic-code').should('not.exist')
+      cy.contains('button', 'Change').click()
       cy.get('#clinic-code').should('have.value', account.accountSlug)
     })
   })

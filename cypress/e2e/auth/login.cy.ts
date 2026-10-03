@@ -4,7 +4,7 @@ describe('Login', () => {
     cy.get('#email').type('nobody@example.test')
     cy.get('#password').type('wrong-password')
     cy.contains('button', 'Sign in').click()
-    cy.contains(/invalid|error/i).should('be.visible')
+    cy.contains('Wrong email or password.').should('be.visible')
     cy.location('pathname').should('eq', '/login')
   })
 

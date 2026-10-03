@@ -3,6 +3,8 @@ definePageMeta({ layout: false })
 
 const supabase = useSupabaseClient()
 const route = useRoute()
+const t = useT()
+const authErrorMessage = useAuthErrorMessage()
 const email = ref('')
 const error = ref('')
 const loading = ref(false)
@@ -24,7 +26,7 @@ async function onSubmit() {
   })
   loading.value = false
   if (resetError) {
-    error.value = resetError.message
+    error.value = authErrorMessage(resetError)
     return
   }
   sent.value = true
@@ -32,37 +34,40 @@ async function onSubmit() {
 </script>
 
 <template>
-  <div class="flex min-h-screen items-center justify-center bg-surface-page px-4">
-    <div class="w-full max-w-sm rounded-card border border-line bg-surface p-8 shadow-card">
-      <h1 class="text-xl font-semibold text-ink-900">Reset your password</h1>
+  <AuthShell :portal="isPortal">
+    <template #heading>
+      <h1 class="text-[25px] font-semibold leading-[1.18] tracking-tightTitle text-ink-900 lg:text-[30px]">
+        {{ t('Reset your password', 'Recupera tu contraseña') }}
+      </h1>
+      <p v-if="!sent" class="mt-2 text-[14.5px] leading-[1.55] text-ink-muted lg:text-[15px]">
+        {{ t("Tell us your email and we'll send you a link to choose a new one.", 'Dinos tu correo y te enviamos un enlace para elegir una nueva.') }}
+      </p>
+    </template>
 
-      <div v-if="sent" class="mt-6">
-        <p class="text-sm text-ink-500">
-          If an account exists for <strong>{{ email }}</strong>, we've sent a link to reset your password. Check your
-          inbox.
-        </p>
-        <NuxtLink :to="signInPath" class="mt-4 block text-center text-sm font-medium text-brand hover:text-brand-hover">
-          &larr; Back to sign in
+    <template #form>
+      <div v-if="sent" class="mt-5 lg:mt-[22px]">
+        <div class="rounded-card border border-brand-tintBorder bg-brand-tint px-3.5 py-3 text-[14px] leading-[1.55] text-ink-700" role="status">
+          {{ t('If an account exists for', 'Si existe una cuenta con') }} <strong class="font-semibold text-ink-900">{{ email }}</strong>{{
+            t(", we've sent a link to reset your password. Check your inbox.", ', te hemos enviado un enlace para cambiar la contraseña. Revisa tu bandeja de entrada.')
+          }}
+        </div>
+        <NuxtLink :to="signInPath" class="mt-5 block text-center text-[13.5px] font-semibold text-brand-text hover:text-brand-hover">
+          &larr; {{ t('Back to sign in', 'Volver a iniciar sesión') }}
         </NuxtLink>
       </div>
 
-      <form v-else class="mt-6 space-y-4" @submit.prevent="onSubmit">
-        <div>
-          <label class="block text-sm font-medium text-ink-700" for="email">Email</label>
-          <input
-            id="email"
-            v-model="email"
-            type="email"
-            required
-            class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-          />
-        </div>
-        <p v-if="error" class="text-sm text-danger-text">{{ error }}</p>
-        <UiBtn type="submit" variant="primary" class="w-full" :disabled="loading">
-          {{ loading ? 'Sending…' : 'Send reset link' }}
-        </UiBtn>
-        <NuxtLink :to="signInPath" class="block text-center text-sm text-ink-muted hover:text-ink-500">&larr; Back to sign in</NuxtLink>
+      <form v-else class="mt-5 flex flex-col gap-[18px] lg:mt-[26px]" @submit.prevent="onSubmit">
+        <OnboardingFormField id="email" :label="t('Email', 'Correo electrónico')">
+          <OnboardingTextInput id="email" v-model="email" type="email" autocomplete="username" required :readonly="loading" />
+        </OnboardingFormField>
+        <p v-if="error" role="alert" class="text-[13px] text-danger-text">{{ error }}</p>
+        <OnboardingPrimaryButton class="mt-1" :loading="loading" :loading-label="t('Sending…', 'Enviando…')">
+          {{ t('Send reset link', 'Enviar enlace') }}
+        </OnboardingPrimaryButton>
+        <NuxtLink :to="signInPath" class="block text-center text-[13.5px] text-ink-muted hover:text-ink-700">
+          &larr; {{ t('Back to sign in', 'Volver a iniciar sesión') }}
+        </NuxtLink>
       </form>
-    </div>
-  </div>
+    </template>
+  </AuthShell>
 </template>

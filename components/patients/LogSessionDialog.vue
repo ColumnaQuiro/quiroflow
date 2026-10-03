@@ -102,8 +102,8 @@ function confirm() {
             <span v-if="v.unpaidInvoice" class="mt-0.5 block text-[12px] text-ink-muted2">
               {{
                 t(
-                  `${v.unpaidInvoice.invoice_number ?? 'Its unpaid receipt'} (${formatEur(v.unpaidInvoice.total_cents)}, unpaid) will be voided -- the bono pays for this visit.`,
-                  `${v.unpaidInvoice.invoice_number ?? 'Su recibo pendiente'} (${formatEur(v.unpaidInvoice.total_cents)}, sin pagar) se anulará: el bono paga esta visita.`,
+                  `${v.unpaidInvoice.invoice_number ?? 'Its unpaid receipt'} (${formatEur(v.unpaidInvoice.total_cents)}, unpaid): the visit is charged at the bono rate instead -- anything else on it stays owed.`,
+                  `${v.unpaidInvoice.invoice_number ?? 'Su recibo pendiente'} (${formatEur(v.unpaidInvoice.total_cents)}, sin pagar): la visita pasa a cobrarse a precio de bono; lo demás que incluya sigue pendiente.`,
                 )
               }}
             </span>

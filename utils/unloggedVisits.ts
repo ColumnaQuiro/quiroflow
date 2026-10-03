@@ -24,7 +24,8 @@ export interface UnloggedVisit {
   practitionerName: string | null
   typeName: string | null
   // A charge raised on the visit and not paid. Logging a bono session against
-  // the visit voids it: the bono pays for the visit, so it cannot also owe.
+  // the visit replaces the visit's own line on it with the bono session's
+  // charge; any extras on it stay owed (utils/bonoVisitInvoice).
   unpaidInvoice: { id: string; invoice_number: string | null; total_cents: number } | null
 }
 

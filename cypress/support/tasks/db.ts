@@ -2104,6 +2104,42 @@ async function readAsStaff(opts: { email: string; password: string; table: strin
 }
 
 /**
+ * Rows a signed-in staff member gets back from a table or view, with the
+ * browser's own key -- optionally narrowed to some ids, so a spec can ask
+ * "which of these two patients' rows can this person see" without the rest of
+ * a shared database getting in the way.
+ */
+async function selectAsStaff(opts: { email: string; password: string; table: string; columns?: string; inColumn?: string; inValues?: string[] }) {
+  const userClient = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+  const { error: signInErr } = await userClient.auth.signInWithPassword({ email: opts.email, password: opts.password })
+  if (signInErr) throw signInErr
+  let query = (userClient.from(opts.table as never) as any).select(opts.columns ?? '*')
+  if (opts.inColumn) query = query.in(opts.inColumn, opts.inValues ?? [])
+  const { data, error } = await query
+  return { rows: (data as unknown[] | null) ?? [], error: error ? error.message : null }
+}
+
+/** An RPC as a signed-in staff member, with the browser's own key. */
+async function rpcAsStaff(opts: { email: string; password: string; fn: string; args?: Record<string, unknown> }) {
+  const userClient = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+  const { error: signInErr } = await userClient.auth.signInWithPassword({ email: opts.email, password: opts.password })
+  if (signInErr) throw signInErr
+  const { data, error } = await (userClient.rpc as any)(opts.fn, opts.args ?? {})
+  return { data: data ?? null, error: error ? error.message : null }
+}
+
+/** Seeds rows into any table with the service role, returning them. */
+async function insertRows(opts: { table: string; rows: Record<string, unknown>[] }) {
+  return unwrap(await (admin.from(opts.table as never) as any).insert(opts.rows).select('*')) as Record<string, unknown>[]
+}
+
+/** Sets columns on the rows matching `match`, with the service role. */
+async function updateRows(opts: { table: string; values: Record<string, unknown>; match: Record<string, unknown> }) {
+  assertOk(await (admin.from(opts.table as never) as any).update(opts.values).match(opts.match))
+  return null
+}
+
+/**
  * Any insert or update on a settings table, as a signed-in staff member with
  * the browser's own key -- what the policy allows, whatever the page shows.
  * Returns how many rows the database actually changed: an update RLS refuses
@@ -3940,6 +3976,10 @@ export const dbTasks = {
   'db:rolePermissions': rolePermissions,
   'db:writeAsStaff': writeAsStaff,
   'db:settingsWriteAsStaff': settingsWriteAsStaff,
+  'db:selectAsStaff': selectAsStaff,
+  'db:rpcAsStaff': rpcAsStaff,
+  'db:insertRows': insertRows,
+  'db:updateRows': updateRows,
   'db:practiceHubStubLastKey': practiceHubStubLastKeyOf,
   'db:practiceHubKeyColumn': practiceHubKeyColumnOf,
   'db:roleByName': roleByName,

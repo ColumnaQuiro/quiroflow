@@ -6549,6 +6549,25 @@ export type Database = {
         Returns: number
       }
       patient_family_members: { Args: { p_patient_id: string }; Returns: string[] }
+      patient_visit_facts: {
+        Args: never
+        Returns: { patient_id: string; last_appointment_at: string | null; last_no_show_at: string | null; has_future_appointment: boolean }[]
+      }
+      care_plan_visit_facts: {
+        Args: never
+        Returns: { patient_id: string; care_plan_id: string; last_completed_at: string | null; completed_in_plan: number; has_future_appointment: boolean }[]
+      }
+      waitlist_waiting_in_clinic: {
+        Args: { p_clinic_id: string }
+        Returns: {
+          id: string
+          created_at: string
+          appointment_type_id: string | null
+          practitioner_id: string | null
+          appointment_type_name: string | null
+          practitioner_name: string | null
+        }[]
+      }
       permission_scope: {
         Args: { perm_key: string; target_account_id: string }
         Returns: string

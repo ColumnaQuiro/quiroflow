@@ -2,6 +2,7 @@ import { invoiceDueCents, settleInvoiceIfCovered } from '../utils/settleInvoice'
 import { bonoVisitChargeStatus } from '../utils/bonoVisitCharge'
 import { bonoSessionDescription } from '../utils/billingDescriptions'
 import { bonoPerSessionCents, creditExceedsLedger, isVisitUpcoming, lineItemsTotalCents, planInvoiceUnderBono } from '../utils/visitCharging'
+import { completeVisit } from '../utils/completeVisit'
 
 // Charging one visit: raising its invoice, adding and removing lines, drawing
 // it from a bono, and taking payment for it -- with the factura, the credit
@@ -526,9 +527,11 @@ export function useVisitCharging(ctx: VisitChargingContext) {
     // Completing the visit is unchanged -- it happened, whatever paid for it.
     // No 'invoice.paid' event and no auto-send: with the visit covered by the
     // bono there is either no invoice at all, or one still open for the extras.
-    await supabase.from('appointments').update({ status: 'completed' }).eq('id', appointmentId())
+    // 'appointment.completed' fires only if this is what completed it: the
+    // app's "Finish visit" may have done so already (utils/completeVisit).
+    const { completedNow } = await completeVisit(supabase, appointmentId())
     ctx.onCompleted?.()
-    fire('appointment.completed', { patientId: patientId(), appointmentId: appointmentId() })
+    if (completedNow) fire('appointment.completed', { patientId: patientId(), appointmentId: appointmentId() })
 
     saving.value = false
     await loadInvoice()
@@ -598,10 +601,12 @@ export function useVisitCharging(ctx: VisitChargingContext) {
       // Recording full payment implies the visit happened -- mirrors PracticeHub's
       // "Process" button, which finalizes the invoice and completes the visit
       // in one action rather than requiring a separate status change.
-      await supabase.from('appointments').update({ status: 'completed' }).eq('id', appointmentId())
+      // Paying a visit that was already finished does not complete it again,
+      // so 'appointment.completed' is not fired a second time.
+      const { completedNow } = await completeVisit(supabase, appointmentId())
       ctx.onCompleted?.()
       fire('invoice.paid', { patientId: patientId(), appointmentId: appointmentId(), invoiceId: invoice.value.id })
-      fire('appointment.completed', { patientId: patientId(), appointmentId: appointmentId() })
+      if (completedNow) fire('appointment.completed', { patientId: patientId(), appointmentId: appointmentId() })
 
       const { data: patient } = await supabase.from('patients').select('invoice_email_enabled, email').eq('id', patientId()).maybeSingle()
       if (patient?.invoice_email_enabled && patient.email) {

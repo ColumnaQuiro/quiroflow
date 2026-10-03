@@ -29,6 +29,12 @@ export interface DocField {
   // a hardcoded allowlist -- it runs unauthenticated by public token, so it
   // can never resolve a column name from client input, only match against
   // one of these known keys). Keep the two lists in sync by hand.
+  //
+  // Only the STORED document's link counts: the public link sends answers,
+  // and since 20261003134945 the function keeps the stored blocks (labels,
+  // types, this link) and takes nothing but each block's `value` from the
+  // caller. An email answer only fills a blank patients.email, never
+  // replaces one.
   patientField?: string
   // 'drawable_image' only: the object key in the public `doc-images` bucket
   // holding the diagram drawn on. A path rather than a URL, matching

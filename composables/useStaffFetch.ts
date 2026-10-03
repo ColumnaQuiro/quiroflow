@@ -21,8 +21,18 @@
 // supabase.auth.getSession() both had a valid, current one). getSession()
 // forces the SDK to check/refresh before returning, so this can't go stale
 // in either direction. Same pattern mobile's useAuthedFetch already uses.
+//
+// In the staff app the URL is also made absolute against `apiBase`, as
+// useAuthedFetch does: the app is a static bundle with no server behind its
+// own origin, so a relative '/api/...' went nowhere. That is what every
+// automation fired from the app's visit screen did -- useAutomations calls
+// this, and the comment there records that mobile was the reason it does, but
+// the request never left the device. The web app has no apiBase, so its URLs
+// stay relative and nothing changes there.
 export async function useStaffFetch<T = unknown>(url: string, opts: Record<string, any> = {}): Promise<T> {
   const supabase = useSupabaseClient()
+  const apiBase = (useRuntimeConfig().public as { apiBase?: string }).apiBase ?? ''
+  if (apiBase && !/^https?:\/\//.test(url)) url = `${apiBase}${url}`
   const { data } = await supabase.auth.getSession()
   const headers = { ...(opts.headers as Record<string, string> | undefined) }
   if (data.session?.access_token) headers.Authorization = `Bearer ${data.session.access_token}`

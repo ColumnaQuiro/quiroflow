@@ -186,6 +186,7 @@ const {
   loadingInvoice,
   appointmentIsUpcoming,
   packageCoverage,
+  otherReceipts,
   saving,
   error,
   paidCents,
@@ -747,6 +748,10 @@ watch(
                 {{ p.package_name }} ({{ t(`${p.sessions_total - p.sessions_used} left`, `quedan ${p.sessions_total - p.sessions_used}`) }})
               </button>
             </div>
+            <p v-if="otherReceipts.length > 0" class="mt-2 border-t border-line-divider pt-2 text-[12px] text-ink-muted2">
+              {{ t('Also on this visit:', 'También en esta visita:') }}
+              {{ otherReceipts.map((r) => `${r.invoice_number} (${euros(r.total_cents)}, ${r.status === 'paid' ? t('paid', 'pagado') : t('unpaid', 'sin pagar')})`).join(', ') }}
+            </p>
           </template>
           <p v-if="error" class="mt-2 text-[12.5px] text-danger-text">{{ error }}</p>
         </div>

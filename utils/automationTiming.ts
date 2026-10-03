@@ -1,4 +1,4 @@
-import { DEFAULT_CLINIC_TIMEZONE, startOfLocalDate } from './clinicClock'
+import { DEFAULT_CLINIC_TIMEZONE, wallClockToUtc } from './clinicClock'
 
 // When an automation may act: a rule's quiet hours ("only send between 10:00
 // and 20:00, Monday to Saturday") and a segment rule's schedule ("every Monday
@@ -65,9 +65,17 @@ function addDays(date: string, days: number) {
 
 const isoWeekday = (day: number) => (day === 0 ? 7 : day)
 
-/** The instant `minutes` past local midnight on `date`, at the clinic. */
+/**
+ * The instant the clinic's clock reads `minutes` past midnight on `date`.
+ *
+ * A wall-clock time, not "local midnight plus `minutes`": on the two days a
+ * year the clocks change the day is 23 or 25 hours long, and midnight plus ten
+ * hours was 09:00 on 25 Oct 2026 and 11:00 on 29 Mar 2026. A time the clock
+ * skips (02:30 on the spring change) lands just after the jump, at 03:30.
+ */
 function atLocal(date: string, minutes: number, timeZone: string): Date {
-  return new Date(startOfLocalDate(date, timeZone || DEFAULT_CLINIC_TIMEZONE).getTime() + minutes * 60_000)
+  const hhmm = `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
+  return new Date(wallClockToUtc(date, hhmm, timeZone || DEFAULT_CLINIC_TIMEZONE))
 }
 
 export function isValidQuietHours(quiet: unknown): quiet is QuietHours {

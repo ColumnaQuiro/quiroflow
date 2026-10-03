@@ -61,6 +61,14 @@ interface WaitingEntry {
   appointment_types: { name: string } | null
   team_members: { full_name: string } | null
 }
+interface WaitingRow {
+  id: string
+  created_at: string
+  appointment_type_id: string | null
+  practitioner_id: string | null
+  appointment_type_name: string | null
+  practitioner_name: string | null
+}
 const matches = ref<WaitingEntry[]>([])
 
 const fee = ref<'none' | 'balance' | 'card'>('none')
@@ -74,30 +82,43 @@ onMounted(async () => {
     // Which card, if any. Only shown to staff who may see it (billing_config);
     // anyone else simply gets no card option.
     useStaffFetch<{ card: { brand: string; last4: string } | null }>('/api/stripe/card-details', { method: 'POST', body: { patientId: props.appointment.patient_id } }).catch(() => ({ card: null })),
-    supabase
-      .from('waitlist_entries')
-      // Named foreign keys: waitlist_entries points at appointment_types and
-      // team_members twice each (the preference and the offer, plus
-      // created_by), and an unnamed embed is ambiguous -- PostgREST refuses
-      // the whole query and the list reads as empty.
-      .select(
-        'id, created_at, appointment_type_id, practitioner_id, patients(first_name, last_name), appointment_types!waitlist_entries_appointment_type_id_fkey(name), team_members!waitlist_entries_practitioner_id_fkey(full_name)',
-      )
-      .eq('clinic_id', store.currentClinicId!)
-      .eq('status', 'waiting')
-      .order('created_at', { ascending: true }),
+    // The whole clinic's waitlist, oldest first, without who is on it: a
+    // practitioner who sees only their own patients cannot read other
+    // patients' waitlist rows, but the slot goes to whoever is first in line
+    // all the same, so the match has to be made against everyone.
+    supabase.rpc('waitlist_waiting_in_clinic', { p_clinic_id: store.currentClinicId! }),
   ])
   feeCents.value = account?.cancellation_fee_cents ?? 0
   card.value = cardRes?.card ?? null
   // The same rule, in the same order, as offerNextWaitlistEntry -- so the
   // person named here is the person the server will offer it to.
   const slot = { appointmentTypeId: props.appointment.appointment_type_id, practitionerId: props.appointment.practitioner_id }
-  matches.value = ((waiting as unknown as WaitingEntry[]) ?? []).filter((w) => waitlistEntryMatches(w, slot))
+  const fitting = ((waiting as WaitingRow[] | null) ?? []).filter((w) => waitlistEntryMatches(w, slot))
+  // Names only for the patients this person may see; anyone else is shown
+  // as "someone on the waitlist".
+  const ids = fitting.slice(0, 3).map((w) => w.id)
+  const { data: named } = ids.length
+    ? await supabase.from('waitlist_entries').select('id, patients(first_name, last_name)').in('id', ids)
+    : { data: [] }
+  const nameById = new Map(((named as unknown as { id: string; patients: WaitingEntry['patients'] }[] | null) ?? []).map((n) => [n.id, n.patients]))
+  matches.value = fitting.map((w) => ({
+    id: w.id,
+    created_at: w.created_at,
+    appointment_type_id: w.appointment_type_id,
+    practitioner_id: w.practitioner_id,
+    patients: nameById.get(w.id) ?? null,
+    appointment_types: w.appointment_type_name ? { name: w.appointment_type_name } : null,
+    team_members: w.practitioner_name ? { full_name: w.practitioner_name } : null,
+  }))
   offer.value = matches.value.length > 0 && !!deadline
   loading.value = false
 })
 
 const nameOf = (p: { first_name: string; last_name: string | null } | null) => `${p?.first_name ?? ''} ${p?.last_name ?? ''}`.trim()
+// A waitlist entry whose patient this person cannot see still holds its place
+// in the queue; it is just not named.
+const waitingName = (p: WaitingEntry['patients']) => nameOf(p) || t('someone on the waitlist', 'alguien de la lista de espera')
+const waitingFirstName = (p: WaitingEntry['patients']) => p?.first_name || t('someone on the waitlist', 'alguien de la lista de espera')
 const firstMatch = computed(() => matches.value[0] ?? null)
 const secondMatch = computed(() => matches.value[1] ?? null)
 const feeText = computed(() => formatEur(feeCents.value))
@@ -129,7 +150,7 @@ const cta = computed(() => {
   return parts.join(' · ')
 })
 const summary = computed(() => {
-  const first = firstMatch.value ? nameOf(firstMatch.value.patients).split(' ')[0] : ''
+  const first = firstMatch.value ? waitingFirstName(firstMatch.value.patients) : ''
   const feePart =
     feeCents.value > 0 && fee.value === 'balance'
       ? t(`, their balance goes up by ${feeText.value}`, `, su saldo pasa a deber ${feeText.value}`)
@@ -168,7 +189,7 @@ async function confirmCancel() {
   // Only when asked: leaving the slot free is a real choice now.
   if (offer.value) {
     const res = await useStaffFetch<{ offered: boolean }>('/api/waitlist/offer-next', { method: 'POST', body: { appointmentId: props.appointment.id } }).catch(() => ({ offered: false }))
-    if (res.offered && firstMatch.value) showToast(t(`Slot offered to ${nameOf(firstMatch.value.patients)}`, `Hueco ofrecido a ${nameOf(firstMatch.value.patients)}`))
+    if (res.offered && firstMatch.value) showToast(t(`Slot offered to ${waitingName(firstMatch.value.patients)}`, `Hueco ofrecido a ${waitingName(firstMatch.value.patients)}`))
   }
   busy.value = false
   emit('done')
@@ -235,7 +256,7 @@ async function confirmCancel() {
             <div v-for="(w, i) in matches.slice(0, 3)" :key="w.id" class="flex items-center gap-3 border-t border-line-divider px-3.5 py-2.5 first:border-t-0" data-cy="cancel-waitlist-entry">
               <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-chip-bg text-[12px] font-bold text-ink-500">{{ i + 1 }}</span>
               <div class="flex min-w-0 flex-1 flex-col">
-                <span class="truncate text-[13.5px] font-semibold text-ink-900">{{ nameOf(w.patients) }}</span>
+                <span class="truncate text-[13.5px] font-semibold text-ink-900">{{ waitingName(w.patients) }}</span>
                 <span class="truncate text-[12px] text-ink-muted">
                   {{ w.appointment_types?.name ?? t('Any type', 'Cualquier tipo') }} · {{ w.team_members?.full_name ?? t('any practitioner', 'cualquier profesional') }} · {{ t(`waiting since ${formatWeekdayDate(w.created_at)}`, `espera desde ${formatWeekdayDate(w.created_at)}`) }}
                 </span>
@@ -253,10 +274,10 @@ async function confirmCancel() {
             >
               <input v-model="offer" type="radio" name="slot" :value="true" :disabled="!deadline" class="mt-1 accent-brand" />
               <span class="flex flex-col gap-0.5">
-                <span class="text-[14px] font-semibold text-ink-900">{{ t(`Offer it to ${nameOf(firstMatch.patients)} by WhatsApp`, `Ofrecérselo a ${nameOf(firstMatch.patients)} por WhatsApp`) }}</span>
+                <span class="text-[14px] font-semibold text-ink-900">{{ t(`Offer it to ${waitingName(firstMatch.patients)} by WhatsApp`, `Ofrecérselo a ${waitingName(firstMatch.patients)} por WhatsApp`) }}</span>
                 <span v-if="deadline" class="text-[12.5px] text-ink-muted" data-cy="cancel-offer-deadline">
                   {{ t(`They have until ${formatTime(deadline)} to accept (20 min before the visit at the latest).`, `Tiene hasta las ${formatTime(deadline)} para aceptar (como tarde 20 min antes de la cita).`) }}
-                  <template v-if="secondMatch">{{ t(` If not, it goes to ${nameOf(secondMatch.patients).split(' ')[0]}.`, ` Si no, pasa a ${nameOf(secondMatch.patients).split(' ')[0]}.`) }}</template>
+                  <template v-if="secondMatch">{{ t(` If not, it goes to ${waitingFirstName(secondMatch.patients)}.`, ` Si no, pasa a ${waitingFirstName(secondMatch.patients)}.`) }}</template>
                 </span>
                 <span v-else class="text-[12.5px] text-ink-muted">{{ t('It starts too soon for anyone to take it.', 'Empieza demasiado pronto para que alguien lo aproveche.') }}</span>
               </span>

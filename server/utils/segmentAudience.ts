@@ -43,7 +43,15 @@ export interface SegmentAudience {
 export async function segmentAudience(service: any, accountId: string, filters: AutomationFilters | null | undefined, isMarketing: boolean): Promise<SegmentAudience> {
   const f = filters ?? {}
   const patients = await allRows<PatientRow>((from, to) =>
-    service.from('patients').select('id, clinic_id, tags, is_minor, do_not_contact, marketing_channels').eq('account_id', accountId).order('id').range(from, to),
+    // Archived patients are not an audience: archiving says it stops
+    // reminders. enrolDueSegments leaves them out the same way.
+    service
+      .from('patients')
+      .select('id, clinic_id, tags, is_minor, do_not_contact, marketing_channels')
+      .eq('account_id', accountId)
+      .neq('status', 'inactive')
+      .order('id')
+      .range(from, to),
   )
   // The enrolment's own gate: nobody who cannot be contacted, and for a
   // marketing rule nobody with no marketing channel at all.

@@ -1429,6 +1429,7 @@ export type Database = {
           appointment_id: string | null
           attempts: number
           branch_taken: string | null
+          claimed_until: string | null
           context: Json
           current_action_id: string | null
           id: string
@@ -1450,6 +1451,7 @@ export type Database = {
           appointment_id?: string | null
           attempts?: number
           branch_taken?: string | null
+          claimed_until?: string | null
           context?: Json
           current_action_id?: string | null
           id?: string
@@ -1471,6 +1473,7 @@ export type Database = {
           appointment_id?: string | null
           attempts?: number
           branch_taken?: string | null
+          claimed_until?: string | null
           context?: Json
           current_action_id?: string | null
           id?: string
@@ -6410,7 +6413,7 @@ export type Database = {
       inbox_growth_account_ids: { Args: never; Returns: string[] }
       patient_list_visit_summary: {
         Args: { p_patient_ids: string[] }
-        Returns: { patient_id: string; last_visit_at: string | null; completed_count: number; next_visit_at: string | null }[]
+        Returns: { patient_id: string; last_visit_at: string | null; completed_count: number; next_visit_at: string | null; completed_in_plan: number }[]
       }
       team_two_factor_status: {
         Args: { p_account_id: string }
@@ -6455,6 +6458,22 @@ export type Database = {
       factura_submission_ready_at: { Args: { p_account_id: string }; Returns: string }
       sif_indicador_multiples_ot: { Args: Record<string, never>; Returns: string }
       next_factura_number: { Args: { p_account_id: string; p_series?: string }; Returns: string }
+      issue_factura: {
+        Args: {
+          p_account_id: string
+          p_patient_id: string
+          p_payment_id: string | null
+          p_kind: string
+          p_description: string
+          p_amount_cents: number
+          p_tax_base_cents: number
+          p_tax_rate_bp: number
+          p_tax_amount_cents: number
+          p_tax_exemption_code?: string | null
+          p_rectifies_factura_id?: string | null
+        }
+        Returns: { id: string; number: string }[]
+      }
       verifactu_fee_locations: { Args: { p_account_id: string; p_at?: string }; Returns: number }
       verifactu_fee_out_of_sync: {
         Args: { p_limit?: number }
@@ -6530,6 +6549,25 @@ export type Database = {
         Returns: number
       }
       patient_family_members: { Args: { p_patient_id: string }; Returns: string[] }
+      patient_visit_facts: {
+        Args: never
+        Returns: { patient_id: string; last_appointment_at: string | null; last_no_show_at: string | null; has_future_appointment: boolean }[]
+      }
+      care_plan_visit_facts: {
+        Args: never
+        Returns: { patient_id: string; care_plan_id: string; last_completed_at: string | null; completed_in_plan: number; has_future_appointment: boolean }[]
+      }
+      waitlist_waiting_in_clinic: {
+        Args: { p_clinic_id: string }
+        Returns: {
+          id: string
+          created_at: string
+          appointment_type_id: string | null
+          practitioner_id: string | null
+          appointment_type_name: string | null
+          practitioner_name: string | null
+        }[]
+      }
       permission_scope: {
         Args: { perm_key: string; target_account_id: string }
         Returns: string

@@ -1,5 +1,6 @@
 import { PDFDocument, PDFName } from 'pdf-lib'
 import sharp from 'sharp'
+import { flattenPdfAnnotations } from './flattenPdfAnnotations'
 
 // Quality 90 is a deliberate middle ground, not a guess: verified against a
 // synthetic photographic test image (photo-realistic noise, not flat color
@@ -72,8 +73,7 @@ function declaredComponents(doc: PDFDocument, dict: any): 1 | 3 | null {
 // (indexed/PNG-style FlateDecode, JBIG2 scans, etc.) are left alone rather
 // than guessed at; a skipped image just means this particular PDF doesn't
 // shrink as much, never a corrupted one.
-async function compressPdfBuffer(buffer: Buffer): Promise<CompressResult> {
-  const doc = await PDFDocument.load(buffer, { updateMetadata: false })
+async function recompressPdfImages(doc: PDFDocument): Promise<boolean> {
   let touchedAny = false
 
   for (const page of doc.getPages()) {
@@ -112,9 +112,23 @@ async function compressPdfBuffer(buffer: Buffer): Promise<CompressResult> {
     }
   }
 
-  if (!touchedAny) return { buffer, changed: false }
+  return touchedAny
+}
+
+// Every PDF has its annotations painted into the page (flattenPdfAnnotations:
+// a Preview-filled report otherwise opens blank on a phone), whatever its
+// size, and kept even when that makes it larger -- the point is what it
+// shows. Its images are recompressed only past MIN_SIZE_BYTES, and that alone
+// is kept only when it made the file smaller.
+async function processPdfBuffer(buffer: Buffer): Promise<CompressResult> {
+  const doc = await PDFDocument.load(buffer, { updateMetadata: false })
+  const flattened = flattenPdfAnnotations(doc) > 0
+  const recompressed = buffer.length >= MIN_SIZE_BYTES && (await recompressPdfImages(doc))
+  if (!flattened && !recompressed) return { buffer, changed: false }
+
   const out = Buffer.from(await doc.save({ useObjectStreams: false }))
-  return out.length < buffer.length ? { buffer: out, changed: true } : { buffer, changed: false }
+  if (flattened || out.length < buffer.length) return { buffer: out, changed: true }
+  return { buffer, changed: false }
 }
 
 // Returns the original buffer unchanged (changed: false) for anything not
@@ -123,10 +137,9 @@ async function compressPdfBuffer(buffer: Buffer): Promise<CompressResult> {
 // unrecognized/unprocessable file; callers should treat that the same as
 // "nothing to do here".
 export async function compressPatientFile(buffer: Buffer, mimeType: string | null): Promise<CompressResult> {
-  if (buffer.length < MIN_SIZE_BYTES) return { buffer, changed: false }
-
   try {
-    if (mimeType === 'application/pdf') return await compressPdfBuffer(buffer)
+    if (mimeType === 'application/pdf') return await processPdfBuffer(buffer)
+    if (buffer.length < MIN_SIZE_BYTES) return { buffer, changed: false }
     if (mimeType === 'image/jpeg' || mimeType === 'image/png' || mimeType === 'image/webp') return await compressImageBuffer(buffer, mimeType)
   } catch {
     // Same reasoning as above: a file this couldn't process is left

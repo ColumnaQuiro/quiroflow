@@ -7,6 +7,8 @@ interface Message {
   phone_number: string | null
   /** Who the conversation is with when there is no phone -- an Instagram IGSID. */
   external_contact_id: string | null
+  /** Set on a lead's message (somebody not yet a patient). */
+  lead_id: string | null
   direction: string
   status: string
   body_preview: string | null
@@ -25,6 +27,8 @@ interface Conversation {
   phoneNumber: string | null
   /** Set instead of phoneNumber on a channel that has no phone, e.g. Instagram. */
   externalContactId: string | null
+  /** A lead's own thread (Growth accounts only), keyed lead:<id>. */
+  leadId: string | null
   name: string
   channel: string
   lastMessage: Message
@@ -114,12 +118,27 @@ async function loadArchivesAndLabels() {
 }
 onMounted(loadArchivesAndLabels)
 
+// Whether a lead's messages are a thread of their own, as the web Inbox draws
+// them for an account with Growth, or a conversation with their number, as
+// they are without it. Decided by the database's own answer
+// (inbox_growth_account_ids, the SQL twin of requireGrowth), which is also
+// what the web Inbox list and badge go by. The app used to file every lead's
+// messages under their number regardless, so a Growth clinic saw them in two
+// shapes on two devices -- read on one, unread on the other -- and a lead's
+// push notification, which names lead:<id>, opened nothing.
+const leadThreadsAreSeparate = ref(false)
+const leadNames = ref<Record<string, string>>({})
+async function loadGrowth() {
+  const { data } = await supabase.rpc('inbox_growth_account_ids')
+  leadThreadsAreSeparate.value = ((data ?? []) as string[]).includes(props.accountId)
+}
+
 async function load(opts: { silent?: boolean } = {}) {
   if (!opts.silent) loading.value = true
   const [{ data: waData }, { data: appData }] = await Promise.all([
     supabase
       .from('whatsapp_messages')
-      .select('id, patient_id, phone_number, external_contact_id, direction, status, body_preview, template_name, media_type, media_storage_path, media_mime_type, media_filename, channel, created_at')
+      .select('id, patient_id, phone_number, external_contact_id, lead_id, direction, status, body_preview, template_name, media_type, media_storage_path, media_mime_type, media_filename, channel, created_at')
       .order('created_at', { ascending: false })
       .limit(500),
     supabase.from('patient_app_messages').select('id, patient_id, direction, body, created_at').order('created_at', { ascending: false }).limit(500),
@@ -129,6 +148,7 @@ async function load(opts: { silent?: boolean } = {}) {
     patient_id: m.patient_id,
     phone_number: null,
     external_contact_id: null,
+    lead_id: null,
     direction: m.direction,
     status: 'sent',
     body_preview: m.body,
@@ -149,22 +169,37 @@ async function load(opts: { silent?: boolean } = {}) {
     for (const p of patients ?? []) names[p.id] = `${p.first_name} ${p.last_name ?? ''}`.trim()
     patientNames.value = names
   }
+  const leadIds = [...new Set(messages.value.filter((m) => m.lead_id && !m.patient_id).map((m) => m.lead_id!))]
+  if (leadThreadsAreSeparate.value && leadIds.length > 0) {
+    const { data: leads } = await supabase.from('leads').select('id, full_name').in('id', leadIds)
+    const names: Record<string, string> = {}
+    for (const l of leads ?? []) if (l.full_name) names[l.id] = l.full_name
+    leadNames.value = names
+  }
   if (!opts.silent) loading.value = false
 }
-onMounted(() => load())
+onMounted(async () => {
+  await loadGrowth()
+  await load()
+})
 
 const allMessages = computed(() =>
   mergePendingIntoThread(messages.value, pendingMessages.value, keptKeys.value).sort((a, b) => b.created_at.localeCompare(a.created_at)),
 )
 
 // The conversation a message belongs to, keyed exactly as the web Inbox and
-// inbox_conversations key it (patient, else phone, else Instagram id) -- the
-// read, archive and label rows are shared with the web by this key, so it
-// has to be the same one. Instagram has no phone, so keying on the phone
-// alone put every DM from every Instagram account into a single "Unknown"
-// thread, whose replies then had nobody to go to.
-function keyOf(m: Pick<Message, 'patient_id' | 'phone_number' | 'external_contact_id'>) {
-  return m.patient_id ?? m.phone_number ?? m.external_contact_id ?? 'unknown'
+// inbox_conversations key it (a Growth account's lead, else patient, else
+// phone, else Instagram id) -- the read, archive and label rows are shared
+// with the web by this key, so it has to be the same one. Instagram has no
+// phone, so keying on the phone alone put every DM from every Instagram
+// account into a single "Unknown" thread, whose replies then had nobody to
+// go to.
+function keyOf(m: Pick<Message, 'patient_id' | 'phone_number' | 'external_contact_id' | 'lead_id'>) {
+  return inboxConversationKey(m, leadThreadsAreSeparate.value)
+}
+/** The newest message a conversation already had, so a pending bubble is only matched to a row newer than it. */
+function newestInThread(key: string): string | null {
+  return messages.value.find((m) => keyOf(m) === key)?.created_at ?? null
 }
 
 const conversations = computed<Conversation[]>(() => {
@@ -180,14 +215,19 @@ const conversations = computed<Conversation[]>(() => {
     list.push({
       key,
       patientId: last.patient_id,
-      phoneNumber: last.phone_number,
+      phoneNumber: last.phone_number ?? msgs.find((m) => m.phone_number)?.phone_number ?? null,
       // The IGSID, which is who an Instagram reply is addressed to. It was
       // read when sending but never selected, so every Instagram thread
       // carried undefined and the reply could not be addressed at all. From
       // any message in the thread, not only the newest: that may be an
       // in-app message or this device's own pending bubble.
       externalContactId: msgs.find((m) => m.external_contact_id)?.external_contact_id ?? null,
-      name: (last.patient_id && patientNames.value[last.patient_id]) || last.phone_number || (last.external_contact_id ? t('Instagram user', 'Usuario de Instagram') : t('Unknown', 'Desconocido')),
+      leadId: leadIdOfKey(key),
+      name:
+        (last.patient_id && patientNames.value[last.patient_id]) ||
+        (leadIdOfKey(key) && leadNames.value[leadIdOfKey(key)!]) ||
+        msgs.find((m) => m.phone_number)?.phone_number ||
+        (last.external_contact_id ? t('Instagram user', 'Usuario de Instagram') : t('Unknown', 'Desconocido')),
       channel: last.channel,
       lastMessage: last,
       unread: last.direction === 'inbound' && (!readTimestamps.value[key] || readTimestamps.value[key] < last.created_at),
@@ -266,6 +306,7 @@ async function prepareDraftConversation(patientId: string) {
     patientId,
     phoneNumber: null,
     externalContactId: null,
+    leadId: null,
     name: `${data.first_name} ${data.last_name ?? ''}`.trim(),
     channel: 'whatsapp',
     // Never listed, so never read as a preview; present only because a
@@ -275,6 +316,7 @@ async function prepareDraftConversation(patientId: string) {
       patient_id: patientId,
       phone_number: null,
       external_contact_id: null,
+      lead_id: null,
       direction: 'outbound',
       status: 'sent',
       body_preview: null,
@@ -307,15 +349,52 @@ watch(selectedKey, (key) => {
 // so it doesn't re-open on the next unrelated visit to this tab.
 watch(
   () => props.openConversationKey,
-  (key) => {
+  async (key) => {
     if (!key) return
+    pendingConversationKey.value = null
+    // A lead's notification names lead:<id>. That is the thread itself for a
+    // Growth account; without Growth the lead's messages are a conversation
+    // with their number, so the key is looked up from their newest message.
+    // Both need to know which it is, which the first load decides.
+    const leadId = leadIdOfKey(key)
+    if (leadId) {
+      await whenLoaded()
+      const resolved = leadThreadsAreSeparate.value ? key : await conversationKeyForLead(leadId)
+      if (!resolved) return
+      selectedKey.value = resolved
+      markRead(resolved)
+      return
+    }
     selectedKey.value = key
     markRead(key)
-    pendingConversationKey.value = null
     prepareDraftConversation(key)
   },
   { immediate: true },
 )
+
+function whenLoaded(): Promise<void> {
+  if (!loading.value) return Promise.resolve()
+  return new Promise((resolve) => {
+    const stop = watch(loading, (l) => {
+      if (l) return
+      stop()
+      resolve()
+    })
+  })
+}
+
+async function conversationKeyForLead(leadId: string): Promise<string | null> {
+  const loaded = messages.value.find((m) => m.lead_id === leadId)
+  if (loaded) return keyOf(loaded)
+  const { data } = await supabase
+    .from('whatsapp_messages')
+    .select('patient_id, phone_number, external_contact_id, lead_id')
+    .eq('lead_id', leadId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  return data ? keyOf(data) : null
+}
 
 async function markRead(key: string) {
   const now = new Date().toISOString()
@@ -616,6 +695,7 @@ async function sendText() {
       patient_id: target.patientId,
       phone_number: target.phoneNumber,
       external_contact_id: target.externalContactId,
+      lead_id: target.leadId,
       direction: 'outbound',
       status: 'pending',
       body_preview: text,
@@ -627,7 +707,7 @@ async function sendText() {
       channel,
       created_at: new Date().toISOString(),
       pending: true,
-      notBefore: newestInConversation(messages.value, target.key),
+      notBefore: newestInThread(target.key),
     },
   ]
   await performTextSend(tempId, text, channel, target)
@@ -686,6 +766,7 @@ async function sendMedia(mediaBase64: string, mediaMimeType: string, mediaFilena
       patient_id: target.patientId,
       phone_number: target.phoneNumber,
       external_contact_id: target.externalContactId,
+      lead_id: target.leadId,
       direction: 'outbound',
       status: 'pending',
       body_preview: null,
@@ -697,7 +778,7 @@ async function sendMedia(mediaBase64: string, mediaMimeType: string, mediaFilena
       channel: replyChannel.value,
       created_at: new Date().toISOString(),
       pending: true,
-      notBefore: newestInConversation(messages.value, target.key),
+      notBefore: newestInThread(target.key),
     },
   ]
   await performMediaSend(tempId, mediaBase64, mediaMimeType, mediaFilename, mediaKind, target)

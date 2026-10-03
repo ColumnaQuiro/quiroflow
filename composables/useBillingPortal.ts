@@ -33,7 +33,10 @@ export function useBillingPortal() {
     loading.value = true
     error.value = ''
     try {
-      const { url } = await $fetch<{ url: string }>('/api/billing/portal-session', { method: 'POST', body: flow ? { flow } : undefined })
+      // useStaffFetch, not $fetch: this composable is auto-imported into the
+      // staff app too, where a relative '/api/...' resolves against the
+      // static bundle's own origin and never reaches the server.
+      const { url } = await useStaffFetch<{ url: string }>('/api/billing/portal-session', { method: 'POST', body: flow ? { flow } : undefined })
       window.location.href = url
     } catch (err: unknown) {
       // statusMessage carries the reason the endpoint actually gave ("Only

@@ -186,3 +186,30 @@ export function phoneMatches(storedNumber: string, storedCountryCode: string, in
   const stored = significantDigits(storedNumber)
   return stored.length === SIGNIFICANT_DIGITS && stored === significantDigits(incomingE164)
 }
+
+/**
+ * A lead's phone as a patient contact number: the local part in `number`, the
+ * country in `countryCode`.
+ *
+ * The two tables hold numbers in different shapes. A lead's phone is
+ * international -- "34611732681", as Meta's lead forms, the WhatsApp webhook
+ * and the public API deliver it, and as inbox-send reads it (with a "+" in
+ * front). A patient's number is local, with the country beside it
+ * ("611732681", "ES"), and every send rebuilds the E.164 with toE164().
+ * Converting a lead copied the international digits across as if they were
+ * local, so the next send added the dial code a second time: Edwin Coloma's
+ * appointment confirmation on 3 Oct 2026 went to 3434611732681, Meta
+ * refused it as undeliverable, and the Inbox opened a second chat for the
+ * number that does not exist.
+ *
+ * Read exactly the way inbox-send reads it, so the patient is messaged at the
+ * same number the lead was. A dial code COUNTRIES does not list keeps its "+"
+ * in `number`, which toE164() and formatPhoneDisplay() both take as-is.
+ */
+export function leadPhoneAsContactNumber(leadPhone: string, defaultCountryCode: string): { countryCode: string; number: string } | null {
+  const digits = whatsappDigits(leadPhone)
+  if (!digits) return null
+  const e164 = toE164Loose(`+${digits}`, defaultCountryCode)
+  if (!e164) return null
+  return splitDialPrefix(`+${e164}`, defaultCountryCode)
+}

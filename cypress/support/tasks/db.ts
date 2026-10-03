@@ -429,18 +429,20 @@ async function recallState(opts: { patientId: string }) {
  * in last-name order, which is `Crowd 000`, `Crowd 001`, ...
  */
 async function seedManyPatients(opts: { accountId: string; clinicId: string; count: number; creditCount?: number }) {
-  const patients = unwrap(
-    await admin
-      .from('patients')
-      .insert(Array.from({ length: opts.count }, (_, i) => ({ account_id: opts.accountId, clinic_id: opts.clinicId, first_name: 'Crowd', last_name: String(i).padStart(3, '0') })))
-      .select('id, last_name'),
-  ) as { id: string; last_name: string }[]
+  // In chunks: one statement inserting a thousand patients (each firing the
+  // patients triggers) can outlast the local statement timeout when the
+  // machine is busy, and the spec then fails before it has tested anything.
+  const CHUNK = 250
+  const rows = Array.from({ length: opts.count }, (_, i) => ({ account_id: opts.accountId, clinic_id: opts.clinicId, first_name: 'Crowd', last_name: String(i).padStart(3, '0') }))
+  const patients: { id: string; last_name: string }[] = []
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    patients.push(...(unwrap(await admin.from('patients').insert(rows.slice(i, i + CHUNK)).select('id, last_name')) as { id: string; last_name: string }[]))
+  }
   patients.sort((a, b) => a.last_name.localeCompare(b.last_name))
-  assertOk(
-    await admin
-      .from('patient_contact_numbers')
-      .insert(patients.map((p, i) => ({ account_id: opts.accountId, patient_id: p.id, number: `6${String(i).padStart(8, '0')}`, country_code: 'ES' }))),
-  )
+  const numbers = patients.map((p, i) => ({ account_id: opts.accountId, patient_id: p.id, number: `6${String(i).padStart(8, '0')}`, country_code: 'ES' }))
+  for (let i = 0; i < numbers.length; i += CHUNK) {
+    assertOk(await admin.from('patient_contact_numbers').insert(numbers.slice(i, i + CHUNK)))
+  }
   if (opts.creditCount) {
     assertOk(
       await admin
@@ -3009,12 +3011,15 @@ async function practiceHubStubLastKeyOf() {
   return practiceHubStubLastKey
 }
 
-async function startPracticeHubStub(opts: { totalEntries?: number; emails?: string[] }) {
+async function startPracticeHubStub(opts: { totalEntries?: number; emails?: string[]; delayMs?: number }) {
   await stopPracticeHubStub()
   const { createServer } = await import('node:http')
   const emails = opts.emails ?? []
-  const server = createServer((req, res) => {
+  const server = createServer(async (req, res) => {
     practiceHubStubLastKey = String(req.headers['x-practicehub-key'] ?? '')
+    // A slow PracticeHub holds a run inside its pre-send check, which is
+    // what widens a race between two processes walking the same run.
+    if (opts.delayMs) await new Promise((resolve) => setTimeout(resolve, opts.delayMs))
     res.setHeader('content-type', 'application/json')
     res.end(
       JSON.stringify({

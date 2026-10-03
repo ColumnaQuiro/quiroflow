@@ -427,4 +427,120 @@ describe('Lead welcome sequences', () => {
       })
     })
   })
+
+  describe('Once per person', () => {
+    afterEach(() => {
+      cy.task('db:stopWebhookReceiver')
+    })
+
+    it('sends the first message once when the tick lands while the lead is still being filed', () => {
+      // The ingest inserts the run due immediately and walks it in the same
+      // request; the tick selects due runs and walks them too. Nothing made
+      // them take turns, so a tick landing in between sent the first message
+      // a second time. A slow PracticeHub holds the inline walk inside its
+      // pre-send check for long enough that the ticks always land there.
+      cy.task<{ baseUrl: string }>('db:startPracticeHubStub', { delayMs: 3000 }).then(({ baseUrl }) => {
+        cy.task('db:setPracticeHubConnection', { accountId: account.accountId, baseUrl })
+      })
+      cy.task<{ url: string }>('db:startWebhookReceiver').then(({ url }) => {
+        cy.task('db:createAutomationRule', {
+          accountId: account.accountId,
+          triggerEvent: 'lead.created',
+          isMarketing: true,
+          actions: [
+            { type: 'webhook', config: { url } },
+            { type: 'delay', config: { delay_minutes: 1440 } },
+            { type: 'webhook', config: { url } },
+          ],
+        })
+        const base = Cypress.config('baseUrl')
+        const tick = (delayMs: number) => ({
+          url: `${base}/api/automations/lead-sequence-cron`,
+          headers: { 'x-cron-secret': Cypress.env('CRON_SECRET') ?? '' },
+          delayMs,
+        })
+        cy.task<{ status: number; body: { data?: { id: string } } }[]>(
+          'auto:concurrentRequests',
+          {
+            requests: [
+              {
+                url: `${base}/api/public/v1/leads`,
+                headers: { Authorization: `Bearer ${token}` },
+                body: { full_name: 'Filed Mid Tick', phone: '+34600900030', email: 'mid.tick@example.com', external_id: 'seq-race', marketing_consent: true },
+              },
+              tick(600),
+              tick(1200),
+              tick(1800),
+            ],
+          },
+          { timeout: 120000 },
+        ).then((responses) => {
+          expect(responses.map((r) => r.status)).to.deep.eq([201, 200, 200, 200])
+          const leadId = responses[0]!.body.data!.id
+          cy.task<string[]>('db:webhookReceiverHits').then((hits) => {
+            expect(hits, 'the first step ran once').to.have.length(1)
+          })
+          cy.task<Run[]>('db:sequenceRuns', { leadId }).then((runs) => {
+            expect(runs).to.have.length(1)
+            expect(runs[0]!.next_position, 'parked at the delay').to.eq(2)
+            cy.task<{ outcome: string; position: number | null }[]>('db:runEvents', { runId: runs[0]!.id }).then((events) => {
+              expect(events.filter((e) => e.position === 0 && e.outcome === 'sent')).to.have.length(1)
+            })
+          })
+        })
+      })
+    })
+
+    it('does not start the drip again when the same person fills in the form twice', () => {
+      // Two submissions are two leads -- each is an enquiry, with its own
+      // answers and attribution -- but one person, who must not receive the
+      // welcome drip twice over.
+      threeStepDrip()
+      ingest({ full_name: 'Filled Twice', phone: '+34600900031', email: 'twice@example.com', external_id: 'seq-twice-1' }).then((first) => {
+        ingest({ full_name: 'Filled Twice', phone: '600 900 031', external_id: 'seq-twice-2' }).then((second) => {
+          expect(second.status).to.eq(201)
+          expect(second.body.data.id, 'kept as its own lead').to.not.eq(first.body.data.id)
+          cy.task<Run[]>('db:sequenceRuns', { leadId: first.body.data.id }).should('have.length', 1)
+          cy.task<Run[]>('db:sequenceRuns', { leadId: second.body.data.id }).should('have.length', 0)
+          cy.task<{ title: string; detail: string | null }[]>('db:leadEvents', { leadId: second.body.data.id }).then((events) => {
+            const note = events.find((e) => e.title === 'Automation not started again')
+            expect(note, 'says why on the timeline').to.not.be.undefined
+            expect(note!.detail).to.contain(first.body.data.reference)
+          })
+        })
+      })
+    })
+
+    it('matches the same person by email when the number differs', () => {
+      threeStepDrip()
+      ingest({ full_name: 'Same Inbox', phone: '+34600900032', email: 'same.inbox@example.com', external_id: 'seq-email-1' }).then(() => {
+        ingest({ full_name: 'Same Inbox', phone: '+34600900033', email: 'Same.Inbox@Example.com', external_id: 'seq-email-2' }).then((second) => {
+          cy.task<Run[]>('db:sequenceRuns', { leadId: second.body.data.id }).should('have.length', 0)
+        })
+      })
+    })
+
+    it('starts it again for somebody whose earlier drip has finished', () => {
+      // Only a drip still in flight blocks a new one. Somebody who went
+      // through it and comes back weeks later is enquiring again.
+      threeStepDrip()
+      ingest({ full_name: 'Came Back', phone: '+34600900034', external_id: 'seq-back-1' }).then((first) => {
+        cy.task('db:makeSequenceDue', { leadId: first.body.data.id })
+        runCron()
+        cy.task<Run[]>('db:sequenceRuns', { leadId: first.body.data.id }).its('0.status').should('eq', 'done')
+        ingest({ full_name: 'Came Back', phone: '+34600900034', external_id: 'seq-back-2' }).then((second) => {
+          cy.task<Run[]>('db:sequenceRuns', { leadId: second.body.data.id }).should('have.length', 1)
+        })
+      })
+    })
+
+    it('does not count a different person with a different number', () => {
+      threeStepDrip()
+      ingest({ full_name: 'First Person', phone: '+34600900035', email: 'first.person@example.com', external_id: 'seq-diff-1' }).then(() => {
+        ingest({ full_name: 'Second Person', phone: '+34600900036', email: 'second.person@example.com', external_id: 'seq-diff-2' }).then((second) => {
+          cy.task<Run[]>('db:sequenceRuns', { leadId: second.body.data.id }).should('have.length', 1)
+        })
+      })
+    })
+  })
 })

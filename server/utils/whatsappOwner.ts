@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
 import { phoneMatches } from '~/utils/phone'
+import { chooseInboundOwner } from '~/utils/inboundOwner'
 
 // Whose WhatsApp number is this? The webhook asks it of every inbound
 // message, and the Inbox's send asks it of every reply addressed by number
@@ -10,8 +11,8 @@ import { phoneMatches } from '~/utils/phone'
 // Returns every patient whose contact number resolves to this phone --
 // plural, not singular: staff testing (or a family sharing one phone
 // across a few real patients) can leave more than one patient record
-// pointing at the same number. Most callers just need any one of
-// them (a message can only be attributed to a single patient_id), but the
+// pointing at the same number. A message can only be attributed to one
+// patient_id, and pickInboundPatientId below chooses which; but the
 // confirm/reschedule/cancel handler needs all of them: it resolves which
 // specific appointment a reply is about across every patient sharing the
 // number (see resolveRepliedAppointment), rather than betting on an
@@ -30,6 +31,50 @@ export async function findPatientIdsByPhone(supabase: SupabaseClient<Database>, 
     }
     if (!data || data.length < PAGE_SIZE) return matches
   }
+}
+
+/**
+ * The one patient an inbound message from `fromNumber` is filed under, out of
+ * every patient findPatientIdsByPhone matched. The rule -- never a minor while
+ * an adult shares the phone, then the most recently active thread on this
+ * number, then a minor's tutor, then the oldest record -- is
+ * chooseInboundOwner's, and documented there.
+ */
+export async function pickInboundPatientId(
+  supabase: SupabaseClient<Database>,
+  accountId: string,
+  fromNumber: string,
+  patientIds: string[],
+): Promise<string | null> {
+  const unique = [...new Set(patientIds)]
+  if (unique.length <= 1) return unique[0] ?? null
+
+  const [{ data: patients }, { data: recent }] = await Promise.all([
+    supabase.from('patients').select('id, is_minor, created_at, tutor_patient_id').in('id', unique),
+    // The newest message per patient on this number. Ordered newest first,
+    // so the first row seen for each patient is their latest.
+    supabase
+      .from('whatsapp_messages')
+      .select('patient_id, created_at')
+      .eq('account_id', accountId)
+      .eq('phone_number', fromNumber)
+      .in('patient_id', unique)
+      .order('created_at', { ascending: false })
+      .limit(200),
+  ])
+  const lastActivity = new Map<string, string>()
+  for (const m of recent ?? []) {
+    if (m.patient_id && !lastActivity.has(m.patient_id)) lastActivity.set(m.patient_id, m.created_at)
+  }
+  return chooseInboundOwner(
+    (patients ?? []).map((p) => ({
+      id: p.id,
+      isMinor: p.is_minor,
+      createdAt: p.created_at,
+      lastActivityAt: lastActivity.get(p.id) ?? null,
+      tutorPatientId: p.tutor_patient_id,
+    })),
+  ) ?? unique[0]!
 }
 
 /**

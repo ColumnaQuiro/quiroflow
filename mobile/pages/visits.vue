@@ -7,6 +7,7 @@ const user = useSupabaseUser()
 watch(user, (u) => { if (!u) navigateTo('/login') }, { immediate: true })
 
 const t = useT()
+const locale = computed(() => t('en-GB', 'es-ES'))
 const { settings } = usePatientAppInfo()
 const { patient, loading: identityLoading } = useIdentity()
 const patientId = computed(() => patient.value?.id ?? '')
@@ -24,16 +25,16 @@ function goReschedule(appointmentId: string) {
 }
 
 function formatWhen(iso: string) {
-  return new Date(iso).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+  return new Date(iso).toLocaleString(locale.value, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 function dayNumber(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, { day: 'numeric' })
+  return new Date(iso).toLocaleDateString(locale.value, { day: 'numeric' })
 }
 function monthShort(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, { month: 'short' })
+  return new Date(iso).toLocaleDateString(locale.value, { month: 'short' }).replace(/\./g, '')
 }
 function timeOnly(iso: string) {
-  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return new Date(iso).toLocaleTimeString(locale.value, { hour: '2-digit', minute: '2-digit' })
 }
 </script>
 

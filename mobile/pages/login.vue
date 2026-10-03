@@ -1,5 +1,7 @@
 <script setup lang="ts">
 const supabase = useSupabaseClient()
+const t = useT()
+const authErrorMessage = useAuthErrorMessage()
 const email = ref('')
 const password = ref('')
 const error = ref('')
@@ -24,7 +26,7 @@ async function onSubmit() {
   })
   loading.value = false
   if (signInError) {
-    error.value = signInError.message
+    error.value = authErrorMessage(signInError)
     return
   }
   // Blur explicitly and give the keyboard-dismiss animation a beat to finish
@@ -41,10 +43,10 @@ async function onSubmit() {
   <div class="flex h-full items-center justify-center bg-surface-page px-6">
     <div class="w-full max-w-sm rounded-card border border-line bg-surface p-8 shadow-card">
       <img src="/logo/quiroflow-mark.svg" alt="" class="h-8 w-8" />
-      <h1 class="mt-4 text-xl font-semibold text-ink-900">Sign in to QuiroFlow</h1>
+      <h1 class="mt-4 text-xl font-semibold text-ink-900">{{ t('Sign in to QuiroFlow', 'Inicia sesión en QuiroFlow') }}</h1>
       <form class="mt-6 space-y-4" @submit.prevent="onSubmit">
         <div>
-          <label class="block text-sm font-medium text-ink-700" for="email">Email</label>
+          <label class="block text-sm font-medium text-ink-700" for="email">{{ t('Email', 'Correo electrónico') }}</label>
           <input
             id="email"
             v-model="email"
@@ -55,7 +57,7 @@ async function onSubmit() {
           />
         </div>
         <div>
-          <label class="block text-sm font-medium text-ink-700" for="password">Password</label>
+          <label class="block text-sm font-medium text-ink-700" for="password">{{ t('Password', 'Contraseña') }}</label>
           <input
             id="password"
             v-model="password"
@@ -67,15 +69,15 @@ async function onSubmit() {
         </div>
         <p v-if="error" class="text-sm text-danger-text">{{ error }}</p>
         <UiBtn type="submit" variant="primary" class="w-full" :disabled="loading">
-          {{ loading ? 'Signing in…' : 'Sign in' }}
+          {{ loading ? t('Signing in…', 'Iniciando sesión…') : t('Sign in', 'Iniciar sesión') }}
         </UiBtn>
       </form>
       <p class="mt-4 text-center text-sm text-ink-muted">
-        New patient?
-        <NuxtLink to="/signup" class="font-medium text-brand hover:text-brand-hover">Create an account</NuxtLink>
+        {{ t('New patient?', '¿Eres paciente nuevo?') }}
+        <NuxtLink to="/signup" class="font-medium text-brand hover:text-brand-hover">{{ t('Create an account', 'Crea una cuenta') }}</NuxtLink>
       </p>
       <button type="button" class="mt-3 block w-full text-center text-sm text-ink-faint hover:text-ink-muted" @click="backToJoin">
-        &larr; Not on the team? Enter a clinic code instead
+        &larr; {{ t('Not on the team? Enter a clinic code instead', '¿No eres del equipo? Introduce un código de clínica') }}
       </button>
     </div>
   </div>

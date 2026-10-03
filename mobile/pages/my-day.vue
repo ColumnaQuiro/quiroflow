@@ -58,7 +58,7 @@ interface BirthdayPatient { id: string; first_name: string; last_name: string | 
 const t = useT()
 const { preference: lang } = useLang()
 const supabase = useSupabaseClient()
-const { context, loading: contextLoading, can, restricted } = usePractitionerContext()
+const { context, loading: contextLoading, can, restricted, ownDiaryOnly } = usePractitionerContext()
 
 const appointments = ref<Appointment[]>([])
 const tasks = ref<Task[]>([])
@@ -81,8 +81,8 @@ const seesMoney = computed(() => can('billing_access') && can('billing_history_v
 const seesRecalls = computed(() => can('recalls_access'))
 // With calendar_scope 'own', RLS shows this person only their own diary, so
 // "nothing booked" means "nothing booked with you" -- a colleague's booking
-// for the same patient is invisible here, as it is on the web calendar.
-const ownDiaryOnly = computed(() => !!context.value && !context.value.isOwner && context.value.permissions.calendar_scope === 'own')
+// for the same patient is invisible here, as it is on the web calendar
+// (ownDiaryOnly).
 
 const timeZone = computed(() => context.value?.timeZone || DEFAULT_CLINIC_TIMEZONE)
 const locale = computed(() => (lang.value === 'es' ? 'es-ES' : 'en-GB'))
@@ -182,7 +182,7 @@ async function load({ silent = false } = {}) {
     settle(t('Visits', 'Visitas'), appointmentsQ),
     settle(t('Tasks', 'Tareas'), tasksQ),
     settle(t('Birthdays', 'Cumpleaños'), birthdaysQ),
-    settle(t('Recalls', 'Recuerdos'), recallsQ),
+    settle(t('Recalls', 'Recordatorios'), recallsQ),
     settle(t('Takings', 'Cobrado'), takingsQ),
   ])
   if (mine !== run) return
@@ -503,7 +503,7 @@ const birthdayNames = computed(() => birthdays.value.map((p) => `${p.first_name}
             <span v-else class="min-w-0 truncate text-right text-[12.5px] text-ink-muted2" data-test="myday-birthdays">{{ birthdayNames || t('None today', 'Ninguno hoy') }}</span>
           </div>
           <div v-if="seesRecalls" class="flex items-center justify-between gap-3 border-t border-line-row py-2">
-            <span class="text-[14px] text-ink-900">{{ t('Recalls due', 'Recuerdos pendientes') }}</span>
+            <span class="text-[14px] text-ink-900">{{ t('Recalls due', 'Recordatorios pendientes') }}</span>
             <UiSkeleton v-if="loading" class="h-3.5 w-16 rounded-ctlSm" />
             <span v-else class="text-[12.5px] text-ink-muted2" data-test="myday-recalls">{{ recallsDue === null ? '—' : t(`${recallsDue} ${recallsDue === 1 ? 'patient' : 'patients'}`, `${recallsDue} ${recallsDue === 1 ? 'paciente' : 'pacientes'}`) }}</span>
           </div>

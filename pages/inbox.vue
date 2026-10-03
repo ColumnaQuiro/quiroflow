@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { normalizeSearchTerm } from '~/utils/searchText'
+import { matchPendingToServer, mergePendingIntoThread, newestInConversation } from '~/utils/inboxPendingMessages'
 import { CHANNEL_LABEL } from '~/composables/useGrowthConversations'
 
 // The Inbox: one row per conversation from the inbox_conversations view
@@ -81,10 +82,21 @@ const { refresh: refreshNavBadges } = useNavBadges()
 // Messages this tab has sent but the server hasn't confirmed into the real
 // table yet -- rendered inline with a clock icon so the composer clears and
 // the message appears immediately (WhatsApp-style) instead of waiting on
-// the round trip. A reload naturally supersedes one once the real row shows
-// up; on failure it's kept and flipped to a failed status instead of
-// vanishing.
-const pendingMessages = ref<Message[]>([])
+// the round trip. Once the real row shows up -- often from the realtime
+// INSERT, before the send has even answered -- it is drawn in the bubble's
+// place under the bubble's key, so the clock just turns into a tick; on
+// failure it's kept and flipped to a failed status instead of vanishing.
+const pendingMessages = ref<(Message & { notBefore: string | null })[]>([])
+
+// The bubble's key passes to the row it became, for good -- dropping the
+// bubble must not change the key the row is drawn under, or it remounts
+// (utils/inboxPendingMessages.ts).
+const keptKeys = ref<Record<string, string>>({})
+function settlePending(tempId: string, server: Message[]) {
+  const rowId = matchPendingToServer(server, pendingMessages.value).get(tempId)
+  if (rowId) keptKeys.value = { ...keptKeys.value, [rowId]: tempId }
+  pendingMessages.value = pendingMessages.value.filter((m) => m.id !== tempId)
+}
 
 const rows = ref<InboxRow[]>([])
 const hasMore = ref(false)
@@ -624,7 +636,7 @@ async function loadThread(c: Conversation | null, opts: { silent?: boolean } = {
 const thread = computed(() => {
   if (!selectedKey.value) return []
   const pending = pendingMessages.value.filter((m) => keyOf(m) === selectedKey.value)
-  return [...threadMessages.value, ...pending]
+  return mergePendingIntoThread(threadMessages.value, pending, keptKeys.value)
 })
 watch(selectedKey, () => loadThread(selected.value))
 
@@ -1002,7 +1014,7 @@ async function performTextSend(tempId: string, text: string, channel: string, ta
     // which is what read as a visible "jump" on the sent tick appearing.
     pendingMessages.value = pendingMessages.value.map((m) => (m.id === tempId ? { ...m, status: 'sent' } : m))
     await Promise.all([loadThread(target, { silent: true }), loadList({ silent: true })])
-    pendingMessages.value = pendingMessages.value.filter((m) => m.id !== tempId)
+    settlePending(tempId, threadMessages.value)
     delete retryPayloads.value[tempId]
   } catch (err: any) {
     sendError.value = err?.data?.statusMessage ?? t('Failed to send', 'Error al enviar')
@@ -1040,6 +1052,7 @@ async function sendText() {
       channel,
       created_at: new Date().toISOString(),
       pending: true,
+      notBefore: newestInConversation(threadMessages.value, target.key),
     },
   ]
   await performTextSend(tempId, text, channel, target)
@@ -1075,7 +1088,7 @@ async function performMediaSend(
     })
     pendingMessages.value = pendingMessages.value.map((m) => (m.id === tempId ? { ...m, status: 'sent' } : m))
     await Promise.all([loadThread(target, { silent: true }), loadList({ silent: true })])
-    pendingMessages.value = pendingMessages.value.filter((m) => m.id !== tempId)
+    settlePending(tempId, threadMessages.value)
     delete retryPayloads.value[tempId]
   } catch (err: any) {
     sendError.value = err?.data?.statusMessage ?? t('Failed to send', 'Error al enviar')
@@ -1109,6 +1122,7 @@ async function sendMedia(mediaBase64: string, mediaMimeType: string, mediaFilena
       channel: replyChannel.value,
       created_at: new Date().toISOString(),
       pending: true,
+      notBefore: newestInConversation(threadMessages.value, target.key),
     },
   ]
   await performMediaSend(tempId, mediaBase64, mediaMimeType, mediaFilename, mediaKind, target)
@@ -1899,7 +1913,7 @@ function avatarInitials(name: string) {
 
         <div class="relative min-h-0 flex-1">
           <div ref="threadScrollEl" class="h-full space-y-3 overflow-y-auto px-4 py-4" @scroll="onThreadScroll">
-          <template v-for="(m, i) in thread" :key="m.id">
+          <template v-for="(m, i) in thread" :key="m.renderKey">
             <div
               v-if="i === 0 || relativeDay(m.created_at) !== relativeDay(thread[i - 1].created_at)"
               class="sticky top-0 z-10 -mx-4 flex justify-center py-1.5"
@@ -1908,6 +1922,7 @@ function avatarInitials(name: string) {
             </div>
             <div class="flex" :class="m.direction === 'outbound' ? 'justify-end' : 'justify-start'">
               <div
+                data-cy="thread-message"
                 class="max-w-[70%] rounded-card px-[8px] py-[6px] shadow-card"
                 :class="[
                   m.direction === 'outbound' ? 'bg-brand text-white' : 'border border-line bg-surface text-ink-900',

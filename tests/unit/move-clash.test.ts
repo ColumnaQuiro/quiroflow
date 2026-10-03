@@ -52,6 +52,18 @@ describe('Move clashes', () => {
     expect(moveClashes(target, [], [block('10:30', '11:00')])).toEqual([])
   })
 
+  // A practitioner who works at two clinics is one person: their own block at
+  // the other clinic keeps them away from this one. A block for the whole of
+  // the other clinic, or for one of its rooms, is that clinic's business.
+  it('counts the practitioner’s own block at another clinic, and nothing else from there', () => {
+    const here = { ...target, clinicId: 'centro' }
+    expect(moveClashes(here, [], [block('10:00', '10:30', { practitioner_id: 'ana', clinic_id: 'norte' })])).toHaveLength(1)
+    expect(moveClashes(here, [], [block('10:00', '10:30', { clinic_id: 'norte' })])).toEqual([])
+    expect(moveClashes(here, [], [block('10:00', '10:30', { room_id: 'sala1', clinic_id: 'norte' })])).toEqual([])
+    expect(moveClashes(here, [], [block('10:00', '10:30', { clinic_id: 'centro' })])).toHaveLength(1)
+    expect(moveClashes(here, [], [block('10:00', '10:30', { room_id: 'sala1', clinic_id: 'centro' })])).toHaveLength(1)
+  })
+
   it('lists everything, earliest first', () => {
     const got = moveClashes({ ...target, endsAt: at('12:00') }, [appt('late', '11:30', '12:00'), appt('early', '10:00', '10:30')], [block('11:00', '11:15')])
     expect(got.map((c) => c.startsAt)).toEqual([at('10:00'), at('11:00'), at('11:30')])

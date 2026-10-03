@@ -17,8 +17,8 @@ interface SlotToOffer {
 
 /**
  * Whether nothing now occupies this slot: no live appointment for its
- * practitioner or in its room, and no blocked time -- the practitioner's own
- * or the whole clinic's. Cancelled and deleted appointments hold no time.
+ * practitioner or in its room, and no blocked time -- the practitioner's own,
+ * at any clinic, or the whole clinic's. Cancelled and deleted appointments hold no time.
  *
  * A slot is offered when it is freed, but the offer then sits for up to two
  * hours, and staff book and block the calendar without any idea it exists.
@@ -45,12 +45,15 @@ export async function waitlistSlotIsFree(
   let blocks = supabase
     .from('availability_blocks')
     .select('id', { count: 'exact', head: true })
-    .eq('clinic_id', slot.clinicId)
+    .eq('account_id', slot.accountId)
     .lt('starts_at', slot.endsAt)
     .gt('ends_at', slot.startsAt)
-  // One naming this practitioner, or one naming nobody, which closes the
-  // clinic for everyone -- as the booking page reads them.
-  blocks = slot.practitionerId ? blocks.or(`practitioner_id.is.null,practitioner_id.eq.${slot.practitionerId}`) : blocks.is('practitioner_id', null)
+  // One naming nobody, which closes this clinic for everyone, or one naming
+  // this practitioner at ANY clinic -- their own blocked time follows them --
+  // as the booking page reads them.
+  blocks = slot.practitionerId
+    ? blocks.or(`and(clinic_id.eq.${slot.clinicId},practitioner_id.is.null),practitioner_id.eq.${slot.practitionerId}`)
+    : blocks.eq('clinic_id', slot.clinicId).is('practitioner_id', null)
 
   const checks = await Promise.all([
     slot.practitionerId ? busy('practitioner_id', slot.practitionerId) : false,

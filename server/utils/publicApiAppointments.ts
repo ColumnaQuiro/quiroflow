@@ -16,6 +16,23 @@ interface WindowInput {
   practitionerId?: string
 }
 
+/**
+ * The practitioner has to work at the clinic the visit is at (Settings ->
+ * Team -> Clinics). GET /availability offers only them, and the booking page
+ * only them; the API booked anybody in the account, so an integration could
+ * put a visit in a diary at a clinic the practitioner never sets foot in.
+ */
+export async function assertPractitionerWorksAt(supabase: unknown, practitionerId: string, clinicId: string) {
+  const { data, error } = await (supabase as any)
+    .from('team_member_clinics')
+    .select('team_member_id')
+    .eq('team_member_id', practitionerId)
+    .eq('clinic_id', clinicId)
+    .maybeSingle()
+  if (error) throw new ApiError('server_error', error.message)
+  if (!data) throw badRequest(`Practitioner "${practitionerId}" does not work at this clinic. GET /availability lists those who do.`, 'practitioner_id')
+}
+
 // An appointment needs a length from somewhere. Callers can be explicit
 // (ends_at) or let the appointment type decide -- and the type's length is
 // per-practitioner where an override exists, which is the same rule the

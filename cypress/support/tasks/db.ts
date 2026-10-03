@@ -1457,11 +1457,19 @@ async function requestConcurrently(opts: { url: string; method: string; headers?
 }
 
 /** Time blocked off on the calendar: the whole clinic, or one practitioner's. */
-async function createAvailabilityBlock(opts: { accountId: string; clinicId: string; startsAt: string; endsAt: string; practitionerId?: string | null }) {
+async function createAvailabilityBlock(opts: { accountId: string; clinicId: string; startsAt: string; endsAt: string; practitionerId?: string | null; roomId?: string | null; note?: string | null }) {
   const row = unwrap(
     await admin
       .from('availability_blocks')
-      .insert({ account_id: opts.accountId, clinic_id: opts.clinicId, starts_at: opts.startsAt, ends_at: opts.endsAt, practitioner_id: opts.practitionerId ?? null })
+      .insert({
+        account_id: opts.accountId,
+        clinic_id: opts.clinicId,
+        starts_at: opts.startsAt,
+        ends_at: opts.endsAt,
+        practitioner_id: opts.practitionerId ?? null,
+        room_id: opts.roomId ?? null,
+        note: opts.note ?? null,
+      })
       .select('id')
       .single(),
   )

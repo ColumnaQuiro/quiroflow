@@ -285,6 +285,31 @@ describe('Settings > Team', () => {
     })
   })
 
+  // The switch stayed on a departed member's page, and ticking it put
+  // somebody who would never turn up back on the booking page's list.
+  it('offers no "Bookable online" switch for somebody who has left', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.setExtraProfessionals(account.accountId, 3)
+      cy.task<{ teamMemberId: string }>('db:createTeamMemberWithRole', {
+        accountId: account.accountId,
+        clinicId: account.clinicId,
+        roleName: 'Practitioner',
+        email: `ido-${Date.now()}@example.test`,
+        password: 'Test1234!',
+        fullName: 'Ido Fuera',
+        isPractitioner: true,
+      }).then((member) => {
+        cy.task('db:setTeamMemberBookingFlags', { id: member.teamMemberId, deletedAt: new Date().toISOString() })
+        cy.login(account.email, account.password)
+        cy.visit(`/settings/team/${member.teamMemberId}`)
+        cy.get('[data-cy=member-page]', { timeout: 20000 }).should('have.attr', 'data-ready', 'true')
+        cy.get('[data-cy=member-deactivated-chip]').should('be.visible')
+        cy.get('[data-cy=member-online]').should('not.exist')
+        cy.get('[data-cy=member-online-departed]').should('contain.text', 'Reactivate')
+      })
+    })
+  })
+
   it('lets an owner make someone else an owner, and refuses deactivating yourself', () => {
     cy.seedStaffAccount().then((account) => {
       cy.task<{ teamMemberId: string }>('db:createTeamMemberWithRole', {

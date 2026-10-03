@@ -110,13 +110,16 @@ const CARD = 'flex scroll-mt-4 flex-col rounded-card border border-line bg-surfa
         />
         <div class="flex flex-wrap gap-2 border-t border-line-row py-3">
           <UiBtn data-test="settings-send-test" @click="emit('sendTest')">{{ t('Send a test to me', 'Enviar prueba a mí') }}</UiBtn>
-          <UiBtn :disabled="!b.ruleId.value || b.isLead.value" data-test="settings-launch" @click="emit('launch')">{{ t('Launch for one patient…', 'Lanzar para un paciente…') }}</UiBtn>
+          <UiBtn :disabled="!b.ruleId.value || b.isLead.value || !b.draft.value.enabled" data-test="settings-launch" @click="emit('launch')">{{ t('Launch for one patient…', 'Lanzar para un paciente…') }}</UiBtn>
         </div>
+        <p v-if="b.ruleId.value && !b.isLead.value && !b.draft.value.enabled" class="pb-3 text-[12.5px] text-ink-muted" data-test="settings-launch-paused">
+          {{ t('It is paused, so nobody can enter it. Switch it on to launch it for a patient.', 'Está en pausa, así que no puede entrar nadie. Actívala para lanzarla para un paciente.') }}
+        </p>
       </section>
 
       <section v-if="b.ruleId.value" id="peligro" aria-labelledby="h-peligro" :class="CARD">
         <h2 id="h-peligro" class="text-[16px] font-bold text-ink-900">{{ t('Pause or delete', 'Pausar o eliminar') }}</h2>
-        <p class="mb-3 mt-0.5 text-[13px] text-ink-500">{{ t('Paused, nobody new enters and the people inside stay where they are.', 'Pausada, nadie nuevo entra y quienes están dentro se quedan donde están.') }}</p>
+        <p class="mb-3 mt-0.5 text-[13px] text-ink-500">{{ t('Paused: nobody new enters, and people already inside wait at their current step until you resume it.', 'En pausa: no entra nadie nuevo y quienes ya están dentro esperan en su paso actual hasta que la reanudes.') }}</p>
         <div class="flex flex-wrap gap-2 pb-3">
           <UiBtn data-test="settings-toggle-enabled" @click="emit('toggleEnabled')">{{ b.draft.value.enabled ? t('Pause', 'Pausar') : t('Switch on', 'Activar') }}</UiBtn>
           <button type="button" class="h-9 rounded-ctl border border-danger-border bg-surface px-3.5 text-[13px] font-semibold text-danger-text hover:bg-danger-bg touch:h-11" data-test="settings-delete" @click="emit('remove')">

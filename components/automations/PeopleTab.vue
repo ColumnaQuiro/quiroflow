@@ -98,8 +98,11 @@ function whereLabel(r: RunRow) {
   const step = r.stepId ? b.stepsById.value.get(r.stepId) : null
   return step ? stepTitle(t, step, b.lookup.value) : (r.stepLabel ?? '—')
 }
+// Paused (and saved that way): nobody inside moves until it is switched on.
+const paused = computed(() => !b.isNew.value && !b.draft.value.enabled)
 function nextLabel(r: RunRow) {
   if (r.status !== 'running') return '—'
+  if (paused.value) return t('when you resume it', 'cuando la reanudes')
   if (r.waitingFor && r.waitingFor !== 'delay' && r.waitDeadline) return t(`until ${when(r.waitDeadline)}`, `hasta el ${when(r.waitDeadline)}`)
   if (r.resumeAt && new Date(r.resumeAt).getTime() > Date.now()) return t(`continues ${when(r.resumeAt)}`, `sigue el ${when(r.resumeAt)}`)
   return t('any moment', 'en breve')
@@ -143,7 +146,14 @@ async function act(kind: 'retry' | 'skip' | 'remove') {
   acting.value = kind
   try {
     await useStaffFetch(`/api/automations/runs/${selectedId.value}/${kind}`, { method: 'POST' })
-    showToast(kind === 'retry' ? t('Retried', 'Reintentado') : kind === 'skip' ? t('Moved on', 'Pasó al siguiente paso') : t('Taken out', 'Ha salido'))
+    const held = paused.value && kind !== 'remove'
+    showToast(
+      kind === 'retry'
+        ? held ? t('Retried. It runs when you resume the automation.', 'Reintentado. Se ejecuta cuando reanudes la automatización.') : t('Retried', 'Reintentado')
+        : kind === 'skip'
+          ? held ? t('Moved on. The next step runs when you resume the automation.', 'Pasó al siguiente paso. Se ejecuta cuando reanudes la automatización.') : t('Moved on', 'Pasó al siguiente paso')
+          : t('Taken out', 'Ha salido'),
+    )
     await Promise.all([open(selectedId.value), load()])
     emit('changed')
   } catch (e) {
@@ -257,6 +267,9 @@ const inboxLink = computed(() => {
         </select>
       </div>
 
+      <p v-if="paused" class="rounded-ctl border border-warning-border bg-warning-bg px-3 py-2.5 text-[12.5px] text-warning-text" data-test="people-paused">
+        {{ t('Paused: people already inside wait at their current step, and nothing is sent to them until you resume it.', 'En pausa: quienes ya están dentro esperan en su paso actual y no se les envía nada hasta que la reanudes.') }}
+      </p>
       <p v-if="error" class="text-[13px] text-danger-text">{{ error }}</p>
       <section v-else class="overflow-hidden rounded-card border border-line bg-surface shadow-card">
         <div v-if="loading && runs.length === 0" class="flex animate-pulse flex-col gap-2 p-4" aria-hidden="true">

@@ -19,31 +19,17 @@ interface Appointment {
   patients: { first_name: string; last_name: string | null } | null
   appointment_types: { name: string; default_price_cents: number } | null
 }
-interface InvoiceRow { id: string; invoice_number: string; status: string; total_cents: number }
-interface LineItemRow { id: string; price_cents: number; service_id: string | null }
-interface PaymentRow { id: string; amount_cents: number; method: string; paid_at: string }
 
 const supabase = useSupabaseClient()
 const { context, can, restricted } = usePractitionerContext()
-const { fire } = useAutomations()
 
 const appointment = ref<Appointment | null>(null)
-const invoice = ref<InvoiceRow | null>(null)
-const lineItems = ref<LineItemRow[]>([])
-const payments = ref<PaymentRow[]>([])
 const loading = ref(true)
 const billingOpen = ref(false)
-// This visit was already drawn from a bono, so it has no invoice. Tracked so
-// the billing sheet can say that rather than rendering empty.
-const packageCovered = ref(false)
-const paymentAmount = ref('')
-const paymentMethod = ref<'card' | 'cash' | 'credit'>('cash')
-const { balanceCents, creditLedgerCents, activePackages } = usePatientFinancialSummary(() => appointment.value?.patient_id ?? '')
-const saving = ref(false)
-const error = ref('')
-
-const paidCents = computed(() => payments.value.reduce((sum, p) => sum + p.amount_cents, 0))
-const balanceDueCents = computed(() => (invoice.value?.total_cents ?? 0) - paidCents.value)
+// The practitioner's own price for this type when they have one -- what the
+// desktop calendar and online booking charge (effectivePriceCents) -- else
+// the type's default. Read when billing opens.
+const visitPriceCents = ref<number | undefined>(undefined)
 
 async function loadAppointment() {
   const { data } = await supabase
@@ -61,285 +47,68 @@ async function checkIn() {
   await loadAppointment()
 }
 
-async function ensureInvoice(): Promise<InvoiceRow | null> {
-  const { data: existing } = await supabase.from('invoices').select('id, invoice_number, status, total_cents').eq('appointment_id', appointmentId).maybeSingle()
-  if (existing) return existing
-  if (!appointment.value || !context.value) return null
+// Charging the visit is the web's own implementation (composables/
+// useVisitCharging.ts, which the calendar's Billing tab uses too), not a copy
+// of it. This screen used to carry one, and it had drifted: it raised an
+// invoice the moment billing was opened, numbered from a head count of every
+// invoice, wrote facturas without the tax breakdown, settled from totals read
+// when the sheet opened, and could take a second bono session for one visit.
+// Who is charging comes from usePractitionerContext, since there is no
+// account store in this app.
+const {
+  creditLedgerCents,
+  activePackages,
+  invoice,
+  loadingInvoice,
+  appointmentIsUpcoming,
+  packageCoverage,
+  saving,
+  error,
+  paidCents,
+  balanceDueCents,
+  paymentMethods,
+  paymentRows,
+  paymentTotalCents,
+  init: initCharging,
+  chargeVisit,
+  usePackageSession,
+  recordPayment,
+} = useVisitCharging({
+  appointmentId,
+  patientId: () => appointment.value?.patient_id ?? '',
+  appointmentTypeName: () => appointment.value?.appointment_types?.name,
+  appointmentTypePriceCents: visitPriceCents,
+  accountId: () => context.value?.accountId,
+  teamMemberId: () => context.value?.teamMemberId,
+  can,
+  onCompleted: () => {
+    loadAppointment()
+  },
+})
 
-  // Already drawn from a bono: not a billing event, so no invoice. Without
-  // this, reopening billing on a covered visit raises a fresh unpaid one at
-  // the standalone price. Mirrors the desktop AppointmentBillingTab.
-  const { count: sessionCount } = await supabase
-    .from('package_sessions')
-    .select('id', { count: 'exact', head: true })
-    .eq('appointment_id', appointmentId)
-  if (sessionCount) {
-    packageCovered.value = true
-    return null
-  }
-  packageCovered.value = false
-
-  const { count } = await supabase.from('invoices').select('id', { count: 'exact', head: true })
-  const invoiceNumber = `INV-${String((count ?? 0) + 1).padStart(4, '0')}`
-  // The practitioner's own price for this type when they have one -- what the
-  // desktop calendar and online booking charge (effectivePriceCents). This
-  // used to charge the type's default regardless.
-  let priceCents = appointment.value.appointment_types?.default_price_cents ?? 0
-  if (appointment.value.appointment_type_id && appointment.value.practitioner_id) {
+async function loadVisitPrice() {
+  const appt = appointment.value
+  if (!appt) return
+  let priceCents = appt.appointment_types?.default_price_cents ?? 0
+  if (appt.appointment_type_id && appt.practitioner_id) {
     const { data: override } = await supabase
       .from('appointment_type_overrides')
       .select('price_cents')
-      .eq('appointment_type_id', appointment.value.appointment_type_id)
-      .eq('team_member_id', appointment.value.practitioner_id)
+      .eq('appointment_type_id', appt.appointment_type_id)
+      .eq('team_member_id', appt.practitioner_id)
       .maybeSingle()
     const own = (override as { price_cents: number | null } | null)?.price_cents
     if (own != null) priceCents = own
   }
-  const description = appointment.value.appointment_types?.name ?? 'Appointment'
-
-  const { data: newInvoice, error: invoiceError } = await supabase
-    .from('invoices')
-    .insert({
-      account_id: context.value.accountId,
-      patient_id: appointment.value.patient_id,
-      appointment_id: appointmentId,
-      invoice_number: invoiceNumber,
-      status: 'unpaid',
-      total_cents: priceCents,
-    } as never)
-    .select('id, invoice_number, status, total_cents')
-    .single()
-  if (invoiceError) {
-    error.value = invoiceError.message
-    return null
-  }
-  await supabase.from('invoice_line_items').insert({
-    account_id: context.value.accountId,
-    invoice_id: newInvoice.id,
-    description,
-    quantity: 1,
-    price_cents: priceCents,
-  } as never)
-  return newInvoice
+  visitPriceCents.value = priceCents
 }
 
+// Opening billing is a read. Nothing is written until "Charge" or a bono is
+// pressed -- the same choice the web's Billing tab offers.
 async function openBilling() {
   billingOpen.value = true
-  error.value = ''
-  const inv = await ensureInvoice()
-  invoice.value = inv
-  if (inv) {
-    const [{ data: lines }, { data: pays }] = await Promise.all([
-      supabase.from('invoice_line_items').select('id, price_cents, service_id').eq('invoice_id', inv.id),
-      supabase.from('payments').select('id, amount_cents, method, paid_at').eq('invoice_id', inv.id).order('paid_at', { ascending: false }),
-    ])
-    lineItems.value = lines ?? []
-    payments.value = pays ?? []
-    paymentAmount.value = (balanceDueCents.value / 100).toFixed(2)
-  }
-}
-
-async function usePackageSession(pkg: { id: string; package_name: string; sessions_used: number; sessions_total: number; price_cents: number }) {
-  if (pkg.sessions_used >= pkg.sessions_total || !invoice.value || !context.value || !appointment.value) return
-  // This visit is already settled -- front desk may have billed it from the
-  // web Billing tab while this page was still open. Spending a session here
-  // too would burn a real session from the bono for a visit that isn't
-  // taking one: the invoice is already paid, so there is nothing left to
-  // charge, and this used to increment sessions_used anyway with no payment,
-  // no credit, and no package_sessions row behind it -- a session vanishing
-  // with no trace.
-  if (invoice.value.status === 'paid') {
-    error.value = 'This visit has already been billed.'
-    return
-  }
-  error.value = ''
-  saving.value = true
-  try {
-    // Re-read the bono and claim the session with a compare-and-set, the
-    // same protection AppointmentBillingTab.usePackageSession() uses: two
-    // devices billing the same visit (front desk on web, practitioner here)
-    // must not both succeed.
-    const { data: bono } = await supabase
-      .from('package_purchases')
-      .select('id, package_name, sessions_used, sessions_total, price_cents, is_closed')
-      .eq('id', pkg.id)
-      .maybeSingle()
-    if (!bono || bono.sessions_used >= bono.sessions_total) {
-      error.value = 'That bono has no sessions left.'
-      saving.value = false
-      return
-    }
-    // Closed in PracticeHub: the sessions left on its counter are history,
-    // not credit. The list this came from already leaves it out; this is the
-    // same backstop the web side has.
-    if (bono.is_closed) {
-      error.value = 'That bono is closed and cannot be used.'
-      saving.value = false
-      return
-    }
-    const { data: claimed } = await supabase
-      .from('package_purchases')
-      .update({ sessions_used: bono.sessions_used + 1 } as never)
-      .eq('id', bono.id)
-      .eq('sessions_used', bono.sessions_used)
-      .select('id')
-      .maybeSingle()
-    if (!claimed) {
-      error.value = 'Someone just used a session from this bono. Try again.'
-      saving.value = false
-      return
-    }
-
-    // What this visit was worth against the bono -- recorded as history, not
-    // billed, because the patient paid it when they bought the bono.
-    const perSessionCents = Math.round(bono.price_cents / bono.sessions_total)
-
-    // The visit on the bono's own history. Not its only record any more: it is
-    // also charged below, at the bono's per-session rate, which is what draws
-    // the prepayment down. Same change as the desktop AppointmentBillingTab.
-    await supabase.from('package_sessions').insert({
-      account_id: context.value.accountId,
-      patient_id: appointment.value.patient_id,
-      package_purchase_id: bono.id,
-      appointment_id: appointmentId,
-      amount_cents: perSessionCents,
-      used_at: appointment.value.starts_at,
-    } as never)
-
-    // Dispose of the invoice raised automatically when this page opened.
-    // Extras (lines with a service_id) are real money owed on top of the bono
-    // and keep their invoice; only the covered visit line goes. Deleting is
-    // guarded on there being no payments, since payments cascade on invoice
-    // delete and would take real money records with them.
-    const extraLines = lineItems.value.filter((l) => l.service_id)
-    const baseLine = lineItems.value.find((l) => !l.service_id)
-    if (extraLines.length === 0 && payments.value.length === 0) {
-      await supabase.from('invoices').delete().eq('id', invoice.value.id)
-      invoice.value = null
-      lineItems.value = []
-    } else {
-      if (baseLine) {
-        await supabase.from('invoice_line_items').delete().eq('id', baseLine.id)
-        lineItems.value = lineItems.value.filter((l) => l.id !== baseLine.id)
-      }
-      const totalCents = lineItems.value.reduce((sum, l) => sum + l.price_cents, 0)
-      await supabase.from('invoices').update({ total_cents: totalCents } as never).eq('id', invoice.value.id)
-      invoice.value.total_cents = totalCents
-      const { data: pays } = await supabase.from('payments').select('id, amount_cents, method, paid_at').eq('invoice_id', invoice.value.id).order('paid_at', { ascending: false })
-      payments.value = pays ?? []
-      paymentAmount.value = (balanceDueCents.value / 100).toFixed(2)
-    }
-
-    // The visit's charge, at the bono rate. Marked paid where the balance
-    // already covers it -- for a prepaid bono it does -- matching the rule the
-    // imported history was settled with.
-    const { data: chargeNumber } = await supabase.rpc('next_invoice_number', { p_account_id: context.value.accountId } as never)
-    if (chargeNumber) {
-      const { data: charge } = await supabase
-        .from('invoices')
-        .insert({
-          account_id: context.value.accountId,
-          patient_id: appointment.value.patient_id,
-          appointment_id: appointmentId,
-          invoice_number: chargeNumber,
-          // The FAMILY's balance, not this patient's: on a shared bono the
-          // money sits on the owner's record. See bonoVisitChargeStatus().
-          status: await bonoVisitChargeStatus(supabase, appointment.value.patient_id, perSessionCents, balanceCents.value),
-          total_cents: perSessionCents,
-        } as never)
-        .select('id')
-        .single()
-      if (charge) {
-        await supabase.from('invoice_line_items').insert({
-          account_id: context.value.accountId,
-          invoice_id: (charge as { id: string }).id,
-          description: `${bono.package_name} — session`,
-          quantity: 1,
-          price_cents: perSessionCents,
-        } as never)
-      }
-    }
-
-    // No 'invoice.paid': the charge is settled by money already on the
-    // account, not by a payment taken now. The visit still completed.
-    const wasCompleted = appointment.value.status === 'completed'
-    await supabase.from('appointments').update({ status: 'completed' } as never).eq('id', appointmentId)
-    if (!wasCompleted) fire('appointment.completed', { patientId: appointment.value.patient_id, appointmentId })
-    await loadAppointment()
-  } finally {
-    saving.value = false
-  }
-}
-
-async function recordPayment() {
-  if (!invoice.value || !context.value || !appointment.value) return
-  error.value = ''
-  const amountCents = Math.round((parseFloat(paymentAmount.value) || 0) * 100)
-  if (amountCents <= 0) return
-  // Credit ledger, not balance: a balance now carries prepaid bono money,
-  // which buys sessions and must not also be spendable here. See the web
-  // Billing tab for the full reasoning.
-  if (paymentMethod.value === 'credit' && amountCents > creditLedgerCents.value) {
-    error.value = 'Amount exceeds available credit.'
-    return
-  }
-  saving.value = true
-  try {
-    const { data: payment } = await supabase
-      .from('payments')
-      .insert({
-        account_id: context.value.accountId,
-        patient_id: appointment.value.patient_id,
-        invoice_id: invoice.value.id,
-        amount_cents: amountCents,
-        method: paymentMethod.value,
-        purpose: 'visit',
-      } as never)
-      .select('id')
-      .single()
-
-    // Same rule as the desktop: a factura for money that came in, none for a
-    // credit payment, which was documented when the credit was paid.
-    if (payment && paymentMethod.value !== 'credit') {
-      await supabase.rpc('next_factura_number', { p_account_id: context.value.accountId } as never).then(async ({ data: number }) => {
-        if (!number) return
-        await supabase.from('facturas').insert({
-          account_id: context.value!.accountId,
-          patient_id: appointment.value!.patient_id,
-          payment_id: (payment as { id: string }).id,
-          number,
-          kind: amountCents > 40000 ? 'full' : 'simplified',
-          description: appointment.value!.appointment_types?.name ?? 'Consulta',
-          amount_cents: amountCents,
-        } as never)
-      })
-    }
-    if (paymentMethod.value === 'credit') {
-      await supabase.from('account_credits').insert({
-        account_id: context.value.accountId,
-        patient_id: appointment.value.patient_id,
-        amount_cents: -amountCents,
-        reason: `Applied to invoice ${invoice.value.invoice_number}`,
-        invoice_id: invoice.value.id,
-      } as never)
-    }
-
-    const newPaid = paidCents.value + amountCents
-    if (newPaid >= invoice.value.total_cents) {
-      await supabase.from('invoices').update({ status: 'paid' } as never).eq('id', invoice.value.id)
-      await supabase.from('appointments').update({ status: 'completed' } as never).eq('id', appointmentId)
-      fire('invoice.paid', { patientId: appointment.value.patient_id, appointmentId, invoiceId: invoice.value.id })
-      fire('appointment.completed', { patientId: appointment.value.patient_id, appointmentId })
-      await loadAppointment()
-    }
-    const { data: pays } = await supabase.from('payments').select('id, amount_cents, method, paid_at').eq('invoice_id', invoice.value.id).order('paid_at', { ascending: false })
-    payments.value = pays ?? []
-    const { data: inv } = await supabase.from('invoices').select('id, invoice_number, status, total_cents').eq('id', invoice.value.id).maybeSingle()
-    invoice.value = inv
-    paymentAmount.value = (balanceDueCents.value / 100).toFixed(2)
-  } finally {
-    saving.value = false
-  }
+  await loadVisitPrice()
+  await initCharging()
 }
 
 function formatDate(iso: string) {
@@ -347,6 +116,10 @@ function formatDate(iso: string) {
 }
 function euros(cents: number) {
   return `€${(cents / 100).toFixed(2)}`
+}
+// The rate a bono button quotes, rounded the way the session is billed.
+function bonoRateLabel(p: { price_cents: number; sessions_total: number }) {
+  return p.sessions_total ? euros(bonoPerSessionCents(p)) : '—'
 }
 </script>
 
@@ -390,50 +163,76 @@ function euros(cents: number) {
         </button>
       </div>
 
-      <div v-else class="rounded-card border border-line bg-surface p-3.5 shadow-card">
+      <div v-else-if="billingOpen" class="rounded-card border border-line bg-surface p-3.5 shadow-card">
         <p class="mb-2 text-[11.5px] font-semibold uppercase tracking-wide text-ink-faint">Billing</p>
-        <!-- No invoice because a bono covered the visit -- say so, rather than
-        sitting on "Loading invoice…" for something that will never arrive. -->
-        <p v-if="!invoice && packageCovered" class="text-[13px] text-ink-muted2">
-          Covered by a bono — already paid when the bono was bought, so there is no invoice for this visit.
+        <p v-if="loadingInvoice" class="text-[13px] text-ink-faint">Loading…</p>
+        <p v-else-if="!invoice && appointmentIsUpcoming" class="text-[13px] text-ink-faint">
+          This appointment hasn't happened yet — no receipt until it does.
         </p>
-        <p v-else-if="!invoice" class="text-[13px] text-ink-faint">Loading invoice…</p>
+        <!-- No invoice because a bono covered the visit -- say so, rather than
+        an empty sheet. -->
+        <p v-else-if="!invoice && packageCoverage" class="text-[13px] text-ink-muted2">
+          Covered by {{ packageCoverage.packageName || 'a bono' }} — worth {{ euros(packageCoverage.amountCents) }}, already paid when the bono was bought.
+        </p>
+        <!-- Past visit, nothing billed yet: charge it, or spend a bono session.
+        Nothing is owed until one is pressed. -->
+        <div v-else-if="!invoice" class="space-y-2">
+          <p class="text-[13.5px] text-ink-700">
+            Not charged yet · {{ appointment.appointment_types?.name ?? 'Appointment' }}<span v-if="(visitPriceCents ?? 0) > 0"> — {{ euros(visitPriceCents ?? 0) }}</span>
+          </p>
+          <button
+            v-for="p in activePackages"
+            :key="p.id"
+            type="button"
+            class="w-full rounded-ctl bg-brand px-4 py-2.5 text-center text-[14px] font-medium text-white active:opacity-90 disabled:opacity-50"
+            :disabled="saving"
+            @click="usePackageSession(p)"
+          >
+            Use {{ p.package_name }} — {{ bonoRateLabel(p) }} ({{ p.sessions_total - p.sessions_used }} left)
+          </button>
+          <UiBtn :variant="activePackages.length > 0 ? 'secondary' : 'primary'" class="w-full" :disabled="saving" @click="chargeVisit">
+            {{ saving ? 'Saving…' : `Charge ${(visitPriceCents ?? 0) > 0 ? euros(visitPriceCents ?? 0) : 'this visit'}${activePackages.length > 0 ? ' instead' : ''}` }}
+          </UiBtn>
+        </div>
         <template v-else>
+          <p v-if="packageCoverage" class="mb-2 text-[12.5px] text-ink-muted2">
+            Covered by {{ packageCoverage.packageName || 'a bono' }} — charged at the bono rate against money already paid.
+          </p>
           <p class="text-[13.5px] text-ink-700">{{ invoice.invoice_number }} · <span :class="invoice.status === 'paid' ? 'text-success-text' : 'text-warning-text'">{{ invoice.status }}</span></p>
-          <p class="mt-1 text-[13px] text-ink-muted2">Total {{ euros(invoice.total_cents) }} · Paid {{ euros(paidCents) }}</p>
+          <p class="mt-1 text-[13px] text-ink-muted2">Total {{ euros(invoice.total_cents) }} · Paid {{ euros(paidCents) }}<span v-if="balanceDueCents > 0"> · Due {{ euros(balanceDueCents) }}</span></p>
 
-          <div v-if="invoice.status !== 'paid'" class="mt-3 space-y-2">
-            <p v-if="error" class="text-[12.5px] text-danger-text">{{ error }}</p>
-            <div class="flex gap-2">
+          <div v-if="can('payments_allocate') && invoice.status !== 'void' && balanceDueCents > 0" class="mt-3 space-y-2">
+            <div v-for="(row, i) in paymentRows" :key="i" class="flex gap-2">
               <input
-                v-model="paymentAmount"
+                v-model="row.amount"
                 type="number"
                 step="0.01"
+                min="0"
                 class="w-24 rounded-ctl border border-line-control px-2.5 py-2 text-[14px]"
               />
-              <select v-model="paymentMethod" class="flex-1 rounded-ctl border border-line-control px-2.5 py-2 text-[14px]">
-                <option value="cash">Cash</option>
-                <option value="card">Card</option>
-                <option v-if="creditLedgerCents > 0" value="credit">Credit on account (€{{ (creditLedgerCents / 100).toFixed(2) }} available)</option>
+              <select v-model="row.method" class="flex-1 rounded-ctl border border-line-control px-2.5 py-2 text-[14px]">
+                <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
+                <option v-if="creditLedgerCents > 0" value="credit">Credit on account ({{ euros(creditLedgerCents) }} available)</option>
               </select>
             </div>
-            <UiBtn variant="primary" class="w-full" :disabled="saving" @click="recordPayment">{{ saving ? 'Saving…' : `Record ${euros(Math.round((parseFloat(paymentAmount) || 0) * 100))}` }}</UiBtn>
+            <UiBtn variant="primary" class="w-full" :disabled="saving || paymentTotalCents <= 0" @click="recordPayment">{{ saving ? 'Saving…' : `Record ${euros(paymentTotalCents)}` }}</UiBtn>
+          </div>
 
-            <div v-if="activePackages.length > 0 && (can('packages_edit') || can('billing_config'))" class="flex flex-wrap items-center gap-2 border-t border-line-divider pt-2">
-              <span class="text-[12px] text-ink-muted2">Or use a package session:</span>
-              <button
-                v-for="p in activePackages"
-                :key="p.id"
-                type="button"
-                class="rounded-ctl border border-brand-tintBorder bg-brand-tint px-2 py-1 text-[12px] font-medium text-brand-text active:brightness-95"
-                :disabled="saving"
-                @click="usePackageSession(p)"
-              >
-                {{ p.package_name }} ({{ p.sessions_total - p.sessions_used }} left)
-              </button>
-            </div>
+          <div v-if="can('billing_access') && invoice.status !== 'paid' && activePackages.length > 0" class="mt-2 flex flex-wrap items-center gap-2 border-t border-line-divider pt-2">
+            <span class="text-[12px] text-ink-muted2">Or use a package session:</span>
+            <button
+              v-for="p in activePackages"
+              :key="p.id"
+              type="button"
+              class="rounded-ctl border border-brand-tintBorder bg-brand-tint px-2 py-1 text-[12px] font-medium text-brand-text active:brightness-95"
+              :disabled="saving"
+              @click="usePackageSession(p)"
+            >
+              {{ p.package_name }} ({{ p.sessions_total - p.sessions_used }} left)
+            </button>
           </div>
         </template>
+        <p v-if="error" class="mt-2 text-[12.5px] text-danger-text">{{ error }}</p>
       </div>
     </div>
   </div>

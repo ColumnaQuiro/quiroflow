@@ -331,7 +331,8 @@ function availabilityPath() {
         '- a practitioner’s own weekly hours are authoritative and are **not** narrowed by the clinic’s;',
         '- the clinic’s hours are the fallback for a practitioner who has never set their own;',
         '- slots step by the appointment’s own length, so anything returned here is bookable as-is;',
-        '- existing appointments and availability blocks remove slots — a practitioner’s appointments at any of the account’s clinics, since they cannot be in two places at once — and slots in the past are omitted.',
+        '- only practitioners who work at `clinic_id` (Settings → Team → Clinics) are included;',
+        '- existing appointments and availability blocks remove slots — a practitioner’s appointments and their own blocked time at any of the account’s clinics, since they cannot be in two places at once; a block for a whole clinic only at that clinic — and slots in the past are omitted.',
         '',
         'Unlike the public booking page this includes practitioners whose `online_booking_enabled` is false — an authenticated integration acts for the clinic. The flag is returned per practitioner so a patient-facing widget can filter on it.',
       ].join('\n'),
@@ -341,9 +342,9 @@ function availabilityPath() {
         { name: 'appointment_type_id', in: 'query', required: true, schema: { type: 'string', format: 'uuid' }, description: 'Decides slot length, including any per-practitioner override.' },
         { name: 'from', in: 'query', required: true, schema: { type: 'string', format: 'date' }, description: 'First day, `YYYY-MM-DD`, in the clinic’s timezone.' },
         { name: 'to', in: 'query', required: true, schema: { type: 'string', format: 'date' }, description: 'Last day, inclusive. At most 62 days from `from`.' },
-        { name: 'practitioner_id', in: 'query', schema: { type: 'string', format: 'uuid' }, description: 'Restrict to one practitioner. Omit to get every practitioner’s slots.' },
+        { name: 'practitioner_id', in: 'query', schema: { type: 'string', format: 'uuid' }, description: 'Restrict to one practitioner, who must work at `clinic_id`. Omit to get the slots of everyone who works there.' },
       ],
-      responses: { 200: objectResponse('Availability'), 400: errorResponse('Missing or malformed parameter, or a range longer than 62 days.') },
+      responses: { 200: objectResponse('Availability'), 400: errorResponse('Missing or malformed parameter, a range longer than 62 days, or a `practitioner_id` who does not work at `clinic_id`.') },
     },
   }
 }
@@ -595,7 +596,7 @@ function schemas() {
       properties: {
         patient_id: uuid(),
         clinic_id: uuid(),
-        practitioner_id: uuid(),
+        practitioner_id: uuid('Must work at `clinic_id` — the practitioners `GET /availability` lists for it.'),
         appointment_type_id: uuid('Decides the length when `ends_at` is omitted, honouring any per-practitioner override.'),
         room_id: uuid(),
         starts_at: { type: 'string', format: 'date-time' },
@@ -609,7 +610,7 @@ function schemas() {
       type: 'object',
       description: '`patient_id` and `clinic_id` are not patchable — cancel and rebook instead. Sending `starts_at` marks the appointment as rescheduled.',
       properties: {
-        practitioner_id: uuid(),
+        practitioner_id: uuid('Must work at the appointment’s clinic.'),
         appointment_type_id: uuid(),
         room_id: uuid(),
         starts_at: { type: 'string', format: 'date-time' },

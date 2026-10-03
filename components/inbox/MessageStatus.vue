@@ -15,7 +15,7 @@ defineProps<{ status: string }>()
 </script>
 
 <template>
-  <span class="inline-flex h-[13px] w-[13px] shrink-0 items-center justify-center">
+  <span class="inline-flex h-[13px] w-[13px] shrink-0 items-center justify-center" :data-status="status">
     <svg v-if="status === 'pending'" viewBox="0 0 16 16" class="h-[11px] w-[11px] text-white/60" fill="none" stroke="currentColor" stroke-width="1.4">
       <circle cx="8" cy="8" r="6.2" />
       <path d="M8 4.6V8.2L10.3 9.6" stroke-linecap="round" stroke-linejoin="round" />

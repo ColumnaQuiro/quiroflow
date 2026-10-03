@@ -63,10 +63,22 @@ watch(threadEl, (el, prevEl) => {
 // Messages this device has sent but the server hasn't confirmed into the
 // real table yet -- rendered inline with a clock icon so the composer
 // clears and the message appears immediately (WhatsApp-style) instead of
-// waiting on the round trip. load() naturally supersedes one once the real
-// row shows up in `messages`; on failure it's kept and flipped to a failed
-// status instead of vanishing.
-const pendingMessages = ref<Message[]>([])
+// waiting on the round trip. Once the real row shows up in `messages` --
+// often from the realtime INSERT, before the send has even answered -- it is
+// drawn in the bubble's place under the bubble's key, so the clock just turns
+// into a tick; on failure it's kept and flipped to a failed status instead of
+// vanishing.
+const pendingMessages = ref<(Message & { notBefore: string | null })[]>([])
+
+// The bubble's key passes to the row it became, for good -- dropping the
+// bubble must not change the key the row is drawn under, or it remounts
+// (utils/inboxPendingMessages.ts).
+const keptKeys = ref<Record<string, string>>({})
+function settlePending(tempId: string, server: Message[]) {
+  const rowId = matchPendingToServer(server, pendingMessages.value).get(tempId)
+  if (rowId) keptKeys.value = { ...keptKeys.value, [rowId]: tempId }
+  pendingMessages.value = pendingMessages.value.filter((m) => m.id !== tempId)
+}
 
 const messages = ref<Message[]>([])
 const patientNames = ref<Record<string, string>>({})
@@ -139,8 +151,8 @@ async function load(opts: { silent?: boolean } = {}) {
 }
 onMounted(() => load())
 
-const allMessages = computed<Message[]>(() =>
-  [...messages.value, ...pendingMessages.value].sort((a, b) => b.created_at.localeCompare(a.created_at)),
+const allMessages = computed(() =>
+  mergePendingIntoThread(messages.value, pendingMessages.value, keptKeys.value).sort((a, b) => b.created_at.localeCompare(a.created_at)),
 )
 
 // The conversation a message belongs to, keyed exactly as the web Inbox and
@@ -530,7 +542,7 @@ async function performTextSend(tempId: string, text: string, channel: string, ta
     // which is what read as a visible "jump" on the sent tick appearing.
     pendingMessages.value = pendingMessages.value.map((m) => (m.id === tempId ? { ...m, status: 'sent' } : m))
     await load()
-    pendingMessages.value = pendingMessages.value.filter((m) => m.id !== tempId)
+    settlePending(tempId, messages.value)
     delete retryPayloads.value[tempId]
   } catch (err: any) {
     sendError.value = err?.data?.statusMessage ?? 'Failed to send'
@@ -568,6 +580,7 @@ async function sendText() {
       channel,
       created_at: new Date().toISOString(),
       pending: true,
+      notBefore: newestInConversation(messages.value, target.key),
     },
   ]
   await performTextSend(tempId, text, channel, target)
@@ -603,7 +616,7 @@ async function performMediaSend(
     })
     pendingMessages.value = pendingMessages.value.map((m) => (m.id === tempId ? { ...m, status: 'sent' } : m))
     await load()
-    pendingMessages.value = pendingMessages.value.filter((m) => m.id !== tempId)
+    settlePending(tempId, messages.value)
     delete retryPayloads.value[tempId]
   } catch (err: any) {
     sendError.value = err?.data?.statusMessage ?? 'Failed to send'
@@ -637,6 +650,7 @@ async function sendMedia(mediaBase64: string, mediaMimeType: string, mediaFilena
       channel: replyChannel.value,
       created_at: new Date().toISOString(),
       pending: true,
+      notBefore: newestInConversation(messages.value, target.key),
     },
   ]
   await performMediaSend(tempId, mediaBase64, mediaMimeType, mediaFilename, mediaKind, target)
@@ -1023,7 +1037,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
       </div>
 
       <div ref="messagesEl" class="flex-1 space-y-2.5 overflow-y-auto px-3 py-3">
-        <template v-for="(m, i) in thread" :key="m.id">
+        <template v-for="(m, i) in thread" :key="m.renderKey">
           <div
             v-if="i === 0 || relativeDay(m.created_at) !== relativeDay(thread[i - 1].created_at)"
             class="sticky top-0 z-10 -mx-3 flex justify-center py-1.5"

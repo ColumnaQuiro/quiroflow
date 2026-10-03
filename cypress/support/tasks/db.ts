@@ -1795,6 +1795,17 @@ async function patientByName(opts: { accountId: string; firstName: string; lastN
   return data ?? null
 }
 
+/** A message in the patient app's own channel, as the app writes one. */
+async function createPatientAppMessage(opts: { accountId: string; patientId: string; direction: 'inbound' | 'outbound'; body: string }) {
+  return unwrap(
+    await admin
+      .from('patient_app_messages')
+      .insert({ account_id: opts.accountId, patient_id: opts.patientId, direction: opts.direction, body: opts.body })
+      .select('id')
+      .single(),
+  )
+}
+
 async function createWhatsappMessage(opts: {
   accountId: string
   patientId?: string
@@ -3787,6 +3798,7 @@ export const dbTasks = {
   'db:claimInstagramId': claimInstagramId,
   'db:usePackageSession': usePackageSession,
   'db:createWhatsappMessage': createWhatsappMessage,
+  'db:createPatientAppMessage': createPatientAppMessage,
   'db:seedWhatsappReplyScenario': seedWhatsappReplyScenario,
   'db:createAppointment': createAppointment,
   'db:setStickyNote': setStickyNote,

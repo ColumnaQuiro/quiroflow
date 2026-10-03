@@ -80,6 +80,11 @@ describe('Building the protected PDF', () => {
     await expect(buildProtectedPdf(once, 'application/pdf', 'X1234567L')).rejects.toThrow(ProtectedPdfError)
   })
 
+  it('refuses a file that only claims to be a PDF, with a reason rather than a crash', async () => {
+    // pdf-lib loads this without complaint and fails later, on its pages.
+    await expect(buildProtectedPdf(Buffer.from('%PDF-1.4 test'), 'application/pdf', '12345678Z')).rejects.toThrow('This PDF could not be read.')
+  })
+
   it('refuses what a phone would not open as a document', async () => {
     await expect(buildProtectedPdf(Buffer.from('x'), 'application/zip', '12345678Z')).rejects.toThrow(ProtectedPdfError)
   })

@@ -41,18 +41,20 @@ async function imageAsPdf(buffer: Buffer, mimeType: string): Promise<Uint8Array>
   return doc.save()
 }
 
+// Everything inside the try, not only the load: pdf-lib accepts a file with
+// no catalog at all ("%PDF-1.4" and little else) and only fails once its
+// pages are asked for, which used to escape as a bare 500.
 async function pdfForSharing(buffer: Buffer): Promise<Uint8Array> {
-  let doc: PDFDocument
   try {
-    doc = await PDFDocument.load(buffer, { updateMetadata: false })
+    const doc = await PDFDocument.load(buffer, { updateMetadata: false })
+    flattenPdfAnnotations(doc)
+    return await doc.save({ useObjectStreams: false })
   } catch (err) {
     if (err instanceof Error && /encrypt/i.test(err.message)) {
       throw new ProtectedPdfError('This PDF already has a password of its own, so it cannot be protected again here.')
     }
     throw new ProtectedPdfError('This PDF could not be read.')
   }
-  flattenPdfAnnotations(doc)
-  return doc.save({ useObjectStreams: false })
 }
 
 export function canProtect(mimeType: string | null): boolean {

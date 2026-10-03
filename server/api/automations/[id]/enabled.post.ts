@@ -3,7 +3,9 @@ import { loadRuleTree, ruleProblems } from '~/server/utils/automationRules'
 // Switches an automation on or off -- the list's toggle, and Pause in its
 // settings. Switching on checks exactly what saving it on checks: nothing
 // missing, and Growth for a lead automation. Switching off is always allowed:
-// nobody new enters, and the people inside stay where they are.
+// nobody new enters, and the people already inside wait at their current step
+// -- nothing is sent to them -- until it is switched back on, when they carry
+// on from that step (automationEngine: holdWhilePaused).
 export default defineEventHandler(async (event) => {
   const ruleId = getRouterParam(event, 'id')
   if (!ruleId) throw createError({ statusCode: 400, statusMessage: 'Missing automation id' })

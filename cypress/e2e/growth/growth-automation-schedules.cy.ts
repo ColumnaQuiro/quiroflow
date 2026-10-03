@@ -312,13 +312,17 @@ describe('Scheduled and manual automation sends', () => {
   })
 
   describe('Send now', () => {
+    // These rules used to be created paused, and Send now ran them anyway --
+    // the tick then walked the rest of the paused rule's run. Pausing now
+    // pauses everybody inside, and Launch on a paused rule is refused
+    // (growth-automation-pause.cy.ts), so they are switched on. Nothing else
+    // fires on appointment.completed here, and afterEach switches them off.
     it("runs a campaign's steps for one patient, waiting at a delay", () => {
       // Every step used to go out at once, straight past the delay. Since the
       // automation engine a delay waits, here as everywhere; the rest of the
       // campaign is a run the tick picks up.
       rule({
         triggerEvent: 'appointment.completed',
-        enabled: false,
         actions: [whatsapp('uno'), { type: 'delay', config: { delay_minutes: 60 } }, whatsapp('dos')],
       }).then((r) => {
         patient().then((p) => {
@@ -337,7 +341,7 @@ describe('Scheduled and manual automation sends', () => {
     })
 
     it('sends a campaign with no delay straight through, leaving no run', () => {
-      rule({ triggerEvent: 'appointment.completed', enabled: false, actions: [whatsapp('uno'), whatsapp('dos')] }).then((r) => {
+      rule({ triggerEvent: 'appointment.completed', actions: [whatsapp('uno'), whatsapp('dos')] }).then((r) => {
         patient().then((p) => {
           cy.login(account.email, account.password)
           cy.request({ method: 'POST', url: '/api/automations/send-now', body: { ruleId: r.id, patientId: p.id } }).its('body').should('deep.eq', { sent: true })

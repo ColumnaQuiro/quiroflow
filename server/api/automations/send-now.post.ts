@@ -6,7 +6,8 @@ import { dispatchPatientRule } from '~/server/utils/automationEngine'
 // now, bypassing the trigger-event matching in fire.post.ts entirely. Same
 // underlying action-sending logic (server/utils/runAutomationActions.ts). A
 // campaign that waits or branches starts a run for the patient instead, and
-// ignores the rule's entry mode: a person asked for it.
+// ignores the rule's entry mode: a person asked for it. Not its pause, though:
+// a paused automation takes nobody new.
 interface SendNowBody {
   ruleId: string
   patientId: string
@@ -22,8 +23,12 @@ export default defineEventHandler(async (event) => {
   const { teamMember } = await requireTeamMember(event)
   const accountId = teamMember.account_id
 
-  const { data: rule } = await supabase.from('automation_rules').select('id').eq('id', body.ruleId).eq('account_id', accountId).maybeSingle()
+  const { data: rule } = await supabase.from('automation_rules').select('id, enabled').eq('id', body.ruleId).eq('account_id', accountId).maybeSingle()
   if (!rule) throw createError({ statusCode: 404, statusMessage: 'Campaign not found' })
+  // A paused automation lets nobody new in, Launch included: the person would
+  // only enter to wait at the first step (or, for one that just sends, be
+  // messaged by an automation that says it is paused).
+  if (!rule.enabled) throw createError({ statusCode: 409, statusMessage: 'This automation is paused. Switch it on to launch it for someone.' })
 
   const { data: patient } = await supabase
     .from('patients')

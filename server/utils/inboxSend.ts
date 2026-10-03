@@ -1,0 +1,180 @@
+import type { H3Event } from 'h3'
+import { serverSupabaseServiceRole } from '#supabase/server'
+import type { Database } from '~/types/database.types'
+import { toE164, toE164Loose } from '~/utils/phone'
+import { sanitizeStorageFilename } from '~/utils/storageFilename'
+import { isWithin24hWindow, sendWhatsAppText, sendWhatsAppMedia, uploadMediaToMeta, type MediaKind } from '~/server/utils/whatsappSend'
+import { findLeadIdByPhone, findPatientIdsByPhone } from '~/server/utils/whatsappOwner'
+import type { requirePermission } from '~/server/utils/requirePermission'
+
+// What the Inbox composer's send does, for any caller that has already
+// checked the sender may use the Inbox: free-form text or one attachment,
+// only ever within WhatsApp's 24h customer-service window (business-initiated
+// messages outside that window still have to go through /api/whatsapp/send
+// with a pre-approved template -- see that file's comment for why).
+//
+// Moved here unchanged from /api/whatsapp/inbox-send so a patient's file can
+// be sent into their chat (/api/patients/files/[id]/send-protected) through
+// the same window check, the same Meta error surfacing and the same message
+// row the Inbox reads, rather than a second copy of all three.
+
+export interface InboxSendParams {
+  patientId?: string
+  phoneNumber?: string
+  /** Stamps the message onto a lead's thread as well as the phone's. */
+  leadId?: string
+  text?: string
+  mediaBuffer?: Buffer
+  mediaMimeType?: string
+  mediaFilename?: string
+  mediaKind?: MediaKind
+  caption?: string
+}
+
+type Access = Pick<Awaited<ReturnType<typeof requirePermission>>, 'supabase' | 'teamMember'>
+
+export async function sendInboxMessage(event: H3Event, { supabase, teamMember }: Access, params: InboxSendParams) {
+  const { data: account } = await supabase
+    .from('accounts')
+    .select('id, whatsapp_phone_number_id, whatsapp_access_token, default_phone_country')
+    .eq('id', teamMember.account_id)
+    .maybeSingle()
+  await withMessagingTokens(teamMember.account_id, account)
+  if (!account?.whatsapp_phone_number_id || !account?.whatsapp_access_token) {
+    throw createError({ statusCode: 400, statusMessage: 'WhatsApp is not configured. Set it up in Settings > WhatsApp.' })
+  }
+  const waAccount = { whatsapp_phone_number_id: account.whatsapp_phone_number_id, whatsapp_access_token: account.whatsapp_access_token }
+
+  let to = params.phoneNumber ?? ''
+
+  // A lead reply resolves its number here rather than in a route of its own,
+  // so it inherits everything below: the WhatsApp configuration check, the
+  // 24h customer-service window, Meta's error surfacing, and the message row
+  // the Inbox reads. A parallel lead-reply endpoint would have had to
+  // reimplement all four, and would have drifted from them the first time
+  // one changed.
+  if (params.leadId) {
+    const { data: lead } = await supabase
+      .from('leads')
+      .select('id, phone')
+      .eq('id', params.leadId)
+      .eq('account_id', teamMember.account_id)
+      .is('deleted_at', null)
+      .maybeSingle()
+    if (!lead) throw createError({ statusCode: 404, statusMessage: 'Lead not found' })
+    if (!lead.phone) throw createError({ statusCode: 400, statusMessage: 'This lead has no phone number to reply to' })
+    // Loose, not toE164 -- and this is the second time the difference has
+    // cost a working feature. A lead's phone is stored the way it arrived:
+    // Meta's lead ads and WhatsApp's own webhook both strip the "+", so it
+    // sits as "34617948363". toE164 sees no "+" and no "00", treats it as a
+    // local number, and prepends Spain's dial code again -- "3434617948363",
+    // which is not anybody, so every reply to every lead was refused by
+    // Meta. toE164Loose recognises a number that already starts with the
+    // country's dial code and leaves it alone.
+    //
+    // But that recognition only works for the account's OWN dial code, and a
+    // lead's phone can belong to any country -- whatsappLeads.ts stores it as
+    // already-international digits with no ambiguity to resolve, which is
+    // exactly what prepending "+" back on before calling toE164Loose tells
+    // it. Passed bare, a non-Spanish number ("5491131571300", Argentina)
+    // doesn't start with the account's dial code either, so it fell through
+    // to toE164 and got "34" prepended anyway -- "345491131571300", which
+    // matched no row in whatsapp_messages, so the 24h window check found no
+    // last-inbound message and refused every reply to a foreign lead as
+    // "more than 24h" regardless of how recently they had written in.
+    const e164 = toE164Loose(`+${lead.phone}`, account.default_phone_country ?? 'ES')
+    if (!e164) throw createError({ statusCode: 400, statusMessage: "This lead's phone number could not be formatted for WhatsApp" })
+    to = e164
+  }
+
+  if (params.patientId) {
+    const { data: patient } = await supabase.from('patients').select('id, is_minor, do_not_contact').eq('id', params.patientId).maybeSingle()
+    if (!patient) throw createError({ statusCode: 404, statusMessage: 'Patient not found' })
+    if (patient.is_minor || patient.do_not_contact) {
+      throw createError({ statusCode: 400, statusMessage: 'This patient cannot be contacted (under age or marked do not contact).' })
+    }
+    const { data: numbers } = await supabase.from('patient_contact_numbers').select('number, country_code, is_whatsapp').eq('patient_id', params.patientId)
+    const target = numbers?.find((n) => n.is_whatsapp) ?? numbers?.[0]
+    if (!target) throw createError({ statusCode: 400, statusMessage: 'This patient has no phone number on file' })
+    const e164 = toE164(target.number, target.country_code)
+    if (!e164) throw createError({ statusCode: 400, statusMessage: "This patient's phone number could not be formatted for WhatsApp" })
+    to = e164
+  }
+
+  const { data: lastInbound } = await supabase
+    .from('whatsapp_messages')
+    .select('created_at')
+    .eq('account_id', account.id)
+    .eq('phone_number', to)
+    .eq('direction', 'inbound')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (!isWithin24hWindow(lastInbound?.created_at ?? null)) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'More than 24h since this patient last messaged you -- send a template instead (WhatsApp blocks free-form replies outside that window).',
+    })
+  }
+
+  // A reply addressed by number alone -- the Inbox's thread for somebody who
+  // is not a patient, on web and in the app -- still belongs to their lead.
+  // The lead's own thread reads strictly by lead_id, and inbound messages
+  // from this number are stamped with it by the webhook, so without this the
+  // lead's page showed every question they asked and none of the answers
+  // sent from the Inbox. Same rule as inbound: a patient owning the number
+  // wins, and then the message belongs to nobody's lead.
+  //
+  // Looked up with the service role, as the webhook does, and scoped by
+  // account inside both helpers: Inbox access does not imply Growth access,
+  // and under the sender's own RLS a role that cannot list leads would find
+  // none and quietly leave the reply off the lead again.
+  let leadId = params.leadId ?? null
+  if (!leadId && !params.patientId) {
+    const admin = serverSupabaseServiceRole<Database>(event)
+    if ((await findPatientIdsByPhone(admin, account.id, to)).length === 0) {
+      leadId = await findLeadIdByPhone(admin, account.id, to)
+    }
+  }
+
+  let wamid: string | null = null
+  const insert: Record<string, unknown> = {
+    account_id: account.id,
+    patient_id: params.patientId ?? null,
+    lead_id: leadId,
+    phone_number: to,
+    direction: 'outbound',
+    status: 'sent',
+    purpose: 'other',
+  }
+
+  try {
+    if (params.mediaBuffer && params.mediaMimeType && params.mediaKind) {
+      const buffer = params.mediaBuffer
+      const filename = params.mediaFilename ?? 'file'
+      const mediaId = await uploadMediaToMeta(waAccount, buffer, params.mediaMimeType, filename)
+      wamid = await sendWhatsAppMedia(waAccount, to, params.mediaKind, mediaId, { caption: params.caption, filename })
+
+      const path = `${account.id}/out-${Date.now()}-${sanitizeStorageFilename(filename)}`
+      await supabase.storage.from('whatsapp-media').upload(path, buffer, { contentType: params.mediaMimeType, upsert: true })
+      insert.media_type = params.mediaKind
+      insert.media_storage_path = path
+      insert.media_mime_type = params.mediaMimeType
+      insert.media_filename = params.mediaFilename ?? null
+      insert.body_preview = params.caption?.slice(0, 2000) ?? null
+    } else if (params.text) {
+      wamid = await sendWhatsAppText(waAccount, to, params.text)
+      insert.body_preview = params.text.slice(0, 2000)
+    }
+  } catch (err: any) {
+    // error_data.details carries the actual reason behind a generic title
+    // like "Media upload error" (e.g. an unsupported mime type) -- surfacing
+    // it is the difference between a diagnosable failure and a guess.
+    const metaError = err?.data?.error
+    const metaMessage = metaError ? [metaError.message, metaError.error_data?.details].filter(Boolean).join(' -- ') : null
+    throw createError({ statusCode: 502, statusMessage: metaMessage ?? 'WhatsApp send failed' })
+  }
+
+  insert.wamid = wamid
+  await supabase.from('whatsapp_messages').insert(insert as never)
+}

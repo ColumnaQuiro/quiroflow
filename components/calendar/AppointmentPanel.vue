@@ -193,7 +193,22 @@ async function commitEdit() {
     error.value = e.message
     return
   }
-  if (timeChanged) fire('appointment.rescheduled', { patientId: props.appointment.patient_id, appointmentId: props.appointment.id })
+  if (timeChanged) {
+    // Logged as a drag or "Mover…" logs it (pages/calendar.vue,
+    // confirmReschedule): without the row the move was missing from the
+    // visit's history and from the calendar's "moved from here" markers.
+    // No reason is asked here, so none is recorded. Best-effort, as there:
+    // the move itself has been saved.
+    const { error: logError } = await supabase.from('appointment_reschedules').insert({
+      account_id: store.accountId!,
+      appointment_id: props.appointment.id,
+      from_starts_at: props.appointment.starts_at,
+      to_starts_at: startsAt.toISOString(),
+      created_by: store.teamMember?.id ?? null,
+    })
+    if (logError) console.error('Cambiar: reschedule not logged', logError)
+    fire('appointment.rescheduled', { patientId: props.appointment.patient_id, appointmentId: props.appointment.id })
+  }
   editing.value = false
   emit('changed')
 }

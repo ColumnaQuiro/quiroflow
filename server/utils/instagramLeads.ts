@@ -17,7 +17,10 @@ import { receptionistHandlesNewLeads } from '~/server/utils/receptionist'
 // them with a scripted welcome drip would be the wrong reply to a live
 // question.
 
-const GRAPH_BASE = 'https://graph.facebook.com/v21.0'
+// Read per call from runtime config (NUXT_META_GRAPH_BASE_URL), never a
+// constant: tests point it at a local stub, and a hard-coded host kept every
+// send made from here out of reach of the e2e suite.
+const graphBase = (): string => useRuntimeConfig().metaGraphBaseUrl
 
 /**
  * Who this IGSID is, as far as Instagram will say.
@@ -28,7 +31,7 @@ const GRAPH_BASE = 'https://graph.facebook.com/v21.0'
  */
 async function fetchInstagramName(igsid: string, accessToken: string): Promise<string | null> {
   try {
-    const profile = await $fetch<{ name?: string; username?: string }>(`${GRAPH_BASE}/${igsid}`, {
+    const profile = await $fetch<{ name?: string; username?: string }>(`${graphBase()}/${igsid}`, {
       query: { fields: 'name,username', access_token: accessToken },
       timeout: 5_000,
     })

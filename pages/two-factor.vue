@@ -42,32 +42,48 @@ async function signOut() {
 </script>
 
 <template>
-  <div class="flex min-h-screen items-center justify-center bg-surface-page px-4 py-10">
-    <div class="w-full rounded-card border border-line bg-surface p-8 shadow-card" :class="mode === 'enroll' ? 'max-w-lg' : 'max-w-sm'">
-      <img src="/logo/quiroflow-mark.svg" alt="" class="h-8 w-8" />
+  <!-- The step straight after /login, so the same shell (OnboardingLayout):
+       the old centred card was the only screen of the sign-in left on it. -->
+  <OnboardingLayout>
+    <template #brand-aside>
+      <AuthLangToggle />
+    </template>
 
-      <template v-if="mode === 'verify'">
-        <h1 class="mt-4 text-xl font-semibold text-ink-900">{{ t('Two-factor authentication', 'Verificación en dos pasos') }}</h1>
-        <div class="mt-6">
-          <AuthTwoFactorCode @verified="done" />
-        </div>
-      </template>
+    <template #heading>
+      <h1 v-if="mode === 'enroll'" class="text-[25px] font-semibold leading-[1.18] tracking-tightTitle text-ink-900 lg:text-[30px]">
+        {{ t('Set up two-factor authentication', 'Configura la verificación en dos pasos') }}
+      </h1>
+      <h1 v-else class="text-[25px] font-semibold leading-[1.18] tracking-tightTitle text-ink-900 lg:text-[30px]">
+        {{ t('Two-factor authentication', 'Verificación en dos pasos') }}
+      </h1>
+      <p v-if="mode === 'enroll'" class="mt-2 text-[14.5px] leading-[1.55] text-ink-muted lg:text-[15px]">
+        {{ t('Your clinic requires a code from an authenticator app every time you sign in. Set it up once to continue.', 'Tu clínica exige un código de una app de autenticación cada vez que inicias sesión. Configúralo una vez para continuar.') }}
+      </p>
+    </template>
 
-      <template v-else-if="mode === 'enroll'">
-        <h1 class="mt-4 text-xl font-semibold text-ink-900">{{ t('Set up two-factor authentication', 'Configura la verificación en dos pasos') }}</h1>
-        <p class="mt-1 text-[13px] text-ink-muted">
-          {{ t('Your clinic requires a code from an authenticator app every time you sign in. Set it up once to continue.', 'Tu clínica exige un código de una app de autenticación cada vez que inicias sesión. Configúralo una vez para continuar.') }}
-        </p>
-        <div class="mt-6">
-          <AuthTwoFactorEnroll required @enabled="done" />
-        </div>
-      </template>
+    <template #form>
+      <div class="mt-5 lg:mt-[26px]">
+        <AuthTwoFactorCode v-if="mode === 'verify'" @verified="done" />
+        <AuthTwoFactorEnroll v-else-if="mode === 'enroll'" required @enabled="done" />
+        <p v-else class="text-sm text-ink-muted">{{ t('Loading…', 'Cargando…') }}</p>
+        <button type="button" class="mt-6 text-[13.5px] font-medium text-ink-muted hover:text-ink-700" @click="signOut">
+          {{ t('Sign out', 'Cerrar sesión') }}
+        </button>
+      </div>
+    </template>
 
-      <p v-else class="mt-4 text-sm text-ink-muted">{{ t('Loading…', 'Cargando…') }}</p>
+    <template #trust>
+      <p class="text-[12px] leading-relaxed text-ink-muted lg:text-[12.5px]">
+        {{ t('Patient records stored in the EU under GDPR.', 'Historiales alojados en la UE conforme al RGPD.') }}
+      </p>
+    </template>
 
-      <button type="button" class="mt-6 text-[12.5px] text-ink-muted hover:text-ink-500" @click="signOut">
-        {{ t('Sign out', 'Cerrar sesión') }}
-      </button>
-    </div>
-  </div>
+    <template #preview>
+      <OnboardingPreviewCalendar
+        eyebrow="QuiroFlow"
+        :title="t('Your clinic, in one place', 'Tu clínica, en un solo sitio')"
+        :body="t('Calendar, patient records, reminders and invoicing, for every clinic in your practice.', 'Agenda, historiales, recordatorios y facturación, para todas las clínicas de tu consulta.')"
+      />
+    </template>
+  </OnboardingLayout>
 </template>

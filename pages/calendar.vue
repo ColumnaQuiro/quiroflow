@@ -124,6 +124,12 @@ const SLOT_MIN = computed(() => store.currentClinic?.slot_duration_minutes ?? 30
 // through the day, matches PracticeHub's placement.
 const cashShiftOpen = ref(false)
 const mobileInfoOpen = ref(false)
+// The phone header's "more" menu (view, cash shift, block time, the day's info).
+const phoneMenuOpen = ref(false)
+function phoneMenu(action: () => void) {
+  phoneMenuOpen.value = false
+  action()
+}
 
 // Defaults to 'workweek', but this is really just the fallback for a
 // browser that's never opened the calendar before -- the real value is
@@ -2179,6 +2185,8 @@ function openAgendaItem(id: string) {
 // deliberate exception, because it has to be found at a glance across a
 // screen full of tinted blocks.
 const now = ref(new Date())
+// The phone header shows "Today" only when another day is on screen.
+const isTodayShown = computed(() => isSameDate(anchorDate.value, now.value))
 let nowTimer: ReturnType<typeof setInterval> | null = null
 // A tab left in the background can go minutes without its timers firing;
 // catch up the moment it is looked at again.
@@ -2210,7 +2218,82 @@ function showNowLineOn(day: Date) {
 
 <template>
   <div class="flex h-full flex-col">
-    <header class="flex shrink-0 flex-col gap-2.5 border-b border-line bg-surface px-4 py-2.5 lg:min-h-14 lg:flex-row lg:flex-wrap lg:items-center lg:justify-between lg:px-6 lg:py-2.5">
+    <!-- Phones get one compact row: the date, Today, back/forward, and a
+         "more" menu for everything else. The full toolbar below wrapped onto
+         three rows of 44px controls there, pushing the day itself half off
+         the screen, and its "+ New Appointment" repeated the agenda's own
+         round button. CSS rather than isPhone, so the server renders the
+         right one and nothing jumps on load. -->
+    <header class="relative flex shrink-0 flex-col border-b border-line bg-surface px-3 py-2 md:hidden" data-cy="calendar-phone-header">
+      <div class="flex items-center gap-1.5">
+        <p class="min-w-0 flex-1 truncate pl-1 text-[16px] font-[640] tracking-tightTitle text-ink-900">{{ rangeLabel }}</p>
+        <button
+          v-if="!isTodayShown"
+          type="button"
+          class="h-9 shrink-0 rounded-ctlSm border border-line-control px-3 text-[13px] font-medium text-ink-600"
+          @click="goToday"
+        >
+          {{ t('Today', 'Hoy') }}
+        </button>
+        <button type="button" :aria-label="t('Previous period', 'Periodo anterior')" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctlSm border border-line-control text-ink-500" @click="stepDate(-1)">
+          <svg width="7" height="11" viewBox="0 0 7 11" fill="none"><path d="M6 1L1 5.5L6 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        </button>
+        <button type="button" :aria-label="t('Next period', 'Periodo siguiente')" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctlSm border border-line-control text-ink-500" @click="stepDate(1)">
+          <svg width="7" height="11" viewBox="0 0 7 11" fill="none"><path d="M1 1L6 5.5L1 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        </button>
+        <button
+          type="button"
+          :aria-label="t('More', 'Más')"
+          :aria-expanded="phoneMenuOpen"
+          data-cy="calendar-phone-more"
+          class="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctlSm border border-line-control text-ink-500"
+          @click="phoneMenuOpen = !phoneMenuOpen"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>
+        </button>
+      </div>
+      <div v-if="bookingFor || readOnly" class="mt-2 flex">
+        <span v-if="bookingFor && !readOnly" class="inline-flex h-8 max-w-full items-center gap-1.5 rounded-pill bg-brand-tint pl-3 pr-1.5 text-[12.5px] font-semibold text-brand-text">
+          <span class="truncate">{{ t(`Booking for ${bookingFor.name} · pick a time`, `Reservando para ${bookingFor.name} · elige una hora`) }}</span>
+          <button type="button" class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-pill hover:bg-surface" :aria-label="t('Stop booking for this patient', 'Dejar de reservar para este paciente')" @click="stopBookingFor">&times;</button>
+        </span>
+        <span v-else-if="readOnly" class="inline-flex h-7 items-center rounded-pill bg-chip-bg px-3 text-[12.5px] font-semibold text-chip-text">{{ t('Read-only', 'Solo lectura') }}</span>
+      </div>
+
+      <template v-if="phoneMenuOpen">
+        <div class="fixed inset-0 z-30" @click="phoneMenuOpen = false" />
+        <div class="absolute right-3 top-[calc(100%-4px)] z-40 w-60 overflow-hidden rounded-card border border-line bg-surface py-1 shadow-popover" role="menu" data-cy="calendar-phone-menu">
+          <p class="px-3.5 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-[.05em] text-ink-faint">{{ t('View', 'Vista') }}</p>
+          <button
+            v-for="v in ([['day', t('Day', 'Día')], ['workweek', t('Work week', 'Semana laboral')], ['week', t('Week', 'Semana')]] as const)"
+            :key="v[0]"
+            type="button"
+            role="menuitemradio"
+            :aria-checked="viewMode === v[0]"
+            class="flex h-10 w-full items-center justify-between px-3.5 text-left text-[14px] text-ink-900 active:bg-surface-subtle"
+            @click="phoneMenu(() => (viewMode = v[0]))"
+          >
+            {{ v[1] }}
+            <svg v-if="viewMode === v[0]" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.4L6.6 11.4L12.5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="text-brand" /></svg>
+          </button>
+          <div class="my-1 h-px bg-line-divider" />
+          <button v-if="!readOnly && !showAgenda" type="button" role="menuitem" class="flex h-10 w-full items-center px-3.5 text-left text-[14px] font-medium text-brand-text active:bg-surface-subtle" @click="phoneMenu(() => openCreateModal())">
+            {{ t('New appointment', 'Nueva cita') }}
+          </button>
+          <button v-if="!readOnly" type="button" role="menuitem" class="flex h-10 w-full items-center px-3.5 text-left text-[14px] text-ink-900 active:bg-surface-subtle" @click="phoneMenu(() => openBlockCreateModal())">
+            {{ t('Block time', 'Bloquear horario') }}
+          </button>
+          <button v-if="can('payments_allocate')" type="button" role="menuitem" class="flex h-10 w-full items-center px-3.5 text-left text-[14px] text-ink-900 active:bg-surface-subtle" @click="phoneMenu(() => (cashShiftOpen = true))">
+            {{ t('Cash Shift', 'Turno de Caja') }}
+          </button>
+          <button type="button" role="menuitem" class="flex h-10 w-full items-center px-3.5 text-left text-[14px] text-ink-900 active:bg-surface-subtle" @click="phoneMenu(() => (mobileInfoOpen = true))">
+            {{ t("Today's info", 'Información del día') }}
+          </button>
+        </div>
+      </template>
+    </header>
+
+    <header class="hidden shrink-0 flex-col gap-2.5 border-b border-line bg-surface px-4 py-2.5 md:flex lg:min-h-14 lg:flex-row lg:flex-wrap lg:items-center lg:justify-between lg:px-6 lg:py-2.5">
       <div class="flex items-center gap-4">
         <h1 class="text-[18px] font-[640] tracking-tightTitle text-ink-900">{{ t('Calendar', 'Calendario') }}</h1>
         <div class="flex items-center gap-1">

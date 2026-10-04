@@ -58,7 +58,8 @@ export default defineNuxtConfig({
     redirectOptions: {
       login: '/login',
       callback: '/confirm',
-      exclude: ['/login', '/signup', '/join'],
+      // /forgot-password is reached signed out, like the other three.
+      exclude: ['/login', '/signup', '/join', '/forgot-password'],
     },
   },
 })

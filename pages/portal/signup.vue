@@ -92,7 +92,7 @@ function useDifferentEmail() {
 </script>
 
 <template>
-  <OnboardingLayout>
+  <OnboardingLayout :trust="false">
     <template #brand>
       <AuthClinicBrand :name="clinic.clinicName.value || undefined" />
     </template>
@@ -178,15 +178,6 @@ function useDifferentEmail() {
       </div>
     </template>
 
-    <template #trust>
-      <p class="text-[12px] leading-relaxed text-ink-muted lg:text-[12.5px]">
-        {{
-          clinic.clinicName.value
-            ? t(`Your records are kept by ${clinic.clinicName.value}, stored in the EU under GDPR.`, `Tus datos los guarda ${clinic.clinicName.value}, alojados en la UE conforme al RGPD.`)
-            : t('Your records are kept by your clinic, stored in the EU under GDPR.', 'Tus datos los guarda tu clínica, alojados en la UE conforme al RGPD.')
-        }}
-      </p>
-    </template>
 
     <template #preview>
       <AuthPreviewPortal :clinic-name="clinic.clinicName.value || undefined" />

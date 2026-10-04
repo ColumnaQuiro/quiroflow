@@ -11,7 +11,7 @@
 // Below lg the panel is not rendered at all. It is reassurance, not content:
 // there is nothing in it a phone needs, and half-scaling it would only make
 // the form harder to finish.
-withDefaults(
+const props = withDefaults(
   defineProps<{
     /**
      * Where the form block sits in the column. Short steps centre; step 2 is
@@ -26,11 +26,22 @@ withDefaults(
      * twice. Embedded, the shell fills its parent instead.
      */
     embedded?: boolean
+    /**
+     * The trust line under the form (EU hosting, the trial). Signup and
+     * onboarding keep it; the sign-in screens leave it out.
+     */
+    trust?: boolean
   }>(),
-  { align: 'center', embedded: false },
+  { align: 'center', embedded: false, trust: true },
 )
 
 const t = useT()
+
+// In the app, the strips behind the status bar and the home indicator belong
+// to app.vue, which paints them the grey page colour; next to this all-white
+// shell they showed as grey bands top and bottom. The class tells
+// mobile/app.vue to paint them white while an embedded shell is on screen.
+useHead(() => (props.embedded ? { htmlAttrs: { class: 'auth-screen' } } : {}))
 </script>
 
 <template>
@@ -69,7 +80,7 @@ const t = useT()
 
         <!-- Trust line. Pinned to the bottom of the column by the flex-1 above,
              which on a phone means the bottom of the viewport. -->
-        <div class="mt-auto border-t border-line-divider pt-3.5 lg:pt-4">
+        <div v-if="trust" class="mt-auto border-t border-line-divider pt-3.5 lg:pt-4">
           <slot name="trust">
             <p class="text-[12px] leading-relaxed text-ink-muted lg:text-[12.5px]">
               {{

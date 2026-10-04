@@ -77,6 +77,8 @@ async function deleteAccount() {
       </div>
       <p v-if="photoError" class="text-[13px] font-semibold text-danger-text">{{ t('Could not change your photo:', 'No se ha podido cambiar tu foto:') }} {{ photoError }}</p>
 
+      <LanguageSetting />
+
       <button
         type="button"
         class="w-full rounded-ctl border border-line-control px-4 py-2.5 text-center text-[14px] font-medium text-danger-text active:bg-surface-subtle"

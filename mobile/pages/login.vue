@@ -72,12 +72,9 @@ async function onSubmit() {
 </script>
 
 <template>
-  <OnboardingLayout embedded>
+  <OnboardingLayout :trust="false" embedded>
     <template v-if="side === 'patient'" #brand>
       <AuthClinicBrand :name="clinic.clinicName.value || undefined" />
-    </template>
-    <template #brand-aside>
-      <AuthLangToggle />
     </template>
 
     <template #heading>
@@ -140,15 +137,6 @@ async function onSubmit() {
       </form>
     </template>
 
-    <template #trust>
-      <p class="text-[12px] leading-relaxed text-ink-muted">
-        {{
-          side === 'patient'
-            ? t('Your records are kept by your clinic, stored in the EU under GDPR.', 'Tus datos los guarda tu clínica, alojados en la UE conforme al RGPD.')
-            : t('Patient records stored in the EU under GDPR · Two-step verification available.', 'Historiales alojados en la UE conforme al RGPD · Verificación en dos pasos disponible.')
-        }}
-      </p>
-    </template>
 
     <template #preview>
       <AuthPreviewPortal v-if="side === 'patient'" :clinic-name="clinic.clinicName.value || undefined" />

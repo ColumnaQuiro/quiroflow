@@ -44,12 +44,9 @@ async function onSubmit() {
 </script>
 
 <template>
-  <OnboardingLayout embedded>
+  <OnboardingLayout :trust="false" embedded>
     <template v-if="isPatient" #brand>
       <AuthClinicBrand :name="clinic.clinicName.value || undefined" />
-    </template>
-    <template #brand-aside>
-      <AuthLangToggle />
     </template>
 
     <template #heading>
@@ -93,14 +90,5 @@ async function onSubmit() {
     <!-- Without its own, the layout's default is signup's ("30-day trial,
          no card required"), which means nothing to someone resetting a
          password. -->
-    <template #trust>
-      <p class="text-[12px] leading-relaxed text-ink-muted">
-        {{
-          isPatient
-            ? t('Your records are kept by your clinic, stored in the EU under GDPR.', 'Tus datos los guarda tu clínica, alojados en la UE conforme al RGPD.')
-            : t('Patient records stored in the EU under GDPR · Two-step verification available.', 'Historiales alojados en la UE conforme al RGPD · Verificación en dos pasos disponible.')
-        }}
-      </p>
-    </template>
   </OnboardingLayout>
 </template>

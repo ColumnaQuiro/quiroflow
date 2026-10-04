@@ -935,7 +935,7 @@ function mediaTypeLabel(mediaType: string): string {
   return pair ? t(pair[0], pair[1]) : mediaType
 }
 function previewText(m: Message) {
-  if (m.media_type) return `📎 ${mediaTypeLabel(m.media_type)}${m.body_preview ? ` — ${m.body_preview}` : ''}`
+  if (m.media_type) return `${mediaTypeLabel(m.media_type)}${m.body_preview ? ` — ${m.body_preview}` : ''}`
   if (m.template_name) return m.body_preview ?? `${t('Template', 'Plantilla')}: ${m.template_name}`
   return m.body_preview ?? '—'
 }
@@ -1251,7 +1251,11 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
               class="flex items-center gap-2 text-[13px] underline"
               :class="m.direction === 'outbound' ? 'text-white' : 'text-brand-text'"
             >
-              📄 {{ m.media_filename ?? t('Document', 'Documento') }}
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" class="shrink-0" aria-hidden="true">
+                <path d="M4 1.5h5.5L12.5 4.5V14.5H4z" stroke-linejoin="round" />
+                <path d="M9.5 1.5V4.5H12.5" stroke-linejoin="round" />
+              </svg>
+              {{ m.media_filename ?? t('Document', 'Documento') }}
             </a>
             <img
               v-else-if="m.media_type === 'sticker' && m.media_storage_path && mediaUrls[m.media_storage_path]"

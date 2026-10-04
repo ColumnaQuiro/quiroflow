@@ -48,10 +48,7 @@ async function signOut() {
        their clinic requires two-factor and it isn't set up yet). Nothing
        below can load until then -- the database returns no rows for this
        login -- so this is the whole screen. -->
-  <OnboardingLayout v-else-if="twoFactor !== 'ok'" embedded>
-    <template #brand-aside>
-      <AuthLangToggle />
-    </template>
+  <OnboardingLayout :trust="false" v-else-if="twoFactor !== 'ok'" embedded>
 
     <template #heading>
       <h1 class="text-[25px] font-semibold leading-[1.18] tracking-tightTitle text-ink-900">
@@ -74,11 +71,6 @@ async function signOut() {
       </div>
     </template>
 
-    <template #trust>
-      <p class="text-[12px] leading-relaxed text-ink-muted">
-        {{ t('Patient records stored in the EU under GDPR.', 'Historiales alojados en la UE conforme al RGPD.') }}
-      </p>
-    </template>
   </OnboardingLayout>
 
   <div v-else-if="!patient && !teamMember" class="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 py-16 text-center">

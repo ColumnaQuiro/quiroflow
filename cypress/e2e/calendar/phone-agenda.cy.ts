@@ -66,4 +66,28 @@ describe('The day on a phone', () => {
       cy.get('[data-cy=create-sheet]').should('be.visible').invoke('outerWidth').should('eq', 375)
     })
   })
+  // The full toolbar wrapped onto three rows of 44px controls on a phone; it
+  // is one row now, with the rest behind "more".
+  it('keeps the header to one row, with the rest in a menu', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.login(account.email, account.password)
+      cy.visit('/calendar')
+      cy.get('[data-cy=calendar-phone-header]').should('be.visible').invoke('outerHeight').should('be.lessThan', 60)
+      cy.get('[data-cy=new-appointment]').should('not.be.visible')
+      cy.contains('button', 'Cash Shift').should('not.be.visible')
+
+      cy.get('[data-cy=calendar-phone-more]').click()
+      cy.get('[data-cy=calendar-phone-menu]').within(() => {
+        cy.contains('button', 'Block time').should('be.visible')
+        cy.contains('button', 'Cash Shift').should('be.visible')
+        // The agenda has its own round "+"; the menu offers New appointment
+        // only where that button is not (the week grid).
+        cy.contains('button', 'New appointment').should('not.exist')
+        cy.contains('button', 'Week').click()
+      })
+      cy.get('[data-cy=phone-agenda]').should('not.exist')
+      cy.get('[data-cy=calendar-phone-more]').click()
+      cy.get('[data-cy=calendar-phone-menu]').contains('button', 'New appointment').should('be.visible')
+    })
+  })
 })

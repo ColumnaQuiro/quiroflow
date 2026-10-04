@@ -1,21 +1,24 @@
 <script setup lang="ts">
+// The app's patient door: the clinic code, once. Same shell and switch as
+// the web sign-in (components/auth), so a patient sees the same thing on
+// the phone as in the browser.
 const t = useT()
 const { pingAppOpen } = useAppOpenPing()
-const code = ref('')
+const clinic = useClinicCode()
 const error = ref('')
 const loading = ref(false)
 
 async function onSubmit() {
   error.value = ''
   loading.value = true
-  const slug = code.value.trim().toLowerCase()
+  const slug = clinic.normalize(clinic.code.value)
   const { error: rpcError } = await pingAppOpen(slug)
   loading.value = false
   if (rpcError) {
     error.value = t('Clinic code not found — check with your clinic.', 'No se encuentra ese código de clínica: consúltalo con tu clínica.')
     return
   }
-  localStorage.setItem('clinic_slug', slug)
+  clinic.remember(slug)
   await navigateTo('/login')
 }
 
@@ -32,39 +35,48 @@ function skipAsTeamMember() {
 </script>
 
 <template>
-  <div class="flex h-full items-center justify-center bg-surface-page px-6">
-    <div class="w-full max-w-sm rounded-card border border-line bg-surface p-8 shadow-card">
-      <img src="/logo/quiroflow-mark.svg" alt="" class="h-8 w-8" />
-      <h1 class="mt-4 text-xl font-semibold text-ink-900">{{ t('Join your clinic', 'Únete a tu clínica') }}</h1>
-      <p class="mt-1 text-sm text-ink-muted">
+  <OnboardingLayout embedded>
+    <template #brand>
+      <AuthClinicBrand :name="clinic.clinicName.value || undefined" />
+    </template>
+    <template #brand-aside>
+      <AuthLangToggle />
+    </template>
+
+    <template #heading>
+      <AuthDoorSwitch current="patient" buttons class="mb-7" @select="skipAsTeamMember" />
+      <h1 class="text-[25px] font-semibold leading-[1.18] tracking-tightTitle text-ink-900">
+        {{ t('Join your clinic', 'Únete a tu clínica') }}
+      </h1>
+      <p class="mt-2 text-[14.5px] leading-[1.55] text-ink-muted">
         {{
           t(
-            'Enter the code your clinic gave you, then sign up with the same email your clinic has on file for you — both have to match.',
-            'Introduce el código que te dio tu clínica y regístrate con el mismo correo que tiene en tu ficha: los dos tienen que coincidir.',
+            'Enter the code your clinic gave you. Then sign in, or create your account with the email your clinic has on file for you.',
+            'Introduce el código que te dio tu clínica. Después entra, o crea tu cuenta con el correo que tiene tu clínica.',
           )
         }}
       </p>
-      <form class="mt-6 space-y-4" @submit.prevent="onSubmit">
-        <div>
-          <label class="block text-sm font-medium text-ink-700" for="code">{{ t('Clinic code', 'Código de la clínica') }}</label>
-          <input
-            id="code"
-            v-model="code"
-            type="text"
-            required
-            autocapitalize="none"
-            autocorrect="off"
-            class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-          />
-        </div>
-        <p v-if="error" class="text-sm text-danger-text">{{ error }}</p>
-        <UiBtn type="submit" variant="primary" class="w-full" :disabled="loading || !code.trim()">
-          {{ loading ? t('Checking…', 'Comprobando…') : t('Continue', 'Continuar') }}
-        </UiBtn>
+    </template>
+
+    <template #form>
+      <form class="mt-5 flex flex-col gap-[18px]" @submit.prevent="onSubmit">
+        <AuthClinicField :clinic="clinic" :readonly="loading" />
+        <p v-if="error" role="alert" class="text-[13px] text-danger-text">{{ error }}</p>
+        <OnboardingPrimaryButton class="mt-1" :loading="loading" :loading-label="t('Checking…', 'Comprobando…')">
+          {{ t('Continue', 'Continuar') }}
+        </OnboardingPrimaryButton>
       </form>
-      <button type="button" class="mt-4 block w-full text-center text-sm text-ink-muted hover:text-ink-700" @click="skipAsTeamMember">
-        {{ t("I'm on the clinic's team", 'Soy del equipo de la clínica') }} &rarr;
-      </button>
-    </div>
-  </div>
+    </template>
+
+    <template #trust>
+      <p class="text-[12px] leading-relaxed text-ink-muted">
+        {{ t('Your records are kept by your clinic, stored in the EU under GDPR.', 'Tus datos los guarda tu clínica, alojados en la UE conforme al RGPD.') }}
+      </p>
+    </template>
+
+    <!-- Only an iPad in landscape is wide enough to show it. -->
+    <template #preview>
+      <AuthPreviewPortal :clinic-name="clinic.clinicName.value || undefined" />
+    </template>
+  </OnboardingLayout>
 </template>

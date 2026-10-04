@@ -18,19 +18,28 @@ withDefaults(
      * tall enough that centring would push its buttons under the fold.
      */
     align?: 'center' | 'start'
+    /**
+     * Inside the mobile app, which already owns the screen: app.vue is the
+     * one h-screen scroll box and pads the top inset, and layouts/default.vue
+     * pads the bottom one. min-h-screen plus those insets made every sign-in
+     * screen a notch taller than the phone, and the bottom inset applied
+     * twice. Embedded, the shell fills its parent instead.
+     */
+    embedded?: boolean
   }>(),
-  { align: 'center' },
+  { align: 'center', embedded: false },
 )
 
 const t = useT()
 </script>
 
 <template>
-  <div class="flex min-h-screen bg-surface">
+  <div class="flex bg-surface" :class="embedded ? 'min-h-full flex-1' : 'min-h-screen'">
     <!-- ============ LEFT: the form column ============ -->
     <div
-      class="flex min-h-screen w-full flex-col px-5 pb-5 pt-6 lg:w-[53%] lg:shrink-0 lg:px-10 lg:pb-11 lg:pt-14 xl:px-[124px]"
-      style="padding-bottom: max(env(safe-area-inset-bottom), 1.25rem)"
+      class="flex w-full flex-col px-5 pb-5 pt-6 lg:w-[53%] lg:shrink-0 lg:px-10 lg:pb-11 lg:pt-14 xl:px-[124px]"
+      :class="embedded ? 'min-h-full' : 'min-h-screen'"
+      :style="embedded ? undefined : 'padding-bottom: max(env(safe-area-inset-bottom), 1.25rem)'"
     >
       <div class="mx-auto flex w-full max-w-[515px] flex-1 flex-col">
         <!-- Brand first: the mark is what tells a clinic whose signup this is.

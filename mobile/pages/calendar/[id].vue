@@ -786,7 +786,7 @@ watch(
     >
       <template #header>
         <div class="flex items-center justify-between gap-2" data-cy="visit-finished-header">
-          <p class="text-[16px] font-semibold text-ink-900">{{ t('Visit finished', 'Visita terminada') }} ✓</p>
+          <p class="text-[16px] font-semibold text-ink-900">{{ t('Visit finished', 'Visita terminada') }}</p>
           <span v-if="bonoUsed" class="text-[12.5px] text-ink-muted2">{{ t('Bono: 1 session used', 'Bono: 1 sesión usada') }}</span>
         </div>
       </template>
@@ -797,7 +797,7 @@ watch(
       <div class="flex flex-col gap-3 rounded-t-[22px] bg-surface px-4 pt-2.5 shadow-popover" style="padding-bottom: max(env(safe-area-inset-bottom), 1.25rem)" role="dialog" aria-modal="true">
         <div class="mx-auto mb-0.5 h-1 w-[38px] shrink-0 rounded-full bg-line-control" />
         <div class="flex items-center justify-between gap-2">
-          <p class="text-[16px] font-semibold text-ink-900">{{ t('Visit finished', 'Visita terminada') }} ✓</p>
+          <p class="text-[16px] font-semibold text-ink-900">{{ t('Visit finished', 'Visita terminada') }}</p>
           <span v-if="bonoUsed" class="text-[12.5px] text-ink-muted2">{{ t('Bono: 1 session used', 'Bono: 1 sesión usada') }}</span>
         </div>
         <div class="rounded-card border border-line bg-surface-page px-3.5 py-2.5">

@@ -476,7 +476,7 @@ const birthdayNames = computed(() => birthdays.value.map((p) => `${p.first_name}
             <p class="truncate text-[12.5px] text-ink-muted2">{{ a.appointment_types?.name ?? t('Appointment', 'Cita') }}</p>
           </div>
           <div class="flex shrink-0 flex-col items-end gap-1">
-            <span v-if="rowState(a) === 'done'" class="text-[12.5px] font-medium text-success-text">✓ {{ t('Done', 'Hecha') }}</span>
+            <span v-if="rowState(a) === 'done'" class="text-[12.5px] font-medium text-success-text">{{ t('Done', 'Hecha') }}</span>
             <span v-else-if="rowState(a) === 'in'" class="inline-flex h-6 items-center rounded-pill bg-brand-tint px-2.5 text-[11.5px] font-semibold text-brand-text">{{ t('In clinic', 'En clínica') }}</span>
             <span v-else-if="rowState(a) === 'noshow'" class="text-[12.5px] font-medium text-danger-text">{{ t('No-show', 'No vino') }}</span>
             <span v-if="isNewPatientVisit(a)" class="inline-flex h-6 items-center rounded-pill bg-brand-tint px-2.5 text-[11.5px] font-semibold text-brand-text" data-test="myday-flag-new">{{ t('New patient', 'Paciente nuevo') }}</span>
@@ -498,7 +498,7 @@ const birthdayNames = computed(() => birthdays.value.map((p) => `${p.first_name}
         <p class="px-0.5 pt-1 text-[10.5px] font-semibold uppercase tracking-[.05em] text-ink-faint">{{ t('Also today', 'También hoy') }}</p>
         <div class="rounded-[13px] border border-line bg-surface px-3.5 py-1" data-test="myday-also">
           <div class="flex items-center justify-between gap-3 py-2">
-            <span class="shrink-0 text-[14px] text-ink-900">🎂 {{ t('Birthdays', 'Cumpleaños') }}</span>
+            <span class="shrink-0 text-[14px] text-ink-900">{{ t('Birthdays', 'Cumpleaños') }}</span>
             <UiSkeleton v-if="loading" class="h-3.5 w-24 rounded-ctlSm" />
             <span v-else class="min-w-0 truncate text-right text-[12.5px] text-ink-muted2" data-test="myday-birthdays">{{ birthdayNames || t('None today', 'Ninguno hoy') }}</span>
           </div>

@@ -35,12 +35,9 @@ function skipAsTeamMember() {
 </script>
 
 <template>
-  <OnboardingLayout embedded>
+  <OnboardingLayout :trust="false" embedded>
     <template #brand>
       <AuthClinicBrand :name="clinic.clinicName.value || undefined" />
-    </template>
-    <template #brand-aside>
-      <AuthLangToggle />
     </template>
 
     <template #heading>
@@ -68,11 +65,6 @@ function skipAsTeamMember() {
       </form>
     </template>
 
-    <template #trust>
-      <p class="text-[12px] leading-relaxed text-ink-muted">
-        {{ t('Your records are kept by your clinic, stored in the EU under GDPR.', 'Tus datos los guarda tu clínica, alojados en la UE conforme al RGPD.') }}
-      </p>
-    </template>
 
     <!-- Only an iPad in landscape is wide enough to show it. -->
     <template #preview>

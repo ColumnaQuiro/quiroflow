@@ -68,3 +68,15 @@ onUnmounted(() => document.removeEventListener('pointerdown', dismissKeyboardOnO
     </NuxtLayout>
   </div>
 </template>
+
+<style>
+/* An embedded sign-in shell (components/onboarding/Layout.vue) is white edge
+   to edge, so the strips behind the status bar and the home indicator --
+   which belong to the root box below, grey like every other page -- are
+   painted white too while one is on screen. */
+html.auth-screen,
+html.auth-screen body,
+html.auth-screen #__nuxt > div {
+  background-color: rgb(var(--color-surface));
+}
+</style>

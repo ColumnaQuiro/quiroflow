@@ -44,7 +44,7 @@ async function signOut() {
 <template>
   <!-- The step straight after /login, so the same shell (OnboardingLayout):
        the old centred card was the only screen of the sign-in left on it. -->
-  <OnboardingLayout>
+  <OnboardingLayout :trust="false">
     <template #brand-aside>
       <AuthLangToggle />
     </template>
@@ -72,11 +72,6 @@ async function signOut() {
       </div>
     </template>
 
-    <template #trust>
-      <p class="text-[12px] leading-relaxed text-ink-muted lg:text-[12.5px]">
-        {{ t('Patient records stored in the EU under GDPR.', 'Historiales alojados en la UE conforme al RGPD.') }}
-      </p>
-    </template>
 
     <template #preview>
       <OnboardingPreviewCalendar

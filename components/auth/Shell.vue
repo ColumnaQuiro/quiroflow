@@ -22,7 +22,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <OnboardingLayout>
+  <OnboardingLayout :trust="false">
     <template v-if="portal" #brand>
       <AuthClinicBrand :name="clinic.clinicName.value || undefined" />
     </template>
@@ -37,15 +37,6 @@ onMounted(async () => {
       <slot name="form" />
     </template>
 
-    <template #trust>
-      <p class="text-[12px] leading-relaxed text-ink-muted lg:text-[12.5px]">
-        {{
-          portal
-            ? t('Your records are kept by your clinic, stored in the EU under GDPR.', 'Tus datos los guarda tu clínica, alojados en la UE conforme al RGPD.')
-            : t('Patient records stored in the EU under GDPR · Two-step verification available.', 'Historiales alojados en la UE conforme al RGPD · Verificación en dos pasos disponible.')
-        }}
-      </p>
-    </template>
 
     <template #preview>
       <AuthPreviewPortal v-if="portal" :clinic-name="clinic.clinicName.value || undefined" />

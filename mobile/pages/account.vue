@@ -79,6 +79,8 @@ async function deleteAccount() {
       <span class="text-[13px] text-ink-faint">&rarr;</span>
     </NuxtLink>
 
+    <LanguageSetting class="mt-3" />
+
     <div class="mt-5 space-y-2">
       <UiBtn variant="secondary" class="w-full" @click="signOut">{{ t('Sign out', 'Cerrar sesión') }}</UiBtn>
       <button

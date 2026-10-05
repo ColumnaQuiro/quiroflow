@@ -4,13 +4,16 @@
 // up: a page that pads its own bottom by the keyboard height (the message
 // composer) would otherwise land a tab-bar-sized gap above it.
 const { keyboardHeight } = useKeyboardInset()
+// Off on the home screen until there is a signed-in patient behind it (see
+// pages/index.vue); the bottom inset is then padded here instead of by the bar.
+const tabsVisible = usePatientTabsVisible()
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 flex-col">
+  <div class="flex min-h-0 flex-1 flex-col" :style="tabsVisible ? undefined : 'padding-bottom: env(safe-area-inset-bottom)'">
     <div class="min-h-0 flex-1 overflow-y-auto">
       <slot />
     </div>
-    <PatientTabBar v-if="keyboardHeight === 0" />
+    <PatientTabBar v-if="tabsVisible && keyboardHeight === 0" />
   </div>
 </template>

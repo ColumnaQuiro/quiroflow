@@ -11,10 +11,15 @@ const { patient, teamMember, twoFactor, loading, reload } = useIdentity()
 // the authenticator code is still owed, or for an account linked to nothing,
 // there is nowhere for those tabs to go -- and with them, the two-factor step
 // right after the password looked like the inside of the app with a form on
-// top. Those screens get the plain layout, like the sign-in before them.
+// top. So the patient layout hides its tab bar until this says otherwise.
+//
+// Not setPageLayout, which this used in 1.5: called while the app is starting
+// it sets the layout for every page after it, not just this one, so a staff
+// member redirected to /my-day below got the patient tabs after signing in
+// and no tabs at all after relaunching the app.
+const patientTabs = usePatientTabsVisible()
 watchEffect(() => {
-  const inside = !loading.value && twoFactor.value === 'ok' && !!(patient.value || teamMember.value)
-  setPageLayout(inside ? 'patient' : 'default')
+  patientTabs.value = !loading.value && twoFactor.value === 'ok' && !!patient.value
 })
 
 // Staff with no patient record of their own have nothing to see here, so

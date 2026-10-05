@@ -565,28 +565,37 @@ async function submitBooking() {
   phoneChecked.value = true
   if (!looksLikePhoneNumber(phoneNumber.value, dialCode.value)) return
   submitting.value = true
-  const { data, error } = await supabase.rpc('create_public_booking', {
-    p_account_slug: slug,
-    p_clinic_id: clinicId.value,
-    p_team_member_id: teamMemberId.value,
-    p_appointment_type_id: appointmentTypeId.value,
-    p_starts_at: selectedSlot.value.toISOString(),
-    p_first_name: firstName.value,
-    p_last_name: lastName.value,
-    p_email: email.value,
-    // Bare number, no dial prefix -- country_code is stored separately and
-    // every display site (patients/Banner.vue, ContactNumbersEditor.vue)
-    // already prepends the dial code itself from country_code.
-    p_phone: phoneNumber.value,
-    p_country_code: dialCode.value,
-    p_note: note.value,
-    p_discount_code: discountCode.value.trim() || undefined,
-  })
-  submitting.value = false
-  if (error) {
-    submitError.value = error.message
+  // Through our own server rather than straight to the RPC, so the clinic's
+  // alert has gone out before this returns -- see book.post.ts.
+  let data: unknown
+  try {
+    data = await $fetch('/api/public-booking/book', {
+      method: 'POST',
+      body: {
+        p_account_slug: slug,
+        p_clinic_id: clinicId.value,
+        p_team_member_id: teamMemberId.value,
+        p_appointment_type_id: appointmentTypeId.value,
+        p_starts_at: selectedSlot.value.toISOString(),
+        p_first_name: firstName.value,
+        p_last_name: lastName.value,
+        p_email: email.value,
+        // Bare number, no dial prefix -- country_code is stored separately and
+        // every display site (patients/Banner.vue, ContactNumbersEditor.vue)
+        // already prepends the dial code itself from country_code.
+        p_phone: phoneNumber.value,
+        p_country_code: dialCode.value,
+        p_note: note.value,
+        p_discount_code: discountCode.value.trim() || undefined,
+      },
+    })
+  } catch (err: any) {
+    submitting.value = false
+    // create_public_booking's own refusal, passed through word for word.
+    submitError.value = err?.data?.data?.message ?? 'No se ha podido completar la reserva. Inténtelo de nuevo, por favor.'
     return
   }
+  submitting.value = false
   const result = data as unknown as { appointment_id: string; starts_at: string; invoice_id: string | null; payment_required_cents: number; discount_applied_cents: number }
   confirmation.value = result
   discountAppliedCents.value = result.discount_applied_cents ?? 0

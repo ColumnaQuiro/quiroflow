@@ -986,6 +986,7 @@ export type Database = {
           room_id: string | null
           same_day_info_sent_at: string | null
           source: string
+          staff_alert_claimed_at: string | null
           starts_at: string
           status: string
         }
@@ -1013,6 +1014,7 @@ export type Database = {
           room_id?: string | null
           same_day_info_sent_at?: string | null
           source?: string
+          staff_alert_claimed_at?: string | null
           starts_at: string
           status?: string
         }
@@ -1040,6 +1042,7 @@ export type Database = {
           room_id?: string | null
           same_day_info_sent_at?: string | null
           source?: string
+          staff_alert_claimed_at?: string | null
           starts_at?: string
           status?: string
         }

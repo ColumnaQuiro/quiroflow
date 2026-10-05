@@ -126,8 +126,14 @@ export default defineEventHandler(async (event) => {
   const caughtUp = (unconfirmed ?? []) as { id: string; account_id: string; source: string }[]
   await mapWithConcurrency(caughtUp, SEND_CONCURRENCY, async (appt) => {
     if (!(await claimAutomaticConfirmation(supabase, appt.id))) return
+    // The clinic's alert, for an online booking nothing has alerted about yet:
+    // the patient app's, which go through no endpoint of ours, and any the
+    // booking page's own request missed. Claimed separately, because
+    // book.post.ts alerts without touching the confirmation claim.
+    if (appt.source === 'online' && (await claimStaffAlert(supabase, appt.id))) {
+      await notifyStaffOfOnlineBooking(supabase, appt.account_id, appt.id)
+    }
     await sendAppointmentConfirmation(supabase, appt.account_id, appt.id)
-    if (appt.source === 'online') await notifyStaffOfOnlineBooking(supabase, appt.account_id, appt.id)
   })
 
   return { sent: dueAppointments.length, confirmationsCaughtUp: caughtUp.length }

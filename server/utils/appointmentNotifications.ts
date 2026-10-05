@@ -1,4 +1,5 @@
 import { toE164 } from '~/utils/phone'
+import { onlineBookingAlert } from '~/utils/onlineBookingAlert'
 import { sendResendEmail } from './resend'
 import { sendWhatsAppTemplate, sendWhatsAppText } from './whatsappSend'
 import { sendPushToPatients } from './pushNotifications'
@@ -413,6 +414,22 @@ export async function claimAutomaticConfirmation(supabase: any, appointmentId: s
   return (data?.length ?? 0) > 0
 }
 
+/**
+ * Claims the clinic's "new online booking" alert: true for exactly one caller.
+ * The booking endpoint, the confirmation endpoint and the cron's catch-up all
+ * offer it, so whichever reaches a booking first alerts and the rest send
+ * nothing. See the migration that added staff_alert_claimed_at.
+ */
+export async function claimStaffAlert(supabase: any, appointmentId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('appointments')
+    .update({ staff_alert_claimed_at: new Date().toISOString() })
+    .eq('id', appointmentId)
+    .is('staff_alert_claimed_at', null)
+    .select('id')
+  return (data?.length ?? 0) > 0
+}
+
 export async function sendAppointmentConfirmation(supabase: any, accountId: string, appointmentId: string): Promise<boolean> {
   const { data: thisAppt } = await supabase.from('appointments').select('patient_id').eq('id', appointmentId).maybeSingle()
   if (thisAppt?.patient_id) {
@@ -465,17 +482,21 @@ export async function notifyStaffOfOnlineBooking(supabase: any, accountId: strin
   const ctx = await loadAppointmentContext(supabase, appointmentId)
   if (!ctx) return
 
-  const when = new Date(ctx.startsAt).toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: ctx.clinicTimezone })
   const patientName = [ctx.patientFirstName, ctx.patientLastName].filter(Boolean).join(' ')
-  const summary = `Nueva reserva online: ${patientName}${ctx.patientPhone ? ` (${ctx.patientPhone})` : ''} con ${ctx.practitionerName || 'un profesional'} el ${when}${ctx.appointmentTypeName ? ` (${ctx.appointmentTypeName})` : ''}.`
+  const alert = onlineBookingAlert({
+    patientFirstName: ctx.patientFirstName,
+    patientLastName: ctx.patientLastName,
+    patientPhone: ctx.patientPhone,
+    practitionerName: ctx.practitionerName,
+    appointmentTypeName: ctx.appointmentTypeName,
+    startsAt: ctx.startsAt,
+    timeZone: ctx.clinicTimezone,
+  })
+  const summary = alert.summary
 
   if (account.online_booking_notify_email) {
     try {
-      await sendResendEmail({
-        to: account.online_booking_notify_email,
-        subject: 'Nueva reserva online',
-        html: `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px;color:#4A4A57;line-height:1.6;">${summary}</div>`,
-      })
+      await sendResendEmail({ to: account.online_booking_notify_email, subject: alert.subject, html: alert.html })
     } catch {
       // Best-effort, see comment above.
     }

@@ -62,7 +62,7 @@ const offer = ref(false)
 const busy = ref(false)
 const error = ref('')
 
-onMounted(async () => {
+async function load() {
   if (!context.value) return
   const clinicId = props.appointment.clinic_id ?? context.value.clinicId
   const [{ data: account }, cardRes, { data: waiting }] = await Promise.all([
@@ -82,7 +82,14 @@ onMounted(async () => {
   matches.value = fitting.map((w) => ({ id: w.id, name: nameById.get(w.id) || t('someone on the waitlist', 'alguien de la lista de espera') }))
   offer.value = matches.value.length > 0 && !!deadline
   loading.value = false
-})
+}
+// Once the team member's context is in: opened straight after a cold start it
+// may still be on its way.
+const stopLoad = watch(() => context.value?.teamMemberId, (id) => {
+  if (!id) return
+  load()
+  nextTick(() => stopLoad())
+}, { immediate: true })
 
 const feeText = computed(() => formatEur(feeCents.value))
 const feeOptions = computed(() => {

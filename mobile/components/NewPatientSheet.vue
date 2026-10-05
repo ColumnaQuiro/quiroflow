@@ -41,13 +41,18 @@ const fieldConfig = ref<Record<string, FieldConfig>>({})
 const visible = (key: string) => fieldConfig.value[key]?.visible ?? true
 const required = (key: string) => fieldConfig.value[key]?.required ?? false
 
-onMounted(async () => {
+async function loadConfig() {
   if (!context.value) return
   const { data } = await supabase.from('accounts').select('new_patient_field_config, default_phone_country').eq('id', context.value.accountId).maybeSingle()
   const row = data as { new_patient_field_config: Record<string, FieldConfig> | null; default_phone_country: string | null } | null
   fieldConfig.value = row?.new_patient_field_config ?? {}
   phoneCountry.value = row?.default_phone_country || 'ES'
-})
+}
+const stopLoad = watch(() => context.value?.accountId, (id) => {
+  if (!id) return
+  loadConfig()
+  nextTick(() => stopLoad())
+}, { immediate: true })
 
 async function save() {
   if (!context.value || saving.value) return

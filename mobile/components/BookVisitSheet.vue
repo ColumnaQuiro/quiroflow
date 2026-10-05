@@ -32,12 +32,28 @@ const props = defineProps<{
   typeId?: string | null
   /** YYYY-MM-DD to centre the days on. Default: worked out from the care plan. */
   suggestedDate?: string | null
+  /**
+   * An exact start the agenda asked for (a slot held down on the timeline).
+   * Offered on its day even when it is off the usual grid of whole visits --
+   * the web's staff calendar books any free time -- and preselected.
+   */
+  preferredStart?: string | null
+  /** The heading. Default: "Book the next visit", or "Move the visit". */
+  title?: string | null
+  /**
+   * Move this visit instead of booking a new one: the same days, free times
+   * and clash check, but the visit keeps its length and type, and saving is
+   * the web's reschedule (calendar.vue confirmReschedule).
+   */
+  move?: { appointmentId: string; startsAt: string; endsAt: string; roomId: string | null } | null
 }>()
 
 const emit = defineEmits<{
   booked: [{ appointmentId: string; startsAt: string; endsAt: string }]
   close: []
 }>()
+
+const moving = computed(() => !!props.move)
 
 const supabase = useSupabaseClient()
 const authedFetch = useAuthedFetch()
@@ -68,6 +84,10 @@ const anchorDate = ref('')
 const selectedDate = ref('')
 const selectedSlot = ref<number | null>(null)
 const changing = ref(false)
+// Moving only: why, and whether the patient hears about it.
+const reasons = ref<{ id: string; name: string }[]>([])
+const reasonId = ref<string | null>(null)
+const notifyPatient = ref(true)
 
 // calendar_scope 'own': this person sees, and may book, only their own
 // diary. Offering anyone else's free times would read them through an RLS
@@ -84,7 +104,11 @@ const practitioners = computed(() => {
 })
 const practitioner = computed(() => practitioners.value.find((p) => p.id === practitionerId.value) ?? null)
 const type = computed(() => types.value.find((x) => x.id === typeId.value) ?? null)
-const duration = computed(() => (type.value ? effectiveDuration(type.value.duration_minutes, type.value.id, practitionerId.value, overrides.value) : 30))
+// A moved visit keeps its own length, as a drag on the web calendar does.
+const duration = computed(() => {
+  if (props.move) return Math.max(5, Math.round((Date.parse(props.move.endsAt) - Date.parse(props.move.startsAt)) / 60000))
+  return type.value ? effectiveDuration(type.value.duration_minutes, type.value.id, practitionerId.value, overrides.value) : 30
+})
 const timeZone = computed(() => clinic.value?.timezone || DEFAULT_CLINIC_TIMEZONE)
 
 // Staff booking treats "no hours set anywhere" as no restriction (the web
@@ -168,16 +192,17 @@ const slotsLoading = ref(false)
 const slotsError = ref('')
 let busyRun = 0
 
-async function fetchBusy(fromIso: string, toIso: string, practId: string) {
+async function fetchBusy(fromIso: string, toIso: string, practId: string, roomId: string | null = null) {
   if (!clinic.value) return { appts: [] as ClashCandidateAppointment[], blocks: [] as ClashCandidateBlock[], error: null as string | null }
   // By practitioner across the account, not the clinic: someone who works at
   // two clinics is still one person (useMoveClashCheck). Their own blocks
-  // too; another clinic's closure is that clinic's.
+  // too; another clinic's closure is that clinic's. A moved visit keeps its
+  // room, so whoever else is in that room counts as well.
   const [appts, blocks] = await Promise.all([
     supabase
       .from('appointments')
       .select('id, starts_at, ends_at, practitioner_id, room_id, status, deleted_at, patients(first_name, last_name)')
-      .eq('practitioner_id', practId)
+      .or(roomId ? `practitioner_id.eq.${practId},room_id.eq.${roomId}` : `practitioner_id.eq.${practId}`)
       .neq('status', 'cancelled')
       .is('deleted_at', null)
       .lt('starts_at', toIso)
@@ -203,11 +228,12 @@ async function loadBusy() {
   slotsError.value = ''
   const from = startOfLocalDate(selectedDate.value, timeZone.value).toISOString()
   const to = startOfLocalDate(nextDate(selectedDate.value), timeZone.value).toISOString()
-  const { appts, blocks, error } = await fetchBusy(from, to, practitionerId.value)
+  const { appts, blocks, error } = await fetchBusy(from, to, practitionerId.value, props.move?.roomId ?? null)
   if (run !== busyRun) return
   if (error) slotsError.value = t('Could not load the free times.', 'No se han podido cargar las horas libres.')
   busy.value = [
-    ...appts,
+    // A visit being moved is never in its own way.
+    ...appts.filter((a) => a.id !== props.move?.appointmentId),
     // A block for this practitioner, or one naming nobody (the whole clinic).
     // A room's own block does not close the practitioner's diary.
     ...blocks.filter((b) => b.practitioner_id === practitionerId.value || (b.practitioner_id === null && b.room_id === null)),
@@ -215,9 +241,10 @@ async function loadBusy() {
   slotsLoading.value = false
 }
 
+const preferredMs = computed(() => (props.preferredStart ? Date.parse(props.preferredStart) : null))
 const slots = computed(() => {
   if (!selectedDate.value || !practitionerId.value) return []
-  return bookingSlotsForDay({
+  const list = bookingSlotsForDay({
     date: selectedDate.value,
     timeZone: timeZone.value,
     clinicHours: clinicHours.value,
@@ -225,6 +252,17 @@ const slots = computed(() => {
     durationMinutes: duration.value,
     busy: busy.value,
   })
+  // The time held down on the agenda, when it is on this day, still ahead
+  // and free -- whether or not it falls on the grid of whole visits.
+  const p = preferredMs.value
+  if (p !== null && clinicDateOf(new Date(p), timeZone.value) === selectedDate.value && p > Date.now() && !list.some((s) => s.getTime() === p)) {
+    const end = p + duration.value * 60000
+    if (!busy.value.some((b) => Date.parse(b.starts_at) < end && Date.parse(b.ends_at) > p)) {
+      list.push(new Date(p))
+      list.sort((a, b) => a.getTime() - b.getTime())
+    }
+  }
+  return list
 })
 
 // The time of day they usually come, preselected when it is free that day --
@@ -235,6 +273,14 @@ const usualTime = computed(() => {
 })
 watch(slots, (list) => {
   if (selectedSlot.value !== null && list.some((s) => s.getTime() === selectedSlot.value)) return
+  if (preferredMs.value !== null && list.some((s) => s.getTime() === preferredMs.value)) {
+    selectedSlot.value = preferredMs.value
+    return
+  }
+  if (moving.value) {
+    selectedSlot.value = null
+    return
+  }
   const usual = usualTime.value ? list.find((s) => clinicTimeLabel(s, timeZone.value) === usualTime.value) : undefined
   selectedSlot.value = usual ? usual.getTime() : null
 })
@@ -313,8 +359,16 @@ async function load() {
   const typeCandidates = [props.typeId, lastVisit.value?.appointment_type_id, nextVisit.value?.appointment_type_id]
   typeId.value = typeCandidates.find((id) => id && types.value.some((x) => x.id === id)) ?? types.value[0]?.id ?? ''
 
-  anchorDate.value = firstWorkingDayFrom(suggestion.value.date)
+  // A day picked on the agenda, or the day of the visit being moved, is
+  // kept as it is: the answer for that day ("no free times") belongs on
+  // screen, not a quiet jump to the next working day.
+  anchorDate.value = props.preferredStart || props.move ? suggestion.value.date : firstWorkingDayFrom(suggestion.value.date)
   selectedDate.value = anchorDate.value
+  if (props.move) {
+    const { data: reasonRows } = await supabase.from('reschedule_reasons').select('id, name').order('name')
+    reasons.value = (reasonRows as { id: string; name: string }[] | null) ?? []
+    notifyPatient.value = !patient.value.is_minor && !patient.value.do_not_contact
+  }
   loading.value = false
 }
 watch(() => context.value?.teamMemberId, (id) => id && load(), { immediate: true })
@@ -323,12 +377,46 @@ watch(() => context.value?.teamMemberId, (id) => id && load(), { immediate: true
 const booking = ref(false)
 const bookError = ref('')
 
+// -- Moving: whether the patient hears about it ------------------------------
+const canNotify = computed(() => !!patient.value && !patient.value.is_minor && !patient.value.do_not_contact)
+
 const selectedStart = computed(() => (selectedSlot.value === null ? null : new Date(selectedSlot.value)))
 const ctaLabel = computed(() => {
-  if (booking.value) return t('Booking…', 'Reservando…')
+  if (booking.value) return moving.value ? t('Moving…', 'Moviendo…') : t('Booking…', 'Reservando…')
   if (!selectedStart.value) return t('Pick a time', 'Elige una hora')
-  return `${t('Book', 'Reservar')} ${longDay(selectedDate.value)}, ${clinicTimeLabel(selectedStart.value, timeZone.value)}`
+  return `${moving.value ? t('Move to', 'Mover al') : t('Book', 'Reservar')} ${longDay(selectedDate.value)}, ${clinicTimeLabel(selectedStart.value, timeZone.value)}`
 })
+const heading = computed(() => props.title || (moving.value ? t('Move the visit', 'Mover la cita') : t('Book the next visit', 'Reservar la próxima cita')))
+
+// The web's reschedule (calendar.vue confirmReschedule): the new time, marked
+// rescheduled, a row in appointment_reschedules, and the patient told only
+// when staff leave that on. The scheduling-policy fee stays a web action --
+// it raises a numbered invoice.
+async function saveMove(start: Date, end: Date) {
+  const move = props.move!
+  const { error } = await supabase
+    .from('appointments')
+    .update({ starts_at: start.toISOString(), ends_at: end.toISOString(), practitioner_id: practitionerId.value || null, rescheduled: true } as never)
+    .eq('id', move.appointmentId)
+  if (error) {
+    bookError.value = error.message
+    return
+  }
+  await supabase.from('appointment_reschedules').insert({
+    account_id: context.value!.accountId,
+    appointment_id: move.appointmentId,
+    from_starts_at: move.startsAt,
+    to_starts_at: start.toISOString(),
+    reason_id: reasonId.value,
+    note: null,
+    fee_applied: false,
+    created_by: context.value!.teamMemberId,
+  } as never)
+  if (notifyPatient.value && canNotify.value) {
+    authedFetch('/api/automations/fire', { method: 'POST', body: { triggerEvent: 'appointment.rescheduled', patientId: props.patientId, appointmentId: move.appointmentId } }).catch(() => {})
+  }
+  emit('booked', { appointmentId: move.appointmentId, startsAt: start.toISOString(), endsAt: end.toISOString() })
+}
 
 async function book() {
   if (!selectedStart.value || !context.value || !clinic.value || booking.value) return
@@ -339,11 +427,20 @@ async function book() {
     const end = new Date(start.getTime() + duration.value * 60000)
     // Asked again now: someone at the desk may have taken the time since the
     // slots were drawn.
-    const fresh = await fetchBusy(start.toISOString(), end.toISOString(), practitionerId.value)
-    const clashes = moveClashes({ appointmentId: '', practitionerId: practitionerId.value, roomId: null, clinicId: clinic.value.id, startsAt: start, endsAt: end }, fresh.appts, fresh.blocks)
+    const roomId = props.move?.roomId ?? null
+    const fresh = await fetchBusy(start.toISOString(), end.toISOString(), practitionerId.value, roomId)
+    const clashes = moveClashes({ appointmentId: props.move?.appointmentId ?? '', practitionerId: practitionerId.value, roomId, clinicId: clinic.value.id, startsAt: start, endsAt: end }, fresh.appts, fresh.blocks)
     if (clashes.length > 0) {
-      bookError.value = t('That time has just been taken. Pick another.', 'Esa hora se acaba de ocupar. Elige otra.')
+      const first = clashes[0]
+      bookError.value =
+        first.kind === 'appointment' && first.via === 'room'
+          ? t(`The room is taken then (${first.patientName}). Pick another time.`, `La sala está ocupada a esa hora (${first.patientName}). Elige otra.`)
+          : t('That time has just been taken. Pick another.', 'Esa hora se acaba de ocupar. Elige otra.')
       await loadBusy()
+      return
+    }
+    if (props.move) {
+      await saveMove(start, end)
       return
     }
     const { data: created, error } = await supabase
@@ -390,7 +487,7 @@ async function book() {
       style="padding-bottom: max(env(safe-area-inset-bottom), 1.25rem)"
       role="dialog"
       aria-modal="true"
-      :aria-label="t('Book the next visit', 'Reservar la próxima cita')"
+      :aria-label="heading"
     >
       <div class="mx-auto mb-0.5 h-1 w-[38px] shrink-0 rounded-full bg-line-control" />
       <slot name="header" />
@@ -409,14 +506,14 @@ async function book() {
 
       <template v-else>
         <div class="rounded-card border border-line bg-surface-page px-3.5 py-2.5">
-          <p class="text-[14px] font-semibold text-ink-900">{{ t('Book the next visit', 'Reservar la próxima cita') }}</p>
+          <p class="text-[14px] font-semibold text-ink-900">{{ heading }}</p>
           <p class="mt-0.5 text-[12.5px] leading-snug text-ink-muted2" data-cy="book-visit-context">
             <template v-if="suggestionLead">{{ suggestionLead }} · </template>
             {{ type?.name }} {{ duration }} min, {{ practitioner?.full_name }}
-            <button type="button" class="ml-1 font-medium text-brand-text" @click="changing = !changing">{{ changing ? t('Done', 'Listo') : t('Change', 'Cambiar') }}</button>
+            <button v-if="!(moving && ownDiaryOnly)" type="button" class="ml-1 font-medium text-brand-text" @click="changing = !changing">{{ changing ? t('Done', 'Listo') : t('Change', 'Cambiar') }}</button>
           </p>
-          <div v-if="changing" class="mt-2.5 grid gap-2" :class="ownDiaryOnly ? 'grid-cols-1' : 'grid-cols-2'">
-            <select v-model="typeId" class="h-11 min-w-0 rounded-ctl border border-line-control bg-surface px-2.5 text-[14px] text-ink-700" :aria-label="t('Type', 'Tipo')">
+          <div v-if="changing" class="mt-2.5 grid gap-2" :class="ownDiaryOnly || moving ? 'grid-cols-1' : 'grid-cols-2'">
+            <select v-if="!moving" v-model="typeId" class="h-11 min-w-0 rounded-ctl border border-line-control bg-surface px-2.5 text-[14px] text-ink-700" :aria-label="t('Type', 'Tipo')">
               <option v-for="x in types" :key="x.id" :value="x.id">{{ x.name }}</option>
             </select>
             <select v-if="!ownDiaryOnly" v-model="practitionerId" class="h-11 min-w-0 rounded-ctl border border-line-control bg-surface px-2.5 text-[14px] text-ink-700" :aria-label="t('Practitioner', 'Profesional')">
@@ -463,6 +560,27 @@ async function book() {
           </div>
           <p v-if="!hoursConfigured" class="mt-2 text-[11.5px] text-ink-faint">{{ t('No working hours set up, so 08:00–20:00 is shown.', 'No hay horario configurado; se muestra de 08:00 a 20:00.') }}</p>
         </div>
+
+        <template v-if="moving">
+          <div v-if="reasons.length" class="flex flex-wrap gap-1.5" role="radiogroup" :aria-label="t('Reason', 'Motivo')">
+            <button
+              v-for="r in reasons"
+              :key="r.id"
+              type="button"
+              role="radio"
+              :aria-checked="reasonId === r.id"
+              class="h-8 rounded-full px-3 text-[13px]"
+              :class="reasonId === r.id ? 'bg-brand-tint font-semibold text-brand-text ring-1 ring-brand' : 'bg-chip-bg text-ink-700'"
+              @click="reasonId = reasonId === r.id ? null : r.id"
+            >
+              {{ r.name }}
+            </button>
+          </div>
+          <label v-if="canNotify" class="flex items-center justify-between gap-3 text-[13.5px] text-ink-700">
+            {{ t('Tell the patient the new time', 'Avisar al paciente de la nueva hora') }}
+            <input v-model="notifyPatient" type="checkbox" class="h-5 w-5 accent-brand" data-cy="move-notify" />
+          </label>
+        </template>
 
         <p v-if="bookError" class="text-[13px] text-danger-text" data-cy="book-visit-error">{{ bookError }}</p>
 

@@ -1,4 +1,6 @@
-import { looksLikePhoneNumber, splitDialPrefix } from '~/utils/phone'
+// Relative, not ~/: the app (mobile/) auto-imports this file, and there ~
+// means mobile/.
+import { looksLikePhoneNumber, splitDialPrefix } from '../utils/phone'
 
 // The message a staff-side phone field shows for something that is not a
 // phone number, or '' when there is nothing to say.

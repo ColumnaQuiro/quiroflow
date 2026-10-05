@@ -95,6 +95,10 @@ export default defineApiHandler({ scope: 'appointments:write' }, async ({ event,
 
   // The check and the update as one step: see saveAppointmentIfFree.
   await saveAppointmentIfFree(supabase, accountId, id, patch, { checkOverlap })
+  // An integration moving or cancelling a visit tells its practitioner, as a
+  // colleague doing it in the calendar does (staffPush.ts).
+  if (finalStatus === 'cancelled' && existing.status !== 'cancelled') await pushAppointmentEvent(supabase, id, 'cancelled')
+  else if (window && window.startsAt !== existing.starts_at && finalStatus !== 'cancelled') await pushAppointmentEvent(supabase, id, 'rescheduled')
   const { data: updated, error } = await loose(supabase)
     .from('appointments')
     .select(appointmentsResource.select)

@@ -469,6 +469,9 @@ export async function sendAppointmentConfirmation(supabase: any, accountId: stri
 // notify address/number, or the WhatsApp free-form 24h window being closed,
 // shouldn't affect the booking that already succeeded.
 export async function notifyStaffOfOnlineBooking(supabase: any, accountId: string, appointmentId: string): Promise<void> {
+  // The practitioner's phone, whatever the clinic set up for email and
+  // WhatsApp below (staffPush.ts; their own Avisos decide).
+  await pushAppointmentEvent(supabase, appointmentId, 'booked_online')
   const { data: account } = await supabase
     .from('accounts')
     .select(

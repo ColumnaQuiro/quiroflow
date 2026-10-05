@@ -33,7 +33,8 @@ function eur(cents: number) {
 </script>
 
 <template>
-  <div class="p-4">
+  <!-- A readable column on an iPad rather than cards stretched across it. -->
+  <div class="p-4 md:px-[max(1.5rem,calc((100%_-_44rem)/2))]">
     <div class="mb-4 flex items-start justify-between gap-3">
       <h1 class="text-[19px] font-[640] tracking-tightTitle text-ink-900">
         {{ t(`Hi, ${patientFirstName}`, `Hola, ${patientFirstName}`) }}

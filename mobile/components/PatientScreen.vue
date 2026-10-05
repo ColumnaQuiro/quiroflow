@@ -6,7 +6,8 @@ defineProps<{ title: string; lead?: string }>()
 </script>
 
 <template>
-  <div class="p-4">
+  <!-- A readable column on an iPad rather than cards stretched across it. -->
+  <div class="p-4 md:px-[max(1.5rem,calc((100%_-_44rem)/2))]">
     <header class="mb-4">
       <h1 class="text-[19px] font-[640] tracking-tightTitle text-ink-900">{{ title }}</h1>
       <p v-if="lead" class="mt-1 text-[13px] text-ink-muted">{{ lead }}</p>

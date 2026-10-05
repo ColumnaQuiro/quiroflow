@@ -996,8 +996,9 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
 
 <template>
   <div class="relative flex min-h-0 flex-1 overflow-hidden">
-    <!-- Conversation list: always mounted underneath the thread overlay -->
-    <div class="absolute inset-0 flex min-h-0 flex-col bg-surface">
+    <!-- Conversation list: always mounted underneath the thread overlay. On a
+         wide iPad (lg) it keeps a 340px column and the thread opens beside it. -->
+    <div class="absolute inset-0 flex min-h-0 flex-col bg-surface lg:right-auto lg:w-[340px] lg:border-r lg:border-line">
       <div v-if="!selectionMode" class="flex shrink-0 items-center gap-2 border-b border-line bg-surface px-3 py-2">
         <input
           v-model="search"
@@ -1193,11 +1194,16 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
       </div>
     </div>
 
+    <!-- Nothing open yet, beside the list on a wide iPad. -->
+    <div v-if="!selectedKey" class="absolute inset-y-0 left-[340px] right-0 hidden items-center justify-center bg-surface-page px-6 text-center text-[14px] text-ink-muted lg:flex">
+      {{ t('Choose a conversation.', 'Elige una conversación.') }}
+    </div>
+
     <!-- Thread: overlay shown while open or animating closed via the back gesture -->
     <div
       v-if="selectedKey || swipeBack.active.value"
       ref="threadEl"
-      class="absolute inset-0 z-30 flex min-h-0 flex-col bg-surface-page shadow-[-2px_0_12px_rgba(0,0,0,0.12)]"
+      class="absolute inset-0 z-30 flex min-h-0 flex-col bg-surface-page shadow-[-2px_0_12px_rgba(0,0,0,0.12)] lg:left-[340px] lg:shadow-none"
       :style="{
         transform: `translateX(${swipeBack.dragX.value}px)`,
         transition: swipeBack.dragging.value ? 'none' : 'transform 200ms ease-out',
@@ -1206,7 +1212,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
     >
       <template v-if="selected">
       <div class="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
-        <button type="button" class="flex h-11 w-11 shrink-0 items-center justify-center text-brand-text" @click="selectedKey = null">
+        <button type="button" class="flex h-11 w-11 shrink-0 items-center justify-center text-brand-text lg:hidden" @click="selectedKey = null">
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7" /></svg>
         </button>
         <div class="min-w-0 flex-1">

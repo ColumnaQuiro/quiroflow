@@ -59,7 +59,7 @@ async function deleteAccount() {
 
     <div v-if="loading" class="flex flex-1 items-center justify-center text-sm text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
 
-    <div v-else class="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+    <div v-else class="flex-1 space-y-4 overflow-y-auto px-4 py-4 md:px-[max(1.5rem,calc((100%_-_44rem)/2))]">
       <div v-if="context" class="flex items-center gap-3">
         <SettingsTeamMemberPhotoUpload
           :account-id="context.accountId"

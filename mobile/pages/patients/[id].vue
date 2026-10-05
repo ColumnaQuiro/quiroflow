@@ -271,19 +271,22 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col">
+  <!-- A wide iPad keeps the patients list beside the record. -->
+  <div class="flex h-full min-h-0">
+  <StaffPatientList class="hidden lg:flex lg:w-80 lg:shrink-0 lg:border-r lg:border-line" :selected-id="patientId" />
+  <div class="flex h-full min-h-0 min-w-0 flex-1 flex-col">
     <div class="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
-      <button type="button" class="flex h-11 w-11 shrink-0 items-center justify-center text-brand-text" :aria-label="t('Back', 'Atrás')" @click="goBack">
+      <button type="button" class="flex h-11 w-11 shrink-0 items-center justify-center text-brand-text lg:hidden" :aria-label="t('Back', 'Atrás')" @click="goBack">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7" /></svg>
       </button>
-      <p class="truncate text-[16px] font-semibold text-ink-900">{{ t('Patient', 'Paciente') }}</p>
+      <p class="truncate text-[16px] font-semibold text-ink-900 lg:pl-2">{{ t('Patient', 'Paciente') }}</p>
     </div>
 
     <p v-if="!patientLoading && !patient" class="flex flex-1 items-center justify-center px-6 text-center text-sm" :class="patientError ? 'text-danger-text' : 'text-ink-muted'">
       {{ patientError || t('Patient not found.', 'Paciente no encontrado.') }}
     </p>
 
-    <div v-else class="flex-1 space-y-2.5 overflow-y-auto px-3.5 py-3" data-cy="patient-record">
+    <div v-else class="flex-1 space-y-2.5 overflow-y-auto px-3.5 py-3 md:px-6 md:py-4" data-cy="patient-record">
       <!-- Who -->
       <div v-if="patientLoading" class="flex items-center gap-3">
         <UiSkeleton class="h-[52px] w-[52px] shrink-0 rounded-full" />
@@ -464,5 +467,6 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
     </div>
 
     <BookVisitSheet v-if="bookOpen" :patient-id="patientId" @booked="onBooked" @close="bookOpen = false" />
+  </div>
   </div>
 </template>

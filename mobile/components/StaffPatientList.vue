@@ -1,0 +1,68 @@
+<script setup lang="ts">
+// The patients list: the Patients tab on a phone, and the left column of the
+// record on a wide iPad (pages/patients/[id].vue), with the open one marked.
+defineProps<{ selectedId?: string }>()
+
+interface Patient {
+  id: string
+  first_name: string
+  last_name: string | null
+  status: string
+}
+
+const supabase = useSupabaseClient()
+const t = useT()
+const search = ref('')
+const patients = ref<Patient[]>([])
+const loading = ref(true)
+
+async function load() {
+  loading.value = true
+  let query = supabase.from('patients').select('id, first_name, last_name, status').eq('status', 'active').order('first_name').limit(100)
+  const term = search.value.trim()
+  if (term) query = query.or(`first_name.ilike.%${term}%,last_name.ilike.%${term}%`)
+  const { data } = await query
+  patients.value = data ?? []
+  loading.value = false
+}
+onMounted(load)
+
+let debounceTimer: ReturnType<typeof setTimeout>
+watch(search, () => {
+  clearTimeout(debounceTimer)
+  debounceTimer = setTimeout(load, 300)
+})
+</script>
+
+<template>
+  <div class="flex h-full min-h-0 flex-col bg-surface">
+    <div class="shrink-0 border-b border-line bg-surface px-4 py-3">
+      <h1 class="mb-2 text-[17px] font-semibold text-ink-900">{{ t('Patients', 'Pacientes') }}</h1>
+      <input
+        v-model="search"
+        type="search"
+        :placeholder="t('Search patients…', 'Buscar pacientes…')"
+        class="w-full rounded-ctl border border-line-control bg-surface-page px-3 py-2 text-[14px] text-ink-700 focus:border-brand focus:outline-none"
+      />
+    </div>
+
+    <div v-if="loading" class="flex flex-1 items-center justify-center text-sm text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+    <p v-else-if="patients.length === 0" class="flex flex-1 items-center justify-center px-6 text-center text-sm text-ink-muted">{{ t('No patients found.', 'No se encontraron pacientes.') }}</p>
+
+    <div v-else class="flex-1 overflow-y-auto">
+      <NuxtLink
+        v-for="p in patients"
+        :key="p.id"
+        :to="`/patients/${p.id}`"
+        class="flex items-center gap-3 border-b border-line-row px-4 py-3 active:bg-surface-subtle"
+        :class="p.id === selectedId ? 'bg-brand-tint' : ''"
+        :aria-current="p.id === selectedId ? 'page' : undefined"
+      >
+        <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[13px] font-semibold text-brand-text">
+          {{ p.first_name.slice(0, 1).toUpperCase() }}{{ (p.last_name ?? '').slice(0, 1).toUpperCase() }}
+        </span>
+        <p class="truncate text-[14px] font-[560] text-ink-900">{{ p.first_name }} {{ p.last_name ?? '' }}</p>
+      </NuxtLink>
+    </div>
+  </div>
+</template>

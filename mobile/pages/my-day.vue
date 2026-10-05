@@ -376,6 +376,40 @@ const seenNoNext = computed(() => {
 
 const openTasks = computed(() => tasks.value.filter((x) => !x.done_at).length)
 const birthdayNames = computed(() => birthdays.value.map((p) => `${p.first_name} ${p.last_name ?? ''}`.trim()).join(' · '))
+
+// The iPad's "In clinic now" card (second column only): the first of today's
+// visits that is checked in and not finished, with that patient's latest note
+// from an earlier visit -- for a role that may read notes; RLS applies the
+// notes scope as everywhere else.
+const inClinicNow = computed(() => (loading.value ? null : appointments.value.find((a) => rowState(a) === 'in') ?? null))
+const lastNote = ref<{ day: string; text: string } | null>(null)
+watch(
+  () => inClinicNow.value?.id,
+  async (id) => {
+    lastNote.value = null
+    const a = inClinicNow.value
+    if (!id || !a || !can('visit_notes_access')) return
+    const { data } = await supabase
+      .from('visit_notes')
+      .select('body, created_at, appointment_id, appointments!inner(starts_at, patient_id)')
+      .eq('appointments.patient_id', a.patient_id)
+      .neq('appointment_id', a.id)
+    const rows = ((data as unknown as { body: string; created_at: string; appointments: { starts_at: string } | null }[]) ?? [])
+      .slice()
+      .sort((x, y) => (y.appointments?.starts_at ?? y.created_at).localeCompare(x.appointments?.starts_at ?? x.created_at))
+    const n = rows[0]
+    if (!n || inClinicNow.value?.id !== id) return
+    const at = new Date(n.appointments?.starts_at ?? n.created_at)
+    lastNote.value = {
+      day: at.toLocaleDateString(locale.value, { day: 'numeric', month: 'short', timeZone: timeZone.value }).replace(/\./g, ''),
+      text: visitNotePreview(n.body, 140),
+    }
+  },
+  { immediate: true },
+)
+function initialsOf(a: Appointment) {
+  return [a.patients?.first_name, a.patients?.last_name].filter(Boolean).map((w) => (w as string)[0]?.toUpperCase()).join('') || '·'
+}
 </script>
 
 <template>
@@ -397,8 +431,12 @@ const birthdayNames = computed(() => birthdays.value.map((p) => `${p.first_name}
         </svg>
       </div>
 
-      <div class="space-y-2.5 px-3.5 py-3">
-        <div v-if="errors.length > 0" class="rounded-card border border-danger-border bg-danger-bg px-3.5 py-2.5" data-test="myday-error">
+      <!-- One column on a phone; on an iPad (lg) the visits on the left and the
+             rest of the day on the right. The two wrappers are display:contents
+             below lg, so on a phone their children fall back into this single
+             flex column, kept in the phone's order by order-*. -->
+        <div class="flex flex-col gap-2.5 px-3.5 py-3 lg:grid lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start lg:gap-5 lg:px-5 lg:py-4">
+        <div v-if="errors.length > 0" class="rounded-card border border-danger-border bg-danger-bg px-3.5 py-2.5 lg:col-span-2" data-test="myday-error">
           <p class="text-[13px] font-semibold text-danger-text">{{ t('Some of today could not load', 'No se ha podido cargar parte del día') }}</p>
           <p v-for="e in errors" :key="e" class="mt-0.5 text-[12px] text-danger-text">{{ e }}</p>
           <button type="button" class="mt-2 rounded-ctl border border-danger-border bg-surface px-3 py-1.5 text-[12.5px] font-medium text-danger-text" @click="load()">
@@ -406,8 +444,9 @@ const birthdayNames = computed(() => birthdays.value.map((p) => `${p.first_name}
           </button>
         </div>
 
+        <div class="contents lg:flex lg:flex-col lg:gap-2.5">
         <!-- Figures for the viewer's own day -->
-        <div class="grid gap-2" :class="seesMoney ? 'grid-cols-3' : 'grid-cols-2'" data-test="myday-figures">
+        <div class="order-1 grid gap-2 lg:order-none" :class="seesMoney ? 'grid-cols-3' : 'grid-cols-2'" data-test="myday-figures">
           <div class="rounded-[13px] border border-line bg-surface px-2.5 py-2">
             <p class="text-[10.5px] font-semibold uppercase tracking-[.05em] text-ink-faint">{{ t('Visits', 'Visitas') }}</p>
             <UiSkeleton v-if="contextLoading || loading" class="mt-1.5 h-[22px] w-14 rounded-ctlSm" />
@@ -429,29 +468,10 @@ const birthdayNames = computed(() => birthdays.value.map((p) => `${p.first_name}
           </div>
         </div>
 
-        <!-- Who left without a next visit -->
-        <div v-if="!loading && seenNoNext.length > 0" class="rounded-[13px] border border-warning-border bg-warning-bg px-3.5 py-2.5" data-test="myday-no-next">
-          <p class="text-[14px] font-semibold text-ink-900">{{ t('Seen today, no next visit', 'Vistos hoy, sin próxima visita') }} · {{ seenNoNext.length }}</p>
-          <p v-if="ownDiaryOnly" class="text-[11.5px] text-ink-muted2">{{ t('Your role sees only bookings with you.', 'Tu rol solo ve las citas contigo.') }}</p>
-          <div v-for="a in seenNoNext" :key="a.patient_id" class="mt-2 flex items-center gap-2.5">
-            <div class="min-w-0 flex-1">
-              <p class="truncate text-[13.5px] font-medium text-ink-900">{{ patientName(a) }}</p>
-              <p class="truncate text-[12.5px] text-ink-muted2">{{ a.appointment_types?.name ?? t('Appointment', 'Cita') }} {{ clinicTime(a.starts_at) }}</p>
-            </div>
-            <NuxtLink
-              :to="`/patients/${a.patient_id}?book=1`"
-              class="flex h-8 shrink-0 items-center rounded-[11px] border border-line-control bg-surface px-3 text-[13px] font-medium text-ink-700 active:bg-surface-subtle"
-              data-test="myday-book"
-            >
-              {{ t('Book', 'Reservar') }}
-            </NuxtLink>
-          </div>
-        </div>
-
         <!-- Today's visits -->
-        <p class="px-0.5 pt-1 text-[10.5px] font-semibold uppercase tracking-[.05em] text-ink-faint">{{ t('Today', 'Hoy') }}</p>
+        <p class="order-3 px-0.5 pt-1 text-[10.5px] font-semibold uppercase tracking-[.05em] text-ink-faint lg:order-none">{{ t('Today', 'Hoy') }}</p>
         <template v-if="contextLoading || loading">
-          <div v-for="n in 4" :key="n" class="flex items-center gap-3 rounded-[13px] border border-l-[3px] border-line border-l-line-control bg-surface px-3 py-2.5">
+          <div v-for="n in 4" :key="n" class="order-3 flex items-center gap-3 rounded-[13px] lg:order-none border border-l-[3px] border-line border-l-line-control bg-surface px-3 py-2.5">
             <UiSkeleton class="h-4 w-10 rounded-ctlSm" />
             <div class="flex-1 space-y-1.5">
               <UiSkeleton class="h-4 w-36 rounded-ctlSm" />
@@ -459,13 +479,13 @@ const birthdayNames = computed(() => birthdays.value.map((p) => `${p.first_name}
             </div>
           </div>
         </template>
-        <p v-else-if="appointments.length === 0" class="rounded-[13px] border border-line bg-surface px-3.5 py-4 text-center text-[13px] text-ink-muted">
+        <p v-else-if="appointments.length === 0" class="order-3 rounded-[13px] border border-line bg-surface px-3.5 py-4 text-center text-[13px] text-ink-muted lg:order-none">
           {{ t('No visits today.', 'Hoy no tienes visitas.') }}
         </p>
         <div
           v-for="a in loading ? [] : appointments"
           :key="a.id"
-          class="relative flex items-center gap-2.5 rounded-[13px] border border-l-[3px] border-line bg-surface px-3 py-2.5"
+          class="relative order-3 flex items-center gap-2.5 rounded-[13px] border border-l-[3px] border-line bg-surface px-3 py-2.5 lg:order-none"
           :class="BORDER[rowState(a)]"
           data-test="myday-visit"
         >
@@ -494,9 +514,48 @@ const birthdayNames = computed(() => birthdays.value.map((p) => `${p.first_name}
           </div>
         </div>
 
+        </div>
+
+        <div class="contents lg:flex lg:flex-col lg:gap-2.5">
+        <!-- Who left without a next visit -->
+        <div v-if="!loading && seenNoNext.length > 0" class="order-2 rounded-[13px] border border-warning-border bg-warning-bg px-3.5 py-2.5 lg:order-none" data-test="myday-no-next">
+          <p class="text-[14px] font-semibold text-ink-900">{{ t('Seen today, no next visit', 'Vistos hoy, sin próxima visita') }} · {{ seenNoNext.length }}</p>
+          <p v-if="ownDiaryOnly" class="text-[11.5px] text-ink-muted2">{{ t('Your role sees only bookings with you.', 'Tu rol solo ve las citas contigo.') }}</p>
+          <div v-for="a in seenNoNext" :key="a.patient_id" class="mt-2 flex items-center gap-2.5">
+            <div class="min-w-0 flex-1">
+              <p class="truncate text-[13.5px] font-medium text-ink-900">{{ patientName(a) }}</p>
+              <p class="truncate text-[12.5px] text-ink-muted2">{{ a.appointment_types?.name ?? t('Appointment', 'Cita') }} {{ clinicTime(a.starts_at) }}</p>
+            </div>
+            <NuxtLink
+              :to="`/patients/${a.patient_id}?book=1`"
+              class="flex h-8 shrink-0 items-center rounded-[11px] border border-line-control bg-surface px-3 text-[13px] font-medium text-ink-700 active:bg-surface-subtle"
+              data-test="myday-book"
+            >
+              {{ t('Book', 'Reservar') }}
+            </NuxtLink>
+          </div>
+        </div>
+
+        <!-- Who is in the room now, with their last note: only where there is
+             room for it (the iPad's second column). -->
+        <div v-if="inClinicNow" class="hidden rounded-[13px] border border-line bg-surface px-3.5 py-3 lg:block" data-test="myday-in-clinic">
+          <p class="text-[10.5px] font-semibold uppercase tracking-[.05em] text-ink-faint">{{ t('In clinic now', 'Ahora en consulta') }}</p>
+          <div class="mt-2 flex items-center gap-2.5">
+            <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[12px] font-bold text-brand-text">{{ initialsOf(inClinicNow) }}</span>
+            <div class="min-w-0">
+              <p class="truncate text-[14px] font-semibold text-ink-900">{{ patientName(inClinicNow) }}</p>
+              <p class="truncate text-[12.5px] text-ink-muted2">{{ inClinicNow.appointment_types?.name ?? t('Appointment', 'Cita') }} · {{ clinicTime(inClinicNow.starts_at) }}</p>
+            </div>
+          </div>
+          <p v-if="lastNote" class="mt-2.5 text-[13px] leading-[1.45] text-ink-700">{{ t('Last note', 'Última nota') }} ({{ lastNote.day }}): {{ lastNote.text }}</p>
+          <NuxtLink :to="`/calendar/${inClinicNow.id}`" class="mt-3 flex h-10 items-center justify-center rounded-[11px] bg-brand text-[14px] font-semibold text-white">
+            {{ t('Open visit', 'Abrir visita') }}
+          </NuxtLink>
+        </div>
+
         <!-- Also today -->
-        <p class="px-0.5 pt-1 text-[10.5px] font-semibold uppercase tracking-[.05em] text-ink-faint">{{ t('Also today', 'También hoy') }}</p>
-        <div class="rounded-[13px] border border-line bg-surface px-3.5 py-1" data-test="myday-also">
+        <p class="order-4 px-0.5 pt-1 text-[10.5px] font-semibold uppercase tracking-[.05em] text-ink-faint lg:order-none lg:pt-0">{{ t('Also today', 'También hoy') }}</p>
+        <div class="order-4 rounded-[13px] border border-line bg-surface px-3.5 py-1 lg:order-none" data-test="myday-also">
           <div class="flex items-center justify-between gap-3 py-2">
             <span class="shrink-0 text-[14px] text-ink-900">{{ t('Birthdays', 'Cumpleaños') }}</span>
             <UiSkeleton v-if="loading" class="h-3.5 w-24 rounded-ctlSm" />
@@ -536,6 +595,7 @@ const birthdayNames = computed(() => birthdays.value.map((p) => `${p.first_name}
               </div>
             </div>
           </template>
+        </div>
         </div>
       </div>
     </div>

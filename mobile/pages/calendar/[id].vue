@@ -541,7 +541,7 @@ watch(
     <p v-else-if="!appointment" class="flex flex-1 items-center justify-center px-6 text-center text-sm text-ink-muted">{{ t('Appointment not found.', 'Cita no encontrada.') }}</p>
 
     <template v-else>
-      <div class="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-3.5 py-3" :style="keyboardHeight ? { paddingBottom: `${keyboardHeight + 16}px` } : undefined">
+      <div class="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-3.5 py-3 md:px-[max(1.5rem,calc((100%_-_44rem)/2))]" :style="keyboardHeight ? { paddingBottom: `${keyboardHeight + 16}px` } : undefined">
         <p v-if="bookedNotice" class="rounded-[11px] border border-success-border bg-success-bg px-3 py-2 text-[13px] font-medium text-success-text" role="status" data-cy="visit-booked-notice">{{ bookedNotice }}</p>
 
         <!-- Who, what, the plan, what to watch for -->

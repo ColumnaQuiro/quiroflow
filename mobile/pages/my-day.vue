@@ -583,11 +583,11 @@ function initialsOf(a: Appointment) {
             <UiSkeleton v-if="loading" class="h-3.5 w-24 rounded-ctlSm" />
             <span v-else class="min-w-0 truncate text-right text-[12.5px] text-ink-muted2" data-test="myday-birthdays">{{ birthdayNames || t('None today', 'Ninguno hoy') }}</span>
           </div>
-          <div v-if="seesRecalls" class="flex items-center justify-between gap-3 border-t border-line-row py-2">
+          <NuxtLink v-if="seesRecalls" to="/recalls" class="flex items-center justify-between gap-3 border-t border-line-row py-2" data-cy="myday-recalls-open">
             <span class="text-[14px] text-ink-900">{{ t('Recalls due', 'Recordatorios pendientes') }}</span>
             <UiSkeleton v-if="loading" class="h-3.5 w-16 rounded-ctlSm" />
-            <span v-else class="text-[12.5px] text-ink-muted2" data-test="myday-recalls">{{ recallsDue === null ? '—' : t(`${recallsDue} ${recallsDue === 1 ? 'patient' : 'patients'}`, `${recallsDue} ${recallsDue === 1 ? 'paciente' : 'pacientes'}`) }}</span>
-          </div>
+            <span v-else class="flex items-center gap-1 text-[12.5px] text-ink-muted2" data-test="myday-recalls">{{ recallsDue === null ? '—' : t(`${recallsDue} ${recallsDue === 1 ? 'patient' : 'patients'}`, `${recallsDue} ${recallsDue === 1 ? 'paciente' : 'pacientes'}`) }}<AppChevron :size="12" /></span>
+          </NuxtLink>
           <button type="button" class="flex w-full items-center justify-between gap-3 border-t border-line-row py-2 text-left focus:outline-none" :aria-expanded="showTasks" data-test="myday-tasks-toggle" @click="showTasks = !showTasks">
             <span class="text-[14px] text-ink-900">{{ t('Tasks', 'Tareas') }}</span>
             <UiSkeleton v-if="loading" class="h-3.5 w-14 rounded-ctlSm" />

@@ -203,6 +203,15 @@ const bonoSummary = computed(() => {
 
 // -- Forms (patient_docs) -----------------------------------------------------
 const receptionOpen = ref(false)
+
+// "Editar": numbers, email, flags and the sticky note (EditPatientSheet).
+// patients_edit is what the web's details and panels need too.
+const canEdit = computed(() => can('patients_edit'))
+const editOpen = ref(false)
+function onEdited() {
+  loadPatient()
+  loadNumbers()
+}
 interface Doc { id: string; title: string; completed_at: string | null; public_token: string | null }
 const docs = ref<Doc[]>([])
 const docsLoading = ref(true)
@@ -288,7 +297,9 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
   <StaffPatientList class="hidden lg:flex lg:w-80 lg:shrink-0 lg:border-r lg:border-line" :selected-id="patientId" />
   <div class="flex h-full min-h-0 min-w-0 flex-1 flex-col">
     <!-- Named for the patient, not "Patient", once they are loaded. -->
-    <AppPageHeader :title="patient ? `${patient.first_name} ${patient.last_name ?? ''}`.trim() : t('Patient', 'Paciente')" back back-hidden-class="lg:hidden" @back="goBack" />
+    <AppPageHeader :title="patient ? `${patient.first_name} ${patient.last_name ?? ''}`.trim() : t('Patient', 'Paciente')" back back-hidden-class="lg:hidden" @back="goBack">
+      <button v-if="patient && canEdit" type="button" class="h-9 shrink-0 rounded-ctl px-2 text-[14px] font-semibold text-brand-text" data-cy="patient-edit" @click="editOpen = true">{{ t('Edit', 'Editar') }}</button>
+    </AppPageHeader>
 
     <p v-if="!patientLoading && !patient" class="flex flex-1 items-center justify-center px-6 text-center text-sm" :class="patientError ? 'text-danger-text' : 'text-ink-muted'">
       {{ patientError || t('Patient not found.', 'Paciente no encontrado.') }}
@@ -489,6 +500,7 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
 
     <BookVisitSheet v-if="bookOpen" :patient-id="patientId" @booked="onBooked" @close="bookOpen = false" />
     <RecordMoneySheet v-if="moneyMode" :patient-id="patientId" :mode="moneyMode" @done="onMoneyDone" @close="moneyMode = null" />
+    <EditPatientSheet v-if="editOpen && patient" :patient-id="patientId" :patient="patient" @saved="onEdited" @close="editOpen = false" />
     <ReceptionSetupSheet v-if="receptionOpen" :patient-id="patientId" @close="receptionOpen = false" />
   </div>
   </div>

@@ -138,7 +138,7 @@ async function checkIn() {
 }
 
 // -- Care plan -----------------------------------------------------------------
-interface Plan { total_visits: number; frequency_value: number; frequency_unit: string; started_at: string }
+interface Plan { name: string; total_visits: number; frequency_value: number; frequency_unit: string; started_at: string }
 const plan = ref<Plan | null>(null)
 const visitNumber = ref<number | null>(null)
 // Which visit of the plan THIS one is: the visits completed since the plan
@@ -149,7 +149,7 @@ async function loadPlan() {
   if (!a) return
   const { data } = await supabase
     .from('care_plans')
-    .select('total_visits, frequency_value, frequency_unit, started_at')
+    .select('name, total_visits, frequency_value, frequency_unit, started_at')
     .eq('patient_id', a.patient_id)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -165,6 +165,12 @@ async function loadPlan() {
     .gte('starts_at', plan.value.started_at)
     .lt('starts_at', a.starts_at)
   visitNumber.value = (count ?? 0) + 1
+}
+// Starting or changing the plan in the room (CarePlanSheet, as on the record).
+const planSheetOpen = ref(false)
+function onPlanSaved() {
+  planSheetOpen.value = false
+  loadPlan()
 }
 
 // -- Alerts and bono ----------------------------------------------------------
@@ -572,7 +578,8 @@ watch(
 
         <!-- Who, what, the plan, what to watch for -->
         <section class="rounded-card border border-line bg-surface shadow-card px-3.5 py-3" data-cy="visit-header">
-          <NuxtLink :to="`/patients/${appointment.patient_id}`" class="flex items-center gap-2.5">
+          <div class="flex items-center gap-2">
+          <NuxtLink :to="`/patients/${appointment.patient_id}`" class="flex min-w-0 flex-1 items-center gap-2.5">
             <span class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full bg-brand-tint text-[12.5px] font-bold text-brand-text">{{ initials }}</span>
             <span class="min-w-0 flex-1">
               <span class="block truncate text-[14px] font-semibold text-ink-900">{{ typeName }} · {{ timeRange }}</span>
@@ -585,6 +592,8 @@ watch(
               <span v-else class="block truncate text-[12.5px] text-ink-muted2">{{ t('Patient record', 'Ficha del paciente') }} <AppChevron :size="11" /></span>
             </span>
           </NuxtLink>
+          <button type="button" class="flex h-9 shrink-0 items-center rounded-ctl border border-line-control px-2.5 text-[12.5px] font-semibold text-brand-text" data-cy="visit-plan-edit" @click="planSheetOpen = true">{{ plan ? t('Plan', 'Plan') : t('+ Plan', '+ Plan') }}</button>
+          </div>
           <div v-if="alerts.length > 0 || bonoChip" class="mt-2 flex flex-wrap gap-1.5" data-cy="visit-alerts">
             <span v-for="al in alerts" :key="al.key" class="inline-flex min-h-6 max-w-full items-center gap-1 rounded-card px-2.5 py-[3px] text-[11.5px] font-semibold leading-snug" :class="al.cls">
               <svg v-if="al.key !== 'note'" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" class="shrink-0" aria-hidden="true"><path d="M8 2l6.2 11H1.8z" stroke-linejoin="round" /><path d="M8 6.5v3M8 11.5v.1" stroke-linecap="round" /></svg>
@@ -811,6 +820,7 @@ watch(
     </template>
 
     <!-- Book the next visit -->
+    <CarePlanSheet v-if="planSheetOpen && appointment" :patient-id="appointment.patient_id" :plan="plan" :today="clinicDateOf(new Date(), timeZone)" @saved="onPlanSaved" @close="planSheetOpen = false" />
     <BookVisitSheet
       v-if="bookOpen && appointment"
       :patient-id="appointment.patient_id"

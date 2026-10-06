@@ -165,6 +165,15 @@ async function loadPlan() {
   if (planErr || apptErr) planError.value = t('Could not load the care plan.', 'No se ha podido cargar el plan.')
   planLoading.value = false
 }
+// "Añadir plan" / "Editar" (CarePlanSheet): anyone who sees the patient, as
+// on the web's Clinical tab; RLS scopes it like the patient.
+const planSheetOpen = ref(false)
+const clinicToday = computed(() => clinicDateOf(new Date(), timeZone.value))
+function onPlanSaved() {
+  planSheetOpen.value = false
+  planLoading.value = true
+  loadPlan()
+}
 const planPercent = computed(() => (plan.value && plan.value.total_visits > 0 ? Math.min(100, Math.round((completedInPlan.value / plan.value.total_visits) * 100)) : 0))
 function apptWhen(iso: string) {
   const d = new Date(iso)
@@ -369,7 +378,10 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
         <template v-else>
           <div class="flex items-center justify-between gap-2">
             <h2 class="text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ plan ? t('Care plan', 'Plan de tratamiento') : t('Next visit', 'Próxima visita') }}</h2>
-            <span v-if="plan" class="text-[12.5px] text-ink-muted2">{{ cadenceLabel(plan, t) }}</span>
+            <span class="flex items-center gap-2">
+              <span v-if="plan" class="text-[12.5px] text-ink-muted2">{{ cadenceLabel(plan, t) }}</span>
+              <button type="button" class="-my-2 flex h-9 items-center px-1 text-[12.5px] font-semibold text-brand-text" data-cy="patient-plan-edit" @click="planSheetOpen = true">{{ plan ? t('Edit', 'Editar') : t('+ Add plan', '+ Añadir plan') }}</button>
+            </span>
           </div>
           <!-- With calendar_scope 'own' the visits a colleague saw are not
                readable here, so the count would come out short: "visit 2 of
@@ -500,6 +512,7 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
 
     <BookVisitSheet v-if="bookOpen" :patient-id="patientId" @booked="onBooked" @close="bookOpen = false" />
     <RecordMoneySheet v-if="moneyMode" :patient-id="patientId" :mode="moneyMode" @done="onMoneyDone" @close="moneyMode = null" />
+    <CarePlanSheet v-if="planSheetOpen" :patient-id="patientId" :plan="plan" :today="clinicToday" @saved="onPlanSaved" @close="planSheetOpen = false" />
     <EditPatientSheet v-if="editOpen && patient" :patient-id="patientId" :patient="patient" @saved="onEdited" @close="editOpen = false" />
     <ReceptionSetupSheet v-if="receptionOpen" :patient-id="patientId" @close="receptionOpen = false" />
   </div>

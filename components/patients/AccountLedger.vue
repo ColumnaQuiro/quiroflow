@@ -11,6 +11,7 @@ import { formatEur } from '~/utils/billing'
 // simply matches no invoice here.
 import { normalizeSearchTerm } from '~/utils/searchText'
 import { isReceipt } from '~/utils/paymentReceipts'
+import { paymentRefundableCents } from '~/utils/paymentRefund'
 
 interface InvoiceRow {
   id: string
@@ -22,12 +23,12 @@ interface InvoiceRow {
   refunds_invoice_id: string | null
   refunds_payment_id: string | null
 }
-interface PaymentRow { id: string; invoice_id: string | null; amount_cents: number; method: string; paid_at: string; created_by?: string | null; stripe_payment_intent_id?: string | null; team_members?: { full_name: string | null } | null }
+interface PaymentRow { id: string; invoice_id: string | null; amount_cents: number; method: string; paid_at: string; purpose?: string | null; package_purchase_id?: string | null; created_by?: string | null; stripe_payment_intent_id?: string | null; team_members?: { full_name: string | null } | null }
 // A visit drawn from a package. Carries no debit or credit -- the money was
 // already accounted for when the package was bought -- so it appears in the
 // ledger purely so a visit is not silently absent from a patient's history.
 interface PackageSessionRow { id: string; amount_cents: number; used_at: string; package_name: string | null }
-interface CreditRow { id: string; amount_cents: number; reason: string | null; method: string | null; invoice_id: string | null; created_at: string }
+interface CreditRow { id: string; amount_cents: number; reason: string | null; method: string | null; invoice_id: string | null; payment_id?: string | null; created_at: string }
 
 const props = defineProps<{
   patientId: string
@@ -161,11 +162,18 @@ const rows = computed<LedgerRow[]>(() => {
     // to" detail line, reused here for the description itself.
     if (inv.is_refund) {
       const refundedCents = Math.abs(inv.total_cents)
+      // A refund of a payment that never had a receipt -- most imported
+      // PracticeHub money -- names the payment instead. Reading
+      // refunds_invoice_id alone called every one of those a "deleted receipt".
+      const refundedPayment = !inv.refunds_invoice_id && inv.refunds_payment_id ? props.payments.find((p) => p.id === inv.refunds_payment_id) : undefined
+      const against = refundedPayment
+        ? `${t('payment of', 'pago de')} ${formatDate(refundedPayment.paid_at)}`
+        : (invoiceRefFor(inv.refunds_invoice_id) ?? t('deleted receipt', 'recibo eliminado'))
       return {
         key: `invoice-${inv.id}`,
         ref: inv.invoice_number,
         date: inv.created_at,
-        description: `${t('Refund', 'Reembolso')} — ${invoiceRefFor(inv.refunds_invoice_id) ?? t('deleted receipt', 'recibo eliminado')}`,
+        description: `${t('Refund', 'Reembolso')} — ${against}`,
         debitCents: 0,
         creditCents: refundedCents,
         balanceText: '—',
@@ -224,52 +232,13 @@ const rows = computed<LedgerRow[]>(() => {
     }
   })
 
-  // What can still go back out on ONE payment.
-  //
-  // The lower of two rooms, which is what stops the same money being returned
-  // twice by two different routes: what's left of this payment (its amount
-  // less refunds naming it), and what's left of its receipt (everything paid
-  // on it less every refund against it, payment-level ones included). Refund
-  // EUR 20 against the card payment and then EUR 50 against the receipt and
-  // the second is capped at EUR 30 -- in the other order, the payment is
-  // capped instead. Either way EUR 50 collected returns at most EUR 50.
+  // What can still go back out on ONE payment -- utils/paymentRefund, which
+  // createRefund re-derives on the write, so the two cannot disagree. A
+  // payment an account_credits row names is a top-up, and stays unrefundable
+  // here: its credit row would outlive the refund and stay spendable.
+  const creditPaymentIds = new Set(props.credits.map((c) => c.payment_id).filter((id): id is string => !!id))
   function paymentRefundableCentsFor(p: PaymentRow): number {
-    // Only money that came in can go back out. That rules out the negative
-    // row createRefund() writes for a refund (refunding a refund) and a
-    // write-off, which settles a balance without collecting anything.
-    if (p.amount_cents <= 0 || p.method === 'write_off') return 0
-
-    const refundedAgainstPayment = props.invoices
-      .filter((r) => r.is_refund && r.refunds_payment_id === p.id)
-      .reduce((sum, r) => sum + Math.abs(r.total_cents), 0)
-    const paymentRoom = p.amount_cents - refundedAgainstPayment
-
-    // Money on account -- a bono or a top-up, which since 0170 carries no
-    // invoice_id -- is deliberately NOT refundable here.
-    //
-    // A top-up writes an account_credits row alongside its payment (see
-    // addCredit), so giving the payment back without also reversing that row
-    // returns the money AND leaves the credit spendable: the patient is paid
-    // twice and their balance never says so. Reversing both is the credit
-    // ledger's problem, not this cap's, so the action stays hidden until
-    // something owns that.
-    if (!p.invoice_id) return 0
-
-    const invoice = props.invoices.find((i) => i.id === p.invoice_id)
-    // Matching the receipt-level cap above rather than second-guessing it: a
-    // voided receipt offers no Refund action there either.
-    if (!invoice || invoice.status === 'void') return 0
-
-    // The receipt's room counts received money only, as the receipt-level
-    // cap above does -- a write-off beside this payment must not widen it.
-    const paidForInvoice = props.payments
-      .filter((q) => q.invoice_id === p.invoice_id && isReceipt(q.method))
-      .reduce((sum, q) => sum + q.amount_cents, 0)
-    const refundedAgainstInvoice = props.invoices
-      .filter((r) => r.is_refund && r.refunds_invoice_id === p.invoice_id)
-      .reduce((sum, r) => sum + Math.abs(r.total_cents), 0)
-
-    return Math.max(0, Math.min(paymentRoom, paidForInvoice - refundedAgainstInvoice))
+    return paymentRefundableCents(p, props.invoices, props.payments, creditPaymentIds)
   }
 
   // Same rule as usePatientFinancialSummary, unconditionally now: a 'credit'

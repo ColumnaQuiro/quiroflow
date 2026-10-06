@@ -5,6 +5,7 @@ import { bonoOwedCents } from '~/utils/bonoOwed'
 import { settleInvoiceIfCovered } from '~/utils/settleInvoice'
 import { validSpanishTaxId } from '~/utils/spanishTaxId'
 import { isReceipt } from '~/utils/paymentReceipts'
+import { onAccountShareCents, paymentRefundableCents } from '~/utils/paymentRefund'
 import { chargeBonoVisit } from '~/utils/bonoVisitInvoice'
 import { loadUnloggedVisits, localDateStr, type LogSessionChoice, type UnloggedVisit } from '~/utils/unloggedVisits'
 
@@ -82,7 +83,7 @@ interface PaymentScheduleRow {
 }
 interface StripeEventRow { id: string; payment_schedule_id: string; period_start: string; amount_cents: number; status: string }
 interface LedgerPaymentRow { id: string; invoice_id: string | null; amount_cents: number; method: string; paid_at: string; package_purchase_id: string | null; external_reference: string | null; purpose: string | null; created_by: string | null; stripe_payment_intent_id: string | null; team_members: { full_name: string | null } | null }
-interface LedgerCreditRow { id: string; amount_cents: number; reason: string | null; method: string | null; invoice_id: string | null; created_at: string }
+interface LedgerCreditRow { id: string; amount_cents: number; reason: string | null; method: string | null; invoice_id: string | null; payment_id: string | null; created_at: string }
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
@@ -752,7 +753,7 @@ async function fetchLedger(): Promise<() => void> {
       .eq('patient_id', props.patientId),
     supabase
       .from('account_credits')
-      .select('id, amount_cents, reason, method, invoice_id, created_at')
+      .select('id, amount_cents, reason, method, invoice_id, payment_id, created_at')
       .eq('patient_id', props.patientId)
       .order('created_at', { ascending: true }),
     supabase
@@ -1123,20 +1124,25 @@ async function refundableCentsFor(invoiceId: string): Promise<number> {
 // the action -- re-derived here rather than trusted from the payload, for the
 // reason refundableCentsFor exists: the cap is what stops money being returned
 // twice, so it has to hold on the write and not only in the UI.
-async function refundablePaymentCentsFor(paymentId: string): Promise<number> {
-  const { data: payment } = await supabase.from('payments').select('id, invoice_id, amount_cents, method').eq('id', paymentId).maybeSingle()
-  if (!payment || payment.amount_cents <= 0 || payment.method === 'write_off') return 0
-
-  const refundedAgainstPayment = invoices.value
-    .filter((i) => i.is_refund && i.refunds_payment_id === paymentId)
-    .reduce((sum, i) => sum + Math.abs(i.total_cents), 0)
-  const paymentRoom = payment.amount_cents - refundedAgainstPayment
-
-  // Money on account is not refundable this way -- its account_credits row
-  // would survive the refund and stay spendable. See the ledger's copy.
-  if (!payment.invoice_id) return 0
-
-  return Math.max(0, Math.min(paymentRoom, await refundableCentsFor(payment.invoice_id)))
+//
+// Read from the database rather than the ledger already on screen, every input
+// of it: the payment, the credit row that would make it a top-up, and the
+// payments both rooms are made of -- this patient's, which include the refunds
+// naming it, and everything on its receipt, whoever's row it sits on.
+async function refundablePaymentCentsFor(paymentId: string): Promise<{ cents: number; loose: boolean }> {
+  const [{ data: payment }, { data: credits }, { data: patientPayments }] = await Promise.all([
+    supabase.from('payments').select('id, invoice_id, amount_cents, method, purpose, package_purchase_id').eq('id', paymentId).maybeSingle(),
+    supabase.from('account_credits').select('payment_id').eq('payment_id', paymentId),
+    supabase.from('payments').select('id, invoice_id, amount_cents, method').eq('patient_id', props.patientId),
+  ])
+  if (!payment) return { cents: 0, loose: false }
+  const { data: receiptPayments } = payment.invoice_id
+    ? await supabase.from('payments').select('id, invoice_id, amount_cents, method').eq('invoice_id', payment.invoice_id)
+    : { data: [] as { id: string; invoice_id: string | null; amount_cents: number; method: string }[] }
+  const payments = [...new Map([...(patientPayments ?? []), ...(receiptPayments ?? [])].map((p) => [p.id, p])).values()]
+  const creditPaymentIds = new Set((credits ?? []).map((c) => c.payment_id as string))
+  const cents = paymentRefundableCents(payment, invoices.value, payments, creditPaymentIds)
+  return { cents, loose: !payment.invoice_id }
 }
 
 // `paymentId` set means this refund names the single payment it gives back --
@@ -1148,8 +1154,20 @@ async function createRefund(invoiceId: string | null, paymentId: string | null, 
   if (invoiceId && !invoice) return
   if (!invoice && !paymentId) return
 
-  const maxRefundable = paymentId ? await refundablePaymentCentsFor(paymentId) : await refundableCentsFor(invoiceId!)
-  if (amountCents > maxRefundable) return
+  const room = paymentId ? await refundablePaymentCentsFor(paymentId) : { cents: await refundableCentsFor(invoiceId!), loose: false }
+  if (amountCents > room.cents) return
+
+  // A payment with no receipt may be handing back money that was still on the
+  // account rather than correcting a charge; that share comes off the refund
+  // invoice so the balance -- and the credit offered at the desk -- drops with
+  // it. See onAccountShareCents. The summary is refreshed first so the
+  // surplus is today's, not whatever this tab last loaded.
+  let onAccountCents = 0
+  if (room.loose) {
+    await refreshCreditSummary()
+    onAccountCents = onAccountShareCents(amountCents, balanceCents.value - creditLedgerCents.value - committedBonoCents.value)
+  }
+  const chargeCorrectionCents = amountCents - onAccountCents
 
   // Its own series, so a refund no longer consumes an invoice number.
   const { data: invoiceNumber } = await supabase.rpc('next_invoice_number', { p_account_id: store.accountId!, p_prefix: 'REF-' })
@@ -1162,7 +1180,7 @@ async function createRefund(invoiceId: string | null, paymentId: string | null, 
       patient_id: props.patientId,
       invoice_number: invoiceNumber,
       status: 'paid',
-      total_cents: -amountCents,
+      total_cents: -chargeCorrectionCents,
       is_refund: true,
       // Both, when there is a receipt behind the payment: the two caps read
       // different columns, and a refund missing from either one is a refund
@@ -1179,7 +1197,7 @@ async function createRefund(invoiceId: string | null, paymentId: string | null, 
     invoice_id: refund.id,
     description: refundDescription(invoice?.invoice_number ?? null, reason),
     quantity: 1,
-    price_cents: -amountCents,
+    price_cents: -chargeCorrectionCents,
   })
 
   // Without this, the refund never showed up as money leaving in

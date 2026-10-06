@@ -2,9 +2,9 @@
 //
 // Every imported PracticeHub payment is one -- PracticeHub links a payment to
 // nothing -- and the Refund action simply was not offered on them. Reception
-// refunded Viviane Vieira Tostes 39 EUR of a 204 EUR card payment anyway and
-// could only leave a 0 EUR note saying so, so the Income report never saw the
-// money go back. See utils/paymentRefund.ts.
+// refunded a patient 39 EUR of a 204 EUR card payment anyway and could only
+// leave a 0 EUR note saying so, so the Income report never saw the money go
+// back. See utils/paymentRefund.ts.
 describe('Refunding a payment with no receipt', () => {
   it('corrects the charge when the patient had nothing left on account', () => {
     cy.seedStaffAccount().then((account) => {

@@ -291,6 +291,49 @@ function markConfirmed() {
 async function markDone() {
   if (await update({ status: 'completed' })) fire('appointment.completed', { patientId: props.appointment.patient_id, appointmentId: props.appointment.id })
 }
+// Undo a visit completed by mistake -- the step-by-step undo above stops at
+// 'completed', which is where a wrong tap does the most damage: Gabriela
+// Encina's visit was drawn from her bono on the wrong day and there was no
+// way back. undo_visit (20261006170032) reopens it, gives the bono session
+// back and voids that session's charge, all or nothing. A visit paid in money
+// is refused: that is a refund, from the patient's Money tab.
+const canUndoVisit = computed(() => props.appointment.status === 'completed' && !readOnly.value)
+const undoVisitOpen = ref(false)
+async function undoVisit() {
+  busy.value = true
+  error.value = ''
+  const { error: e } = await supabase.rpc('undo_visit', { p_appointment_id: props.appointment.id })
+  busy.value = false
+  undoVisitOpen.value = false
+  if (e) {
+    error.value = undoVisitError(e.hint, e.message)
+    return
+  }
+  refreshFacts()
+  refreshMoney()
+  emit('changed')
+}
+function undoVisitError(hint: string | null | undefined, message: string) {
+  switch (hint) {
+    case 'has_payment':
+      return t(
+        "This visit has a payment recorded, so it can't be undone here. Refund the payment from the patient's Money tab first.",
+        'Esta visita tiene un pago registrado y no se puede deshacer aquí. Devuelve antes el pago desde la pestaña Dinero de la ficha.',
+      )
+    case 'invoice':
+      return t(
+        "You can't void this visit's charge: your role only edits receipts on the day they were made. Ask someone who can edit past receipts.",
+        'No puedes anular el cargo de esta visita: tu rol solo edita recibos del mismo día. Pídeselo a alguien que pueda editar recibos anteriores.',
+      )
+    case 'bono':
+    case 'bono_session':
+      return t("Your role can't give sessions back to a bono.", 'Tu rol no permite devolver sesiones a un bono.')
+    case 'not_completed':
+      return t('This visit is no longer marked done.', 'Esta visita ya no está marcada como hecha.')
+    default:
+      return message
+  }
+}
 
 // --- Money --------------------------------------------------------------------
 const methodLabel = (m: string) => ({ cash: t('cash', 'efectivo'), card: t('card', 'tarjeta'), transfer: t('transfer', 'transferencia'), bizum: 'Bizum' })[m] ?? m
@@ -394,7 +437,7 @@ function statusChangeText(from: string, to: string) {
     case 'completed':
       return t('Marked done', 'Marcada como hecha')
     case 'booked':
-      return t('Restored', 'Reactivada')
+      return from === 'completed' ? t('Visit undone', 'Visita deshecha') : t('Restored', 'Reactivada')
     default:
       return t(`Status: ${from} → ${to}`, `Estado: ${from} → ${to}`)
   }
@@ -618,7 +661,7 @@ const canAct = computed(() => props.appointment.status === 'booked' && !readOnly
           <p v-else class="text-[14px] font-semibold text-ink-700" data-cy="stage-off-track">{{ stageLine(appointment, stage).title }}</p>
           <p v-if="onTrack && stageLine(appointment, stage).sub" class="mt-2 text-[12.5px] text-ink-muted">{{ stageLine(appointment, stage).title }} · {{ stageLine(appointment, stage).sub }}</p>
 
-          <div v-if="!readOnly && (next || undoable || isUnconfirmedStage(stage))" class="mt-3 flex flex-wrap items-center gap-2">
+          <div v-if="!readOnly && (next || undoable || canUndoVisit || isUnconfirmedStage(stage))" class="mt-3 flex flex-wrap items-center gap-2">
             <button v-if="next && !isPhone" type="button" data-cy="advance-stage" :data-next="next" :disabled="busy" class="flex h-9 touch:h-11 items-center gap-2 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface hover:bg-brand-hover disabled:opacity-60" @click="advance">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
               {{ nextLabel }}
@@ -626,6 +669,7 @@ const canAct = computed(() => props.appointment.status === 'booked' && !readOnly
             <button v-if="isUnconfirmedStage(stage)" type="button" data-cy="mark-confirmed" :disabled="busy" class="h-9 touch:h-11 rounded-ctl border border-line-control px-3.5 text-[13px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="markConfirmed">{{ t('Mark confirmed', 'Marcar confirmada') }}</button>
             <button v-if="stage === 'checkout'" type="button" data-cy="mark-done" :disabled="busy" class="h-9 touch:h-11 rounded-ctl border border-line-control px-3.5 text-[13px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="markDone">{{ t('Done, nothing to charge', 'Hecha, sin cobro') }}</button>
             <button v-if="undoable" type="button" data-cy="undo-stage" :disabled="busy" class="h-9 touch:h-11 rounded-ctl px-3 text-[13px] font-semibold text-ink-muted hover:bg-surface-subtle" @click="undo">{{ undoable.label }}</button>
+            <button v-if="canUndoVisit" type="button" data-cy="undo-visit" :disabled="busy" class="h-9 touch:h-11 rounded-ctl border border-line-control px-3.5 text-[13px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="undoVisitOpen = true">{{ t('Undo visit', 'Deshacer visita') }}</button>
           </div>
         </section>
 
@@ -748,6 +792,21 @@ const canAct = computed(() => props.appointment.status === 'booked' && !readOnly
     @cancel="deleteOpen = false"
   >
     <p class="text-[14px] leading-relaxed text-ink-500">{{ t('It disappears from the calendar. To keep a record that the patient did not come, cancel it instead.', 'Desaparece del calendario. Para dejar constancia de que el paciente no vino, cancélala en su lugar.') }}</p>
+  </UiConfirmDialog>
+
+  <UiConfirmDialog
+    v-if="undoVisitOpen"
+    :title="t('Undo this visit?', '¿Deshacer esta visita?')"
+    :confirm-label="t('Undo visit', 'Deshacer visita')"
+    :cancel-label="t('Keep it', 'Mantenerla')"
+    :busy="busy"
+    @confirm="undoVisit"
+    @cancel="undoVisitOpen = false"
+  >
+    <p class="text-[14px] leading-relaxed text-ink-500">
+      {{ t('It stops being marked done and goes back to the step it was on.', 'Deja de estar marcada como hecha y vuelve al paso en el que estaba.') }}
+      <template v-if="view.bono?.drawn">{{ t(`The session goes back to ${view.bono.packageName} and its charge is voided.`, `La sesión vuelve a ${view.bono.packageName} y se anula su cargo.`) }}</template>
+    </p>
   </UiConfirmDialog>
 
   <CalendarMoveClashDialog v-if="editClashes" :clashes="editClashes" :busy="busy" @confirm="commitEdit" @cancel="editClashes = null" />

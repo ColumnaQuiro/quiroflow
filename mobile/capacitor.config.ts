@@ -4,6 +4,13 @@ const config: CapacitorConfig = {
   appId: 'com.quiroflow.app',
   appName: 'QuiroFlow',
   webDir: '.output/public',
+  // Android 15+ draws apps edge to edge (targetSdk 36): without margins the
+  // WebView sits under the status and navigation bars, where Android's
+  // WebView reports no safe-area insets to pad by. 'auto' adds the margins
+  // natively on exactly those versions (Capacitor 8's default).
+  android: {
+    adjustMarginsForEdgeToEdge: 'auto',
+  },
   plugins: {
     // 'body' resizes the whole WebView viewport when the keyboard opens --
     // on a 100vh-based layout that triggers a full relayout plus the

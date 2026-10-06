@@ -157,7 +157,7 @@ function useDifferentEmail() {
           <button type="button" class="font-semibold text-brand-text" @click="useDifferentEmail">{{ t('use a different email', 'usa otro correo') }}</button>.
         </p>
         <NuxtLink to="/login" class="mt-5 block text-center text-[13.5px] font-semibold text-brand-text">
-          &larr; {{ t('Back to sign in', 'Volver a iniciar sesión') }}
+          <AppChevron dir="left" /> {{ t('Back to sign in', 'Volver a iniciar sesión') }}
         </NuxtLink>
       </div>
     </template>

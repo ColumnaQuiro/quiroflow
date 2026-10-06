@@ -66,10 +66,22 @@ onUnmounted(() => document.removeEventListener('pointerdown', dismissKeyboardOnO
     <NuxtLayout>
       <NuxtPage />
     </NuxtLayout>
+    <AppConfirmHost />
   </div>
 </template>
 
 <style>
+/* A small control that still answers a whole fingertip: the visible button
+   keeps its size and the touchable area grows 8px each way (Apple's 44pt
+   minimum), so rows of compact actions do not have to get taller. */
+.tap-target {
+  position: relative;
+}
+.tap-target::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+}
 /* An embedded sign-in shell (components/onboarding/Layout.vue) is white edge
    to edge, so the strips behind the status bar and the home indicator --
    which belong to the root box below, grey like every other page -- are

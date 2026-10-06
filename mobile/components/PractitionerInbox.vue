@@ -968,9 +968,9 @@ let channel: ReturnType<typeof supabase.channel> | null = null
 onMounted(() => {
   channel = supabase
     .channel('mobile-inbox-whatsapp-messages')
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'whatsapp_messages', filter: `account_id=eq.${props.accountId}` }, () => load({ silent: true }))
-    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'whatsapp_messages', filter: `account_id=eq.${props.accountId}` }, () => load({ silent: true }))
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'patient_app_messages', filter: `account_id=eq.${props.accountId}` }, () => load({ silent: true }))
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'whatsapp_messages', filter: `account_id=eq.${props.accountId}` }, () => scheduleLoad())
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'whatsapp_messages', filter: `account_id=eq.${props.accountId}` }, () => scheduleLoad())
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'patient_app_messages', filter: `account_id=eq.${props.accountId}` }, () => scheduleLoad())
     .subscribe()
 })
 onUnmounted(() => {
@@ -995,9 +995,29 @@ onUnmounted(() => {
 // thread stuck until something else forces a reload, which reads as "I have
 // to leave and come back to see a new message." A cheap periodic refetch
 // bounds how stale the inbox can get even if realtime isn't delivering.
+// Realtime fires once per change, and every WhatsApp delivered/read receipt
+// is a change: a busy hour reloaded the whole Inbox many times a minute.
+// Changes arriving together now cause one reload.
+let reloadTimer: ReturnType<typeof setTimeout> | undefined
+function scheduleLoad() {
+  clearTimeout(reloadTimer)
+  reloadTimer = setTimeout(() => load({ silent: true }), 600)
+}
+// The poll is only a safety net for a dropped realtime connection, so it
+// rests while the app is in the background and catches up on return.
+function onInboxVisible() {
+  if (document.visibilityState === 'visible') scheduleLoad()
+}
+onMounted(() => document.addEventListener('visibilitychange', onInboxVisible))
+onBeforeUnmount(() => {
+  document.removeEventListener('visibilitychange', onInboxVisible)
+  clearTimeout(reloadTimer)
+})
 let pollTimer: ReturnType<typeof setInterval> | null = null
 onMounted(() => {
-  pollTimer = setInterval(() => load({ silent: true }), 15000)
+  pollTimer = setInterval(() => {
+    if (document.visibilityState === 'visible') load({ silent: true })
+  }, 15000)
 })
 onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer)
@@ -1023,7 +1043,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
           type="button"
           class="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl border"
           :class="view === 'archived' ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted'"
-          :title="view === 'archived' ? t('Show active conversations', 'Mostrar conversaciones activas') : t('Show archived conversations', 'Mostrar conversaciones archivadas')"
+          :title="view === 'archived' ? t('Show active conversations', 'Mostrar conversaciones activas') : t('Show archived conversations', 'Mostrar conversaciones archivadas')" :aria-label="view === 'archived' ? t('Show active conversations', 'Mostrar conversaciones activas') : t('Show archived conversations', 'Mostrar conversaciones archivadas')"
           @click="view = view === 'archived' ? 'active' : 'archived'"
         >
           <svg viewBox="0 0 16 16" class="h-[18px] w-[18px]" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
@@ -1036,7 +1056,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
           type="button"
           class="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl border"
           :class="unreadOnly || replyFilter !== 'all' || labelFilter ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted'"
-          :title="t('Filter', 'Filtrar')"
+          :title="t('Filter', 'Filtrar')" :aria-label="t('Filter', 'Filtrar')"
           @click="filterSheetOpen = true"
         >
           <svg viewBox="0 0 16 16" class="h-[18px] w-[18px]" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
@@ -1087,7 +1107,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             <path d="M17.5 3v5h-5M6.5 21v-5h5" />
           </svg>
         </div>
-        <div v-if="loading" class="p-6 text-center text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+        <AppSkeletonList v-if="loading" avatar :rows="7" />
         <p v-else-if="filteredConversations.length === 0" class="p-6 text-center text-[13px] text-ink-faint">
           {{ view === 'archived' ? t('No archived conversations.', 'No hay conversaciones archivadas.') : t('No conversations yet.', 'Aún no hay conversaciones.') }}
         </p>
@@ -1225,7 +1245,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
     >
       <template v-if="selected">
       <div class="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
-        <button type="button" class="flex h-11 w-11 shrink-0 items-center justify-center text-brand-text lg:hidden" @click="selectedKey = null">
+        <button type="button" class="flex h-11 w-11 shrink-0 items-center justify-center text-brand-text lg:hidden" :aria-label="t('Back to conversations', 'Volver a las conversaciones')" @click="selectedKey = null">
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7" /></svg>
         </button>
         <div class="min-w-0 flex-1">
@@ -1359,17 +1379,18 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             type="button"
             class="flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-muted disabled:opacity-50"
             :disabled="sending"
-            :title="t('Attach a file', 'Adjuntar archivo')"
+            :title="t('Attach a file', 'Adjuntar archivo')" :aria-label="t('Attach a file', 'Adjuntar archivo')"
             @click="fileInput?.click()"
           >
             <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
               <path d="M8 2.5v11M2.5 8h11" />
             </svg>
           </button>
-          <!-- No visible Send button -- Enter on a hardware keyboard already
-               sends (see the handler below); enterkeyhint swaps the virtual
-               keyboard's own return key to a "Send" label so the native
-               keyboard button does the same job, same as iMessage/WhatsApp. -->
+          <!-- Enter on a hardware keyboard sends (see the handler below), and
+               enterkeyhint labels the virtual keyboard's own key "Send". Some
+               Android keyboards show a newline key on a textarea anyway, so
+               once there is text the camera and microphone give way to a Send
+               button, as in WhatsApp. -->
           <textarea
             ref="composerTextarea"
             v-model="composerText"
@@ -1381,11 +1402,23 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
           />
           <input ref="cameraInput" type="file" accept="image/*" capture="environment" class="hidden" @change="onFileChosen" />
           <button
+            v-if="composerText.trim()"
+            type="button"
+            class="flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl bg-brand text-white disabled:opacity-50"
+            :disabled="sending"
+            :aria-label="t('Send', 'Enviar')"
+            data-cy="inbox-send"
+            @click="sendText"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6" /></svg>
+          </button>
+          <template v-else>
+          <button
             v-if="replyChannel !== 'instagram'"
             type="button"
             class="flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-muted disabled:opacity-50"
             :disabled="sending"
-            :title="t('Take a photo', 'Hacer una foto')"
+            :title="t('Take a photo', 'Hacer una foto')" :aria-label="t('Take a photo', 'Hacer una foto')"
             @click="cameraInput?.click()"
           >
             <svg width="19" height="19" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
@@ -1398,7 +1431,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             type="button"
             class="flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-muted disabled:opacity-50"
             :disabled="sending"
-            :title="t('Record a voice note', 'Grabar una nota de voz')"
+            :title="t('Record a voice note', 'Grabar una nota de voz')" :aria-label="t('Record a voice note', 'Grabar una nota de voz')"
             @click="toggleAudioRecording"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
@@ -1406,6 +1439,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
               <path d="M3 8a5 5 0 0 0 10 0M8 13v1.5" stroke-linecap="round" />
             </svg>
           </button>
+          </template>
         </div>
       </div>
       </template>
@@ -1423,12 +1457,12 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
     <div v-if="lightboxUrl" class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-6" @click="lightboxUrl = null">
       <img :src="lightboxUrl" class="max-h-full max-w-full rounded-ctl object-contain" @click.stop />
       <div class="absolute right-4 flex gap-2" style="top: calc(env(safe-area-inset-top) + 12px)">
-        <a :href="lightboxUrl" download target="_blank" class="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white" :title="t('Download', 'Descargar')" @click.stop>
+        <a :href="lightboxUrl" download target="_blank" class="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white" :title="t('Download', 'Descargar')" :aria-label="t('Download', 'Descargar')" @click.stop>
           <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
             <path d="M8 1.5v9M4.5 7 8 10.5 11.5 7M2 12.5v1a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-1" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
         </a>
-        <button type="button" class="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white" :title="t('Close', 'Cerrar')" @click="lightboxUrl = null">
+        <button type="button" class="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white" :title="t('Close', 'Cerrar')" :aria-label="t('Close', 'Cerrar')" @click="lightboxUrl = null">
           <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
             <path d="M3 3l10 10M13 3 3 13" stroke-linecap="round" />
           </svg>

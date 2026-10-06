@@ -36,7 +36,10 @@ watch(
 )
 
 const supabase = useSupabaseClient()
+const { unregister: unregisterPush } = usePushNotifications()
 async function signOut() {
+  await unregisterPush()
+  clearVisitNoteDrafts()
   await supabase.auth.signOut()
   ;(document.activeElement as HTMLElement | null)?.blur()
   await new Promise((resolve) => setTimeout(resolve, 350))

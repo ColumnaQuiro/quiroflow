@@ -405,12 +405,15 @@ async function markNoShow() {
   if (err) actionError.value = err.message
   else if ((data ?? []).length > 0) {
     fire('appointment.no_show', { patientId: a.patient_id, appointmentId: a.id })
+    // The fee raises an invoice, which only billing_access may insert: asking
+    // anyone else offered a charge the database then refused without a word.
     const accountId = context.value?.accountId
-    const feeCents = accountId ? await missedAppointmentFeeCents(supabase, accountId) : null
+    const feeCents = accountId && can('billing_access') ? await missedAppointmentFeeCents(supabase, accountId) : null
     if (accountId && feeCents) {
       const question = t(`Add the ${formatEur(feeCents)} missed-appointment fee to this patient's balance?`, `¿Añadir el cargo por no presentarse de ${formatEur(feeCents)} a su saldo?`)
       if (confirm(question)) {
-        await chargeMissedAppointmentFee(supabase, { accountId, patientId: a.patient_id, feeCents })
+        const charged = await chargeMissedAppointmentFee(supabase, { accountId, patientId: a.patient_id, feeCents })
+        if (!charged) actionError.value = t('Marked as a no-show, but the fee could not be added.', 'Marcada como no vino, pero no se ha podido añadir el cargo.')
         if (showMoney.value) refreshMoney()
       }
     }

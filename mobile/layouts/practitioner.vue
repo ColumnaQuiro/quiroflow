@@ -14,7 +14,7 @@ const { keyboardHeight } = useKeyboardInset()
 // On an iPad (md and up) the sections are a side menu instead of the tab bar.
 // Chosen in CSS, so the phone is untouched and nothing swaps on load.
 const { items, isActive } = useStaffNav()
-const { context } = usePractitionerContext()
+const { context, loadFailed, retry } = usePractitionerContext()
 const t = useT()
 const initials = computed(() => (context.value?.fullName ?? '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join(''))
 </script>
@@ -29,8 +29,16 @@ const initials = computed(() => (context.value?.fullName ?? '').split(/\s+/).fil
         </NuxtLink>
       </template>
     </AppSideNav>
-    <div class="min-h-0 min-w-0 flex-1">
-      <slot />
+    <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+      <!-- The team record or the role could not be read: say so, instead of
+           screens that look empty because nothing loaded. -->
+      <div v-if="loadFailed" class="flex shrink-0 items-center gap-2 border-b border-warning-border bg-warning-bg px-4 py-2 text-[13px] text-warning-text" role="status" data-cy="context-load-failed">
+        <span class="min-w-0 flex-1">{{ t('Could not reach the clinic. Trying again…', 'No se ha podido conectar con la clínica. Reintentando…') }}</span>
+        <button type="button" class="h-9 shrink-0 rounded-ctl px-2 font-semibold" @click="retry">{{ t('Retry', 'Reintentar') }}</button>
+      </div>
+      <div class="min-h-0 min-w-0 flex-1">
+        <slot />
+      </div>
     </div>
     <AppTabBar v-if="keyboardHeight === 0" class="md:hidden" />
   </div>

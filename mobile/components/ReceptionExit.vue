@@ -23,6 +23,7 @@ onMounted(async () => {
 })
 
 async function leave() {
+  reception.clearFailures()
   reception.unlock()
   await navigateTo(`/patients/${props.patientId}`, { replace: true })
 }
@@ -33,12 +34,11 @@ async function tryBiometry() {
 }
 
 // A four-digit code is guessable by a patient with time on their hands, so
-// every fifth wrong one locks the code out for half a minute.
-const failures = ref(0)
-const waitUntil = ref(0)
+// every fifth wrong one locks the code out, for longer each time
+// (useReceptionLock.recordFailure).
 async function tryCode() {
   if (checking.value) return
-  if (Date.now() < waitUntil.value) {
+  if (Date.now() < reception.attempts().waitUntil) {
     error.value = t('Too many tries. Wait a moment.', 'Demasiados intentos. Espera un momento.')
     return
   }
@@ -48,8 +48,7 @@ async function tryCode() {
   checking.value = false
   if (ok) return leave()
   code.value = ''
-  failures.value++
-  if (failures.value % 5 === 0) waitUntil.value = Date.now() + 30000
+  reception.recordFailure()
   error.value = t('That is not the code.', 'Ese no es el código.')
 }
 watch(code, (v) => {

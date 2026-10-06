@@ -5,7 +5,7 @@ const user = useSupabaseUser()
 watch(user, (u) => { if (!u) navigateTo('/login') }, { immediate: true })
 
 const t = useT()
-const { context, loading } = usePractitionerContext()
+const { context, loading, can } = usePractitionerContext()
 </script>
 
 <template>
@@ -13,6 +13,9 @@ const { context, loading } = usePractitionerContext()
     <div v-if="loading" class="flex min-h-0 flex-1 items-center justify-center text-sm text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
     <p v-else-if="!context" class="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-sm text-ink-muted">
       {{ t("This account isn't linked to a team record.", 'Esta cuenta no está vinculada a una ficha de equipo.') }}
+    </p>
+    <p v-else-if="!can('inbox_access')" class="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-sm text-ink-muted" data-cy="inbox-no-access">
+      {{ t('Your role does not include the Inbox.', 'Tu rol no incluye la Bandeja.') }}
     </p>
     <PractitionerInbox v-else :account-id="context.accountId" :team-member-id="context.teamMemberId" :open-conversation-key="pendingConversationKey" />
   </div>

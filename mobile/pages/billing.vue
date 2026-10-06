@@ -1,3 +1,8 @@
+<script lang="ts">
+// Across mounts of this screen within one app run.
+let shownBefore = false
+</script>
+
 <script setup lang="ts">
 import { formatEur } from '../../utils/billing'
 
@@ -12,9 +17,22 @@ const locale = computed(() => t('en-GB', 'es-ES'))
 const { patient } = useIdentity()
 const patientId = computed(() => patient.value?.id ?? '')
 
-const { loading: moneyLoading, balanceCents, creditLedgerCents, activePackages, activeMembership } = usePatientFinancialSummary(
+const { loading: moneyLoading, balanceCents, creditLedgerCents, activePackages, activeMembership, refresh: refreshMoney } = usePatientFinancialSummary(
   () => patientId.value,
 )
+
+// Fresh figures each time this screen is shown again and when the app comes
+// back to the front -- see PatientHome.vue: the cached summary otherwise kept
+// a debt paid at the desk on screen until the app was force-quit.
+onMounted(() => {
+  if (shownBefore) refreshMoney()
+  shownBefore = true
+})
+function onVisible() {
+  if (document.visibilityState === 'visible') refreshMoney()
+}
+onMounted(() => document.addEventListener('visibilitychange', onVisible))
+onBeforeUnmount(() => document.removeEventListener('visibilitychange', onVisible))
 const { invoices, loading: invoicesLoading, busyId, download } = usePatientInvoices(() => patientId.value)
 
 const amountDueCents = computed(() => (balanceCents.value < 0 ? -balanceCents.value : 0))

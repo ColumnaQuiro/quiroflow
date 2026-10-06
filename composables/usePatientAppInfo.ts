@@ -29,6 +29,10 @@ export function usePatientAppInfo() {
   const supabase = useSupabaseClient()
   const settings = ref<PatientAppSettings>({ ...CLOSED })
   const loading = ref(true)
+  // Each of the patient's clinics' time zones. A patient cannot read the
+  // clinics table itself; the booking info carries them, and the visits a
+  // patient sees are shown at their clinic's hour, not the phone's.
+  const clinicZones = ref<Record<string, string>>({})
 
   async function load() {
     loading.value = true
@@ -38,6 +42,9 @@ export function usePatientAppInfo() {
       loading.value = false
       return
     }
+    const zones: Record<string, string> = {}
+    for (const c of (data as { clinics?: { id: string; timezone?: string | null }[] }).clinics ?? []) if (c.timezone) zones[c.id] = c.timezone
+    clinicZones.value = zones
     const raw = (data as { settings?: Record<string, unknown> }).settings ?? {}
     settings.value = {
       bookingEnabled: raw.booking_enabled === true,
@@ -51,5 +58,7 @@ export function usePatientAppInfo() {
 
   onMounted(load)
 
-  return { settings, loading, reload: load }
+  const zoneOf = (clinicId: string | null | undefined) => (clinicId && clinicZones.value[clinicId]) || DEFAULT_CLINIC_TIMEZONE
+
+  return { settings, loading, reload: load, zoneOf }
 }

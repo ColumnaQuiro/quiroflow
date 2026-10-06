@@ -50,7 +50,9 @@ const readOnly = computed(() => restricted('calendar_read_only'))
 const today = () => clinicDateOf(new Date(), tz.value)
 const day = ref(typeof route.query.day === 'string' ? route.query.day : '')
 watch(tz, () => { if (!day.value) day.value = today() }, { immediate: true })
-const isToday = computed(() => day.value === today())
+// Read against the ticking clock below, so an agenda left open past midnight
+// stops calling yesterday "today" (no Today button, the now-line on it).
+const isToday = computed(() => day.value === clinicDateOf(now.value, tz.value))
 const title = computed(() => {
   const s = shortDayLabel(new Date(`${day.value}T12:00:00Z`), locale.value, 'UTC')
   return s.charAt(0).toUpperCase() + s.slice(1)

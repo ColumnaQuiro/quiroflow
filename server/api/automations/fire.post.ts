@@ -33,6 +33,15 @@ export default defineEventHandler(async (event) => {
   const service = serverSupabaseServiceRole<Database>(event)
   const origin = getRequestURL(event).origin
 
+  // The visit's practitioner hears about it on their phone when someone
+  // else checked their patient in, cancelled or moved it (server/utils/
+  // staffPush.ts) -- whether or not any automation rule fires on it.
+  const pushEvent = ({ 'appointment.checked_in': 'checked_in', 'appointment.cancelled': 'cancelled', 'appointment.rescheduled': 'rescheduled' } as const)[body.triggerEvent as 'appointment.checked_in']
+  if (pushEvent && body.appointmentId) {
+    const { data: own } = await supabase.from('appointments').select('id').eq('id', body.appointmentId).eq('account_id', accountId).maybeSingle()
+    if (own) await pushAppointmentEvent(service, body.appointmentId, pushEvent, teamMember.id)
+  }
+
   // Runs already in flight hear about the event whether or not any rule
   // fires on it -- so this happens before the early returns below. Only for
   // a patient of the caller's own account.

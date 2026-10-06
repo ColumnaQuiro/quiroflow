@@ -2,6 +2,8 @@ import { createSign } from 'node:crypto'
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { inboxRecipients } from '~/utils/inboxRecipients'
+import type { BusinessHours } from '~/utils/businessHours'
+import { wantingPush } from './staffPush'
 
 // Push notification for a new inbound message (WhatsApp or in-app), to
 // every team member who can see the Inbox -- the owner (bypasses all
@@ -19,7 +21,7 @@ export async function notifyInboxTeamMembers(
 ) {
   const { data: members } = await supabase
     .from('team_members')
-    .select('id, user_id, is_owner, account_roles(permissions)')
+    .select('id, user_id, is_owner, business_hours, account_roles(permissions)')
     .eq('account_id', accountId)
     .not('user_id', 'is', null)
   if (!members) return
@@ -45,7 +47,19 @@ export async function notifyInboxTeamMembers(
     assignedTo,
   )
 
-  await sendPushToUsers(supabase, userIds, { title: senderName, body: preview, data })
+  // Each person's own Avisos: Inbox pushes off, or quiet outside their hours
+  // (staffPush.ts). Read against the account's first clinic's hours and zone.
+  const { data: clinic } = await supabase.from('clinics').select('timezone, business_hours').eq('account_id', accountId).is('archived_at', null).order('name').limit(1).maybeSingle()
+  const wanted = new Set(
+    await wantingPush(
+      supabase,
+      members.filter((m) => m.user_id && userIds.includes(m.user_id)).map((m) => ({ id: m.id, user_id: m.user_id, business_hours: m.business_hours as BusinessHours | null })),
+      'inbox',
+      clinic as { timezone: string | null; business_hours: BusinessHours | null } | null,
+    ),
+  )
+
+  await sendPushToUsers(supabase, userIds.filter((u) => wanted.has(u)), { title: senderName, body: preview, data })
 }
 
 // FCM v1 needs an OAuth access token minted from the Firebase service

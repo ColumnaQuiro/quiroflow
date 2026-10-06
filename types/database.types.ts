@@ -5097,6 +5097,60 @@ export type Database = {
           },
         ]
       }
+      staff_push_preferences: {
+        Row: {
+          account_id: string
+          changes: boolean
+          check_in: boolean
+          inbox: boolean
+          morning_summary: boolean
+          online_bookings: boolean
+          quiet_hours: boolean
+          summary_sent_on: string | null
+          team_member_id: string
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          changes?: boolean
+          check_in?: boolean
+          inbox?: boolean
+          morning_summary?: boolean
+          online_bookings?: boolean
+          quiet_hours?: boolean
+          summary_sent_on?: string | null
+          team_member_id: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          changes?: boolean
+          check_in?: boolean
+          inbox?: boolean
+          morning_summary?: boolean
+          online_bookings?: boolean
+          quiet_hours?: boolean
+          summary_sent_on?: string | null
+          team_member_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_push_preferences_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staff_push_preferences_team_member_id_fkey"
+            columns: ["team_member_id"]
+            isOneToOne: true
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       staff_tasks: {
         Row: {
           account_id: string

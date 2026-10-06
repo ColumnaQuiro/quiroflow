@@ -9,15 +9,23 @@ const { context, can } = usePractitionerContext()
 type Key = 'online_bookings' | 'changes' | 'inbox' | 'check_in' | 'morning_summary' | 'quiet_hours'
 const prefs = reactive<Record<Key, boolean>>({ online_bookings: true, changes: true, inbox: true, check_in: false, morning_summary: true, quiet_hours: false })
 const loaded = ref(false)
+const loadFailed = ref(false)
 const error = ref('')
 
 async function load() {
   if (!context.value) return
-  const { data } = await supabase
+  loadFailed.value = false
+  const { data, error: readError } = await supabase
     .from('staff_push_preferences')
     .select('online_bookings, changes, inbox, check_in, morning_summary, quiet_hours')
     .eq('team_member_id', context.value.teamMemberId)
     .maybeSingle()
+  // A failed read must not look like the defaults: flipping one switch then
+  // wrote every default over the person's saved choices.
+  if (readError) {
+    loadFailed.value = true
+    return
+  }
   if (data) Object.assign(prefs, data)
   loaded.value = true
 }
@@ -42,13 +50,13 @@ async function flip(key: Key) {
 
 // Inbox pushes only ever go to people who can see the Inbox.
 const rows = computed(() =>
-  [
+  ([
     { key: 'online_bookings' as const, label: t('New online bookings', 'Citas nuevas online') },
     { key: 'changes' as const, label: t('Cancellations and changes', 'Cancelaciones y cambios') },
     can('inbox_access') ? { key: 'inbox' as const, label: t('Inbox messages', 'Mensajes en la Bandeja') } : null,
     { key: 'check_in' as const, label: t('A patient checking in', 'Paciente que llega (check-in)') },
     { key: 'morning_summary' as const, label: t('Summary of the day at 8:00', 'Resumen del día a las 8:00') },
-  ].filter((r): r is { key: Key; label: string } => !!r),
+  ] as ({ key: Key; label: string } | null)[]).filter((r): r is { key: Key; label: string } => !!r),
 )
 </script>
 
@@ -85,5 +93,9 @@ const rows = computed(() =>
       </span>
     </button>
     <p v-if="error" role="alert" class="mt-1 text-[12.5px] text-danger-text">{{ error }}</p>
+    <p v-if="loadFailed" role="alert" class="mt-1 text-[12.5px] text-danger-text">
+      {{ t('Could not load your settings.', 'No se han podido cargar tus avisos.') }}
+      <button type="button" class="ml-1 font-semibold text-brand-text" @click="load">{{ t('Try again', 'Reintentar') }}</button>
+    </p>
   </div>
 </template>

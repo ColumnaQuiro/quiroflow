@@ -12,6 +12,7 @@ const authedFetch = useAuthedFetch()
 
 async function signOut() {
   await unregisterPush()
+  clearVisitNoteDrafts()
   await supabase.auth.signOut()
   ;(document.activeElement as HTMLElement | null)?.blur()
   await new Promise((resolve) => setTimeout(resolve, 350))
@@ -46,6 +47,7 @@ async function deleteAccount() {
     return
   }
   await unregisterPush()
+  clearVisitNoteDrafts()
   await supabase.auth.signOut()
   await navigateTo('/login')
 }

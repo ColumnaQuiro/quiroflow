@@ -25,6 +25,7 @@ const fields = ref<DocField[]>([])
 const saving = ref(false)
 const error = ref('')
 const exitOpen = ref(false)
+const topEl = ref<HTMLElement | null>(null)
 const total = computed(() => lock.value?.tokens.length ?? 0)
 
 async function loadCurrent() {
@@ -45,7 +46,10 @@ async function loadCurrent() {
   title.value = doc.title ?? ''
   fields.value = Array.isArray(doc.fields) ? doc.fields : []
   phase.value = 'fill'
-  window.scrollTo({ top: 0 })
+  // The page scrolls inside the app's root box (app.vue), not the window, so
+  // window.scrollTo did nothing and the next form opened halfway down.
+  await nextTick()
+  topEl.value?.scrollIntoView({ block: 'start' })
 }
 onMounted(loadCurrent)
 
@@ -72,7 +76,8 @@ const initials = computed(() => (lock.value?.clinicName ?? '').split(/\s+/).filt
 </script>
 
 <template>
-  <div v-if="lock" class="flex min-h-screen flex-col bg-surface" style="padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom)" data-cy="reception">
+  <div v-if="lock" ref="topEl" class="flex min-h-full flex-col bg-surface" style="padding-bottom: env(safe-area-inset-bottom)" data-cy="reception">
+    <!-- No top inset here: app.vue's root box already pads for the status bar. -->
     <header class="flex shrink-0 items-center justify-between gap-3 border-b border-line px-5 py-3 md:px-10">
       <div class="flex min-w-0 items-center gap-2.5">
         <span class="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] bg-brand text-[12px] font-bold text-white">{{ initials }}</span>

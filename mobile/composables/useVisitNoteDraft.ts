@@ -58,6 +58,21 @@ interface LocalCopy {
 const DEBOUNCE_MS = 800
 const MAX_RETRY_MS = 30_000
 
+const DRAFT_PREFIX = 'quiroflow-visit-note:'
+
+/**
+ * Drops every unsent note kept on this device. Called on sign-out: the text
+ * is clinical, and a shared clinic iPad must not hand it to whoever signs in
+ * next (who could then save it under their own name).
+ */
+export function clearVisitNoteDrafts() {
+  try {
+    for (const k of Object.keys(localStorage)) if (k.startsWith(DRAFT_PREFIX)) localStorage.removeItem(k)
+  } catch {
+    // Storage blocked: nothing kept to clear.
+  }
+}
+
 export function useVisitNoteDraft(opts: {
   appointmentId: string
   accountId: () => string | null | undefined
@@ -72,7 +87,9 @@ export function useVisitNoteDraft(opts: {
   scopeAll: () => boolean
 }) {
   const supabase = useSupabaseClient()
-  const storageKey = `quiroflow-visit-note:${opts.appointmentId}`
+  // Per person as well as per visit: a draft is only ever offered back to
+  // the one who typed it.
+  const storageKey = () => `${DRAFT_PREFIX}${opts.teamMemberId() ?? 'unknown'}:${opts.appointmentId}`
 
   const notes = ref<VisitNoteRow[]>([])
   const noteId = ref<string | null>(null)
@@ -98,7 +115,7 @@ export function useVisitNoteDraft(opts: {
   // -- The copy kept on the device -------------------------------------------
   function readLocal(): LocalCopy | null {
     try {
-      const raw = localStorage.getItem(storageKey)
+      const raw = localStorage.getItem(storageKey())
       return raw ? (JSON.parse(raw) as LocalCopy) : null
     } catch {
       return null
@@ -106,14 +123,14 @@ export function useVisitNoteDraft(opts: {
   }
   function writeLocal() {
     try {
-      localStorage.setItem(storageKey, JSON.stringify({ noteId: noteId.value, base, body: draft.value } satisfies LocalCopy))
+      localStorage.setItem(storageKey(), JSON.stringify({ noteId: noteId.value, base, body: draft.value } satisfies LocalCopy))
     } catch {
       // Storage full or blocked: the database save still runs.
     }
   }
   function clearLocal() {
     try {
-      localStorage.removeItem(storageKey)
+      localStorage.removeItem(storageKey())
     } catch {
       // Nothing to do.
     }

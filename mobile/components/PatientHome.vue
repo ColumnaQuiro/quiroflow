@@ -1,3 +1,8 @@
+<script lang="ts">
+// Across mounts of this screen within one app run.
+let shownBefore = false
+</script>
+
 <script setup lang="ts">
 import { formatEur } from '../../utils/billing'
 
@@ -17,15 +22,32 @@ const { upcoming, loading: apptLoading } = usePatientAppointments(
   () => props.patientId,
   () => settings.value,
 )
-const { loading: moneyLoading, balanceCents, creditLedgerCents, activePackages } = usePatientFinancialSummary(() => props.patientId)
+const { loading: moneyLoading, balanceCents, creditLedgerCents, activePackages, refresh: refreshMoney } = usePatientFinancialSummary(() => props.patientId)
+
+// The money summary is cached for the whole app run (usePatientFinancialSummary),
+// and Capacitor keeps the app alive in the background: a debt paid at the desk
+// stayed on screen until the app was force-quit. Fresh figures each time this
+// screen is shown again, and when the app comes back to the front.
+onMounted(() => {
+  if (shownBefore) refreshMoney()
+  shownBefore = true
+})
+function onVisible() {
+  if (document.visibilityState === 'visible') refreshMoney()
+}
+onMounted(() => document.addEventListener('visibilitychange', onVisible))
+onBeforeUnmount(() => document.removeEventListener('visibilitychange', onVisible))
 const { documents } = usePatientDocuments(() => props.patientId)
 
 const next = computed(() => upcoming.value[0] ?? null)
 const amountDueCents = computed(() => (balanceCents.value < 0 ? -balanceCents.value : 0))
 const sessionsLeft = computed(() => activePackages.value.reduce((sum, p) => sum + Math.max(0, p.sessions_total - p.sessions_used), 0))
 
-function longWhen(iso: string) {
-  return new Date(iso).toLocaleString(locale.value, { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })
+// At the clinic's hour, not the phone's: a patient whose phone is set to
+// another zone saw a visit booked for 10:00 as 09:00.
+const { zoneOf } = usePatientAppInfo()
+function longWhen(iso: string, clinicId?: string | null) {
+  return new Date(iso).toLocaleString(locale.value, { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: zoneOf(clinicId) })
 }
 function eur(cents: number) {
   return formatEur(cents)
@@ -57,7 +79,7 @@ function eur(cents: number) {
       <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-faint">{{ t('Your next visit', 'Tu próxima cita') }}</p>
       <div v-if="apptLoading" class="mt-2"><UiSkeleton class="h-6 w-48 rounded-ctlSm" /></div>
       <template v-else-if="next">
-        <p class="mt-1.5 text-[17px] font-[640] leading-snug tracking-tightTitle text-ink-900 first-letter:uppercase">{{ longWhen(next.starts_at) }}</p>
+        <p class="mt-1.5 text-[17px] font-[640] leading-snug tracking-tightTitle text-ink-900 first-letter:uppercase">{{ longWhen(next.starts_at, next.clinic_id) }}</p>
         <p class="mt-1 text-[13px] text-ink-muted">
           {{ next.appointment_types?.name ?? t('Appointment', 'Cita') }}
           <template v-if="next.team_members?.full_name"> &middot; {{ next.team_members.full_name }}</template>

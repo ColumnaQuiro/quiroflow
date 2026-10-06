@@ -14,6 +14,7 @@ watch(user, (u) => { if (!u) navigateTo('/login') }, { immediate: true })
 
 const t = useT()
 const supabase = useSupabaseClient()
+const { unregister: unregisterPush } = usePushNotifications()
 const authedFetch = useAuthedFetch()
 const { settings } = usePatientAppInfo()
 const { patient, teamMember } = useIdentity()
@@ -24,6 +25,8 @@ const initials = computed(() =>
 )
 
 async function signOut() {
+  await unregisterPush()
+  clearVisitNoteDrafts()
   await supabase.auth.signOut()
   ;(document.activeElement as HTMLElement | null)?.blur()
   await new Promise((resolve) => setTimeout(resolve, 350))
@@ -49,6 +52,8 @@ async function deleteAccount() {
     alert((err as { data?: { statusMessage?: string } })?.data?.statusMessage ?? t('Failed to delete account.', 'No se pudo eliminar la cuenta.'))
     return
   }
+  await unregisterPush()
+  clearVisitNoteDrafts()
   await supabase.auth.signOut()
   await navigateTo('/login')
 }

@@ -286,16 +286,35 @@ async function toggleTask(task: Task) {
   }
 }
 
+// The visit screen's check-in (calendar/[id].vue): only if nobody has checked
+// them in yet, and then the 'appointment.checked_in' automations -- which is
+// also what tells their practitioner (server/utils/staffPush.ts). From here it
+// used to set the time and nothing else, overwriting an earlier arrival.
+const { fire } = useAutomations()
 async function checkIn(a: Appointment) {
-  const { error } = await supabase.from('appointments').update({ checked_in_at: new Date().toISOString() } as never).eq('id', a.id)
+  const { data, error } = await supabase
+    .from('appointments')
+    .update({ checked_in_at: new Date().toISOString() } as never)
+    .eq('id', a.id)
+    .is('checked_in_at', null)
+    .select('id')
   if (error) {
     capture(t('Check in', 'Registrar llegada'), error)
     return
   }
+  if ((data ?? []).length > 0) fire('appointment.checked_in', { patientId: a.patient_id, appointmentId: a.id })
   await load({ silent: true })
 }
 
 watch(context, () => load(), { immediate: true })
+
+// Back to the front after a while (the app is suspended, not closed): the day
+// is read again, so a phone left open overnight does not show yesterday.
+function onVisible() {
+  if (document.visibilityState === 'visible' && context.value) load({ silent: true })
+}
+onMounted(() => document.addEventListener('visibilitychange', onVisible))
+onBeforeUnmount(() => document.removeEventListener('visibilitychange', onVisible))
 
 const scroller = ref<HTMLElement | null>(null)
 const { pulling, refreshing, pullDistance, onTouchStart, onTouchMove, onTouchEnd } = usePullToRefresh(scroller, () => load({ silent: true }))

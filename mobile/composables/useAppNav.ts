@@ -10,11 +10,15 @@ export interface AppNavItem {
 export function useStaffNav() {
   const t = useT()
   const route = useRoute()
+  // The Inbox only for roles that can see it (inbox_access), as the web's
+  // sidebar does: without it every read comes back empty, which looked like
+  // "no messages" rather than "not for you".
+  const { context, can } = usePractitionerContext()
   const items = computed<AppNavItem[]>(() => [
     { label: t('My Day', 'Mi día'), to: '/my-day', icon: 'M2.5 2.5h11v11h-11zM5.5 8.2l1.8 1.8 3.2-3.4' },
     { label: t('Calendar', 'Calendario'), to: '/calendar', icon: 'M2.5 3.5h11v10h-11zM2.5 6.6h11M5.6 2v2M10.4 2v2' },
     { label: t('Patients', 'Pacientes'), to: '/patients', icon: 'M6.2 5.6a2.6 2.6 0 11-5.2 0 2.6 2.6 0 015.2 0zM2 13.4c0-2.3 1.9-3.6 4.2-3.6s4.2 1.3 4.2 3.6' },
-    { label: t('Inbox', 'Bandeja'), to: '/inbox', icon: 'M2 3.5h12v9h-8l-3 2.5v-2.5h-1z' },
+    ...(!context.value || can('inbox_access') ? [{ label: t('Inbox', 'Bandeja'), to: '/inbox', icon: 'M2 3.5h12v9h-8l-3 2.5v-2.5h-1z' }] : []),
     { label: t('Profile', 'Perfil'), to: '/profile', icon: 'M8 8a2.6 2.6 0 100-5.2A2.6 2.6 0 008 8zM3.2 13.4c0-2.3 2.1-3.6 4.8-3.6s4.8 1.3 4.8 3.6' },
   ])
   const isActive = (to: string) => route.path === to || route.path.startsWith(`${to}/`)

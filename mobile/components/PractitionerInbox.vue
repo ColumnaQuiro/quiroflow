@@ -133,9 +133,15 @@ async function loadGrowth() {
   leadThreadsAreSeparate.value = ((data ?? []) as string[]).includes(props.accountId)
 }
 
+// The poll, realtime and sending all call this; only the newest call's answer
+// is kept, and a failed read keeps what is on screen. Replacing the list with
+// an empty one whenever a 15-second poll lost signal emptied every
+// conversation, the open thread included.
+let loadRun = 0
 async function load(opts: { silent?: boolean } = {}) {
+  const run = ++loadRun
   if (!opts.silent) loading.value = true
-  const [{ data: waData }, { data: appData }] = await Promise.all([
+  const [{ data: waData, error: waError }, { data: appData, error: appError }] = await Promise.all([
     supabase
       .from('whatsapp_messages')
       .select('id, patient_id, phone_number, external_contact_id, lead_id, direction, status, body_preview, template_name, media_type, media_storage_path, media_mime_type, media_filename, channel, created_at')
@@ -143,6 +149,11 @@ async function load(opts: { silent?: boolean } = {}) {
       .limit(500),
     supabase.from('patient_app_messages').select('id, patient_id, direction, body, created_at').order('created_at', { ascending: false }).limit(500),
   ])
+  if (run !== loadRun) return
+  if (waError || appError) {
+    loading.value = false
+    return
+  }
   const appMessages: Message[] = (appData ?? []).map((m) => ({
     id: m.id,
     patient_id: m.patient_id,
@@ -164,10 +175,12 @@ async function load(opts: { silent?: boolean } = {}) {
 
   const patientIds = [...new Set(messages.value.map((m) => m.patient_id).filter((id): id is string => !!id))]
   if (patientIds.length > 0) {
-    const { data: patients } = await supabase.from('patients').select('id, first_name, last_name').in('id', patientIds)
-    const names: Record<string, string> = {}
-    for (const p of patients ?? []) names[p.id] = `${p.first_name} ${p.last_name ?? ''}`.trim()
-    patientNames.value = names
+    const { data: patients, error: namesError } = await supabase.from('patients').select('id, first_name, last_name').in('id', patientIds)
+    if (!namesError) {
+      const names: Record<string, string> = {}
+      for (const p of patients ?? []) names[p.id] = `${p.first_name} ${p.last_name ?? ''}`.trim()
+      patientNames.value = names
+    }
   }
   const leadIds = [...new Set(messages.value.filter((m) => m.lead_id && !m.patient_id).map((m) => m.lead_id!))]
   if (leadThreadsAreSeparate.value && leadIds.length > 0) {

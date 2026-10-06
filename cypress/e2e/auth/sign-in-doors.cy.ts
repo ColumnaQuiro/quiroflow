@@ -67,6 +67,23 @@ describe('Sign-in: staff and patients through the same door', () => {
     })
   })
 
+  it('says so when the email already has an account', () => {
+    cy.seedStaffAccount().then((account) => {
+      // What Supabase answers for an existing email with confirmation on: no
+      // error, and a user with an empty identities list.
+      cy.intercept('POST', '**/auth/v1/signup*', {
+        statusCode: 200,
+        body: { id: '00000000-0000-0000-0000-000000000000', email: 'taken@example.test', aud: 'authenticated', role: '', identities: [] },
+      })
+      cy.visit(`/portal/signup?clinic=${account.accountSlug}`)
+      cy.get('#email').type('taken@example.test')
+      cy.get('#password').type('valencia2026')
+      cy.contains('button', 'Create account').click()
+      cy.contains('There is already an account with this email')
+      cy.contains('h1', 'Check your email').should('not.exist')
+    })
+  })
+
   it('offers a resend once a patient has signed up', () => {
     cy.seedStaffAccount().then((account) => {
       cy.intercept('POST', '**/auth/v1/signup*', {

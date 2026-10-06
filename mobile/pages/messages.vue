@@ -15,13 +15,9 @@ const t = useT()
 
 <template>
   <div class="flex h-full min-h-0 flex-col">
-    <div class="flex h-14 shrink-0 items-center border-b border-line bg-surface px-4">
-      <p class="text-[15px] font-[600] text-ink-900">{{ t('Messages', 'Mensajes') }}</p>
-    </div>
+    <AppPageHeader :title="t('Messages', 'Mensajes')" />
 
-    <div v-if="identityLoading" class="flex min-h-0 flex-1 items-center justify-center text-sm text-ink-faint">
-      {{ t('Loading…', 'Cargando…') }}
-    </div>
+    <AppSkeletonList v-if="identityLoading" :rows="4" class="min-h-0 flex-1" />
     <p v-else-if="!patient" class="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-sm text-ink-muted">
       {{ t("This account isn't linked to a patient record.", 'Esta cuenta no está vinculada a una ficha de paciente.') }}
     </p>

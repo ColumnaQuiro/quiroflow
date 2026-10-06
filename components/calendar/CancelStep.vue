@@ -164,10 +164,23 @@ const summary = computed(() => {
 async function confirmCancel() {
   busy.value = true
   error.value = ''
-  const { error: e } = await supabase.from('appointments').update({ status: 'cancelled' }).eq('id', props.appointment.id)
+  // Only a visit that is not cancelled yet, and only if the row really
+  // changed: a colleague cancelling it first, or a refused update (no error,
+  // no rows), used to fire the automation and charge the fee a second time.
+  const { data: changed, error: e } = await supabase
+    .from('appointments')
+    .update({ status: 'cancelled' })
+    .eq('id', props.appointment.id)
+    .neq('status', 'cancelled')
+    .select('id')
   if (e) {
     busy.value = false
     error.value = e.message
+    return
+  }
+  if (!(changed ?? []).length) {
+    busy.value = false
+    error.value = t('This visit was already cancelled, or could not be changed. Nothing was charged.', 'Esta cita ya estaba cancelada o no se ha podido cambiar. No se ha cobrado nada.')
     return
   }
   fire('appointment.cancelled', { patientId: props.appointment.patient_id, appointmentId: props.appointment.id })

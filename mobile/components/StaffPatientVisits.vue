@@ -81,11 +81,11 @@ function statusOf(v: VisitRow) {
 </script>
 
 <template>
-  <section class="rounded-[13px] border border-line bg-surface px-3.5 py-3" data-cy="patient-visits">
+  <section class="rounded-card border border-line bg-surface shadow-card px-3.5 py-3" data-cy="patient-visits">
     <div class="flex items-center justify-between">
-      <h2 class="text-[11px] font-semibold uppercase tracking-[.05em] text-ink-faint">{{ t('Recent visits', 'Visitas recientes') }}</h2>
+      <h2 class="text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Recent visits', 'Visitas recientes') }}</h2>
       <button v-if="visits.length > PREVIEW_COUNT" type="button" class="text-[12.5px] font-medium text-brand-text" @click="showAll = !showAll">
-        {{ showAll ? t('Fewer', 'Menos') : `${t('All', 'Todas')} ›` }}
+        <template v-if="showAll">{{ t('Fewer', 'Menos') }}</template><template v-else>{{ t('All', 'Todas') }} <AppChevron :size="12" /></template>
       </button>
     </div>
 

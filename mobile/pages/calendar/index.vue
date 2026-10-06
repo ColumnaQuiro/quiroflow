@@ -92,6 +92,10 @@ watch(amPractitioner, (yes) => { if (!yes && !ownDiaryOnly.value) scope.value = 
 const effectiveScope = computed(() => (ownDiaryOnly.value || (scope.value === 'mine' && amPractitioner.value) ? 'mine' : 'all'))
 
 let loadRun = 0
+// The team, their clinic links and the clinic's hours are read once per
+// clinic; the minute-by-minute refresh only asks for the day's visits and
+// blocks, which are what change.
+let staticFor: string | null = null
 async function load(quiet = false) {
   if (!context.value?.clinicId || !day.value) {
     loading.value = !!contextLoading.value
@@ -103,6 +107,8 @@ async function load(quiet = false) {
   const from = startOfLocalDate(day.value, tz.value).toISOString()
   const to = startOfLocalDate(nextDate(day.value), tz.value).toISOString()
   const clinicId = context.value.clinicId
+  const needStatic = !quiet || staticFor !== clinicId
+  const none = Promise.resolve({ data: null, error: null })
   const [ap, bl, pr, links, cl] = await Promise.all([
     supabase
       .from('appointments')
@@ -115,19 +121,27 @@ async function load(quiet = false) {
       .gt('ends_at', from)
       .order('starts_at'),
     supabase.from('availability_blocks').select('id, starts_at, ends_at, practitioner_id, room_id, note').eq('clinic_id', clinicId).lt('starts_at', to).gt('ends_at', from),
-    supabase.from('team_members').select('id, full_name, business_hours').is('deleted_at', null).eq('is_practitioner', true).order('full_name'),
-    supabase.from('team_member_clinics').select('team_member_id, clinic_id').eq('clinic_id', clinicId),
-    supabase.from('clinics').select('business_hours').eq('id', clinicId).maybeSingle(),
+    needStatic ? supabase.from('team_members').select('id, full_name, business_hours').is('deleted_at', null).eq('is_practitioner', true).order('full_name') : none,
+    needStatic ? supabase.from('team_member_clinics').select('team_member_id, clinic_id').eq('clinic_id', clinicId) : none,
+    needStatic ? supabase.from('clinics').select('business_hours').eq('id', clinicId).maybeSingle() : none,
   ])
   if (run !== loadRun) return
-  const failed = [ap, bl, pr].find((r) => r.error)
-  if (failed) loadError.value = failed.error!.message
+  const failed = [ap, bl, pr, links, cl].find((r) => r.error)
+  if (failed) {
+    // A failed read keeps what is on screen; a quiet refresh says nothing.
+    if (!quiet) loadError.value = failed.error!.message
+    loading.value = false
+    return
+  }
   appointments.value = (ap.data as unknown as Appointment[] | null) ?? []
   blocks.value = (bl.data as Block[] | null) ?? []
-  const linked = new Set(((links.data as { team_member_id: string }[] | null) ?? []).map((l) => l.team_member_id))
-  const everyone = (pr.data as Practitioner[] | null) ?? []
-  practitioners.value = linked.size ? everyone.filter((p) => linked.has(p.id)) : everyone
-  clinicHours.value = ((cl.data as { business_hours: BusinessHours | null } | null)?.business_hours ?? null)
+  if (needStatic) {
+    const linked = new Set(((links.data as { team_member_id: string }[] | null) ?? []).map((l) => l.team_member_id))
+    const everyone = (pr.data as Practitioner[] | null) ?? []
+    practitioners.value = linked.size ? everyone.filter((p) => linked.has(p.id)) : everyone
+    clinicHours.value = ((cl.data as { business_hours: BusinessHours | null } | null)?.business_hours ?? null)
+    staticFor = clinicId
+  }
   loading.value = false
 }
 watch([() => context.value?.clinicId, day], () => load(), { immediate: true })
@@ -454,7 +468,7 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
 
     <div class="flex min-h-0 flex-1">
       <div class="flex min-w-0 flex-1 flex-col bg-surface">
-        <div v-if="contextLoading || loading" class="flex flex-1 items-center justify-center text-sm text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+        <AppSkeletonList v-if="contextLoading || loading" :rows="6" class="flex-1" />
         <p v-else-if="loadError" class="m-4 rounded-card border border-danger-border bg-danger-bg px-3.5 py-3 text-[13.5px] text-danger-text">{{ loadError }}</p>
         <template v-else>
           <div v-if="showColumnHeads" class="flex shrink-0 border-b border-line pl-12">
@@ -543,7 +557,7 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
             <p v-if="practitionerName(selected.practitioner_id)" class="text-[12.5px] text-ink-muted">{{ practitionerName(selected.practitioner_id) }}</p>
             <p v-if="selected.checked_in_at && selected.status === 'booked'" class="mt-2 inline-flex rounded-full bg-success-bg px-2 py-0.5 text-[11.5px] font-semibold text-success-text">{{ t('Checked in', 'Ha llegado') }}</p>
           </div>
-          <NuxtLink :to="`/calendar/${selected.id}`" class="flex h-11 items-center justify-center rounded-[12px] bg-brand text-[14.5px] font-semibold text-white" data-cy="agenda-panel-open">{{ t('Open visit', 'Abrir la cita') }}</NuxtLink>
+          <NuxtLink :to="`/calendar/${selected.id}`" class="flex h-11 items-center justify-center rounded-card bg-brand text-[14.5px] font-semibold text-white" data-cy="agenda-panel-open">{{ t('Open visit', 'Abrir la cita') }}</NuxtLink>
           <div v-if="canChange(selected)" class="grid grid-cols-2 gap-2">
             <button type="button" class="h-10 rounded-ctl border border-line-control bg-surface text-[13.5px] font-medium text-ink-700" data-cy="agenda-panel-move" @click="moveFor = { a: selected, preferredStart: null, practitionerId: selected.practitioner_id }">{{ t('Move', 'Mover') }}</button>
             <button type="button" class="h-10 rounded-ctl border border-line-control bg-surface text-[13.5px] font-medium text-danger-text" data-cy="agenda-panel-cancel" @click="cancelFor = selected">{{ t('Cancel', 'Cancelar') }}</button>
@@ -611,6 +625,7 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
 
 <style scoped>
 .agenda-blocked {
-  background: repeating-linear-gradient(135deg, rgb(241 242 245), rgb(241 242 245) 6px, rgb(248 249 251) 6px, rgb(248 249 251) 12px);
+  /* Theme variables, so the stripes follow a dark theme too. */
+  background: repeating-linear-gradient(135deg, rgb(var(--color-line-row)), rgb(var(--color-line-row)) 6px, rgb(var(--color-surface-subtle)) 6px, rgb(var(--color-surface-subtle)) 12px);
 }
 </style>

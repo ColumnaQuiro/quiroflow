@@ -111,10 +111,24 @@ async function confirmCancel() {
   if (busy.value) return
   busy.value = true
   error.value = ''
-  const { error: e } = await supabase.from('appointments').update({ status: 'cancelled' } as never).eq('id', props.appointment.id)
+  // Only a visit that is not cancelled yet, and only if the row really
+  // changed: a colleague cancelling it first, or the database refusing the
+  // update (no error, no rows), used to go on to fire the automation and
+  // charge the fee a second time.
+  const { data: changed, error: e } = await supabase
+    .from('appointments')
+    .update({ status: 'cancelled' } as never)
+    .eq('id', props.appointment.id)
+    .neq('status', 'cancelled')
+    .select('id')
   if (e) {
     busy.value = false
     error.value = e.message
+    return
+  }
+  if (!(changed ?? []).length) {
+    busy.value = false
+    error.value = t('This visit was already cancelled, or could not be changed. Nothing was charged.', 'Esta cita ya estaba cancelada o no se ha podido cambiar. No se ha cobrado nada.')
     return
   }
   authedFetch('/api/automations/fire', { method: 'POST', body: { triggerEvent: 'appointment.cancelled', patientId: props.appointment.patient_id, appointmentId: props.appointment.id } }).catch(() => {})
@@ -149,7 +163,7 @@ async function confirmCancel() {
       <div class="mx-auto mb-0.5 h-1 w-[38px] shrink-0 rounded-full bg-line-control md:hidden" />
       <p class="text-[17px] font-semibold text-ink-900">{{ t('Cancel the visit', 'Cancelar la cita') }}</p>
 
-      <div class="flex items-center gap-3 rounded-card border border-line bg-surface-subtle px-3.5 py-3">
+      <div class="flex items-center gap-3 rounded-card border border-line bg-surface shadow-card-subtle px-3.5 py-3">
         <div class="min-w-0 flex-1">
           <p class="truncate text-[15px] font-semibold text-ink-900">{{ appointment.patientName }}</p>
           <p class="text-[12.5px] text-ink-muted">
@@ -169,7 +183,7 @@ async function confirmCancel() {
           <label
             v-for="o in feeOptions"
             :key="o.key"
-            class="flex min-h-11 cursor-pointer items-center gap-3 rounded-[12px] px-3.5 py-2.5"
+            class="flex min-h-11 cursor-pointer items-center gap-3 rounded-card px-3.5 py-2.5"
             :class="fee === o.key ? 'border-[1.5px] border-brand bg-brand-tint' : 'border border-line-control bg-surface'"
             :data-cy="`cancel-fee-${o.key}`"
           >
@@ -182,7 +196,7 @@ async function confirmCancel() {
           <legend class="mb-1.5 text-[13.5px] font-semibold text-ink-900">{{ t(`The ${time(appointment.starts_at)} slot`, `El hueco de las ${time(appointment.starts_at)}`) }}</legend>
           <template v-if="matches.length">
             <label
-              class="flex min-h-11 items-start gap-3 rounded-[12px] px-3.5 py-2.5"
+              class="flex min-h-11 items-start gap-3 rounded-card px-3.5 py-2.5"
               :class="[offer ? 'border-[1.5px] border-brand bg-brand-tint' : 'border border-line-control bg-surface', deadline ? 'cursor-pointer' : 'opacity-60']"
               data-cy="cancel-offer"
             >
@@ -198,7 +212,7 @@ async function confirmCancel() {
                 </span>
               </span>
             </label>
-            <label class="flex min-h-11 cursor-pointer items-center gap-3 rounded-[12px] px-3.5 py-2.5" :class="!offer ? 'border-[1.5px] border-brand bg-brand-tint' : 'border border-line-control bg-surface'" data-cy="cancel-leave-free">
+            <label class="flex min-h-11 cursor-pointer items-center gap-3 rounded-card px-3.5 py-2.5" :class="!offer ? 'border-[1.5px] border-brand bg-brand-tint' : 'border border-line-control bg-surface'" data-cy="cancel-leave-free">
               <input v-model="offer" type="radio" name="slot" :value="false" class="accent-brand" />
               <span class="text-[14px] font-medium text-ink-900">{{ t('Leave the slot free', 'Dejar el hueco libre') }}</span>
             </label>
@@ -208,7 +222,7 @@ async function confirmCancel() {
       </template>
 
       <p v-if="error" role="alert" class="text-[13px] text-danger-text">{{ error }}</p>
-      <button type="button" class="flex h-11 items-center justify-center rounded-[12px] bg-ink-900 text-[15px] font-semibold text-surface disabled:opacity-50" :disabled="busy || loading" data-cy="confirm-cancel" @click="confirmCancel">
+      <button type="button" class="flex h-11 items-center justify-center rounded-card bg-ink-900 text-[15px] font-semibold text-surface disabled:opacity-50" :disabled="busy || loading" data-cy="confirm-cancel" @click="confirmCancel">
         {{ busy ? t('Cancelling…', 'Cancelando…') : cta }}
       </button>
       <button type="button" class="py-1 text-[13.5px] text-ink-muted" @click="emit('close')">{{ t('Don’t cancel', 'No cancelar') }}</button>

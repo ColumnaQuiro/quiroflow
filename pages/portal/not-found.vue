@@ -4,7 +4,7 @@ definePageMeta({ layout: false })
 const supabase = useSupabaseClient()
 
 async function signOut() {
-  await supabase.auth.signOut()
+  await supabase.auth.signOut({ scope: 'local' })
   await navigateTo('/portal/login')
 }
 </script>

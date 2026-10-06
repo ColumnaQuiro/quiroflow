@@ -8,7 +8,7 @@ const t = useT()
 const { patient } = usePortalPatient()
 const patientId = computed(() => patient.value?.id ?? '')
 
-const { loading: moneyLoading, balanceCents, creditLedgerCents, activePackages, activeMembership } = usePatientFinancialSummary(
+const { loading: moneyLoading, outstandingCents, creditLedgerCents, activePackages, activeMembership } = usePatientFinancialSummary(
   () => patientId.value,
 )
 const { invoices, loading: invoicesLoading, busyId, download } = usePatientInvoices(() => patientId.value)
@@ -17,7 +17,10 @@ const { invoices, loading: invoicesLoading, busyId, download } = usePatientInvoi
 // a patient asking "what am I being charged for?" are asking different things.
 const { facturas, loading: facturasLoading, busyId: facturaBusyId, download: downloadFactura } = usePatientFacturas(() => patientId.value)
 
-const amountDueCents = computed(() => (balanceCents.value < 0 ? -balanceCents.value : 0))
+// What is unpaid, not the balance, as the staff record shows it
+// (components/patient/BalanceCard.vue, utils/owing.ts): a family bono's
+// beneficiary was shown a debt for visits already paid for from the bono.
+const amountDueCents = computed(() => outstandingCents.value)
 
 const showAll = ref(false)
 const PREVIEW = 10

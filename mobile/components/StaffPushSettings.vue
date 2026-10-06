@@ -61,7 +61,7 @@ const rows = computed(() =>
 </script>
 
 <template>
-  <div class="rounded-card border border-line bg-surface px-4 py-3.5" data-cy="staff-push-settings">
+  <div class="rounded-card border border-line bg-surface shadow-card px-4 py-3.5" data-cy="staff-push-settings">
     <p class="text-[13.5px] font-medium text-ink-900">{{ t('Notifications', 'Avisos') }}</p>
     <p class="mt-0.5 text-[12px] leading-snug text-ink-muted">{{ t('Only about your patients and your diary.', 'Solo de tus pacientes y tu agenda.') }}</p>
     <div class="mt-1.5 divide-y divide-line-row" :class="loaded ? '' : 'opacity-60'">

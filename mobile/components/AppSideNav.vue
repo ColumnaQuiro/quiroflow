@@ -26,6 +26,7 @@ defineProps<{ items: AppNavItem[]; isActive: (to: string) => boolean; title: str
       :to="item.to"
       class="flex h-10 items-center gap-2.5 rounded-ctl px-2.5 text-[14px]"
       :class="isActive(item.to) ? 'bg-brand-tint font-semibold text-brand-text' : 'text-ink-700 active:bg-surface-subtle'"
+      :aria-current="isActive(item.to) ? 'page' : undefined"
     >
       <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" :stroke-width="isActive(item.to) ? 1.6 : 1.3" stroke-linejoin="round" aria-hidden="true">
         <path :d="item.icon" />

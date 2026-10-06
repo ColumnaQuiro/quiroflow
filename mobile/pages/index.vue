@@ -40,7 +40,7 @@ const { unregister: unregisterPush } = usePushNotifications()
 async function signOut() {
   await unregisterPush()
   clearVisitNoteDrafts()
-  await supabase.auth.signOut()
+  await supabase.auth.signOut({ scope: 'local' })
   ;(document.activeElement as HTMLElement | null)?.blur()
   await new Promise((resolve) => setTimeout(resolve, 350))
   await navigateTo('/login')

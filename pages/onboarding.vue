@@ -139,7 +139,7 @@ async function onSubmit() {
 // lost: no account row exists yet, and signing in with the same address
 // lands straight back here.
 async function backToSignup() {
-  await supabase.auth.signOut()
+  await supabase.auth.signOut({ scope: 'local' })
   await navigateTo('/signup')
 }
 

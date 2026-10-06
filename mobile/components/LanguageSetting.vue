@@ -11,7 +11,7 @@ const options = [
 </script>
 
 <template>
-  <div class="rounded-card border border-line bg-surface px-4 py-3.5" data-cy="language-setting">
+  <div class="rounded-card border border-line bg-surface shadow-card px-4 py-3.5" data-cy="language-setting">
     <p class="text-[13.5px] font-medium text-ink-900">{{ t('Language', 'Idioma') }}</p>
     <div role="radiogroup" :aria-label="t('Language', 'Idioma')" class="mt-2.5 grid grid-cols-2 gap-[3px] rounded-ctl bg-surface-subtle p-[3px]">
       <button

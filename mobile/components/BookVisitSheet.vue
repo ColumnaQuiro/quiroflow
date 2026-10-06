@@ -481,15 +481,15 @@ async function book() {
 
 
 <template>
-  <div class="fixed inset-0 z-50 flex flex-col justify-end bg-ink-900/40" data-cy="book-visit-sheet" @click.self="emit('close')">
+  <div class="fixed inset-0 z-50 flex flex-col justify-end bg-ink-900/40 md:items-center md:justify-center" data-cy="book-visit-sheet" @click.self="emit('close')">
     <div
-      class="flex max-h-[92%] flex-col gap-3 overflow-y-auto rounded-t-[22px] bg-surface px-4 pt-2.5 shadow-popover"
+      class="flex max-h-[92%] w-full flex-col gap-3 overflow-y-auto rounded-t-[22px] bg-surface px-4 pt-2.5 shadow-popover md:max-w-[520px] md:rounded-[18px] md:pt-5"
       style="padding-bottom: max(env(safe-area-inset-bottom), 1.25rem)"
       role="dialog"
       aria-modal="true"
       :aria-label="heading"
     >
-      <div class="mx-auto mb-0.5 h-1 w-[38px] shrink-0 rounded-full bg-line-control" />
+      <div class="mx-auto mb-0.5 h-1 w-[38px] shrink-0 rounded-full bg-line-control md:hidden" />
       <slot name="header" />
 
       <template v-if="loading">
@@ -500,12 +500,12 @@ async function book() {
 
       <p v-else-if="loadError" class="rounded-card border border-danger-border bg-danger-bg px-3.5 py-3 text-[13.5px] text-danger-text">{{ loadError }}</p>
 
-      <p v-else-if="practitioners.length === 0 || types.length === 0" class="rounded-card border border-line bg-surface-page px-3.5 py-3 text-[13.5px] text-ink-muted">
+      <p v-else-if="practitioners.length === 0 || types.length === 0" class="rounded-card border border-line bg-surface shadow-card-page px-3.5 py-3 text-[13.5px] text-ink-muted">
         {{ practitioners.length === 0 ? t('No practitioner to book with at this clinic.', 'No hay ningún profesional con quien reservar en esta clínica.') : t('No appointment types set up yet.', 'Aún no hay tipos de cita.') }}
       </p>
 
       <template v-else>
-        <div class="rounded-card border border-line bg-surface-page px-3.5 py-2.5">
+        <div class="rounded-card border border-line bg-surface shadow-card-page px-3.5 py-2.5">
           <p class="text-[14px] font-semibold text-ink-900">{{ heading }}</p>
           <p class="mt-0.5 text-[12.5px] leading-snug text-ink-muted2" data-cy="book-visit-context">
             <template v-if="suggestionLead">{{ suggestionLead }} · </template>
@@ -586,7 +586,7 @@ async function book() {
 
         <button
           type="button"
-          class="flex h-11 items-center justify-center rounded-[12px] bg-brand text-[15px] font-semibold text-white disabled:opacity-50"
+          class="flex h-11 items-center justify-center rounded-card bg-brand text-[15px] font-semibold text-white disabled:opacity-50"
           :disabled="!selectedStart || booking"
           data-cy="book-visit-confirm"
           @click="book"

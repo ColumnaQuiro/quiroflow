@@ -176,6 +176,17 @@ const showMoney = computed(() => can('billing_history_view'))
 // Handed an empty id until the role is known to see money, so nothing is
 // fetched for a role that does not.
 const money = usePatientFinancialSummary(() => (showMoney.value ? patientId : ''))
+// The web Billing tab's rules: paying needs payments_allocate; selling a bono
+// needs packages_edit or billing_config (and taking money for it, the same).
+const canTakePayments = computed(() => can('payments_allocate'))
+const canSellBonos = computed(() => (can('packages_edit') || can('billing_config')) && can('payments_allocate'))
+const moneyMode = ref<'pay' | 'sell' | null>(null)
+const moneyNotice = ref('')
+async function onMoneyDone(message: string) {
+  moneyMode.value = null
+  moneyNotice.value = message
+  await money.refresh()
+}
 // The composable keeps what it loaded for the life of the app, and the app
 // stays open all day: a balance read this morning is not the balance now.
 // Refreshed on arrival unless a load is already under way.
@@ -410,6 +421,12 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
           </template>
         </section>
       </div>
+      <!-- Taking money at the desk, as the web's Billing tab allows the role -->
+      <div v-if="showMoney && (canTakePayments || canSellBonos)" class="grid gap-2" :class="canTakePayments && canSellBonos ? 'grid-cols-2' : 'grid-cols-1'" data-cy="patient-money-actions">
+        <button v-if="canTakePayments" type="button" class="flex h-11 items-center justify-center rounded-card bg-brand text-[14px] font-semibold text-white" data-cy="patient-take-payment" @click="moneyMode = 'pay'">{{ t('Take payment', 'Cobrar') }}</button>
+        <button v-if="canSellBonos" type="button" class="flex h-11 items-center justify-center rounded-card border border-line-control bg-surface text-[14px] font-semibold text-ink-900" data-cy="patient-sell-bono" @click="moneyMode = 'sell'">{{ t('Sell a bono', 'Vender bono') }}</button>
+      </div>
+      <p v-if="moneyNotice" class="rounded-card border border-success-border bg-success-bg px-3 py-2 text-[13px] font-medium text-success-text" role="status" data-cy="patient-money-notice">{{ moneyNotice }}</p>
 
       <!-- Forms -->
       <section class="rounded-card border border-line bg-surface shadow-card px-3.5 py-3" data-cy="patient-forms">
@@ -471,6 +488,7 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
     </div>
 
     <BookVisitSheet v-if="bookOpen" :patient-id="patientId" @booked="onBooked" @close="bookOpen = false" />
+    <RecordMoneySheet v-if="moneyMode" :patient-id="patientId" :mode="moneyMode" @done="onMoneyDone" @close="moneyMode = null" />
     <ReceptionSetupSheet v-if="receptionOpen" :patient-id="patientId" @close="receptionOpen = false" />
   </div>
   </div>

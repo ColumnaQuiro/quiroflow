@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { DateRange } from '~/composables/useDateRangePresets'
 import { newBlockId, type ChartKind, type Compare, type OwnPeriod, type ReportBlock, type SplitKey } from '~/utils/reportBlocks'
-import { AREAS, METRICS, METRIC_BY_KEY, SPLIT_LABELS, type Area } from '~/utils/reportMetrics'
+import { AREAS, METRICS, METRIC_BY_KEY, pivotColumnsFor, SPLIT_LABELS, type Area } from '~/utils/reportMetrics'
 
 // New report / Edit block: pick a metric from the catalogue, how to split it,
 // how to draw it, and for which period -- with the block itself as the
@@ -27,6 +27,8 @@ onMounted(() => {
 const metric = ref(props.initial?.config.metric ?? 'income_paid')
 const split = ref<SplitKey>(props.initial?.config.split ?? 'none')
 const chart = ref<ChartKind>(props.initial?.config.chart ?? 'number')
+// A second split across the top of a table ('' = none).
+const columns = ref<SplitKey | ''>(props.initial?.config.columns ?? '')
 const practitionerFilter = ref(props.initial?.config.filters?.practitionerId ?? '')
 const clinicFilter = ref(props.initial?.config.filters?.clinicId ?? '')
 const methodFilter = ref(props.initial?.config.filters?.method ?? '')
@@ -57,6 +59,8 @@ const charts = computed<{ key: ChartKind; label: string }[]>(() => {
   ]
 })
 
+const columnChoices = computed(() => (chart.value === 'table' ? pivotColumnsFor(def.value, split.value) : []))
+
 // Keep the choices valid as the metric and split change.
 watch(metric, () => {
   if (!def.value.splits.includes(split.value)) split.value = 'none'
@@ -70,10 +74,15 @@ watch(
   },
   { immediate: true },
 )
+watch(columnChoices, (choices) => {
+  if (columns.value && !choices.includes(columns.value)) columns.value = ''
+})
 // The title follows the choices until someone types one.
 const suggestedTitle = computed(() => {
   const m = t(...def.value.label)
-  return split.value === 'none' ? m : `${m} ${t('by', 'por')} ${t(...SPLIT_LABELS[split.value]).toLowerCase()}`
+  if (split.value === 'none') return m
+  const by = `${m} ${t('by', 'por')} ${t(...SPLIT_LABELS[split.value]).toLowerCase()}`
+  return columns.value ? `${by} ${t('and', 'y')} ${t(...SPLIT_LABELS[columns.value]).toLowerCase()}` : by
 })
 watch(suggestedTitle, (v) => {
   if (!titleTouched.value) title.value = v
@@ -82,11 +91,12 @@ watch(suggestedTitle, (v) => {
 const draft = computed<ReportBlock>(() => ({
   id: props.initial?.id ?? 'preview',
   title: title.value.trim() || suggestedTitle.value,
-  span: props.initial?.span ?? (split.value === 'none' || def.value.steps ? (def.value.steps ? 12 : 3) : 6),
+  span: props.initial?.span ?? (split.value === 'none' || def.value.steps ? (def.value.steps ? 12 : 3) : columns.value ? 12 : 6),
   origin: props.initial?.origin ?? null,
   config: {
     metric: metric.value,
     split: split.value,
+    ...(columns.value ? { columns: columns.value } : {}),
     chart: chart.value,
     filters:
       practitionerFilter.value || clinicFilter.value || methodFilter.value
@@ -162,6 +172,13 @@ const optionClass = (on: boolean) =>
             <div class="flex flex-wrap gap-1.5">
               <button v-for="c in charts" :key="c.key" type="button" class="h-8 rounded-ctl border px-2.5 text-[12.5px]" :class="optionClass(chart === c.key)" :data-cy="`report-chart-${c.key}`" @click="chart = c.key">{{ c.label }}</button>
             </div>
+            <label v-if="columnChoices.length" class="flex flex-wrap items-center gap-2 pt-1 text-[13px] text-ink-700">
+              {{ t('Columns', 'Columnas') }}
+              <select v-model="columns" class="h-8 rounded-ctl border border-line-control bg-surface px-2.5 text-[12.5px]" data-cy="report-builder-columns">
+                <option value="">{{ t('None: one figure per row', 'Ninguna: una cifra por fila') }}</option>
+                <option v-for="c in columnChoices" :key="c" :value="c">{{ t(...SPLIT_LABELS[c]) }}</option>
+              </select>
+            </label>
           </div>
 
           <div v-if="!def.clinicWide" class="space-y-2">

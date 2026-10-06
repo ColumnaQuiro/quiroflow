@@ -3,7 +3,7 @@ import { Bar, Doughnut, Line } from 'vue-chartjs'
 import { computePresetRange, rangeBounds, type DateRange } from '~/composables/useDateRangePresets'
 import { REPORT_DATA_KEY } from '~/composables/useReportData'
 import type { Compare, OwnPeriod, ReportBlock } from '~/utils/reportBlocks'
-import { comparisonRange, computeMetric, formatDelta, formatMetric, METRIC_BY_KEY, SPLIT_LABELS, TIME_SPLITS, type Ctx, type MetricResult } from '~/utils/reportMetrics'
+import { comparisonRange, computeMetric, computePivot, formatDelta, formatMetric, METRIC_BY_KEY, SPLIT_LABELS, TIME_SPLITS, type Ctx, type MetricResult, type PivotResult } from '~/utils/reportMetrics'
 
 // One block of a report page: a metric, split some way, drawn some way, for
 // the page's period (or its own). Its data comes from the page's shared
@@ -105,6 +105,13 @@ const result = computed<MetricResult | null>(() => {
   void hub.version.value
   if (loading.value || error.value || !def.value || unavailable.value) return null
   return computeMetric(def.value, props.block.config.split, hub.data, ctxFor(period.value))
+})
+// A table split two ways, when the block asks for one and the metric can be cut into cells.
+const pivot = computed<PivotResult | null>(() => {
+  void hub.version.value
+  const columns = props.block.config.columns
+  if (!columns || chart.value !== 'table' || loading.value || error.value || !def.value || unavailable.value) return null
+  return computePivot(def.value, props.block.config.split, columns, hub.data, ctxFor(period.value))
 })
 const previous = computed<number | null>(() => {
   void hub.version.value
@@ -277,6 +284,29 @@ function closeMenuSoon() {
           <span class="font-mono font-semibold text-ink-900">{{ fmt(r.value) }}</span>
         </li>
       </ul>
+    </div>
+    <div v-else-if="pivot" class="-mx-4 -mb-4 overflow-x-auto" data-cy="report-block-pivot">
+      <table class="w-full text-[13px]">
+        <thead class="border-b border-line text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2">
+          <tr>
+            <th class="whitespace-nowrap px-4 py-1.5">{{ t(...SPLIT_LABELS[block.config.split]) }}</th>
+            <th v-for="c in pivot.columns" :key="c.key" class="whitespace-nowrap px-3 py-1.5 text-right">{{ c.label }}</th>
+            <th class="whitespace-nowrap px-4 py-1.5 text-right">{{ t('Total', 'Total') }}</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-line-row">
+          <tr v-for="r in pivot.rows" :key="r.key">
+            <td class="whitespace-nowrap px-4 py-1.5 text-ink-600">{{ r.label }}</td>
+            <td v-for="c in pivot.columns" :key="c.key" class="px-3 py-1.5 text-right font-mono" :class="r.cells[c.key] ? 'font-medium text-ink-900' : 'text-ink-faint2'">{{ fmt(r.cells[c.key] ?? null) }}</td>
+            <td class="px-4 py-1.5 text-right font-mono font-semibold text-ink-900">{{ fmt(r.value) }}</td>
+          </tr>
+          <tr v-if="pivot.rows.length > 1 && !isTime" class="bg-surface-subtle">
+            <td class="px-4 py-1.5 font-semibold text-ink-800">{{ t('Total', 'Total') }}</td>
+            <td v-for="c in pivot.columns" :key="c.key" class="px-3 py-1.5 text-right font-mono font-semibold text-ink-900">{{ fmt(pivot.columnTotals[c.key] ?? null) }}</td>
+            <td class="px-4 py-1.5 text-right font-mono font-semibold text-ink-900">{{ fmt(pivot.value) }}</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
     <div v-else class="-mx-4 -mb-4 overflow-x-auto">
       <table class="w-full text-[13px]">

@@ -64,6 +64,8 @@ const appointments = ref<Appointment[]>([])
 const tasks = ref<Task[]>([])
 const birthdays = ref<BirthdayPatient[]>([])
 const recallsDue = ref<number | null>(null)
+// Waiting or offered a slot: the web's waitlist page, active entries.
+const waitlistActive = ref<number | null>(null)
 const takingsCents = ref<number | null>(null)
 // patient -> ids of their future, live appointments (any practitioner's the
 // role can see). Until it has answered, nobody is flagged "No next visit".
@@ -178,12 +180,24 @@ async function load({ silent = false } = {}) {
 
   const takingsQ = seesMoney.value ? loadTakings(ctx.teamMemberId, startIso, endIso) : Promise.resolve(null)
 
-  const [appts, taskRows, birthdayRows, recalls, takings] = await Promise.all([
+  const waitlistQ = seesRecalls.value
+    ? supabase
+        .from('waitlist_entries')
+        .select('id', { count: 'exact', head: true })
+        .in('status', ['waiting', 'offered'])
+        .then(({ count, error }) => {
+          if (error) throw error
+          return count ?? 0
+        })
+    : Promise.resolve(null)
+
+  const [appts, taskRows, birthdayRows, recalls, takings, waitlist] = await Promise.all([
     settle(t('Visits', 'Visitas'), appointmentsQ),
     settle(t('Tasks', 'Tareas'), tasksQ),
     settle(t('Birthdays', 'Cumpleaños'), birthdaysQ),
     settle(t('Recalls', 'Recordatorios'), recallsQ),
     settle(t('Takings', 'Cobrado'), takingsQ),
+    settle(t('Waitlist', 'Lista de espera'), waitlistQ),
   ])
   if (mine !== run) return
 
@@ -193,6 +207,7 @@ async function load({ silent = false } = {}) {
   if (taskRows) tasks.value = taskRows
   if (birthdayRows) birthdays.value = birthdayRows
   recallsDue.value = recalls
+  waitlistActive.value = waitlist
   takingsCents.value = takings
   errors.value = nextErrors
   loading.value = false
@@ -587,6 +602,11 @@ function initialsOf(a: Appointment) {
             <span class="text-[14px] text-ink-900">{{ t('Recalls due', 'Recordatorios pendientes') }}</span>
             <UiSkeleton v-if="loading" class="h-3.5 w-16 rounded-ctlSm" />
             <span v-else class="flex items-center gap-1 text-[12.5px] text-ink-muted2" data-test="myday-recalls">{{ recallsDue === null ? '—' : t(`${recallsDue} ${recallsDue === 1 ? 'patient' : 'patients'}`, `${recallsDue} ${recallsDue === 1 ? 'paciente' : 'pacientes'}`) }}<AppChevron :size="12" /></span>
+          </NuxtLink>
+          <NuxtLink v-if="seesRecalls" to="/waitlist" class="flex items-center justify-between gap-3 border-t border-line-row py-2" data-cy="myday-waitlist-open">
+            <span class="text-[14px] text-ink-900">{{ t('Waitlist', 'Lista de espera') }}</span>
+            <UiSkeleton v-if="loading" class="h-3.5 w-16 rounded-ctlSm" />
+            <span v-else class="flex items-center gap-1 text-[12.5px] text-ink-muted2" data-test="myday-waitlist">{{ waitlistActive === null ? '—' : t(`${waitlistActive} waiting`, `${waitlistActive} en espera`) }}<AppChevron :size="12" /></span>
           </NuxtLink>
           <button type="button" class="flex w-full items-center justify-between gap-3 border-t border-line-row py-2 text-left focus:outline-none" :aria-expanded="showTasks" data-test="myday-tasks-toggle" @click="showTasks = !showTasks">
             <span class="text-[14px] text-ink-900">{{ t('Tasks', 'Tareas') }}</span>

@@ -41,24 +41,44 @@ export interface ParsedNote {
 export function parseVisitNote(body: string | null): ParsedNote {
   if (!body?.trim()) return { sections: [], preamble: '', structured: false }
 
-  const found = new Map<NoteSection, string>()
+  const found = new Map<NoteSection, string[]>()
   const leftovers: string[] = []
+  // The section the paragraphs being read belong to. A blank line separates
+  // the sections, but a section can hold blank lines of its own -- a
+  // Subjective typed as three paragraphs is written as one section with two
+  // blank lines inside it. Splitting on the blank line alone kept only the
+  // first paragraph and pushed the rest out as loose text, which the clinical
+  // tab draws after the last section: a patient's history read as if it
+  // were the Plan (reported 6 Oct 2026). So a paragraph that does not open
+  // with a label continues the section above it; only text before the first
+  // label is preamble.
+  let current: NoteSection | null = null
 
   for (const chunk of body.split('\n\n')) {
     const idx = chunk.indexOf(':')
     const label = idx === -1 ? null : chunk.slice(0, idx).trim()
     if (label && (NOTE_SECTIONS as readonly string[]).includes(label)) {
-      const text = chunk.slice(idx + 1).trim()
-      if (text) found.set(label as NoteSection, text)
-    } else if (chunk.trim()) {
+      current = label as NoteSection
+      found.set(current, [chunk.slice(idx + 1).trim()])
+    } else if (!chunk.trim()) {
+      continue
+    } else if (current) {
+      found.get(current)!.push(chunk.trim())
+    } else {
       leftovers.push(chunk.trim())
     }
   }
 
+  const texts = new Map<NoteSection, string>()
+  for (const [label, paragraphs] of found) {
+    const text = paragraphs.filter(Boolean).join('\n\n')
+    if (text) texts.set(label, text)
+  }
+
   return {
-    sections: NOTE_SECTIONS.filter((s) => found.has(s)).map((label) => ({ label, text: found.get(label)! })),
+    sections: NOTE_SECTIONS.filter((s) => texts.has(s)).map((label) => ({ label, text: texts.get(label)! })),
     preamble: leftovers.join('\n\n'),
-    structured: found.size > 0,
+    structured: texts.size > 0,
   }
 }
 

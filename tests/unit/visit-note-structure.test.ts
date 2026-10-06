@@ -50,6 +50,29 @@ describe('Reading a visit note', () => {
     expect(parsed.preamble).to.contain('patient called ahead')
   })
 
+  it('keeps a section typed as several paragraphs together', () => {
+    // The charting pane joins the sections with blank lines, and a section
+    // can hold blank lines of its own. Splitting on them alone kept the first
+    // paragraph of a Subjective and drew the rest after the Plan, as if the
+    // patient's history were the plan (reported 6 Oct 2026).
+    const subjective = ['Hip replacement in 2020.', 'Right leg pain, 4/10.', 'Neck pain, tingling in the left arm.'].join('\n\n')
+    const body = [`Subjective: ${subjective}`, 'Objective: SOT CAT III', 'Action: Blocking', 'Plan: Review next week.\nDrink water and walk.'].join('\n\n')
+    const parsed = parseVisitNote(body)
+    expect(parsed.preamble).to.equal('')
+    expect(parsed.sections.map((s) => [s.label, s.text])).to.deep.equal([
+      ['Subjective', subjective],
+      ['Objective', 'SOT CAT III'],
+      ['Action', 'Blocking'],
+      ['Plan', 'Review next week.\nDrink water and walk.'],
+    ])
+  })
+
+  it('gives an empty section none of the text after it', () => {
+    const body = ['Subjective: Sore.', 'Objective: ', 'Action: ', 'Plan: Review.'].join('\n\n')
+    expect(parseVisitNote(body).sections.map((s) => s.label)).to.deep.equal(['Subjective', 'Plan'])
+    expect(parseVisitNote('Subjective: \n\nObjective: \n\nAction: \n\nPlan: ').structured).to.equal(false)
+  })
+
   it('previews what the patient said, which is what a list is scanned for', () => {
     expect(visitNotePreview(written)).to.equal('Lower back pain, worse in the mornings.')
   })

@@ -50,6 +50,16 @@ async function onSubmit() {
     }
     return
   }
+  // An email that already has an account: with email confirmation on,
+  // Supabase answers without an error (so as not to reveal who is signed up)
+  // and with no identities on the user. It used to read as "check your email"
+  // for a link that was never sent.
+  if (data.user && (data.user.identities ?? []).length === 0) {
+    emailError.value = 'taken'
+    await nextTick()
+    emailField.value?.focus()
+    return
+  }
   if (data.session) {
     // Email confirmation is disabled on this project — session is live already.
     await navigateTo('/onboarding')

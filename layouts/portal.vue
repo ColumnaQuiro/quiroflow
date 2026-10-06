@@ -21,7 +21,7 @@ const { settings } = usePatientAppInfo()
 const { patient, fullName, initials } = usePortalPatient()
 
 async function signOut() {
-  await supabase.auth.signOut()
+  await supabase.auth.signOut({ scope: 'local' })
   await navigateTo('/portal/login')
 }
 

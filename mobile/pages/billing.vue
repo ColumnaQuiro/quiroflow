@@ -17,7 +17,7 @@ const locale = computed(() => t('en-GB', 'es-ES'))
 const { patient } = useIdentity()
 const patientId = computed(() => patient.value?.id ?? '')
 
-const { loading: moneyLoading, balanceCents, creditLedgerCents, activePackages, activeMembership, refresh: refreshMoney } = usePatientFinancialSummary(
+const { loading: moneyLoading, outstandingCents, creditLedgerCents, activePackages, activeMembership, refresh: refreshMoney } = usePatientFinancialSummary(
   () => patientId.value,
 )
 
@@ -35,7 +35,10 @@ onMounted(() => document.addEventListener('visibilitychange', onVisible))
 onBeforeUnmount(() => document.removeEventListener('visibilitychange', onVisible))
 const { invoices, loading: invoicesLoading, busyId, download } = usePatientInvoices(() => patientId.value)
 
-const amountDueCents = computed(() => (balanceCents.value < 0 ? -balanceCents.value : 0))
+// What is unpaid, not the balance, as the staff record shows it
+// (components/patient/BalanceCard.vue, utils/owing.ts): a family bono's
+// beneficiary was shown a debt for visits already paid for from the bono.
+const amountDueCents = computed(() => outstandingCents.value)
 
 const showAll = ref(false)
 const PREVIEW = 8

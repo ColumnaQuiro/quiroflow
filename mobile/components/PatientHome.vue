@@ -22,7 +22,7 @@ const { upcoming, loading: apptLoading } = usePatientAppointments(
   () => props.patientId,
   () => settings.value,
 )
-const { loading: moneyLoading, balanceCents, creditLedgerCents, activePackages, refresh: refreshMoney } = usePatientFinancialSummary(() => props.patientId)
+const { loading: moneyLoading, outstandingCents, creditLedgerCents, activePackages, refresh: refreshMoney } = usePatientFinancialSummary(() => props.patientId)
 
 // The money summary is cached for the whole app run (usePatientFinancialSummary),
 // and Capacitor keeps the app alive in the background: a debt paid at the desk
@@ -40,7 +40,10 @@ onBeforeUnmount(() => document.removeEventListener('visibilitychange', onVisible
 const { documents } = usePatientDocuments(() => props.patientId)
 
 const next = computed(() => upcoming.value[0] ?? null)
-const amountDueCents = computed(() => (balanceCents.value < 0 ? -balanceCents.value : 0))
+// What is unpaid, not the balance, as the staff record shows it
+// (components/patient/BalanceCard.vue, utils/owing.ts): a family bono's
+// beneficiary was shown a debt for visits already paid for from the bono.
+const amountDueCents = computed(() => outstandingCents.value)
 const sessionsLeft = computed(() => activePackages.value.reduce((sum, p) => sum + Math.max(0, p.sessions_total - p.sessions_used), 0))
 
 // At the clinic's hour, not the phone's: a patient whose phone is set to

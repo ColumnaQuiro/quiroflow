@@ -32,6 +32,14 @@ async function onSubmit() {
     error.value = authErrorMessage(signUpError)
     return
   }
+  // An email that already has an account: with email confirmation on,
+  // Supabase answers without an error (so as not to reveal who is signed up)
+  // and with no identities on the user. It used to read as "check your email"
+  // for a link that was never sent.
+  if (data.user && (data.user.identities ?? []).length === 0) {
+    error.value = t('There is already an account with this email. Sign in, or reset your password.', 'Ya hay una cuenta con este correo. Entra o recupera tu contraseña.')
+    return
+  }
   if (data.session) {
     ;(document.activeElement as HTMLElement | null)?.blur()
     await new Promise((resolve) => setTimeout(resolve, 350))

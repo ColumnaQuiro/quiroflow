@@ -6,14 +6,17 @@ watch(user, (u) => { if (!u) navigateTo('/login') }, { immediate: true })
 
 const supabase = useSupabaseClient()
 const t = useT()
-const { context, loading } = usePractitionerContext()
+const { context, loading, clinics, setClinic } = usePractitionerContext()
 const { unregister: unregisterPush } = usePushNotifications()
 const authedFetch = useAuthedFetch()
 
 async function signOut() {
   await unregisterPush()
   clearVisitNoteDrafts()
-  await supabase.auth.signOut()
+  // This device only. The default, scope 'global', also signed the person
+  // out of every other phone and browser; the web's Account page keeps a
+  // separate "sign out of other devices".
+  await supabase.auth.signOut({ scope: 'local' })
   ;(document.activeElement as HTMLElement | null)?.blur()
   await new Promise((resolve) => setTimeout(resolve, 350))
   await navigateTo('/login')
@@ -48,7 +51,7 @@ async function deleteAccount() {
   }
   await unregisterPush()
   clearVisitNoteDrafts()
-  await supabase.auth.signOut()
+  await supabase.auth.signOut({ scope: 'local' })
   await navigateTo('/login')
 }
 </script>
@@ -79,6 +82,25 @@ async function deleteAccount() {
       </div>
       <p v-if="photoError" class="text-[13px] font-semibold text-danger-text">{{ t('Could not change your photo:', 'No se ha podido cambiar tu foto:') }} {{ photoError }}</p>
 
+      <!-- Which location the app works in, when the account has more than one -->
+      <div v-if="context && clinics.length > 1" class="rounded-card border border-line bg-surface px-4 py-3.5" data-cy="clinic-switcher">
+        <p class="text-[13.5px] font-medium text-ink-900">{{ t('Clinic', 'Clínica') }}</p>
+        <p class="mt-0.5 text-[12px] text-ink-muted">{{ t('My Day, the calendar and new visits use this location.', 'Mi día, la agenda y las citas nuevas usan esta clínica.') }}</p>
+        <div role="radiogroup" :aria-label="t('Clinic', 'Clínica')" class="mt-2.5 flex flex-col gap-1.5">
+          <button
+            v-for="c in clinics"
+            :key="c.id"
+            type="button"
+            role="radio"
+            :aria-checked="context.clinicId === c.id"
+            class="flex min-h-11 items-center justify-between rounded-ctl px-3.5 text-left text-[14px]"
+            :class="context.clinicId === c.id ? 'border-[1.5px] border-brand bg-brand-tint font-semibold text-ink-900' : 'border border-line-control text-ink-700'"
+            @click="setClinic(c.id)"
+          >
+            {{ c.name }}
+          </button>
+        </div>
+      </div>
       <StaffPushSettings v-if="context" />
       <LanguageSetting />
 

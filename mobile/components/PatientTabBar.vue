@@ -15,7 +15,8 @@ const { items: tabs, isActive } = usePatientNav()
       :key="tab.to"
       :to="tab.to"
       class="flex flex-1 flex-col items-center gap-1 pt-2 text-[10.5px] font-medium"
-      :class="isActive(tab.to) ? 'text-brand-text' : 'text-ink-faint'"
+      :class="isActive(tab.to) ? 'text-brand-text' : 'text-ink-muted'"
+      :aria-current="isActive(tab.to) ? 'page' : undefined"
     >
       <svg width="21" height="21" viewBox="0 0 16 16" fill="none" stroke="currentColor" :stroke-width="isActive(tab.to) ? 1.6 : 1.3" stroke-linejoin="round">
         <path :d="tab.icon" />

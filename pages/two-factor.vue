@@ -35,7 +35,7 @@ async function done() {
 }
 
 async function signOut() {
-  await supabase.auth.signOut()
+  await supabase.auth.signOut({ scope: 'local' })
   store.reset()
   await navigateTo('/login')
 }

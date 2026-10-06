@@ -12,9 +12,13 @@ interface Patient {
 
 const supabase = useSupabaseClient()
 const t = useT()
-const search = ref('')
+// Kept across remounts: on a wide iPad this list sits inside the record page,
+// which Nuxt rebuilds for every patient tapped -- the search used to clear
+// itself on each tap.
+const search = useState('staff-patient-search', () => '')
 const patients = ref<Patient[]>([])
 const loading = ref(true)
+const loadError = ref(false)
 const adding = ref(false)
 // A new patient opens straight on their record, where booking is one tap.
 function created(p: { id: string }) {
@@ -22,13 +26,23 @@ function created(p: { id: string }) {
   navigateTo(`/patients/${p.id}`)
 }
 
+// Every word has to match the first name or the surname, so "Elena Martín"
+// finds her (the whole phrase was matched against each column and found
+// nobody). Characters PostgREST reads as filter syntax are dropped -- a comma
+// used to invalidate the query, which then read as "No patients found". Only
+// the newest search's answer is kept. The same rules as NewVisitSheet.
+let run = 0
 async function load() {
+  const mine = ++run
   loading.value = true
+  loadError.value = false
   let query = supabase.from('patients').select('id, first_name, last_name, status').eq('status', 'active').order('first_name').limit(100)
-  const term = search.value.trim()
-  if (term) query = query.or(`first_name.ilike.%${term}%,last_name.ilike.%${term}%`)
-  const { data } = await query
-  patients.value = data ?? []
+  const words = search.value.trim().split(/\s+/).map((w) => w.replace(/[,()%*\\]/g, '')).filter(Boolean)
+  for (const w of words) query = query.or(`first_name.ilike.%${w}%,last_name.ilike.%${w}%`)
+  const { data, error } = await query
+  if (mine !== run) return
+  if (error) loadError.value = true
+  else patients.value = (data as Patient[] | null) ?? []
   loading.value = false
 }
 onMounted(load)
@@ -58,7 +72,11 @@ watch(search, () => {
       />
     </div>
 
-    <div v-if="loading" class="flex flex-1 items-center justify-center text-sm text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+    <AppSkeletonList v-if="loading && patients.length === 0" avatar :rows="8" class="flex-1" />
+    <div v-else-if="loadError && patients.length === 0" class="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center" data-cy="patients-load-error">
+      <p class="text-sm text-danger-text">{{ t('Could not load the patients.', 'No se han podido cargar los pacientes.') }}</p>
+      <button type="button" class="h-10 rounded-ctl border border-line-control px-4 text-[13.5px] font-medium text-ink-700" @click="load">{{ t('Try again', 'Reintentar') }}</button>
+    </div>
     <p v-else-if="patients.length === 0" class="flex flex-1 items-center justify-center px-6 text-center text-sm text-ink-muted">{{ t('No patients found.', 'No se encontraron pacientes.') }}</p>
 
     <div v-else class="flex-1 overflow-y-auto">
@@ -75,6 +93,9 @@ watch(search, () => {
         </span>
         <p class="truncate text-[14px] font-[560] text-ink-900">{{ p.first_name }} {{ p.last_name ?? '' }}</p>
       </NuxtLink>
+      <p v-if="patients.length >= 100" class="px-4 py-3 text-center text-[12.5px] text-ink-muted" data-cy="patients-capped">
+        {{ t('Showing the first 100. Search to find anyone else.', 'Se muestran los 100 primeros. Busca para encontrar a cualquier otro.') }}
+      </p>
     </div>
     <NewPatientSheet v-if="adding" :initial-name="search" @created="created" @close="adding = false" />
   </div>

@@ -13,7 +13,10 @@ let registered = false
 export function useKeyboardInset() {
   if (!registered) {
     registered = true
-    if (Capacitor.isNativePlatform()) {
+    // iOS only. Keyboard.resize is an iOS setting: Android's manifest says
+    // adjustResize, so the WebView already shrinks for the keyboard, and
+    // adding its height again left a keyboard-sized gap above the composer.
+    if (Capacitor.getPlatform() === 'ios') {
       Keyboard.addListener('keyboardWillShow', (info) => {
         keyboardHeight.value = info.keyboardHeight
       })

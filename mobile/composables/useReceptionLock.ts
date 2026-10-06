@@ -92,5 +92,24 @@ export function useReceptionLock() {
     }
   }
 
-  return { current, lock, unlock, hasCode, setCode, checkCode, biometry, confirmWithBiometry }
+  // Wrong codes are counted on the device, not in the exit sheet: the sheet
+  // is rebuilt each time it opens, so closing and reopening it used to reset
+  // the count and the 30-second wait never stopped anyone.
+  const ATTEMPTS_KEY = 'reception_code_attempts'
+  function attempts(): { failures: number; waitUntil: number } {
+    return read<{ failures: number; waitUntil: number }>(ATTEMPTS_KEY) ?? { failures: 0, waitUntil: 0 }
+  }
+  function recordFailure() {
+    const a = attempts()
+    a.failures++
+    // Every fifth miss waits, and each wait doubles (30 s, 1 min, 2 min… up
+    // to 15 min): ten thousand four-digit codes stop being a pastime.
+    if (a.failures % 5 === 0) a.waitUntil = Date.now() + Math.min(15 * 60000, 30000 * 2 ** (a.failures / 5 - 1))
+    localStorage.setItem(ATTEMPTS_KEY, JSON.stringify(a))
+  }
+  function clearFailures() {
+    localStorage.removeItem(ATTEMPTS_KEY)
+  }
+
+  return { current, lock, unlock, hasCode, setCode, checkCode, biometry, confirmWithBiometry, attempts, recordFailure, clearFailures }
 }

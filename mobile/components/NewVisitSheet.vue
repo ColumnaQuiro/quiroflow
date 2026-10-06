@@ -92,15 +92,15 @@ const dayLabel = computed(() => shortDayLabel(new Date(`${props.date}T12:00:00Z`
   />
   <NewPatientSheet v-else-if="step === 'new'" :initial-name="term" :practitioner-id="practitionerId" @created="created" @close="step = 'search'" />
 
-  <div v-else class="fixed inset-0 z-50 flex flex-col justify-end bg-ink-900/40" data-cy="new-visit-sheet" @click.self="emit('close')">
+  <div v-else class="fixed inset-0 z-50 flex flex-col justify-end bg-ink-900/40 md:items-center md:justify-center" data-cy="new-visit-sheet" @click.self="emit('close')">
     <div
-      class="flex h-[78%] flex-col gap-3 rounded-t-[22px] bg-surface px-4 pt-2.5 shadow-popover"
+      class="flex h-[78%] w-full flex-col gap-3 rounded-t-[22px] bg-surface px-4 pt-2.5 shadow-popover md:h-[70%] md:max-w-[520px] md:rounded-[18px] md:pt-5"
       style="padding-bottom: max(env(safe-area-inset-bottom), 1.25rem)"
       role="dialog"
       aria-modal="true"
       :aria-label="t('New visit', 'Nueva cita')"
     >
-      <div class="mx-auto mb-0.5 h-1 w-[38px] shrink-0 rounded-full bg-line-control" />
+      <div class="mx-auto mb-0.5 h-1 w-[38px] shrink-0 rounded-full bg-line-control md:hidden" />
       <p class="text-[17px] font-semibold text-ink-900">
         {{ t('New visit', 'Nueva cita') }} · <span class="capitalize">{{ dayLabel }}</span><template v-if="preferredStart">, {{ clinicTimeLabel(new Date(preferredStart), context?.timeZone) }}</template>
       </p>

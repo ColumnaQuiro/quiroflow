@@ -6,13 +6,18 @@ watch(user, (u) => { if (!u) navigateTo('/login') }, { immediate: true })
 
 const supabase = useSupabaseClient()
 const t = useT()
-const { context, loading } = usePractitionerContext()
+const { context, loading, clinics, setClinic } = usePractitionerContext()
 const { unregister: unregisterPush } = usePushNotifications()
+const { ask, notify } = useAppConfirm()
 const authedFetch = useAuthedFetch()
 
 async function signOut() {
   await unregisterPush()
-  await supabase.auth.signOut()
+  clearVisitNoteDrafts()
+  // This device only. The default, scope 'global', also signed the person
+  // out of every other phone and browser; the web's Account page keeps a
+  // separate "sign out of other devices".
+  await supabase.auth.signOut({ scope: 'local' })
   ;(document.activeElement as HTMLElement | null)?.blur()
   await new Promise((resolve) => setTimeout(resolve, 350))
   await navigateTo('/login')
@@ -28,36 +33,37 @@ async function onPhotoUploaded() {
 
 const deletingAccount = ref(false)
 async function deleteAccount() {
-  if (
-    !confirm(
-      t(
-        "Delete your account? This signs you out and revokes your login immediately. This can't be undone by you — an owner would need to re-invite you to come back.",
-        '¿Eliminar tu cuenta? Se cerrará tu sesión y se revocará tu acceso de inmediato. No podrás deshacerlo tú: un propietario tendría que volver a invitarte.',
-      ),
-    )
-  )
-    return
+  const ok = await ask({
+    title: t('Delete your account?', '¿Eliminar tu cuenta?'),
+    body: t(
+        "This signs you out and revokes your login immediately. This can't be undone by you — an owner would need to re-invite you to come back.",
+        'Se cerrará tu sesión y se revocará tu acceso de inmediato. No podrás deshacerlo tú: un propietario tendría que volver a invitarte.',
+    ),
+    confirmLabel: t('Delete account', 'Eliminar cuenta'),
+    cancelLabel: t('Cancel', 'Cancelar'),
+    danger: true,
+  })
+  if (!ok) return
   deletingAccount.value = true
   try {
     await authedFetch('/api/account/delete', { method: 'POST' })
   } catch (err: any) {
     deletingAccount.value = false
-    alert(err?.data?.statusMessage ?? t('Failed to delete account.', 'No se pudo eliminar la cuenta.'))
+    notify(err?.data?.statusMessage ?? t('Failed to delete account.', 'No se pudo eliminar la cuenta.'))
     return
   }
   await unregisterPush()
-  await supabase.auth.signOut()
+  clearVisitNoteDrafts()
+  await supabase.auth.signOut({ scope: 'local' })
   await navigateTo('/login')
 }
 </script>
 
 <template>
   <div class="flex h-full min-h-0 flex-col">
-    <div class="shrink-0 border-b border-line bg-surface px-4 py-3">
-      <h1 class="text-[17px] font-semibold text-ink-900">{{ t('Profile', 'Perfil') }}</h1>
-    </div>
+    <AppPageHeader :title="t('Profile', 'Perfil')" />
 
-    <div v-if="loading" class="flex flex-1 items-center justify-center text-sm text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+    <AppSkeletonList v-if="loading" :rows="4" class="flex-1" />
 
     <div v-else class="flex-1 space-y-4 overflow-y-auto px-4 py-4 md:px-[max(1.5rem,calc((100%_-_44rem)/2))]">
       <div v-if="context" class="flex items-center gap-3">
@@ -77,6 +83,25 @@ async function deleteAccount() {
       </div>
       <p v-if="photoError" class="text-[13px] font-semibold text-danger-text">{{ t('Could not change your photo:', 'No se ha podido cambiar tu foto:') }} {{ photoError }}</p>
 
+      <!-- Which location the app works in, when the account has more than one -->
+      <div v-if="context && clinics.length > 1" class="rounded-card border border-line bg-surface shadow-card px-4 py-3.5" data-cy="clinic-switcher">
+        <p class="text-[13.5px] font-medium text-ink-900">{{ t('Clinic', 'Clínica') }}</p>
+        <p class="mt-0.5 text-[12px] text-ink-muted">{{ t('My Day, the calendar and new visits use this location.', 'Mi día, la agenda y las citas nuevas usan esta clínica.') }}</p>
+        <div role="radiogroup" :aria-label="t('Clinic', 'Clínica')" class="mt-2.5 flex flex-col gap-1.5">
+          <button
+            v-for="c in clinics"
+            :key="c.id"
+            type="button"
+            role="radio"
+            :aria-checked="context.clinicId === c.id"
+            class="flex min-h-11 items-center justify-between rounded-ctl px-3.5 text-left text-[14px]"
+            :class="context.clinicId === c.id ? 'border-[1.5px] border-brand bg-brand-tint font-semibold text-ink-900' : 'border border-line-control text-ink-700'"
+            @click="setClinic(c.id)"
+          >
+            {{ c.name }}
+          </button>
+        </div>
+      </div>
       <StaffPushSettings v-if="context" />
       <LanguageSetting />
 

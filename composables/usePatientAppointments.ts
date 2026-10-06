@@ -16,9 +16,12 @@ export interface PatientAppointmentRow {
   status: string
   appointment_types: { name: string } | null
   team_members: { full_name: string } | null
+  clinic_id?: string | null
 }
 
-const SELECT = 'id, starts_at, ends_at, status, appointment_types(name), team_members(full_name)'
+// clinic_id so the screens can show a visit at its clinic's hour
+// (usePatientAppInfo().zoneOf), not the phone's.
+const SELECT = 'id, clinic_id, starts_at, ends_at, status, appointment_types(name), team_members(full_name)'
 
 export function usePatientAppointments(patientId: () => string, settings: () => PatientAppSettings) {
   const supabase = useSupabaseClient()

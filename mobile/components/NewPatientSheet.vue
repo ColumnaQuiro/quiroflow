@@ -34,6 +34,9 @@ const email = ref('')
 const dateOfBirth = ref('')
 const phoneCountry = ref('ES')
 const error = ref('')
+// Set when the patient was created but their number was refused: the sheet
+// stays open to say so, and the button carries on without it.
+const createdWithoutPhone = ref<{ id: string; firstName: string; lastName: string | null } | null>(null)
 const saving = ref(false)
 
 interface FieldConfig { visible: boolean; required: boolean }
@@ -55,6 +58,10 @@ const stopLoad = watch(() => context.value?.accountId, (id) => {
 }, { immediate: true })
 
 async function save() {
+  if (createdWithoutPhone.value) {
+    emit('created', createdWithoutPhone.value)
+    return
+  }
   if (!context.value || saving.value) return
   error.value = ''
   if (!firstName.value.trim()) {
@@ -79,7 +86,10 @@ async function save() {
     last_name: last,
     email: email.value.trim() || null,
     date_of_birth: dateOfBirth.value || null,
-    default_practitioner_id: props.practitionerId || (own ? context.value.teamMemberId : null),
+    // Someone who sees only their own patients must be this one's
+    // practitioner, whichever column the slot was held in: made a colleague's,
+    // the new patient was invisible to its creator ("Patient not found").
+    default_practitioner_id: own ? context.value.teamMemberId : props.practitionerId || null,
   } as never)
   if (insertError) {
     saving.value = false
@@ -88,7 +98,15 @@ async function save() {
   }
   if (phone.value.trim()) {
     const { countryCode, number } = splitDialPrefix(phone.value, phoneCountry.value)
-    await supabase.from('patient_contact_numbers').insert({ account_id: context.value.accountId, patient_id: id, country_code: countryCode, number } as never)
+    const { error: numberError } = await supabase.from('patient_contact_numbers').insert({ account_id: context.value.accountId, patient_id: id, country_code: countryCode, number } as never)
+    // The patient exists by now, so carry on (a second tap would create them
+    // twice) -- but say the number was not kept.
+    if (numberError) {
+      saving.value = false
+      error.value = t(`Patient created, but the phone was not saved: ${numberError.message}`, `Paciente creado, pero el teléfono no se ha guardado: ${numberError.message}`)
+      createdWithoutPhone.value = { id, firstName: first, lastName: last }
+      return
+    }
   }
   saving.value = false
   emit('created', { id, firstName: first, lastName: last })
@@ -134,8 +152,8 @@ async function save() {
 
       <p v-if="error" role="alert" class="text-[13px] text-danger-text">{{ error }}</p>
 
-      <button type="submit" class="flex h-11 items-center justify-center rounded-[12px] bg-brand text-[15px] font-semibold text-white disabled:opacity-50" :disabled="saving" data-cy="new-patient-save">
-        {{ saving ? t('Saving…', 'Guardando…') : t('Create patient', 'Crear paciente') }}
+      <button type="submit" class="flex h-11 items-center justify-center rounded-card bg-brand text-[15px] font-semibold text-white disabled:opacity-50" :disabled="saving" data-cy="new-patient-save">
+        {{ saving ? t('Saving…', 'Guardando…') : createdWithoutPhone ? t('Continue without the phone', 'Continuar sin el teléfono') : t('Create patient', 'Crear paciente') }}
       </button>
       <button type="button" class="py-1 text-[13.5px] text-ink-muted" @click="emit('close')">{{ t('Cancel', 'Cancelar') }}</button>
     </form>

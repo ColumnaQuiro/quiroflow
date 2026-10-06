@@ -46,6 +46,7 @@ interface Appointment {
 const supabase = useSupabaseClient()
 const { context, loading: contextLoading, can, restricted, ownDiaryOnly } = usePractitionerContext()
 const { fire } = useAutomations()
+const { ask } = useAppConfirm()
 const { keyboardHeight } = useKeyboardInset()
 
 const appointment = ref<Appointment | null>(null)
@@ -393,7 +394,7 @@ function noteText(body: string) {
 async function markNoShow() {
   const a = appointment.value
   if (!a || busy.value) return
-  if (!confirm(t(`Mark ${fullName.value} as a no-show?`, `¿Marcar que ${fullName.value} no vino?`))) return
+  if (!(await ask({ title: t(`Mark ${fullName.value} as a no-show?`, `¿Marcar que ${fullName.value} no vino?`), confirmLabel: t('No-show', 'No vino'), cancelLabel: t('Cancel', 'Cancelar') }))) return
   busy.value = true
   actionError.value = ''
   const { data, error: err } = await supabase
@@ -405,12 +406,15 @@ async function markNoShow() {
   if (err) actionError.value = err.message
   else if ((data ?? []).length > 0) {
     fire('appointment.no_show', { patientId: a.patient_id, appointmentId: a.id })
+    // The fee raises an invoice, which only billing_access may insert: asking
+    // anyone else offered a charge the database then refused without a word.
     const accountId = context.value?.accountId
-    const feeCents = accountId ? await missedAppointmentFeeCents(supabase, accountId) : null
+    const feeCents = accountId && can('billing_access') ? await missedAppointmentFeeCents(supabase, accountId) : null
     if (accountId && feeCents) {
       const question = t(`Add the ${formatEur(feeCents)} missed-appointment fee to this patient's balance?`, `¿Añadir el cargo por no presentarse de ${formatEur(feeCents)} a su saldo?`)
-      if (confirm(question)) {
-        await chargeMissedAppointmentFee(supabase, { accountId, patientId: a.patient_id, feeCents })
+      if (await ask({ title: question, confirmLabel: t('Add the fee', 'Añadir el cargo'), cancelLabel: t('No charge', 'Sin cargo') })) {
+        const charged = await chargeMissedAppointmentFee(supabase, { accountId, patientId: a.patient_id, feeCents })
+        if (!charged) actionError.value = t('Marked as a no-show, but the fee could not be added.', 'Marcada como no vino, pero no se ha podido añadir el cargo.')
         if (showMoney.value) refreshMoney()
       }
     }
@@ -532,11 +536,11 @@ watch(
 
 <template>
   <div class="flex h-full min-h-0 flex-col">
-    <div class="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
-      <button type="button" class="flex h-11 w-11 shrink-0 items-center justify-center text-brand-text" :aria-label="t('Back', 'Atrás')" @click="goBack">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7" /></svg>
+    <div class="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3 md:px-5">
+      <button type="button" class="-ml-1 flex h-11 w-11 shrink-0 items-center justify-center text-brand-text" :aria-label="t('Back', 'Atrás')" @click="goBack">
+        <AppChevron dir="left" :size="24" />
       </button>
-      <p class="min-w-0 flex-1 truncate text-[16px] font-semibold text-ink-900" data-cy="visit-patient-name">{{ appointment ? fullName : t('Visit', 'Visita') }}</p>
+      <h1 class="min-w-0 flex-1 truncate text-[17px] font-semibold text-ink-900" data-cy="visit-patient-name">{{ appointment ? fullName : t('Visit', 'Visita') }}</h1>
       <span v-if="statusChip" class="inline-flex h-6 shrink-0 items-center rounded-pill px-2.5 text-[11.5px] font-semibold" :class="statusChip.cls" data-cy="visit-status">{{ statusChip.label }}</span>
       <button
         v-else-if="appointment && canAct && !appointment.checked_in_at"
@@ -551,18 +555,23 @@ watch(
     </div>
 
     <div v-if="loading" class="flex-1 space-y-2.5 px-3.5 py-3">
-      <UiSkeleton class="h-[86px] w-full rounded-[13px]" />
-      <UiSkeleton class="h-[170px] w-full rounded-[13px]" />
-      <UiSkeleton class="h-[120px] w-full rounded-[13px]" />
+      <UiSkeleton class="h-[86px] w-full rounded-card" />
+      <UiSkeleton class="h-[170px] w-full rounded-card" />
+      <UiSkeleton class="h-[120px] w-full rounded-card" />
     </div>
     <p v-else-if="!appointment" class="flex flex-1 items-center justify-center px-6 text-center text-sm text-ink-muted">{{ t('Appointment not found.', 'Cita no encontrada.') }}</p>
 
     <template v-else>
-      <div class="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-3.5 py-3 md:px-[max(1.5rem,calc((100%_-_44rem)/2))]" :style="keyboardHeight ? { paddingBottom: `${keyboardHeight + 16}px` } : undefined">
-        <p v-if="bookedNotice" class="rounded-[11px] border border-success-border bg-success-bg px-3 py-2 text-[13px] font-medium text-success-text" role="status" data-cy="visit-booked-notice">{{ bookedNotice }}</p>
+      <!-- On a wide iPad: the patient and today's note on the left, the earlier
+           notes, charging and the visit's own actions on the right. The
+           wrappers are display:contents below that, so the phone keeps its one
+           column in the same order. -->
+      <div class="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-3.5 py-3 md:px-[max(1.5rem,calc((100%_-_44rem)/2))] lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] lg:content-start lg:items-start lg:gap-4 lg:px-6" :style="keyboardHeight ? { paddingBottom: `${keyboardHeight + 16}px` } : undefined">
+        <div class="contents lg:flex lg:min-w-0 lg:flex-col lg:gap-2.5">
+        <p v-if="bookedNotice" class="rounded-card border border-success-border bg-success-bg px-3 py-2 text-[13px] font-medium text-success-text" role="status" data-cy="visit-booked-notice">{{ bookedNotice }}</p>
 
         <!-- Who, what, the plan, what to watch for -->
-        <section class="rounded-[13px] border border-line bg-surface px-3.5 py-3" data-cy="visit-header">
+        <section class="rounded-card border border-line bg-surface shadow-card px-3.5 py-3" data-cy="visit-header">
           <NuxtLink :to="`/patients/${appointment.patient_id}`" class="flex items-center gap-2.5">
             <span class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full bg-brand-tint text-[12.5px] font-bold text-brand-text">{{ initials }}</span>
             <span class="min-w-0 flex-1">
@@ -573,11 +582,11 @@ watch(
               <span v-else-if="plan" class="block truncate text-[12.5px] text-ink-muted2" data-cy="visit-plan">
                 {{ t('Care plan', 'Plan') }}: {{ t(`${plan.total_visits} visits`, `${plan.total_visits} visitas`) }} · {{ cadenceLabel(plan, t) }}
               </span>
-              <span v-else class="block truncate text-[12.5px] text-ink-muted2">{{ t('Patient record', 'Ficha del paciente') }} ›</span>
+              <span v-else class="block truncate text-[12.5px] text-ink-muted2">{{ t('Patient record', 'Ficha del paciente') }} <AppChevron :size="11" /></span>
             </span>
           </NuxtLink>
           <div v-if="alerts.length > 0 || bonoChip" class="mt-2 flex flex-wrap gap-1.5" data-cy="visit-alerts">
-            <span v-for="al in alerts" :key="al.key" class="inline-flex min-h-6 max-w-full items-center gap-1 rounded-[12px] px-2.5 py-[3px] text-[11.5px] font-semibold leading-snug" :class="al.cls">
+            <span v-for="al in alerts" :key="al.key" class="inline-flex min-h-6 max-w-full items-center gap-1 rounded-card px-2.5 py-[3px] text-[11.5px] font-semibold leading-snug" :class="al.cls">
               <svg v-if="al.key !== 'note'" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" class="shrink-0" aria-hidden="true"><path d="M8 2l6.2 11H1.8z" stroke-linejoin="round" /><path d="M8 6.5v3M8 11.5v.1" stroke-linecap="round" /></svg>
               <span class="line-clamp-2">{{ al.text }}</span>
             </span>
@@ -586,9 +595,9 @@ watch(
         </section>
 
         <!-- Today's note -->
-        <section v-if="canReadNotes" class="rounded-[13px] border border-line bg-surface px-3.5 py-3" data-cy="visit-note">
+        <section v-if="canReadNotes" class="rounded-card border border-line bg-surface shadow-card px-3.5 py-3" data-cy="visit-note">
           <div class="mb-1.5 flex items-center justify-between">
-            <h2 class="text-[10.5px] font-semibold uppercase tracking-[.05em] text-ink-faint">{{ t("Today's note", 'Nota de hoy') }}</h2>
+            <h2 class="text-[10.5px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t("Today's note", 'Nota de hoy') }}</h2>
             <span v-if="!canWriteNotes && !addComposing" class="text-[11.5px] text-ink-faint" data-cy="visit-note-read-only">{{ t('Read only', 'Solo lectura') }}</span>
           </div>
 
@@ -666,10 +675,12 @@ watch(
             </template>
           </template>
         </section>
+        </div>
 
+        <div class="contents lg:flex lg:min-w-0 lg:flex-col lg:gap-2.5">
         <!-- Previous notes -->
-        <section v-if="canReadNotes" class="rounded-[13px] border border-line bg-surface px-3.5 py-3" data-cy="visit-previous-notes">
-          <h2 class="mb-1.5 text-[10.5px] font-semibold uppercase tracking-[.05em] text-ink-faint">{{ t('Previous notes', 'Notas anteriores') }}</h2>
+        <section v-if="canReadNotes" class="rounded-card border border-line bg-surface shadow-card px-3.5 py-3" data-cy="visit-previous-notes">
+          <h2 class="mb-1.5 text-[10.5px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Previous notes', 'Notas anteriores') }}</h2>
           <div v-if="pastLoading" class="space-y-2">
             <UiSkeleton class="h-3.5 w-48 rounded-ctlSm" />
             <UiSkeleton class="h-3 w-full rounded-ctlSm" />
@@ -682,7 +693,7 @@ watch(
               <p class="line-clamp-3 whitespace-pre-line text-[13px] leading-snug text-ink-900">{{ noteText(n.body) }}</p>
             </div>
             <button v-if="pastNotes.length > PAST_PREVIEW" type="button" class="self-start text-[12.5px] font-medium text-brand-text" data-cy="visit-all-notes" @click="allNotesOpen = true">
-              {{ t(`All ${pastNotes.length} notes`, `Las ${pastNotes.length} notas`) }} ›
+              {{ t(`All ${pastNotes.length} notes`, `Las ${pastNotes.length} notas`) }} <AppChevron :size="12" />
             </button>
           </div>
         </section>
@@ -691,7 +702,7 @@ watch(
         <div v-if="!billingOpen && can('billing_access') && !readOnlyCalendar && appointment.status !== 'cancelled'">
           <button
             type="button"
-            class="w-full rounded-[11px] border border-line-control bg-surface px-4 py-2.5 text-center text-[14px] font-medium text-ink-700 active:bg-surface-subtle"
+            class="w-full rounded-card border border-line-control bg-surface px-4 py-2.5 text-center text-[14px] font-medium text-ink-700 active:bg-surface-subtle"
             data-cy="visit-bill"
             @click="openBilling"
           >
@@ -699,8 +710,8 @@ watch(
           </button>
         </div>
 
-        <div v-else-if="billingOpen" class="rounded-[13px] border border-line bg-surface p-3.5" data-cy="visit-billing">
-          <p class="mb-2 text-[10.5px] font-semibold uppercase tracking-[.05em] text-ink-faint">{{ t('Billing', 'Cobro') }}</p>
+        <div v-else-if="billingOpen" class="rounded-card border border-line bg-surface shadow-card p-3.5" data-cy="visit-billing">
+          <p class="mb-2 text-[10.5px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Billing', 'Cobro') }}</p>
           <p v-if="loadingInvoice" class="text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</p>
           <p v-else-if="!invoice && appointmentIsUpcoming" class="text-[13px] text-ink-faint">
             {{ t("This appointment hasn't happened yet — no receipt until it does.", 'Esta cita aún no ha tenido lugar: no hay recibo hasta entonces.') }}
@@ -777,22 +788,23 @@ watch(
 
         <!-- Move or cancel, as the agenda does: before the visit has started -->
         <div v-if="canAct && !appointment.checked_in_at" class="grid grid-cols-2 gap-2" data-cy="visit-change">
-          <button type="button" class="flex h-11 items-center justify-center rounded-[11px] border border-line-control bg-surface text-[14px] font-medium text-ink-700" data-cy="visit-move" @click="moveOpen = true">{{ t('Move', 'Mover') }}</button>
-          <button type="button" class="flex h-11 items-center justify-center rounded-[11px] border border-line-control bg-surface text-[14px] font-medium text-danger-text" data-cy="visit-cancel" @click="cancelOpen = true">{{ t('Cancel visit', 'Cancelar cita') }}</button>
+          <button type="button" class="flex h-11 items-center justify-center rounded-card border border-line-control bg-surface text-[14px] font-medium text-ink-700" data-cy="visit-move" @click="moveOpen = true">{{ t('Move', 'Mover') }}</button>
+          <button type="button" class="flex h-11 items-center justify-center rounded-card border border-line-control bg-surface text-[14px] font-medium text-danger-text" data-cy="visit-cancel" @click="cancelOpen = true">{{ t('Cancel visit', 'Cancelar cita') }}</button>
+        </div>
         </div>
       </div>
 
       <!-- No-show / Finish visit, or book the next one once it is done -->
       <div v-if="keyboardHeight === 0 && (canAct || (appointment.status === 'completed' && canBook))" class="flex shrink-0 gap-2 border-t border-line bg-surface-page px-3.5 py-2.5" data-cy="visit-footer">
         <template v-if="canAct">
-          <button type="button" class="flex h-11 flex-1 items-center justify-center rounded-[11px] border border-line-control bg-surface text-[14px] font-medium text-ink-700 disabled:opacity-50" :disabled="busy" data-cy="visit-no-show" @click="markNoShow">
+          <button type="button" class="flex h-11 flex-1 items-center justify-center rounded-card border border-line-control bg-surface text-[14px] font-medium text-ink-700 disabled:opacity-50" :disabled="busy" data-cy="visit-no-show" @click="markNoShow">
             {{ t('No-show', 'No vino') }}
           </button>
-          <button type="button" class="flex h-11 flex-[2] items-center justify-center rounded-[12px] bg-brand text-[15px] font-semibold text-white disabled:opacity-50" :disabled="busy" data-cy="visit-finish" @click="finishVisit">
+          <button type="button" class="flex h-11 flex-[2] items-center justify-center rounded-card bg-brand text-[15px] font-semibold text-white disabled:opacity-50" :disabled="busy" data-cy="visit-finish" @click="finishVisit">
             {{ busy ? t('Finishing…', 'Terminando…') : t('Finish visit', 'Terminar visita') }}
           </button>
         </template>
-        <button v-else type="button" class="flex h-11 flex-1 items-center justify-center rounded-[12px] border border-brand-tintBorder bg-brand-tint text-[15px] font-semibold text-brand-text" data-cy="visit-book-next" @click="openBookNext">
+        <button v-else type="button" class="flex h-11 flex-1 items-center justify-center rounded-card border border-brand-tintBorder bg-brand-tint text-[15px] font-semibold text-brand-text" data-cy="visit-book-next" @click="openBookNext">
           {{ t('Book the next visit', 'Reservar la próxima cita') }}
         </button>
       </div>
@@ -845,29 +857,29 @@ watch(
     />
 
     <!-- Already booked (or nothing this role can book): say so instead -->
-    <div v-if="alreadyBookedOpen" class="fixed inset-0 z-50 flex flex-col justify-end bg-ink-900/40" data-cy="visit-already-booked" @click.self="alreadyBookedOpen = false">
-      <div class="flex flex-col gap-3 rounded-t-[22px] bg-surface px-4 pt-2.5 shadow-popover" style="padding-bottom: max(env(safe-area-inset-bottom), 1.25rem)" role="dialog" aria-modal="true">
-        <div class="mx-auto mb-0.5 h-1 w-[38px] shrink-0 rounded-full bg-line-control" />
+    <div v-if="alreadyBookedOpen" class="fixed inset-0 z-50 flex flex-col justify-end bg-ink-900/40 md:items-center md:justify-center" data-cy="visit-already-booked" @click.self="alreadyBookedOpen = false">
+      <div class="flex w-full flex-col gap-3 rounded-t-[22px] bg-surface px-4 pt-2.5 shadow-popover md:max-w-[480px] md:rounded-[18px] md:pt-5" style="padding-bottom: max(env(safe-area-inset-bottom), 1.25rem)" role="dialog" aria-modal="true">
+        <div class="mx-auto mb-0.5 h-1 w-[38px] shrink-0 rounded-full bg-line-control md:hidden" />
         <div class="flex items-center justify-between gap-2">
           <p class="text-[16px] font-semibold text-ink-900">{{ t('Visit finished', 'Visita terminada') }}</p>
           <span v-if="bonoUsed" class="text-[12.5px] text-ink-muted2">{{ t('Bono: 1 session used', 'Bono: 1 sesión usada') }}</span>
         </div>
-        <div class="rounded-card border border-line bg-surface-page px-3.5 py-2.5">
+        <div class="rounded-card border border-line bg-surface shadow-card-page px-3.5 py-2.5">
           <template v-if="nextVisit">
             <p class="text-[14px] font-semibold text-ink-900">{{ t('Next visit already booked', 'La próxima cita ya está reservada') }}</p>
             <p class="mt-0.5 text-[12.5px] text-ink-muted2">{{ [when(nextVisit.starts_at), nextVisit.appointment_types?.name, nextVisit.team_members?.full_name].filter(Boolean).join(' · ') }}</p>
           </template>
           <p v-else class="text-[13.5px] text-ink-muted2">{{ t('No next visit booked. Reception can book it.', 'No tiene próxima cita. Recepción puede reservarla.') }}</p>
         </div>
-        <button type="button" class="flex h-11 items-center justify-center rounded-[12px] bg-brand text-[15px] font-semibold text-white" @click="alreadyBookedOpen = false">{{ t('Done', 'Listo') }}</button>
+        <button type="button" class="flex h-11 items-center justify-center rounded-card bg-brand text-[15px] font-semibold text-white" @click="alreadyBookedOpen = false">{{ t('Done', 'Listo') }}</button>
       </div>
     </div>
 
     <!-- Every earlier note, in full -->
-    <div v-if="allNotesOpen" class="fixed inset-0 z-50 flex flex-col justify-end bg-ink-900/40" data-cy="visit-all-notes-sheet" @click.self="allNotesOpen = false">
-      <div class="flex max-h-[88%] flex-col rounded-t-[22px] bg-surface shadow-popover" role="dialog" aria-modal="true" :aria-label="t('Previous notes', 'Notas anteriores')">
+    <div v-if="allNotesOpen" class="fixed inset-0 z-50 flex flex-col justify-end bg-ink-900/40 md:items-center md:justify-center" data-cy="visit-all-notes-sheet" @click.self="allNotesOpen = false">
+      <div class="flex max-h-[88%] w-full flex-col rounded-t-[22px] bg-surface shadow-popover md:max-w-[600px] md:rounded-[18px]" role="dialog" aria-modal="true" :aria-label="t('Previous notes', 'Notas anteriores')">
         <div class="shrink-0 px-4 pt-2.5">
-          <div class="mx-auto mb-2 h-1 w-[38px] rounded-full bg-line-control" />
+          <div class="mx-auto mb-2 h-1 w-[38px] rounded-full bg-line-control md:hidden" />
           <div class="flex items-center justify-between pb-2">
             <p class="text-[16px] font-semibold text-ink-900">{{ t(`${pastNotes.length} previous notes`, `${pastNotes.length} notas anteriores`) }}</p>
             <button type="button" class="py-1 text-[14px] font-medium text-brand-text" @click="allNotesOpen = false">{{ t('Close', 'Cerrar') }}</button>

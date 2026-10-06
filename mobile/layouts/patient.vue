@@ -8,6 +8,13 @@ const { keyboardHeight } = useKeyboardInset()
 // pages/index.vue); the bottom inset is then padded here instead of by the bar.
 const tabsVisible = usePatientTabsVisible()
 
+// A patient's phone registers for push too, once there is a signed-in,
+// linked patient (the tabs show exactly then). Only the staff layout used to,
+// so no patient ever had a token: the clinic's replies, broadcasts and
+// appointment pushes all reached nobody.
+const { register: registerForPush } = usePushNotifications()
+watch(tabsVisible, (on) => { if (on) registerForPush() }, { immediate: true })
+
 // On an iPad the sections are a side menu instead of the tab bar (CSS, by
 // width), headed by the patient's clinic.
 const { items, isActive } = usePatientNav()

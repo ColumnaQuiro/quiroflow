@@ -5,6 +5,10 @@ definePageMeta({ layout: 'practitioner' })
 //
 // - iPhone: "Mis citas" / "Toda la clínica", one column; visits that overlap
 //   sit side by side.
+// - "Semana": on iPad a column per day (the scope's visits, overlaps side by
+//   side, hold and drag as in the day); on iPhone, seven columns do not fit,
+//   so the week is a list grouped by day. Tapping the date opens a picker to
+//   jump to any day.
 // - iPad: a column per practitioner (the canvas's AppIpadAgenda), and at
 //   landscape width the selected visit on the right with Mover / Cancelar.
 // - Hold a free slot, or "+", to book (NewVisitSheet -> BookVisitSheet: the
@@ -50,11 +54,64 @@ const readOnly = computed(() => restricted('calendar_read_only'))
 const today = () => clinicDateOf(new Date(), tz.value)
 const day = ref(typeof route.query.day === 'string' ? route.query.day : '')
 watch(tz, () => { if (!day.value) day.value = today() }, { immediate: true })
-const isToday = computed(() => day.value === today())
-const title = computed(() => {
-  const s = shortDayLabel(new Date(`${day.value}T12:00:00Z`), locale.value, 'UTC')
-  return s.charAt(0).toUpperCase() + s.slice(1)
+// Read against the ticking clock below, so an agenda left open past midnight
+// stops calling yesterday "today" (no Today button, the now-line on it).
+const todayDate = computed(() => clinicDateOf(now.value, tz.value))
+const isToday = computed(() => day.value === todayDate.value)
+
+// -- Day or week ----------------------------------------------------------------
+// Remembered on the device: someone who plans by the week keeps seeing it.
+const VIEW_KEY = 'quiroflow_agenda_view'
+const view = ref<'day' | 'week'>('day')
+onMounted(() => {
+  try {
+    if (localStorage.getItem(VIEW_KEY) === 'week') view.value = 'week'
+  } catch {}
 })
+watch(view, (v) => {
+  selectedId.value = null
+  try {
+    localStorage.setItem(VIEW_KEY, v)
+  } catch {}
+})
+const isWeek = computed(() => view.value === 'week')
+// Monday to Sunday around the day being looked at.
+const weekStart = computed(() => {
+  const dow = new Date(`${day.value}T00:00:00Z`).getUTCDay()
+  return addDaysToDate(day.value, -((dow + 6) % 7))
+})
+const weekDates = computed(() => Array.from({ length: 7 }, (_, i) => addDaysToDate(weekStart.value, i)))
+const shownToday = computed(() => (isWeek.value ? weekDates.value.includes(todayDate.value) : isToday.value))
+
+const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+const fmt = (date: string, o: Intl.DateTimeFormatOptions) => new Date(`${date}T12:00:00Z`).toLocaleDateString(locale.value, { ...o, timeZone: 'UTC' })
+const title = computed(() => {
+  if (!isWeek.value) return capital(shortDayLabel(new Date(`${day.value}T12:00:00Z`), locale.value, 'UTC'))
+  const first = weekDates.value[0]
+  const last = weekDates.value[6]
+  const sameMonth = first.slice(0, 7) === last.slice(0, 7)
+  return `${sameMonth ? fmt(first, { day: 'numeric' }) : fmt(first, { day: 'numeric', month: 'short' })} – ${fmt(last, { day: 'numeric', month: 'short' })}`
+})
+const dayHead = (date: string) => capital(fmt(date, { weekday: 'short', day: 'numeric' }))
+
+// Tapping the date opens the device's own date picker.
+const datePicker = ref<HTMLInputElement | null>(null)
+function openPicker() {
+  try {
+    datePicker.value?.showPicker()
+  } catch {}
+}
+function jumpTo(e: Event) {
+  const v = (e.target as HTMLInputElement).value
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+    day.value = v
+    selectedId.value = null
+  }
+}
+function openDay(date: string) {
+  day.value = date
+  view.value = 'day'
+}
 
 // -- Width: columns from iPad portrait, the side panel from landscape --------
 const wide = ref(false)
@@ -90,6 +147,10 @@ watch(amPractitioner, (yes) => { if (!yes && !ownDiaryOnly.value) scope.value = 
 const effectiveScope = computed(() => (ownDiaryOnly.value || (scope.value === 'mine' && amPractitioner.value) ? 'mine' : 'all'))
 
 let loadRun = 0
+// The team, their clinic links and the clinic's hours are read once per
+// clinic; the minute-by-minute refresh only asks for the day's visits and
+// blocks, which are what change.
+let staticFor: string | null = null
 async function load(quiet = false) {
   if (!context.value?.clinicId || !day.value) {
     loading.value = !!contextLoading.value
@@ -98,9 +159,12 @@ async function load(quiet = false) {
   const run = ++loadRun
   if (!quiet) loading.value = true
   loadError.value = ''
-  const from = startOfLocalDate(day.value, tz.value).toISOString()
-  const to = startOfLocalDate(nextDate(day.value), tz.value).toISOString()
+  const first = isWeek.value ? weekStart.value : day.value
+  const from = startOfLocalDate(first, tz.value).toISOString()
+  const to = startOfLocalDate(isWeek.value ? addDaysToDate(first, 7) : nextDate(first), tz.value).toISOString()
   const clinicId = context.value.clinicId
+  const needStatic = !quiet || staticFor !== clinicId
+  const none = Promise.resolve({ data: null, error: null })
   const [ap, bl, pr, links, cl] = await Promise.all([
     supabase
       .from('appointments')
@@ -113,22 +177,31 @@ async function load(quiet = false) {
       .gt('ends_at', from)
       .order('starts_at'),
     supabase.from('availability_blocks').select('id, starts_at, ends_at, practitioner_id, room_id, note').eq('clinic_id', clinicId).lt('starts_at', to).gt('ends_at', from),
-    supabase.from('team_members').select('id, full_name, business_hours').is('deleted_at', null).eq('is_practitioner', true).order('full_name'),
-    supabase.from('team_member_clinics').select('team_member_id, clinic_id').eq('clinic_id', clinicId),
-    supabase.from('clinics').select('business_hours').eq('id', clinicId).maybeSingle(),
+    needStatic ? supabase.from('team_members').select('id, full_name, business_hours').is('deleted_at', null).eq('is_practitioner', true).order('full_name') : none,
+    needStatic ? supabase.from('team_member_clinics').select('team_member_id, clinic_id').eq('clinic_id', clinicId) : none,
+    needStatic ? supabase.from('clinics').select('business_hours').eq('id', clinicId).maybeSingle() : none,
   ])
   if (run !== loadRun) return
-  const failed = [ap, bl, pr].find((r) => r.error)
-  if (failed) loadError.value = failed.error!.message
+  const failed = [ap, bl, pr, links, cl].find((r) => r.error)
+  if (failed) {
+    // A failed read keeps what is on screen; a quiet refresh says nothing.
+    if (!quiet) loadError.value = failed.error!.message
+    loading.value = false
+    return
+  }
   appointments.value = (ap.data as unknown as Appointment[] | null) ?? []
   blocks.value = (bl.data as Block[] | null) ?? []
-  const linked = new Set(((links.data as { team_member_id: string }[] | null) ?? []).map((l) => l.team_member_id))
-  const everyone = (pr.data as Practitioner[] | null) ?? []
-  practitioners.value = linked.size ? everyone.filter((p) => linked.has(p.id)) : everyone
-  clinicHours.value = ((cl.data as { business_hours: BusinessHours | null } | null)?.business_hours ?? null)
+  if (needStatic) {
+    const linked = new Set(((links.data as { team_member_id: string }[] | null) ?? []).map((l) => l.team_member_id))
+    const everyone = (pr.data as Practitioner[] | null) ?? []
+    practitioners.value = linked.size ? everyone.filter((p) => linked.has(p.id)) : everyone
+    clinicHours.value = ((cl.data as { business_hours: BusinessHours | null } | null)?.business_hours ?? null)
+    staticFor = clinicId
+  }
   loading.value = false
 }
-watch([() => context.value?.clinicId, day], () => load(), { immediate: true })
+// A day inside the week already shown needs no new read.
+watch([() => context.value?.clinicId, () => (isWeek.value ? `w${weekStart.value}` : day.value)], () => load(), { immediate: true })
 
 // Kept current while it is open: a booking at the desk or online shows up
 // without leaving the tab.
@@ -146,17 +219,18 @@ onBeforeUnmount(() => {
 })
 
 function shiftDay(n: number) {
-  day.value = addDaysToDate(day.value, n)
+  day.value = addDaysToDate(day.value, isWeek.value ? n * 7 : n)
   selectedId.value = null
 }
 
 // -- Geometry -----------------------------------------------------------------
 const HOUR = computed(() => (wide.value ? 72 : 64))
-const minuteOfDay = (iso: string | number) => {
+// Minutes from midnight on `date` (the day shown, or a week column's day).
+const minuteOfDay = (iso: string | number, date = day.value) => {
   const at = new Date(iso)
   const d = clinicDateOf(at, tz.value)
-  if (d < day.value) return 0
-  if (d > day.value) return 24 * 60
+  if (d < date) return 0
+  if (d > date) return 24 * 60
   const { hour, minute } = wallClock(at, tz.value)
   return hour * 60 + minute
 }
@@ -164,16 +238,22 @@ const toMinutes = (hhmm: string) => {
   const [h, m] = hhmm.split(':').map(Number)
   return h * 60 + m
 }
-// From the earliest anyone opens to the latest anyone closes that day (8 to
-// 20 when no hours are set), stretched to whatever is actually booked.
+const dateOfIso = (iso: string) => clinicDateOf(new Date(iso), tz.value)
+const windowsOn = (date: string) => {
+  const key = weekdayKeyOf(date) as keyof BusinessHours
+  return [...(clinicHours.value?.[key] ?? []), ...practitioners.value.flatMap((p) => p.business_hours?.[key] ?? [])] as [string, string][]
+}
+// From the earliest anyone opens to the latest anyone closes that day -- or
+// any day of the week shown (8 to 20 when no hours are set), stretched to
+// whatever is actually booked.
 const range = computed(() => {
-  const key = weekdayKeyOf(day.value)
-  const windows = [...(clinicHours.value?.[key as keyof BusinessHours] ?? []), ...practitioners.value.flatMap((p) => p.business_hours?.[key as keyof BusinessHours] ?? [])] as [string, string][]
+  const windows = (isWeek.value ? weekDates.value : [day.value]).flatMap(windowsOn)
   let start = windows.length ? Math.min(...windows.map((w) => toMinutes(w[0]))) : 8 * 60
   let end = windows.length ? Math.max(...windows.map((w) => toMinutes(w[1]))) : 20 * 60
   for (const a of appointments.value) {
-    start = Math.min(start, minuteOfDay(a.starts_at))
-    end = Math.max(end, minuteOfDay(a.ends_at))
+    const d = dateOfIso(a.starts_at)
+    start = Math.min(start, minuteOfDay(a.starts_at, d))
+    end = Math.max(end, minuteOfDay(a.ends_at, d))
   }
   return { start: Math.floor(start / 60) * 60, end: Math.min(24 * 60, Math.ceil(end / 60) * 60) }
 })
@@ -186,17 +266,28 @@ const totalHeight = computed(() => ((range.value.end - range.value.start) / 60) 
 const yOf = (minute: number) => ((minute - range.value.start) / 60) * HOUR.value
 
 // -- Columns ------------------------------------------------------------------
-interface Column { key: string; practitionerId: string | null; name: string }
-const columns = computed<Column[]>(() => {
-  const me = context.value?.teamMemberId ?? null
-  if (effectiveScope.value === 'mine') return [{ key: 'mine', practitionerId: me, name: context.value?.fullName ?? '' }]
-  if (!wide.value || practitioners.value.length === 0) return [{ key: 'all', practitionerId: null, name: '' }]
-  return practitioners.value.map((p) => ({ key: p.id, practitionerId: p.id, name: p.full_name }))
+// A column is a practitioner's day, everyone's day, or (week) one day of the
+// scope's diary.
+interface Column { key: string; practitionerId: string | null; name: string; date: string }
+const scopePractitioner = computed(() => (effectiveScope.value === 'mine' ? (context.value?.teamMemberId ?? null) : null))
+// The week's days: the ones anyone works or anything is booked on, so a
+// clinic closed at weekends gets five wider columns, not seven.
+const weekColumnsDates = computed(() => {
+  const busy = new Set(appointments.value.map((a) => dateOfIso(a.starts_at)))
+  const open = weekDates.value.filter((d) => windowsOn(d).length || busy.has(d))
+  return open.length ? open : weekDates.value.slice(0, 5)
 })
-const showColumnHeads = computed(() => columns.value.length > 1)
+const columns = computed<Column[]>(() => {
+  if (isWeek.value) return weekColumnsDates.value.map((date) => ({ key: date, practitionerId: scopePractitioner.value, name: dayHead(date), date }))
+  const me = context.value?.teamMemberId ?? null
+  if (effectiveScope.value === 'mine') return [{ key: 'mine', practitionerId: me, name: context.value?.fullName ?? '', date: day.value }]
+  if (!wide.value || practitioners.value.length === 0) return [{ key: 'all', practitionerId: null, name: '', date: day.value }]
+  return practitioners.value.map((p) => ({ key: p.id, practitionerId: p.id, name: p.full_name, date: day.value }))
+})
+const showColumnHeads = computed(() => columns.value.length > 1 || isWeek.value)
 
 interface Placed { a: Appointment; top: number; height: number; lane: number; lanes: number }
-function layout(list: Appointment[]): Placed[] {
+function layout(list: Appointment[], date: string): Placed[] {
   const sorted = [...list].sort((x, y) => Date.parse(x.starts_at) - Date.parse(y.starts_at))
   const out: Placed[] = []
   let cluster: Placed[] = []
@@ -209,8 +300,8 @@ function layout(list: Appointment[]): Placed[] {
     laneEnds = []
   }
   for (const a of sorted) {
-    const s = minuteOfDay(a.starts_at)
-    const e = Math.max(s + 10, minuteOfDay(a.ends_at))
+    const s = minuteOfDay(a.starts_at, date)
+    const e = Math.max(s + 10, minuteOfDay(a.ends_at, date))
     if (s >= clusterEnd) flush()
     let lane = laneEnds.findIndex((end) => end <= s)
     if (lane === -1) {
@@ -228,8 +319,8 @@ function layout(list: Appointment[]): Placed[] {
 const placedByColumn = computed(() => {
   const map: Record<string, Placed[]> = {}
   for (const c of columns.value) {
-    const list = c.practitionerId ? appointments.value.filter((a) => a.practitioner_id === c.practitionerId) : appointments.value
-    map[c.key] = layout(list)
+    const list = appointments.value.filter((a) => (!c.practitionerId || a.practitioner_id === c.practitionerId) && (!isWeek.value || dateOfIso(a.starts_at) === c.date))
+    map[c.key] = layout(list, c.date)
   }
   return map
 })
@@ -238,9 +329,10 @@ const placedByColumn = computed(() => {
 function blocksFor(c: Column) {
   return blocks.value
     .filter((b) => (b.practitioner_id === null && b.room_id === null) || (c.practitionerId !== null && b.practitioner_id === c.practitionerId))
-    .map((b) => {
-      const s = minuteOfDay(b.starts_at)
-      const e = minuteOfDay(b.ends_at)
+    .map((b) => ({ b, s: minuteOfDay(b.starts_at, c.date), e: minuteOfDay(b.ends_at, c.date) }))
+    // A block on another day of the week sits wholly before or after this one.
+    .filter(({ s, e }) => e > s)
+    .map(({ b, s, e }) => {
       return { b, top: yOf(Math.max(s, range.value.start)), height: Math.max(18, yOf(Math.min(e, range.value.end)) - yOf(Math.max(s, range.value.start))) }
     })
 }
@@ -250,21 +342,27 @@ let tick: ReturnType<typeof setInterval> | undefined
 onMounted(() => { tick = setInterval(() => (now.value = new Date()), 30000) })
 onBeforeUnmount(() => clearInterval(tick))
 const nowTop = computed(() => {
-  if (!isToday.value) return null
-  const m = minuteOfDay(now.value.toISOString())
+  if (!shownToday.value) return null
+  const m = minuteOfDay(now.value.toISOString(), todayDate.value)
   return m >= range.value.start && m <= range.value.end ? yOf(m) : null
 })
 
 // Scrolled to now (or the first visit) when a day opens.
 const scroller = ref<HTMLElement | null>(null)
-watch([loading, day], async ([l]) => {
+watch([loading, day, view], async ([l]) => {
   if (l) return
   await nextTick()
-  const first = appointments.value[0]
-  const target = nowTop.value ?? (first ? yOf(minuteOfDay(first.starts_at)) : 0)
+  const firsts = appointments.value.map((a) => minuteOfDay(a.starts_at, dateOfIso(a.starts_at)))
+  const target = nowTop.value ?? (firsts.length ? yOf(Math.min(...firsts)) : 0)
   scroller.value?.scrollTo({ top: Math.max(0, target - 80) })
 })
 
+const weekList = computed(() =>
+  weekDates.value.map((date) => ({
+    date,
+    items: appointments.value.filter((a) => dateOfIso(a.starts_at) === date && (!scopePractitioner.value || a.practitioner_id === scopePractitioner.value)),
+  })),
+)
 const timeLabel = (iso: string) => clinicTimeLabel(new Date(iso), tz.value)
 const nameOf = (a: Appointment) => `${a.patients?.first_name ?? ''} ${a.patients?.last_name ?? ''}`.trim()
 const practitionerName = (id: string | null) => practitioners.value.find((p) => p.id === id)?.full_name ?? null
@@ -287,8 +385,8 @@ function open(a: Appointment) {
 const canChange = (a: Appointment) => !readOnly.value && a.status === 'booked'
 
 // -- Sheets --------------------------------------------------------------------
-const newVisit = ref<{ preferredStart: string | null; practitionerId: string | null } | null>(null)
-const moveFor = ref<{ a: Appointment; preferredStart: string | null; practitionerId: string | null } | null>(null)
+const newVisit = ref<{ preferredStart: string | null; practitionerId: string | null; date?: string } | null>(null)
+const moveFor = ref<{ a: Appointment; preferredStart: string | null; practitionerId: string | null; date?: string } | null>(null)
 const cancelFor = ref<Appointment | null>(null)
 const blockAt = ref<{ time: string | null; practitionerId: string | null } | null>(null)
 const notice = ref('')
@@ -354,7 +452,7 @@ function onSlotDown(e: PointerEvent, c: Column) {
     const m = minuteAtY(column, y)
     ghost.value = { columnKey: c.key, top: yOf(m), label: hhmm(m) }
     navigator.vibrate?.(10)
-    newVisit.value = { preferredStart: new Date(wallClockToUtc(day.value, hhmm(m), tz.value)).toISOString(), practitionerId: columnPractitioner(c) }
+    newVisit.value = { preferredStart: new Date(wallClockToUtc(c.date, hhmm(m), tz.value)).toISOString(), practitionerId: columnPractitioner(c), date: c.date }
   }, HOLD_MS)
 }
 function onPointerMove(e: PointerEvent) {
@@ -379,10 +477,10 @@ function onApptDown(e: PointerEvent, a: Appointment, c: Column) {
   clearTimeout(holdTimer)
   holdTimer = setTimeout(() => {
     pressStart = null
-    const s = minuteOfDay(a.starts_at)
+    const s = minuteOfDay(a.starts_at, c.date)
     const col = columnEls.value[c.key]
     const at = col ? minuteAtY(col, y) : s
-    drag.value = { a, columnKey: c.key, offsetMin: at - s, minute: s, duration: minuteOfDay(a.ends_at) - s }
+    drag.value = { a, columnKey: c.key, offsetMin: at - s, minute: s, duration: minuteOfDay(a.ends_at, c.date) - s }
     navigator.vibrate?.(10)
   }, HOLD_MS)
 }
@@ -407,8 +505,9 @@ function onPointerUp() {
   setTimeout(() => (suppressClick = false), 400)
   const c = columns.value.find((x) => x.key === d.columnKey)
   const practitionerId = c?.practitionerId ?? d.a.practitioner_id
-  if (d.minute === minuteOfDay(d.a.starts_at) && practitionerId === d.a.practitioner_id) return
-  moveFor.value = { a: d.a, preferredStart: new Date(wallClockToUtc(day.value, hhmm(d.minute), tz.value)).toISOString(), practitionerId }
+  const date = c?.date ?? day.value
+  if (date === dateOfIso(d.a.starts_at) && d.minute === minuteOfDay(d.a.starts_at, date) && practitionerId === d.a.practitioner_id) return
+  moveFor.value = { a: d.a, preferredStart: new Date(wallClockToUtc(date, hhmm(d.minute), tz.value)).toISOString(), practitionerId, date }
 }
 // While a visit is being dragged the page must not scroll under the finger.
 function onTouchMove(e: TouchEvent) {
@@ -422,12 +521,20 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
   <div class="flex h-full min-h-0 select-none flex-col bg-surface-page" style="-webkit-touch-callout: none" @pointermove="onPointerMove" @pointerup="onPointerUp" @pointercancel="onPointerUp">
     <!-- Day bar -->
     <div class="flex shrink-0 items-center gap-1.5 border-b border-line bg-surface px-3 py-2 md:px-5">
-      <h1 class="min-w-0 flex-1 truncate text-[17px] font-semibold text-ink-900" data-cy="agenda-day">{{ title }}</h1>
-      <button v-if="!isToday" type="button" class="h-9 rounded-ctl border border-line-control px-3 text-[13px] font-medium text-ink-700" @click="day = today(); selectedId = null">{{ t('Today', 'Hoy') }}</button>
-      <button type="button" class="flex h-9 w-9 items-center justify-center rounded-ctl border border-line-control text-ink-700" :aria-label="t('Previous day', 'Día anterior')" data-cy="agenda-prev" @click="shiftDay(-1)">
+      <div class="relative min-w-0 flex-1">
+        <button type="button" class="flex max-w-full items-center gap-1 rounded-ctl py-1 text-left" :aria-label="t(`${title}. Choose a date`, `${title}. Elegir fecha`)" data-cy="agenda-day" @click="openPicker">
+          <span class="truncate text-[17px] font-semibold text-ink-900">{{ title }}</span>
+          <AppChevron dir="down" class="text-ink-muted" />
+        </button>
+        <!-- Over the title, invisible: a tap on it is a tap on the native picker
+             wherever showPicker() is not supported. -->
+        <input ref="datePicker" type="date" :value="day" class="absolute inset-0 h-full w-full cursor-pointer opacity-0" tabindex="-1" aria-hidden="true" data-cy="agenda-date-input" @change="jumpTo" />
+      </div>
+      <button v-if="!shownToday" type="button" class="h-9 rounded-ctl border border-line-control px-3 text-[13px] font-medium text-ink-700" data-cy="agenda-today" @click="day = today(); selectedId = null">{{ t('Today', 'Hoy') }}</button>
+      <button type="button" class="flex h-9 w-9 items-center justify-center rounded-ctl border border-line-control text-ink-700" :aria-label="isWeek ? t('Previous week', 'Semana anterior') : t('Previous day', 'Día anterior')" data-cy="agenda-prev" @click="shiftDay(-1)">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg>
       </button>
-      <button type="button" class="flex h-9 w-9 items-center justify-center rounded-ctl border border-line-control text-ink-700" :aria-label="t('Next day', 'Día siguiente')" data-cy="agenda-next" @click="shiftDay(1)">
+      <button type="button" class="flex h-9 w-9 items-center justify-center rounded-ctl border border-line-control text-ink-700" :aria-label="isWeek ? t('Next week', 'Semana siguiente') : t('Next day', 'Día siguiente')" data-cy="agenda-next" @click="shiftDay(1)">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
       </button>
       <template v-if="!readOnly">
@@ -442,21 +549,51 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
       </template>
     </div>
 
-    <div v-if="canScopeMine" class="shrink-0 border-b border-line bg-surface px-3 pb-2 pt-1 md:px-5">
-      <div role="tablist" class="grid grid-cols-2 gap-1 rounded-ctl bg-chip-bg p-[3px] md:max-w-[360px]">
+    <div class="flex shrink-0 items-center gap-2 border-b border-line bg-surface px-3 pb-2 pt-1 md:px-5">
+      <div v-if="canScopeMine" role="tablist" :aria-label="t('Whose diary', 'De quién')" class="grid min-w-0 flex-1 grid-cols-2 gap-1 rounded-ctl bg-chip-bg p-[3px] md:max-w-[360px]">
         <button v-for="s in (['mine', 'all'] as const)" :key="s" type="button" role="tab" :aria-selected="effectiveScope === s" class="h-8 rounded-ctlSm text-[13px] font-semibold" :class="effectiveScope === s ? 'bg-surface text-ink-900 shadow-card' : 'text-ink-muted'" :data-cy="`agenda-scope-${s}`" @click="scope = s; selectedId = null">
           {{ s === 'mine' ? t('My appointments', 'Mis citas') : t('Whole clinic', 'Toda la clínica') }}
+        </button>
+      </div>
+      <div v-else class="flex-1" />
+      <div role="tablist" :aria-label="t('View', 'Vista')" class="grid w-[148px] shrink-0 grid-cols-2 gap-1 rounded-ctl bg-chip-bg p-[3px]">
+        <button v-for="v in (['day', 'week'] as const)" :key="v" type="button" role="tab" :aria-selected="view === v" class="h-8 rounded-ctlSm text-[13px] font-semibold" :class="view === v ? 'bg-surface text-ink-900 shadow-card' : 'text-ink-muted'" :data-cy="`agenda-view-${v}`" @click="view = v">
+          {{ v === 'day' ? t('Day', 'Día') : t('Week', 'Semana') }}
         </button>
       </div>
     </div>
 
     <div class="flex min-h-0 flex-1">
       <div class="flex min-w-0 flex-1 flex-col bg-surface">
-        <div v-if="contextLoading || loading" class="flex flex-1 items-center justify-center text-sm text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+        <AppSkeletonList v-if="contextLoading || loading" :rows="6" class="flex-1" />
         <p v-else-if="loadError" class="m-4 rounded-card border border-danger-border bg-danger-bg px-3.5 py-3 text-[13.5px] text-danger-text">{{ loadError }}</p>
+        <!-- iPhone week: the days as a list -->
+        <div v-else-if="isWeek && !wide" class="min-h-0 flex-1 overflow-y-auto bg-surface-page px-3 py-3" data-cy="agenda-week-list">
+          <section v-for="d in weekList" :key="d.date" class="mb-3" data-cy="agenda-week-day">
+            <button type="button" class="tap-target flex w-full items-center justify-between px-1 pb-1.5 text-left" :data-cy="`agenda-week-open-${d.date}`" @click="openDay(d.date)">
+              <span class="text-[13px] font-semibold" :class="d.date === todayDate ? 'text-brand-text' : 'text-ink-700'">{{ capital(fmt(d.date, { weekday: 'long', day: 'numeric', month: 'short' })) }}</span>
+              <span class="flex items-center gap-1 text-[12px] text-ink-muted">{{ d.items.length ? t(`${d.items.length} visits`, `${d.items.length} ${d.items.length === 1 ? 'cita' : 'citas'}`) : '' }}<AppChevron /></span>
+            </button>
+            <div v-if="d.items.length" class="divide-y divide-line-row overflow-hidden rounded-card border border-line bg-surface shadow-card">
+              <button v-for="a in d.items" :key="a.id" type="button" class="flex min-h-12 w-full items-center gap-3 px-3.5 py-2 text-left" :class="a.status === 'completed' || a.status === 'no_show' ? 'opacity-55' : ''" data-cy="agenda-item" :data-appt-id="a.id" @click="open(a)">
+                <span class="h-8 w-[3px] shrink-0 rounded-full" :style="{ background: tint(a.appointment_types?.color).borderLeftColor }" />
+                <span class="w-11 shrink-0 font-mono text-[12.5px] text-ink-700">{{ timeLabel(a.starts_at) }}</span>
+                <span class="min-w-0 flex-1">
+                  <span class="block truncate text-[14px] font-semibold text-ink-900" :class="a.status === 'no_show' ? 'line-through' : ''">{{ nameOf(a) }}</span>
+                  <span class="block truncate text-[12px] text-ink-muted">{{ a.appointment_types?.name ?? t('Appointment', 'Cita') }}<template v-if="!scopePractitioner && practitionerName(a.practitioner_id)"> · {{ practitionerName(a.practitioner_id) }}</template></span>
+                </span>
+                <span v-if="a.checked_in_at && a.status === 'booked'" class="h-2 w-2 shrink-0 rounded-full bg-success-accent" :title="t('Checked in', 'Ha llegado')" />
+              </button>
+            </div>
+            <p v-else class="px-1 text-[12.5px] text-ink-faint">{{ t('Nothing booked.', 'Sin citas.') }}</p>
+          </section>
+        </div>
         <template v-else>
           <div v-if="showColumnHeads" class="flex shrink-0 border-b border-line pl-12">
-            <div v-for="c in columns" :key="c.key" class="min-w-0 flex-1 truncate border-l border-line-row px-2 py-2 text-[12.5px] font-semibold text-ink-700">{{ c.name }}</div>
+            <template v-for="c in columns" :key="c.key">
+              <button v-if="isWeek" type="button" class="min-w-0 flex-1 truncate border-l border-line-row px-2 py-2 text-left text-[12.5px] font-semibold" :class="c.date === todayDate ? 'text-brand-text' : 'text-ink-700'" :data-cy="`agenda-week-open-${c.date}`" @click="openDay(c.date)">{{ c.name }}</button>
+              <div v-else class="min-w-0 flex-1 truncate border-l border-line-row px-2 py-2 text-[12.5px] font-semibold text-ink-700">{{ c.name }}</div>
+            </template>
           </div>
           <div ref="scroller" class="min-h-0 flex-1 overflow-y-auto" data-cy="agenda-timeline">
             <div class="relative flex pl-12" :style="{ height: `${totalHeight + 24}px` }">
@@ -504,10 +641,12 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
                     <span class="truncate text-[12.5px] font-semibold text-ink-900" :class="p.a.status === 'no_show' ? 'line-through' : ''">{{ nameOf(p.a) }}</span>
                   </span>
                   <span v-if="p.height >= 38" class="block truncate text-[11.5px] text-ink-muted">
-                    {{ timeLabel(p.a.starts_at) }} · {{ p.a.appointment_types?.name ?? t('Appointment', 'Cita') }}<template v-if="c.key === 'all' && p.lanes === 1 && practitionerName(p.a.practitioner_id)"> · {{ practitionerName(p.a.practitioner_id) }}</template>
+                    {{ timeLabel(p.a.starts_at) }} · {{ p.a.appointment_types?.name ?? t('Appointment', 'Cita') }}<template v-if="!c.practitionerId && p.lanes === 1 && practitionerName(p.a.practitioner_id)"> · {{ practitionerName(p.a.practitioner_id) }}</template>
                   </span>
                 </button>
 
+                <!-- Now, in today's column of the week -->
+                <div v-if="isWeek && nowTop !== null && c.date === todayDate" class="pointer-events-none absolute left-0 right-0 z-10 border-t-2 border-danger-text" :style="{ top: `${nowTop}px` }" data-cy="agenda-now" />
                 <!-- Where a held slot will book -->
                 <div v-if="ghost && ghost.columnKey === c.key" class="pointer-events-none absolute left-1 right-1 flex items-center rounded-[8px] border-[1.5px] border-dashed border-brand bg-brand-tint px-2 text-[12px] font-semibold text-brand-text" :style="{ top: `${ghost.top + 1}px`, height: `${HOUR / 2 - 2}px` }">
                   + {{ t('New visit at', 'Nueva cita a las') }} {{ ghost.label }}
@@ -519,12 +658,13 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
                 </div>
               </div>
 
-              <div v-if="nowTop !== null" class="pointer-events-none absolute left-10 right-0 z-10 border-t-2 border-danger-text" :style="{ top: `${nowTop}px` }" data-cy="agenda-now">
+              <div v-if="!isWeek && nowTop !== null" class="pointer-events-none absolute left-10 right-0 z-10 border-t-2 border-danger-text" :style="{ top: `${nowTop}px` }" data-cy="agenda-now">
                 <span class="absolute -left-1 -top-[5px] h-2 w-2 rounded-full bg-danger-text" />
               </div>
             </div>
             <p v-if="!appointments.length" class="pointer-events-none sticky bottom-4 mx-auto w-fit rounded-full bg-surface px-3 py-1.5 text-[12.5px] text-ink-muted shadow-card">
-              {{ readOnly ? t('Nothing booked this day.', 'No hay citas este día.') : t('Nothing booked. Hold a free slot to book.', 'No hay citas. Mantén pulsado un hueco para reservar.') }}
+              <template v-if="isWeek">{{ readOnly ? t('Nothing booked this week.', 'No hay citas esta semana.') : t('Nothing booked this week. Hold a free slot to book.', 'No hay citas esta semana. Mantén pulsado un hueco para reservar.') }}</template>
+              <template v-else>{{ readOnly ? t('Nothing booked this day.', 'No hay citas este día.') : t('Nothing booked. Hold a free slot to book.', 'No hay citas. Mantén pulsado un hueco para reservar.') }}</template>
             </p>
           </div>
         </template>
@@ -541,7 +681,7 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
             <p v-if="practitionerName(selected.practitioner_id)" class="text-[12.5px] text-ink-muted">{{ practitionerName(selected.practitioner_id) }}</p>
             <p v-if="selected.checked_in_at && selected.status === 'booked'" class="mt-2 inline-flex rounded-full bg-success-bg px-2 py-0.5 text-[11.5px] font-semibold text-success-text">{{ t('Checked in', 'Ha llegado') }}</p>
           </div>
-          <NuxtLink :to="`/calendar/${selected.id}`" class="flex h-11 items-center justify-center rounded-[12px] bg-brand text-[14.5px] font-semibold text-white" data-cy="agenda-panel-open">{{ t('Open visit', 'Abrir la cita') }}</NuxtLink>
+          <NuxtLink :to="`/calendar/${selected.id}`" class="flex h-11 items-center justify-center rounded-card bg-brand text-[14.5px] font-semibold text-white" data-cy="agenda-panel-open">{{ t('Open visit', 'Abrir la cita') }}</NuxtLink>
           <div v-if="canChange(selected)" class="grid grid-cols-2 gap-2">
             <button type="button" class="h-10 rounded-ctl border border-line-control bg-surface text-[13.5px] font-medium text-ink-700" data-cy="agenda-panel-move" @click="moveFor = { a: selected, preferredStart: null, practitionerId: selected.practitioner_id }">{{ t('Move', 'Mover') }}</button>
             <button type="button" class="h-10 rounded-ctl border border-line-control bg-surface text-[13.5px] font-medium text-danger-text" data-cy="agenda-panel-cancel" @click="cancelFor = selected">{{ t('Cancel', 'Cancelar') }}</button>
@@ -560,7 +700,7 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
 
     <NewVisitSheet
       v-if="newVisit"
-      :date="day"
+      :date="newVisit.date ?? day"
       :preferred-start="newVisit.preferredStart"
       :practitioner-id="newVisit.practitionerId"
       @booked="(b) => afterBooked(b, t('Visit booked.', 'Cita reservada.'))"
@@ -571,7 +711,7 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
       :patient-id="moveFor.a.patient_id"
       :practitioner-id="moveFor.practitionerId"
       :type-id="moveFor.a.appointment_type_id"
-      :suggested-date="day"
+      :suggested-date="moveFor.date ?? dateOfIso(moveFor.a.starts_at)"
       :preferred-start="moveFor.preferredStart"
       :title="t(`Move · ${nameOf(moveFor.a)}`, `Mover · ${nameOf(moveFor.a)}`)"
       :move="{ appointmentId: moveFor.a.id, startsAt: moveFor.a.starts_at, endsAt: moveFor.a.ends_at, roomId: moveFor.a.room_id }"
@@ -609,6 +749,7 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
 
 <style scoped>
 .agenda-blocked {
-  background: repeating-linear-gradient(135deg, rgb(241 242 245), rgb(241 242 245) 6px, rgb(248 249 251) 6px, rgb(248 249 251) 12px);
+  /* Theme variables, so the stripes follow a dark theme too. */
+  background: repeating-linear-gradient(135deg, rgb(var(--color-line-row)), rgb(var(--color-line-row)) 6px, rgb(var(--color-surface-subtle)) 6px, rgb(var(--color-surface-subtle)) 12px);
 }
 </style>

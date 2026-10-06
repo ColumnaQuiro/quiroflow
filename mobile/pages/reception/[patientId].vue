@@ -25,6 +25,7 @@ const fields = ref<DocField[]>([])
 const saving = ref(false)
 const error = ref('')
 const exitOpen = ref(false)
+const topEl = ref<HTMLElement | null>(null)
 const total = computed(() => lock.value?.tokens.length ?? 0)
 
 async function loadCurrent() {
@@ -45,7 +46,10 @@ async function loadCurrent() {
   title.value = doc.title ?? ''
   fields.value = Array.isArray(doc.fields) ? doc.fields : []
   phase.value = 'fill'
-  window.scrollTo({ top: 0 })
+  // The page scrolls inside the app's root box (app.vue), not the window, so
+  // window.scrollTo did nothing and the next form opened halfway down.
+  await nextTick()
+  topEl.value?.scrollIntoView({ block: 'start' })
 }
 onMounted(loadCurrent)
 
@@ -72,7 +76,8 @@ const initials = computed(() => (lock.value?.clinicName ?? '').split(/\s+/).filt
 </script>
 
 <template>
-  <div v-if="lock" class="flex min-h-screen flex-col bg-surface" style="padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom)" data-cy="reception">
+  <div v-if="lock" ref="topEl" class="flex min-h-full flex-col bg-surface" style="padding-bottom: env(safe-area-inset-bottom)" data-cy="reception">
+    <!-- No top inset here: app.vue's root box already pads for the status bar. -->
     <header class="flex shrink-0 items-center justify-between gap-3 border-b border-line px-5 py-3 md:px-10">
       <div class="flex min-w-0 items-center gap-2.5">
         <span class="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] bg-brand text-[12px] font-bold text-white">{{ initials }}</span>
@@ -100,7 +105,7 @@ const initials = computed(() => (lock.value?.clinicName ?? '').split(/\s+/).filt
           <DocBlocks :fields="fields" mode="fill" @update:fields="fields = $event" />
         </div>
         <p v-if="error" role="alert" class="mt-4 text-[13.5px] text-danger-text" data-cy="reception-error">{{ error }}</p>
-        <button type="button" class="mt-6 flex h-12 items-center justify-center rounded-[12px] bg-brand px-6 text-[16px] font-semibold text-white disabled:opacity-50 md:self-end" :disabled="saving" data-cy="reception-submit" @click="submit">
+        <button type="button" class="mt-6 flex h-12 items-center justify-center rounded-card bg-brand px-6 text-[16px] font-semibold text-white disabled:opacity-50 md:self-end" :disabled="saving" data-cy="reception-submit" @click="submit">
           {{ saving ? t('Saving…', 'Guardando…') : index + 1 < total ? t('Sign and continue', 'Firmar y continuar') : t('Sign and finish', 'Firmar y terminar') }}
         </button>
       </template>
@@ -110,8 +115,8 @@ const initials = computed(() => (lock.value?.clinicName ?? '').split(/\s+/).filt
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
         </span>
         <h1 class="mt-4 text-[24px] font-semibold text-ink-900">{{ t(`Thank you, ${lock.firstName}`, `Gracias, ${lock.firstName}`) }}</h1>
-        <p class="mt-2 text-[15px] leading-relaxed text-ink-muted">{{ t('All done. Please hand the iPad back to reception.', 'Ya está todo. Devuelve el iPad a recepción, por favor.') }}</p>
-        <button type="button" class="mt-8 h-11 rounded-[12px] border border-line-control px-5 text-[14px] font-medium text-ink-700" @click="exitOpen = true">{{ t('Reception: take the iPad back', 'Recepción: recoger el iPad') }}</button>
+        <p class="mt-2 text-[15px] leading-relaxed text-ink-muted">{{ t('All done. Please hand the device back to reception.', 'Ya está todo. Devuélvelo a recepción, por favor.') }}</p>
+        <button type="button" class="mt-8 h-11 rounded-card border border-line-control px-5 text-[14px] font-medium text-ink-700" @click="exitOpen = true">{{ t('Reception: take it back', 'Recepción: recoger el dispositivo') }}</button>
       </div>
     </main>
 

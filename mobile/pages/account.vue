@@ -15,6 +15,7 @@ watch(user, (u) => { if (!u) navigateTo('/login') }, { immediate: true })
 const t = useT()
 const supabase = useSupabaseClient()
 const { unregister: unregisterPush } = usePushNotifications()
+const { ask, notify } = useAppConfirm()
 const authedFetch = useAuthedFetch()
 const { settings } = usePatientAppInfo()
 const { patient, teamMember } = useIdentity()
@@ -35,21 +36,23 @@ async function signOut() {
 
 const deletingAccount = ref(false)
 async function deleteAccount() {
-  if (
-    !confirm(
-      t(
-        "Delete your account? This removes your login immediately and can't be undone by you.",
-        '¿Eliminar tu cuenta? Esto borra tu acceso de inmediato y no podrás deshacerlo.',
-      ),
-    )
-  )
-    return
+  const ok = await ask({
+    title: t('Delete your account?', '¿Eliminar tu cuenta?'),
+    body: t(
+        "This removes your login immediately and can't be undone by you.",
+        'Esto borra tu acceso de inmediato y no podrás deshacerlo.',
+    ),
+    confirmLabel: t('Delete account', 'Eliminar cuenta'),
+    cancelLabel: t('Cancel', 'Cancelar'),
+    danger: true,
+  })
+  if (!ok) return
   deletingAccount.value = true
   try {
     await authedFetch('/api/account/delete', { method: 'POST' })
   } catch (err: unknown) {
     deletingAccount.value = false
-    alert((err as { data?: { statusMessage?: string } })?.data?.statusMessage ?? t('Failed to delete account.', 'No se pudo eliminar la cuenta.'))
+    notify((err as { data?: { statusMessage?: string } })?.data?.statusMessage ?? t('Failed to delete account.', 'No se pudo eliminar la cuenta.'))
     return
   }
   await unregisterPush()
@@ -81,7 +84,7 @@ async function deleteAccount() {
       class="mt-3 flex items-center justify-between rounded-card border border-line bg-surface px-4 py-3.5 shadow-card"
     >
       <span class="text-[13.5px] font-medium text-ink-900">{{ t('Switch to practitioner view', 'Cambiar a vista de profesional') }}</span>
-      <span class="text-[13px] text-ink-faint">&rarr;</span>
+      <span class="text-ink-faint"><AppChevron /></span>
     </NuxtLink>
 
     <LanguageSetting class="mt-3" />

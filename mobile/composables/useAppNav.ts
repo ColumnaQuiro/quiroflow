@@ -34,7 +34,7 @@ export function usePatientNav() {
     { label: t('Home', 'Inicio'), to: '/', icon: 'M2.5 7L8 2.5 13.5 7v6.5h-4v-4h-3v4h-4z' },
     { label: t('Visits', 'Citas'), to: '/visits', icon: 'M2.5 3.5h11v10h-11zM2.5 6.6h11M5.6 2v2M10.4 2v2' },
     { label: t('Billing', 'Pagos'), to: '/billing', icon: 'M2 4h12v8h-12zM2 7h12' },
-    { label: t('Files', 'Archivos'), to: '/documents', icon: 'M4 2h5l3 3v9H4zM9 2v3.2h3' },
+    { label: t('Documents', 'Documentos'), to: '/documents', icon: 'M4 2h5l3 3v9H4zM9 2v3.2h3' },
     { label: t('Messages', 'Mensajes'), to: '/messages', icon: 'M2 3.5h12v8h-7l-3 2.5v-2.5h-2z' },
   ])
   // Home is an exact match -- every other path starts with '/', so a prefix

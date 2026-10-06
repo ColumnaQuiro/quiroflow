@@ -79,7 +79,7 @@ function eur(cents: number) {
     </div>
 
     <section class="rounded-card border border-line bg-surface p-4 shadow-card">
-      <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-faint">{{ t('Your next visit', 'Tu próxima cita') }}</p>
+      <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ t('Your next visit', 'Tu próxima cita') }}</p>
       <div v-if="apptLoading" class="mt-2"><UiSkeleton class="h-6 w-48 rounded-ctlSm" /></div>
       <template v-else-if="next">
         <p class="mt-1.5 text-[17px] font-[640] leading-snug tracking-tightTitle text-ink-900 first-letter:uppercase">{{ longWhen(next.starts_at, next.clinic_id) }}</p>
@@ -88,25 +88,25 @@ function eur(cents: number) {
           <template v-if="next.team_members?.full_name"> &middot; {{ next.team_members.full_name }}</template>
         </p>
         <NuxtLink to="/visits" class="mt-3 inline-block text-[12.5px] font-medium text-brand-text">
-          {{ t('See all visits', 'Ver todas las citas') }} &rarr;
+          {{ t('See all visits', 'Ver todas las citas') }} <AppChevron :size="12" />
         </NuxtLink>
       </template>
       <template v-else>
         <p class="mt-1.5 text-[15px] text-ink-muted">{{ t('Nothing booked yet.', 'No tienes ninguna cita reservada.') }}</p>
         <NuxtLink v-if="settings.bookingEnabled" to="/book" class="mt-3 inline-block text-[12.5px] font-medium text-brand-text">
-          {{ t('Book a visit', 'Reservar cita') }} &rarr;
+          {{ t('Book a visit', 'Reservar cita') }} <AppChevron :size="12" />
         </NuxtLink>
       </template>
     </section>
 
     <div class="mt-3 grid grid-cols-2 gap-3">
       <NuxtLink to="/billing" class="rounded-card border border-line bg-surface p-3.5 shadow-card">
-        <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-faint">{{ t('Sessions left', 'Sesiones') }}</p>
+        <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ t('Sessions left', 'Sesiones') }}</p>
         <p v-if="moneyLoading" class="mt-2"><UiSkeleton class="h-6 w-10 rounded-ctlSm" /></p>
         <p v-else class="mt-1 text-[22px] font-[640] tracking-tightTitle text-ink-900">{{ sessionsLeft }}</p>
       </NuxtLink>
       <NuxtLink to="/billing" class="rounded-card border border-line bg-surface p-3.5 shadow-card">
-        <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-faint">
+        <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted">
           {{ amountDueCents > 0 ? t('You owe', 'Pendiente') : t('Your credit', 'Saldo') }}
         </p>
         <p v-if="moneyLoading" class="mt-2"><UiSkeleton class="h-6 w-16 rounded-ctlSm" /></p>
@@ -125,11 +125,11 @@ function eur(cents: number) {
         {{ t('Your documents', 'Tus documentos') }}
         <span class="ml-1 text-[12.5px] font-normal text-ink-faint">{{ documents.length }}</span>
       </span>
-      <span class="text-[13px] text-ink-faint">&rarr;</span>
+      <span class="text-ink-faint"><AppChevron /></span>
     </NuxtLink>
 
     <section class="mt-5">
-      <h2 class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-faint">{{ t('Care plan', 'Plan de tratamiento') }}</h2>
+      <h2 class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ t('Care plan', 'Plan de tratamiento') }}</h2>
       <div class="mt-2">
         <PatientsPhaseStats :patient-id="props.patientId" :editable="false" />
       </div>

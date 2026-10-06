@@ -72,7 +72,7 @@ watch(search, () => {
       />
     </div>
 
-    <div v-if="loading && patients.length === 0" class="flex flex-1 items-center justify-center text-sm text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+    <AppSkeletonList v-if="loading && patients.length === 0" avatar :rows="8" class="flex-1" />
     <div v-else-if="loadError && patients.length === 0" class="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center" data-cy="patients-load-error">
       <p class="text-sm text-danger-text">{{ t('Could not load the patients.', 'No se han podido cargar los pacientes.') }}</p>
       <button type="button" class="h-10 rounded-ctl border border-line-control px-4 text-[13.5px] font-medium text-ink-700" @click="load">{{ t('Try again', 'Reintentar') }}</button>
@@ -93,6 +93,9 @@ watch(search, () => {
         </span>
         <p class="truncate text-[14px] font-[560] text-ink-900">{{ p.first_name }} {{ p.last_name ?? '' }}</p>
       </NuxtLink>
+      <p v-if="patients.length >= 100" class="px-4 py-3 text-center text-[12.5px] text-ink-muted" data-cy="patients-capped">
+        {{ t('Showing the first 100. Search to find anyone else.', 'Se muestran los 100 primeros. Busca para encontrar a cualquier otro.') }}
+      </p>
     </div>
     <NewPatientSheet v-if="adding" :initial-name="search" @created="created" @close="adding = false" />
   </div>

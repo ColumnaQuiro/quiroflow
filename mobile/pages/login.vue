@@ -95,7 +95,7 @@ async function onSubmit() {
       <form class="mt-5 flex flex-col gap-[18px]" @submit.prevent="onSubmit">
         <div
           v-if="side === 'patient' && clinic.clinicName.value"
-          class="flex items-center gap-2.5 rounded-card border border-line bg-surface-subtle px-3 py-2.5"
+          class="flex items-center gap-2.5 rounded-card border border-line bg-surface shadow-card-subtle px-3 py-2.5"
           data-testid="clinic-chip"
         >
           <span

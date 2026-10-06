@@ -105,7 +105,7 @@ const initials = computed(() => (lock.value?.clinicName ?? '').split(/\s+/).filt
           <DocBlocks :fields="fields" mode="fill" @update:fields="fields = $event" />
         </div>
         <p v-if="error" role="alert" class="mt-4 text-[13.5px] text-danger-text" data-cy="reception-error">{{ error }}</p>
-        <button type="button" class="mt-6 flex h-12 items-center justify-center rounded-[12px] bg-brand px-6 text-[16px] font-semibold text-white disabled:opacity-50 md:self-end" :disabled="saving" data-cy="reception-submit" @click="submit">
+        <button type="button" class="mt-6 flex h-12 items-center justify-center rounded-card bg-brand px-6 text-[16px] font-semibold text-white disabled:opacity-50 md:self-end" :disabled="saving" data-cy="reception-submit" @click="submit">
           {{ saving ? t('Saving…', 'Guardando…') : index + 1 < total ? t('Sign and continue', 'Firmar y continuar') : t('Sign and finish', 'Firmar y terminar') }}
         </button>
       </template>
@@ -115,8 +115,8 @@ const initials = computed(() => (lock.value?.clinicName ?? '').split(/\s+/).filt
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
         </span>
         <h1 class="mt-4 text-[24px] font-semibold text-ink-900">{{ t(`Thank you, ${lock.firstName}`, `Gracias, ${lock.firstName}`) }}</h1>
-        <p class="mt-2 text-[15px] leading-relaxed text-ink-muted">{{ t('All done. Please hand the iPad back to reception.', 'Ya está todo. Devuelve el iPad a recepción, por favor.') }}</p>
-        <button type="button" class="mt-8 h-11 rounded-[12px] border border-line-control px-5 text-[14px] font-medium text-ink-700" @click="exitOpen = true">{{ t('Reception: take the iPad back', 'Recepción: recoger el iPad') }}</button>
+        <p class="mt-2 text-[15px] leading-relaxed text-ink-muted">{{ t('All done. Please hand the device back to reception.', 'Ya está todo. Devuélvelo a recepción, por favor.') }}</p>
+        <button type="button" class="mt-8 h-11 rounded-card border border-line-control px-5 text-[14px] font-medium text-ink-700" @click="exitOpen = true">{{ t('Reception: take it back', 'Recepción: recoger el dispositivo') }}</button>
       </div>
     </main>
 

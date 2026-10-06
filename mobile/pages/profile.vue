@@ -104,6 +104,7 @@ async function deleteAccount() {
       </div>
       <StaffPushSettings v-if="context" />
       <LanguageSetting />
+      <ThemeSetting />
 
       <button
         type="button"

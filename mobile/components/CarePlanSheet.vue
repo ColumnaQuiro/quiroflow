@@ -67,7 +67,7 @@ const stepBtn = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex flex-col justify-end bg-ink-900/40 md:items-center md:justify-center" data-cy="care-plan-sheet" @click.self="emit('close')">
+  <div class="fixed inset-0 z-50 flex flex-col justify-end bg-black/40 md:items-center md:justify-center" data-cy="care-plan-sheet" @click.self="emit('close')">
     <form
       class="flex max-h-[92%] w-full flex-col gap-3.5 overflow-y-auto rounded-t-[22px] bg-surface px-4 pt-2.5 shadow-popover md:max-w-[460px] md:rounded-[18px] md:pt-5"
       style="padding-bottom: max(env(safe-area-inset-bottom), 1.25rem)"

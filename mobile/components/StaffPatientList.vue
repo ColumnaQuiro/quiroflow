@@ -15,6 +15,12 @@ const t = useT()
 const search = ref('')
 const patients = ref<Patient[]>([])
 const loading = ref(true)
+const adding = ref(false)
+// A new patient opens straight on their record, where booking is one tap.
+function created(p: { id: string }) {
+  adding.value = false
+  navigateTo(`/patients/${p.id}`)
+}
 
 async function load() {
   loading.value = true
@@ -37,7 +43,13 @@ watch(search, () => {
 <template>
   <div class="flex h-full min-h-0 flex-col bg-surface">
     <div class="shrink-0 border-b border-line bg-surface px-4 py-3">
-      <h1 class="mb-2 text-[17px] font-semibold text-ink-900">{{ t('Patients', 'Pacientes') }}</h1>
+      <div class="mb-2 flex items-center justify-between gap-2">
+        <h1 class="text-[17px] font-semibold text-ink-900">{{ t('Patients', 'Pacientes') }}</h1>
+        <button type="button" class="flex h-8 items-center gap-1 rounded-ctl bg-brand px-3 text-[13px] font-semibold text-white" data-cy="patients-new" @click="adding = true">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+          {{ t('New', 'Nuevo') }}
+        </button>
+      </div>
       <input
         v-model="search"
         type="search"
@@ -64,5 +76,6 @@ watch(search, () => {
         <p class="truncate text-[14px] font-[560] text-ink-900">{{ p.first_name }} {{ p.last_name ?? '' }}</p>
       </NuxtLink>
     </div>
+    <NewPatientSheet v-if="adding" :initial-name="search" @created="created" @close="adding = false" />
   </div>
 </template>

@@ -521,6 +521,7 @@ export default defineEventHandler(async (event) => {
               // dialog elsewhere, not something to apply automatically off
               // an inbound message).
               await supabase.from('appointments').update({ status: 'cancelled' }).eq('id', appt.id)
+              await pushAppointmentEvent(supabase, appt.id, 'cancelled')
               // No staff session on a Meta webhook call, so this can't go
               // through fire.post.ts (requireTeamMember-gated) -- same
               // direct-call pattern as birthday-cron.post.ts.

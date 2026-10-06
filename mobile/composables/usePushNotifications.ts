@@ -62,8 +62,18 @@ export function usePushNotifications() {
       // it just had nothing on the client reading it until now. Routes to
       // the Inbox tab and hands off the target conversation key; navigating
       // there when already on it is a harmless no-op.
+      // Staff pushes (server/utils/staffPush.ts) carry { type: 'appointment',
+      // appointmentId } or { type: 'my_day' } and open the visit or the day.
       FirebaseMessaging.addListener('notificationActionPerformed', (event) => {
         const data = event.notification.data as Record<string, string> | undefined
+        if (data?.type === 'appointment' && data.appointmentId) {
+          navigateTo(`/calendar/${data.appointmentId}`)
+          return
+        }
+        if (data?.type === 'my_day') {
+          navigateTo('/my-day')
+          return
+        }
         if (!data?.key) return
         pendingConversationKey.value = data.key
         navigateTo('/inbox')

@@ -191,6 +191,7 @@ const bonoSummary = computed(() => {
 })
 
 // -- Forms (patient_docs) -----------------------------------------------------
+const receptionOpen = ref(false)
 interface Doc { id: string; title: string; completed_at: string | null; public_token: string | null }
 const docs = ref<Doc[]>([])
 const docsLoading = ref(true)
@@ -416,7 +417,14 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
 
       <!-- Forms -->
       <section class="rounded-[13px] border border-line bg-surface px-3.5 py-3" data-cy="patient-forms">
-        <h2 class="text-[11px] font-semibold uppercase tracking-[.05em] text-ink-faint">{{ t('Forms', 'Formularios') }}</h2>
+        <div class="flex items-center justify-between gap-2">
+          <h2 class="text-[11px] font-semibold uppercase tracking-[.05em] text-ink-faint">{{ t('Forms', 'Formularios') }}</h2>
+          <!-- Hand the iPad to the patient to fill in and sign their forms -->
+          <button type="button" class="inline-flex h-7 items-center gap-1 rounded-pill bg-brand-tint px-2.5 text-[12px] font-semibold text-brand-text" data-cy="patient-reception" @click="receptionOpen = true">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20c4-1 5-7 9-11l3 3c-4 4-10 5-11 9" /><path d="M14 8l2-2 2 2-2 2" /></svg>
+            {{ t('Sign at reception', 'Firmar en recepción') }}
+          </button>
+        </div>
         <div v-if="docsLoading" class="mt-2 space-y-2">
           <UiSkeleton class="h-4 w-full rounded-ctlSm" />
           <UiSkeleton class="h-4 w-full rounded-ctlSm" />
@@ -467,6 +475,7 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
     </div>
 
     <BookVisitSheet v-if="bookOpen" :patient-id="patientId" @booked="onBooked" @close="bookOpen = false" />
+    <ReceptionSetupSheet v-if="receptionOpen" :patient-id="patientId" @close="receptionOpen = false" />
   </div>
   </div>
 </template>

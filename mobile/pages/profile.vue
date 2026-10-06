@@ -77,6 +77,7 @@ async function deleteAccount() {
       </div>
       <p v-if="photoError" class="text-[13px] font-semibold text-danger-text">{{ t('Could not change your photo:', 'No se ha podido cambiar tu foto:') }} {{ photoError }}</p>
 
+      <StaffPushSettings v-if="context" />
       <LanguageSetting />
 
       <button

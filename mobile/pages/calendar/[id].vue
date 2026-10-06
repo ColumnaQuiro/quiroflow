@@ -35,6 +35,9 @@ interface Appointment {
   checked_in_at: string | null
   appointment_type_id: string | null
   practitioner_id: string | null
+  clinic_id: string | null
+  room_id: string | null
+  team_members: { full_name: string } | null
   patients: { first_name: string; last_name: string | null; red_flags: string | null; yellow_flags: string | null; sticky_note: string | null } | null
   appointment_types: { name: string; default_price_cents: number } | null
   clinics: { timezone: string | null } | null
@@ -57,7 +60,7 @@ async function loadAppointment() {
   const { data } = await supabase
     .from('appointments')
     .select(
-      'id, patient_id, starts_at, ends_at, status, checked_in_at, appointment_type_id, practitioner_id, patients(first_name, last_name, red_flags, yellow_flags, sticky_note), appointment_types(name, default_price_cents), clinics(timezone)',
+      'id, patient_id, starts_at, ends_at, status, checked_in_at, appointment_type_id, practitioner_id, clinic_id, room_id, team_members(full_name), patients(first_name, last_name, red_flags, yellow_flags, sticky_note), appointment_types(name, default_price_cents), clinics(timezone)',
     )
     .eq('id', appointmentId)
     .maybeSingle()
@@ -485,6 +488,20 @@ function onBooked(e: { startsAt: string }) {
   bookedNotice.value = `${t('Next visit booked', 'Próxima cita reservada')}: ${when(e.startsAt)}`
 }
 
+// Moving or cancelling from here: the same sheets as the agenda.
+const moveOpen = ref(false)
+const cancelOpen = ref(false)
+async function onMoved(e: { startsAt: string }) {
+  moveOpen.value = false
+  await loadAppointment()
+  bookedNotice.value = `${t('Moved to', 'Movida al')} ${when(e.startsAt)}`
+}
+async function onCancelled(message: string) {
+  cancelOpen.value = false
+  await loadAppointment()
+  bookedNotice.value = message
+}
+
 function goBack() {
   if (window.history.state?.back) router.back()
   else navigateTo('/calendar')
@@ -757,6 +774,12 @@ watch(
         </div>
 
         <p v-if="actionError" class="text-[13px] text-danger-text">{{ actionError }}</p>
+
+        <!-- Move or cancel, as the agenda does: before the visit has started -->
+        <div v-if="canAct && !appointment.checked_in_at" class="grid grid-cols-2 gap-2" data-cy="visit-change">
+          <button type="button" class="flex h-11 items-center justify-center rounded-[11px] border border-line-control bg-surface text-[14px] font-medium text-ink-700" data-cy="visit-move" @click="moveOpen = true">{{ t('Move', 'Mover') }}</button>
+          <button type="button" class="flex h-11 items-center justify-center rounded-[11px] border border-line-control bg-surface text-[14px] font-medium text-danger-text" data-cy="visit-cancel" @click="cancelOpen = true">{{ t('Cancel visit', 'Cancelar cita') }}</button>
+        </div>
       </div>
 
       <!-- No-show / Finish visit, or book the next one once it is done -->
@@ -791,6 +814,35 @@ watch(
         </div>
       </template>
     </BookVisitSheet>
+
+    <BookVisitSheet
+      v-if="moveOpen && appointment"
+      :patient-id="appointment.patient_id"
+      :practitioner-id="appointment.practitioner_id"
+      :type-id="appointment.appointment_type_id"
+      :suggested-date="clinicDateOf(new Date(appointment.starts_at), timeZone)"
+      :title="t(`Move · ${fullName}`, `Mover · ${fullName}`)"
+      :move="{ appointmentId: appointment.id, startsAt: appointment.starts_at, endsAt: appointment.ends_at, roomId: appointment.room_id }"
+      @booked="onMoved"
+      @close="moveOpen = false"
+    />
+    <CancelVisitSheet
+      v-if="cancelOpen && appointment"
+      :appointment="{
+        id: appointment.id,
+        patient_id: appointment.patient_id,
+        clinic_id: appointment.clinic_id,
+        practitioner_id: appointment.practitioner_id,
+        appointment_type_id: appointment.appointment_type_id,
+        starts_at: appointment.starts_at,
+        ends_at: appointment.ends_at,
+        patientName: fullName,
+        typeName: appointment.appointment_types?.name ?? null,
+        practitionerName: appointment.team_members?.full_name ?? null,
+      }"
+      @done="onCancelled"
+      @close="cancelOpen = false"
+    />
 
     <!-- Already booked (or nothing this role can book): say so instead -->
     <div v-if="alreadyBookedOpen" class="fixed inset-0 z-50 flex flex-col justify-end bg-ink-900/40" data-cy="visit-already-booked" @click.self="alreadyBookedOpen = false">

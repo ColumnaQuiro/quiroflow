@@ -41,6 +41,7 @@ export default defineApiHandler({ scope: 'appointments:write' }, async ({ event,
     .select(appointmentsResource.select)
     .single()
   if (error) throw new ApiError('server_error', error.message)
+  await pushAppointmentEvent(supabase, id, 'cancelled')
 
   return { data: appointmentsResource.serialize(updated) }
 })

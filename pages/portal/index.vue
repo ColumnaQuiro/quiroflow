@@ -17,11 +17,14 @@ const { upcoming, loading: apptLoading } = usePatientAppointments(
   () => patientId.value,
   () => settings.value,
 )
-const { loading: moneyLoading, balanceCents, creditLedgerCents, activePackages } = usePatientFinancialSummary(() => patientId.value)
+const { loading: moneyLoading, outstandingCents, creditLedgerCents, activePackages } = usePatientFinancialSummary(() => patientId.value)
 const { documents } = usePatientDocuments(() => patientId.value)
 
 const next = computed(() => upcoming.value[0] ?? null)
-const amountDueCents = computed(() => (balanceCents.value < 0 ? -balanceCents.value : 0))
+// What is unpaid, not the balance, as the staff record shows it
+// (components/patient/BalanceCard.vue, utils/owing.ts): a family bono's
+// beneficiary was shown a debt for visits already paid for from the bono.
+const amountDueCents = computed(() => outstandingCents.value)
 const sessionsLeft = computed(() => activePackages.value.reduce((sum, p) => sum + Math.max(0, p.sessions_total - p.sessions_used), 0))
 
 function longWhen(iso: string) {

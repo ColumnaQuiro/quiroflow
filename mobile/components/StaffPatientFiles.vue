@@ -142,11 +142,11 @@ async function onPhotoTaken(e: Event) {
 </script>
 
 <template>
-  <section class="rounded-[13px] border border-line bg-surface px-3.5 py-3" data-cy="patient-files">
+  <section class="rounded-card border border-line bg-surface shadow-card px-3.5 py-3" data-cy="patient-files">
     <div class="flex items-center justify-between">
-      <h2 class="text-[11px] font-semibold uppercase tracking-[.05em] text-ink-faint">{{ t('Files', 'Archivos') }}</h2>
+      <h2 class="text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Files', 'Archivos') }}</h2>
       <button v-if="files.length > PREVIEW_COUNT" type="button" class="text-[12.5px] font-medium text-brand-text" @click="showAll = !showAll">
-        {{ showAll ? t('Fewer', 'Menos') : `${t('All', 'Todos')} ${files.length} ›` }}
+        <template v-if="showAll">{{ t('Fewer', 'Menos') }}</template><template v-else>{{ t('All', 'Todos') }} {{ files.length }} <AppChevron :size="12" /></template>
       </button>
     </div>
 
@@ -162,7 +162,7 @@ async function onPhotoTaken(e: Event) {
           :key="f.id"
           type="button"
           class="relative aspect-square overflow-hidden rounded-[9px] text-left"
-          :class="isImage(f) && urls[f.id] ? 'bg-ink-900' : 'bg-surface-subtle'"
+          :class="isImage(f) && urls[f.id] ? 'bg-black' : 'bg-surface-subtle'"
           :aria-label="f.file_name"
           data-cy="patient-file-tile"
           @click="open(f)"
@@ -179,7 +179,7 @@ async function onPhotoTaken(e: Event) {
       </div>
 
       <p v-if="uploadError" class="mt-2 text-[12.5px] text-danger-text">{{ uploadError }}</p>
-      <label class="mt-2.5 flex h-10 items-center justify-center gap-1.5 rounded-[11px] border border-line-control text-[13.5px] font-medium text-ink-700" :class="uploading ? 'opacity-60' : ''">
+      <label class="mt-2.5 flex h-10 items-center justify-center gap-1.5 rounded-card border border-line-control text-[13.5px] font-medium text-ink-700" :class="uploading ? 'opacity-60' : ''">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
           <path d="M2 5.5A1.5 1.5 0 013.5 4h1.6l1-1.5h3.8l1 1.5h1.6A1.5 1.5 0 0114 5.5v6A1.5 1.5 0 0112.5 13h-9A1.5 1.5 0 012 11.5z" stroke-linejoin="round" />
           <circle cx="8" cy="8.3" r="2.3" />

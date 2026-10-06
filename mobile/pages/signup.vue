@@ -32,6 +32,15 @@ async function onSubmit() {
     error.value = authErrorMessage(signUpError)
     return
   }
+  // An email that already has an account: with email confirmation on,
+  // Supabase answers without an error (so as not to reveal who is signed up)
+  // and with no identities on the user. It used to read as "check your email"
+  // for a link that was never sent. An EMPTY list, not a missing one: a
+  // response without the field says nothing either way.
+  if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+    error.value = t('There is already an account with this email. Sign in, or reset your password.', 'Ya hay una cuenta con este correo. Entra o recupera tu contraseña.')
+    return
+  }
   if (data.session) {
     ;(document.activeElement as HTMLElement | null)?.blur()
     await new Promise((resolve) => setTimeout(resolve, 350))
@@ -148,7 +157,7 @@ function useDifferentEmail() {
           <button type="button" class="font-semibold text-brand-text" @click="useDifferentEmail">{{ t('use a different email', 'usa otro correo') }}</button>.
         </p>
         <NuxtLink to="/login" class="mt-5 block text-center text-[13.5px] font-semibold text-brand-text">
-          &larr; {{ t('Back to sign in', 'Volver a iniciar sesión') }}
+          <AppChevron dir="left" /> {{ t('Back to sign in', 'Volver a iniciar sesión') }}
         </NuxtLink>
       </div>
     </template>

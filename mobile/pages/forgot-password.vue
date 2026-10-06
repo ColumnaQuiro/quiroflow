@@ -69,7 +69,7 @@ async function onSubmit() {
           }}
         </div>
         <NuxtLink to="/login" class="mt-5 block text-center text-[13.5px] font-semibold text-brand-text">
-          &larr; {{ t('Back to sign in', 'Volver a iniciar sesión') }}
+          <AppChevron dir="left" /> {{ t('Back to sign in', 'Volver a iniciar sesión') }}
         </NuxtLink>
       </div>
 
@@ -82,7 +82,7 @@ async function onSubmit() {
           {{ t('Send reset link', 'Enviar enlace') }}
         </OnboardingPrimaryButton>
         <NuxtLink to="/login" class="block text-center text-[13.5px] text-ink-muted">
-          &larr; {{ t('Back to sign in', 'Volver a iniciar sesión') }}
+          <AppChevron dir="left" /> {{ t('Back to sign in', 'Volver a iniciar sesión') }}
         </NuxtLink>
       </form>
     </template>

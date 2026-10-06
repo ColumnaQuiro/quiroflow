@@ -28,7 +28,10 @@ onMounted(() => document.addEventListener('click', onDocumentClick))
 onUnmounted(() => document.removeEventListener('click', onDocumentClick))
 
 async function signOut() {
-  await supabase.auth.signOut()
+  // This device only. The default, scope 'global', also signed the person
+  // out of every other phone and browser; the web's Account page keeps a
+  // separate "sign out of other devices".
+  await supabase.auth.signOut({ scope: 'local' })
   store.reset()
   await navigateTo('/login')
 }

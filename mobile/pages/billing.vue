@@ -17,7 +17,7 @@ const locale = computed(() => t('en-GB', 'es-ES'))
 const { patient } = useIdentity()
 const patientId = computed(() => patient.value?.id ?? '')
 
-const { loading: moneyLoading, balanceCents, creditLedgerCents, activePackages, activeMembership, refresh: refreshMoney } = usePatientFinancialSummary(
+const { loading: moneyLoading, outstandingCents, creditLedgerCents, activePackages, activeMembership, refresh: refreshMoney } = usePatientFinancialSummary(
   () => patientId.value,
 )
 
@@ -35,7 +35,10 @@ onMounted(() => document.addEventListener('visibilitychange', onVisible))
 onBeforeUnmount(() => document.removeEventListener('visibilitychange', onVisible))
 const { invoices, loading: invoicesLoading, busyId, download } = usePatientInvoices(() => patientId.value)
 
-const amountDueCents = computed(() => (balanceCents.value < 0 ? -balanceCents.value : 0))
+// What is unpaid, not the balance, as the staff record shows it
+// (components/patient/BalanceCard.vue, utils/owing.ts): a family bono's
+// beneficiary was shown a debt for visits already paid for from the bono.
+const amountDueCents = computed(() => outstandingCents.value)
 
 const showAll = ref(false)
 const PREVIEW = 8
@@ -50,12 +53,12 @@ function eur(cents: number) {
   <PatientScreen :title="t('Billing', 'Pagos')">
     <div class="grid grid-cols-2 gap-3">
       <div class="rounded-card border border-line bg-surface p-3.5 shadow-card">
-        <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-faint">{{ t('Credit', 'Saldo') }}</p>
+        <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ t('Credit', 'Saldo') }}</p>
         <p v-if="moneyLoading" class="mt-2"><UiSkeleton class="h-6 w-16 rounded-ctlSm" /></p>
         <p v-else class="mt-1 text-[22px] font-[640] tracking-tightTitle text-ink-900">{{ eur(creditLedgerCents) }}</p>
       </div>
       <div class="rounded-card border border-line bg-surface p-3.5 shadow-card">
-        <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-faint">{{ t('Outstanding', 'Pendiente') }}</p>
+        <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ t('Outstanding', 'Pendiente') }}</p>
         <p v-if="moneyLoading" class="mt-2"><UiSkeleton class="h-6 w-16 rounded-ctlSm" /></p>
         <p v-else class="mt-1 text-[22px] font-[640] tracking-tightTitle" :class="amountDueCents > 0 ? 'text-danger-text' : 'text-ink-900'">
           {{ eur(amountDueCents) }}

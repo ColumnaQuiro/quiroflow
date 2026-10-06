@@ -114,7 +114,7 @@ async function save() {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex flex-col justify-end bg-ink-900/40 md:items-center md:justify-center" data-cy="new-patient-sheet" @click.self="emit('close')">
+  <div class="fixed inset-0 z-50 flex flex-col justify-end bg-black/40 md:items-center md:justify-center" data-cy="new-patient-sheet" @click.self="emit('close')">
     <form
       class="flex max-h-[92%] w-full flex-col gap-3 overflow-y-auto rounded-t-[22px] bg-surface px-4 pt-2.5 shadow-popover md:max-w-[460px] md:rounded-[18px] md:pt-5"
       style="padding-bottom: max(env(safe-area-inset-bottom), 1.25rem)"
@@ -152,7 +152,7 @@ async function save() {
 
       <p v-if="error" role="alert" class="text-[13px] text-danger-text">{{ error }}</p>
 
-      <button type="submit" class="flex h-11 items-center justify-center rounded-[12px] bg-brand text-[15px] font-semibold text-white disabled:opacity-50" :disabled="saving" data-cy="new-patient-save">
+      <button type="submit" class="flex h-11 items-center justify-center rounded-card bg-brand text-[15px] font-semibold text-white disabled:opacity-50" :disabled="saving" data-cy="new-patient-save">
         {{ saving ? t('Saving…', 'Guardando…') : createdWithoutPhone ? t('Continue without the phone', 'Continuar sin el teléfono') : t('Create patient', 'Crear paciente') }}
       </button>
       <button type="button" class="py-1 text-[13.5px] text-ink-muted" @click="emit('close')">{{ t('Cancel', 'Cancelar') }}</button>

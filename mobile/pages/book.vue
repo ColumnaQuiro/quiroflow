@@ -79,6 +79,13 @@ const locale = computed(() => t('en-GB', 'es-ES'))
 // else.
 const route = useRoute()
 const rescheduleId = computed(() => (typeof route.query.reschedule === 'string' ? route.query.reschedule : null))
+// Back to wherever the booking was opened from (Visits for a reschedule),
+// Home when there is nothing to go back to.
+const router = useRouter()
+function goBackFromBook() {
+  if (window.history.length > 1) router.back()
+  else navigateTo('/')
+}
 const rescheduleTarget = ref<RescheduleTarget | null>(null)
 
 const phase = ref<'loading' | 'not_available' | 'select' | 'datetime' | 'confirm' | 'success'>('loading')
@@ -371,13 +378,12 @@ async function submitBooking() {
 </script>
 
 <template>
-  <div class="flex h-full flex-col p-4">
-    <div class="mb-4 flex items-center gap-2">
-      <NuxtLink to="/" class="text-[13px] font-medium text-brand-text">&larr; {{ t('Back', 'Atrás') }}</NuxtLink>
-      <h1 class="ml-auto text-[15px] font-semibold text-ink-900">{{ t('New appointment', 'Nueva cita') }}</h1>
-    </div>
+  <div class="flex h-full flex-col">
+    <!-- Back goes where they came from (Visits, for a reschedule), not always Home. -->
+    <AppPageHeader :title="rescheduleId ? t('Change appointment', 'Cambiar cita') : t('New appointment', 'Nueva cita')" back @back="goBackFromBook" />
+    <div class="mx-auto flex w-full min-h-0 max-w-[44rem] flex-1 flex-col p-4">
 
-    <div v-if="phase === 'loading'" class="flex flex-1 items-center justify-center text-sm text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+    <AppSkeletonList v-if="phase === 'loading'" :rows="4" class="flex-1" />
     <div v-else-if="phase === 'not_available'" class="flex flex-1 items-center justify-center px-6 text-center text-sm text-ink-muted">
       <template v-if="rescheduleId">{{ t("This appointment can't be moved from the app — please contact the clinic.", 'Esta cita no se puede cambiar desde la app: contacta con la clínica.') }}</template>
       <template v-else>{{ t("Online booking isn't available for your clinic right now — please contact them directly.", 'Ahora mismo tu clínica no tiene disponible la reserva online: contacta directamente con ella.') }}</template>
@@ -402,7 +408,7 @@ async function submitBooking() {
       <!-- Types the clinic takes payment for when they are booked. The app
            cannot take a payment, so the server refuses them here; the web
            booking page can. -->
-      <div v-if="onlinePaymentTypes.length > 0" class="rounded-card border border-line bg-surface-subtle p-3 text-[12.5px] text-ink-muted">
+      <div v-if="onlinePaymentTypes.length > 0" class="rounded-card border border-line bg-surface shadow-card-subtle p-3 text-[12.5px] text-ink-muted">
         <p>
           {{ t("These appointments are paid online when you book them, which the app can't do yet:", 'Estas citas se pagan online al reservarlas, y la app todavía no puede hacerlo:') }}
         </p>
@@ -482,7 +488,7 @@ async function submitBooking() {
     </div>
 
     <div v-else-if="phase === 'confirm'" class="space-y-4">
-      <div class="rounded-card border border-line bg-surface p-4">
+      <div class="rounded-card border border-line bg-surface shadow-card p-4">
         <p class="text-[13.5px] font-medium text-ink-900">{{ typeName }}</p>
         <p v-if="practitionerName" class="mt-1 text-[12.5px] text-ink-muted">{{ t('with', 'con') }} {{ practitionerName }}</p>
         <p class="mt-1 text-[12.5px] text-ink-muted first-letter:uppercase">{{ selectedSlot?.toLocaleString(locale, { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: clinicTimeZone }) }}</p>
@@ -496,14 +502,15 @@ async function submitBooking() {
       </div>
       <p v-else class="text-[12.5px] text-ink-muted">{{ t('This will move your existing appointment to the time above.', 'Tu cita actual se moverá a la hora de arriba.') }}</p>
       <p v-if="submitError" class="text-[12.5px] text-danger-text">{{ submitError }}</p>
-      <UiBtn variant="primary" class="w-full" :disabled="submitting" @click="submitBooking">{{ submitting ? t('Booking…', 'Reservando…') : t('Confirm booking', 'Confirmar reserva') }}</UiBtn>
-      <button type="button" class="w-full text-center text-[12.5px] text-ink-muted" @click="phase = 'datetime'">&larr; {{ t('Choose a different time', 'Elegir otra hora') }}</button>
+      <UiBtn variant="primary" class="w-full" :disabled="submitting" @click="submitBooking">{{ submitting ? (rescheduleId ? t('Moving…', 'Cambiando…') : t('Booking…', 'Reservando…')) : rescheduleId ? t('Confirm the change', 'Confirmar el cambio') : t('Confirm booking', 'Confirmar reserva') }}</UiBtn>
+      <button type="button" class="w-full text-center text-[12.5px] text-ink-muted" @click="phase = 'datetime'"><AppChevron dir="left" /> {{ t('Choose a different time', 'Elegir otra hora') }}</button>
     </div>
 
     <div v-else-if="phase === 'success'" class="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-      <p class="text-[15px] font-semibold text-ink-900">{{ t('Appointment booked', 'Cita reservada') }}</p>
+      <p class="text-[15px] font-semibold text-ink-900">{{ rescheduleId ? t('Appointment changed', 'Cita cambiada') : t('Appointment booked', 'Cita reservada') }}</p>
       <p class="text-[13px] text-ink-muted first-letter:uppercase">{{ confirmation && new Date(confirmation.starts_at).toLocaleString(locale, { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: clinicTimeZone }) }}</p>
       <NuxtLink to="/" class="mt-2 text-[13px] font-medium text-brand-text">{{ t('Back to home', 'Volver al inicio') }}</NuxtLink>
+    </div>
     </div>
   </div>
 </template>

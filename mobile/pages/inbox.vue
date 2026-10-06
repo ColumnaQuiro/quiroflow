@@ -10,7 +10,7 @@ const { context, loading, can } = usePractitionerContext()
 
 <template>
   <div class="flex h-full min-h-0 flex-col">
-    <div v-if="loading" class="flex min-h-0 flex-1 items-center justify-center text-sm text-ink-faint">{{ t('Loading…', 'Cargando…') }}</div>
+    <AppSkeletonList v-if="loading" avatar class="min-h-0 flex-1" />
     <p v-else-if="!context" class="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-sm text-ink-muted">
       {{ t("This account isn't linked to a team record.", 'Esta cuenta no está vinculada a una ficha de equipo.') }}
     </p>

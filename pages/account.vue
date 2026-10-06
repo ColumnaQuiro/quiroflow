@@ -315,7 +315,7 @@ async function deleteAccount() {
     showToast(err?.data?.statusMessage ?? t('Could not remove your access.', 'No se pudo eliminar tu acceso.'), 'error')
     return
   }
-  await supabase.auth.signOut()
+  await supabase.auth.signOut({ scope: 'local' })
   await navigateTo('/login')
 }
 

@@ -131,7 +131,7 @@ async function start() {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex flex-col justify-end bg-ink-900/40 md:items-center md:justify-center" data-cy="reception-setup" @click.self="emit('close')">
+  <div class="fixed inset-0 z-50 flex flex-col justify-end bg-black/40 md:items-center md:justify-center" data-cy="reception-setup" @click.self="emit('close')">
     <div
       class="flex max-h-[92%] w-full flex-col gap-3 overflow-y-auto rounded-t-[22px] bg-surface px-4 pt-2.5 shadow-popover md:max-w-[480px] md:rounded-[18px] md:pt-5"
       style="padding-bottom: max(env(safe-area-inset-bottom), 1.25rem)"
@@ -142,7 +142,7 @@ async function start() {
       <div class="mx-auto mb-0.5 h-1 w-[38px] shrink-0 rounded-full bg-line-control md:hidden" />
       <p class="text-[17px] font-semibold text-ink-900">{{ t('Sign at reception', 'Firmar en recepción') }}</p>
       <p class="-mt-1.5 text-[13px] leading-snug text-ink-muted">
-        {{ t('The iPad shows only these forms, one after another. Leaving needs Face ID or the reception code.', 'El iPad muestra solo estos formularios, uno tras otro. Para salir hace falta Face ID o el código de recepción.') }}
+        {{ t('Only these forms will show, one after another. Leaving needs Face ID or the reception code.', 'Solo se mostrarán estos formularios, uno tras otro. Para salir hace falta Face ID o el código de recepción.') }}
       </p>
 
       <template v-if="loading">
@@ -151,26 +151,26 @@ async function start() {
       </template>
       <template v-else>
         <div v-if="pending.length" class="flex flex-col gap-1.5">
-          <p class="text-[11px] font-semibold uppercase tracking-[.05em] text-ink-faint">{{ t('Waiting for them', 'Pendientes') }}</p>
-          <label v-for="d in pending" :key="d.id" class="flex min-h-11 cursor-pointer items-center gap-3 rounded-[12px] border border-line-control px-3.5" data-cy="reception-pending">
+          <p class="text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Waiting for them', 'Pendientes') }}</p>
+          <label v-for="d in pending" :key="d.id" class="flex min-h-11 cursor-pointer items-center gap-3 rounded-card border border-line-control px-3.5" data-cy="reception-pending">
             <input type="checkbox" class="h-5 w-5 accent-brand" :checked="chosenDocs.has(d.id)" @change="toggle(chosenDocs, d.id)" />
             <span class="text-[14px] text-ink-900">{{ d.title }}</span>
           </label>
         </div>
         <div v-if="templates.length" class="flex flex-col gap-1.5">
-          <p class="text-[11px] font-semibold uppercase tracking-[.05em] text-ink-faint">{{ t('Add a form', 'Añadir un formulario') }}</p>
-          <label v-for="tp in templates" :key="tp.id" class="flex min-h-11 cursor-pointer items-center gap-3 rounded-[12px] border border-line-control px-3.5" data-cy="reception-template">
+          <p class="text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Add a form', 'Añadir un formulario') }}</p>
+          <label v-for="tp in templates" :key="tp.id" class="flex min-h-11 cursor-pointer items-center gap-3 rounded-card border border-line-control px-3.5" data-cy="reception-template">
             <input type="checkbox" class="h-5 w-5 accent-brand" :checked="chosenTemplates.has(tp.id)" @change="toggle(chosenTemplates, tp.id)" />
             <span class="text-[14px] text-ink-900">{{ tp.title }}</span>
           </label>
         </div>
-        <p v-if="!pending.length && !templates.length" class="rounded-card border border-line bg-surface-page px-3.5 py-3 text-[13px] text-ink-muted">
+        <p v-if="!pending.length && !templates.length" class="rounded-card border border-line bg-surface shadow-card-page px-3.5 py-3 text-[13px] text-ink-muted">
           {{ t('Nothing to sign: no pending forms and no templates yet. Templates are set up on the web, in Settings.', 'No hay nada que firmar: ni formularios pendientes ni plantillas. Las plantillas se crean en la web, en Ajustes.') }}
         </p>
 
-        <div v-if="needsCode" class="flex flex-col gap-1.5 rounded-card border border-line bg-surface-page p-3.5">
-          <p class="text-[13.5px] font-semibold text-ink-900">{{ t('Reception code for this iPad', 'Código de recepción de este iPad') }}</p>
-          <p class="text-[12.5px] leading-snug text-ink-muted">{{ t('4 to 6 digits, for whoever takes the iPad back. Asked once on this device.', 'De 4 a 6 cifras, para quien recoja el iPad. Se pide una vez en este dispositivo.') }}</p>
+        <div v-if="needsCode" class="flex flex-col gap-1.5 rounded-card border border-line bg-surface shadow-card-page p-3.5">
+          <p class="text-[13.5px] font-semibold text-ink-900">{{ t('Reception code for this device', 'Código de recepción de este dispositivo') }}</p>
+          <p class="text-[12.5px] leading-snug text-ink-muted">{{ t('4 to 6 digits, for whoever takes the device back. Asked once on this device.', 'De 4 a 6 cifras, para quien lo recoja. Se pide una vez en este dispositivo.') }}</p>
           <div class="mt-1 grid grid-cols-2 gap-2">
             <input v-model="code" type="password" inputmode="numeric" autocomplete="off" maxlength="6" :placeholder="t('Code', 'Código')" class="h-11 rounded-ctl border border-line-control bg-surface px-3 text-center text-[18px] tracking-[.3em]" data-cy="reception-code" />
             <input v-model="codeAgain" type="password" inputmode="numeric" autocomplete="off" maxlength="6" :placeholder="t('Again', 'Repítelo')" class="h-11 rounded-ctl border border-line-control bg-surface px-3 text-center text-[18px] tracking-[.3em]" data-cy="reception-code-again" />
@@ -182,8 +182,8 @@ async function start() {
       </template>
 
       <p v-if="error" role="alert" class="text-[13px] text-danger-text">{{ error }}</p>
-      <button type="button" class="flex h-11 items-center justify-center rounded-[12px] bg-brand text-[15px] font-semibold text-white disabled:opacity-50" :disabled="loading || starting || count === 0" data-cy="reception-start" @click="start">
-        {{ starting ? t('Starting…', 'Preparando…') : t(`Hand over the iPad · ${count} ${count === 1 ? 'form' : 'forms'}`, `Entregar el iPad · ${count} ${count === 1 ? 'formulario' : 'formularios'}`) }}
+      <button type="button" class="flex h-11 items-center justify-center rounded-card bg-brand text-[15px] font-semibold text-white disabled:opacity-50" :disabled="loading || starting || count === 0" data-cy="reception-start" @click="start">
+        {{ starting ? t('Starting…', 'Preparando…') : t(`Hand it over · ${count} ${count === 1 ? 'form' : 'forms'}`, `Entregar al paciente · ${count} ${count === 1 ? 'formulario' : 'formularios'}`) }}
       </button>
       <button type="button" class="py-1 text-[13.5px] text-ink-muted" @click="emit('close')">{{ t('Cancel', 'Cancelar') }}</button>
     </div>

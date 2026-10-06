@@ -31,10 +31,9 @@ export function bonoSessionDescription(packageName: string): string {
  */
 export function refundDescription(invoiceNumber: string | null, reason: string): string {
   const trimmed = reason.trim()
-  // Null is defensive rather than reachable today: every refund is against a
-  // receipt, and a payment can only be refunded when it has one. It exists so
-  // that changing the latter produces a description rather than
-  // "Reembolso (null)", which is not a description of anything.
+  // Null for a payment refunded with no receipt behind it -- most imported
+  // PracticeHub money (see utils/paymentRefund). "Reembolso (null)" is not a
+  // description of anything.
   if (!invoiceNumber) return trimmed ? `Reembolso — ${trimmed}` : 'Reembolso'
   return trimmed ? `Reembolso (${invoiceNumber}) — ${trimmed}` : `Reembolso — ${invoiceNumber}`
 }

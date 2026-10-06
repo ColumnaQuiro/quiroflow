@@ -28,6 +28,9 @@ const props = defineProps<{
   patientId?: string | null
   phoneNumber?: string | null
   patientFirstName?: string
+  /** Chosen on opening when approved (Recordatorios: the account's recall template), in the patient's language if there is that variant. */
+  defaultTemplateName?: string | null
+  patientPreferredLanguage?: string | null
 }>()
 const emit = defineEmits<{ close: []; sent: [] }>()
 
@@ -66,6 +69,12 @@ onMounted(async () => {
   try {
     const { templates: list } = await useStaffFetch<{ templates: Template[] }>('/api/whatsapp/templates')
     templates.value = list
+    // As the web's SendWhatsAppModal: the patient's language first, then any
+    // approved variant of it.
+    const candidates = props.defaultTemplateName ? list.filter((tpl) => tpl.name === props.defaultTemplateName) : []
+    const lang = props.patientPreferredLanguage ?? ''
+    const match = candidates.find((tpl) => tpl.language === lang) ?? candidates.find((tpl) => tpl.language.split('_')[0] === lang) ?? candidates[0]
+    if (match) choose(match)
   } catch (err: unknown) {
     loadError.value = (err as { data?: { statusMessage?: string } })?.data?.statusMessage ?? t('Could not load the WhatsApp templates.', 'No se han podido cargar las plantillas de WhatsApp.')
   } finally {

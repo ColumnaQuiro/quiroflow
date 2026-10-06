@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { DocField, DocFieldType } from '~/utils/docFields'
+import type { DocField, DocFieldType } from '../utils/docFields'
 
 const props = defineProps<{ fields: DocField[]; mode: 'build' | 'fill' }>()
 const emit = defineEmits<{ 'update:fields': [DocField[]] }>()

@@ -6,7 +6,7 @@ const t = useT()
 </script>
 
 <template>
-  <div v-if="current" class="fixed inset-0 z-[60] flex flex-col justify-end bg-ink-900/40 md:items-center md:justify-center" data-cy="app-confirm" @click.self="answer(false)">
+  <div v-if="current" class="fixed inset-0 z-[60] flex flex-col justify-end bg-black/40 md:items-center md:justify-center" data-cy="app-confirm" @click.self="answer(false)">
     <div
       class="flex w-full flex-col gap-3 rounded-t-[22px] bg-surface px-4 pt-4 shadow-popover md:max-w-[420px] md:rounded-[18px]"
       style="padding-bottom: max(env(safe-area-inset-bottom), 1.25rem)"

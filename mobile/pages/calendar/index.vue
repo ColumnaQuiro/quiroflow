@@ -695,7 +695,7 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
     </div>
 
     <div v-if="notice" class="pointer-events-none fixed inset-x-0 bottom-24 z-40 flex justify-center px-4 md:bottom-6" role="status">
-      <span class="rounded-full bg-ink-900 px-4 py-2 text-[13px] font-medium text-white shadow-popover" data-cy="agenda-notice">{{ notice }}</span>
+      <span class="rounded-full bg-ink-900 px-4 py-2 text-[13px] font-medium text-surface shadow-popover" data-cy="agenda-notice">{{ notice }}</span>
     </div>
 
     <NewVisitSheet

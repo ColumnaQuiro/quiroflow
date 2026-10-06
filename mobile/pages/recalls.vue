@@ -329,11 +329,11 @@ const canBook = computed(() => !!context.value && !restricted('calendar_read_onl
     </template>
 
     <div v-if="notice" class="pointer-events-none fixed inset-x-0 bottom-24 z-40 flex justify-center px-4 md:bottom-6" role="status">
-      <span class="rounded-full bg-ink-900 px-4 py-2 text-[13px] font-medium text-white shadow-popover" data-cy="recalls-notice">{{ notice }}</span>
+      <span class="rounded-full bg-ink-900 px-4 py-2 text-[13px] font-medium text-surface shadow-popover" data-cy="recalls-notice">{{ notice }}</span>
     </div>
 
     <!-- More: log a call, book, snooze, dismiss; and, back from a call, how it went -->
-    <div v-if="menuFor || calledFor" class="fixed inset-0 z-50 flex flex-col justify-end bg-ink-900/40 md:items-center md:justify-center" data-cy="recall-sheet" @click.self="menuFor = null; calledFor = null">
+    <div v-if="menuFor || calledFor" class="fixed inset-0 z-50 flex flex-col justify-end bg-black/40 md:items-center md:justify-center" data-cy="recall-sheet" @click.self="menuFor = null; calledFor = null">
       <div class="flex max-h-[92%] w-full flex-col gap-1 overflow-y-auto rounded-t-[22px] bg-surface px-4 pt-2.5 shadow-popover md:max-w-[440px] md:rounded-[18px] md:pt-5" style="padding-bottom: max(env(safe-area-inset-bottom), 1.25rem)" role="dialog" aria-modal="true" :aria-label="nameOf((menuFor ?? calledFor)!)">
         <div class="mx-auto mb-1.5 h-1 w-[38px] shrink-0 rounded-full bg-line-control md:hidden" />
         <p class="px-1 text-[16px] font-semibold text-ink-900">{{ nameOf((menuFor ?? calledFor)!) }}</p>

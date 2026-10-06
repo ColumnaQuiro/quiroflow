@@ -867,7 +867,7 @@ watch(
     />
 
     <!-- Already booked (or nothing this role can book): say so instead -->
-    <div v-if="alreadyBookedOpen" class="fixed inset-0 z-50 flex flex-col justify-end bg-ink-900/40 md:items-center md:justify-center" data-cy="visit-already-booked" @click.self="alreadyBookedOpen = false">
+    <div v-if="alreadyBookedOpen" class="fixed inset-0 z-50 flex flex-col justify-end bg-black/40 md:items-center md:justify-center" data-cy="visit-already-booked" @click.self="alreadyBookedOpen = false">
       <div class="flex w-full flex-col gap-3 rounded-t-[22px] bg-surface px-4 pt-2.5 shadow-popover md:max-w-[480px] md:rounded-[18px] md:pt-5" style="padding-bottom: max(env(safe-area-inset-bottom), 1.25rem)" role="dialog" aria-modal="true">
         <div class="mx-auto mb-0.5 h-1 w-[38px] shrink-0 rounded-full bg-line-control md:hidden" />
         <div class="flex items-center justify-between gap-2">
@@ -886,7 +886,7 @@ watch(
     </div>
 
     <!-- Every earlier note, in full -->
-    <div v-if="allNotesOpen" class="fixed inset-0 z-50 flex flex-col justify-end bg-ink-900/40 md:items-center md:justify-center" data-cy="visit-all-notes-sheet" @click.self="allNotesOpen = false">
+    <div v-if="allNotesOpen" class="fixed inset-0 z-50 flex flex-col justify-end bg-black/40 md:items-center md:justify-center" data-cy="visit-all-notes-sheet" @click.self="allNotesOpen = false">
       <div class="flex max-h-[88%] w-full flex-col rounded-t-[22px] bg-surface shadow-popover md:max-w-[600px] md:rounded-[18px]" role="dialog" aria-modal="true" :aria-label="t('Previous notes', 'Notas anteriores')">
         <div class="shrink-0 px-4 pt-2.5">
           <div class="mx-auto mb-2 h-1 w-[38px] rounded-full bg-line-control md:hidden" />

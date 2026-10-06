@@ -82,6 +82,13 @@ onUnmounted(() => document.removeEventListener('pointerdown', dismissKeyboardOnO
   position: absolute;
   inset: -8px;
 }
+/* The page behind the root box, which iOS shows when the view bounces past
+   either end: the theme's own grey, not the WebView's white, so a dark
+   screen does not flash a white strip. */
+html,
+body {
+  background-color: rgb(var(--color-surface-page));
+}
 /* An embedded sign-in shell (components/onboarding/Layout.vue) is white edge
    to edge, so the strips behind the status bar and the home indicator --
    which belong to the root box below, grey like every other page -- are

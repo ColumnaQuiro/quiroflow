@@ -6472,6 +6472,10 @@ export type Database = {
         Args: { p_patient_ids: string[] }
         Returns: { patient_id: string; last_visit_at: string | null; completed_count: number; next_visit_at: string | null; completed_in_plan: number }[]
       }
+      undo_visit: {
+        Args: { p_appointment_id: string }
+        Returns: Json
+      }
       team_two_factor_status: {
         Args: { p_account_id: string }
         Returns: { team_member_id: string; enrolled: boolean }[]

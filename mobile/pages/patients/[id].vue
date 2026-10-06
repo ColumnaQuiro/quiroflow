@@ -165,6 +165,15 @@ async function loadPlan() {
   if (planErr || apptErr) planError.value = t('Could not load the care plan.', 'No se ha podido cargar el plan.')
   planLoading.value = false
 }
+// "Añadir plan" / "Editar" (CarePlanSheet): anyone who sees the patient, as
+// on the web's Clinical tab; RLS scopes it like the patient.
+const planSheetOpen = ref(false)
+const clinicToday = computed(() => clinicDateOf(new Date(), timeZone.value))
+function onPlanSaved() {
+  planSheetOpen.value = false
+  planLoading.value = true
+  loadPlan()
+}
 const planPercent = computed(() => (plan.value && plan.value.total_visits > 0 ? Math.min(100, Math.round((completedInPlan.value / plan.value.total_visits) * 100)) : 0))
 function apptWhen(iso: string) {
   const d = new Date(iso)
@@ -176,6 +185,17 @@ const showMoney = computed(() => can('billing_history_view'))
 // Handed an empty id until the role is known to see money, so nothing is
 // fetched for a role that does not.
 const money = usePatientFinancialSummary(() => (showMoney.value ? patientId : ''))
+// The web Billing tab's rules: paying needs payments_allocate; selling a bono
+// needs packages_edit or billing_config (and taking money for it, the same).
+const canTakePayments = computed(() => can('payments_allocate'))
+const canSellBonos = computed(() => (can('packages_edit') || can('billing_config')) && can('payments_allocate'))
+const moneyMode = ref<'pay' | 'sell' | null>(null)
+const moneyNotice = ref('')
+async function onMoneyDone(message: string) {
+  moneyMode.value = null
+  moneyNotice.value = message
+  await money.refresh()
+}
 // The composable keeps what it loaded for the life of the app, and the app
 // stays open all day: a balance read this morning is not the balance now.
 // Refreshed on arrival unless a load is already under way.
@@ -192,6 +212,15 @@ const bonoSummary = computed(() => {
 
 // -- Forms (patient_docs) -----------------------------------------------------
 const receptionOpen = ref(false)
+
+// "Editar": numbers, email, flags and the sticky note (EditPatientSheet).
+// patients_edit is what the web's details and panels need too.
+const canEdit = computed(() => can('patients_edit'))
+const editOpen = ref(false)
+function onEdited() {
+  loadPatient()
+  loadNumbers()
+}
 interface Doc { id: string; title: string; completed_at: string | null; public_token: string | null }
 const docs = ref<Doc[]>([])
 const docsLoading = ref(true)
@@ -277,7 +306,9 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
   <StaffPatientList class="hidden lg:flex lg:w-80 lg:shrink-0 lg:border-r lg:border-line" :selected-id="patientId" />
   <div class="flex h-full min-h-0 min-w-0 flex-1 flex-col">
     <!-- Named for the patient, not "Patient", once they are loaded. -->
-    <AppPageHeader :title="patient ? `${patient.first_name} ${patient.last_name ?? ''}`.trim() : t('Patient', 'Paciente')" back back-hidden-class="lg:hidden" @back="goBack" />
+    <AppPageHeader :title="patient ? `${patient.first_name} ${patient.last_name ?? ''}`.trim() : t('Patient', 'Paciente')" back back-hidden-class="lg:hidden" @back="goBack">
+      <button v-if="patient && canEdit" type="button" class="h-9 shrink-0 rounded-ctl px-2 text-[14px] font-semibold text-brand-text" data-cy="patient-edit" @click="editOpen = true">{{ t('Edit', 'Editar') }}</button>
+    </AppPageHeader>
 
     <p v-if="!patientLoading && !patient" class="flex flex-1 items-center justify-center px-6 text-center text-sm" :class="patientError ? 'text-danger-text' : 'text-ink-muted'">
       {{ patientError || t('Patient not found.', 'Paciente no encontrado.') }}
@@ -347,7 +378,10 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
         <template v-else>
           <div class="flex items-center justify-between gap-2">
             <h2 class="text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ plan ? t('Care plan', 'Plan de tratamiento') : t('Next visit', 'Próxima visita') }}</h2>
-            <span v-if="plan" class="text-[12.5px] text-ink-muted2">{{ cadenceLabel(plan, t) }}</span>
+            <span class="flex items-center gap-2">
+              <span v-if="plan" class="text-[12.5px] text-ink-muted2">{{ cadenceLabel(plan, t) }}</span>
+              <button type="button" class="-my-2 flex h-9 items-center px-1 text-[12.5px] font-semibold text-brand-text" data-cy="patient-plan-edit" @click="planSheetOpen = true">{{ plan ? t('Edit', 'Editar') : t('+ Add plan', '+ Añadir plan') }}</button>
+            </span>
           </div>
           <!-- With calendar_scope 'own' the visits a colleague saw are not
                readable here, so the count would come out short: "visit 2 of
@@ -410,6 +444,12 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
           </template>
         </section>
       </div>
+      <!-- Taking money at the desk, as the web's Billing tab allows the role -->
+      <div v-if="showMoney && (canTakePayments || canSellBonos)" class="grid gap-2" :class="canTakePayments && canSellBonos ? 'grid-cols-2' : 'grid-cols-1'" data-cy="patient-money-actions">
+        <button v-if="canTakePayments" type="button" class="flex h-11 items-center justify-center rounded-card bg-brand text-[14px] font-semibold text-white" data-cy="patient-take-payment" @click="moneyMode = 'pay'">{{ t('Take payment', 'Cobrar') }}</button>
+        <button v-if="canSellBonos" type="button" class="flex h-11 items-center justify-center rounded-card border border-line-control bg-surface text-[14px] font-semibold text-ink-900" data-cy="patient-sell-bono" @click="moneyMode = 'sell'">{{ t('Sell a bono', 'Vender bono') }}</button>
+      </div>
+      <p v-if="moneyNotice" class="rounded-card border border-success-border bg-success-bg px-3 py-2 text-[13px] font-medium text-success-text" role="status" data-cy="patient-money-notice">{{ moneyNotice }}</p>
 
       <!-- Forms -->
       <section class="rounded-card border border-line bg-surface shadow-card px-3.5 py-3" data-cy="patient-forms">
@@ -471,6 +511,9 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
     </div>
 
     <BookVisitSheet v-if="bookOpen" :patient-id="patientId" @booked="onBooked" @close="bookOpen = false" />
+    <RecordMoneySheet v-if="moneyMode" :patient-id="patientId" :mode="moneyMode" @done="onMoneyDone" @close="moneyMode = null" />
+    <CarePlanSheet v-if="planSheetOpen" :patient-id="patientId" :plan="plan" :today="clinicToday" @saved="onPlanSaved" @close="planSheetOpen = false" />
+    <EditPatientSheet v-if="editOpen && patient" :patient-id="patientId" :patient="patient" @saved="onEdited" @close="editOpen = false" />
     <ReceptionSetupSheet v-if="receptionOpen" :patient-id="patientId" @close="receptionOpen = false" />
   </div>
   </div>

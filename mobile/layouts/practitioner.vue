@@ -3,6 +3,9 @@
 // Patients/Inbox doesn't re-register a push token on every navigation.
 const { register: registerForPush } = usePushNotifications()
 onMounted(registerForPush)
+// The Inbox tab's unread count, kept current from here for the whole app.
+const { start: startInboxBadge } = useInboxUnread()
+onMounted(startInboxBadge)
 
 // Hidden (not just covered) while the keyboard is up: with it gone, the
 // page's slot fills the tab bar's space too, so a page like Inbox that pads

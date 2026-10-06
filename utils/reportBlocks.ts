@@ -34,6 +34,11 @@ export type BlockPeriod = { mode: 'page' } | { mode: 'own'; preset: OwnPeriod }
 export interface BlockConfig {
   metric: string
   split: SplitKey
+  /**
+   * A second split, across the top of a table, with `split` down the side:
+   * "by practitioner and stage". Tables only; any other chart ignores it.
+   */
+  columns?: SplitKey | null
   chart: ChartKind
   /** Narrower than the page, never wider: a block cannot show a practitioner the page's own-only scope hides. */
   filters?: { practitionerId?: string | null; clinicId?: string | null; method?: string | null }
@@ -88,6 +93,7 @@ export function normaliseBlocks(raw: unknown): ReportBlock[] {
       config: {
         metric: b.config.metric,
         split: typeof b.config.split === 'string' ? b.config.split : 'none',
+        columns: typeof b.config.columns === 'string' ? (b.config.columns as SplitKey) : null,
         chart: typeof b.config.chart === 'string' ? b.config.chart : 'number',
         filters: b.config.filters ?? undefined,
         period: b.config.period?.mode === 'own' ? { mode: 'own', preset: b.config.period.preset } : { mode: 'page' },
@@ -105,7 +111,7 @@ export function normaliseBlocks(raw: unknown): ReportBlock[] {
 export function savedReportConfig(config: unknown): BlockConfig | null {
   const c = (config ?? {}) as Record<string, any>
   if (c.v === 2 && typeof c.metric === 'string') {
-    return { metric: c.metric, split: c.split ?? 'none', chart: c.chart ?? 'bar', filters: c.filters ?? undefined, period: c.period ?? { mode: 'page' } }
+    return { metric: c.metric, split: c.split ?? 'none', columns: typeof c.columns === 'string' ? (c.columns as SplitKey) : null, chart: c.chart ?? 'bar', filters: c.filters ?? undefined, period: c.period ?? { mode: 'page' } }
   }
   const chart: ChartKind = c.chartType === 'line' ? 'line' : c.chartType === 'table' ? 'table' : 'bar'
   const groupBy: Record<string, SplitKey> = {
@@ -127,10 +133,10 @@ export function savedReportConfig(config: unknown): BlockConfig | null {
 }
 
 type Preset = Omit<ReportBlock, 'id'>
-const b = (title: string, span: ReportBlock['span'], metric: string, split: SplitKey, chart: ChartKind, origin: string | null, period?: BlockPeriod): Preset => ({
+const b = (title: string, span: ReportBlock['span'], metric: string, split: SplitKey, chart: ChartKind, origin: string | null, period?: BlockPeriod, columns?: SplitKey): Preset => ({
   title,
   span,
-  config: { metric, split, chart, period: period ?? { mode: 'page' } },
+  config: { metric, split, ...(columns ? { columns } : {}), chart, period: period ?? { mode: 'page' } },
   origin,
 })
 
@@ -165,6 +171,10 @@ export function reportLibrary(t: (en: string, es: string) => string): { report: 
         // appointment types, not only by the stage each one is tagged with.
         b(t('Completed visits by appointment type', 'Visitas completadas por tipo de cita'), 6, 'visits_completed', 'appointment_type', 'table', STATS),
         b(t('Month by month', 'Mes a mes'), 12, 'visits_completed', 'month', 'table', STATS),
+        // What each practitioner's month was made of: first visits with the
+        // offer, reports, adjustments, maintenance -- one row each, a column
+        // per stage, so they read side by side.
+        b(t('Completed visits by practitioner and stage', 'Visitas completadas por profesional y etapa'), 12, 'visits_completed', 'practitioner', 'table', STATS, undefined, 'stage'),
       ],
     },
     {
@@ -276,6 +286,7 @@ export function pageTemplates(t: (en: string, es: string) => string): PageTempla
       blocks: [
         b(t('Income paid by practitioner', 'Ingresos por profesional'), 6, 'income_paid', 'practitioner', 'bar', null),
         b(t('Completed visits by practitioner', 'Visitas completadas por profesional'), 6, 'visits_completed', 'practitioner', 'bar', null),
+        { ...lib.find((p) => p.config.metric === 'visits_completed' && p.config.columns === 'stage')!, origin: null },
         b(t('PVA by practitioner', 'PVA por profesional'), 6, 'pva', 'practitioner', 'table', null),
         b(t('Show rate by practitioner', 'Asistencia por profesional'), 6, 'show_rate', 'practitioner', 'table', null),
         find('income_paid', 'practitioner') && b(t('Practitioners by month', 'Profesionales por mes'), 12, 'income_paid', 'practitioner', 'line', null, { mode: 'own', preset: 'last_6_months' }),

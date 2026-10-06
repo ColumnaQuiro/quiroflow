@@ -19,6 +19,7 @@ interface WaitlistRow {
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+const { showToast } = useToast()
 
 const STATUS_LABEL: Record<WaitlistRow['status'], [string, string]> = {
   waiting: ['Waiting', 'Esperando'],
@@ -47,12 +48,18 @@ async function load() {
   loading.value = true
   let query = supabase
     .from('waitlist_entries')
-    .select('id, status, created_at, offer_expires_at, offered_starts_at, patients(id, first_name, last_name), appointment_types(name), team_members:practitioner_id(full_name)')
+    // appointment_types named by column: waitlist_entries points at it twice
+    // (appointment_type_id, offered_appointment_type_id), and the bare embed
+    // is refused as ambiguous (PGRST201) -- the WHOLE select, so this page
+    // read nothing and said "No one on the waitlist" whatever was on it.
+    .select('id, status, created_at, offer_expires_at, offered_starts_at, patients(id, first_name, last_name), appointment_types:appointment_type_id(name), team_members:practitioner_id(full_name)')
     .order('created_at', { ascending: true })
   if (showOnlyActive.value) query = query.in('status', ['waiting', 'offered'])
-  const { data } = await query
+  const { data, error } = await query
   if (token !== loadToken) return
-  rows.value = (data as unknown as WaitlistRow[]) ?? []
+  // A failed read is said, and does not pass for an empty list.
+  if (error) showToast(error.message, 'error')
+  else rows.value = (data as unknown as WaitlistRow[]) ?? []
   loading.value = false
 }
 onMounted(load)

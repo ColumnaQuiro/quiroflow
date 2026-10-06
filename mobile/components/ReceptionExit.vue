@@ -70,7 +70,7 @@ const biometryLabel = computed(() => (kind.value === 'faceId' ? 'Face ID' : kind
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/50 px-4" data-cy="reception-exit-sheet" @click.self="emit('close')">
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4" data-cy="reception-exit-sheet" @click.self="emit('close')">
     <div class="flex w-full max-w-[380px] flex-col gap-3 rounded-[18px] bg-surface p-5 shadow-popover" role="dialog" aria-modal="true" :aria-label="t('Leave reception mode', 'Salir del modo recepción')">
       <p class="text-[17px] font-semibold text-ink-900">{{ t('For the clinic team', 'Para el equipo de la clínica') }}</p>
       <p class="-mt-1.5 text-[13px] text-ink-muted">{{ t('Leaving reception mode returns to the clinic’s app.', 'Al salir del modo recepción vuelve la app de la clínica.') }}</p>

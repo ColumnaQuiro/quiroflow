@@ -28,6 +28,9 @@ const props = defineProps<{
   patientId?: string | null
   phoneNumber?: string | null
   patientFirstName?: string
+  /** Chosen on opening when approved (Recordatorios: the account's recall template), in the patient's language if there is that variant. */
+  defaultTemplateName?: string | null
+  patientPreferredLanguage?: string | null
 }>()
 const emit = defineEmits<{ close: []; sent: [] }>()
 
@@ -66,6 +69,12 @@ onMounted(async () => {
   try {
     const { templates: list } = await useStaffFetch<{ templates: Template[] }>('/api/whatsapp/templates')
     templates.value = list
+    // As the web's SendWhatsAppModal: the patient's language first, then any
+    // approved variant of it.
+    const candidates = props.defaultTemplateName ? list.filter((tpl) => tpl.name === props.defaultTemplateName) : []
+    const lang = props.patientPreferredLanguage ?? ''
+    const match = candidates.find((tpl) => tpl.language === lang) ?? candidates.find((tpl) => tpl.language.split('_')[0] === lang) ?? candidates[0]
+    if (match) choose(match)
   } catch (err: unknown) {
     loadError.value = (err as { data?: { statusMessage?: string } })?.data?.statusMessage ?? t('Could not load the WhatsApp templates.', 'No se han podido cargar las plantillas de WhatsApp.')
   } finally {
@@ -131,7 +140,7 @@ const inputCls = 'block w-full rounded-ctl border border-line-control bg-surface
   <!-- Lifted by the keyboard's height: the WebView does not resize for it
        (capacitor.config.ts, Keyboard.resize 'none'), so without this the
        variables and Send would sit under the keyboard. -->
-  <div class="fixed inset-0 z-50 flex flex-col justify-end bg-ink-900/40 md:items-center md:justify-center" :style="{ paddingBottom: keyboardHeight + 'px' }" data-cy="wa-template-sheet" @click.self="emit('close')">
+  <div class="fixed inset-0 z-50 flex flex-col justify-end bg-black/40 md:items-center md:justify-center" :style="{ paddingBottom: keyboardHeight + 'px' }" data-cy="wa-template-sheet" @click.self="emit('close')">
     <div class="flex max-h-[88%] w-full flex-col rounded-t-[22px] bg-surface shadow-popover md:max-w-[520px] md:rounded-[18px]" role="dialog" aria-modal="true" :aria-label="t('Send a template', 'Enviar una plantilla')">
       <div class="shrink-0 px-4 pt-2.5">
         <div class="mx-auto mb-2 h-1 w-[38px] rounded-full bg-line-control md:hidden" />

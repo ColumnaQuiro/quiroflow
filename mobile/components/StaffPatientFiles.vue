@@ -162,7 +162,7 @@ async function onPhotoTaken(e: Event) {
           :key="f.id"
           type="button"
           class="relative aspect-square overflow-hidden rounded-[9px] text-left"
-          :class="isImage(f) && urls[f.id] ? 'bg-ink-900' : 'bg-surface-subtle'"
+          :class="isImage(f) && urls[f.id] ? 'bg-black' : 'bg-surface-subtle'"
           :aria-label="f.file_name"
           data-cy="patient-file-tile"
           @click="open(f)"

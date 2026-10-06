@@ -409,10 +409,13 @@ async function conversationKeyForLead(leadId: string): Promise<string | null> {
   return data ? keyOf(data) : null
 }
 
+// The tab's badge counts the same reads and archives: told after each change.
+const { refresh: refreshBadge } = useInboxUnread()
 async function markRead(key: string) {
   const now = new Date().toISOString()
   readTimestamps.value = { ...readTimestamps.value, [key]: now }
   await supabase.from('inbox_reads').upsert({ account_id: props.accountId, team_member_id: props.teamMemberId, conversation_key: key, last_read_at: now } as never)
+  refreshBadge()
 }
 function openConversation(c: Conversation) {
   selectedKey.value = c.key
@@ -428,6 +431,7 @@ async function bulkMarkUnreadSelected() {
     await supabase.from('inbox_reads').upsert({ account_id: props.accountId, team_member_id: props.teamMemberId, conversation_key: key, last_read_at: past } as never)
   }
   exitSelectionMode()
+  refreshBadge()
 }
 
 async function bulkArchiveSelected(archive: boolean) {
@@ -445,6 +449,7 @@ async function bulkArchiveSelected(archive: boolean) {
     await supabase.from('whatsapp_conversation_archives').delete().eq('team_member_id', props.teamMemberId).in('conversation_key', keys)
   }
   exitSelectionMode()
+  refreshBadge()
 }
 
 // Single-conversation archive toggle, used from the row swipe action.
@@ -460,6 +465,7 @@ async function toggleArchive(c: Conversation) {
   } else {
     await supabase.from('whatsapp_conversation_archives').upsert({ account_id: props.accountId, team_member_id: props.teamMemberId, conversation_key: c.key } as never)
   }
+  refreshBadge()
 }
 
 // Mixed-selection rule matches the checkbox convention used elsewhere: if
@@ -501,6 +507,7 @@ async function toggleUnread(c: Conversation) {
   const past = new Date(0).toISOString()
   readTimestamps.value = { ...readTimestamps.value, [c.key]: past }
   await supabase.from('inbox_reads').upsert({ account_id: props.accountId, team_member_id: props.teamMemberId, conversation_key: c.key, last_read_at: past } as never)
+  refreshBadge()
 }
 
 // Swipe-to-reveal on each conversation row, live-following the finger like
@@ -624,7 +631,10 @@ const within24h = computed(() => {
 // for a patient or inbox_access for a bare number -- so the option is offered
 // only when both would succeed. A minor or a do-not-contact patient is never
 // offered it (the send route refuses them too).
-const { can } = usePractitionerContext()
+const { can, restricted, context: staffContext } = usePractitionerContext()
+// From a patient's thread: their record, and booking them (the record's own
+// sheet, via ?book=1), as the record's Book button allows it.
+const canBookFromThread = computed(() => !!staffContext.value && !restricted('calendar_read_only') && (staffContext.value.isOwner || staffContext.value.permissions.calendar_scope !== 'none'))
 const templateSheetOpen = ref(false)
 const contactBlocked = ref(false)
 watch(
@@ -1256,6 +1266,15 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             <span v-if="selected.phoneNumber" class="ml-1.5">{{ selected.phoneNumber }}</span>
           </p>
         </div>
+        <template v-if="selected.patientId">
+          <NuxtLink :to="`/patients/${selected.patientId}`" class="flex h-9 shrink-0 items-center gap-1 rounded-ctl border border-line-control px-2.5 text-[13px] font-medium text-ink-700" data-cy="inbox-open-record">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M8 8a2.6 2.6 0 100-5.2A2.6 2.6 0 008 8zM3.2 13.4c0-2.3 2.1-3.6 4.8-3.6s4.8 1.3 4.8 3.6" /></svg>
+            {{ t('Record', 'Ficha') }}
+          </NuxtLink>
+          <NuxtLink v-if="canBookFromThread" :to="`/patients/${selected.patientId}?book=1`" class="flex h-9 shrink-0 items-center rounded-ctl bg-brand px-2.5 text-[13px] font-semibold text-white" data-cy="inbox-book">
+            {{ t('Book', 'Reservar') }}
+          </NuxtLink>
+        </template>
       </div>
 
       <div ref="messagesEl" class="flex-1 space-y-2.5 overflow-y-auto px-3 py-3">

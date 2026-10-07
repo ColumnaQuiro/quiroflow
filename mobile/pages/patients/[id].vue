@@ -511,7 +511,7 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
     </div>
 
     <BookVisitSheet v-if="bookOpen" :patient-id="patientId" @booked="onBooked" @close="bookOpen = false" />
-    <RecordMoneySheet v-if="moneyMode" :patient-id="patientId" :mode="moneyMode" @done="onMoneyDone" @close="moneyMode = null" />
+    <RecordMoneySheet v-if="moneyMode" :patient-id="patientId" :mode="moneyMode" :can-pay="canTakePayments" :can-sell="canSellBonos" @done="onMoneyDone" @close="moneyMode = null" />
     <CarePlanSheet v-if="planSheetOpen" :patient-id="patientId" :plan="plan" :today="clinicToday" @saved="onPlanSaved" @close="planSheetOpen = false" />
     <EditPatientSheet v-if="editOpen && patient" :patient-id="patientId" :patient="patient" @saved="onEdited" @close="editOpen = false" />
     <ReceptionSetupSheet v-if="receptionOpen" :patient-id="patientId" @close="receptionOpen = false" />

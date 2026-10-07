@@ -346,12 +346,19 @@ async function load() {
   nextVisit.value = ((next.data as VisitRow[]) ?? [])[0] ?? null
 
   const clinics = (cl.data as ClinicRow[]) ?? []
-  clinic.value = clinics.find((c) => c.id === patient.value!.clinic_id) ?? clinics.find((c) => c.id === context.value!.clinicId) ?? clinics[0] ?? null
+  // The clinic the app is working in (the agenda, My Day), as the web books
+  // into store.currentClinicId -- not the patient's home clinic: booked
+  // there from clinic B's agenda, the visit landed on A, never showed on the
+  // agenda it was made from, and was checked against A's closures.
+  clinic.value = clinics.find((c) => c.id === context.value!.clinicId) ?? clinics.find((c) => c.id === patient.value!.clinic_id) ?? clinics[0] ?? null
 
   // The practitioners who work at this clinic, when the clinic has any linked.
   const linked = new Set(((links.data as { team_member_id: string; clinic_id: string }[]) ?? []).filter((l) => l.clinic_id === clinic.value?.id).map((l) => l.team_member_id))
   const everyone = (pr.data as PractitionerRow[]) ?? []
-  allPractitioners.value = linked.size > 0 ? everyone.filter((m) => linked.has(m.id)) : everyone
+  // A visit being moved keeps its practitioner even when they are not
+  // linked to this clinic: dropped from the list, the move silently handed
+  // the visit to someone else.
+  allPractitioners.value = linked.size > 0 ? everyone.filter((m) => linked.has(m.id) || (props.move && m.id === props.practitionerId)) : everyone
 
   const candidates = [props.practitionerId, patient.value.default_practitioner_id, lastVisit.value?.practitioner_id, context.value.teamMemberId]
   practitionerId.value = candidates.find((id) => id && practitioners.value.some((m) => m.id === id)) ?? practitioners.value[0]?.id ?? ''

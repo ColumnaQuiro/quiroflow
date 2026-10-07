@@ -98,6 +98,51 @@ describe('Report pages', () => {
     })
   })
 
+  it('splits a block two ways: each practitioner down the side, a column per stage', () => {
+    // What a clinic asked for on 6 Oct 2026: how many first visits with the
+    // offer, reports, adjustments and maintenance visits each practitioner saw.
+    cy.seedStaffAccount().then((account) => {
+      const earlier = new Date(Date.now() - 5 * 60 * 1000).toISOString()
+      cy.task<{ id: string }>('db:createAppointmentType', { accountId: account.accountId, name: 'Oferta primera visita', stage: 'first_visit_offer' }).then((offer) =>
+        cy.task<{ id: string }>('db:createAppointmentType', { accountId: account.accountId, name: 'Ajuste', stage: 'adjustment' }).then((adjustment) =>
+          cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Lucía' }).then((patient) => {
+            const visit = (typeId: string, status = 'completed') =>
+              cy.task('db:createAppointment', { accountId: account.accountId, clinicId: account.clinicId, patientId: patient.id, practitionerId: account.teamMemberId, appointmentTypeId: typeId, startsAt: earlier, status })
+            visit(offer.id)
+            visit(offer.id)
+            visit(adjustment.id)
+            visit(adjustment.id)
+            visit(adjustment.id)
+            visit(adjustment.id, 'no_show')
+          }),
+        ),
+      )
+      createPage(account, 'By stage', []).then((id) => {
+        cy.login(account.email, account.password)
+        cy.visit(`/reports/pages/${id}?edit=1`)
+        cy.get('[data-cy="report-page-add"]').click()
+        cy.get('[data-cy="report-add-new"]').click()
+        cy.get('[data-cy="report-builder-search"]').type('completed visits')
+        cy.get('[data-cy="report-metric-visits_completed"]').click()
+        cy.get('[data-cy="report-split-practitioner"]').click()
+        cy.get('[data-cy="report-chart-table"]').click()
+        cy.get('[data-cy="report-builder-columns"]').select('stage')
+        cy.get('[data-cy="report-builder-title"]').should('have.value', 'Completed visits by practitioner and stage')
+        cy.get('[data-cy="report-builder-add"]').click()
+
+        blockNamed('Completed visits by practitioner and stage').within(() => {
+          cy.get('[data-cy="report-block-pivot"] thead th').then(($th) => {
+            expect([...$th].map((th) => norm(th.textContent!)).slice(1)).to.deep.eq(['First visit (offer)', 'Adjustment', 'Total'])
+          })
+          cy.get('[data-cy="report-block-pivot"] tbody tr')
+            .first()
+            .find('td')
+            .then(($td) => expect([...$td].map((td) => norm(td.textContent!)).slice(1)).to.deep.eq(['2', '3', '5']))
+        })
+      })
+    })
+  })
+
   it('offers a report saved by the old Custom Reports page, and counts every patient', () => {
     cy.seedStaffAccount().then((account) => {
       cy.task('db:seedManyPatients', { accountId: account.accountId, clinicId: account.clinicId, count: 1052 }, { timeout: 120000 })

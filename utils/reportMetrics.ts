@@ -1237,6 +1237,107 @@ export function computeMetric(def: MetricDef, split: SplitKey, data: ReportData,
   return { value: total, rows }
 }
 
+// ---- Two-way tables -------------------------------------------------------------
+
+// A table split two ways: one split down the side, a second across the top --
+// "completed visits by practitioner and stage", which is how a clinic compares
+// what each practitioner spent their month on (so many first visits with the
+// offer, so many reports, adjustments, maintenance visits). One cell is the
+// metric for the visits in both groups, reduced the way the metric always is.
+
+export interface PivotColumn {
+  key: string
+  label: string
+}
+export interface PivotRow {
+  key: string
+  label: string
+  cells: Record<string, number | null>
+  /** The row's own figure, over all its columns. */
+  value: number | null
+}
+export interface PivotResult {
+  columns: PivotColumn[]
+  rows: PivotRow[]
+  /** Each column's figure, over all the rows. */
+  columnTotals: Record<string, number | null>
+  value: number | null
+}
+
+// Stages across the top in the order a patient meets them, not by count.
+const STAGE_ORDER = ['first_visit_offer', 'first_visit', 'report', 'adjustment', 'revision', 'maintenance', 'other', '']
+
+/**
+ * Whether a metric can be split two ways: it has to be a sum, rate or count of
+ * records. A figure recomputed per group (PVA, retention) or a funnel cannot
+ * be cut into cells.
+ */
+export function canPivot(def: MetricDef): boolean {
+  return !!def.records && !def.steps && !def.value
+}
+
+/** The splits a metric can take across the top, beside `split` down the side. */
+export function pivotColumnsFor(def: MetricDef, split: SplitKey): SplitKey[] {
+  if (!canPivot(def) || split === 'none') return []
+  return def.splits.filter((s) => s !== 'none' && s !== split && s !== 'service')
+}
+
+export function computePivot(def: MetricDef, split: SplitKey, columns: SplitKey, data: ReportData, ctx: Ctx): PivotResult | null {
+  if (!pivotColumnsFor(def, split).includes(columns)) return null
+  // Recorded with the split across the top, as a by-service total is: a
+  // metric is free to record differently per split.
+  const recs = def.records!(data, ctx, columns)
+  const empty = def.reduce === 'rate' ? null : 0
+
+  const byRow = new Map<string, Rec[]>()
+  const byCol = new Map<string, Rec[]>()
+  const byCell = new Map<string, Rec[]>()
+  const push = (m: Map<string, Rec[]>, k: string, r: Rec) => {
+    const list = m.get(k)
+    if (list) list.push(r)
+    else m.set(k, [r])
+  }
+  for (const r of recs) {
+    const rk = recKey(r, split)
+    const ck = recKey(r, columns)
+    if (rk === null || ck === null) continue
+    push(byRow, rk, r)
+    push(byCol, ck, r)
+    push(byCell, `${rk}\u0000${ck}`, r)
+  }
+
+  let cols: PivotColumn[]
+  if (TIME.includes(columns)) cols = timeBuckets(columns, ctx).map((b) => ({ key: b.key, label: b.label }))
+  else if (TIME_SPLITS.includes(columns)) cols = fixedBuckets(columns, ctx.t).map((b) => ({ key: b.key, label: b.label }))
+  else {
+    const rank = (k: string) => (columns === 'stage' ? (STAGE_ORDER.indexOf(k) + 1 || STAGE_ORDER.length + 1) : 0)
+    cols = [...byCol.entries()]
+      .map(([key, list]) => ({ key, label: labelFor(columns, key, data.names, ctx.t), total: reduceRecs(list, def.reduce) ?? 0 }))
+      .sort((a, b) => rank(a.key) - rank(b.key) || b.total - a.total || a.label.localeCompare(b.label))
+      .map(({ key, label }) => ({ key, label }))
+  }
+
+  const rowKeys = TIME.includes(split)
+    ? timeBuckets(split, ctx).map((b) => ({ key: b.key, label: b.label }))
+    : TIME_SPLITS.includes(split)
+      ? fixedBuckets(split, ctx.t).map((b) => ({ key: b.key, label: b.label }))
+      : null
+  let rows: PivotRow[] = (rowKeys ?? [...byRow.keys()].map((key) => ({ key, label: labelFor(split, key, data.names, ctx.t) }))).map(({ key, label }) => ({
+    key,
+    label,
+    cells: Object.fromEntries(cols.map((c) => [c.key, byCell.has(`${key}\u0000${c.key}`) ? reduceRecs(byCell.get(`${key}\u0000${c.key}`)!, def.reduce) : empty])),
+    value: byRow.has(key) ? reduceRecs(byRow.get(key)!, def.reduce) : empty,
+  }))
+  if (!rowKeys) rows = rows.sort((a, b) => (b.value ?? 0) - (a.value ?? 0) || a.label.localeCompare(b.label))
+
+  return {
+    columns: cols,
+    rows,
+    columnTotals: Object.fromEntries(cols.map((c) => [c.key, byCol.has(c.key) ? reduceRecs(byCol.get(c.key)!, def.reduce) : empty])),
+    value: reduceRecs(recs.filter((r) => recKey(r, split) !== null && recKey(r, columns) !== null), def.reduce),
+  }
+}
+
 // ---- Periods ------------------------------------------------------------------
 
 function clampShift(d: Date, months: number) {

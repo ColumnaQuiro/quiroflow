@@ -1693,6 +1693,10 @@ const loggingSessionFor = ref<string | null>(null)
 // the next time anyone opens the patient rather than only when they happen
 // to look for it. See utils/unloggedVisits.ts.
 const unloggedVisits = ref<UnloggedVisit[]>([])
+// The ones nothing has paid for at all -- what the bono card warns about. A
+// visit paid at the walk-in price is offered by Log session too, but is not
+// missing anything.
+const unpaidVisits = computed(() => unloggedVisits.value.filter((v) => !v.paidInvoice))
 const loadingUnlogged = ref(false)
 async function loadUnlogged() {
   loadingUnlogged.value = true
@@ -1821,6 +1825,36 @@ async function useSession(purchase: PackagePurchaseRow, choice: LogSessionChoice
       usedAt = visitTime.toISOString()
     }
 
+    // A visit paid at the walk-in price before the bono was bought: what was
+    // paid on its receipt now pays towards the bono, and the receipt becomes
+    // the session's charge below. Moved first, so the charge reads the
+    // receipt with nothing on it -- the same as a visit nobody had paid for.
+    // The factura for that money stands: it was received, and still was.
+    // See utils/unloggedVisits.paidVisitToMove.
+    const paidReceiptId = visit?.paidInvoice?.id ?? null
+    if (paidReceiptId) {
+      const { error: moveError } = await supabase
+        .from('payments')
+        .update({ invoice_id: null, purpose: 'bono', package_purchase_id: purchase.id })
+        .eq('invoice_id', paidReceiptId)
+      if (moveError) {
+        // Nothing else written yet bar the claim: give the session back.
+        await supabase
+          .from('package_purchases')
+          .update({ sessions_used: purchase.sessions_used })
+          .eq('id', purchase.id)
+          .eq('sessions_used', purchase.sessions_used + 1)
+        alert(
+          t(
+            `The payment could not be moved to the bono, so no session was used. (${moveError.message})`,
+            `No se pudo pasar el pago al bono, así que no se ha usado ninguna sesión. (${moveError.message})`,
+          ),
+        )
+        await loadAll()
+        return
+      }
+    }
+
     // The visit on the bono's own history.
     await supabase.from('package_sessions').insert({
       account_id: store.accountId,
@@ -1851,6 +1885,7 @@ async function useSession(purchase: PackagePurchaseRow, choice: LogSessionChoice
       bonoName: purchase.package_name,
       bonoPurchaseId: purchase.id,
       ownBalanceCents: balanceCents.value,
+      reusePaidReceiptId: paidReceiptId,
     })
     if (chargeError) {
       showToast(
@@ -1858,6 +1893,17 @@ async function useSession(purchase: PackagePurchaseRow, choice: LogSessionChoice
         'error',
         10000,
       )
+    }
+
+    // A visit from the calendar is now settled, so it is completed -- as the
+    // calendar's own bono checkout completes it. Only an invented visit was
+    // ever written completed: one picked from the calendar kept whatever it
+    // had, and a checked-in patient's stayed "booked" at checkout: a session
+    // logged and charged here still showed on the calendar as waiting to be
+    // charged. Booked only: a
+    // cancellation or no-show is not something logging a session overrides.
+    if (visit) {
+      await supabase.from('appointments').update({ status: 'completed' }).eq('id', visit.id).eq('status', 'booked')
     }
 
     // Deliberately fires no appointment.completed/invoice.paid automation:
@@ -2424,14 +2470,14 @@ function money(cents: number) {
             session and no receipt for nine days. Said here, on the card the
             fix starts from, rather than left for someone to go looking. -->
             <p
-              v-if="unloggedVisits.length > 0 && !p.is_closed && p.sessions_used < p.sessions_total"
+              v-if="unpaidVisits.length > 0 && !p.is_closed && p.sessions_used < p.sessions_total"
               data-cy="bono-unlogged-visits"
               class="mt-2.5 rounded-ctl bg-warning-bg px-2.5 py-2 text-[12px] text-warning-text"
             >
               {{
-                unloggedVisits.length === 1
-                  ? t(`1 visit has no session or payment: ${formatShortDate(unloggedVisits[0].starts_at)}.`, `1 visita no tiene sesión ni pago: ${formatShortDate(unloggedVisits[0].starts_at)}.`)
-                  : t(`${unloggedVisits.length} visits have no session or payment.`, `${unloggedVisits.length} visitas no tienen sesión ni pago.`)
+                unpaidVisits.length === 1
+                  ? t(`1 visit has no session or payment: ${formatShortDate(unpaidVisits[0].starts_at)}.`, `1 visita no tiene sesión ni pago: ${formatShortDate(unpaidVisits[0].starts_at)}.`)
+                  : t(`${unpaidVisits.length} visits have no session or payment.`, `${unpaidVisits.length} visitas no tienen sesión ni pago.`)
               }}
               <button type="button" class="ml-1 font-semibold underline" @click="openLogSession(p)">{{ t('Log it', 'Registrarla') }}</button>
             </p>

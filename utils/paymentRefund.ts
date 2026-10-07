@@ -10,10 +10,10 @@ import { isReceipt } from './paymentReceipts'
 // A payment with no invoice was never refundable here, and that turned out to
 // be most of the money the clinic holds. PracticeHub links no payment to
 // anything, so all 3,259 imported payments arrived with invoice_id null.
-// Viviane Vieira Tostes was refunded 39 EUR of a 204 EUR card payment on
-// 23 Sep 2026; the button was not there, so reception left a 0 EUR note on her
-// account instead, and Natacha Felix's September takings read 39 EUR high
-// until it was entered by hand as REF-0006.
+// When a patient was refunded 39 EUR of a 204 EUR imported card payment in
+// September 2026, the button was not there, so reception left a 0 EUR note on
+// the account instead, and the practitioner's September takings read 39 EUR
+// high until the refund was entered by hand.
 //
 // What still stays unrefundable without an invoice is money with something
 // else hanging off it, because refunding the payment alone leaves that thing

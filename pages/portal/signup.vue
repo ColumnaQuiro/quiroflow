@@ -32,9 +32,13 @@ async function onSubmit() {
   }
   clinic.remember(slug)
   localStorage.setItem('signup_intent', 'portal')
+  // The intent rides on the account too, not only in this browser: the
+  // confirmation link is often opened on another device, where the
+  // localStorage flag is missing and /confirm sent a patient to clinic setup.
   const { data, error: signUpError } = await supabase.auth.signUp({
     email: email.value,
     password: password.value,
+    options: { data: { signup_intent: 'portal' }, emailRedirectTo: `${window.location.origin}/confirm` },
   })
   loading.value = false
   if (signUpError) {

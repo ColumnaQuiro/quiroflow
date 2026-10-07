@@ -142,7 +142,12 @@ async function addToWaitlist() {
 
 async function cancelEntry(row: WaitlistRow) {
   if (!confirm(t('Remove this patient from the waitlist?', '¿Quitar a este paciente de la lista de espera?'))) return
-  await supabase.from('waitlist_entries').update({ status: 'cancelled' }).eq('id', row.id)
+  // Only while still waiting: an entry offered a slot since the list loaded
+  // must not be cancelled from under its live claim link. A refused or
+  // missed update is said, not shown as done.
+  const { data, error } = await supabase.from('waitlist_entries').update({ status: 'cancelled' }).eq('id', row.id).eq('status', 'waiting').select('id')
+  if (error) showToast(error.message, 'error')
+  else if (!data?.length) showToast(t('Not removed: they have just been offered a slot.', 'No se ha quitado: se le acaba de ofrecer un hueco.'), 'error')
   await load()
 }
 

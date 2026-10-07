@@ -202,6 +202,10 @@ const selectedSlot = ref<Date | null>(null)
 // own, and whole-clinic closures), for the selected day.
 const busyRanges = ref<{ starts_at: string; ends_at: string }[]>([])
 const slotsLoading = ref(false)
+const slotsError = ref(false)
+// Only the newest day's answer is used: tapping two days quickly could
+// otherwise show the first day's busy times under the second.
+let slotsRun = 0
 
 function startOfMonth(d: Date) {
   return new Date(d.getFullYear(), d.getMonth(), 1)
@@ -285,11 +289,13 @@ async function selectDate(day: { date: Date; bookable: boolean }) {
   selectedDate.value = day.date
   selectedSlot.value = null
   slotsLoading.value = true
+  slotsError.value = false
+  const mine = ++slotsRun
   // A day either side of the phone's day: the clinic's day can start or end
   // outside it when the two zones differ.
   const from = new Date(day.date.getTime() - 86400000).toISOString()
   const to = new Date(day.date.getTime() + 2 * 86400000).toISOString()
-  const [{ data }, { data: blocked }] = await Promise.all([
+  const [{ data, error: busyError }, { data: blocked, error: blockedError }] = await Promise.all([
     supabase.rpc('get_booking_busy_times', {
       p_clinic_id: clinicId.value,
       p_team_member_id: teamMemberId.value,
@@ -301,6 +307,15 @@ async function selectDate(day: { date: Date; bookable: boolean }) {
     // One naming nobody closes the clinic for everyone, as on the web page.
     supabase.rpc('get_booking_blocked_times', { p_clinic_id: clinicId.value, p_from: from, p_to: to }),
   ])
+  if (mine !== slotsRun) return
+  // A failed read is not a free day: with no busy times every slot looked
+  // open, and the patient only learned otherwise at the last step.
+  if (busyError || blockedError) {
+    busyRanges.value = []
+    slotsError.value = true
+    slotsLoading.value = false
+    return
+  }
   // The appointment being moved is busy time on this practitioner's
   // calendar, but not in its own way: reschedule_patient_appointment skips it.
   const appointments = ((data as { starts_at: string; ends_at: string }[]) ?? []).filter(
@@ -472,6 +487,10 @@ async function submitBooking() {
 
       <div v-if="selectedDate">
         <div v-if="slotsLoading" class="text-[13px] text-ink-faint">{{ t('Loading times…', 'Cargando horas…') }}</div>
+        <p v-else-if="slotsError" class="text-[13px] text-danger-text" data-cy="book-slots-error">
+          {{ t('Could not load the times.', 'No se han podido cargar las horas.') }}
+          <button type="button" class="ml-1 font-semibold underline" @click="selectDate({ date: selectedDate, bookable: true })">{{ t('Try again', 'Reintentar') }}</button>
+        </p>
         <div v-else-if="daySlots.length === 0" class="text-[13px] text-ink-faint">{{ t('No times available this day.', 'No hay horas disponibles este día.') }}</div>
         <div v-else class="grid grid-cols-3 gap-2">
           <button

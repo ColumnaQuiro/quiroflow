@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { normalizeSearchTerm, sanitizeSearchToken } from '../../utils/searchText'
 // The patients list: the Patients tab on a phone, and the left column of the
 // record on a wide iPad (pages/patients/[id].vue), with the open one marked.
 defineProps<{ selectedId?: string }>()
@@ -26,7 +27,9 @@ function created(p: { id: string }) {
   navigateTo(`/patients/${p.id}`)
 }
 
-// Every word has to match the first name or the surname, so "Elena Martín"
+// Every word has to match the name -- search_name, the accent-folded
+// "first last" the web searches too, so "Martin" finds "Martín" (ilike on
+// the columns did not, and the desk created a duplicate) -- so "Elena Martín"
 // finds her (the whole phrase was matched against each column and found
 // nobody). Characters PostgREST reads as filter syntax are dropped -- a comma
 // used to invalidate the query, which then read as "No patients found". Only
@@ -37,8 +40,8 @@ async function load() {
   loading.value = true
   loadError.value = false
   let query = supabase.from('patients').select('id, first_name, last_name, status').eq('status', 'active').order('first_name').limit(100)
-  const words = search.value.trim().split(/\s+/).map((w) => w.replace(/[,()%*\\]/g, '')).filter(Boolean)
-  for (const w of words) query = query.or(`first_name.ilike.%${w}%,last_name.ilike.%${w}%`)
+  const words = search.value.trim().split(/\s+/).map(sanitizeSearchToken).filter(Boolean)
+  for (const w of words) query = query.ilike('search_name', `%${normalizeSearchTerm(w)}%`)
   const { data, error } = await query
   if (mine !== run) return
   if (error) loadError.value = true

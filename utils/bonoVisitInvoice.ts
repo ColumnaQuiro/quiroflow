@@ -45,6 +45,14 @@ export interface BonoVisitCharge {
   bonoPurchaseId: string
   /** The screen's own balance -- bonoVisitChargeStatus()'s fallback only. */
   ownBalanceCents: number
+  /**
+   * A receipt the visit was already PAID on, at the walk-in price, whose money
+   * the caller has just moved onto the bono (Log session, for a visit paid
+   * before the bono was bought -- utils/unloggedVisits.paidVisitToMove). It
+   * becomes the session's charge exactly as an open receipt would. Without
+   * this a paid receipt is never touched.
+   */
+  reusePaidReceiptId?: string | null
 }
 
 interface OpenReceipt {
@@ -66,8 +74,9 @@ export async function chargeBonoVisit(supabase: any, input: BonoVisitCharge): Pr
   if (readError) return { error: readError.message, invoiceId: null }
 
   // The newest receipt still open. A paid one is settled and is not touched:
-  // both callers refuse a visit that is already paid before reaching here.
-  const open = ((receipts ?? []) as OpenReceipt[]).find((r) => r.status !== 'paid' && !r.is_refund) ?? null
+  // both callers refuse a visit that is already paid before reaching here --
+  // except the one receipt the caller names, whose money it has moved.
+  const open = ((receipts ?? []) as OpenReceipt[]).find((r) => (r.status !== 'paid' || r.id === input.reusePaidReceiptId) && !r.is_refund) ?? null
 
   if (open) {
     const lines = open.invoice_line_items ?? []

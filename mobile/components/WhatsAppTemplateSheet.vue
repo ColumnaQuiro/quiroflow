@@ -140,7 +140,7 @@ const inputCls = 'block w-full rounded-ctl border border-line-control bg-surface
   <!-- Lifted by the keyboard's height: the WebView does not resize for it
        (capacitor.config.ts, Keyboard.resize 'none'), so without this the
        variables and Send would sit under the keyboard. -->
-  <div class="fixed inset-0 z-50 flex flex-col justify-end bg-ink-900/40 md:items-center md:justify-center" :style="{ paddingBottom: keyboardHeight + 'px' }" data-cy="wa-template-sheet" @click.self="emit('close')">
+  <div class="fixed inset-0 z-50 flex flex-col justify-end bg-black/40 md:items-center md:justify-center" :style="{ paddingBottom: keyboardHeight + 'px' }" data-cy="wa-template-sheet" @click.self="emit('close')">
     <div class="flex max-h-[88%] w-full flex-col rounded-t-[22px] bg-surface shadow-popover md:max-w-[520px] md:rounded-[18px]" role="dialog" aria-modal="true" :aria-label="t('Send a template', 'Enviar una plantilla')">
       <div class="shrink-0 px-4 pt-2.5">
         <div class="mx-auto mb-2 h-1 w-[38px] rounded-full bg-line-control md:hidden" />

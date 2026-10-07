@@ -16,6 +16,7 @@
     "@capacitor/core": "^7.4.4",
     "@capacitor/ios": "^7.4.4",
     "@capacitor/keyboard": "^7.0.6",
+    "@capacitor/status-bar": "^7.0.6",
     "@nuxtjs/supabase": "^2.0.10",
     "@nuxtjs/tailwindcss": "^6.14.0",
     "firebase": "^11.10.0",

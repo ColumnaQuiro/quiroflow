@@ -87,6 +87,23 @@ describe('Taking a visit from a bono in the calendar', () => {
             expect(eff.appointments, 'the appointment').to.have.length(1)
             expect(eff.appointments[0].status, 'completed by taking the session').to.eq('completed')
           })
+
+          // Taken by mistake: undo the visit. Gabriela Encina's was drawn from
+          // her bono on the wrong day, and nothing short of SQL undid it.
+          cy.get('[data-cy=appt-sheet]').within(() => {
+            cy.get('[data-cy=appt-tab-summary]').click()
+            cy.get('[data-cy=undo-visit]').click()
+          })
+          cy.get('[data-cy=confirm-dialog]').should('contain.text', 'The session goes back to Bono 12')
+          cy.get('[data-cy=confirm-dialog-confirm]').click()
+          cy.get('[data-cy=undo-visit]').should('not.exist')
+
+          cy.task('db:packageSessionEffects', { patientId: patient.id, packagePurchaseId: purchase.id }).then((eff: any) => {
+            expect(eff.purchase.sessions_used, 'the session is back on the bono').to.eq(0)
+            expect(eff.sessions, 'and no longer recorded against the visit').to.have.length(0)
+            expect(eff.invoices.map((i: any) => i.status), 'its charge voided, not deleted').to.deep.eq(['void'])
+            expect(eff.appointments[0].status, 'the visit is open again').to.eq('booked')
+          })
         })
       })
     })

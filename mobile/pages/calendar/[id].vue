@@ -280,6 +280,26 @@ const note = useVisitNoteDraft({
 })
 const noteDraft = note.draft
 const noteBox = ref<HTMLTextAreaElement | null>(null)
+// Free text, or the four SOAP sections the web charts in (SoapNoteFields).
+// A note already in sections opens in sections; otherwise the last choice on
+// this device.
+const NOTE_MODE_KEY = 'quiroflow_note_mode'
+const noteMode = ref<'free' | 'soap'>('free')
+try {
+  if (localStorage.getItem(NOTE_MODE_KEY) === 'soap') noteMode.value = 'soap'
+} catch {}
+watch(
+  () => note.loading.value,
+  (l) => {
+    if (!l && parseVisitNote(noteDraft.value).structured) noteMode.value = 'soap'
+  },
+)
+function setNoteMode(m: 'free' | 'soap') {
+  noteMode.value = m
+  try {
+    localStorage.setItem(NOTE_MODE_KEY, m)
+  } catch {}
+}
 // Add mode (no visit_notes_edit): nothing is saved until "Save note".
 const addComposing = computed(() => canAddNote.value && note.addOpen.value)
 const addedAtLabel = computed(() => (note.savedAt.value ? clinicTimeLabel(note.savedAt.value, timeZone.value) : ''))
@@ -726,7 +746,14 @@ watch(
             </template>
 
             <template v-if="canWriteNotes">
+              <div role="tablist" :aria-label="t('Note format', 'Formato de la nota')" class="mb-2 grid grid-cols-2 gap-1 rounded-ctl bg-chip-bg p-[3px]">
+                <button v-for="m in (['free', 'soap'] as const)" :key="m" type="button" role="tab" :aria-selected="noteMode === m" class="h-8 rounded-ctlSm text-[12.5px] font-semibold" :class="noteMode === m ? 'bg-surface text-ink-900 shadow-card' : 'text-ink-muted'" :data-cy="`visit-note-mode-${m}`" @click="setNoteMode(m)">
+                  {{ m === 'free' ? t('Free text', 'Libre') : t('S · O · A · P', 'Por apartados') }}
+                </button>
+              </div>
+              <SoapNoteFields v-if="noteMode === 'soap'" v-model="noteDraft" @input="note.onInput()" @blur="note.save()" />
               <textarea
+                v-else
                 ref="noteBox"
                 v-model="noteDraft"
                 rows="5"

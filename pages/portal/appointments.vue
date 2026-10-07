@@ -4,7 +4,7 @@
 definePageMeta({ layout: 'portal' })
 
 const t = useT()
-const { settings } = usePatientAppInfo()
+const { settings, zoneOf } = usePatientAppInfo()
 const { patient } = usePortalPatient()
 const patientId = computed(() => patient.value?.id ?? '')
 
@@ -13,18 +13,15 @@ const { upcoming, past, loading, busyId, canChange, cancel } = usePatientAppoint
   () => settings.value,
 )
 
-function formatWhen(iso: string) {
-  return new Date(iso).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
-}
-function dayNumber(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, { day: 'numeric' })
-}
-function monthShort(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, { month: 'short' })
-}
-function timeOnly(iso: string) {
-  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-}
+// In the CLINIC's time zone, as the app shows them (PatientHome, visits):
+// in the browser's, a patient whose computer is set elsewhere saw every
+// visit shifted, and was asked to confirm cancelling at the wrong hour.
+type Visit = { starts_at: string; clinic_id?: string | null }
+const fmt = (a: Visit, o: Intl.DateTimeFormatOptions) => new Date(a.starts_at).toLocaleString(t('en-GB', 'es-ES'), { ...o, timeZone: zoneOf(a.clinic_id) })
+const formatWhen = (a: Visit) => fmt(a, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+const dayNumber = (a: Visit) => fmt(a, { day: 'numeric' })
+const monthShort = (a: Visit) => fmt(a, { month: 'short' })
+const timeOnly = (a: Visit) => fmt(a, { hour: '2-digit', minute: '2-digit' })
 </script>
 
 <template>
@@ -44,12 +41,12 @@ function timeOnly(iso: string) {
           <!-- A date block rather than a sentence: a list of visits is
                scanned by date, not read. -->
           <span class="flex h-9 touch:h-11 w-9 touch:w-11 shrink-0 flex-col items-center justify-center rounded-ctl bg-brand-tint leading-none">
-            <span class="text-[15px] font-[640] text-brand">{{ dayNumber(appt.starts_at) }}</span>
-            <span class="mt-0.5 text-[10px] font-medium uppercase text-brand">{{ monthShort(appt.starts_at) }}</span>
+            <span class="text-[15px] font-[640] text-brand">{{ dayNumber(appt) }}</span>
+            <span class="mt-0.5 text-[10px] font-medium uppercase text-brand">{{ monthShort(appt) }}</span>
           </span>
           <div class="min-w-0 flex-1">
             <p class="text-[13.5px] font-medium text-ink-900">
-              {{ timeOnly(appt.starts_at) }} &middot; {{ appt.appointment_types?.name ?? t('Appointment', 'Cita') }}
+              {{ timeOnly(appt) }} &middot; {{ appt.appointment_types?.name ?? t('Appointment', 'Cita') }}
             </p>
             <p v-if="appt.team_members?.full_name" class="text-[12.5px] text-ink-muted">{{ appt.team_members.full_name }}</p>
 
@@ -64,7 +61,7 @@ function timeOnly(iso: string) {
                   type="button"
                   class="text-[12.5px] font-medium text-danger-text hover:opacity-80"
                   :disabled="busyId === appt.id"
-                  @click="cancel(appt, formatWhen(appt.starts_at))"
+                  @click="cancel(appt, formatWhen(appt))"
                 >
                   {{ busyId === appt.id ? t('Cancelling…', 'Cancelando…') : t('Cancel', 'Cancelar') }}
                 </button>
@@ -87,7 +84,7 @@ function timeOnly(iso: string) {
         <ul v-if="past.length > 0" class="divide-y divide-line-divider">
           <li v-for="appt in past" :key="appt.id" class="flex items-center justify-between gap-3 px-4 py-3">
             <div class="min-w-0">
-              <p class="text-[13px] text-ink-700">{{ formatWhen(appt.starts_at) }}</p>
+              <p class="text-[13px] text-ink-700">{{ formatWhen(appt) }}</p>
               <p class="text-[12px] text-ink-faint">{{ appt.appointment_types?.name ?? t('Appointment', 'Cita') }}</p>
             </div>
             <span class="shrink-0 rounded-pill bg-chip-bg px-2 py-0.5 text-[11.5px] font-medium text-chip-text">

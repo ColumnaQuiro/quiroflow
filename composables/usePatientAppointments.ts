@@ -27,6 +27,7 @@ export function usePatientAppointments(patientId: () => string, settings: () => 
   const supabase = useSupabaseClient()
   const t = useT()
   const { showToast } = useToast()
+  const authedFetch = useAuthedFetch()
 
   const upcoming = ref<PatientAppointmentRow[]>([])
   const past = ref<PatientAppointmentRow[]>([])
@@ -61,12 +62,17 @@ export function usePatientAppointments(patientId: () => string, settings: () => 
   async function cancel(appt: PatientAppointmentRow, whenLabel: string) {
     if (!confirm(t(`Cancel your appointment on ${whenLabel}?`, `¿Cancelar tu cita del ${whenLabel}?`))) return
     busyId.value = appt.id
-    const { error } = await supabase.rpc('cancel_patient_appointment', { p_appointment_id: appt.id })
-    busyId.value = null
-    if (error) {
-      showToast(error.message, 'error')
+    // Through the server, which cancels as the patient (the same RPC) and
+    // then tells the clinic: the practitioner's push, the clinic's
+    // automations and the freed slot offered to the waitlist.
+    try {
+      await authedFetch('/api/portal/appointments/cancel', { method: 'POST', body: { appointmentId: appt.id } })
+    } catch (err: unknown) {
+      busyId.value = null
+      showToast((err as { data?: { statusMessage?: string } })?.data?.statusMessage ?? t('Could not cancel the appointment.', 'No se ha podido cancelar la cita.'), 'error')
       return
     }
+    busyId.value = null
     showToast(t('Appointment cancelled.', 'Cita cancelada.'))
     await load()
   }

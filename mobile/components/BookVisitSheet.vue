@@ -105,8 +105,11 @@ const practitioners = computed(() => {
 const practitioner = computed(() => practitioners.value.find((p) => p.id === practitionerId.value) ?? null)
 const type = computed(() => types.value.find((x) => x.id === typeId.value) ?? null)
 // A moved visit keeps its own length, as a drag on the web calendar does.
+// A move can change the visit's type too (the web's "Cambiar"): kept at its
+// own length unless the type is changed, then the new type's length.
+const typeChanged = computed(() => !!props.move && !!props.typeId && typeId.value !== props.typeId)
 const duration = computed(() => {
-  if (props.move) return Math.max(5, Math.round((Date.parse(props.move.endsAt) - Date.parse(props.move.startsAt)) / 60000))
+  if (props.move && !typeChanged.value) return Math.max(5, Math.round((Date.parse(props.move.endsAt) - Date.parse(props.move.startsAt)) / 60000))
   return type.value ? effectiveDuration(type.value.duration_minutes, type.value.id, practitionerId.value, overrides.value) : 30
 })
 const timeZone = computed(() => clinic.value?.timezone || DEFAULT_CLINIC_TIMEZONE)
@@ -401,12 +404,19 @@ const heading = computed(() => props.title || (moving.value ? t('Move the visit'
 // it raises a numbered invoice.
 async function saveMove(start: Date, end: Date) {
   const move = props.move!
+  // Same start, only the type (or practitioner) changed: not a reschedule --
+  // no "rescheduled" mark, no reschedule log, nothing sent to the patient.
+  const timeMoved = start.getTime() !== Date.parse(move.startsAt)
   const { error } = await supabase
     .from('appointments')
-    .update({ starts_at: start.toISOString(), ends_at: end.toISOString(), practitioner_id: practitionerId.value || null, rescheduled: true } as never)
+    .update({ starts_at: start.toISOString(), ends_at: end.toISOString(), practitioner_id: practitionerId.value || null, ...(timeMoved ? { rescheduled: true } : {}), ...(typeChanged.value ? { appointment_type_id: typeId.value || null } : {}) } as never)
     .eq('id', move.appointmentId)
   if (error) {
     bookError.value = error.message
+    return
+  }
+  if (!timeMoved) {
+    emit('booked', { appointmentId: move.appointmentId, startsAt: start.toISOString(), endsAt: end.toISOString() })
     return
   }
   await supabase.from('appointment_reschedules').insert({
@@ -517,10 +527,10 @@ async function book() {
           <p class="mt-0.5 text-[12.5px] leading-snug text-ink-muted2" data-cy="book-visit-context">
             <template v-if="suggestionLead">{{ suggestionLead }} · </template>
             {{ type?.name }} {{ duration }} min, {{ practitioner?.full_name }}
-            <button v-if="!(moving && ownDiaryOnly)" type="button" class="ml-1 font-medium text-brand-text" @click="changing = !changing">{{ changing ? t('Done', 'Listo') : t('Change', 'Cambiar') }}</button>
+            <button type="button" class="ml-1 font-medium text-brand-text" @click="changing = !changing">{{ changing ? t('Done', 'Listo') : t('Change', 'Cambiar') }}</button>
           </p>
-          <div v-if="changing" class="mt-2.5 grid gap-2" :class="ownDiaryOnly || moving ? 'grid-cols-1' : 'grid-cols-2'">
-            <select v-if="!moving" v-model="typeId" class="h-11 min-w-0 rounded-ctl border border-line-control bg-surface px-2.5 text-[14px] text-ink-700" :aria-label="t('Type', 'Tipo')">
+          <div v-if="changing" class="mt-2.5 grid gap-2" :class="ownDiaryOnly ? 'grid-cols-1' : 'grid-cols-2'">
+            <select v-model="typeId" data-cy="book-type" class="h-11 min-w-0 rounded-ctl border border-line-control bg-surface px-2.5 text-[14px] text-ink-700" :aria-label="t('Type', 'Tipo')">
               <option v-for="x in types" :key="x.id" :value="x.id">{{ x.name }}</option>
             </select>
             <select v-if="!ownDiaryOnly" v-model="practitionerId" class="h-11 min-w-0 rounded-ctl border border-line-control bg-surface px-2.5 text-[14px] text-ink-700" :aria-label="t('Practitioner', 'Profesional')">

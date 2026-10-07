@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { normalizeSearchTerm, sanitizeSearchToken } from '../../utils/searchText'
 // "+ Nueva cita" on the agenda, or a free slot held down: who it is for,
 // then the booking itself. The second half is BookVisitSheet -- the same free
 // times, clash check, insert, automation and confirmation as "Book the next
@@ -38,7 +39,7 @@ onMounted(() => nextTick(() => input.value?.focus()))
 // finds Elena Martín. Characters PostgREST reads as syntax are dropped.
 let run = 0
 async function search() {
-  const words = term.value.trim().split(/\s+/).map((w) => w.replace(/[,()%*\\]/g, '')).filter(Boolean)
+  const words = term.value.trim().split(/\s+/).map(sanitizeSearchToken).filter(Boolean)
   const mine = ++run
   if (!words.length) {
     results.value = []
@@ -47,7 +48,8 @@ async function search() {
   }
   searching.value = true
   let query = supabase.from('patients').select('id, first_name, last_name, patient_contact_numbers(country_code, number)').eq('status', 'active').order('first_name').limit(8)
-  for (const w of words) query = query.or(`first_name.ilike.%${w}%,last_name.ilike.%${w}%`)
+  // search_name: accent-folded, as the web and the patients list search.
+  for (const w of words) query = query.ilike('search_name', `%${normalizeSearchTerm(w)}%`)
   const { data } = await query
   if (mine !== run) return
   results.value = (data as unknown as Found[] | null) ?? []

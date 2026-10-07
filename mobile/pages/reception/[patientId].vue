@@ -19,7 +19,7 @@ const lock = ref(reception.current())
 if (!lock.value) navigateTo('/', { replace: true })
 
 const index = ref(0)
-const phase = ref<'loading' | 'fill' | 'done'>('loading')
+const phase = ref<'loading' | 'fill' | 'failed' | 'done'>('loading')
 const title = ref('')
 const fields = ref<DocField[]>([])
 const saving = ref(false)
@@ -38,8 +38,17 @@ async function loadCurrent() {
   phase.value = 'loading'
   const { data, error: e } = await supabase.rpc('get_public_patient_doc' as never, { p_token: token } as never)
   const doc = data as { title: string | null; fields: DocField[]; completed_at: string | null } | null
-  // Already signed (from the link, or on another device): on to the next.
-  if (e || !doc || doc.completed_at) {
+  // A read that failed is not a signed form. supabase-js returns a dropped
+  // connection as { error }, and skipping on it walked the patient past
+  // every unsigned form to "All done": staff took the iPad back believing
+  // they were signed. Said, with a retry, and the form stays where it is.
+  if (e) {
+    phase.value = 'failed'
+    return
+  }
+  // Already signed (from the link, or on another device), or a link that no
+  // longer exists: on to the next.
+  if (!doc || doc.completed_at) {
     index.value++
     return loadCurrent()
   }
@@ -109,6 +118,12 @@ const initials = computed(() => (lock.value?.clinicName ?? '').split(/\s+/).filt
           {{ saving ? t('Saving…', 'Guardando…') : index + 1 < total ? t('Sign and continue', 'Firmar y continuar') : t('Sign and finish', 'Firmar y terminar') }}
         </button>
       </template>
+
+      <div v-else-if="phase === 'failed'" class="m-auto flex max-w-[420px] flex-col items-center text-center" data-cy="reception-failed">
+        <h1 class="text-[22px] font-semibold text-ink-900">{{ t('The form did not load', 'No se ha podido cargar el formulario') }}</h1>
+        <p class="mt-2 text-[15px] leading-relaxed text-ink-muted">{{ t('Check the connection and try again.', 'Revisa la conexión e inténtalo de nuevo.') }}</p>
+        <button type="button" class="mt-6 h-12 rounded-card bg-brand px-6 text-[16px] font-semibold text-white" data-cy="reception-retry" @click="loadCurrent">{{ t('Try again', 'Reintentar') }}</button>
+      </div>
 
       <div v-else class="m-auto flex max-w-[420px] flex-col items-center text-center" data-cy="reception-done">
         <span class="flex h-14 w-14 items-center justify-center rounded-full bg-success-bg text-success-text">

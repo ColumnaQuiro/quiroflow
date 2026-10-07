@@ -109,10 +109,14 @@ async function save() {
     }
   }
 
+  // Each row is marked as stored the moment its write succeeds, so Save
+  // pressed again after a later row failed does not write it a second time
+  // (a new number used to be inserted twice: nothing unique stops it).
   for (const r of rows.value) {
     let failed: { message: string } | null = null
     if (r.removed && r.id) {
       failed = (await supabase.from('patient_contact_numbers').delete().eq('id', r.id)).error
+      if (!failed) r.id = null
     } else if (!r.removed && rowChanged(r) && r.number.trim()) {
       const { countryCode, number } = numberChanged(r) ? splitDialPrefix(r.number, r.country_code) : { countryCode: r.country_code, number: null }
       if (r.id) {
@@ -120,8 +124,11 @@ async function save() {
         if (number !== null) Object.assign(update, { number, country_code: countryCode })
         failed = (await supabase.from('patient_contact_numbers').update(update as never).eq('id', r.id)).error
       } else {
-        failed = (await supabase.from('patient_contact_numbers').insert({ account_id: context.value.accountId, patient_id: props.patientId, country_code: countryCode, number, is_whatsapp: r.is_whatsapp } as never)).error
+        const inserted = await supabase.from('patient_contact_numbers').insert({ account_id: context.value.accountId, patient_id: props.patientId, country_code: countryCode, number, is_whatsapp: r.is_whatsapp } as never).select('id').single()
+        failed = inserted.error
+        if (!failed) r.id = (inserted.data as { id: string }).id
       }
+      if (!failed) r.original = { number: r.number.trim(), country_code: countryCode, is_whatsapp: r.is_whatsapp }
     }
     if (failed) {
       saving.value = false

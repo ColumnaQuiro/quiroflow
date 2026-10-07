@@ -36,8 +36,8 @@ const refundInvoice = (over: Partial<RefundInvoice> & { id: string }): RefundInv
 
 describe('A payment with no invoice', () => {
   it('can be refunded in full when nothing else hangs off it', () => {
-    // Viviane Vieira Tostes: 204 EUR by card on 13 Aug, imported from
-    // PracticeHub with no invoice. The button used to be missing entirely.
+    // 204 EUR by card, imported from PracticeHub with no invoice. The button
+    // used to be missing entirely.
     expect(paymentRefundableCents(payment(), [], [], none)).toBe(20400)
   })
 
@@ -117,7 +117,7 @@ describe('A payment on a receipt', () => {
 
 describe('The share of a refund that was money on account', () => {
   it('is nothing when the patient holds no surplus -- the refund corrects a charge', () => {
-    // Viviane's balance was 0 before her 39 EUR came back.
+    // A patient whose balance was 0 before the 39 EUR came back.
     expect(onAccountShareCents(3900, 0)).toBe(0)
     expect(onAccountShareCents(3900, -5000)).toBe(0)
   })

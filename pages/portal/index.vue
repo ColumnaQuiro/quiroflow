@@ -9,7 +9,7 @@ import { formatEur } from '~/utils/billing'
 definePageMeta({ layout: 'portal' })
 
 const t = useT()
-const { settings } = usePatientAppInfo()
+const { settings, zoneOf } = usePatientAppInfo()
 const { patient, loading: patientLoading, loadError } = usePortalPatient()
 
 const patientId = computed(() => patient.value?.id ?? '')
@@ -27,8 +27,9 @@ const next = computed(() => upcoming.value[0] ?? null)
 const amountDueCents = computed(() => outstandingCents.value)
 const sessionsLeft = computed(() => activePackages.value.reduce((sum, p) => sum + Math.max(0, p.sessions_total - p.sessions_used), 0))
 
-function longWhen(iso: string) {
-  return new Date(iso).toLocaleString(undefined, { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })
+// In the clinic's time zone, not the browser's (see appointments.vue).
+function longWhen(appt: { starts_at: string; clinic_id?: string | null }) {
+  return new Date(appt.starts_at).toLocaleString(t('en-GB', 'es-ES'), { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: zoneOf(appt.clinic_id) })
 }
 function eur(cents: number) {
   return `${formatEur(cents)}`
@@ -53,7 +54,7 @@ function eur(cents: number) {
         <p class="text-[11.5px] font-[640] uppercase tracking-[.05em] text-ink-faint">{{ t('Your next visit', 'Tu próxima cita') }}</p>
         <div v-if="apptLoading" class="mt-2"><UiSkeleton class="h-6 w-56 rounded-ctlSm" /></div>
         <template v-else-if="next">
-          <p class="mt-1.5 text-[19px] font-[640] tracking-tightTitle text-ink-900 first-letter:uppercase">{{ longWhen(next.starts_at) }}</p>
+          <p class="mt-1.5 text-[19px] font-[640] tracking-tightTitle text-ink-900 first-letter:uppercase">{{ longWhen(next) }}</p>
           <p class="mt-1 text-[13.5px] text-ink-muted">
             {{ next.appointment_types?.name ?? t('Appointment', 'Cita') }}
             <template v-if="next.team_members?.full_name"> &middot; {{ next.team_members.full_name }}</template>

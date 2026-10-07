@@ -33,6 +33,7 @@ interface Appointment {
   ends_at: string
   status: string
   checked_in_at: string | null
+  confirmation_status: string | null
   appointment_type_id: string | null
   practitioner_id: string | null
   clinic_id: string | null
@@ -61,7 +62,7 @@ async function loadAppointment() {
   const { data } = await supabase
     .from('appointments')
     .select(
-      'id, patient_id, starts_at, ends_at, status, checked_in_at, appointment_type_id, practitioner_id, clinic_id, room_id, team_members(full_name), patients(first_name, last_name, red_flags, yellow_flags, sticky_note), appointment_types(name, default_price_cents), clinics(timezone)',
+      'id, patient_id, starts_at, ends_at, status, checked_in_at, confirmation_status, appointment_type_id, practitioner_id, clinic_id, room_id, team_members(full_name), patients(first_name, last_name, red_flags, yellow_flags, sticky_note), appointment_types(name, default_price_cents), clinics(timezone)',
     )
     .eq('id', appointmentId)
     .maybeSingle()
@@ -502,9 +503,68 @@ function onBooked(e: { startsAt: string }) {
 const moveOpen = ref(false)
 const cancelOpen = ref(false)
 async function onMoved(e: { startsAt: string }) {
+  const before = appointment.value?.starts_at
   moveOpen.value = false
   await loadAppointment()
-  bookedNotice.value = `${t('Moved to', 'Movida al')} ${when(e.startsAt)}`
+  bookedNotice.value = before && Date.parse(before) === Date.parse(e.startsAt) ? t('Visit changed.', 'Cita cambiada.') : `${t('Moved to', 'Movida al')} ${when(e.startsAt)}`
+}
+
+// Confirmed by phone or at the desk rather than by replying to WhatsApp, as
+// the web's appointment panel does.
+async function markConfirmed() {
+  const a = appointment.value
+  if (!a || busy.value) return
+  busy.value = true
+  actionError.value = ''
+  const { data, error } = await supabase.from('appointments').update({ confirmation_status: 'confirmed' } as never).eq('id', a.id).select('id')
+  busy.value = false
+  if (error || !data?.length) {
+    actionError.value = t('Could not mark it confirmed.', 'No se ha podido marcar como confirmada.')
+    return
+  }
+  a.confirmation_status = 'confirmed'
+}
+
+// Undo a visit finished by mistake -- the web's undo_visit (20261006170032):
+// reopens it, gives the bono session back and voids that session's charge,
+// all or nothing. A visit paid in money is refused: that is a refund, on the
+// web. A wrong tap on "Finish" drew a bono session with no way back here.
+const canUndoVisit = computed(() => appointment.value?.status === 'completed' && !readOnlyCalendar.value)
+async function undoVisit() {
+  const a = appointment.value
+  if (!a || busy.value) return
+  const ok = await ask({
+    title: t('Undo this visit?', '¿Deshacer esta visita?'),
+    body: t('It goes back to booked. A bono session used on it is returned and its charge voided.', 'Vuelve a quedar reservada. Si usó una sesión de bono, se devuelve y se anula su cargo.'),
+    confirmLabel: t('Undo visit', 'Deshacer visita'),
+    danger: true,
+  })
+  if (!ok) return
+  busy.value = true
+  actionError.value = ''
+  const { error } = await supabase.rpc('undo_visit' as never, { p_appointment_id: a.id } as never)
+  busy.value = false
+  if (error) {
+    actionError.value = undoVisitError((error as { hint?: string }).hint, error.message)
+    return
+  }
+  await loadAppointment()
+  bookedNotice.value = t('Visit undone.', 'Visita deshecha.')
+}
+function undoVisitError(hint: string | null | undefined, message: string) {
+  switch (hint) {
+    case 'has_payment':
+      return t('This visit has a payment recorded, so it can’t be undone here. Refund it on the web first.', 'Esta visita tiene un pago registrado y no se puede deshacer aquí. Devuelve antes el pago desde la web.')
+    case 'invoice':
+      return t('Your role only edits receipts on the day they were made.', 'Tu rol solo edita recibos del mismo día.')
+    case 'bono':
+    case 'bono_session':
+      return t('Your role can’t give sessions back to a bono.', 'Tu rol no permite devolver sesiones a un bono.')
+    case 'not_completed':
+      return t('This visit is no longer marked done.', 'Esta visita ya no está marcada como hecha.')
+    default:
+      return message
+  }
 }
 async function onCancelled(message: string) {
   cancelOpen.value = false
@@ -796,10 +856,19 @@ watch(
         <p v-if="actionError" class="text-[13px] text-danger-text">{{ actionError }}</p>
 
         <!-- Move or cancel, as the agenda does: before the visit has started -->
+        <template v-if="canAct && !appointment.checked_in_at">
+          <p v-if="appointment.confirmation_status === 'confirmed'" class="flex items-center gap-1.5 px-1 text-[13px] font-medium text-success-text" data-cy="visit-confirmed">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+            {{ t('Confirmed', 'Confirmada') }}
+          </p>
+          <button v-else type="button" class="flex h-11 items-center justify-center rounded-card border border-line-control bg-surface text-[14px] font-medium text-ink-700 disabled:opacity-50" :disabled="busy" data-cy="visit-confirm" @click="markConfirmed">{{ t('Confirmed by phone', 'Confirmada por teléfono') }}</button>
+        </template>
         <div v-if="canAct && !appointment.checked_in_at" class="grid grid-cols-2 gap-2" data-cy="visit-change">
-          <button type="button" class="flex h-11 items-center justify-center rounded-card border border-line-control bg-surface text-[14px] font-medium text-ink-700" data-cy="visit-move" @click="moveOpen = true">{{ t('Move', 'Mover') }}</button>
+          <button type="button" class="flex h-11 items-center justify-center rounded-card border border-line-control bg-surface text-[14px] font-medium text-ink-700" data-cy="visit-move" @click="moveOpen = true">{{ t('Change', 'Cambiar') }}</button>
           <button type="button" class="flex h-11 items-center justify-center rounded-card border border-line-control bg-surface text-[14px] font-medium text-danger-text" data-cy="visit-cancel" @click="cancelOpen = true">{{ t('Cancel visit', 'Cancelar cita') }}</button>
         </div>
+        <!-- Finished by mistake -->
+        <button v-if="canUndoVisit" type="button" class="flex h-10 items-center justify-center rounded-card text-[13.5px] font-medium text-ink-muted disabled:opacity-50" :disabled="busy" data-cy="visit-undo" @click="undoVisit">{{ t('Undo visit', 'Deshacer visita') }}</button>
         </div>
       </div>
 
@@ -843,7 +912,8 @@ watch(
       :practitioner-id="appointment.practitioner_id"
       :type-id="appointment.appointment_type_id"
       :suggested-date="clinicDateOf(new Date(appointment.starts_at), timeZone)"
-      :title="t(`Move · ${fullName}`, `Mover · ${fullName}`)"
+      :title="t(`Change · ${fullName}`, `Cambiar · ${fullName}`)"
+      :preferred-start="appointment.starts_at"
       :move="{ appointmentId: appointment.id, startsAt: appointment.starts_at, endsAt: appointment.ends_at, roomId: appointment.room_id }"
       @booked="onMoved"
       @close="moveOpen = false"

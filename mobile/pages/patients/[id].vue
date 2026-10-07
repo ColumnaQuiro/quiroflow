@@ -44,6 +44,9 @@ interface Patient {
   red_flags: string | null
   yellow_flags: string | null
   sticky_note: string | null
+  chief_complaint: string | null
+  diagnosis: string | null
+  goals: string | null
   is_minor: boolean
   do_not_contact: boolean
   practitioner: { full_name: string } | null
@@ -61,7 +64,7 @@ async function loadPatient() {
   const { data, error } = await supabase
     .from('patients')
     .select(
-      'id, first_name, last_name, email, date_of_birth, created_at, photo_storage_path, red_flags, yellow_flags, sticky_note, is_minor, do_not_contact, practitioner:team_members!patients_default_practitioner_id_fkey(full_name), clinic:clinics(timezone)',
+      'id, first_name, last_name, email, date_of_birth, created_at, photo_storage_path, red_flags, yellow_flags, sticky_note, chief_complaint, diagnosis, goals, is_minor, do_not_contact, practitioner:team_members!patients_default_practitioner_id_fkey(full_name), clinic:clinics(timezone)',
     )
     .eq('id', patientId)
     .maybeSingle()
@@ -212,6 +215,12 @@ const bonoSummary = computed(() => {
 
 // -- Forms (patient_docs) -----------------------------------------------------
 const receptionOpen = ref(false)
+
+// The clinical summary the web's Clinical tab opens with: why they came,
+// the working diagnosis, and the goals (one free-text column, shown as chips
+// split the way the web splits them).
+const goalChips = computed(() => (patient.value?.goals ?? '').split(/[\n;,]+/).map((g) => g.trim()).filter(Boolean))
+const hasClinical = computed(() => !!(patient.value?.chief_complaint?.trim() || patient.value?.diagnosis?.trim() || goalChips.value.length))
 
 // "Editar": numbers, email, flags and the sticky note (EditPatientSheet).
 // patients_edit is what the web's details and panels need too.
@@ -365,6 +374,30 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
             </span>
           </li>
         </ul>
+      </section>
+
+      <!-- Clinical summary: chief complaint, working diagnosis, goals -->
+      <section v-if="patient && (hasClinical || canEdit)" class="rounded-card border border-line bg-surface shadow-card px-3.5 py-3" data-cy="patient-clinical">
+        <div class="flex items-center justify-between gap-2">
+          <h2 class="text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Clinical summary', 'Resumen clínico') }}</h2>
+          <button v-if="canEdit" type="button" class="-my-2 flex h-9 items-center px-1 text-[12.5px] font-semibold text-brand-text" data-cy="patient-clinical-edit" @click="editOpen = true">{{ hasClinical ? t('Edit', 'Editar') : t('+ Add', '+ Añadir') }}</button>
+        </div>
+        <template v-if="hasClinical">
+          <dl class="mt-1.5 space-y-1.5">
+            <div v-if="patient.chief_complaint?.trim()">
+              <dt class="text-[11.5px] text-ink-muted2">{{ t('Chief complaint', 'Motivo de consulta') }}</dt>
+              <dd class="whitespace-pre-wrap text-[14px] leading-snug text-ink-900" data-cy="patient-chief-complaint">{{ patient.chief_complaint }}</dd>
+            </div>
+            <div v-if="patient.diagnosis?.trim()">
+              <dt class="text-[11.5px] text-ink-muted2">{{ t('Working diagnosis', 'Diagnóstico de trabajo') }}</dt>
+              <dd class="whitespace-pre-wrap text-[14px] leading-snug text-ink-900" data-cy="patient-diagnosis">{{ patient.diagnosis }}</dd>
+            </div>
+          </dl>
+          <div v-if="goalChips.length" class="mt-2 flex flex-wrap gap-1.5" data-cy="patient-goals">
+            <span v-for="g in goalChips" :key="g" class="rounded-pill bg-chip-bg px-2 py-0.5 text-[12px] text-chip-text">{{ g }}</span>
+          </div>
+        </template>
+        <p v-else class="mt-1.5 text-[13px] text-ink-faint">{{ t('No complaint or diagnosis recorded.', 'Sin motivo ni diagnóstico registrados.') }}</p>
       </section>
 
       <!-- Care plan, or just the next visit when there is no plan -->

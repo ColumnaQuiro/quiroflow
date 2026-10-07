@@ -87,8 +87,18 @@ export default defineNuxtRouteMiddleware(async (to) => {
     }
   }
 
+  // Somebody with no clinic account is sent to set one up -- unless they are
+  // a patient, who belongs on the portal. A patient who signed up in the app
+  // and opened the confirmation link here was offered "create your clinic".
+  // /onboarding stays reachable on purpose for anyone who asks for it.
   if (!hasAccount && to.path !== '/onboarding') {
-    return navigateTo('/onboarding')
+    const meta = user.value.user_metadata as { signup_intent?: string } | undefined
+    let isPatient = meta?.signup_intent === 'portal'
+    if (!isPatient) {
+      const { data: own } = await useSupabaseClient().from('patients').select('id').eq('user_id', user.value.sub).limit(1)
+      isPatient = !!own?.length
+    }
+    return navigateTo(isPatient ? '/portal' : '/onboarding')
   }
   if (hasAccount && ['/onboarding', '/login', '/signup', '/'].includes(to.path)) {
     return navigateTo('/dashboard')

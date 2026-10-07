@@ -23,9 +23,13 @@ onMounted(async () => {
 async function onSubmit() {
   error.value = ''
   loading.value = true
+  // A patient account: said on the account, so the confirmation link --
+  // opened in the phone's browser, on the web -- lands on the patient portal
+  // rather than the web's clinic setup.
   const { data, error: signUpError } = await supabase.auth.signUp({
     email: email.value,
     password: password.value,
+    options: { data: { signup_intent: 'portal' }, emailRedirectTo: `${useRuntimeConfig().public.apiBase}/confirm` },
   })
   loading.value = false
   if (signUpError) {

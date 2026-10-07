@@ -5,7 +5,7 @@ import { invoiceDueCents } from '../../utils/settleInvoice'
 // Billing tab's own steps). Cobrar lists their unpaid charges, oldest first,
 // with what is still due on each; Vender bono offers the clinic's bonos at
 // their price, paid in full or in part (the rest stays owed on the bono).
-const props = defineProps<{ patientId: string; mode: 'pay' | 'sell' }>()
+const props = defineProps<{ patientId: string; mode: 'pay' | 'sell'; canPay?: boolean; canSell?: boolean }>()
 const emit = defineEmits<{ done: [message: string]; close: [] }>()
 
 const supabase = useSupabaseClient()
@@ -22,6 +22,9 @@ interface UnpaidInvoice { id: string; invoice_number: string; created_at: string
 interface BonoTemplate { id: string; name: string; session_count: number; price_cents: number }
 
 const tab = ref<'pay' | 'sell'>(props.mode)
+// Only what the role may do (the record's own rules): a role without
+// packages_edit/billing_config was offered "Vender bono" and refused by RLS.
+const tabs = computed(() => (['pay', 'sell'] as const).filter((k) => (k === 'pay' ? props.canPay !== false : props.canSell !== false)))
 const loading = ref(true)
 const loadError = ref('')
 const invoices = ref<UnpaidInvoice[]>([])
@@ -131,8 +134,9 @@ async function save() {
       :aria-label="tab === 'pay' ? t('Take payment', 'Cobrar') : t('Sell a bono', 'Vender bono')"
     >
       <div class="mx-auto mb-0.5 h-1 w-[38px] shrink-0 rounded-full bg-line-control md:hidden" />
-      <div role="tablist" class="grid grid-cols-2 gap-1 rounded-ctl bg-chip-bg p-[3px]">
-        <button v-for="k in (['pay', 'sell'] as const)" :key="k" type="button" role="tab" :aria-selected="tab === k" class="h-9 rounded-ctlSm text-[13.5px] font-semibold" :class="tab === k ? 'bg-surface text-ink-900 shadow-card' : 'text-ink-muted'" :data-cy="`money-tab-${k}`" @click="tab = k">
+      <p v-if="tabs.length === 1" class="text-[17px] font-semibold text-ink-900">{{ tab === 'pay' ? t('Take payment', 'Cobrar') : t('Sell a bono', 'Vender bono') }}</p>
+      <div v-else role="tablist" class="grid grid-cols-2 gap-1 rounded-ctl bg-chip-bg p-[3px]">
+        <button v-for="k in tabs" :key="k" type="button" role="tab" :aria-selected="tab === k" class="h-9 rounded-ctlSm text-[13.5px] font-semibold" :class="tab === k ? 'bg-surface text-ink-900 shadow-card' : 'text-ink-muted'" :data-cy="`money-tab-${k}`" @click="tab = k">
           {{ k === 'pay' ? t('Take payment', 'Cobrar') : t('Sell a bono', 'Vender bono') }}
         </button>
       </div>

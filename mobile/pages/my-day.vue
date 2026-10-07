@@ -66,6 +66,9 @@ const birthdays = ref<BirthdayPatient[]>([])
 const recallsDue = ref<number | null>(null)
 // Waiting or offered a slot: the web's waitlist page, active entries.
 const waitlistActive = ref<number | null>(null)
+// This person's patients on a care plan and behind its cadence, as
+// Recalls due is narrowed (care_plan_continuity_alerts).
+const plansBehind = ref<number | null>(null)
 const takingsCents = ref<number | null>(null)
 // patient -> ids of their future, live appointments (any practitioner's the
 // role can see). Until it has answered, nobody is flagged "No next visit".
@@ -191,13 +194,25 @@ async function load({ silent = false } = {}) {
         })
     : Promise.resolve(null)
 
-  const [appts, taskRows, birthdayRows, recalls, takings, waitlist] = await Promise.all([
+  const plansQ = seesRecalls.value
+    ? supabase
+        .from('care_plan_continuity_alerts')
+        .select('patient_id', { count: 'exact', head: true })
+        .eq('default_practitioner_id', ctx.teamMemberId)
+        .then(({ count, error }) => {
+          if (error) throw error
+          return count ?? 0
+        })
+    : Promise.resolve(null)
+
+  const [appts, taskRows, birthdayRows, recalls, takings, waitlist, plans] = await Promise.all([
     settle(t('Visits', 'Visitas'), appointmentsQ),
     settle(t('Tasks', 'Tareas'), tasksQ),
     settle(t('Birthdays', 'Cumpleaños'), birthdaysQ),
     settle(t('Recalls', 'Recordatorios'), recallsQ),
     settle(t('Takings', 'Cobrado'), takingsQ),
     settle(t('Waitlist', 'Lista de espera'), waitlistQ),
+    settle(t('Plans behind schedule', 'Planes con retraso'), plansQ),
   ])
   if (mine !== run) return
 
@@ -208,6 +223,7 @@ async function load({ silent = false } = {}) {
   if (birthdayRows) birthdays.value = birthdayRows
   recallsDue.value = recalls
   waitlistActive.value = waitlist
+  plansBehind.value = plans
   takingsCents.value = takings
   errors.value = nextErrors
   loading.value = false
@@ -602,6 +618,11 @@ function initialsOf(a: Appointment) {
             <span class="text-[14px] text-ink-900">{{ t('Recalls due', 'Recordatorios pendientes') }}</span>
             <UiSkeleton v-if="loading" class="h-3.5 w-16 rounded-ctlSm" />
             <span v-else class="flex items-center gap-1 text-[12.5px] text-ink-muted2" data-test="myday-recalls">{{ recallsDue === null ? '—' : t(`${recallsDue} ${recallsDue === 1 ? 'patient' : 'patients'}`, `${recallsDue} ${recallsDue === 1 ? 'paciente' : 'pacientes'}`) }}<AppChevron :size="12" /></span>
+          </NuxtLink>
+          <NuxtLink v-if="seesRecalls" to="/plan-alerts" class="flex items-center justify-between gap-3 border-t border-line-row py-2" data-cy="myday-plans-open">
+            <span class="text-[14px] text-ink-900">{{ t('Plans behind schedule', 'Planes con retraso') }}</span>
+            <UiSkeleton v-if="loading" class="h-3.5 w-16 rounded-ctlSm" />
+            <span v-else class="flex items-center gap-1 text-[12.5px]" :class="plansBehind ? 'font-semibold text-danger-text' : 'text-ink-muted2'" data-test="myday-plans">{{ plansBehind === null ? '—' : t(`${plansBehind} ${plansBehind === 1 ? 'patient' : 'patients'}`, `${plansBehind} ${plansBehind === 1 ? 'paciente' : 'pacientes'}`) }}<AppChevron :size="12" /></span>
           </NuxtLink>
           <NuxtLink v-if="seesRecalls" to="/waitlist" class="flex items-center justify-between gap-3 border-t border-line-row py-2" data-cy="myday-waitlist-open">
             <span class="text-[14px] text-ink-900">{{ t('Waitlist', 'Lista de espera') }}</span>

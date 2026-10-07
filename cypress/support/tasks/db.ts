@@ -1639,6 +1639,20 @@ async function callRpcAsPatient(opts: { email: string; password: string; fn: str
   return { data: data ?? null, error: error?.message ?? null }
 }
 
+/** Lets the clinic's patients cancel from the app and the portal (0162). */
+async function setPatientCancel(opts: { accountId: string; enabled: boolean }) {
+  assertOk(await admin.from('accounts').update({ patient_app_cancel_enabled: opts.enabled }).eq('id', opts.accountId))
+  return { ok: true }
+}
+
+/** A signed-in user's access token, to call a server route as them. */
+async function accessTokenFor(opts: { email: string; password: string }) {
+  const client = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+  const { data, error } = await client.auth.signInWithPassword({ email: opts.email, password: opts.password })
+  if (error) throw error
+  return data.session!.access_token
+}
+
 /** Gives a second patient the run of someone else's bono -- a family sharing one. */
 async function sharePackageWith(opts: { accountId: string; packagePurchaseId: string; patientId: string }) {
   const row = unwrap(
@@ -3946,6 +3960,8 @@ export const dbTasks = {
   'db:callRpcAsAnon': callRpcAsAnon,
   'db:setAppointmentTypeBookingRules': setAppointmentTypeBookingRules,
   'db:givePatientAppLogin': givePatientAppLogin,
+  'db:setPatientCancel': setPatientCancel,
+  'db:accessTokenFor': accessTokenFor,
   'db:callRpcAsPatient': callRpcAsPatient,
   'db:setPatientAppReschedule': setPatientAppReschedule,
   'db:setTeamMemberBookingFlags': setTeamMemberBookingFlags,

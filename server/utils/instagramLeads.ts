@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
-import { nextLeadReference } from '~/server/utils/leads'
+import { insertLead } from '~/server/utils/leads'
 import { receptionistHandlesNewLeads } from '~/server/utils/receptionist'
 
 // Turning an Instagram DM into a lead.
@@ -17,7 +17,10 @@ import { receptionistHandlesNewLeads } from '~/server/utils/receptionist'
 // them with a scripted welcome drip would be the wrong reply to a live
 // question.
 
-const GRAPH_BASE = 'https://graph.facebook.com/v21.0'
+// Read per call from runtime config (NUXT_META_GRAPH_BASE_URL), never a
+// constant: tests point it at a local stub, and a hard-coded host kept every
+// send made from here out of reach of the e2e suite.
+const graphBase = (): string => useRuntimeConfig().metaGraphBaseUrl
 
 /**
  * Who this IGSID is, as far as Instagram will say.
@@ -28,7 +31,7 @@ const GRAPH_BASE = 'https://graph.facebook.com/v21.0'
  */
 async function fetchInstagramName(igsid: string, accessToken: string): Promise<string | null> {
   try {
-    const profile = await $fetch<{ name?: string; username?: string }>(`${GRAPH_BASE}/${igsid}`, {
+    const profile = await $fetch<{ name?: string; username?: string }>(`${graphBase()}/${igsid}`, {
       query: { fields: 'name,username', access_token: accessToken },
       timeout: 5_000,
     })
@@ -107,32 +110,26 @@ export async function leadForInstagramSender(
 
   const name = accessToken ? await fetchInstagramName(igsid, accessToken) : null
 
-  const { data: lead, error } = await supabase
-    .from('leads')
-    .insert({
-      account_id: accountId,
-      reference: await nextLeadReference(supabase, accountId),
-      // Named as honestly as Instagram allows. Not left blank: full_name is
-      // NOT NULL and a board of empty rows is worse than a board of
-      // placeholders somebody can rename.
-      full_name: name ?? placeholderName(igsid),
-      channel: 'instagram',
-      // Spelled so the dashboard's channelOf() reads it as its own channel --
-      // it splits a source on '·' and takes the head, which is how "Meta Ads
-      // · <campaign>" becomes the "Meta Ads" row.
-      source: 'Instagram',
-      external_source: 'instagram',
-      external_id: igsid,
-      // 'contacted' rather than 'new': they wrote first. 'new' means an
-      // enquiry nobody has spoken to, and the funnel counts it that way.
-      stage: 'contacted',
-      // Same rule as the form ingest: on means the receptionist has it.
-      // Especially here -- somebody who has just asked a question in a DM is
-      // the clearest case there is for a drafted reply already waiting.
-      ...((await receptionistHandlesNewLeads(supabase, accountId)) ? { ai_state: 'handling' as const } : {}),
-    })
-    .select('id')
-    .single()
+  const { data: lead, error } = await insertLead(supabase, accountId, {
+    // Named as honestly as Instagram allows. Not left blank: full_name is
+    // NOT NULL and a board of empty rows is worse than a board of
+    // placeholders somebody can rename.
+    full_name: name ?? placeholderName(igsid),
+    channel: 'instagram',
+    // Spelled so the dashboard's channelOf() reads it as its own channel --
+    // it splits a source on '·' and takes the head, which is how "Meta Ads
+    // · <campaign>" becomes the "Meta Ads" row.
+    source: 'Instagram',
+    external_source: 'instagram',
+    external_id: igsid,
+    // 'contacted' rather than 'new': they wrote first. 'new' means an
+    // enquiry nobody has spoken to, and the funnel counts it that way.
+    stage: 'contacted',
+    // Same rule as the form ingest: on means the receptionist has it.
+    // Especially here -- somebody who has just asked a question in a DM is
+    // the clearest case there is for a drafted reply already waiting.
+    ...((await receptionistHandlesNewLeads(supabase, accountId)) ? { ai_state: 'handling' as const } : {}),
+  })
 
   if (error) {
     console.error('[instagram] could not create a lead:', error.message)

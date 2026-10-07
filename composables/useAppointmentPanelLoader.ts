@@ -44,8 +44,8 @@ export function useAppointmentPanelLoader() {
       supabase.from('package_purchases').select('package_name, sessions_total, sessions_used, is_closed').eq('patient_id', a.patient_id).order('purchased_at', { ascending: false }),
       supabase.from('appointment_reschedules').select('id', { count: 'exact', head: true }).eq('appointment_id', a.id),
       // The calendar's rule for "has a next visit" (loadFutureAppointmentIds): any
-      // visit not cancelled, from now on, other than this one.
-      supabase.from('appointments').select('id').eq('patient_id', a.patient_id).neq('status', 'cancelled').gt('starts_at', new Date().toISOString()).neq('id', a.id).limit(1),
+      // visit not cancelled or deleted, from now on, other than this one.
+      supabase.from('appointments').select('id').eq('patient_id', a.patient_id).neq('status', 'cancelled').is('deleted_at', null).gt('starts_at', new Date().toISOString()).neq('id', a.id).limit(1),
       supabase.from('appointment_type_overrides').select('appointment_type_id, team_member_id, duration_minutes, price_cents'),
     ])
 

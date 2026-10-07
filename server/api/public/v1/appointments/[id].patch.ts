@@ -2,7 +2,7 @@ import { ApiError, defineApiHandler, notFound } from '~/server/utils/publicApi'
 import { assertUuid } from '~/server/utils/publicApiQuery'
 import { definedOnly, enumValue, isoDateTime, readApiBody, rejectUnknownFields, str, uuid } from '~/server/utils/publicApiBody'
 import { assertBelongsToAccount, loose } from '~/server/utils/publicApiHandlers'
-import { APPOINTMENT_STATUSES, assertNoOverlap, assertTypeBookable, resolveWindow } from '~/server/utils/publicApiAppointments'
+import { APPOINTMENT_STATUSES, assertPractitionerWorksAt, assertTypeBookable, resolveWindow, saveAppointmentIfFree } from '~/server/utils/publicApiAppointments'
 import { appointmentsResource } from '~/server/utils/publicApiResources'
 
 const FIELDS = ['practitioner_id', 'appointment_type_id', 'room_id', 'starts_at', 'ends_at', 'status', 'note', 'external_reference']
@@ -17,7 +17,7 @@ export default defineApiHandler({ scope: 'appointments:write' }, async ({ event,
 
   const { data: existing } = await loose(supabase)
     .from('appointments')
-    .select('id, practitioner_id, appointment_type_id, starts_at, ends_at')
+    .select('id, clinic_id, practitioner_id, appointment_type_id, starts_at, ends_at, status')
     .eq('account_id', accountId)
     .eq('id', id)
     .is('deleted_at', null)
@@ -35,6 +35,8 @@ export default defineApiHandler({ scope: 'appointments:write' }, async ({ event,
       is_practitioner: true,
     })
     practitionerName = practitioner.full_name as string
+    // Only a practitioner being given now: one the visit already has keeps it.
+    if (practitionerId !== existing.practitioner_id) await assertPractitionerWorksAt(supabase, practitionerId, existing.clinic_id)
   }
   if (roomId) await assertBelongsToAccount(supabase, 'calendar_resources', roomId, accountId, 'room_id')
   // Only a type being given now; keeping the one it has is always allowed.
@@ -57,8 +59,8 @@ export default defineApiHandler({ scope: 'appointments:write' }, async ({ event,
       appointmentTypeId: appointmentTypeId ?? existing.appointment_type_id ?? undefined,
       practitionerId: practitionerId ?? existing.practitioner_id ?? undefined,
     })
-    await assertNoOverlap(supabase, accountId, practitionerId ?? existing.practitioner_id ?? undefined, window.startsAt, window.endsAt, id)
   }
+  const status = enumValue(body, 'status', APPOINTMENT_STATUSES)
 
   const patch = definedOnly({
     practitioner_id: practitionerId,
@@ -67,7 +69,7 @@ export default defineApiHandler({ scope: 'appointments:write' }, async ({ event,
     room_id: roomId,
     starts_at: window?.startsAt,
     ends_at: window?.endsAt,
-    status: enumValue(body, 'status', APPOINTMENT_STATUSES),
+    status,
     note: str(body, 'note', { max: 2000 }),
     external_reference: str(body, 'external_reference', { max: 255 }),
     // Flags the appointment as moved, which the calendar's "Hide
@@ -79,12 +81,29 @@ export default defineApiHandler({ scope: 'appointments:write' }, async ({ event,
     throw new ApiError('invalid_request', `Nothing to update. Send at least one of: ${FIELDS.join(', ')}.`)
   }
 
+  // Checked against the practitioner and the time the visit will have once
+  // this is written. Not only when the time moves: handing a visit to someone
+  // busy then, or un-cancelling it onto a slot taken since it was cancelled,
+  // puts two appointments in one diary just the same, and both used to go
+  // straight in. A visit that stays cancelled holds no time, so giving it a
+  // new practitioner needs no check. A PATCH that only sets a note or a
+  // reference needs none either.
+  const finalStatus = status ?? existing.status
+  const practitionerChanged = practitionerId !== undefined && practitionerId !== existing.practitioner_id
+  const uncancelled = existing.status === 'cancelled' && finalStatus !== 'cancelled'
+  const checkOverlap = window !== undefined || ((practitionerChanged || uncancelled) && finalStatus !== 'cancelled')
+
+  // The check and the update as one step: see saveAppointmentIfFree.
+  await saveAppointmentIfFree(supabase, accountId, id, patch, { checkOverlap })
+  // An integration moving or cancelling a visit tells its practitioner, as a
+  // colleague doing it in the calendar does (staffPush.ts).
+  if (finalStatus === 'cancelled' && existing.status !== 'cancelled') await pushAppointmentEvent(supabase, id, 'cancelled')
+  else if (window && window.startsAt !== existing.starts_at && finalStatus !== 'cancelled') await pushAppointmentEvent(supabase, id, 'rescheduled')
   const { data: updated, error } = await loose(supabase)
     .from('appointments')
-    .update(patch as never)
+    .select(appointmentsResource.select)
     .eq('account_id', accountId)
     .eq('id', id)
-    .select(appointmentsResource.select)
     .single()
   if (error) throw new ApiError('server_error', error.message)
 

@@ -1,7 +1,6 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { H3Event } from 'h3'
 import type { Database } from '~/types/database.types'
-import { phoneMatches } from '~/utils/phone'
 import { downloadMetaMedia, extensionForMimeType, type MediaKind } from '~/server/utils/whatsappSend'
 import { notifyInboxTeamMembers } from '~/server/utils/pushNotifications'
 import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
@@ -40,6 +39,8 @@ interface MetaMessage {
 }
 import type { InstagramMessagingEvent } from '~/server/utils/instagramWebhook'
 import { leadForWhatsAppSender } from '~/server/utils/whatsappLeads'
+import { receptionistDraftsFor } from '~/server/utils/receptionist'
+import { findLeadIdByPhone, findPatientIdsByPhone, pickInboundPatientId } from '~/server/utils/whatsappOwner'
 
 interface MetaChangeValue {
   metadata?: { phone_number_id: string }
@@ -100,66 +101,31 @@ function isButtonReply(msg: MetaMessage): boolean {
   return Boolean(msg.button?.text || msg.interactive?.button_reply?.title || msg.interactive?.list_reply?.title)
 }
 
-// Returns every patient whose contact number resolves to this phone --
-// plural, not singular: staff testing (or a family sharing one phone
-// across a few real patients) can leave more than one patient record
-// pointing at the same number. Most callers below just need any one of
-// them (a message can only be attributed to a single patient_id), but the
-// confirm/reschedule/cancel handler needs all of them: it resolves which
-// specific appointment a reply is about across every patient sharing the
-// number (see resolveRepliedAppointment), rather than betting on an
-// arbitrary first match that may have nothing scheduled.
-async function findPatientIdsByPhone(supabase: ReturnType<typeof serverSupabaseServiceRole<Database>>, accountId: string, fromNumber: string): Promise<string[]> {
-  const PAGE_SIZE = 1000
-  const matches: string[] = []
-  for (let page = 0; ; page++) {
-    const { data } = await supabase
-      .from('patient_contact_numbers')
-      .select('patient_id, number, country_code')
-      .eq('account_id', accountId)
-      .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
-    for (const c of data ?? []) {
-      if (phoneMatches(c.number, c.country_code, fromNumber)) matches.push(c.patient_id)
-    }
-    if (!data || data.length < PAGE_SIZE) return matches
-  }
-}
+// How far along a message is. 'failed' is not on this ladder: it is terminal,
+// and nothing that arrives after it -- a late 'sent' in particular -- may
+// replace it or clear the error it recorded.
+const STATUS_RANK: Record<string, number> = { sent: 1, delivered: 2, read: 3 }
 
 /**
- * The lead this number belongs to, when it belongs to no patient.
+ * The stored statuses a callback reporting `incoming` may overwrite, or null
+ * when it should be ignored outright.
  *
- * Inbound messages were attributed to a patient or to nobody, which meant a
- * reply from somebody who enquired through a Facebook ad -- a lead, by
- * definition not yet a patient -- attached to nothing. Their thread in the
- * Inbox showed only what the clinic had sent them, with their answers
- * missing, and the lead's own drawer showed no sign they had ever written
- * back.
- *
- * Patients win where a number matches both, deliberately: somebody who has
- * become a patient is a patient, and their clinical thread is the one their
- * messages belong in. This only runs when no patient matched at all.
- *
- * Newest lead wins where one person enquired twice, on the grounds that the
- * reply is far more likely to be about the enquiry they just made.
+ * Forward only: sent < delivered < read. A failure replaces anything short of
+ * 'read' -- a message the recipient has read was delivered, whatever arrives
+ * afterwards -- and nothing replaces a failure. Statuses we do not track
+ * ('deleted', 'warning', whatever Meta adds next) are ignored rather than
+ * written over one we do.
  */
-async function findLeadIdByPhone(supabase: ReturnType<typeof serverSupabaseServiceRole<Database>>, accountId: string, fromNumber: string): Promise<string | null> {
-  const { data } = await supabase
-    .from('leads')
-    .select('id, phone')
-    .eq('account_id', accountId)
-    .is('deleted_at', null)
-    .not('phone', 'is', null)
-    .order('created_at', { ascending: false })
-    .limit(500)
+function statusesThisMayReplace(incoming: string): string[] | null {
+  if (incoming === 'failed') return Object.keys(STATUS_RANK).filter((s) => s !== 'read')
+  const rank = STATUS_RANK[incoming]
+  if (!rank) return null
+  return Object.keys(STATUS_RANK).filter((s) => STATUS_RANK[s]! < rank)
+}
 
-  const incoming = fromNumber.replace(/\D/g, '')
-  for (const lead of data ?? []) {
-    // The same tolerance patients get: a lead's number may have been typed
-    // by hand at the desk, or arrived from Meta with no "+", and both should
-    // still match the digits Meta sends on the way back.
-    if (lead.phone && phoneMatches(lead.phone, 'ES', incoming)) return lead.id
-  }
-  return null
+async function alreadyStored(supabase: ReturnType<typeof serverSupabaseServiceRole<Database>>, wamid: string): Promise<boolean> {
+  const { data } = await supabase.from('whatsapp_messages').select('id').eq('wamid', wamid).limit(1).maybeSingle()
+  return Boolean(data)
 }
 
 // Which appointment is a Confirmar/Cambiar/Cancelar reply about?
@@ -310,6 +276,7 @@ export default defineEventHandler(async (event) => {
         .select('id, whatsapp_phone_number_id, whatsapp_access_token')
         .eq('whatsapp_phone_number_id', phoneNumberId)
         .limit(2)
+      for (const match of matches ?? []) await withMessagingTokens(match.id, match)
 
       if (lookupError) {
         console.error(`[whatsapp] could not look up the account for phone number id ${phoneNumberId}: ${lookupError.message}`)
@@ -356,21 +323,39 @@ export default defineEventHandler(async (event) => {
       }
 
       for (const status of value?.statuses ?? []) {
+        // Only ever forward. Meta does not promise to deliver callbacks in
+        // the order they happened, and redelivers any it thinks we missed,
+        // so writing each one as it arrives let a late 'delivered' turn a
+        // 'read' back into two grey ticks, and a late 'sent' clear a
+        // failure -- status and reason both -- leaving a thread showing a
+        // message as on its way that never arrived. See statusesThisMayReplace.
+        // 'sent' replaces nothing: it is where every outbound row starts.
+        const replaceable = statusesThisMayReplace(status.status)
+        if (!replaceable?.length) continue
+
         // error_data.details carries the actual reason behind a generic
         // title like "Media upload error" (e.g. which mime type/constraint
         // was violated) -- appending it is the difference between a
         // diagnosable failure and a guess next time one happens.
         const error = status.errors?.[0]
         const errorMessage = error ? [error.title, error.error_data?.details].filter(Boolean).join(' -- ') : null
-        await supabase
-          .from('whatsapp_messages')
-          .update({
-            status: status.status,
-            error_code: error?.code != null ? String(error.code) : null,
-            error_message: errorMessage,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('wamid', status.id)
+        // Through record_whatsapp_status rather than a plain update, because
+        // the row may not exist YET: every sender asks Meta first and stores
+        // the row with the wamid it gets back, and a fast refusal (131026,
+        // 131047) can beat that insert here -- for a media reply, by a whole
+        // storage upload. A plain update matched nothing, and the insert that
+        // followed wrote 'sent' over a message that had already failed. The
+        // function applies the same forward-only rule as above, and holds a
+        // status for an unknown wamid briefly so the insert picks it up
+        // (20261003134857_whatsapp_status_before_its_message.sql).
+        const { error: updateError } = await supabase.rpc('record_whatsapp_status', {
+          p_account_id: account.id,
+          p_wamid: status.id,
+          p_status: status.status,
+          p_error_code: error?.code != null ? String(error.code) : null,
+          p_error_message: errorMessage,
+        })
+        if (updateError) console.error(`[whatsapp] could not record status ${status.status} for ${status.id}: ${updateError.message}`)
       }
 
       // Keyed by wa_id, because a batch can carry messages from more than one
@@ -378,8 +363,17 @@ export default defineEventHandler(async (event) => {
       const profileNames = new Map((value?.contacts ?? []).map((c) => [c.wa_id, c.profile?.name?.trim() || null]))
 
       for (const msg of value?.messages ?? []) {
+        // A redelivery of something already stored: nothing to do, and no
+        // reason to download its media again or look anybody up. Only a
+        // shortcut -- two copies arriving at once both get past it, which is
+        // what the insert's own duplicate check below is for.
+        if (await alreadyStored(supabase, msg.id)) continue
+
         const patientIds = await findPatientIdsByPhone(supabase, account.id, msg.from)
-        const patientId = patientIds[0] ?? null
+        // One of them, chosen by a fixed rule rather than by whichever row
+        // the query returned first -- which for a family phone was usually a
+        // child's record. See chooseInboundOwner (utils/inboundOwner.ts).
+        const patientId = await pickInboundPatientId(supabase, account.id, msg.from, patientIds)
         // Three ways to belong to somebody, in descending confidence: a
         // patient, a lead already on the board, or nobody -- which used to
         // mean the message attached to nothing and the person who sent it
@@ -428,14 +422,31 @@ export default defineEventHandler(async (event) => {
           insert.body_preview = text.slice(0, 2000) || null
         }
 
-        await supabase.from('whatsapp_messages').insert(insert)
+        const { error: insertError } = await supabase.from('whatsapp_messages').insert(insert)
+
+        // Everything below is a consequence of this message arriving, so it
+        // happens once, when the message is first stored -- never on Meta's
+        // redelivery of it. A redelivery fails here on the unique wamid, and
+        // that error used to go unread: the lead's "Replied" event, the push,
+        // the automations and the reply classification all ran again, and a
+        // repeated "Cancelar" -- its appointment already cancelled by the
+        // first -- fell through to the patient's NEXT booked visit and
+        // cancelled that as well.
+        //
+        // Any other failure stops the side effects too: acting on a message
+        // the inbox does not have (and that a retry may yet store, and then
+        // act on) is how the same thing happens twice.
+        if (insertError) {
+          if (insertError.code !== '23505') {
+            console.error(`[whatsapp] could not store inbound message ${msg.id} for account ${account.id}: ${insertError.message}`)
+          }
+          continue
+        }
 
         // A lead writing back is the thing the whole acquisition funnel is
         // trying to cause, and until now it left no trace anywhere except an
         // unattributed row. Recorded on the lead's own timeline so the drawer
-        // shows it, and flagged as needing a person: the AI receptionist does
-        // not answer real enquiries yet, so nobody is replying unless a human
-        // does.
+        // shows it.
         if (leadId) {
           await supabase.from('lead_events').insert({
             account_id: account.id,
@@ -444,13 +455,25 @@ export default defineEventHandler(async (event) => {
             title: 'Replied',
             detail: insert.body_preview?.slice(0, 500) ?? null,
           })
-          // Only lifts a lead the AI was handling, so a lead a person has
-          // already taken over is left where that person put it.
-          await supabase
-            .from('leads')
-            .update({ ai_state: 'needs_human' })
-            .eq('id', leadId)
-            .eq('ai_state', 'handling')
+          // A lead the AI is handling stays the AI's when the receptionist
+          // will draft for it: this message is precisely what the drafting
+          // tick looks for, and it only looks at 'handling'. Lifting every
+          // such lead to 'needs_human' on arrival -- which this did, from
+          // before the receptionist drafted anything -- meant the one event
+          // that should produce a draft was the one that guaranteed none
+          // ever would, for every WhatsApp lead in every clinic.
+          //
+          // When nothing will draft (switched off, or Growth lapsed), it goes
+          // to a person, since otherwise nobody is reading it. The tick hands
+          // over too, when the model cannot answer. Only from 'handling', so
+          // a lead a person already took over stays where they put it.
+          if (!(await receptionistDraftsFor(supabase, account.id))) {
+            await supabase
+              .from('leads')
+              .update({ ai_state: 'needs_human' })
+              .eq('id', leadId)
+              .eq('ai_state', 'handling')
+          }
         }
 
         let senderName = msg.from
@@ -498,6 +521,7 @@ export default defineEventHandler(async (event) => {
               // dialog elsewhere, not something to apply automatically off
               // an inbound message).
               await supabase.from('appointments').update({ status: 'cancelled' }).eq('id', appt.id)
+              await pushAppointmentEvent(supabase, appt.id, 'cancelled')
               // No staff session on a Meta webhook call, so this can't go
               // through fire.post.ts (requireTeamMember-gated) -- same
               // direct-call pattern as birthday-cron.post.ts.
@@ -543,7 +567,8 @@ export default defineEventHandler(async (event) => {
   // every transient cause -- an app secret not yet saved, a deploy mid-flight,
   // a clock skew -- from lost messages into late ones. Replays are safe:
   // whatsapp_messages.wamid is uniquely indexed, so a redelivery of something
-  // already stored inserts nothing.
+  // already stored inserts nothing -- and does nothing else either, since
+  // every side effect of a message waits on its insert succeeding.
   //
   // The cost is an oracle: a forged request naming a phone_number_id we know
   // gets 401, an unknown one gets 200, so the difference reveals which

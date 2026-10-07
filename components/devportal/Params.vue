@@ -11,8 +11,8 @@ defineProps<{ params: Param[]; title?: string }>()
 <template>
   <div class="my-4">
     <p v-if="title" class="mb-1.5 text-[12.5px] font-[560] text-ink-700">{{ title }}</p>
-    <div class="overflow-hidden rounded-card border border-line">
-      <table class="w-full text-[12.5px]">
+    <div class="overflow-x-auto rounded-card border border-line">
+      <table class="w-full min-w-[520px] text-[12.5px]">
         <tbody class="divide-y divide-line-row">
           <tr v-for="param in params" :key="param.name" class="align-top">
             <td class="w-[30%] px-3 py-2">

@@ -209,7 +209,7 @@ function formatDate(iso: string) {
       <UiBtn variant="primary" @click="navigateTo('/billing/new')">+ {{ t('Quick receipt', 'Recibo rápido') }}</UiBtn>
     </PageHeader>
 
-    <div class="flex-1 overflow-y-auto bg-surface-page p-6">
+    <div class="flex-1 overflow-y-auto bg-surface-page p-4 sm:p-6">
       <div class="mx-auto max-w-xl">
         <!-- The active patient filter, as a removable chip. Shown above the
              status chips because it scopes them: with it on, "Unpaid · 3"

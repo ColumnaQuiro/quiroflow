@@ -53,10 +53,10 @@ function confirm() {
       aria-modal="true"
       :aria-labelledby="titleId"
       data-cy="confirm-dialog"
-      class="w-full max-w-[520px] rounded-card border border-line bg-surface shadow-popover"
+      class="max-h-full w-full max-w-[520px] overflow-y-auto rounded-card border border-line bg-surface shadow-popover"
     >
       <div class="flex flex-col gap-3 px-6 pb-2 pt-6">
-        <h2 :id="titleId" class="text-[18px] font-bold" :class="tone === 'danger' ? 'text-danger-text' : 'text-ink-900'">{{ title }}</h2>
+        <h2 :id="titleId" class="break-words text-[18px] font-bold" :class="tone === 'danger' ? 'text-danger-text' : 'text-ink-900'">{{ title }}</h2>
         <slot />
         <label v-if="confirmWord" class="mt-1 flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
           {{ t(`Type ${confirmWord} to confirm`, `Escribe ${confirmWord} para confirmar`) }}

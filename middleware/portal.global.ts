@@ -4,11 +4,18 @@ export default defineNuxtRouteMiddleware(async (to) => {
   // would just redirect it to itself.
   if (['/portal/login', '/portal/signup', '/portal/not-found'].includes(to.path)) return
 
-  const user = useSupabaseUser()
-  if (!user.value) return navigateTo('/portal/login')
-
+  // useSupabaseUser() lags a fresh sign-in: straight after
+  // signInWithPassword it is still empty, so the sign-in's own
+  // navigateTo('/portal') was bounced straight back here -- the patient
+  // pressed "Sign in", saw the button come back, and had to press it again.
+  // pages/login.vue hit the same thing on the staff side. The session is
+  // already in the client by then, so ask it when the ref has not caught up.
   const supabase = useSupabaseClient()
-  const { data: patient } = await supabase.from('patients').select('id').eq('user_id', user.value.sub).maybeSingle()
+  const user = useSupabaseUser()
+  const userId = user.value?.sub ?? (await supabase.auth.getSession()).data.session?.user.id
+  if (!userId) return navigateTo('/portal/login')
+
+  const { data: patient } = await supabase.from('patients').select('id').eq('user_id', userId).maybeSingle()
 
   if (!patient) {
     // Scoped to the clinic code entered on the sign-in form (see

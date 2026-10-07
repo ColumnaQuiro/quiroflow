@@ -1,4 +1,5 @@
 import { practitionerWindowsForDay } from '~/utils/businessHours'
+import { wallClockToUtc } from '~/utils/clinicClock'
 import type { BusinessHours } from '~/utils/businessHours'
 import { ApiError, badRequest, defineApiHandler } from '~/server/utils/publicApi'
 import { assertBelongsToAccount } from '~/server/utils/publicApiHandlers'
@@ -14,7 +15,11 @@ import { assertBelongsToAccount } from '~/server/utils/publicApiHandlers'
 //     set their own;
 //   * slots step by the appointment's own length, so what's offered here is
 //     bookable as-is rather than needing the caller to round;
-//   * existing appointments and availability blocks remove slots.
+//   * only practitioners who work at the clinic asked about are offered;
+//   * existing appointments and availability blocks remove slots -- the
+//     practitioner's appointments and own blocks at every clinic of the
+//     account, since they cannot be in two places at once; a block for a
+//     whole clinic only at that clinic.
 //
 // Everything in and out is UTC ISO 8601. business_hours are wall-clock
 // strings in the clinic's timezone, so they're converted using that timezone
@@ -50,23 +55,29 @@ export default defineApiHandler({ scope: 'appointments:read' }, async ({ event, 
   const appointmentType = await assertBelongsToAccount(supabase, 'appointment_types', appointmentTypeId, accountId, 'appointment_type_id', { archived_at: null })
   const timezone = (clinic.timezone as string) || 'Europe/Madrid'
 
-  // Practitioners considered. Unlike the public booking page this does not
-  // require online_booking_enabled: an authenticated integration acts for
-  // the clinic, so it can see practitioners the clinic doesn't publish to
-  // patients. online_booking_enabled is returned per practitioner so a
-  // caller building a patient-facing widget can filter on it.
+  // Practitioners considered: those who work at THIS clinic (Settings ->
+  // Team -> Clinics), as the booking page offers them. Every practitioner in
+  // the account used to be listed, so a clinic's availability offered people
+  // who are never there -- and POST /appointments booked them.
+  //
+  // Unlike the public booking page this does not require
+  // online_booking_enabled: an authenticated integration acts for the clinic,
+  // so it can see practitioners the clinic doesn't publish to patients.
+  // online_booking_enabled is returned per practitioner so a caller building
+  // a patient-facing widget can filter on it.
   let practitionerQuery = supabase
     .from('team_members')
-    .select('id, full_name, business_hours, online_booking_enabled')
+    .select('id, full_name, business_hours, online_booking_enabled, team_member_clinics!inner(clinic_id)')
     .eq('account_id', accountId)
     .eq('is_practitioner', true)
     .is('deleted_at', null)
+    .eq('team_member_clinics.clinic_id', clinicId)
   if (practitionerFilter) practitionerQuery = practitionerQuery.eq('id', practitionerFilter)
 
   const { data: practitioners, error: practitionerError } = await practitionerQuery
   if (practitionerError) throw new ApiError('server_error', practitionerError.message)
   if (practitionerFilter && !practitioners?.length) {
-    throw badRequest(`No active practitioner in this account with id "${practitionerFilter}".`, 'practitioner_id')
+    throw badRequest(`No active practitioner with id "${practitionerFilter}" works at this clinic.`, 'practitioner_id')
   }
 
   const rangeStart = new Date(`${from}T00:00:00Z`)
@@ -75,20 +86,26 @@ export default defineApiHandler({ scope: 'appointments:read' }, async ({ event, 
   const rangeEnd = new Date(Date.parse(`${to}T00:00:00Z`) + 2 * 86400000)
 
   const [{ data: appointments }, { data: blocks }, { data: overrides }] = await Promise.all([
+    // Every clinic's appointments, not only this one's: a practitioner who
+    // works at two is busy here while they are seeing somebody at the other.
+    // POST /appointments checks clashes across clinics, so a slot offered
+    // here on this clinic's diary alone was refused when booked.
     supabase
       .from('appointments')
       .select('practitioner_id, starts_at, ends_at')
       .eq('account_id', accountId)
-      .eq('clinic_id', clinicId)
       .is('deleted_at', null)
       .neq('status', 'cancelled')
       .lt('starts_at', rangeEnd.toISOString())
       .gt('ends_at', rangeStart.toISOString()),
+    // This clinic's blocks, and every practitioner's own blocks at any
+    // clinic: a morning blocked off for them at the other one is a morning
+    // they are not here either. Another clinic's closure is its own.
     supabase
       .from('availability_blocks')
       .select('practitioner_id, starts_at, ends_at')
       .eq('account_id', accountId)
-      .eq('clinic_id', clinicId)
+      .or(`clinic_id.eq.${clinicId},practitioner_id.not.is.null`)
       .lt('starts_at', rangeEnd.toISOString())
       .gt('ends_at', rangeStart.toISOString()),
     supabase
@@ -192,40 +209,4 @@ function requireDateParam(value: unknown, field: string): string {
     throw badRequest(`"${field}" is required and must be a date in YYYY-MM-DD form.`, field)
   }
   return raw
-}
-
-// Turns "2026-03-14" + "09:00" in a named timezone into the UTC instant it
-// refers to.
-//
-// Two passes because the offset depends on the instant we're solving for:
-// the first guess uses the offset at the naive-UTC reading of the wall clock,
-// which is wrong for the couple of hours a year that straddle a DST switch.
-// Re-reading the offset at the corrected instant settles it.
-function wallClockToUtc(date: string, hhmm: string, timeZone: string): number {
-  const [hours, minutes] = hhmm.split(':').map(Number)
-  const naive = Date.parse(`${date}T00:00:00Z`) + (hours * 60 + minutes) * 60000
-
-  let instant = naive - offsetMinutes(naive, timeZone) * 60000
-  const settled = naive - offsetMinutes(instant, timeZone) * 60000
-  if (settled !== instant) instant = settled
-  return instant
-}
-
-// Minutes that `timeZone` is ahead of UTC at the given instant.
-function offsetMinutes(instant: number, timeZone: string): number {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    hour12: false,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  }).formatToParts(new Date(instant))
-
-  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0)
-  // Intl renders midnight as hour 24 in some ICU versions; normalise it.
-  const asUtc = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour') % 24, get('minute'), get('second'))
-  return Math.round((asUtc - instant) / 60000)
 }

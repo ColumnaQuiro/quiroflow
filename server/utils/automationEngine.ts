@@ -27,6 +27,7 @@ import { evaluateBranch, fieldsUsed, type BranchConfig, type ConditionFacts } fr
 import { isValidQuietHours, nextAllowedSendTime, segmentIsDue, type QuietHours, type SegmentSchedule } from '~/utils/automationTiming'
 import { automationFieldValue, type MergeContext } from '~/utils/automationFields'
 import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
+import { fetchAllRows } from '~/composables/useFetchAllRows'
 
 // The automation engine: walks one run of a rule through its steps.
 //
@@ -82,6 +83,7 @@ interface EngineRule {
   account_id: string
   name: string
   trigger_event: string
+  enabled: boolean
   dry_run: boolean
   quiet_hours: QuietHours | null
 }
@@ -188,6 +190,10 @@ export async function startPatientRun(
       rule_id: opts.ruleId,
       patient_id: opts.patientId,
       appointment_id: opts.appointmentId ?? null,
+      // Set here rather than left to the column's now(): the claim that walks
+      // it compares against this server's clock, and a database clock a few
+      // milliseconds ahead would make a run started now look not yet due.
+      resume_at: new Date().toISOString(),
       context: {
         triggerBody: opts.triggerBody ?? null,
         extraContext: opts.extraContext ?? null,
@@ -215,7 +221,8 @@ export async function startPatientRun(
 export async function startLeadSequence(supabase: any, accountId: string, ruleId: string, leadId: string, origin: string) {
   const { data: run } = await supabase
     .from('automation_sequence_runs')
-    .insert({ account_id: accountId, rule_id: ruleId, lead_id: leadId })
+    // resume_at from this clock for the same reason as startPatientRun.
+    .insert({ account_id: accountId, rule_id: ruleId, lead_id: leadId, resume_at: new Date().toISOString() })
     .select(RUN_COLUMNS)
     .maybeSingle()
 
@@ -226,6 +233,76 @@ export async function startLeadSequence(supabase: any, accountId: string, ruleId
   await logRunEvent(supabase, run, { outcome: 'started' })
   await advanceRun(supabase, run as SequenceRun, origin)
   return run.id as string
+}
+
+/**
+ * How long a drip still in flight on one lead counts against starting the same
+ * drip for another lead who is the same person. Long enough to cover any
+ * welcome sequence; short enough that a run left 'failed' and forgotten does
+ * not block somebody enquiring again months later.
+ */
+export const SAME_PERSON_WINDOW_DAYS = 30
+
+/**
+ * A run of this rule already in flight for the same person under another lead
+ * -- same phone number or same email -- or null.
+ *
+ * Somebody who fills in the same Meta form twice is two leads, deliberately:
+ * each submission is an enquiry, with its own answers and attribution, and
+ * the newest is the one a reply attaches to. But it is one person, and two
+ * leads used to mean two welcome drips, every message of it twice over.
+ *
+ * "In flight" is running or failed (a failed run is waiting for a person's
+ * Retry, not finished), started within SAME_PERSON_WINDOW_DAYS. A drip that
+ * has finished does not count: somebody who went through it and comes back is
+ * enquiring again, and gets it again. Two submissions landing in the same
+ * instant can both pass this; a person cannot fill in a form twice that fast.
+ */
+export async function sequenceRunForSamePerson(
+  supabase: any,
+  accountId: string,
+  ruleId: string,
+  lead: { id: string; phone: string | null | undefined; email: string | null | undefined },
+): Promise<{ leadId: string; reference: string | null } | null> {
+  const since = new Date(Date.now() - SAME_PERSON_WINDOW_DAYS * 24 * 3600 * 1000).toISOString()
+  const live = () =>
+    supabase
+      .from('automation_sequence_runs')
+      .select('lead_id, leads!inner(reference)')
+      .eq('account_id', accountId)
+      .eq('rule_id', ruleId)
+      .in('status', ['running', 'failed'])
+      .gte('started_at', since)
+      .neq('lead_id', lead.id)
+      .is('leads.deleted_at', null)
+      .limit(1)
+
+  const found = (data: any[] | null) => {
+    const row = (data ?? [])[0]
+    if (!row) return null
+    const other = Array.isArray(row.leads) ? row.leads[0] : row.leads
+    return { leadId: row.lead_id as string, reference: (other?.reference as string | undefined) ?? null }
+  }
+
+  const digits = (lead.phone ?? '').replace(/\D/g, '')
+  if (digits) {
+    // Stored as bare international digits by every ingest path; the "+" form
+    // as well, for a lead somebody typed in by hand.
+    const { data } = await live().in('leads.phone', [digits, `+${digits}`])
+    const match = found(data)
+    if (match) return match
+  }
+
+  const email = (lead.email ?? '').trim()
+  if (email) {
+    // ilike for case only: the wildcards in it are escaped, so an address
+    // with an underscore matches itself and nothing else.
+    const { data } = await live().ilike('leads.email', email.replace(/[\\%_]/g, (c) => `\\${c}`))
+    const match = found(data)
+    if (match) return match
+  }
+
+  return null
 }
 
 /**
@@ -272,16 +349,78 @@ export const advanceSequenceRun = (supabase: any, run: SequenceRun, origin: stri
  * `resume` is how an event wakes a run parked at a wait_until: 'met' takes the
  * met chain. Without it, a parked wait whose deadline has passed takes the
  * timeout chain, and one whose deadline has not is left where it is.
+ *
+ * A paused rule (enabled = false) pauses everybody in it, not only the door:
+ * the walk sends nothing, applies nothing and leaves the run exactly where it
+ * is -- still 'running', same cursor, same resume_at -- whichever path asked
+ * (the tick, an event, Retry, Skip). See holdWhilePaused for the one thing it
+ * does record, and for what happens when the rule is switched back on. The
+ * tick does not even claim a paused rule's runs (lead-sequence-cron filters
+ * them out); any other path claims, finds the rule paused, and lets go.
  */
 export async function advanceRun(supabase: any, run: SequenceRun, origin: string, opts: { resume?: 'met' } = {}) {
-  const subject = await loadSubject(supabase, run)
-  if (!subject) return
+  const claim = await claimRun(supabase, run.id, { due: opts.resume !== 'met' })
+  if (!claim) return
+  try {
+    await walkRun(supabase, claim.run, origin, opts)
+  } finally {
+    await releaseRun(supabase, run.id, claim.until)
+  }
+}
 
+/**
+ * How long a claim on a run lasts. Far longer than any walk (a function is
+ * killed long before), and short enough that a process that died holding one
+ * costs a run one tick at most.
+ */
+const CLAIM_MINUTES = 10
+
+/**
+ * Takes a run for this process, or says somebody else has it.
+ *
+ * Every path that walks a run comes through here: the inline start of a drip
+ * or a patient rule, the tick, an event waking a wait, a person's Retry or
+ * Skip. Until this existed nothing made them take turns -- a lead's run is
+ * inserted due and walked in the same request, and a tick that read it in
+ * that window walked it too, from the same step, and sent the first message
+ * twice (four times, with three ticks in the window).
+ *
+ * One conditional update: still running, nobody else's claim live, and -- for
+ * everything except an event wake, whose run is deliberately parked in the
+ * future -- actually due. It returns the row as it is NOW, and that is what is
+ * walked rather than whatever the caller read: a tick's batch is read before
+ * any of it is walked, and walking a stale copy of a run another process has
+ * since moved on is the same double send by a slower route.
+ */
+async function claimRun(supabase: any, runId: string, opts: { due: boolean }): Promise<{ run: SequenceRun; until: string } | null> {
+  const now = new Date()
+  const until = new Date(now.getTime() + CLAIM_MINUTES * 60_000).toISOString()
+  let claim = supabase
+    .from('automation_sequence_runs')
+    .update({ claimed_until: until })
+    .eq('id', runId)
+    .eq('status', 'running')
+    .or(`claimed_until.is.null,claimed_until.lt.${now.toISOString()}`)
+  if (opts.due) claim = claim.lte('resume_at', now.toISOString())
+  const { data, error } = await claim.select(RUN_COLUMNS).maybeSingle()
+  if (error) {
+    console.error('[automationEngine] could not claim run', runId, error.message)
+    return null
+  }
+  return data ? { run: data as SequenceRun, until } : null
+}
+
+/** Lets the run go -- only if the claim is still ours, not one taken after ours ran out. */
+async function releaseRun(supabase: any, runId: string, until: string) {
+  await supabase.from('automation_sequence_runs').update({ claimed_until: null }).eq('id', runId).eq('claimed_until', until)
+}
+
+async function walkRun(supabase: any, run: SequenceRun, origin: string, opts: { resume?: 'met' }) {
   const [{ data: ruleRow }, { data: actionRows }] = await Promise.all([
-    supabase.from('automation_rules').select('id, account_id, name, trigger_event, dry_run, quiet_hours').eq('id', run.rule_id).maybeSingle(),
+    supabase.from('automation_rules').select('id, account_id, name, trigger_event, enabled, dry_run, quiet_hours').eq('id', run.rule_id).maybeSingle(),
     supabase.from('automation_actions').select('id, action_type, position, config, parent_id, branch').eq('rule_id', run.rule_id).order('position'),
   ])
-  const rule: EngineRule = ruleRow ?? { id: run.rule_id, account_id: run.account_id, name: '', trigger_event: '', dry_run: false, quiet_hours: null }
+  const rule: EngineRule = ruleRow ?? { id: run.rule_id, account_id: run.account_id, name: '', trigger_event: '', enabled: true, dry_run: false, quiet_hours: null }
   const actions = ((actionRows ?? []) as EngineAction[]).map((a) => ({ ...a, parent_id: a.parent_id ?? null, branch: a.branch ?? null, config: a.config ?? {} }))
 
   const chainOf = (parentId: string | null, branch: string | null) => actions.filter((a) => a.parent_id === parentId && a.branch === branch)
@@ -289,6 +428,19 @@ export async function advanceRun(supabase: any, run: SequenceRun, origin: string
   const nextInChain = (action: EngineAction) => chainOf(action.parent_id, action.branch).find((a) => a.position > action.position) ?? null
   const current = run.current_action_id ? (actions.find((a) => a.id === run.current_action_id) ?? null) : null
   const waitingEvent = run.waiting_for && run.waiting_for !== 'delay' ? run.waiting_for : null
+
+  // Before the person is even re-checked: a paused rule does nothing to them,
+  // including the lead checks that call out to PracticeHub.
+  if (rule.enabled === false) return holdWhilePaused(supabase, run, root, current, waitingEvent, chainOf, opts)
+
+  const subject = await loadSubject(supabase, run)
+  if (!subject) return
+
+  const appointment = run.appointment_id
+    ? ((await supabase.from('appointments').select('status, deleted_at, starts_at').eq('id', run.appointment_id).maybeSingle()).data as AppointmentState | null)
+    : null
+  if (await appointmentGone(supabase, run, rule, appointment)) return
+  const late = lateForVisit(run, rule, appointment)
 
   // ---- where to start
   let start: EngineAction | null
@@ -300,23 +452,7 @@ export async function advanceRun(supabase: any, run: SequenceRun, origin: string
       await supabase.from('automation_sequence_runs').update({ resume_at: run.wait_deadline }).eq('id', run.id)
       return
     }
-    // The claim: only one of the event and the cron takes this outlet. The
-    // other finds waiting_for already cleared and leaves the run alone.
-    const { data: claimed } = await supabase
-      .from('automation_sequence_runs')
-      .update({ waiting_for: null, wait_deadline: null, branch_taken: outlet })
-      .eq('id', run.id)
-      .eq('status', 'running')
-      .eq('waiting_for', waitingEvent)
-      .select('id')
-      .maybeSingle()
-    if (!claimed) return
-    await logRunEvent(supabase, run, {
-      outcome: outlet === 'met' ? 'met' : 'timed_out',
-      position: current.parent_id ? null : current.position,
-      action: current,
-      detail: outlet === 'met' ? `${waitingEvent} happened` : `No ${waitingEvent} before the deadline`,
-    })
+    if (!(await takeWaitOutlet(supabase, run, current, waitingEvent, outlet))) return
     start = chainOf(current.id, outlet)[0] ?? null
     if (!start) return finish(supabase, run, root, current)
   } else if (current && current.parent_id) {
@@ -388,6 +524,17 @@ export async function advanceRun(supabase: any, run: SequenceRun, origin: string
       await logRunEvent(supabase, run, { outcome: 'branched', position: eventPosition, action, detail: yes ? 'Yes' : 'No' })
       last = action
       action = first
+      continue
+    }
+
+    if (late && (isMessage(action) || action.action_type === 'notify')) {
+      await supabase
+        .from('automation_sequence_runs')
+        .update({ ...position, attempts: 0, last_error: null, current_action_id: next?.id ?? null, waiting_for: null })
+        .eq('id', run.id)
+      await logRunEvent(supabase, run, { outcome: 'skipped', position: eventPosition, action, detail: late })
+      last = action
+      action = next
       continue
     }
 
@@ -474,6 +621,85 @@ async function finish(supabase: any, run: SequenceRun, root: EngineAction[], las
 }
 
 /**
+ * Takes one outlet of a wait_until: 'met' when the event happened, 'timeout'
+ * when the deadline passed. Returns false when somebody else already took one.
+ *
+ * The update is the claim: only one of the event and the cron takes this
+ * outlet. The other finds waiting_for already cleared and leaves the run alone.
+ */
+async function takeWaitOutlet(supabase: any, run: SequenceRun, wait: EngineAction, waitingEvent: string, outlet: 'met' | 'timeout', note = ''): Promise<boolean> {
+  const { data: claimed } = await supabase
+    .from('automation_sequence_runs')
+    .update({ waiting_for: null, wait_deadline: null, branch_taken: outlet })
+    .eq('id', run.id)
+    .eq('status', 'running')
+    .eq('waiting_for', waitingEvent)
+    .select('id')
+    .maybeSingle()
+  if (!claimed) return false
+  await logRunEvent(supabase, run, {
+    outcome: outlet === 'met' ? 'met' : 'timed_out',
+    position: wait.parent_id ? null : wait.position,
+    action: wait,
+    detail: (outlet === 'met' ? `${waitingEvent} happened` : `No ${waitingEvent} before the deadline`) + note,
+  })
+  return true
+}
+
+/**
+ * A paused rule's run, reached by any path that walks runs. It stays where it
+ * is -- status 'running', the same step, the same resume_at -- and nothing is
+ * sent, applied or even re-checked.
+ *
+ * The one thing recorded is an event a wait_until was waiting for, if it
+ * happens while paused and before the wait's deadline: the run moves onto the
+ * first step of the "met" path and waits THERE, without doing it. Otherwise a
+ * patient who booked during the pause would be sent the "we miss you" of the
+ * timeout path the moment it was switched back on. Exits (exit_on) still
+ * apply while paused, in automationEvent: leaving sends nothing.
+ *
+ * Switching back on needs nothing of its own. The tick finds the runs whose
+ * resume_at has passed -- however long ago -- and carries each on from the
+ * step it was on, exactly as it would any due run:
+ *   - under the tick's usual cap (MAX_PER_TICK, oldest first), so a big
+ *     automation drains over a few ticks rather than in one burst;
+ *   - inside the rule's quiet hours, which are checked at the moment of
+ *     sending, so a run resumed at night sends in the morning;
+ *   - a delay that ran out during the pause is over: the step after it goes
+ *     at the first tick, not a whole delay later;
+ *   - a wait_until whose deadline passed during the pause takes its timeout
+ *     path, unless the event was recorded as above;
+ *   - a reminder's step that came due before its visit and is only reached
+ *     after the visit started is skipped, not sent late (lateForVisit);
+ *   - the per-person checks (lead converted or lost, Growth, appointment
+ *     deleted or cancelled, patient deleted) run first, as before every step.
+ */
+async function holdWhilePaused(
+  supabase: any,
+  run: SequenceRun,
+  root: EngineAction[],
+  current: EngineAction | null,
+  waitingEvent: string | null,
+  chainOf: (parentId: string | null, branch: string | null) => EngineAction[],
+  opts: { resume?: 'met' },
+) {
+  if (opts.resume !== 'met' || !current || current.action_type !== 'wait_until' || !waitingEvent) return
+  // Past its deadline the wait has already timed out, whether or not anybody
+  // has walked it yet: the event came too late to count.
+  if (!run.wait_deadline || new Date(run.wait_deadline).getTime() <= Date.now()) return
+  if (!(await takeWaitOutlet(supabase, run, current, waitingEvent, 'met', ' (while paused; continues from here when switched back on)'))) return
+  const first = chainOf(current.id, 'met')[0] ?? null
+  // An empty "met" path is the end of the run; finishing sends nothing.
+  if (!first) return finish(supabase, run, root, current)
+  // Parked on the met path's first step, due now: walkRun starts a branch
+  // chain at current_action_id when nothing is being waited for.
+  await supabase
+    .from('automation_sequence_runs')
+    .update({ current_action_id: first.id, waiting_for: null, resume_at: new Date().toISOString(), attempts: 0, last_error: null })
+    .eq('id', run.id)
+}
+
+/**
  * Who the run is for, re-read and re-checked before every advance. Null means
  * the run was stopped (or, for a lead, deferred) and there is nothing to do.
  */
@@ -534,6 +760,74 @@ async function loadSubject(supabase: any, run: SequenceRun): Promise<Subject | n
     return null
   }
   return { kind: 'patient', patient }
+}
+
+/**
+ * Rules whose whole subject is a visit that is still going to happen: a
+ * reminder "N hours before" it. Once that visit is cancelled, every step left
+ * in the run is about an appointment the patient no longer has.
+ */
+const UPCOMING_VISIT_TRIGGERS = ['appointment.hours_before']
+
+/**
+ * Ends a run whose appointment is no longer there, and says so. Returns true
+ * when it did.
+ *
+ * "Eliminar cita" sets deleted_at and leaves status 'booked', so the crons
+ * that START a rule learnt to skip it -- but a run that had already started
+ * carried its appointment_id past the delete, and at the next tick walked on
+ * and sent the rest of its steps about a visit that no longer existed. A
+ * deleted appointment ends any run tied to it. A cancelled one ends only a
+ * reminder's run: an "appointment.cancelled" rule exists precisely to follow
+ * a cancellation up, and a rebooking drip after a completed visit is not
+ * about whether some later one was cancelled.
+ *
+ * Checked before every advance, which is also the only time a run can act, so
+ * nothing has to find these runs at the moment of the delete.
+ */
+async function appointmentGone(supabase: any, run: SequenceRun, rule: EngineRule, appt: AppointmentState | null): Promise<boolean> {
+  if (!appt) return false
+  if (appt.deleted_at) {
+    await stopRun(supabase, run, 'appointment_deleted')
+    return true
+  }
+  if (appt.status === 'cancelled' && UPCOMING_VISIT_TRIGGERS.includes(rule.trigger_event)) {
+    await stopRun(supabase, run, 'appointment_cancelled')
+    return true
+  }
+  return false
+}
+
+interface AppointmentState {
+  status: string
+  deleted_at: string | null
+  starts_at: string
+}
+
+/**
+ * Why the steps this walk reaches are too late to do, or null.
+ *
+ * A reminder's run (UPCOMING_VISIT_TRIGGERS) counts down to a visit. A step
+ * that came due BEFORE the visit started but is only reached AFTER it -- the
+ * rule was paused across the visit, or nothing walked it in time -- is about
+ * a visit that has already begun: "see you in two hours" sent once the
+ * patient has been and gone. Those steps are skipped, with the reason in the
+ * history, rather than sent late; the run carries on past them. A step due
+ * after the visit started was meant for then and is not late.
+ *
+ * Only steps that reach a person (messages, notifications) are skipped: a
+ * tag or a lead move is no less true for being late. Every step of one walk
+ * shares the walk's due time, since a walk only ever stops at a park.
+ */
+function lateForVisit(run: SequenceRun, rule: EngineRule, appt: AppointmentState | null): string | null {
+  if (!appt || !UPCOMING_VISIT_TRIGGERS.includes(rule.trigger_event)) return null
+  const visit = new Date(appt.starts_at).getTime()
+  const now = Date.now()
+  // An event wake leaves resume_at in the future (the wait's deadline): its
+  // steps are due now.
+  const due = Math.min(run.resume_at ? new Date(run.resume_at).getTime() : now, now)
+  if (!(due < visit && visit <= now)) return null
+  return `Due before the visit at ${appt.starts_at}, which has already started; not sent late.`
 }
 
 /** The clinic whose clock quiet hours are read on: the appointment's, else the account's first. */
@@ -797,6 +1091,8 @@ async function branchFacts(supabase: any, run: SequenceRun, subject: Subject, co
         .select('id', { count: 'exact', head: true })
         .eq('patient_id', p.id)
         .eq('status', 'booked')
+        // A deleted appointment keeps status 'booked'; it is not a future visit.
+        .is('deleted_at', null)
         .gt('starts_at', new Date().toISOString())
       facts.has_future_appointment = (count ?? 0) > 0
     }
@@ -950,11 +1246,22 @@ export async function enrolDueSegments(supabase: any, origin: string, now = new 
       const { data: claimed } = await claim.select('id').maybeSingle()
       if (!claimed) continue
 
-      const { data: patients } = await supabase
-        .from('patients')
-        .select('id, is_minor, do_not_contact, marketing_channels')
-        .eq('account_id', rule.account_id)
-      let candidates = (patients ?? []).filter(
+      // Every page, not the first 1000: an unpaged select stops there without
+      // an error, and a clinic past it had a segment enrol whoever came back
+      // first and skip the rest, every time. Ordered by id so pages neither
+      // overlap nor skip. A failed read throws, and the rule waits for the
+      // next occurrence rather than enrolling half its audience.
+      const patients = await fetchAllRows<{ id: string; is_minor: boolean; do_not_contact: boolean; marketing_channels: string[] | null }>((from, to) =>
+        supabase
+          .from('patients')
+          .select('id, is_minor, do_not_contact, marketing_channels')
+          .eq('account_id', rule.account_id)
+          // Not archived patients -- as segmentAudience counts them.
+          .neq('status', 'inactive')
+          .order('id')
+          .range(from, to),
+      )
+      let candidates = patients.filter(
         (p: { is_minor: boolean; do_not_contact: boolean; marketing_channels: string[] | null }) =>
           !p.is_minor && !p.do_not_contact && (!rule.is_marketing || (p.marketing_channels ?? []).length > 0),
       )
@@ -962,8 +1269,12 @@ export async function enrolDueSegments(supabase: any, origin: string, now = new 
       const reentryDays = Number(segment.reentry_days)
       if (Number.isFinite(reentryDays) && reentryDays > 0) {
         const since = new Date(now.getTime() - reentryDays * 24 * 3600 * 1000).toISOString()
-        const { data: recent } = await supabase.from('automation_sequence_runs').select('patient_id').eq('rule_id', rule.id).gte('started_at', since)
-        const recentIds = new Set((recent ?? []).map((r: { patient_id: string }) => r.patient_id))
+        // Paged for the same reason: reading only the first 1000 runs let
+        // everybody enrolled after them straight back in, inside the window.
+        const recent = await fetchAllRows<{ patient_id: string }>((from, to) =>
+          supabase.from('automation_sequence_runs').select('patient_id').eq('rule_id', rule.id).gte('started_at', since).order('id').range(from, to),
+        )
+        const recentIds = new Set(recent.map((r) => r.patient_id))
         candidates = candidates.filter((p: { id: string }) => !recentIds.has(p.id))
       }
 

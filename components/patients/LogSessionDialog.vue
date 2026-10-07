@@ -33,7 +33,10 @@ const today = localDateStr()
 const NEW = '__new__'
 
 const isToday = (v: UnloggedVisit) => localDateStr(new Date(v.starts_at)) === today
-const todaysVisit = computed(() => props.visits.find(isToday) ?? null)
+// Never picked for anyone: a visit already paid at the walk-in price moves
+// that money onto the bono, which is a decision, not a default.
+const todaysVisit = computed(() => props.visits.find((v) => isToday(v) && !v.paidInvoice) ?? null)
+const unpaidCount = computed(() => props.visits.filter((v) => !v.paidInvoice).length)
 
 const selected = ref<string | null>(null)
 const newDate = ref(today)
@@ -82,8 +85,8 @@ function confirm() {
       <p v-if="loading" class="text-ink-muted">{{ t('Looking for visits…', 'Buscando visitas…') }}</p>
 
       <template v-else>
-        <p v-if="visits.length > 1 && !todaysVisit" class="rounded-ctl bg-warning-bg px-3 py-2 text-[12.5px] text-warning-text">
-          {{ t(`${visits.length} visits have nothing paying for them yet. Pick the one this session is for.`, `${visits.length} visitas aún no tienen nada que las pague. Elige a cuál corresponde esta sesión.`) }}
+        <p v-if="unpaidCount > 1 && !todaysVisit" class="rounded-ctl bg-warning-bg px-3 py-2 text-[12.5px] text-warning-text">
+          {{ t(`${unpaidCount} visits have nothing paying for them yet. Pick the one this session is for.`, `${unpaidCount} visitas aún no tienen nada que las pague. Elige a cuál corresponde esta sesión.`) }}
         </p>
 
         <label
@@ -102,8 +105,16 @@ function confirm() {
             <span v-if="v.unpaidInvoice" class="mt-0.5 block text-[12px] text-ink-muted2">
               {{
                 t(
-                  `${v.unpaidInvoice.invoice_number ?? 'Its unpaid receipt'} (${formatEur(v.unpaidInvoice.total_cents)}, unpaid) will be voided -- the bono pays for this visit.`,
-                  `${v.unpaidInvoice.invoice_number ?? 'Su recibo pendiente'} (${formatEur(v.unpaidInvoice.total_cents)}, sin pagar) se anulará: el bono paga esta visita.`,
+                  `${v.unpaidInvoice.invoice_number ?? 'Its unpaid receipt'} (${formatEur(v.unpaidInvoice.total_cents)}, unpaid): the visit is charged at the bono rate instead -- anything else on it stays owed.`,
+                  `${v.unpaidInvoice.invoice_number ?? 'Su recibo pendiente'} (${formatEur(v.unpaidInvoice.total_cents)}, sin pagar): la visita pasa a cobrarse a precio de bono; lo demás que incluya sigue pendiente.`,
+                )
+              }}
+            </span>
+            <span v-if="v.paidInvoice" data-cy="log-session-paid-visit" class="mt-0.5 block text-[12px] text-ink-muted2">
+              {{
+                t(
+                  `Already paid: ${formatEur(v.paidInvoice.paidCents)} on ${v.paidInvoice.invoice_number ?? 'its receipt'}. That money goes towards the bono, and the visit is charged at the bono rate instead.`,
+                  `Ya pagada: ${formatEur(v.paidInvoice.paidCents)} en ${v.paidInvoice.invoice_number ?? 'su recibo'}. Ese dinero pasa a pagar el bono y la visita se carga a precio de bono.`,
                 )
               }}
             </span>

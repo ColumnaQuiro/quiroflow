@@ -66,5 +66,36 @@ onUnmounted(() => document.removeEventListener('pointerdown', dismissKeyboardOnO
     <NuxtLayout>
       <NuxtPage />
     </NuxtLayout>
+    <AppConfirmHost />
   </div>
 </template>
+
+<style>
+/* A small control that still answers a whole fingertip: the visible button
+   keeps its size and the touchable area grows 8px each way (Apple's 44pt
+   minimum), so rows of compact actions do not have to get taller. */
+.tap-target {
+  position: relative;
+}
+.tap-target::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+}
+/* The page behind the root box, which iOS shows when the view bounces past
+   either end: the theme's own grey, not the WebView's white, so a dark
+   screen does not flash a white strip. */
+html,
+body {
+  background-color: rgb(var(--color-surface-page));
+}
+/* An embedded sign-in shell (components/onboarding/Layout.vue) is white edge
+   to edge, so the strips behind the status bar and the home indicator --
+   which belong to the root box below, grey like every other page -- are
+   painted white too while one is on screen. */
+html.auth-screen,
+html.auth-screen body,
+html.auth-screen #__nuxt > div {
+  background-color: rgb(var(--color-surface));
+}
+</style>

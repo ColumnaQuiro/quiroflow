@@ -35,6 +35,13 @@ export default defineEventHandler(async (event) => {
 
   const supabase = serverSupabaseServiceRole<Database>(event)
 
+  // The team's 8:00 "your day" push rides on this cron rather than one of its
+  // own: it already runs every 15 minutes and reads each clinic's clock, and a
+  // new endpoint would be one more pg_cron job to create by hand in
+  // production (CLAUDE.md, "Scheduling a cron"). Before the rule lookup, so a
+  // clinic with no same-day automation still gets it.
+  await sendStaffMorningSummaries(supabase, now)
+
   const { data: rules } = await supabase
     .from('automation_rules')
     .select('id, account_id, filters')
@@ -64,6 +71,8 @@ export default defineEventHandler(async (event) => {
       .in('account_id', accountIds)
       .in('clinic_id', clinicIds)
       .eq('status', 'booked')
+      // A deleted appointment keeps status 'booked' (only deleted_at is set).
+      .is('deleted_at', null)
       // Sent on an earlier day means it was for the day the appointment has
       // since been moved from -- kept rather than cleared on the move because
       // the panel's History tab reads it.

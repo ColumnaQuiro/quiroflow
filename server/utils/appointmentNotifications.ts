@@ -1,4 +1,5 @@
 import { toE164 } from '~/utils/phone'
+import { onlineBookingAlert } from '~/utils/onlineBookingAlert'
 import { sendResendEmail } from './resend'
 import { sendWhatsAppTemplate, sendWhatsAppText } from './whatsappSend'
 import { sendPushToPatients } from './pushNotifications'
@@ -48,6 +49,13 @@ async function loadAppointmentContext(supabase: any, appointmentId: string): Pro
       'id, account_id, patient_id, starts_at, team_members(full_name), appointment_types(name), patients(first_name, last_name, email, preferred_language, is_minor, do_not_contact), clinics(name, address, phone, email, timezone)',
     )
     .eq('id', appointmentId)
+    // A deleted appointment is never messaged about. "Eliminar cita" only sets
+    // deleted_at (status stays 'booked'), so every sender that found one by id
+    // -- the reminder and hours-before crons, the confirmation catch-up --
+    // used to message the patient about an appointment the clinic had
+    // removed. Refused here as well as filtered in each query, so a caller
+    // that forgets the filter still sends nothing.
+    .is('deleted_at', null)
     .maybeSingle()
   if (!data || !data.patients) return null
 
@@ -122,11 +130,26 @@ export async function resolveTemplateVariant(
   accountDefaultLanguage: string,
   patientPreferredLanguage: string | null,
 ): Promise<{ language: string; bodyText: string } | null> {
-  const response = await $fetch<{ data: MetaTemplate[] }>(`https://graph.facebook.com/v21.0/${businessAccountId}/message_templates`, {
-    params: { fields: 'name,language,components', limit: 100 },
-    headers: { Authorization: `Bearer ${accessToken}` },
-  })
-  const candidates: MetaTemplate[] = (response.data ?? []).filter((t: MetaTemplate) => t.name === templateName)
+  // Every page, and APPROVED only. The first 100 templates were all it read,
+  // and a variant's status was never asked: with the patient's language
+  // preferred (and 'es' the default for everyone), a REJECTED or PAUSED 'es'
+  // variant was picked over the approved one the clinic chose in Settings,
+  // and Meta refused every send.
+  const all: (MetaTemplate & { status?: string })[] = []
+  // metaGraphBaseUrl, as whatsappTemplates.ts reads the same list: a stub in
+  // tests, graph.facebook.com/v21.0 everywhere else.
+  let url: string | null = `${useRuntimeConfig().metaGraphBaseUrl}/${businessAccountId}/message_templates`
+  let params: Record<string, string | number> | undefined = { fields: 'name,language,components,status', limit: 100, name: templateName }
+  for (let page = 0; url && page < 20; page++) {
+    const response: { data?: (MetaTemplate & { status?: string })[]; paging?: { next?: string } } = await $fetch(url, {
+      params,
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+    all.push(...(response.data ?? []))
+    url = response.paging?.next ?? null
+    params = undefined
+  }
+  const candidates: MetaTemplate[] = all.filter((t) => t.name === templateName && (!t.status || t.status === 'APPROVED'))
   if (candidates.length === 0) return null
 
   const match: MetaTemplate =
@@ -177,22 +200,23 @@ async function sendWhatsApp(
   purpose: 'confirmation' | 'reminder',
   templateName: string,
   templateLanguage: string,
-): Promise<void> {
+): Promise<boolean> {
   const { data: account } = await supabase
     .from('accounts')
     .select('whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_access_token')
     .eq('id', ctx.accountId)
     .maybeSingle()
-  if (!account?.whatsapp_phone_number_id || !account?.whatsapp_access_token) return
+  await withMessagingTokens(ctx.accountId, account)
+  if (!account?.whatsapp_phone_number_id || !account?.whatsapp_access_token) return false
 
   const { data: numbers } = await supabase
     .from('patient_contact_numbers')
     .select('number, country_code, is_whatsapp')
     .eq('patient_id', ctx.patientId)
   const target = numbers?.find((n: any) => n.is_whatsapp) ?? numbers?.[0]
-  if (!target) return
+  if (!target) return false
   const to = toE164(target.number, target.country_code)
-  if (!to) return
+  if (!to) return false
 
   let resolvedLanguage = templateLanguage
   let bodyText = ''
@@ -212,7 +236,7 @@ async function sendWhatsApp(
   let status = 'sent'
   let errorMessage: string | null = null
   try {
-    const response = await $fetch<{ messages?: { id: string }[] }>(`https://graph.facebook.com/v21.0/${account.whatsapp_phone_number_id}/messages`, {
+    const response = await $fetch<{ messages?: { id: string }[] }>(`${useRuntimeConfig().metaGraphBaseUrl}/${account.whatsapp_phone_number_id}/messages`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${account.whatsapp_access_token}` },
       body: {
@@ -264,6 +288,7 @@ async function sendWhatsApp(
       await supabase.from('appointments').update({ confirmation_status: 'pending' }).eq('id', ctx.id)
     }
   }
+  return status === 'sent'
 }
 
 // Where the appointment is and how to reach it, under the clinic's own text:
@@ -284,8 +309,8 @@ function clinicFooter(ctx: AppointmentContext): string {
   return `<div style="padding:16px 32px 24px;border-top:1px solid #E4E4EA;font-size:13px;line-height:1.6;color:#6B6B78;">${lines.join('<br>')}</div>`
 }
 
-async function sendEmail(ctx: AppointmentContext, subject: string, body: string): Promise<void> {
-  if (!ctx.patientEmail) return
+async function sendEmail(ctx: AppointmentContext, subject: string, body: string): Promise<boolean> {
+  if (!ctx.patientEmail) return false
   const html = `
     <div style="background:#F4F4F6;padding:40px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
       <div style="max-width:560px;margin:0 auto;background:#FFFFFF;border-radius:14px;border:1px solid #E4E4EA;overflow:hidden;">
@@ -294,6 +319,7 @@ async function sendEmail(ctx: AppointmentContext, subject: string, body: string)
     </div>
   `
   await sendResendEmail({ to: ctx.patientEmail, subject: mergeText(subject, ctx), html })
+  return true
 }
 
 interface CommunicationSettings {
@@ -313,16 +339,18 @@ async function sendForPurpose(supabase: any, appointmentId: string, purpose: 'co
   let sent = false
   if (settings.channels.includes('whatsapp') && settings.whatsappTemplateName) {
     try {
-      await sendWhatsApp(supabase, ctx, purpose, settings.whatsappTemplateName, settings.whatsappTemplateLanguage)
-      sent = true
+      // Only what reached someone counts. A patient with no number, WhatsApp
+      // not connected, or Meta refusing the send used to be recorded as
+      // "sent" -- shown on the appointment, and starting the cooldown that
+      // then held back the confirmation of the patient's next booking.
+      if (await sendWhatsApp(supabase, ctx, purpose, settings.whatsappTemplateName, settings.whatsappTemplateLanguage)) sent = true
     } catch {
       // Best-effort: a failed channel shouldn't block the other one.
     }
   }
   if (settings.channels.includes('email') && settings.emailSubject && settings.emailBody) {
     try {
-      await sendEmail(ctx, settings.emailSubject, settings.emailBody)
-      sent = true
+      if (await sendEmail(ctx, settings.emailSubject, settings.emailBody)) sent = true
     } catch {
       // Best-effort, same as above.
     }
@@ -370,7 +398,39 @@ async function sendForPurpose(supabase: any, appointmentId: string, purpose: 'co
 // patient with several visits booked actually wants one each.
 const CONFIRMATION_COOLDOWN_MINUTES = 10
 
-export async function sendAppointmentConfirmation(supabase: any, accountId: string, appointmentId: string): Promise<void> {
+/**
+ * Claims the automatic confirmation of a booking made without staff (booking
+ * page, patient app, API): true for exactly one caller, false for every
+ * later one, so a repeated request sends nothing. See the migration that
+ * added auto_confirmation_claimed_at.
+ */
+export async function claimAutomaticConfirmation(supabase: any, appointmentId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('appointments')
+    .update({ auto_confirmation_claimed_at: new Date().toISOString() })
+    .eq('id', appointmentId)
+    .is('auto_confirmation_claimed_at', null)
+    .select('id')
+  return (data?.length ?? 0) > 0
+}
+
+/**
+ * Claims the clinic's "new online booking" alert: true for exactly one caller.
+ * The booking endpoint, the confirmation endpoint and the cron's catch-up all
+ * offer it, so whichever reaches a booking first alerts and the rest send
+ * nothing. See the migration that added staff_alert_claimed_at.
+ */
+export async function claimStaffAlert(supabase: any, appointmentId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('appointments')
+    .update({ staff_alert_claimed_at: new Date().toISOString() })
+    .eq('id', appointmentId)
+    .is('staff_alert_claimed_at', null)
+    .select('id')
+  return (data?.length ?? 0) > 0
+}
+
+export async function sendAppointmentConfirmation(supabase: any, accountId: string, appointmentId: string): Promise<boolean> {
   const { data: thisAppt } = await supabase.from('appointments').select('patient_id').eq('id', appointmentId).maybeSingle()
   if (thisAppt?.patient_id) {
     const since = new Date(Date.now() - CONFIRMATION_COOLDOWN_MINUTES * 60_000).toISOString()
@@ -381,7 +441,7 @@ export async function sendAppointmentConfirmation(supabase: any, accountId: stri
       .neq('id', appointmentId)
       .gte('confirmation_sent_at', since)
       .limit(1)
-    if (justConfirmed && justConfirmed.length > 0) return
+    if (justConfirmed && justConfirmed.length > 0) return false
   }
 
   const { data: account } = await supabase
@@ -389,7 +449,7 @@ export async function sendAppointmentConfirmation(supabase: any, accountId: stri
     .select('appointment_confirmation_enabled, appointment_confirmation_channels, email_confirmation_subject, email_confirmation_body, whatsapp_confirmation_template_name, whatsapp_confirmation_template_language')
     .eq('id', accountId)
     .maybeSingle()
-  if (!account) return
+  if (!account) return false
 
   const sent = await sendForPurpose(supabase, appointmentId, 'confirmation', {
     enabled: account.appointment_confirmation_enabled,
@@ -400,6 +460,7 @@ export async function sendAppointmentConfirmation(supabase: any, accountId: stri
     whatsappTemplateLanguage: account.whatsapp_confirmation_template_language ?? 'es',
   })
   if (sent) await supabase.from('appointments').update({ confirmation_sent_at: new Date().toISOString() }).eq('id', appointmentId)
+  return sent
 }
 
 // Pings the clinic itself (Settings > Online Booking > General) whenever a
@@ -408,6 +469,9 @@ export async function sendAppointmentConfirmation(supabase: any, accountId: stri
 // notify address/number, or the WhatsApp free-form 24h window being closed,
 // shouldn't affect the booking that already succeeded.
 export async function notifyStaffOfOnlineBooking(supabase: any, accountId: string, appointmentId: string): Promise<void> {
+  // The practitioner's phone, whatever the clinic set up for email and
+  // WhatsApp below (staffPush.ts; their own Avisos decide).
+  await pushAppointmentEvent(supabase, appointmentId, 'booked_online')
   const { data: account } = await supabase
     .from('accounts')
     .select(
@@ -415,22 +479,27 @@ export async function notifyStaffOfOnlineBooking(supabase: any, accountId: strin
     )
     .eq('id', accountId)
     .maybeSingle()
+  await withMessagingTokens(accountId, account)
   if (!account?.online_booking_notify_email && !account?.online_booking_notify_whatsapp) return
 
   const ctx = await loadAppointmentContext(supabase, appointmentId)
   if (!ctx) return
 
-  const when = new Date(ctx.startsAt).toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: ctx.clinicTimezone })
   const patientName = [ctx.patientFirstName, ctx.patientLastName].filter(Boolean).join(' ')
-  const summary = `Nueva reserva online: ${patientName}${ctx.patientPhone ? ` (${ctx.patientPhone})` : ''} con ${ctx.practitionerName || 'un profesional'} el ${when}${ctx.appointmentTypeName ? ` (${ctx.appointmentTypeName})` : ''}.`
+  const alert = onlineBookingAlert({
+    patientFirstName: ctx.patientFirstName,
+    patientLastName: ctx.patientLastName,
+    patientPhone: ctx.patientPhone,
+    practitionerName: ctx.practitionerName,
+    appointmentTypeName: ctx.appointmentTypeName,
+    startsAt: ctx.startsAt,
+    timeZone: ctx.clinicTimezone,
+  })
+  const summary = alert.summary
 
   if (account.online_booking_notify_email) {
     try {
-      await sendResendEmail({
-        to: account.online_booking_notify_email,
-        subject: 'Nueva reserva online',
-        html: `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px;color:#4A4A57;line-height:1.6;">${summary}</div>`,
-      })
+      await sendResendEmail({ to: account.online_booking_notify_email, subject: alert.subject, html: alert.html })
     } catch {
       // Best-effort, see comment above.
     }

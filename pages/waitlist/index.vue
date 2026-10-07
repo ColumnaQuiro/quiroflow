@@ -19,6 +19,7 @@ interface WaitlistRow {
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+const { showToast } = useToast()
 
 const STATUS_LABEL: Record<WaitlistRow['status'], [string, string]> = {
   waiting: ['Waiting', 'Esperando'],
@@ -47,12 +48,18 @@ async function load() {
   loading.value = true
   let query = supabase
     .from('waitlist_entries')
-    .select('id, status, created_at, offer_expires_at, offered_starts_at, patients(id, first_name, last_name), appointment_types(name), team_members:practitioner_id(full_name)')
+    // appointment_types named by column: waitlist_entries points at it twice
+    // (appointment_type_id, offered_appointment_type_id), and the bare embed
+    // is refused as ambiguous (PGRST201) -- the WHOLE select, so this page
+    // read nothing and said "No one on the waitlist" whatever was on it.
+    .select('id, status, created_at, offer_expires_at, offered_starts_at, patients(id, first_name, last_name), appointment_types:appointment_type_id(name), team_members:practitioner_id(full_name)')
     .order('created_at', { ascending: true })
   if (showOnlyActive.value) query = query.in('status', ['waiting', 'offered'])
-  const { data } = await query
+  const { data, error } = await query
   if (token !== loadToken) return
-  rows.value = (data as unknown as WaitlistRow[]) ?? []
+  // A failed read is said, and does not pass for an empty list.
+  if (error) showToast(error.message, 'error')
+  else rows.value = (data as unknown as WaitlistRow[]) ?? []
   loading.value = false
 }
 onMounted(load)
@@ -154,14 +161,14 @@ function formatDate(iso: string | null) {
       <UiBtn variant="primary" @click="openAdd">{{ t('+ Add to waitlist', '+ Añadir a la lista') }}</UiBtn>
     </PageHeader>
 
-    <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
+    <div class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] sm:px-6">
       <label class="mb-3 flex w-fit items-center gap-1.5 text-[12.5px] text-ink-600">
         <input v-model="showOnlyActive" type="checkbox" class="rounded border-line-control text-brand focus:ring-brand" />
         {{ t('Show only waiting / offered', 'Mostrar solo esperando / con oferta') }}
       </label>
 
-      <div class="overflow-hidden rounded-card border border-line bg-surface shadow-card">
-        <table class="w-full text-[13px]">
+      <div class="overflow-x-auto rounded-card border border-line bg-surface shadow-card">
+        <table class="w-full text-[13px]" :class="rows.length ? 'min-w-[640px]' : ''">
           <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2">
             <tr>
               <th class="px-3 py-2">{{ t('Patient', 'Paciente') }}</th>
@@ -213,10 +220,10 @@ function formatDate(iso: string | null) {
     </div>
 
     <div v-if="addOpen" class="fixed inset-0 z-50 flex justify-end bg-ink-900/30" @click.self="addOpen = false">
-      <div class="flex h-full w-full max-w-md flex-col overflow-y-auto border-l border-line bg-surface p-6 shadow-popover">
+      <div class="flex h-full w-full max-w-md flex-col overflow-y-auto border-l border-line bg-surface p-4 shadow-popover sm:p-6">
         <div class="flex items-center justify-between">
           <h2 class="text-[15px] font-semibold text-ink-900">{{ t('Add to waitlist', 'Añadir a la lista de espera') }}</h2>
-          <button type="button" class="text-ink-faint hover:text-ink-600" @click="addOpen = false">✕</button>
+          <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="addOpen = false">✕</button>
         </div>
 
         <form class="mt-4 space-y-4" @submit.prevent="addToWaitlist">

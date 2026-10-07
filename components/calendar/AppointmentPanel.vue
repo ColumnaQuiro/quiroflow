@@ -6,6 +6,7 @@ import { effectiveDuration, type AppointmentTypeOverride } from '~/utils/appoint
 import { hasArrived, isUnconfirmedStage, nextStep, STAGE_TRACK, trackIndex } from '~/utils/appointmentStage'
 import { matchingMove, parseActivitySummary, type ActivityChange } from '~/utils/appointmentActivity'
 import type { VisitPayment } from '~/utils/visitPayment'
+import type { MoveClash } from '~/utils/moveClash'
 import type { BlockView } from '~/components/calendar/AppointmentBlock.vue'
 import type { StageFacts } from '~/composables/useAppointmentStage'
 import type { Database } from '~/types/database.types'
@@ -136,6 +137,10 @@ function outsideHours(at: Date) {
   if (!hasBusinessHoursConfigured(clinicHours) && !hasBusinessHoursConfigured(practitionerHours)) return false
   return !withinWindows(at.getHours() * 60 + at.getMinutes(), practitionerWindowsForDay(windowsForDay(at, clinicHours), practitionerHours, dayKeyFor(at)))
 }
+// What the new time, room or practitioner would land on, asked before saving
+// -- as a drag on the calendar asks (CalendarMoveClashDialog).
+const { findMoveClashes } = useMoveClashCheck()
+const editClashes = ref<MoveClash[] | null>(null)
 async function saveEdit() {
   error.value = ''
   const startsAt = new Date(`${form.date}T${form.time}`)
@@ -146,7 +151,31 @@ async function saveEdit() {
   // Instants, not strings: Postgres and toISOString() spell the same moment
   // differently, and comparing the strings marked every edit as a move.
   const same = (a: string, b: string) => new Date(a).getTime() === new Date(b).getTime()
-  const timeChanged = !same(startsAt.toISOString(), props.appointment.starts_at) || !same(endsAt.toISOString(), props.appointment.ends_at)
+  const placed =
+    !same(startsAt.toISOString(), props.appointment.starts_at) ||
+    !same(endsAt.toISOString(), props.appointment.ends_at) ||
+    (form.roomId || null) !== props.appointment.room_id ||
+    (form.practitionerId || null) !== props.appointment.practitioner_id
+  // Only when the visit is put somewhere else: changing just its type must not
+  // re-ask about a double booking that was made on purpose.
+  if (placed) {
+    busy.value = true
+    const clashes = await findMoveClashes({ appointmentId: props.appointment.id, practitionerId: form.practitionerId || null, roomId: form.roomId || null, startsAt, endsAt })
+    busy.value = false
+    if (clashes.length) {
+      editClashes.value = clashes
+      return
+    }
+  }
+  await commitEdit()
+}
+async function commitEdit() {
+  editClashes.value = null
+  const startsAt = new Date(`${form.date}T${form.time}`)
+  const endsAt = new Date(startsAt.getTime() + form.duration * 60000)
+  // A new start is a move; a longer or shorter visit starting when it did is
+  // not -- the patient is still expected when they were told.
+  const timeChanged = new Date(props.appointment.starts_at).getTime() !== startsAt.getTime()
   busy.value = true
   const { error: e } = await supabase
     .from('appointments')
@@ -164,7 +193,22 @@ async function saveEdit() {
     error.value = e.message
     return
   }
-  if (timeChanged) fire('appointment.rescheduled', { patientId: props.appointment.patient_id, appointmentId: props.appointment.id })
+  if (timeChanged) {
+    // Logged as a drag or "Mover…" logs it (pages/calendar.vue,
+    // confirmReschedule): without the row the move was missing from the
+    // visit's history and from the calendar's "moved from here" markers.
+    // No reason is asked here, so none is recorded. Best-effort, as there:
+    // the move itself has been saved.
+    const { error: logError } = await supabase.from('appointment_reschedules').insert({
+      account_id: store.accountId!,
+      appointment_id: props.appointment.id,
+      from_starts_at: props.appointment.starts_at,
+      to_starts_at: startsAt.toISOString(),
+      created_by: store.teamMember?.id ?? null,
+    })
+    if (logError) console.error('Cambiar: reschedule not logged', logError)
+    fire('appointment.rescheduled', { patientId: props.appointment.patient_id, appointmentId: props.appointment.id })
+  }
   editing.value = false
   emit('changed')
 }
@@ -246,6 +290,49 @@ function markConfirmed() {
 // Out of the room with nothing to charge (a bono visit, a courtesy): done.
 async function markDone() {
   if (await update({ status: 'completed' })) fire('appointment.completed', { patientId: props.appointment.patient_id, appointmentId: props.appointment.id })
+}
+// Undo a visit completed by mistake -- the step-by-step undo above stops at
+// 'completed', which is where a wrong tap does the most damage: Gabriela
+// Encina's visit was drawn from her bono on the wrong day and there was no
+// way back. undo_visit (20261006170032) reopens it, gives the bono session
+// back and voids that session's charge, all or nothing. A visit paid in money
+// is refused: that is a refund, from the patient's Money tab.
+const canUndoVisit = computed(() => props.appointment.status === 'completed' && !readOnly.value)
+const undoVisitOpen = ref(false)
+async function undoVisit() {
+  busy.value = true
+  error.value = ''
+  const { error: e } = await supabase.rpc('undo_visit', { p_appointment_id: props.appointment.id })
+  busy.value = false
+  undoVisitOpen.value = false
+  if (e) {
+    error.value = undoVisitError(e.hint, e.message)
+    return
+  }
+  refreshFacts()
+  refreshMoney()
+  emit('changed')
+}
+function undoVisitError(hint: string | null | undefined, message: string) {
+  switch (hint) {
+    case 'has_payment':
+      return t(
+        "This visit has a payment recorded, so it can't be undone here. Refund the payment from the patient's Money tab first.",
+        'Esta visita tiene un pago registrado y no se puede deshacer aquí. Devuelve antes el pago desde la pestaña Dinero de la ficha.',
+      )
+    case 'invoice':
+      return t(
+        "You can't void this visit's charge: your role only edits receipts on the day they were made. Ask someone who can edit past receipts.",
+        'No puedes anular el cargo de esta visita: tu rol solo edita recibos del mismo día. Pídeselo a alguien que pueda editar recibos anteriores.',
+      )
+    case 'bono':
+    case 'bono_session':
+      return t("Your role can't give sessions back to a bono.", 'Tu rol no permite devolver sesiones a un bono.')
+    case 'not_completed':
+      return t('This visit is no longer marked done.', 'Esta visita ya no está marcada como hecha.')
+    default:
+      return message
+  }
 }
 
 // --- Money --------------------------------------------------------------------
@@ -350,7 +437,7 @@ function statusChangeText(from: string, to: string) {
     case 'completed':
       return t('Marked done', 'Marcada como hecha')
     case 'booked':
-      return t('Restored', 'Reactivada')
+      return from === 'completed' ? t('Visit undone', 'Visita deshecha') : t('Restored', 'Reactivada')
     default:
       return t(`Status: ${from} → ${to}`, `Estado: ${from} → ${to}`)
   }
@@ -423,28 +510,14 @@ const history = computed(() => {
 // The missed-appointment fee from Settings > Scheduling Policies, as before:
 // the configured fee, confirmed once. (Cancelling asks about its own fee in
 // the cancel step.)
-async function maybeApplyStatusFee(kind: 'no_show') {
-  const column = 'missed_appointment_fee_cents'
-  const { data: account } = await supabase.from('accounts').select(column).eq('id', store.accountId!).maybeSingle()
-  const feeCents = (account as Record<string, number | null> | null)?.[column]
+// The charge itself is utils/missedAppointmentFee, which the staff app's
+// visit screen raises too.
+async function maybeApplyMissedFee() {
+  const feeCents = await missedAppointmentFeeCents(supabase, store.accountId!)
   if (!feeCents) return
   const question = t(`Add the ${formatEur(feeCents)} missed-appointment fee to this patient's balance?`, `¿Añadir el cargo por no presentarse de ${formatEur(feeCents)} a su saldo?`)
   if (!confirm(question)) return
-  const { data: invoiceNumber } = await supabase.rpc('next_invoice_number', { p_account_id: store.accountId! })
-  if (!invoiceNumber) return
-  const { data: invoice } = await supabase
-    .from('invoices')
-    .insert({ account_id: store.accountId!, patient_id: props.appointment.patient_id, invoice_number: invoiceNumber, status: 'unpaid', total_cents: feeCents })
-    .select('id')
-    .single()
-  if (!invoice) return
-  await supabase.from('invoice_line_items').insert({
-    account_id: store.accountId!,
-    invoice_id: invoice.id,
-    description: 'Missed appointment fee',
-    quantity: 1,
-    price_cents: feeCents,
-  })
+  await chargeMissedAppointmentFee(supabase, { accountId: store.accountId!, patientId: props.appointment.patient_id, feeCents })
 }
 function cancelAppointment() {
   step.value = 'cancel'
@@ -456,7 +529,7 @@ function onCancelled() {
 async function markNoShow() {
   if (!(await update({ status: 'no_show' }))) return
   fire('appointment.no_show', { patientId: props.appointment.patient_id, appointmentId: props.appointment.id })
-  await maybeApplyStatusFee('no_show')
+  await maybeApplyMissedFee()
 }
 const deleteOpen = ref(false)
 async function remove() {
@@ -588,7 +661,7 @@ const canAct = computed(() => props.appointment.status === 'booked' && !readOnly
           <p v-else class="text-[14px] font-semibold text-ink-700" data-cy="stage-off-track">{{ stageLine(appointment, stage).title }}</p>
           <p v-if="onTrack && stageLine(appointment, stage).sub" class="mt-2 text-[12.5px] text-ink-muted">{{ stageLine(appointment, stage).title }} · {{ stageLine(appointment, stage).sub }}</p>
 
-          <div v-if="!readOnly && (next || undoable || isUnconfirmedStage(stage))" class="mt-3 flex flex-wrap items-center gap-2">
+          <div v-if="!readOnly && (next || undoable || canUndoVisit || isUnconfirmedStage(stage))" class="mt-3 flex flex-wrap items-center gap-2">
             <button v-if="next && !isPhone" type="button" data-cy="advance-stage" :data-next="next" :disabled="busy" class="flex h-9 touch:h-11 items-center gap-2 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface hover:bg-brand-hover disabled:opacity-60" @click="advance">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
               {{ nextLabel }}
@@ -596,6 +669,7 @@ const canAct = computed(() => props.appointment.status === 'booked' && !readOnly
             <button v-if="isUnconfirmedStage(stage)" type="button" data-cy="mark-confirmed" :disabled="busy" class="h-9 touch:h-11 rounded-ctl border border-line-control px-3.5 text-[13px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="markConfirmed">{{ t('Mark confirmed', 'Marcar confirmada') }}</button>
             <button v-if="stage === 'checkout'" type="button" data-cy="mark-done" :disabled="busy" class="h-9 touch:h-11 rounded-ctl border border-line-control px-3.5 text-[13px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="markDone">{{ t('Done, nothing to charge', 'Hecha, sin cobro') }}</button>
             <button v-if="undoable" type="button" data-cy="undo-stage" :disabled="busy" class="h-9 touch:h-11 rounded-ctl px-3 text-[13px] font-semibold text-ink-muted hover:bg-surface-subtle" @click="undo">{{ undoable.label }}</button>
+            <button v-if="canUndoVisit" type="button" data-cy="undo-visit" :disabled="busy" class="h-9 touch:h-11 rounded-ctl border border-line-control px-3.5 text-[13px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="undoVisitOpen = true">{{ t('Undo visit', 'Deshacer visita') }}</button>
           </div>
         </section>
 
@@ -719,6 +793,23 @@ const canAct = computed(() => props.appointment.status === 'booked' && !readOnly
   >
     <p class="text-[14px] leading-relaxed text-ink-500">{{ t('It disappears from the calendar. To keep a record that the patient did not come, cancel it instead.', 'Desaparece del calendario. Para dejar constancia de que el paciente no vino, cancélala en su lugar.') }}</p>
   </UiConfirmDialog>
+
+  <UiConfirmDialog
+    v-if="undoVisitOpen"
+    :title="t('Undo this visit?', '¿Deshacer esta visita?')"
+    :confirm-label="t('Undo visit', 'Deshacer visita')"
+    :cancel-label="t('Keep it', 'Mantenerla')"
+    :busy="busy"
+    @confirm="undoVisit"
+    @cancel="undoVisitOpen = false"
+  >
+    <p class="text-[14px] leading-relaxed text-ink-500">
+      {{ t('It stops being marked done and goes back to the step it was on.', 'Deja de estar marcada como hecha y vuelve al paso en el que estaba.') }}
+      <template v-if="view.bono?.drawn">{{ t(`The session goes back to ${view.bono.packageName} and its charge is voided.`, `La sesión vuelve a ${view.bono.packageName} y se anula su cargo.`) }}</template>
+    </p>
+  </UiConfirmDialog>
+
+  <CalendarMoveClashDialog v-if="editClashes" :clashes="editClashes" :busy="busy" @confirm="commitEdit" @cancel="editClashes = null" />
 </template>
 
 <style scoped>

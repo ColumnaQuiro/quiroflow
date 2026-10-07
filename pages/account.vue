@@ -205,11 +205,19 @@ const LANGUAGES = [
 const savingLang = ref(false)
 async function chooseLanguage(value: 'en' | 'es') {
   if (!store.teamMember || langPreference.value === value) return
+  const previous = langPreference.value
   setLangPreference(value)
   savingLang.value = true
-  await supabase.from('team_members').update({ language_preference: value }).eq('id', store.teamMember.id)
-  store.teamMember.language_preference = value
+  const { error } = await supabase.from('team_members').update({ language_preference: value }).eq('id', store.teamMember.id)
   savingLang.value = false
+  // The page switched language at once; a refused save switched it back on
+  // the next load without a word.
+  if (error) {
+    setLangPreference(previous)
+    showToast(error.message, 'error')
+    return
+  }
+  store.teamMember.language_preference = value
 }
 
 // --- Seguridad --------------------------------------------------------------
@@ -307,7 +315,7 @@ async function deleteAccount() {
     showToast(err?.data?.statusMessage ?? t('Could not remove your access.', 'No se pudo eliminar tu acceso.'), 'error')
     return
   }
-  await supabase.auth.signOut()
+  await supabase.auth.signOut({ scope: 'local' })
   await navigateTo('/login')
 }
 
@@ -474,7 +482,7 @@ const phoneSections = computed(() => sections.value.filter((s) => s.id !== 'acce
             >
               <template v-if="me?.online_booking_enabled">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-success-text" aria-hidden="true"><path d="M5 12l5 5 9-10" /></svg>
-                <span><strong class="text-success-text">{{ t('Patients can book you online', 'Los pacientes pueden reservarte online') }}</strong><span class="text-ink-500"> {{ t('within your hours.', 'en tu horario.') }}</span></span>
+                <span><strong class="text-success-text">{{ t('Patients can book you online', 'Los pacientes pueden reservarte online') }}</strong><span class="text-ink-500">{{ ' ' + t('within your hours.', 'en tu horario.') }}</span></span>
               </template>
               <span v-else class="text-ink-500">{{ t("Patients can't book you online. An owner turns it on in Settings › Team.", 'Los pacientes no pueden reservarte online. Lo activa una persona propietaria en Ajustes › Equipo.') }}</span>
             </div>

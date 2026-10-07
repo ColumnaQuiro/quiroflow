@@ -1,17 +1,8 @@
 <script setup lang="ts">
-const route = useRoute()
-
-const tabs = [
-  { label: 'My Day', to: '/my-day', icon: 'M2.5 2.5h11v11h-11zM5.5 8.2l1.8 1.8 3.2-3.4' },
-  { label: 'Calendar', to: '/calendar', icon: 'M2.5 3.5h11v10h-11zM2.5 6.6h11M5.6 2v2M10.4 2v2' },
-  { label: 'Patients', to: '/patients', icon: 'M6.2 5.6a2.6 2.6 0 11-5.2 0 2.6 2.6 0 015.2 0zM2 13.4c0-2.3 1.9-3.6 4.2-3.6s4.2 1.3 4.2 3.6' },
-  { label: 'Inbox', to: '/inbox', icon: 'M2 3.5h12v9h-8l-3 2.5v-2.5h-1z' },
-  { label: 'Profile', to: '/profile', icon: 'M8 8a2.6 2.6 0 100-5.2A2.6 2.6 0 008 8zM3.2 13.4c0-2.3 2.1-3.6 4.8-3.6s4.8 1.3 4.8 3.6' },
-]
-
-function isActive(to: string) {
-  return route.path === to || route.path.startsWith(`${to}/`)
-}
+// The list itself lives in composables/useAppNav.ts, shared with the iPad
+// side menu; this bar is the phone's, hidden from md up by the layout.
+const { items: tabs, isActive } = useStaffNav()
+const t = useT()
 </script>
 
 <template>
@@ -24,12 +15,16 @@ function isActive(to: string) {
       :key="tab.to"
       :to="tab.to"
       class="flex flex-1 flex-col items-center gap-1 pt-2 text-[10.5px] font-medium"
-      :class="isActive(tab.to) ? 'text-brand-text' : 'text-ink-faint'"
+      :class="isActive(tab.to) ? 'text-brand-text' : 'text-ink-muted'"
+      :aria-current="isActive(tab.to) ? 'page' : undefined"
     >
-      <svg width="21" height="21" viewBox="0 0 16 16" fill="none" stroke="currentColor" :stroke-width="isActive(tab.to) ? 1.6 : 1.3">
-        <path :d="tab.icon" />
-      </svg>
-      {{ tab.label }}
+      <span class="relative">
+        <svg width="21" height="21" viewBox="0 0 16 16" fill="none" stroke="currentColor" :stroke-width="isActive(tab.to) ? 1.6 : 1.3">
+          <path :d="tab.icon" />
+        </svg>
+        <span v-if="tab.badge" class="absolute -right-2.5 -top-1.5 flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-danger-text px-1 text-[10.5px] font-bold leading-none text-white" data-cy="nav-badge">{{ tab.badge > 99 ? '99+' : tab.badge }}</span>
+      </span>
+      {{ tab.label }}<span v-if="tab.badge" class="sr-only">, {{ tab.badge }} {{ t('unread', 'sin leer') }}</span>
     </NuxtLink>
   </nav>
 </template>

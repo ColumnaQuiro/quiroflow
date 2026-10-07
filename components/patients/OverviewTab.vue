@@ -138,6 +138,7 @@ const lastVisitFootnote = computed(() => {
   if (payment.kind === 'bono') return `${prefix}, ${t('drawn from', 'con cargo a')} ${payment.packageName}.`
   if (payment.kind === 'unpaid') return `${prefix}, ${t('still unpaid', 'aún sin pagar')} (${formatEur(payment.totalCents)}).`
   if (payment.kind === 'void') return `${prefix}, ${t('charge voided', 'cargo anulado')}.`
+  if (payment.methods.length === 0) return `${prefix}, ${t('paid', 'pagada')}.`
   const methods = payment.methods.map((m) => METHOD_LABELS.value[m] ?? m).join(' + ')
   return `${prefix}, ${t('paid by', 'pagada con')} ${methods}.`
 })
@@ -223,23 +224,33 @@ const plan = ref<PlanRow | null>(null)
 const planCompleted = ref(0)
 const planLoading = ref(true)
 
+// Visits completed SINCE THE PLAN STARTED, and not deleted -- as
+// care_plan_continuity_alerts (0131), the Clinical tab's PhaseStats and the
+// app count them. Every completed visit ever put a returning patient's new
+// plan half done on day one.
 async function loadPlan({ silent = false } = {}) {
   if (!silent) planLoading.value = true
-  const [{ data: plans }, { count }] = await Promise.all([
-    supabase
-      .from('care_plans')
-      .select('id, name, total_visits, frequency_value, frequency_unit, started_at')
-      .eq('patient_id', props.patient.id)
-      .order('created_at', { ascending: false })
-      .limit(1),
-    supabase
+  const { data: plans } = await supabase
+    .from('care_plans')
+    .select('id, name, total_visits, frequency_value, frequency_unit, started_at')
+    .eq('patient_id', props.patient.id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+  const latest = (plans?.[0] as PlanRow) ?? null
+  let completed = 0
+  if (latest) {
+    let q = supabase
       .from('appointments')
       .select('id', { count: 'exact', head: true })
       .eq('patient_id', props.patient.id)
-      .eq('status', 'completed'),
-  ])
-  plan.value = (plans?.[0] as PlanRow) ?? null
-  planCompleted.value = count ?? 0
+      .eq('status', 'completed')
+      .is('deleted_at', null)
+    if (latest.started_at) q = q.gte('starts_at', latest.started_at)
+    const { count } = await q
+    completed = count ?? 0
+  }
+  plan.value = latest
+  planCompleted.value = completed
   planLoading.value = false
 }
 

@@ -8,6 +8,8 @@ const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
 const { phoneProblem } = usePhoneValidation()
+const { scope } = usePermission()
+const { showToast } = useToast()
 
 const firstName = ref('')
 const lastName = ref('')
@@ -68,9 +70,18 @@ async function onSubmit() {
     .map((t) => t.trim())
     .filter(Boolean)
 
-  const { data, error: insertError } = await supabase
+  // The id is made here and the row is not read back in the same statement.
+  // RLS checks a returned row against the SELECT policy using the snapshot
+  // the INSERT started with, and for someone who sees only their own patients
+  // that policy asks my_own_patient_ids() -- which cannot yet contain the
+  // patient being inserted. So `.insert().select('id')` fails with "new row
+  // violates row-level security policy" for every 'own'-scope practitioner,
+  // default practitioner or not; the next statement sees the row fine.
+  const patientId = crypto.randomUUID()
+  const { error: insertError } = await supabase
     .from('patients')
     .insert({
+      id: patientId,
       account_id: store.accountId!,
       clinic_id: clinicId.value || null,
       first_name: firstName.value,
@@ -87,9 +98,14 @@ async function onSubmit() {
       preferred_language: preferredLanguage.value,
       notes: notes.value || null,
       tags,
+      // Someone who sees only their own patients has to be this patient's
+      // practitioner, or the patient they have just created is one they
+      // cannot see: the phone number below would be refused and the record
+      // they land on would be "not found". The calendar's "new patient" does
+      // the same with the visit's practitioner. Anyone else leaves it unset,
+      // as before.
+      default_practitioner_id: scope('patients_scope') === 'own' ? (store.teamMember?.id ?? null) : null,
     })
-    .select('id')
-    .single()
 
   if (insertError) {
     saving.value = false
@@ -101,26 +117,32 @@ async function onSubmit() {
     // A typed "+34 600…" wins over the dropdown, so the prefix isn't stored
     // twice -- once in the number and again as the country code.
     const { countryCode, number } = splitDialPrefix(phoneNumber.value, phoneCountry.value)
-    await supabase.from('patient_contact_numbers').insert({
+    const { error: numberError } = await supabase.from('patient_contact_numbers').insert({
       account_id: store.accountId!,
-      patient_id: data.id,
+      patient_id: patientId,
       country_code: countryCode,
       number,
       is_whatsapp: phoneIsWhatsapp.value,
     })
+    // The patient exists by now, so this is not a reason to stay on the form
+    // (a second Add would create them twice) -- but a number that silently
+    // failed to save is one nobody will ever message.
+    if (numberError) {
+      showToast(t(`Patient created, but the phone number was not saved: ${numberError.message}`, `Paciente creado, pero el teléfono no se ha guardado: ${numberError.message}`), 'error', 8000)
+    }
   }
 
   saving.value = false
-  emit('created', data.id)
+  emit('created', patientId)
 }
 </script>
 
 <template>
   <div class="fixed inset-0 z-50 flex justify-end bg-ink-900/30" @click.self="emit('close')">
-    <div class="flex h-full w-full max-w-lg flex-col overflow-y-auto border-l border-line bg-surface p-6 shadow-popover">
+    <div class="flex h-full w-full max-w-lg flex-col overflow-y-auto border-l border-line bg-surface p-4 shadow-popover sm:p-6">
       <div class="flex items-center justify-between">
         <h2 class="text-[16px] font-[640] text-ink-900">{{ t('Add Patient', 'Añadir paciente') }}</h2>
-        <button type="button" class="text-ink-faint hover:text-ink-600" @click="emit('close')">✕</button>
+        <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="emit('close')">✕</button>
       </div>
 
       <form class="mt-4 space-y-4" @submit.prevent="onSubmit">
@@ -157,7 +179,9 @@ async function onSubmit() {
           />
         </div>
 
-        <div class="grid grid-cols-2 gap-4">
+        <!-- One column on a phone: half of 390px left the number field
+             itself about two digits wide beside the country picker. -->
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div v-if="isVisible('email')">
             <label class="block text-sm font-medium text-ink-700" for="email">{{ t('Email', 'Correo electrónico') }}</label>
             <input

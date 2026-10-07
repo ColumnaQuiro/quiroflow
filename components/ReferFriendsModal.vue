@@ -15,7 +15,7 @@ function copy() {
 
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/40 p-4" @click.self="emit('close')">
-    <div class="w-full max-w-md rounded-card bg-surface shadow-xl">
+    <div class="max-h-full w-full overflow-y-auto max-w-md rounded-card bg-surface shadow-xl">
       <div class="flex h-12 shrink-0 items-center justify-between border-b border-line px-4">
         <h3 class="text-[13.5px] font-semibold text-ink-900">{{ t('Refer Your Friends!', '¡Recomienda a tus amigos!') }}</h3>
         <button type="button" class="flex h-6 w-6 items-center justify-center rounded-ctlSm text-ink-faint2 hover:bg-surface-subtle" @click="emit('close')">✕</button>

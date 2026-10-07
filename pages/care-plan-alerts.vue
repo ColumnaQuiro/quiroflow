@@ -66,7 +66,7 @@ const messagingRow = computed(() => rows.value.find((r) => r.patient_id === mess
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Care Plan Alerts', 'Alertas de plan de tratamiento')" :meta="loading ? undefined : `${rows.length} ${t('behind schedule', 'con retraso')}`" />
 
-    <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
+    <div class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] sm:px-6">
       <p class="mb-4 text-[13px] text-ink-muted2">
         {{
           t(
@@ -76,8 +76,8 @@ const messagingRow = computed(() => rows.value.find((r) => r.patient_id === mess
         }}
       </p>
 
-      <div class="overflow-hidden rounded-card border border-line bg-surface shadow-card">
-        <table class="w-full text-[13px]">
+      <div class="overflow-x-auto rounded-card border border-line bg-surface shadow-card">
+        <table class="w-full text-[13px]" :class="rows.length ? 'min-w-[640px]' : ''">
           <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2">
             <tr>
               <th class="px-3 py-2">{{ t('Patient', 'Paciente') }}</th>

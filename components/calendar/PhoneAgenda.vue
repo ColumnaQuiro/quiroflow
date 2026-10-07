@@ -64,13 +64,13 @@ const heightFor = (i: AgendaItem) => {
 <template>
   <div class="relative flex min-h-0 flex-1 flex-col bg-surface-page" data-cy="phone-agenda">
     <div class="shrink-0 border-b border-line bg-surface px-4 pb-2.5 pt-2">
-      <div v-if="canScopeMine" role="tablist" class="grid grid-cols-2 gap-1 rounded-ctl bg-chip-bg p-1">
+      <div v-if="canScopeMine" role="tablist" class="grid grid-cols-2 gap-1 rounded-ctl bg-chip-bg p-[3px]">
         <button
           type="button"
           role="tab"
           data-cy="agenda-scope-mine"
           :aria-selected="scope === 'mine'"
-          class="h-9 touch:h-11 rounded-ctlSm text-[14px] font-semibold"
+          class="h-9 rounded-ctlSm text-[13.5px] font-semibold"
           :class="scope === 'mine' ? 'bg-surface text-ink-900 shadow-card' : 'text-ink-muted'"
           @click="emit('scope', 'mine')"
         >
@@ -81,7 +81,7 @@ const heightFor = (i: AgendaItem) => {
           role="tab"
           data-cy="agenda-scope-all"
           :aria-selected="scope === 'all'"
-          class="h-9 touch:h-11 rounded-ctlSm text-[14px] font-semibold"
+          class="h-9 rounded-ctlSm text-[13.5px] font-semibold"
           :class="scope === 'all' ? 'bg-surface text-ink-900 shadow-card' : 'text-ink-muted'"
           @click="emit('scope', 'all')"
         >

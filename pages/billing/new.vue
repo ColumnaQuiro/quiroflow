@@ -163,9 +163,9 @@ async function save() {
       <UiBtn variant="primary" :disabled="saving" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Create receipt', 'Crear recibo') }}</UiBtn>
     </PageHeader>
 
-    <div class="flex-1 overflow-y-auto bg-surface-page p-6">
+    <div class="flex-1 overflow-y-auto bg-surface-page p-4 sm:p-6">
       <div class="mx-auto max-w-2xl space-y-4">
-        <div class="rounded-card border border-line bg-surface p-6 shadow-card">
+        <div class="rounded-card border border-line bg-surface p-4 shadow-card sm:p-6">
           <label class="block text-[12.5px] font-medium text-ink-500">{{ t('Patient', 'Paciente') }}</label>
           <input
             v-model="patientQuery"
@@ -190,13 +190,17 @@ async function save() {
           </p>
         </div>
 
-        <div class="rounded-card border border-line bg-surface p-6 shadow-card">
+        <div class="rounded-card border border-line bg-surface p-4 shadow-card sm:p-6">
           <label class="block text-[12.5px] font-medium text-ink-500">{{ t('Services & products', 'Servicios y productos') }}</label>
           <div class="mt-2 space-y-2">
-            <div v-for="(line, i) in lines" :key="i" class="flex items-center gap-2">
+            <!-- One row on a desktop. On a phone the service and the
+                 description take a line each and quantity and price share the
+                 last: in one row the description ran off the card and the
+                 amount was not on screen at all. -->
+            <div v-for="(line, i) in lines" :key="i" class="flex flex-wrap items-center gap-2 border-b border-line-row2 pb-3 last:border-b-0 sm:flex-nowrap sm:border-b-0 sm:pb-0">
               <select
                 v-model="line.serviceId"
-                class="w-40 shrink-0 rounded-ctl border border-line-control px-2 py-1.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                class="w-full shrink-0 rounded-ctl sm:w-40 border border-line-control px-2 py-1.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
                 @change="onServiceChange(line)"
               >
                 <option value="">{{ t('Custom', 'Personalizado') }}</option>
@@ -206,7 +210,7 @@ async function save() {
                 v-model="line.description"
                 type="text"
                 :placeholder="t('Description', 'Descripción')"
-                class="flex-1 rounded-ctl border border-line-control px-3 py-1.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                class="w-full min-w-0 rounded-ctl sm:w-auto sm:flex-1 border border-line-control px-3 py-1.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
               />
               <input
                 v-model.number="line.quantity"
@@ -220,9 +224,9 @@ async function save() {
                 step="0.01"
                 min="0"
                 placeholder="0.00"
-                class="w-24 rounded-ctl border border-line-control px-2 py-1.5 text-right font-mono text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                class="min-w-0 flex-1 rounded-ctl sm:w-24 sm:flex-none border border-line-control px-2 py-1.5 text-right font-mono text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
               />
-              <button type="button" class="text-ink-faint2 hover:text-danger-text" @click="removeLine(i)">✕</button>
+              <button type="button" class="shrink-0 text-ink-faint2 hover:text-danger-text touch:h-11 touch:w-11" :aria-label="t('Remove line', 'Quitar línea')" @click="removeLine(i)">✕</button>
             </div>
           </div>
           <button type="button" class="mt-2 text-[13px] font-medium text-brand-text hover:text-brand-hover" @click="addLine">

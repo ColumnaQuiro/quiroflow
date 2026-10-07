@@ -470,15 +470,22 @@ const trendChartOptions = {
 const unclassifiedTypeNames = computed(() =>
   types.value.filter((type) => !type.stage).map((type) => type.name).sort((a, b) => a.localeCompare(b)),
 )
+
+// What "Download PDF" reads: the sections below marked data-pdf-block,
+// and the figure tiles (components/reports/Stat.vue).
+const pdfRoot = ref<HTMLElement | null>(null)
 </script>
 
 <template>
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Statistics', 'Estadísticas')" :meta="t('Visit-type counts, conversion, and retention', 'Recuentos por tipo de visita, conversión y retención')">
-      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
+      <div class="flex items-center gap-3">
+        <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
+        <ReportsPdfButton :target="pdfRoot" :title="t('Statistics', 'Estadísticas')" :range="range" :practitioner-id="practitionerFilter || null" :clinic-id="clinicFilter || null" />
+      </div>
     </PageHeader>
 
-    <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
+    <div ref="pdfRoot" class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] sm:px-6">
       <p v-if="!appointmentsLoading && unclassifiedTypeNames.length > 0" class="rounded-ctl border border-warning-border bg-warning-bg p-3 text-[13px] text-warning-text">
         {{ t(
           `Not counted anywhere below, because they have no stage yet: ${unclassifiedTypeNames.join(', ')}. Tag them in`,

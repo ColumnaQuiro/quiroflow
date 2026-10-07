@@ -15,6 +15,54 @@ interface SlotToOffer {
   endsAt: string
 }
 
+/**
+ * Whether nothing now occupies this slot: no live appointment for its
+ * practitioner or in its room, and no blocked time -- the practitioner's own,
+ * at any clinic, or the whole clinic's. Cancelled and deleted appointments hold no time.
+ *
+ * A slot is offered when it is freed, but the offer then sits for up to two
+ * hours, and staff book and block the calendar without any idea it exists.
+ * So both ends ask again: the claim before it books (the database asks once
+ * more under the booking lock, save_appointment_if_free), and the expiry
+ * sweep before it hands the slot to the next person in line.
+ */
+export async function waitlistSlotIsFree(
+  supabase: any,
+  slot: { accountId: string; clinicId: string; roomId: string | null; practitionerId: string | null; startsAt: string; endsAt: string },
+): Promise<boolean> {
+  const busy = (column: 'practitioner_id' | 'room_id', id: string) =>
+    supabase
+      .from('appointments')
+      .select('id', { count: 'exact', head: true })
+      .eq('account_id', slot.accountId)
+      .eq(column, id)
+      .neq('status', 'cancelled')
+      .is('deleted_at', null)
+      .lt('starts_at', slot.endsAt)
+      .gt('ends_at', slot.startsAt)
+      .then(({ count }: { count: number | null }) => (count ?? 0) > 0)
+
+  let blocks = supabase
+    .from('availability_blocks')
+    .select('id', { count: 'exact', head: true })
+    .eq('account_id', slot.accountId)
+    .lt('starts_at', slot.endsAt)
+    .gt('ends_at', slot.startsAt)
+  // One naming nobody, which closes this clinic for everyone, or one naming
+  // this practitioner at ANY clinic -- their own blocked time follows them --
+  // as the booking page reads them.
+  blocks = slot.practitionerId
+    ? blocks.or(`and(clinic_id.eq.${slot.clinicId},practitioner_id.is.null),practitioner_id.eq.${slot.practitionerId}`)
+    : blocks.eq('clinic_id', slot.clinicId).is('practitioner_id', null)
+
+  const checks = await Promise.all([
+    slot.practitionerId ? busy('practitioner_id', slot.practitionerId) : false,
+    slot.roomId ? busy('room_id', slot.roomId) : false,
+    blocks.then(({ count }: { count: number | null }) => (count ?? 0) > 0),
+  ])
+  return !checks.some(Boolean)
+}
+
 // Shared by offer-next.post.ts (fires right after a staff cancellation) and
 // expire-cron.post.ts (re-offers a slot whose previous offer timed out
 // unclaimed) -- both ultimately do the same thing: find the oldest waiting
@@ -30,6 +78,12 @@ export async function offerNextWaitlistEntry(supabase: any, origin: string, slot
   // A slot starting sooner than that is offered to nobody.
   const expiresAt = offerDeadline(new Date(), new Date(slot.startsAt))
   if (!expiresAt) return false
+
+  // A slot re-offered by the expiry sweep was freed hours ago and may well
+  // have been booked or blocked since; offering it would send somebody a link
+  // to a time that is not there. (Straight after a cancellation it is free,
+  // and this costs one look.)
+  if (!(await waitlistSlotIsFree(supabase, slot))) return false
 
   const { data: candidates } = await supabase
     .from('waitlist_entries')

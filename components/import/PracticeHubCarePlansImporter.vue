@@ -88,7 +88,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       const { data } = await supabase
         .from('patients')
         .select('id, external_reference, first_name, last_name')
-        .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+        .order('id').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
       for (const p of data ?? [])
         if (p.external_reference)
           ourPatientByRef.set(p.external_reference, { id: p.id, label: `${p.first_name} ${p.last_name ?? ''}`.trim() })
@@ -102,7 +102,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
         .from('contact_log')
         .select('external_reference')
         .not('external_reference', 'is', null)
-        .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+        .order('id').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
       for (const c of data ?? []) if (c.external_reference) existingRefs.add(c.external_reference)
       if (!data || data.length < PAGE_SIZE) break
     }

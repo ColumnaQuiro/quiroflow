@@ -185,15 +185,22 @@ const chartOptions = {
 // four times, and still there after filtering to one practitioner. Which
 // arrived first was a race, so the page showed it some loads and not others.
 const totalsByPractitioner = computed(() => series.value.map((s) => ({ id: s.id, label: s.label, total: s.data.reduce((a, b) => a + b, 0) })).sort((a, b) => b.total - a.total))
+
+// What "Download PDF" reads: the sections below marked data-pdf-block,
+// and the figure tiles (components/reports/Stat.vue).
+const pdfRoot = ref<HTMLElement | null>(null)
 </script>
 
 <template>
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Income Performance', 'Rendimiento de ingresos')" :meta="t('Compare practitioners month over month', 'Compara profesionales mes a mes')">
-      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
+      <div class="flex items-center gap-3">
+        <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
+        <ReportsPdfButton :target="pdfRoot" :title="t('Income Performance', 'Rendimiento de ingresos')" :range="range" :practitioner-id="practitionerFilter || null" :clinic-id="clinicFilter || null" />
+      </div>
     </PageHeader>
 
-    <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
+    <div ref="pdfRoot" class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] sm:px-6">
       <div class="flex flex-wrap items-center gap-2">
         <ReportsDateRangeSelect v-model="range" />
         <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" :locked-to="reportsPractitionerId" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />

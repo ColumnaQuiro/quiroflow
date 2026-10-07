@@ -3,6 +3,9 @@ import { PREVIEW_APPOINTMENTS, PREVIEW_DAYS, PREVIEW_SLOTS, PREVIEW_WEEK } from 
 
 const t = useT()
 
+// The staff sign-in shows the same calendar under its own heading.
+const props = defineProps<{ eyebrow?: string; title?: string; body?: string }>()
+
 const TONE = {
   brand: { box: 'bg-brand-tint border-brand-tintBorder', dot: 'bg-brand' },
   success: { box: 'bg-success-bg border-success-border', dot: 'bg-success-text' },
@@ -16,9 +19,10 @@ function at(day: number, slot: number) {
 
 <template>
   <OnboardingPreview
-    :eyebrow="t(`A look at what you're setting up`, 'Un vistazo a lo que estás montando')"
-    :title="t('Every appointment knows its clinic and its room', 'Cada cita sabe en qué clínica y en qué sala está')"
+    :eyebrow="props.eyebrow ?? t(`A look at what you're setting up`, 'Un vistazo a lo que estás montando')"
+    :title="props.title ?? t('Every appointment knows its clinic and its room', 'Cada cita sabe en qué clínica y en qué sala está')"
     :body="
+      props.body ??
       t(
         'Valencia and Madrid keep separate calendars, separate rooms, one shared patient history.',
         'Valencia y Madrid tienen agendas y salas separadas, y un único historial compartido.',
@@ -62,9 +66,9 @@ function at(day: number, slot: number) {
             >
               <div class="flex items-center gap-[5px]">
                 <span class="h-[5px] w-[5px] shrink-0 rounded-full" :class="TONE[at(col, row)!.tone].dot" />
-                <span class="truncate text-[11.5px] font-semibold text-ink-900">{{ at(col, row)!.patient }}</span>
+                <span class="truncate text-[11.5px] font-semibold text-ink-900">{{ t(at(col, row)!.patient, at(col, row)!.patientEs ?? at(col, row)!.patient) }}</span>
               </div>
-              <span class="truncate text-[11px] text-ink-500">{{ at(col, row)!.detail }}</span>
+              <span class="truncate text-[11px] text-ink-500">{{ t(at(col, row)!.detail, at(col, row)!.detailEs) }}</span>
             </div>
           </div>
         </template>

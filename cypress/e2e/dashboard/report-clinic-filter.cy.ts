@@ -7,6 +7,7 @@
 //    purpose (the sidebar's clinic already scopes it).
 //  - The custom report's Patients source read one unpaged select, which
 //    PostgREST caps at 1,000 rows, so a bigger clinic's counts stopped there.
+//    Custom Reports became report pages; that case is in report-pages.cy.ts.
 const REPORTS_WITH_CLINIC_FILTER = [
   '/reports/income',
   '/reports/income-performance',
@@ -27,18 +28,19 @@ describe('Reports: clinic filter and large patient lists', () => {
         // 1,040 in the first clinic and 12 in the second: past the 1,000-row
         // cap, and split so a clinic filter has something to tell apart.
         cy.task<{ patientIds: string[] }>('db:seedManyPatients', { accountId: account.accountId, clinicId: account.clinicId, count: 1040 }, { timeout: 60000 }).then(({ patientIds }) => {
-          // Mornings, a few days ago: inside the distribution report's
-          // default month, in its "Morning" shift. Two in the first clinic,
-          // one in the second.
-          const morning = (daysAgo: number) => {
+          // This morning, in the distribution report's "Morning" shift. Two
+          // in the first clinic, one in the second. Today, not a few days
+          // ago: the report opens on "This month", and on the 1st to the 5th
+          // "a few days ago" is last month, so the spec failed every PR for
+          // the first days of each month. Today is always in this month.
+          const morning = (hour: number) => {
             const d = new Date()
-            d.setDate(d.getDate() - daysAgo)
-            d.setHours(10, 0, 0, 0)
+            d.setHours(hour, 0, 0, 0)
             return d.toISOString()
           }
-          cy.task('db:createAppointment', { accountId: account.accountId, clinicId: account.clinicId, patientId: patientIds[0], startsAt: morning(3), status: 'completed' })
-          cy.task('db:createAppointment', { accountId: account.accountId, clinicId: account.clinicId, patientId: patientIds[1], startsAt: morning(4), status: 'completed' })
-          cy.task('db:createAppointment', { accountId: account.accountId, clinicId: north.id, patientId: patientIds[2], startsAt: morning(5), status: 'completed' })
+          cy.task('db:createAppointment', { accountId: account.accountId, clinicId: account.clinicId, patientId: patientIds[0], startsAt: morning(9), status: 'completed' })
+          cy.task('db:createAppointment', { accountId: account.accountId, clinicId: account.clinicId, patientId: patientIds[1], startsAt: morning(10), status: 'completed' })
+          cy.task('db:createAppointment', { accountId: account.accountId, clinicId: north.id, patientId: patientIds[2], startsAt: morning(11), status: 'completed' })
         })
         cy.task('db:seedManyPatients', { accountId: account.accountId, clinicId: north.id, count: 12 })
       })
@@ -66,20 +68,5 @@ describe('Reports: clinic filter and large patient lists', () => {
     morningTotal().should('have.text', '1')
     cy.get('[data-cy="report-clinic-filter"]').select('All clinics')
     morningTotal().should('have.text', '3')
-  })
-
-  it('the custom report counts every patient, not the first 1,000', () => {
-    cy.visit('/reports/custom')
-    cy.contains('label', 'Data source').parent().find('select').select('Patients')
-    cy.contains('label', 'Chart').parent().find('select').select('Table')
-    // Summed across whatever rows the grouping gives, against the account's
-    // own count -- 1,052 seeded here plus anything the staff seed adds.
-    cy.task<number>('db:patientCount', { accountId }).then((expected) => {
-      expect(expected).to.be.greaterThan(1000)
-      cy.get('table tbody tr td:last-child').should(($cells) => {
-        const total = [...$cells].reduce((sum, td) => sum + Number(td.textContent), 0)
-        expect(total).to.eq(expected)
-      })
-    })
   })
 })

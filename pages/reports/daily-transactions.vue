@@ -221,15 +221,22 @@ const { ensureLoaded: ensurePaymentMethodsLoaded, labelFor: labelForMethod } = u
 // same amount on the same morning are a double charge or a visit plus a
 // prepayment, and nothing on this page said which.
 const { purposeLabelFor } = usePaymentPurpose()
+
+// What "Download PDF" reads: the sections below marked data-pdf-block,
+// and the figure tiles (components/reports/Stat.vue).
+const pdfRoot = ref<HTMLElement | null>(null)
 </script>
 
 <template>
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Daily Transactions', 'Transacciones del día')" :meta="t('Every payment and refund recorded on a given day, for end-of-day cash reconciliation.', 'Todos los pagos y reembolsos registrados en un día, para el cuadre de caja.')">
-      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
+      <div class="flex items-center gap-3">
+        <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
+        <ReportsPdfButton :target="pdfRoot" :title="t('Daily Transactions', 'Transacciones del día')" :day="dateStr" :practitioner-id="practitionerFilter || null" :clinic-id="clinicFilter || null" />
+      </div>
     </PageHeader>
 
-    <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
+    <div ref="pdfRoot" class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] sm:px-6">
       <div class="flex flex-wrap items-center gap-2">
         <div class="flex items-center gap-1 rounded-ctl border border-line-control bg-surface">
           <button type="button" class="flex h-8 w-8 items-center justify-center text-ink-muted2 hover:text-ink-700" @click="shiftDay(-1)">‹</button>
@@ -262,8 +269,8 @@ const { purposeLabelFor } = usePaymentPurpose()
         </template>
       </div>
 
-      <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">
-        <table class="w-full text-[13px]">
+      <div class="mt-4 overflow-x-auto rounded-card border border-line bg-surface shadow-card" data-pdf-block="table" :data-pdf-title="t('Transactions', 'Transacciones')">
+        <table class="w-full min-w-[720px] text-[13px]">
           <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2">
             <tr>
               <th class="px-4 py-2">{{ t('Time', 'Hora') }}</th>

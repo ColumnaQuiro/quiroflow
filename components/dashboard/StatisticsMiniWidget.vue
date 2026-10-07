@@ -118,7 +118,9 @@ const filteredPayments = computed(() => {
   })
 })
 
-const pva = computed(() => {
+// Euros taken per completed visit. Not PVA: PVA is visits per new patient
+// (Statistics), and this used to be called that too.
+const incomePerVisit = computed(() => {
   const totalCents = filteredPayments.value.reduce((sum, p) => sum + p.amount_cents, 0)
   if (inRange.value.length === 0) return null
   return totalCents / 100 / inRange.value.length
@@ -146,8 +148,8 @@ const retentionRate = computed(() => {
       <span class="font-mono text-[12.5px] text-ink-900">{{ inRange.length }}</span>
     </li>
     <li class="flex items-center justify-between py-1.5">
-      <span class="text-ink-700">{{ t('Per-visit average', 'Media por visita') }}</span>
-      <span class="font-mono text-[12.5px] text-ink-900">{{ pva !== null ? formatEurFromAmount(pva) : '—' }}</span>
+      <span class="text-ink-700">{{ t('Average income per visit', 'Ingreso medio por visita') }}</span>
+      <span class="font-mono text-[12.5px] text-ink-900">{{ incomePerVisit !== null ? formatEurFromAmount(incomePerVisit) : '—' }}</span>
     </li>
     <li class="flex items-center justify-between py-1.5">
       <span class="text-ink-700">{{ t('Retention', 'Retención') }}</span>

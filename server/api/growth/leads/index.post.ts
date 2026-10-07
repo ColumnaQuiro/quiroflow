@@ -1,5 +1,5 @@
 import { requireGrowth } from '~/server/utils/requireGrowth'
-import { isLeadChannel, isLeadStage, nextLeadReference } from '~/server/utils/leads'
+import { insertLead, isLeadChannel, isLeadStage } from '~/server/utils/leads'
 
 interface Body {
   fullName?: unknown
@@ -37,14 +37,11 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Estimated value must be a whole number of cents' })
   }
 
-  const reference = await nextLeadReference(supabase, teamMember.account_id)
-
-  const { data: lead, error } = await supabase
-    .from('leads')
-    .insert({
-      account_id: teamMember.account_id,
+  const { data: lead, error } = await insertLead(
+    supabase,
+    teamMember.account_id,
+    {
       clinic_id: typeof body.clinicId === 'string' ? body.clinicId : null,
-      reference,
       full_name: fullName,
       phone: typeof body.phone === 'string' && body.phone.trim() ? body.phone.trim() : null,
       email: typeof body.email === 'string' && body.email.trim() ? body.email.trim() : null,
@@ -53,9 +50,9 @@ export default defineEventHandler(async (event) => {
       stage: isLeadStage(body.stage) ? body.stage : 'new',
       estimated_value_cents: typeof value === 'number' ? value : null,
       owner_team_member_id: teamMember.id,
-    })
-    .select('id, reference')
-    .single()
+    },
+    'id, reference',
+  )
 
   if (error) throw createError({ statusCode: 500, statusMessage: error.message })
 

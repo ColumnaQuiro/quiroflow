@@ -99,7 +99,7 @@ const STATES: { value: State; label: () => string }[] = [
       <UiBtn variant="primary" data-cy="fields-save" :disabled="saving || loading || !dirty" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Save changes', 'Guardar cambios') }}</UiBtn>
     </PageHeader>
     <div class="flex-1 overflow-y-auto">
-      <div class="flex gap-8 p-6">
+      <div class="flex gap-8 p-4 pb-24 sm:px-6 sm:pt-6 lg:pb-6">
         <SettingsNav />
         <div class="flex min-w-0 max-w-[960px] flex-1 flex-col gap-4" data-cy="fields-settings" :data-ready="loading ? undefined : 'true'">
           <p class="text-[13.5px] text-ink-muted">
@@ -124,7 +124,9 @@ const STATES: { value: State; label: () => string }[] = [
                 </div>
               </template>
               <div v-for="f in FIELDS" v-else :key="f.key" data-cy="field-row" :data-field="f.key" class="flex min-h-[56px] flex-wrap items-center gap-3 border-t border-line-row px-[18px] py-2 sm:flex-nowrap">
-                <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+                <!-- min-w makes the row wrap the control onto its own line on a
+                     phone rather than squeezing the hint one word per line. -->
+                <div class="flex min-w-[9rem] flex-1 flex-col gap-0.5 sm:min-w-0">
                   <strong :id="`field-${f.key}`" class="text-[14.5px] text-ink-900">{{ f.label }}</strong>
                   <span v-if="f.hint" class="text-[12.5px] text-ink-muted">{{ f.hint }}</span>
                 </div>

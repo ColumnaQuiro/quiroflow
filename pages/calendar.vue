@@ -8,6 +8,7 @@ import { shortPatientName } from '~/utils/appointmentBlock'
 import { bonoForVisit, type VisitPayment } from '~/utils/visitPayment'
 import { effectivePriceCents } from '~/utils/appointmentOverrides'
 import { orderTypes } from '~/utils/appointmentTypes'
+import type { MoveClash } from '~/utils/moveClash'
 import { FILTER_DOT_CLASS, STAGE_TONE, STAGE_TONE_CLASS } from '~/composables/useAppointmentStage'
 import type { BlockView } from '~/components/calendar/AppointmentBlock.vue'
 import type { FlowRow } from '~/components/calendar/FlowTracker.vue'
@@ -97,6 +98,13 @@ interface AppointmentRow {
   patients: { first_name: string; last_name: string | null; sticky_note: string | null } | null
   appointment_types: { name: string; color: string; default_price_cents: number } | null
   team_members: { full_name: string; color: string } | null
+  /**
+   * Set only on a moved-away marker: the slot this visit USED to hold, drawn
+   * faded where it was. The real visit is `_movedFrom`, and `_movedTo` is
+   * where it is now.
+   */
+  _movedFrom?: AppointmentRow
+  _movedTo?: string
 }
 
 const supabase = useSupabaseClient()
@@ -116,6 +124,12 @@ const SLOT_MIN = computed(() => store.currentClinic?.slot_duration_minutes ?? 30
 // through the day, matches PracticeHub's placement.
 const cashShiftOpen = ref(false)
 const mobileInfoOpen = ref(false)
+// The phone header's "more" menu (view, cash shift, block time, the day's info).
+const phoneMenuOpen = ref(false)
+function phoneMenu(action: () => void) {
+  phoneMenuOpen.value = false
+  action()
+}
 
 // Defaults to 'workweek', but this is really just the fallback for a
 // browser that's never opened the calendar before -- the real value is
@@ -180,12 +194,42 @@ const openAppointment = computed(() => {
   if (!modalOpen.value || modalMode.value !== 'edit' || !editingAppointment.value) return null
   const id = editingAppointment.value.id
   // The flow tracker opens today's visits while the grid may be on another
-  // week, so today's own rows are the fallback.
-  return appointments.value.find((a) => a.id === id) ?? todayRows.value.find((a) => a.id === id) ?? null
+  // week, so today's own rows are the fallback -- and a moved-away marker
+  // opens its visit wherever it went, often a day not on screen.
+  return (
+    appointments.value.find((a) => a.id === id) ??
+    todayRows.value.find((a) => a.id === id) ??
+    movedAwayMarkers.value.find((m) => m._movedFrom?.id === id)?._movedFrom ??
+    null
+  )
 })
 /** The tab the appointment panel opens on; the flow tracker's "Cobrar" asks for Cobro. */
 const panelInitialTab = ref<'summary' | 'billing'>('summary')
 const prefill = ref<{ date: string; time: string; roomId: string } | null>(null)
+
+// Booking from a patient's page (/calendar?patient=<id>): the slot is still
+// chosen here, as always, but whichever way the new-appointment panel opens
+// it starts with that patient instead of a search. Cleared once the visit is
+// booked, or with the chip's x.
+const route = useRoute()
+const bookingFor = ref<{ id: string; name: string } | null>(null)
+watch(
+  () => route.query.patient,
+  async (id) => {
+    if (typeof id !== 'string' || !id) {
+      bookingFor.value = null
+      return
+    }
+    const { data } = await supabase.from('patients').select('id, first_name, last_name').eq('id', id).maybeSingle()
+    if (route.query.patient !== id) return
+    bookingFor.value = data ? { id: data.id, name: `${data.first_name} ${data.last_name ?? ''}`.trim() } : null
+  },
+  { immediate: true },
+)
+function stopBookingFor() {
+  bookingFor.value = null
+  navigateTo({ query: { ...route.query, patient: undefined } }, { replace: true })
+}
 
 const blockModalOpen = ref(false)
 const editingBlock = ref<AvailabilityBlock | null>(null)
@@ -423,6 +467,56 @@ async function loadAppointments(silent = false) {
   // so they fill in after it renders rather than holding it back for the
   // three sequential rounds fetchVisitPayments needs.
   loadBlockDetails(token, appointmentIds, patientIds, rangeStart, rangeEnd).catch((e) => console.error('calendar: block details failed', e))
+  loadMovedAwayMarkers(token, rangeStart, rangeEnd).catch((e) => console.error('calendar: moved-away markers failed', e))
+}
+
+// Where a visit used to be. Moving an appointment moves the row itself --
+// nothing is left at the old time -- so the slot it held is drawn from
+// appointment_reschedules: one faded marker per move out of this range, for
+// the visit wherever it is now (often outside the range: moved to tomorrow).
+// "Hide rescheduled" hides these markers, and only these; it used to hide
+// the moved visits themselves, which made confirmed visits vanish from
+// today and completed ones from past days.
+const movedAwayMarkers = ref<AppointmentRow[]>([])
+async function loadMovedAwayMarkers(token: number, rangeStart: Date, rangeEnd: Date) {
+  const { data: moves } = await supabase
+    .from('appointment_reschedules')
+    .select('id, appointment_id, from_starts_at')
+    .eq('account_id', store.accountId!)
+    .gte('from_starts_at', rangeStart.toISOString())
+    .lt('from_starts_at', rangeEnd.toISOString())
+  if (token !== loadToken) return
+  const loaded = new Map(appointments.value.map((a) => [a.id, a]))
+  const missing = [...new Set((moves ?? []).map((m) => m.appointment_id).filter((id) => !loaded.has(id)))]
+  if (missing.length) {
+    const rows = await fetchByIds(missing, (chunk) => {
+      let q = supabase.from('appointments').select(APPOINTMENT_SELECT).eq('clinic_id', store.currentClinicId!).in('id', chunk)
+      if (practitionerFilter.value === UNASSIGNED_PRACTITIONER) q = q.is('practitioner_id', null)
+      else if (practitionerFilter.value && practitionerFilter.value !== ALL_PRACTITIONERS) q = q.eq('practitioner_id', practitionerFilter.value)
+      return q
+    })
+    if (token !== loadToken) return
+    for (const a of rows as unknown as AppointmentRow[]) loaded.set(a.id, a)
+  }
+  const markers: AppointmentRow[] = []
+  for (const m of moves ?? []) {
+    const real = loaded.get(m.appointment_id)
+    // Another clinic's visit, or one the practitioner filter leaves out.
+    if (!real) continue
+    const fromMs = Date.parse(m.from_starts_at)
+    // Moved away and later back again: the visit is in that slot itself.
+    if (fromMs === Date.parse(real.starts_at)) continue
+    const durationMs = Date.parse(real.ends_at) - Date.parse(real.starts_at)
+    markers.push({
+      ...real,
+      id: `moved-${m.id}`,
+      starts_at: new Date(fromMs).toISOString(),
+      ends_at: new Date(fromMs + durationMs).toISOString(),
+      _movedFrom: real,
+      _movedTo: real.starts_at,
+    })
+  }
+  movedAwayMarkers.value = markers
 }
 
 // Bumped on every load, so a slow response for a range the user has already
@@ -665,7 +759,8 @@ async function loadFutureAppointmentIds(token: number, patientIds: string[]) {
     return
   }
   const data = await fetchByIds(patientIds, (chunk) =>
-    supabase.from('appointments').select('id, patient_id').in('patient_id', chunk).neq('status', 'cancelled').gt('starts_at', new Date().toISOString()),
+    // Not one the clinic deleted: deleting leaves the row, still 'booked'.
+    supabase.from('appointments').select('id, patient_id').in('patient_id', chunk).neq('status', 'cancelled').is('deleted_at', null).gt('starts_at', new Date().toISOString()),
   )
   if (token !== loadToken) return
   const map: Record<string, Set<string>> = {}
@@ -799,7 +894,12 @@ async function onBlockSaved() {
 
 function isApptVisible(appt: AppointmentRow) {
   if (appt.status === 'cancelled' && !settings.showCancelled) return false
-  if (appt.rescheduled && settings.hideRescheduled) return false
+  // A moved visit is a real visit wherever it now sits, so it always shows.
+  // What "Hide rescheduled" hides is the marker left at its old slot.
+  if (appt._movedFrom) {
+    if (settings.hideRescheduled) return false
+    return isApptVisible(appt._movedFrom)
+  }
   if (appt.deleted_at && settings.hideDeleted) return false
   return true
 }
@@ -1190,15 +1290,21 @@ function columnKey(dayKey: string, roomId: string) {
 const layoutByColumn = computed(() => {
   const day = viewMode.value === 'day'
   const columns = new Map<string, AppointmentRow[]>()
-  for (const [dayKey, rows] of appointmentsByDay.value) {
-    for (const a of rows) {
-      if (!isApptVisible(a)) continue
-      const key = columnKey(dayKey, a.room_id ?? '__none')
-      const col = columns.get(key)
-      if (col) col.push(a)
-      else columns.set(key, [a])
-    }
+  const place = (dayKey: string, a: AppointmentRow) => {
+    if (!isApptVisible(a)) return
+    const key = columnKey(dayKey, a.room_id ?? '__none')
+    const col = columns.get(key)
+    if (col) col.push(a)
+    else columns.set(key, [a])
   }
+  for (const [dayKey, rows] of appointmentsByDay.value) {
+    for (const a of rows) place(dayKey, a)
+  }
+  // Laid out with the visits rather than under them, so a marker and the
+  // visit booked into the freed slot sit side by side instead of one
+  // covering the other. Counts, today's glance and conflict checks read
+  // appointmentsByDay, which the markers never enter.
+  for (const m of movedAwayMarkers.value) place(toDateKey(new Date(m.starts_at)), m)
   const layouts = new Map<string, LayoutBlock[]>()
   for (const [key, rows] of columns) {
     rows.sort((a, b) => a.starts_at.localeCompare(b.starts_at))
@@ -1240,6 +1346,10 @@ function openEditModal(appointment: AppointmentRow, tab: 'summary' | 'billing' =
 async function onSaved() {
   modalOpen.value = false
   await reloadAfterChange()
+}
+async function onCreated() {
+  if (bookingFor.value) stopBookingFor()
+  await onSaved()
 }
 
 // --- Drag-to-move / drag-to-resize ---
@@ -1358,6 +1468,37 @@ interface PendingReschedule {
 }
 const pendingReschedule = ref<PendingReschedule | null>(null)
 
+// A move, resize or slot pick that lands on another patient or a block asks
+// first (CalendarMoveClashDialog), the way a new booking needs "allow double
+// booking" ticked. `proceed` carries on exactly as a clash-free move would;
+// `back` undoes the live preview.
+const { findMoveClashes } = useMoveClashCheck()
+const moveClash = ref<{ clashes: MoveClash[]; proceed: () => void; back: () => void } | null>(null)
+function onMoveClashConfirm() {
+  const c = moveClash.value
+  moveClash.value = null
+  c?.proceed()
+}
+function onMoveClashCancel() {
+  const c = moveClash.value
+  moveClash.value = null
+  c?.back()
+}
+
+// A drag that leaves the start where it was -- a resize, or the same time in
+// another room -- is not a reschedule: the patient comes when they were told
+// to. It saves as it is, with no reason to give, no "moved" flag, no
+// appointment_reschedules row and no "your appointment has moved" message.
+async function saveInPlace(appointmentId: string, values: { ends_at: string; room_id: string | null }, revert: () => void) {
+  const { error } = await supabase.from('appointments').update(values).eq('id', appointmentId)
+  if (error) {
+    revert()
+    alert(error.message)
+    return
+  }
+  await reloadAfterChange()
+}
+
 // --- Reschedule mode ---
 // Drag-and-drop above only works within whatever days/rooms are currently
 // rendered in the DOM -- there's no way to drag an appointment onto a week
@@ -1416,9 +1557,9 @@ function cancelRescheduleMode() {
 // revert() on cancel; if it isn't (a genuinely different week), there's
 // nothing in memory to preview -- confirmReschedule()'s reload is what
 // makes the new position show up once that week comes into view.
-function pickRescheduleSlot(day: Date, time: string, roomId: string | null) {
+async function pickRescheduleSlot(day: Date, time: string, roomId: string | null) {
   const src = reschedulingAppointment.value
-  if (!src) return
+  if (!src || moveClash.value) return
   const [h, m] = time.split(':').map(Number)
   const newStartsAt = new Date(day.getFullYear(), day.getMonth(), day.getDate(), h, m, 0, 0)
   const durationMs = new Date(src.endsAt).getTime() - new Date(src.startsAt).getTime()
@@ -1431,6 +1572,18 @@ function pickRescheduleSlot(day: Date, time: string, roomId: string | null) {
     if (!confirm(t('This falls outside working hours. Move it anyway?', 'Esto queda fuera del horario de atención. ¿Moverla de todos modos?'))) return
   }
 
+  const clashes = await findMoveClashes({ appointmentId: src.id, practitionerId: src.practitionerId, roomId, startsAt: newStartsAt, endsAt: newEndsAt })
+  // Picking mode may have been left while the lookup was out.
+  if (reschedulingAppointment.value !== src) return
+  if (clashes.length) {
+    // Going back leaves picking mode on: the next click is another try.
+    moveClash.value = { clashes, proceed: () => placeRescheduled(src, newStartsAt, newEndsAt, roomId), back: () => {} }
+    return
+  }
+  placeRescheduled(src, newStartsAt, newEndsAt, roomId)
+}
+
+function placeRescheduled(src: ReschedulingAppointment, newStartsAt: Date, newEndsAt: Date, roomId: string | null) {
   const live = appointments.value.find((a) => a.id === src.id)
   const orig = live ? { starts_at: live.starts_at, ends_at: live.ends_at, room_id: live.room_id } : null
   function revert() {
@@ -1488,17 +1641,38 @@ async function onAppointmentDragEnd(e: PointerEvent) {
     }
   }
 
-  pendingReschedule.value = {
-    appointmentId: appt.id,
-    patientId: appt.patient_id,
-    patientName: appt.patients ? `${appt.patients.first_name} ${appt.patients.last_name ?? ''}`.trim() : '',
-    appointmentTypeName: appt.appointment_types?.name ?? null,
-    origStartsAt: orig.starts_at,
-    newStartsAt: appt.starts_at,
-    newEndsAt: appt.ends_at,
-    newRoomId: appt.room_id,
-    revert,
+  // Where it was dropped, taken now: the lookup below is a round trip, and
+  // the live row can be replaced by a reload in the meantime.
+  const next = { starts_at: appt.starts_at, ends_at: appt.ends_at, room_id: appt.room_id }
+  const same = (a: string, b: string) => new Date(a).getTime() === new Date(b).getTime()
+  const sameStart = same(next.starts_at, orig.starts_at)
+  // Snapped back to where it started: nothing to save or to ask about.
+  if (sameStart && same(next.ends_at, orig.ends_at) && next.room_id === orig.room_id) return
+
+  function proceed() {
+    if (sameStart) {
+      saveInPlace(appt!.id, { ends_at: next.ends_at, room_id: next.room_id }, revert)
+      return
+    }
+    pendingReschedule.value = {
+      appointmentId: appt!.id,
+      patientId: appt!.patient_id,
+      patientName: appt!.patients ? `${appt!.patients.first_name} ${appt!.patients.last_name ?? ''}`.trim() : '',
+      appointmentTypeName: appt!.appointment_types?.name ?? null,
+      origStartsAt: orig.starts_at,
+      newStartsAt: next.starts_at,
+      newEndsAt: next.ends_at,
+      newRoomId: next.room_id,
+      revert,
+    }
   }
+
+  const clashes = await findMoveClashes({ appointmentId: appt.id, practitionerId: appt.practitioner_id, roomId: next.room_id, startsAt: next.starts_at, endsAt: next.ends_at })
+  if (clashes.length) {
+    moveClash.value = { clashes, proceed, back: revert }
+    return
+  }
+  proceed()
 }
 
 function cancelReschedule() {
@@ -1957,6 +2131,19 @@ function freedSlotLabel(o: WaitlistOffer) {
   const who = `${o.patients?.first_name ?? ''} ${o.patients?.last_name ?? ''}`.trim() || t('the waitlist', 'la lista de espera')
   return t(`Slot offered to ${who}`, `Hueco ofrecido a ${who}`)
 }
+// "Moved to Thu 1 Oct 10:00" on the marker left at a visit's old slot --
+// same day reads as just the time.
+function movedMarkerName(m: AppointmentRow) {
+  if (settings.privacyMode) return t('Moved', 'Movida')
+  return `${m.patients?.first_name ?? ''} ${m.patients?.last_name ?? ''}`.trim()
+}
+function movedMarkerLabel(m: AppointmentRow) {
+  const to = new Date(m._movedTo!)
+  const sameDay = toDateKey(to) === toDateKey(new Date(m.starts_at))
+  const day = to.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
+  const when = sameDay ? formatTime(m._movedTo!) : `${day} ${formatTime(m._movedTo!)}`
+  return t(`Moved to ${when}`, `Movida al ${when}`)
+}
 function freedSlotUntil(o: WaitlistOffer) {
   return o.offer_expires_at ? t(`replies by ${formatTime(o.offer_expires_at)}`, `responde antes de las ${formatTime(o.offer_expires_at)}`) : ''
 }
@@ -1998,6 +2185,8 @@ function openAgendaItem(id: string) {
 // deliberate exception, because it has to be found at a glance across a
 // screen full of tinted blocks.
 const now = ref(new Date())
+// The phone header shows "Today" only when another day is on screen.
+const isTodayShown = computed(() => isSameDate(anchorDate.value, now.value))
 let nowTimer: ReturnType<typeof setInterval> | null = null
 // A tab left in the background can go minutes without its timers firing;
 // catch up the moment it is looked at again.
@@ -2029,7 +2218,82 @@ function showNowLineOn(day: Date) {
 
 <template>
   <div class="flex h-full flex-col">
-    <header class="flex shrink-0 flex-col gap-2.5 border-b border-line bg-surface px-4 py-2.5 lg:min-h-14 lg:flex-row lg:flex-wrap lg:items-center lg:justify-between lg:px-6 lg:py-2.5">
+    <!-- Phones get one compact row: the date, Today, back/forward, and a
+         "more" menu for everything else. The full toolbar below wrapped onto
+         three rows of 44px controls there, pushing the day itself half off
+         the screen, and its "+ New Appointment" repeated the agenda's own
+         round button. CSS rather than isPhone, so the server renders the
+         right one and nothing jumps on load. -->
+    <header class="relative flex shrink-0 flex-col border-b border-line bg-surface px-3 py-2 md:hidden" data-cy="calendar-phone-header">
+      <div class="flex items-center gap-1.5">
+        <p class="min-w-0 flex-1 truncate pl-1 text-[16px] font-[640] tracking-tightTitle text-ink-900">{{ rangeLabel }}</p>
+        <button
+          v-if="!isTodayShown"
+          type="button"
+          class="h-9 shrink-0 rounded-ctlSm border border-line-control px-3 text-[13px] font-medium text-ink-600"
+          @click="goToday"
+        >
+          {{ t('Today', 'Hoy') }}
+        </button>
+        <button type="button" :aria-label="t('Previous period', 'Periodo anterior')" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctlSm border border-line-control text-ink-500" @click="stepDate(-1)">
+          <svg width="7" height="11" viewBox="0 0 7 11" fill="none"><path d="M6 1L1 5.5L6 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        </button>
+        <button type="button" :aria-label="t('Next period', 'Periodo siguiente')" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctlSm border border-line-control text-ink-500" @click="stepDate(1)">
+          <svg width="7" height="11" viewBox="0 0 7 11" fill="none"><path d="M1 1L6 5.5L1 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        </button>
+        <button
+          type="button"
+          :aria-label="t('More', 'Más')"
+          :aria-expanded="phoneMenuOpen"
+          data-cy="calendar-phone-more"
+          class="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctlSm border border-line-control text-ink-500"
+          @click="phoneMenuOpen = !phoneMenuOpen"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>
+        </button>
+      </div>
+      <div v-if="bookingFor || readOnly" class="mt-2 flex">
+        <span v-if="bookingFor && !readOnly" class="inline-flex h-8 max-w-full items-center gap-1.5 rounded-pill bg-brand-tint pl-3 pr-1.5 text-[12.5px] font-semibold text-brand-text">
+          <span class="truncate">{{ t(`Booking for ${bookingFor.name} · pick a time`, `Reservando para ${bookingFor.name} · elige una hora`) }}</span>
+          <button type="button" class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-pill hover:bg-surface" :aria-label="t('Stop booking for this patient', 'Dejar de reservar para este paciente')" @click="stopBookingFor">&times;</button>
+        </span>
+        <span v-else-if="readOnly" class="inline-flex h-7 items-center rounded-pill bg-chip-bg px-3 text-[12.5px] font-semibold text-chip-text">{{ t('Read-only', 'Solo lectura') }}</span>
+      </div>
+
+      <template v-if="phoneMenuOpen">
+        <div class="fixed inset-0 z-30" @click="phoneMenuOpen = false" />
+        <div class="absolute right-3 top-[calc(100%-4px)] z-40 w-60 overflow-hidden rounded-card border border-line bg-surface py-1 shadow-popover" role="menu" data-cy="calendar-phone-menu">
+          <p class="px-3.5 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-[.05em] text-ink-faint">{{ t('View', 'Vista') }}</p>
+          <button
+            v-for="v in ([['day', t('Day', 'Día')], ['workweek', t('Work week', 'Semana laboral')], ['week', t('Week', 'Semana')]] as const)"
+            :key="v[0]"
+            type="button"
+            role="menuitemradio"
+            :aria-checked="viewMode === v[0]"
+            class="flex h-10 w-full items-center justify-between px-3.5 text-left text-[14px] text-ink-900 active:bg-surface-subtle"
+            @click="phoneMenu(() => (viewMode = v[0]))"
+          >
+            {{ v[1] }}
+            <svg v-if="viewMode === v[0]" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.4L6.6 11.4L12.5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="text-brand" /></svg>
+          </button>
+          <div class="my-1 h-px bg-line-divider" />
+          <button v-if="!readOnly && !showAgenda" type="button" role="menuitem" class="flex h-10 w-full items-center px-3.5 text-left text-[14px] font-medium text-brand-text active:bg-surface-subtle" @click="phoneMenu(() => openCreateModal())">
+            {{ t('New appointment', 'Nueva cita') }}
+          </button>
+          <button v-if="!readOnly" type="button" role="menuitem" class="flex h-10 w-full items-center px-3.5 text-left text-[14px] text-ink-900 active:bg-surface-subtle" @click="phoneMenu(() => openBlockCreateModal())">
+            {{ t('Block time', 'Bloquear horario') }}
+          </button>
+          <button v-if="can('payments_allocate')" type="button" role="menuitem" class="flex h-10 w-full items-center px-3.5 text-left text-[14px] text-ink-900 active:bg-surface-subtle" @click="phoneMenu(() => (cashShiftOpen = true))">
+            {{ t('Cash Shift', 'Turno de Caja') }}
+          </button>
+          <button type="button" role="menuitem" class="flex h-10 w-full items-center px-3.5 text-left text-[14px] text-ink-900 active:bg-surface-subtle" @click="phoneMenu(() => (mobileInfoOpen = true))">
+            {{ t("Today's info", 'Información del día') }}
+          </button>
+        </div>
+      </template>
+    </header>
+
+    <header class="hidden shrink-0 flex-col gap-2.5 border-b border-line bg-surface px-4 py-2.5 md:flex lg:min-h-14 lg:flex-row lg:flex-wrap lg:items-center lg:justify-between lg:px-6 lg:py-2.5">
       <div class="flex items-center gap-4">
         <h1 class="text-[18px] font-[640] tracking-tightTitle text-ink-900">{{ t('Calendar', 'Calendario') }}</h1>
         <div class="flex items-center gap-1">
@@ -2051,6 +2315,16 @@ function showNowLineOn(day: Date) {
         </select>
         <UiBtn v-if="can('payments_allocate')" variant="secondary" size="sm" @click="cashShiftOpen = true">{{ t('Cash Shift', 'Turno de Caja') }}</UiBtn>
         <template v-if="!readOnly">
+          <span v-if="bookingFor" class="inline-flex h-8 items-center gap-1.5 rounded-pill bg-brand-tint pl-3 pr-1.5 text-[12.5px] font-semibold text-brand-text" data-cy="booking-for">
+            {{ t(`Booking for ${bookingFor.name} · pick a time`, `Reservando para ${bookingFor.name} · elige una hora`) }}
+            <button
+              type="button"
+              class="inline-flex h-5 w-5 items-center justify-center rounded-pill hover:bg-surface"
+              :aria-label="t('Stop booking for this patient', 'Dejar de reservar para este paciente')"
+              data-cy="booking-for-clear"
+              @click="stopBookingFor"
+            >&times;</button>
+          </span>
           <UiBtn variant="secondary" size="sm" @click="openBlockCreateModal()">{{ t('Block time', 'Bloquear horario') }}</UiBtn>
           <UiBtn variant="primary" size="sm" data-cy="new-appointment" @click="openCreateModal()">{{ t('+ New Appointment', '+ Nueva Cita') }}</UiBtn>
         </template>
@@ -2425,6 +2699,20 @@ function showNowLineOn(day: Date) {
                       +{{ appt.count }} {{ t('more', 'más') }}
                     </div>
                     <div
+                      v-else-if="appt._movedFrom"
+                      data-cy="moved-away-marker"
+                      :data-appt-id="appt._movedFrom.id"
+                      class="absolute cursor-pointer"
+                      :style="columnStyle(appt, timeToPx(appt.starts_at, DAY_HOUR_PX) + 1, Math.max(0, durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) - 3))"
+                      :title="`${movedMarkerName(appt)} · ${movedMarkerLabel(appt)}`"
+                      @click.stop="openEditModal(appt._movedFrom)"
+                    >
+                      <div class="flex h-full flex-col overflow-hidden rounded-ctl border border-dashed border-line-control bg-surface-page px-2.5 py-1 text-[12px] leading-tight text-ink-muted opacity-60 hover:opacity-90">
+                        <span class="truncate font-semibold">{{ movedMarkerName(appt) }}</span>
+                        <span class="truncate">{{ movedMarkerLabel(appt) }}</span>
+                      </div>
+                    </div>
+                    <div
                       v-else
                       data-cy="appt-block"
                       :data-appt-id="appt.id"
@@ -2619,6 +2907,20 @@ function showNowLineOn(day: Date) {
                         +{{ appt.count }}
                       </button>
                       <div
+                        v-else-if="appt._movedFrom"
+                        data-cy="moved-away-marker"
+                        :data-appt-id="appt._movedFrom.id"
+                        class="absolute cursor-pointer"
+                        :style="columnStyle(appt, timeToPx(appt.starts_at, WEEK_HOUR_PX), Math.max(0, durationToPx(appt.starts_at, appt.ends_at, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX) - 2))"
+                        :title="`${movedMarkerName(appt)} · ${movedMarkerLabel(appt)}`"
+                        @click.stop="openEditModal(appt._movedFrom)"
+                      >
+                        <div class="flex h-full flex-col overflow-hidden rounded-[6px] border border-dashed border-line-control bg-surface-page px-1 py-0.5 text-[10.5px] leading-tight text-ink-muted opacity-60 hover:opacity-90">
+                          <span class="truncate font-semibold">{{ movedMarkerName(appt) }}</span>
+                          <span class="truncate">{{ movedMarkerLabel(appt) }}</span>
+                        </div>
+                      </div>
+                      <div
                         v-else
                         data-cy="appt-block"
                         :data-appt-id="appt.id"
@@ -2690,9 +2992,10 @@ function showNowLineOn(day: Date) {
       :prefill-time="prefill?.time"
       :prefill-room-id="prefill?.roomId"
       :prefill-practitioner-id="prefillPractitionerId"
+      :prefill-patient-id="bookingFor?.id"
       :slot-minutes="SLOT_MIN"
       @close="modalOpen = false"
-      @saved="onSaved"
+      @saved="onCreated"
     />
 
     <CalendarAppointmentPanel
@@ -2723,6 +3026,8 @@ function showNowLineOn(day: Date) {
       @close="cancelReschedule"
       @confirm="confirmReschedule"
     />
+
+    <CalendarMoveClashDialog v-if="moveClash" :clashes="moveClash.clashes" @confirm="onMoveClashConfirm" @cancel="onMoveClashCancel" />
 
     <CalendarAvailabilityBlockModal
       v-if="blockModalOpen"

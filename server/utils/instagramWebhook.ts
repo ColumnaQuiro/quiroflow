@@ -78,6 +78,7 @@ export async function handleInstagramEntries(
         .select('id, instagram_user_id, instagram_access_token')
         .eq('instagram_user_id', igUserId)
         .limit(2)
+      for (const match of matches ?? []) await withMessagingTokens(match.id, match)
       if (lookupError) {
         console.error(`[instagram] could not look up the account for Instagram id ${igUserId}: ${lookupError.message}`)
         continue
@@ -137,11 +138,14 @@ export async function handleInstagramEntries(
 
       // A duplicate is the expected outcome of a redelivery, not a problem:
       // the unique index did its job. Anything else is worth knowing about.
-      if (error && !error.message.includes('duplicate key')) {
-        console.error('[instagram] could not store a message:', error.message)
+      // Either way the push below is not sent: it announces a message
+      // arriving, and a redelivery used to buzz every phone on the team a
+      // second time for one that already had.
+      if (error) {
+        if (error.code !== '23505') console.error('[instagram] could not store a message:', error.message)
         continue
       }
-      if (!error) stored++
+      stored++
 
       await notifyInboxTeamMembers(supabase, account.id, 'Instagram', preview.slice(0, 120), {
         channel: 'instagram',

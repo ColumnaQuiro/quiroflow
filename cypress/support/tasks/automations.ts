@@ -42,6 +42,8 @@ async function patient(opts: {
   isMinor?: boolean
   doNotContact?: boolean
   dateOfBirth?: string
+  /** 'inactive' is how the record's Archive leaves a patient. */
+  status?: 'active' | 'inactive'
 }) {
   const row = check(
     await admin
@@ -57,6 +59,7 @@ async function patient(opts: {
         is_minor: opts.isMinor ?? false,
         do_not_contact: opts.doNotContact ?? false,
         date_of_birth: opts.dateOfBirth ?? null,
+        status: opts.status ?? 'active',
       })
       .select('id')
       .single(),
@@ -128,6 +131,11 @@ async function tryInsertRule(opts: { accountId: string; triggerEvent: string }) 
   return { id: (data as { id: string } | null)?.id ?? null, error: error?.message ?? null }
 }
 
+/** Moves an appointment in time, as if the clock had moved on to (or past) it. */
+async function setAppointmentStart(opts: { appointmentId: string; startsAt: string }) {
+  check(await admin.from('appointments').update({ starts_at: opts.startsAt, ends_at: new Date(new Date(opts.startsAt).getTime() + 30 * 60_000).toISOString() }).eq('id', opts.appointmentId).select('id'))
+  return { ok: true }
+}
 async function setRuleEnabled(opts: { ruleId: string; enabled: boolean }) {
   check(await admin.from('automation_rules').update({ enabled: opts.enabled }).eq('id', opts.ruleId).select('id'))
   return { ok: true }
@@ -256,9 +264,12 @@ async function createFlowRule(opts: {
   return rule
 }
 
-/** Pulls a rule's running runs back so the next tick sees them as due -- and any wait as timed out. */
-async function makeRunsDue(opts: { ruleId: string }) {
-  const past = new Date(Date.now() - 60_000).toISOString()
+/**
+ * Pulls a rule's running runs back so the next tick sees them as due -- and any wait as timed out.
+ * `minutesAgo` says how long ago they came due (1 by default), for a run left overdue.
+ */
+async function makeRunsDue(opts: { ruleId: string; minutesAgo?: number }) {
+  const past = new Date(Date.now() - (opts.minutesAgo ?? 1) * 60_000).toISOString()
   check(await admin.from('automation_sequence_runs').update({ resume_at: past }).eq('rule_id', opts.ruleId).eq('status', 'running').select('id'))
   check(
     await admin
@@ -464,7 +475,122 @@ async function leadConsent(opts: { leadId: string }) {
   return check(await admin.from('leads').select('marketing_consent_at, marketing_consent_source').eq('id', opts.leadId).single())
 }
 
+/**
+ * Fires HTTP requests at once rather than one after another, which cy.request
+ * cannot do: each waits for the last. What the races in the sequence specs
+ * need -- a lead being filed while the tick runs. `delayMs` staggers a request
+ * after the first has gone out.
+ */
+async function concurrentRequests(opts: {
+  requests: { url: string; method?: string; headers?: Record<string, string>; body?: unknown; delayMs?: number }[]
+}) {
+  return Promise.all(
+    opts.requests.map(async (r) => {
+      if (r.delayMs) await new Promise((resolve) => setTimeout(resolve, r.delayMs))
+      const res = await fetch(r.url, {
+        method: r.method ?? 'POST',
+        headers: { 'content-type': 'application/json', ...(r.headers ?? {}) },
+        body: r.body === undefined ? undefined : JSON.stringify(r.body),
+      })
+      const text = await res.text()
+      let body: unknown = text
+      try {
+        body = JSON.parse(text)
+      } catch {
+        // Kept as text.
+      }
+      return { status: res.status, body }
+    }),
+  )
+}
+
+/** Leads the AI is handling who have never written: form leads, in bulk. */
+async function seedHandlingLeads(opts: { accountId: string; count: number }) {
+  const rows = check(
+    await admin
+      .from('leads')
+      .insert(
+        Array.from({ length: opts.count }, (_, i) => ({
+          account_id: opts.accountId,
+          reference: `LEAD-SILENT-${Math.random().toString(36).slice(2, 8)}-${i}`,
+          full_name: `Silent ${i}`,
+          stage: 'new',
+          channel: 'facebook',
+          ai_state: 'handling',
+        })) as never,
+      )
+      .select('id'),
+  ) as { id: string }[]
+  return rows.map((r) => r.id)
+}
+
+async function softDeleteLeads(opts: { ids: string[] }) {
+  for (let i = 0; i < opts.ids.length; i += 200) {
+    check(await admin.from('leads').update({ deleted_at: new Date().toISOString() } as never).in('id', opts.ids.slice(i, i + 200)).select('id'))
+  }
+  return { ok: true }
+}
+
+/** How many runs a rule has, counted in the database -- not capped at a page. */
+async function countRunsForRule(opts: { ruleId: string; status?: string }) {
+  let query = admin.from('automation_sequence_runs').select('id', { count: 'exact', head: true }).eq('rule_id', opts.ruleId)
+  if (opts.status) query = query.eq('status', opts.status)
+  const { count, error } = await query
+  if (error) throw error
+  return count ?? 0
+}
+
+/** Ends every live run of a rule, so a bulk spec leaves nothing due for other specs' ticks. */
+async function cancelRunsForRule(opts: { ruleId: string }) {
+  check(
+    await admin
+      .from('automation_sequence_runs')
+      .update({ status: 'cancelled', stopped_reason: 'taken_out' } as never)
+      .eq('rule_id', opts.ruleId)
+      .in('status', ['running', 'failed'])
+      .select('id'),
+  )
+  return { ok: true }
+}
+
+/** Puts a segment rule's clock back, so the next tick takes it as due again. */
+async function setSegmentLastRunAt(opts: { ruleId: string; at: string | null }) {
+  check(await admin.from('automation_rules').update({ segment_last_run_at: opts.at } as never).eq('id', opts.ruleId).select('id'))
+  return { ok: true }
+}
+
+/** Parks one run per patient at a rule's step, waiting out a delay that has not ended. */
+async function parkPatientRuns(opts: { accountId: string; ruleId: string; actionId: string; nextPosition: number; patientIds: string[] }) {
+  const resumeAt = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString()
+  for (let i = 0; i < opts.patientIds.length; i += 500) {
+    check(
+      await admin
+        .from('automation_sequence_runs')
+        .insert(
+          opts.patientIds.slice(i, i + 500).map((patientId) => ({
+            account_id: opts.accountId,
+            rule_id: opts.ruleId,
+            patient_id: patientId,
+            current_action_id: opts.actionId,
+            next_position: opts.nextPosition,
+            waiting_for: 'delay',
+            resume_at: resumeAt,
+          })) as never,
+        )
+        .select('id'),
+    )
+  }
+  return { ok: true }
+}
+
 export const automationTasks = {
+  'auto:concurrentRequests': concurrentRequests,
+  'auto:seedHandlingLeads': seedHandlingLeads,
+  'auto:softDeleteLeads': softDeleteLeads,
+  'auto:countRunsForRule': countRunsForRule,
+  'auto:cancelRunsForRule': cancelRunsForRule,
+  'auto:setSegmentLastRunAt': setSegmentLastRunAt,
+  'auto:parkPatientRuns': parkPatientRuns,
   'auto:actionsForRule': actionsForRule,
   'auto:ruleRow': ruleRow,
   'auto:seedWhatsAppMessage': seedWhatsAppMessage,
@@ -479,6 +605,7 @@ export const automationTasks = {
   'auto:setClinicTimezone': setClinicTimezone,
   'auto:tryInsertRule': tryInsertRule,
   'auto:setRuleEnabled': setRuleEnabled,
+  'auto:setAppointmentStart': setAppointmentStart,
   'auto:disableRules': disableRules,
   'auto:setReminderTemplate': setReminderTemplate,
   'auto:reviewRequestsForPatient': reviewRequestsForPatient,

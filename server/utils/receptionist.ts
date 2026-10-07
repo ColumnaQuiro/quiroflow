@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
 import { offeredAppointmentTypes, offeredTypesSection, type PromptType } from '~/utils/receptionistTypes'
 import { leadOriginSection, type LeadOrigin } from '~/utils/receptionistLeadOrigin'
+import { hasGrowth } from '~/server/utils/requireGrowth'
 
 export type { LeadOrigin }
 
@@ -223,4 +224,25 @@ export async function receptionistHandlesNewLeads(supabase: any, accountId: stri
     .eq('account_id', accountId)
     .maybeSingle()
   return Boolean(data?.enabled)
+}
+
+/**
+ * Whether a lead the receptionist is handling will actually be drafted for:
+ * switched on, and the account entitled to Growth -- the same two things the
+ * drafting tick (receptionist-draft-cron) checks before it looks at a lead.
+ *
+ * What the WhatsApp webhook asks when a lead on 'handling' writes. If the
+ * answer is yes, the message is exactly what the tick is waiting for and the
+ * lead stays the AI's. If no, nothing is going to draft a reply, and leaving
+ * the lead marked as the AI's would hide a question nobody is reading -- so it
+ * goes to a person.
+ */
+export async function receptionistDraftsFor(supabase: any, accountId: string): Promise<boolean> {
+  if (!(await receptionistHandlesNewLeads(supabase, accountId))) return false
+  const { data: subscription } = await supabase
+    .from('subscriptions')
+    .select('plan_id, growth_addon, status, comped')
+    .eq('account_id', accountId)
+    .maybeSingle()
+  return hasGrowth(subscription)
 }

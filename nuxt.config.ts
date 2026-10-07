@@ -45,6 +45,24 @@ export default defineNuxtConfig({
         { name: 'theme-color', content: '#F7F8FA', media: '(prefers-color-scheme: light)' },
         { name: 'theme-color', content: '#0F1014', media: '(prefers-color-scheme: dark)' },
       ],
+      // iOS zooms the whole page into any field whose text is under 16px --
+      // nearly every input here is 13px -- and does not zoom back out when
+      // the field loses focus, so staff on an iPhone were left pinching the
+      // page back after every form. maximum-scale=1 stops that zoom-on-focus;
+      // iOS still lets people pinch-zoom themselves (it has ignored the
+      // setting for user gestures since iOS 10). Only on iOS: Android honours
+      // maximum-scale for pinching too, which would take zoom away from
+      // anyone who needs it, and Android does not zoom on focus anyway.
+      // Inline and in <head> so it is in place before the first tap, on the
+      // server-rendered pages (booking, docs) as much as inside the app.
+      script: [
+        {
+          key: 'ios-no-focus-zoom',
+          tagPosition: 'head',
+          innerHTML:
+            "(function(){var n=navigator,ios=/iP(hone|ad|od)/.test(n.userAgent)||(n.platform==='MacIntel'&&n.maxTouchPoints>1);if(!ios)return;var m=document.querySelector('meta[name=viewport]');if(m&&m.content.indexOf('maximum-scale')<0)m.content+=', maximum-scale=1'})()",
+        },
+      ],
       link: [
         { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
         { rel: 'alternate icon', href: '/favicon.ico' },

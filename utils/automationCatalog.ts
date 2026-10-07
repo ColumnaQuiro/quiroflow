@@ -591,6 +591,8 @@ export const STOP_REASONS: Record<string, Pair> = {
   exited: ['Left when an exit event happened', 'Salió al ocurrir un evento de salida'],
   taken_out: ['Taken out by someone on the team', 'Lo sacó alguien del equipo'],
   step_removed: ['The step they were on was removed', 'Se quitó el paso en el que estaba'],
+  appointment_deleted: ['The appointment was deleted', 'Se eliminó la cita'],
+  appointment_cancelled: ['The appointment was cancelled', 'Se canceló la cita'],
 }
 
 /** A run history row's outcome, in words. */

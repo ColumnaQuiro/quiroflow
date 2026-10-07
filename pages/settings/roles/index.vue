@@ -108,7 +108,7 @@ function describe(r: RoleRow) {
 <template>
   <div class="flex h-full flex-col">
     <header class="flex shrink-0 flex-wrap items-end gap-3 border-b border-line bg-surface px-4 py-3 sm:px-6">
-      <div class="flex min-w-0 flex-1 flex-col gap-1">
+      <div class="flex min-w-[16rem] flex-1 flex-col gap-1 sm:min-w-0">
         <nav :aria-label="t('Breadcrumb', 'Ruta')" class="flex items-center gap-1.5 text-[13px] text-ink-muted">
           <NuxtLink to="/settings" class="hover:underline">{{ t('Settings', 'Ajustes') }}</NuxtLink>
         </nav>
@@ -130,7 +130,7 @@ function describe(r: RoleRow) {
     </header>
 
     <div class="flex-1 overflow-y-auto">
-      <div class="flex gap-8 p-4 sm:p-6">
+      <div class="flex gap-8 p-4 pb-24 sm:px-6 sm:pt-6 lg:pb-6">
         <SettingsNav />
         <div class="flex min-w-0 max-w-[820px] flex-1 flex-col gap-4" data-cy="roles-page" :data-ready="ready ? 'true' : undefined">
           <p class="rounded-ctl border border-line bg-surface-subtle px-3.5 py-3 text-[13.5px] leading-snug text-ink-700">

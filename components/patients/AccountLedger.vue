@@ -10,6 +10,8 @@ import { formatEur } from '~/utils/billing'
 // PracticeHub records most of a bono patient's payments -- and such a row
 // simply matches no invoice here.
 import { normalizeSearchTerm } from '~/utils/searchText'
+import { isReceipt } from '~/utils/paymentReceipts'
+import { paymentRefundableCents } from '~/utils/paymentRefund'
 
 interface InvoiceRow {
   id: string
@@ -21,15 +23,17 @@ interface InvoiceRow {
   refunds_invoice_id: string | null
   refunds_payment_id: string | null
 }
-interface PaymentRow { id: string; invoice_id: string | null; amount_cents: number; method: string; paid_at: string; created_by?: string | null; stripe_payment_intent_id?: string | null; team_members?: { full_name: string | null } | null }
+interface PaymentRow { id: string; invoice_id: string | null; amount_cents: number; method: string; paid_at: string; purpose?: string | null; package_purchase_id?: string | null; created_by?: string | null; stripe_payment_intent_id?: string | null; team_members?: { full_name: string | null } | null }
 // A visit drawn from a package. Carries no debit or credit -- the money was
 // already accounted for when the package was bought -- so it appears in the
 // ledger purely so a visit is not silently absent from a patient's history.
 interface PackageSessionRow { id: string; amount_cents: number; used_at: string; package_name: string | null }
-interface CreditRow { id: string; amount_cents: number; reason: string | null; method: string | null; invoice_id: string | null; created_at: string }
+interface CreditRow { id: string; amount_cents: number; reason: string | null; method: string | null; invoice_id: string | null; payment_id?: string | null; created_at: string }
 
 const props = defineProps<{
   patientId: string
+  /** Under age or "do not contact": the statement is not emailed to them. */
+  contactBlocked?: boolean
   invoices: InvoiceRow[]
   lineItemDescriptions: Record<string, string[]>
   payments: PaymentRow[]
@@ -52,6 +56,9 @@ const props = defineProps<{
   canChangePaymentMethod: boolean
   canWriteOff: boolean
   canRefund: boolean
+  // New Payment and Add Credit both write a `payments` row, which RLS only
+  // allows with payments_allocate.
+  canTakePayments: boolean
   /**
    * A receipt to open the refund modal for straight away, from
    * /billing/<id>'s Refund button. The receipt page deliberately does not
@@ -155,11 +162,18 @@ const rows = computed<LedgerRow[]>(() => {
     // to" detail line, reused here for the description itself.
     if (inv.is_refund) {
       const refundedCents = Math.abs(inv.total_cents)
+      // A refund of a payment that never had a receipt -- most imported
+      // PracticeHub money -- names the payment instead. Reading
+      // refunds_invoice_id alone called every one of those a "deleted receipt".
+      const refundedPayment = !inv.refunds_invoice_id && inv.refunds_payment_id ? props.payments.find((p) => p.id === inv.refunds_payment_id) : undefined
+      const against = refundedPayment
+        ? `${t('payment of', 'pago de')} ${formatDate(refundedPayment.paid_at)}`
+        : (invoiceRefFor(inv.refunds_invoice_id) ?? t('deleted receipt', 'recibo eliminado'))
       return {
         key: `invoice-${inv.id}`,
         ref: inv.invoice_number,
         date: inv.created_at,
-        description: `${t('Refund', 'Reembolso')} — ${invoiceRefFor(inv.refunds_invoice_id) ?? t('deleted receipt', 'recibo eliminado')}`,
+        description: `${t('Refund', 'Reembolso')} — ${against}`,
         debitCents: 0,
         creditCents: refundedCents,
         balanceText: '—',
@@ -180,10 +194,19 @@ const rows = computed<LedgerRow[]>(() => {
     // refunds_invoice_id as well as refunds_payment_id precisely so this sum
     // keeps working. Refund EUR 20 against the card payment and the receipt's
     // own refundable total drops by EUR 20 with it.
+    //
+    // Only money that came in, which is the rule a single payment already
+    // followed: a write-off settles a receipt without collecting anything, and
+    // a 'credit' row spends a balance paid in (and refundable) elsewhere.
+    // Summing every payment let a written-off receipt be refunded in cash --
+    // money out of the till for a debt that was forgiven, not paid.
     const alreadyRefunded = props.invoices
       .filter((r) => r.is_refund && r.refunds_invoice_id === inv.id)
       .reduce((sum, r) => sum + Math.abs(r.total_cents), 0)
-    const refundableCents = inv.status === 'void' ? 0 : Math.max(0, paidForInvoice - alreadyRefunded)
+    const receivedForInvoice = props.payments
+      .filter((p) => p.invoice_id === inv.id && isReceipt(p.method))
+      .reduce((sum, p) => sum + p.amount_cents, 0)
+    const refundableCents = inv.status === 'void' ? 0 : Math.max(0, receivedForInvoice - alreadyRefunded)
 
     // A negative total_cents invoice that isn't flagged is_refund happens
     // for imported data (e.g. a PracticeHub refund record) rather than one
@@ -209,48 +232,13 @@ const rows = computed<LedgerRow[]>(() => {
     }
   })
 
-  // What can still go back out on ONE payment.
-  //
-  // The lower of two rooms, which is what stops the same money being returned
-  // twice by two different routes: what's left of this payment (its amount
-  // less refunds naming it), and what's left of its receipt (everything paid
-  // on it less every refund against it, payment-level ones included). Refund
-  // EUR 20 against the card payment and then EUR 50 against the receipt and
-  // the second is capped at EUR 30 -- in the other order, the payment is
-  // capped instead. Either way EUR 50 collected returns at most EUR 50.
+  // What can still go back out on ONE payment -- utils/paymentRefund, which
+  // createRefund re-derives on the write, so the two cannot disagree. A
+  // payment an account_credits row names is a top-up, and stays unrefundable
+  // here: its credit row would outlive the refund and stay spendable.
+  const creditPaymentIds = new Set(props.credits.map((c) => c.payment_id).filter((id): id is string => !!id))
   function paymentRefundableCentsFor(p: PaymentRow): number {
-    // Only money that came in can go back out. That rules out the negative
-    // row createRefund() writes for a refund (refunding a refund) and a
-    // write-off, which settles a balance without collecting anything.
-    if (p.amount_cents <= 0 || p.method === 'write_off') return 0
-
-    const refundedAgainstPayment = props.invoices
-      .filter((r) => r.is_refund && r.refunds_payment_id === p.id)
-      .reduce((sum, r) => sum + Math.abs(r.total_cents), 0)
-    const paymentRoom = p.amount_cents - refundedAgainstPayment
-
-    // Money on account -- a bono or a top-up, which since 0170 carries no
-    // invoice_id -- is deliberately NOT refundable here.
-    //
-    // A top-up writes an account_credits row alongside its payment (see
-    // addCredit), so giving the payment back without also reversing that row
-    // returns the money AND leaves the credit spendable: the patient is paid
-    // twice and their balance never says so. Reversing both is the credit
-    // ledger's problem, not this cap's, so the action stays hidden until
-    // something owns that.
-    if (!p.invoice_id) return 0
-
-    const invoice = props.invoices.find((i) => i.id === p.invoice_id)
-    // Matching the receipt-level cap above rather than second-guessing it: a
-    // voided receipt offers no Refund action there either.
-    if (!invoice || invoice.status === 'void') return 0
-
-    const paidForInvoice = props.payments.filter((q) => q.invoice_id === p.invoice_id).reduce((sum, q) => sum + q.amount_cents, 0)
-    const refundedAgainstInvoice = props.invoices
-      .filter((r) => r.is_refund && r.refunds_invoice_id === p.invoice_id)
-      .reduce((sum, r) => sum + Math.abs(r.total_cents), 0)
-
-    return Math.max(0, Math.min(paymentRoom, paidForInvoice - refundedAgainstInvoice))
+    return paymentRefundableCents(p, props.invoices, props.payments, creditPaymentIds)
   }
 
   // Same rule as usePatientFinancialSummary, unconditionally now: a 'credit'
@@ -606,7 +594,7 @@ async function sendStatement() {
     await useStaffFetch(`/api/patients/${props.patientId}/statement/send`, { method: 'POST' })
     statementMessage.value = t('Statement emailed.', 'Extracto enviado por correo.')
   } catch (e: any) {
-    statementMessage.value = e?.data?.message ?? t('Failed to send statement.', 'No se pudo enviar el extracto.')
+    statementMessage.value = e?.data?.statusMessage ?? e?.data?.message ?? t('Failed to send statement.', 'No se pudo enviar el extracto.')
   }
   statementSending.value = false
   setTimeout(() => (statementMessage.value = ''), 4000)
@@ -631,13 +619,13 @@ async function sendStatement() {
         </NuxtLink>
         <span v-if="statementMessage" class="text-[12px] text-ink-faint">{{ statementMessage }}</span>
         <div class="relative">
-          <button type="button" class="rounded-ctlSm px-1.5 py-1 text-ink-faint hover:bg-surface-subtle hover:text-ink-700" @click="menuOpen = !menuOpen">
+          <button type="button" class="rounded-ctlSm px-1.5 py-1 text-ink-faint hover:bg-surface-subtle hover:text-ink-700" data-cy="ledger-menu" :aria-label="t('More actions', 'Más acciones')" @click="menuOpen = !menuOpen">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>
           </button>
           <div v-if="menuOpen" class="absolute right-0 z-10 mt-1 w-44 rounded-ctl border border-line bg-surface py-1 shadow-popover">
             <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="newInvoice">{{ t('New receipt', 'Nuevo recibo') }}</button>
-            <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="takePayment">{{ t('New Payment', 'Nuevo pago') }}</button>
-            <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="addCredit">{{ t('Add Credit', 'Añadir crédito') }}</button>
+            <button v-if="canTakePayments" type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="takePayment">{{ t('New Payment', 'Nuevo pago') }}</button>
+            <button v-if="canTakePayments" type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="addCredit">{{ t('Add Credit', 'Añadir crédito') }}</button>
             <button v-if="spendableCreditCents > 0" type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="openTransferCredit">
               {{ t('Transfer Credit', 'Transferir crédito') }}
             </button>
@@ -646,7 +634,9 @@ async function sendStatement() {
             <button
               type="button"
               class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle disabled:opacity-50"
-              :disabled="statementSending"
+              data-cy="send-statement"
+              :disabled="statementSending || contactBlocked"
+              :title="contactBlocked ? t('Not sent to a patient who is under age or marked do not contact', 'No se envía a un paciente menor de edad o marcado como no contactar') : undefined"
               @click="sendStatement"
             >
               {{ statementSending ? t('Sending…', 'Enviando…') : t('Send Statement', 'Enviar extracto') }}
@@ -805,7 +795,7 @@ async function sendStatement() {
   </div>
 
   <div v-if="transferModalOpen" class="fixed inset-0 z-20 flex items-center justify-center bg-ink-900/40 p-4" @click.self="transferModalOpen = false">
-    <div class="w-full max-w-sm rounded-card border border-line bg-surface p-4 shadow-popover">
+    <div class="max-h-full w-full max-w-sm overflow-y-auto rounded-card border border-line bg-surface p-4 shadow-popover">
       <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Transfer credit', 'Transferir crédito') }}</p>
       <p class="mt-1 text-[12px] text-ink-faint">{{ t('Moves an amount from this patient\'s credit', 'Mueve un importe del crédito de este paciente') }} ({{ formatEur(spendableCreditCents) }} {{ t('available', 'disponible') }}) {{ t('to another patient\'s account.', 'a la cuenta de otro paciente.') }}</p>
 
@@ -852,7 +842,7 @@ async function sendStatement() {
   </div>
 
   <div v-if="methodModalPaymentId" class="fixed inset-0 z-20 flex items-center justify-center bg-ink-900/40 p-4" @click.self="closeMethodModal">
-    <div class="w-full max-w-sm rounded-card border border-line bg-surface p-4 shadow-popover" data-cy="payment-method-modal">
+    <div class="max-h-full w-full max-w-sm overflow-y-auto rounded-card border border-line bg-surface p-4 shadow-popover" data-cy="payment-method-modal">
       <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Change payment method', 'Cambiar método de pago') }}</p>
       <p class="mt-1 text-[12px] text-ink-faint">
         {{
@@ -879,7 +869,7 @@ async function sendStatement() {
   </div>
 
   <div v-if="refundModalOpen" class="fixed inset-0 z-20 flex items-center justify-center bg-ink-900/40 p-4" @click.self="closeRefundModal">
-    <div class="w-full max-w-sm rounded-card border border-line bg-surface p-4 shadow-popover">
+    <div class="max-h-full w-full max-w-sm overflow-y-auto rounded-card border border-line bg-surface p-4 shadow-popover">
       <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Refund', 'Reembolso') }}</p>
       <p class="mt-1 text-[12px] text-ink-faint">
         {{

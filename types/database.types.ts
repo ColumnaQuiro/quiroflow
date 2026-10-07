@@ -963,6 +963,7 @@ export type Database = {
       }
       appointments: {
         Row: {
+          auto_confirmation_claimed_at: string | null
           account_id: string
           appointment_type_id: string | null
           checked_in_at: string | null
@@ -985,10 +986,12 @@ export type Database = {
           room_id: string | null
           same_day_info_sent_at: string | null
           source: string
+          staff_alert_claimed_at: string | null
           starts_at: string
           status: string
         }
         Insert: {
+          auto_confirmation_claimed_at?: string | null
           account_id: string
           appointment_type_id?: string | null
           checked_in_at?: string | null
@@ -1011,10 +1014,12 @@ export type Database = {
           room_id?: string | null
           same_day_info_sent_at?: string | null
           source?: string
+          staff_alert_claimed_at?: string | null
           starts_at: string
           status?: string
         }
         Update: {
+          auto_confirmation_claimed_at?: string | null
           account_id?: string
           appointment_type_id?: string | null
           checked_in_at?: string | null
@@ -1037,6 +1042,7 @@ export type Database = {
           room_id?: string | null
           same_day_info_sent_at?: string | null
           source?: string
+          staff_alert_claimed_at?: string | null
           starts_at?: string
           status?: string
         }
@@ -1426,6 +1432,7 @@ export type Database = {
           appointment_id: string | null
           attempts: number
           branch_taken: string | null
+          claimed_until: string | null
           context: Json
           current_action_id: string | null
           id: string
@@ -1447,6 +1454,7 @@ export type Database = {
           appointment_id?: string | null
           attempts?: number
           branch_taken?: string | null
+          claimed_until?: string | null
           context?: Json
           current_action_id?: string | null
           id?: string
@@ -1468,6 +1476,7 @@ export type Database = {
           appointment_id?: string | null
           attempts?: number
           branch_taken?: string | null
+          claimed_until?: string | null
           context?: Json
           current_action_id?: string | null
           id?: string
@@ -3917,6 +3926,8 @@ export type Database = {
       }
       patient_memberships: {
         Row: {
+          billing_interval: string | null
+          billing_interval_count: number | null
           account_id: string
           created_by: string | null
           id: string
@@ -3928,6 +3939,8 @@ export type Database = {
           status: string
         }
         Insert: {
+          billing_interval?: string | null
+          billing_interval_count?: number | null
           account_id: string
           created_by?: string | null
           id?: string
@@ -3939,6 +3952,8 @@ export type Database = {
           status?: string
         }
         Update: {
+          billing_interval?: string | null
+          billing_interval_count?: number | null
           account_id?: string
           created_by?: string | null
           id?: string
@@ -4783,6 +4798,57 @@ export type Database = {
           },
         ]
       }
+      report_pages: {
+        Row: {
+          account_id: string
+          blocks: Json
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          settings: Json
+          updated_at: string
+          visibility: string
+        }
+        Insert: {
+          account_id: string
+          blocks?: Json
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          settings?: Json
+          updated_at?: string
+          visibility?: string
+        }
+        Update: {
+          account_id?: string
+          blocks?: Json
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          settings?: Json
+          updated_at?: string
+          visibility?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "report_pages_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "report_pages_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       reschedule_reasons: {
         Row: {
           account_id: string
@@ -5027,6 +5093,60 @@ export type Database = {
             columns: ["account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      staff_push_preferences: {
+        Row: {
+          account_id: string
+          changes: boolean
+          check_in: boolean
+          inbox: boolean
+          morning_summary: boolean
+          online_bookings: boolean
+          quiet_hours: boolean
+          summary_sent_on: string | null
+          team_member_id: string
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          changes?: boolean
+          check_in?: boolean
+          inbox?: boolean
+          morning_summary?: boolean
+          online_bookings?: boolean
+          quiet_hours?: boolean
+          summary_sent_on?: string | null
+          team_member_id: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          changes?: boolean
+          check_in?: boolean
+          inbox?: boolean
+          morning_summary?: boolean
+          online_bookings?: boolean
+          quiet_hours?: boolean
+          summary_sent_on?: string | null
+          team_member_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_push_preferences_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staff_push_preferences_team_member_id_fkey"
+            columns: ["team_member_id"]
+            isOneToOne: true
+            referencedRelation: "team_members"
             referencedColumns: ["id"]
           },
         ]
@@ -6224,6 +6344,10 @@ export type Database = {
         Args: { p_phone_number: string; p_patient_id: string }
         Returns: number
       }
+      record_whatsapp_status: {
+        Args: { p_account_id: string; p_wamid: string; p_status: string; p_error_code: string | null; p_error_message: string | null }
+        Returns: string
+      }
       clinic_location_allowance: {
         Args: { target_account_id: string }
         Returns: number
@@ -6343,9 +6467,14 @@ export type Database = {
       get_my_bootstrap: { Args: never; Returns: Json }
       get_my_two_factor_gate: { Args: never; Returns: string }
       inbox_unread_count: { Args: never; Returns: number }
+      inbox_growth_account_ids: { Args: never; Returns: string[] }
       patient_list_visit_summary: {
         Args: { p_patient_ids: string[] }
-        Returns: { patient_id: string; last_visit_at: string | null; completed_count: number; next_visit_at: string | null }[]
+        Returns: { patient_id: string; last_visit_at: string | null; completed_count: number; next_visit_at: string | null; completed_in_plan: number }[]
+      }
+      undo_visit: {
+        Args: { p_appointment_id: string }
+        Returns: Json
       }
       team_two_factor_status: {
         Args: { p_account_id: string }
@@ -6390,6 +6519,22 @@ export type Database = {
       factura_submission_ready_at: { Args: { p_account_id: string }; Returns: string }
       sif_indicador_multiples_ot: { Args: Record<string, never>; Returns: string }
       next_factura_number: { Args: { p_account_id: string; p_series?: string }; Returns: string }
+      issue_factura: {
+        Args: {
+          p_account_id: string
+          p_patient_id: string
+          p_payment_id: string | null
+          p_kind: string
+          p_description: string
+          p_amount_cents: number
+          p_tax_base_cents: number
+          p_tax_rate_bp: number
+          p_tax_amount_cents: number
+          p_tax_exemption_code?: string | null
+          p_rectifies_factura_id?: string | null
+        }
+        Returns: { id: string; number: string }[]
+      }
       verifactu_fee_locations: { Args: { p_account_id: string; p_at?: string }; Returns: number }
       verifactu_fee_out_of_sync: {
         Args: { p_limit?: number }
@@ -6465,6 +6610,25 @@ export type Database = {
         Returns: number
       }
       patient_family_members: { Args: { p_patient_id: string }; Returns: string[] }
+      patient_visit_facts: {
+        Args: never
+        Returns: { patient_id: string; last_appointment_at: string | null; last_no_show_at: string | null; has_future_appointment: boolean }[]
+      }
+      care_plan_visit_facts: {
+        Args: never
+        Returns: { patient_id: string; care_plan_id: string; last_completed_at: string | null; completed_in_plan: number; has_future_appointment: boolean }[]
+      }
+      waitlist_waiting_in_clinic: {
+        Args: { p_clinic_id: string }
+        Returns: {
+          id: string
+          created_at: string
+          appointment_type_id: string | null
+          practitioner_id: string | null
+          appointment_type_name: string | null
+          practitioner_name: string | null
+        }[]
+      }
       permission_scope: {
         Args: { perm_key: string; target_account_id: string }
         Returns: string

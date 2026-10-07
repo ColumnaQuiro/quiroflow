@@ -27,6 +27,7 @@ export async function notifyStaffOfNewLead(supabase: any, accountId: string, lea
     )
     .eq('id', accountId)
     .maybeSingle()
+  await withMessagingTokens(accountId, account)
   if (!account?.new_lead_notify_email && !account?.new_lead_notify_whatsapp) return
 
   const { data: lead } = await supabase

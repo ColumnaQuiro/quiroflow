@@ -25,6 +25,7 @@ export default defineEventHandler(async (event) => {
     .select('id, whatsapp_phone_number_id, whatsapp_access_token')
     .eq('id', teamMember.account_id)
     .maybeSingle()
+  await withMessagingTokens(teamMember.account_id, account)
   if (!account?.whatsapp_phone_number_id || !account?.whatsapp_access_token) {
     throw createError({ statusCode: 400, statusMessage: 'WhatsApp is not configured. Set it up in Settings > WhatsApp.' })
   }

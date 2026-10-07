@@ -1,4 +1,5 @@
-import { phoneMatches } from '~/utils/phone'
+import { patientsWithPhone } from '~/utils/patientsWithPhone'
+import { getAccountSecret } from '~/server/utils/accountSecrets'
 
 // A multi-step automation for a lead: send, wait, send again, and stop the
 // moment it stops being appropriate.
@@ -27,11 +28,13 @@ export interface SequenceRun {
   wait_deadline?: string | null
   attempts?: number
   last_error?: string | null
+  /** When the step it is parked before came (or comes) due. */
+  resume_at?: string | null
 }
 
 /** What every caller has to select for the engine to advance a run. */
 export const RUN_COLUMNS =
-  'id, account_id, rule_id, lead_id, patient_id, appointment_id, context, current_action_id, next_position, waiting_for, wait_deadline, attempts, last_error'
+  'id, account_id, rule_id, lead_id, patient_id, appointment_id, context, current_action_id, next_position, waiting_for, wait_deadline, attempts, last_error, resume_at'
 
 export type StopReason =
   | 'converted'
@@ -48,6 +51,10 @@ export type StopReason =
   // The step they were on was removed from the automation, and whoever saved
   // it chose to take the people on it out rather than move them on.
   | 'step_removed'
+  // The appointment the run was started for was deleted from the calendar.
+  | 'appointment_deleted'
+  // The visit a reminder run was counting down to was cancelled.
+  | 'appointment_cancelled'
 
 /**
  * 'defer' is the third answer, and the reason this is not a boolean.
@@ -96,14 +103,11 @@ export async function sequenceStopReason(
   }
 
   if (lead.phone) {
-    const digits = lead.phone.replace(/\D/g, '')
-    const { data: numbers } = await supabase
-      .from('patient_contact_numbers')
-      .select('number, country_code')
-      .eq('account_id', accountId)
-    for (const n of numbers ?? []) {
-      if (phoneMatches(n.number, n.country_code, digits)) return 'already_a_patient'
-    }
+    // Every page of the account's numbers, not the first 1000. A read that
+    // fails throws, and every caller leaves the run due for the next tick --
+    // it does not go on to send as if nobody had matched.
+    const matched = await patientsWithPhone(supabase, accountId, lead.phone.replace(/\D/g, ''))
+    if (matched.size > 0) return 'already_a_patient'
   }
 
   return practiceHubVerdict(supabase, accountId, lead)
@@ -133,12 +137,13 @@ async function practiceHubVerdict(
 ): Promise<SequenceVerdict> {
   const { data: account } = await supabase
     .from('accounts')
-    .select('practicehub_base_url, practicehub_api_key, practicehub_contact_email')
+    .select('practicehub_base_url, practicehub_contact_email')
     .eq('id', accountId)
     .maybeSingle()
 
   const baseUrl: string | undefined = account?.practicehub_base_url ?? undefined
-  const apiKey: string | undefined = account?.practicehub_api_key ?? undefined
+  // In account_secrets now, out of every staff member's reach.
+  const apiKey: string | undefined = (await getAccountSecret(supabase, accountId, 'practicehub_api_key')) ?? undefined
   // Not configured is not the same as unreachable. A clinic that never used
   // PracticeHub must not have its drips deferred forever waiting for an
   // answer nobody can give.
@@ -224,6 +229,8 @@ export const STOP_REASON_TEXT: Record<StopReason, string> = {
   exited: 'Left the automation when an exit event happened',
   taken_out: 'Taken out by someone on the team',
   step_removed: 'The step they were on was removed from the automation',
+  appointment_deleted: 'The appointment it was about was deleted',
+  appointment_cancelled: 'The appointment it was reminding them of was cancelled',
 }
 
 /** What a step is called in the history, copied at the time it ran. */

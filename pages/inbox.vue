@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { normalizeSearchTerm } from '~/utils/searchText'
+import { matchPendingToServer, mergePendingIntoThread, newestInConversation } from '~/utils/inboxPendingMessages'
 import { CHANNEL_LABEL } from '~/composables/useGrowthConversations'
 
 // The Inbox: one row per conversation from the inbox_conversations view
@@ -81,10 +82,21 @@ const { refresh: refreshNavBadges } = useNavBadges()
 // Messages this tab has sent but the server hasn't confirmed into the real
 // table yet -- rendered inline with a clock icon so the composer clears and
 // the message appears immediately (WhatsApp-style) instead of waiting on
-// the round trip. A reload naturally supersedes one once the real row shows
-// up; on failure it's kept and flipped to a failed status instead of
-// vanishing.
-const pendingMessages = ref<Message[]>([])
+// the round trip. Once the real row shows up -- often from the realtime
+// INSERT, before the send has even answered -- it is drawn in the bubble's
+// place under the bubble's key, so the clock just turns into a tick; on
+// failure it's kept and flipped to a failed status instead of vanishing.
+const pendingMessages = ref<(Message & { notBefore: string | null })[]>([])
+
+// The bubble's key passes to the row it became, for good -- dropping the
+// bubble must not change the key the row is drawn under, or it remounts
+// (utils/inboxPendingMessages.ts).
+const keptKeys = ref<Record<string, string>>({})
+function settlePending(tempId: string, server: Message[]) {
+  const rowId = matchPendingToServer(server, pendingMessages.value).get(tempId)
+  if (rowId) keptKeys.value = { ...keptKeys.value, [rowId]: tempId }
+  pendingMessages.value = pendingMessages.value.filter((m) => m.id !== tempId)
+}
 
 const rows = ref<InboxRow[]>([])
 const hasMore = ref(false)
@@ -114,7 +126,12 @@ function toConversation(r: InboxRow): Conversation {
     patientId: r.patient_id,
     phoneNumber: r.phone_number,
     externalContactId: r.external_contact_id,
-    name: (r.patient_id && `${r.first_name ?? ''} ${r.last_name ?? ''}`.trim()) || r.phone_number || t('Unknown', 'Desconocido'),
+    name:
+      (r.patient_id && `${r.first_name ?? ''} ${r.last_name ?? ''}`.trim()) ||
+      r.phone_number ||
+      // An Instagram account with no patient: there is no number to show, and
+      // "Unknown" read as if the message had come from nowhere.
+      (r.external_contact_id ? t('Instagram user', 'Usuario de Instagram') : t('Unknown', 'Desconocido')),
     channel: r.last_channel,
     lastMessage: {
       id: `head-${r.conversation_key}`,
@@ -198,18 +215,29 @@ function cleanTerm(q: string) {
 }
 async function keysMatchingText(q: string): Promise<string[]> {
   const [wa, app] = await Promise.all([
-    supabase
-      .from('whatsapp_messages')
-      .select('patient_id, phone_number, external_contact_id')
-      .ilike('body_preview', `%${q}%`)
-      .or('lead_id.is.null,patient_id.not.is.null')
-      .limit(200),
+    withoutLeadThreads(
+      supabase
+        .from('whatsapp_messages')
+        .select('patient_id, phone_number, external_contact_id')
+        .ilike('body_preview', `%${q}%`),
+    ).limit(200),
     supabase.from('patient_app_messages').select('patient_id').ilike('body', `%${q}%`).limit(200),
   ])
   const keys = new Set<string>()
   for (const m of wa.data ?? []) keys.add(keyOf(m as any))
   for (const m of app.data ?? []) keys.add(m.patient_id)
   return [...keys]
+}
+
+// A lead's messages (lead_id set, no patient) are Growth's to draw: with the
+// tier they appear as the lead's own row, from /api/growth/conversations, and
+// are kept out of the plain threads so nobody sees them twice. Without it
+// nothing else shows them, so they stay in, under the number (or Instagram
+// account) they came from -- which is how inbox_conversations keys them for an
+// account without Growth (20260930142159). Applied to every direct read of
+// whatsapp_messages here, so a thread and a search match what the list shows.
+function withoutLeadThreads<Q extends { or: (filters: string) => Q }>(q: Q): Q {
+  return hasGrowth.value ? q.or('lead_id.is.null,patient_id.not.is.null') : q
 }
 
 // Every list query and count shares these, so a count always describes the
@@ -288,17 +316,20 @@ watch(view, () => {
 })
 watch([tab, unreadOnly, replyFilter, labelFilter], () => loadList())
 
-onMounted(async () => {
-  if (!store.teamMember) {
-    await new Promise<void>((resolve) => {
-      const stop = watch(() => store.teamMember, (v) => {
-        if (v) {
-          stop()
-          resolve()
-        }
-      }, { immediate: true })
+function accountLoaded(): Promise<void> {
+  if (store.teamMember) return Promise.resolve()
+  return new Promise<void>((resolve) => {
+    const stop = watch(() => store.teamMember, (v) => {
+      if (v) {
+        stop()
+        resolve()
+      }
     })
-  }
+  })
+}
+
+onMounted(async () => {
+  await accountLoaded()
   loadCounts()
   await loadList()
   ready.value = true
@@ -565,7 +596,7 @@ async function loadThread(c: Conversation | null, opts: { silent?: boolean } = {
     return
   }
   if (!opts.silent) threadLoading.value = true
-  let wa = supabase.from('whatsapp_messages').select(THREAD_COLUMNS).or('lead_id.is.null,patient_id.not.is.null')
+  let wa = withoutLeadThreads(supabase.from('whatsapp_messages').select(THREAD_COLUMNS))
   if (c.patientId) wa = wa.eq('patient_id', c.patientId)
   else if (c.phoneNumber) wa = wa.eq('phone_number', c.phoneNumber).is('patient_id', null)
   else if (c.externalContactId) wa = wa.eq('external_contact_id', c.externalContactId).is('patient_id', null)
@@ -605,7 +636,7 @@ async function loadThread(c: Conversation | null, opts: { silent?: boolean } = {
 const thread = computed(() => {
   if (!selectedKey.value) return []
   const pending = pendingMessages.value.filter((m) => keyOf(m) === selectedKey.value)
-  return [...threadMessages.value, ...pending]
+  return mergePendingIntoThread(threadMessages.value, pending, keptKeys.value)
 })
 watch(selectedKey, () => loadThread(selected.value))
 
@@ -724,9 +755,21 @@ function selectConversation(c: Conversation) {
 // its own and opened the same way a click on its row would.
 const route = useRoute()
 onMounted(async () => {
-  const key = route.query.open
+  let key = route.query.open
   if (typeof key !== 'string') return
   if (key.startsWith('lead:')) {
+    // Without Growth there is no lead row to open: the lead's messages are a
+    // conversation with their number instead (see withoutLeadThreads), so the
+    // notification -- which names the lead -- opens that. The tier is only
+    // known once the account has loaded.
+    await accountLoaded()
+    // useGrowthTier re-decides from the store in a watcher of its own.
+    await nextTick()
+    if (!hasGrowth.value) {
+      const leadKey = await conversationKeyForLead(key.slice('lead:'.length))
+      if (leadKey) openConversationByKey(leadKey)
+      return
+    }
     // Lead rows arrive from the Growth endpoint, after mount.
     const stop = watch(leadConversations, (list) => {
       const lead = list.find((c) => c.key === key)
@@ -737,11 +780,27 @@ onMounted(async () => {
     }, { immediate: true })
     return
   }
+  openConversationByKey(key)
+})
+
+async function openConversationByKey(key: string) {
   const { data } = await supabase.from('inbox_conversations').select('*').eq('conversation_key', key).maybeSingle()
   if (!data) return
   openedRow.value = data as unknown as InboxRow
   selectConversation(toConversation(openedRow.value))
-})
+}
+
+/** The key a lead's messages go by in an account without Growth. */
+async function conversationKeyForLead(leadId: string): Promise<string | null> {
+  const { data } = await supabase
+    .from('whatsapp_messages')
+    .select('patient_id, phone_number, external_contact_id')
+    .eq('lead_id', leadId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  return data ? keyOf(data) : null
+}
 
 // --- Archive, unread, assign (single and bulk) ------------------------------------
 async function setArchived(keys: string[], archive: boolean) {
@@ -955,7 +1014,7 @@ async function performTextSend(tempId: string, text: string, channel: string, ta
     // which is what read as a visible "jump" on the sent tick appearing.
     pendingMessages.value = pendingMessages.value.map((m) => (m.id === tempId ? { ...m, status: 'sent' } : m))
     await Promise.all([loadThread(target, { silent: true }), loadList({ silent: true })])
-    pendingMessages.value = pendingMessages.value.filter((m) => m.id !== tempId)
+    settlePending(tempId, threadMessages.value)
     delete retryPayloads.value[tempId]
   } catch (err: any) {
     sendError.value = err?.data?.statusMessage ?? t('Failed to send', 'Error al enviar')
@@ -993,6 +1052,7 @@ async function sendText() {
       channel,
       created_at: new Date().toISOString(),
       pending: true,
+      notBefore: newestInConversation(threadMessages.value, target.key),
     },
   ]
   await performTextSend(tempId, text, channel, target)
@@ -1028,7 +1088,7 @@ async function performMediaSend(
     })
     pendingMessages.value = pendingMessages.value.map((m) => (m.id === tempId ? { ...m, status: 'sent' } : m))
     await Promise.all([loadThread(target, { silent: true }), loadList({ silent: true })])
-    pendingMessages.value = pendingMessages.value.filter((m) => m.id !== tempId)
+    settlePending(tempId, threadMessages.value)
     delete retryPayloads.value[tempId]
   } catch (err: any) {
     sendError.value = err?.data?.statusMessage ?? t('Failed to send', 'Error al enviar')
@@ -1062,6 +1122,7 @@ async function sendMedia(mediaBase64: string, mediaMimeType: string, mediaFilena
       channel: replyChannel.value,
       created_at: new Date().toISOString(),
       pending: true,
+      notBefore: newestInConversation(threadMessages.value, target.key),
     },
   ]
   await performMediaSend(tempId, mediaBase64, mediaMimeType, mediaFilename, mediaKind, target)
@@ -1753,7 +1814,9 @@ function avatarInitials(name: string) {
           <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[13px] font-bold" :class="selected.patientId ? 'bg-brand-tint text-brand-text' : 'bg-chip-bg text-ink-700'">
             {{ avatarInitials(selected.name) }}
           </span>
-          <div class="min-w-0 flex-1">
+          <!-- min-w on a phone so the controls after it wrap onto a second
+          row; flex-1 alone shrank the name to its first letter. -->
+          <div class="min-w-[11rem] flex-1 md:min-w-0">
             <p class="truncate text-[16px] font-bold text-ink-900" data-cy="thread-name">{{ selected.name }}</p>
             <p class="flex items-center gap-1.5 truncate text-[13px] text-ink-muted">
               <!-- Named from the channel itself: anything that was not
@@ -1850,7 +1913,7 @@ function avatarInitials(name: string) {
 
         <div class="relative min-h-0 flex-1">
           <div ref="threadScrollEl" class="h-full space-y-3 overflow-y-auto px-4 py-4" @scroll="onThreadScroll">
-          <template v-for="(m, i) in thread" :key="m.id">
+          <template v-for="(m, i) in thread" :key="m.renderKey">
             <div
               v-if="i === 0 || relativeDay(m.created_at) !== relativeDay(thread[i - 1].created_at)"
               class="sticky top-0 z-10 -mx-4 flex justify-center py-1.5"
@@ -1859,6 +1922,7 @@ function avatarInitials(name: string) {
             </div>
             <div class="flex" :class="m.direction === 'outbound' ? 'justify-end' : 'justify-start'">
               <div
+                data-cy="thread-message"
                 class="max-w-[70%] rounded-card px-[8px] py-[6px] shadow-card"
                 :class="[
                   m.direction === 'outbound' ? 'bg-brand text-white' : 'border border-line bg-surface text-ink-900',
@@ -1953,7 +2017,10 @@ function avatarInitials(name: string) {
             <button type="button" class="shrink-0 text-[12.5px] text-ink-faint hover:text-ink-muted" @click="cancelAudioRecording">{{ t('Cancel', 'Cancelar') }}</button>
             <UiBtn variant="primary" size="sm" @click="toggleAudioRecording">{{ t('Send', 'Enviar') }}</UiBtn>
           </div>
-          <div v-else class="flex items-end gap-2">
+          <!-- On a phone the message box takes the full width on a row of its
+          own, with attach, voice, saved replies and Send under it: inline it
+          was left about 130px between them. -->
+          <div v-else class="flex flex-wrap items-end gap-2 sm:flex-nowrap">
             <!-- Attachments and voice notes are WhatsApp-only: both upload
             through whatsapp/inbox-send, and instagram/send posts text alone.
             Offering the buttons on an Instagram thread would take a file,
@@ -1984,10 +2051,10 @@ function avatarInitials(name: string) {
               v-model="composerText"
               rows="1"
               :placeholder="t('Type a message…', 'Escribe un mensaje…')"
-              class="max-h-32 min-h-9 touch:min-h-11 flex-1 resize-none rounded-ctl border border-line-control bg-surface px-3 py-[10px] text-[15px] text-ink-900 focus:border-brand focus:outline-none"
+              class="order-first max-h-32 min-h-9 w-full touch:min-h-11 resize-none rounded-ctl border border-line-control bg-surface px-3 py-[10px] text-[15px] text-ink-900 focus:border-brand focus:outline-none sm:order-none sm:w-auto sm:flex-1"
               @keydown.enter.exact.prevent="sendText"
             />
-            <button type="button" data-cy="thread-send" class="h-9 touch:h-11 shrink-0 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface hover:bg-brand-hover disabled:opacity-50" :disabled="sending || !composerText.trim()" @click="sendText">{{ sending ? '…' : t('Send', 'Enviar') }}</button>
+            <button type="button" data-cy="thread-send" class="ml-auto h-9 touch:h-11 shrink-0 rounded-ctl bg-brand sm:ml-0 px-4 text-[14px] font-bold text-surface hover:bg-brand-hover disabled:opacity-50" :disabled="sending || !composerText.trim()" @click="sendText">{{ sending ? '…' : t('Send', 'Enviar') }}</button>
           </div>
         </div>
       </div>

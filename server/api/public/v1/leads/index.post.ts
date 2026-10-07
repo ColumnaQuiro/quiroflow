@@ -1,9 +1,9 @@
 import { toE164Loose } from '~/utils/phone'
 import { ApiError, defineApiHandler, badRequest } from '~/server/utils/publicApi'
 import { assertBelongsToAccount, loose } from '~/server/utils/publicApiHandlers'
-import { bool, definedOnly, email as emailField, enumValue, integer, readApiBody, rejectUnknownFields, str, uuid } from '~/server/utils/publicApiBody'
-import { LEAD_CHANNELS, nextLeadReference } from '~/server/utils/leads'
-import { startLeadSequence } from '~/server/utils/automationEngine'
+import { bool, definedOnly, email as emailField, enumValue, integer, isoDateTime, readApiBody, rejectUnknownFields, str, uuid } from '~/server/utils/publicApiBody'
+import { LEAD_CHANNELS, insertLead } from '~/server/utils/leads'
+import { sequenceRunForSamePerson, startLeadSequence } from '~/server/utils/automationEngine'
 import { hasGrowth } from '~/server/utils/requireGrowth'
 
 // Where an enquiry gets in from outside.
@@ -118,6 +118,34 @@ function readAnswers(body: Record<string, unknown>): Answer[] | undefined {
   throw badRequest('"answers" must be an array of { question, answer } objects, or an object of question/answer pairs.', 'answers')
 }
 
+/**
+ * The campaign, ad and cost, read and checked before anything is written.
+ *
+ * Absent is fine -- a form nobody paid to promote has none. Present has to be
+ * right, because a 400 is only an honest answer if it wrote nothing: this was
+ * checked after the lead was inserted, so a typo'd field got the caller a 400
+ * while the lead stayed in the board with no timeline and no welcome drip,
+ * and the corrected retry matched it by external_id and was "deduplicated"
+ * past both.
+ */
+function readAttribution(body: Record<string, unknown>) {
+  const raw = body.attribution
+  if (raw === undefined || raw === null) return undefined
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    throw badRequest(`"attribution" must be an object with any of: ${ATTRIBUTION_FIELDS.join(', ')}.`, 'attribution')
+  }
+  const attr = raw as Record<string, unknown>
+  rejectUnknownFields(attr, ATTRIBUTION_FIELDS)
+  return definedOnly({
+    campaign: str(attr, 'campaign', { max: 255 }),
+    ad: str(attr, 'ad', { max: 255 }),
+    audience: str(attr, 'audience', { max: 255 }),
+    first_touch: str(attr, 'first_touch', { max: 255 }),
+    last_touch: str(attr, 'last_touch', { max: 255 }),
+    cost_cents: integer(attr, 'cost_cents', { min: 0 }),
+  })
+}
+
 export default defineApiHandler({ scope: 'leads:write' }, async ({ event, supabase, accountId }) => {
   // The token proves who is calling; this proves the clinic bought the thing
   // being called. Checked before anything is read or written, so a lapsed
@@ -182,12 +210,33 @@ export default defineApiHandler({ scope: 'leads:write' }, async ({ event, supaba
   // existence of a row is not evidence, and defaulting to true here would
   // make every hand-typed walk-in a marketing target. Absent means no
   // marketing -- it does not stop anyone answering the enquiry itself.
-  const occurredAtValue = str(body, 'occurred_at')
+  //
+  // An instant, checked here: it dates the consent on the lead itself, so a
+  // value the database cannot read would fail the insert as a 500.
+  const occurredAtValue = isoDateTime(body, 'occurred_at')
   const consented = bool(body, 'marketing_consent') === true
   const consentSource = str(body, 'marketing_consent_source', { max: 120 })
 
   const externalId = str(body, 'external_id', { max: 255 })
   const externalSource = str(body, 'external_source', { max: 60 }) ?? (externalId ? 'facebook' : undefined)
+
+  // Everything else the request carries, read now: after the insert, a
+  // refusal would be a 400 on top of a lead that was kept.
+  const channel = enumValue(body, 'channel', LEAD_CHANNELS) ?? 'facebook'
+  const source = str(body, 'source', { max: 255 })
+  // Cents, like every other money column. A lead that has not been
+  // qualified has no meaningful estimate, and 0 would drag the stage
+  // totals down as though it were worth nothing -- so it stays null.
+  const estimatedValueCents = integer(body, 'estimated_value_cents', { min: 0 })
+  // A caller may say the lead is already further along: a form that books
+  // a slot arrives 'booked', not 'new'. The furthest_stage trigger fires
+  // on INSERT, so the funnel counts it correctly either way.
+  // Not the full ladder: an ingest caller may say the enquiry arrived
+  // already booked, but 'converted' and 'lost' are outcomes the clinic
+  // decides, not facts a form can assert about itself.
+  const stage = enumValue(body, 'stage', ['new', 'contacted', 'qualified', 'booked'] as const)
+  const attribution = readAttribution(body)
+  const answers = readAnswers(body)
 
   // Idempotency, not a conflict. Meta redelivers a leadgen webhook whenever
   // it does not get a clean 200 -- on a timeout, on a deploy, on its own
@@ -195,7 +244,8 @@ export default defineApiHandler({ scope: 'leads:write' }, async ({ event, supaba
   // caller's retry look like a failure it has to handle; returning the lead
   // it already created makes the retry a no-op, which is what a webhook
   // sender needs.
-  if (externalId) {
+  async function alreadyFiled() {
+    if (!externalId) return null
     const { data: existing } = await loose(supabase)
       .from('leads')
       .select('id, reference, stage, created_at')
@@ -203,40 +253,30 @@ export default defineApiHandler({ scope: 'leads:write' }, async ({ event, supaba
       .eq('external_source', externalSource)
       .eq('external_id', externalId)
       .maybeSingle()
-
-    if (existing) {
-      return {
-        data: {
-          id: existing.id,
-          reference: existing.reference,
-          stage: existing.stage,
-          created_at: existing.created_at,
-          deduplicated: true,
-        },
-      }
+    if (!existing) return null
+    return {
+      data: {
+        id: existing.id,
+        reference: existing.reference,
+        stage: existing.stage,
+        created_at: existing.created_at,
+        deduplicated: true,
+      },
     }
   }
 
+  const existing = await alreadyFiled()
+  if (existing) return existing
+
   const insert = definedOnly({
-    account_id: accountId,
-    reference: await nextLeadReference(supabase, accountId),
     full_name: fullName,
     phone: normalisedPhone,
     email,
     clinic_id: clinicId,
-    channel: enumValue(body, 'channel', LEAD_CHANNELS) ?? 'facebook',
-    source: str(body, 'source', { max: 255 }),
-    // Cents, like every other money column. A lead that has not been
-    // qualified has no meaningful estimate, and 0 would drag the stage
-    // totals down as though it were worth nothing -- so it stays null.
-    estimated_value_cents: integer(body, 'estimated_value_cents', { min: 0 }),
-    // A caller may say the lead is already further along: a form that books
-    // a slot arrives 'booked', not 'new'. The furthest_stage trigger fires
-    // on INSERT, so the funnel counts it correctly either way.
-    // Not the full ladder: an ingest caller may say the enquiry arrived
-    // already booked, but 'converted' and 'lost' are outcomes the clinic
-    // decides, not facts a form can assert about itself.
-    stage: enumValue(body, 'stage', ['new', 'contacted', 'qualified', 'booked'] as const),
+    channel,
+    source,
+    estimated_value_cents: estimatedValueCents,
+    stage,
     external_id: externalId,
     external_source: externalId ? externalSource : undefined,
     // Dated to when they actually agreed, which is when they submitted --
@@ -253,50 +293,55 @@ export default defineApiHandler({ scope: 'leads:write' }, async ({ event, supaba
     ai_state: (await receptionistHandlesNewLeads(supabase, accountId)) ? 'handling' : undefined,
   })
 
-  const { data: created, error } = await loose(supabase)
-    .from('leads')
-    .insert(insert as never)
-    .select('id, reference, stage, created_at')
-    .single()
+  const { data: created, error } = await insertLead(supabase, accountId, insert as never, 'id, reference, stage, created_at')
 
-  if (error) throw new ApiError('server_error', error.message)
+  if (error) {
+    // The same submission delivered twice at once: both passed the check
+    // above, and the unique index let exactly one of them in. That one is
+    // the lead, and this request is the redelivery.
+    if (error.code === '23505') {
+      const raced = await alreadyFiled()
+      if (raced) return raced
+    }
+    throw new ApiError('server_error', error.message)
+  }
   const lead = created as { id: string; reference: string; stage: string; created_at: string }
 
-  // Attribution second, and non-fatally: an ad platform that knows the
-  // campaign but not the cost still gives us a lead worth keeping, and a
-  // failure here must not lose the enquiry itself.
-  const attribution = body.attribution
-  if (attribution && typeof attribution === 'object' && !Array.isArray(attribution)) {
-    const attr = attribution as Record<string, unknown>
-    rejectUnknownFields(attr, ATTRIBUTION_FIELDS)
-    await loose(supabase).from('lead_attribution').insert({
+  // From here on the lead exists, and nothing may turn that into an error:
+  // the caller would retry, meet the lead by external_id and be told
+  // "deduplicated", and whatever was skipped here would never happen -- or,
+  // with no external_id, the retry would file the enquiry twice. So the
+  // attribution and the timeline entry are logged when they fail rather than
+  // thrown, and the drip and the notification below run regardless.
+  //
+  // Attribution second: an ad platform that knows the campaign but not the
+  // cost still gives us a lead worth keeping.
+  if (attribution) {
+    const { error: attributionError } = await loose(supabase).from('lead_attribution').insert({
       lead_id: lead.id,
       account_id: accountId,
-      ...definedOnly({
-        campaign: str(attr, 'campaign', { max: 255 }),
-        ad: str(attr, 'ad', { max: 255 }),
-        audience: str(attr, 'audience', { max: 255 }),
-        first_touch: str(attr, 'first_touch', { max: 255 }),
-        last_touch: str(attr, 'last_touch', { max: 255 }),
-        cost_cents: integer(attr, 'cost_cents', { min: 0 }),
-      }),
+      ...attribution,
     } as never)
+    if (attributionError) {
+      console.error('[public/v1/leads] attribution was not saved for lead', lead.id, attributionError.message)
+    }
   }
 
-  const answers = readAnswers(body)
-
-  await loose(supabase).from('lead_events').insert({
+  const { error: eventError } = await loose(supabase).from('lead_events').insert({
     account_id: accountId,
     lead_id: lead.id,
     kind: answers?.length ? 'qualification' : 'form',
     title: answers?.length ? 'Submitted the form' : 'Enquiry received',
-    detail: str(body, 'source', { max: 255 }) ?? null,
+    detail: source ?? null,
     body: answers?.length ? { answers } : null,
     // When it happened, which is not when we heard about it: an ad platform
     // can deliver a submission minutes late, and the drawer's timeline has
     // to read in the order the patient experienced it.
     ...definedOnly({ occurred_at: occurredAtValue }),
   } as never)
+  if (eventError) {
+    console.error('[public/v1/leads] the enquiry was not added to the timeline of lead', lead.id, eventError.message)
+  }
 
   // Any enabled lead.created sequence starts now, in the same request. Not
   // left to the cron: the first message of a welcome drip is the one whose
@@ -309,12 +354,26 @@ export default defineApiHandler({ scope: 'leads:write' }, async ({ event, supaba
   try {
     const { data: rules } = await loose(supabase)
       .from('automation_rules')
-      .select('id')
+      .select('id, name')
       .eq('account_id', accountId)
       .eq('trigger_event', 'lead.created')
       .eq('enabled', true)
 
-    for (const rule of (rules ?? []) as { id: string }[]) {
+    for (const rule of (rules ?? []) as { id: string; name: string | null }[]) {
+      // The same person filling in the form again is a second lead, kept --
+      // but not a second copy of a drip they are already part-way through.
+      // Said on the new lead's timeline, so nobody wonders why it got nothing.
+      const already = await sequenceRunForSamePerson(supabase, accountId, rule.id, { id: lead.id, phone: normalisedPhone, email })
+      if (already) {
+        await loose(supabase).from('lead_events').insert({
+          account_id: accountId,
+          lead_id: lead.id,
+          kind: 'note',
+          title: 'Automation not started again',
+          detail: `"${rule.name ?? 'Automation'}" is already running for this person as ${already.reference ?? 'another lead'}.`,
+        } as never)
+        continue
+      }
       await startLeadSequence(supabase, accountId, rule.id, lead.id, getRequestURL(event).origin)
     }
   } catch (err) {

@@ -5,6 +5,10 @@ interface Message {
   id: string
   patient_id: string | null
   phone_number: string | null
+  /** Who the conversation is with when there is no phone -- an Instagram IGSID. */
+  external_contact_id: string | null
+  /** Set on a lead's message (somebody not yet a patient). */
+  lead_id: string | null
   direction: string
   status: string
   body_preview: string | null
@@ -21,6 +25,10 @@ interface Conversation {
   key: string
   patientId: string | null
   phoneNumber: string | null
+  /** Set instead of phoneNumber on a channel that has no phone, e.g. Instagram. */
+  externalContactId: string | null
+  /** A lead's own thread (Growth accounts only), keyed lead:<id>. */
+  leadId: string | null
   name: string
   channel: string
   lastMessage: Message
@@ -28,6 +36,8 @@ interface Conversation {
 }
 
 const supabase = useSupabaseClient()
+const t = useT()
+const locale = computed(() => t('en-GB', 'es-ES'))
 const authedFetch = useAuthedFetch()
 const { keyboardHeight } = useKeyboardInset()
 const messagesEl = ref<HTMLElement>()
@@ -59,10 +69,22 @@ watch(threadEl, (el, prevEl) => {
 // Messages this device has sent but the server hasn't confirmed into the
 // real table yet -- rendered inline with a clock icon so the composer
 // clears and the message appears immediately (WhatsApp-style) instead of
-// waiting on the round trip. load() naturally supersedes one once the real
-// row shows up in `messages`; on failure it's kept and flipped to a failed
-// status instead of vanishing.
-const pendingMessages = ref<Message[]>([])
+// waiting on the round trip. Once the real row shows up in `messages` --
+// often from the realtime INSERT, before the send has even answered -- it is
+// drawn in the bubble's place under the bubble's key, so the clock just turns
+// into a tick; on failure it's kept and flipped to a failed status instead of
+// vanishing.
+const pendingMessages = ref<(Message & { notBefore: string | null })[]>([])
+
+// The bubble's key passes to the row it became, for good -- dropping the
+// bubble must not change the key the row is drawn under, or it remounts
+// (utils/inboxPendingMessages.ts).
+const keptKeys = ref<Record<string, string>>({})
+function settlePending(tempId: string, server: Message[]) {
+  const rowId = matchPendingToServer(server, pendingMessages.value).get(tempId)
+  if (rowId) keptKeys.value = { ...keptKeys.value, [rowId]: tempId }
+  pendingMessages.value = pendingMessages.value.filter((m) => m.id !== tempId)
+}
 
 const messages = ref<Message[]>([])
 const patientNames = ref<Record<string, string>>({})
@@ -96,20 +118,48 @@ async function loadArchivesAndLabels() {
 }
 onMounted(loadArchivesAndLabels)
 
+// Whether a lead's messages are a thread of their own, as the web Inbox draws
+// them for an account with Growth, or a conversation with their number, as
+// they are without it. Decided by the database's own answer
+// (inbox_growth_account_ids, the SQL twin of requireGrowth), which is also
+// what the web Inbox list and badge go by. The app used to file every lead's
+// messages under their number regardless, so a Growth clinic saw them in two
+// shapes on two devices -- read on one, unread on the other -- and a lead's
+// push notification, which names lead:<id>, opened nothing.
+const leadThreadsAreSeparate = ref(false)
+const leadNames = ref<Record<string, string>>({})
+async function loadGrowth() {
+  const { data } = await supabase.rpc('inbox_growth_account_ids')
+  leadThreadsAreSeparate.value = ((data ?? []) as string[]).includes(props.accountId)
+}
+
+// The poll, realtime and sending all call this; only the newest call's answer
+// is kept, and a failed read keeps what is on screen. Replacing the list with
+// an empty one whenever a 15-second poll lost signal emptied every
+// conversation, the open thread included.
+let loadRun = 0
 async function load(opts: { silent?: boolean } = {}) {
+  const run = ++loadRun
   if (!opts.silent) loading.value = true
-  const [{ data: waData }, { data: appData }] = await Promise.all([
+  const [{ data: waData, error: waError }, { data: appData, error: appError }] = await Promise.all([
     supabase
       .from('whatsapp_messages')
-      .select('id, patient_id, phone_number, direction, status, body_preview, template_name, media_type, media_storage_path, media_mime_type, media_filename, channel, created_at')
+      .select('id, patient_id, phone_number, external_contact_id, lead_id, direction, status, body_preview, template_name, media_type, media_storage_path, media_mime_type, media_filename, channel, created_at')
       .order('created_at', { ascending: false })
       .limit(500),
     supabase.from('patient_app_messages').select('id, patient_id, direction, body, created_at').order('created_at', { ascending: false }).limit(500),
   ])
+  if (run !== loadRun) return
+  if (waError || appError) {
+    loading.value = false
+    return
+  }
   const appMessages: Message[] = (appData ?? []).map((m) => ({
     id: m.id,
     patient_id: m.patient_id,
     phone_number: null,
+    external_contact_id: null,
+    lead_id: null,
     direction: m.direction,
     status: 'sent',
     body_preview: m.body,
@@ -125,23 +175,50 @@ async function load(opts: { silent?: boolean } = {}) {
 
   const patientIds = [...new Set(messages.value.map((m) => m.patient_id).filter((id): id is string => !!id))]
   if (patientIds.length > 0) {
-    const { data: patients } = await supabase.from('patients').select('id, first_name, last_name').in('id', patientIds)
+    const { data: patients, error: namesError } = await supabase.from('patients').select('id, first_name, last_name').in('id', patientIds)
+    if (!namesError) {
+      const names: Record<string, string> = {}
+      for (const p of patients ?? []) names[p.id] = `${p.first_name} ${p.last_name ?? ''}`.trim()
+      patientNames.value = names
+    }
+  }
+  const leadIds = [...new Set(messages.value.filter((m) => m.lead_id && !m.patient_id).map((m) => m.lead_id!))]
+  if (leadThreadsAreSeparate.value && leadIds.length > 0) {
+    const { data: leads } = await supabase.from('leads').select('id, full_name').in('id', leadIds)
     const names: Record<string, string> = {}
-    for (const p of patients ?? []) names[p.id] = `${p.first_name} ${p.last_name ?? ''}`.trim()
-    patientNames.value = names
+    for (const l of leads ?? []) if (l.full_name) names[l.id] = l.full_name
+    leadNames.value = names
   }
   if (!opts.silent) loading.value = false
 }
-onMounted(() => load())
+onMounted(async () => {
+  await loadGrowth()
+  await load()
+})
 
-const allMessages = computed<Message[]>(() =>
-  [...messages.value, ...pendingMessages.value].sort((a, b) => b.created_at.localeCompare(a.created_at)),
+const allMessages = computed(() =>
+  mergePendingIntoThread(messages.value, pendingMessages.value, keptKeys.value).sort((a, b) => b.created_at.localeCompare(a.created_at)),
 )
+
+// The conversation a message belongs to, keyed exactly as the web Inbox and
+// inbox_conversations key it (a Growth account's lead, else patient, else
+// phone, else Instagram id) -- the read, archive and label rows are shared
+// with the web by this key, so it has to be the same one. Instagram has no
+// phone, so keying on the phone alone put every DM from every Instagram
+// account into a single "Unknown" thread, whose replies then had nobody to
+// go to.
+function keyOf(m: Pick<Message, 'patient_id' | 'phone_number' | 'external_contact_id' | 'lead_id'>) {
+  return inboxConversationKey(m, leadThreadsAreSeparate.value)
+}
+/** The newest message a conversation already had, so a pending bubble is only matched to a row newer than it. */
+function newestInThread(key: string): string | null {
+  return messages.value.find((m) => keyOf(m) === key)?.created_at ?? null
+}
 
 const conversations = computed<Conversation[]>(() => {
   const byKey = new Map<string, Message[]>()
   for (const m of allMessages.value) {
-    const key = m.patient_id ?? m.phone_number ?? 'unknown'
+    const key = keyOf(m)
     if (!byKey.has(key)) byKey.set(key, [])
     byKey.get(key)!.push(m)
   }
@@ -151,13 +228,19 @@ const conversations = computed<Conversation[]>(() => {
     list.push({
       key,
       patientId: last.patient_id,
-      phoneNumber: last.phone_number,
-      // The IGSID, which is who an Instagram reply is addressed to. The field
-      // was on the type and read when sending, but nothing ever set it, so
-      // every Instagram thread carried undefined and the reply could not be
-      // addressed at all.
-      externalContactId: last.external_contact_id,
-      name: (last.patient_id && patientNames.value[last.patient_id]) || last.phone_number || 'Unknown',
+      phoneNumber: last.phone_number ?? msgs.find((m) => m.phone_number)?.phone_number ?? null,
+      // The IGSID, which is who an Instagram reply is addressed to. It was
+      // read when sending but never selected, so every Instagram thread
+      // carried undefined and the reply could not be addressed at all. From
+      // any message in the thread, not only the newest: that may be an
+      // in-app message or this device's own pending bubble.
+      externalContactId: msgs.find((m) => m.external_contact_id)?.external_contact_id ?? null,
+      leadId: leadIdOfKey(key),
+      name:
+        (last.patient_id && patientNames.value[last.patient_id]) ||
+        (leadIdOfKey(key) && leadNames.value[leadIdOfKey(key)!]) ||
+        msgs.find((m) => m.phone_number)?.phone_number ||
+        (last.external_contact_id ? t('Instagram user', 'Usuario de Instagram') : t('Unknown', 'Desconocido')),
       channel: last.channel,
       lastMessage: last,
       unread: last.direction === 'inbound' && (!readTimestamps.value[key] || readTimestamps.value[key] < last.created_at),
@@ -173,7 +256,7 @@ const search = ref('')
 const conversationSearchText = computed(() => {
   const map: Record<string, string> = {}
   for (const m of allMessages.value) {
-    const key = m.patient_id ?? m.phone_number ?? 'unknown'
+    const key = keyOf(m)
     map[key] = `${map[key] ?? ''} ${m.body_preview ?? ''}`
   }
   return map
@@ -214,9 +297,55 @@ function exitSelectionMode() {
 }
 
 const selectedKey = ref<string | null>(null)
-const selected = computed(() => conversations.value.find((c) => c.key === selectedKey.value) ?? null)
+// A patient opened from their record (WhatsApp on the patient screen) who has
+// never exchanged a message has no conversation to find, and the thread view
+// rendered nothing at all. This stands in for it until a message exists: the
+// patient's name and an empty thread, under the same 24-hour rule as any
+// other -- with no inbound message there is no window, so the composer
+// explains that rather than offering a send WhatsApp would refuse.
+const draftConversation = ref<Conversation | null>(null)
+const selected = computed(
+  () => conversations.value.find((c) => c.key === selectedKey.value) ??
+    // Not while the messages are still loading: a real thread would flash up as an empty one first.
+    (!loading.value && draftConversation.value?.key === selectedKey.value ? draftConversation.value : null),
+)
+async function prepareDraftConversation(patientId: string) {
+  if (!/^[0-9a-f-]{36}$/i.test(patientId)) return
+  const { data } = await supabase.from('patients').select('id, first_name, last_name').eq('id', patientId).maybeSingle()
+  if (!data) return
+  const now = new Date().toISOString()
+  draftConversation.value = {
+    key: patientId,
+    patientId,
+    phoneNumber: null,
+    externalContactId: null,
+    leadId: null,
+    name: `${data.first_name} ${data.last_name ?? ''}`.trim(),
+    channel: 'whatsapp',
+    // Never listed, so never read as a preview; present only because a
+    // conversation always has one.
+    lastMessage: {
+      id: `draft-${patientId}`,
+      patient_id: patientId,
+      phone_number: null,
+      external_contact_id: null,
+      lead_id: null,
+      direction: 'outbound',
+      status: 'sent',
+      body_preview: null,
+      template_name: null,
+      media_type: null,
+      media_storage_path: null,
+      media_mime_type: null,
+      media_filename: null,
+      channel: 'whatsapp',
+      created_at: now,
+    },
+    unread: false,
+  }
+}
 const thread = computed(() =>
-  selectedKey.value ? allMessages.value.filter((m) => (m.patient_id ?? m.phone_number ?? 'unknown') === selectedKey.value).slice().reverse() : [],
+  selectedKey.value ? allMessages.value.filter((m) => keyOf(m) === selectedKey.value).slice().reverse() : [],
 )
 // Follows the bottom of the thread automatically -- a reply the practitioner
 // just sent, or a message that just arrived, used to sit hidden behind the
@@ -233,19 +362,60 @@ watch(selectedKey, (key) => {
 // so it doesn't re-open on the next unrelated visit to this tab.
 watch(
   () => props.openConversationKey,
-  (key) => {
+  async (key) => {
     if (!key) return
+    pendingConversationKey.value = null
+    // A lead's notification names lead:<id>. That is the thread itself for a
+    // Growth account; without Growth the lead's messages are a conversation
+    // with their number, so the key is looked up from their newest message.
+    // Both need to know which it is, which the first load decides.
+    const leadId = leadIdOfKey(key)
+    if (leadId) {
+      await whenLoaded()
+      const resolved = leadThreadsAreSeparate.value ? key : await conversationKeyForLead(leadId)
+      if (!resolved) return
+      selectedKey.value = resolved
+      markRead(resolved)
+      return
+    }
     selectedKey.value = key
     markRead(key)
-    pendingConversationKey.value = null
+    prepareDraftConversation(key)
   },
   { immediate: true },
 )
 
+function whenLoaded(): Promise<void> {
+  if (!loading.value) return Promise.resolve()
+  return new Promise((resolve) => {
+    const stop = watch(loading, (l) => {
+      if (l) return
+      stop()
+      resolve()
+    })
+  })
+}
+
+async function conversationKeyForLead(leadId: string): Promise<string | null> {
+  const loaded = messages.value.find((m) => m.lead_id === leadId)
+  if (loaded) return keyOf(loaded)
+  const { data } = await supabase
+    .from('whatsapp_messages')
+    .select('patient_id, phone_number, external_contact_id, lead_id')
+    .eq('lead_id', leadId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  return data ? keyOf(data) : null
+}
+
+// The tab's badge counts the same reads and archives: told after each change.
+const { refresh: refreshBadge } = useInboxUnread()
 async function markRead(key: string) {
   const now = new Date().toISOString()
   readTimestamps.value = { ...readTimestamps.value, [key]: now }
   await supabase.from('inbox_reads').upsert({ account_id: props.accountId, team_member_id: props.teamMemberId, conversation_key: key, last_read_at: now } as never)
+  refreshBadge()
 }
 function openConversation(c: Conversation) {
   selectedKey.value = c.key
@@ -261,6 +431,7 @@ async function bulkMarkUnreadSelected() {
     await supabase.from('inbox_reads').upsert({ account_id: props.accountId, team_member_id: props.teamMemberId, conversation_key: key, last_read_at: past } as never)
   }
   exitSelectionMode()
+  refreshBadge()
 }
 
 async function bulkArchiveSelected(archive: boolean) {
@@ -278,6 +449,7 @@ async function bulkArchiveSelected(archive: boolean) {
     await supabase.from('whatsapp_conversation_archives').delete().eq('team_member_id', props.teamMemberId).in('conversation_key', keys)
   }
   exitSelectionMode()
+  refreshBadge()
 }
 
 // Single-conversation archive toggle, used from the row swipe action.
@@ -293,6 +465,7 @@ async function toggleArchive(c: Conversation) {
   } else {
     await supabase.from('whatsapp_conversation_archives').upsert({ account_id: props.accountId, team_member_id: props.teamMemberId, conversation_key: c.key } as never)
   }
+  refreshBadge()
 }
 
 // Mixed-selection rule matches the checkbox convention used elsewhere: if
@@ -334,6 +507,7 @@ async function toggleUnread(c: Conversation) {
   const past = new Date(0).toISOString()
   readTimestamps.value = { ...readTimestamps.value, [c.key]: past }
   await supabase.from('inbox_reads').upsert({ account_id: props.accountId, team_member_id: props.teamMemberId, conversation_key: c.key, last_read_at: past } as never)
+  refreshBadge()
 }
 
 // Swipe-to-reveal on each conversation row, live-following the finger like
@@ -450,6 +624,48 @@ const within24h = computed(() => {
   return Date.now() - new Date(lastInbound.created_at).getTime() < 24 * 60 * 60 * 1000
 })
 
+// -- Send a template -----------------------------------------------------------
+// Outside the 24-hour window (or before the first message) a template is the
+// only thing WhatsApp accepts. The same two routes as the web Inbox's "Send
+// template": listing them needs communication_config, sending one recalls_access
+// for a patient or inbox_access for a bare number -- so the option is offered
+// only when both would succeed. A minor or a do-not-contact patient is never
+// offered it (the send route refuses them too).
+const { can, restricted, context: staffContext } = usePractitionerContext()
+// From a patient's thread: their record, and booking them (the record's own
+// sheet, via ?book=1), as the record's Book button allows it.
+const canBookFromThread = computed(() => !!staffContext.value && !restricted('calendar_read_only') && (staffContext.value.isOwner || staffContext.value.permissions.calendar_scope !== 'none'))
+const templateSheetOpen = ref(false)
+const contactBlocked = ref(false)
+watch(
+  () => selected.value?.patientId ?? null,
+  async (patientId) => {
+    contactBlocked.value = false
+    if (!patientId) return
+    const { data } = await supabase.from('patients').select('is_minor, do_not_contact').eq('id', patientId).maybeSingle()
+    if (selected.value?.patientId === patientId) contactBlocked.value = !!(data?.is_minor || data?.do_not_contact)
+  },
+  { immediate: true },
+)
+// A Growth lead's own thread is not offered one: the web sends a lead nothing
+// through this route either (its thread is GrowthInboxLeadThread), and a send
+// to the bare number would be filed under the number, not the lead.
+const templateTarget = computed(() => {
+  const c = selected.value
+  if (!c || replyChannel.value !== 'whatsapp' || (c.leadId && !c.patientId)) return false
+  return !!(c.patientId || c.phoneNumber)
+})
+const templateAllowed = computed(() => {
+  const c = selected.value
+  return !!c && can('communication_config') && can(c.patientId ? 'recalls_access' : 'inbox_access')
+})
+const canSendTemplate = computed(() => templateTarget.value && templateAllowed.value && !contactBlocked.value)
+async function onTemplateSent() {
+  templateSheetOpen.value = false
+  sendError.value = ''
+  await load()
+}
+
 const composerText = ref('')
 const sending = ref(false)
 const sendError = ref('')
@@ -514,10 +730,10 @@ async function performTextSend(tempId: string, text: string, channel: string, ta
     // which is what read as a visible "jump" on the sent tick appearing.
     pendingMessages.value = pendingMessages.value.map((m) => (m.id === tempId ? { ...m, status: 'sent' } : m))
     await load()
-    pendingMessages.value = pendingMessages.value.filter((m) => m.id !== tempId)
+    settlePending(tempId, messages.value)
     delete retryPayloads.value[tempId]
   } catch (err: any) {
-    sendError.value = err?.data?.statusMessage ?? 'Failed to send'
+    sendError.value = err?.data?.statusMessage ?? t('Failed to send', 'Error al enviar')
     pendingMessages.value = pendingMessages.value.map((m) => (m.id === tempId ? { ...m, pending: false, status: 'failed' } : m))
   } finally {
     sending.value = false
@@ -540,6 +756,8 @@ async function sendText() {
       id: tempId,
       patient_id: target.patientId,
       phone_number: target.phoneNumber,
+      external_contact_id: target.externalContactId,
+      lead_id: target.leadId,
       direction: 'outbound',
       status: 'pending',
       body_preview: text,
@@ -551,6 +769,7 @@ async function sendText() {
       channel,
       created_at: new Date().toISOString(),
       pending: true,
+      notBefore: newestInThread(target.key),
     },
   ]
   await performTextSend(tempId, text, channel, target)
@@ -586,10 +805,10 @@ async function performMediaSend(
     })
     pendingMessages.value = pendingMessages.value.map((m) => (m.id === tempId ? { ...m, status: 'sent' } : m))
     await load()
-    pendingMessages.value = pendingMessages.value.filter((m) => m.id !== tempId)
+    settlePending(tempId, messages.value)
     delete retryPayloads.value[tempId]
   } catch (err: any) {
-    sendError.value = err?.data?.statusMessage ?? 'Failed to send'
+    sendError.value = err?.data?.statusMessage ?? t('Failed to send', 'Error al enviar')
     pendingMessages.value = pendingMessages.value.map((m) => (m.id === tempId ? { ...m, pending: false, status: 'failed' } : m))
   } finally {
     sending.value = false
@@ -608,6 +827,8 @@ async function sendMedia(mediaBase64: string, mediaMimeType: string, mediaFilena
       id: tempId,
       patient_id: target.patientId,
       phone_number: target.phoneNumber,
+      external_contact_id: target.externalContactId,
+      lead_id: target.leadId,
       direction: 'outbound',
       status: 'pending',
       body_preview: null,
@@ -619,6 +840,7 @@ async function sendMedia(mediaBase64: string, mediaMimeType: string, mediaFilena
       channel: replyChannel.value,
       created_at: new Date().toISOString(),
       pending: true,
+      notBefore: newestInThread(target.key),
     },
   ]
   await performMediaSend(tempId, mediaBase64, mediaMimeType, mediaFilename, mediaKind, target)
@@ -647,7 +869,7 @@ async function onFileChosen(e: Event) {
     return
   }
   if (file.size > MAX_MEDIA_BYTES) {
-    sendError.value = 'File is too large (max 16 MB).'
+    sendError.value = t('File is too large (max 16 MB).', 'El archivo es demasiado grande (máx. 16 MB).')
     input.value = ''
     return
   }
@@ -658,7 +880,7 @@ async function onFileChosen(e: Event) {
       const base64 = await blobToBase64(blob)
       await sendMedia(base64, mimeType, file.name.replace(/\.\w+$/, '.jpg'), 'image')
     } catch (err: any) {
-      sendError.value = err?.message ?? 'Could not process this image.'
+      sendError.value = err?.message ?? t('Could not process this image.', 'No se pudo procesar esta imagen.')
     }
   } else {
     const base64 = await blobToBase64(file)
@@ -681,7 +903,7 @@ async function toggleAudioRecording() {
     try {
       await startAudioRecording()
     } catch {
-      sendError.value = 'Could not access the microphone -- check permissions.'
+      sendError.value = t('Could not access the microphone — check permissions.', 'No se pudo acceder al micrófono; comprueba los permisos.')
     }
   }
 }
@@ -696,7 +918,7 @@ function recordingLabel(secs: number) {
 const lightboxUrl = ref<string | null>(null)
 
 function shortTime(iso: string) {
-  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return new Date(iso).toLocaleTimeString(locale.value, { hour: '2-digit', minute: '2-digit' })
 }
 // Same day-divider label as the web inbox (pages/inbox.vue) -- kept as its
 // own copy rather than a shared util since mobile already duplicates the
@@ -705,9 +927,9 @@ function relativeDay(iso: string) {
   const d = new Date(iso)
   const today = new Date()
   const diffDays = Math.round((new Date(today.toDateString()).getTime() - new Date(d.toDateString()).getTime()) / 86400000)
-  if (diffDays === 0) return 'Today'
-  if (diffDays === 1) return 'Yesterday'
-  return d.toLocaleDateString([], { day: 'numeric', month: 'short' })
+  if (diffDays === 0) return t('Today', 'Hoy')
+  if (diffDays === 1) return t('Yesterday', 'Ayer')
+  return d.toLocaleDateString(locale.value, { day: 'numeric', month: 'short' })
 }
 // The conversation list's timestamp, WhatsApp-style: a bare hour today loses
 // meaning for anything older, so it steps down in precision the further back
@@ -719,13 +941,25 @@ function listTime(iso: string) {
   const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
   const diffDays = Math.round((startOfDay(now) - startOfDay(d)) / 86400000)
   if (diffDays === 0) return shortTime(iso)
-  if (diffDays === 1) return 'Yesterday'
-  if (diffDays > 1 && diffDays < 7) return d.toLocaleDateString([], { weekday: 'long' })
+  if (diffDays === 1) return t('Yesterday', 'Ayer')
+  if (diffDays > 1 && diffDays < 7) return d.toLocaleDateString(locale.value, { weekday: 'long' })
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
 }
+// The web Inbox's words for each kind of attachment (pages/inbox.vue).
+const MEDIA_TYPE_LABELS: Record<string, [string, string]> = {
+  image: ['Image', 'Imagen'],
+  video: ['Video', 'Vídeo'],
+  audio: ['Audio', 'Audio'],
+  document: ['Document', 'Documento'],
+  sticker: ['Sticker', 'Sticker'],
+}
+function mediaTypeLabel(mediaType: string): string {
+  const pair = MEDIA_TYPE_LABELS[mediaType]
+  return pair ? t(pair[0], pair[1]) : mediaType
+}
 function previewText(m: Message) {
-  if (m.media_type) return `📎 ${m.media_type}${m.body_preview ? ` — ${m.body_preview}` : ''}`
-  if (m.template_name) return m.body_preview ?? `Template: ${m.template_name}`
+  if (m.media_type) return `${mediaTypeLabel(m.media_type)}${m.body_preview ? ` — ${m.body_preview}` : ''}`
+  if (m.template_name) return m.body_preview ?? `${t('Template', 'Plantilla')}: ${m.template_name}`
   return m.body_preview ?? '—'
 }
 // What actually renders as the bubble's text, distinct from previewText
@@ -733,7 +967,7 @@ function previewText(m: Message) {
 // caption, since there's nothing to attach the inline time+status to.
 function bubbleText(m: Message): string {
   if (m.media_type) return m.body_preview ?? ''
-  if (m.template_name) return m.body_preview ?? `Template: ${m.template_name}`
+  if (m.template_name) return m.body_preview ?? `${t('Template', 'Plantilla')}: ${m.template_name}`
   return m.body_preview ?? ''
 }
 
@@ -744,9 +978,9 @@ let channel: ReturnType<typeof supabase.channel> | null = null
 onMounted(() => {
   channel = supabase
     .channel('mobile-inbox-whatsapp-messages')
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'whatsapp_messages', filter: `account_id=eq.${props.accountId}` }, () => load({ silent: true }))
-    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'whatsapp_messages', filter: `account_id=eq.${props.accountId}` }, () => load({ silent: true }))
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'patient_app_messages', filter: `account_id=eq.${props.accountId}` }, () => load({ silent: true }))
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'whatsapp_messages', filter: `account_id=eq.${props.accountId}` }, () => scheduleLoad())
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'whatsapp_messages', filter: `account_id=eq.${props.accountId}` }, () => scheduleLoad())
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'patient_app_messages', filter: `account_id=eq.${props.accountId}` }, () => scheduleLoad())
     .subscribe()
 })
 onUnmounted(() => {
@@ -771,9 +1005,29 @@ onUnmounted(() => {
 // thread stuck until something else forces a reload, which reads as "I have
 // to leave and come back to see a new message." A cheap periodic refetch
 // bounds how stale the inbox can get even if realtime isn't delivering.
+// Realtime fires once per change, and every WhatsApp delivered/read receipt
+// is a change: a busy hour reloaded the whole Inbox many times a minute.
+// Changes arriving together now cause one reload.
+let reloadTimer: ReturnType<typeof setTimeout> | undefined
+function scheduleLoad() {
+  clearTimeout(reloadTimer)
+  reloadTimer = setTimeout(() => load({ silent: true }), 600)
+}
+// The poll is only a safety net for a dropped realtime connection, so it
+// rests while the app is in the background and catches up on return.
+function onInboxVisible() {
+  if (document.visibilityState === 'visible') scheduleLoad()
+}
+onMounted(() => document.addEventListener('visibilitychange', onInboxVisible))
+onBeforeUnmount(() => {
+  document.removeEventListener('visibilitychange', onInboxVisible)
+  clearTimeout(reloadTimer)
+})
 let pollTimer: ReturnType<typeof setInterval> | null = null
 onMounted(() => {
-  pollTimer = setInterval(() => load({ silent: true }), 15000)
+  pollTimer = setInterval(() => {
+    if (document.visibilityState === 'visible') load({ silent: true })
+  }, 15000)
 })
 onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer)
@@ -785,20 +1039,21 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
 
 <template>
   <div class="relative flex min-h-0 flex-1 overflow-hidden">
-    <!-- Conversation list: always mounted underneath the thread overlay -->
-    <div class="absolute inset-0 flex min-h-0 flex-col bg-surface">
+    <!-- Conversation list: always mounted underneath the thread overlay. On a
+         wide iPad (lg) it keeps a 340px column and the thread opens beside it. -->
+    <div class="absolute inset-0 flex min-h-0 flex-col bg-surface lg:right-auto lg:w-[340px] lg:border-r lg:border-line">
       <div v-if="!selectionMode" class="flex shrink-0 items-center gap-2 border-b border-line bg-surface px-3 py-2">
         <input
           v-model="search"
           type="search"
-          placeholder="Search name, number, messages…"
+          :placeholder="t('Search name, number, messages…', 'Nombre, nº o mensaje')"
           class="h-9 flex-1 rounded-ctl border border-line-control bg-surface-subtle px-3 text-[14px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none"
         />
         <button
           type="button"
           class="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl border"
           :class="view === 'archived' ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted'"
-          :title="view === 'archived' ? 'Show active conversations' : 'Show archived conversations'"
+          :title="view === 'archived' ? t('Show active conversations', 'Mostrar conversaciones activas') : t('Show archived conversations', 'Mostrar conversaciones archivadas')" :aria-label="view === 'archived' ? t('Show active conversations', 'Mostrar conversaciones activas') : t('Show archived conversations', 'Mostrar conversaciones archivadas')"
           @click="view = view === 'archived' ? 'active' : 'archived'"
         >
           <svg viewBox="0 0 16 16" class="h-[18px] w-[18px]" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
@@ -811,34 +1066,38 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
           type="button"
           class="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl border"
           :class="unreadOnly || replyFilter !== 'all' || labelFilter ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted'"
-          title="Filter"
+          :title="t('Filter', 'Filtrar')" :aria-label="t('Filter', 'Filtrar')"
           @click="filterSheetOpen = true"
         >
           <svg viewBox="0 0 16 16" class="h-[18px] w-[18px]" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
             <path d="M2 4h12M4.5 8h7M7 12h2" />
           </svg>
         </button>
-        <button type="button" class="shrink-0 px-1 text-[13px] font-medium text-brand-text" @click="selectionMode = true">Select</button>
+        <button type="button" class="shrink-0 px-1 text-[13px] font-medium text-brand-text" @click="selectionMode = true">{{ t('Select', 'Seleccionar') }}</button>
       </div>
       <div v-else class="flex shrink-0 items-center justify-between gap-2 border-b border-line bg-surface px-3 py-2">
-        <button type="button" class="shrink-0 px-1 text-[13px] text-ink-muted2" @click="exitSelectionMode">Cancel</button>
-        <p class="truncate text-[13px] text-ink-700">{{ selectedKeys.size }} selected</p>
+        <button type="button" class="shrink-0 px-1 text-[13px] text-ink-muted2" @click="exitSelectionMode">{{ t('Cancel', 'Cancelar') }}</button>
+        <p class="truncate text-[13px] text-ink-700">{{ t(`${selectedKeys.size} selected`, `${selectedKeys.size} seleccionadas`) }}</p>
         <div class="flex shrink-0 items-center gap-3">
-          <InboxLabelPicker
-            :labels="labels"
-            :applied-ids="[]"
-            @toggle-label="(id: string) => toggleLabelForKeys(id, [...selectedKeys])"
-            @create-label="(name: string, color: string) => createLabel(name, color, [...selectedKeys])"
-          />
           <button
             type="button"
             class="text-[13px] font-medium text-brand-text disabled:opacity-40"
             :disabled="selectedKeys.size === 0"
             @click="bulkArchiveSelected(view !== 'archived')"
           >
-            {{ view === 'archived' ? 'Unarchive' : 'Archive' }}
+            {{ view === 'archived' ? t('Unarchive', 'Desarchivar') : t('Archive', 'Archivar') }}
           </button>
-          <button type="button" class="text-[13px] font-medium text-brand-text disabled:opacity-40" :disabled="selectedKeys.size === 0" @click="bulkMarkUnreadSelected">Unread</button>
+          <button type="button" class="text-[13px] font-medium text-brand-text disabled:opacity-40" :disabled="selectedKeys.size === 0" @click="bulkMarkUnreadSelected">{{ t('Unread', 'No leídas') }}</button>
+          <!-- Last, at the right edge: its menu is 256px wide and opens leftwards
+               from the button, so anything after it pushed the menu off the
+               left of a phone screen -- by ~17px in Spanish, where "Archivar"
+               and "No leídas" are wider than "Archive" and "Unread". -->
+          <InboxLabelPicker
+            :labels="labels"
+            :applied-ids="[]"
+            @toggle-label="(id: string) => toggleLabelForKeys(id, [...selectedKeys])"
+            @create-label="(name: string, color: string) => createLabel(name, color, [...selectedKeys])"
+          />
         </div>
       </div>
       <div
@@ -858,17 +1117,17 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             <path d="M17.5 3v5h-5M6.5 21v-5h5" />
           </svg>
         </div>
-        <div v-if="loading" class="p-6 text-center text-[13px] text-ink-faint">Loading…</div>
+        <AppSkeletonList v-if="loading" avatar :rows="7" />
         <p v-else-if="filteredConversations.length === 0" class="p-6 text-center text-[13px] text-ink-faint">
-          {{ view === 'archived' ? 'No archived conversations.' : 'No conversations yet.' }}
+          {{ view === 'archived' ? t('No archived conversations.', 'No hay conversaciones archivadas.') : t('No conversations yet.', 'Aún no hay conversaciones.') }}
         </p>
         <div v-for="c in filteredConversations" :key="c.key" class="relative overflow-hidden border-b border-line-row">
           <div class="absolute inset-y-0 right-0 flex">
             <button type="button" class="flex w-[76px] items-center justify-center bg-brand text-[12px] font-medium text-white" @click="toggleUnread(c)">
-              {{ c.unread ? 'Read' : 'Unread' }}
+              {{ c.unread ? t('Read', 'Leída') : t('Unread', 'No leída') }}
             </button>
             <button type="button" class="flex w-[76px] items-center justify-center bg-ink-muted text-[12px] font-medium text-white" @click="toggleArchive(c)">
-              {{ archivedKeys.has(c.key) ? 'Unarchive' : 'Archive' }}
+              {{ archivedKeys.has(c.key) ? t('Unarchive', 'Desarchivar') : t('Archive', 'Archivar') }}
             </button>
           </div>
           <button
@@ -897,7 +1156,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             <span v-if="c.channel === 'whatsapp'" class="absolute -bottom-0.5 -right-0.5 flex h-[15px] w-[15px] items-center justify-center rounded-full border border-surface bg-[#25D366]" title="WhatsApp">
               <svg viewBox="0 0 24 24" class="h-[9px] w-[9px] fill-white"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm5.6 14.2c-.2.6-1.2 1.1-1.7 1.2-.4.1-1 .1-1.6-.1-.4-.1-.9-.3-1.5-.6-2.6-1.1-4.3-3.8-4.4-4-.1-.2-1-1.4-1-2.6 0-1.2.6-1.8.9-2.1.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .5.4.2.5.7 1.7.7 1.8.1.1.1.3 0 .4-.1.2-.1.3-.3.4-.1.2-.3.4-.4.5-.1.1-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.4 2.5 1.5.3.1.5.1.6-.1.2-.2.7-.8.9-1.1.2-.3.4-.2.6-.1.2.1 1.5.7 1.8.8.3.1.4.2.5.3.1.2.1.7-.1 1.3z" /></svg>
             </span>
-            <span v-else class="absolute -bottom-0.5 -right-0.5 flex h-[15px] w-[15px] items-center justify-center rounded-full border border-surface bg-brand" title="In-app message">
+            <span v-else class="absolute -bottom-0.5 -right-0.5 flex h-[15px] w-[15px] items-center justify-center rounded-full border border-surface bg-brand" :title="t('In-app message', 'Mensaje en la app')">
               <svg viewBox="0 0 24 24" class="h-[9px] w-[9px] fill-white"><path d="M4 4h16v12H7l-3 3z" /></svg>
             </span>
           </span>
@@ -910,7 +1169,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
               <span class="shrink-0 text-[12px] text-ink-faint">{{ listTime(c.lastMessage.created_at) }}</span>
             </div>
             <p class="truncate text-[13px]" :class="c.unread ? 'font-medium text-ink-800' : 'text-ink-muted2'">
-              {{ c.lastMessage.direction === 'outbound' ? 'You: ' : '' }}{{ previewText(c.lastMessage) }}
+              {{ c.lastMessage.direction === 'outbound' ? t('You: ', 'Tú: ') : '' }}{{ previewText(c.lastMessage) }}
             </p>
             <div v-if="myLabelsByKey[c.key]?.length" class="mt-1 flex flex-wrap gap-1">
               <span
@@ -932,7 +1191,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
     <!-- Filter bottom sheet -->
     <div v-if="filterSheetOpen" class="absolute inset-0 z-40 flex items-end bg-black/30" @click="filterSheetOpen = false">
       <div class="w-full rounded-t-card border-t border-line bg-surface p-4 pb-[calc(env(safe-area-inset-bottom)+16px)]" @click.stop>
-        <p class="mb-3 text-[13px] font-[600] text-ink-900">Filter conversations</p>
+        <p class="mb-3 text-[13px] font-[600] text-ink-900">{{ t('Filter conversations', 'Filtrar conversaciones') }}</p>
         <div class="flex flex-col gap-1">
           <button
             type="button"
@@ -940,7 +1199,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             :class="unreadOnly ? 'bg-brand-tint text-brand-text' : 'text-ink-700'"
             @click="unreadOnly = !unreadOnly"
           >
-            Unread
+            {{ t('Unread', 'No leídas') }}
             <svg v-if="unreadOnly" viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l3.5 3.5L13 5" /></svg>
           </button>
           <button
@@ -949,7 +1208,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             :class="replyFilter === 'awaiting_us' ? 'bg-brand-tint text-brand-text' : 'text-ink-700'"
             @click="replyFilter = replyFilter === 'awaiting_us' ? 'all' : 'awaiting_us'"
           >
-            Awaiting us
+            {{ t('Awaiting us', 'Esperan respuesta') }}
             <svg v-if="replyFilter === 'awaiting_us'" viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l3.5 3.5L13 5" /></svg>
           </button>
           <button
@@ -958,7 +1217,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             :class="replyFilter === 'awaiting_patient' ? 'bg-brand-tint text-brand-text' : 'text-ink-700'"
             @click="replyFilter = replyFilter === 'awaiting_patient' ? 'all' : 'awaiting_patient'"
           >
-            Awaiting patient
+            {{ t('Awaiting patient', 'Esperan al paciente') }}
             <svg v-if="replyFilter === 'awaiting_patient'" viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l3.5 3.5L13 5" /></svg>
           </button>
           <div v-if="labels.length > 0" class="my-1.5 border-t border-line-divider" />
@@ -978,11 +1237,16 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
       </div>
     </div>
 
+    <!-- Nothing open yet, beside the list on a wide iPad. -->
+    <div v-if="!selectedKey" class="absolute inset-y-0 left-[340px] right-0 hidden items-center justify-center bg-surface-page px-6 text-center text-[14px] text-ink-muted lg:flex">
+      {{ t('Choose a conversation.', 'Elige una conversación.') }}
+    </div>
+
     <!-- Thread: overlay shown while open or animating closed via the back gesture -->
     <div
       v-if="selectedKey || swipeBack.active.value"
       ref="threadEl"
-      class="absolute inset-0 z-30 flex min-h-0 flex-col bg-surface-page shadow-[-2px_0_12px_rgba(0,0,0,0.12)]"
+      class="absolute inset-0 z-30 flex min-h-0 flex-col bg-surface-page shadow-[-2px_0_12px_rgba(0,0,0,0.12)] lg:left-[340px] lg:shadow-none"
       :style="{
         transform: `translateX(${swipeBack.dragX.value}px)`,
         transition: swipeBack.dragging.value ? 'none' : 'transform 200ms ease-out',
@@ -991,21 +1255,30 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
     >
       <template v-if="selected">
       <div class="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
-        <button type="button" class="flex h-11 w-11 shrink-0 items-center justify-center text-brand-text" @click="selectedKey = null">
+        <button type="button" class="flex h-11 w-11 shrink-0 items-center justify-center text-brand-text lg:hidden" :aria-label="t('Back to conversations', 'Volver a las conversaciones')" @click="selectedKey = null">
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7" /></svg>
         </button>
         <div class="min-w-0 flex-1">
           <p class="truncate text-[14px] font-[600] text-ink-900">{{ selected.name }}</p>
           <p class="truncate text-[12px] text-ink-muted2">
             <span v-if="selected.channel === 'whatsapp'" class="rounded-pill bg-[#25D366]/10 px-1.5 py-px font-medium text-[#128C4B]">WhatsApp</span>
-            <span v-else class="rounded-pill bg-brand-tint px-1.5 py-px font-medium text-brand-text">In-app</span>
+            <span v-else class="rounded-pill bg-brand-tint px-1.5 py-px font-medium text-brand-text">{{ t('In-app', 'App') }}</span>
             <span v-if="selected.phoneNumber" class="ml-1.5">{{ selected.phoneNumber }}</span>
           </p>
         </div>
+        <template v-if="selected.patientId">
+          <NuxtLink :to="`/patients/${selected.patientId}`" class="flex h-9 shrink-0 items-center gap-1 rounded-ctl border border-line-control px-2.5 text-[13px] font-medium text-ink-700" data-cy="inbox-open-record">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M8 8a2.6 2.6 0 100-5.2A2.6 2.6 0 008 8zM3.2 13.4c0-2.3 2.1-3.6 4.8-3.6s4.8 1.3 4.8 3.6" /></svg>
+            {{ t('Record', 'Ficha') }}
+          </NuxtLink>
+          <NuxtLink v-if="canBookFromThread" :to="`/patients/${selected.patientId}?book=1`" class="flex h-9 shrink-0 items-center rounded-ctl bg-brand px-2.5 text-[13px] font-semibold text-white" data-cy="inbox-book">
+            {{ t('Book', 'Reservar') }}
+          </NuxtLink>
+        </template>
       </div>
 
       <div ref="messagesEl" class="flex-1 space-y-2.5 overflow-y-auto px-3 py-3">
-        <template v-for="(m, i) in thread" :key="m.id">
+        <template v-for="(m, i) in thread" :key="m.renderKey">
           <div
             v-if="i === 0 || relativeDay(m.created_at) !== relativeDay(thread[i - 1].created_at)"
             class="sticky top-0 z-10 -mx-3 flex justify-center py-1.5"
@@ -1036,14 +1309,18 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
               class="flex items-center gap-2 text-[13px] underline"
               :class="m.direction === 'outbound' ? 'text-white' : 'text-brand-text'"
             >
-              📄 {{ m.media_filename ?? 'Document' }}
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" class="shrink-0" aria-hidden="true">
+                <path d="M4 1.5h5.5L12.5 4.5V14.5H4z" stroke-linejoin="round" />
+                <path d="M9.5 1.5V4.5H12.5" stroke-linejoin="round" />
+              </svg>
+              {{ m.media_filename ?? t('Document', 'Documento') }}
             </a>
             <img
               v-else-if="m.media_type === 'sticker' && m.media_storage_path && mediaUrls[m.media_storage_path]"
               :src="mediaUrls[m.media_storage_path]"
               class="h-24 w-24"
             />
-            <p v-else-if="m.media_type" class="text-[12.5px] italic opacity-70">{{ m.pending ? 'Uploading…' : 'Media unavailable' }}</p>
+            <p v-else-if="m.media_type" class="text-[12.5px] italic opacity-70">{{ m.pending ? t('Uploading…', 'Subiendo…') : t('Media unavailable', 'Contenido no disponible') }}</p>
 
             <!-- Text (or a caption/template fallback) carries its own trailing
                  time+status inline, WhatsApp-style: same line as the last word
@@ -1056,13 +1333,13 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
                 class="ml-1.5 inline-flex translate-y-[2px] items-center gap-1 whitespace-nowrap text-[10.5px]"
                 :class="m.direction === 'outbound' ? 'text-white/70' : 'text-ink-faint'"
               >
-                <span v-if="m.status === 'failed'" class="underline">Tap to retry</span>
+                <span v-if="m.status === 'failed'" class="underline">{{ t('Tap to retry', 'Toca para reintentar') }}</span>
                 <span v-else>{{ shortTime(m.created_at) }}</span>
                 <InboxMessageStatus v-if="m.direction === 'outbound'" :status="m.status" />
               </span>
             </p>
             <p v-else class="mt-1 flex items-center justify-end gap-1.5 text-right text-[10.5px]" :class="m.direction === 'outbound' ? 'text-white/70' : 'text-ink-faint'">
-              <span v-if="m.status === 'failed'" class="underline">Tap to retry</span>
+              <span v-if="m.status === 'failed'" class="underline">{{ t('Tap to retry', 'Toca para reintentar') }}</span>
               <span v-else>{{ shortTime(m.created_at) }}</span>
               <InboxMessageStatus v-if="m.direction === 'outbound'" :status="m.status" />
             </p>
@@ -1073,15 +1350,40 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
 
       <div class="shrink-0 border-t border-line bg-surface p-3">
         <p v-if="sendError" class="mb-2 text-[12.5px] text-danger-text">{{ sendError }}</p>
-        <p v-if="!within24h" class="rounded-ctl border border-warning-border bg-warning-bg px-3 py-2 text-[12.5px] text-warning-text">
-          More than 24h since {{ selected.name }} last messaged — free-form replies are blocked by
-          {{ replyChannel === 'instagram' ? 'Instagram' : 'WhatsApp' }}.
-        </p>
+        <div v-if="thread.length === 0 || !within24h" class="rounded-ctl border border-warning-border bg-warning-bg px-3 py-2 text-[12.5px] text-warning-text" data-cy="inbox-window-closed">
+          <p>
+            {{
+              thread.length === 0
+                ? t(
+                    `No messages with ${selected.name} yet. WhatsApp only lets a clinic start a conversation with an approved template.`,
+                    `Aún no hay mensajes con ${selected.name}. WhatsApp solo permite a una clínica iniciar una conversación con una plantilla aprobada.`,
+                  )
+                : replyChannel === 'instagram'
+                  ? t(
+                      `More than 24h since ${selected.name} last messaged — free-form replies are blocked by Instagram.`,
+                      `Han pasado más de 24h desde que ${selected.name} escribió por última vez — Instagram bloquea las respuestas libres.`,
+                    )
+                  : t(
+                      `More than 24h since ${selected.name} last messaged — free-form replies are blocked by WhatsApp; only an approved template can be sent.`,
+                      `Han pasado más de 24h desde que ${selected.name} escribió por última vez — WhatsApp bloquea las respuestas libres; solo se puede enviar una plantilla aprobada.`,
+                    )
+            }}
+            <template v-if="templateTarget && contactBlocked">
+              {{ t('This patient cannot be contacted (under age or marked do not contact).', 'A este paciente no se le puede contactar (menor de edad o marcado como no contactar).') }}
+            </template>
+            <template v-else-if="templateTarget && !templateAllowed">
+              {{ t("Your role can't send templates.", 'Tu rol no puede enviar plantillas.') }}
+            </template>
+          </p>
+          <UiBtn v-if="canSendTemplate" variant="primary" size="sm" class="mt-2 h-10 w-full" data-cy="inbox-send-template" @click="templateSheetOpen = true">
+            {{ t('Send a template', 'Enviar una plantilla') }}
+          </UiBtn>
+        </div>
         <div v-else-if="audioRecording" class="flex items-center gap-3 rounded-ctl border border-line-control bg-surface-subtle px-3 py-2.5">
           <span class="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-danger-text" />
-          <span class="flex-1 text-[14px] text-ink-700">Recording… {{ recordingLabel(audioSeconds) }}</span>
-          <button type="button" class="shrink-0 px-1.5 text-[12.5px] text-ink-faint" @click="cancelAudioRecording">Cancel</button>
-          <UiBtn variant="primary" size="sm" @click="toggleAudioRecording">Send</UiBtn>
+          <span class="flex-1 text-[14px] text-ink-700">{{ t('Recording…', 'Grabando…') }} {{ recordingLabel(audioSeconds) }}</span>
+          <button type="button" class="shrink-0 px-1.5 text-[12.5px] text-ink-faint" @click="cancelAudioRecording">{{ t('Cancel', 'Cancelar') }}</button>
+          <UiBtn variant="primary" size="sm" @click="toggleAudioRecording">{{ t('Send', 'Enviar') }}</UiBtn>
         </div>
         <div v-else class="flex items-end gap-2">
           <InboxSavedRepliesPicker size="lg" @insert="insertReply" />
@@ -1096,33 +1398,46 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             type="button"
             class="flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-muted disabled:opacity-50"
             :disabled="sending"
-            title="Attach a file"
+            :title="t('Attach a file', 'Adjuntar archivo')" :aria-label="t('Attach a file', 'Adjuntar archivo')"
             @click="fileInput?.click()"
           >
             <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
               <path d="M8 2.5v11M2.5 8h11" />
             </svg>
           </button>
-          <!-- No visible Send button -- Enter on a hardware keyboard already
-               sends (see the handler below); enterkeyhint swaps the virtual
-               keyboard's own return key to a "Send" label so the native
-               keyboard button does the same job, same as iMessage/WhatsApp. -->
+          <!-- Enter on a hardware keyboard sends (see the handler below), and
+               enterkeyhint labels the virtual keyboard's own key "Send". Some
+               Android keyboards show a newline key on a textarea anyway, so
+               once there is text the camera and microphone give way to a Send
+               button, as in WhatsApp. -->
           <textarea
             ref="composerTextarea"
             v-model="composerText"
             rows="1"
             enterkeyhint="send"
-            placeholder="Type a message…"
+            :placeholder="t('Type a message…', 'Mensaje…')"
             class="max-h-24 min-h-11 flex-1 resize-none rounded-ctl border border-line-control bg-surface px-3 py-2.5 text-[14px] text-ink-700 focus:border-brand focus:outline-none"
             @keydown.enter.exact.prevent="sendText"
           />
           <input ref="cameraInput" type="file" accept="image/*" capture="environment" class="hidden" @change="onFileChosen" />
           <button
+            v-if="composerText.trim()"
+            type="button"
+            class="flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl bg-brand text-white disabled:opacity-50"
+            :disabled="sending"
+            :aria-label="t('Send', 'Enviar')"
+            data-cy="inbox-send"
+            @click="sendText"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6" /></svg>
+          </button>
+          <template v-else>
+          <button
             v-if="replyChannel !== 'instagram'"
             type="button"
             class="flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-muted disabled:opacity-50"
             :disabled="sending"
-            title="Take a photo"
+            :title="t('Take a photo', 'Hacer una foto')" :aria-label="t('Take a photo', 'Hacer una foto')"
             @click="cameraInput?.click()"
           >
             <svg width="19" height="19" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
@@ -1135,7 +1450,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             type="button"
             class="flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-muted disabled:opacity-50"
             :disabled="sending"
-            title="Record a voice note"
+            :title="t('Record a voice note', 'Grabar una nota de voz')" :aria-label="t('Record a voice note', 'Grabar una nota de voz')"
             @click="toggleAudioRecording"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
@@ -1143,20 +1458,30 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
               <path d="M3 8a5 5 0 0 0 10 0M8 13v1.5" stroke-linecap="round" />
             </svg>
           </button>
+          </template>
         </div>
       </div>
       </template>
     </div>
 
+    <WhatsAppTemplateSheet
+      v-if="templateSheetOpen && selected && canSendTemplate"
+      :patient-id="selected.patientId"
+      :phone-number="selected.patientId ? null : selected.phoneNumber"
+      :patient-first-name="selected.patientId ? selected.name.split(' ')[0] : undefined"
+      @close="templateSheetOpen = false"
+      @sent="onTemplateSent"
+    />
+
     <div v-if="lightboxUrl" class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-6" @click="lightboxUrl = null">
       <img :src="lightboxUrl" class="max-h-full max-w-full rounded-ctl object-contain" @click.stop />
       <div class="absolute right-4 flex gap-2" style="top: calc(env(safe-area-inset-top) + 12px)">
-        <a :href="lightboxUrl" download target="_blank" class="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white" title="Download" @click.stop>
+        <a :href="lightboxUrl" download target="_blank" class="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white" :title="t('Download', 'Descargar')" :aria-label="t('Download', 'Descargar')" @click.stop>
           <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
             <path d="M8 1.5v9M4.5 7 8 10.5 11.5 7M2 12.5v1a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-1" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
         </a>
-        <button type="button" class="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white" title="Close" @click="lightboxUrl = null">
+        <button type="button" class="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white" :title="t('Close', 'Cerrar')" :aria-label="t('Close', 'Cerrar')" @click="lightboxUrl = null">
           <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
             <path d="M3 3l10 10M13 3 3 13" stroke-linecap="round" />
           </svg>

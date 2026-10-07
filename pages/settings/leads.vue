@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { centsToInput, parseEurosToCents } from '~/utils/appointmentTypes'
+import { normalizeNotifyEmail, normalizeNotifyWhatsapp } from '~/utils/notifyContacts'
 import type { TablesUpdate } from '~/types/database.types'
 
 // How the Growth › Leads board moves and what it is worth.
@@ -65,13 +66,25 @@ async function save() {
     showToast(t('The number of visits has to be between 1 and 50.', 'El número de visitas tiene que estar entre 1 y 50.'), 'error')
     return
   }
+  const notifyEmailValue = normalizeNotifyEmail(notifyEmail.value)
+  const notifyWhatsappValue = normalizeNotifyWhatsapp(notifyWhatsapp.value, store.defaultPhoneCountry)
+  if (notifyEmailValue === undefined) {
+    showToast(t('The alert email is not an email address.', 'El correo de aviso no es una dirección de correo.'), 'error')
+    return
+  }
+  if (notifyWhatsappValue === undefined) {
+    showToast(t('The alert WhatsApp is not a phone number.', 'El WhatsApp de aviso no es un número de teléfono.'), 'error')
+    return
+  }
+  notifyEmail.value = notifyEmailValue ?? ''
+  notifyWhatsapp.value = notifyWhatsappValue ?? ''
   saving.value = true
   const update: TablesUpdate<'accounts'> = {
     lead_default_value_cents: cents,
     lead_convert_after_visits: autoConvert.value ? visits : null,
     lead_convert_appointment_type_id: autoConvert.value && convertTypeId.value ? convertTypeId.value : null,
-    new_lead_notify_email: notifyEmail.value.trim() || null,
-    new_lead_notify_whatsapp: notifyWhatsapp.value.trim() || null,
+    new_lead_notify_email: notifyEmailValue,
+    new_lead_notify_whatsapp: notifyWhatsappValue,
   }
   const { error } = await supabase.from('accounts').update(update).eq('id', store.accountId!)
   saving.value = false
@@ -105,7 +118,7 @@ const STAGES = computed(() => [
       <UiBtn variant="primary" :disabled="saving || loading" data-test="save-lead-settings" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Save changes', 'Guardar cambios') }}</UiBtn>
     </PageHeader>
     <div class="flex-1 overflow-y-auto">
-      <div class="flex gap-8 p-6">
+      <div class="flex gap-8 p-4 pb-24 sm:px-6 sm:pt-6 lg:pb-6">
         <SettingsNav />
         <div class="flex min-w-0 max-w-[940px] flex-1 flex-col gap-4" data-cy="leads-settings" :data-ready="loading ? undefined : 'true'">
           <p class="text-[13.5px] text-ink-muted">

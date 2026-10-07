@@ -119,9 +119,11 @@ async function testConnection() {
 // with none of the consequences.
 const disconnectOpen = ref(false)
 async function disconnect() {
-  const { data: saved, error } = await supabase.from('accounts').update({ stripe_connect_account_id: null }).eq('id', store.accountId!).select('id')
-  if (error || !saved?.length) {
-    showToast(error?.message ?? t('Stripe is still connected: the change was not saved.', 'Stripe sigue conectado: no se ha guardado el cambio.'), 'error')
+  // Through the server, which also revokes QuiroFlow's access in Stripe.
+  try {
+    await useStaffFetch('/api/stripe/connect/disconnect', { method: 'POST' })
+  } catch (e: any) {
+    showToast(e?.data?.statusMessage ?? e?.message ?? t('Stripe is still connected.', 'Stripe sigue conectado.'), 'error')
     return
   }
   connectAccountId.value = null
@@ -244,7 +246,7 @@ const GENERIC_ICON = 'M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6'
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Payments', 'Pagos')" />
     <div class="flex-1 overflow-y-auto">
-      <div class="flex gap-8 p-6">
+      <div class="flex gap-8 p-4 pb-24 sm:px-6 sm:pt-6 lg:pb-6">
         <SettingsNav />
         <div class="flex min-w-0 max-w-[820px] flex-1 flex-col gap-4" data-cy="payments-settings" :data-ready="methodsLoading || loading ? undefined : 'true'">
           <p class="text-[13.5px] text-ink-muted">

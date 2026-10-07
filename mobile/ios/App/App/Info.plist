@@ -28,6 +28,8 @@
 	<string>QuiroFlow needs access to your camera to take a photo or video to send in the Inbox.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>QuiroFlow needs access to your microphone to record voice notes and video to send in the Inbox.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>QuiroFlow uses Face ID so the clinic team can leave reception mode after a patient has signed their forms.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
@@ -39,8 +41,6 @@
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>

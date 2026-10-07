@@ -59,16 +59,66 @@ export function facturaKind(input: IssueFacturaInput): 'simplified' | 'full' {
 
 export function useFacturas() {
   const supabase = useSupabaseClient()
+  const { showToast } = useToast()
+  const t = useT()
+
+  /**
+   * Numbers and writes the factura in ONE call -- issue_factura() -- so a
+   * write the database refuses gives its number back. It used to be two: the
+   * number was taken by next_factura_number() and committed, then the insert
+   * failed, and the series had a hole nothing could fill. See the migration.
+   */
+  async function insertFactura(row: {
+    accountId: string
+    patientId: string
+    paymentId: string | null
+    kind: string
+    description: string
+    amountCents: number
+    tax: { taxBaseCents: number; taxRateBp: number; taxAmountCents: number; taxExemptionCode: string | null }
+    rectifiesFacturaId?: string | null
+  }): Promise<{ number: string } | null> {
+    const { data, error } = await supabase.rpc('issue_factura', {
+      p_account_id: row.accountId,
+      p_patient_id: row.patientId,
+      p_payment_id: row.paymentId,
+      p_kind: row.kind,
+      p_description: row.description,
+      p_amount_cents: row.amountCents,
+      p_tax_base_cents: row.tax.taxBaseCents,
+      p_tax_rate_bp: row.tax.taxRateBp,
+      p_tax_amount_cents: row.tax.taxAmountCents,
+      p_tax_exemption_code: row.tax.taxExemptionCode,
+      p_rectifies_factura_id: row.rectifiesFacturaId ?? null,
+    })
+    const issued = Array.isArray(data) ? data[0] : data
+    if (error || !issued?.number) {
+      // Said out loud. This returned null and every caller dropped it, so a
+      // payment with no factura behind it looked exactly like one with.
+      const detail = error?.message ? `: ${error.message}` : '.'
+      console.error('[facturas] could not issue', row.kind, 'for payment', row.paymentId, error)
+      showToast(
+        row.kind === 'rectificativa'
+          ? t(`The rectifying factura could not be issued${detail}`, `No se ha podido emitir la factura rectificativa${detail}`)
+          : t(
+              `The payment was recorded, but its factura could not be issued${detail}`,
+              `El pago se ha registrado, pero no se ha podido emitir su factura${detail}`,
+            ),
+        'error',
+        10000,
+      )
+      return null
+    }
+    return { number: issued.number }
+  }
 
   // Never throws and never blocks the payment. Taking the money is the thing
-  // that must not fail; a factura that could not be numbered is recoverable
+  // that must not fail; a factura that could not be issued is recoverable
   // (the payment is there, and it can be issued again), whereas a payment
   // rolled back because of a document is money the clinic actually took and
-  // has no record of.
+  // has no record of. A failure is reported -- toast here, null to the caller
+  // -- rather than swallowed.
   async function issueFactura(input: IssueFacturaInput): Promise<{ number: string } | null> {
-    const { data: number } = await supabase.rpc('next_factura_number', { p_account_id: input.accountId })
-    if (!number) return null
-
     // Same lookup and the same helper as issueFacturaServer -- a factura
     // issued at the desk and one issued by a Stripe webhook have to carry the
     // same tax breakdown for the same money.
@@ -79,30 +129,19 @@ export function useFacturas() {
       .maybeSingle()
     const tax = facturaTaxFor(input.amountCents, taxDefaults)
 
-    const { data, error } = await supabase
-      .from('facturas')
-      .insert({
-        account_id: input.accountId,
-        patient_id: input.patientId,
-        payment_id: input.paymentId,
-        number,
-        kind: facturaKind(input),
-        description: facturaDescription(input),
-        amount_cents: input.amountCents,
-        tax_base_cents: tax.taxBaseCents,
-        tax_rate_bp: tax.taxRateBp,
-        tax_amount_cents: tax.taxAmountCents,
-        tax_exemption_code: tax.taxExemptionCode,
-        // Recipient left null on purpose: it resolves from the patient record
-        // when the document is rendered, so a NIF collected next week appears
-        // on this factura without anyone reissuing it. Setting these freezes
-        // the document, which is what to do once it has been delivered.
-      })
-      .select('number')
-      .single()
-
-    if (error) return null
-    return data
+    // Recipient left null on purpose: it resolves from the patient record
+    // when the document is rendered, so a NIF collected next week appears
+    // on this factura without anyone reissuing it. Setting these freezes
+    // the document, which is what to do once it has been delivered.
+    return insertFactura({
+      accountId: input.accountId,
+      patientId: input.patientId,
+      paymentId: input.paymentId,
+      kind: facturaKind(input),
+      description: facturaDescription(input),
+      amountCents: input.amountCents,
+      tax,
+    })
   }
 
   /**
@@ -113,15 +152,20 @@ export function useFacturas() {
    * -- every refund the clinic had ever made was in that state.
    *
    * Its own R- series rather than the next F- number: see the migration for
-   * why. Same never-throws contract as issueFactura -- the money has already
-   * gone back to the patient by the time this runs, and failing the refund
-   * over a document would leave the clinic with no record of it at all.
+   * why (issue_factura picks it from the kind). Same never-throws contract as
+   * issueFactura -- the money has already gone back to the patient by the
+   * time this runs, and failing the refund over a document would leave the
+   * clinic with no record of it at all.
    */
   async function issueRectificativa(input: {
     accountId: string
     patientId: string
-    /** The refund's own negative payment row. */
-    paymentId: string
+    /**
+     * The refund's own negative payment row. Null when no money moved: a
+     * factura annulled because the payment it documented was recorded in
+     * error and has been removed (see annulFactura in BillingTab).
+     */
+    paymentId: string | null
     /** Negative: what is going back. */
     amountCents: number
     /** Set when the refunded invoice had exactly one factura behind it. */
@@ -130,16 +174,13 @@ export function useFacturas() {
     rectifiesNumber?: string | null
     reason?: string
   }): Promise<{ number: string } | null> {
-    const { data: number } = await supabase.rpc('next_factura_number', { p_account_id: input.accountId, p_series: 'R' })
-    if (!number) return null
-
     const corrects = input.rectifiesNumber ? `Rectificación de ${input.rectifiesNumber}` : 'Rectificación'
 
     // A rectificativa carries the same tax treatment as the operation it
     // corrects, negated with it: money going back under an exemption does not
     // become taxable on the way out. Read from the account for the same reason
     // the original was -- and it must be set, because a factura with no base
-    // is rejected, which is how this path was found: it inserts separately
+    // is rejected, which is how this path was found: it inserted separately
     // from issueFactura and silently produced nothing.
     const { data: taxDefaults } = await supabase
       .from('accounts')
@@ -149,29 +190,23 @@ export function useFacturas() {
     const refunded = -Math.abs(input.amountCents)
     const tax = facturaTaxFor(Math.abs(input.amountCents), taxDefaults)
 
-    const { data, error } = await supabase
-      .from('facturas')
-      .insert({
-        account_id: input.accountId,
-        patient_id: input.patientId,
-        payment_id: input.paymentId,
-        number,
-        kind: 'rectificativa',
-        description: input.reason?.trim() ? `${corrects} — ${input.reason.trim()}` : corrects,
-        // Negative, mirroring the payment. The sign is what makes this a
-        // correction rather than a second sale.
-        amount_cents: refunded,
-        tax_base_cents: -tax.taxBaseCents,
-        tax_rate_bp: tax.taxRateBp,
-        tax_amount_cents: -tax.taxAmountCents,
-        tax_exemption_code: tax.taxExemptionCode,
-        rectifies_factura_id: input.rectifiesFacturaId ?? null,
-      })
-      .select('number')
-      .single()
-
-    if (error) return null
-    return data
+    return insertFactura({
+      accountId: input.accountId,
+      patientId: input.patientId,
+      paymentId: input.paymentId,
+      kind: 'rectificativa',
+      description: input.reason?.trim() ? `${corrects} — ${input.reason.trim()}` : corrects,
+      // Negative, mirroring the payment. The sign is what makes this a
+      // correction rather than a second sale.
+      amountCents: refunded,
+      tax: {
+        taxBaseCents: -tax.taxBaseCents,
+        taxRateBp: tax.taxRateBp,
+        taxAmountCents: -tax.taxAmountCents,
+        taxExemptionCode: tax.taxExemptionCode,
+      },
+      rectifiesFacturaId: input.rectifiesFacturaId ?? null,
+    })
   }
 
   return { issueFactura, issueRectificativa, facturaDescription, facturaKind }

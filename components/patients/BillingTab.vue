@@ -3,9 +3,13 @@ import { formatEur, formatLongDate, formatShortDate } from '~/utils/billing'
 import { normalizeSearchTerm } from '~/utils/searchText'
 import { bonoOwedCents } from '~/utils/bonoOwed'
 import { settleInvoiceIfCovered } from '~/utils/settleInvoice'
+import { validSpanishTaxId } from '~/utils/spanishTaxId'
+import { isReceipt } from '~/utils/paymentReceipts'
+import { onAccountShareCents, paymentRefundableCents } from '~/utils/paymentRefund'
+import { chargeBonoVisit } from '~/utils/bonoVisitInvoice'
 import { loadUnloggedVisits, localDateStr, type LogSessionChoice, type UnloggedVisit } from '~/utils/unloggedVisits'
 
-const props = defineProps<{ patientId: string; openPaymentTrigger?: boolean; refundInvoiceId?: string | null }>()
+const props = defineProps<{ patientId: string; openPaymentTrigger?: boolean; refundInvoiceId?: string | null; contactBlocked?: boolean }>()
 const emit = defineEmits<{ paymentTriggerConsumed: [] }>()
 
 interface InvoiceRow {
@@ -48,9 +52,16 @@ interface PatientMembershipRow {
   price_cents: number
   status: string
   started_at: string
-  // The plan's own period, to start autopay from. Null when the plan has
-  // since been removed (membership_id is `on delete set null`).
+  // The period this member signed up on, copied from the plan when the
+  // membership was created -- so editing the plan later does not re-state
+  // what existing members pay. The plan's own period is the fallback for a
+  // row from before that copy existed.
+  billing_interval: string | null
+  billing_interval_count: number | null
   memberships: { billing_interval: string; billing_interval_count: number } | null
+}
+function memberPeriod(m: { billing_interval: string | null; billing_interval_count: number | null; memberships: { billing_interval: string; billing_interval_count: number } | null }) {
+  return m.billing_interval ? { billing_interval: m.billing_interval, billing_interval_count: m.billing_interval_count ?? 1 } : m.memberships
 }
 interface MembershipPaymentRow {
   id: string
@@ -72,7 +83,7 @@ interface PaymentScheduleRow {
 }
 interface StripeEventRow { id: string; payment_schedule_id: string; period_start: string; amount_cents: number; status: string }
 interface LedgerPaymentRow { id: string; invoice_id: string | null; amount_cents: number; method: string; paid_at: string; package_purchase_id: string | null; external_reference: string | null; purpose: string | null; created_by: string | null; stripe_payment_intent_id: string | null; team_members: { full_name: string | null } | null }
-interface LedgerCreditRow { id: string; amount_cents: number; reason: string | null; method: string | null; invoice_id: string | null; created_at: string }
+interface LedgerCreditRow { id: string; amount_cents: number; reason: string | null; method: string | null; invoice_id: string | null; payment_id: string | null; created_at: string }
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
@@ -84,6 +95,21 @@ const { can } = usePermission()
 // now grant it (20260925074722), so an admin who could do this keeps it and a
 // receptionist can be given it without the catalogue and Stripe settings.
 const canManagePackages = computed(() => can('packages_edit') || can('billing_config'))
+// Taking money -- Take payment, Add credit, Apply credit -- writes a
+// `payments` row, and RLS ("staff write payments", 0170) only allows that
+// with payments_allocate. These were offered on billing_access alone, so the
+// seeded Practitioner role (billing_access yes, payments_allocate no) was
+// shown them and then refused by the database, with nothing on screen to
+// say so.
+const canTakePayments = computed(() => can('payments_allocate'))
+
+// The message shown when a payment insert is refused. Every flow that writes
+// a payment reads its error now: they used to carry on regardless, closing
+// the panel as if the money had been taken, or -- worse -- writing the paired
+// account_credits row with nothing behind it.
+function paymentRefusedMessage(error: { message?: string } | null) {
+  return t('The payment could not be recorded', 'No se pudo registrar el pago') + (error?.message ? `: ${error.message}` : '.')
+}
 const { fire } = useAutomations()
 const t = useT()
 
@@ -114,6 +140,7 @@ interface FacturaRow {
   // stands -- a number issued in a correlative series cannot just disappear --
   // but it no longer matches any money, which someone has to resolve.
   payment_id: string | null
+  rectifies_factura_id: string | null
 }
 const facturas = ref<FacturaRow[]>([])
 const sendingFacturaId = ref('')
@@ -124,13 +151,67 @@ async function loadFacturas() {
     supabase.from('patients').select('national_id, default_practitioner_id').eq('id', props.patientId).maybeSingle(),
     supabase
       .from('facturas')
-      .select('id, number, kind, description, amount_cents, issued_at, recipient_nif, payment_id')
+      .select('id, number, kind, description, amount_cents, issued_at, recipient_nif, payment_id, rectifies_factura_id')
       .eq('patient_id', props.patientId)
       .order('issued_at', { ascending: false }),
   ])
   patientNationalId.value = patientRow?.national_id ?? null
   patientDefaultPractitionerId.value = patientRow?.default_practitioner_id ?? null
   facturas.value = data ?? []
+}
+
+// What a factura still documents once its rectificativas are taken off. A
+// refund rectifies part or all of one; annulling it rectifies the rest.
+function facturaOutstandingCents(f: FacturaRow): number {
+  const rectified = facturas.value
+    .filter((r) => r.kind === 'rectificativa' && r.rectifies_factura_id === f.id)
+    .reduce((sum, r) => sum + r.amount_cents, 0)
+  return f.amount_cents + rectified
+}
+
+// A factura whose payment was removed, and which nothing has cancelled yet.
+// That is the only kind that can be annulled: the money it documents was
+// never taken, so it needs a rectificativa with no refund behind it. One whose
+// payment still stands documents money the clinic did receive, and the way to
+// undo that is a refund, which records the money going back as well.
+function canAnnulFactura(f: FacturaRow): boolean {
+  return !f.payment_id && f.kind !== 'rectificativa' && facturaOutstandingCents(f) > 0
+}
+
+// Annul a factura whose payment was recorded in error.
+//
+// Removing the payment (deletePayment) leaves its factura on the series --
+// numbers in a correlative series cannot disappear -- documenting money that
+// never came in. Until now the only rectificativa the app could issue was a
+// refund's, and a refund needs a payment to refund and records money going
+// back to the patient, which here never left. So this was done by hand in
+// the database (R-2026-0006, R-2026-0007).
+//
+// It issues the rectificativa alone: no payment, no receipt, nothing on the
+// balance, because no money moves.
+const annullingFactura = ref<FacturaRow | null>(null)
+const annulReason = ref('')
+const annulBusy = ref(false)
+async function confirmAnnulFactura() {
+  const f = annullingFactura.value
+  if (!f || !canAnnulFactura(f)) return
+  annulBusy.value = true
+  const issued = await issueRectificativa({
+    accountId: store.accountId!,
+    patientId: props.patientId,
+    paymentId: null,
+    amountCents: facturaOutstandingCents(f),
+    rectifiesFacturaId: f.id,
+    rectifiesNumber: f.number,
+    reason: annulReason.value || t('payment recorded in error, no money was taken', 'cobro registrado por error, no se cobró nada'),
+  })
+  annulBusy.value = false
+  // useFacturas has already said why, on screen.
+  if (!issued) return
+  annullingFactura.value = null
+  annulReason.value = ''
+  showToast(t(`${f.number} annulled with ${issued.number}`, `${f.number} anulada con ${issued.number}`))
+  await loadFacturas()
 }
 
 async function sendFactura(id: string) {
@@ -151,8 +232,11 @@ async function sendFactura(id: string) {
 const patientNationalId = ref<string | null>(null)
 // Who a logged session belongs to when it has to invent the visit.
 const patientDefaultPractitionerId = ref<string | null>(null)
+// A valid one: an ID on file that the AEAT would not take as a NIF -- a wrong
+// check letter, a passport -- is sent as no recipient at all (registroAlta),
+// so for this purpose it is still missing.
 const facturasMissingNif = computed(() =>
-  patientNationalId.value ? [] : facturas.value.filter((f) => f.kind === 'full' && !f.recipient_nif),
+  validSpanishTaxId(patientNationalId.value) ? [] : facturas.value.filter((f) => f.kind === 'full' && !validSpanishTaxId(f.recipient_nif)),
 )
 const { packageTemplates, membershipTemplates, ensureLoaded: ensureBillingTemplatesLoaded } = useBillingTemplates()
 const addCreditAmount = ref('')
@@ -182,7 +266,7 @@ async function addCredit() {
   //
   // The credit row is still what the patient can draw on; the payment is the
   // record that the money arrived.
-  const { data: creditPayment } = await supabase
+  const { data: creditPayment, error: paymentError } = await supabase
     .from('payments')
     .insert({
       account_id: store.accountId!,
@@ -194,7 +278,14 @@ async function addCredit() {
     })
     .select('id')
     .single()
-  await supabase.from('account_credits').insert({
+  // No payment, no credit: the credit row restates the payment, and written
+  // alone it is money the patient never handed over.
+  if (paymentError || !creditPayment) {
+    creditError.value = paymentRefusedMessage(paymentError)
+    addingCredit.value = false
+    return
+  }
+  const { error: creditRowError } = await supabase.from('account_credits').insert({
     account_id: store.accountId!,
     patient_id: props.patientId,
     amount_cents: amountCents,
@@ -203,23 +294,24 @@ async function addCredit() {
     // The row restates the payment above rather than adjusting anything, and
     // says so -- otherwise the balance counts the same euros twice, once as
     // money in and once as credit. See the column comment.
-    payment_id: creditPayment?.id ?? null,
+    payment_id: creditPayment.id,
     created_by: store.teamMember?.id ?? null,
   })
-  if (creditPayment) {
-    await issueFactura({
-      accountId: store.accountId!,
-      patientId: props.patientId,
-      paymentId: creditPayment.id,
-      amountCents,
-      purpose: 'on_account',
-    })
-  }
+  // The money did arrive, so its factura is still issued below; the credit
+  // row failing is reported rather than hidden.
+  if (creditRowError) creditError.value = t('The payment was recorded but the credit could not be added', 'El pago se registró, pero no se pudo añadir el crédito') + `: ${creditRowError.message}`
+  await issueFactura({
+    accountId: store.accountId!,
+    patientId: props.patientId,
+    paymentId: creditPayment.id,
+    amountCents,
+    purpose: 'on_account',
+  })
   addCreditAmount.value = ''
   addCreditReason.value = ''
   addCreditMethod.value = 'cash'
   addingCredit.value = false
-  activePanel.value = null
+  if (!creditRowError) activePanel.value = null
   await Promise.all([loadAll(), refreshCreditSummary(), loadFacturas()])
 }
 
@@ -234,14 +326,21 @@ async function applyCreditToInvoice() {
   creditError.value = ''
   applyingCredit.value = true
 
-  await supabase.from('payments').insert({
+  const { error: paymentError } = await supabase.from('payments').insert({
     account_id: store.accountId!,
     patient_id: props.patientId,
     invoice_id: invoice.id,
     amount_cents: amountCents,
     method: 'credit',
   })
-  await supabase.from('account_credits').insert({
+  // Spending credit the invoice never received would take it off the
+  // patient's balance for nothing.
+  if (paymentError) {
+    creditError.value = paymentRefusedMessage(paymentError)
+    applyingCredit.value = false
+    return
+  }
+  const { error: creditRowError } = await supabase.from('account_credits').insert({
     account_id: store.accountId!,
     patient_id: props.patientId,
     amount_cents: -amountCents,
@@ -249,6 +348,7 @@ async function applyCreditToInvoice() {
     invoice_id: invoice.id,
     created_by: store.teamMember?.id ?? null,
   })
+  if (creditRowError) creditError.value = t('The payment was recorded but the credit could not be drawn down', 'El pago se registró, pero no se pudo descontar el crédito') + `: ${creditRowError.message}`
 
   await settleInvoiceIfCovered(supabase, invoice.id)
 
@@ -297,7 +397,7 @@ async function takePayment() {
   }
   takingPayment.value = true
 
-  const { data: insertedPayments } = await supabase
+  const { data: insertedPayments, error: insertError } = await supabase
     .from('payments')
     .insert(
       rows.map((r) => ({
@@ -310,6 +410,14 @@ async function takePayment() {
       })),
     )
     .select('id, amount_cents, method')
+  // One insert for every row, so it is all or nothing: nothing was taken,
+  // and the panel stays open with the reason rather than closing as if it
+  // had been.
+  if (insertError || !insertedPayments?.length) {
+    paymentError.value = paymentRefusedMessage(insertError)
+    takingPayment.value = false
+    return
+  }
 
   // A factura for the money that actually came in. 'credit' rows are excluded:
   // spending account credit moves no money and was already documented when
@@ -326,8 +434,9 @@ async function takePayment() {
     })
   }
   const creditRows = rows.filter((r) => r.method === 'credit')
+  let creditRowError: { message: string } | null = null
   if (creditRows.length > 0) {
-    await supabase.from('account_credits').insert(
+    ;({ error: creditRowError } = await supabase.from('account_credits').insert(
       creditRows.map((r) => ({
         account_id: store.accountId!,
         patient_id: props.patientId,
@@ -336,7 +445,7 @@ async function takePayment() {
         invoice_id: invoice.id,
         created_by: store.teamMember?.id ?? null,
       })),
-    )
+    ))
   }
 
   // An instalment on a bono used to be banked as spendable account credit,
@@ -357,7 +466,11 @@ async function takePayment() {
   }
 
   takingPayment.value = false
-  activePanel.value = null
+  if (creditRowError) {
+    paymentError.value = t('The payment was recorded but the credit could not be drawn down', 'El pago se registró, pero no se pudo descontar el crédito') + `: ${creditRowError.message}`
+  } else {
+    activePanel.value = null
+  }
   await Promise.all([refreshCreditSummary(), loadAll()])
 }
 
@@ -453,22 +566,46 @@ watch(activateMembershipId, (id) => {
 // the existing Stripe autopay/installments flow below, which already has an
 // "already paid" concept for exactly this). Same compound cash/card/other/
 // credit handling as recordPayment's credit branch and applyCreditToInvoice.
-async function recordSalePayment(description: string, amountCents: number, method: string) {
-  const { data: invoiceNumber } = await supabase.rpc('next_invoice_number', { p_account_id: store.accountId! })
-  if (!invoiceNumber) return
+//
+// Returns why it failed, or null. A payment the database refuses means nothing
+// else is written: no credit drawn down (the D2 rule addCredit and
+// applyCreditToInvoice already follow) and no receipt left saying "paid".
+async function recordSalePayment(description: string, amountCents: number, method: string): Promise<string | null> {
+  const { data: invoiceNumber, error: numberError } = await supabase.rpc('next_invoice_number', { p_account_id: store.accountId! })
+  if (!invoiceNumber) return paymentRefusedMessage(numberError)
 
-  const { data: invoice } = await supabase
+  const { data: invoice, error: invoiceError } = await supabase
     .from('invoices')
     .insert({ account_id: store.accountId!, patient_id: props.patientId, invoice_number: invoiceNumber, status: 'paid', total_cents: amountCents })
     .select('id')
     .single()
-  if (!invoice) return
+  if (!invoice) return paymentRefusedMessage(invoiceError)
 
   await supabase.from('invoice_line_items').insert({ account_id: store.accountId!, invoice_id: invoice.id, description, quantity: 1, price_cents: amountCents })
 
+  const { data: payment, error: paymentError } = await supabase
+    .from('payments')
+    .insert({
+      account_id: store.accountId!,
+      patient_id: props.patientId,
+      invoice_id: invoice.id,
+      amount_cents: amountCents,
+      method,
+      ...(method === 'credit' ? {} : { purpose: 'membership' as const }),
+    })
+    .select('id')
+    .single()
+  if (paymentError || !payment) {
+    // The receipt above was raised as paid for this payment and nothing else;
+    // left standing it is a charge marked settled by money that never came.
+    // It was written a moment ago by this same call, has no payments and no
+    // factura, so taking it back out is safe.
+    await supabase.from('invoices').delete().eq('id', invoice.id)
+    return paymentRefusedMessage(paymentError)
+  }
+
   if (method === 'credit') {
-    await supabase.from('payments').insert({ account_id: store.accountId!, patient_id: props.patientId, invoice_id: invoice.id, amount_cents: amountCents, method: 'credit' })
-    await supabase.from('account_credits').insert({
+    const { error: creditRowError } = await supabase.from('account_credits').insert({
       account_id: store.accountId!,
       patient_id: props.patientId,
       amount_cents: -amountCents,
@@ -476,23 +613,20 @@ async function recordSalePayment(description: string, amountCents: number, metho
       invoice_id: invoice.id,
       created_by: store.teamMember?.id ?? null,
     })
-  } else {
-    const { data: payment } = await supabase
-      .from('payments')
-      .insert({ account_id: store.accountId!, patient_id: props.patientId, invoice_id: invoice.id, amount_cents: amountCents, method, purpose: 'membership' })
-      .select('id')
-      .single()
-    if (payment) {
-      await issueFactura({
-        accountId: store.accountId!,
-        patientId: props.patientId,
-        paymentId: payment.id,
-        amountCents,
-        purpose: 'membership',
-        serviceName: description,
-      })
+    if (creditRowError) {
+      return t('The payment was recorded but the credit could not be drawn down', 'El pago se registró, pero no se pudo descontar el crédito') + `: ${creditRowError.message}`
     }
+  } else {
+    await issueFactura({
+      accountId: store.accountId!,
+      patientId: props.patientId,
+      paymentId: payment.id,
+      amountCents,
+      purpose: 'membership',
+      serviceName: description,
+    })
   }
+  return null
 }
 
 // The payment side of a bono sale or instalment. Cash/card money settles the
@@ -508,8 +642,8 @@ async function recordPackagePayment(
     method: string,
     description: string,
     bono?: { priceCents: number; sessionsTotal: number },
-  ) {
-  if (!packagePurchaseId) return
+  ): Promise<string | null> {
+  if (!packagePurchaseId) return null
   // Attached to the bono, not to an invoice. Selling a bono used to raise an
   // invoice for its full price and hang the payments off that -- which
   // charged the patient twice, because every visit drawn from the bono raises
@@ -521,7 +655,7 @@ async function recordPackagePayment(
   // 5 removed them -- and they have been correct all along: the money sits on
   // the account and each visit's charge draws it down. This makes a bono sold
   // here behave the same way, so there is one model rather than two.
-  const { data: payment } = await supabase
+  const { data: payment, error: paymentError } = await supabase
     .from('payments')
     .insert({
       account_id: store.accountId!,
@@ -534,12 +668,16 @@ async function recordPackagePayment(
     })
     .select('id')
     .single()
+  // No payment, nothing else: the credit row below restates this payment, and
+  // written alone it takes credit off the patient for a bono nothing was paid
+  // towards.
+  if (paymentError || !payment) return paymentRefusedMessage(paymentError)
 
   // A bono's factura says how much of it this money bought -- "264.00 EUR of
   // 528.00 EUR (6 of 12 sessions)" -- because that is what the patient is
   // actually purchasing when they pay an instalment. Not issued for a credit
   // payment: that money was documented when it was paid in.
-  if (payment && method !== 'credit' && bono) {
+  if (method !== 'credit' && bono) {
     await issueFactura({
       accountId: store.accountId!,
       patientId: props.patientId,
@@ -550,7 +688,7 @@ async function recordPackagePayment(
     })
   }
   if (method === 'credit') {
-    await supabase.from('account_credits').insert({
+    const { error: creditRowError } = await supabase.from('account_credits').insert({
       account_id: store.accountId!,
       patient_id: props.patientId,
       amount_cents: -amountCents,
@@ -558,7 +696,11 @@ async function recordPackagePayment(
       invoice_id: null,
       created_by: store.teamMember?.id ?? null,
     })
+    if (creditRowError) {
+      return t('The payment was recorded but the credit could not be drawn down', 'El pago se registró, pero no se pudo descontar el crédito') + `: ${creditRowError.message}`
+    }
   }
+  return null
 }
 
 // Each loader below is independent -- its own query pair, its own loading
@@ -611,7 +753,7 @@ async function fetchLedger(): Promise<() => void> {
       .eq('patient_id', props.patientId),
     supabase
       .from('account_credits')
-      .select('id, amount_cents, reason, method, invoice_id, created_at')
+      .select('id, amount_cents, reason, method, invoice_id, payment_id, created_at')
       .eq('patient_id', props.patientId)
       .order('created_at', { ascending: true }),
     supabase
@@ -714,7 +856,7 @@ async function fetchPackages(): Promise<() => void> {
 async function loadMemberships({ silent = false } = {}) {
   if (!silent) membershipsLoading.value = true
   const [{ data: patMemberships }, { data: membershipPaymentRows }] = await Promise.all([
-    supabase.from('patient_memberships').select('id, membership_name, price_cents, status, started_at, memberships(billing_interval, billing_interval_count)').eq('patient_id', props.patientId).order('started_at', { ascending: false }),
+    supabase.from('patient_memberships').select('id, membership_name, price_cents, status, started_at, billing_interval, billing_interval_count, memberships(billing_interval, billing_interval_count)').eq('patient_id', props.patientId).order('started_at', { ascending: false }),
     supabase
       .from('membership_payments')
       .select('id, patient_membership_id, period_start, amount_cents, status, patient_memberships!inner(patient_id)')
@@ -783,6 +925,10 @@ onMounted(async () => {
 // already active (no remount, so the prop's own change is what fires this).
 function maybeOpenPaymentFromTrigger() {
   if (!props.openPaymentTrigger) return
+  if (!canTakePayments.value) {
+    emit('paymentTriggerConsumed')
+    return
+  }
   activePanel.value = 'payment'
   emit('paymentTriggerConsumed')
 }
@@ -807,13 +953,55 @@ async function sendInvoiceEmail(invoiceId: string) {
   }, 3000)
 }
 
-// Deleting cascades to this invoice's own line items and payments (both
-// on delete cascade) -- the intended use is fixing a mis-entered sale or
-// payment by deleting the wrong invoice outright and redoing it correctly,
-// rather than trying to edit amounts in place after the fact.
+// Deleting a receipt removes the receipt and its own lines, and nothing else.
+//
+// It used to say it removed the payments recorded against it too. Since 0170
+// payments.invoice_id is ON DELETE SET NULL, so it did not: the payments
+// survived as unallocated money on account while the charge they settled
+// vanished -- the patient's balance moved by the whole receipt, with nothing
+// on screen to say why. So a receipt with payments is not deleted here at all:
+// each payment is removed (recorded in error) or refunded (money went back)
+// first, which are the two instruments that say what actually happened. That
+// also covers facturas, which belong to payments: a receipt with none has no
+// factura behind it.
+//
+// The intended use is unchanged -- a charge raised in error, deleted outright
+// and raised again correctly.
 async function deleteInvoice(invoice: InvoiceRow) {
-  if (!confirm(`${t('Delete receipt', 'Eliminar recibo')} ${invoice.invoice_number} (${money(invoice.total_cents)})? ${t("This also removes any payments recorded against it. This can't be undone.", 'Esto también elimina los pagos registrados contra ella. Esta acción no se puede deshacer.')}`)) return
-  await supabase.from('invoices').delete().eq('id', invoice.id)
+  // Read now, not from the ledger on screen: another till may have taken a
+  // payment against it since this tab loaded.
+  const { data: paid, error: paidError } = await supabase.from('payments').select('id').eq('invoice_id', invoice.id).limit(1)
+  if (paidError) {
+    showToast(paidError.message, 'error')
+    return
+  }
+  if ((paid ?? []).length > 0) {
+    showToast(
+      t(
+        `${invoice.invoice_number} has payments recorded against it, so it cannot be deleted. Remove each payment if it was recorded in error, or refund it if money went back, then delete the receipt.`,
+        `${invoice.invoice_number} tiene pagos registrados, así que no se puede eliminar. Elimina cada pago si se registró por error, o reembólsalo si se devolvió el dinero, y después elimina el recibo.`,
+      ),
+      'error',
+      10000,
+    )
+    return
+  }
+  if (
+    !confirm(
+      `${t('Delete receipt', 'Eliminar recibo')} ${invoice.invoice_number} (${money(invoice.total_cents)})? ${t(
+        "It has no payments; the charge and its lines are removed from the patient's account. This can't be undone.",
+        'No tiene pagos; el cargo y sus líneas se eliminan de la cuenta del paciente. Esta acción no se puede deshacer.',
+      )}`,
+    )
+  )
+    return
+  // Checked, and checked for a row: a policy refuses a delete by matching
+  // nothing rather than by erroring.
+  const { data: deleted, error } = await supabase.from('invoices').delete().eq('id', invoice.id).select('id')
+  if (error || !deleted?.length) {
+    showToast(error?.message ?? t('This receipt could not be deleted.', 'No se pudo eliminar este recibo.'), 'error')
+    return
+  }
   await Promise.all([loadAll(), refreshCreditSummary(), loadFacturas()])
 }
 
@@ -868,8 +1056,8 @@ async function deletePayment(paymentId: string, invoiceId: string | null, amount
         (facturaNumbers
           ? '\n\n' +
             t(
-              `Factura ${facturaNumbers} was issued for this payment. It stays on the fiscal series and will be flagged as no longer matching a payment. If money actually went back to the patient, record a refund instead.`,
-              `Se emitió la factura ${facturaNumbers} por este pago. Seguirá en la serie fiscal y quedará marcada como sin pago asociado. Si el dinero se devolvió realmente al paciente, registra un reembolso en su lugar.`,
+              `Factura ${facturaNumbers} was issued for this payment. It stays on the fiscal series, flagged as no longer matching a payment; annul it afterwards from Facturas & receipts. If money actually went back to the patient, record a refund instead.`,
+              `Se emitió la factura ${facturaNumbers} por este pago. Seguirá en la serie fiscal, marcada como sin pago asociado; después puedes anularla desde Facturas y recibos. Si el dinero se devolvió realmente al paciente, registra un reembolso en su lugar.`,
             )
           : ''),
     )
@@ -920,12 +1108,15 @@ async function refundableCentsFor(invoiceId: string): Promise<number> {
   const invoice = invoices.value.find((i) => i.id === invoiceId)
   if (!invoice) return 0
   const [{ data: paid }, alreadyRefunded] = await Promise.all([
-    supabase.from('payments').select('amount_cents').eq('invoice_id', invoiceId),
+    supabase.from('payments').select('amount_cents, method').eq('invoice_id', invoiceId),
     Promise.resolve(
       invoices.value.filter((i) => i.is_refund && i.refunds_invoice_id === invoiceId).reduce((sum, i) => sum + Math.abs(i.total_cents), 0),
     ),
   ])
-  const paidCents = (paid ?? []).reduce((sum, p) => sum + p.amount_cents, 0)
+  // Only money that came in can go back out -- the ledger's rule, held here on
+  // the write too. A write-off collected nothing, and a 'credit' payment spent
+  // a balance that was paid in (and is refundable) on its own payment.
+  const paidCents = (paid ?? []).filter((p) => isReceipt(p.method)).reduce((sum, p) => sum + p.amount_cents, 0)
   return Math.max(0, paidCents - alreadyRefunded)
 }
 
@@ -933,20 +1124,25 @@ async function refundableCentsFor(invoiceId: string): Promise<number> {
 // the action -- re-derived here rather than trusted from the payload, for the
 // reason refundableCentsFor exists: the cap is what stops money being returned
 // twice, so it has to hold on the write and not only in the UI.
-async function refundablePaymentCentsFor(paymentId: string): Promise<number> {
-  const { data: payment } = await supabase.from('payments').select('id, invoice_id, amount_cents, method').eq('id', paymentId).maybeSingle()
-  if (!payment || payment.amount_cents <= 0 || payment.method === 'write_off') return 0
-
-  const refundedAgainstPayment = invoices.value
-    .filter((i) => i.is_refund && i.refunds_payment_id === paymentId)
-    .reduce((sum, i) => sum + Math.abs(i.total_cents), 0)
-  const paymentRoom = payment.amount_cents - refundedAgainstPayment
-
-  // Money on account is not refundable this way -- its account_credits row
-  // would survive the refund and stay spendable. See the ledger's copy.
-  if (!payment.invoice_id) return 0
-
-  return Math.max(0, Math.min(paymentRoom, await refundableCentsFor(payment.invoice_id)))
+//
+// Read from the database rather than the ledger already on screen, every input
+// of it: the payment, the credit row that would make it a top-up, and the
+// payments both rooms are made of -- this patient's, which include the refunds
+// naming it, and everything on its receipt, whoever's row it sits on.
+async function refundablePaymentCentsFor(paymentId: string): Promise<{ cents: number; loose: boolean }> {
+  const [{ data: payment }, { data: credits }, { data: patientPayments }] = await Promise.all([
+    supabase.from('payments').select('id, invoice_id, amount_cents, method, purpose, package_purchase_id').eq('id', paymentId).maybeSingle(),
+    supabase.from('account_credits').select('payment_id').eq('payment_id', paymentId),
+    supabase.from('payments').select('id, invoice_id, amount_cents, method').eq('patient_id', props.patientId),
+  ])
+  if (!payment) return { cents: 0, loose: false }
+  const { data: receiptPayments } = payment.invoice_id
+    ? await supabase.from('payments').select('id, invoice_id, amount_cents, method').eq('invoice_id', payment.invoice_id)
+    : { data: [] as { id: string; invoice_id: string | null; amount_cents: number; method: string }[] }
+  const payments = [...new Map([...(patientPayments ?? []), ...(receiptPayments ?? [])].map((p) => [p.id, p])).values()]
+  const creditPaymentIds = new Set((credits ?? []).map((c) => c.payment_id as string))
+  const cents = paymentRefundableCents(payment, invoices.value, payments, creditPaymentIds)
+  return { cents, loose: !payment.invoice_id }
 }
 
 // `paymentId` set means this refund names the single payment it gives back --
@@ -958,8 +1154,20 @@ async function createRefund(invoiceId: string | null, paymentId: string | null, 
   if (invoiceId && !invoice) return
   if (!invoice && !paymentId) return
 
-  const maxRefundable = paymentId ? await refundablePaymentCentsFor(paymentId) : await refundableCentsFor(invoiceId!)
-  if (amountCents > maxRefundable) return
+  const room = paymentId ? await refundablePaymentCentsFor(paymentId) : { cents: await refundableCentsFor(invoiceId!), loose: false }
+  if (amountCents > room.cents) return
+
+  // A payment with no receipt may be handing back money that was still on the
+  // account rather than correcting a charge; that share comes off the refund
+  // invoice so the balance -- and the credit offered at the desk -- drops with
+  // it. See onAccountShareCents. The summary is refreshed first so the
+  // surplus is today's, not whatever this tab last loaded.
+  let onAccountCents = 0
+  if (room.loose) {
+    await refreshCreditSummary()
+    onAccountCents = onAccountShareCents(amountCents, balanceCents.value - creditLedgerCents.value - committedBonoCents.value)
+  }
+  const chargeCorrectionCents = amountCents - onAccountCents
 
   // Its own series, so a refund no longer consumes an invoice number.
   const { data: invoiceNumber } = await supabase.rpc('next_invoice_number', { p_account_id: store.accountId!, p_prefix: 'REF-' })
@@ -972,7 +1180,7 @@ async function createRefund(invoiceId: string | null, paymentId: string | null, 
       patient_id: props.patientId,
       invoice_number: invoiceNumber,
       status: 'paid',
-      total_cents: -amountCents,
+      total_cents: -chargeCorrectionCents,
       is_refund: true,
       // Both, when there is a receipt behind the payment: the two caps read
       // different columns, and a refund missing from either one is a refund
@@ -989,7 +1197,7 @@ async function createRefund(invoiceId: string | null, paymentId: string | null, 
     invoice_id: refund.id,
     description: refundDescription(invoice?.invoice_number ?? null, reason),
     quantity: 1,
-    price_cents: -amountCents,
+    price_cents: -chargeCorrectionCents,
   })
 
   // Without this, the refund never showed up as money leaving in
@@ -1221,8 +1429,13 @@ const statusTone: Record<string, 'success' | 'danger' | 'warning' | 'neutral'> =
 }
 
 async function sellPackage() {
-  const tpl = packageTemplates.value.find((p) => p.id === sellPackageId.value)
-  if (!tpl) return
+  // Read again at the sale, not from the list loaded earlier: a price another
+  // member changed in Settings since then would otherwise be sold at the old
+  // one.
+  const cached = packageTemplates.value.find((p) => p.id === sellPackageId.value)
+  if (!cached) return
+  const { data: fresh } = await supabase.from('packages').select('id, name, session_count, price_cents').eq('id', cached.id).maybeSingle()
+  const tpl = fresh ?? cached
   const amountCents = Math.round((parseFloat(sellAmountPaid.value) || 0) * 100)
   // Against what is actually spendable, and against the amount being paid
   // now rather than the package's price -- part-paying a EUR 528 bono with
@@ -1254,10 +1467,17 @@ async function sellPackage() {
     .single()
   // Amount paid can be less than the package's full price -- the rest is
   // expected via the existing "Set up autopay" Stripe schedule below.
+  let paymentProblem: string | null = null
   if (purchase && amountCents > 0) {
-    await recordPackagePayment(purchase.id, amountCents, sellMethod.value, tpl.name, { priceCents: tpl.price_cents, sessionsTotal: tpl.session_count })
+    paymentProblem = await recordPackagePayment(purchase.id, amountCents, sellMethod.value, tpl.name, { priceCents: tpl.price_cents, sessionsTotal: tpl.session_count })
   }
   sellingPackage.value = false
+  // The bono is sold either way -- what it costs is owed on it -- but nothing
+  // was paid towards it, and reception has to know before the patient leaves.
+  if (paymentProblem) {
+    creditError.value = paymentProblem
+    showToast(paymentProblem, 'error', 10000)
+  }
   sellPackageId.value = ''
   sellAmountPaid.value = ''
   sellMethod.value = 'cash'
@@ -1359,11 +1579,16 @@ async function submitPackageCollection(purchase: PackagePurchaseRow) {
   }
   collectError.value = ''
   collectingPayment.value = true
-  await recordPackagePayment(purchase.id, amountCents, collectMethod.value, purchase.package_name, {
+  const problem = await recordPackagePayment(purchase.id, amountCents, collectMethod.value, purchase.package_name, {
     priceCents: purchase.price_cents,
     sessionsTotal: purchase.sessions_total,
   })
   collectingPayment.value = false
+  if (problem) {
+    collectError.value = problem
+    await Promise.all([loadAll(), refreshCreditSummary(), loadFacturas()])
+    return
+  }
   collectOnPackageId.value = null
   collectAmount.value = ''
   await Promise.all([loadAll(), refreshCreditSummary(), loadFacturas()])
@@ -1426,10 +1651,18 @@ async function linkPaymentToPackage(purchase: PackagePurchaseRow) {
   // credit-method payment that pays the bono down; utils/bonoOwed skips
   // on-account money for exactly this reason, so the two cannot both count.
   if (payment?.purpose === 'on_account') {
-    await recordPackagePayment(purchase.id, payment.amount_cents, 'credit', purchase.package_name, {
+    const problem = await recordPackagePayment(purchase.id, payment.amount_cents, 'credit', purchase.package_name, {
       priceCents: purchase.price_cents,
       sessionsTotal: purchase.sessions_total,
     })
+    // Not relabelled either: the credit was not drawn down, so pointing the
+    // payment at the bono would show it paid with the credit still standing.
+    if (problem) {
+      linkingPayment.value = false
+      showToast(problem, 'error', 10000)
+      await Promise.all([loadAll(), refreshCreditSummary()])
+      return
+    }
   }
   await supabase.from('payments').update({ package_purchase_id: purchase.id }).eq('id', linkPaymentSelection.value)
 
@@ -1460,6 +1693,10 @@ const loggingSessionFor = ref<string | null>(null)
 // the next time anyone opens the patient rather than only when they happen
 // to look for it. See utils/unloggedVisits.ts.
 const unloggedVisits = ref<UnloggedVisit[]>([])
+// The ones nothing has paid for at all -- what the bono card warns about. A
+// visit paid at the walk-in price is offered by Log session too, but is not
+// missing anything.
+const unpaidVisits = computed(() => unloggedVisits.value.filter((v) => !v.paidInvoice))
 const loadingUnlogged = ref(false)
 async function loadUnlogged() {
   loadingUnlogged.value = true
@@ -1586,13 +1823,36 @@ async function useSession(purchase: PackagePurchaseRow, choice: LogSessionChoice
       }
       appointmentId = appointment.id
       usedAt = visitTime.toISOString()
-    } else if (visit?.unpaidInvoice) {
-      // One visit, one charge. The bono paid for it, so the invoice raised
-      // against it goes -- void rather than deleted, keeping the number in
-      // the books. Safe to void unconditionally: loadUnloggedVisits
-      // only returns an unpaid one, and 'void invoice keeps payments'
-      // (#169) is about invoices that have some.
-      await supabase.from('invoices').update({ status: 'void' }).eq('id', visit.unpaidInvoice.id)
+    }
+
+    // A visit paid at the walk-in price before the bono was bought: what was
+    // paid on its receipt now pays towards the bono, and the receipt becomes
+    // the session's charge below. Moved first, so the charge reads the
+    // receipt with nothing on it -- the same as a visit nobody had paid for.
+    // The factura for that money stands: it was received, and still was.
+    // See utils/unloggedVisits.paidVisitToMove.
+    const paidReceiptId = visit?.paidInvoice?.id ?? null
+    if (paidReceiptId) {
+      const { error: moveError } = await supabase
+        .from('payments')
+        .update({ invoice_id: null, purpose: 'bono', package_purchase_id: purchase.id })
+        .eq('invoice_id', paidReceiptId)
+      if (moveError) {
+        // Nothing else written yet bar the claim: give the session back.
+        await supabase
+          .from('package_purchases')
+          .update({ sessions_used: purchase.sessions_used })
+          .eq('id', purchase.id)
+          .eq('sessions_used', purchase.sessions_used + 1)
+        alert(
+          t(
+            `The payment could not be moved to the bono, so no session was used. (${moveError.message})`,
+            `No se pudo pasar el pago al bono, así que no se ha usado ninguna sesión. (${moveError.message})`,
+          ),
+        )
+        await loadAll()
+        return
+      }
     }
 
     // The visit on the bono's own history.
@@ -1608,35 +1868,42 @@ async function useSession(purchase: PackagePurchaseRow, choice: LogSessionChoice
     // And its charge, at the bono's per-session rate. This is what draws the
     // prepayment down: the money went into the balance when the bono was
     // bought, and each visit takes its share back out. Marked paid where the
-    // balance already covers it, the same rule the imported history follows.
-    const { data: chargeNumber } = await supabase.rpc('next_invoice_number', { p_account_id: store.accountId! })
-    if (chargeNumber) {
-      const { data: charge } = await supabase
-        .from('invoices')
-        .insert({
-          account_id: store.accountId!,
-          patient_id: props.patientId,
-          appointment_id: appointmentId,
-          invoice_number: chargeNumber,
-          // The FAMILY's balance, not this patient's: on a shared bono the
-          // money sits on the owner's record. See bonoVisitChargeStatus().
-          status: await bonoVisitChargeStatus(supabase, props.patientId, perSessionCents, balanceCents.value),
-          total_cents: perSessionCents,
-        })
-        .select('id')
-        .single()
-      if (charge) {
-        await supabase.from('invoice_line_items').insert({
-          account_id: store.accountId!,
-          invoice_id: charge.id,
-          description: bonoSessionDescription(purchase.package_name),
-          // Which bono, as a key rather than as words. The description is a
-          // copy of the name at purchase time and is not an identifier.
-          package_purchase_id: purchase.id,
-          quantity: 1,
-          price_cents: perSessionCents,
-        })
-      }
+    // (family) balance already covers it, the rule the imported history follows.
+    //
+    // On the receipt the visit already has, the same way the calendar does it
+    // (utils/bonoVisitInvoice). This used to VOID that receipt and raise a new
+    // one: one receipt carrying only the visit lost nothing but its number's
+    // meaning, but one carrying extras -- a product sold at the visit -- had
+    // them voided with it, so money genuinely owed stopped being owed. Now the
+    // visit's line is what goes, extras stay on their receipt, and a receipt
+    // with nothing else on it simply becomes the session's charge.
+    const { error: chargeError } = await chargeBonoVisit(supabase, {
+      accountId: store.accountId!,
+      patientId: props.patientId,
+      appointmentId: appointmentId!,
+      perSessionCents,
+      bonoName: purchase.package_name,
+      bonoPurchaseId: purchase.id,
+      ownBalanceCents: balanceCents.value,
+      reusePaidReceiptId: paidReceiptId,
+    })
+    if (chargeError) {
+      showToast(
+        t(`The session was logged, but its charge could not be recorded: ${chargeError}`, `La sesión se ha registrado, pero no se ha podido registrar su cargo: ${chargeError}`),
+        'error',
+        10000,
+      )
+    }
+
+    // A visit from the calendar is now settled, so it is completed -- as the
+    // calendar's own bono checkout completes it. Only an invented visit was
+    // ever written completed: one picked from the calendar kept whatever it
+    // had, and a checked-in patient's stayed "booked" at checkout: a session
+    // logged and charged here still showed on the calendar as waiting to be
+    // charged. Booked only: a
+    // cancellation or no-show is not something logging a session overrides.
+    if (visit) {
+      await supabase.from('appointments').update({ status: 'completed' }).eq('id', visit.id).eq('status', 'booked')
     }
 
     // Deliberately fires no appointment.completed/invoice.paid automation:
@@ -1712,8 +1979,11 @@ async function removeShare(packageId: string, patientId: string) {
 }
 
 async function activateMembership() {
-  const tpl = membershipTemplates.value.find((m) => m.id === activateMembershipId.value)
-  if (!tpl) return
+  // Read again at the sale, as for bonos above.
+  const cachedPlan = membershipTemplates.value.find((m) => m.id === activateMembershipId.value)
+  if (!cachedPlan) return
+  const { data: freshPlan } = await supabase.from('memberships').select('id, name, price_cents').eq('id', cachedPlan.id).maybeSingle()
+  const tpl = freshPlan ?? cachedPlan
   const amountCents = Math.round((parseFloat(activateAmountPaid.value) || 0) * 100)
   if (activateMethod.value === 'credit' && amountCents > spendableCreditCents.value) {
     creditError.value = t('Amount exceeds available credit.', 'El importe supera el crédito disponible.')
@@ -1740,8 +2010,12 @@ async function activateMembership() {
     return
   }
   fire('membership.new_member', { patientId: props.patientId, membershipId: newMembership.id })
-  if (amountCents > 0) await recordSalePayment(tpl.name, amountCents, activateMethod.value)
+  const paymentProblem = amountCents > 0 ? await recordSalePayment(tpl.name, amountCents, activateMethod.value) : null
   activatingMembership.value = false
+  if (paymentProblem) {
+    creditError.value = paymentProblem
+    showToast(paymentProblem, 'error', 10000)
+  }
   activateMembershipId.value = ''
   activateAmountPaid.value = ''
   activateMethod.value = 'cash'
@@ -1878,7 +2152,7 @@ function money(cents: number) {
           {{ formatLongDate(oldestUnpaid.created_at) }}
         </p>
         <p v-else class="mt-0.5 text-[12px] text-ink-muted2">{{ t('Nothing outstanding.', 'Nada pendiente.') }}</p>
-        <div class="mt-3 flex flex-wrap gap-2">
+        <div v-if="canTakePayments" class="mt-3 flex flex-wrap gap-2">
           <UiBtn variant="primary" size="sm" @click="activePanel === 'payment' ? (activePanel = null) : openTakePayment()">
             {{ t('Take payment', 'Registrar pago') }}
           </UiBtn>
@@ -1941,7 +2215,7 @@ function money(cents: number) {
           </div>
         </dl>
 
-        <div class="mt-3">
+        <div v-if="canTakePayments" class="mt-3">
           <UiBtn variant="secondary" size="sm" @click="activePanel = activePanel === 'credit' ? null : 'credit'">
             {{ t('Add credit', 'Añadir crédito') }}
           </UiBtn>
@@ -1977,7 +2251,7 @@ function money(cents: number) {
     </div>
 
     <!-- The panels the cards above open. -->
-    <div v-if="activePanel" class="rounded-card border border-line bg-surface p-4 shadow-card">
+    <div v-if="activePanel && canTakePayments" class="rounded-card border border-line bg-surface p-4 shadow-card">
       <div v-if="activePanel === 'credit'" class="mt-4 border-t border-line-divider pt-4">
         <form class="flex flex-wrap items-end gap-2" @submit.prevent="addCredit">
           <div>
@@ -2196,14 +2470,14 @@ function money(cents: number) {
             session and no receipt for nine days. Said here, on the card the
             fix starts from, rather than left for someone to go looking. -->
             <p
-              v-if="unloggedVisits.length > 0 && !p.is_closed && p.sessions_used < p.sessions_total"
+              v-if="unpaidVisits.length > 0 && !p.is_closed && p.sessions_used < p.sessions_total"
               data-cy="bono-unlogged-visits"
               class="mt-2.5 rounded-ctl bg-warning-bg px-2.5 py-2 text-[12px] text-warning-text"
             >
               {{
-                unloggedVisits.length === 1
-                  ? t(`1 visit has no session or payment: ${formatShortDate(unloggedVisits[0].starts_at)}.`, `1 visita no tiene sesión ni pago: ${formatShortDate(unloggedVisits[0].starts_at)}.`)
-                  : t(`${unloggedVisits.length} visits have no session or payment.`, `${unloggedVisits.length} visitas no tienen sesión ni pago.`)
+                unpaidVisits.length === 1
+                  ? t(`1 visit has no session or payment: ${formatShortDate(unpaidVisits[0].starts_at)}.`, `1 visita no tiene sesión ni pago: ${formatShortDate(unpaidVisits[0].starts_at)}.`)
+                  : t(`${unpaidVisits.length} visits have no session or payment.`, `${unpaidVisits.length} visitas no tienen sesión ni pago.`)
               }}
               <button type="button" class="ml-1 font-semibold underline" @click="openLogSession(p)">{{ t('Log it', 'Registrarla') }}</button>
             </p>
@@ -2427,7 +2701,7 @@ function money(cents: number) {
               </UiBtn>
             </div>
             <div v-else-if="hasCard" class="mt-2.5">
-              <UiBtn v-if="autopayFormFor !== m.id" size="sm" variant="ghost" @click="openAutopayForm(m.id, m.memberships)">
+              <UiBtn v-if="autopayFormFor !== m.id" size="sm" variant="ghost" @click="openAutopayForm(m.id, memberPeriod(m))">
                 {{ t('Set up autopay', 'Configurar pago automático') }}
               </UiBtn>
               <form v-else class="flex flex-wrap items-end gap-1.5 rounded-ctl border border-line-divider bg-surface-subtle p-2.5" @submit.prevent="setUpMembershipAutopay(m)">
@@ -2566,7 +2840,9 @@ function money(cents: number) {
       :can-change-payment-method="can('financials_edit_all') && can('payments_allocate')"
       :can-write-off="can('financials_edit_all')"
       :can-refund="can('financials_edit_all')"
+      :can-take-payments="canTakePayments"
       :open-refund-for-invoice-id="props.refundInvoiceId ?? null"
+      :contact-blocked="props.contactBlocked ?? false"
       @add-credit="activePanel = 'credit'"
       @take-payment="activePanel === 'payment' ? (activePanel = null) : openTakePayment()"
       @send-invoice="sendInvoiceEmail"
@@ -2595,8 +2871,8 @@ function money(cents: number) {
         <p v-if="facturasMissingNif.length > 0" class="mt-2 rounded-ctl border border-amber-border bg-amber-bg px-2.5 py-1.5 text-[12px] text-amber-text">
           {{
             t(
-              `${facturasMissingNif.length} of these need the patient's NIF. Add it on the Overview tab and they will pick it up.`,
-              `${facturasMissingNif.length} de estas necesitan el NIF del paciente. Añádelo en la pestaña Resumen y se actualizarán solas.`,
+              `${facturasMissingNif.length} of these need the patient's NIF (a valid Spanish DNI/NIE/NIF). Add or correct it in the patient's details and they will pick it up.`,
+              `${facturasMissingNif.length} de estas necesitan el NIF del paciente (un DNI/NIE/NIF español válido). Añádelo o corrígelo en los datos del paciente y se actualizarán solas.`,
             )
           }}
         </p>
@@ -2624,8 +2900,15 @@ function money(cents: number) {
                   holes punched in it -- but it now documents money that is no
                   longer recorded, which needs resolving rather than ignoring.
                 -->
-                <span v-if="!f.payment_id" class="ml-1 rounded-ctlSm bg-warning-bg px-1.5 py-0.5 font-sans text-[10.5px] text-warning-text">
+                <span v-if="canAnnulFactura(f)" class="ml-1 rounded-ctlSm bg-warning-bg px-1.5 py-0.5 font-sans text-[10.5px] text-warning-text">
                   {{ t('payment removed', 'pago eliminado') }}
+                </span>
+                <!-- Resolved: a rectificativa now cancels it. -->
+                <span
+                  v-else-if="!f.payment_id && f.kind !== 'rectificativa'"
+                  class="ml-1 rounded-ctlSm bg-chip-bg px-1.5 py-0.5 font-sans text-[10.5px] text-chip-text"
+                >
+                  {{ t('annulled', 'anulada') }}
                 </span>
               </p>
               <p class="truncate text-[12.5px] text-ink-muted2">{{ f.description }}</p>
@@ -2641,6 +2924,15 @@ function money(cents: number) {
               >
                 {{ t('PDF', 'PDF') }}
               </a>
+              <button
+                v-if="canAnnulFactura(f) && can('financials_edit_all') && can('payments_allocate')"
+                type="button"
+                data-cy="factura-annul"
+                class="text-[12px] font-medium text-danger-text hover:opacity-80"
+                @click="annullingFactura = f"
+              >
+                {{ t('Annul', 'Anular') }}
+              </button>
               <span v-if="facturaSendResult[f.id]" class="text-[12px] text-ink-faint">{{ facturaSendResult[f.id] }}</span>
               <button
                 v-else
@@ -2657,6 +2949,36 @@ function money(cents: number) {
       </div>
     </div>
 
+
+    <UiConfirmDialog
+      v-if="annullingFactura"
+      tone="danger"
+      :title="t(`Annul ${annullingFactura.number}?`, `¿Anular ${annullingFactura.number}?`)"
+      :confirm-label="t('Issue rectifying factura', 'Emitir rectificativa')"
+      :cancel-label="t('Cancel', 'Cancelar')"
+      :busy="annulBusy"
+      @confirm="confirmAnnulFactura"
+      @cancel="annullingFactura = null; annulReason = ''"
+    >
+      <p class="text-[14px] leading-snug text-ink-700">
+        {{
+          t(
+            `Issues a rectifying factura for ${money(facturaOutstandingCents(annullingFactura))} that cancels it. No money moves: use this only when the payment was recorded in error. If money went back to the patient, record a refund instead.`,
+            `Emite una factura rectificativa por ${money(facturaOutstandingCents(annullingFactura))} que la anula. No se mueve dinero: úsalo solo si el cobro se registró por error. Si se devolvió dinero al paciente, registra un reembolso.`,
+          )
+        }}
+      </p>
+      <label class="mt-3 block text-[12.5px] font-medium text-ink-700">
+        {{ t('Reason (on the rectifying factura)', 'Motivo (aparece en la rectificativa)') }}
+        <input
+          v-model="annulReason"
+          type="text"
+          data-cy="factura-annul-reason"
+          class="mt-1 w-full rounded-ctl border border-line-control px-2.5 py-1.5 text-[13px] focus:border-brand focus:outline-none"
+          :placeholder="t('payment recorded in error, no money was taken', 'cobro registrado por error, no se cobró nada')"
+        />
+      </label>
+    </UiConfirmDialog>
 
     <PatientsStripeCardModal
       v-if="showCardModal"

@@ -380,7 +380,7 @@ const facts = computed(() => {
       </UiPill>
     </PageHeader>
     <div class="flex-1 overflow-y-auto">
-      <div class="flex gap-8 p-6">
+      <div class="flex gap-8 p-4 pb-24 sm:px-6 sm:pt-6 lg:pb-6">
         <SettingsNav />
         <div class="flex min-w-0 max-w-[900px] flex-1 flex-col gap-4" data-cy="verifactu-settings">
           <p class="text-[13.5px] leading-snug text-ink-muted">
@@ -653,7 +653,7 @@ const facts = computed(() => {
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
                   {{ settings.certificate ? t('Replace the certificate', 'Sustituir el certificado') : t('Upload a certificate', 'Subir un certificado') }}
                 </summary>
-                <form class="grid gap-3 px-[18px] pb-4 sm:grid-cols-2" @submit.prevent="uploadCertificate">
+                <form class="grid grid-cols-[minmax(0,1fr)] gap-3 px-[18px] pb-4 sm:grid-cols-2" @submit.prevent="uploadCertificate">
                   <label class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
                     {{ t('Type', 'Tipo') }}
                     <select v-model="certType" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-2 text-[14px] font-normal text-ink-900">

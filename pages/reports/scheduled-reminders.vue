@@ -134,15 +134,22 @@ const rescheduleRequested = computed(() => appointments.value.filter((a) => a.co
 function fmt(iso: string) {
   return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
+
+// What "Download PDF" reads: the sections below marked data-pdf-block,
+// and the figure tiles (components/reports/Stat.vue).
+const pdfRoot = ref<HTMLElement | null>(null)
 </script>
 
 <template>
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Scheduled Reminders', 'Recordatorios programados')" :meta="t('WhatsApp delivery and confirmation status', 'Estado de entrega y confirmación de WhatsApp')">
-      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
+      <div class="flex items-center gap-3">
+        <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
+        <ReportsPdfButton :target="pdfRoot" :title="t('Scheduled Reminders', 'Recordatorios programados')" :range="range" />
+      </div>
     </PageHeader>
 
-    <div class="flex-1 overflow-y-auto bg-surface-page px-6 pb-10 pt-[18px]">
+    <div ref="pdfRoot" class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] sm:px-6">
       <p class="text-[13px] text-ink-muted2">{{ t('Did every WhatsApp actually send, and who has confirmed, is pending, or asked to reschedule.', 'Si todos los WhatsApp se enviaron realmente, y quién ha confirmado, está pendiente o ha pedido reprogramar.') }}</p>
 
       <p v-if="!canReadMessages" class="mt-4 rounded-ctl border border-line bg-surface-subtle px-3 py-2 text-[13px] text-ink-muted">

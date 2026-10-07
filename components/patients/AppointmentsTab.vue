@@ -13,7 +13,14 @@ import type { VisitPayment } from '~/utils/visitPayment'
 // The four counters at the top used to be a KPI strip on Overview, where
 // they sat above a patient's contact details answering a question nobody
 // had asked yet. They belong to this tab, which is the one about visits.
-const props = defineProps<{ patientId: string; firstName?: string; lastName?: string | null; preferredLanguage?: string }>()
+const props = defineProps<{
+  patientId: string
+  firstName?: string
+  lastName?: string | null
+  preferredLanguage?: string
+  /** Under age or "do not contact": the history is not sent to them, by any channel. */
+  contactBlocked?: boolean
+}>()
 
 interface AppointmentRow {
   id: string
@@ -150,7 +157,7 @@ function paymentLine(appt: AppointmentRow): { text: string; tone: 'muted' | 'dan
   if (payment.kind === 'void') {
     return { text: t('Charge voided', 'Cargo anulado'), tone: 'muted', mono: payment.invoiceNumber }
   }
-  const methods = payment.methods.map((m) => METHOD_LABELS.value[m] ?? m).join(' + ')
+  const methods = payment.methods.map((m) => METHOD_LABELS.value[m] ?? m).join(' + ') || t('Paid', 'Pagada')
   return { text: methods, tone: 'muted', mono: payment.facturaNumber ?? payment.invoiceNumber }
 }
 
@@ -243,12 +250,19 @@ const stats = computed(() => [
             <span v-if="!loading" class="ml-1 font-normal text-ink-faint">{{ group.rows.length }}</span>
           </h2>
           <div v-if="group.key === 'upcoming'" class="flex items-center gap-2">
-            <UiBtn variant="primary" size="sm" @click="navigateTo('/calendar')">{{ t('Book visit', 'Reservar visita') }}</UiBtn>
+            <UiBtn variant="primary" size="sm" @click="navigateTo({ path: '/calendar', query: { patient: patientId } })">{{ t('Book visit', 'Reservar visita') }}</UiBtn>
           </div>
           <div v-else class="flex items-center gap-2">
             <span v-if="sendMessage" class="text-[12px] text-ink-faint">{{ sendMessage }}</span>
             <div class="relative">
-              <UiBtn variant="secondary" size="sm" :disabled="sending" @click="sendMenuOpen = !sendMenuOpen">
+              <UiBtn
+                variant="secondary"
+                size="sm"
+                data-cy="send-history"
+                :disabled="sending || contactBlocked"
+                :title="contactBlocked ? t('Not sent to a patient who is under age or marked do not contact', 'No se envía a un paciente menor de edad o marcado como no contactar') : undefined"
+                @click="sendMenuOpen = !sendMenuOpen"
+              >
                 {{ sending ? t('Sending…', 'Enviando…') : t('Send history', 'Enviar historial') }}
               </UiBtn>
               <div v-if="sendMenuOpen" class="absolute right-0 z-10 mt-1 w-36 rounded-ctl border border-line bg-surface py-1 shadow-popover">
@@ -346,7 +360,7 @@ const stats = computed(() => [
       <div class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-card bg-surface p-6 shadow-drawer">
         <div class="flex items-center justify-between">
           <h2 class="text-[15px] font-semibold text-ink-900">{{ t('Visit notes', 'Notas de la visita') }}</h2>
-          <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600" @click="notesAppointmentId = null">✕</button>
+          <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="notesAppointmentId = null">✕</button>
         </div>
         <div class="mt-4">
           <AppointmentsNotesPanel :appointment-id="notesAppointmentId" />

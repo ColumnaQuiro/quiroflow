@@ -1,4 +1,5 @@
-import { toE164 } from '~/utils/phone'
+import { toE164, whatsappDigits } from '~/utils/phone'
+import { whatsappRecipient } from '~/utils/whatsappRecipient'
 import { ApiError, badRequest, defineApiHandler } from '~/server/utils/publicApi'
 import { isWithin24hWindow, sendWhatsAppTemplate, sendWhatsAppText } from '~/server/utils/whatsappSend'
 
@@ -37,13 +38,22 @@ export default defineApiHandler({ scope: 'whatsapp:send' }, async ({ event, supa
     .select('whatsapp_phone_number_id, whatsapp_access_token')
     .eq('id', accountId)
     .maybeSingle()
+  await withMessagingTokens(accountId, account)
   if (!account?.whatsapp_phone_number_id || !account?.whatsapp_access_token) {
     throw badRequest('WhatsApp is not configured for this account yet. Connect it in Settings → WhatsApp.')
   }
   const waAccount = { whatsapp_phone_number_id: account.whatsapp_phone_number_id, whatsapp_access_token: account.whatsapp_access_token }
 
   let patientId: string | null = body.patientId ?? null
-  let to = body.to ?? ''
+  // Digits only, the one shape every number in whatsapp_messages is in: Meta
+  // sends inbound numbers that way, and toE164() below returns them that way.
+  // "to" is documented as E.164, which is written with a "+" -- compared as
+  // given, "+34612..." matched no patient, so the minor and do-not-contact
+  // refusals below never ran for anyone addressed by number; the 24h window
+  // found none of their replies; and the row was stored under a number no
+  // thread is keyed by.
+  let to = body.to ? whatsappDigits(String(body.to)) : ''
+  if (body.to && !to) throw badRequest('"to" must be a phone number in E.164 format, e.g. +34612345678.', 'to')
   if (!to && body.patientId) {
     const { data: numbers } = await supabase
       .from('patient_contact_numbers')
@@ -57,14 +67,26 @@ export default defineApiHandler({ scope: 'whatsapp:send' }, async ({ event, supa
     to = e164
   }
   if (!patientId) {
-    // Scoped to this token's account -- unscoped, this pulled every clinic's
-    // contact numbers into memory on every send (service-role bypasses RLS),
-    // which is what took the process down as the table grew.
-    const { data: numbers } = await supabase.from('patient_contact_numbers').select('patient_id, number, country_code').eq('account_id', accountId)
-    patientId = numbers?.find((n) => toE164(n.number, n.country_code) === to)?.patient_id ?? null
-  }
-  if (patientId) {
-    const { data: patient } = await supabase.from('patients').select('is_minor, do_not_contact').eq('id', patientId).eq('account_id', accountId).maybeSingle()
+    // Every number the account has, not the first 1000, matched loosely, and
+    // every patient sharing the number checked -- see whatsappRecipient. A
+    // read that fails throws (a 500, nothing sent) rather than reading as
+    // "nobody", which is what skipped the refusal for row 1001 onwards.
+    const recipient = await whatsappRecipient(supabase, accountId, to)
+    if (recipient.blocked) {
+      throw badRequest(
+        'This number belongs to a patient who cannot be contacted (under age, or marked do not contact). If it is shared and the message is for someone else on it, send their "patient_id".',
+        'to',
+      )
+    }
+    patientId = recipient.patientId
+  } else {
+    const { data: patient, error } = await supabase
+      .from('patients')
+      .select('is_minor, do_not_contact')
+      .eq('id', patientId)
+      .eq('account_id', accountId)
+      .maybeSingle()
+    if (error) throw error
     if (patient?.is_minor || patient?.do_not_contact) {
       throw badRequest('This patient cannot be contacted (under age, or marked do not contact).', 'patient_id')
     }
@@ -125,3 +147,4 @@ function pick<T>(body: Record<string, unknown>, ...keys: string[]): T | undefine
   }
   return undefined
 }
+

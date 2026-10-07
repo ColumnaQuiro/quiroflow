@@ -35,6 +35,7 @@ export default defineEventHandler(async (event) => {
     )
     .eq('id', teamMember.account_id)
     .maybeSingle()
+  await withMessagingTokens(teamMember.account_id, account)
   if (!account?.whatsapp_phone_number_id || !account?.whatsapp_access_token) {
     throw createError({ statusCode: 400, statusMessage: 'WhatsApp is not configured. Set it up in Settings > WhatsApp.' })
   }
@@ -53,6 +54,9 @@ export default defineEventHandler(async (event) => {
       .from('patient_contact_numbers')
       .select('number, country_code, is_whatsapp')
       .eq('patient_id', body.patientId)
+      // Oldest first, so a patient with two numbers is always sent to the
+      // same one rather than to whichever the query returned first.
+      .order('created_at')
     const target = numbers?.find((n) => n.is_whatsapp) ?? numbers?.[0]
     if (!target) {
       throw createError({ statusCode: 400, statusMessage: 'This patient has no phone number on file' })
@@ -108,7 +112,7 @@ export default defineEventHandler(async (event) => {
     components.push({ type: 'body', parameters: body.variables.map((v) => ({ type: 'text', text: v })) })
   }
 
-  const url: string = `https://graph.facebook.com/v21.0/${account.whatsapp_phone_number_id}/messages`
+  const url: string = `${useRuntimeConfig().metaGraphBaseUrl}/${account.whatsapp_phone_number_id}/messages`
   let wamid: string | null = null
   try {
     const response = await $fetch<{ messages?: { id: string }[] }>(url, {

@@ -312,7 +312,7 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
     </header>
 
     <div class="flex-1 overflow-y-auto">
-      <div class="flex gap-8 p-6 pb-32">
+      <div class="flex gap-8 p-4 pb-32 sm:px-6 sm:pt-6">
         <SettingsNav />
         <p v-if="loaded && missing" class="text-[14px] text-ink-muted" data-cy="clinic-missing">
           {{ t('This clinic does not exist, or is not yours.', 'Esta clínica no existe o no es tuya.') }}
@@ -585,7 +585,7 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
       @confirm="remove"
       @cancel="deleteOpen = false"
     >
-      <p class="text-[14px] leading-relaxed text-ink-500">{{ t('It has no appointments, so it can be removed entirely. Its calendar resources go with it. This cannot be undone.', 'No tiene citas, así que se puede eliminar del todo. Sus recursos de calendario se eliminan con ella. Esto no se puede deshacer.') }}</p>
+      <p class="text-[14px] leading-relaxed text-ink-500">{{ t('It has no appointments, so it can be removed entirely. Its calendar resources, closures, waitlist entries and which practitioners work there go with it; its patients stay, with no location set. This cannot be undone.', 'No tiene citas, así que se puede eliminar del todo. Sus recursos de calendario, cierres, lista de espera y qué profesionales trabajan allí se eliminan con ella; sus pacientes se quedan, sin sede asignada. Esto no se puede deshacer.') }}</p>
     </UiConfirmDialog>
 
     <UiConfirmDialog

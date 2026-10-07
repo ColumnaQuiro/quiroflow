@@ -36,7 +36,9 @@ describe('Booking without a way to reach the patient', () => {
   beforeEach(() => {
     cy.seedStaffAccount().as('acct')
     cy.get('@acct').then((account: any) => {
-      cy.task('db:enableOnlineBooking', { clinicId: account.clinicId })
+      // Open every day: these book "N days from now", which is sometimes a
+      // weekend, and opening hours are not what they are about.
+      cy.task('db:enableOnlineBooking', { clinicId: account.clinicId, everyDay: true })
       cy.task('db:createAppointmentType', {
         accountId: account.accountId,
         name: 'Consultation',
@@ -185,6 +187,9 @@ describe('Booking without a way to reach the patient', () => {
       // The case the email-only backstop misses, and the one that actually
       // happened: the lead carries the number from the Meta form, the booking
       // carries the same number typed by hand, and the two emails differ.
+      //
+      // The number is matched together with the first name: a number on its
+      // own is something anybody can type (booking-identity.cy.ts).
       cy.get('@acct').then((account: any) => {
         cy.get('@typeId').then((type: any) => {
           cy.task('db:createLead', {
@@ -195,7 +200,7 @@ describe('Booking without a way to reach the patient', () => {
             email: 'ruedamansilla@example.test',
             phone: '34600445533',
           }).then((lead: any) => {
-            book({ p_email: 'rudamansilla@example.test', p_phone: '600 445 533' }, account, type.id).then((r) => {
+            book({ p_first_name: 'Alberto', p_last_name: 'Rueda Mansilla', p_email: 'rudamansilla@example.test', p_phone: '600 445 533' }, account, type.id).then((r) => {
               expect(r.error).to.eq(null)
               cy.task('db:leadById', { id: lead.id }).then((after: any) => {
                 expect(after.patient_id, 'matched on the number, not the address').to.not.be.null

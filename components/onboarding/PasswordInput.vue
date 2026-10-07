@@ -1,8 +1,20 @@
 <script setup lang="ts">
-withDefaults(defineProps<{ id: string; describedBy?: string; readonly?: boolean }>(), {
-  describedBy: undefined,
-  readonly: false,
-})
+const props = withDefaults(
+  defineProps<{
+    id: string
+    describedBy?: string
+    readonly?: boolean
+    /**
+     * 'new' sets a password: strength meter, the minimum, and the hint.
+     * 'current' is a sign-in: none of that, and the browser offers the saved
+     * password instead of suggesting a new one.
+     */
+    mode?: 'new' | 'current'
+    /** The minimum a 'new' password is held to (and the hint states). */
+    minLength?: number
+  }>(),
+  { describedBy: undefined, readonly: false, mode: 'new', minLength: 6 },
+)
 
 const model = defineModel<string>({ required: true })
 
@@ -42,11 +54,11 @@ const tone = computed(() => TONES[Math.max(0, score.value - 1)])
         :id="id"
         v-model="model"
         :type="visible ? 'text' : 'password'"
-        autocomplete="new-password"
+        :autocomplete="props.mode === 'current' ? 'current-password' : 'new-password'"
         required
-        minlength="6"
+        :minlength="props.mode === 'current' ? undefined : props.minLength"
         :readonly="readonly"
-        :aria-describedby="[describedBy, `${id}-strength`].filter(Boolean).join(' ') || undefined"
+        :aria-describedby="[describedBy, props.mode === 'new' && `${id}-strength`].filter(Boolean).join(' ') || undefined"
         class="h-9 touch:h-11 w-full rounded-ctl border bg-surface pl-3 pr-[74px] text-[15px] text-ink-900 outline-none transition-shadow lg:h-[38px] lg:text-[14px]"
         :class="
           readonly
@@ -71,7 +83,7 @@ const tone = computed(() => TONES[Math.max(0, score.value - 1)])
       </button>
     </div>
 
-    <div class="mt-[9px] flex items-center gap-2.5">
+    <div v-if="props.mode === 'new'" class="mt-[9px] flex items-center gap-2.5">
       <div class="flex flex-1 gap-1">
         <div
           v-for="n in 4"
@@ -88,11 +100,11 @@ const tone = computed(() => TONES[Math.max(0, score.value - 1)])
       >{{ score ? tone.label() : '' }}</span>
     </div>
 
-    <p v-if="!readonly" class="mt-[7px] text-[12.5px] leading-[1.45] text-ink-muted">
+    <p v-if="props.mode === 'new' && !readonly" class="mt-[7px] text-[12.5px] leading-[1.45] text-ink-muted">
       {{
         t(
-          "At least 6 characters. A phrase you'll remember beats a short password you won't.",
-          'Mínimo 6 caracteres. Una frase que recuerdes vale más que una contraseña corta que no.',
+          `At least ${props.minLength} characters. A phrase you'll remember beats a short password you won't.`,
+          `Mínimo ${props.minLength} caracteres. Una frase que recuerdes vale más que una contraseña corta que no.`,
         )
       }}
     </p>

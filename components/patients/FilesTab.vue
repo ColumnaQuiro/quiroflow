@@ -2,12 +2,15 @@
 import { formatShortDate } from '~/utils/billing'
 import type { Tables } from '~/types/database.types'
 import { sanitizeStorageFilename } from '~/utils/storageFilename'
+import { MIN_DOCUMENT_PASSWORD_LENGTH, captionRevealsPassword, defaultProtectedCaption, documentPassword, isSpanishId } from '~/utils/protectedDocument'
 
 const props = defineProps<{ patientId: string }>()
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+const { can } = usePermission()
+const { showToast } = useToast()
 
 // `visibility` isn't in the generated Supabase types yet -- merge it in
 // locally rather than editing the generated file by hand.
@@ -156,10 +159,16 @@ async function uploadFiles(fileList: FileList) {
   await load()
 }
 
-async function view(file: Tables<'patient_files'>) {
-  if (!file.storage_path) return
-  const { data } = await supabase.storage.from('patient-files').createSignedUrl(file.storage_path, 60 * 5)
-  if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+// Through openWhenReady, not window.open after the await: on an iPad that
+// open is refused by Safari's popup blocker without a word, and neither
+// button did anything at all.
+function view(file: Tables<'patient_files'>) {
+  const path = file.storage_path
+  if (!path) return
+  openWhenReady(async () => {
+    const { data } = await supabase.storage.from('patient-files').createSignedUrl(path, 60 * 5)
+    return data?.signedUrl
+  })
 }
 
 /**
@@ -168,18 +177,99 @@ async function view(file: Tables<'patient_files'>) {
  * when it has to go to an insurer or a consultant, and a viewer tab is a
  * poor way to get there.
  */
-async function download(file: Tables<'patient_files'>) {
-  if (!file.storage_path) return
-  const { data } = await supabase.storage
-    .from('patient-files')
-    .createSignedUrl(file.storage_path, 60 * 5, { download: file.file_name ?? true })
-  if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+function download(file: Tables<'patient_files'>) {
+  const path = file.storage_path
+  if (!path) return
+  openWhenReady(async () => {
+    const { data } = await supabase.storage
+      .from('patient-files')
+      .createSignedUrl(path, 60 * 5, { download: file.file_name ?? true })
+    return data?.signedUrl
+  })
 }
 
-async function remove(file: Tables<'patient_files'>) {
-  if (!confirm(`${t('Delete', 'Eliminar')} ${file.file_name}?`)) return
+// Sends the file into the patient's WhatsApp chat as a PDF that opens only
+// with their DNI/NIE -- or a password the clinic tells them when there is no
+// DNI on file (88 of 1,598 Columnaquiro patients had one on 3 Oct 2026).
+// utils/protectedDocument.ts and /api/patients/files/[id]/send-protected
+// have the rest. PDFs and photos only: those are what a phone opens.
+function canSendProtected(file: PatientFile) {
+  return !!file.storage_path && can('inbox_access') && (isPdf(file) || ['image/jpeg', 'image/png', 'image/webp'].includes(file.file_type ?? ''))
+}
+
+const protecting = ref<PatientFile | null>(null)
+const protectPatient = ref<{ national_id: string | null; preferred_language: string } | null>(null)
+const protectPassword = ref('')
+const protectSaveId = ref(false)
+const protectCaption = ref('')
+const protectCaptionEdited = ref(false)
+const protectBusy = ref(false)
+const protectError = ref('')
+
+const protectNormalised = computed(() => documentPassword(protectPassword.value))
+const storedNationalId = computed(() => (protectPatient.value?.national_id ? documentPassword(protectPatient.value.national_id) : null))
+const protectUsesNationalId = computed(() => isSpanishId(protectNormalised.value) && (protectNormalised.value === storedNationalId.value || protectSaveId.value))
+const protectCanSaveId = computed(() => !protectPatient.value?.national_id && isSpanishId(protectNormalised.value))
+const protectLeaksPassword = computed(() => captionRevealsPassword(protectCaption.value, protectNormalised.value))
+const protectReady = computed(() => protectNormalised.value.length >= MIN_DOCUMENT_PASSWORD_LENGTH && !!protectCaption.value.trim() && !protectLeaksPassword.value)
+
+function suggestedCaption() {
+  if (!protecting.value) return ''
+  return defaultProtectedCaption({ fileName: protecting.value.file_name, passwordIsNationalId: protectUsesNationalId.value, english: protectPatient.value?.preferred_language === 'en' })
+}
+// The suggested message follows the password (DNI or not) until someone
+// writes their own.
+watch(protectUsesNationalId, () => {
+  if (!protectCaptionEdited.value) protectCaption.value = suggestedCaption()
+})
+
+async function openProtect(file: PatientFile) {
+  protecting.value = file
+  protectError.value = ''
+  protectSaveId.value = false
+  protectCaptionEdited.value = false
+  const { data } = await supabase.from('patients').select('national_id, preferred_language').eq('id', props.patientId).maybeSingle()
+  protectPatient.value = data
+  protectPassword.value = data?.national_id ? documentPassword(data.national_id) : ''
+  protectCaption.value = suggestedCaption()
+}
+
+async function sendProtected() {
+  const file = protecting.value
+  if (!file || !protectReady.value) return
+  protectBusy.value = true
+  protectError.value = ''
+  try {
+    await useStaffFetch(`/api/patients/files/${file.id}/send-protected`, {
+      method: 'POST',
+      body: { password: protectPassword.value, caption: protectCaption.value, saveAsNationalId: protectCanSaveId.value && protectSaveId.value },
+    })
+    protecting.value = null
+    showToast(t('Sent to the patient on WhatsApp, password-protected.', 'Enviado al paciente por WhatsApp, protegido con contraseña.'))
+  } catch (err: any) {
+    protectError.value = err?.data?.statusMessage ?? t('Could not send the document.', 'No se pudo enviar el documento.')
+  } finally {
+    protectBusy.value = false
+  }
+}
+
+// The row first, then the file. It was the other way round, with neither
+// result checked: storage lets any member remove an object, but the row needs
+// patient_files_delete (and, under own-docs scope, to be theirs) -- so a role
+// without it removed the file, had the row refused, and left a file on the
+// patient that opens to nothing. Four such rows were found in production on
+// 30 Sep 2026. Asked in an in-app dialog rather than confirm().
+const deleting = ref<Tables<'patient_files'> | null>(null)
+async function confirmRemove() {
+  const file = deleting.value
+  if (!file) return
+  deleting.value = null
+  const { data: gone, error: deleteError } = await supabase.from('patient_files').delete().eq('id', file.id).select('id')
+  if (deleteError || !gone?.length) {
+    error.value = deleteError?.message ?? t('This file was not deleted: your role cannot delete it.', 'No se ha eliminado el archivo: tu rol no puede eliminarlo.')
+    return
+  }
   if (file.storage_path) await supabase.storage.from('patient-files').remove([file.storage_path])
-  await supabase.from('patient_files').delete().eq('id', file.id)
   files.value = files.value.filter((f) => f.id !== file.id)
 }
 </script>
@@ -191,14 +281,14 @@ async function remove(file: Tables<'patient_files'>) {
         {{ t('Files uploaded by the clinic', 'Archivos subidos por la clínica') }}
         <span v-if="!loading" class="ml-1 font-normal text-ink-faint">{{ files.length }}</span>
       </p>
-      <label class="inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-ctl border border-brand bg-brand px-3.5 text-[13px] font-semibold text-white hover:bg-brand-hover">
+      <label class="inline-flex h-8 shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-ctl border border-brand bg-brand px-3.5 text-[13px] font-semibold text-white hover:bg-brand-hover">
         {{ uploading ? t('Uploading…', 'Subiendo…') : t('Upload file', 'Subir archivo') }}
         <input ref="fileInput" type="file" multiple class="hidden" :disabled="uploading" @change="(e) => uploadFiles((e.target as HTMLInputElement).files!)" />
       </label>
     </div>
     <p v-if="error" class="px-4 pt-3 text-[13px] text-danger-text">{{ error }}</p>
 
-    <div v-if="loading" class="grid grid-cols-2 gap-4 p-4 sm:grid-cols-4">
+    <div v-if="loading" class="grid grid-cols-1 gap-4 p-4 min-[480px]:grid-cols-2 sm:grid-cols-4">
       <div v-for="i in 4" :key="i" class="overflow-hidden rounded-ctl border border-line-divider bg-surface">
         <UiSkeleton class="h-[104px] w-full rounded-none" />
         <div class="space-y-1.5 p-2.5">
@@ -210,7 +300,7 @@ async function remove(file: Tables<'patient_files'>) {
     <div v-else-if="files.length === 0" class="p-8 text-center text-[13px] text-ink-faint">{{ t('No files uploaded yet.', 'Aún no se han subido archivos.') }}</div>
     <div
       v-else
-      class="grid grid-cols-2 gap-4 p-4 sm:grid-cols-4"
+      class="grid grid-cols-1 gap-4 p-4 min-[480px]:grid-cols-2 sm:grid-cols-4"
       @dragover.prevent="dragging = true"
       @dragleave.prevent="dragging = false"
       @drop.prevent="onDrop"
@@ -257,10 +347,13 @@ async function remove(file: Tables<'patient_files'>) {
         <div class="p-2.5">
           <p class="truncate font-mono text-[12px] font-medium text-ink-700" :title="file.file_name">{{ file.file_name }}</p>
           <p class="mt-0.5 truncate text-[11px] text-ink-faint" :title="fileMeta(file)">{{ fileMeta(file) }}</p>
-          <div class="mt-1.5 flex items-center justify-between gap-1.5">
+          <!-- Wraps rather than squeezing: two to a row on a phone left the
+               select a bare chevron and pushed the delete button out of the
+               card. -->
+          <div class="mt-1.5 flex flex-wrap items-center justify-between gap-1.5">
             <select
               v-model="file.visibility"
-              class="min-w-0 rounded border border-line-control px-1 py-0.5 text-[10.5px] text-ink-muted focus:border-brand focus:outline-none"
+              class="min-w-0 rounded border border-line-control px-1 py-0.5 text-[10.5px] text-ink-muted focus:border-brand focus:outline-none touch:min-h-10"
               :title="t('Whether this file will show to the patient in the mobile app', 'Si este archivo se mostrará al paciente en la aplicación móvil')"
               @change="updateVisibility(file)"
             >
@@ -268,9 +361,10 @@ async function remove(file: Tables<'patient_files'>) {
               <option value="custom">{{ t('Custom', 'Personalizado') }}</option>
             </select>
             <div class="flex shrink-0 items-center gap-2">
-              <button v-if="file.storage_path" type="button" class="text-[11px] font-medium text-brand-text outline-none hover:text-brand-hover focus-visible:shadow-focus" @click="view(file)">{{ t('Preview', 'Vista previa') }}</button>
-              <button v-if="file.storage_path" type="button" class="text-[11px] font-medium text-brand-text outline-none hover:text-brand-hover focus-visible:shadow-focus" @click="download(file)">{{ t('Download', 'Descargar') }}</button>
-              <UiIconBtn icon="trash" tone="danger" :label="t('Delete', 'Eliminar')" @click="remove(file)" />
+              <button v-if="file.storage_path" type="button" class="text-[11px] font-medium text-brand-text outline-none hover:text-brand-hover focus-visible:shadow-focus touch:min-h-10 touch:px-1" @click="view(file)">{{ t('Preview', 'Vista previa') }}</button>
+              <button v-if="file.storage_path" type="button" class="text-[11px] font-medium text-brand-text outline-none hover:text-brand-hover focus-visible:shadow-focus touch:min-h-10 touch:px-1" @click="download(file)">{{ t('Download', 'Descargar') }}</button>
+              <UiIconBtn v-if="canSendProtected(file)" icon="lock" data-cy="file-send-protected" :label="t('Send protected by WhatsApp', 'Enviar protegido por WhatsApp')" @click="openProtect(file)" />
+              <UiIconBtn v-if="can('patient_files_delete')" icon="trash" tone="danger" data-cy="file-delete" :label="t('Delete', 'Eliminar')" @click="deleting = file" />
             </div>
           </div>
         </div>
@@ -292,5 +386,67 @@ async function remove(file: Tables<'patient_files'>) {
       </span>
       <input type="file" multiple class="hidden" :disabled="uploading" @change="(e) => uploadFiles((e.target as HTMLInputElement).files!)" />
     </label>
+    <UiConfirmDialog
+      v-if="protecting"
+      :title="t('Send protected by WhatsApp', 'Enviar protegido por WhatsApp')"
+      :confirm-label="protectBusy ? t('Sending…', 'Enviando…') : t('Send', 'Enviar')"
+      :cancel-label="t('Cancel', 'Cancelar')"
+      :busy="protectBusy"
+      :disabled="!protectReady"
+      @confirm="sendProtected"
+      @cancel="protecting = null"
+    >
+      <div class="space-y-3 text-[13.5px] text-ink-700" data-cy="send-protected-dialog">
+        <p class="leading-snug">
+          {{ t(`${protecting.file_name} goes to the patient's WhatsApp as a PDF that only opens with this password.`, `${protecting.file_name} se envía al WhatsApp del paciente como un PDF que solo se abre con esta contraseña.`) }}
+        </p>
+        <label class="block">
+          <span class="text-[12.5px] font-medium text-ink-700">{{ t('Password', 'Contraseña') }}</span>
+          <input
+            v-model="protectPassword"
+            type="text"
+            autocomplete="off"
+            spellcheck="false"
+            data-cy="send-protected-password"
+            class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 font-mono text-[13.5px] text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+          />
+          <span class="mt-1 block text-[12px] text-ink-muted2">
+            <template v-if="storedNationalId && protectNormalised === storedNationalId">{{ t('Their DNI/NIE on file.', 'Su DNI/NIE guardado.') }}</template>
+            <template v-else-if="!protectPatient?.national_id">{{ t('No DNI/NIE saved for this patient. Type it, or a password you will tell them in person or by phone.', 'Este paciente no tiene DNI/NIE guardado. Escríbelo, o una contraseña que le dirás en persona o por teléfono.') }}</template>
+            <template v-else>{{ t('Not the DNI/NIE on file: tell the patient this password yourself.', 'No es el DNI/NIE guardado: dile tú esta contraseña al paciente.') }}</template>
+          </span>
+        </label>
+        <label v-if="protectCanSaveId" class="flex items-center gap-2 text-[12.5px]">
+          <input v-model="protectSaveId" type="checkbox" class="h-4 w-4 rounded border-line-control text-brand focus:ring-brand" />
+          {{ t("Save it as this patient's DNI/NIE", 'Guardarlo como DNI/NIE del paciente') }}
+        </label>
+        <label class="block">
+          <span class="text-[12.5px] font-medium text-ink-700">{{ t('Message', 'Mensaje') }}</span>
+          <textarea
+            v-model="protectCaption"
+            rows="3"
+            data-cy="send-protected-caption"
+            class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13.5px] text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            @input="protectCaptionEdited = true"
+          ></textarea>
+          <span v-if="protectLeaksPassword" class="mt-1 block text-[12px] text-danger-text">{{ t('The message must not contain the password.', 'El mensaje no puede incluir la contraseña.') }}</span>
+        </label>
+        <p class="text-[12px] leading-snug text-ink-muted2">
+          {{ t('WhatsApp only allows this within 24 hours of the patient\'s last message to you.', 'WhatsApp solo lo permite en las 24 horas siguientes al último mensaje del paciente.') }}
+        </p>
+        <p v-if="protectError" class="text-[12.5px] text-danger-text" data-cy="send-protected-error">{{ protectError }}</p>
+      </div>
+    </UiConfirmDialog>
+    <UiConfirmDialog
+      v-if="deleting"
+      tone="danger"
+      :title="t(`Delete ${deleting.file_name}?`, `¿Eliminar ${deleting.file_name}?`)"
+      :confirm-label="t('Delete file', 'Eliminar archivo')"
+      :cancel-label="t('Cancel', 'Cancelar')"
+      @confirm="confirmRemove"
+      @cancel="deleting = null"
+    >
+      <p class="text-[14px] leading-snug text-ink-700">{{ t('It is removed from this patient for everyone, and cannot be recovered.', 'Se elimina de este paciente para todos, y no se puede recuperar.') }}</p>
+    </UiConfirmDialog>
   </div>
 </template>

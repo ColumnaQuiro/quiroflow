@@ -16,9 +16,12 @@ export interface PatientAppointmentRow {
   status: string
   appointment_types: { name: string } | null
   team_members: { full_name: string } | null
+  clinic_id?: string | null
 }
 
-const SELECT = 'id, starts_at, ends_at, status, appointment_types(name), team_members(full_name)'
+// clinic_id so the screens can show a visit at its clinic's hour
+// (usePatientAppInfo().zoneOf), not the phone's.
+const SELECT = 'id, clinic_id, starts_at, ends_at, status, appointment_types(name), team_members(full_name)'
 
 export function usePatientAppointments(patientId: () => string, settings: () => PatientAppSettings) {
   const supabase = useSupabaseClient()
@@ -35,9 +38,13 @@ export function usePatientAppointments(patientId: () => string, settings: () => 
     if (!id) return
     loading.value = true
     const nowIso = new Date().toISOString()
+    // deleted_at: "Eliminar cita" leaves status 'booked', and the patients'
+    // RLS policy does not hide deleted rows, so an appointment the clinic
+    // deleted still showed here as upcoming -- with a cancel button the RPC
+    // then refused.
     const [{ data: next }, { data: history }] = await Promise.all([
-      supabase.from('appointments').select(SELECT).eq('patient_id', id).gte('starts_at', nowIso).neq('status', 'cancelled').order('starts_at'),
-      supabase.from('appointments').select(SELECT).eq('patient_id', id).lt('starts_at', nowIso).order('starts_at', { ascending: false }).limit(20),
+      supabase.from('appointments').select(SELECT).eq('patient_id', id).is('deleted_at', null).gte('starts_at', nowIso).neq('status', 'cancelled').order('starts_at'),
+      supabase.from('appointments').select(SELECT).eq('patient_id', id).is('deleted_at', null).lt('starts_at', nowIso).order('starts_at', { ascending: false }).limit(20),
     ])
     upcoming.value = (next as unknown as PatientAppointmentRow[]) ?? []
     past.value = (history as unknown as PatientAppointmentRow[]) ?? []

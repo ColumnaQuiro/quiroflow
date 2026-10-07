@@ -1,4 +1,11 @@
+<script lang="ts">
+// Across mounts of this screen within one app run.
+let shownBefore = false
+</script>
+
 <script setup lang="ts">
+import { formatEur } from '../../utils/billing'
+
 // Bonos, balance and invoices -- one question, one screen.
 definePageMeta({ layout: 'patient' })
 
@@ -6,22 +13,39 @@ const user = useSupabaseUser()
 watch(user, (u) => { if (!u) navigateTo('/login') }, { immediate: true })
 
 const t = useT()
+const locale = computed(() => t('en-GB', 'es-ES'))
 const { patient } = useIdentity()
 const patientId = computed(() => patient.value?.id ?? '')
 
-const { loading: moneyLoading, balanceCents, creditLedgerCents, activePackages, activeMembership } = usePatientFinancialSummary(
+const { loading: moneyLoading, outstandingCents, creditLedgerCents, activePackages, activeMembership, refresh: refreshMoney } = usePatientFinancialSummary(
   () => patientId.value,
 )
+
+// Fresh figures each time this screen is shown again and when the app comes
+// back to the front -- see PatientHome.vue: the cached summary otherwise kept
+// a debt paid at the desk on screen until the app was force-quit.
+onMounted(() => {
+  if (shownBefore) refreshMoney()
+  shownBefore = true
+})
+function onVisible() {
+  if (document.visibilityState === 'visible') refreshMoney()
+}
+onMounted(() => document.addEventListener('visibilitychange', onVisible))
+onBeforeUnmount(() => document.removeEventListener('visibilitychange', onVisible))
 const { invoices, loading: invoicesLoading, busyId, download } = usePatientInvoices(() => patientId.value)
 
-const amountDueCents = computed(() => (balanceCents.value < 0 ? -balanceCents.value : 0))
+// What is unpaid, not the balance, as the staff record shows it
+// (components/patient/BalanceCard.vue, utils/owing.ts): a family bono's
+// beneficiary was shown a debt for visits already paid for from the bono.
+const amountDueCents = computed(() => outstandingCents.value)
 
 const showAll = ref(false)
 const PREVIEW = 8
 const visibleInvoices = computed(() => (showAll.value ? invoices.value : invoices.value.slice(0, PREVIEW)))
 
 function eur(cents: number) {
-  return `€${(cents / 100).toFixed(2)}`
+  return formatEur(cents)
 }
 </script>
 
@@ -29,12 +53,12 @@ function eur(cents: number) {
   <PatientScreen :title="t('Billing', 'Pagos')">
     <div class="grid grid-cols-2 gap-3">
       <div class="rounded-card border border-line bg-surface p-3.5 shadow-card">
-        <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-faint">{{ t('Credit', 'Saldo') }}</p>
+        <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ t('Credit', 'Saldo') }}</p>
         <p v-if="moneyLoading" class="mt-2"><UiSkeleton class="h-6 w-16 rounded-ctlSm" /></p>
         <p v-else class="mt-1 text-[22px] font-[640] tracking-tightTitle text-ink-900">{{ eur(creditLedgerCents) }}</p>
       </div>
       <div class="rounded-card border border-line bg-surface p-3.5 shadow-card">
-        <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-faint">{{ t('Outstanding', 'Pendiente') }}</p>
+        <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ t('Outstanding', 'Pendiente') }}</p>
         <p v-if="moneyLoading" class="mt-2"><UiSkeleton class="h-6 w-16 rounded-ctlSm" /></p>
         <p v-else class="mt-1 text-[22px] font-[640] tracking-tightTitle" :class="amountDueCents > 0 ? 'text-danger-text' : 'text-ink-900'">
           {{ eur(amountDueCents) }}
@@ -72,7 +96,7 @@ function eur(cents: number) {
             <div class="min-w-0 flex-1">
               <p class="text-[13.5px] font-medium text-ink-900">{{ eur(inv.total_cents) }}</p>
               <p class="text-[12px] text-ink-faint">
-                {{ new Date(inv.created_at).toLocaleDateString() }}
+                {{ new Date(inv.created_at).toLocaleDateString(locale) }}
                 <template v-if="inv.invoice_number"> &middot; {{ inv.invoice_number }}</template>
               </p>
             </div>

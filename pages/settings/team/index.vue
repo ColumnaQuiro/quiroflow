@@ -199,6 +199,8 @@ async function loadImportedNames() {
       .is('practitioner_id', null)
       .not('practitioner_name', 'is', null)
       .is('deleted_at', null)
+      // A fixed order: pages of an unordered read can repeat or skip rows.
+      .order('id')
       .range(from, from + PAGE - 1)
     if (error) {
       showToast(error.message, 'error')
@@ -282,7 +284,7 @@ onMounted(() => {
       </button>
     </PageHeader>
     <div class="flex-1 overflow-y-auto">
-      <div class="flex gap-8 p-6">
+      <div class="flex gap-8 p-4 pb-24 sm:px-6 sm:pt-6 lg:pb-6">
         <SettingsNav />
         <div class="flex min-w-0 max-w-[820px] flex-1 flex-col gap-5" data-cy="team-page" :data-ready="loading ? undefined : 'true'">
           <p class="text-[13.5px] text-ink-muted">{{ t('Who signs in to QuiroFlow, with which role, and who of them sees patients.', 'Quién entra en QuiroFlow, con qué rol, y quién atiende pacientes.') }}</p>

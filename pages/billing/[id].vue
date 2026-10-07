@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { formatEur } from '~/utils/billing'
 import type { Tables } from '~/types/database.types'
-import { settleInvoiceIfCovered } from '~/utils/settleInvoice'
+import { invoiceDueCents, settleInvoiceIfCovered } from '~/utils/settleInvoice'
 
 const route = useRoute()
 const supabase = useSupabaseClient()
@@ -76,7 +76,9 @@ onMounted(async () => {
 })
 
 const paidCents = computed(() => payments.value.reduce((sum, p) => sum + p.amount_cents, 0))
-const balanceDueCents = computed(() => (invoice.value?.total_cents ?? 0) - paidCents.value)
+// Nothing is due on a paid or void receipt, payment rows or not -- a bono
+// visit is raised paid with none. See invoiceDueCents.
+const balanceDueCents = computed(() => invoiceDueCents(invoice.value, paidCents.value))
 
 // Which clinic issued this invoice, for the fiscal letterhead -- most
 // invoices come from an appointment (which has a clinic_id), but a
@@ -125,7 +127,7 @@ async function recordPayment() {
   }
   savingPayment.value = true
 
-  const { data: payment } = await supabase
+  const { data: payment, error: paymentError } = await supabase
     .from('payments')
     .insert({
       account_id: store.accountId!,
@@ -137,10 +139,17 @@ async function recordPayment() {
     })
     .select('id')
     .single()
+  // Refused (RLS wants payments_allocate): say so, and never go on to draw
+  // credit down for a payment that does not exist.
+  if (paymentError || !payment) {
+    error.value = t('The payment could not be recorded', 'No se pudo registrar el pago') + (paymentError?.message ? `: ${paymentError.message}` : '.')
+    savingPayment.value = false
+    return
+  }
 
   // No factura for a credit payment: that money was documented when it was
   // paid in, and issuing a second one would double it in the series.
-  if (payment && paymentMethod.value !== 'credit') {
+  if (paymentMethod.value !== 'credit') {
     await issueFactura({
       accountId: store.accountId!,
       patientId: invoice.value!.patient_id,
@@ -150,7 +159,7 @@ async function recordPayment() {
     })
   }
   if (paymentMethod.value === 'credit') {
-    await supabase.from('account_credits').insert({
+    const { error: creditRowError } = await supabase.from('account_credits').insert({
       account_id: store.accountId!,
       patient_id: invoice.value!.patient_id,
       amount_cents: -amountCents,
@@ -158,6 +167,7 @@ async function recordPayment() {
       invoice_id: invoiceId,
       created_by: store.teamMember?.id ?? null,
     })
+    if (creditRowError) error.value = t('The payment was recorded but the credit could not be drawn down', 'El pago se registró, pero no se pudo descontar el crédito') + `: ${creditRowError.message}`
   }
 
   // Decided from the database, not from the totals this page loaded when it
@@ -205,6 +215,9 @@ const hasPayments = computed(() => payments.value.length > 0)
 // "refund the payments first", and then offered no refund and no way to
 // reach one. It named an action it did not provide.
 const { can } = usePermission()
+// Recording a payment writes to `payments`, which RLS only allows with
+// payments_allocate.
+const canTakePayments = computed(() => can('payments_allocate'))
 const canRefund = computed(() => can('financials_edit_all'))
 const showRefund = computed(() => !!invoice.value && invoice.value.status !== 'void' && hasPayments.value && canRefund.value)
 
@@ -286,7 +299,7 @@ function formatDate(iso: string) {
       </PageHeader>
     </div>
 
-    <div class="flex-1 overflow-y-auto bg-surface-page p-6">
+    <div class="flex-1 overflow-y-auto bg-surface-page p-4 sm:p-6">
       <div v-if="loading" class="mx-auto max-w-[720px] space-y-4">
         <div class="space-y-3 rounded-card border border-line bg-surface p-6 shadow-card">
           <UiSkeleton class="h-4 w-40 rounded-ctlSm" />
@@ -378,6 +391,7 @@ function formatDate(iso: string) {
               <span v-if="sendMessage" class="text-[12.5px] text-ink-muted2">{{ sendMessage }}</span>
             </div>
             <UiBtn
+              v-if="canTakePayments"
               variant="primary"
               :disabled="savingPayment || invoice.status === 'paid' || invoice.status === 'void' || balanceDueCents <= 0"
               @click="markAsPaid"
@@ -400,7 +414,7 @@ function formatDate(iso: string) {
           </ul>
           <p v-else class="mt-2 text-[13px] text-ink-muted2">{{ t('No payments recorded.', 'No hay pagos registrados.') }}</p>
 
-          <form v-if="invoice.status !== 'void' && balanceDueCents > 0" class="mt-4 flex items-end gap-2" @submit.prevent="recordPayment">
+          <form v-if="canTakePayments && invoice.status !== 'void' && balanceDueCents > 0" class="mt-4 flex items-end gap-2" @submit.prevent="recordPayment">
             <div>
               <label class="block text-[12.5px] font-medium text-ink-500">{{ t('Amount (€)', 'Importe (€)') }}</label>
               <input

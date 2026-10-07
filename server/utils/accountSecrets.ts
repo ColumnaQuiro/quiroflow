@@ -1,3 +1,4 @@
+import { createClient } from '@supabase/supabase-js'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
 
@@ -9,7 +10,13 @@ import type { Database } from '~/types/database.types'
 //
 // Only reachable with the service role, which means only from server routes.
 
-export type AccountSecretName = 'stripe_secret_key' | 'stripe_webhook_secret'
+export type AccountSecretName =
+  | 'stripe_secret_key'
+  | 'stripe_webhook_secret'
+  | 'practicehub_api_key'
+  | 'whatsapp_access_token'
+  | 'instagram_access_token'
+  | 'meta_ads_access_token'
 
 /**
  * The named secret for this account, or null.
@@ -72,4 +79,38 @@ export async function accountSecretStatus(supabase: SupabaseClient<Database>, ac
     getAccountSecret(supabase, accountId, 'stripe_webhook_secret'),
   ])
   return { stripeSecretKey: Boolean(secretKey), stripeWebhookSecret: Boolean(webhookSecret) }
+}
+
+// --- Messaging tokens ------------------------------------------------------
+// The WhatsApp, Instagram and Meta Ads access tokens sat on `accounts`, whose
+// select policy lets every member read every column: anyone at the clinic
+// could fetch the token that sends WhatsApp as the clinic. They live in
+// account_secrets now.
+//
+// Many routes read them with the signed-in member's own client, which cannot
+// read account_secrets, so this uses a service-role client of its own. Called
+// right after a route's select of the account row: it replaces each token the
+// row carries with the stored secret, and leaves the column's value where no
+// secret is stored yet (the fallback goes away with the columns).
+export const MESSAGING_TOKENS = ['whatsapp_access_token', 'instagram_access_token', 'meta_ads_access_token'] as const
+type MessagingToken = (typeof MESSAGING_TOKENS)[number]
+
+let secretsClient: SupabaseClient<Database> | null = null
+function serviceClient(): SupabaseClient<Database> {
+  if (!secretsClient) {
+    const config = useRuntimeConfig()
+    const key = (config.supabase as { secretKey?: string; serviceKey?: string }).secretKey || (config.supabase as { serviceKey?: string }).serviceKey
+    if (!key) throw new Error('Missing server key. Set NUXT_SUPABASE_SECRET_KEY.')
+    secretsClient = createClient<Database>(config.public.supabase.url, key, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } })
+  }
+  return secretsClient
+}
+
+export async function withMessagingTokens<T extends Record<string, any> | null | undefined>(accountId: string | null | undefined, row: T): Promise<T> {
+  if (!row || !accountId) return row
+  const wanted = MESSAGING_TOKENS.filter((n) => n in row)
+  if (wanted.length === 0) return row
+  const { data } = await serviceClient().from('account_secrets').select('name, value').eq('account_id', accountId).in('name', wanted)
+  for (const secret of data ?? []) (row as Record<string, unknown>)[secret.name as MessagingToken] = secret.value
+  return row
 }

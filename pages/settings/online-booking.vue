@@ -4,6 +4,7 @@ import { WEEK, dayRangesText } from '~/utils/clinicHours'
 import { formatEur } from '~/utils/billing'
 import { orderTypes } from '~/utils/appointmentTypes'
 import { nextDate, startOfLocalDate } from '~/utils/clinicClock'
+import { normalizeNotifyEmail, normalizeNotifyWhatsapp } from '~/utils/notifyContacts'
 import type { Tables, TablesUpdate } from '~/types/database.types'
 
 const supabase = useSupabaseClient()
@@ -96,6 +97,18 @@ async function saveAccountSettings() {
     return
   }
   successUrl.value = success.value ?? ''
+  const notifyEmailValue = normalizeNotifyEmail(notifyEmail.value)
+  const notifyWhatsappValue = normalizeNotifyWhatsapp(notifyWhatsapp.value, store.defaultPhoneCountry)
+  if (notifyEmailValue === undefined) {
+    showToast(t('The alert email is not an email address.', 'El correo de aviso no es una dirección de correo.'), 'error')
+    return
+  }
+  if (notifyWhatsappValue === undefined) {
+    showToast(t('The alert WhatsApp is not a phone number.', 'El WhatsApp de aviso no es un número de teléfono.'), 'error')
+    return
+  }
+  notifyEmail.value = notifyEmailValue ?? ''
+  notifyWhatsapp.value = notifyWhatsappValue ?? ''
 
   saving.value = true
   const update: TablesUpdate<'accounts'> = {
@@ -109,8 +122,8 @@ async function saveAccountSettings() {
     online_booking_hide_logo: hideLogo.value,
     online_booking_practitioner_order: practitionerOrder.value,
     online_booking_text_overrides: textOverrides.value,
-    online_booking_notify_email: notifyEmail.value.trim() || null,
-    online_booking_notify_whatsapp: notifyWhatsapp.value.trim() || null,
+    online_booking_notify_email: notifyEmailValue,
+    online_booking_notify_whatsapp: notifyWhatsappValue,
   }
   const { error: updateError } = await supabase.from('accounts').update(update).eq('id', store.accountId!)
   saving.value = false
@@ -334,7 +347,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
       </UiBtn>
     </PageHeader>
     <div class="flex-1 overflow-y-auto">
-      <div class="flex gap-8 p-6">
+      <div class="flex gap-8 p-4 pb-24 sm:px-6 sm:pt-6 lg:pb-6">
         <SettingsNav />
         <div class="flex min-w-0 max-w-[940px] flex-1 flex-col gap-4" data-cy="booking-settings" :data-ready="loading ? undefined : 'true'">
           <p class="text-[13.5px] text-ink-muted">
@@ -362,12 +375,14 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
             </div>
             <div class="flex flex-col gap-2.5 border-t border-line-row px-[18px] pb-4 pt-3.5" data-test="booking-embed-card">
               <div class="flex flex-wrap items-center gap-2.5">
-                <span class="w-[110px] shrink-0 text-[13.5px] font-semibold text-ink-700">{{ t('Link', 'Enlace') }}</span>
+                <!-- The label takes its own line on a phone; beside it the link was
+                     squeezed to "http: …" between it and Copy. -->
+                <span class="w-full shrink-0 text-[13.5px] font-semibold text-ink-700 sm:w-[110px]">{{ t('Link', 'Enlace') }}</span>
                 <code class="min-w-0 flex-1 truncate rounded-ctlSm bg-surface-page px-2.5 py-2 font-mono text-[12.5px] text-ink-500">{{ bookingUrl(store.accountSlug) }}</code>
                 <UiBtn class="w-24" @click="copy(bookingUrl(store.accountSlug))">{{ t('Copy', 'Copiar') }}</UiBtn>
               </div>
               <div class="flex flex-wrap items-start gap-2.5">
-                <span class="w-[110px] shrink-0 pt-2 text-[13.5px] font-semibold text-ink-700">{{ t('Website embed', 'Insertar en tu web') }}</span>
+                <span class="w-full shrink-0 text-[13.5px] font-semibold text-ink-700 sm:w-[110px] sm:pt-2">{{ t('Website embed', 'Insertar en tu web') }}</span>
                 <textarea
                   :value="embedSnippet(store.accountSlug)"
                   data-test="booking-embed-snippet"

@@ -48,10 +48,10 @@
       "60",
       "Appointment distribution",
       "1 Jun – 17 Jun",
-      "[Afternoon | 16 visits | 100% ; Evening | 22 visits | 85% ; Morning | 21 visits | 93%]",
+      "[Afternoon | 15 visits | 100% ; Evening | 22 visits | 85% ; Morning | 21 visits | 93%]",
       "Visit value & retention",
       "1 Jun – 17 Jun",
-      "[Per-visit average | 102,82 € ; Retention | 100% ; Visits | 44]",
+      "[Average income per visit | 102,82 € ; Retention | 100% ; Visits | 44]",
       "Memberships",
       "1 Jun – 17 Jun",
       "[Active memberships | 5 ; Failed payments | 5 ; Revenue this month | 354,00 €]",
@@ -110,10 +110,10 @@
       "60",
       "Appointment distribution",
       "18 May – 17 Jun",
-      "[Afternoon | 29 visits | 100% ; Evening | 34 visits | 91% ; Morning | 42 visits | 97%]",
+      "[Afternoon | 28 visits | 100% ; Evening | 34 visits | 91% ; Morning | 42 visits | 97%]",
       "Visit value & retention",
       "18 May – 17 Jun",
-      "[Per-visit average | 67,85 € ; Retention | 98% ; Visits | 86]",
+      "[Average income per visit | 67,85 € ; Retention | 98% ; Visits | 86]",
       "Memberships",
       "18 May – 17 Jun",
       "[Active memberships | 5 ; Failed payments | 5 ; Revenue this month | 354,00 €]",
@@ -173,7 +173,7 @@
       "[Afternoon | 9 visits | 100% ; Evening | 10 visits | 90% ; Morning | 12 visits | 100%]",
       "Visit value & retention",
       "18 May – 17 Jun",
-      "[Per-visit average | 11,79 € ; Retention | 59% ; Visits | 29]",
+      "[Average income per visit | 11,79 € ; Retention | 59% ; Visits | 29]",
       "Memberships",
       "18 May – 17 Jun",
       "[Active memberships | 5 ; Failed payments | 5 ; Revenue this month | 354,00 €]",
@@ -857,7 +857,7 @@
       "21",
       "93% show-up rate",
       "Afternoon (12–4pm)",
-      "16",
+      "15",
       "100% show-up rate",
       "Evening (4pm+)",
       "22",
@@ -868,8 +868,8 @@
       "height 256px"
     ],
     "charts": [
-      "Appointments: 10am=4, 11am=3, 12pm=4, 1pm=4, 2pm=2, 3pm=6, 4pm=10, 5pm=7, 6pm=4, 7pm=1, 8am=6, 9am=8",
-      "Booked (upcoming): Afternoon (12–4pm)=2, Evening (4pm+)=2, Morning (before 12pm)=4 || Cancelled: Afternoon (12–4pm)=1, Evening (4pm+)=0, Morning (before 12pm)=2 || Completed: Afternoon (12–4pm)=13, Evening (4pm+)=17, Morning (before 12pm)=14 || No-show: Afternoon (12–4pm)=0, Evening (4pm+)=3, Morning (before 12pm)=1"
+      "Appointments: 10am=4, 11am=3, 12pm=4, 1pm=4, 2pm=2, 3pm=5, 4pm=10, 5pm=7, 6pm=4, 7pm=1, 8am=6, 9am=8",
+      "Booked (upcoming): Afternoon (12–4pm)=2, Evening (4pm+)=2, Morning (before 12pm)=4 || Cancelled: Afternoon (12–4pm)=1, Evening (4pm+)=0, Morning (before 12pm)=2 || Completed: Afternoon (12–4pm)=12, Evening (4pm+)=17, Morning (before 12pm)=14 || No-show: Afternoon (12–4pm)=0, Evening (4pm+)=3, Morning (before 12pm)=1"
     ]
   },
   "appointment distribution / Olga": {
@@ -881,7 +881,7 @@
       "10",
       "100% show-up rate",
       "Afternoon (12–4pm)",
-      "6",
+      "5",
       "100% show-up rate",
       "Evening (4pm+)",
       "11",
@@ -892,8 +892,8 @@
       "height 256px"
     ],
     "charts": [
-      "Appointments: 10am=1, 11am=2, 12pm=1, 1pm=3, 2pm=0, 3pm=2, 4pm=5, 5pm=3, 6pm=3, 7pm=0, 8am=2, 9am=5",
-      "Booked (upcoming): Afternoon (12–4pm)=2, Evening (4pm+)=1, Morning (before 12pm)=2 || Cancelled: Afternoon (12–4pm)=1, Evening (4pm+)=0, Morning (before 12pm)=2 || Completed: Afternoon (12–4pm)=3, Evening (4pm+)=9, Morning (before 12pm)=6 || No-show: Afternoon (12–4pm)=0, Evening (4pm+)=1, Morning (before 12pm)=0"
+      "Appointments: 10am=1, 11am=2, 12pm=1, 1pm=3, 2pm=0, 3pm=1, 4pm=5, 5pm=3, 6pm=3, 7pm=0, 8am=2, 9am=5",
+      "Booked (upcoming): Afternoon (12–4pm)=2, Evening (4pm+)=1, Morning (before 12pm)=2 || Cancelled: Afternoon (12–4pm)=1, Evening (4pm+)=0, Morning (before 12pm)=2 || Completed: Afternoon (12–4pm)=2, Evening (4pm+)=9, Morning (before 12pm)=6 || No-show: Afternoon (12–4pm)=0, Evening (4pm+)=1, Morning (before 12pm)=0"
     ]
   },
   "appointment distribution / Norte": {
@@ -905,7 +905,7 @@
       "14",
       "100% show-up rate",
       "Afternoon (12–4pm)",
-      "8",
+      "7",
       "100% show-up rate",
       "Evening (4pm+)",
       "13",
@@ -916,8 +916,8 @@
       "height 256px"
     ],
     "charts": [
-      "Appointments: 10am=2, 11am=1, 12pm=1, 1pm=1, 2pm=1, 3pm=5, 4pm=6, 5pm=4, 6pm=2, 7pm=1, 8am=5, 9am=6",
-      "Booked (upcoming): Afternoon (12–4pm)=1, Evening (4pm+)=2, Morning (before 12pm)=3 || Cancelled: Afternoon (12–4pm)=0, Evening (4pm+)=0, Morning (before 12pm)=1 || Completed: Afternoon (12–4pm)=7, Evening (4pm+)=10, Morning (before 12pm)=10 || No-show: Afternoon (12–4pm)=0, Evening (4pm+)=1, Morning (before 12pm)=0"
+      "Appointments: 10am=2, 11am=1, 12pm=1, 1pm=1, 2pm=1, 3pm=4, 4pm=6, 5pm=4, 6pm=2, 7pm=1, 8am=5, 9am=6",
+      "Booked (upcoming): Afternoon (12–4pm)=1, Evening (4pm+)=2, Morning (before 12pm)=3 || Cancelled: Afternoon (12–4pm)=0, Evening (4pm+)=0, Morning (before 12pm)=1 || Completed: Afternoon (12–4pm)=6, Evening (4pm+)=10, Morning (before 12pm)=10 || No-show: Afternoon (12–4pm)=0, Evening (4pm+)=1, Morning (before 12pm)=0"
     ]
   },
   "debtors": {
@@ -943,157 +943,5 @@
       "[Elena Navarro 35 Familiar active 9/8/2025 2026-06-01: paid ; Emma López 6 Familiar active 7/9/2025 2026-06-01: paid ; Javier Díaz 19 Familiar active 6/8/2025 2026-06-01: paid ; Mateo Alonso 28 Mensual active 9/25/2025 2026-06-01: paid ; Noa Muñoz 37 Mensual active 7/13/2025 2026-06-01: paid ; Álvaro Martínez 34 Familiar cancelled 1/25/2026 2026-06-01: paid]"
     ],
     "charts": []
-  },
-  "custom": {
-    "lines": [
-      "Data source",
-      "<select: Appointments>",
-      "Metric",
-      "<select: Count>",
-      "Group by",
-      "<select: Month>",
-      "Chart",
-      "<select: Bar>",
-      "Range",
-      "This month",
-      "Save report",
-      "height 320px"
-    ],
-    "charts": [
-      "Count: Jun 26=59"
-    ]
-  },
-  "custom / appointments by type": {
-    "lines": [
-      "Data source",
-      "<select: Appointments>",
-      "Metric",
-      "<select: Count>",
-      "Group by",
-      "<select: Appointment type>",
-      "Chart",
-      "<select: Bar>",
-      "Range",
-      "This month",
-      "Save report",
-      "height 320px"
-    ],
-    "charts": [
-      "Count: Ajuste=27, Informe=5, Mantenimiento=18, Oferta primera visita=1, Primera visita=5, Revisión=2, Sin etiquetar=1"
-    ]
-  },
-  "custom / appointments by practitioner": {
-    "lines": [
-      "Data source",
-      "<select: Appointments>",
-      "Metric",
-      "<select: Count>",
-      "Group by",
-      "<select: Practitioner>",
-      "Chart",
-      "<select: Bar>",
-      "Range",
-      "This month",
-      "Save report",
-      "height 320px"
-    ],
-    "charts": [
-      "Count: Beatriz Ferrando=15, Natacha Ruiz=15, Olga Owner=27, Unassigned=2"
-    ]
-  },
-  "custom / payments total by month": {
-    "lines": [
-      "Data source",
-      "<select: Payments>",
-      "Metric",
-      "<select: Total (€)>",
-      "Group by",
-      "<select: Month>",
-      "Chart",
-      "<select: Bar>",
-      "Range",
-      "This month",
-      "Save report",
-      "height 320px"
-    ],
-    "charts": [
-      "Total (€): Jun 26=4568"
-    ]
-  },
-  "custom / payments total by method": {
-    "lines": [
-      "Data source",
-      "<select: Payments>",
-      "Metric",
-      "<select: Total (€)>",
-      "Group by",
-      "<select: Payment method>",
-      "Chart",
-      "<select: Bar>",
-      "Range",
-      "This month",
-      "Save report",
-      "height 320px"
-    ],
-    "charts": [
-      "Total (€): bizum=424, card=2145, cash=1223, other=20, transfer=756"
-    ]
-  },
-  "custom / payment count by practitioner": {
-    "lines": [
-      "Data source",
-      "<select: Payments>",
-      "Metric",
-      "<select: Count>",
-      "Group by",
-      "<select: Practitioner>",
-      "Chart",
-      "<select: Bar>",
-      "Range",
-      "This month",
-      "Save report",
-      "height 320px"
-    ],
-    "charts": [
-      "Count: Beatriz Ferrando=5, Natacha Ruiz=3, Olga Owner=8, Unassigned=16"
-    ]
-  },
-  "custom / patients by practitioner": {
-    "lines": [
-      "Data source",
-      "<select: Patients>",
-      "Metric",
-      "<select: Count>",
-      "Group by",
-      "<select: Default practitioner>",
-      "Chart",
-      "<select: Bar>",
-      "Range",
-      "This month",
-      "Save report",
-      "height 320px"
-    ],
-    "charts": [
-      "Count: Beatriz Ferrando=15, Natacha Ruiz=16, Olga Owner=18, Unassigned=11"
-    ]
-  },
-  "custom / patients by recall status": {
-    "lines": [
-      "Data source",
-      "<select: Patients>",
-      "Metric",
-      "<select: Count>",
-      "Group by",
-      "<select: Recall status>",
-      "Chart",
-      "<select: Bar>",
-      "Range",
-      "This month",
-      "Save report",
-      "height 320px"
-    ],
-    "charts": [
-      "Count: active=60"
-    ]
   }
 }

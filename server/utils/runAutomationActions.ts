@@ -638,6 +638,7 @@ async function runWhatsAppAction(
     )
     .eq('id', accountId)
     .maybeSingle()
+  await withMessagingTokens(accountId, account)
   // A dry run is allowed to proceed without WhatsApp credentials: rehearsing
   // the rule before the channel is connected is a legitimate thing to want,
   // and is the order a clinic actually does things in. It does prove less --
@@ -721,7 +722,7 @@ async function runWhatsAppAction(
   const headerComponents = await buildHeaderComponent(supabase, config.header)
   if (account?.whatsapp_business_account_id) {
     const templates = await $fetch<{ data: { name: string; language: string; components: any[] }[] }>(
-      `https://graph.facebook.com/v21.0/${account.whatsapp_business_account_id}/message_templates`,
+      `${useRuntimeConfig().metaGraphBaseUrl}/${account.whatsapp_business_account_id}/message_templates`,
       { params: { name: templateName, fields: 'name,language,components' }, headers: { Authorization: `Bearer ${account.whatsapp_access_token}` } },
     ).catch(() => null)
     // Meta's `name` query param is a fuzzy/substring match, not an exact
@@ -816,7 +817,7 @@ async function runWhatsAppAction(
 
   try {
     const response = await $fetch<{ messages?: { id: string }[] }>(
-      `https://graph.facebook.com/v21.0/${account.whatsapp_phone_number_id}/messages`,
+      `${useRuntimeConfig().metaGraphBaseUrl}/${account.whatsapp_phone_number_id}/messages`,
       {
         method: 'POST',
         headers: { Authorization: `Bearer ${account.whatsapp_access_token}` },

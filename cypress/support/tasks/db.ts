@@ -351,6 +351,8 @@ async function createPatient(opts: {
   referralSource?: string
   /** As an import leaves it: the other system's patient number. */
   externalReference?: string
+  /** DNI/NIE, which a protected document is locked with. */
+  nationalId?: string
 }) {
   const { accountId, clinicId, firstName, lastName, email, dateOfBirth, defaultPractitionerId } = opts
   const patient = unwrap(
@@ -367,6 +369,7 @@ async function createPatient(opts: {
         ...(opts.invoiceEmailEnabled === undefined ? {} : { invoice_email_enabled: opts.invoiceEmailEnabled }),
         ...(opts.referralSource === undefined ? {} : { referral_source: opts.referralSource }),
         ...(opts.externalReference === undefined ? {} : { external_reference: opts.externalReference }),
+        ...(opts.nationalId === undefined ? {} : { national_id: opts.nationalId }),
       })
       .select('id, first_name, last_name')
       .single(),
@@ -392,6 +395,12 @@ async function createPatient(opts: {
 async function addClinic(opts: { accountId: string; name: string }) {
   const row = unwrap(await admin.from('clinics').insert({ account_id: opts.accountId, name: opts.name }).select('id').single())
   return { id: row.id as string }
+}
+
+/** Has somebody work at one more of the account's clinics, as Settings -> Team -> <member> -> Clinics does. */
+async function linkTeamMemberToClinic(opts: { teamMemberId: string; clinicId: string }) {
+  assertOk(await admin.from('team_member_clinics').insert({ team_member_id: opts.teamMemberId, clinic_id: opts.clinicId }))
+  return { ok: true }
 }
 
 /** A patient's place in the recall queue, set directly or read back. */
@@ -420,18 +429,20 @@ async function recallState(opts: { patientId: string }) {
  * in last-name order, which is `Crowd 000`, `Crowd 001`, ...
  */
 async function seedManyPatients(opts: { accountId: string; clinicId: string; count: number; creditCount?: number }) {
-  const patients = unwrap(
-    await admin
-      .from('patients')
-      .insert(Array.from({ length: opts.count }, (_, i) => ({ account_id: opts.accountId, clinic_id: opts.clinicId, first_name: 'Crowd', last_name: String(i).padStart(3, '0') })))
-      .select('id, last_name'),
-  ) as { id: string; last_name: string }[]
+  // In chunks: one statement inserting a thousand patients (each firing the
+  // patients triggers) can outlast the local statement timeout when the
+  // machine is busy, and the spec then fails before it has tested anything.
+  const CHUNK = 250
+  const rows = Array.from({ length: opts.count }, (_, i) => ({ account_id: opts.accountId, clinic_id: opts.clinicId, first_name: 'Crowd', last_name: String(i).padStart(3, '0') }))
+  const patients: { id: string; last_name: string }[] = []
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    patients.push(...(unwrap(await admin.from('patients').insert(rows.slice(i, i + CHUNK)).select('id, last_name')) as { id: string; last_name: string }[]))
+  }
   patients.sort((a, b) => a.last_name.localeCompare(b.last_name))
-  assertOk(
-    await admin
-      .from('patient_contact_numbers')
-      .insert(patients.map((p, i) => ({ account_id: opts.accountId, patient_id: p.id, number: `6${String(i).padStart(8, '0')}`, country_code: 'ES' }))),
-  )
+  const numbers = patients.map((p, i) => ({ account_id: opts.accountId, patient_id: p.id, number: `6${String(i).padStart(8, '0')}`, country_code: 'ES' }))
+  for (let i = 0; i < numbers.length; i += CHUNK) {
+    assertOk(await admin.from('patient_contact_numbers').insert(numbers.slice(i, i + CHUNK)))
+  }
   if (opts.creditCount) {
     assertOk(
       await admin
@@ -552,6 +563,38 @@ async function chargeService(opts: { accountId: string; invoiceId: string; servi
   return null
 }
 
+/** A line on a receipt, with or without a service -- a visit's own line has none. */
+async function addInvoiceLine(opts: { accountId: string; invoiceId: string; description: string; priceCents: number; serviceId?: string | null }) {
+  assertOk(
+    await admin.from('invoice_line_items').insert({
+      account_id: opts.accountId,
+      invoice_id: opts.invoiceId,
+      service_id: opts.serviceId ?? null,
+      description: opts.description,
+      quantity: 1,
+      price_cents: opts.priceCents,
+    }),
+  )
+  return null
+}
+
+/** A receipt's total, as adding or removing a line leaves it. */
+async function setInvoiceTotal(opts: { invoiceId: string; totalCents: number }) {
+  assertOk(await admin.from('invoices').update({ total_cents: opts.totalCents }).eq('id', opts.invoiceId))
+  return null
+}
+
+/** Every receipt raised against one appointment, with its lines, oldest first. */
+async function invoicesForAppointment(opts: { appointmentId: string }) {
+  const { data, error } = await admin
+    .from('invoices')
+    .select('id, invoice_number, status, total_cents, invoice_line_items(description, price_cents, service_id, package_purchase_id), payments!payments_invoice_id_fkey(amount_cents, method)')
+    .eq('appointment_id', opts.appointmentId)
+    .order('created_at')
+  if (error) throw error
+  return data
+}
+
 /** The balance the patient list shows: positive is credit. */
 async function liveBalance(opts: { patientId: string }) {
   const row = unwrap(await admin.from('patients').select('live_balance_cents').eq('id', opts.patientId).single()) as unknown as { live_balance_cents: number }
@@ -607,16 +650,23 @@ async function createServiceProduct(opts: { accountId: string; name: string; pri
 }
 
 /** Enables online booking for a clinic with generous Mon-Fri business hours, for public booking specs. */
-async function enableOnlineBooking(opts: { clinicId: string }) {
-  const businessHours = {
-    mon: [['08:00', '19:00']],
-    tue: [['08:00', '19:00']],
-    wed: [['08:00', '19:00']],
-    thu: [['08:00', '19:00']],
-    fri: [['08:00', '19:00']],
-    sat: [],
-    sun: [],
-  }
+// everyDay: open 07:00-21:00 all week, for a spec that books by relative
+// date through the booking functions and is not about opening hours. Those
+// functions refuse a time outside the hours (20260930141539), and "three days
+// from now" is a Saturday twice a week.
+async function enableOnlineBooking(opts: { clinicId: string; everyDay?: boolean }) {
+  const allDay = [['07:00', '21:00']]
+  const businessHours = opts.everyDay
+    ? { mon: allDay, tue: allDay, wed: allDay, thu: allDay, fri: allDay, sat: allDay, sun: allDay }
+    : {
+        mon: [['08:00', '19:00']],
+        tue: [['08:00', '19:00']],
+        wed: [['08:00', '19:00']],
+        thu: [['08:00', '19:00']],
+        fri: [['08:00', '19:00']],
+        sat: [],
+        sun: [],
+      }
   assertOk(
     await admin
       .from('clinics')
@@ -627,6 +677,52 @@ async function enableOnlineBooking(opts: { clinicId: string }) {
 }
 
 /** Adds 'email' to the account's confirmation channels -- accounts default to whatsapp-only. */
+/**
+ * Confirmations and reminders over WhatsApp, as Settings > Messages and
+ * WhatsApp leave them, against the Meta Graph stub.
+ */
+async function setAutomaticMessages(opts: {
+  accountId: string
+  confirmation?: boolean
+  reminder?: boolean
+  channels?: string[]
+  templateName?: string
+  templateLanguage?: string
+  reminderHoursBefore?: number
+}) {
+  assertOk(
+    await admin
+      .from('accounts')
+      .update({
+        appointment_confirmation_enabled: opts.confirmation ?? true,
+        appointment_confirmation_channels: opts.channels ?? ['whatsapp'],
+        whatsapp_confirmation_template_name: opts.templateName ?? 'confirmacion_cita',
+        whatsapp_confirmation_template_language: opts.templateLanguage ?? 'es',
+        appointment_reminder_enabled: opts.reminder ?? false,
+        appointment_reminder_channels: opts.channels ?? ['whatsapp'],
+        whatsapp_reminder_template_name: opts.templateName ?? 'confirmacion_cita',
+        whatsapp_reminder_template_language: opts.templateLanguage ?? 'es',
+        appointment_reminder_hours_before: opts.reminderHoursBefore ?? 24,
+        whatsapp_business_account_id: 'waba-stub',
+        whatsapp_phone_number_id: `pnid-${Date.now()}-${Math.floor(Math.random() * 1e9)}`,
+        whatsapp_access_token: 'stub-token',
+      })
+      .eq('id', opts.accountId),
+  )
+  return null
+}
+
+/** What was recorded about an appointment's automatic messages. */
+async function appointmentMessageState(opts: { appointmentId: string }) {
+  const { data, error } = await admin
+    .from('appointments')
+    .select('confirmation_sent_at, reminder_sent_at, auto_confirmation_claimed_at')
+    .eq('id', opts.appointmentId)
+    .single()
+  if (error) throw error
+  return data
+}
+
 async function enableEmailConfirmations(opts: { accountId: string }) {
   assertOk(
     await admin
@@ -729,7 +825,8 @@ async function createPayment(opts: {
  * `count` completed visits for one patient, one a day going back from
  * `endingAt`, in a single insert -- a history longer than one unpaged
  * select() returns (PostgREST stops at 1000 rows). With `carePlanVisits`,
- * also a care plan of that many visits, so the list shows its progress.
+ * also a care plan of that many visits, started on the day of the first of
+ * them -- progress counts only the visits since a plan started.
  */
 async function seedCompletedVisits(opts: { accountId: string; clinicId: string; patientId: string; count: number; endingAt: string; carePlanVisits?: number }) {
   const end = new Date(opts.endingAt).getTime()
@@ -749,9 +846,29 @@ async function seedCompletedVisits(opts: { accountId: string; clinicId: string; 
     ),
   )
   if (opts.carePlanVisits) {
-    assertOk(await admin.from('care_plans').insert({ account_id: opts.accountId, patient_id: opts.patientId, name: 'Plan largo', total_visits: opts.carePlanVisits }))
+    const firstVisit = new Date(end - (opts.count - 1) * 86400000).toISOString().slice(0, 10)
+    assertOk(await admin.from('care_plans').insert({ account_id: opts.accountId, patient_id: opts.patientId, name: 'Plan largo', total_visits: opts.carePlanVisits, started_at: firstVisit }))
   }
   return { ok: true }
+}
+
+/** A care plan, started on `startedAt` (a date; today when left out). */
+async function createCarePlan(opts: { accountId: string; patientId: string; totalVisits: number; startedAt?: string; name?: string; frequencyValue?: number; frequencyUnit?: 'week' | 'month' }) {
+  return unwrap(
+    await admin
+      .from('care_plans')
+      .insert({
+        account_id: opts.accountId,
+        patient_id: opts.patientId,
+        name: opts.name ?? 'Plan de tratamiento',
+        total_visits: opts.totalVisits,
+        frequency_value: opts.frequencyValue ?? 1,
+        frequency_unit: opts.frequencyUnit ?? 'week',
+        ...(opts.startedAt ? { started_at: opts.startedAt } : {}),
+      })
+      .select('id')
+      .single(),
+  ) as { id: string }
 }
 
 async function seedManyPayments(opts: { accountId: string; patientId: string; count: number; amountCents?: number }) {
@@ -884,10 +1001,11 @@ async function createFactura(opts: {
  * 0063_patient_status_minor_tutor_dnc.sql), and nothing could set them from a
  * spec before.
  */
-async function setPatientContactFlags(opts: { patientId: string; isMinor?: boolean; doNotContact?: boolean }) {
+async function setPatientContactFlags(opts: { patientId: string; isMinor?: boolean; doNotContact?: boolean; appPushOptedOut?: boolean }) {
   const patch: Record<string, boolean> = {}
   if (opts.isMinor !== undefined) patch.is_minor = opts.isMinor
   if (opts.doNotContact !== undefined) patch.do_not_contact = opts.doNotContact
+  if (opts.appPushOptedOut !== undefined) patch.app_push_opted_out = opts.appPushOptedOut
   const { error } = await admin.from('patients').update(patch).eq('id', opts.patientId)
   if (error) throw error
   return null
@@ -898,6 +1016,17 @@ async function setPatientTutor(opts: { patientId: string; tutorPatientId: string
   const { error } = await admin.from('patients').update({ tutor_patient_id: opts.tutorPatientId }).eq('id', opts.patientId)
   if (error) throw error
   return null
+}
+
+/** The fields a merge has to carry across rather than lose with the
+ *  duplicate: the other system's reference and who may be contacted. */
+async function patientMergeFields(opts: { patientId: string }) {
+  const { data } = await admin
+    .from('patients')
+    .select('id, external_reference, is_minor, tutor_patient_id, app_push_opted_out, do_not_contact, referred_by_patient_id')
+    .eq('id', opts.patientId)
+    .maybeSingle()
+  return data ?? null
 }
 
 async function patientInvoiceEmail(opts: { patientId: string }) {
@@ -950,6 +1079,32 @@ async function paymentsFor(opts: { patientId: string }) {
     .order('paid_at')
   if (error) throw error
   return data
+}
+
+/** The patient's account_credits rows, oldest first. */
+async function creditsFor(opts: { patientId: string }) {
+  const { data, error } = await admin
+    .from('account_credits')
+    .select('amount_cents, payment_id, invoice_id, reason')
+    .eq('patient_id', opts.patientId)
+    .order('created_at')
+  if (error) throw error
+  return data
+}
+
+/** A Stripe-paid schedule as the webhook left it: the instalment counter and
+ *  the events mirrored from Stripe. */
+async function stripeScheduleState(opts: { subscriptionId: string }) {
+  const schedule = unwrap(
+    await admin.from('payment_schedules').select('id, installments_paid, status').eq('stripe_subscription_id', opts.subscriptionId).single(),
+  ) as { id: string; installments_paid: number; status: string }
+  const { data: events, error } = await admin
+    .from('stripe_payment_events')
+    .select('stripe_invoice_id, stripe_payment_intent_id, status, amount_cents')
+    .eq('payment_schedule_id', schedule.id)
+    .order('created_at')
+  if (error) throw error
+  return { installmentsPaid: schedule.installments_paid, status: schedule.status, events }
 }
 
 async function facturasFor(opts: { patientId: string }) {
@@ -1313,8 +1468,70 @@ async function callPublicBookingAsAnon(args: Record<string, unknown>) {
   const anon = createClient(SUPABASE_URL, ANON_KEY, {
     auth: { autoRefreshToken: false, persistSession: false },
   })
-  const { error } = await anon.rpc('create_public_booking', args as never)
-  return { error: error?.message ?? null }
+  const { data, error } = await anon.rpc('create_public_booking', args as never)
+  return { error: error?.message ?? null, data: (data as Record<string, unknown> | null) ?? null }
+}
+
+/**
+ * The same booking sent `times` times at once, each on its own anon client --
+ * several patients pressing "Reservar" on one slot in the same instant.
+ */
+async function callPublicBookingConcurrently(opts: { args: Record<string, unknown>; times: number }) {
+  const results = await Promise.all(
+    Array.from({ length: opts.times }, (_, i) => {
+      const anon = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+      // A different person each time, so nothing but the slot is shared.
+      const args = { ...opts.args, p_email: `race-${i}-${Date.now()}@example.test`, p_first_name: `Carrera ${i}` }
+      return anon.rpc('create_public_booking', args as never).then(({ error }) => error?.message ?? null)
+    }),
+  )
+  return { errors: results }
+}
+
+/**
+ * The same HTTP request sent once per body, all at the same instant -- an
+ * integration firing parallel calls at the public API. cy.request queues one
+ * after another, which can never race; this cannot help but race.
+ */
+async function requestConcurrently(opts: { url: string; method: string; headers?: Record<string, string>; bodies: unknown[] }) {
+  const results = await Promise.all(
+    opts.bodies.map(async (body) => {
+      const res = await fetch(opts.url, {
+        method: opts.method,
+        headers: { 'content-type': 'application/json', ...(opts.headers ?? {}) },
+        body: JSON.stringify(body),
+      })
+      const text = await res.text()
+      let parsed: unknown = text
+      try {
+        parsed = JSON.parse(text)
+      } catch {
+        // Left as text: a 500 page is still worth seeing in the assertion.
+      }
+      return { status: res.status, body: parsed }
+    }),
+  )
+  return results
+}
+
+/** Time blocked off on the calendar: the whole clinic, or one practitioner's. */
+async function createAvailabilityBlock(opts: { accountId: string; clinicId: string; startsAt: string; endsAt: string; practitionerId?: string | null; roomId?: string | null; note?: string | null }) {
+  const row = unwrap(
+    await admin
+      .from('availability_blocks')
+      .insert({
+        account_id: opts.accountId,
+        clinic_id: opts.clinicId,
+        starts_at: opts.startsAt,
+        ends_at: opts.endsAt,
+        practitioner_id: opts.practitionerId ?? null,
+        room_id: opts.roomId ?? null,
+        note: opts.note ?? null,
+      })
+      .select('id')
+      .single(),
+  )
+  return row as { id: string }
 }
 
 /**
@@ -1329,8 +1546,8 @@ async function callRpcAsAnon(opts: { fn: string; args?: Record<string, unknown> 
   const anon = createClient(SUPABASE_URL, ANON_KEY, {
     auth: { autoRefreshToken: false, persistSession: false },
   })
-  const { error } = await anon.rpc(opts.fn, (opts.args ?? {}) as never)
-  return { error: error?.message ?? null, code: (error as { code?: string } | null)?.code ?? null }
+  const { data, error } = await anon.rpc(opts.fn, (opts.args ?? {}) as never)
+  return { error: error?.message ?? null, code: (error as { code?: string } | null)?.code ?? null, data: data ?? null }
 }
 
 /**
@@ -1547,6 +1764,49 @@ async function issueReceiptNumber(opts: { accountId: string }) {
 }
 
 /**
+ * A patient file with real content in storage, as an upload leaves it.
+ *
+ * As an upload leaves it means visibility 'generic' (the column default):
+ * staff-only, and invisible to the patient app's Documents screen. A file is
+ * shared with the patient only by the web's Attachments tab setting it to
+ * 'Custom' (visibility = 'custom'), which is all the "patients view own custom
+ * patient_files" policy (0162) and /api/patient-files/signed-url look at --
+ * there is no 'patient' value, and the check constraint refuses one. A spec
+ * that expects the patient to see this file has to update visibility to
+ * 'custom' itself; one that did not read a "missing" document as a bug.
+ */
+async function storePatientFile(opts: { accountId: string; patientId: string; fileName: string }) {
+  const path = `${opts.accountId}/${opts.patientId}/${Date.now()}-${opts.fileName}`
+  const { error: uploadError } = await admin.storage.from('patient-files').upload(path, Buffer.from('%PDF-1.4 test'), { contentType: 'application/pdf' })
+  if (uploadError) throw uploadError
+  const row = unwrap(
+    await admin
+      .from('patient_files')
+      .insert({ account_id: opts.accountId, patient_id: opts.patientId, file_name: opts.fileName, file_type: 'application/pdf', size_bytes: 13, storage_path: path })
+      .select('id')
+      .single(),
+  )
+  return { id: (row as { id: string }).id, path }
+}
+
+/** Whether a patient file's content is still in storage. */
+async function patientFileStored(opts: { path: string }) {
+  const folder = opts.path.split('/').slice(0, -1).join('/')
+  const name = opts.path.split('/').pop()!
+  const { data } = await admin.storage.from('patient-files').list(folder, { search: name })
+  return (data ?? []).some((o) => o.name === name)
+}
+
+/** Removing a patient file's content as a signed-in staff member. */
+async function removePatientFileAsStaff(opts: { email: string; password: string; path: string }) {
+  const userClient = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+  const { error: signInErr } = await userClient.auth.signInWithPassword({ email: opts.email, password: opts.password })
+  if (signInErr) throw signInErr
+  const { data, error } = await userClient.storage.from('patient-files').remove([opts.path])
+  return { removed: data?.length ?? 0, error: error ? error.message : null }
+}
+
+/**
  * A file the clinic uploaded. No object is stored -- only the row.
  * storagePath: null is a file an import left as a name only; compressed and
  * externalReference are what Settings > Files counts.
@@ -1612,6 +1872,17 @@ async function patientByName(opts: { accountId: string; firstName: string; lastN
   return data ?? null
 }
 
+/** A message in the patient app's own channel, as the app writes one. */
+async function createPatientAppMessage(opts: { accountId: string; patientId: string; direction: 'inbound' | 'outbound'; body: string }) {
+  return unwrap(
+    await admin
+      .from('patient_app_messages')
+      .insert({ account_id: opts.accountId, patient_id: opts.patientId, direction: opts.direction, body: opts.body })
+      .select('id')
+      .single(),
+  )
+}
+
 async function createWhatsappMessage(opts: {
   accountId: string
   patientId?: string
@@ -1629,6 +1900,10 @@ async function createWhatsappMessage(opts: {
   /** 'instagram' with an externalContactId for a DM; WhatsApp otherwise. */
   channel?: string
   externalContactId?: string
+  /** Meta's message id, so a spec can send status callbacks about it. */
+  wamid?: string
+  /** A lead's message, stored the way the webhook attributes one. */
+  leadId?: string
 }) {
   const { accountId, patientId, phoneNumber, direction, bodyPreview } = opts
   const row = unwrap(
@@ -1647,6 +1922,8 @@ async function createWhatsappMessage(opts: {
         ...(opts.createdAt ? { created_at: opts.createdAt } : {}),
         ...(opts.channel ? { channel: opts.channel } : {}),
         ...(opts.externalContactId ? { external_contact_id: opts.externalContactId } : {}),
+        ...(opts.wamid ? { wamid: opts.wamid } : {}),
+        ...(opts.leadId ? { lead_id: opts.leadId } : {}),
       })
       .select('id, channel')
       .single(),
@@ -1722,6 +1999,26 @@ async function seedWhatsappReplyScenario(opts: {
 // message -- every inbound message is stored before any intent is applied.
 // A test asserting a status STAYED put passes just as happily when the
 // endpoint silently no-opped, so the negative cases check this too.
+/** One more number on a patient, as the patient form adds a second phone. */
+async function addPatientContactNumber(opts: { accountId: string; patientId: string; number: string; countryCode?: string; isWhatsapp?: boolean }) {
+  assertOk(
+    await admin.from('patient_contact_numbers').insert({
+      account_id: opts.accountId,
+      patient_id: opts.patientId,
+      number: opts.number,
+      country_code: opts.countryCode ?? 'ES',
+      is_whatsapp: opts.isWhatsapp ?? false,
+    }),
+  )
+  return { ok: true }
+}
+
+/** A patient's numbers, as stored: local part and country. */
+async function patientContactNumbers(opts: { patientId: string }) {
+  const rows = unwrap(await admin.from('patient_contact_numbers').select('number, country_code, is_whatsapp').eq('patient_id', opts.patientId).order('created_at'))
+  return rows as { number: string; country_code: string; is_whatsapp: boolean }[]
+}
+
 async function inboundMessages(opts: { patientId: string }) {
   const rows = unwrap(
     await admin.from('whatsapp_messages').select('id, body_preview').eq('patient_id', opts.patientId).eq('direction', 'inbound'),
@@ -1800,7 +2097,16 @@ async function accountWhatsappConnection(opts: { accountId: string }) {
     .select('whatsapp_access_token, whatsapp_business_account_id, whatsapp_phone_number_id')
     .eq('id', opts.accountId)
     .maybeSingle()
-  return data ?? null
+  if (!data) return null
+  // The token is a secret now; the column is only the fallback.
+  const { data: secret } = await admin.from('account_secrets').select('value').eq('account_id', opts.accountId).eq('name', 'whatsapp_access_token').maybeSingle()
+  return { ...data, whatsapp_access_token: secret?.value ?? data.whatsapp_access_token }
+}
+
+/** What a staff member can read of the messaging tokens, straight from accounts. */
+async function messagingTokenColumnsOf(opts: { accountId: string }) {
+  const { data } = await admin.from('accounts').select('whatsapp_access_token, instagram_access_token, meta_ads_access_token').eq('id', opts.accountId).single()
+  return data
 }
 
 // Stores a secret the way the server does, so a spec can then try to read it
@@ -1827,6 +2133,42 @@ async function readAsStaff(opts: { email: string; password: string; table: strin
 
   const { data, error } = await userClient.from(opts.table as never).select(opts.columns ?? '*')
   return { rows: (data as unknown[] | null)?.length ?? 0, error: error ? error.message : null }
+}
+
+/**
+ * Rows a signed-in staff member gets back from a table or view, with the
+ * browser's own key -- optionally narrowed to some ids, so a spec can ask
+ * "which of these two patients' rows can this person see" without the rest of
+ * a shared database getting in the way.
+ */
+async function selectAsStaff(opts: { email: string; password: string; table: string; columns?: string; inColumn?: string; inValues?: string[] }) {
+  const userClient = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+  const { error: signInErr } = await userClient.auth.signInWithPassword({ email: opts.email, password: opts.password })
+  if (signInErr) throw signInErr
+  let query = (userClient.from(opts.table as never) as any).select(opts.columns ?? '*')
+  if (opts.inColumn) query = query.in(opts.inColumn, opts.inValues ?? [])
+  const { data, error } = await query
+  return { rows: (data as unknown[] | null) ?? [], error: error ? error.message : null }
+}
+
+/** An RPC as a signed-in staff member, with the browser's own key. */
+async function rpcAsStaff(opts: { email: string; password: string; fn: string; args?: Record<string, unknown> }) {
+  const userClient = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+  const { error: signInErr } = await userClient.auth.signInWithPassword({ email: opts.email, password: opts.password })
+  if (signInErr) throw signInErr
+  const { data, error } = await (userClient.rpc as any)(opts.fn, opts.args ?? {})
+  return { data: data ?? null, error: error ? error.message : null }
+}
+
+/** Seeds rows into any table with the service role, returning them. */
+async function insertRows(opts: { table: string; rows: Record<string, unknown>[] }) {
+  return unwrap(await (admin.from(opts.table as never) as any).insert(opts.rows).select('*')) as Record<string, unknown>[]
+}
+
+/** Sets columns on the rows matching `match`, with the service role. */
+async function updateRows(opts: { table: string; values: Record<string, unknown>; match: Record<string, unknown> }) {
+  assertOk(await (admin.from(opts.table as never) as any).update(opts.values).match(opts.match))
+  return null
 }
 
 /**
@@ -1977,6 +2319,8 @@ async function createAppointment(opts: {
   // visit at any point of the flow without clicking through it.
   confirmationStatus?: string | null
   source?: string
+  /** Backdated creation, for the crons that look at how long ago a booking was made. */
+  createdAt?: string
   checkedInAt?: string | null
   flowWithPractitionerAt?: string | null
   flowCheckoutAt?: string | null
@@ -1986,6 +2330,8 @@ async function createAppointment(opts: {
   reminderSentAt?: string | null
   /** Soft-deleted, as the panel's Delete leaves it. */
   deletedAt?: string | null
+  /** Moved at some point, as a drag or the public API leaves it. */
+  rescheduled?: boolean
 }) {
   const startsAt = new Date(opts.startsAt)
   const endsAt = new Date(startsAt.getTime() + (opts.durationMinutes ?? 30) * 60000)
@@ -2003,6 +2349,8 @@ async function createAppointment(opts: {
         ...(opts.checkedIn ? { checked_in_at: startsAt.toISOString(), flow_with_practitioner_at: startsAt.toISOString() } : {}),
         ...(opts.confirmationStatus !== undefined ? { confirmation_status: opts.confirmationStatus } : {}),
         ...(opts.source ? { source: opts.source } : {}),
+        ...(opts.rescheduled ? { rescheduled: true } : {}),
+        ...(opts.createdAt ? { created_at: opts.createdAt } : {}),
         ...(opts.checkedInAt !== undefined ? { checked_in_at: opts.checkedInAt } : {}),
         ...(opts.flowWithPractitionerAt !== undefined ? { flow_with_practitioner_at: opts.flowWithPractitionerAt } : {}),
         ...(opts.flowCheckoutAt !== undefined ? { flow_checkout_at: opts.flowCheckoutAt } : {}),
@@ -2107,6 +2455,15 @@ async function createLead(opts: {
 async function leadById(opts: { id: string }) {
   const { data } = await admin.from('leads').select('*').eq('id', opts.id).maybeSingle()
   return data
+}
+
+/**
+ * Every lead on an account, deleted or not, for asserting a refused request
+ * wrote nothing -- a count, because a refused lead has no id to look up.
+ */
+async function leadCount(opts: { accountId: string }) {
+  const { count } = await admin.from('leads').select('id', { count: 'exact', head: true }).eq('account_id', opts.accountId)
+  return count ?? 0
 }
 
 /** The timeline the API wrote, for asserting a stage change was recorded. */
@@ -2547,6 +2904,11 @@ async function leadMessages(opts: { leadId: string }) {
 // Graph API would mean live calls to Meta from CI; testing it not at all would
 // leave the one endpoint that stores a credential unexercised.
 const META_GRAPH_STUB_PORT = 9147
+// What the stub was asked to send, for a spec to read back.
+let metaGraphStubSends: unknown[] = []
+async function metaGraphStubSendsOf() {
+  return metaGraphStubSends
+}
 let metaGraphStub: import('node:http').Server | null = null
 
 async function startMetaGraphStub(opts: {
@@ -2557,6 +2919,17 @@ async function startMetaGraphStub(opts: {
   displayPhoneNumber?: string
   /** Scopes granted, so a connection with no WABA on it can be simulated. */
   scope?: string
+  /** The template list Meta answers with, variants and statuses included. */
+  templates?: { name: string; language: string; status: string; body: string }[]
+  /** Refuse template sends, as Meta does for a paused template. */
+  failSends?: boolean
+  /**
+   * What the message ids Meta answers with start with. Unique per run by
+   * default, because whatsapp_messages.wamid is unique and the database is
+   * shared across runs; a spec sets it to know an id before the send that
+   * gets it -- which is how a status that beats its own message is staged.
+   */
+  wamidPrefix?: string
 }) {
   await stopMetaGraphStub()
   const { createServer } = await import('node:http')
@@ -2564,6 +2937,7 @@ async function startMetaGraphStub(opts: {
   const wabaId = opts.wabaId ?? '102290129340398'
   const phoneNumberId = opts.phoneNumberId ?? '387933511072949'
   const seen: string[] = []
+  const wamidPrefix = opts.wamidPrefix ?? `wamid.STUB.${Date.now()}.`
 
   const server = createServer((req, res) => {
     const path = (req.url ?? '').split('?')[0]
@@ -2591,6 +2965,11 @@ async function startMetaGraphStub(opts: {
       if (opts.failAt === 'templates') {
         return send(401, { error: { message: 'Error validating access token: Session has expired.', type: 'OAuthException', code: 190 } })
       }
+      if (opts.templates) {
+        return send(200, {
+          data: opts.templates.map((t) => ({ name: t.name, language: t.language, category: 'UTILITY', status: t.status, components: [{ type: 'BODY', text: t.body }] })),
+        })
+      }
       return send(200, {
         data: [
           {
@@ -2602,6 +2981,27 @@ async function startMetaGraphStub(opts: {
           },
         ],
       })
+    }
+    if (path.endsWith('/messages') && req.method === 'POST') {
+      let raw = ''
+      req.on('data', (chunk) => (raw += chunk))
+      req.on('end', () => {
+        try {
+          metaGraphStubSends.push(JSON.parse(raw))
+        } catch {
+          metaGraphStubSends.push(raw)
+        }
+        if (opts.failSends) return send(400, { error: { message: 'Template is paused.', code: 132015 } })
+        send(200, { messages: [{ id: `${wamidPrefix}${metaGraphStubSends.length}` }] })
+      })
+      return
+    }
+    // A media upload, before a media send can name it. The body is multipart
+    // and nothing here needs to read it.
+    if (path.endsWith('/media') && req.method === 'POST') {
+      req.resume()
+      req.on('end', () => send(200, { id: `media.STUB.${Date.now()}` }))
+      return
     }
     if (path.endsWith('/phone_numbers')) {
       if (opts.failAt === 'phones') return refuse('Unsupported get request.')
@@ -2620,6 +3020,7 @@ async function startMetaGraphStub(opts: {
 }
 
 async function stopMetaGraphStub() {
+  metaGraphStubSends = []
   const server = metaGraphStub
   metaGraphStub = null
   if (!server) return { ok: true }
@@ -2629,11 +3030,28 @@ async function stopMetaGraphStub() {
 
 let practiceHubStub: import('node:http').Server | null = null
 
-async function startPracticeHubStub(opts: { totalEntries?: number; emails?: string[] }) {
+// The key the last request to the stub carried, so a spec can tell which one
+// the proxy sent without the stub checking keys itself.
+let practiceHubStubLastKey = ''
+
+/** What the legacy accounts column holds: nothing, once a key is saved as a secret. */
+async function practiceHubKeyColumnOf(opts: { accountId: string }) {
+  const { data } = await admin.from('accounts').select('practicehub_api_key').eq('id', opts.accountId).single()
+  return (data as { practicehub_api_key: string | null } | null)?.practicehub_api_key ?? null
+}
+async function practiceHubStubLastKeyOf() {
+  return practiceHubStubLastKey
+}
+
+async function startPracticeHubStub(opts: { totalEntries?: number; emails?: string[]; delayMs?: number }) {
   await stopPracticeHubStub()
   const { createServer } = await import('node:http')
   const emails = opts.emails ?? []
-  const server = createServer((_req, res) => {
+  const server = createServer(async (req, res) => {
+    practiceHubStubLastKey = String(req.headers['x-practicehub-key'] ?? '')
+    // A slow PracticeHub holds a run inside its pre-send check, which is
+    // what widens a race between two processes walking the same run.
+    if (opts.delayMs) await new Promise((resolve) => setTimeout(resolve, opts.delayMs))
     res.setHeader('content-type', 'application/json')
     res.end(
       JSON.stringify({
@@ -3431,6 +3849,7 @@ export const dbTasks = {
   'db:patientCount': patientCount,
   'db:leadById': leadById,
   'db:leadEvents': leadEvents,
+  'db:leadCount': leadCount,
   'db:createTeamMemberWithRole': createTeamMemberWithRole,
   'db:setRolePermissions': setRolePermissions,
   'db:setSubscriptionStatus': setSubscriptionStatus,
@@ -3454,12 +3873,18 @@ export const dbTasks = {
   'db:liveBalance': liveBalance,
   'db:deleteServiceProduct': deleteServiceProduct,
   'db:chargeService': chargeService,
+  'db:addInvoiceLine': addInvoiceLine,
+  'db:invoicesForAppointment': invoicesForAppointment,
+  'db:setInvoiceTotal': setInvoiceTotal,
+  // Any signed-in user, staff included: the name is historical.
+  'db:callRpcAs': callRpcAsPatient,
   'db:enableOnlineBooking': enableOnlineBooking,
   'db:enableEmailConfirmations': enableEmailConfirmations,
   'db:createInvoice': createInvoice,
   'db:createPayment': createPayment,
   'db:seedManyPayments': seedManyPayments,
   'db:seedCompletedVisits': seedCompletedVisits,
+  'db:createCarePlan': createCarePlan,
   'db:nextInvoiceNumber': nextInvoiceNumber,
   'db:deleteInvoice': deleteInvoice,
   'db:paymentById': paymentById,
@@ -3469,18 +3894,24 @@ export const dbTasks = {
   'db:patientInvoiceEmail': patientInvoiceEmail,
   'db:setPatientContactFlags': setPatientContactFlags,
   'db:setPatientTutor': setPatientTutor,
+  'db:patientMergeFields': patientMergeFields,
   'db:createPatientDoc': createPatientDoc,
   'db:createDocTemplate': createDocTemplate,
   'db:commsSettingsOf': commsSettingsOf,
   'db:uploadDocImage': uploadDocImage,
   'db:patientDocFields': patientDocFields,
   'db:createPatientFile': createPatientFile,
+  'db:storePatientFile': storePatientFile,
+  'db:patientFileStored': patientFileStored,
+  'db:removePatientFileAsStaff': removePatientFileAsStaff,
   'db:issueReceiptNumber': issueReceiptNumber,
   'db:selectRows': selectRows,
   'db:addVisitNote': addVisitNote,
   'db:setPatientClinical': setPatientClinical,
   'db:createAccountCredit': createAccountCredit,
   'db:paymentsFor': paymentsFor,
+  'db:creditsFor': creditsFor,
+  'db:stripeScheduleState': stripeScheduleState,
   'db:auditLogFor': auditLogFor,
   'db:facturasFor': facturasFor,
   'db:createFacturaWithoutTax': createFacturaWithoutTax,
@@ -3509,6 +3940,9 @@ export const dbTasks = {
   'db:createImportedPayment': createImportedPayment,
   'db:createPackagePurchase': createPackagePurchase,
   'db:callPublicBookingAsAnon': callPublicBookingAsAnon,
+  'db:callPublicBookingConcurrently': callPublicBookingConcurrently,
+  'db:createAvailabilityBlock': createAvailabilityBlock,
+  'db:requestConcurrently': requestConcurrently,
   'db:callRpcAsAnon': callRpcAsAnon,
   'db:setAppointmentTypeBookingRules': setAppointmentTypeBookingRules,
   'db:givePatientAppLogin': givePatientAppLogin,
@@ -3521,6 +3955,7 @@ export const dbTasks = {
   'db:claimInstagramId': claimInstagramId,
   'db:usePackageSession': usePackageSession,
   'db:createWhatsappMessage': createWhatsappMessage,
+  'db:createPatientAppMessage': createPatientAppMessage,
   'db:seedWhatsappReplyScenario': seedWhatsappReplyScenario,
   'db:createAppointment': createAppointment,
   'db:setStickyNote': setStickyNote,
@@ -3532,6 +3967,7 @@ export const dbTasks = {
   'db:setTeamMemberHours': setTeamMemberHours,
   'db:setRecallState': setRecallState,
   'db:addClinic': addClinic,
+  'db:linkTeamMemberToClinic': linkTeamMemberToClinic,
   'db:recallState': recallState,
   'db:teamMemberById': teamMemberById,
   'db:teamMemberDetail': teamMemberDetail,
@@ -3554,19 +3990,31 @@ export const dbTasks = {
   'db:setWhatsappAppSecret': setWhatsappAppSecret,
   'db:createApiToken': createApiToken,
   'db:signWhatsappBody': signWhatsappBody,
+  'db:addPatientContactNumber': addPatientContactNumber,
+  'db:patientContactNumbers': patientContactNumbers,
   'db:clearWhatsappAppSecret': clearWhatsappAppSecret,
   'db:setAccountSecret': setAccountSecret,
   'db:accountWhatsappConnection': accountWhatsappConnection,
+  'db:messagingTokenColumnsOf': messagingTokenColumnsOf,
   'db:setWhatsappBusinessAccount': setWhatsappBusinessAccount,
   'db:setBookingTextOverrides': setBookingTextOverrides,
   'db:bookingAndWhatsappSettingsOf': bookingAndWhatsappSettingsOf,
   'db:setAccountWhatsappToken': setAccountWhatsappToken,
   'db:startMetaGraphStub': startMetaGraphStub,
   'db:stopMetaGraphStub': stopMetaGraphStub,
+  'db:metaGraphStubSends': metaGraphStubSendsOf,
+  'db:setAutomaticMessages': setAutomaticMessages,
+  'db:appointmentMessageState': appointmentMessageState,
   'db:readAsStaff': readAsStaff,
   'db:rolePermissions': rolePermissions,
   'db:writeAsStaff': writeAsStaff,
   'db:settingsWriteAsStaff': settingsWriteAsStaff,
+  'db:selectAsStaff': selectAsStaff,
+  'db:rpcAsStaff': rpcAsStaff,
+  'db:insertRows': insertRows,
+  'db:updateRows': updateRows,
+  'db:practiceHubStubLastKey': practiceHubStubLastKeyOf,
+  'db:practiceHubKeyColumn': practiceHubKeyColumnOf,
   'db:roleByName': roleByName,
   'db:roleIdsOf': roleIdsOf,
   'db:packagePurchasesFor': packagePurchasesFor,

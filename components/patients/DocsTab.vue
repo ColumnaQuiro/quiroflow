@@ -9,6 +9,7 @@ const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
 const { showToast } = useToast()
+const { can } = usePermission()
 
 // `public_token` isn't in the generated Supabase types yet -- merge it in
 // locally rather than editing the generated file by hand.
@@ -156,9 +157,19 @@ async function toggleComplete() {
   }
 }
 
+// Deleting needs patient_docs_delete (and, under own-docs scope, the form to
+// be theirs), and RLS refuses otherwise by deleting nothing -- no error. So
+// the rows that went are read back, as FilesTab does: the form used to
+// vanish here regardless and come back on the next load.
+const deleteError = ref('')
 async function removeDoc(doc: Doc) {
   if (!confirm(`${t('Delete', 'Eliminar')} "${doc.title}"?`)) return
-  await supabase.from('patient_docs').delete().eq('id', doc.id)
+  deleteError.value = ''
+  const { data: gone, error } = await supabase.from('patient_docs').delete().eq('id', doc.id).select('id')
+  if (error || !gone?.length) {
+    deleteError.value = error?.message ?? t('This form was not deleted: your role cannot delete it.', 'No se ha eliminado el formulario: tu rol no puede eliminarlo.')
+    return
+  }
   docs.value = docs.value.filter((d) => d.id !== doc.id)
   if (activeDoc.value?.id === doc.id) activeDoc.value = null
 }
@@ -196,7 +207,7 @@ function metaFor(doc: Doc) {
       <div class="flex items-center justify-between border-b border-line-divider px-4 py-3">
         <p class="text-[13.5px] font-semibold text-ink-700">
           {{ t('Forms sent to the patient', 'Formularios enviados al paciente') }}
-          <span v-if="!loading" class="ml-1 font-normal text-ink-faint">{{ docs.length }}</span>
+          <span v-if="!loading" class="ml-1 font-normal text-ink-faint" data-cy="docs-count">{{ docs.length }}</span>
         </p>
         <div class="relative">
           <UiBtn variant="primary" size="sm" @click="showNewMenu = !showNewMenu">{{ t('Send a form', 'Enviar un formulario') }}</UiBtn>
@@ -219,6 +230,7 @@ function metaFor(doc: Doc) {
           </div>
         </div>
       </div>
+      <p v-if="deleteError" role="alert" class="px-4 pt-3 text-[13px] text-danger-text" data-cy="docs-error">{{ deleteError }}</p>
       <div v-if="loading" class="divide-y divide-line-row">
         <div v-for="i in 3" :key="i" class="flex items-center gap-3 px-4 py-3">
           <UiSkeleton class="h-[26px] w-[26px] shrink-0 rounded-ctlSm" />
@@ -232,12 +244,15 @@ function metaFor(doc: Doc) {
         {{ t('No docs yet — e.g. a data protection consent record for this patient.', 'Aún no hay documentos — p. ej. un registro de consentimiento de protección de datos para este paciente.') }}
       </div>
       <ul v-else class="divide-y divide-line-row">
-        <li v-for="doc in docs" :key="doc.id" class="flex items-center gap-3 px-4 py-3">
+        <!-- On a phone the status and the four actions take a line of their
+             own under the title; beside it they squeezed the title and the
+             date down to a column one word wide. -->
+        <li v-for="doc in docs" :key="doc.id" class="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 sm:flex-nowrap">
           <svg width="26" height="26" viewBox="0 0 26 26" fill="none" class="shrink-0 text-ink-faint2">
             <path d="M7 3h8l4 4v15a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1z" stroke="currentColor" stroke-width="1.3" />
             <path d="M15 3v4h4" stroke="currentColor" stroke-width="1.3" />
           </svg>
-          <div class="min-w-0 flex-1">
+          <div class="min-w-0 flex-1 basis-[calc(100%-38px)] sm:basis-0">
             <button type="button" class="block w-full text-left outline-none focus-visible:shadow-focus" @click="openDoc(doc)">
               <p class="truncate text-[13px] font-medium text-ink-700 hover:text-brand-text">{{ doc.title }}</p>
               <p class="text-[11.5px] text-ink-faint">{{ metaFor(doc) }}</p>
@@ -256,24 +271,26 @@ function metaFor(doc: Doc) {
               </button>
             </p>
           </div>
+          <div class="flex w-full flex-wrap items-center gap-x-3 gap-y-1 pl-[38px] sm:w-auto sm:flex-nowrap sm:pl-0">
           <UiPill :tone="statusFor(doc).tone">{{ statusFor(doc).label }}</UiPill>
-          <div class="flex items-center gap-2.5">
-            <button type="button" class="text-[11.5px] font-medium text-brand-text hover:text-brand-hover" :title="t('Open patient link in a new tab', 'Abrir el enlace del paciente en una pestaña nueva')" @click="openLink(doc)">
+          <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+            <button type="button" class="text-[11.5px] font-medium text-brand-text hover:text-brand-hover touch:min-h-11" :title="t('Open patient link in a new tab', 'Abrir el enlace del paciente en una pestaña nueva')" @click="openLink(doc)">
               {{ doc.completed_at ? t('View answers', 'Ver respuestas') : t('Open', 'Abrir') }}
             </button>
-            <button type="button" class="text-[11.5px] font-medium text-brand-text hover:text-brand-hover" :title="t('Copy patient link', 'Copiar el enlace del paciente')" @click="copyLink(doc)">
+            <button type="button" class="text-[11.5px] font-medium text-brand-text hover:text-brand-hover touch:min-h-11" :title="t('Copy patient link', 'Copiar el enlace del paciente')" @click="copyLink(doc)">
               {{ copiedId === doc.id ? t('Copied!', '¡Copiado!') : t('Copy link', 'Copiar enlace') }}
             </button>
             <button
               v-if="patientPhoneDigits"
               type="button"
-              class="text-[11.5px] font-medium text-success-text hover:text-success-deep"
+              class="text-[11.5px] font-medium text-success-text hover:text-success-deep touch:min-h-11"
               :title="t('Send patient link via WhatsApp', 'Enviar el enlace del paciente por WhatsApp')"
               @click="sendViaWhatsApp(doc)"
             >
               {{ t('Resend', 'Reenviar') }}
             </button>
-            <UiIconBtn icon="trash" tone="danger" :label="t('Delete', 'Eliminar')" @click="removeDoc(doc)" />
+            <UiIconBtn v-if="can('patient_docs_delete')" icon="trash" tone="danger" data-cy="doc-delete" :label="t('Delete', 'Eliminar')" @click="removeDoc(doc)" />
+          </div>
           </div>
         </li>
       </ul>

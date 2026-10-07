@@ -39,7 +39,7 @@ interface Appointment {
   clinic_id: string | null
   room_id: string | null
   team_members: { full_name: string } | null
-  patients: { first_name: string; last_name: string | null; red_flags: string | null; yellow_flags: string | null; sticky_note: string | null } | null
+  patients: { first_name: string; last_name: string | null; red_flags: string | null; yellow_flags: string | null; sticky_note: string | null; chief_complaint: string | null; diagnosis: string | null } | null
   appointment_types: { name: string; default_price_cents: number } | null
   clinics: { timezone: string | null } | null
 }
@@ -62,7 +62,7 @@ async function loadAppointment() {
   const { data } = await supabase
     .from('appointments')
     .select(
-      'id, patient_id, starts_at, ends_at, status, checked_in_at, confirmation_status, appointment_type_id, practitioner_id, clinic_id, room_id, team_members(full_name), patients(first_name, last_name, red_flags, yellow_flags, sticky_note), appointment_types(name, default_price_cents), clinics(timezone)',
+      'id, patient_id, starts_at, ends_at, status, checked_in_at, confirmation_status, appointment_type_id, practitioner_id, clinic_id, room_id, team_members(full_name), patients(first_name, last_name, red_flags, yellow_flags, sticky_note, chief_complaint, diagnosis), appointment_types(name, default_price_cents), clinics(timezone)',
     )
     .eq('id', appointmentId)
     .maybeSingle()
@@ -654,6 +654,11 @@ watch(
           </NuxtLink>
           <button type="button" class="flex h-9 shrink-0 items-center rounded-ctl border border-line-control px-2.5 text-[12.5px] font-semibold text-brand-text" data-cy="visit-plan-edit" @click="planSheetOpen = true">{{ plan ? t('Plan', 'Plan') : t('+ Plan', '+ Plan') }}</button>
           </div>
+          <!-- Why they came and the working diagnosis, read before treating -->
+          <dl v-if="appointment.patients?.chief_complaint?.trim() || appointment.patients?.diagnosis?.trim()" class="mt-2 space-y-0.5 text-[12.5px] leading-snug" data-cy="visit-clinical">
+            <div v-if="appointment.patients?.chief_complaint?.trim()" class="flex gap-1.5"><dt class="shrink-0 text-ink-muted2">{{ t('Complaint', 'Motivo') }}:</dt><dd class="line-clamp-2 text-ink-900">{{ appointment.patients.chief_complaint }}</dd></div>
+            <div v-if="appointment.patients?.diagnosis?.trim()" class="flex gap-1.5"><dt class="shrink-0 text-ink-muted2">{{ t('Diagnosis', 'Diagnóstico') }}:</dt><dd class="line-clamp-2 text-ink-900">{{ appointment.patients.diagnosis }}</dd></div>
+          </dl>
           <div v-if="alerts.length > 0 || bonoChip" class="mt-2 flex flex-wrap gap-1.5" data-cy="visit-alerts">
             <span v-for="al in alerts" :key="al.key" class="inline-flex min-h-6 max-w-full items-center gap-1 rounded-card px-2.5 py-[3px] text-[11.5px] font-semibold leading-snug" :class="al.cls">
               <svg v-if="al.key !== 'note'" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" class="shrink-0" aria-hidden="true"><path d="M8 2l6.2 11H1.8z" stroke-linejoin="round" /><path d="M8 6.5v3M8 11.5v.1" stroke-linecap="round" /></svg>

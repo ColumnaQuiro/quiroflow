@@ -10,6 +10,7 @@ definePageMeta({ layout: false })
 
 const route = useRoute()
 const supabase = useSupabaseClient()
+const user = useSupabaseUser()
 const store = useAccountStore()
 const { gate } = useTwoFactor()
 const t = useT()
@@ -36,6 +37,8 @@ async function done() {
 
 async function signOut() {
   await supabase.auth.signOut({ scope: 'local' })
+  // See components/AppAccountMenu.vue: the claims can outlive the session.
+  user.value = null
   store.reset()
   await navigateTo('/login')
 }

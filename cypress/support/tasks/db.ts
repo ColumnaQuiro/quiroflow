@@ -2592,6 +2592,35 @@ async function leadsByExternalId(opts: { accountId: string; externalSource: stri
   return data ?? []
 }
 
+/**
+ * A Facebook Page connected for lead ads, as /api/meta/lead-pages/connect
+ * leaves it -- without going through Meta's dialog, which a test cannot.
+ */
+async function connectLeadAdPage(opts: { accountId: string; pageId: string; pageName?: string; accessToken?: string; formSubmissionIsConsent?: boolean; connectedAt?: string }) {
+  assertOk(
+    await admin.from('lead_ad_pages').insert({
+      account_id: opts.accountId,
+      page_id: opts.pageId,
+      page_name: opts.pageName ?? 'Clínica Demo',
+      form_submission_is_consent: opts.formSubmissionIsConsent ?? false,
+      ...(opts.connectedAt ? { connected_at: opts.connectedAt } : {}),
+    }),
+  )
+  assertOk(await admin.from('lead_ad_page_tokens').insert({ page_id: opts.pageId, account_id: opts.accountId, access_token: opts.accessToken ?? 'STUB-PAGE-TOKEN' }))
+  return { ok: true }
+}
+
+async function leadAdPage(opts: { pageId: string }) {
+  const { data: page } = await admin.from('lead_ad_pages').select('*').eq('page_id', opts.pageId).maybeSingle()
+  const { data: token } = await admin.from('lead_ad_page_tokens').select('access_token').eq('page_id', opts.pageId).maybeSingle()
+  return { page, token: token?.access_token ?? null }
+}
+
+async function leadAttribution(opts: { leadId: string }) {
+  const { data } = await admin.from('lead_attribution').select('*').eq('lead_id', opts.leadId).maybeSingle()
+  return data
+}
+
 /** Connects an Instagram account, the way Settings > WhatsApp does. */
 async function setInstagramAccount(opts: { accountId: string; instagramUserId: string | null; accessToken?: string | null }) {
   assertOk(
@@ -2944,6 +2973,17 @@ async function startMetaGraphStub(opts: {
    * gets it -- which is how a status that beats its own message is staged.
    */
   wamidPrefix?: string
+  /** Facebook Pages the lead-ads login grants (GET /me/accounts). */
+  pages?: { id: string; name: string; access_token: string }[]
+  /** Lead forms on those Pages, and which leads each holds. */
+  leadForms?: { id: string; name: string; pageId: string; leadIds: string[] }[]
+  /** Leads Meta hands over for GET /{leadgen_id} and GET /{form}/leads. */
+  leads?: Record<string, unknown>[]
+  /**
+   * Refuse a lead read that asks for the ad and campaign names, as Meta does
+   * for a token with leads_retrieval but no ads permission.
+   */
+  refuseAdNames?: boolean
 }) {
   await stopMetaGraphStub()
   const { createServer } = await import('node:http')
@@ -3016,6 +3056,34 @@ async function startMetaGraphStub(opts: {
       req.resume()
       req.on('end', () => send(200, { id: `media.STUB.${Date.now()}` }))
       return
+    }
+    // ---- Facebook lead ads ----
+    const query = new URL(req.url ?? '', 'http://stub').searchParams
+    const leadFields = query.get('fields') ?? ''
+    const refusesFields = opts.refuseAdNames && /ad_name|adset_name|campaign_name/.test(leadFields)
+    const leadById = (id: string) => (opts.leads ?? []).find((l) => String(l.id) === id)
+    if (path.endsWith('/me/accounts')) {
+      return send(200, { data: opts.pages ?? [] })
+    }
+    const formsOf = path.match(/\/(\d+)\/leadgen_forms$/)
+    if (formsOf) {
+      return send(200, { data: (opts.leadForms ?? []).filter((f) => f.pageId === formsOf[1]).map((f) => ({ id: f.id })) })
+    }
+    const leadsOf = path.match(/\/(\d+)\/leads$/)
+    if (leadsOf) {
+      if (refusesFields) return send(403, { error: { message: '(#200) Requires ads_management permission to read ad_name.', code: 200 } })
+      const form = (opts.leadForms ?? []).find((f) => f.id === leadsOf[1])
+      return send(200, { data: (form?.leadIds ?? []).map(leadById).filter(Boolean) })
+    }
+    const node = path.match(/^\/(?:v[\d.]+\/)?(\d+)$/)
+    if (node && req.method === 'GET') {
+      const form = (opts.leadForms ?? []).find((f) => f.id === node[1])
+      if (form) return send(200, { id: form.id, name: form.name })
+      const lead = leadById(node[1])
+      if (lead) {
+        if (refusesFields) return send(403, { error: { message: '(#200) Requires ads_management permission to read ad_name.', code: 200 } })
+        return send(200, lead)
+      }
     }
     if (path.endsWith('/phone_numbers')) {
       if (opts.failAt === 'phones') return refuse('Unsupported get request.')
@@ -3827,6 +3895,9 @@ export const dbTasks = {
   'db:setLeadAiState': setLeadAiState,
   'db:setWhatsappPhoneNumberId': setWhatsappPhoneNumberId,
   'db:leadsByExternalId': leadsByExternalId,
+  'db:connectLeadAdPage': connectLeadAdPage,
+  'db:leadAdPage': leadAdPage,
+  'db:leadAttribution': leadAttribution,
   'db:setInstagramAccount': setInstagramAccount,
   'db:messagesOnChannel': messagesOnChannel,
   'db:setChannelSpend': setChannelSpend,

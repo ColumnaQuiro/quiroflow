@@ -286,6 +286,7 @@ const columns = computed<Column[]>(() => {
 })
 const showColumnHeads = computed(() => columns.value.length > 1 || isWeek.value)
 
+const MIN_TILE = 22
 interface Placed { a: Appointment; top: number; height: number; lane: number; lanes: number }
 function layout(list: Appointment[], date: string): Placed[] {
   const sorted = [...list].sort((x, y) => Date.parse(x.starts_at) - Date.parse(y.starts_at))
@@ -299,17 +300,22 @@ function layout(list: Appointment[], date: string): Placed[] {
     cluster = []
     laneEnds = []
   }
+  // Lanes go by how tall a tile is DRAWN, not by the visit's minutes: a tile is
+  // never shorter than MIN_TILE px, which on a phone is ~20 minutes, so three
+  // back-to-back 15-minute visits shared a lane and each covered the next.
+  const drawnMinutes = (MIN_TILE * 60) / HOUR.value
   for (const a of sorted) {
     const s = minuteOfDay(a.starts_at, date)
     const e = Math.max(s + 10, minuteOfDay(a.ends_at, date))
+    const drawnEnd = Math.max(e, s + drawnMinutes)
     if (s >= clusterEnd) flush()
     let lane = laneEnds.findIndex((end) => end <= s)
     if (lane === -1) {
       lane = laneEnds.length
-      laneEnds.push(e)
-    } else laneEnds[lane] = e
-    clusterEnd = Math.max(clusterEnd, e)
-    const p: Placed = { a, top: yOf(s), height: Math.max(22, yOf(e) - yOf(s)), lane, lanes: 1 }
+      laneEnds.push(drawnEnd)
+    } else laneEnds[lane] = drawnEnd
+    clusterEnd = Math.max(clusterEnd, drawnEnd)
+    const p: Placed = { a, top: yOf(s), height: Math.max(MIN_TILE, yOf(e) - yOf(s)), lane, lanes: 1 }
     cluster.push(p)
     out.push(p)
   }
@@ -555,8 +561,8 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
 
     <div class="flex shrink-0 items-center gap-2 border-b border-line bg-surface px-3 pb-2 pt-1 md:px-5">
       <div v-if="canScopeMine" role="tablist" :aria-label="t('Whose diary', 'De quién')" class="grid min-w-0 flex-1 grid-cols-2 gap-1 rounded-ctl bg-chip-bg p-[3px] md:max-w-[360px]">
-        <button v-for="s in (['mine', 'all'] as const)" :key="s" type="button" role="tab" :aria-selected="effectiveScope === s" class="h-8 rounded-ctlSm text-[13px] font-semibold" :class="effectiveScope === s ? 'bg-surface text-ink-900 shadow-card' : 'text-ink-muted'" :data-cy="`agenda-scope-${s}`" @click="scope = s; selectedId = null">
-          {{ s === 'mine' ? t('My appointments', 'Mis citas') : t('Whole clinic', 'Toda la clínica') }}
+        <button v-for="s in (['mine', 'all'] as const)" :key="s" type="button" role="tab" :aria-selected="effectiveScope === s" class="h-8 min-w-0 truncate whitespace-nowrap rounded-ctlSm px-1.5 text-[13px] font-semibold" :class="effectiveScope === s ? 'bg-surface text-ink-900 shadow-card' : 'text-ink-muted'" :data-cy="`agenda-scope-${s}`" @click="scope = s; selectedId = null">
+          {{ s === 'mine' ? t('My visits', 'Mis citas') : t('Whole clinic', 'Toda la clínica') }}
         </button>
       </div>
       <div v-else class="flex-1" />

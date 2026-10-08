@@ -393,6 +393,7 @@ const BORDER: Record<RowState, string> = {
   upcoming: 'border-l-line-control',
 }
 
+const { privacy, togglePrivacy, shown } = usePrivacyMode()
 function patientName(a: { patients: { first_name: string; last_name: string | null } | null }) {
   return a.patients ? `${a.patients.first_name} ${a.patients.last_name ?? ''}`.trim() : t('Patient', 'Paciente')
 }
@@ -425,7 +426,7 @@ const seenNoNext = computed(() => {
 })
 
 const openTasks = computed(() => tasks.value.filter((x) => !x.done_at).length)
-const birthdayNames = computed(() => birthdays.value.map((p) => `${p.first_name} ${p.last_name ?? ''}`.trim()).join(' · '))
+const birthdayNames = computed(() => birthdays.value.map((p) => shown(`${p.first_name} ${p.last_name ?? ''}`.trim())).join(' · '))
 
 // The iPad's "In clinic now" card (second column only): the first of today's
 // visits that is checked in and not finished, with that patient's latest note
@@ -470,6 +471,9 @@ function initialsOf(a: Appointment) {
   <div class="flex h-full min-h-0 flex-col bg-surface-page">
     <AppPageHeader :title="t('My Day', 'Mi día')">
       <span class="text-[12.5px] text-ink-muted" data-test="myday-date">{{ dateLabel }}</span>
+      <button type="button" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl border" :class="privacy ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted'" role="switch" :aria-checked="privacy" :aria-label="t('Privacy mode: names as initials', 'Modo privacidad: nombres como iniciales')" data-cy="myday-privacy" @click="togglePrivacy">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path v-if="!privacy" d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" /><circle v-if="!privacy" cx="12" cy="12" r="3" /><path v-if="privacy" d="M3 3l18 18M10.6 5.1A10.4 10.4 0 0112 5c6.5 0 10 7 10 7a17.6 17.6 0 01-3.1 4M6.6 6.6C3.9 8.3 2 12 2 12s3.5 7 10 7a9.7 9.7 0 005.4-1.6M9.9 9.9a3 3 0 004.2 4.2" /></svg>
+      </button>
     </AppPageHeader>
 
     <div ref="scroller" class="min-h-0 flex-1 overflow-y-auto" @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd">
@@ -545,7 +549,7 @@ function initialsOf(a: Appointment) {
           <NuxtLink :to="`/calendar/${a.id}`" class="absolute inset-0 rounded-card" :aria-label="`${clinicTime(a.starts_at)} ${patientName(a)}`" />
           <p class="w-[42px] shrink-0 text-[14px] font-semibold text-ink-900">{{ clinicTime(a.starts_at) }}</p>
           <div class="min-w-0 flex-1">
-            <p class="truncate text-[14px] font-semibold" :class="rowState(a) === 'done' ? 'text-ink-faint' : 'text-ink-900'">{{ patientName(a) }}</p>
+            <p class="truncate text-[14px] font-semibold" :class="rowState(a) === 'done' ? 'text-ink-faint' : 'text-ink-900'">{{ shown(patientName(a)) }}</p>
             <p class="truncate text-[12.5px] text-ink-muted2">{{ a.appointment_types?.name ?? t('Appointment', 'Cita') }}</p>
           </div>
           <div class="flex shrink-0 flex-col items-end gap-1">
@@ -576,7 +580,7 @@ function initialsOf(a: Appointment) {
           <p v-if="ownDiaryOnly" class="text-[11.5px] text-ink-muted2">{{ t('Your role sees only bookings with you.', 'Tu rol solo ve las citas contigo.') }}</p>
           <div v-for="a in seenNoNext" :key="a.patient_id" class="mt-2 flex items-center gap-2.5">
             <div class="min-w-0 flex-1">
-              <p class="truncate text-[13.5px] font-medium text-ink-900">{{ patientName(a) }}</p>
+              <p class="truncate text-[13.5px] font-medium text-ink-900">{{ shown(patientName(a)) }}</p>
               <p class="truncate text-[12.5px] text-ink-muted2">{{ a.appointment_types?.name ?? t('Appointment', 'Cita') }} {{ clinicTime(a.starts_at) }}</p>
             </div>
             <NuxtLink
@@ -596,7 +600,7 @@ function initialsOf(a: Appointment) {
           <div class="mt-2 flex items-center gap-2.5">
             <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[12px] font-bold text-brand-text">{{ initialsOf(inClinicNow) }}</span>
             <div class="min-w-0">
-              <p class="truncate text-[14px] font-semibold text-ink-900">{{ patientName(inClinicNow) }}</p>
+              <p class="truncate text-[14px] font-semibold text-ink-900">{{ shown(patientName(inClinicNow)) }}</p>
               <p class="truncate text-[12.5px] text-ink-muted2">{{ inClinicNow.appointment_types?.name ?? t('Appointment', 'Cita') }} · {{ clinicTime(inClinicNow.starts_at) }}</p>
             </div>
           </div>
@@ -657,7 +661,7 @@ function initialsOf(a: Appointment) {
               <div class="min-w-0">
                 <p class="text-[14px] font-[600]" :class="task.done_at ? 'text-ink-faint line-through' : 'text-ink-900'">{{ task.title }}</p>
                 <p class="mt-0.5 text-[12.5px] text-ink-muted2">
-                  <NuxtLink v-if="task.patient_id && task.patients" :to="`/patients/${task.patient_id}`" class="font-medium text-brand-text">{{ task.patients.first_name }} {{ task.patients.last_name ?? '' }}</NuxtLink>
+                  <NuxtLink v-if="task.patient_id && task.patients" :to="`/patients/${task.patient_id}`" class="font-medium text-brand-text">{{ shown(`${task.patients.first_name} ${task.patients.last_name ?? ''}`.trim()) }}</NuxtLink>
                   <span v-if="task.automation_rules"> · {{ t('Automation', 'Automatización') }} “{{ task.automation_rules.name }}”</span>
                 </p>
               </div>

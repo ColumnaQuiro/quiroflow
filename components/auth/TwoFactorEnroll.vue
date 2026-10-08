@@ -107,6 +107,11 @@ async function cancel() {
       </form>
     </template>
 
-    <p v-else class="text-sm text-danger-text">{{ error }}</p>
+    <!-- Set-up could not start (GoTrue refused the enrolment): say why, and
+         leave a way back out -- without one the card stayed stuck on this. -->
+    <div v-else class="space-y-3">
+      <p class="text-sm text-danger-text">{{ error }}</p>
+      <UiBtn v-if="!props.required" type="button" variant="secondary" @click="cancel">{{ t('Cancel', 'Cancelar') }}</UiBtn>
+    </div>
   </div>
 </template>

@@ -228,6 +228,36 @@ admin) is recovered with the service role: delete the owner's row from
 `auth.mfa_factors`, or `update accounts set require_two_factor = false`.
 The guard trigger lets both through when there is no `auth.uid()`.
 
+## The audit trail covers a table only once it has a trigger
+
+Settings → Activity log (owners only) reads three append-only tables from
+`20261008070424_audit_trail.sql`: `audit_logs` (every change, with the values
+before and after and a copy of deleted rows), `patient_access_log` (who opened
+a patient's record or files, or exported patients) and `auth_events` (sign-ins,
+two-factor and password changes, recorded from triggers on `auth.*`).
+
+**A new table holding patient data, money or clinic settings is not audited
+until its own migration adds the trigger** and its entity type to
+`audit_logs_entity_type_check`:
+
+```sql
+create trigger trg_audit_my_table after insert or update or delete on my_table
+  for each row execute function public.fn_audit_log('my_entity', 'columns,to,ignore');
+```
+
+The second argument lists bookkeeping columns something recomputes (a
+counter, a `last_used_at`) so they do not write a row on every touch. Column
+names that look like credentials are redacted automatically. A new staff
+screen that SHOWS a patient's data, or exports it, should call
+`useAccessLog()`; a trigger cannot see reads.
+
+Server routes are attributed to the person calling them because the auth
+guards in `server/utils/requirePermission.ts` swap the request's cached
+service-role client for one carrying `x-audit-actor`
+(`server/utils/auditActor.ts`). A route that builds its own service client
+instead of calling `serverSupabaseServiceRole(event)` after the guard is
+recorded as "QuiroFlow (automatic)".
+
 ## A new column on `accounts` needs a permission in its guard
 
 Most of a clinic's settings are columns on `accounts`, and its update policy

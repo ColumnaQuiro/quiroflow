@@ -21,6 +21,7 @@ const store = useAccountStore()
 const t = useT()
 const { can } = usePermission()
 const { showToast } = useToast()
+const logAccess = useAccessLog()
 const patientId = route.params.id as string
 
 const patient = ref<Tables<'patients'> | null>(null)
@@ -61,6 +62,7 @@ async function loadPatient() {
     tutor.value = null
   }
   notFound.value = !data
+  if (data && loading.value) logAccess('record_opened', patientId)
   loading.value = false
 }
 onMounted(loadPatient)

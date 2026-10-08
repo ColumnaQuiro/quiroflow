@@ -14,6 +14,7 @@ import { DEV_PORTAL_SLUGS } from '../../utils/devPortal'
 // differently about them.
 export const SETTINGS_PAGES = [
   '/settings',
+  '/settings/activity',
   '/settings/app',
   '/settings/appointment-types',
   '/settings/clinics',

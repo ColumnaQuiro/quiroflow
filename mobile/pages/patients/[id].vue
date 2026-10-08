@@ -133,6 +133,9 @@ interface NextAppt { id: string; starts_at: string; appointment_types: { name: s
 const plan = ref<Plan | null>(null)
 const completedInPlan = ref(0)
 const nextAppt = ref<NextAppt | null>(null)
+// Every booked visit ahead, not only the next one (the web's Appointments tab).
+const upcomingVisits = ref<NextAppt[]>([])
+const upcomingOpen = ref(false)
 const planLoading = ref(true)
 const planError = ref('')
 async function loadPlan() {
@@ -147,10 +150,12 @@ async function loadPlan() {
       .is('deleted_at', null)
       .gt('starts_at', new Date().toISOString())
       .order('starts_at')
-      .limit(1),
+      .limit(20),
   ])
   plan.value = ((plans as Plan[] | null) ?? [])[0] ?? null
-  nextAppt.value = ((upcoming as unknown as NextAppt[] | null) ?? [])[0] ?? null
+  const ahead = (upcoming as unknown as NextAppt[] | null) ?? []
+  nextAppt.value = ahead[0] ?? null
+  upcomingVisits.value = ahead
   // Visits completed SINCE THE PLAN STARTED, as care_plan_continuity_alerts
   // (0131) and PhaseStats count them -- not every visit the patient has ever
   // had, which would put a returning patient's new plan half done on day one.
@@ -233,6 +238,8 @@ function onEdited() {
 interface Doc { id: string; title: string; completed_at: string | null; public_token: string | null }
 const docs = ref<Doc[]>([])
 const docsLoading = ref(true)
+// Tapping a form opens what was answered and signed (DocViewSheet).
+const viewDocId = ref<string | null>(null)
 const docsError = ref('')
 async function loadDocs() {
   const { data, error } = await supabase.from('patient_docs').select('id, title, completed_at, public_token').eq('patient_id', patientId).order('created_at', { ascending: false })
@@ -436,6 +443,20 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
             <template v-else-if="ownDiaryOnly">{{ t('Nothing booked with you.', 'Nada reservado contigo.') }}</template>
             <template v-else>{{ t('Nothing booked.', 'Nada reservado.') }}</template>
           </p>
+          <!-- The rest of what is booked ahead -->
+          <template v-if="upcomingVisits.length > 1">
+            <button type="button" class="mt-1 text-[12.5px] font-semibold text-brand-text" :aria-expanded="upcomingOpen" data-cy="patient-upcoming-toggle" @click="upcomingOpen = !upcomingOpen">
+              {{ upcomingOpen ? t('Hide', 'Ocultar') : t(`${upcomingVisits.length - 1} more booked`, `${upcomingVisits.length - 1} más reservadas`) }}
+            </button>
+            <ul v-if="upcomingOpen" class="mt-1 space-y-1" data-cy="patient-upcoming">
+              <li v-for="a in upcomingVisits.slice(1)" :key="a.id">
+                <NuxtLink :to="`/calendar/${a.id}`" class="flex items-center justify-between gap-2 text-[13px] text-ink-700">
+                  <span class="truncate">{{ apptWhen(a.starts_at) }}<template v-if="a.appointment_types?.name"> · {{ a.appointment_types.name }}</template></span>
+                  <AppChevron :size="11" />
+                </NuxtLink>
+              </li>
+            </ul>
+          </template>
         </template>
       </section>
 
@@ -502,7 +523,7 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
         <p v-else-if="docs.length === 0" class="mt-1.5 text-[13px] text-ink-faint">{{ t('No forms yet.', 'Aún no hay formularios.') }}</p>
         <ul v-else class="mt-1.5 space-y-1.5">
           <li v-for="d in docs" :key="d.id" class="flex items-center justify-between gap-2">
-            <span class="min-w-0 truncate text-[13.5px] text-ink-900">{{ d.title }}</span>
+            <button type="button" class="min-w-0 truncate text-left text-[13.5px] text-ink-900 underline-offset-2 active:underline" data-cy="patient-form-open" @click="viewDocId = d.id">{{ d.title }}</button>
             <span v-if="d.completed_at" class="inline-flex h-6 shrink-0 items-center rounded-pill bg-success-bg px-2.5 text-[11.5px] font-semibold text-success-text">{{ t('Signed', 'Firmado') }}</span>
             <button
               v-else-if="canContact && docSendDigits && d.public_token"
@@ -519,7 +540,7 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
       </section>
 
       <!-- Recent visits and their notes: clinical access only -->
-      <StaffPatientVisits v-if="!contextLoading && can('visit_notes_access')" :patient-id="patientId" :time-zone="timeZone" />
+      <StaffPatientVisits v-if="!contextLoading && can('visit_notes_access')" :patient-id="patientId" :time-zone="timeZone" :show-money="showMoney" />
 
       <!-- Files, as RLS returns them for this role -->
       <StaffPatientFiles v-if="context" :patient-id="patientId" :account-id="context.accountId" :team-member-id="context.teamMemberId" />
@@ -546,6 +567,7 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
     <BookVisitSheet v-if="bookOpen" :patient-id="patientId" @booked="onBooked" @close="bookOpen = false" />
     <RecordMoneySheet v-if="moneyMode" :patient-id="patientId" :mode="moneyMode" :can-pay="canTakePayments" :can-sell="canSellBonos" @done="onMoneyDone" @close="moneyMode = null" />
     <CarePlanSheet v-if="planSheetOpen" :patient-id="patientId" :plan="plan" :today="clinicToday" @saved="onPlanSaved" @close="planSheetOpen = false" />
+    <DocViewSheet v-if="viewDocId" :doc-id="viewDocId" @close="viewDocId = null" />
     <EditPatientSheet v-if="editOpen && patient" :patient-id="patientId" :patient="patient" @saved="onEdited" @close="editOpen = false" />
     <ReceptionSetupSheet v-if="receptionOpen" :patient-id="patientId" @close="receptionOpen = false" />
   </div>

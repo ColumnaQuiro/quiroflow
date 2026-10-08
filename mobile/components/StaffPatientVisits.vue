@@ -8,7 +8,9 @@
 // and its first line is read through parseVisitNote: a charted note is four
 // labelled sections, and "Subjective: Pain 3/10…" would otherwise open with
 // the label rather than with what was said.
-const props = defineProps<{ patientId: string; timeZone: string }>()
+// showMoney: the role reads money (billing_history_view), so each visit says
+// whether its charge is paid, as the web's Appointments tab does.
+const props = defineProps<{ patientId: string; timeZone: string; showMoney?: boolean }>()
 
 const supabase = useSupabaseClient()
 const t = useT()
@@ -22,6 +24,7 @@ interface VisitRow {
 
 const visits = ref<VisitRow[]>([])
 const notes = ref<Record<string, string>>({})
+const charge = ref<Record<string, 'paid' | 'unpaid'>>({})
 const loading = ref(true)
 const error = ref('')
 const showAll = ref(false)
@@ -56,6 +59,17 @@ async function load() {
       if (!(n.appointment_id in byVisit)) byVisit[n.appointment_id] = firstLine(n.body)
     }
     notes.value = byVisit
+    if (props.showMoney) {
+      // The charge that stands decides: paid over open, a void one is none.
+      const { data: inv } = await supabase.from('invoices').select('appointment_id, status').in('appointment_id', ids)
+      const map: Record<string, 'paid' | 'unpaid'> = {}
+      for (const i of (inv as { appointment_id: string | null; status: string }[] | null) ?? []) {
+        if (!i.appointment_id || i.status === 'void') continue
+        if (i.status === 'paid') map[i.appointment_id] = 'paid'
+        else if (!map[i.appointment_id]) map[i.appointment_id] = 'unpaid'
+      }
+      charge.value = map
+    }
   }
   loading.value = false
 }
@@ -70,8 +84,11 @@ function firstLine(body: string | null) {
 const shown = computed(() => (showAll.value ? visits.value : visits.value.slice(0, PREVIEW_COUNT)))
 
 const locale = computed(() => t('en-GB', 'es-ES'))
+// The year too once it is not this one: the list goes back up to fifty visits.
 function dayLabel(iso: string) {
-  return new Date(iso).toLocaleDateString(locale.value, { day: 'numeric', month: 'short', timeZone: props.timeZone })
+  const d = new Date(iso)
+  const sameYear = d.getUTCFullYear() === new Date().getUTCFullYear()
+  return d.toLocaleDateString(locale.value, { day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }), timeZone: props.timeZone })
 }
 function statusOf(v: VisitRow) {
   if (v.status === 'completed') return { label: t('Completed', 'Completada'), cls: 'text-success-text' }
@@ -99,11 +116,16 @@ function statusOf(v: VisitRow) {
     <p v-else-if="visits.length === 0" class="mt-1.5 text-[13px] text-ink-faint">{{ t('No visits yet.', 'Aún no hay visitas.') }}</p>
     <ul v-else class="mt-2 space-y-2.5">
       <li v-for="v in shown" :key="v.id">
-        <div class="flex items-center justify-between gap-2">
-          <span class="truncate text-[13.5px] font-semibold text-ink-900">{{ dayLabel(v.starts_at) }}<template v-if="v.appointment_types?.name"> · {{ v.appointment_types.name }}</template></span>
-          <span class="shrink-0 text-[12.5px]" :class="statusOf(v).cls">{{ statusOf(v).label }}</span>
-        </div>
-        <p v-if="notes[v.id]" class="mt-0.5 text-[12.5px] leading-snug text-ink-muted2" :class="showAll ? 'line-clamp-3' : 'line-clamp-1'">{{ notes[v.id] }}</p>
+        <NuxtLink :to="`/calendar/${v.id}`" class="block" data-cy="patient-visit-row">
+          <div class="flex items-center justify-between gap-2">
+            <span class="truncate text-[13.5px] font-semibold text-ink-900">{{ dayLabel(v.starts_at) }}<template v-if="v.appointment_types?.name"> · {{ v.appointment_types.name }}</template></span>
+            <span class="flex shrink-0 items-center gap-1.5">
+              <span v-if="charge[v.id]" class="rounded-pill px-1.5 py-px text-[11px] font-semibold" :class="charge[v.id] === 'paid' ? 'bg-success-bg text-success-text' : 'bg-warning-bg text-warning-text'" data-cy="patient-visit-charge">{{ charge[v.id] === 'paid' ? t('Paid', 'Pagada') : t('Due', 'Pendiente') }}</span>
+              <span class="text-[12.5px]" :class="statusOf(v).cls">{{ statusOf(v).label }}</span>
+            </span>
+          </div>
+          <p v-if="notes[v.id]" class="mt-0.5 text-[12.5px] leading-snug text-ink-muted2" :class="showAll ? 'line-clamp-3' : 'line-clamp-1'">{{ notes[v.id] }}</p>
+        </NuxtLink>
       </li>
     </ul>
   </section>

@@ -26,7 +26,7 @@ const GRAPH_VERSION = 'v21.0'
 
 let sdkReady: Promise<void> | null = null
 
-function loadSdk(appId: string): Promise<void> {
+export function loadFacebookSdk(appId: string): Promise<void> {
   // Once per page, not once per click: FB.init() twice is not harmless, and a
   // clinic that closes the dialog and tries again would otherwise re-init.
   if (sdkReady) return sdkReady
@@ -73,7 +73,7 @@ export function useEmbeddedSignup() {
    */
   async function launch(): Promise<string> {
     if (!available.value) throw new Error('WhatsApp connect is not configured on this deployment.')
-    await loadSdk(appId)
+    await loadFacebookSdk(appId)
 
     return new Promise<string>((resolve, reject) => {
       // Meta reports what happened INSIDE the dialog here -- the FB.login

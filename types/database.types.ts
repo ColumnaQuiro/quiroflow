@@ -2901,6 +2901,99 @@ export type Database = {
           },
         ]
       }
+      lead_ad_page_tokens: {
+        Row: {
+          access_token: string
+          account_id: string
+          page_id: string
+          updated_at: string
+        }
+        Insert: {
+          access_token: string
+          account_id: string
+          page_id: string
+          updated_at?: string
+        }
+        Update: {
+          access_token?: string
+          account_id?: string
+          page_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_ad_page_tokens_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_ad_page_tokens_page_id_fkey"
+            columns: ["page_id"]
+            isOneToOne: true
+            referencedRelation: "lead_ad_pages"
+            referencedColumns: ["page_id"]
+          },
+        ]
+      }
+      lead_ad_pages: {
+        Row: {
+          account_id: string
+          connected_at: string
+          connected_by: string | null
+          form_submission_is_consent: boolean
+          id: string
+          last_error: string | null
+          last_error_at: string | null
+          last_lead_at: string | null
+          last_synced_at: string | null
+          page_id: string
+          page_name: string | null
+        }
+        Insert: {
+          account_id: string
+          connected_at?: string
+          connected_by?: string | null
+          form_submission_is_consent?: boolean
+          id?: string
+          last_error?: string | null
+          last_error_at?: string | null
+          last_lead_at?: string | null
+          last_synced_at?: string | null
+          page_id: string
+          page_name?: string | null
+        }
+        Update: {
+          account_id?: string
+          connected_at?: string
+          connected_by?: string | null
+          form_submission_is_consent?: boolean
+          id?: string
+          last_error?: string | null
+          last_error_at?: string | null
+          last_lead_at?: string | null
+          last_synced_at?: string | null
+          page_id?: string
+          page_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_ad_pages_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_ad_pages_connected_by_fkey"
+            columns: ["connected_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lead_attribution: {
         Row: {
           account_id: string

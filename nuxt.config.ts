@@ -259,6 +259,13 @@ export default defineNuxtConfig({
       // a copy of these ids elsewhere buys nobody anything.
       metaPlatformAppId: '1377782808751290',
       metaEmbeddedSignupConfigId: '1071135465616821',
+      // A second Facebook Login for Business configuration on the same app,
+      // for Settings > Leads: it asks for the clinic's Pages and the lead
+      // permissions (leads_retrieval, pages_manage_metadata, ...) instead of
+      // a WhatsApp Business Account. Blank until it is created in the Meta
+      // dashboard, and blank hides the Connect card -- the same as the one
+      // above was.
+      metaLeadAdsConfigId: '',
       // Connect "client ID" (ca_...) from Stripe Dashboard > Connect >
       // Settings -- not a secret, it's meant to sit in a redirect URL.
       stripeConnectClientId: '',

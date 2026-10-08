@@ -153,3 +153,12 @@ jobs:
           # Not a secret -- a site's API ID is not sensitive information,
           # only its auth token is. app.quiroflow.com's Netlify site.
           NETLIFY_SITE_ID: 8a81ed5a-0561-4e1d-891a-163a223d99f8
+          # Source maps for Sentry, uploaded by the build and then deleted so
+          # they are never served (nuxt.config.ts, `sentry`). All three blank
+          # -- the secret or the variables not set -- and the build skips the
+          # upload and ships exactly what it did before. The DSN is not here:
+          # it is NUXT_PUBLIC_SENTRY_DSN in the Netlify site's environment,
+          # read at runtime by the function and handed to the browser.
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}

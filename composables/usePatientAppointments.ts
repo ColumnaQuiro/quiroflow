@@ -32,6 +32,9 @@ export function usePatientAppointments(patientId: () => string, settings: () => 
   const upcoming = ref<PatientAppointmentRow[]>([])
   const past = ref<PatientAppointmentRow[]>([])
   const loading = ref(true)
+  // A failed read keeps what was shown and says so, rather than reading as
+  // "no appointments".
+  const loadError = ref(false)
   const busyId = ref<string | null>(null)
 
   async function load() {
@@ -43,13 +46,15 @@ export function usePatientAppointments(patientId: () => string, settings: () => 
     // RLS policy does not hide deleted rows, so an appointment the clinic
     // deleted still showed here as upcoming -- with a cancel button the RPC
     // then refused.
-    const [{ data: next }, { data: history }] = await Promise.all([
+    const [{ data: next, error: nextError }, { data: history, error: historyError }] = await Promise.all([
       supabase.from('appointments').select(SELECT).eq('patient_id', id).is('deleted_at', null).gte('starts_at', nowIso).neq('status', 'cancelled').order('starts_at'),
       supabase.from('appointments').select(SELECT).eq('patient_id', id).is('deleted_at', null).lt('starts_at', nowIso).order('starts_at', { ascending: false }).limit(20),
     ])
+    loading.value = false
+    loadError.value = !!(nextError || historyError)
+    if (loadError.value) return
     upcoming.value = (next as unknown as PatientAppointmentRow[]) ?? []
     past.value = (history as unknown as PatientAppointmentRow[]) ?? []
-    loading.value = false
   }
 
   function withinNotice(appt: PatientAppointmentRow): boolean {
@@ -79,7 +84,7 @@ export function usePatientAppointments(patientId: () => string, settings: () => 
 
   watch(patientId, load, { immediate: true })
 
-  return { upcoming, past, loading, busyId, canChange, cancel, reload: load }
+  return { upcoming, past, loading, loadError, busyId, canChange, cancel, reload: load }
 }
 
 export const PATIENT_APPOINTMENT_STATUS: Record<string, [string, string]> = {

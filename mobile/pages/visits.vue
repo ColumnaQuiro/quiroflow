@@ -12,7 +12,7 @@ const { settings } = usePatientAppInfo()
 const { patient, loading: identityLoading } = useIdentity()
 const patientId = computed(() => patient.value?.id ?? '')
 
-const { upcoming, past, loading, busyId, canChange, cancel } = usePatientAppointments(
+const { upcoming, past, loading, loadError, reload, busyId, canChange, cancel } = usePatientAppointments(
   () => patientId.value,
   () => settings.value,
 )
@@ -95,6 +95,7 @@ function timeOnly(a: When) {
             </div>
           </li>
         </ul>
+        <PatientLoadError v-else-if="loadError" @retry="reload" />
         <PatientEmpty v-else :text="t('No upcoming appointments.', 'No tienes citas próximas.')" />
       </PatientCard>
 
@@ -111,6 +112,7 @@ function timeOnly(a: When) {
               </span>
             </li>
           </ul>
+          <PatientLoadError v-else-if="loadError" @retry="reload" />
           <PatientEmpty v-else :text="t('Nothing here yet.', 'Todavía no hay nada aquí.')" />
         </PatientCard>
       </div>

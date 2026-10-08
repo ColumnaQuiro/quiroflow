@@ -229,6 +229,8 @@ export function useVisitNoteDraft(opts: {
   let retryMs = 2000
   let chain: Promise<void> = Promise.resolve()
   let disposed = false
+  /** Edit mode: an insert was sent and not confirmed, so it may have landed. */
+  let insertTried = false
 
   function scheduleSave(ms = DEBOUNCE_MS) {
     clearTimeout(debounce)
@@ -285,6 +287,26 @@ export function useVisitNoteDraft(opts: {
     errorKind.value = null
     let ok = false
     try {
+      // A failed insert may have landed with only its reply lost (a phone
+      // dropping signal mid-request). Inserting again would put the note on
+      // the visit twice, so first look for a note of this person's that has
+      // appeared since -- add mode's addNow does the same.
+      const me = opts.teamMemberId() ?? null
+      if (!noteId.value && insertTried && me) {
+        const { data: landed, error: lookError } = await supabase
+          .from('visit_notes')
+          .select('id, body, created_at, created_by, team_members(full_name)')
+          .eq('appointment_id', opts.appointmentId)
+          .eq('created_by', me)
+          .order('created_at', { ascending: false })
+          .limit(1)
+        if (lookError) throw lookError
+        const row = ((landed as unknown as VisitNoteRow[]) ?? [])[0]
+        if (row && !notes.value.some((n) => n.id === row.id)) {
+          noteId.value = row.id
+          notes.value = [...notes.value, row]
+        }
+      }
       if (noteId.value) {
         const { data, error } = await supabase.from('visit_notes').update({ body }).eq('id', noteId.value).select('id')
         if (error) throw error
@@ -304,9 +326,10 @@ export function useVisitNoteDraft(opts: {
           ok = true
         }
       } else {
+        insertTried = true
         const { data, error } = await supabase
           .from('visit_notes')
-          .insert({ account_id: accountId, appointment_id: opts.appointmentId, body, created_by: opts.teamMemberId() ?? null })
+          .insert({ account_id: accountId, appointment_id: opts.appointmentId, body, created_by: me })
           .select('id, body, created_at, created_by, team_members(full_name)')
           .single()
         if (error) throw error
@@ -320,6 +343,7 @@ export function useVisitNoteDraft(opts: {
     }
 
     if (ok) {
+      insertTried = false
       savedBody = body
       base = body
       savedAt.value = new Date()

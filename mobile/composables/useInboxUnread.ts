@@ -15,6 +15,9 @@ export function useInboxUnread() {
 
   async function refresh() {
     if (!context.value || !can('inbox_access')) {
+      // Also outdates a read still in flight, or the previous person's count
+      // would land on top of this zero after signing out.
+      run++
       count.value = 0
       return
     }

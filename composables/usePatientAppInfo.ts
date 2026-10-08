@@ -30,20 +30,28 @@ export function usePatientAppInfo() {
   const settings = ref<PatientAppSettings>({ ...CLOSED })
   const loading = ref(true)
   // Each of the patient's clinics' time zones. A patient cannot read the
-  // clinics table itself; the booking info carries them, and the visits a
-  // patient sees are shown at their clinic's hour, not the phone's.
+  // clinics table itself; get_my_clinic_timezones() carries every one (the
+  // booking info only lists clinics taking online bookings), and the visits
+  // a patient sees are shown at their clinic's hour, not the phone's.
   const clinicZones = ref<Record<string, string>>({})
 
   async function load() {
     loading.value = true
-    const { data, error } = await supabase.rpc('get_patient_booking_info')
+    const [{ data, error }, { data: allZones, error: zonesError }] = await Promise.all([
+      supabase.rpc('get_patient_booking_info'),
+      // Every clinic of the account, not only those taking online bookings --
+      // a visit at any of them is shown at its own hour.
+      supabase.rpc('get_my_clinic_timezones' as never),
+    ])
+    const zones: Record<string, string> = {}
+    if (!zonesError) for (const z of (allZones as { clinic_id: string; timezone: string }[] | null) ?? []) zones[z.clinic_id] = z.timezone
     if (error || !data) {
+      clinicZones.value = zones
       settings.value = { ...CLOSED }
       loading.value = false
       return
     }
-    const zones: Record<string, string> = {}
-    for (const c of (data as { clinics?: { id: string; timezone?: string | null }[] }).clinics ?? []) if (c.timezone) zones[c.id] = c.timezone
+    for (const c of (data as { clinics?: { id: string; timezone?: string | null }[] }).clinics ?? []) if (c.timezone && !zones[c.id]) zones[c.id] = c.timezone
     clinicZones.value = zones
     const raw = (data as { settings?: Record<string, unknown> }).settings ?? {}
     settings.value = {

@@ -8,7 +8,7 @@ const { settings, zoneOf } = usePatientAppInfo()
 const { patient } = usePortalPatient()
 const patientId = computed(() => patient.value?.id ?? '')
 
-const { upcoming, past, loading, busyId, canChange, cancel } = usePatientAppointments(
+const { upcoming, past, loading, loadError, reload, busyId, canChange, cancel } = usePatientAppointments(
   () => patientId.value,
   () => settings.value,
 )
@@ -76,6 +76,7 @@ const timeOnly = (a: Visit) => fmt(a, { hour: '2-digit', minute: '2-digit' })
           </div>
         </li>
       </ul>
+      <PatientLoadError v-else-if="loadError" @retry="reload" />
       <PatientEmpty v-else :text="t('No upcoming appointments.', 'No tienes citas próximas.')" />
     </PatientCard>
 
@@ -92,6 +93,7 @@ const timeOnly = (a: Visit) => fmt(a, { hour: '2-digit', minute: '2-digit' })
             </span>
           </li>
         </ul>
+        <PatientLoadError v-else-if="loadError" @retry="reload" />
         <PatientEmpty v-else :text="t('Nothing here yet.', 'Todavía no hay nada aquí.')" />
       </PatientCard>
     </div>

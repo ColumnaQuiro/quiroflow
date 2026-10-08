@@ -103,6 +103,7 @@ async function deleteAccount() {
         </div>
       </div>
       <StaffPushSettings v-if="context" />
+      <StaffSecuritySettings v-if="context" :account-id="context.accountId" />
       <LanguageSetting />
       <ThemeSetting />
 

@@ -131,6 +131,10 @@ export const useAccountStore = defineStore('account', {
       // Before the first await: on the server, useCookie needs the request
       // context, which an await drops.
       const clinicCookie = useCookie<string | null>(CURRENT_CLINIC_STORAGE_KEY, CLINIC_COOKIE_OPTIONS)
+      // Same for these: their preference is per-request state (useState),
+      // which is out of reach once the await below has run.
+      const theme = useTheme()
+      const lang = useLang()
 
       if (!user.value) {
         this.teamMember = null
@@ -168,8 +172,8 @@ export const useAccountStore = defineStore('account', {
       // The client plugin already applied whatever was cached in
       // localStorage before this resolved -- this reconciles it with the
       // user's real saved preference (e.g. first login on a new device).
-      useTheme().setPreference(teamMember.theme_preference as 'light' | 'dark' | 'system')
-      useLang().setPreference(teamMember.language_preference as 'en' | 'es')
+      theme.setPreference(teamMember.theme_preference as 'light' | 'dark' | 'system')
+      lang.setPreference(teamMember.language_preference as 'en' | 'es')
 
       const account = bootstrap.account
       const clinics = bootstrap.clinics

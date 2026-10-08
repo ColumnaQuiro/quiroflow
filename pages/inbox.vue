@@ -561,6 +561,7 @@ function exitSelectionMode() {
   selectedKeys.value = new Set()
 }
 function onRowClick(c: Conversation) {
+  cancelPrefetch()
   if (selectionMode.value) {
     toggleSelectKey(c.key)
     return
@@ -585,33 +586,97 @@ const selected = computed<Conversation | null>(() => {
 
 // The open conversation's own messages, oldest first, with this tab's
 // unconfirmed sends at the end.
+//
+// `threadKey` is the conversation `threadMessages` belongs to. Switching used
+// to leave the previous conversation's messages on screen, under the new
+// person's name, until the new ones arrived -- which read as the Inbox being
+// slow to change conversation, and meanwhile worked out the reply channel and
+// the 24-hour window from someone else's thread. Now a switch shows that
+// conversation's own last-known messages at once (threadCache), or nothing
+// and a loading state, and refreshes behind it.
 const threadMessages = ref<Message[]>([])
+const threadKey = ref<string | null>(null)
 const threadLoading = ref(false)
+const threadError = ref(false)
 const THREAD_COLUMNS = 'id, patient_id, phone_number, external_contact_id, direction, status, body_preview, template_name, media_type, media_storage_path, media_mime_type, media_filename, channel, created_at'
+
+// Each conversation's last-loaded messages, newest-used last, so going back
+// to one is instant. Always refreshed on open; only ever a head start.
+const THREAD_CACHE_SIZE = 40
+const threadCache = new Map<string, Message[]>()
+function cacheThread(key: string, messages: Message[]) {
+  threadCache.delete(key)
+  threadCache.set(key, messages)
+  if (threadCache.size > THREAD_CACHE_SIZE) threadCache.delete(threadCache.keys().next().value!)
+}
+// One request per conversation at a time: a hover that started loading it and
+// the click that follows share the same request instead of sending two.
+const threadInflight = new Map<string, Promise<Message[] | null>>()
+
+function fetchThread(c: Conversation): Promise<Message[] | null> {
+  const running = threadInflight.get(c.key)
+  if (running) return running
+  const request = fetchThreadUncached(c).finally(() => threadInflight.delete(c.key))
+  threadInflight.set(c.key, request)
+  return request
+}
+
 let threadToken = 0
 async function loadThread(c: Conversation | null, opts: { silent?: boolean } = {}) {
   const token = ++threadToken
   if (!c) {
     threadMessages.value = []
+    threadKey.value = null
     return
   }
   if (!opts.silent) threadLoading.value = true
+  threadError.value = false
+  const messages = await fetchThread(c)
+  if (token !== threadToken) return
+  threadLoading.value = false
+  if (!messages) {
+    // Only worth saying when there is nothing of theirs on screen to fall
+    // back on; a failed background refresh keeps what is already shown.
+    threadError.value = threadKey.value !== c.key
+    return
+  }
+  cacheThread(c.key, messages)
+  threadMessages.value = messages
+  threadKey.value = c.key
+}
+
+// Started when the pointer rests on a row, so the click usually finds the
+// conversation already loaded. Skipped for anything cached or already loading.
+let prefetchTimer: ReturnType<typeof setTimeout> | undefined
+function prefetchThread(c: Conversation) {
+  clearTimeout(prefetchTimer)
+  if (threadCache.has(c.key) || threadInflight.has(c.key)) return
+  prefetchTimer = setTimeout(() => {
+    if (threadCache.has(c.key) || threadInflight.has(c.key)) return
+    fetchThread(c).then((messages) => {
+      if (messages && !threadCache.has(c.key)) cacheThread(c.key, messages)
+    })
+  }, 120)
+}
+function cancelPrefetch() {
+  clearTimeout(prefetchTimer)
+}
+
+async function fetchThreadUncached(c: Conversation): Promise<Message[] | null> {
   let wa = withoutLeadThreads(supabase.from('whatsapp_messages').select(THREAD_COLUMNS))
   if (c.patientId) wa = wa.eq('patient_id', c.patientId)
   else if (c.phoneNumber) wa = wa.eq('phone_number', c.phoneNumber).is('patient_id', null)
   else if (c.externalContactId) wa = wa.eq('external_contact_id', c.externalContactId).is('patient_id', null)
-  else {
-    threadMessages.value = []
-    threadLoading.value = false
-    return
-  }
-  const [{ data: waData }, app] = await Promise.all([
+  else return []
+  const [{ data: waData, error }, app] = await Promise.all([
     wa.order('created_at', { ascending: false }).limit(300),
     c.patientId
       ? supabase.from('patient_app_messages').select('id, patient_id, direction, body, created_at').eq('patient_id', c.patientId).order('created_at', { ascending: false }).limit(300)
-      : Promise.resolve({ data: [] as { id: string; patient_id: string; direction: string; body: string; created_at: string }[] }),
+      : Promise.resolve({ data: [] as { id: string; patient_id: string; direction: string; body: string; created_at: string }[], error: null }),
   ])
-  if (token !== threadToken) return
+  // A failed read keeps whatever is on screen rather than emptying the
+  // conversation -- an empty thread is what offers to start it with a template.
+  if (error || app.error) return null
   // In-app messages are normalized into the same Message shape so the thread
   // (ticks, media, retry) doesn't need to know two tables exist.
   const appMessages: Message[] = (app.data ?? []).map((m) => ({
@@ -630,15 +695,28 @@ async function loadThread(c: Conversation | null, opts: { silent?: boolean } = {
     channel: 'in_app',
     created_at: m.created_at,
   }))
-  threadMessages.value = [...((waData ?? []) as Message[]), ...appMessages].sort((a, b) => a.created_at.localeCompare(b.created_at))
-  threadLoading.value = false
+  return [...((waData ?? []) as Message[]), ...appMessages].sort((a, b) => a.created_at.localeCompare(b.created_at))
 }
 const thread = computed(() => {
   if (!selectedKey.value) return []
   const pending = pendingMessages.value.filter((m) => keyOf(m) === selectedKey.value)
-  return mergePendingIntoThread(threadMessages.value, pending, keptKeys.value)
+  const own = threadKey.value === selectedKey.value ? threadMessages.value : []
+  return mergePendingIntoThread(own, pending, keptKeys.value)
 })
-watch(selectedKey, () => loadThread(selected.value))
+// Whether the thread on screen is the selected conversation's, rather than
+// still on its way. The composer's channel, 24-hour window and "new
+// conversation" prompt are all read from the thread, so they wait for it.
+const threadReady = computed(() => !!selectedKey.value && threadKey.value === selectedKey.value)
+// Receipts patch threadMessages in place (onMessageUpdate); the cache follows.
+watch(threadMessages, (messages) => {
+  if (threadKey.value) cacheThread(threadKey.value, messages)
+})
+watch(selectedKey, (key) => {
+  const cached = key ? threadCache.get(key) : undefined
+  threadMessages.value = cached ?? []
+  threadKey.value = cached ? key : null
+  loadThread(selected.value, { silent: !!cached })
+})
 
 // Auto-scroll, WhatsApp-style: snap to the bottom when a conversation is
 // opened, and keep following new messages only while already at the bottom
@@ -673,11 +751,23 @@ function jumpToLatest() {
   showJumpToLatest.value = false
 }
 
+// The first messages to arrive for a conversation just opened land at the
+// bottom at once. They used to arrive while the scroll position still belonged
+// to the previous conversation and were then smooth-scrolled into place, an
+// animation that read as the switch itself being slow.
+let snapOnArrival = false
 watch(selectedKey, () => {
   showJumpToLatest.value = false
+  snapOnArrival = true
   scrollThreadToBottomNextFrame(false)
 })
 watch(thread, () => {
+  if (snapOnArrival) {
+    if (!threadReady.value) return
+    snapOnArrival = false
+    scrollThreadToBottomNextFrame(false)
+    return
+  }
   const wasNearBottom = isThreadNearBottom()
   const isOwnSend = thread.value.at(-1)?.direction === 'outbound'
   if (wasNearBottom || isOwnSend) {
@@ -935,6 +1025,9 @@ watch(thread, async (msgs) => {
 // (a brand-new conversation from "+ New") always defaults to whatsapp.
 const replyChannel = computed(() => (thread.value.length === 0 ? 'whatsapp' : thread.value[thread.value.length - 1].channel))
 const within24h = computed(() => {
+  // Unknown until the thread has loaded -- no "more than 24h" warning, no
+  // template prompt, for a conversation that has not arrived yet.
+  if (!threadReady.value) return true
   if (replyChannel.value === 'in_app') return true
   // Whichever channel the reply goes out on -- not always WhatsApp. An
   // Instagram thread's inbound messages carry channel 'instagram', so looking
@@ -945,7 +1038,7 @@ const within24h = computed(() => {
   if (!lastInbound) return false
   return Date.now() - new Date(lastInbound.created_at).getTime() < 24 * 60 * 60 * 1000
 })
-const isNewConversation = computed(() => thread.value.length === 0)
+const isNewConversation = computed(() => threadReady.value && thread.value.length === 0)
 
 const composerText = ref('')
 const sending = ref(false)
@@ -1025,7 +1118,10 @@ async function performTextSend(tempId: string, text: string, channel: string, ta
 }
 
 async function sendText() {
-  if (!composerText.value.trim() || !selected.value) return
+  // The reply channel is read from the thread, so a send waits for it: a
+  // message typed into a conversation still loading would otherwise go out
+  // as WhatsApp whatever channel the person actually uses.
+  if (!composerText.value.trim() || !selected.value || !threadReady.value) return
   sendError.value = ''
   const text = composerText.value.trim()
   const channel = replyChannel.value
@@ -1099,7 +1195,7 @@ async function performMediaSend(
 }
 
 async function sendMedia(mediaBase64: string, mediaMimeType: string, mediaFilename: string, mediaKind: 'image' | 'video' | 'audio' | 'document') {
-  if (!selected.value) return
+  if (!selected.value || !threadReady.value) return
   sendError.value = ''
   const target = selected.value
   const tempId = `pending-${Date.now()}`
@@ -1684,6 +1780,8 @@ function avatarInitials(name: string) {
               class="flex min-h-[76px] w-full items-start gap-3 border-b border-l-[3px] border-b-line-row px-3.5 py-3 text-left hover:bg-surface-subtle"
               :class="(selectedKey === row.c.key && !selectionMode) || selectedKeys.has(row.c.key) ? 'border-l-brand bg-brand-tint' : 'border-l-transparent'"
               @click="onRowClick(row.c)"
+              @mouseenter="prefetchThread(row.c)"
+              @mouseleave="cancelPrefetch"
             >
               <span
                 v-if="selectionMode"
@@ -1913,6 +2011,17 @@ function avatarInitials(name: string) {
 
         <div class="relative min-h-0 flex-1">
           <div ref="threadScrollEl" class="h-full space-y-3 overflow-y-auto px-4 py-4" @scroll="onThreadScroll">
+          <!-- Nothing of this conversation's to show yet: a placeholder, never
+               the previous conversation's messages. -->
+          <div v-if="!threadReady && thread.length === 0 && !threadError" data-cy="thread-loading" class="flex flex-col gap-3" aria-busy="true">
+            <div class="h-10 w-2/5 animate-pulse self-start rounded-[12px] bg-surface-subtle" />
+            <div class="h-14 w-3/5 animate-pulse self-start rounded-[12px] bg-surface-subtle" />
+            <div class="h-10 w-1/3 animate-pulse self-end rounded-[12px] bg-surface-subtle" />
+          </div>
+          <div v-else-if="threadError && !threadReady" role="alert" class="flex flex-col items-center gap-2 py-10 text-center text-[13.5px] text-ink-muted">
+            {{ t('This conversation could not be loaded.', 'No se ha podido cargar la conversación.') }}
+            <UiBtn variant="secondary" size="sm" @click="loadThread(selected)">{{ t('Try again', 'Reintentar') }}</UiBtn>
+          </div>
           <template v-for="(m, i) in thread" :key="m.renderKey">
             <div
               v-if="i === 0 || relativeDay(m.created_at) !== relativeDay(thread[i - 1].created_at)"
@@ -2025,7 +2134,7 @@ function avatarInitials(name: string) {
             through whatsapp/inbox-send, and instagram/send posts text alone.
             Offering the buttons on an Instagram thread would take a file,
             upload it and fail at the very end. -->
-            <button v-if="replyChannel !== 'instagram'" type="button" class="flex h-9 touch:h-11 w-9 touch:w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-500 hover:bg-surface-subtle" :disabled="sending" :aria-label="t('Attach a file', 'Adjuntar archivo')" @click="fileInput?.click()">
+            <button v-if="replyChannel !== 'instagram'" type="button" class="flex h-9 touch:h-11 w-9 touch:w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-500 hover:bg-surface-subtle" :disabled="sending || !threadReady" :aria-label="t('Attach a file', 'Adjuntar archivo')" @click="fileInput?.click()">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
                 <path d="M11.5 5.5L6.4 10.6a2 2 0 002.8 2.8l5.1-5.1a3.5 3.5 0 00-4.95-4.95L4.25 8.45a5 5 0 007.07 7.07" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
@@ -2035,7 +2144,7 @@ function avatarInitials(name: string) {
               v-if="replyChannel !== 'instagram'"
               type="button"
               class="flex h-9 touch:h-11 w-9 touch:w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-500 hover:bg-surface-subtle disabled:opacity-50"
-              :disabled="sending"
+              :disabled="sending || !threadReady"
               :title="t('Record a voice note', 'Grabar una nota de voz')"
               :aria-label="t('Record a voice note', 'Grabar una nota de voz')"
               @click="toggleAudioRecording"
@@ -2054,7 +2163,7 @@ function avatarInitials(name: string) {
               class="order-first max-h-32 min-h-9 w-full touch:min-h-11 resize-none rounded-ctl border border-line-control bg-surface px-3 py-[10px] text-[15px] text-ink-900 focus:border-brand focus:outline-none sm:order-none sm:w-auto sm:flex-1"
               @keydown.enter.exact.prevent="sendText"
             />
-            <button type="button" data-cy="thread-send" class="ml-auto h-9 touch:h-11 shrink-0 rounded-ctl bg-brand sm:ml-0 px-4 text-[14px] font-bold text-surface hover:bg-brand-hover disabled:opacity-50" :disabled="sending || !composerText.trim()" @click="sendText">{{ sending ? '…' : t('Send', 'Enviar') }}</button>
+            <button type="button" data-cy="thread-send" class="ml-auto h-9 touch:h-11 shrink-0 rounded-ctl bg-brand sm:ml-0 px-4 text-[14px] font-bold text-surface hover:bg-brand-hover disabled:opacity-50" :disabled="sending || !composerText.trim() || !threadReady" @click="sendText">{{ sending ? '…' : t('Send', 'Enviar') }}</button>
           </div>
         </div>
       </div>

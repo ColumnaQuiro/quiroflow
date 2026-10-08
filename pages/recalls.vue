@@ -33,6 +33,7 @@ interface ContactLogRow {
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+const logAccess = useAccessLog()
 const { preference: language } = useLang()
 const { showToast } = useToast()
 
@@ -550,6 +551,7 @@ async function exportCsv() {
   a.download = `recordatorios-${new Date().toISOString().slice(0, 10)}.csv`
   a.click()
   URL.revokeObjectURL(url)
+  logAccess('export', null, { export: 'recalls', rows: rows.length })
   exporting.value = false
 }
 

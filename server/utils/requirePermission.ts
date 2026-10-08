@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { serverSupabaseClient } from '#supabase/server'
 import type { H3Event } from 'h3'
 import type { Database } from '~/types/database.types'
+import { attachAuditActor } from '~/server/utils/auditActor'
 
 // The web app authenticates via a cookie (handled by serverSupabaseClient).
 // The mobile app has no cookie -- Capacitor's WebView origin can't reliably
@@ -81,6 +82,7 @@ export async function requireTeamMember(event: H3Event) {
     throw createError({ statusCode: 403, statusMessage: 'Not signed in as a team member' })
   }
 
+  attachAuditActor(event, teamMember.id)
   return { supabase, teamMember }
 }
 
@@ -130,6 +132,7 @@ export async function requireActiveAccount(event: H3Event) {
     throw createError({ statusCode: 402, statusMessage: 'This account is locked pending payment' })
   }
 
+  attachAuditActor(event, teamMember.id)
   return { supabase, teamMember, subscription }
 }
 

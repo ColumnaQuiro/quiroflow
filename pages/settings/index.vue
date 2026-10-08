@@ -84,6 +84,9 @@ const allGroups = computed(() => [
     items: [
       { to: '/settings/import', label: t('Import', 'Importar'), description: t('Bring records across from PracticeHub, or patients from a CSV file.', 'Trae los registros desde PracticeHub, o pacientes desde un archivo CSV.'), icon: ICONS.arrowDownTray },
       { to: '/settings/files', label: t('Files', 'Archivos'), description: t('Files still missing after a migration, and shrinking the ones already here.', 'Archivos que faltan tras una migración, y reducir el tamaño de los que ya están.'), icon: ICONS.paperClip },
+      // Owners only: who opened which patient's record and every version of a
+      // clinical note are the data controller's questions, not a role's.
+      { to: '/settings/activity', label: t('Activity log', 'Registro de actividad'), description: t('Who changed what, who opened which patient record, and who signed in.', 'Quién cambió qué, quién abrió la ficha de cada paciente y quién inició sesión.'), icon: ICONS.lockClosed },
     ],
   },
   {

@@ -2246,8 +2246,8 @@ async function writeAsStaff(opts: {
 /** What audit_logs holds about one entity, oldest first. */
 async function auditLogFor(opts: { entityId: string }) {
   return unwrap(
-    await admin.from('audit_logs').select('entity_type, action, summary, team_member_id').eq('entity_id', opts.entityId).order('created_at'),
-  ) as { entity_type: string; action: string; summary: string; team_member_id: string | null }[]
+    await admin.from('audit_logs').select('entity_type, action, summary, team_member_id, actor, changes').eq('entity_id', opts.entityId).order('created_at'),
+  ) as { entity_type: string; action: string; summary: string; team_member_id: string | null; actor: string | null; changes: Record<string, { from: unknown; to: unknown }> | null }[]
 }
 
 /** A role by its stored name, or null -- rolePermissions throws when it is gone. */

@@ -23,6 +23,7 @@ type Patient = Pick<
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+const logAccess = useAccessLog()
 
 const PAGE_SIZE = 50
 
@@ -312,6 +313,7 @@ async function exportCsv() {
     a.download = `patients-${new Date().toISOString().slice(0, 10)}.csv`
     a.click()
     URL.revokeObjectURL(url)
+    logAccess('export', null, { export: 'patient_list', rows: rows.length })
   } finally {
     exporting.value = false
   }

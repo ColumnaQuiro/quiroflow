@@ -73,6 +73,25 @@ async function loadPatient() {
   patientLoading.value = false
 }
 
+// The owner's access log (Settings -> Activity log on the web) records who
+// opened which patient's record, here as on the web's patient page. Once the
+// clinic is known as well as the patient; fire-and-forget, so a log row that
+// fails to write never stands between a practitioner and the record.
+const accessLogged = ref(false)
+watch(
+  () => [patient.value?.id, context.value?.accountId] as const,
+  ([id, accountId]) => {
+    if (!id || !accountId || accessLogged.value) return
+    accessLogged.value = true
+    supabase
+      .rpc('log_patient_access', { p_account_id: accountId, p_kind: 'record_opened', p_patient_id: id })
+      .then(({ error }) => {
+        if (error) console.warn('[access-log]', error.message)
+      })
+  },
+  { immediate: true },
+)
+
 const timeZone = computed(() => patient.value?.clinic?.timezone || DEFAULT_CLINIC_TIMEZONE)
 const fullName = computed(() => [patient.value?.first_name, patient.value?.last_name].filter(Boolean).join(' '))
 const initials = computed(() => [patient.value?.first_name?.[0], patient.value?.last_name?.[0]].filter(Boolean).join('').toUpperCase() || '?')

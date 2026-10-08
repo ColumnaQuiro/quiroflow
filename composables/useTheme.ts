@@ -1,9 +1,26 @@
+import type { Ref } from 'vue'
+
 export type ThemePreference = 'light' | 'dark' | 'system'
 
 const STORAGE_KEY = 'quiroflow-theme'
-const preference = ref<ThemePreference>('system')
-let systemDark = ref(false)
+const STATE_KEY = 'theme-preference'
+const DEFAULT: ThemePreference = 'system'
+// The device's own appearance. Only ever set on the client (initFromStorage),
+// so file scope is the right scope for it: the server leaves it false.
+const systemDark = ref(false)
 let initialized = false
+
+// Per request on the server, from the payload on the client -- see
+// preferenceState in useLang.ts, which this mirrors: a file-scope ref here
+// was shared by every request in the server process, so one staff member's
+// saved theme leaked into the next request's render.
+function preferenceState(): Ref<ThemePreference | null> {
+  if (tryUseNuxtApp()) return useState<ThemePreference | null>(STATE_KEY, () => null)
+  if (import.meta.dev && import.meta.server) {
+    console.warn('[useTheme] called outside a Nuxt context on the server; using the default theme. Call useTheme() before the first await.')
+  }
+  return ref(null)
+}
 
 function resolve(pref: ThemePreference) {
   return pref === 'system' ? (systemDark.value ? 'dark' : 'light') : pref
@@ -19,9 +36,9 @@ export function applyThemeColor(theme: 'light' | 'dark') {
   document.querySelectorAll('meta[name="theme-color"]').forEach((el) => el.setAttribute('content', THEME_COLOR[theme]))
 }
 
-function apply() {
+function apply(pref: ThemePreference) {
   if (import.meta.server) return
-  const resolved = resolve(preference.value)
+  const resolved = resolve(pref)
   document.documentElement.setAttribute('data-theme', resolved)
   applyThemeColor(resolved)
 }
@@ -29,29 +46,40 @@ function apply() {
 // Applied as early as possible (a client-only plugin calls this on boot) so
 // the page never flashes the wrong theme -- localStorage is read
 // synchronously before the account store's DB round-trip resolves.
+//
+// A preference the server already resolved (a signed-in staff member's
+// saved one, carried in the payload) wins over this device's stored one, and
+// is stored -- same as useLang's initFromStorage.
 function initFromStorage() {
   if (initialized || import.meta.server) return
   initialized = true
-  const stored = localStorage.getItem(STORAGE_KEY) as ThemePreference | null
-  if (stored === 'light' || stored === 'dark' || stored === 'system') preference.value = stored
+  const state = preferenceState()
+  if (state.value) {
+    localStorage.setItem(STORAGE_KEY, state.value)
+  } else {
+    const stored = localStorage.getItem(STORAGE_KEY) as ThemePreference | null
+    if (stored === 'light' || stored === 'dark' || stored === 'system') state.value = stored
+  }
   systemDark.value = window.matchMedia('(prefers-color-scheme: dark)').matches
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
     systemDark.value = e.matches
-    apply()
+    apply(state.value ?? DEFAULT)
   })
-  apply()
+  apply(state.value ?? DEFAULT)
 }
 
 export function useTheme() {
+  const state = preferenceState()
+
   function setPreference(pref: ThemePreference) {
-    preference.value = pref
+    state.value = pref
     if (!import.meta.server) localStorage.setItem(STORAGE_KEY, pref)
-    apply()
+    apply(pref)
   }
 
   return {
-    preference: computed(() => preference.value),
-    resolved: computed(() => resolve(preference.value)),
+    preference: computed(() => state.value ?? DEFAULT),
+    resolved: computed(() => resolve(state.value ?? DEFAULT)),
     setPreference,
     initFromStorage,
   }

@@ -44,6 +44,11 @@ const rules: Rule[] = [
   // Owners only, whatever the role: whether the clinic's records go to the
   // AEAT, and under whose certificate, is the company's own decision.
   { test: (p) => p === '/settings/verifactu', check: (s) => s.isOwner },
+  // Owners only, for the same kind of reason: who opened which patient's
+  // record, and every version of a clinical note, are questions for the
+  // clinic as data controller. The database refuses anyone else too
+  // (audit_require_owner, 20261008070424_audit_trail.sql).
+  { test: (p) => p === '/settings/activity', check: (s) => s.isOwner },
   {
     // payment-methods, invoice-settings and fiscal-data now redirect into
     // Payments and Invoicing; they keep the gate so a bookmark never lands

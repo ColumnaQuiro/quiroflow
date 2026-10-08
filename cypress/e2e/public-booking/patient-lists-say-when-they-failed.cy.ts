@@ -36,6 +36,8 @@ describe("A patient's list that failed to load", () => {
     cy.get('[data-cy="patient-load-error"]').first().contains('button', 'Try again').click()
     cy.get('[data-cy="patient-load-error"]').should('not.exist')
     cy.contains('No upcoming appointments').should('not.exist')
-    cy.contains('12:00').should('be.visible')
+    // The visit itself, by its practitioner: its time is drawn in the clinic's
+    // zone, which is not the CI runner's.
+    cy.contains('Test Owner').should('be.visible')
   })
 })

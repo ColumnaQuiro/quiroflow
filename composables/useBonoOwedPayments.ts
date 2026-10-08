@@ -1,5 +1,5 @@
-import type { BonoOwedPayment } from '~/utils/bonoOwed'
-import { fetchAllRows } from '~/composables/useFetchAllRows'
+import type { BonoOwedPayment } from '../utils/bonoOwed'
+import { fetchAllRows } from './useFetchAllRows'
 
 // Everything the Debtors report and the dashboard's Debtors widget need to
 // work out what each bono is still owed, in three requests side by side.

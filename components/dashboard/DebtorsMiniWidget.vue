@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { useBonoDebts } from '~/composables/useBonoOwedPayments'
-import { formatEur } from '~/utils/billing'
-import { bonoOwedCents, type BonoOwedPayment } from '~/utils/bonoOwed'
+import { useBonoDebts } from '../../composables/useBonoOwedPayments'
+import { formatEur } from '../../utils/billing'
+import { bonoOwedCents, type BonoOwedPayment } from '../../utils/bonoOwed'
 defineProps<{ dateRange?: unknown; practitionerId?: string; clinicId?: string }>()
 
 interface PurchaseRow {

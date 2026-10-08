@@ -202,6 +202,10 @@ export function defaultLocale(win: Cypress.AUTWindow, locale = 'en-US') {
 export function pickPreset(label: 'Last 7 days' | 'Last 30 days' | 'This month' | 'Last month') {
   // clickUntil, not click: the button can be in the server-rendered HTML
   // before Vue has hydrated it. See cypress/support/commands.ts.
-  cy.clickUntil('button:contains("month"), button:contains("days")', 'button:contains("Last 7 days")')
+  // Two presets side by side, not one label: the trigger shows the label of
+  // the preset its range matches, and on the 8th of a month "This month"
+  // (1st-8th) IS "Last 7 days" -- so a "Last 7 days" button is on screen
+  // with the panel still shut, and a click lost to hydration never retries.
+  cy.clickUntil('button:contains("month"), button:contains("days")', 'button:contains("Last 7 days") + button:contains("Last 30 days")')
   cy.contains('button', label).click()
 }

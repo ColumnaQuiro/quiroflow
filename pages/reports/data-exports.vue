@@ -29,6 +29,7 @@ interface GeneratedExport {
 
 const supabase = useSupabaseClient()
 const t = useT()
+const logAccess = useAccessLog()
 
 // Only "Patients" actually generates anything today -- the other data types
 // mirror PracticeHub's own dropdown (matching its layout, per the QA
@@ -250,6 +251,7 @@ async function generateExport() {
   a.href = blobUrl
   a.download = filename
   a.click()
+  logAccess('export', null, { export: 'data_exports', rows: rows.length })
 
   generatedExports.value.unshift({
     id: crypto.randomUUID(),

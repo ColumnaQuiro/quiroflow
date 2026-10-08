@@ -73,8 +73,10 @@ describe('The dashboard income card', () => {
         // vanish. The panel then never opens and the failure reads as
         // "Expected to find content: 'Last 30 days'", which sounds like the
         // preset is missing rather than like a click that went nowhere.
-        // See clickUntil in cypress/support/commands.ts.
-        cy.clickUntil('button:contains("month"), button:contains("days")', 'button:contains("Last 7 days")')
+        // See clickUntil in cypress/support/commands.ts. It waits for two
+        // presets side by side because the trigger itself reads "Last 7 days"
+        // on the 8th of a month, when "This month" is the same range.
+        cy.clickUntil('button:contains("month"), button:contains("days")', 'button:contains("Last 7 days") + button:contains("Last 30 days")')
         cy.contains('Last 30 days').click()
         cy.get('select').first().select('Nueva Nadia')
 

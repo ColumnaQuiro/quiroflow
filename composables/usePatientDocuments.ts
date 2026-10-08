@@ -24,19 +24,24 @@ export function usePatientDocuments(patientId: () => string) {
 
   const documents = ref<PatientDocumentRow[]>([])
   const loading = ref(true)
+  // A failed read keeps what was shown and says so, rather than reading as
+  // an empty list.
+  const loadError = ref(false)
   const busyId = ref<string | null>(null)
 
   async function load() {
     const id = patientId()
     if (!id) return
     loading.value = true
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('patient_files')
       .select('id, file_name, file_type, size_bytes, created_at')
       .eq('patient_id', id)
       .order('created_at', { ascending: false })
-    documents.value = data ?? []
     loading.value = false
+    loadError.value = !!error
+    if (error) return
+    documents.value = data ?? []
   }
 
   async function open(file: PatientDocumentRow) {
@@ -62,7 +67,7 @@ export function usePatientDocuments(patientId: () => string) {
 
   watch(patientId, load, { immediate: true })
 
-  return { documents, loading, busyId, open, reload: load }
+  return { documents, loading, loadError, busyId, open, reload: load }
 }
 
 export function fileSizeLabel(bytes: number | null): string {

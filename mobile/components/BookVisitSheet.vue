@@ -446,6 +446,12 @@ async function book() {
     // slots were drawn.
     const roomId = props.move?.roomId ?? null
     const fresh = await fetchBusy(start.toISOString(), end.toISOString(), practitionerId.value, roomId)
+    // A failed read is not an empty diary: nothing in the database refuses a
+    // double booking, so booking on would skip the only check there is.
+    if (fresh.error) {
+      bookError.value = t("Couldn't check that the time is still free. Try again.", 'No se ha podido comprobar que la hora sigue libre. Inténtalo de nuevo.')
+      return
+    }
     const clashes = moveClashes({ appointmentId: props.move?.appointmentId ?? '', practitionerId: practitionerId.value, roomId, clinicId: clinic.value.id, startsAt: start, endsAt: end }, fresh.appts, fresh.blocks)
     if (clashes.length > 0) {
       const first = clashes[0]

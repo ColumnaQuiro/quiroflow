@@ -21,20 +21,25 @@ export function usePatientFacturas(patientId: () => string) {
 
   const facturas = ref<PatientFacturaRow[]>([])
   const loading = ref(true)
+  // A failed read keeps what was shown and says so, rather than reading as
+  // an empty list.
+  const loadError = ref(false)
   const busyId = ref<string | null>(null)
 
   async function load() {
     const id = patientId()
     if (!id) return
     loading.value = true
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('facturas')
       .select('id, number, kind, description, amount_cents, issued_at')
       .eq('patient_id', id)
       .order('issued_at', { ascending: false })
       .limit(200)
-    facturas.value = data ?? []
     loading.value = false
+    loadError.value = !!error
+    if (error) return
+    facturas.value = data ?? []
   }
 
   // A URL rather than bytes, for the same reason as an invoice: the patient
@@ -58,5 +63,5 @@ export function usePatientFacturas(patientId: () => string) {
 
   watch(patientId, load, { immediate: true })
 
-  return { facturas, loading, busyId, download, reload: load }
+  return { facturas, loading, loadError, busyId, download, reload: load }
 }

@@ -5,7 +5,7 @@ definePageMeta({ layout: 'portal' })
 const t = useT()
 const { patient } = usePortalPatient()
 const patientId = computed(() => patient.value?.id ?? '')
-const { documents, loading, busyId, open } = usePatientDocuments(() => patientId.value)
+const { documents, loading, loadError, reload, busyId, open } = usePatientDocuments(() => patientId.value)
 </script>
 
 <template>
@@ -42,6 +42,7 @@ const { documents, loading, busyId, open } = usePatientDocuments(() => patientId
           </button>
         </li>
       </ul>
+      <PatientLoadError v-else-if="loadError" @retry="reload" />
       <PatientEmpty v-else :text="t('Your clinic has not shared any documents with you yet.', 'Tu clínica todavía no ha compartido ningún documento contigo.')" />
     </PatientCard>
   </div>

@@ -11,11 +11,11 @@ const patientId = computed(() => patient.value?.id ?? '')
 const { loading: moneyLoading, outstandingCents, creditLedgerCents, activePackages, activeMembership } = usePatientFinancialSummary(
   () => patientId.value,
 )
-const { invoices, loading: invoicesLoading, busyId, download } = usePatientInvoices(() => patientId.value)
+const { invoices, loading: invoicesLoading, loadError: invoicesError, reload: reloadInvoices, busyId, download } = usePatientInvoices(() => patientId.value)
 // Facturas are the documents; the invoices below are the charges that make up
 // the balance. Two lists on purpose -- a patient asking "what did I pay?" and
 // a patient asking "what am I being charged for?" are asking different things.
-const { facturas, loading: facturasLoading, busyId: facturaBusyId, download: downloadFactura } = usePatientFacturas(() => patientId.value)
+const { facturas, loading: facturasLoading, loadError: facturasError, reload: reloadFacturas, busyId: facturaBusyId, download: downloadFactura } = usePatientFacturas(() => patientId.value)
 
 // What is unpaid, not the balance, as the staff record shows it
 // (components/patient/BalanceCard.vue, utils/owing.ts): a family bono's
@@ -97,6 +97,7 @@ function eur(cents: number) {
             </button>
           </li>
         </ul>
+        <PatientLoadError v-else-if="facturasError" @retry="reloadFacturas" />
         <PatientEmpty v-else :text="t('No facturas yet.', 'Todavía no hay facturas.')" />
       </PatientCard>
     </div>
@@ -132,6 +133,7 @@ function eur(cents: number) {
             </button>
           </li>
         </ul>
+        <PatientLoadError v-else-if="invoicesError" @retry="reloadInvoices" />
         <PatientEmpty v-else :text="t('No charges yet.', 'Todavía no hay cargos.')" />
         <div v-if="!showAll && invoices.length > PREVIEW" class="border-t border-line-divider px-4 py-2.5">
           <button type="button" class="text-[12.5px] font-medium text-ink-muted hover:text-ink-700" @click="showAll = true">

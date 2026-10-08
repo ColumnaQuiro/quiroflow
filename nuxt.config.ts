@@ -105,7 +105,25 @@ export default defineNuxtConfig({
     // so it's simplest to render this route client-side only.
     '/calendar': { ssr: false },
   },
-  modules: ['@nuxtjs/tailwindcss', '@nuxtjs/supabase', '@pinia/nuxt'],
+  modules: ['@nuxtjs/tailwindcss', '@nuxtjs/supabase', '@pinia/nuxt', '@sentry/nuxt/module'],
+  // Error monitoring (sentry.client.config.ts, sentry.server.config.ts). It
+  // sends nothing until NUXT_PUBLIC_SENTRY_DSN is set. These options are the
+  // BUILD side only: the release is the commit the deploy builds, and source
+  // maps are uploaded -- then deleted, so they are never served -- only when
+  // SENTRY_AUTH_TOKEN, SENTRY_ORG and SENTRY_PROJECT are in the build's
+  // environment. Without them the build is exactly as before.
+  sentry: {
+    org: process.env.SENTRY_ORG,
+    project: process.env.SENTRY_PROJECT,
+    authToken: process.env.SENTRY_AUTH_TOKEN,
+    telemetry: false,
+    release: { name: process.env.GITHUB_SHA || undefined },
+    sourcemaps: {
+      disable: !process.env.SENTRY_AUTH_TOKEN,
+      filesToDeleteAfterUpload: ['dist/**/*.map', '.output/**/public/**/*.map'],
+    },
+  },
+  sourcemap: { client: process.env.SENTRY_AUTH_TOKEN ? 'hidden' : false },
   supabase: {
     redirectOptions: {
       login: '/login',
@@ -231,6 +249,14 @@ export default defineNuxtConfig({
     // doing the moment metaPlatformAppId stopped being blank.
     metaGraphBaseUrl: 'https://graph.facebook.com/v21.0',
     public: {
+      // Sentry: the DSN only allows sending events, so it is public by
+      // design. Blank turns monitoring off (NUXT_PUBLIC_SENTRY_DSN), and the
+      // environment tells production from a draft deploy
+      // (NUXT_PUBLIC_SENTRY_ENVIRONMENT). Flat keys, not `public.sentry`:
+      // the Sentry module claims that one and replaces it with its own empty
+      // object, which silently left the browser with no DSN at all.
+      sentryDsn: '',
+      sentryEnvironment: 'production',
       // Booking subdomains: <account-slug>.<appDomain> gets rewritten to
       // /book/<account-slug> by server/middleware/subdomain-booking.ts.
       // Defaults to localtest.me (public DNS -> 127.0.0.1) so this works

@@ -20,6 +20,7 @@ interface SeededAccount {
   password: string
   accountId: string
   clinicId: string
+  teamMemberId: string
 }
 
 // Tokens are unique across every account, deliberately -- one is a public
@@ -261,6 +262,10 @@ describe('Growth reputation', () => {
   describe('dark theme', () => {
     for (const path of GROWTH_PAGES) {
       it(`flips the palette on ${path}`, () => {
+        // Saved on the team member, as the theme toggle does. localStorage is
+        // only this device's copy for painting before the account loads; the
+        // saved preference wins once it has, so dark there alone is undone.
+        cy.task('db:setTeamMemberTheme', { id: account.teamMemberId, theme: 'dark' })
         cy.visit(`${path}?growth=1`, {
           onBeforeLoad(win) {
             win.localStorage.setItem('quiroflow-theme', 'dark')

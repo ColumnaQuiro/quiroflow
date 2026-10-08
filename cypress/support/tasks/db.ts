@@ -1612,6 +1612,14 @@ async function setPatientAppReschedule(opts: { accountId: string; enabled: boole
  * patients, whether they take online bookings, and whether they have left
  * (deleted_at, as closing their own login leaves it).
  */
+// A team member's saved theme, as the theme toggle saves it. The device's
+// localStorage copy alone is not the preference: the account store applies
+// this column on every load and it wins (composables/useTheme.ts).
+async function setTeamMemberTheme(opts: { id: string; theme: 'light' | 'dark' | 'system' }) {
+  assertOk(await admin.from('team_members').update({ theme_preference: opts.theme }).eq('id', opts.id))
+  return { ok: true }
+}
+
 async function setTeamMemberBookingFlags(opts: { id: string; isPractitioner?: boolean; onlineBookingEnabled?: boolean; deletedAt?: string | null }) {
   assertOk(
     await admin
@@ -4036,6 +4044,7 @@ export const dbTasks = {
   'db:callRpcAsPatient': callRpcAsPatient,
   'db:setPatientAppReschedule': setPatientAppReschedule,
   'db:setTeamMemberBookingFlags': setTeamMemberBookingFlags,
+  'db:setTeamMemberTheme': setTeamMemberTheme,
   'db:sharePackageWith': sharePackageWith,
   'db:packageSessionEffects': packageSessionEffects,
   'db:insertDuplicateSession': insertDuplicateSession,

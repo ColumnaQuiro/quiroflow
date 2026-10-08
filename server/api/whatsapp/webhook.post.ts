@@ -247,6 +247,26 @@ export default defineEventHandler(async (event) => {
     return { success: true }
   }
 
+  // Facebook lead ads: a Page a clinic connected in Settings > Leads. Its own
+  // pass for the same reason as Instagram -- an entry per Page, changes keyed
+  // by `field`, and nothing about a phone number.
+  //
+  // A lead that could be verified but not filed (Meta refused the read, the
+  // insert failed) still answers 200: it is recorded on the Page and the
+  // catch-up sync retries it. A non-200 would only make Meta redeliver the
+  // same notification on its own schedule, and after enough of those Meta
+  // disables the subscription -- every later lead lost to save this one.
+  if (body.object === 'page') {
+    const handled = await handleLeadgenEntries(supabase, (body.entry ?? []) as LeadgenEntry[], auth, rawBody, getRequestURL(event).origin)
+    if (handled.unverified > 0) {
+      throw createError({
+        statusCode: 401,
+        statusMessage: `Could not verify ${handled.unverified} lead notification(s).`,
+      })
+    }
+    return { success: true }
+  }
+
   // Which phone number ids this delivery has already complained about. A
   // single POST can carry several changes for one number, and one unroutable
   // number should read as one problem rather than as a burst.

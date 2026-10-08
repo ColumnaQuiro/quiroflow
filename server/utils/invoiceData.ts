@@ -12,6 +12,10 @@ const MM = 72 / 25.4
 // downloaded PDF, the emailed PDF, and the on-screen invoice can't drift
 // out of sync with each other.
 export interface InvoiceDocumentData {
+  // Not printed: whose document this is, for the access log the staff PDF
+  // routes write (server/utils/patientAccessLog.ts).
+  accountId: string
+  patientId: string | null
   invoiceNumber: string
   createdAt: string
   totalCents: number
@@ -202,6 +206,8 @@ export async function loadInvoiceDocumentData(
   }
 
   return {
+    accountId: invoice.account_id,
+    patientId: invoice.patient_id,
     invoiceNumber: invoice.invoice_number,
     createdAt: invoice.created_at,
     totalCents: invoice.total_cents,

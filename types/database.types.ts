@@ -1116,30 +1116,48 @@ export type Database = {
         Row: {
           account_id: string
           action: string
+          actor: string | null
+          actor_detail: string | null
+          actor_name: string | null
+          changes: Json | null
           created_at: string
           entity_id: string
           entity_type: string
           id: string
+          patient_id: string | null
+          snapshot: Json | null
           summary: string
           team_member_id: string | null
         }
         Insert: {
           account_id: string
           action: string
+          actor?: string | null
+          actor_detail?: string | null
+          actor_name?: string | null
+          changes?: Json | null
           created_at?: string
           entity_id: string
           entity_type: string
           id?: string
+          patient_id?: string | null
+          snapshot?: Json | null
           summary: string
           team_member_id?: string | null
         }
         Update: {
           account_id?: string
           action?: string
+          actor?: string | null
+          actor_detail?: string | null
+          actor_name?: string | null
+          changes?: Json | null
           created_at?: string
           entity_id?: string
           entity_type?: string
           id?: string
+          patient_id?: string | null
+          snapshot?: Json | null
           summary?: string
           team_member_id?: string | null
         }
@@ -1156,6 +1174,50 @@ export type Database = {
             columns: ["team_member_id"]
             isOneToOne: false
             referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      auth_events: {
+        Row: {
+          account_id: string
+          actor_name: string | null
+          created_at: string
+          event: string
+          id: string
+          ip: unknown
+          team_member_id: string | null
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          account_id: string
+          actor_name?: string | null
+          created_at?: string
+          event: string
+          id?: string
+          ip?: unknown
+          team_member_id?: string | null
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          account_id?: string
+          actor_name?: string | null
+          created_at?: string
+          event?: string
+          id?: string
+          ip?: unknown
+          team_member_id?: string | null
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "auth_events_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
             referencedColumns: ["id"]
           },
         ]
@@ -2901,6 +2963,99 @@ export type Database = {
           },
         ]
       }
+      lead_ad_page_tokens: {
+        Row: {
+          access_token: string
+          account_id: string
+          page_id: string
+          updated_at: string
+        }
+        Insert: {
+          access_token: string
+          account_id: string
+          page_id: string
+          updated_at?: string
+        }
+        Update: {
+          access_token?: string
+          account_id?: string
+          page_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_ad_page_tokens_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_ad_page_tokens_page_id_fkey"
+            columns: ["page_id"]
+            isOneToOne: true
+            referencedRelation: "lead_ad_pages"
+            referencedColumns: ["page_id"]
+          },
+        ]
+      }
+      lead_ad_pages: {
+        Row: {
+          account_id: string
+          connected_at: string
+          connected_by: string | null
+          form_submission_is_consent: boolean
+          id: string
+          last_error: string | null
+          last_error_at: string | null
+          last_lead_at: string | null
+          last_synced_at: string | null
+          page_id: string
+          page_name: string | null
+        }
+        Insert: {
+          account_id: string
+          connected_at?: string
+          connected_by?: string | null
+          form_submission_is_consent?: boolean
+          id?: string
+          last_error?: string | null
+          last_error_at?: string | null
+          last_lead_at?: string | null
+          last_synced_at?: string | null
+          page_id: string
+          page_name?: string | null
+        }
+        Update: {
+          account_id?: string
+          connected_at?: string
+          connected_by?: string | null
+          form_submission_is_consent?: boolean
+          id?: string
+          last_error?: string | null
+          last_error_at?: string | null
+          last_lead_at?: string | null
+          last_synced_at?: string | null
+          page_id?: string
+          page_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_ad_pages_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_ad_pages_connected_by_fkey"
+            columns: ["connected_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lead_attribution: {
         Row: {
           account_id: string
@@ -3592,6 +3747,47 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "packages_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      patient_access_log: {
+        Row: {
+          account_id: string
+          actor_name: string | null
+          created_at: string
+          detail: Json | null
+          id: string
+          kind: string
+          patient_id: string | null
+          team_member_id: string | null
+        }
+        Insert: {
+          account_id: string
+          actor_name?: string | null
+          created_at?: string
+          detail?: Json | null
+          id?: string
+          kind: string
+          patient_id?: string | null
+          team_member_id?: string | null
+        }
+        Update: {
+          account_id?: string
+          actor_name?: string | null
+          created_at?: string
+          detail?: Json | null
+          id?: string
+          kind?: string
+          patient_id?: string | null
+          team_member_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_access_log_account_id_fkey"
             columns: ["account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
@@ -6364,6 +6560,104 @@ export type Database = {
           storage_bytes: number
           whatsapp_conversations_mtd: number
         }[]
+      }
+      audit_actor: {
+        Args: { p_account_id: string }
+        Returns: Record<string, unknown>
+      }
+      audit_diff: {
+        Args: { p_ignore: string[]; p_new: Json; p_old: Json }
+        Returns: Json
+      }
+      audit_is_secret: { Args: { p_column: string }; Returns: boolean }
+      audit_patient_name: {
+        Args: { p_account_id: string; p_patient_id: string }
+        Returns: string
+      }
+      audit_redact: { Args: { p_row: Json }; Returns: Json }
+      audit_require_owner: {
+        Args: { p_account_id: string }
+        Returns: undefined
+      }
+      get_audit_log: {
+        Args: {
+          p_account_id: string
+          p_before?: string
+          p_entity_types?: string[]
+          p_limit?: number
+          p_patient_id?: string
+          p_team_member_id?: string
+        }
+        Returns: {
+          action: string
+          actor: string
+          actor_detail: string
+          actor_name: string
+          changes: Json
+          created_at: string
+          entity_id: string
+          entity_type: string
+          id: string
+          patient_id: string
+          patient_name: string
+          snapshot: Json
+          summary: string
+          team_member_id: string
+        }[]
+      }
+      get_auth_events: {
+        Args: {
+          p_account_id: string
+          p_before?: string
+          p_limit?: number
+          p_team_member_id?: string
+        }
+        Returns: {
+          actor_name: string
+          created_at: string
+          event: string
+          id: string
+          ip: string
+          team_member_id: string
+          user_agent: string
+        }[]
+      }
+      get_patient_access_log: {
+        Args: {
+          p_account_id: string
+          p_before?: string
+          p_limit?: number
+          p_patient_id?: string
+          p_team_member_id?: string
+        }
+        Returns: {
+          actor_name: string
+          created_at: string
+          detail: Json
+          id: string
+          kind: string
+          patient_id: string
+          patient_name: string
+          team_member_id: string
+        }[]
+      }
+      log_patient_access: {
+        Args: {
+          p_account_id: string
+          p_detail?: Json
+          p_kind: string
+          p_patient_id?: string
+        }
+        Returns: undefined
+      }
+      record_auth_event: {
+        Args: {
+          p_event: string
+          p_ip?: unknown
+          p_user_agent?: string
+          p_user_id: string
+        }
+        Returns: undefined
       }
       record_review_request_opened: {
         Args: { p_token: string }

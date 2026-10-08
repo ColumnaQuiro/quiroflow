@@ -316,6 +316,10 @@ async function deleteAccount() {
     return
   }
   await supabase.auth.signOut({ scope: 'local' })
+  // Same as the account menu's Sign out: the claims can outlive the session,
+  // and the store would otherwise still hold the access just removed.
+  user.value = null
+  store.reset()
   await navigateTo('/login')
 }
 

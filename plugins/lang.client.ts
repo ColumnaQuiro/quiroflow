@@ -8,12 +8,11 @@
 // always English, which is what every patient opening the portal sign-in
 // from a clinic's WhatsApp link was met with. Signed-in staff are unaffected:
 // the account store applies their saved preference as soon as it loads.
+//
+// The server renders a first visit in the same language, from the
+// Accept-Language header (utils/uiLanguage.ts keeps the two readings
+// together), so the page does not switch language as it hydrates.
 export default defineNuxtPlugin(() => {
   const { initFromStorage } = useLang()
-  initFromStorage(browserLanguage())
+  initFromStorage(languageOfTag(navigator.languages?.[0] ?? navigator.language))
 })
-
-function browserLanguage(): 'en' | 'es' {
-  const tag = (navigator.languages?.[0] ?? navigator.language ?? '').toLowerCase()
-  return tag.startsWith('es') ? 'es' : 'en'
-}

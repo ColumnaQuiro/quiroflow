@@ -134,6 +134,70 @@ describe('Language on the client', () => {
   })
 })
 
+describe("A visitor nobody has resolved", () => {
+  // The server's guess from the request (cookie, then Accept-Language) is
+  // kept in its own state, so a signed-in preference still wins over it.
+  it("renders in the request's language, and a saved preference wins over it", async () => {
+    const useLang = await loadLang()
+    const anonymous = newApp({ 'lang-request-default': 'es' })
+    expect(inApp(anonymous, () => useLang().preference.value)).to.eq('es')
+
+    const staff = newApp({ 'lang-request-default': 'es' })
+    inApp(staff, () => useLang().setPreference('en'))
+    expect(inApp(staff, () => useLang().preference.value)).to.eq('en')
+  })
+
+  it("does not store the server's guess on the device as if it were a choice", async () => {
+    const useLang = await loadLang()
+    const app = newApp({ 'lang-preference': null, 'lang-request-default': 'es' })
+
+    inApp(app, () => useLang().initFromStorage('es'))
+
+    expect(inApp(app, () => useLang().preference.value)).to.eq('es')
+    expect(storage.has('quiroflow-lang')).to.eq(false)
+  })
+})
+
+describe('The stored choice is mirrored into a cookie the server can read', () => {
+  let cookieWrites: string[]
+
+  beforeEach(() => {
+    cookieWrites = []
+    vi.stubGlobal('location', { protocol: 'https:' })
+    vi.stubGlobal('document', {
+      set cookie(value: string) {
+        cookieWrites.push(value)
+      },
+    })
+  })
+
+  it('sets it when a language is chosen', async () => {
+    const useLang = await loadLang()
+    inApp(newApp(), () => useLang().setPreference('es'))
+    expect(cookieWrites.at(-1)).to.match(/^quiroflow-lang=es; Path=\/; Max-Age=\d+; SameSite=Lax; Secure$/)
+  })
+
+  it('sets it on boot for a choice stored before the cookie existed', async () => {
+    const useLang = await loadLang()
+    storage.set('quiroflow-lang', 'es')
+    inApp(newApp(), () => useLang().initFromStorage('en'))
+    expect(cookieWrites.at(-1)).to.match(/^quiroflow-lang=es;/)
+  })
+
+  it('clears it on boot when nothing is stored, so the server goes by the browser too', async () => {
+    const useLang = await loadLang()
+    inApp(newApp(), () => useLang().initFromStorage('es'))
+    expect(cookieWrites.at(-1)).to.match(/^quiroflow-lang=; .*Max-Age=0/)
+  })
+
+  it("sets it to a signed-in staff member's saved language", async () => {
+    const useLang = await loadLang()
+    storage.set('quiroflow-lang', 'en')
+    inApp(newApp({ 'lang-preference': 'es' }), () => useLang().initFromStorage('en'))
+    expect(cookieWrites.at(-1)).to.match(/^quiroflow-lang=es;/)
+  })
+})
+
 describe('Theme is per request', () => {
   it("does not carry one request's theme into the next", async () => {
     const useTheme = await loadTheme()

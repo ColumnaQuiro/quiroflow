@@ -231,7 +231,18 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     // deliberately no separate "unallocated value" computed from price
     // pro-rated by sessions left -- that number never matched what the
     // patient actually paid, and didn't move in step with real spend.
-    const sharedPackages = (shares ?? [])
+    // Staff read the shares through the table; a patient cannot (it has only
+    // a staff policy, and the bono is someone else's), so for them the read
+    // above is empty and get_my_shared_packages answers instead -- only for
+    // the patient themselves, with only the counters and the owner's name.
+    let shareRows = shares ?? []
+    if (shareRows.length === 0) {
+      const { data: mine } = await supabase.rpc('get_my_shared_packages' as never, { p_patient_id: currentId } as never)
+      shareRows = ((mine as { id: string; package_name: string; sessions_total: number; sessions_used: number; price_cents: number; is_closed: boolean; owner_first_name: string; owner_last_name: string | null }[] | null) ?? []).map(
+        ({ owner_first_name, owner_last_name, ...p }) => ({ package_purchases: { ...p, patients: { first_name: owner_first_name, last_name: owner_last_name } } }),
+      ) as unknown as typeof shareRows
+    }
+    const sharedPackages = shareRows
       .map((s) => s.package_purchases)
       .filter((p): p is NonNullable<typeof p> => p !== null)
       .map(({ patients: owner, ...p }) => ({

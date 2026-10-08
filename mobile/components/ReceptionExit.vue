@@ -3,10 +3,11 @@
 // device has it, the reception code, or -- the code forgotten -- the
 // password of the team member who handed it over. Any one of them unlocks
 // and returns to that patient's record, with the forms just signed on it.
+import { createClient } from '@supabase/supabase-js'
+
 const props = defineProps<{ staffEmail: string; patientId: string }>()
 const emit = defineEmits<{ close: [] }>()
 
-const supabase = useSupabaseClient()
 const t = useT()
 const reception = useReceptionLock()
 
@@ -55,11 +56,20 @@ watch(code, (v) => {
   if (v.length === 6) tryCode()
 })
 
+// The password is checked on a client of its own that keeps nothing. Signing
+// in on the app's client REPLACED the iPad's session with a password-only
+// one: for anyone with two-factor on, every table then read empty (the
+// "two factor when required" policies) and nothing asked for the code,
+// because the user id had not changed.
 async function tryPassword() {
   if (checking.value || !props.staffEmail) return
   checking.value = true
   error.value = ''
-  const { error: e } = await supabase.auth.signInWithPassword({ email: props.staffEmail, password: password.value })
+  const config = useRuntimeConfig().public.supabase as { url: string; key: string }
+  const check = createClient(config.url, config.key, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: 'quiroflow-reception-password-check' } })
+  const { error: e } = await check.auth.signInWithPassword({ email: props.staffEmail, password: password.value })
+  // The session it made is only proof; ended at once.
+  if (!e) await check.auth.signOut({ scope: 'local' }).catch(() => {})
   checking.value = false
   if (!e) return leave()
   password.value = ''

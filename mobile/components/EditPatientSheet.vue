@@ -16,7 +16,7 @@ import { splitDialPrefix, formatPhoneDisplay } from '../../utils/phone'
 
 const props = defineProps<{
   patientId: string
-  patient: { email: string | null; red_flags: string | null; yellow_flags: string | null; sticky_note: string | null }
+  patient: { email: string | null; red_flags: string | null; yellow_flags: string | null; sticky_note: string | null; chief_complaint?: string | null; diagnosis?: string | null; goals?: string | null }
 }>()
 const emit = defineEmits<{ saved: []; close: [] }>()
 
@@ -35,6 +35,9 @@ const email = ref(props.patient.email ?? '')
 const redFlags = ref(props.patient.red_flags ?? '')
 const yellowFlags = ref(props.patient.yellow_flags ?? '')
 const stickyNote = ref(props.patient.sticky_note ?? '')
+const chiefComplaint = ref(props.patient.chief_complaint ?? '')
+const diagnosis = ref(props.patient.diagnosis ?? '')
+const goals = ref(props.patient.goals ?? '')
 const saving = ref(false)
 const error = ref('')
 const rowErrors = ref<Record<number, string>>({})
@@ -100,6 +103,10 @@ async function save() {
   if (norm(redFlags.value) !== (props.patient.red_flags?.trim() || null)) patch.red_flags = norm(redFlags.value)
   if (norm(yellowFlags.value) !== (props.patient.yellow_flags?.trim() || null)) patch.yellow_flags = norm(yellowFlags.value)
   if (norm(stickyNote.value) !== (props.patient.sticky_note?.trim() || null)) patch.sticky_note = norm(stickyNote.value)
+  // The clinical summary: the same three columns as the web's Clinical tab.
+  if (norm(chiefComplaint.value) !== (props.patient.chief_complaint?.trim() || null)) patch.chief_complaint = norm(chiefComplaint.value)
+  if (norm(diagnosis.value) !== (props.patient.diagnosis?.trim() || null)) patch.diagnosis = norm(diagnosis.value)
+  if (norm(goals.value) !== (props.patient.goals?.trim() || null)) patch.goals = norm(goals.value)
   if (Object.keys(patch).length) {
     const { data, error: e } = await supabase.from('patients').update(patch as never).eq('id', props.patientId).select('id')
     if (e || !data?.length) {
@@ -109,10 +116,14 @@ async function save() {
     }
   }
 
+  // Each row is marked as stored the moment its write succeeds, so Save
+  // pressed again after a later row failed does not write it a second time
+  // (a new number used to be inserted twice: nothing unique stops it).
   for (const r of rows.value) {
     let failed: { message: string } | null = null
     if (r.removed && r.id) {
       failed = (await supabase.from('patient_contact_numbers').delete().eq('id', r.id)).error
+      if (!failed) r.id = null
     } else if (!r.removed && rowChanged(r) && r.number.trim()) {
       const { countryCode, number } = numberChanged(r) ? splitDialPrefix(r.number, r.country_code) : { countryCode: r.country_code, number: null }
       if (r.id) {
@@ -120,8 +131,11 @@ async function save() {
         if (number !== null) Object.assign(update, { number, country_code: countryCode })
         failed = (await supabase.from('patient_contact_numbers').update(update as never).eq('id', r.id)).error
       } else {
-        failed = (await supabase.from('patient_contact_numbers').insert({ account_id: context.value.accountId, patient_id: props.patientId, country_code: countryCode, number, is_whatsapp: r.is_whatsapp } as never)).error
+        const inserted = await supabase.from('patient_contact_numbers').insert({ account_id: context.value.accountId, patient_id: props.patientId, country_code: countryCode, number, is_whatsapp: r.is_whatsapp } as never).select('id').single()
+        failed = inserted.error
+        if (!failed) r.id = (inserted.data as { id: string }).id
       }
+      if (!failed) r.original = { number: r.number.trim(), country_code: countryCode, is_whatsapp: r.is_whatsapp }
     }
     if (failed) {
       saving.value = false
@@ -191,6 +205,19 @@ const field = 'rounded-ctl border border-line-control bg-surface px-3 text-[15px
       <label class="flex flex-col gap-1 text-[12.5px] font-medium text-ink-muted">
         {{ t('Email', 'Correo electrónico') }}
         <input v-model="email" type="email" inputmode="email" autocomplete="off" autocapitalize="off" class="h-11" :class="field" data-cy="edit-email" />
+      </label>
+
+      <label class="flex flex-col gap-1 text-[12.5px] font-medium text-ink-muted">
+        {{ t('Chief complaint', 'Motivo de consulta') }}
+        <textarea v-model="chiefComplaint" rows="2" class="py-2 leading-snug" :class="field" data-cy="edit-chief-complaint" />
+      </label>
+      <label class="flex flex-col gap-1 text-[12.5px] font-medium text-ink-muted">
+        {{ t('Working diagnosis', 'Diagnóstico de trabajo') }}
+        <textarea v-model="diagnosis" rows="2" class="py-2 leading-snug" :class="field" data-cy="edit-diagnosis" />
+      </label>
+      <label class="flex flex-col gap-1 text-[12.5px] font-medium text-ink-muted">
+        {{ t('Goals', 'Objetivos') }}
+        <input v-model="goals" type="text" class="h-11" :class="field" :placeholder="t('Separated by commas', 'Separados por comas')" data-cy="edit-goals" />
       </label>
 
       <label class="flex flex-col gap-1 text-[12.5px] font-medium text-danger-text">

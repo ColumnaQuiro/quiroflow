@@ -364,6 +364,7 @@ const weekList = computed(() =>
   })),
 )
 const timeLabel = (iso: string) => clinicTimeLabel(new Date(iso), tz.value)
+const { privacy, togglePrivacy, shown } = usePrivacyMode()
 const nameOf = (a: Appointment) => `${a.patients?.first_name ?? ''} ${a.patients?.last_name ?? ''}`.trim()
 const practitionerName = (id: string | null) => practitioners.value.find((p) => p.id === id)?.full_name ?? null
 function tint(color: string | null | undefined) {
@@ -538,6 +539,9 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
       </button>
       <template v-if="!readOnly">
+        <button type="button" class="flex h-9 w-9 items-center justify-center rounded-ctl border" :class="privacy ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-700'" role="switch" :aria-checked="privacy" :aria-label="t('Privacy mode: names as initials', 'Modo privacidad: nombres como iniciales')" data-cy="agenda-privacy" @click="togglePrivacy">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path v-if="!privacy" d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" /><circle v-if="!privacy" cx="12" cy="12" r="3" /><path v-if="privacy" d="M3 3l18 18M10.6 5.1A10.4 10.4 0 0112 5c6.5 0 10 7 10 7a17.6 17.6 0 01-3.1 4M6.6 6.6C3.9 8.3 2 12 2 12s3.5 7 10 7a9.7 9.7 0 005.4-1.6M9.9 9.9a3 3 0 004.2 4.2" /></svg>
+        </button>
         <button type="button" class="flex h-9 w-9 items-center justify-center rounded-ctl border border-line-control text-ink-700 md:w-auto md:gap-1.5 md:px-3" :aria-label="t('Block time', 'Bloquear tiempo')" data-cy="agenda-block" @click="blockAt = { time: null, practitionerId: effectiveScope === 'mine' ? (context?.teamMemberId ?? null) : null }">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5" /><path d="M6 6l12 12" /></svg>
           <span class="hidden text-[13px] font-medium md:inline">{{ t('Block', 'Bloquear') }}</span>
@@ -579,7 +583,7 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
                 <span class="h-8 w-[3px] shrink-0 rounded-full" :style="{ background: tint(a.appointment_types?.color).borderLeftColor }" />
                 <span class="w-11 shrink-0 font-mono text-[12.5px] text-ink-700">{{ timeLabel(a.starts_at) }}</span>
                 <span class="min-w-0 flex-1">
-                  <span class="block truncate text-[14px] font-semibold text-ink-900" :class="a.status === 'no_show' ? 'line-through' : ''">{{ nameOf(a) }}</span>
+                  <span class="block truncate text-[14px] font-semibold text-ink-900" :class="a.status === 'no_show' ? 'line-through' : ''">{{ shown(nameOf(a)) }}</span>
                   <span class="block truncate text-[12px] text-ink-muted">{{ a.appointment_types?.name ?? t('Appointment', 'Cita') }}<template v-if="!scopePractitioner && practitionerName(a.practitioner_id)"> · {{ practitionerName(a.practitioner_id) }}</template></span>
                 </span>
                 <span v-if="a.checked_in_at && a.status === 'booked'" class="h-2 w-2 shrink-0 rounded-full bg-success-accent" :title="t('Checked in', 'Ha llegado')" />
@@ -638,7 +642,7 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
                 >
                   <span class="flex items-center gap-1.5">
                     <span v-if="p.a.checked_in_at && p.a.status === 'booked'" class="h-1.5 w-1.5 shrink-0 rounded-full bg-success-accent" :title="t('Checked in', 'Ha llegado')" />
-                    <span class="truncate text-[12.5px] font-semibold text-ink-900" :class="p.a.status === 'no_show' ? 'line-through' : ''">{{ nameOf(p.a) }}</span>
+                    <span class="truncate text-[12.5px] font-semibold text-ink-900" :class="p.a.status === 'no_show' ? 'line-through' : ''">{{ shown(nameOf(p.a)) }}</span>
                   </span>
                   <span v-if="p.height >= 38" class="block truncate text-[11.5px] text-ink-muted">
                     {{ timeLabel(p.a.starts_at) }} · {{ p.a.appointment_types?.name ?? t('Appointment', 'Cita') }}<template v-if="!c.practitionerId && p.lanes === 1 && practitionerName(p.a.practitioner_id)"> · {{ practitionerName(p.a.practitioner_id) }}</template>
@@ -653,7 +657,7 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
                 </div>
                 <!-- Where a dragged visit will land -->
                 <div v-if="drag && drag.columnKey === c.key" class="pointer-events-none absolute left-1 right-1 rounded-[8px] border-[1.5px] border-brand bg-surface px-2 py-1 shadow-popover" :style="{ top: `${yOf(drag.minute) + 1}px`, height: `${(drag.duration / 60) * HOUR - 2}px` }" data-cy="agenda-drag">
-                  <span class="block truncate text-[12.5px] font-semibold text-ink-900">{{ nameOf(drag.a) }}</span>
+                  <span class="block truncate text-[12.5px] font-semibold text-ink-900">{{ shown(nameOf(drag.a)) }}</span>
                   <span class="block font-mono text-[11.5px] text-brand-text">{{ hhmm(drag.minute) }}–{{ hhmm(drag.minute + drag.duration) }}</span>
                 </div>
               </div>
@@ -674,7 +678,7 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
       <aside v-if="panelWide" class="flex w-[300px] shrink-0 flex-col gap-2.5 border-l border-line bg-surface-page p-3.5" data-cy="agenda-panel">
         <template v-if="selected">
           <div class="rounded-card border border-line bg-surface p-3.5 shadow-card">
-            <p class="text-[15px] font-semibold text-ink-900">{{ nameOf(selected) }}</p>
+            <p class="text-[15px] font-semibold text-ink-900">{{ shown(nameOf(selected)) }}</p>
             <p class="mt-0.5 text-[12.5px] text-ink-muted">
               {{ selected.appointment_types?.name ?? t('Appointment', 'Cita') }} · {{ timeLabel(selected.starts_at) }}–{{ timeLabel(selected.ends_at) }}
             </p>
@@ -713,7 +717,7 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
       :type-id="moveFor.a.appointment_type_id"
       :suggested-date="moveFor.date ?? dateOfIso(moveFor.a.starts_at)"
       :preferred-start="moveFor.preferredStart"
-      :title="t(`Move · ${nameOf(moveFor.a)}`, `Mover · ${nameOf(moveFor.a)}`)"
+      :title="t(`Move · ${shown(nameOf(moveFor.a))}`, `Mover · ${shown(nameOf(moveFor.a))}`)"
       :move="{ appointmentId: moveFor.a.id, startsAt: moveFor.a.starts_at, endsAt: moveFor.a.ends_at, roomId: moveFor.a.room_id }"
       @booked="(b) => afterBooked(b, t('Visit moved.', 'Cita movida.'))"
       @close="moveFor = null"

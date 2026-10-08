@@ -46,6 +46,47 @@ const allowed = computed(() => can('recalls_access'))
 const tz = computed(() => context.value?.timeZone ?? DEFAULT_CLINIC_TIMEZONE)
 
 const scope = ref<'mine' | 'all'>('mine')
+// The web's three tabs: who to contact, and the two kinds of parked --
+// snoozed (back on their own on a date) and dismissed (back only if they
+// attend again and lapse) -- each with Restaurar, which only the web had.
+const view = ref<'queue' | 'snoozed' | 'dismissed'>('queue')
+interface Parked { patient_id: string; first_name: string | null; last_name: string | null; last_appointment_at: string | null; recall_snoozed_until: string | null; recall_dismissed_at: string | null }
+const parked = ref<Parked[]>([])
+const parkedLoading = ref(false)
+let parkedRun = 0
+async function loadParked() {
+  if (!context.value || !allowed.value || view.value === 'queue') return
+  const mine = ++parkedRun
+  parkedLoading.value = true
+  let q = supabase
+    .from('recall_parked')
+    .select('patient_id, first_name, last_name, last_appointment_at, recall_snoozed_until, recall_dismissed_at')
+    .eq('parked_as', view.value)
+  if (context.value.clinicId && clinics.value.length > 1) q = q.or(`clinic_id.eq.${context.value.clinicId},clinic_id.is.null`)
+  if (scope.value === 'mine') q = q.eq('default_practitioner_id', context.value.teamMemberId)
+  q = view.value === 'snoozed' ? q.order('recall_snoozed_until', { ascending: true }) : q.order('recall_dismissed_at', { ascending: false, nullsFirst: false })
+  const { data, error } = await q.range(0, 199)
+  if (mine !== parkedRun) return
+  parkedLoading.value = false
+  if (error) {
+    loadError.value = t('Could not load the list.', 'No se ha podido cargar la lista.')
+    return
+  }
+  loadError.value = ''
+  parked.value = (data as Parked[] | null) ?? []
+}
+watch([view, scope, () => context.value?.clinicId], () => loadParked())
+async function restore(r: Parked) {
+  const values = view.value === 'dismissed' ? { recall_status: 'active', recall_dismissed_at: null } : { recall_snoozed_until: null }
+  const { data, error } = await supabase.from('patients').update(values as never).eq('id', r.patient_id).select('id')
+  if (error || !data?.length) {
+    say(t('Could not restore.', 'No se ha podido restaurar.'))
+    return
+  }
+  parked.value = parked.value.filter((x) => x.patient_id !== r.patient_id)
+  say(view.value === 'dismissed' ? t('Back in recalls.', 'De vuelta en recordatorios.') : t('Back in the list.', 'De vuelta en la lista.'))
+  load()
+}
 const MIN_WEEKS = 3
 const everyone = ref(false)
 const recalls = ref<Recall[]>([])
@@ -273,12 +314,17 @@ const canBook = computed(() => !!context.value && !restricted('calendar_read_onl
     <template v-else>
       <div class="shrink-0 border-b border-line bg-surface px-3 pb-2 pt-2 md:px-5">
         <div class="mx-auto max-w-[760px]">
+        <div role="tablist" :aria-label="t('List', 'Lista')" class="mb-1.5 grid grid-cols-3 gap-1 rounded-ctl bg-chip-bg p-[3px] md:max-w-[460px]">
+          <button v-for="v in (['queue', 'snoozed', 'dismissed'] as const)" :key="v" type="button" role="tab" :aria-selected="view === v" class="h-8 rounded-ctlSm text-[12.5px] font-semibold" :class="view === v ? 'bg-surface text-ink-900 shadow-card' : 'text-ink-muted'" :data-cy="`recalls-view-${v}`" @click="view = v">
+            {{ v === 'queue' ? t('To contact', 'Por contactar') : v === 'snoozed' ? t('Snoozed', 'Pospuestos') : t('Dismissed', 'Descartados') }}
+          </button>
+        </div>
         <div role="tablist" class="grid grid-cols-2 gap-1 rounded-ctl bg-chip-bg p-[3px] md:max-w-[360px]">
           <button v-for="s in (['mine', 'all'] as const)" :key="s" type="button" role="tab" :aria-selected="scope === s" class="h-8 rounded-ctlSm text-[13px] font-semibold" :class="scope === s ? 'bg-surface text-ink-900 shadow-card' : 'text-ink-muted'" :data-cy="`recalls-scope-${s}`" @click="scope = s">
             {{ s === 'mine' ? t('My patients', 'Mis pacientes') : t('Whole clinic', 'Toda la clínica') }}
           </button>
         </div>
-        <button type="button" role="switch" :aria-checked="everyone" class="mt-1.5 flex min-h-9 w-full items-center justify-between gap-3 text-left md:max-w-[360px]" data-cy="recalls-everyone" @click="everyone = !everyone">
+        <button v-if="view === 'queue'" type="button" role="switch" :aria-checked="everyone" class="mt-1.5 flex min-h-9 w-full items-center justify-between gap-3 text-left md:max-w-[360px]" data-cy="recalls-everyone" @click="everyone = !everyone">
           <span class="text-[12.5px] text-ink-muted">{{ everyone ? t('Everyone with nothing booked', 'Todos los que no tienen cita') : t(`No visit for ${MIN_WEEKS} weeks or more`, `Sin venir desde hace ${MIN_WEEKS} semanas o más`) }}</span>
           <span class="text-[12.5px] font-semibold text-brand-text">{{ everyone ? t(`${MIN_WEEKS}+ weeks only`, `Solo ${MIN_WEEKS}+ semanas`) : t('Show everyone', 'Ver todos') }}</span>
         </button>
@@ -286,7 +332,26 @@ const canBook = computed(() => !!context.value && !restricted('calendar_read_onl
       </div>
 
       <div class="min-h-0 flex-1 overflow-y-auto px-3 py-3 md:px-5" style="padding-bottom: max(env(safe-area-inset-bottom), 1rem)">
-        <AppSkeletonList v-if="contextLoading || loading" :rows="6" />
+        <!-- Snoozed / dismissed -->
+        <template v-if="view !== 'queue'">
+          <AppSkeletonList v-if="contextLoading || parkedLoading" :rows="5" />
+          <p v-else-if="loadError" class="rounded-card border border-danger-border bg-danger-bg px-3.5 py-3 text-[13.5px] text-danger-text">{{ loadError }}</p>
+          <p v-else-if="!parked.length" class="mt-10 text-center text-[14px] text-ink-muted" data-cy="recalls-parked-empty">{{ view === 'snoozed' ? t('Nobody snoozed.', 'Nadie pospuesto.') : t('Nobody dismissed.', 'Nadie descartado.') }}</p>
+          <div v-else class="mx-auto flex max-w-[760px] flex-col gap-2">
+            <article v-for="r in parked" :key="r.patient_id" class="flex items-center gap-3 rounded-card border border-line bg-surface px-3.5 py-3 shadow-card" data-cy="recall-parked-row">
+              <NuxtLink :to="`/patients/${r.patient_id}`" class="min-w-0 flex-1">
+                <span class="block truncate text-[15px] font-semibold text-ink-900">{{ `${r.first_name ?? ''} ${r.last_name ?? ''}`.trim() }}</span>
+                <span class="block truncate text-[12.5px] text-ink-muted">
+                  <template v-if="view === 'snoozed' && r.recall_snoozed_until">{{ t('Snoozed until', 'Pospuesto hasta el') }} {{ shortDate(`${r.recall_snoozed_until.slice(0, 10)}T12:00:00Z`) }}</template>
+                  <template v-else-if="r.recall_dismissed_at">{{ t('Dismissed on', 'Descartado el') }} {{ shortDate(r.recall_dismissed_at) }}</template>
+                  <template v-if="r.last_appointment_at"> · {{ t('last visit', 'última visita') }} {{ shortDate(r.last_appointment_at) }}</template>
+                </span>
+              </NuxtLink>
+              <button type="button" class="flex h-9 shrink-0 items-center rounded-ctl border border-line-control px-3 text-[13px] font-semibold text-brand-text" data-cy="recall-restore" @click="restore(r)">{{ t('Restore', 'Restaurar') }}</button>
+            </article>
+          </div>
+        </template>
+        <AppSkeletonList v-else-if="contextLoading || loading" :rows="6" />
         <p v-else-if="loadError" class="rounded-card border border-danger-border bg-danger-bg px-3.5 py-3 text-[13.5px] text-danger-text">
           {{ loadError }} <button type="button" class="ml-1 font-semibold underline" @click="load()">{{ t('Try again', 'Reintentar') }}</button>
         </p>

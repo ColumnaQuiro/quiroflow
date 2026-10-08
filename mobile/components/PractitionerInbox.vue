@@ -139,6 +139,7 @@ async function loadGrowth() {
 // conversation, the open thread included.
 let loadRun = 0
 async function load(opts: { silent?: boolean } = {}) {
+  loadAssignments()
   const run = ++loadRun
   if (!opts.silent) loading.value = true
   const [{ data: waData, error: waError }, { data: appData, error: appError }] = await Promise.all([
@@ -261,6 +262,21 @@ const conversationSearchText = computed(() => {
   }
   return map
 })
+// Who each conversation is assigned to (inbox_assignments, the web Inbox's
+// "Mine / Unassigned"), and the team's names to show and pick from.
+const assignments = ref<Record<string, string>>({})
+const teamNames = ref<{ id: string; full_name: string }[]>([])
+async function loadAssignments() {
+  const [{ data: a }, { data: tm }] = await Promise.all([
+    supabase.from('inbox_assignments').select('conversation_key, team_member_id').eq('account_id', props.accountId),
+    teamNames.value.length ? Promise.resolve({ data: null }) : supabase.from('team_members').select('id, full_name').is('deleted_at', null).order('full_name'),
+  ])
+  if (a) assignments.value = Object.fromEntries((a as { conversation_key: string; team_member_id: string }[]).map((r) => [r.conversation_key, r.team_member_id]))
+  if (tm) teamNames.value = tm as { id: string; full_name: string }[]
+}
+const assigneeName = (key: string) => teamNames.value.find((m) => m.id === assignments.value[key])?.full_name ?? null
+const assignFilter = ref<'all' | 'mine' | 'unassigned'>('all')
+
 const view = ref<'active' | 'archived'>('active')
 const unreadOnly = ref(false)
 const replyFilter = ref<'all' | 'awaiting_us' | 'awaiting_patient'>('all')
@@ -273,6 +289,8 @@ const filteredConversations = computed(() => {
     const q = normalizeSearchTerm(search.value.trim())
     list = list.filter((c) => normalizeSearchTerm(`${c.name} ${c.phoneNumber ?? ''} ${conversationSearchText.value[c.key] ?? ''}`).includes(q))
   }
+  if (assignFilter.value === 'mine') list = list.filter((c) => assignments.value[c.key] === props.teamMemberId)
+  else if (assignFilter.value === 'unassigned') list = list.filter((c) => !assignments.value[c.key])
   if (unreadOnly.value) list = list.filter((c) => c.unread)
   if (replyFilter.value === 'awaiting_us') list = list.filter((c) => c.lastMessage.direction === 'inbound')
   else if (replyFilter.value === 'awaiting_patient') list = list.filter((c) => c.lastMessage.direction === 'outbound')
@@ -407,6 +425,40 @@ async function conversationKeyForLead(leadId: string): Promise<string | null> {
     .limit(1)
     .maybeSingle()
   return data ? keyOf(data) : null
+}
+
+// Assigning, as the web Inbox does: one row per conversation, removed for
+// "nobody". Shown at once; the next load confirms it.
+const assignOpen = ref(false)
+async function assign(key: string, memberId: string | null) {
+  assignOpen.value = false
+  const before = assignments.value[key]
+  const next = { ...assignments.value }
+  if (memberId) next[key] = memberId
+  else delete next[key]
+  assignments.value = next
+  const { error } = memberId
+    ? await supabase.from('inbox_assignments').upsert({ account_id: props.accountId, conversation_key: key, team_member_id: memberId, assigned_by: props.teamMemberId, assigned_at: new Date().toISOString() } as never)
+    : await supabase.from('inbox_assignments').delete().eq('account_id', props.accountId).eq('conversation_key', key)
+  if (error) {
+    const back = { ...assignments.value }
+    if (before) back[key] = before
+    else delete back[key]
+    assignments.value = back
+  }
+}
+
+// A WhatsApp thread from a number with no patient (and not a Growth lead's
+// own thread): attach it to one (InboxLinkSheet, the web's UnknownPanel).
+const linkOpen = ref(false)
+const canLinkSelected = computed(() => {
+  const c = selected.value
+  return !!c && !c.patientId && !c.leadId && !!c.phoneNumber && c.channel === 'whatsapp' && can('patients_edit')
+})
+async function onLinked(patientId: string) {
+  linkOpen.value = false
+  await load({ silent: true })
+  selectedKey.value = patientId
 }
 
 // The tab's badge counts the same reads and archives: told after each change.
@@ -1065,7 +1117,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
         <button
           type="button"
           class="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl border"
-          :class="unreadOnly || replyFilter !== 'all' || labelFilter ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted'"
+          :class="unreadOnly || replyFilter !== 'all' || labelFilter || assignFilter !== 'all' ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted'"
           :title="t('Filter', 'Filtrar')" :aria-label="t('Filter', 'Filtrar')"
           @click="filterSheetOpen = true"
         >
@@ -1194,6 +1246,19 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
         <p class="mb-3 text-[13px] font-[600] text-ink-900">{{ t('Filter conversations', 'Filtrar conversaciones') }}</p>
         <div class="flex flex-col gap-1">
           <button
+            v-for="f in (['mine', 'unassigned'] as const)"
+            :key="f"
+            type="button"
+            class="flex items-center justify-between rounded-ctl px-3 py-2.5 text-left text-[14px]"
+            :class="assignFilter === f ? 'bg-brand-tint text-brand-text' : 'text-ink-700'"
+            :data-cy="`inbox-filter-${f}`"
+            @click="assignFilter = assignFilter === f ? 'all' : f"
+          >
+            {{ f === 'mine' ? t('Assigned to me', 'Asignadas a mí') : t('Unassigned', 'Sin asignar') }}
+            <svg v-if="assignFilter === f" viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l3.5 3.5L13 5" /></svg>
+          </button>
+          <div class="my-1.5 border-t border-line-divider" />
+          <button
             type="button"
             class="flex items-center justify-between rounded-ctl px-3 py-2.5 text-left text-[14px]"
             :class="unreadOnly ? 'bg-brand-tint text-brand-text' : 'text-ink-700'"
@@ -1264,8 +1329,13 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             <span v-if="selected.channel === 'whatsapp'" class="rounded-pill bg-[#25D366]/10 px-1.5 py-px font-medium text-[#128C4B]">WhatsApp</span>
             <span v-else class="rounded-pill bg-brand-tint px-1.5 py-px font-medium text-brand-text">{{ t('In-app', 'App') }}</span>
             <span v-if="selected.phoneNumber" class="ml-1.5">{{ selected.phoneNumber }}</span>
+            <span v-if="assigneeName(selected.key)" class="ml-1.5" data-cy="inbox-assignee">· {{ assigneeName(selected.key) }}</span>
           </p>
         </div>
+        <button type="button" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-700" :aria-label="t('Assign', 'Asignar')" data-cy="inbox-assign" @click="assignOpen = true">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M6.5 7.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM2 13.5c0-2.2 2-3.5 4.5-3.5 1 0 1.9.2 2.6.6M12 9.5v4M10 11.5h4" /></svg>
+        </button>
+        <button v-if="canLinkSelected" type="button" class="flex h-9 shrink-0 items-center rounded-ctl bg-brand px-2.5 text-[13px] font-semibold text-white" data-cy="inbox-link" @click="linkOpen = true">{{ t('Link', 'Vincular') }}</button>
         <template v-if="selected.patientId">
           <NuxtLink :to="`/patients/${selected.patientId}`" class="flex h-9 shrink-0 items-center gap-1 rounded-ctl border border-line-control px-2.5 text-[13px] font-medium text-ink-700" data-cy="inbox-open-record">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M8 8a2.6 2.6 0 100-5.2A2.6 2.6 0 008 8zM3.2 13.4c0-2.3 2.1-3.6 4.8-3.6s4.8 1.3 4.8 3.6" /></svg>
@@ -1463,6 +1533,25 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
       </div>
       </template>
     </div>
+
+    <!-- Assign the open conversation -->
+    <div v-if="assignOpen && selected" class="absolute inset-0 z-40 flex items-end bg-black/30 md:items-center md:justify-center" data-cy="inbox-assign-sheet" @click.self="assignOpen = false">
+      <div class="flex max-h-[80%] w-full flex-col gap-1 overflow-y-auto rounded-t-[22px] bg-surface px-4 pt-3 shadow-popover md:max-w-[380px] md:rounded-[18px] md:pt-4" style="padding-bottom: max(env(safe-area-inset-bottom), 1rem)" role="dialog" aria-modal="true" :aria-label="t('Assign', 'Asignar')">
+        <p class="px-1 pb-1 text-[16px] font-semibold text-ink-900">{{ t('Assign to', 'Asignar a') }}</p>
+        <button
+          v-for="m in [{ id: '', full_name: t('Nobody (unassigned)', 'Nadie (sin asignar)') }, ...teamNames]"
+          :key="m.id || 'none'"
+          type="button"
+          class="flex min-h-11 items-center justify-between rounded-ctl px-3 text-left text-[14.5px]"
+          :class="(assignments[selected.key] ?? '') === m.id ? 'bg-brand-tint font-semibold text-brand-text' : 'text-ink-900'"
+          data-cy="inbox-assign-option"
+          @click="assign(selected.key, m.id || null)"
+        >
+          {{ m.id === teamMemberId ? t(`${m.full_name} (me)`, `${m.full_name} (yo)`) : m.full_name }}
+        </button>
+      </div>
+    </div>
+    <InboxLinkSheet v-if="linkOpen && selected?.phoneNumber" :phone-number="selected.phoneNumber" @linked="onLinked" @close="linkOpen = false" />
 
     <WhatsAppTemplateSheet
       v-if="templateSheetOpen && selected && canSendTemplate"

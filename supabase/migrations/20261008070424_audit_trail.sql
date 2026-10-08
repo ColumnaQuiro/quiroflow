@@ -33,13 +33,26 @@
 -- waits for `patients` -- a deadlock, which is exactly what happened the
 -- first time this ran against a database in use. Writers wait out the
 -- migration instead; it takes well under a second.
-lock table
-  patients, appointments, visit_notes, patient_files, patient_docs, payments, invoices,
-  account_credits, package_purchases, patient_memberships, cash_shifts, cash_movements,
-  team_members, team_member_clinics, account_roles, account_invites, api_tokens, webhooks,
-  accounts, clinics, verifactu_certificates, verifactu_delegations, appointment_types,
-  packages, memberships, services_products, audit_logs
-  in share row exclusive mode;
+--
+-- A lock lasts until the transaction ends, so it needs one to live in.
+-- Production has it: scripts/apply-migrations.mjs runs each file under
+-- `psql -1`. `supabase db reset` (CI, local) does not wrap a file in a
+-- transaction, and a bare LOCK TABLE there is an error (25P01) -- but a reset
+-- builds a database nobody is writing to, so there is nothing to deadlock
+-- with and the lock is skipped.
+do $$
+begin
+  execute 'lock table
+    patients, appointments, visit_notes, patient_files, patient_docs, payments, invoices,
+    account_credits, package_purchases, patient_memberships, cash_shifts, cash_movements,
+    team_members, team_member_clinics, account_roles, account_invites, api_tokens, webhooks,
+    accounts, clinics, verifactu_certificates, verifactu_delegations, appointment_types,
+    packages, memberships, services_products, audit_logs
+    in share row exclusive mode';
+exception when sqlstate '25P01' then
+  null;
+end;
+$$;
 
 -- 1. audit_logs gains structure ---------------------------------------------
 --

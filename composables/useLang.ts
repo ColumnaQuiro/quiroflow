@@ -3,7 +3,12 @@ import type { Ref } from 'vue'
 export type LanguagePreference = 'en' | 'es'
 
 const STORAGE_KEY = 'quiroflow-lang'
+// The stored choice is mirrored into a cookie of the same name, because the
+// server cannot read localStorage -- see requestLanguage below.
+const COOKIE_KEY = STORAGE_KEY
+const COOKIE_MAX_AGE = 60 * 60 * 24 * 365
 const STATE_KEY = 'lang-preference'
+const REQUEST_STATE_KEY = 'lang-request-default'
 const DEFAULT: LanguagePreference = 'en'
 let initialized = false
 
@@ -17,7 +22,8 @@ let initialized = false
 // value from the payload.
 //
 // null means "nobody has resolved it": nothing signed in on the server, and
-// no stored choice applied yet on the client. It reads as DEFAULT.
+// no stored choice applied yet on the client. It then reads as the
+// request's own default (requestDefaultState), and failing that as DEFAULT.
 //
 // Outside a Nuxt context there is no app to hang it on. On the server that
 // means after an await -- resolve useLang()/useT() before the first one --
@@ -29,6 +35,32 @@ function preferenceState(): Ref<LanguagePreference | null> {
     console.warn('[useLang] called outside a Nuxt context on the server; rendering in the default language. Call useLang()/useT() before the first await.')
   }
   return ref(null)
+}
+
+// What the server renders in for someone it has no saved preference for --
+// the language the client is about to pick for them, so that the page does
+// not render in English and switch to Spanish as it hydrates.
+//
+// Kept apart from preferenceState on purpose: a value there means "this
+// person's saved preference, store it on the device", and a guess from
+// request headers is not a choice anyone made. The client ignores this one
+// and decides for itself (initFromStorage); the two agree because they ask
+// the same questions in the same order.
+//
+// Resolved once per request (useState runs its initializer once), not on
+// every useT() call.
+function requestDefaultState(): Ref<LanguagePreference | null> {
+  if (!tryUseNuxtApp()) return ref(null)
+  return useState<LanguagePreference | null>(REQUEST_STATE_KEY, () => (import.meta.server ? requestLanguage() : null))
+}
+
+// The server's view of what initFromStorage will pick: the choice stored on
+// this device (as its cookie), else the browser's language (Accept-Language,
+// the header built from the same list navigator.languages reads).
+function requestLanguage(): LanguagePreference {
+  const stored = useCookie<string | null>(COOKIE_KEY, { readonly: true }).value
+  if (stored === 'en' || stored === 'es') return stored
+  return languageFromAcceptLanguage(useRequestHeader('accept-language'))
 }
 
 // Applied as early as possible (a client-only plugin calls this on boot),
@@ -43,11 +75,14 @@ function preferenceState(): Ref<LanguagePreference | null> {
 // the account store does not load again on the client to re-apply it. It is
 // stored, so the next client-only page starts from it too.
 //
-// `fallback` is what to show when nothing has been stored: the staff app
-// passes the device's language there (mobile/plugins/lang.client.ts), since
-// it has no account store to resolve a preference from. It is applied, not
-// stored, so a later choice still wins and a device language change is
-// still followed.
+// `fallback` is what to show when nothing has been stored: the browser's or
+// device's language, which both plugins pass. It is applied, not stored, so
+// a later choice still wins and a language change on the device is still
+// followed.
+//
+// The cookie is brought in line with what is stored either way: set for a
+// choice made before it existed, cleared when there is no choice -- so the
+// server falls back to the browser's language exactly when this does.
 function initFromStorage(fallback?: LanguagePreference) {
   if (initialized || import.meta.server) return
   initialized = true
@@ -62,8 +97,13 @@ function initFromStorage(fallback?: LanguagePreference) {
   } catch {
     // Storage can be unavailable (private mode, blocked site data).
   }
-  if (stored === 'en' || stored === 'es') state.value = stored
-  else if (fallback) state.value = fallback
+  if (stored === 'en' || stored === 'es') {
+    state.value = stored
+    writeCookie(stored)
+  } else {
+    writeCookie(null)
+    if (fallback) state.value = fallback
+  }
 }
 
 function writeStorage(pref: LanguagePreference) {
@@ -72,10 +112,26 @@ function writeStorage(pref: LanguagePreference) {
   } catch {
     // As above.
   }
+  writeCookie(pref)
+}
+
+// Written directly rather than through useCookie: this runs from click
+// handlers and from the plugin alike, and only needs to set one string.
+function writeCookie(pref: LanguagePreference | null) {
+  try {
+    const secure = location.protocol === 'https:' ? '; Secure' : ''
+    document.cookie = pref
+      ? `${COOKIE_KEY}=${pref}; Path=/; Max-Age=${COOKIE_MAX_AGE}; SameSite=Lax${secure}`
+      : `${COOKIE_KEY}=; Path=/; Max-Age=0; SameSite=Lax${secure}`
+  } catch {
+    // No document cookies (sandboxed frame): the server falls back to the
+    // browser's language, which is where it was before the cookie existed.
+  }
 }
 
 export function useLang() {
   const state = preferenceState()
+  const requestDefault = requestDefaultState()
 
   function setPreference(pref: LanguagePreference) {
     state.value = pref
@@ -83,7 +139,7 @@ export function useLang() {
   }
 
   return {
-    preference: computed(() => state.value ?? DEFAULT),
+    preference: computed(() => state.value ?? requestDefault.value ?? DEFAULT),
     setPreference,
     initFromStorage,
   }

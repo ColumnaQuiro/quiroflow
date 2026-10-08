@@ -2,17 +2,17 @@ import { toE164Loose } from '~/utils/phone'
 import { ApiError, defineApiHandler, badRequest } from '~/server/utils/publicApi'
 import { assertBelongsToAccount, loose } from '~/server/utils/publicApiHandlers'
 import { bool, definedOnly, email as emailField, enumValue, integer, isoDateTime, readApiBody, rejectUnknownFields, str, uuid } from '~/server/utils/publicApiBody'
-import { LEAD_CHANNELS, insertLead } from '~/server/utils/leads'
-import { sequenceRunForSamePerson, startLeadSequence } from '~/server/utils/automationEngine'
-import { hasGrowth } from '~/server/utils/requireGrowth'
+import { LEAD_CHANNELS } from '~/server/utils/leads'
+import { accountHasGrowth, fileLead, humanise, isQuestionKey, type Answer } from '~/server/utils/leadIngest'
 
 // Where an enquiry gets in from outside.
 //
-// Built for the Meta lead-ads flow that currently lives in n8n: a form
-// submission arrives with a name, a phone, an email, the ad and ad set it
-// came from, and the answers to whatever the clinic asked on the form. All
-// four of those things have a home in the schema already, and this endpoint
-// is the one door they come through.
+// Built for the Meta lead-ads flow that lived in n8n until October 2026: a
+// form submission arrives with a name, a phone, an email, the ad and ad set it
+// came from, and the answers to whatever the clinic asked on the form. Meta
+// lead ads now arrive through the leadgen webhook instead (a Page connected in
+// Settings > Leads); this stays the door for everything else, and both file
+// through server/utils/leadIngest.ts so nothing after the reading differs.
 //
 // Three shapes of the same enquiry land in three tables, deliberately:
 //   leads            -- the person, and where they are in the pipeline
@@ -30,38 +30,6 @@ const FIELDS = [
 ]
 
 const ATTRIBUTION_FIELDS = ['campaign', 'ad', 'audience', 'first_touch', 'last_touch', 'cost_cents']
-
-interface Answer {
-  question: string
-  answer: string
-}
-
-/**
- * Field names an ad platform sends as part of the lead itself, rather than as
- * a question the clinic asked. Excluded from the derived answers so the
- * drawer does not show "Email: pablo@example.com" as though it were a
- * qualifying question. Matched case-insensitively and underscore-insensitively,
- * because platforms disagree about `phone_number` vs `phoneNumber`.
- */
-const NOT_A_QUESTION = new Set([
-  'firstname', 'lastname', 'fullname', 'name', 'email', 'phone', 'phonenumber',
-  'city', 'country', 'zip', 'postalcode', 'street', 'state', 'province',
-])
-
-function isQuestionKey(key: string) {
-  return !NOT_A_QUESTION.has(key.toLowerCase().replace(/[_\s-]/g, ''))
-}
-
-/**
- * Meta names a custom question by its own text, lowercased with underscores:
- * `¿cuál_sería_el_motivo_de_tu_visita?_(alguna_molestia...)`. Underscores back
- * to spaces is the whole transformation -- punctuation and accents stay,
- * because "¿Cuál sería el motivo de tu visita?" is the question the clinic
- * wrote and the front desk recognises.
- */
-function humanise(key: string) {
-  return key.replace(/_/g, ' ').replace(/\s+/g, ' ').trim()
-}
 
 function toAnswer(question: string, value: unknown, i: number): Answer | null {
   if (!question) throw badRequest(`"answers[${i}].question" is required.`, 'answers')
@@ -155,13 +123,7 @@ export default defineApiHandler({ scope: 'leads:write' }, async ({ event, supaba
   // is the cost of the add-on meaning anything. The status code says so
   // plainly -- an ad platform's retry log showing 402 is diagnosable; a
   // silent success that stores nothing is not.
-  const { data: subscription } = await loose(supabase)
-    .from('subscriptions')
-    .select('plan_id, growth_addon, status, comped')
-    .eq('account_id', accountId)
-    .maybeSingle()
-
-  if (!hasGrowth(subscription as never)) {
+  if (!(await accountHasGrowth(supabase, accountId))) {
     throw new ApiError('forbidden', 'Growth is not on this subscription, so leads cannot be captured. Add it under Billing.')
   }
 
@@ -238,166 +200,37 @@ export default defineApiHandler({ scope: 'leads:write' }, async ({ event, supaba
   const attribution = readAttribution(body)
   const answers = readAnswers(body)
 
-  // Idempotency, not a conflict. Meta redelivers a leadgen webhook whenever
-  // it does not get a clean 200 -- on a timeout, on a deploy, on its own
-  // retry schedule -- and the redelivery is identical. A 409 would make the
-  // caller's retry look like a failure it has to handle; returning the lead
-  // it already created makes the retry a no-op, which is what a webhook
-  // sender needs.
-  async function alreadyFiled() {
-    if (!externalId) return null
-    const { data: existing } = await loose(supabase)
-      .from('leads')
-      .select('id, reference, stage, created_at')
-      .eq('account_id', accountId)
-      .eq('external_source', externalSource)
-      .eq('external_id', externalId)
-      .maybeSingle()
-    if (!existing) return null
-    return {
-      data: {
-        id: existing.id,
-        reference: existing.reference,
-        stage: existing.stage,
-        created_at: existing.created_at,
-        deduplicated: true,
+  let lead
+  try {
+    lead = await fileLead(
+      supabase,
+      accountId,
+      {
+        fullName,
+        phone: normalisedPhone ?? undefined,
+        email,
+        clinicId,
+        channel,
+        source,
+        estimatedValueCents,
+        stage,
+        externalId,
+        externalSource,
+        occurredAt: occurredAtValue,
+        consented,
+        consentSource,
+        attribution,
+        answers,
       },
-    }
-  }
-
-  const existing = await alreadyFiled()
-  if (existing) return existing
-
-  const insert = definedOnly({
-    full_name: fullName,
-    phone: normalisedPhone,
-    email,
-    clinic_id: clinicId,
-    channel,
-    source,
-    estimated_value_cents: estimatedValueCents,
-    stage,
-    external_id: externalId,
-    external_source: externalId ? externalSource : undefined,
-    // Dated to when they actually agreed, which is when they submitted --
-    // not when the webhook reached us, which can be minutes or hours later.
-    marketing_consent_at: consented ? (occurredAtValue ?? new Date().toISOString()) : undefined,
-    marketing_consent_source: consented ? (consentSource ?? externalSource ?? 'form') : undefined,
-    // Handed to the receptionist when the clinic has switched it on.
-    //
-    // Leads have always been created 'none', and the only thing that ever
-    // changed that is a button in the Inbox. So the tick that drafts replies
-    // -- which looks for 'handling' -- had nothing to do on any lead in any
-    // clinic, while the switch said the receptionist reads real enquiries.
-    // This is what makes that switch true.
-    ai_state: (await receptionistHandlesNewLeads(supabase, accountId)) ? 'handling' : undefined,
-  })
-
-  const { data: created, error } = await insertLead(supabase, accountId, insert as never, 'id, reference, stage, created_at')
-
-  if (error) {
-    // The same submission delivered twice at once: both passed the check
-    // above, and the unique index let exactly one of them in. That one is
-    // the lead, and this request is the redelivery.
-    if (error.code === '23505') {
-      const raced = await alreadyFiled()
-      if (raced) return raced
-    }
-    throw new ApiError('server_error', error.message)
-  }
-  const lead = created as { id: string; reference: string; stage: string; created_at: string }
-
-  // From here on the lead exists, and nothing may turn that into an error:
-  // the caller would retry, meet the lead by external_id and be told
-  // "deduplicated", and whatever was skipped here would never happen -- or,
-  // with no external_id, the retry would file the enquiry twice. So the
-  // attribution and the timeline entry are logged when they fail rather than
-  // thrown, and the drip and the notification below run regardless.
-  //
-  // Attribution second: an ad platform that knows the campaign but not the
-  // cost still gives us a lead worth keeping.
-  if (attribution) {
-    const { error: attributionError } = await loose(supabase).from('lead_attribution').insert({
-      lead_id: lead.id,
-      account_id: accountId,
-      ...attribution,
-    } as never)
-    if (attributionError) {
-      console.error('[public/v1/leads] attribution was not saved for lead', lead.id, attributionError.message)
-    }
-  }
-
-  const { error: eventError } = await loose(supabase).from('lead_events').insert({
-    account_id: accountId,
-    lead_id: lead.id,
-    kind: answers?.length ? 'qualification' : 'form',
-    title: answers?.length ? 'Submitted the form' : 'Enquiry received',
-    detail: source ?? null,
-    body: answers?.length ? { answers } : null,
-    // When it happened, which is not when we heard about it: an ad platform
-    // can deliver a submission minutes late, and the drawer's timeline has
-    // to read in the order the patient experienced it.
-    ...definedOnly({ occurred_at: occurredAtValue }),
-  } as never)
-  if (eventError) {
-    console.error('[public/v1/leads] the enquiry was not added to the timeline of lead', lead.id, eventError.message)
-  }
-
-  // Any enabled lead.created sequence starts now, in the same request. Not
-  // left to the cron: the first message of a welcome drip is the one whose
-  // timing matters -- "within a minute of enquiring" is the product promise,
-  // and a 15-minute tick would make it "within a quarter of an hour".
-  //
-  // Deliberately after the lead, its attribution and its answers are all
-  // committed, and deliberately non-fatal: a rule that throws must not lose
-  // the enquiry itself, which is the thing that cannot be recovered.
-  try {
-    const { data: rules } = await loose(supabase)
-      .from('automation_rules')
-      .select('id, name')
-      .eq('account_id', accountId)
-      .eq('trigger_event', 'lead.created')
-      .eq('enabled', true)
-
-    for (const rule of (rules ?? []) as { id: string; name: string | null }[]) {
-      // The same person filling in the form again is a second lead, kept --
-      // but not a second copy of a drip they are already part-way through.
-      // Said on the new lead's timeline, so nobody wonders why it got nothing.
-      const already = await sequenceRunForSamePerson(supabase, accountId, rule.id, { id: lead.id, phone: normalisedPhone, email })
-      if (already) {
-        await loose(supabase).from('lead_events').insert({
-          account_id: accountId,
-          lead_id: lead.id,
-          kind: 'note',
-          title: 'Automation not started again',
-          detail: `"${rule.name ?? 'Automation'}" is already running for this person as ${already.reference ?? 'another lead'}.`,
-        } as never)
-        continue
-      }
-      await startLeadSequence(supabase, accountId, rule.id, lead.id, getRequestURL(event).origin)
-    }
+      getRequestURL(event).origin,
+      'public/v1/leads',
+    )
   } catch (err) {
-    console.error('[public/v1/leads] lead.created sequence failed to start:', (err as Error)?.message ?? err)
+    throw new ApiError('server_error', (err as Error).message)
   }
 
-  // After the sequence, and non-fatal for the same reason: the drip answers
-  // the lead, this tells the clinic, and neither is worth losing the enquiry
-  // over. Deliberately not inside the try above -- a rule that throws must
-  // not also silence the notification.
-  try {
-    await notifyStaffOfNewLead(supabase, accountId, lead.id)
-  } catch (err) {
-    console.error('[public/v1/leads] new lead notification failed:', (err as Error)?.message ?? err)
-  }
-
-  setResponseStatus(event, 201)
-  return {
-    data: {
-      id: lead.id,
-      reference: lead.reference,
-      stage: lead.stage,
-      created_at: lead.created_at,
-      deduplicated: false,
-    },
-  }
+  // A redelivery is answered 200 with the lead it already made, not 201:
+  // nothing was created by this request.
+  if (!lead.deduplicated) setResponseStatus(event, 201)
+  return { data: lead }
 })

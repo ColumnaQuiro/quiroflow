@@ -76,5 +76,16 @@ export default defineEventHandler(async (event) => {
     )
   }
 
-  return { due: runs.length, advanced, ...(enrolled ? { enrolled } : {}) }
+  // Facebook lead ads the webhook missed. Last, so a slow Graph API cannot
+  // hold up drips that are already due, and on this tick rather than a cron
+  // of its own for the reason given at the top: this one is scheduled. Each
+  // Page is swept at most hourly (syncDueLeadAdPages), whatever the tick.
+  let leadAds: { filed: number } | undefined
+  try {
+    leadAds = await syncDueLeadAdPages(supabase, origin)
+  } catch (err) {
+    console.error('[lead-sequence-cron] lead ad sweep failed:', (err as Error)?.message ?? err)
+  }
+
+  return { due: runs.length, advanced, ...(enrolled ? { enrolled } : {}), ...(leadAds?.filed ? { leadAdsFiled: leadAds.filed } : {}) }
 })

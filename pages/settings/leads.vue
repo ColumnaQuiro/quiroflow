@@ -129,6 +129,9 @@ const STAGES = computed(() => [
             <UiSkeleton v-for="i in 3" :key="i" class="h-32 w-full rounded-card" />
           </template>
           <template v-else>
+            <!-- Where leads come from: first, because nothing below matters until they arrive -->
+            <SettingsFacebookLeadAdsCard />
+
             <!-- The pipeline, drawn: which steps move on their own -->
             <section aria-labelledby="h-pipe" class="overflow-hidden rounded-card border border-line bg-surface">
               <div class="px-[18px] pb-3 pt-4">

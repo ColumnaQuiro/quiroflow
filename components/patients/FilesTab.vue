@@ -11,6 +11,7 @@ const store = useAccountStore()
 const t = useT()
 const { can } = usePermission()
 const { showToast } = useToast()
+const logAccess = useAccessLog()
 
 // `visibility` isn't in the generated Supabase types yet -- merge it in
 // locally rather than editing the generated file by hand.
@@ -165,6 +166,7 @@ async function uploadFiles(fileList: FileList) {
 function view(file: Tables<'patient_files'>) {
   const path = file.storage_path
   if (!path) return
+  logAccess('file_viewed', file.patient_id, { file: file.file_name })
   openWhenReady(async () => {
     const { data } = await supabase.storage.from('patient-files').createSignedUrl(path, 60 * 5)
     return data?.signedUrl
@@ -180,6 +182,7 @@ function view(file: Tables<'patient_files'>) {
 function download(file: Tables<'patient_files'>) {
   const path = file.storage_path
   if (!path) return
+  logAccess('file_downloaded', file.patient_id, { file: file.file_name })
   openWhenReady(async () => {
     const { data } = await supabase.storage
       .from('patient-files')

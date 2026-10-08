@@ -84,6 +84,8 @@ export async function loadFacturaDocumentData(
   const [frozenFirst, ...frozenRest] = (frozenName ?? '').split(' ')
 
   return {
+    accountId: factura.account_id,
+    patientId: factura.patient_id,
     invoiceNumber: factura.number,
     createdAt: factura.issued_at,
     totalCents: factura.amount_cents,

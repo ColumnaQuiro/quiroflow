@@ -41,11 +41,15 @@ describe('Changing a payment method', () => {
             expect(facturas, 'the factura still documents the payment').to.have.length(1)
             expect(facturas[0].payment_id).to.not.eq(null)
 
+            // Payments are audited in full since the audit trail (20261008070424):
+            // the taking is a 'created' row, and the correction exactly one
+            // 'updated' row with the method before and after.
             cy.task('db:auditLogFor', { entityId: facturas[0].payment_id }).then((log: any) => {
-              expect(log).to.have.length(1)
-              expect(log[0].entity_type).to.eq('payment')
-              expect(log[0].summary).to.eq('Method changed from cash to card')
-              expect(log[0].team_member_id, 'and who changed it').to.not.eq(null)
+              const updates = log.filter((row: any) => row.action === 'updated')
+              expect(updates, 'one change, not one per trigger').to.have.length(1)
+              expect(updates[0].entity_type).to.eq('payment')
+              expect(updates[0].changes.method).to.deep.eq({ from: 'cash', to: 'card' })
+              expect(updates[0].team_member_id, 'and who changed it').to.not.eq(null)
             })
 
             // Account credit is not money: the database refuses, whatever the

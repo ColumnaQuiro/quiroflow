@@ -12,7 +12,8 @@ export default defineNuxtRouteMiddleware(async (to) => {
   // The docs subdomain's root. It can't render the intro page in place --
   // "/" already belongs to the app's sign-in entry point -- so it redirects
   // to the first page instead, which is also the honest URL for it.
-  if (isDevPortalHost(useRequestURL().hostname)) {
+  const requestUrl = useRequestURL()
+  if (isDevPortalHost(requestUrl.hostname)) {
     return navigateTo('/introduction', { replace: true })
   }
 
@@ -24,7 +25,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
   // handled here at all.
   const appDomain = useRuntimeConfig().public.appDomain
   if (appDomain && !to.path.startsWith('/book/')) {
-    const host = useRequestURL().hostname.toLowerCase()
+    const host = requestUrl.hostname.toLowerCase()
     if (host !== appDomain && host.endsWith(`.${appDomain}`)) {
       const slug = host.slice(0, host.length - appDomain.length - 1)
       if (slug && !slug.includes('.')) {
@@ -44,11 +45,26 @@ export default defineNuxtRouteMiddleware(async (to) => {
   const user = useSupabaseUser()
   if (!user.value) return
 
+  // Every composable this middleware needs is resolved HERE, before the
+  // first await, and never after one. On the server an await drops Vue's
+  // injection context (Nuxt's transform restores only its own app context),
+  // so a store resolved after it can't inject this request's Pinia and falls
+  // back to Pinia's module-global "active" instance -- whichever request set
+  // it last. Under concurrent SSR that was another clinic's store: this
+  // request loaded its own account into it, the other request rendered it,
+  // and this one rendered empty. When the other request had already finished,
+  // the global was unset instead and the page 500ed with "getActivePinia()
+  // was called but there was no active Pinia". tests/unit/ssr-context.test.ts
+  // fails on a use*() call after an await in here.
+  const store = useAccountStore()
+  const supabase = useSupabaseClient()
+  const twoFactorGate = useTwoFactor()
+
   // Two-factor goes before anything that reads the account. Until the code
   // is in, the database returns nothing for this person -- and "no
   // team_members row" below means "send them to onboarding to create a new
   // clinic", which is the one place a staff member must never be sent.
-  const twoFactor = await useTwoFactor().gate()
+  const twoFactor = await twoFactorGate.gate()
   if (twoFactor !== 'ok') {
     if (to.path === '/two-factor') return
     // Where they were going comes along, so a password-reset link still
@@ -58,7 +74,6 @@ export default defineNuxtRouteMiddleware(async (to) => {
   }
   if (to.path === '/two-factor') return
 
-  const store = useAccountStore()
   if (!store.loaded) {
     await store.load()
   }
@@ -77,7 +92,6 @@ export default defineNuxtRouteMiddleware(async (to) => {
   if (!hasAccount && import.meta.client) {
     const token = localStorage.getItem('pending_invite_token')
     if (token) {
-      const supabase = useSupabaseClient()
       const { error } = await supabase.rpc('accept_invite', { p_token: token })
       if (error) return navigateTo('/join')
       localStorage.removeItem('pending_invite_token')
@@ -95,7 +109,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
     const meta = user.value.user_metadata as { signup_intent?: string } | undefined
     let isPatient = meta?.signup_intent === 'portal'
     if (!isPatient) {
-      const { data: own } = await useSupabaseClient().from('patients').select('id').eq('user_id', user.value.sub).limit(1)
+      const { data: own } = await supabase.from('patients').select('id').eq('user_id', user.value.sub).limit(1)
       isPatient = !!own?.length
     }
     return navigateTo(isPatient ? '/portal' : '/onboarding')

@@ -41,6 +41,7 @@ interface AppointmentRow {
 }
 
 const supabase = useSupabaseClient()
+const logAccess = useAccessLog()
 const store = useAccountStore()
 const { scope } = usePermission()
 const t = useT()
@@ -186,6 +187,9 @@ const refreshDay = () => loadDay(true)
 
 async function selectAppointment(appointment: AppointmentRow) {
   selectedAppointment.value = appointment
+  // The chart beside the list is the patient's record, as much as their own
+  // page is.
+  if (appointment.patient_id) logAccess('record_opened', appointment.patient_id)
   // Opening the chart is, in practice, the moment the practitioner is now
   // "in room" with the patient -- there's no separate UI for that transition
   // on this screen, so it's inferred here rather than left permanently unset.

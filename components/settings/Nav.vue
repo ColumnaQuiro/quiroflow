@@ -59,6 +59,7 @@ const allGroups = computed<NavGroup[]>(() => [
     items: [
       { label: t('Import', 'Importar'), to: '/settings/import', perm: 'data_admin' },
       { label: t('Files', 'Archivos'), to: '/settings/files', perm: 'data_admin' },
+      { label: t('Activity log', 'Registro de actividad'), to: '/settings/activity', ownerOnly: true },
     ],
   },
   {

@@ -53,6 +53,7 @@ const allGroups = computed(() => [
       { to: '/settings/rooms', label: t('Calendar Resources', 'Recursos de calendario'), description: t('Rooms used for scheduling per clinic.', 'Salas usadas para la programación en cada clínica.'), icon: ICONS.calendar },
       { to: '/settings/app', label: t('Mobile App', 'App móvil'), description: t("Join code and QR, store links, what patients can do in the app, announcements, and install stats.", 'Código de acceso y QR, enlaces a las tiendas, lo que los pacientes pueden hacer en la app, avisos y estadísticas de instalación.'), icon: ICONS.devicePhoneMobile },
       { to: '/settings/referral-sources', label: t('Referral Sources', 'Fuentes de referencia'), description: t('The options on a patient\'s referral source field.', 'Las opciones del campo de fuente de referencia del paciente.'), icon: ICONS.tag },
+      { to: '/settings/exercises', label: t('Exercise Library', 'Biblioteca de ejercicios'), description: t('The home exercises practitioners assign: edit, archive, and who is doing each.', 'Los ejercicios para casa que se asignan: editarlos, archivarlos y quién hace cada uno.'), icon: ICONS.bookmark },
       { to: '/settings/new-patient-fields', label: t('New Patient Fields', 'Campos de nuevo paciente'), description: t('Which fields show and are required on the Add Patient panel.', 'Qué campos se muestran y son obligatorios en el panel de Añadir paciente.'), icon: ICONS.userCircle },
     ],
   },

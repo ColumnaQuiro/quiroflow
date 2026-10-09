@@ -14,5 +14,6 @@ const patientId = computed(() => patient.value?.id ?? '')
 <template>
   <PatientScreen :title="t('Exercises', 'Ejercicios')">
     <PatientExercises v-if="patientId" :patient-id="patientId" />
+    <ExerciseReminderSetting v-if="patientId" class="mt-3" :patient-id="patientId" />
   </PatientScreen>
 </template>

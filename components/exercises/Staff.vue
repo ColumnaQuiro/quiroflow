@@ -89,8 +89,9 @@ const input = 'h-10 w-full rounded-ctl border border-line-control bg-surface px-
         <div class="min-w-0 flex-1">
           <p class="text-[14px] font-medium text-ink-900">{{ pe.exercises?.name }}</p>
           <p v-if="dose(pe)" class="text-[12.5px] text-ink-muted">{{ dose(pe) }}</p>
-          <div class="mt-1.5 flex gap-1" :aria-label="t('Last seven days', 'Últimos siete días')">
+          <div class="mt-1.5 flex items-center gap-1" :aria-label="t('Last seven days', 'Últimos siete días')">
             <span v-for="d in exerciseWeek(pe.patient_exercise_logs.map((l) => l.done_on))" :key="d.date" class="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold" :class="d.done ? 'bg-success-accent text-white' : 'bg-chip-bg text-ink-faint'" :title="d.date">{{ d.initial }}</span>
+            <span class="ml-1.5 text-[11.5px] text-ink-muted2" data-cy="exercise-adherence">{{ t(`${exerciseWeek(pe.patient_exercise_logs.map((l) => l.done_on)).filter((d) => d.done).length} of 7 days`, `${exerciseWeek(pe.patient_exercise_logs.map((l) => l.done_on)).filter((d) => d.done).length} de 7 días`) }}</span>
           </div>
         </div>
         <button type="button" class="shrink-0 text-[12px] font-medium text-ink-muted" :data-cy="`exercise-end-${pe.id}`" @click="end(pe.id)">{{ t('Remove', 'Quitar') }}</button>

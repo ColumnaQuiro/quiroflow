@@ -50,6 +50,8 @@ function routeTap(data: Record<string, string> | undefined) {
   if (type.startsWith('appointment_')) return navigateTo('/visits')
   if (type === 'patient_app_message' && !data?.key) return navigateTo('/messages')
   if (type === 'clinic_announcement') return navigateTo('/')
+  // A new exercise from the clinic, or the daily "¿Has hecho tus ejercicios hoy?".
+  if (type === 'exercises') return navigateTo('/exercises')
   if (!data?.key) return
   pendingConversationKey.value = data.key
   return navigateTo('/inbox')

@@ -10,6 +10,8 @@ const supabase = useSupabaseClient()
 const twoFactor = useTwoFactor()
 const authPasswordError = useAuthPasswordError()
 const { ask, notify } = useAppConfirm()
+const appLock = useAppLock()
+const faceIdShown = computed(() => appLock.native() && !!appLock.biometry.value)
 
 // Password
 const passwordOpen = ref(false)
@@ -140,6 +142,11 @@ const smallBtn = 'min-h-10 shrink-0 rounded-ctl border border-line-control px-3.
           <UiBtn type="button" variant="secondary" @click="closePassword">{{ t('Cancel', 'Cancelar') }}</UiBtn>
         </div>
       </form>
+    </div>
+
+    <!-- Face ID to open the app -->
+    <div v-if="faceIdShown" class="mt-3 border-t border-line-row pt-2">
+      <FaceIdSetting bare />
     </div>
 
     <!-- Two-factor -->

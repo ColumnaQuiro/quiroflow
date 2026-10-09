@@ -49,6 +49,21 @@ function selectSide(next: 'staff' | 'patient') {
   else switchToStaff()
 }
 
+// "Entrar con Face ID": the app lost its session (a reinstall, iOS clearing
+// the WebView's storage) but the sign-in kept in the Keychain is still there
+// -- see composables/useAppLock.ts. Not after signing out: that forgets it.
+const appLock = useAppLock()
+onMounted(() => appLock.init())
+const faceIdBusy = ref(false)
+async function signInWithFaceId() {
+  error.value = ''
+  faceIdBusy.value = true
+  const result = await appLock.signIn()
+  faceIdBusy.value = false
+  if (result === 'ok') await navigateTo('/')
+  else if (result === 'expired') error.value = t('That sign-in has expired. Enter your password.', 'Ese acceso ha caducado. Introduce tu contraseña.')
+}
+
 async function onSubmit() {
   error.value = ''
   loading.value = true
@@ -129,6 +144,17 @@ async function onSubmit() {
         <OnboardingPrimaryButton class="mt-1" :loading="loading" :loading-label="t('Signing in…', 'Entrando…')">
           {{ t('Sign in', 'Entrar') }}
         </OnboardingPrimaryButton>
+
+        <button
+          v-if="appLock.native() && appLock.enabled.value && appLock.biometry.value"
+          type="button"
+          class="min-h-11 rounded-ctl border border-line-control bg-surface px-4 text-[15px] font-semibold text-ink-900"
+          :disabled="faceIdBusy"
+          data-cy="login-faceid"
+          @click="signInWithFaceId"
+        >
+          {{ t(`Sign in with ${appLock.label.value}`, `Entrar con ${appLock.label.value}`) }}
+        </button>
 
         <p v-if="side === 'patient'" class="text-center text-[13.5px] text-ink-muted">
           {{ t('First time here?', '¿Primera vez aquí?') }}

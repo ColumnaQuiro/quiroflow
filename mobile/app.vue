@@ -67,6 +67,9 @@ onUnmounted(() => document.removeEventListener('pointerdown', dismissKeyboardOnO
       <NuxtPage />
     </NuxtLayout>
     <AppConfirmHost />
+    <!-- Face ID: the one-time offer after signing in, and the lock over everything -->
+    <AppFaceIdOffer />
+    <AppLockScreen />
   </div>
 </template>
 

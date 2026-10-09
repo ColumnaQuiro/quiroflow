@@ -28,6 +28,8 @@ const initials = computed(() =>
 async function signOut() {
   await unregisterPush()
   clearVisitNoteDrafts()
+  // Signing out forgets Face ID on this device (composables/useAppLock.ts).
+  await useAppLock().forget()
   await supabase.auth.signOut({ scope: 'local' })
   ;(document.activeElement as HTMLElement | null)?.blur()
   await new Promise((resolve) => setTimeout(resolve, 350))
@@ -57,6 +59,8 @@ async function deleteAccount() {
   }
   await unregisterPush()
   clearVisitNoteDrafts()
+  // Signing out forgets Face ID on this device (composables/useAppLock.ts).
+  await useAppLock().forget()
   await supabase.auth.signOut({ scope: 'local' })
   await navigateTo('/login')
 }
@@ -89,6 +93,7 @@ async function deleteAccount() {
 
     <LanguageSetting class="mt-3" />
     <ThemeSetting class="mt-3" />
+    <FaceIdSetting class="mt-3" />
 
     <div class="mt-5 space-y-2">
       <UiBtn variant="secondary" class="w-full" @click="signOut">{{ t('Sign out', 'Cerrar sesión') }}</UiBtn>

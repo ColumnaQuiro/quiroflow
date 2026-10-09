@@ -11,9 +11,9 @@
 //   * A family bono. settle_imported_invoices() pools payments and invoices
 //     across the sharing graph (20260915183351), so a child's visits are
 //     correctly marked paid out of a parent's money -- while the child's own
-//     paid-minus-invoiced still reads as debt. Nelson Sandoval showed
-//     "174,00 EUR due" for four visits drawn on Henna Anis Nawab's bonos, and
-//     his Money tab printed that figure directly above "Nothing outstanding."
+//     paid-minus-invoiced still reads as debt. One child showed
+//     "174,00 EUR due" for four visits drawn on a parent's bonos, and
+//     their Money tab printed that figure directly above "Nothing outstanding."
 //   * A bono sale raises no invoice on purpose (20260914150556), so the money
 //     paid for it sits in the balance until the sessions are used.
 //   * PracticeHub links no payment to an invoice at all, so 3,262 imported
@@ -81,10 +81,10 @@ export function outstandingCentsOf(invoices: OwingInvoice[], payments: OwingPaym
   //
   // What the invoices say is unpaid overstates it wherever money arrived
   // without settling a particular charge -- which is every imported
-  // PracticeHub payment and every bono sale. Aurora Cendra, in
-  // owing-counts-unallocated-payments.cy.ts, has a 50,00 invoice still marked
-  // unpaid and 50,00 of unallocated cash: the invoice says she owes, the money
-  // says she does not.
+  // PracticeHub payment and every bono sale. The settled patient in
+  // owing-counts-unallocated-payments.cy.ts has a 50,00 invoice still marked
+  // unpaid and 50,00 of unallocated cash: the invoice says they owe, the money
+  // says they do not.
   //
   // What the money says -- invoiced minus paid -- overstates it wherever the
   // money sits on another patient's row, which is the family bono this was

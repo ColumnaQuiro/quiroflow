@@ -38,9 +38,9 @@ export interface AutomationFilters {
   //
   // It matters more here than on a screen: a stale figure on the patients list
   // is a wrong number someone can see, but a stale figure here decides who an
-  // automation contacts. Elvira Cotelo is settled at 0 and the import wanted to
-  // write -16 EUR against her, which is "owes money" by this convention and
-  // enough to put her in a chasing automation for a debt she does not have.
+  // automation contacts. One patient is settled at 0 and the import wanted to
+  // write -16 EUR against them, which is "owes money" by this convention and
+  // enough to put them in a chasing automation for a debt they do not have.
   balance?: 'debit' | 'credit'
   // true alone means "has any active membership"; paired with membership_ids
   // it means "has an active membership in one of these specific plans".

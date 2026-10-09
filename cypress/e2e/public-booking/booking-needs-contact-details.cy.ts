@@ -156,9 +156,9 @@ describe('Booking without a way to reach the patient', () => {
   // Conversion was a staff action only, so a lead who booked online stayed at
   // 'new' with no patient_id and its drip sequence kept running.
   // sequenceStopReason() compares lead.email to patients.email on the next
-  // cron pass -- late, and blind to a typo. Alberto Rueda Mansilla booked on
-  // 14 Sep and got a seven-step sequence over the following two days because
-  // his lead says ruedamansilla@ and his patient record says rudamansilla@.
+  // cron pass -- late, and blind to a typo. One lead booked on 14 Sep and got
+  // a seven-step sequence over the following two days because the email on
+  // their lead and the one on their patient record differed by one letter.
   describe('the lead it came from', () => {
     it('is linked and moved to booked, matching on email', () => {
       cy.get('@acct').then((account: any) => {
@@ -194,13 +194,13 @@ describe('Booking without a way to reach the patient', () => {
         cy.get('@typeId').then((type: any) => {
           cy.task('db:createLead', {
             accountId: account.accountId,
-            fullName: 'Alberto Rueda Mansilla',
+            fullName: 'Alberto Romero Molina',
             stage: 'new',
             channel: 'facebook',
-            email: 'ruedamansilla@example.test',
-            phone: '34600445533',
+            email: 'romeromolina@example.test',
+            phone: '34600555123',
           }).then((lead: any) => {
-            book({ p_first_name: 'Alberto', p_last_name: 'Rueda Mansilla', p_email: 'rudamansilla@example.test', p_phone: '600 445 533' }, account, type.id).then((r) => {
+            book({ p_first_name: 'Alberto', p_last_name: 'Romero Molina', p_email: 'romermolina@example.test', p_phone: '600 555 123' }, account, type.id).then((r) => {
               expect(r.error).to.eq(null)
               cy.task('db:leadById', { id: lead.id }).then((after: any) => {
                 expect(after.patient_id, 'matched on the number, not the address').to.not.be.null

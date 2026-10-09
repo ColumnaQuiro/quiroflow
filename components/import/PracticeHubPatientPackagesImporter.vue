@@ -203,9 +203,9 @@ const showRawSample = ref(false)
 //     balance + package_balance = (price - consumed) + (paid - price)
 //                               = paid - consumed
 //
-// Checked against real payment history: Ismael Cardenal 440 + (-240) = 200
-// paid of a 480 bono with 1 of 12 taken; Lorena Ibanez 516 + (-301) = 215;
-// Javier Mota Gil 484 + (-264) = 220; Celia Narbona, fully paid, 360 + 0 = 360.
+// Checked against real payment history for four patients: 440 + (-240) = 200
+// paid of a 480 bono with 1 of 12 taken; 516 + (-301) = 215;
+// 484 + (-264) = 220; and one fully paid, 360 + 0 = 360.
 //
 // Using `balance` alone -- as this did -- credits the whole entitlement and
 // hands part-payers money they never paid: 440 instead of 200 for the first.
@@ -218,7 +218,7 @@ const showRawSample = ref(false)
 //
 // Caveat worth knowing before a big run: `package_balance` is only as good as
 // PracticeHub's own payment linking. Where their staff took a payment without
-// linking it to the bono (Herminia Lacalle: PH reports 602 outstanding, she
+// linking it to the bono (one patient: PH reports 602 outstanding, they
 // actually paid 301) PH under-reports what was paid, so this under-reads.
 // It never over-reads, which is the safer direction, and the reconciliation
 // report is where those show up.
@@ -239,10 +239,10 @@ function paidNotConsumedCentsFor(pkg: PHPatientPackage): number {
 // wrong price is copied in and then silently mis-charges every session drawn
 // from that bono for the rest of its life.
 //
-// That is not hypothetical. Leandro Ferraz's Bono mantenimiento (PH 524)
+// That is not hypothetical. One patient's Bono mantenimiento (PH 524)
 // came over at 240 EUR for 12 sessions where the product is 480 for 12 --
-// someone appears to have entered the half he was paying as the price. His
-// visit on 2026-09-15 drew 20 EUR instead of 40, five weeks after the import,
+// someone appears to have entered the half they were paying as the price.
+// Their visit on 2026-09-15 drew 20 EUR instead of 40, five weeks after the import,
 // and nothing would have surfaced it. PracticeHub's own numbers disagreed the
 // whole time: 10 visits left at 20 each is 200, and it stated a balance of
 // 160.
@@ -255,7 +255,7 @@ function paidNotConsumedCentsFor(pkg: PHPatientPackage): number {
 // (1 visit left x 21.50 = the 21.50 balance PracticeHub states).
 //
 // Reported, never corrected. Which of the three numbers is wrong is not
-// knowable from here -- Leandro's balance does not match ANY of the candidate
+// knowable from here -- PH 524's balance does not match ANY of the candidate
 // prices -- so this asks a human to look at the bono in PracticeHub before the
 // price is trusted.
 //
@@ -270,7 +270,7 @@ function paidNotConsumedCentsFor(pkg: PHPatientPackage): number {
 //
 // What is left once those go is a SHORTFALL on a live bono -- the stated
 // balance being less than the remaining sessions are worth -- which is the
-// shape Leandro's has (160 against 200). Directional, and 10 EUR rather than
+// shape PH 524 has (160 against 200). Directional, and 10 EUR rather than
 // 1, because two records sit 4 EUR under on identical Bono 10s and look like
 // the same rounding as the closed ones. That leaves 2 of 553 flagged: PH 524,
 // the known bad one, and PH 241, half a session under on a half-paid bono and
@@ -321,8 +321,8 @@ function owedCentsFor(pkg: PHPatientPackage): number {
 // A bono is imported once and then never looked at again, so whatever
 // PracticeHub said that day is frozen here forever. That is fine until the
 // clinic corrects PracticeHub -- which is exactly what onboarding is: the
-// source data gets cleaned while the migration is already running. Hugo
-// Belmonte's bono came over as 11 sessions at 440 EUR because that is what
+// source data gets cleaned while the migration is already running. One
+// patient's bono came over as 11 sessions at 440 EUR because that is what
 // PracticeHub said at the time; it now says 12 at 480 with 2 consumed, and
 // nothing here could ever pick that up.
 //
@@ -446,9 +446,9 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     const localBonoById = new Map<string, LocalBono>()
     // A LIST per day, not a single id. Two PracticeHub bonos created on the
     // same day for the same patient used to both resolve to the same local
-    // row, and each then took back the same deposit: Damian Puyol's two bonos
-    // both claimed his one 360 EUR row and clawed it back twice, leaving him
-    // at -280 EUR. Each local row is now claimed by at most one bono, and a
+    // row, and each then took back the same deposit: one patient's two bonos
+    // both claimed their one 360 EUR row and clawed it back twice, leaving
+    // them at -280 EUR. Each local row is now claimed by at most one bono, and a
     // bono that finds nothing left to claim is a genuinely new one to insert.
     const purchasesByPatientDay = new Map<string, LocalBono[]>()
     // Rows carrying no PracticeHub reference: the bonos the hand backfill
@@ -608,7 +608,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     // deposit for the day whichever way PracticeHub split it, and a correction
     // written earlier was recorded against whichever bono happened to claim
     // that deposit on that run. Reading each bono on its own then strands
-    // those rows -- Amparo Teruel has one deposit of 322 EUR, a -322
+    // those rows -- one patient has one deposit of 322 EUR, a -322
     // correction against bono 471 and a +92 row against bono 473, all correct
     // together; read separately, 471 shows a bare -322 with nothing behind it
     // and the tool offers to hand it back.
@@ -720,10 +720,10 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       }
 
       // A cancelled record: PracticeHub deactivated it and not one session was
-      // ever drawn on it. Andres Quintela has two Bono 12s dated 22 July ten
+      // ever drawn on it. One patient has two Bono 12s dated 22 July ten
       // minutes apart -- 12/12 remaining, price 528, balance 528,
       // package_balance -528, deactivated -- while PracticeHub's own billing
-      // screen for him shows a single 70 EUR first visit and no bonos at all.
+      // screen for them shows a single 70 EUR first visit and no bonos at all.
       // Importing them hands a patient 24 sessions they never bought.
       //
       // The discriminator is deactivated AND untouched. A bono that was

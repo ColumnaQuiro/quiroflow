@@ -99,7 +99,7 @@ describe('The day sheet attributes every row', () => {
   })
 
   // Two card payments of the same amount, minutes apart, on the same morning.
-  // Ana Paula Mañanes has exactly this on 15 Sep 2026 and it reads as a double
+  // One patient has exactly this on 15 Sep 2026 and it reads as a double
   // charge: one settled that day's visit, the other went on account and paid
   // the visit two days later. payments.purpose said so all along and the day
   // sheet never showed it.

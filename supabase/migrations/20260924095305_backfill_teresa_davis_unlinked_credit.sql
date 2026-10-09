@@ -1,4 +1,4 @@
--- Teresa Davis's EUR 240 credit was a genuine card payment (phpay-3405,
+-- One patient's EUR 240 credit was a genuine card payment (phpay-3405,
 -- 1 Sep 2026) that PracticeHub carried unallocated -- no invoice_id, no
 -- account_credits row, exactly the normal shape 20260923094340 describes for
 -- an imported payment. It read as EUR 240 of credit anyway, through

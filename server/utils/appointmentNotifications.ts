@@ -388,9 +388,9 @@ async function sendForPurpose(supabase: any, appointmentId: string, purpose: 'co
 
 // One confirmation per patient per booking sitting, not one per appointment.
 // Reception books a patient's next block of visits while they stand at the
-// desk, and every one of those bookings fired its own template: Grace
-// Valencia was sent four in four minutes for four different dates, four
-// template fees, all telling her the same thing -- that she had just booked.
+// desk, and every one of those bookings fired its own template: one patient
+// was sent four in four minutes for four different dates, four template
+// fees, all telling them the same thing -- that they had just booked.
 //
 // Keyed off other appointments for the same patient rather than the booking
 // call, because those four came from four separate saves a minute apart, not
@@ -553,4 +553,91 @@ export async function sendAppointmentReminder(supabase: any, accountId: string, 
     whatsappTemplateLanguage: account.whatsapp_reminder_template_language ?? 'es',
   })
   if (sent) await supabase.from('appointments').update({ reminder_sent_at: new Date().toISOString() }).eq('id', appointmentId)
+}
+
+/**
+ * A series booked in one go -- "Repetir" in the booking panel, most often a
+ * care plan's visits -- tells the patient once, not once per visit.
+ *
+ * The first visit gets the clinic's usual confirmation (its approved
+ * WhatsApp template, email and push, as a single booking does); then the
+ * whole list of dates goes out once, on the clinic's own confirmation
+ * channels: by email, by push to the app, and by WhatsApp only as a
+ * free-form message inside the 24h window -- a business-initiated WhatsApp
+ * needs a Meta-approved template, and no template can carry a list of
+ * dates, so outside the window the template for the first visit is what
+ * WhatsApp gets. `sendWhatsAppList` is that free-form send, supplied by the
+ * caller (the Inbox's own send, with its window check and message row).
+ *
+ * Best-effort throughout, like every confirmation: the bookings are made.
+ */
+export async function sendSeriesConfirmation(
+  supabase: any,
+  accountId: string,
+  appointmentIds: string[],
+  sendWhatsAppList?: (patientId: string, text: string) => Promise<void>,
+): Promise<{ first: boolean; list: string[] }> {
+  const out = { first: false, list: [] as string[] }
+  const { data: appts } = await supabase.from('appointments').select('id, starts_at').in('id', appointmentIds).order('starts_at')
+  const rows = (appts as { id: string; starts_at: string }[] | null) ?? []
+  if (!rows.length) return out
+
+  out.first = await sendAppointmentConfirmation(supabase, accountId, rows[0].id)
+  if (rows.length < 2) return out
+
+  const { data: account } = await supabase.from('accounts').select('appointment_confirmation_enabled, appointment_confirmation_channels').eq('id', accountId).maybeSingle()
+  if (!account?.appointment_confirmation_enabled) return out
+  const channels: string[] = account.appointment_confirmation_channels ?? []
+  const ctx = await loadAppointmentContext(supabase, rows[0].id)
+  if (!ctx || ctx.patientIsMinor || ctx.patientDoNotContact) return out
+
+  const when = (iso: string, long: boolean) =>
+    new Date(iso).toLocaleString('es-ES', { weekday: long ? 'long' : 'short', day: 'numeric', month: long ? 'long' : 'short', hour: '2-digit', minute: '2-digit', timeZone: ctx.clinicTimezone })
+  const lines = rows.map((r) => when(r.starts_at, true))
+  const intro = `Hola ${ctx.patientFirstName}, estas son tus ${rows.length} próximas citas en ${ctx.clinicName}:`
+
+  if (channels.includes('email') && ctx.patientEmail) {
+    try {
+      const html = `
+    <div style="background:#F4F4F6;padding:40px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+      <div style="max-width:560px;margin:0 auto;background:#FFFFFF;border-radius:14px;border:1px solid #E4E4EA;overflow:hidden;">
+        <div style="padding:24px 32px 32px;font-size:14px;line-height:1.6;color:#4A4A57;">
+          <p>${escapeHtml(intro)}</p>
+          <ul style="padding-left:18px;">${lines.map((l) => `<li>${escapeHtml(l)}</li>`).join('')}</ul>
+        </div>${clinicFooter(ctx)}
+      </div>
+    </div>`
+      await sendResendEmail({ to: ctx.patientEmail, subject: `Tus próximas citas en ${ctx.clinicName}`, html })
+      out.list.push('email')
+    } catch {
+      // Best-effort.
+    }
+  }
+  if (channels.includes('push')) {
+    try {
+      const short = rows.slice(0, 4).map((r) => when(r.starts_at, false))
+      const result = await sendPushToPatients(supabase, accountId, [ctx.patientId], {
+        title: `Tus ${rows.length} próximas citas`,
+        body: `${short.join(' · ')}${rows.length > 4 ? '…' : ''}`,
+        data: { type: 'appointment_confirmation', key: rows[0].id },
+      })
+      if (result.delivered > 0) out.list.push('push')
+    } catch {
+      // Best-effort.
+    }
+  }
+  if (channels.includes('whatsapp') && sendWhatsAppList) {
+    try {
+      await sendWhatsAppList(ctx.patientId, `${intro}\n${lines.map((l) => `• ${l}`).join('\n')}`)
+      out.list.push('whatsapp')
+    } catch {
+      // Outside the 24h window, or no WhatsApp: the first visit's template
+      // already went.
+    }
+  }
+  return out
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }

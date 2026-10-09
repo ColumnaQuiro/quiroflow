@@ -14,12 +14,12 @@
 -- sessions_used against sessions_total -- usePatientFinancialSummary's
 -- activePackages, the Billing tab's bono card, the calendar's "use a session".
 --
--- Paqui Cortes is the case that surfaced it: PH-package-531, a 480 EUR Bono
+-- The case that surfaced it: PH-package-531, a 480 EUR Bono
 -- mantenimiento bought on 12 Aug with one session taken, deactivated in
 -- PracticeHub and re-issued on 9 Sep as PH-package-551 at the same price with
--- the same eleven visits left. PracticeHub shows her one live bono. QuiroFlow
--- showed two, and counted 440 EUR of the closed one's sessions as money she
--- could draw on -- money PracticeHub does not think exists.
+-- the same eleven visits left. PracticeHub shows the patient one live bono.
+-- QuiroFlow showed two, and counted 440 EUR of the closed one's sessions as
+-- money they could draw on -- money PracticeHub does not think exists.
 --
 -- Across the live account that is 12 bonos: closed in PracticeHub, unused
 -- sessions here.

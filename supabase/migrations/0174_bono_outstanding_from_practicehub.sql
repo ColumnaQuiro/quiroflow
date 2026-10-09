@@ -8,8 +8,8 @@
 -- linked to it.
 --
 -- packageOwedCents() returns 0 when it has neither, so every part-paid bono
--- reads "Paid". Noelia Sanabria bought a 528 EUR Bono 12, paid half, and her
--- card says she is square while PracticeHub says she owes 264. 200 active
+-- reads "Paid". One patient bought a 528 EUR Bono 12, paid half, and their
+-- card says they are square while PracticeHub says they owe 264. 200 active
 -- bonos are in that state.
 --
 -- PracticeHub knows the answer -- it keeps an outstanding figure on the

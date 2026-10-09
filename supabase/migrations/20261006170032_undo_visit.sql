@@ -1,7 +1,7 @@
 -- Undo a visit that was completed by mistake.
 --
--- Reception reported it on 6 Oct: Gabriela Encina's 1 Oct visit was checked
--- in, put in session, sent to checkout and drawn from her Bono 14 sesiones
+-- Reception reported it on 6 Oct: one patient's 1 Oct visit was checked
+-- in, put in session, sent to checkout and drawn from their Bono 14 sesiones
 -- inside three seconds, on the wrong patient. The calendar could undo each
 -- flow step while the visit was still open (AppointmentPanel's "Deshacer
 -- llegada" and friends), but nothing undid the step that matters most: once

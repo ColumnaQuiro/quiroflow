@@ -10,9 +10,9 @@
 --     across the sharing graph (20260915183351), so a beneficiary's visits are
 --     correctly marked paid out of the owner's money -- while their own
 --     paid-minus-invoiced still reads as debt. 15 patients, 1,881 EUR.
---     Nelson Sandoval showed "174,00 EUR due" for four visits drawn on Henna
---     Anis Nawab's Bono 12 and Bono 14, at 44,00 and 43,00 -- the two bonos'
---     per-session rates, to the cent. His Money tab printed that figure
+--     One child showed "174,00 EUR due" for four visits drawn on a parent's
+--     Bono 12 and Bono 14, at 44,00 and 43,00 -- the two bonos'
+--     per-session rates, to the cent. Their Money tab printed that figure
 --     directly above "Nothing outstanding."
 --   * A bono sale raises no invoice on purpose (20260914150556), so money paid
 --     for one sits in the balance until the sessions are used.

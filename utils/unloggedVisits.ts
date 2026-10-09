@@ -7,9 +7,9 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 // a bono bought afterwards (paidVisitToMove).
 //
 // It used to look at today only. Anything earlier went through "Another
-// date", which could not see the calendar and always invented a visit: Teresa
-// Davis's 15 Sep session, logged on 24 Sep, became a second, typeless 12:00
-// visit that day while her real 10:30 one stayed uncovered -- two visits on
+// date", which could not see the calendar and always invented a visit: one
+// patient's 15 Sep session, logged on 24 Sep, became a second, typeless 12:00
+// visit that day while their real 10:30 one stayed uncovered -- two visits on
 // the calendar for one appointment, and a receipt on the wrong one.
 //
 // Measured on 24 Sep 2026 across the clinic: of 147 visits since go-live,
@@ -76,8 +76,8 @@ export function paidVisitToMove(receipts: VisitReceipt[], refundedIds: ReadonlyS
 }
 
 // Checked in counts as happened, not only completed: the front desk logs the
-// session while the patient is still in the room (Tomas Berenguer's was logged
-// 62 seconds before he was checked out). A booking nobody has arrived for is
+// session while the patient is still in the room (one patient's was logged
+// 62 seconds before they were checked out). A booking nobody has arrived for is
 // left out, which is what stops a session being spent in advance.
 export async function loadUnloggedVisits(supabase: SupabaseClient, patientId: string): Promise<UnloggedVisit[]> {
   const since = new Date()

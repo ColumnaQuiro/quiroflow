@@ -247,7 +247,7 @@ const rows = computed<LedgerRow[]>(() => {
   // otherwise -- see that composable for why the narrower, invoice-only
   // version of this rule still let a credit-method payment inflate the
   // running balance whenever the credit being spent was never its own
-  // account_credits row (Teresa Davis, EUR 240, 24 Sep 2026). Leaving the
+  // account_credits row (one patient, EUR 240, 24 Sep 2026). Leaving the
   // payment in the Credit column here shows a credit line with nothing
   // facing it and a running balance that disagrees with the summary strip;
   // what actually happened is still visible, on its own account_credits row

@@ -88,8 +88,8 @@ describe('Taking a visit from a bono in the calendar', () => {
             expect(eff.appointments[0].status, 'completed by taking the session').to.eq('completed')
           })
 
-          // Taken by mistake: undo the visit. Gabriela Encina's was drawn from
-          // her bono on the wrong day, and nothing short of SQL undid it.
+          // Taken by mistake: undo the visit. One patient's was drawn from
+          // their bono on the wrong day, and nothing short of SQL undid it.
           cy.get('[data-cy=appt-sheet]').within(() => {
             cy.get('[data-cy=appt-tab-summary]').click()
             cy.get('[data-cy=undo-visit]').click()

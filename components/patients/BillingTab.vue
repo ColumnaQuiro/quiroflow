@@ -259,7 +259,7 @@ async function addCredit() {
   // Money in is a payment, and a payment gets a factura -- whatever the
   // method, whatever the reason. This used to write the credit row alone, so
   // cash handed over here reached no payments ledger and no fiscal document:
-  // Alonso Varela's 150 EUR came in this way and had neither. The gap then
+  // One patient's 150 EUR came in this way and had neither. The gap then
   // compounded, because spending that credit issues no factura either, on the
   // stated grounds that the money "was already documented when it was paid
   // in" -- which only becomes true now.
@@ -647,8 +647,8 @@ async function recordPackagePayment(
   // Attached to the bono, not to an invoice. Selling a bono used to raise an
   // invoice for its full price and hang the payments off that -- which
   // charged the patient twice, because every visit drawn from the bono raises
-  // its own charge as well. Alonso Varela was invoiced 528 for the bono and
-  // 44 for the visit he took from it; run the bono out and that is 1,056
+  // its own charge as well. One patient was invoiced 528 for the bono and
+  // 44 for the visit they took from it; run the bono out and that is 1,056
   // charged for 528 of sessions.
   //
   // The 518 bonos migrated from PracticeHub never had a sale invoice -- phase
@@ -1637,9 +1637,9 @@ async function linkPaymentToPackage(purchase: PackagePurchaseRow) {
   // Money taken ON ACCOUNT is not moved by relabelling it. Adding credit wrote
   // two rows for the same euros -- this payment, and a credit row saying the
   // patient still has it to direct somewhere -- so pointing the payment at a
-  // bono while that credit row stands spends it twice: Alonso Varela's 115
-  // EUR paid down his bono AND sat in his credit, and "available" read 292
-  // where he had 177.
+  // bono while that credit row stands spends it twice: one patient's 115
+  // EUR paid down their bono AND sat in their credit, and "available" read
+  // 292 where they had 177.
   //
   // Putting it on the bono is therefore the same operation as Collect with
   // method Credit, and is done the same way: the credit is drawn down and a
@@ -1787,7 +1787,7 @@ async function useSession(purchase: PackagePurchaseRow, choice: LogSessionChoice
           clinic_id: store.currentClinicId,
           patient_id: props.patientId,
           // The patient's own practitioner, not whoever is logged in. This
-          // used to record the front desk: Tomas Berenguer's bono visit
+          // used to record the front desk: one patient's bono visit
           // went down as recepcion@example.test, a reception account that is
           // not a practitioner at all, which also takes the visit out of the
           // treating practitioner's income. The signed-in member is only the
@@ -2466,7 +2466,7 @@ function money(cents: number) {
             </div>
 
             <!-- A visit that happened and that nothing paid for is the thing
-            that goes unnoticed: Teresa Davis's 15 Sep visit sat with no
+            that goes unnoticed: one patient's 15 Sep visit sat with no
             session and no receipt for nine days. Said here, on the card the
             fix starts from, rather than left for someone to go looking. -->
             <p

@@ -15,9 +15,9 @@
 -- never its own account_credits row to begin with -- an imported PracticeHub
 -- payment sitting on the account unallocated, which this view's own history
 -- (20260923094340) says is the NORMAL shape for one, not an edge case. There
--- the spend's +paid_cents has nothing of its own to cancel: Teresa Davis had
+-- the spend's +paid_cents has nothing of its own to cancel: one patient had
 -- EUR 240 of exactly that kind of credit, spent it on a Bono mantenimiento on
--- 24 Sep 2026, and her balance read EUR 240 ahead of itself -- the same
+-- 24 Sep 2026, and their balance read EUR 240 ahead of itself -- the same
 -- "written down twice" bug 20260916160000 fixed for adding credit, mirrored
 -- on the spending side.
 --

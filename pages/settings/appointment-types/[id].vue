@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { TablesUpdate } from '~/types/database.types'
 import { formatEur } from '~/utils/billing'
 import { CALENDAR_PALETTE, isPaletteColor } from '~/utils/calendarPalette'
 import { DURATION_MAX, DURATION_MIN, TYPE_STAGES, centsToInput, parseEurosToCents, parseMinutes, typeProblems } from '~/utils/appointmentTypes'
@@ -143,7 +144,48 @@ const saved = computed(() => (original.value ? (JSON.parse(original.value) as Fo
 // number input hands back 30 once typed in -- so typing the same duration
 // back counted as a change and asked to leave without saving.
 const asText = (_: string, v: unknown) => (typeof v === 'number' ? String(v) : v)
-const dirty = computed(() => !!form.value && JSON.stringify(form.value, asText) !== JSON.stringify(JSON.parse(original.value || 'null'), asText))
+const same = (a: unknown, b: unknown) => JSON.stringify(a, asText) === JSON.stringify(b, asText)
+
+// What Save writes to appointment_types: only the columns this edit changed,
+// compared against the row as it was loaded. Sending the whole form rewrote
+// columns nobody touched -- renaming a type whose deposit was stored while
+// payment was off deleted the deposit -- and the activity log recorded every
+// one of them as that person's edit.
+const changes = computed(() => {
+  const out: TablesUpdate<'appointment_types'> = {}
+  const f = form.value
+  const before = saved.value
+  if (!f || !before) return out
+  if (f.name !== before.name) out.name = f.name.trim()
+  if (!same(f.duration, before.duration)) out.duration_minutes = parseMinutes(f.duration)!
+  if (f.price !== before.price) out.default_price_cents = priceCents.value
+  if (f.color !== before.color) out.color = f.color
+  if (f.stage !== before.stage) out.stage = f.stage || null
+  if (f.online !== before.online) out.online_booking_enabled = f.online
+  if (f.bookableBy !== before.bookableBy) out.online_bookable_by = f.bookableBy
+  if (f.bypass !== before.bypass) out.online_bypass_practitioner = f.bypass
+  if (!same(f.maxDays, before.maxDays)) out.online_max_days_ahead = parseMinutes(f.maxDays)
+  if (f.payment !== before.payment) out.online_payment_required = f.payment
+  // A deposit only means something while payment is taken at booking, and
+  // the field is hidden otherwise. So: written as typed while payment is on;
+  // cleared when this edit turns payment off; and otherwise left as stored --
+  // unless the price is now below it, which the deposit check would refuse
+  // for a field nobody can see.
+  const payment = f.online && f.payment
+  const storedDeposit = parseEurosToCents(before.deposit)
+  if (payment) {
+    if (!same(f.deposit, before.deposit)) out.online_deposit_cents = parseEurosToCents(f.deposit)
+  } else if (storedDeposit !== null) {
+    const price = out.default_price_cents ?? parseEurosToCents(before.price) ?? 0
+    if ((before.online && before.payment) || storedDeposit > price) out.online_deposit_cents = null
+  }
+  return out
+})
+const overrideChanges = computed(() => {
+  const before = saved.value?.overrides ?? {}
+  return Object.entries(form.value?.overrides ?? {}).filter(([id, o]) => !same(o, before[id] ?? { duration: '', price: '' }))
+})
+const dirty = computed(() => Object.keys(changes.value).length > 0 || overrideChanges.value.length > 0)
 
 // --- Validation -------------------------------------------------------------------
 const problems = computed(() =>
@@ -191,40 +233,25 @@ async function save() {
   }
   saving.value = true
   const f = form.value
-  const payment = f.online && f.payment
-  const values = {
-    name: f.name.trim(),
-    duration_minutes: parseMinutes(f.duration)!,
-    default_price_cents: priceCents.value,
-    color: f.color,
-    stage: f.stage || null,
-    online_booking_enabled: f.online,
-    online_bookable_by: f.bookableBy,
-    online_bypass_practitioner: f.bypass,
-    online_max_days_ahead: parseMinutes(f.maxDays),
-    online_payment_required: f.payment,
-    // A deposit only means something while payment is taken at booking; with
-    // it off, a leftover amount above a since-lowered price would be refused
-    // by the deposit check for a field nobody can see.
-    online_deposit_cents: payment ? parseEurosToCents(f.deposit) : null,
-  }
-  const { error } = await supabase.from('appointment_types').update(values).eq('id', typeId).select('id').single()
-  if (error) {
-    saving.value = false
-    showToast(
-      error.code === '23505' ? t('There is already an active type with that name.', 'Ya hay un tipo activo con ese nombre.') : error.message,
-      'error',
-      8000,
-    )
-    return
+  const before = saved.value!
+  const values = changes.value
+  if (Object.keys(values).length) {
+    const { error } = await supabase.from('appointment_types').update(values).eq('id', typeId).select('id').single()
+    if (error) {
+      saving.value = false
+      showToast(
+        error.code === '23505' ? t('There is already an active type with that name.', 'Ya hay un tipo activo con ese nombre.') : error.message,
+        'error',
+        8000,
+      )
+      return
+    }
   }
 
   // Overrides: only the rows that changed. Absence means "use the type's own
   // duration and price", so emptying both fields deletes the row rather than
   // storing two nulls.
-  const before = saved.value?.overrides ?? {}
-  const writes = Object.entries(f.overrides)
-    .filter(([id, o]) => JSON.stringify(o, asText) !== JSON.stringify(before[id] ?? { duration: '', price: '' }, asText))
+  const writes = overrideChanges.value
     .map(async ([memberId, o]) => {
       const duration = parseMinutes(o.duration)
       const price = parseEurosToCents(o.price)
@@ -246,8 +273,11 @@ async function save() {
     return
   }
   tried.value = false
-  f.name = values.name
-  if (!payment) f.deposit = ''
+  // The form holds what is stored now. A deposit edited while payment was
+  // switched off again was not written, so it goes back to what it was.
+  if (values.name !== undefined) f.name = values.name
+  if (values.online_deposit_cents !== undefined) f.deposit = centsToInput(values.online_deposit_cents)
+  else if (!(f.online && f.payment)) f.deposit = before.deposit
   original.value = JSON.stringify(f)
   showToast(t('Saved', 'Guardado'))
 }

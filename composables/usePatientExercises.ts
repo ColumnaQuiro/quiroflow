@@ -20,7 +20,7 @@ export function usePatientExercises(patientId: () => string) {
     const weekAgo = new Date(Date.now() - 8 * 86_400_000).toISOString().slice(0, 10)
     const { data, error: readError } = await supabase
       .from('patient_exercises')
-      .select('id, sets, reps, frequency, notes, created_at, exercises(id, name, instructions, media_url), patient_exercise_logs(done_on)')
+      .select('id, sets, reps, frequency, notes, created_at, exercises(id, name, instructions, media_url, media_path), patient_exercise_logs(done_on)')
       .eq('patient_id', id)
       .is('ended_at', null)
       .gte('patient_exercise_logs.done_on', weekAgo)

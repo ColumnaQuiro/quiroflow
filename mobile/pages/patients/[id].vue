@@ -479,6 +479,9 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
         </template>
       </section>
 
+      <!-- Home exercises given to this patient, and how their week has gone -->
+      <ExercisesStaff v-if="context && patient" :account-id="context.accountId" :patient-id="patient.id" :team-member-id="context.teamMemberId" />
+
       <!-- Bonos and balance: only for a role that sees money -->
       <div v-if="contextLoading" class="grid grid-cols-2 gap-2">
         <UiSkeleton class="h-[74px] rounded-card" />

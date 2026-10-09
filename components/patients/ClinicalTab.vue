@@ -16,6 +16,10 @@ import type { Tables } from '~/types/database.types'
 // render them with their structure rather than as a wall of text with the
 // labels still in it.
 const props = defineProps<{ patientId: string }>()
+// Home exercises (components/exercises/Staff.vue): assigned as the signed-in member.
+const exercisesStore = useAccountStore()
+const exercisesAccountId = computed(() => exercisesStore.teamMember?.account_id ?? null)
+const exercisesTeamMemberId = computed(() => exercisesStore.teamMember?.id ?? null)
 
 const supabase = useSupabaseClient()
 const t = useT()
@@ -269,6 +273,7 @@ const goalChips = computed(() =>
         </section>
 
         <PatientsStickyNotePanel :patient-id="patientId" />
+        <ExercisesStaff v-if="exercisesAccountId" :account-id="exercisesAccountId" :patient-id="patientId" :team-member-id="exercisesTeamMemberId" />
       </div>
     </div>
 

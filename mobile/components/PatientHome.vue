@@ -38,6 +38,8 @@ function onVisible() {
 onMounted(() => document.addEventListener('visibilitychange', onVisible))
 onBeforeUnmount(() => document.removeEventListener('visibilitychange', onVisible))
 const { documents } = usePatientDocuments(() => props.patientId)
+// Home exercises: a way through to them, once the clinic has given some.
+const { items: exercises } = usePatientExercises(() => props.patientId)
 
 const next = computed(() => upcoming.value[0] ?? null)
 // What is unpaid, not the balance, as the staff record shows it
@@ -126,6 +128,19 @@ function eur(cents: number) {
         </p>
       </NuxtLink>
     </div>
+
+    <NuxtLink
+      v-if="exercises.length > 0"
+      to="/exercises"
+      class="mt-3 flex items-center justify-between rounded-card border border-line bg-surface px-4 py-3 shadow-card"
+      data-cy="patient-home-exercises"
+    >
+      <span class="text-[13.5px] font-medium text-ink-900">
+        {{ t('Your exercises', 'Tus ejercicios') }}
+        <span class="ml-1 text-[12.5px] font-normal text-ink-faint">{{ exercises.length }}</span>
+      </span>
+      <span class="text-ink-faint"><AppChevron /></span>
+    </NuxtLink>
 
     <NuxtLink
       v-if="documents.length > 0"

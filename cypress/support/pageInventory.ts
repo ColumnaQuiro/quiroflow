@@ -146,6 +146,7 @@ export const NOT_SWEPT_HERE: Record<string, string> = {
   '/portal/appointments': 'patient portal -- separate app with its own auth',
   '/portal/billing': 'patient portal -- separate app with its own auth',
   '/portal/documents': 'patient portal -- separate app with its own auth',
+  '/portal/exercises': 'patient portal -- separate app with its own auth; covered by cypress/e2e/patients/home-exercises.cy.ts',
   '/portal/messages': 'patient portal -- separate app with its own auth',
 }
 

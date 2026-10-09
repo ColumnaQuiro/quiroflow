@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { BusinessHours } from '~/utils/businessHours'
+import { hasBusinessHoursConfigured, type BusinessHours } from '~/utils/businessHours'
 import { hoursProblems, normalizeHours } from '~/utils/clinicHours'
 import { CALENDAR_PALETTE } from '~/utils/calendarPalette'
 import { formatEur, formatShortDate } from '~/utils/billing'
@@ -28,7 +28,9 @@ interface Form {
   is_practitioner: boolean
   online_booking_enabled: boolean
   clinic_ids: string[]
-  business_hours: BusinessHours
+  // As stored: null is "no hours of their own", and stays null until someone
+  // sets some. Normalising it on load made every save write a week back.
+  business_hours: BusinessHours | null
 }
 interface Override {
   id: string
@@ -81,7 +83,7 @@ async function load() {
     is_practitioner: m.data.is_practitioner,
     online_booking_enabled: m.data.online_booking_enabled,
     clinic_ids: (links.data ?? []).map((l) => l.clinic_id).sort(),
-    business_hours: normalizeHours(m.data.business_hours as BusinessHours | null),
+    business_hours: m.data.business_hours as BusinessHours | null,
   }
   form.value = f
   original.value = JSON.stringify(f)
@@ -112,7 +114,7 @@ function roleLabel(name: string) {
 }
 const initials = computed(() => (form.value?.full_name ?? '').split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('') || '·')
 const activeClinics = computed(() => store.clinics)
-const hasOwnHours = computed(() => !!form.value && Object.values(form.value.business_hours).some((w) => (w ?? []).length > 0))
+const hasOwnHours = computed(() => !!form.value && hasBusinessHoursConfigured(form.value.business_hours))
 const SECTIONS = computed(() => [
   { id: 'perfil', label: t('Profile', 'Perfil') },
   { id: 'acceso', label: t('Access', 'Acceso') },
@@ -122,8 +124,46 @@ const SECTIONS = computed(() => [
 ])
 
 // --- Editing -----------------------------------------------------------------------------
-const dirty = computed(() => !!form.value && JSON.stringify(form.value) !== original.value)
-const problems = computed(() => (form.value ? hoursProblems(form.value.business_hours) : {}))
+// A week with no window on any day means the same as null -- the clinic's
+// hours apply (hasBusinessHoursConfigured, and assert_booking_slot_open in
+// SQL) -- so the two compare equal and a change is written as null.
+function canonicalHours(hours: BusinessHours | null): BusinessHours | null {
+  return hasBusinessHoursConfigured(hours) ? normalizeHours(hours) : null
+}
+// What Save writes to team_members: only the columns this edit changed,
+// compared against the row as it was loaded. Sending the whole form rewrote
+// columns nobody touched -- renaming a Front Desk member switched off their
+// online booking and replaced their null hours with an empty week.
+const changes = computed(() => {
+  const out: Partial<Omit<Form, 'clinic_ids'>> = {}
+  if (!form.value) return out
+  const f = form.value
+  const before = JSON.parse(original.value) as Form
+  if (f.full_name !== before.full_name) out.full_name = f.full_name.trim()
+  if (f.color !== before.color) out.color = f.color
+  if (f.role_id !== before.role_id) out.role_id = f.role_id
+  if (f.is_practitioner !== before.is_practitioner) out.is_practitioner = f.is_practitioner
+  // Taking someone off "sees patients" takes them off the booking page too.
+  // Only then: the switch is hidden for anyone who is not a practitioner, and
+  // booking requires is_practitioner as well, so a stored value nobody can
+  // see is not this save's to rewrite.
+  const online = before.is_practitioner && !f.is_practitioner ? false : f.online_booking_enabled
+  if (online !== before.online_booking_enabled) out.online_booking_enabled = online
+  const hours = canonicalHours(f.business_hours)
+  if (JSON.stringify(hours) !== JSON.stringify(canonicalHours(before.business_hours))) out.business_hours = hours
+  return out
+})
+const clinicChanges = computed(() => {
+  if (!form.value) return { added: [], removed: [] }
+  const ids = form.value.clinic_ids
+  const before = (JSON.parse(original.value) as Form).clinic_ids
+  return { added: ids.filter((c) => !before.includes(c)), removed: before.filter((c) => !ids.includes(c)) }
+})
+const dirty = computed(() => Object.keys(changes.value).length > 0 || clinicChanges.value.added.length > 0 || clinicChanges.value.removed.length > 0)
+// The editor always works on a full week; form.business_hours only becomes
+// one when it emits a change.
+const editorHours = computed(() => normalizeHours(form.value?.business_hours))
+const problems = computed(() => (form.value ? hoursProblems(editorHours.value) : {}))
 const nameMissing = computed(() => !!form.value && !form.value.full_name.trim())
 // Active clinics only. A practitioner linked only to a clinic since archived
 // has none: they vanish from every calendar and from booking, and counting the
@@ -141,7 +181,7 @@ function toggleClinic(id: string) {
 // whenever the clinic is open). It opens when someone sets their own.
 const ownHoursOpen = ref(false)
 function clearHours() {
-  if (form.value) form.value.business_hours = normalizeHours({})
+  if (form.value) form.value.business_hours = null
   ownHoursOpen.value = false
 }
 
@@ -158,29 +198,21 @@ async function save() {
   saving.value = true
   seatRefused.value = ''
   const f = form.value
-  const before = JSON.parse(original.value) as Form
-  const values = {
-    full_name: f.full_name.trim(),
-    color: f.color,
-    role_id: f.role_id,
-    is_practitioner: f.is_practitioner,
-    // Nobody is bookable online who does not see patients, or who has left
-    // (the database holds that too).
-    online_booking_enabled: f.is_practitioner && f.online_booking_enabled && !deletedAt.value,
-    business_hours: f.business_hours,
+  const values = changes.value
+  const { added, removed } = clinicChanges.value
+  if (Object.keys(values).length) {
+    // .select().single() so a write RLS refuses errors instead of "succeeding"
+    // on zero rows. Someone who has left is never bookable online: the
+    // database holds that (team_member_leaving_stops_online_booking).
+    const { error } = await supabase.from('team_members').update(values).eq('id', memberId).select('id').single()
+    if (error) {
+      saving.value = false
+      // The seat cap trigger (PT402) explains itself.
+      if (error.code === 'PT402') seatRefused.value = error.message
+      else showToast(error.message, 'error', 8000)
+      return
+    }
   }
-  // .select().single() so a write RLS refuses errors instead of "succeeding"
-  // on zero rows.
-  const { error } = await supabase.from('team_members').update(values).eq('id', memberId).select('id').single()
-  if (error) {
-    saving.value = false
-    // The seat cap trigger (PT402) explains itself.
-    if (error.code === 'PT402') seatRefused.value = error.message
-    else showToast(error.message, 'error', 8000)
-    return
-  }
-  const added = f.clinic_ids.filter((c) => !before.clinic_ids.includes(c))
-  const removed = before.clinic_ids.filter((c) => !f.clinic_ids.includes(c))
   if (added.length) {
     const { error: e } = await supabase.from('team_member_clinics').insert(added.map((clinic_id) => ({ team_member_id: memberId, clinic_id })))
     if (e) {
@@ -199,7 +231,7 @@ async function save() {
   }
   saving.value = false
   tried.value = false
-  f.online_booking_enabled = values.online_booking_enabled
+  Object.assign(f, values)
   original.value = JSON.stringify(f)
   // Your own name, colour and role are read from the store everywhere.
   if (isMe.value) await store.load()
@@ -480,8 +512,9 @@ const card = 'flex scroll-mt-4 flex-col gap-4 rounded-card border border-line bg
                   </div>
                   <SettingsClinicHoursEditor
                     v-if="hasOwnHours || ownHoursOpen"
-                    v-model="form.business_hours"
+                    :model-value="editorHours"
                     :problems="problems"
+                    @update:model-value="form.business_hours = $event"
                     :empty-note="t('No days set yet: until one is, they can be booked whenever the clinic is open.', 'Aún sin días: hasta que marques alguno, se le puede reservar siempre que la sede esté abierta.')"
                   />
                   <div v-else class="flex flex-wrap items-center gap-3 rounded-ctl border border-line bg-surface-subtle px-3.5 py-3" data-cy="member-hours-none">

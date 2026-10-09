@@ -221,9 +221,18 @@ export async function sendStaffMorningSummaries(service: Service, now = new Date
         if (!(claimed as unknown[] | null)?.length) continue
         const first = dayAndTime(visits[0].starts_at, tz).time
         const n = visits.length
+        // Their own patients who have stopped doing their home exercises
+        // (exercise_adherence_alerts), as one more line: a nudge to ask at
+        // today's visit, not a push of its own.
+        const { count: lapsed } = await service
+          .from('exercise_adherence_alerts')
+          .select('patient_id', { count: 'exact', head: true })
+          .eq('account_id', clinic.account_id)
+          .eq('default_practitioner_id', m.id)
+        const exercisesLine = lapsed ? ` ${lapsed === 1 ? '1 paciente lleva' : `${lapsed} pacientes llevan`} 5 días o más sin hacer sus ejercicios.` : ''
         await sendPushToUsers(service, [m.user_id!], {
           title: 'Tu día',
-          body: `Hoy tienes ${n} ${n === 1 ? 'cita' : 'citas'}, la primera a las ${first}.`,
+          body: `Hoy tienes ${n} ${n === 1 ? 'cita' : 'citas'}, la primera a las ${first}.${exercisesLine}`,
           data: { type: 'my_day' },
         })
         sent++

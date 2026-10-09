@@ -4,6 +4,10 @@
 // (care_plan_continuity_alerts) rather than a flat days-since-last-visit
 // threshold. Deliberately reuses SendWhatsAppModal.vue rather than
 // duplicating recalls.vue's messaging UI.
+//
+// Below it, the patients who have stopped doing their home exercises
+// (exercise_adherence_alerts): the same kind of "someone is falling off
+// their treatment", and the same action.
 interface AlertRow {
   patient_id: string
   first_name: string
@@ -21,10 +25,21 @@ interface AlertRow {
   default_practitioner_id: string | null
 }
 
+interface ExerciseAlertRow {
+  patient_id: string
+  first_name: string
+  last_name: string | null
+  preferred_language: string | null
+  active_exercises: number
+  last_done_on: string | null
+  days_without: number
+}
+
 const supabase = useSupabaseClient()
 const t = useT()
 
 const rows = ref<AlertRow[]>([])
+const exerciseRows = ref<ExerciseAlertRow[]>([])
 const loading = ref(true)
 const messagingPatientId = ref<string | null>(null)
 
@@ -32,13 +47,20 @@ const messagingPatientId = ref<string | null>(null)
 // swapping it for skeleton rows to drop one patient was a jump for nothing.
 async function load(opts: { silent?: boolean } = {}) {
   if (!opts.silent) loading.value = true
-  const { data } = await supabase.from('care_plan_continuity_alerts').select('*').order('days_overdue', { ascending: false })
+  const [{ data }, { data: exercises }] = await Promise.all([
+    supabase.from('care_plan_continuity_alerts').select('*').order('days_overdue', { ascending: false }),
+    supabase
+      .from('exercise_adherence_alerts')
+      .select('patient_id, first_name, last_name, preferred_language, active_exercises, last_done_on, days_without')
+      .order('days_without', { ascending: false }),
+  ])
   rows.value = (data as AlertRow[]) ?? []
+  exerciseRows.value = (exercises as ExerciseAlertRow[] | null) ?? []
   loading.value = false
 }
 onMounted(() => load())
 
-function patientName(row: AlertRow) {
+function patientName(row: { first_name: string; last_name: string | null }) {
   return `${row.first_name} ${row.last_name ?? ''}`.trim()
 }
 function cadenceLabel(row: AlertRow) {
@@ -52,14 +74,14 @@ function cadenceLabel(row: AlertRow) {
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })
 }
-function openMessage(row: AlertRow) {
+function openMessage(row: { patient_id: string }) {
   messagingPatientId.value = row.patient_id
 }
 function onSent() {
   messagingPatientId.value = null
   load({ silent: true })
 }
-const messagingRow = computed(() => rows.value.find((r) => r.patient_id === messagingPatientId.value) ?? null)
+const messagingRow = computed(() => [...rows.value, ...exerciseRows.value].find((r) => r.patient_id === messagingPatientId.value) ?? null)
 </script>
 
 <template>
@@ -117,6 +139,47 @@ const messagingRow = computed(() => rows.value.find((r) => r.patient_id === mess
               </td>
               <td class="px-3 py-2 text-right">
                 <button type="button" class="text-[12px] font-medium text-brand-text hover:underline" @click="openMessage(row)">
+                  {{ t('Message', 'Mensaje') }}
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 class="mb-1 mt-8 text-[15px] font-semibold text-ink-900">{{ t('Home exercises not being done', 'Ejercicios en casa sin hacer') }}</h2>
+      <p class="mb-4 text-[13px] text-ink-muted2">
+        {{ t('Patients with the app and home exercises who have not ticked any for 5 days or more.', 'Pacientes con la app y ejercicios en casa que llevan 5 días o más sin marcar ninguno.') }}
+      </p>
+      <div class="overflow-x-auto rounded-card border border-line bg-surface shadow-card" data-cy="exercise-alerts">
+        <table class="w-full text-[13px]" :class="exerciseRows.length ? 'min-w-[560px]' : ''">
+          <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2">
+            <tr>
+              <th class="px-3 py-2">{{ t('Patient', 'Paciente') }}</th>
+              <th class="px-3 py-2">{{ t('Exercises', 'Ejercicios') }}</th>
+              <th class="px-3 py-2">{{ t('Last ticked', 'Último marcado') }}</th>
+              <th class="px-3 py-2">{{ t('Without', 'Sin hacer') }}</th>
+              <th class="px-3 py-2" />
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-line-divider">
+            <tr v-if="loading">
+              <td colspan="5" class="px-3 py-2.5"><UiSkeleton class="h-3.5 w-40 rounded-ctlSm" /></td>
+            </tr>
+            <tr v-else-if="exerciseRows.length === 0">
+              <td colspan="5" class="px-3 py-6 text-center text-ink-faint">{{ t('Everyone with exercises is keeping up.', 'Todos los que tienen ejercicios los están haciendo.') }}</td>
+            </tr>
+            <tr v-for="row in loading ? [] : exerciseRows" :key="row.patient_id" data-cy="exercise-alert-row">
+              <td class="px-3 py-2">
+                <NuxtLink :to="`/patients/${row.patient_id}?tab=clinical`" class="font-medium text-ink-900 hover:text-brand-text">{{ patientName(row) }}</NuxtLink>
+              </td>
+              <td class="px-3 py-2 text-ink-muted2">{{ row.active_exercises }}</td>
+              <td class="px-3 py-2 text-ink-muted2">{{ row.last_done_on ? formatDate(`${row.last_done_on}T12:00:00Z`) : t('Never', 'Nunca') }}</td>
+              <td class="px-3 py-2">
+                <UiPill tone="warning">{{ row.days_without }} {{ t('days', 'días') }}</UiPill>
+              </td>
+              <td class="px-3 py-2 text-right">
+                <button type="button" class="text-[12px] font-medium text-brand-text hover:underline" data-cy="exercise-alert-message" @click="openMessage(row)">
                   {{ t('Message', 'Mensaje') }}
                 </button>
               </td>

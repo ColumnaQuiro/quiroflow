@@ -66,9 +66,19 @@ async function load() {
 onMounted(load)
 watch(() => props.patientId, load)
 
+// Visits the plan still needs that have no appointment yet -- what
+// "Reservar las visitas del plan" books (the calendar panel's own count).
+const toBook = computed(() => (plan.value ? Math.max(0, plan.value.total_visits - completedInPlan.value - scheduledInPlan.value) : 0))
+// Just saved a plan: offer to book it, the step after creating one.
+const justSaved = ref(false)
+
 async function onPlanSaved() {
   editOpen.value = false
   await load()
+  justSaved.value = true
+}
+function bookPlan() {
+  navigateTo({ path: '/calendar', query: { patient: props.patientId, repeat: 'plan' } })
 }
 </script>
 
@@ -101,6 +111,13 @@ async function onPlanSaved() {
         </p>
       </template>
       <p v-else class="mt-1 text-[12.5px] text-ink-faint">{{ t('No plan set up for this patient yet.', 'Aún no se ha configurado un plan para este paciente.') }}</p>
+
+      <div v-if="plan && editable && toBook > 0" class="mt-2.5 rounded-ctl px-3 py-2" :class="justSaved ? 'bg-brand-tint' : 'bg-surface-subtle'" data-cy="care-plan-book">
+        <p v-if="justSaved" class="text-[12.5px] font-medium text-ink-900">{{ t('Plan saved. Book its visits now?', 'Plan guardado. ¿Reservas ya sus visitas?') }}</p>
+        <button type="button" class="text-[12.5px] font-semibold text-brand-text hover:underline" data-cy="care-plan-book-open" @click="bookPlan">
+          {{ toBook === 1 ? t('Book the 1 visit left →', 'Reservar la visita que falta →') : t(`Book the ${toBook} visits left →`, `Reservar las ${toBook} visitas que faltan →`) }}
+        </button>
+      </div>
     </template>
 
     <PatientsEditCarePlanModal v-if="editOpen" :patient-id="patientId" :plan="plan" @close="editOpen = false" @saved="onPlanSaved" />

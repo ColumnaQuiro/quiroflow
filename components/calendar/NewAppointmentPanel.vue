@@ -45,6 +45,11 @@ const props = defineProps<{
   prefillPractitionerId?: string
   /** Booking from a patient's page: start with them chosen, no search. */
   prefillPatientId?: string
+  /**
+   * "Reservar las visitas del plan" on the record: start with Repeat set to
+   * follow their care plan, once it is loaded and still has visits to book.
+   */
+  prefillFollowPlan?: boolean
   /** The clinic's slot size, for the next-free-times search. */
   slotMinutes?: number
 }>()
@@ -411,6 +416,7 @@ async function loadCarePlan(patientId: string) {
   carePlan.value = plan
   carePlanRemaining.value = Math.max(0, plan.total_visits - completed - scheduled)
   if (repeat.value === 'care_plan' && carePlanRemaining.value === 0) repeat.value = 'none'
+  if (props.prefillFollowPlan && patientId === props.prefillPatientId && carePlanRemaining.value > 0 && repeat.value === 'none') repeat.value = 'care_plan'
 }
 const carePlanFrequencyLabel = computed(() => {
   if (!carePlan.value) return ''
@@ -620,6 +626,8 @@ async function book(starts: Date[]) {
   if (!patientId) return
 
   let firstAppointmentId: string | null = null
+  const createdIds: string[] = []
+  let failed = false
   for (const [i, occStart] of starts.entries()) {
     const occEnd = new Date(occStart.getTime() + duration.value * 60000)
     const { data: created, error: apptError } = await supabase
@@ -643,12 +651,20 @@ async function book(starts: Date[]) {
       // Part of a series is already in: say how much, so a retry is not a
       // blind second copy of it.
       error.value = i === 0 ? why : t(`Booked ${i} of ${starts.length}; ${formatWeekdayDate(occStart)} failed: ${why}`, `Reservadas ${i} de ${starts.length}; ${formatWeekdayDate(occStart)} ha fallado: ${why}`)
-      return
+      // The ones already in are still the patient's: confirmed below.
+      failed = true
+      break
     }
     if (i === 0) firstAppointmentId = created.id
+    createdIds.push(created.id)
     fire('appointment.booked', { patientId, appointmentId: created.id })
-    if (sendConfirmation.value) useStaffFetch('/api/appointments/send-confirmation', { method: 'POST', body: { appointmentId: created.id } }).catch(() => {})
   }
+  // One booking, one confirmation. A series -- a care plan's visits -- is one
+  // message too: the first visit's confirmation and the list of every date,
+  // not a confirmation per visit (send-series-confirmation).
+  if (sendConfirmation.value && createdIds.length === 1) useStaffFetch('/api/appointments/send-confirmation', { method: 'POST', body: { appointmentId: createdIds[0] } }).catch(() => {})
+  if (sendConfirmation.value && createdIds.length > 1) useStaffFetch('/api/appointments/send-series-confirmation', { method: 'POST', body: { appointmentIds: createdIds } }).catch(() => {})
+  if (failed) return
 
   if (collectPayment.value && firstAppointmentId) {
     const amountCents = Math.round((parseFloat(paymentAmount.value) || 0) * 100)

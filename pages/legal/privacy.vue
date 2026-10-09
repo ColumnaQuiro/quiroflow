@@ -38,6 +38,8 @@ definePageMeta({ layout: false })
             <li><strong>Clinic staff accounts</strong> (name, email, role) -- to provide the service and manage access, under our contract with the clinic (GDPR Art. 6(1)(b)).</li>
             <li><strong>Patient data entered by clinics</strong> (appointments, clinical notes, billing, messages, uploaded files) -- processed strictly on each clinic's instructions, as their processor. We do not decide why this data is collected or how it's used.</li>
             <li><strong>Device/usage data</strong> (app opens, push-notification tokens) -- to operate and improve the mobile app.</li>
+            <li><strong>Security and audit logs</strong> (staff sign-ins with IP address and device, who opened or changed which record, and when) -- to protect the clinic's data and let the clinic answer who accessed a patient's record (GDPR Art. 32; legitimate interest, Art. 6(1)(f)). Visible only to the clinic's owners.</li>
+            <li><strong>Error reports</strong> (the page and code location where the app failed, the browser, and the clinic and staff account IDs) -- to find and fix faults. Request bodies, search terms, cookies and IP addresses are removed before sending; no patient data is included.</li>
             <li><strong>Support communications</strong> -- to respond to clinics that contact us.</li>
           </ul>
         </div>
@@ -59,6 +61,7 @@ definePageMeta({ layout: false })
             <li><strong>Stripe</strong> (payment processing) -- US-based; transfer basis: [confirm current EU-US Data Privacy Framework status / SCCs].</li>
             <li><strong>Google LLC / Firebase</strong> (push notifications) -- US-based; transfer basis: [confirm current EU-US Data Privacy Framework status / SCCs].</li>
             <li><strong>Resend</strong> (transactional email) -- [confirm hosting region and transfer basis].</li>
+            <li><strong>Sentry (Functional Software, Inc.)</strong> (error monitoring; error reports only, no patient data) -- data stored in the EU (Germany); US-based company: transfer basis for support access: [confirm current EU-US Data Privacy Framework status / SCCs].</li>
           </ul>
         </div>
 
@@ -84,7 +87,9 @@ definePageMeta({ layout: false })
           <h2 class="text-[15px] font-semibold text-ink-900">7. Security</h2>
           <p class="mt-2">
             Data is encrypted in transit (HTTPS) and at rest. Access to patient data is restricted per clinic via row-level database security, so
-            one clinic's staff cannot see another clinic's data. [Add any further security certifications/measures once confirmed.]
+            one clinic's staff cannot see another clinic's data. Changes to patient records, clinical notes, billing, team permissions and
+            settings, every opening of a patient's record or files, and every staff sign-in are recorded in an audit log that cannot be edited or
+            deleted, and that each clinic's owners can review. [Add any further security certifications/measures once confirmed.]
           </p>
         </div>
 

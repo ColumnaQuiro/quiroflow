@@ -1620,6 +1620,26 @@ async function setTeamMemberTheme(opts: { id: string; theme: 'light' | 'dark' | 
   return { ok: true }
 }
 
+/** A home exercise assigned to a patient, optionally already done on some days. */
+async function assignExercise(opts: { accountId: string; patientId: string; name: string; doneOn?: string[] }) {
+  const exercise = unwrap(await admin.from('exercises').insert({ account_id: opts.accountId, name: opts.name }).select('id').single()) as { id: string }
+  const pe = unwrap(await admin.from('patient_exercises').insert({ account_id: opts.accountId, patient_id: opts.patientId, exercise_id: exercise.id, sets: 3, reps: '10' }).select('id').single()) as { id: string }
+  for (const day of opts.doneOn ?? []) {
+    assertOk(await admin.from('patient_exercise_logs').insert({ account_id: opts.accountId, patient_exercise_id: pe.id, done_on: day }))
+  }
+  return { exerciseId: exercise.id, patientExerciseId: pe.id }
+}
+
+/** A patient's daily exercise reminder, as set_my_exercise_reminder leaves it. */
+async function setExerciseReminder(opts: { patientId: string; hour: number | null; remindedOn?: string | null }) {
+  assertOk(await admin.from('patients').update({ exercise_reminder_hour: opts.hour, exercise_reminded_on: opts.remindedOn ?? null }).eq('id', opts.patientId))
+  return { ok: true }
+}
+
+async function exerciseReminderState(opts: { patientId: string }) {
+  return unwrap(await admin.from('patients').select('exercise_reminder_hour, exercise_reminded_on').eq('id', opts.patientId).single())
+}
+
 async function setTeamMemberBookingFlags(opts: { id: string; isPractitioner?: boolean; onlineBookingEnabled?: boolean; deletedAt?: string | null }) {
   assertOk(
     await admin
@@ -4044,6 +4064,9 @@ export const dbTasks = {
   'db:callRpcAsPatient': callRpcAsPatient,
   'db:setPatientAppReschedule': setPatientAppReschedule,
   'db:setTeamMemberBookingFlags': setTeamMemberBookingFlags,
+  'db:assignExercise': assignExercise,
+  'db:setExerciseReminder': setExerciseReminder,
+  'db:exerciseReminderState': exerciseReminderState,
   'db:setTeamMemberTheme': setTeamMemberTheme,
   'db:sharePackageWith': sharePackageWith,
   'db:packageSessionEffects': packageSessionEffects,

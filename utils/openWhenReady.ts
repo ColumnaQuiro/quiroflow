@@ -18,8 +18,8 @@
 // refuses one that arrives after the tap the same way Safari does: Capacitor
 // never turns on javaScriptCanOpenWindowsAutomatically. So `await sign();
 // window.open(url)` did nothing in the iPhone app either -- a patient could
-// see a document the clinic shared and could not open it (Michelle Galang,
-// 1 Oct 2026). A pre-opened empty tab is no better: it would reach Safari as
+// see a document the clinic shared and could not open it (reported 1 Oct
+// 2026). A pre-opened empty tab is no better: it would reach Safari as
 // about:blank.
 //
 // What does work is navigating the app's own page to the URL. Capacitor

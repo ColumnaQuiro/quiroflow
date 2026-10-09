@@ -4,6 +4,7 @@ import type { BusinessHours } from '~/utils/businessHours'
 import { DEFAULT_CLINIC_TIMEZONE, clinicDateOf, localDay, startOfLocalDate, nextDate } from '~/utils/clinicClock'
 import { outsideHoursInZone } from '~/utils/staffQuietHours'
 import { sendPushToUsers } from './pushNotifications'
+import { patientActionRecipients } from './patientActionRecipients'
 
 // Push notifications for the clinic's team, each kind switchable per person
 // in the app's Profile > Avisos (staff_push_preferences):
@@ -14,6 +15,8 @@ import { sendPushToUsers } from './pushNotifications'
 //   inbox            a new Inbox message (notifyInboxTeamMembers)
 //   check_in         reception checked their patient in
 //   morning_summary  8:00, the day ahead (same-day-cron.post.ts)
+//   patient_actions  a patient paid an invoice online or joined the
+//                    waitlist from the app or the portal (pushPatientAction)
 //
 // "Only your patients and your diary": a visit's push goes to its
 // practitioner -- to the owners when it has none -- and never to whoever did
@@ -21,7 +24,7 @@ import { sendPushToUsers } from './pushNotifications'
 // outside that person's working hours, read in the clinic's time zone.
 type Service = ReturnType<typeof serverSupabaseServiceRole<Database>>
 
-export type StaffPushKind = 'online_bookings' | 'changes' | 'inbox' | 'check_in' | 'morning_summary'
+export type StaffPushKind = 'online_bookings' | 'changes' | 'inbox' | 'check_in' | 'morning_summary' | 'patient_actions'
 
 interface Preferences {
   online_bookings: boolean
@@ -29,10 +32,11 @@ interface Preferences {
   inbox: boolean
   check_in: boolean
   morning_summary: boolean
+  patient_actions: boolean
   quiet_hours: boolean
 }
 // The table's own defaults, for someone who has never opened Avisos.
-const DEFAULTS: Preferences = { online_bookings: true, changes: true, inbox: true, check_in: false, morning_summary: true, quiet_hours: false }
+const DEFAULTS: Preferences = { online_bookings: true, changes: true, inbox: true, check_in: false, morning_summary: true, patient_actions: true, quiet_hours: false }
 
 export interface StaffRecipient {
   id: string
@@ -55,7 +59,7 @@ export async function wantingPush(
   if (withUser.length === 0) return []
   const { data } = await service
     .from('staff_push_preferences')
-    .select('team_member_id, online_bookings, changes, inbox, check_in, morning_summary, quiet_hours')
+    .select('team_member_id, online_bookings, changes, inbox, check_in, morning_summary, patient_actions, quiet_hours')
     .in('team_member_id', withUser.map((m) => m.id))
   const byId = new Map(((data as unknown as (Preferences & { team_member_id: string })[] | null) ?? []).map((p) => [p.team_member_id, p]))
   const tz = clinic?.timezone || DEFAULT_CLINIC_TIMEZONE
@@ -119,6 +123,44 @@ export async function pushAppointmentEvent(service: Service, appointmentId: stri
     await sendPushToUsers(service, userIds, { ...message, data: { type: 'appointment', appointmentId } })
   } catch (err) {
     console.error('[staff-push] appointment event failed', event, appointmentId, err)
+  }
+}
+
+/**
+ * Tells the clinic something a patient did on their own -- paid online,
+ * joined the waitlist -- so self-service never goes unnoticed. To the
+ * patient's practitioner (the one given, else their default) and to the
+ * owners, who see the clinic's money; never twice to the same person.
+ * Best-effort: never throws.
+ */
+export async function pushPatientAction(
+  service: Service,
+  opts: { patientId: string; practitionerId?: string | null; title: string; body: string; data?: Record<string, string> },
+) {
+  try {
+    const { data: patient } = await service
+      .from('patients')
+      .select('account_id, default_practitioner_id, clinics(timezone, business_hours)')
+      .eq('id', opts.patientId)
+      .maybeSingle()
+    if (!patient) return
+    const p = patient as unknown as {
+      account_id: string
+      default_practitioner_id: string | null
+      clinics: { timezone: string | null; business_hours: BusinessHours | null } | null
+    }
+    const practitionerId = opts.practitionerId ?? p.default_practitioner_id
+    const { data: members } = await service
+      .from('team_members')
+      .select('id, user_id, business_hours, is_owner')
+      .eq('account_id', p.account_id)
+      .is('deleted_at', null)
+    const recipients = patientActionRecipients((members as (StaffRecipient & { is_owner: boolean })[] | null) ?? [], practitionerId)
+    const userIds = [...new Set(await wantingPush(service, recipients, 'patient_actions', p.clinics))]
+    if (userIds.length === 0) return
+    await sendPushToUsers(service, userIds, { title: opts.title, body: opts.body, data: { type: 'patient', patientId: opts.patientId, ...(opts.data ?? {}) } })
+  } catch (err) {
+    console.error('[staff-push] patient action failed', opts.title, opts.patientId, err)
   }
 }
 

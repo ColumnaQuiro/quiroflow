@@ -3429,7 +3429,7 @@ async function createWaitlistEntry(opts: {
 
 /** A waitlist entry as it stands now -- status, and when its offer lapses. */
 async function waitlistEntryById(opts: { id: string }) {
-  return unwrap(await admin.from('waitlist_entries').select('id, status, offer_expires_at, offered_starts_at').eq('id', opts.id).single())
+  return unwrap(await admin.from('waitlist_entries').select('id, status, source, offer_expires_at, offered_starts_at').eq('id', opts.id).single())
 }
 
 /** A room (calendar_resources row) in a clinic. */

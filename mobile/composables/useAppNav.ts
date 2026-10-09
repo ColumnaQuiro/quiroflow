@@ -28,8 +28,10 @@ export function useStaffNav() {
   return { items, isActive }
 }
 
-// Same five destinations as the web portal (layouts/portal.vue), so a patient
-// who uses both finds the same things in the same order.
+// The web portal's destinations (layouts/portal.vue) in the same order, so a
+// patient who uses both finds the same things -- except Ejercicios, which the
+// portal lists and the app reaches from the home screen: six tabs do not fit
+// a phone's tab bar.
 export function usePatientNav() {
   const t = useT()
   const route = useRoute()

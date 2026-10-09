@@ -11,10 +11,10 @@
   "dependencies": {
     "@aparajita/capacitor-biometric-auth": "^9.1.2",
     "@capacitor-firebase/messaging": "^7.5.0",
-    "@capacitor/android": "^7.4.4",
+    "@capacitor/android": "^7.6.9",
     "@capacitor/app": "^7.1.2",
-    "@capacitor/core": "^7.4.4",
-    "@capacitor/ios": "^7.4.4",
+    "@capacitor/core": "^7.6.9",
+    "@capacitor/ios": "^7.6.9",
     "@capacitor/keyboard": "^7.0.6",
     "@capacitor/status-bar": "^7.0.6",
     "@nuxtjs/supabase": "^2.0.10",
@@ -22,16 +22,18 @@
     "@supabase/supabase-js": "^2.112.3",
     "firebase": "^11.10.0",
     "nuxt": "^3.21.11",
-    "vue": "^3.5.41",
+    "vue": "^3.5.43",
     "vue-router": "^4.4.5"
   },
   "devDependencies": {
-    "@capacitor/cli": "^7.4.4",
+    "@capacitor/cli": "^7.6.9",
     "typescript": "5.7"
   },
   "overrides": {
     "@nuxt/devtools": {
       "vite": "7.3.6"
-    }
+    },
+    "@grpc/grpc-js": "^1.13.6",
+    "postcss-selector-parser": "^7.1.6"
   }
 }

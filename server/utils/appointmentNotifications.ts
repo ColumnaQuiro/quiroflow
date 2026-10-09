@@ -370,7 +370,9 @@ async function sendForPurpose(supabase: any, appointmentId: string, purpose: 'co
       const when = new Date(ctx.startsAt).toLocaleString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: ctx.clinicTimezone })
       const result = await sendPushToPatients(supabase, ctx.accountId, [ctx.patientId], {
         title: purpose === 'reminder' ? 'Recordatorio de cita' : 'Cita confirmada',
-        body: `${ctx.appointmentTypeName} · ${when}${ctx.practitionerName ? ` · ${ctx.practitionerName}` : ''}`,
+        // A reminder asks, as the WhatsApp one does: tapping it opens the
+        // visits screen, where "Confirmar asistencia" records the answer.
+        body: `${ctx.appointmentTypeName} · ${when}${ctx.practitionerName ? ` · ${ctx.practitionerName}` : ''}${purpose === 'reminder' ? '. Toca para confirmar tu asistencia.' : ''}`,
         data: { type: `appointment_${purpose}`, key: ctx.id },
       })
       // Only counts as sent if it actually reached a device. Otherwise a

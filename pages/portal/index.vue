@@ -13,7 +13,7 @@ const { settings, zoneOf } = usePatientAppInfo()
 const { patient, loading: patientLoading, loadError } = usePortalPatient()
 
 const patientId = computed(() => patient.value?.id ?? '')
-const { upcoming, loading: apptLoading } = usePatientAppointments(
+const { upcoming, loading: apptLoading, confirmAttendance, confirmingId } = usePatientAppointments(
   () => patientId.value,
   () => settings.value,
 )
@@ -63,6 +63,7 @@ function eur(cents: number) {
             {{ next.appointment_types?.name ?? t('Appointment', 'Cita') }}
             <template v-if="next.team_members?.full_name"> &middot; {{ next.team_members.full_name }}</template>
           </p>
+          <PatientConfirmVisit class="mt-3" :appt="next" :busy="confirmingId === next.id" @confirm="confirmAttendance" />
           <PatientNextVisitActions class="mt-3" :appointment-id="next.id" :clinic-id="next.clinic_id" />
           <NuxtLink to="/portal/appointments" class="mt-3 inline-block text-[12.5px] font-medium text-brand-text hover:text-brand-hover">
             {{ t('See all appointments', 'Ver todas las citas') }} &rarr;

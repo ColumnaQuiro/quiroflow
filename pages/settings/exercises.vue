@@ -21,6 +21,7 @@ interface LibraryExercise {
   name: string
   instructions: string | null
   media_url: string | null
+  media_path: string | null
   archived_at: string | null
   current: { count: number }[]
   ever: { count: number }[]
@@ -30,6 +31,7 @@ const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
 const { showToast } = useToast()
+const media = useExerciseMedia()
 
 const exercises = ref<LibraryExercise[]>([])
 const loading = ref(true)
@@ -39,7 +41,7 @@ async function load() {
   // ended) and ever, which is what decides whether delete is safe.
   const { data, error } = await supabase
     .from('exercises')
-    .select('id, name, instructions, media_url, archived_at, current:patient_exercises(count), ever:patient_exercises(count)')
+    .select('id, name, instructions, media_url, media_path, archived_at, current:patient_exercises(count), ever:patient_exercises(count)')
     .is('current.ended_at', null)
     .order('name')
   if (error) showToast(error.message, 'error')
@@ -63,7 +65,10 @@ function countLabel(e: LibraryExercise) {
 
 const editingId = ref<string | null>(null)
 const adding = ref(false)
-const form = reactive({ name: '', instructions: '', media_url: '' })
+const form = reactive({ name: '', instructions: '', media_url: '', media_path: null as string | null })
+// What the exercise had when the form opened: an upload that replaced it is
+// the one to keep on save, and the one to throw away on cancel.
+const savedPath = ref<string | null>(null)
 const saving = ref(false)
 const formError = ref('')
 const nameInput = ref<HTMLInputElement | null>(null)
@@ -80,18 +85,23 @@ function focusForm() {
 function openNew() {
   editingId.value = null
   adding.value = true
-  Object.assign(form, { name: '', instructions: '', media_url: '' })
+  Object.assign(form, { name: '', instructions: '', media_url: '', media_path: null })
+  savedPath.value = null
   formError.value = ''
   focusForm()
 }
 function openEdit(e: LibraryExercise) {
   adding.value = false
   editingId.value = e.id
-  Object.assign(form, { name: e.name, instructions: e.instructions ?? '', media_url: e.media_url ?? '' })
+  Object.assign(form, { name: e.name, instructions: e.instructions ?? '', media_url: e.media_url ?? '', media_path: e.media_path })
+  savedPath.value = e.media_path
   formError.value = ''
   focusForm()
 }
 function closeForm() {
+  // Cancelled: an upload made in this form is not kept by anything.
+  if (form.media_path && form.media_path !== savedPath.value) media.remove(form.media_path)
+  form.media_path = savedPath.value
   adding.value = false
   editingId.value = null
 }
@@ -103,8 +113,8 @@ async function save() {
     formError.value = t('Give it a name.', 'Ponle un nombre.')
     return
   }
-  const media = form.media_url.trim()
-  if (media && !/^https?:\/\//i.test(media)) {
+  const link = form.media_url.trim()
+  if (link && !/^https?:\/\//i.test(link)) {
     formError.value = t('The link has to start with https://', 'El enlace tiene que empezar por https://')
     return
   }
@@ -112,7 +122,7 @@ async function save() {
     formError.value = t('There is already an exercise with that name.', 'Ya hay un ejercicio con ese nombre.')
     return
   }
-  const values = { name, instructions: form.instructions.trim() || null, media_url: media || null }
+  const values = { name, instructions: form.instructions.trim() || null, media_url: link || null, media_path: form.media_path }
   saving.value = true
   const { error } = editingId.value
     ? await supabase.from('exercises').update(values as never).eq('id', editingId.value)
@@ -122,6 +132,9 @@ async function save() {
     formError.value = error.message
     return
   }
+  // Saved: the file it replaced (or that was removed) belongs to nothing now.
+  if (savedPath.value && savedPath.value !== form.media_path) await media.remove(savedPath.value)
+  savedPath.value = form.media_path
   closeForm()
   await load()
 }
@@ -145,6 +158,7 @@ async function remove(e: LibraryExercise) {
     showToast(error.message, 'error')
     return
   }
+  media.remove(e.media_path)
   await load()
 }
 
@@ -185,6 +199,7 @@ const iconBtn = 'flex h-9 w-9 touch:h-11 touch:w-11 shrink-0 items-center justif
               {{ t('Video or image link (optional)', 'Enlace a vídeo o imagen (opcional)') }}
               <input v-model="form.media_url" type="text" inputmode="url" autocapitalize="off" placeholder="https://" :class="[inputClass, 'mt-1']" data-cy="library-link" />
             </label>
+            <ExercisesMediaField v-if="store.accountId" v-model="form.media_path" :account-id="store.accountId" />
             <p v-if="formError" role="alert" class="text-[12.5px] font-semibold text-danger-text">{{ formError }}</p>
             <div class="flex gap-2">
               <UiBtn type="submit" variant="primary" :disabled="saving" data-cy="library-save">{{ saving ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}</UiBtn>
@@ -213,6 +228,7 @@ const iconBtn = 'flex h-9 w-9 touch:h-11 touch:w-11 shrink-0 items-center justif
                 <strong class="truncate text-[15px] text-ink-900" data-cy="library-row-name">{{ e.name }}</strong>
                 <span v-if="e.instructions" class="line-clamp-1 text-[13px] text-ink-muted">{{ e.instructions }}</span>
                 <a v-if="e.media_url" :href="e.media_url" target="_blank" rel="noopener" class="truncate text-[12.5px] text-brand-text hover:underline">{{ e.media_url }}</a>
+                <button v-if="e.media_path" type="button" class="self-start text-[12.5px] font-medium text-brand-text hover:underline" data-cy="library-row-media" @click="openWhenReady(() => media.signedUrl(e.media_path!))">{{ exerciseMediaKind(e.media_path) === 'video' ? t('▶ Video', '▶ Vídeo') : t('Photo', 'Foto') }}</button>
               </div>
               <span class="w-[110px] shrink-0 text-right text-[13.5px] text-ink-500" data-cy="library-row-count">{{ countLabel(e) }}</span>
               <button type="button" data-cy="library-edit" :class="iconBtn" :aria-label="t(`Edit ${e.name}`, `Editar ${e.name}`)" :title="t('Edit', 'Editar')" @click="openEdit(e)">

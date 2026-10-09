@@ -1311,7 +1311,21 @@ async function releaseParkedRecords(opts: { accountId: string }) {
 // A clinic's fiscal header, as Settings -> Clinics / Fiscal Data would leave
 // it. Written directly so a spec can change it between two renders of the
 // same document.
-async function updateClinic(opts: { clinicId: string; name?: string; legalName?: string | null; address?: string | null; taxId?: string | null; footerText?: string | null; phone?: string | null; archivedAt?: string | null; timezone?: string }) {
+async function updateClinic(opts: {
+  clinicId: string
+  name?: string
+  legalName?: string | null
+  address?: string | null
+  taxId?: string | null
+  footerText?: string | null
+  phone?: string | null
+  email?: string | null
+  archivedAt?: string | null
+  timezone?: string
+  /** Stored as given: a day missing, ranges out of order, or {}. */
+  businessHours?: Record<string, [string, string][]>
+  slotDurationMinutes?: number
+}) {
   assertOk(
     await admin
       .from('clinics')
@@ -1324,6 +1338,9 @@ async function updateClinic(opts: { clinicId: string; name?: string; legalName?:
         ...(opts.phone !== undefined ? { phone: opts.phone } : {}),
         ...(opts.archivedAt !== undefined ? { archived_at: opts.archivedAt } : {}),
         ...(opts.timezone !== undefined ? { timezone: opts.timezone } : {}),
+        ...(opts.email !== undefined ? { email: opts.email } : {}),
+        ...(opts.businessHours !== undefined ? { business_hours: opts.businessHours } : {}),
+        ...(opts.slotDurationMinutes !== undefined ? { slot_duration_minutes: opts.slotDurationMinutes } : {}),
       })
       .eq('id', opts.clinicId),
   )

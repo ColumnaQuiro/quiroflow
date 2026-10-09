@@ -853,7 +853,7 @@ async function seedCompletedVisits(opts: { accountId: string; clinicId: string; 
 }
 
 /** A care plan, started on `startedAt` (a date; today when left out). */
-async function createCarePlan(opts: { accountId: string; patientId: string; totalVisits: number; startedAt?: string; name?: string; frequencyValue?: number; frequencyUnit?: 'week' | 'month' }) {
+async function createCarePlan(opts: { accountId: string; patientId: string; totalVisits: number; startedAt?: string; name?: string; frequencyValue?: number; frequencyUnit?: 'week' | 'month'; visitsPerPeriod?: number }) {
   return unwrap(
     await admin
       .from('care_plans')
@@ -864,6 +864,7 @@ async function createCarePlan(opts: { accountId: string; patientId: string; tota
         total_visits: opts.totalVisits,
         frequency_value: opts.frequencyValue ?? 1,
         frequency_unit: opts.frequencyUnit ?? 'week',
+        ...(opts.visitsPerPeriod ? { visits_per_period: opts.visitsPerPeriod } : {}),
         ...(opts.startedAt ? { started_at: opts.startedAt } : {}),
       })
       .select('id')

@@ -1937,6 +1937,7 @@ export type Database = {
           patient_id: string
           started_at: string
           total_visits: number
+          visits_per_period: number
         }
         Insert: {
           account_id: string
@@ -1949,6 +1950,7 @@ export type Database = {
           patient_id: string
           started_at?: string
           total_visits: number
+          visits_per_period?: number
         }
         Update: {
           account_id?: string
@@ -1961,6 +1963,7 @@ export type Database = {
           patient_id?: string
           started_at?: string
           total_visits?: number
+          visits_per_period?: number
         }
         Relationships: [
           {
@@ -6718,6 +6721,7 @@ export type Database = {
           patient_id: string | null
           preferred_language: string | null
           total_visits: number | null
+          visits_per_period: number | null
           visits_remaining: number | null
         }
         Relationships: [

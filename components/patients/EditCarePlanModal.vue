@@ -4,6 +4,7 @@ interface CarePlan {
   name: string
   frequency_value: number
   frequency_unit: 'week' | 'month'
+  visits_per_period?: number | null
   total_visits: number
   started_at: string
 }
@@ -16,6 +17,9 @@ const store = useAccountStore()
 const t = useT()
 
 const name = ref(props.plan?.name ?? t('Care Plan', 'Plan de tratamiento'))
+// "N visits every M weeks": frequency_value is the interval M (what the
+// calendar series and Care Plan Alerts read), visits_per_period is N.
+const visitsPerPeriod = ref(props.plan?.visits_per_period ?? 1)
 const frequencyValue = ref(props.plan?.frequency_value ?? 1)
 const frequencyUnit = ref<'week' | 'month'>(props.plan?.frequency_unit ?? 'week')
 const totalVisits = ref(props.plan?.total_visits ?? 10)
@@ -33,8 +37,9 @@ async function save() {
     account_id: store.accountId!,
     patient_id: props.patientId,
     name: name.value.trim() || t('Care Plan', 'Plan de tratamiento'),
-    frequency_value: frequencyValue.value,
+    frequency_value: Math.max(1, Math.round(frequencyValue.value || 1)),
     frequency_unit: frequencyUnit.value,
+    visits_per_period: Math.min(7, Math.max(1, Math.round(visitsPerPeriod.value || 1))),
     total_visits: totalVisits.value,
     started_at: startedAt.value,
     created_by: store.teamMember?.id ?? null,
@@ -61,18 +66,20 @@ async function save() {
           <label class="block text-sm font-medium text-gray-700">{{ t('Name', 'Nombre') }}</label>
           <input v-model="name" type="text" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
         </div>
-        <div class="flex items-end gap-3">
+        <div class="flex flex-wrap items-end gap-2">
           <div>
             <label class="block text-sm font-medium text-gray-700">{{ t('Visits', 'Visitas') }}</label>
-            <input v-model.number="frequencyValue" type="number" min="1" class="mt-1 w-20 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+            <input v-model.number="visitsPerPeriod" type="number" min="1" max="7" class="mt-1 w-16 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" data-cy="plan-visits-per-period" />
           </div>
           <span class="pb-2 text-sm text-gray-500">{{ t('every', 'cada') }}</span>
-          <div class="flex-1">
-            <select v-model="frequencyUnit" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-              <option value="week">{{ t('week', 'semana') }}</option>
-              <option value="month">{{ t('month', 'mes') }}</option>
+          <input v-model.number="frequencyValue" type="number" min="1" :aria-label="t('Every how many', 'Cada cuántas')" class="w-16 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" data-cy="plan-every" />
+          <div class="min-w-[7rem] flex-1">
+            <select v-model="frequencyUnit" :aria-label="t('Period', 'Periodo')" class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" data-cy="plan-unit">
+              <option value="week">{{ frequencyValue > 1 ? t('weeks', 'semanas') : t('week', 'semana') }}</option>
+              <option value="month">{{ frequencyValue > 1 ? t('months', 'meses') : t('month', 'mes') }}</option>
             </select>
           </div>
+          <p class="w-full text-[12px] text-gray-500" data-cy="plan-cadence-preview">{{ carePlanCadenceLabel({ frequency_value: frequencyValue || 1, frequency_unit: frequencyUnit, visits_per_period: visitsPerPeriod || 1 }, t) }}</p>
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700">{{ t('Total visits in plan', 'Visitas totales en el plan') }}</label>

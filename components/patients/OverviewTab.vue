@@ -219,7 +219,7 @@ const attention = computed<AttentionRow[]>(() => {
 })
 
 // -- Care plan -------------------------------------------------------------
-interface PlanRow { id: string; name: string; total_visits: number; frequency_value: number; frequency_unit: string; started_at: string | null }
+interface PlanRow { id: string; name: string; total_visits: number; frequency_value: number; frequency_unit: string; visits_per_period: number | null; started_at: string | null }
 const plan = ref<PlanRow | null>(null)
 const planCompleted = ref(0)
 const planLoading = ref(true)
@@ -232,7 +232,7 @@ async function loadPlan({ silent = false } = {}) {
   if (!silent) planLoading.value = true
   const { data: plans } = await supabase
     .from('care_plans')
-    .select('id, name, total_visits, frequency_value, frequency_unit, started_at')
+    .select('id, name, total_visits, frequency_value, frequency_unit, visits_per_period, started_at')
     .eq('patient_id', props.patient.id)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -258,12 +258,7 @@ const planPercent = computed(() => {
   if (!plan.value || plan.value.total_visits <= 0) return 0
   return Math.min(100, Math.round((planCompleted.value / plan.value.total_visits) * 100))
 })
-const planCadence = computed(() => {
-  if (!plan.value) return null
-  const unit = plan.value.frequency_unit === 'week' ? t('week', 'semana') : t('month', 'mes')
-  const plural = plan.value.frequency_unit === 'week' ? t('weeks', 'semanas') : t('months', 'meses')
-  return `${plan.value.frequency_value}× ${t('per', 'por')} ${plan.value.frequency_value === 1 ? unit : plural}`
-})
+const planCadence = computed(() => (plan.value ? carePlanCadenceLabel(plan.value, t) : null))
 // Goals are one free-text field, not a list, so they are split on the
 // separators people actually type rather than pretending the schema has
 // structure it does not.

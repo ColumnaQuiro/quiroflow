@@ -33,6 +33,7 @@ export interface NewAssignment {
 
 export function useStaffExercises(opts: { accountId: () => string | null | undefined; patientId: () => string; teamMemberId: () => string | null | undefined }) {
   const supabase = useSupabaseClient()
+  const authedFetch = useAuthedFetch()
   const t = useT()
   const assigned = ref<AssignedExercise[]>([])
   const library = ref<ExerciseRow[]>([])
@@ -78,7 +79,7 @@ export function useStaffExercises(opts: { accountId: () => string | null | undef
         exerciseId = (data as { id: string }).id
       }
       if (!exerciseId) return false
-      const { error: e } = await supabase.from('patient_exercises').insert({
+      const { data: created, error: e } = await supabase.from('patient_exercises').insert({
         account_id: accountId,
         patient_id: opts.patientId(),
         exercise_id: exerciseId,
@@ -87,8 +88,11 @@ export function useStaffExercises(opts: { accountId: () => string | null | undef
         frequency: a.frequency,
         notes: a.notes,
         assigned_by: opts.teamMemberId() ?? null,
-      } as never)
+      } as never).select('id').single()
       if (e) throw e
+      // The patient's push ("Nuevo ejercicio para casa"); never holds this up.
+      const createdId = (created as { id: string } | null)?.id
+      if (createdId) authedFetch('/api/exercises/notify-assigned', { method: 'POST', body: { patientExerciseId: createdId } }).catch(() => {})
       await load()
       return true
     } catch {

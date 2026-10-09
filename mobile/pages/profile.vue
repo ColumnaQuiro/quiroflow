@@ -17,6 +17,8 @@ async function signOut() {
   // This device only. The default, scope 'global', also signed the person
   // out of every other phone and browser; the web's Account page keeps a
   // separate "sign out of other devices".
+  // Signing out forgets Face ID on this device (composables/useAppLock.ts).
+  await useAppLock().forget()
   await supabase.auth.signOut({ scope: 'local' })
   ;(document.activeElement as HTMLElement | null)?.blur()
   await new Promise((resolve) => setTimeout(resolve, 350))
@@ -54,6 +56,8 @@ async function deleteAccount() {
   }
   await unregisterPush()
   clearVisitNoteDrafts()
+  // Signing out forgets Face ID on this device (composables/useAppLock.ts).
+  await useAppLock().forget()
   await supabase.auth.signOut({ scope: 'local' })
   await navigateTo('/login')
 }

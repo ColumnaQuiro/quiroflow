@@ -212,7 +212,7 @@ const prefill = ref<{ date: string; time: string; roomId: string } | null>(null)
 // it starts with that patient instead of a search. Cleared once the visit is
 // booked, or with the chip's x.
 const route = useRoute()
-const bookingFor = ref<{ id: string; name: string } | null>(null)
+const bookingFor = ref<{ id: string; name: string; followPlan: boolean } | null>(null)
 watch(
   () => route.query.patient,
   async (id) => {
@@ -222,13 +222,15 @@ watch(
     }
     const { data } = await supabase.from('patients').select('id, first_name, last_name').eq('id', id).maybeSingle()
     if (route.query.patient !== id) return
-    bookingFor.value = data ? { id: data.id, name: `${data.first_name} ${data.last_name ?? ''}`.trim() } : null
+    // &repeat=plan: "Reservar las visitas del plan" -- the panel starts
+    // repeating by the patient's care plan.
+    bookingFor.value = data ? { id: data.id, name: `${data.first_name} ${data.last_name ?? ''}`.trim(), followPlan: route.query.repeat === 'plan' } : null
   },
   { immediate: true },
 )
 function stopBookingFor() {
   bookingFor.value = null
-  navigateTo({ query: { ...route.query, patient: undefined } }, { replace: true })
+  navigateTo({ query: { ...route.query, patient: undefined, repeat: undefined } }, { replace: true })
 }
 
 const blockModalOpen = ref(false)
@@ -2993,6 +2995,7 @@ function showNowLineOn(day: Date) {
       :prefill-room-id="prefill?.roomId"
       :prefill-practitioner-id="prefillPractitionerId"
       :prefill-patient-id="bookingFor?.id"
+      :prefill-follow-plan="bookingFor?.followPlan"
       :slot-minutes="SLOT_MIN"
       @close="modalOpen = false"
       @saved="onCreated"

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const store = useAccountStore()
 const supabase = useSupabaseClient()
+const user = useSupabaseUser()
 const { can } = usePermission()
 const t = useT()
 
@@ -32,6 +33,9 @@ async function signOut() {
   // out of every other phone and browser; the web's Account page keeps a
   // separate "sign out of other devices".
   await supabase.auth.signOut({ scope: 'local' })
+  // The module clears this on SIGNED_OUT, but a getClaims() of its still in
+  // flight can put the old claims back; see middleware/account.global.ts.
+  user.value = null
   store.reset()
   await navigateTo('/login')
 }

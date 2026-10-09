@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { DateRange } from '~/composables/useDateRangePresets'
+import type { DateRange } from '../../composables/useDateRangePresets'
 
 const props = defineProps<{ dateRange: DateRange; practitionerId?: string; clinicId?: string }>()
 

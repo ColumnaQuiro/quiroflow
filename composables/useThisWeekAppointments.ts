@@ -1,6 +1,6 @@
-import { sharedFetch } from '~/composables/useSharedFetch'
-import { fetchAllRows } from '~/composables/useFetchAllRows'
-import { getWeekRange, rangeBounds } from '~/composables/useDateRangePresets'
+import { sharedFetch } from './useSharedFetch'
+import { fetchAllRows } from './useFetchAllRows'
+import { getWeekRange, rangeBounds } from './useDateRangePresets'
 
 export interface WeekAppointmentRow {
   id: string

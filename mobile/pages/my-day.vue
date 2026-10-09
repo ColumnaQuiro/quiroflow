@@ -394,6 +394,8 @@ const BORDER: Record<RowState, string> = {
 }
 
 const { privacy, togglePrivacy, shown } = usePrivacyMode()
+// The web's dashboard_scope: owners, and roles set to 'all' or 'own'.
+const seesNumbers = computed(() => !!context.value && (context.value.isOwner || ['all', 'own'].includes(String(context.value.permissions.dashboard_scope))))
 function patientName(a: { patients: { first_name: string; last_name: string | null } | null }) {
   return a.patients ? `${a.patients.first_name} ${a.patients.last_name ?? ''}`.trim() : t('Patient', 'Paciente')
 }
@@ -622,6 +624,11 @@ function initialsOf(a: Appointment) {
             <span class="text-[14px] text-ink-900">{{ t('Recalls due', 'Recordatorios pendientes') }}</span>
             <UiSkeleton v-if="loading" class="h-3.5 w-16 rounded-ctlSm" />
             <span v-else class="flex items-center gap-1 text-[12.5px] text-ink-muted2" data-test="myday-recalls">{{ recallsDue === null ? '—' : t(`${recallsDue} ${recallsDue === 1 ? 'patient' : 'patients'}`, `${recallsDue} ${recallsDue === 1 ? 'paciente' : 'pacientes'}`) }}<AppChevron :size="12" /></span>
+          </NuxtLink>
+          <!-- The clinic's figures (the web dashboard), for whoever's role includes them -->
+          <NuxtLink v-if="seesNumbers" to="/numbers" class="flex items-center justify-between gap-3 border-t border-line-row py-2" data-cy="myday-numbers-open">
+            <span class="text-[14px] text-ink-900">{{ t('Numbers', 'Números') }}</span>
+            <span class="flex items-center gap-1 text-[12.5px] text-ink-muted2">{{ t('Income, visits, no-shows', 'Ingresos, visitas, ausencias') }}<AppChevron :size="12" /></span>
           </NuxtLink>
           <!-- The front desk's cash shift (the web's Caja), for whoever takes payments -->
           <NuxtLink v-if="can('payments_allocate')" to="/cash" class="flex items-center justify-between gap-3 border-t border-line-row py-2" data-cy="myday-cash-open">

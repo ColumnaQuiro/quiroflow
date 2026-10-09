@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { formatEur } from '~/utils/billing'
-import { classifyPaymentForFilter } from '~/utils/incomeAttribution'
-import { isReceipt } from '~/utils/paymentReceipts'
-import type { DateRange } from '~/composables/useDateRangePresets'
+import { formatEur } from '../../utils/billing'
+import { classifyPaymentForFilter } from '../../utils/incomeAttribution'
+import { isReceipt } from '../../utils/paymentReceipts'
+import type { DateRange } from '../../composables/useDateRangePresets'
 
 const props = defineProps<{ dateRange: DateRange; practitionerId?: string; clinicId?: string }>()
 

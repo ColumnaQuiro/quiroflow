@@ -14,6 +14,109 @@ export type Database = {
   }
   public: {
     Tables: {
+      exercise_program_items: {
+        Row: {
+          account_id: string
+          created_at: string
+          exercise_id: string
+          frequency: string | null
+          id: string
+          notes: string | null
+          position: number
+          program_id: string
+          reps: string | null
+          sets: number | null
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          exercise_id: string
+          frequency?: string | null
+          id?: string
+          notes?: string | null
+          position?: number
+          program_id: string
+          reps?: string | null
+          sets?: number | null
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          exercise_id?: string
+          frequency?: string | null
+          id?: string
+          notes?: string | null
+          position?: number
+          program_id?: string
+          reps?: string | null
+          sets?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "exercise_program_items_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "exercise_program_items_exercise_id_fkey"
+            columns: ["exercise_id"]
+            isOneToOne: false
+            referencedRelation: "exercises"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "exercise_program_items_program_id_fkey"
+            columns: ["program_id"]
+            isOneToOne: false
+            referencedRelation: "exercise_programs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      exercise_programs: {
+        Row: {
+          account_id: string
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          name: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          name: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "exercise_programs_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "exercise_programs_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       exercises: {
         Row: {
           account_id: string
@@ -6697,6 +6800,16 @@ export type Database = {
       }
     }
     Functions: {
+      save_exercise_program: {
+        Args: {
+          p_account_id: string
+          p_description: string | null
+          p_items: Json
+          p_name: string
+          p_program_id: string | null
+        }
+        Returns: string
+      }
       delete_account_role: {
         Args: { p_move_to_role_id?: string; p_role_id: string }
         Returns: number

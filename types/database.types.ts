@@ -6686,6 +6686,20 @@ export type Database = {
         }
         Relationships: []
       }
+      exercise_adherence_alerts: {
+        Row: {
+          account_id: string | null
+          active_exercises: number | null
+          days_without: number | null
+          default_practitioner_id: string | null
+          first_name: string | null
+          last_done_on: string | null
+          last_name: string | null
+          patient_id: string | null
+          preferred_language: string | null
+        }
+        Relationships: []
+      }
       care_plan_continuity_alerts: {
         Row: {
           account_id: string | null

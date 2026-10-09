@@ -2219,6 +2219,22 @@ async function rpcAsStaff(opts: { email: string; password: string; fn: string; a
   return { data: data ?? null, error: error ? error.message : null }
 }
 
+/** A signed URL for a private object, as a signed-in user: null when their storage policies refuse it. */
+async function storageSignAsUser(opts: { email: string; password: string; bucket: string; path: string }) {
+  const userClient = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+  const { error: signInErr } = await userClient.auth.signInWithPassword({ email: opts.email, password: opts.password })
+  if (signInErr) throw signInErr
+  const { data } = await userClient.storage.from(opts.bucket).createSignedUrl(opts.path, 60)
+  return { url: data?.signedUrl ?? null }
+}
+
+/** Whether an object exists in a bucket, with the service role. */
+async function storageObjectExists(opts: { bucket: string; path: string }) {
+  const slash = opts.path.lastIndexOf('/')
+  const { data } = await admin.storage.from(opts.bucket).list(opts.path.slice(0, slash), { search: opts.path.slice(slash + 1) })
+  return (data ?? []).some((o) => o.name === opts.path.slice(slash + 1))
+}
+
 /** Seeds rows into any table with the service role, returning them. */
 async function insertRows(opts: { table: string; rows: Record<string, unknown>[] }) {
   return unwrap(await (admin.from(opts.table as never) as any).insert(opts.rows).select('*')) as Record<string, unknown>[]
@@ -4147,6 +4163,8 @@ export const dbTasks = {
   'db:settingsWriteAsStaff': settingsWriteAsStaff,
   'db:selectAsStaff': selectAsStaff,
   'db:rpcAsStaff': rpcAsStaff,
+  'db:storageSignAsUser': storageSignAsUser,
+  'db:storageObjectExists': storageObjectExists,
   'db:insertRows': insertRows,
   'db:updateRows': updateRows,
   'db:practiceHubStubLastKey': practiceHubStubLastKeyOf,

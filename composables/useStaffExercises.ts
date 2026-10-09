@@ -8,6 +8,7 @@ export interface ExerciseRow {
   name: string
   instructions: string | null
   media_url: string | null
+  media_path?: string | null
 }
 
 export interface AssignedExercise {
@@ -24,7 +25,7 @@ export interface AssignedExercise {
 export interface NewAssignment {
   exerciseId: string | null
   /** When exerciseId is null: a new exercise, saved to the library too. */
-  newExercise?: { name: string; instructions: string | null; media_url: string | null }
+  newExercise?: { name: string; instructions: string | null; media_url: string | null; media_path?: string | null }
   sets: number | null
   reps: string | null
   frequency: string | null
@@ -48,12 +49,12 @@ export function useStaffExercises(opts: { accountId: () => string | null | undef
     const [{ data, error: readError }, { data: lib }] = await Promise.all([
       supabase
         .from('patient_exercises')
-        .select('id, sets, reps, frequency, notes, created_at, exercises(id, name, instructions, media_url), patient_exercise_logs(done_on)')
+        .select('id, sets, reps, frequency, notes, created_at, exercises(id, name, instructions, media_url, media_path), patient_exercise_logs(done_on)')
         .eq('patient_id', opts.patientId())
         .is('ended_at', null)
         .gte('patient_exercise_logs.done_on', weekAgo)
         .order('created_at'),
-      supabase.from('exercises').select('id, name, instructions, media_url').is('archived_at', null).order('name'),
+      supabase.from('exercises').select('id, name, instructions, media_url, media_path').is('archived_at', null).order('name'),
     ])
     loading.value = false
     loadError.value = !!readError
@@ -72,7 +73,7 @@ export function useStaffExercises(opts: { accountId: () => string | null | undef
       if (!exerciseId && a.newExercise) {
         const { data, error: e } = await supabase
           .from('exercises')
-          .insert({ account_id: accountId, name: a.newExercise.name.trim(), instructions: a.newExercise.instructions, media_url: a.newExercise.media_url, created_by: opts.teamMemberId() ?? null } as never)
+          .insert({ account_id: accountId, name: a.newExercise.name.trim(), instructions: a.newExercise.instructions, media_url: a.newExercise.media_url, media_path: a.newExercise.media_path ?? null, created_by: opts.teamMemberId() ?? null } as never)
           .select('id')
           .single()
         if (e || !data) throw e ?? new Error('no exercise')

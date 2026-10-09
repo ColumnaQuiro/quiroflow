@@ -15,6 +15,8 @@ export interface PatientAppSettings {
   rescheduleEnabled: boolean
   changeNoticeHours: number
   clinicName: string | null
+  /** The clinic's public booking page, /book/<slug>, for the web portal. */
+  bookingSlug: string | null
 }
 
 const CLOSED: PatientAppSettings = {
@@ -23,6 +25,7 @@ const CLOSED: PatientAppSettings = {
   rescheduleEnabled: false,
   changeNoticeHours: 24,
   clinicName: null,
+  bookingSlug: null,
 }
 
 export function usePatientAppInfo() {
@@ -60,6 +63,7 @@ export function usePatientAppInfo() {
       rescheduleEnabled: raw.reschedule_enabled === true,
       changeNoticeHours: typeof raw.change_notice_hours === 'number' ? raw.change_notice_hours : 24,
       clinicName: typeof raw.clinic_name === 'string' ? raw.clinic_name : null,
+      bookingSlug: typeof raw.booking_slug === 'string' ? raw.booking_slug : null,
     }
     loading.value = false
   }

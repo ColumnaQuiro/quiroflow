@@ -9,6 +9,8 @@ interface WaitlistRow {
   id: string
   status: 'waiting' | 'offered' | 'booked' | 'expired' | 'cancelled'
   created_at: string
+  /** 'patient' when they joined it themselves from the app or portal. */
+  source?: string | null
   offer_expires_at: string | null
   offered_starts_at: string | null
   patients: { id: string; first_name: string; last_name: string | null } | null
@@ -52,7 +54,7 @@ async function load() {
     // (appointment_type_id, offered_appointment_type_id), and the bare embed
     // is refused as ambiguous (PGRST201) -- the WHOLE select, so this page
     // read nothing and said "No one on the waitlist" whatever was on it.
-    .select('id, status, created_at, offer_expires_at, offered_starts_at, patients(id, first_name, last_name), appointment_types:appointment_type_id(name), team_members:practitioner_id(full_name)')
+    .select('id, status, source, created_at, offer_expires_at, offered_starts_at, patients(id, first_name, last_name), appointment_types:appointment_type_id(name), team_members:practitioner_id(full_name)')
     .order('created_at', { ascending: true })
   if (showOnlyActive.value) query = query.in('status', ['waiting', 'offered'])
   const { data, error } = await query
@@ -199,7 +201,10 @@ function formatDate(iso: string | null) {
               <td colspan="6" class="px-3 py-6 text-center text-ink-faint">{{ t('No one on the waitlist.', 'Nadie en la lista de espera.') }}</td>
             </tr>
             <tr v-for="row in rows" :key="row.id">
-              <td class="px-3 py-2 text-ink-900">{{ patientName(row) }}</td>
+              <td class="px-3 py-2 text-ink-900">
+                {{ patientName(row) }}
+                <span v-if="row.source === 'patient'" class="ml-1.5 text-[11.5px] text-ink-muted2" data-cy="waitlist-self-added">{{ t('Joined themselves', 'Se apuntó el paciente') }}</span>
+              </td>
               <td class="px-3 py-2 text-ink-muted2">
                 {{ row.appointment_types?.name ?? t('Any type', 'Cualquier tipo') }} ·
                 {{ row.team_members?.full_name ?? t('Any practitioner', 'Cualquier profesional') }}

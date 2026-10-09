@@ -29,47 +29,15 @@ onMounted(() => {
   shownBefore = true
 })
 function onVisible() {
-  if (document.visibilityState !== 'visible') return
-  refreshMoney()
-  // Back from paying in the browser: the webhook may have marked it paid.
-  if (paidFromHere) {
-    paidFromHere = false
-    reloadInvoices()
-  }
+  if (document.visibilityState === 'visible') refreshMoney()
 }
 onMounted(() => document.addEventListener('visibilitychange', onVisible))
 onBeforeUnmount(() => document.removeEventListener('visibilitychange', onVisible))
 const { invoices, loading: invoicesLoading, loadError: invoicesError, reload: reloadInvoices, busyId, download } = usePatientInvoices(() => patientId.value)
 
-// "Pagar": an unpaid invoice paid by card on a Stripe page in the browser
-// (server/api/portal/invoices/pay-link.post.ts), offered only where the
-// clinic takes card payments online. The webhook records the payment.
-const authedFetch = useAuthedFetch()
-const canPayOnline = ref(false)
-onMounted(async () => {
-  try {
-    canPayOnline.value = (await authedFetch<{ enabled: boolean }>('/api/portal/invoices/payable')).enabled
-  } catch {
-    canPayOnline.value = false
-  }
-})
-const payingId = ref<string | null>(null)
-const payError = ref('')
-let paidFromHere = false
-async function pay(invoiceId: string) {
-  payingId.value = invoiceId
-  payError.value = ''
-  try {
-    await openWhenReady(async () => (await authedFetch<{ url: string }>('/api/portal/invoices/pay-link', { method: 'POST', body: { invoiceId } })).url)
-    paidFromHere = true
-  } catch (err) {
-    payError.value = (err as { data?: { statusMessage?: string } })?.data?.statusMessage === 'This invoice is already settled.'
-      ? t('That invoice is already paid.', 'Esa factura ya está pagada.')
-      : t("Couldn't open the payment. Try again.", 'No se ha podido abrir el pago. Inténtalo de nuevo.')
-  } finally {
-    payingId.value = null
-  }
-}
+// "Pagar", shared with the portal: re-read the invoices when the patient
+// comes back from paying.
+const { enabled: canPayOnline, payingId, error: payError, pay } = usePatientPay(() => reloadInvoices())
 
 // What is unpaid, not the balance, as the staff record shows it
 // (components/patient/BalanceCard.vue, utils/owing.ts): a family bono's

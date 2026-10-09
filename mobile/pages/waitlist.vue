@@ -20,6 +20,8 @@ interface Row {
   id: string
   status: Status
   created_at: string
+  /** 'patient' when they joined it themselves from the app or portal. */
+  source?: string | null
   offer_expires_at: string | null
   offered_starts_at: string | null
   patients: { id: string; first_name: string; last_name: string | null } | null
@@ -59,7 +61,7 @@ async function load() {
     // Named by column: waitlist_entries points at appointment_types twice
     // (wanted, and offered), and a bare appointment_types(name) is refused
     // as ambiguous (PGRST201) -- the whole select, not just that column.
-    .select('id, status, created_at, offer_expires_at, offered_starts_at, patients(id, first_name, last_name), appointment_types:appointment_type_id(name), team_members:practitioner_id(full_name)')
+    .select('id, status, source, created_at, offer_expires_at, offered_starts_at, patients(id, first_name, last_name), appointment_types:appointment_type_id(name), team_members:practitioner_id(full_name)')
     .order('created_at', { ascending: true })
   if (onlyActive.value) q = q.in('status', ['waiting', 'offered'])
   const { data, error } = await q
@@ -216,6 +218,7 @@ const field = 'h-11 rounded-ctl border border-line-control bg-surface px-3 text-
         <article v-for="r in rows" :key="r.id" class="flex items-start gap-3 rounded-card border border-line bg-surface px-3.5 py-3 shadow-card" data-cy="waitlist-row">
           <NuxtLink v-if="r.patients" :to="`/patients/${r.patients.id}`" class="min-w-0 flex-1">
             <span class="block truncate text-[15px] font-semibold text-ink-900">{{ nameOf(r) }}</span>
+            <span v-if="r.source === 'patient'" class="block truncate text-[12px] text-brand-text" data-cy="waitlist-self-added">{{ t('Joined from the app or portal', 'Se apuntó el paciente desde la app o el portal') }}</span>
             <span class="block truncate text-[12.5px] text-ink-muted">{{ r.appointment_types?.name ?? t('Any type', 'Cualquier tipo') }} · {{ r.team_members?.full_name ?? t('Any practitioner', 'Cualquier profesional') }}</span>
             <span v-if="r.status === 'offered'" class="block truncate text-[12.5px] text-brand-text">{{ t('Offered', 'Ofrecida') }} {{ when(r.offered_starts_at) }} · {{ t('expires', 'caduca') }} {{ when(r.offer_expires_at) }}</span>
             <span v-else class="block truncate text-[12px] text-ink-faint">{{ t('Waiting since', 'Esperando desde el') }} {{ since(r.created_at) }}</span>

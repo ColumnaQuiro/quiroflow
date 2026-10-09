@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { directionsUrl, telUrl } from '../../utils/clinicLinks'
+import { devicePlatform, directionsUrl, telUrl } from '../../utils/clinicLinks'
 
 const clinic = { name: 'Clínica Demo', address: 'Calle Mayor 12, Valencia', phone: '+34 961 23 45 67' }
 
@@ -22,5 +22,16 @@ describe('calling the clinic', () => {
   it('offers nothing for an empty or too-short number', () => {
     expect(telUrl(null)).toBeNull()
     expect(telUrl('12')).toBeNull()
+  })
+})
+
+describe('which maps app a device has', () => {
+  it('trusts the native platform in the app', () => {
+    expect(devicePlatform({ Capacitor: { getPlatform: () => 'android' }, navigator: { userAgent: 'iPhone' } })).toBe('android')
+  })
+  it('reads Safari on an iPhone, and an iPad that calls itself a Mac', () => {
+    expect(devicePlatform({ navigator: { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)' } })).toBe('ios')
+    expect(devicePlatform({ navigator: { userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)', maxTouchPoints: 5 } })).toBe('ios')
+    expect(devicePlatform({ navigator: { userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)', maxTouchPoints: 0 } })).toBe('web')
   })
 })

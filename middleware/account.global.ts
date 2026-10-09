@@ -41,6 +41,8 @@ export default defineNuxtRouteMiddleware(async (to) => {
   // Unsubscribing from a clinic's marketing email: a patient's link, never
   // anything to do with a staff session that happens to be open.
   if (to.path.startsWith('/unsubscribe/')) return
+  // Stripe Checkout's return page for a patient paying from the app.
+  if (to.path === '/payment-done') return
 
   const user = useSupabaseUser()
   if (!user.value) return

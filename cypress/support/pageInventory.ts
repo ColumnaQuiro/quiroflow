@@ -95,10 +95,14 @@ export const DEV_PORTAL_PAGES = DEV_PORTAL_SLUGS.map((slug) => `/developers/${sl
 // Supabase module's redirect exclude list, and a sweep that visits it is the
 // only thing that notices when it is not. It bounced to /login the first time
 // it was written.
+//
+// /payment-done likewise: Stripe Checkout returns a patient there in the
+// phone's browser, where they have no QuiroFlow session at all.
 export const UNAUTHENTICATED_PAGES = [
   '/login',
   '/signup',
   '/check-email',
+  '/payment-done',
   '/forgot-password',
   '/legal/declaracion-responsable',
   ...DEV_PORTAL_PAGES,

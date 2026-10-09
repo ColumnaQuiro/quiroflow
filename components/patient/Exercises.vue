@@ -4,6 +4,8 @@ import { exerciseWeek } from '../../utils/exerciseWeek'
 // "Tus ejercicios", in the app and the portal: what the clinic gave this
 // patient to do at home, how to do it, the last week at a glance, and "Hecho
 // hoy" to tick today off (the practitioner sees the ticks on the record).
+// A video or photo the clinic uploaded plays right here, from a signed URL;
+// a link they pasted opens outside the app as before.
 const props = defineProps<{ patientId: string }>()
 
 const t = useT()
@@ -16,6 +18,24 @@ function dose(pe: { sets: number | null; reps: string | null; frequency: string 
 }
 function openMedia(url: string) {
   openWhenReady(async () => url)
+}
+
+const exerciseMedia = useExerciseMedia()
+const playingId = ref<string | null>(null)
+const mediaSrc = ref<Record<string, string>>({})
+const mediaError = ref<string | null>(null)
+async function toggleUpload(pe: { id: string; exercises: { media_path?: string | null } | null }) {
+  if (playingId.value === pe.id) {
+    playingId.value = null
+    return
+  }
+  mediaError.value = null
+  playingId.value = pe.id
+  const path = pe.exercises?.media_path
+  if (!path || mediaSrc.value[pe.id]) return
+  const url = await exerciseMedia.signedUrl(path)
+  if (url) mediaSrc.value = { ...mediaSrc.value, [pe.id]: url }
+  else mediaError.value = pe.id
 }
 </script>
 
@@ -47,11 +67,20 @@ function openMedia(url: string) {
         <div class="mt-2.5 flex gap-1" :aria-label="t('Last seven days', 'Últimos siete días')">
           <span v-for="d in exerciseWeek(pe.patient_exercise_logs.map((l) => l.done_on))" :key="d.date" class="flex h-6 w-6 items-center justify-center rounded-full text-[10.5px] font-semibold" :class="[d.done ? 'bg-success-accent text-white' : 'bg-chip-bg text-ink-faint', d.isToday ? 'ring-2 ring-brand/40' : '']">{{ d.initial }}</span>
         </div>
-        <div v-if="pe.exercises?.instructions || pe.exercises?.media_url" class="mt-2.5 flex flex-wrap items-center gap-3">
+        <div v-if="pe.exercises?.instructions || pe.exercises?.media_url || pe.exercises?.media_path" class="mt-2.5 flex flex-wrap items-center gap-3">
           <button v-if="pe.exercises?.instructions" type="button" class="text-[12.5px] font-medium text-brand-text" @click="openId = openId === pe.id ? null : pe.id">
             {{ openId === pe.id ? t('Hide how to do it', 'Ocultar cómo hacerlo') : t('How to do it', 'Cómo hacerlo') }}
           </button>
-          <button v-if="pe.exercises?.media_url" type="button" class="text-[12.5px] font-medium text-brand-text" data-cy="exercise-media" @click="openMedia(pe.exercises!.media_url!)">{{ t('Watch the video', 'Ver el vídeo') }}</button>
+          <button v-if="pe.exercises?.media_path" type="button" class="text-[12.5px] font-medium text-brand-text" data-cy="exercise-upload-toggle" @click="toggleUpload(pe)">
+            {{ playingId === pe.id ? t('Hide', 'Ocultar') : exerciseMediaKind(pe.exercises.media_path) === 'video' ? t('▶ Watch the video', '▶ Ver el vídeo') : t('See the photo', 'Ver la foto') }}
+          </button>
+          <button v-if="pe.exercises?.media_url" type="button" class="text-[12.5px] font-medium text-brand-text" data-cy="exercise-media" @click="openMedia(pe.exercises!.media_url!)">{{ pe.exercises?.media_path ? t('Open the link', 'Abrir el enlace') : t('Watch the video', 'Ver el vídeo') }}</button>
+        </div>
+        <div v-if="playingId === pe.id && pe.exercises?.media_path" class="mt-2.5 overflow-hidden rounded-ctl bg-black/5" data-cy="exercise-upload-player">
+          <p v-if="mediaError === pe.id" class="px-3 py-2 text-[12.5px] text-danger-text">{{ t("Couldn't load it. Try again.", 'No se ha podido cargar. Inténtalo de nuevo.') }}</p>
+          <UiSkeleton v-else-if="!mediaSrc[pe.id]" class="aspect-video w-full" />
+          <video v-else-if="exerciseMediaKind(pe.exercises.media_path) === 'video'" :src="mediaSrc[pe.id]" controls playsinline preload="metadata" class="max-h-[60vh] w-full bg-black" />
+          <img v-else :src="mediaSrc[pe.id]" :alt="pe.exercises?.name ?? ''" class="max-h-[60vh] w-full object-contain" />
         </div>
         <p v-if="openId === pe.id && pe.exercises?.instructions" class="mt-2 whitespace-pre-line text-[13px] leading-relaxed text-ink-700">{{ pe.exercises.instructions }}</p>
       </article>

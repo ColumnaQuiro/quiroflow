@@ -18,7 +18,7 @@ const t = useT()
 const locale = computed(() => t('en-GB', 'es-ES'))
 const { settings } = usePatientAppInfo()
 
-const { upcoming, loading: apptLoading } = usePatientAppointments(
+const { upcoming, loading: apptLoading, confirmAttendance, confirmingId } = usePatientAppointments(
   () => props.patientId,
   () => settings.value,
 )
@@ -95,6 +95,7 @@ function eur(cents: number) {
           {{ next.appointment_types?.name ?? t('Appointment', 'Cita') }}
           <template v-if="next.team_members?.full_name"> &middot; {{ next.team_members.full_name }}</template>
         </p>
+        <PatientConfirmVisit class="mt-3" :appt="next" :busy="confirmingId === next.id" @confirm="confirmAttendance" />
         <PatientNextVisitActions class="mt-3" :appointment-id="next.id" :clinic-id="next.clinic_id" />
         <NuxtLink to="/visits" class="mt-3 inline-block text-[12.5px] font-medium text-brand-text">
           {{ t('See all visits', 'Ver todas las citas') }} <AppChevron :size="12" />

@@ -8,7 +8,7 @@ const { settings, zoneOf } = usePatientAppInfo()
 const { patient } = usePortalPatient()
 const patientId = computed(() => patient.value?.id ?? '')
 
-const { upcoming, past, loading, loadError, reload, busyId, canChange, cancel } = usePatientAppointments(
+const { upcoming, past, loading, loadError, reload, busyId, canChange, cancel, confirmAttendance, confirmingId } = usePatientAppointments(
   () => patientId.value,
   () => settings.value,
 )
@@ -49,6 +49,7 @@ const timeOnly = (a: Visit) => fmt(a, { hour: '2-digit', minute: '2-digit' })
               {{ timeOnly(appt) }} &middot; {{ appt.appointment_types?.name ?? t('Appointment', 'Cita') }}
             </p>
             <p v-if="appt.team_members?.full_name" class="text-[12.5px] text-ink-muted">{{ appt.team_members.full_name }}</p>
+            <PatientConfirmVisit class="mt-2" :appt="appt" :busy="confirmingId === appt.id" @confirm="confirmAttendance" />
 
             <div v-if="settings.cancelEnabled || settings.rescheduleEnabled" class="mt-2 flex items-center gap-3">
               <template v-if="canChange(appt)">

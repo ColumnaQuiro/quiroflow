@@ -17,11 +17,13 @@ export interface PatientAppointmentRow {
   appointment_types: { name: string } | null
   team_members: { full_name: string } | null
   clinic_id?: string | null
+  /** 'confirmed' once the patient said they are coming (WhatsApp reply, or the app). */
+  confirmation_status?: string | null
 }
 
 // clinic_id so the screens can show a visit at its clinic's hour
 // (usePatientAppInfo().zoneOf), not the phone's.
-const SELECT = 'id, clinic_id, starts_at, ends_at, status, appointment_types(name), team_members(full_name)'
+const SELECT = 'id, clinic_id, starts_at, ends_at, status, confirmation_status, appointment_types(name), team_members(full_name)'
 
 export function usePatientAppointments(patientId: () => string, settings: () => PatientAppSettings) {
   const supabase = useSupabaseClient()
@@ -84,7 +86,25 @@ export function usePatientAppointments(patientId: () => string, settings: () => 
 
   watch(patientId, load, { immediate: true })
 
-  return { upcoming, past, loading, loadError, busyId, canChange, cancel, reload: load }
+  // "Confirmar asistencia": the patient's own say-so, as a WhatsApp reply to
+  // the reminder records it (confirm_my_appointment). Kept on the row so the
+  // button turns into "Confirmada" without a reload.
+  const confirmingId = ref<string | null>(null)
+  // Not named confirm: that would shadow window.confirm, which cancel() asks with.
+  async function confirmAttendance(appt: PatientAppointmentRow): Promise<boolean> {
+    confirmingId.value = appt.id
+    const { data, error } = await supabase.rpc('confirm_my_appointment' as never, { p_appointment_id: appt.id } as never)
+    confirmingId.value = null
+    if (error || data !== true) {
+      showToast(t('Could not confirm it. Try again.', 'No se ha podido confirmar. Inténtalo de nuevo.'), 'error')
+      return false
+    }
+    const row = upcoming.value.find((a) => a.id === appt.id)
+    if (row) row.confirmation_status = 'confirmed'
+    return true
+  }
+
+  return { upcoming, past, loading, loadError, confirmAttendance, confirmingId, busyId, canChange, cancel, reload: load }
 }
 
 export const PATIENT_APPOINTMENT_STATUS: Record<string, [string, string]> = {

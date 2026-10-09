@@ -30,12 +30,20 @@ export function usePatientWaitlist() {
     entries.value = (data as PatientWaitlistEntry[] | null) ?? []
   }
 
+  // Through the server, which joins as the patient and then tells the clinic
+  // (server/api/portal/waitlist/join.post.ts).
+  const authedFetch = useAuthedFetch()
   async function join(clinicId: string) {
     busy.value = true
     error.value = ''
-    const { error: rpcError } = await supabase.rpc('join_my_waitlist' as never, { p_clinic_id: clinicId } as never)
+    let failed = false
+    try {
+      await authedFetch('/api/portal/waitlist/join', { method: 'POST', body: { clinicId } })
+    } catch {
+      failed = true
+    }
     busy.value = false
-    if (rpcError) {
+    if (failed) {
       error.value = t("Couldn't add you to the waitlist. Try again.", 'No se ha podido apuntarte a la lista de espera. Inténtalo de nuevo.')
       return
     }

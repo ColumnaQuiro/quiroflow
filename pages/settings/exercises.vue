@@ -9,8 +9,9 @@
 //
 // patient_exercises.exercise_id is ON DELETE CASCADE, so deleting an exercise
 // anyone has ever been given would take their assignment and its ticked days
-// with it. Delete is therefore offered only for one never assigned; anything
-// else is archived: off the picker, still on the patients who have it.
+// with it. Delete is therefore offered only for one never assigned and in no
+// programme (exercise_program_items cascades the same way); anything else is
+// archived: off the picker, still on the patients who have it.
 //
 // The counts are read under the viewer's own RLS, so a role limited to its
 // own patients counts only those; this page is for clinic_config roles,
@@ -24,6 +25,7 @@ interface LibraryExercise {
   archived_at: string | null
   current: { count: number }[]
   ever: { count: number }[]
+  in_programs: { count: number }[]
 }
 
 const supabase = useSupabaseClient()
@@ -39,17 +41,21 @@ async function load() {
   // ended) and ever, which is what decides whether delete is safe.
   const { data, error } = await supabase
     .from('exercises')
-    .select('id, name, instructions, media_url, archived_at, current:patient_exercises(count), ever:patient_exercises(count)')
+    .select('id, name, instructions, media_url, archived_at, current:patient_exercises(count), ever:patient_exercises(count), in_programs:exercise_program_items(count)')
     .is('current.ended_at', null)
     .order('name')
   if (error) showToast(error.message, 'error')
   exercises.value = (data as unknown as LibraryExercise[] | null) ?? []
   loading.value = false
+  // A renamed or archived exercise shows in the programmes too.
+  programsSection.value?.reload()
 }
 onMounted(load)
 
 const nowCount = (e: LibraryExercise) => e.current?.[0]?.count ?? 0
 const everCount = (e: LibraryExercise) => e.ever?.[0]?.count ?? 0
+const deletable = (e: LibraryExercise) => everCount(e) === 0 && (e.in_programs?.[0]?.count ?? 0) === 0
+const programsSection = ref<{ reload: () => Promise<void> } | null>(null)
 const active = computed(() => exercises.value.filter((e) => !e.archived_at))
 const archived = computed(() => exercises.value.filter((e) => e.archived_at))
 
@@ -224,6 +230,8 @@ const iconBtn = 'flex h-9 w-9 touch:h-11 touch:w-11 shrink-0 items-center justif
             </div>
           </section>
 
+          <ExercisesPrograms v-if="store.accountId" ref="programsSection" :account-id="store.accountId" :exercises="active.map((e) => ({ id: e.id, name: e.name }))" @changed="load" />
+
           <section v-if="archived.length > 0" aria-labelledby="h-archived" class="overflow-hidden rounded-card border border-line bg-surface" data-cy="library-archived">
             <div class="px-[18px] pb-3 pt-4">
               <h2 id="h-archived" class="text-[16px] font-bold text-ink-900">{{ t(`Archived · ${archived.length}`, `Archivados · ${archived.length}`) }}</h2>
@@ -235,7 +243,7 @@ const iconBtn = 'flex h-9 w-9 touch:h-11 touch:w-11 shrink-0 items-center justif
                 <span class="text-[13px] text-ink-muted">{{ countLabel(e) }}</span>
               </div>
               <UiBtn data-cy="library-restore" @click="setArchived(e, false)">{{ t('Restore', 'Recuperar') }}</UiBtn>
-              <button v-if="everCount(e) === 0" type="button" data-cy="library-delete" :class="iconBtn" :aria-label="t(`Delete ${e.name}`, `Eliminar ${e.name}`)" @click="remove(e)">
+              <button v-if="deletable(e)" type="button" data-cy="library-delete" :class="iconBtn" :aria-label="t(`Delete ${e.name}`, `Eliminar ${e.name}`)" @click="remove(e)">
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" /></svg>
               </button>
               <span v-else class="w-9 shrink-0 touch:w-11" aria-hidden="true" />
@@ -243,7 +251,7 @@ const iconBtn = 'flex h-9 w-9 touch:h-11 touch:w-11 shrink-0 items-center justif
           </section>
 
           <p class="rounded-ctl border border-line bg-surface-subtle px-3.5 py-3 text-[13.5px] leading-snug text-ink-700">
-            {{ t('An exercise any patient has ever had can only be archived, so their history keeps its ticked days. Delete appears once archived and never assigned.', 'Un ejercicio que algún paciente ha tenido solo se puede archivar, para que su historial conserve los días marcados. Eliminar aparece al archivarlo si nunca se ha asignado.') }}
+            {{ t('An exercise any patient has ever had can only be archived, so their history keeps its ticked days. Delete appears once archived, never assigned and in no programme.', 'Un ejercicio que algún paciente ha tenido solo se puede archivar, para que su historial conserve los días marcados. Eliminar aparece al archivarlo si nunca se ha asignado y no está en ningún programa.') }}
           </p>
         </div>
       </div>

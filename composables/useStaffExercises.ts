@@ -103,6 +103,39 @@ export function useStaffExercises(opts: { accountId: () => string | null | undef
     }
   }
 
+  /**
+   * Assigns every exercise of a programme, each with the programme's dose, in
+   * one insert (all or nothing). One the patient already has is skipped
+   * rather than given twice. Returns how many were added and skipped, or null.
+   */
+  async function assignProgram(items: { exercise_id: string; sets: number | null; reps: string | null; frequency: string | null; notes: string | null }[]): Promise<{ added: number; skipped: number } | null> {
+    const accountId = opts.accountId()
+    if (!accountId) return null
+    const have = new Set(assigned.value.map((a) => a.exercises?.id).filter(Boolean))
+    const fresh = items.filter((i, idx) => !have.has(i.exercise_id) && items.findIndex((j) => j.exercise_id === i.exercise_id) === idx)
+    const skipped = items.length - fresh.length
+    if (!fresh.length) return { added: 0, skipped }
+    saving.value = true
+    error.value = ''
+    try {
+      const { data, error: e } = await supabase
+        .from('patient_exercises')
+        .insert(fresh.map((i) => ({ account_id: accountId, patient_id: opts.patientId(), exercise_id: i.exercise_id, sets: i.sets, reps: i.reps, frequency: i.frequency, notes: i.notes, assigned_by: opts.teamMemberId() ?? null })) as never)
+        .select('id')
+      if (e) throw e
+      // One push for the lot ("Nuevos ejercicios para casa"), not one each.
+      const ids = ((data as { id: string }[] | null) ?? []).map((r) => r.id)
+      if (ids.length) authedFetch('/api/exercises/notify-assigned', { method: 'POST', body: { patientExerciseIds: ids } }).catch(() => {})
+      await load()
+      return { added: fresh.length, skipped }
+    } catch {
+      error.value = t("Couldn't assign it. Try again.", 'No se ha podido asignar. Inténtalo de nuevo.')
+      return null
+    } finally {
+      saving.value = false
+    }
+  }
+
   /** Stops an exercise: kept, with its history, but no longer shown to the patient. */
   async function end(id: string) {
     const { error: e } = await supabase.from('patient_exercises').update({ ended_at: new Date().toISOString() } as never).eq('id', id).select('id')
@@ -114,5 +147,5 @@ export function useStaffExercises(opts: { accountId: () => string | null | undef
   }
 
   watch(opts.patientId, (id) => id && load(), { immediate: true })
-  return { assigned, library, loading, loadError, saving, error, load, assign, end }
+  return { assigned, library, loading, loadError, saving, error, load, assign, assignProgram, end }
 }

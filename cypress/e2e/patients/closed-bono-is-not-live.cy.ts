@@ -5,10 +5,10 @@
 // every screen that asks "what can this patient use?" answered by comparing
 // sessions_used against sessions_total and offered it.
 //
-// Paqui Cortes is the case: a 480 EUR Bono mantenimiento bought on 12 Aug with
-// one session taken, deactivated in PracticeHub and re-issued on 9 Sep at the
-// same price. PracticeHub shows her one live bono. QuiroFlow showed two, and
-// counted 440 EUR of the closed one as money she could draw on.
+// The case: a 480 EUR Bono mantenimiento bought on 12 Aug with one session
+// taken, deactivated in PracticeHub and re-issued on 9 Sep at the same price.
+// PracticeHub shows the patient one live bono. QuiroFlow showed two, and
+// counted 440 EUR of the closed one as money they could draw on.
 describe('A bono closed in PracticeHub', () => {
   it('is not counted as money and cannot be drawn on, but is still listed', () => {
     cy.seedStaffAccount().then((account) => {

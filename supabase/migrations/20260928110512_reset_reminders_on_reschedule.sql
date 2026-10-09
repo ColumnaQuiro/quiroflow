@@ -4,7 +4,7 @@
 -- per (rule, appointment) -- keyed by the appointment, never by the time it
 -- was at. A reschedule keeps the same row and only changes starts_at, so the
 -- guard written for the OLD time still reads "done" and the patient hears
--- nothing about the new one. Antonella Locascio's appointment was moved from
+-- nothing about the new one. One patient's appointment was moved from
 -- 16 Sep to 29 Sep after both its 72h and 24h reminders had gone out, and
 -- neither fired again for the 29th; three other upcoming appointments were in
 -- the same state when this was found.

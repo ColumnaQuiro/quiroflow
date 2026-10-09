@@ -6,8 +6,8 @@ import { clinicDateOf, DEFAULT_CLINIC_TIMEZONE } from './clinicClock'
 // is the whole answer. It fails when staff delete an appointment in
 // PracticeHub and re-create it to check the patient out, which Columnaquiro
 // did while dual-running: the re-created appointment has a NEW id, and the
-// visit it describes is already here -- imported under the old id (Beatriz
-// López Ibáñez's 9 Sep visit is 9851 here, 9876 in PracticeHub now), or
+// visit it describes is already here -- imported under the old id (one
+// patient's 9 Sep visit is 9851 here, 9876 in PracticeHub now), or
 // entered in QuiroFlow and never carrying an id at all. PracticeHub
 // 9865-9889 are one such batch. Matched by id alone, every one of them would
 // be inserted as a second visit beside the first.

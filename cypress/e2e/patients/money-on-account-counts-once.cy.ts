@@ -3,8 +3,8 @@
 // account_credits row, because it is still the patient's to direct somewhere.
 // Two rows, one set of euros.
 //
-// The balance added both. Alonso Varela handed over EUR 115 and moved EUR 230
-// ahead of himself; the pill by his name offered it all back to him. The
+// The balance added both. One patient handed over EUR 115 and moved EUR 230
+// ahead of themselves; the pill by their name offered it all back to them. The
 // credit row names its payment now, and a row that only restates a payment is
 // not counted again.
 describe('Money taken on account', () => {

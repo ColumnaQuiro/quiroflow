@@ -388,9 +388,9 @@ async function sendForPurpose(supabase: any, appointmentId: string, purpose: 'co
 
 // One confirmation per patient per booking sitting, not one per appointment.
 // Reception books a patient's next block of visits while they stand at the
-// desk, and every one of those bookings fired its own template: Grace
-// Valencia was sent four in four minutes for four different dates, four
-// template fees, all telling her the same thing -- that she had just booked.
+// desk, and every one of those bookings fired its own template: one patient
+// was sent four in four minutes for four different dates, four template
+// fees, all telling them the same thing -- that they had just booked.
 //
 // Keyed off other appointments for the same patient rather than the booking
 // call, because those four came from four separate saves a minute apart, not

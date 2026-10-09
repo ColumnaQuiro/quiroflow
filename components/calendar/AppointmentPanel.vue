@@ -292,8 +292,8 @@ async function markDone() {
   if (await update({ status: 'completed' })) fire('appointment.completed', { patientId: props.appointment.patient_id, appointmentId: props.appointment.id })
 }
 // Undo a visit completed by mistake -- the step-by-step undo above stops at
-// 'completed', which is where a wrong tap does the most damage: Gabriela
-// Encina's visit was drawn from her bono on the wrong day and there was no
+// 'completed', which is where a wrong tap does the most damage: one
+// patient's visit was drawn from their bono on the wrong day and there was no
 // way back. undo_visit (20261006170032) reopens it, gives the bono session
 // back and voids that session's charge, all or nothing. A visit paid in money
 // is refused: that is a refund, from the patient's Money tab.

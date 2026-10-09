@@ -10,7 +10,7 @@ import { clinicDateOf, DEFAULT_CLINIC_TIMEZONE } from './clinicClock'
 //     carries PracticeHub's id.
 //   - Staff deleted the appointment in PracticeHub and re-created it to check
 //     the patient out. The invoice names the NEW appointment; QuiroFlow had
-//     imported the old one. Beatriz López Ibáñez's 9 Sep visit is 9851 here
+//     imported the old one. One patient's 9 Sep visit is 9851 here
 //     and invoice 7202 points at 9876.
 //
 // Either way the invoice arrived linked to nothing, and the visit read "Not

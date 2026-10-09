@@ -2,7 +2,7 @@
 -- room) -- every block was either "this room" or "the whole clinic",
 -- affecting every practitioner regardless. null keeps that existing
 -- behavior; set it to scope a block to just one practitioner (e.g.
--- blocking Beatriz's calendar without touching anyone else's).
+-- blocking one practitioner's calendar without touching anyone else's).
 alter table availability_blocks add column practitioner_id uuid references team_members(id) on delete cascade;
 
 -- Public read: blocked time ranges for a clinic, now including which

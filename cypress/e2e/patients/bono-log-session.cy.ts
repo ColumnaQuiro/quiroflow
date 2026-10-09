@@ -118,7 +118,7 @@ describe('Logging a bono session', () => {
   })
 
   it('logs a past visit that was never logged onto that visit, not a new one', () => {
-    // Teresa Davis, 24 Sep 2026: her 15 Sep visit had nothing against it, and
+    // One patient, 24 Sep 2026: their 15 Sep visit had nothing against it, and
     // "Another date -> 15 Sep" could not see the calendar -- it invented a
     // second, typeless 12:00 visit that day and put the session and its
     // receipt on that, leaving the real 10:30 one uncovered.

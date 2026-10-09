@@ -116,8 +116,7 @@ export function useVisitCharging(ctx: VisitChargingContext) {
    * Reading the balance from payment rows alone therefore showed the full
    * session price as still due and put the take-payment box in front of
    * reception, on a visit the patient had already paid for. Five patients paid
-   * twice on 15 Sep that way -- EUR 206 across Rodrigo Palau, Peter Holloway,
-   * Adela Andrade, Arelis Campos Duarte and Martin Sagredo -- all of them
+   * twice on 15 Sep that way -- EUR 206 between them -- all of them
    * holding a bono with nothing outstanding.
    *
    * Status is the right thing to trust here: deletePayment recomputes it from
@@ -361,7 +360,7 @@ export function useVisitCharging(ctx: VisitChargingContext) {
     // a real session for a visit that isn't taking one: the invoice is already
     // paid, so there is nothing left to charge, and the session would vanish
     // with no payment, no credit, and (before this check) no package_sessions
-    // row behind it either. Daniela Pardo's newly-bought "maintenance" bono
+    // row behind it either. One patient's newly-bought "maintenance" bono
     // lost a session this way when it, not the bono actually being visited,
     // was tapped on an appointment already paid from the web tab.
     if (invoice.value?.status === 'paid') {
@@ -375,7 +374,7 @@ export function useVisitCharging(ctx: VisitChargingContext) {
     // patients' screens at once, where the second write must lose. A second
     // click on the same screen is not that -- it reads the count the first one
     // left behind, claims the next session legitimately, and takes a second
-    // session for a visit that only happened once. Alonso Varela's bono lost
+    // session for a visit that only happened once. One patient's bono lost
     // 44 EUR that way, two clicks 18 seconds apart.
     //
     // Read from the database, not from anything this screen is holding: the
@@ -399,8 +398,8 @@ export function useVisitCharging(ctx: VisitChargingContext) {
     // `activePackages` includes bonos SHARED from another patient (a family
     // bono), and a shared bono is being drawn on from several patients' screens
     // at once, so the copy in hand goes stale the moment a relative uses a
-    // session. Ainhoa Escalante's Bono Familiar was drawn on twice within ten
-    // seconds -- once by her, once by Elena Cifuentes -- and both writes computed
+    // session. One family's Bono Familiar was drawn on twice within ten
+    // seconds -- once by its owner, once by a relative -- and both writes computed
     // 0 + 1, so the bono recorded one session while paying for two.
     const { data: bono } = await supabase
       .from('package_purchases')

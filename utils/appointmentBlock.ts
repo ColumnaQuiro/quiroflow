@@ -106,7 +106,7 @@ export function blockLadder(input: LadderInput): Ladder {
   // Rank 1 before rank 2: the label is shown only if the whole name still
   // fits beside it (and beside the money, on a one-line block). Spanish
   // labels are long -- "Online · sin confirmar" -- and at iPad widths they
-  // used to leave "Sergio Nav…".
+  // used to leave "Lucía Fern…".
   const namePx = input.nameText ? Math.ceil(input.nameText.length * NAME_CHAR_PX) : NAME_MIN_PX
   const beside = compact && input.owes ? owesPx + GAP_PX : 0
   const labelFits = inner - Math.max(namePx, NAME_MIN_PX) - beside - GAP_PX >= textPx(input.pillText, 26)

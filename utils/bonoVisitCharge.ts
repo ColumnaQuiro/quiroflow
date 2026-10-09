@@ -14,8 +14,8 @@
  * and the check can never pass for them: their visit is billed even though
  * their family prepaid for it and the session has just come off the bono.
  *
- * Santiago Nawab, 23 Sep 2026: a session off Henna's Bono 12 and INV-3576 for
- * 44 EUR raised 0.3s later, unpaid. His balance -173 EUR, his family's +44 --
+ * One child, 23 Sep 2026: a session off a parent's Bono 12 and INV-3576 for
+ * 44 EUR raised 0.3s later, unpaid. Their balance -173 EUR, the family's +44 --
  * exactly the session that had just been drawn. The family nets to zero.
  *
  * So the question is asked of the family, via patient_family_balance_cents()

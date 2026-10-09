@@ -5,8 +5,8 @@ import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRef, PDFStream, 
 // macOS Preview fills in a document by laying text boxes, shapes and
 // signatures OVER the page as annotations; the page underneath stays the
 // blank template. A desktop browser draws annotations, so the file looks
-// finished there. The viewer Android hands a PDF to does not: Emmanuel Botella's
-// informe (30 Sep 2026: 24 Preview text boxes, 12 circles) opened on his
+// finished there. The viewer Android hands a PDF to does not: one patient's
+// informe (30 Sep 2026: 24 Preview text boxes, 12 circles) opened on their
 // phone as the empty template, the same file that read correctly on the
 // clinic's computer. A patient forwarding it, or opening it from WhatsApp or
 // email, would be at the mercy of whichever viewer they have.

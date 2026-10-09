@@ -1,21 +1,17 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
+# R8 rules for the QuiroFlow app (release builds shrink; see build.gradle).
 #
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# Capacitor's plugins (@CapacitorPlugin classes and their @PluginMethod
+# methods, which the bridge finds by reflection) are kept by the rules that
+# ship inside capacitor-android as consumerProguardFiles -- they apply here
+# without being repeated. Firebase Messaging ships its own too, and its
+# service is kept through the manifest.
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# The web view's JavaScript bridge: methods called from JS by name.
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
-
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Readable crash stack traces in Play Console, with the mapping file
+# uploaded beside the AAB.
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile

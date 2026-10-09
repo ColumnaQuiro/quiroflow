@@ -27,6 +27,8 @@ const notice = ref('')
 const name = ref('')
 const instructions = ref('')
 const mediaUrl = ref('')
+const mediaPath = ref<string | null>(null)
+const exerciseMedia = useExerciseMedia()
 const sets = ref('')
 const reps = ref('')
 const frequency = ref('')
@@ -34,7 +36,10 @@ const notes = ref('')
 const isNew = computed(() => pick.value === '__new' || (library.value.length === 0 && programs.value.length === 0))
 const formError = ref('')
 
-function reset() {
+function reset(opts: { kept?: boolean } = {}) {
+  // Cancelled (or the new exercise was not saved): nothing keeps the upload.
+  if (!opts.kept && mediaPath.value) exerciseMedia.remove(mediaPath.value)
+  mediaPath.value = null
   open.value = false
   pick.value = ''
   name.value = instructions.value = mediaUrl.value = sets.value = reps.value = frequency.value = notes.value = ''
@@ -75,13 +80,13 @@ async function save() {
   }
   const ok = await assign({
     exerciseId: isNew.value ? null : pick.value,
-    newExercise: isNew.value ? { name: name.value, instructions: instructions.value.trim() || null, media_url: link || null } : undefined,
+    newExercise: isNew.value ? { name: name.value, instructions: instructions.value.trim() || null, media_url: link || null, media_path: mediaPath.value } : undefined,
     sets: n,
     reps: reps.value.trim() || null,
     frequency: frequency.value.trim() || null,
     notes: notes.value.trim() || null,
   })
-  if (ok) reset()
+  if (ok) reset({ kept: isNew.value })
 }
 
 // "Save as programme": what this patient has now, with their doses.
@@ -171,6 +176,7 @@ const input = 'h-10 w-full rounded-ctl border border-line-control bg-surface px-
         <input v-model="name" :class="input" :placeholder="t('Name, e.g. Cat-camel', 'Nombre, p. ej. Gato-camello')" data-cy="exercise-name" />
         <textarea v-model="instructions" rows="2" :class="[input, 'h-auto py-2']" :placeholder="t('How to do it (optional)', 'Cómo hacerlo (opcional)')" />
         <input v-model="mediaUrl" type="url" inputmode="url" :class="input" :placeholder="t('Video or image link (optional)', 'Enlace a vídeo o imagen (opcional)')" data-cy="exercise-link" />
+        <ExercisesMediaField v-model="mediaPath" :account-id="accountId" />
       </template>
       <ul v-if="pickedProgram" class="space-y-1 rounded-ctl bg-surface-subtle px-3 py-2 text-[13px]" data-cy="exercise-program-preview">
         <li v-for="item in pickedProgram.exercise_program_items" :key="item.exercise_id" class="flex justify-between gap-3">
@@ -188,7 +194,7 @@ const input = 'h-10 w-full rounded-ctl border border-line-control bg-surface px-
       <p v-if="formError || error" role="alert" class="text-[12.5px] text-danger-text">{{ formError || error }}</p>
       <div class="flex gap-2">
         <UiBtn type="submit" variant="primary" :disabled="saving || (!!pickedProgram && !pickedProgram.exercise_program_items.length)" data-cy="exercise-save">{{ saving ? t('Saving…', 'Guardando…') : pickedProgram ? t(`Assign ${pickedProgram.exercise_program_items.length}`, `Asignar ${pickedProgram.exercise_program_items.length}`) : t('Assign', 'Asignar') }}</UiBtn>
-        <UiBtn type="button" variant="secondary" @click="reset">{{ t('Cancel', 'Cancelar') }}</UiBtn>
+        <UiBtn type="button" variant="secondary" @click="reset()">{{ t('Cancel', 'Cancelar') }}</UiBtn>
       </div>
     </form>
   </section>

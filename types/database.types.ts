@@ -125,6 +125,7 @@ export type Database = {
           created_by: string | null
           id: string
           instructions: string | null
+          media_path: string | null
           media_url: string | null
           name: string
         }
@@ -135,6 +136,7 @@ export type Database = {
           created_by?: string | null
           id?: string
           instructions?: string | null
+          media_path?: string | null
           media_url?: string | null
           name: string
         }
@@ -145,6 +147,7 @@ export type Database = {
           created_by?: string | null
           id?: string
           instructions?: string | null
+          media_path?: string | null
           media_url?: string | null
           name?: string
         }

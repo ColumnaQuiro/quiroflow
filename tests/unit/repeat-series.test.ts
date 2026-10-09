@@ -108,3 +108,27 @@ describe('Every date in a series is checked, not just the first', () => {
     expect(seriesProblems(starts, 30, [], nobodyOff)).toEqual([])
   })
 })
+
+describe('A care plan of several visits a period', () => {
+  it('books 2 a week on the same two weekdays, at the same time', () => {
+    // Monday 5 Oct 2026, 10:00: Monday and Thursday each week, across the clock change.
+    const starts = seriesStarts(new Date(2026, 9, 5, 10, 0), { unit: 'week', every: 1, count: 6, perPeriod: 2 })
+    expect(starts.map(ymd)).toEqual(['2026-10-05', '2026-10-08', '2026-10-12', '2026-10-15', '2026-10-19', '2026-10-22'])
+    expect(new Set(starts.map(hhmm))).toEqual(new Set(['10:00']))
+  })
+
+  it('books 3 a week as Monday, Wednesday, Friday, and stops at the count', () => {
+    const starts = seriesStarts(new Date(2026, 9, 5, 9, 30), { unit: 'week', every: 1, count: 4, perPeriod: 3 })
+    expect(starts.map(ymd)).toEqual(['2026-10-05', '2026-10-07', '2026-10-09', '2026-10-12'])
+  })
+
+  it('spreads 2 every 2 weeks a week apart, and 2 a month two weeks apart', () => {
+    expect(seriesStarts(new Date(2026, 9, 5, 10, 0), { unit: 'week', every: 2, count: 4, perPeriod: 2 }).map(ymd)).toEqual(['2026-10-05', '2026-10-12', '2026-10-19', '2026-10-26'])
+    expect(seriesStarts(new Date(2026, 9, 5, 10, 0), { unit: 'month', every: 1, count: 3, perPeriod: 2 }).map(ymd)).toEqual(['2026-10-05', '2026-10-19', '2026-11-05'])
+  })
+
+  it('is the plain series with 1 a period', () => {
+    const plain = seriesStarts(new Date(2026, 9, 5, 10, 0), { unit: 'week', every: 2, count: 3 })
+    expect(seriesStarts(new Date(2026, 9, 5, 10, 0), { unit: 'week', every: 2, count: 3, perPeriod: 1 })).toEqual(plain)
+  })
+})

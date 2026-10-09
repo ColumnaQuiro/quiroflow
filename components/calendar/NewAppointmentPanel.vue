@@ -386,7 +386,7 @@ function startNewPatient() {
 // (0056_care_plans.sql is explicit about that -- progress is inferred from
 // real appointments, not a stored schedule), so this is the one place that
 // actually creates the plan's future sessions in bulk.
-interface CarePlan { id: string; name: string; frequency_value: number; frequency_unit: 'week' | 'month'; total_visits: number; started_at: string }
+interface CarePlan { id: string; name: string; frequency_value: number; frequency_unit: 'week' | 'month'; visits_per_period: number | null; total_visits: number; started_at: string }
 const carePlan = ref<CarePlan | null>(null)
 // Visits with no appointment at all yet -- stricter than the "remaining" on
 // the patient profile, which still counts a booked visit as remaining.
@@ -398,7 +398,7 @@ async function loadCarePlan(patientId: string) {
   carePlan.value = null
   carePlanRemaining.value = 0
   const [{ data: plans }, { data: appts }] = await Promise.all([
-    supabase.from('care_plans').select('id, name, frequency_value, frequency_unit, total_visits, started_at').eq('patient_id', patientId).order('created_at', { ascending: false }).limit(1),
+    supabase.from('care_plans').select('id, name, frequency_value, frequency_unit, visits_per_period, total_visits, started_at').eq('patient_id', patientId).order('created_at', { ascending: false }).limit(1),
     // A deleted visit keeps its row and its 'booked': it holds no session.
     supabase.from('appointments').select('status, starts_at').eq('patient_id', patientId).is('deleted_at', null),
   ])
@@ -412,15 +412,7 @@ async function loadCarePlan(patientId: string) {
   carePlanRemaining.value = Math.max(0, plan.total_visits - completed - scheduled)
   if (repeat.value === 'care_plan' && carePlanRemaining.value === 0) repeat.value = 'none'
 }
-const carePlanFrequencyLabel = computed(() => {
-  if (!carePlan.value) return ''
-  const unitEs = carePlan.value.frequency_unit === 'week' ? 'semana' : 'mes'
-  const unitEsPlural = carePlan.value.frequency_unit === 'week' ? 'semanas' : 'meses'
-  return t(
-    `every ${carePlan.value.frequency_value} ${carePlan.value.frequency_unit}${carePlan.value.frequency_value > 1 ? 's' : ''}`,
-    `cada ${carePlan.value.frequency_value} ${carePlan.value.frequency_value > 1 ? unitEsPlural : unitEs}`,
-  )
-})
+const carePlanFrequencyLabel = computed(() => (carePlan.value ? carePlanCadenceLabel(carePlan.value, t) : ''))
 
 // -- Collect Payment --------------------------------------------------
 const collectPayment = ref(false)
@@ -442,7 +434,7 @@ const MAX_CARE_PLAN_OCCURRENCES = 26
 // or the clinic's for someone who never set any -- and still books eight.
 function repeatRule(): RepeatRule {
   if (repeat.value === 'care_plan' && carePlan.value) {
-    return { unit: carePlan.value.frequency_unit, every: carePlan.value.frequency_value, count: Math.max(1, Math.min(carePlanRemaining.value, MAX_CARE_PLAN_OCCURRENCES)) }
+    return { unit: carePlan.value.frequency_unit, every: carePlan.value.frequency_value, perPeriod: planVisitsPerPeriod(carePlan.value), count: Math.max(1, Math.min(carePlanRemaining.value, MAX_CARE_PLAN_OCCURRENCES)) }
   }
   if (repeat.value === 'daily') return { unit: 'day', every: 1, count: REPEAT_OCCURRENCES, skipDay: (day) => windowsFor(practitionerId.value, day)?.length === 0 }
   if (repeat.value === 'weekly') return { unit: 'week', every: 1, count: REPEAT_OCCURRENCES }

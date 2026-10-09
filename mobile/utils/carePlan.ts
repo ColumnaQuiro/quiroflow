@@ -1,17 +1,12 @@
-// A care plan's cadence (care_plans.frequency_value / frequency_unit) is
-// "every N weeks" or "every N months" -- the reading PhaseStats.vue and the
-// care_plan_continuity_alerts view (0131) both use.
+// A care plan's cadence: visits_per_period visits every frequency_value weeks
+// or months (utils/carePlanCadence.ts, shared with the web, says why both).
+import { carePlanCadenceLabel, carePlanGapDays, planVisitsPerPeriod, type PlanCadence } from '../../utils/carePlanCadence'
 
-export interface CarePlanCadence {
-  frequency_value: number
-  frequency_unit: string
-}
+export type CarePlanCadence = PlanCadence
 
-/** "weekly", "every 2 weeks", "monthly" -- the cadence as people say it. */
+/** "weekly", "2× a week", "every 2 weeks", "monthly" -- the cadence as people say it. */
 export function cadenceLabel(plan: CarePlanCadence, t: (en: string, es: string) => string): string {
-  const n = plan.frequency_value
-  if (plan.frequency_unit === 'month') return n === 1 ? t('monthly', 'mensual') : t(`every ${n} months`, `cada ${n} meses`)
-  return n === 1 ? t('weekly', 'semanal') : t(`every ${n} weeks`, `cada ${n} semanas`)
+  return carePlanCadenceLabel(plan, t)
 }
 
 /** YYYY-MM-DD plus whole days. */
@@ -29,5 +24,7 @@ export function addMonthsToDate(date: string, months: number): string {
 
 /** The date the plan says the visit after `from` (YYYY-MM-DD) is due. */
 export function nextDueDate(plan: CarePlanCadence, from: string): string {
+  // Several visits a period: the average gap between them (as Care Plan Alerts).
+  if (planVisitsPerPeriod(plan) > 1) return addDaysToDate(from, carePlanGapDays(plan))
   return plan.frequency_unit === 'month' ? addMonthsToDate(from, plan.frequency_value) : addDaysToDate(from, plan.frequency_value * 7)
 }

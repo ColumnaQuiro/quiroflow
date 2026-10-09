@@ -6,6 +6,7 @@ interface CarePlan {
   name: string
   frequency_value: number
   frequency_unit: 'week' | 'month'
+  visits_per_period?: number | null
   total_visits: number
   started_at: string
 }
@@ -27,15 +28,7 @@ const progressPct = computed(() => {
   if (!plan.value || plan.value.total_visits === 0) return 0
   return Math.min(100, Math.round((completedInPlan.value / plan.value.total_visits) * 100))
 })
-const frequencyLabel = computed(() => {
-  if (!plan.value) return ''
-  const unitEs = plan.value.frequency_unit === 'week' ? 'semana' : 'mes'
-  const unitEsPlural = plan.value.frequency_unit === 'week' ? 'semanas' : 'meses'
-  return t(
-    `every ${plan.value.frequency_value} ${plan.value.frequency_unit}${plan.value.frequency_value > 1 ? 's' : ''}`,
-    `cada ${plan.value.frequency_value} ${plan.value.frequency_value > 1 ? unitEsPlural : unitEs}`,
-  )
-})
+const frequencyLabel = computed(() => (plan.value ? carePlanCadenceLabel(plan.value, t) : ''))
 
 async function load() {
   loading.value = true
@@ -43,7 +36,7 @@ async function load() {
     supabase.from('appointments').select('status, starts_at').eq('patient_id', props.patientId).is('deleted_at', null),
     supabase
       .from('care_plans')
-      .select('id, name, frequency_value, frequency_unit, total_visits, started_at')
+      .select('id, name, frequency_value, frequency_unit, visits_per_period, total_visits, started_at')
       .eq('patient_id', props.patientId)
       .order('created_at', { ascending: false })
       .limit(1),
@@ -82,13 +75,13 @@ async function onPlanSaved() {
     <template v-else>
       <div class="flex items-center justify-between gap-2">
         <p class="truncate text-[13.5px] font-semibold text-ink-700">{{ plan ? plan.name : t('No care plan', 'Sin plan de tratamiento') }}</p>
-        <button v-if="editable" type="button" class="shrink-0 text-[12px] font-medium text-brand-text hover:text-brand-hover" @click="editOpen = true">
+        <button v-if="editable" type="button" class="shrink-0 text-[12px] font-medium text-brand-text hover:text-brand-hover" data-cy="care-plan-edit" @click="editOpen = true">
           {{ plan ? t('Edit', 'Editar') : t('+ Add plan', '+ Añadir plan') }}
         </button>
       </div>
 
       <template v-if="plan">
-        <p class="mt-0.5 text-[12px] text-ink-muted2">
+        <p class="mt-0.5 text-[12px] text-ink-muted2" data-cy="care-plan-summary">
           {{ completedInPlan }} {{ t('of', 'de') }} {{ plan.total_visits }} {{ t('visits', 'visitas') }} &middot; {{ frequencyLabel }}
         </p>
 

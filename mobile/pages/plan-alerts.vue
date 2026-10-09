@@ -22,6 +22,7 @@ interface Alert {
   preferred_language: string | null
   care_plan_name: string | null
   frequency_value: number
+  visits_per_period: number | null
   frequency_unit: string
   total_visits: number
   visits_remaining: number
@@ -64,7 +65,7 @@ async function load(silent = false) {
   loadError.value = ''
   let q = supabase
     .from('care_plan_continuity_alerts')
-    .select('patient_id, first_name, last_name, preferred_language, care_plan_name, frequency_value, frequency_unit, total_visits, visits_remaining, last_appointment_at, due_date, days_overdue, default_practitioner_id')
+    .select('patient_id, first_name, last_name, preferred_language, care_plan_name, frequency_value, frequency_unit, visits_per_period, total_visits, visits_remaining, last_appointment_at, due_date, days_overdue, default_practitioner_id')
     .order('days_overdue', { ascending: false })
   let eq = supabase
     .from('exercise_adherence_alerts')
@@ -101,7 +102,7 @@ watch([() => context.value?.teamMemberId, scope, allowed], () => load(), { immed
 const nameOf = (r: { first_name: string; last_name: string | null }) => `${r.first_name} ${r.last_name ?? ''}`.trim()
 const initialsOf = (r: { first_name: string; last_name: string | null }) => ((r.first_name?.[0] ?? '') + (r.last_name?.[0] ?? '')).toUpperCase() || '?'
 const shortDate = (iso: string) => new Date(iso.length === 10 ? `${iso}T12:00:00Z` : iso).toLocaleDateString(t('en-GB', 'es-ES'), { day: 'numeric', month: 'short', timeZone: iso.length === 10 ? 'UTC' : tz.value })
-const cadence = (r: Alert) => cadenceLabel({ frequency_value: r.frequency_value, frequency_unit: r.frequency_unit }, t)
+const cadence = (r: Alert) => cadenceLabel({ frequency_value: r.frequency_value, frequency_unit: r.frequency_unit, visits_per_period: r.visits_per_period }, t)
 const canWhatsApp = (r: { patient_id: string }) => can('communication_config') && !!phones.value[r.patient_id] && !blocked.value[r.patient_id]
 const canBook = computed(() => !!context.value && !restricted('calendar_read_only') && (context.value.isOwner || context.value.permissions.calendar_scope !== 'none'))
 const sendingTo = ref<{ patient_id: string; first_name: string; preferred_language: string | null } | null>(null)

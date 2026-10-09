@@ -24,6 +24,9 @@ interface Form {
   address: string
   phone: string
   email: string
+  // As stored. The editor gets a full, sorted week to work on, and this only
+  // changes when it emits one: normalising on load made every save write the
+  // hours back whatever was edited.
   business_hours: BusinessHours
   timezone: string
   slot_duration_minutes: number
@@ -58,7 +61,7 @@ function toForm(c: any): Form {
     address: c.address ?? '',
     phone: c.phone ?? '',
     email: c.email ?? '',
-    business_hours: normalizeHours(c.business_hours as BusinessHours | null),
+    business_hours: (c.business_hours ?? {}) as BusinessHours,
     timezone: c.timezone ?? 'Europe/Madrid',
     slot_duration_minutes: c.slot_duration_minutes ?? 15,
     legal_name: c.legal_name ?? '',
@@ -119,11 +122,42 @@ async function loadContext() {
 
 onMounted(load)
 
-const dirty = computed(() => !!form.value && JSON.stringify(form.value) !== original.value)
+// A week with no window on any day is "no hours set", however it is stored --
+// {}, seven empty days, or a day or two missing -- so those compare equal.
+// Anything else compares as the editor would show it: every day present,
+// ranges in order.
+function comparableHours(hours: BusinessHours | null | undefined): BusinessHours | null {
+  return hasBusinessHoursConfigured(hours) ? normalizeHours(hours) : null
+}
+const OPTIONAL_TEXT = ['address', 'phone', 'email', 'legal_name', 'tax_id', 'invoice_footer_text'] as const
+type ClinicUpdate = Partial<Omit<Form, (typeof OPTIONAL_TEXT)[number]> & Record<(typeof OPTIONAL_TEXT)[number], string | null>>
+// What Save writes to clinics: only the columns this edit changed, compared
+// against the row as it was loaded. Sending the whole form rewrote columns
+// nobody touched -- a phone number change also turned an empty legal name
+// into null and wrote back the opening hours -- and the activity log recorded
+// every one of them as that person's edit.
+const changes = computed(() => {
+  const out: ClinicUpdate = {}
+  if (!form.value) return out
+  const f = form.value
+  const before = JSON.parse(original.value) as Form
+  if (f.name !== before.name) out.name = f.name.trim()
+  for (const k of OPTIONAL_TEXT) if (f[k] !== before[k]) out[k] = f[k].trim() || null
+  // The column is not null: a week with nothing set is written as seven empty
+  // days, its default.
+  if (JSON.stringify(comparableHours(f.business_hours)) !== JSON.stringify(comparableHours(before.business_hours))) out.business_hours = normalizeHours(f.business_hours)
+  if (f.timezone !== before.timezone) out.timezone = f.timezone
+  if (f.slot_duration_minutes !== before.slot_duration_minutes) out.slot_duration_minutes = f.slot_duration_minutes
+  return out
+})
+const dirty = computed(() => Object.keys(changes.value).length > 0)
 // Closures are whole days in the zone the clinic is saved in, not one still
 // being chosen above.
 const savedTimezone = computed(() => (original.value ? (JSON.parse(original.value) as Form).timezone : 'Europe/Madrid'))
-const problems = computed(() => (form.value ? hoursProblems(form.value.business_hours) : {}))
+// The editor always works on a full week; form.business_hours only becomes
+// one when it emits a change.
+const editorHours = computed(() => normalizeHours(form.value?.business_hours))
+const problems = computed(() => (form.value ? hoursProblems(editorHours.value) : {}))
 const withOwnHours = computed(() => practitioners.value.filter((p) => p.ownHours))
 const withoutOwnHours = computed(() => practitioners.value.filter((p) => !p.ownHours))
 const fiscalIncomplete = computed(() => !!form.value && isFiscal.value && (!form.value.legal_name.trim() || !form.value.tax_id.trim()))
@@ -146,39 +180,29 @@ async function save() {
   }
   saving.value = true
   const f = form.value
-  const values = {
-    name: f.name.trim(),
-    address: f.address.trim() || null,
-    phone: f.phone.trim() || null,
-    email: f.email.trim() || null,
-    business_hours: f.business_hours,
-    timezone: f.timezone,
-    slot_duration_minutes: f.slot_duration_minutes,
-    legal_name: f.legal_name.trim() || null,
-    tax_id: f.tax_id.trim() || null,
-    invoice_footer_text: f.invoice_footer_text.trim() || null,
+  const values = changes.value
+  if (Object.keys(values).length) {
+    const { error } = await supabase.from('clinics').update(values).eq('id', clinicId).select('id').single()
+    if (error) {
+      saving.value = false
+      showToast(error.message, 'error', 8000)
+      return
+    }
   }
-  const { error } = await supabase.from('clinics').update(values).eq('id', clinicId).select('id').single()
   saving.value = false
-  if (error) {
-    showToast(error.message, 'error', 8000)
-    return
-  }
   tried.value = false
+  // The form holds what was written: the trimmed name and the normalised
+  // hours. The optional texts keep '' for null, as toForm loads them.
+  if (values.name !== undefined) f.name = values.name
+  if (values.business_hours) f.business_hours = values.business_hours
   original.value = JSON.stringify(f)
   // The switcher, the calendar's grid and the booking hours read the store's
   // copy; patch it rather than reloading the whole account.
   const inStore = store.clinics.find((c) => c.id === clinicId)
   if (inStore) {
-    Object.assign(inStore, {
-      name: values.name,
-      address: values.address,
-      business_hours: values.business_hours,
-      slot_duration_minutes: values.slot_duration_minutes,
-      legal_name: values.legal_name,
-      tax_id: values.tax_id,
-      invoice_footer_text: values.invoice_footer_text,
-    })
+    const { name, address, business_hours, slot_duration_minutes, legal_name, tax_id, invoice_footer_text } = values
+    const patch = { name, address, business_hours, slot_duration_minutes, legal_name, tax_id, invoice_footer_text }
+    Object.assign(inStore, Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)))
   }
   showToast(t('Saved', 'Guardado'))
 }
@@ -387,7 +411,7 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
                   {{ t('The default hours: used by the calendar, by online booking with "any practitioner", by the API, and by any practitioner without hours of their own.', 'El horario por defecto: lo usa el calendario, la reserva online con «cualquier profesional», la API y cualquier profesional que no tenga horario propio.') }}
                 </p>
               </div>
-              <SettingsClinicHoursEditor v-model="form.business_hours" :problems="problems" />
+              <SettingsClinicHoursEditor :model-value="editorHours" :problems="problems" @update:model-value="form.business_hours = $event" />
               <!-- A practitioner's own hours are authoritative -- not narrowed
               by these (practitionerWindowsForDay, utils/businessHours.ts) --
               so say who these actually apply to. -->

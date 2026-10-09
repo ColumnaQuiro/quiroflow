@@ -14,6 +14,54 @@ export type Database = {
   }
   public: {
     Tables: {
+      patient_push_log: {
+        Row: {
+          account_id: string
+          body: string
+          created_at: string
+          delivered_count: number | null
+          id: string
+          kind: string | null
+          patient_id: string
+          title: string
+        }
+        Insert: {
+          account_id: string
+          body: string
+          created_at?: string
+          delivered_count?: number | null
+          id?: string
+          kind?: string | null
+          patient_id: string
+          title: string
+        }
+        Update: {
+          account_id?: string
+          body?: string
+          created_at?: string
+          delivered_count?: number | null
+          id?: string
+          kind?: string | null
+          patient_id?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_push_log_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_push_log_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       exercise_program_items: {
         Row: {
           account_id: string
@@ -125,6 +173,7 @@ export type Database = {
           created_by: string | null
           id: string
           instructions: string | null
+          media_path: string | null
           media_url: string | null
           name: string
         }
@@ -135,6 +184,7 @@ export type Database = {
           created_by?: string | null
           id?: string
           instructions?: string | null
+          media_path?: string | null
           media_url?: string | null
           name: string
         }
@@ -145,6 +195,7 @@ export type Database = {
           created_by?: string | null
           id?: string
           instructions?: string | null
+          media_path?: string | null
           media_url?: string | null
           name?: string
         }
@@ -6700,6 +6751,22 @@ export type Database = {
           last_name: string | null
           patient_id: string | null
           preferred_language: string | null
+        }
+        Relationships: []
+      }
+      communications_log: {
+        Row: {
+          account_id: string | null
+          channel: string | null
+          contact_name: string | null
+          id: string | null
+          kind: string | null
+          lead_id: string | null
+          patient_id: string | null
+          preview: string | null
+          recipient: string | null
+          sent_at: string | null
+          status: string | null
         }
         Relationships: []
       }

@@ -299,67 +299,14 @@ const glanceFields = computed(() => [
   { key: 'referral', label: t('Referred by', 'Origen'), value: props.patient.referral_source },
 ])
 
-// -- Recent activity -------------------------------------------------------
-interface ActivityItem { at: string; text: string; dot: string }
-const activity = ref<ActivityItem[]>([])
-const activityLoading = ref(true)
-
-async function loadActivity({ silent = false } = {}) {
-  if (!silent) activityLoading.value = true
-  const [{ data: appts }, { data: invoices }, { data: messages }] = await Promise.all([
-    supabase
-      .from('appointments')
-      .select('starts_at, status, appointment_types(name)')
-      .eq('patient_id', props.patient.id)
-      .order('starts_at', { ascending: false })
-      .limit(3),
-    supabase.from('invoices').select('created_at, invoice_number, status').eq('patient_id', props.patient.id).order('created_at', { ascending: false }).limit(2),
-    // 0164 gates message reads on inbox_access. Asking anyway would return
-    // an empty list indistinguishable from "this patient has never been
-    // contacted", so the activity feed simply omits the channel instead of
-    // quietly reporting silence.
-    can('inbox_access')
-      ? supabase.from('whatsapp_messages').select('created_at, direction, status').eq('patient_id', props.patient.id).order('created_at', { ascending: false }).limit(2)
-      : Promise.resolve({ data: [] as { created_at: string; direction: string; status: string }[] }),
-  ])
-
-  const items: ActivityItem[] = []
-  for (const a of (appts as any[]) ?? []) {
-    const typeNameEn = a.appointment_types?.name ?? 'Visit'
-    const typeNameEs = a.appointment_types?.name ?? 'Visita'
-    const verbEn = a.status === 'completed' ? 'Completed' : a.status === 'cancelled' ? 'Cancelled' : a.status === 'no_show' ? 'Missed' : 'Booked'
-    const verbEs = a.status === 'completed' ? 'completada' : a.status === 'cancelled' ? 'cancelada' : a.status === 'no_show' ? 'no asistida' : 'reservada'
-    const text = t(`${verbEn} ${typeNameEn.toLowerCase()} appointment`, `Cita de ${typeNameEs.toLowerCase()} ${verbEs}`)
-    items.push({ at: a.starts_at, text, dot: a.status === 'completed' ? 'bg-success-accent' : a.status === 'no_show' || a.status === 'cancelled' ? 'bg-warning-accent' : 'bg-brand' })
-  }
-  for (const inv of invoices ?? []) {
-    const text = t(`Invoice ${inv.invoice_number} ${inv.status === 'paid' ? 'paid' : 'issued'}`, `Factura ${inv.invoice_number} ${inv.status === 'paid' ? 'pagada' : 'emitida'}`)
-    items.push({ at: inv.created_at, text, dot: inv.status === 'paid' ? 'bg-success-accent' : 'bg-ink-faint3' })
-  }
-  for (const m of messages ?? []) {
-    items.push({ at: m.created_at, text: m.direction === 'inbound' ? t('Replied via WhatsApp', 'Respondió por WhatsApp') : t('WhatsApp message sent', 'Mensaje de WhatsApp enviado'), dot: 'bg-brand' })
-  }
-  items.sort((a, b) => b.at.localeCompare(a.at))
-  activity.value = items.slice(0, 6)
-  activityLoading.value = false
-}
-
-function relativeTime(iso: string) {
-  const diffMs = Date.now() - new Date(iso).getTime()
-  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24))
-  if (diffDays === 0) return t('Today', 'Hoy')
-  if (diffDays === 1) return t('Yesterday', 'Ayer')
-  if (diffDays === -1) return t('Tomorrow', 'Mañana')
-  if (diffDays > 0 && diffDays < 7) return t(`${diffDays}d ago`, `hace ${diffDays}d`)
-  if (diffDays < 0 && diffDays > -7) return t(`in ${-diffDays}d`, `en ${-diffDays}d`)
-  if (diffDays >= 7 && diffDays < 60) return t(`${Math.round(diffDays / 7)}w ago`, `hace ${Math.round(diffDays / 7)}sem`)
-  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-}
+// -- Activity: the timeline component loads its own, and reloads with the
+// rest after an edit (loadAll).
+const timeline = ref<{ reload: (opts?: { silent?: boolean }) => Promise<void> } | null>(null)
 
 // Silent after an edit: the cards already hold the last answer, and swapping
 // them all for skeletons to confirm it reads as the page reloading.
 async function loadAll(options: { silent?: boolean } = {}) {
-  await Promise.all([loadAppointments(options), loadAttention(options), loadPlan(options), loadActivity(options)])
+  await Promise.all([loadAppointments(options), loadAttention(options), loadPlan(options), timeline.value?.reload(options)])
 }
 async function loadTeamMembers() {
   const { data } = await supabase.from('team_members').select('id, full_name').order('full_name')
@@ -507,32 +454,8 @@ function onDetailsUpdated() {
         <p v-else class="mt-3 text-[13px] text-ink-faint">{{ t('No plan set up for this patient yet.', 'Aún no hay plan para este paciente.') }}</p>
       </section>
 
-      <!-- 4. Recent activity -->
-      <section aria-labelledby="ov-activity" class="rounded-card border border-line bg-surface p-4 shadow-card">
-        <div class="flex items-center justify-between gap-2">
-          <h2 id="ov-activity" class="text-[13.5px] font-semibold text-ink-700">{{ t('Recent activity', 'Actividad reciente') }}</h2>
-          <NuxtLink
-            :to="`/patients/${patient.id}?tab=appointments`"
-            class="text-[12.5px] font-medium text-brand-text outline-none hover:underline focus-visible:shadow-focus"
-          >
-            {{ t('View all', 'Ver todo') }}
-          </NuxtLink>
-        </div>
-        <div v-if="activityLoading" class="mt-3 space-y-2.5">
-          <div v-for="i in 3" :key="i" class="flex items-center gap-2.5">
-            <UiSkeleton class="h-[6px] w-[6px] shrink-0 rounded-full" />
-            <UiSkeleton class="h-3 w-40 rounded-ctlSm" />
-          </div>
-        </div>
-        <p v-else-if="activity.length === 0" class="mt-3 text-[12.5px] text-ink-faint">{{ t('No recent activity.', 'Sin actividad reciente.') }}</p>
-        <ul v-else class="mt-3 space-y-2.5">
-          <li v-for="(item, i) in activity.slice(0, 5)" :key="i" class="flex items-center gap-2.5">
-            <span aria-hidden="true" class="h-[6px] w-[6px] shrink-0 rounded-full" :class="item.dot" />
-            <span class="min-w-0 flex-1 truncate text-[12.5px] text-ink-600">{{ item.text }}</span>
-            <span class="shrink-0 text-[11.5px] text-ink-faint">{{ relativeTime(item.at) }}</span>
-          </li>
-        </ul>
-      </section>
+      <!-- 4. Activity: everything that happened to them, newest first. -->
+      <PatientsActivityTimeline ref="timeline" :patient-id="patient.id" />
     </div>
 
     <!-- Side column -->

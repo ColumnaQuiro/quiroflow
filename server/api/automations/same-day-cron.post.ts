@@ -3,6 +3,7 @@ import type { Database } from '~/types/database.types'
 import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
 import { dispatchPatientRule } from '~/server/utils/automationEngine'
 import { DEFAULT_CLINIC_TIMEZONE, localDay } from '~/utils/clinicClock'
+import { sendExerciseReminders } from '~/server/utils/exerciseReminders'
 
 // Fires 'appointment.same_day' for every booked appointment happening today,
 // for accounts with an enabled rule on that trigger -- same reasoning/auth
@@ -41,6 +42,8 @@ export default defineEventHandler(async (event) => {
   // production (CLAUDE.md, "Scheduling a cron"). Before the rule lookup, so a
   // clinic with no same-day automation still gets it.
   await sendStaffMorningSummaries(supabase, now)
+  // Patients' daily exercise reminder rides here for the same reason.
+  await sendExerciseReminders(supabase, now)
 
   const { data: rules } = await supabase
     .from('automation_rules')

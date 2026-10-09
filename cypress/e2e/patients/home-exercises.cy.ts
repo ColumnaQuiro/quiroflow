@@ -41,6 +41,7 @@ describe('Home exercises', () => {
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}?tab=clinical`)
         cy.get('[data-cy="exercise-row"] .bg-success-accent').should('have.length', 1)
+        cy.get('[data-cy="exercise-adherence"]').should('contain.text', '1 of 7 days')
       })
     })
   })

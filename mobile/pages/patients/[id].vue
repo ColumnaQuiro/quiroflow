@@ -456,6 +456,7 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
             <div class="mt-1.5 h-[7px] overflow-hidden rounded-full bg-brand-tint">
               <div class="h-full rounded-full bg-brand" :style="{ width: `${planPercent}%` }" />
             </div>
+            <PatientsPlanPeriods v-if="plan.started_at" :patient-id="patient!.id" :plan="plan" :time-zone="timeZone" />
           </template>
           <p class="mt-1.5 text-[12.5px]" :class="nextAppt ? 'text-ink-muted2' : 'text-warning-text'">
             <template v-if="nextAppt">{{ t('Next', 'Próxima') }}: {{ apptWhen(nextAppt.starts_at) }}<template v-if="nextAppt.appointment_types?.name"> · {{ nextAppt.appointment_types.name }}</template></template>

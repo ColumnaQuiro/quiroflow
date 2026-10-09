@@ -258,6 +258,7 @@ const planPercent = computed(() => {
   if (!plan.value || plan.value.total_visits <= 0) return 0
   return Math.min(100, Math.round((planCompleted.value / plan.value.total_visits) * 100))
 })
+const seesAllVisits = computed(() => store.isOwner || store.permissions.calendar_scope === 'all')
 const planCadence = computed(() => (plan.value ? carePlanCadenceLabel(plan.value, t) : null))
 // Goals are one free-text field, not a list, so they are split on the
 // separators people actually type rather than pretending the schema has
@@ -500,6 +501,9 @@ function onDetailsUpdated() {
           <div class="mt-2 h-[6px] w-full overflow-hidden rounded-full bg-chip-bg2">
             <div class="h-full rounded-full bg-brand" :style="{ width: `${planPercent}%` }" />
           </div>
+          <!-- Period by period: only for someone who sees every visit, or a
+               colleague's attended visit would read as one missed. -->
+          <PatientsPlanPeriods v-if="plan.started_at && seesAllVisits" :patient-id="patient.id" :plan="{ ...plan, started_at: plan.started_at }" />
           <div v-if="goalChips.length > 0" class="mt-3 flex flex-wrap gap-1.5">
             <span v-for="goal in goalChips" :key="goal" class="rounded-pill bg-chip-bg px-2 py-0.5 text-[11.5px] text-chip-text">{{ goal }}</span>
           </div>

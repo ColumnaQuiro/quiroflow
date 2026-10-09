@@ -3,11 +3,11 @@ import { SEEDED_PRACTITIONER, assertDayGridShows, dateInputValue, openNewAppoint
 // A bono visit was reported as a debt because the appointment type is priced
 // above the bono's per-session rate.
 //
-// Nieves Monteagudo: a €480 Bono mantenimiento (12 sessions, €40 each) with
-// 4 left, an "Ajuste Quiropractico" priced at €55, and €160 of her own money
-// sitting with the clinic. Her appointment said "This visit costs more than the
-// package covers — patient owes the difference". She owes nothing: taking the
-// visit from the bono charges the BONO's rate, so €40 comes off what she has
+// One patient: a €480 Bono mantenimiento (12 sessions, €40 each) with 4
+// left, an "Ajuste Quiropractico" priced at €55, and €160 of their own money
+// sitting with the clinic. Their appointment said "This visit costs more than the
+// package covers — patient owes the difference". They owe nothing: taking the
+// visit from the bono charges the BONO's rate, so €40 comes off what they have
 // already paid. The €55 never enters it.
 const bookedDay = yesterday()
 

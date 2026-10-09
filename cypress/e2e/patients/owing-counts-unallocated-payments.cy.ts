@@ -23,26 +23,26 @@ describe('The Owing filter', () => {
 
       // Paid in full, but the money settles no invoice -- the imported and the
       // bono shape. Balance is zero and this patient owes nothing.
-      cy.task<{ id: string }>('db:createPatient', { ...base, firstName: 'Aurora', lastName: 'Cendra' }).then((settled) => {
+      cy.task<{ id: string }>('db:createPatient', { ...base, firstName: 'Aurora', lastName: 'Saldada' }).then((settled) => {
         cy.task('db:createInvoice', { accountId: account.accountId, patientId: settled.id, totalCents: 5000, status: 'unpaid' })
         cy.task('db:createPayment', { accountId: account.accountId, patientId: settled.id, amountCents: 5000, method: 'cash' })
 
         // A real debtor, so the filter is shown to be working rather than
         // merely empty -- the failure this guards against would hide behind an
         // assertion that only ever said "not.exist".
-        cy.task<{ id: string }>('db:createPatient', { ...base, firstName: 'Nestor', lastName: 'Quilez' }).then((debtor) => {
+        cy.task<{ id: string }>('db:createPatient', { ...base, firstName: 'Nestor', lastName: 'Deudor' }).then((debtor) => {
           cy.task('db:createInvoice', { accountId: account.accountId, patientId: debtor.id, totalCents: 5000, status: 'unpaid' })
 
           cy.login(account.email, account.password)
           cy.visit('/patients')
 
-          cy.contains('Aurora Cendra').should('be.visible')
-          cy.contains('Nestor Quilez').should('be.visible')
+          cy.contains('Aurora Saldada').should('be.visible')
+          cy.contains('Nestor Deudor').should('be.visible')
 
           cy.get('select[aria-label="Balance"]').select('owing')
 
-          cy.contains('Nestor Quilez').should('be.visible')
-          cy.contains('Aurora Cendra').should('not.exist')
+          cy.contains('Nestor Deudor').should('be.visible')
+          cy.contains('Aurora Saldada').should('not.exist')
         })
       })
     })

@@ -1,10 +1,10 @@
 // Logging a bono session while the patient is still in the room invented a
 // second visit, and put it down to the front desk.
 //
-// Tomas Berenguer: his 17:00 Informe Quiropráctico was charged €60 and
-// paid by card, and a €44 session came off his bono for the same visit. The
-// session was logged at 17:55:21, while he was still with the practitioner;
-// he was checked out at 17:56:23, 62 seconds later. "Log session" only looked
+// One patient's 17:00 Informe Quiropráctico was charged €60 and paid by
+// card, and a €44 session came off their bono for the same visit. The
+// session was logged at 17:55:21, while they were still with the practitioner;
+// they were checked out at 17:56:23, 62 seconds later. "Log session" only looked
 // for COMPLETED appointments, found none, and so created an off-calendar one
 // — recorded against recepcion@example.test, the reception account that was
 // signed in, which is not a practitioner at all.
@@ -42,7 +42,7 @@ describe('Logging a bono session', () => {
           priceCents: 52800,
         }).then((purchase: any) => {
           // Arrived and with the practitioner, not yet checked out — the state
-          // Tomas was in when his session was logged.
+          // that patient was in when their session was logged.
           cy.task('db:createAppointment', {
             accountId: account.accountId,
             clinicId: account.clinicId,

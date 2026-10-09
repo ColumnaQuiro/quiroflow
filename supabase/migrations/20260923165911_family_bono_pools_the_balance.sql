@@ -16,15 +16,15 @@
 -- check fails, and the visit is charged -- to a patient whose family prepaid
 -- for it, against a session that has just been drawn off the bono.
 --
--- Santiago Nawab is the case that surfaced it. 23 Sep 2026, 15:56: a session
--- came off Henna's Bono 12 (11/12 -> 12/12) and INV-3576 was raised 0.3s
--- later for 44 EUR, unpaid. His own balance was -173 EUR. His family's was
+-- One child is the case that surfaced it. 23 Sep 2026, 15:56: a session
+-- came off a parent's Bono 12 (11/12 -> 12/12) and INV-3576 was raised 0.3s
+-- later for 44 EUR, unpaid. Their own balance was -173 EUR. The family's was
 -- +44 EUR -- exactly the one session left on that bono:
 --
---   Henna Anis   paid 1,802.00   invoiced 1,153.00
---   Nelson         paid 55.00    invoiced   229.00
---   Santiago        paid 0.00    invoiced   217.00
---   Zion            paid 0.00    invoiced   258.00
+--   parent       paid 1,802.00   invoiced 1,153.00
+--   child 1        paid 55.00    invoiced   229.00
+--   child 2         paid 0.00    invoiced   217.00
+--   child 3         paid 0.00    invoiced   258.00
 --   ------------------------------------------------
 --   family       paid 1,857.00   invoiced 1,857.00   net 0.00
 --

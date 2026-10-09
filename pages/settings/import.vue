@@ -41,8 +41,8 @@ function counted(table: 'patients' | 'appointments' | 'payments' | 'package_purc
 
 // Grouped, and ordered the way a migration actually runs. Everything
 // downstream matches a record to its patient by external_reference, so
-// Patients genuinely has to go first -- Rodrigo Palau's bono sat unimportable
-// because his patient reference had never been stored, and nothing in the UI
+// Patients genuinely has to go first -- one patient's bono sat unimportable
+// because their patient reference had never been stored, and nothing in the UI
 // said that was the dependency.
 const sources = computed<Source[]>(() => [
   {

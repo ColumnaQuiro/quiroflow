@@ -8,9 +8,9 @@
 // balance is negative by construction, the check could never pass, and their
 // visit was billed even though the family had prepaid for it.
 //
-// Santiago Nawab, 23 Sep 2026: a session came off Henna's Bono 12 and
-// INV-3576 for 44 EUR was raised 0.3s later, unpaid. His own balance was
-// -173 EUR; his family's was +44, exactly the session just drawn.
+// One child, 23 Sep 2026: a session came off a parent's Bono 12 and
+// INV-3576 for 44 EUR was raised 0.3s later, unpaid. Their own balance was
+// -173 EUR; the family's was +44, exactly the session just drawn.
 describe('Logging a session from a shared bono', () => {
   it('charges it to the family’s money, not to the beneficiary’s own balance', () => {
     cy.seedStaffAccount().then((account) => {
@@ -34,7 +34,7 @@ describe('Logging a session from a shared bono', () => {
             // Only the parent ever hands money over, and the eleven visits
             // already taken have been charged against it. That leaves the
             // family exactly one session ahead -- 528 - 484 = 44 -- which is
-            // the shape the Nawab family was in.
+            // the shape the real family was in.
             cy.task('db:createPayment', { accountId: account.accountId, patientId: parent.id, amountCents: 52800, method: 'cash', purpose: 'bono' })
             cy.task('db:createInvoice', { accountId: account.accountId, patientId: parent.id, totalCents: 48400, status: 'paid' })
 

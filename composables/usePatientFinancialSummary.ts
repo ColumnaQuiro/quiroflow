@@ -152,7 +152,7 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     // was never its own account_credits row to begin with -- an imported
     // PracticeHub payment sitting on the account unallocated, which is the
     // normal shape for one (see 20260923094340). There the spend's
-    // +paidCents has nothing of its own to cancel: Teresa Davis had EUR 240
+    // +paidCents has nothing of its own to cancel: one patient had EUR 240
     // of exactly that kind of credit, spent it on a Bono mantenimiento, and
     // the ledger came out EUR 240 ahead of itself -- the same "written down
     // twice" bug 20260916160000 fixed for adding credit, mirrored on the
@@ -192,8 +192,8 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     // Adding credit writes both: a payment, because the money arrived and a
     // factura has to say so, and a credit row, because it is still the
     // patient's to direct somewhere. Two rows, one set of euros -- and a
-    // balance of paid - invoiced + credit counted them both, putting Alonso
-    // Varela 115 EUR ahead of himself the moment the cash was counted.
+    // balance of paid - invoiced + credit counted them both, putting one
+    // patient 115 EUR ahead of themselves the moment the cash was counted.
     //
     // Only that one path sets payment_id. Everything else stays: the cutover
     // entries, goodwill credits, credit added before the payment row existed,
@@ -254,9 +254,9 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     // PracticeHub has closed keeps whatever was on its counter when it was
     // closed, and the importer brings it in that way on purpose, as history.
     // Counting it here offered its sessions to the calendar and its remaining
-    // value to bonoValueCents below -- Paqui Cortes' August bono, closed in
+    // value to bonoValueCents below -- one patient's August bono, closed in
     // PracticeHub and re-issued in September, showed as a second live bono
-    // worth 440 EUR she could draw on. See the is_closed migration.
+    // worth 440 EUR they could draw on. See the is_closed migration.
     state.activePackages.value = [...(packages ?? []), ...sharedPackages].filter(
       (p) => !p.is_closed && p.sessions_used < p.sessions_total,
     )
@@ -268,12 +268,12 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     //
     // The subtraction is the whole point. Unused sessions exist whether or not
     // anyone has paid for them, so counting them gross says a patient can draw
-    // on money they have not handed over: Alonso Varela put 150 EUR down on a
+    // on money they have not handed over: one patient put 150 EUR down on a
     // 528 EUR bono and the pill read "484 available" while the Debtors report,
-    // reading the same purchase through utils/bonoOwed, listed him as owing
+    // reading the same purchase through utils/bonoOwed, listed them as owing
     // 378. Both numbers came out of this database on the same day. Net of the
-    // debt he has 106 EUR -- which is exactly his balance, because 106 is what
-    // he has actually paid beyond what he has been invoiced. Across the
+    // debt they had 106 EUR -- which is exactly their balance, because 106 is
+    // what they had actually paid beyond what they had been invoiced. Across the
     // account the gross figure overstated what patients could draw on by
     // 21,910 EUR on 86 bonos.
     //

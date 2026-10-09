@@ -5,8 +5,8 @@
 // SECOND payment, method 'credit', against whatever it settled. Both are real
 // rows and both are right; only one of them is income.
 //
-// Every income figure summed both. Alonso Varela handed over €115 in cash on
-// 16 Sep 2026 and it was applied to his bono an hour later, so September read
+// Every income figure summed both. One patient handed over €115 in cash on
+// 16 Sep 2026 and it was applied to their bono an hour later, so September read
 // €230 for it -- and a payment method called "credit" appeared in the
 // by-method chart beside Efectivo and Tarjeta, which is how it was spotted:
 // the cash he paid with had turned into a method of its own.

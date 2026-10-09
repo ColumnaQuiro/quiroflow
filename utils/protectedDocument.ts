@@ -42,7 +42,7 @@ export function documentPassword(raw: string): string {
   return isSpanishId(asId) ? asId : trimmed
 }
 
-/** "Informe Emmanuel.pdf" -> "Informe Emmanuel (protegido).pdf". */
+/** "Informe Lucía.pdf" -> "Informe Lucía (protegido).pdf". */
 export function protectedFileName(fileName: string): string {
   const base = fileName.replace(/\.[^.]+$/, '').trim() || 'Documento'
   return `${base} (protegido).pdf`

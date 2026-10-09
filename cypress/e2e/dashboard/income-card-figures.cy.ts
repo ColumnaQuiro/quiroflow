@@ -1,9 +1,9 @@
 // The dashboard's income card, filtered to one practitioner.
 //
-// Beatriz Ferrando's first month read "2320,00 €, -56% vs previous period"
-// — her September against the WHOLE CLINIC's late August, because the
+// One practitioner's first month read "2320,00 €, -56% vs previous period"
+// — their September against the WHOLE CLINIC's late August, because the
 // previous-period total was summed account-wide while the figure above it was
-// filtered. She had gone from nothing to 2,320 and the card called it a 56%
+// filtered. They had gone from nothing to 2,320 and the card called it a 56%
 // collapse.
 //
 // "Last 30 days" rather than the default "this month": that preset's previous

@@ -343,12 +343,12 @@ begin
   -- backstop rather than a link: it compares lead.email to patients.email on
   -- the next cron pass, which is both late and email-only.
   --
-  -- Both of those cost something real. Alberto Rueda Mansilla booked on 14 Sep
-  -- and received a seven-step sequence between the 16th and the 18th, because
-  -- his lead says ruedamansilla@ and his patient record says rudamansilla@
-  -- -- one letter, and the backstop never fired. Sergio Bielsa booked four
-  -- minutes after his sequence started and it ran for another day before
-  -- the cron noticed.
+  -- Both of those cost something real. One lead booked on 14 Sep and
+  -- received a seven-step sequence between the 16th and the 18th, because
+  -- the email on their lead and the one on their patient record differ by
+  -- one letter, and the backstop never fired. Another booked four minutes
+  -- after their sequence started and it ran for another day before the cron
+  -- noticed.
   --
   -- So: match on email OR phone, here, at the moment of booking.
   --

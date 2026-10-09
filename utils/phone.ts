@@ -197,7 +197,7 @@ export function phoneMatches(storedNumber: string, storedCountryCode: string, in
  * front). A patient's number is local, with the country beside it
  * ("611732681", "ES"), and every send rebuilds the E.164 with toE164().
  * Converting a lead copied the international digits across as if they were
- * local, so the next send added the dial code a second time: Edwin Coloma's
+ * local, so the next send added the dial code a second time: one patient's
  * appointment confirmation on 3 Oct 2026 went to 3434611732681, Meta
  * refused it as undeliverable, and the Inbox opened a second chat for the
  * number that does not exist.

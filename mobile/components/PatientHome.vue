@@ -5,6 +5,7 @@ let shownBefore = false
 
 <script setup lang="ts">
 import { formatEur } from '../../utils/billing'
+import { directionsUrl, telUrl } from '../../utils/clinicLinks'
 
 // The patient's home screen: the two things the app gets opened for --
 // when am I next in, what do I have left -- and a way through to the rest.
@@ -52,6 +53,38 @@ const { zoneOf } = usePatientAppInfo()
 function longWhen(iso: string, clinicId?: string | null) {
   return new Date(iso).toLocaleString(locale.value, { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: zoneOf(clinicId) })
 }
+// Getting there and getting in touch: the visit's clinic, its directions in
+// the phone's own maps app, its phone, and the visit in the phone's calendar.
+const { clinics, clinicOf } = usePatientClinics()
+const platform = import.meta.client ? ((window as unknown as { Capacitor?: { getPlatform?: () => string } }).Capacitor?.getPlatform?.() ?? 'web') : 'web'
+const nextClinic = computed(() => clinicOf(next.value?.clinic_id))
+const nextDirections = computed(() => (nextClinic.value ? directionsUrl(nextClinic.value, platform) : null))
+function openUrl(url: string) {
+  openWhenReady(async () => url)
+}
+
+const authedFetch = useAuthedFetch()
+const calendarBusy = ref(false)
+const calendarError = ref('')
+async function addToCalendar(appointmentId: string) {
+  calendarBusy.value = true
+  calendarError.value = ''
+  try {
+    await openWhenReady(async () => (await authedFetch<{ url: string }>('/api/portal/appointments/calendar-link', { method: 'POST', body: { appointmentId } })).url)
+  } catch {
+    calendarError.value = t("Couldn't prepare it for your calendar. Try again.", 'No se ha podido preparar para tu calendario. Inténtalo de nuevo.')
+  } finally {
+    calendarBusy.value = false
+  }
+}
+
+// "Avísame si queda un hueco antes", at the next visit's clinic -- or the
+// only clinic, with nothing booked. Offered where the clinic lets patients
+// book from the app, which is also what join_my_waitlist checks.
+const { entries: waitlist, busy: waitlistBusy, error: waitlistError, join: joinWaitlist, leave: leaveWaitlist } = usePatientWaitlist()
+const waitlistClinicId = computed(() => next.value?.clinic_id ?? (clinics.value.length === 1 ? clinics.value[0]!.id : null))
+const myWaitlistEntry = computed(() => waitlist.value.find((e) => e.clinic_id === waitlistClinicId.value) ?? null)
+
 function eur(cents: number) {
   return formatEur(cents)
 }
@@ -87,6 +120,15 @@ function eur(cents: number) {
           {{ next.appointment_types?.name ?? t('Appointment', 'Cita') }}
           <template v-if="next.team_members?.full_name"> &middot; {{ next.team_members.full_name }}</template>
         </p>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <button type="button" class="min-h-9 rounded-ctl border border-line-control px-3 text-[12.5px] font-medium text-ink-700 active:bg-surface-subtle" :disabled="calendarBusy" data-cy="patient-add-to-calendar" @click="addToCalendar(next.id)">
+            {{ calendarBusy ? t('Preparing…', 'Preparando…') : t('Add to calendar', 'Añadir al calendario') }}
+          </button>
+          <button v-if="nextDirections" type="button" class="min-h-9 rounded-ctl border border-line-control px-3 text-[12.5px] font-medium text-ink-700 active:bg-surface-subtle" data-cy="patient-next-directions" @click="openUrl(nextDirections)">
+            {{ t('Directions', 'Cómo llegar') }}
+          </button>
+        </div>
+        <p v-if="calendarError" role="alert" class="mt-2 text-[12.5px] text-danger-text">{{ calendarError }}</p>
         <NuxtLink to="/visits" class="mt-3 inline-block text-[12.5px] font-medium text-brand-text">
           {{ t('See all visits', 'Ver todas las citas') }} <AppChevron :size="12" />
         </NuxtLink>
@@ -97,6 +139,29 @@ function eur(cents: number) {
           {{ t('Book a visit', 'Reservar cita') }} <AppChevron :size="12" />
         </NuxtLink>
       </template>
+    </section>
+
+    <!-- Earlier, if a slot frees up: the clinic's waitlist -->
+    <section v-if="settings.bookingEnabled && waitlistClinicId && !apptLoading" class="mt-3 rounded-card border border-line bg-surface p-4 shadow-card" data-cy="patient-waitlist">
+      <template v-if="myWaitlistEntry">
+        <p class="text-[13.5px] font-medium text-ink-900">{{ t("You're on the waitlist", 'Estás en la lista de espera') }}</p>
+        <p class="mt-0.5 text-[12.5px] text-ink-muted">
+          {{ myWaitlistEntry.status === 'offered'
+            ? t('The clinic has offered you a slot: check your messages.', 'La clínica te ha ofrecido un hueco: revisa tus mensajes.')
+            : t("We'll let you know if an earlier slot frees up.", 'Te avisaremos si queda libre un hueco antes.') }}
+        </p>
+        <button v-if="myWaitlistEntry.status === 'waiting'" type="button" class="mt-2 text-[12.5px] font-medium text-danger-text" :disabled="waitlistBusy" data-cy="patient-waitlist-leave" @click="leaveWaitlist(myWaitlistEntry.id)">
+          {{ t('Leave the waitlist', 'Salir de la lista de espera') }}
+        </button>
+      </template>
+      <template v-else>
+        <p class="text-[13.5px] font-medium text-ink-900">{{ next ? t('Would earlier suit you?', '¿Te vendría bien antes?') : t('No slot that suits you?', '¿No encuentras hueco?') }}</p>
+        <p class="mt-0.5 text-[12.5px] text-ink-muted">{{ t("Join the waitlist and we'll let you know if a slot frees up.", 'Apúntate a la lista de espera y te avisaremos si queda un hueco libre.') }}</p>
+        <button type="button" class="mt-2 min-h-9 rounded-ctl bg-brand px-3.5 text-[13px] font-semibold text-white" :disabled="waitlistBusy" data-cy="patient-waitlist-join" @click="joinWaitlist(waitlistClinicId)">
+          {{ waitlistBusy ? t('Adding you…', 'Apuntándote…') : t('Let me know', 'Avísame') }}
+        </button>
+      </template>
+      <p v-if="waitlistError" role="alert" class="mt-2 text-[12.5px] text-danger-text">{{ waitlistError }}</p>
     </section>
 
     <div class="mt-3 grid grid-cols-2 gap-3">
@@ -127,6 +192,18 @@ function eur(cents: number) {
       </span>
       <span class="text-ink-faint"><AppChevron /></span>
     </NuxtLink>
+
+    <!-- The clinic: where it is and how to reach it -->
+    <section v-for="c in clinics" :key="c.id" class="mt-3 rounded-card border border-line bg-surface p-4 shadow-card" data-cy="patient-clinic">
+      <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ t('Your clinic', 'Tu clínica') }}</p>
+      <p class="mt-1 text-[14.5px] font-semibold text-ink-900">{{ c.name }}</p>
+      <p v-if="c.address" class="mt-0.5 text-[12.5px] text-ink-muted">{{ c.address }}</p>
+      <div class="mt-2.5 flex flex-wrap gap-2">
+        <a v-if="telUrl(c.phone)" :href="telUrl(c.phone)!" class="flex min-h-9 items-center rounded-ctl border border-line-control px-3 text-[12.5px] font-medium text-ink-700 active:bg-surface-subtle" data-cy="patient-clinic-call">{{ t('Call', 'Llamar') }}</a>
+        <button v-if="directionsUrl(c, platform)" type="button" class="min-h-9 rounded-ctl border border-line-control px-3 text-[12.5px] font-medium text-ink-700 active:bg-surface-subtle" data-cy="patient-clinic-directions" @click="openUrl(directionsUrl(c, platform)!)">{{ t('Directions', 'Cómo llegar') }}</button>
+        <NuxtLink to="/messages" class="flex min-h-9 items-center rounded-ctl border border-line-control px-3 text-[12.5px] font-medium text-ink-700 active:bg-surface-subtle">{{ t('Message', 'Escribir') }}</NuxtLink>
+      </div>
+    </section>
 
     <section class="mt-5">
       <h2 class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ t('Care plan', 'Plan de tratamiento') }}</h2>

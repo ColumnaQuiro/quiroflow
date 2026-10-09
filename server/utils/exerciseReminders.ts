@@ -44,23 +44,34 @@ export async function sendExerciseReminders(service: Service, now = new Date()):
   return { sent }
 }
 
-/** "Tu clínica te ha dado un ejercicio": the patient's push when one is assigned. Best-effort. */
-export async function notifyExerciseAssigned(service: Service, patientExerciseId: string) {
+/**
+ * "Nuevo ejercicio para casa": the patient's push when one is assigned, or
+ * "Nuevos ejercicios para casa" naming them when a programme assigns several
+ * at once. Callers pass one patient's assignments. Best-effort.
+ */
+export async function notifyExerciseAssigned(service: Service, patientExerciseIds: string | string[]) {
+  const ids = Array.isArray(patientExerciseIds) ? patientExerciseIds : [patientExerciseIds]
   try {
     const { data } = await service
       .from('patient_exercises')
-      .select('account_id, patient_id, sets, reps, frequency, exercises(name)')
-      .eq('id', patientExerciseId)
-      .maybeSingle()
-    const pe = data as unknown as { account_id: string; patient_id: string; sets: number | null; reps: string | null; frequency: string | null; exercises: { name: string } | null } | null
+      .select('account_id, patient_id, sets, reps, frequency, created_at, exercises(name)')
+      .in('id', ids)
+      .order('created_at')
+    const rows = (data as unknown as { account_id: string; patient_id: string; sets: number | null; reps: string | null; frequency: string | null; exercises: { name: string } | null }[] | null) ?? []
+    const pe = rows[0]
     if (!pe) return
-    const dose = [pe.sets && pe.reps ? `${pe.sets} × ${pe.reps}` : pe.reps, pe.frequency].filter(Boolean).join(' · ')
-    await sendPushToPatients(service, pe.account_id, [pe.patient_id], {
-      title: 'Nuevo ejercicio para casa',
-      body: [pe.exercises?.name, dose].filter(Boolean).join(' · '),
-      data: { type: 'exercises' },
-    })
+    let title = 'Nuevo ejercicio para casa'
+    let body: string
+    if (rows.length === 1) {
+      const dose = [pe.sets && pe.reps ? `${pe.sets} × ${pe.reps}` : pe.reps, pe.frequency].filter(Boolean).join(' · ')
+      body = [pe.exercises?.name, dose].filter(Boolean).join(' · ')
+    } else {
+      title = 'Nuevos ejercicios para casa'
+      const names = rows.map((r) => r.exercises?.name).filter(Boolean) as string[]
+      body = `${rows.length} ejercicios: ${names.slice(0, 3).join(', ')}${names.length > 3 ? '…' : ''}`
+    }
+    await sendPushToPatients(service, pe.account_id, [pe.patient_id], { title, body, data: { type: 'exercises' } })
   } catch (err) {
-    console.error('[exercise-assigned] push failed', patientExerciseId, err)
+    console.error('[exercise-assigned] push failed', ids, err)
   }
 }

@@ -64,6 +64,7 @@ export const APP_PAGES = [
   '/billing/new',
   '/reports',
   '/reports/appointment-distribution',
+  '/reports/communications',
   '/reports/data-exports',
   '/reports/daily-transactions',
   '/reports/debtors',

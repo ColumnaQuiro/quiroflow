@@ -226,7 +226,7 @@ export async function sendPushToPatients(
 ): Promise<PushSendResult & { recipients: number }> {
   let query = supabase
     .from('patients')
-    .select('user_id')
+    .select('id, user_id')
     .eq('account_id', accountId)
     .not('user_id', 'is', null)
     .eq('do_not_contact', false)
@@ -239,5 +239,22 @@ export async function sendPushToPatients(
   const { data: recipients } = await query
   const userIds = [...new Set((recipients ?? []).map((r) => r.user_id as string))]
   const result = await sendPushToUsers(supabase, userIds, notification)
+  // Reports > Communications: one row per patient it went to. A broadcast
+  // (patientIds null) is recorded once, in patient_push_broadcasts, by its
+  // caller. Best-effort: the push has already gone either way.
+  const sentTo = patientIds !== null ? (recipients ?? []).map((r) => r.id as string) : []
+  if (sentTo.length) {
+    const { error } = await supabase.from('patient_push_log').insert(
+      sentTo.map((patientId) => ({
+        account_id: accountId,
+        patient_id: patientId,
+        kind: notification.data?.type ?? null,
+        title: notification.title,
+        body: notification.body,
+        delivered_count: sentTo.length === 1 ? result.delivered : null,
+      })) as never,
+    )
+    if (error) console.error('[push] could not log the send', error.message)
+  }
   return { ...result, recipients: userIds.length }
 }

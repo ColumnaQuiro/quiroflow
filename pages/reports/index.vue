@@ -22,6 +22,7 @@ const allGroups = computed(() => [
     label: t('Operations', 'Operaciones'),
     items: [
       { to: '/reports/scheduled-reminders', label: t('Scheduled Reminders', 'Recordatorios programados'), description: t('WhatsApp delivery status and who has confirmed, is pending, or wants to reschedule.', 'Estado de entrega de WhatsApp y quién ha confirmado, está pendiente o quiere reprogramar.'), icon: ICONS.bell },
+      { to: '/reports/communications', label: t('Communications', 'Comunicaciones'), description: t('Every WhatsApp, email, app message and push sent to patients and leads, with its status.', 'Todos los WhatsApp, correos, mensajes en la app y push enviados a pacientes y leads, con su estado.'), icon: ICONS.bell },
       { to: '/reports/upcoming-visits', label: t('Upcoming Visits', 'Próximas visitas'), description: t('How appointments are distributed across the month.', 'Cómo se distribuyen las citas a lo largo del mes.'), icon: ICONS.calendar },
       { to: '/reports/patient-flow', label: t('Patient Flow', 'Flujo de pacientes'), description: t('How long patients wait, how late the clinic runs, and how long sessions last.', 'Cuánto esperan los pacientes, cuánto retraso lleva la clínica y cuánto dura cada consulta.'), icon: ICONS.squares },
       { to: '/reports/appointment-distribution', label: t('Appointment Distribution', 'Distribución de citas'), description: t('Which shift/time of day performs best, by volume and completion.', 'Qué turno/hora del día rinde mejor, por volumen y finalización.'), icon: ICONS.squares },

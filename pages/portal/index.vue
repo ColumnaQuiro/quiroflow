@@ -21,6 +21,10 @@ const { loading: moneyLoading, outstandingCents, creditLedgerCents, activePackag
 const { documents } = usePatientDocuments(() => patientId.value)
 
 const next = computed(() => upcoming.value[0] ?? null)
+// The waitlist card's clinic: the next visit's, or the only one with nothing
+// booked. It and the clinic card are shared with the app (components/patient).
+const { clinics } = usePatientClinics()
+const waitlistClinicId = computed(() => next.value?.clinic_id ?? (clinics.value.length === 1 ? clinics.value[0]!.id : null))
 // What is unpaid, not the balance, as the staff record shows it
 // (components/patient/BalanceCard.vue, utils/owing.ts): a family bono's
 // beneficiary was shown a debt for visits already paid for from the bono.
@@ -59,15 +63,21 @@ function eur(cents: number) {
             {{ next.appointment_types?.name ?? t('Appointment', 'Cita') }}
             <template v-if="next.team_members?.full_name"> &middot; {{ next.team_members.full_name }}</template>
           </p>
+          <PatientNextVisitActions class="mt-3" :appointment-id="next.id" :clinic-id="next.clinic_id" />
           <NuxtLink to="/portal/appointments" class="mt-3 inline-block text-[12.5px] font-medium text-brand-text hover:text-brand-hover">
             {{ t('See all appointments', 'Ver todas las citas') }} &rarr;
           </NuxtLink>
         </template>
         <template v-else>
           <p class="mt-1.5 text-[15px] text-ink-muted">{{ t('Nothing booked yet.', 'No tienes ninguna cita reservada.') }}</p>
-          <p class="mt-1 text-[13px] text-ink-faint">{{ t('Contact the clinic to book your next visit.', 'Contacta con la clínica para reservar tu próxima cita.') }}</p>
+          <NuxtLink v-if="settings.bookingEnabled && settings.bookingSlug" :to="`/book/${settings.bookingSlug}`" class="mt-3 inline-block text-[12.5px] font-medium text-brand-text hover:text-brand-hover" data-cy="portal-book">
+            {{ t('Book a visit', 'Reservar cita') }} &rarr;
+          </NuxtLink>
+          <p v-else class="mt-1 text-[13px] text-ink-faint">{{ t('Contact the clinic to book your next visit.', 'Contacta con la clínica para reservar tu próxima cita.') }}</p>
         </template>
       </section>
+
+      <PatientWaitlistCard v-if="settings.bookingEnabled && !apptLoading" class="mt-4" :clinic-id="waitlistClinicId" :has-next-visit="!!next" />
 
       <!-- Two numbers, never netted into one: sessions are not money, and a
            patient holding a bono while owing an instalment needs to see
@@ -107,6 +117,10 @@ function eur(cents: number) {
           </span>
           <span class="text-[13px] text-ink-faint">&rarr;</span>
         </NuxtLink>
+      </div>
+
+      <div class="mt-4 grid gap-3 sm:grid-cols-2">
+        <PatientClinicCards messages-to="/portal/messages" />
       </div>
 
       <!-- Last, not first: someone who opened the portal came for the two

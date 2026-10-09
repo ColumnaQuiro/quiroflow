@@ -23,3 +23,17 @@ export function telUrl(phone: string | null | undefined): string | null {
   const digits = (phone ?? '').replace(/[^\d+]/g, '')
   return digits.replace(/\+/g, '').length >= 6 ? `tel:${digits}` : null
 }
+
+/**
+ * 'ios' on an iPhone or iPad -- the app's own Capacitor platform, or Safari's
+ * user agent in the web portal -- so directions open in Apple Maps there.
+ */
+export function devicePlatform(win: { Capacitor?: { getPlatform?: () => string }; navigator?: { userAgent?: string; maxTouchPoints?: number } } | undefined): string {
+  if (!win) return 'web'
+  const native = win.Capacitor?.getPlatform?.()
+  if (native && native !== 'web') return native
+  const ua = win.navigator?.userAgent ?? ''
+  // iPadOS reports itself as a Mac; the touch points give it away.
+  if (/iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && (win.navigator?.maxTouchPoints ?? 0) > 1)) return 'ios'
+  return /Android/.test(ua) ? 'android' : 'web'
+}

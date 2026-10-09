@@ -12,6 +12,9 @@ const { loading: moneyLoading, outstandingCents, creditLedgerCents, activePackag
   () => patientId.value,
 )
 const { invoices, loading: invoicesLoading, loadError: invoicesError, reload: reloadInvoices, busyId, download } = usePatientInvoices(() => patientId.value)
+// "Pagar", shared with the app: re-read the invoices when the patient comes
+// back to this tab from paying.
+const { enabled: canPayOnline, payingId, error: payError, pay } = usePatientPay(() => reloadInvoices())
 // Facturas are the documents; the invoices below are the charges that make up
 // the balance. Two lists on purpose -- a patient asking "what did I pay?" and
 // a patient asking "what am I being charged for?" are asking different things.
@@ -124,6 +127,16 @@ function eur(cents: number) {
               {{ t(PATIENT_INVOICE_STATUS[inv.status]?.label[0] ?? inv.status, PATIENT_INVOICE_STATUS[inv.status]?.label[1] ?? inv.status) }}
             </span>
             <button
+              v-if="canPayOnline && inv.status === 'unpaid'"
+              type="button"
+              class="shrink-0 rounded-ctlSm bg-brand px-2.5 py-1 text-[12px] font-semibold text-white hover:bg-brand-hover disabled:opacity-60"
+              :disabled="payingId === inv.id"
+              :data-cy="`patient-pay-${inv.id}`"
+              @click="pay(inv.id)"
+            >
+              {{ payingId === inv.id ? t('Opening…', 'Abriendo…') : t('Pay', 'Pagar') }}
+            </button>
+            <button
               type="button"
               class="shrink-0 rounded-ctlSm border border-line-control px-2 py-1 text-[12px] font-medium text-ink-600 hover:border-line-controlHover hover:text-ink-900 disabled:opacity-50"
               :disabled="busyId === inv.id"
@@ -135,6 +148,7 @@ function eur(cents: number) {
         </ul>
         <PatientLoadError v-else-if="invoicesError" @retry="reloadInvoices" />
         <PatientEmpty v-else :text="t('No charges yet.', 'Todavía no hay cargos.')" />
+        <p v-if="payError" role="alert" class="border-t border-line-divider px-4 py-2.5 text-[12.5px] text-danger-text">{{ payError }}</p>
         <div v-if="!showAll && invoices.length > PREVIEW" class="border-t border-line-divider px-4 py-2.5">
           <button type="button" class="text-[12.5px] font-medium text-ink-muted hover:text-ink-700" @click="showAll = true">
             {{ t(`Show all ${invoices.length}`, `Ver las ${invoices.length}`) }}

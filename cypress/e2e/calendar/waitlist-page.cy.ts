@@ -15,4 +15,25 @@ describe('Waitlist page', () => {
       cy.contains('No one on the waitlist').should('not.exist')
     })
   })
+
+  // A patient can now join from the app or the portal (join_my_waitlist). The
+  // front desk sees those beside its own and has to be able to tell them
+  // apart: it did not add that person, and may want to call them.
+  it("marks the people who joined it themselves", () => {
+    const email = `waitlist-self-${Date.now()}@example.test`
+    const password = 'valencia2026'
+    cy.seedStaffAccount().then((account) => {
+      cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Rocío', lastName: 'Gil' }).then((self) => {
+        cy.task('db:givePatientAppLogin', { accountId: account.accountId, patientId: self.id, email, password })
+        cy.task<{ error: string | null }>('db:callRpcAsPatient', { email, password, fn: 'join_my_waitlist', args: { p_clinic_id: account.clinicId } }).its('error').should('be.null')
+      })
+      cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Nuria', lastName: 'Sanz' }).then((byDesk) => {
+        cy.task('db:createWaitlistEntry', { accountId: account.accountId, clinicId: account.clinicId, patientId: byDesk.id })
+      })
+      cy.login(account.email, account.password)
+      cy.visit('/waitlist')
+      cy.contains('tr', 'Rocío Gil').find('[data-cy="waitlist-self-added"]').should('contain.text', 'Joined themselves')
+      cy.contains('tr', 'Nuria Sanz').find('[data-cy="waitlist-self-added"]').should('not.exist')
+    })
+  })
 })

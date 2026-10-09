@@ -17,6 +17,7 @@ interface AlertRow {
   care_plan_name: string | null
   frequency_value: number
   frequency_unit: 'week' | 'month'
+  visits_per_period: number | null
   total_visits: number
   visits_remaining: number
   last_appointment_at: string
@@ -64,12 +65,7 @@ function patientName(row: { first_name: string; last_name: string | null }) {
   return `${row.first_name} ${row.last_name ?? ''}`.trim()
 }
 function cadenceLabel(row: AlertRow) {
-  const unitEs = row.frequency_unit === 'week' ? 'semana' : 'mes'
-  const unitEsPlural = row.frequency_unit === 'week' ? 'semanas' : 'meses'
-  return t(
-    `every ${row.frequency_value} ${row.frequency_unit}${row.frequency_value > 1 ? 's' : ''}`,
-    `cada ${row.frequency_value} ${row.frequency_value > 1 ? unitEsPlural : unitEs}`,
-  )
+  return carePlanCadenceLabel(row, t)
 }
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })

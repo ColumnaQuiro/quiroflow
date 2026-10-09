@@ -64,7 +64,7 @@ interface TypeRow { id: string; name: string; duration_minutes: number; sort_ord
 interface PractitionerRow { id: string; full_name: string; business_hours: BusinessHours | null }
 interface ClinicRow { id: string; timezone: string | null; business_hours: BusinessHours | null }
 interface VisitRow { starts_at: string; appointment_type_id: string | null; practitioner_id: string | null }
-interface PlanRow { frequency_value: number; frequency_unit: 'week' | 'month' }
+interface PlanRow { frequency_value: number; frequency_unit: 'week' | 'month'; visits_per_period: number | null }
 interface PatientRow { first_name: string; default_practitioner_id: string | null; clinic_id: string | null; is_minor: boolean; do_not_contact: boolean }
 
 const loading = ref(true)
@@ -316,7 +316,7 @@ async function load() {
     supabase.from('team_member_clinics').select('team_member_id, clinic_id'),
     supabase.from('appointment_type_overrides').select('appointment_type_id, team_member_id, duration_minutes, price_cents'),
     supabase.from('clinics').select('id, timezone, business_hours').is('archived_at', null).order('name'),
-    supabase.from('care_plans').select('frequency_value, frequency_unit').eq('patient_id', props.patientId).order('created_at', { ascending: false }).limit(1),
+    supabase.from('care_plans').select('frequency_value, frequency_unit, visits_per_period').eq('patient_id', props.patientId).order('created_at', { ascending: false }).limit(1),
     supabase
       .from('appointments')
       .select('starts_at, appointment_type_id, practitioner_id')

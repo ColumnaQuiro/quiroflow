@@ -9,7 +9,7 @@
 // care_plans") scopes it the way it scopes the patient.
 const props = defineProps<{
   patientId: string
-  plan?: { name: string; frequency_value: number; frequency_unit: string; total_visits: number; started_at: string } | null
+  plan?: { name: string; frequency_value: number; frequency_unit: string; visits_per_period?: number | null; total_visits: number; started_at: string } | null
   /** The clinic's date today, the default start. */
   today: string
 }>()
@@ -21,6 +21,8 @@ const { context } = usePractitionerContext()
 
 const name = ref(props.plan?.name ?? t('Care Plan', 'Plan de tratamiento'))
 const every = ref(props.plan?.frequency_value ?? 1)
+// Visits in each period: 2 a week for an intensive phase (visits_per_period).
+const perPeriod = ref(props.plan?.visits_per_period ?? 1)
 const unit = ref<'week' | 'month'>(props.plan?.frequency_unit === 'month' ? 'month' : 'week')
 const total = ref(props.plan?.total_visits ?? 10)
 // As the web: an edit keeps the plan's own start unless it is changed.
@@ -30,10 +32,12 @@ const error = ref('')
 
 // The cadences a clinic sets most, one tap each; the steppers do the rest.
 const PRESETS = computed(() => [
-  { every: 1, unit: 'week' as const, label: t('Weekly', 'Semanal') },
-  { every: 2, unit: 'week' as const, label: t('Every 2 weeks', 'Cada 2 semanas') },
-  { every: 3, unit: 'week' as const, label: t('Every 3 weeks', 'Cada 3 semanas') },
-  { every: 1, unit: 'month' as const, label: t('Monthly', 'Mensual') },
+  { every: 1, unit: 'week' as const, per: 3, label: t('3× a week', '3 veces por semana') },
+  { every: 1, unit: 'week' as const, per: 2, label: t('2× a week', '2 veces por semana') },
+  { every: 1, unit: 'week' as const, per: 1, label: t('Weekly', 'Semanal') },
+  { every: 2, unit: 'week' as const, per: 1, label: t('Every 2 weeks', 'Cada 2 semanas') },
+  { every: 3, unit: 'week' as const, per: 1, label: t('Every 3 weeks', 'Cada 3 semanas') },
+  { every: 1, unit: 'month' as const, per: 1, label: t('Monthly', 'Mensual') },
 ])
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, Math.round(v) || lo))
 
@@ -51,6 +55,7 @@ async function save() {
     name: name.value.trim() || t('Care Plan', 'Plan de tratamiento'),
     frequency_value: clamp(every.value, 1, 52),
     frequency_unit: unit.value,
+    visits_per_period: clamp(perPeriod.value, 1, 7),
     total_visits: clamp(total.value, 1, 200),
     started_at: startedAt.value,
     created_by: context.value.teamMemberId,
@@ -92,15 +97,22 @@ const stepBtn = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl
             :key="p.label"
             type="button"
             class="h-9 rounded-full border px-3 text-[13px] font-medium"
-            :class="every === p.every && unit === p.unit ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-700'"
-            :aria-pressed="every === p.every && unit === p.unit"
-            @click="every = p.every; unit = p.unit"
+            :class="every === p.every && unit === p.unit && perPeriod === p.per ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-700'"
+            :aria-pressed="every === p.every && unit === p.unit && perPeriod === p.per"
+            :data-cy="`plan-preset-${p.per}-${p.every}-${p.unit}`"
+            @click="every = p.every; unit = p.unit; perPeriod = p.per"
           >
             {{ p.label }}
           </button>
         </div>
         <div class="flex items-center gap-2">
-          <span class="text-[14px] text-ink-700">{{ t('1 visit every', '1 visita cada') }}</span>
+          <button type="button" :class="stepBtn" :disabled="perPeriod <= 1" :aria-label="t('Fewer visits', 'Menos visitas')" @click="perPeriod = clamp(perPeriod - 1, 1, 7)">−</button>
+          <span class="w-8 text-center text-[16px] font-semibold tabular-nums text-ink-900" data-cy="plan-per-period">{{ perPeriod }}</span>
+          <button type="button" :class="stepBtn" :disabled="perPeriod >= 7" :aria-label="t('More visits', 'Más visitas')" @click="perPeriod = clamp(perPeriod + 1, 1, 7)">+</button>
+          <span class="text-[14px] text-ink-700">{{ perPeriod === 1 ? t('visit', 'visita') : t('visits', 'visitas') }}</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="shrink-0 text-[14px] text-ink-700">{{ t('every', 'cada') }}</span>
           <button type="button" :class="stepBtn" :disabled="every <= 1" :aria-label="t('Less', 'Menos')" @click="every = clamp(every - 1, 1, 52)">−</button>
           <span class="w-8 text-center text-[16px] font-semibold tabular-nums text-ink-900" data-cy="plan-every">{{ every }}</span>
           <button type="button" :class="stepBtn" :aria-label="t('More', 'Más')" @click="every = clamp(every + 1, 1, 52)">+</button>

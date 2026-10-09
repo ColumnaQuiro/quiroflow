@@ -23,6 +23,13 @@ export interface RepeatRule {
   /** How many visits, the first included. */
   count: number
   /**
+   * Visits in each period, for a care plan of "2 a week" (week and month
+   * units). They are spread evenly through the period on the same days each
+   * time -- 2 a week from a Monday is Monday and Thursday, 3 is Monday,
+   * Wednesday, Friday. Default 1.
+   */
+  perPeriod?: number
+  /**
    * Days to step over instead of booking -- only for `unit: 'day'`, where
    * "daily" means every day the patient could actually be seen. The first
    * date is always kept: it is the one the desk picked.
@@ -46,6 +53,23 @@ export function seriesStarts(first: Date, rule: RepeatRule): Date[] {
   const every = Math.max(1, rule.every)
   const out: Date[] = []
   if (rule.count <= 0) return out
+
+  const perPeriod = Math.max(1, Math.min(7, Math.floor(rule.perPeriod ?? 1)))
+  if (perPeriod > 1 && (rule.unit === 'week' || rule.unit === 'month')) {
+    // Each period starts where a one-a-period series would have put its
+    // visit; the others sit at whole-day offsets through the period (a month
+    // is taken as four weeks for spacing, so the days stay put).
+    const periodDays = rule.unit === 'week' ? 7 * every : 28 * every
+    const offsets = Array.from({ length: perPeriod }, (_, j) => Math.floor((j * periodDays) / perPeriod))
+    for (let i = 0; out.length < rule.count; i++) {
+      const base = rule.unit === 'week' ? new Date(y, m, d + i * 7 * every, h, mi) : new Date(y, m + i * every, Math.min(d, daysInMonth(y, m + i * every)), h, mi)
+      for (const off of offsets) {
+        if (out.length >= rule.count) break
+        out.push(new Date(base.getFullYear(), base.getMonth(), base.getDate() + off, h, mi))
+      }
+    }
+    return out
+  }
 
   if (rule.unit === 'month') {
     for (let i = 0; i < rule.count; i++) {

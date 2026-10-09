@@ -147,7 +147,7 @@ function telHref(n: ContactNumber) {
 }
 
 // -- Care plan and the next visit -------------------------------------------
-interface Plan { id: string; name: string; total_visits: number; frequency_value: number; frequency_unit: string; started_at: string }
+interface Plan { id: string; name: string; total_visits: number; frequency_value: number; frequency_unit: string; visits_per_period: number | null; started_at: string }
 interface NextAppt { id: string; starts_at: string; appointment_types: { name: string } | null }
 const plan = ref<Plan | null>(null)
 const completedInPlan = ref(0)
@@ -160,7 +160,7 @@ const planError = ref('')
 async function loadPlan() {
   planError.value = ''
   const [{ data: plans, error: planErr }, { data: upcoming, error: apptErr }] = await Promise.all([
-    supabase.from('care_plans').select('id, name, total_visits, frequency_value, frequency_unit, started_at').eq('patient_id', patientId).order('created_at', { ascending: false }).limit(1),
+    supabase.from('care_plans').select('id, name, total_visits, frequency_value, frequency_unit, visits_per_period, started_at').eq('patient_id', patientId).order('created_at', { ascending: false }).limit(1),
     supabase
       .from('appointments')
       .select('id, starts_at, appointment_types(name)')

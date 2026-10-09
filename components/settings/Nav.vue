@@ -30,6 +30,7 @@ const allGroups = computed<NavGroup[]>(() => [
       { label: t('Calendar Resources', 'Recursos de calendario'), to: '/settings/rooms', perm: 'clinic_config' },
       { label: t('Mobile App', 'App móvil'), to: '/settings/app', perm: 'clinic_config' },
       { label: t('Referral Sources', 'Fuentes de referencia'), to: '/settings/referral-sources', perm: 'clinic_config' },
+      { label: t('Exercise Library', 'Biblioteca de ejercicios'), to: '/settings/exercises', perm: 'clinic_config' },
       { label: t('New Patient Fields', 'Campos de nuevo paciente'), to: '/settings/new-patient-fields', perm: 'clinic_config' },
     ],
   },

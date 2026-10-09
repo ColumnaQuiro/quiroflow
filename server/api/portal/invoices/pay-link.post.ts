@@ -59,7 +59,9 @@ export default defineEventHandler(async (event) => {
           price_data: { currency: 'eur', unit_amount: remainingCents, product_data: { name: `${account.name} · ${invoice.invoice_number}` } },
         },
       ],
-      payment_intent_data: { metadata: { invoice_id: invoice.id, account_id: account.id } },
+      // source: the webhook tells the clinic a patient paid on their own
+      // (pushPatientAction); online booking's intents carry no source.
+      payment_intent_data: { metadata: { invoice_id: invoice.id, account_id: account.id, source: 'patient_pay' } },
       success_url: `${origin}/payment-done?status=success`,
       cancel_url: `${origin}/payment-done?status=cancelled`,
     },

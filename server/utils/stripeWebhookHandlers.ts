@@ -3,6 +3,8 @@ import type { Database } from '~/types/database.types'
 import type Stripe from 'stripe'
 import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
 import { dispatchPatientRule } from '~/server/utils/automationEngine'
+import { pushPatientAction } from '~/server/utils/staffPush'
+import { formatEur } from '~/utils/billing'
 
 // The subscription an invoice belongs to, in either shape Stripe sends it.
 // Up to 2025-02-24.acacia it is `invoice.subscription`; from 2025-03-31.basil
@@ -363,6 +365,17 @@ export async function handleStripeEvent(supabase: SupabaseClient<Database>, acco
         const paidCents = (payments ?? []).reduce((sum, p) => sum + p.amount_cents, 0)
         if (paidCents >= invoice.total_cents) {
           await supabase.from('invoices').update({ status: 'paid' }).eq('id', invoiceId)
+        }
+        // Paid by the patient from the app or the portal ("Pagar"): tell the
+        // clinic, as nobody at the desk took this money.
+        if (payment && intent.metadata?.source === 'patient_pay' && invoice.patient_id) {
+          const { data: who } = await supabase.from('patients').select('first_name, last_name').eq('id', invoice.patient_id).maybeSingle()
+          const name = who ? `${who.first_name} ${who.last_name ?? ''}`.trim() : 'Un paciente'
+          await pushPatientAction(supabase, {
+            patientId: invoice.patient_id,
+            title: 'Pago online recibido',
+            body: `${name} · ${formatEur(intent.amount_received)}`,
+          })
         }
       }
     }

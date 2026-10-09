@@ -66,6 +66,10 @@ const birthdays = ref<BirthdayPatient[]>([])
 const recallsDue = ref<number | null>(null)
 // Waiting or offered a slot: the web's waitlist page, active entries.
 const waitlistActive = ref<number | null>(null)
+// What patients did on their own today, from the app or the portal: joined
+// the waitlist, paid online (staffPush's patient_actions, as a glance).
+const waitlistSelfToday = ref(0)
+const onlineToday = ref<{ count: number; cents: number } | null>(null)
 // This person's patients on a care plan and behind its cadence, as
 // Recalls due is narrowed (care_plan_continuity_alerts).
 const plansBehind = ref<number | null>(null)
@@ -194,6 +198,34 @@ async function load({ silent = false } = {}) {
         })
     : Promise.resolve(null)
 
+  const waitlistSelfQ = seesRecalls.value
+    ? supabase
+        .from('waitlist_entries')
+        .select('id', { count: 'exact', head: true })
+        .eq('source', 'patient')
+        .gte('created_at', startIso)
+        .then(({ count, error }) => {
+          if (error) throw error
+          return count ?? 0
+        })
+    : Promise.resolve(null)
+
+  // Card payments that came through Stripe today: online bookings and
+  // "Pagar" from the app or the portal -- money nobody at the desk took.
+  const onlineQ = seesMoney.value
+    ? supabase
+        .from('payments')
+        .select('amount_cents')
+        .not('stripe_payment_intent_id', 'is', null)
+        .gte('paid_at', startIso)
+        .lt('paid_at', endIso)
+        .then(({ data, error }) => {
+          if (error) throw error
+          const rows = (data as { amount_cents: number }[] | null) ?? []
+          return { count: rows.length, cents: rows.reduce((sum, r) => sum + r.amount_cents, 0) }
+        })
+    : Promise.resolve(null)
+
   const plansQ = seesRecalls.value
     ? supabase
         .from('care_plan_continuity_alerts')
@@ -205,7 +237,7 @@ async function load({ silent = false } = {}) {
         })
     : Promise.resolve(null)
 
-  const [appts, taskRows, birthdayRows, recalls, takings, waitlist, plans] = await Promise.all([
+  const [appts, taskRows, birthdayRows, recalls, takings, waitlist, plans, waitlistSelf, online] = await Promise.all([
     settle(t('Visits', 'Visitas'), appointmentsQ),
     settle(t('Tasks', 'Tareas'), tasksQ),
     settle(t('Birthdays', 'Cumpleaños'), birthdaysQ),
@@ -213,6 +245,8 @@ async function load({ silent = false } = {}) {
     settle(t('Takings', 'Cobrado'), takingsQ),
     settle(t('Waitlist', 'Lista de espera'), waitlistQ),
     settle(t('Plans behind schedule', 'Planes con retraso'), plansQ),
+    settle(t('Waitlist', 'Lista de espera'), waitlistSelfQ),
+    settle(t('Online payments', 'Pagos online'), onlineQ),
   ])
   if (mine !== run) return
 
@@ -223,6 +257,8 @@ async function load({ silent = false } = {}) {
   if (birthdayRows) birthdays.value = birthdayRows
   recallsDue.value = recalls
   waitlistActive.value = waitlist
+  waitlistSelfToday.value = waitlistSelf ?? 0
+  onlineToday.value = online
   plansBehind.value = plans
   takingsCents.value = takings
   errors.value = nextErrors
@@ -630,6 +666,11 @@ function initialsOf(a: Appointment) {
             <span class="text-[14px] text-ink-900">{{ t('Numbers', 'Números') }}</span>
             <span class="flex items-center gap-1 text-[12.5px] text-ink-muted2">{{ t('Income, visits, no-shows', 'Ingresos, visitas, ausencias') }}<AppChevron :size="12" /></span>
           </NuxtLink>
+          <!-- Paid online today (Stripe): bookings and "Pagar" from the app or portal -->
+          <div v-if="onlineToday && onlineToday.count > 0" class="flex items-center justify-between gap-3 border-t border-line-row py-2" data-cy="myday-online-paid">
+            <span class="text-[14px] text-ink-900">{{ t('Paid online', 'Pagos online') }}</span>
+            <span class="text-[12.5px] font-semibold text-success-text">{{ t(`${onlineToday.count} today · ${formatEur(onlineToday.cents)}`, `${onlineToday.count} hoy · ${formatEur(onlineToday.cents)}`) }}</span>
+          </div>
           <!-- The front desk's cash shift (the web's Caja), for whoever takes payments -->
           <NuxtLink v-if="can('payments_allocate')" to="/cash" class="flex items-center justify-between gap-3 border-t border-line-row py-2" data-cy="myday-cash-open">
             <span class="text-[14px] text-ink-900">{{ t('Cash shift', 'Caja') }}</span>
@@ -643,7 +684,7 @@ function initialsOf(a: Appointment) {
           <NuxtLink v-if="seesRecalls" to="/waitlist" class="flex items-center justify-between gap-3 border-t border-line-row py-2" data-cy="myday-waitlist-open">
             <span class="text-[14px] text-ink-900">{{ t('Waitlist', 'Lista de espera') }}</span>
             <UiSkeleton v-if="loading" class="h-3.5 w-16 rounded-ctlSm" />
-            <span v-else class="flex items-center gap-1 text-[12.5px] text-ink-muted2" data-test="myday-waitlist">{{ waitlistActive === null ? '—' : t(`${waitlistActive} waiting`, `${waitlistActive} en espera`) }}<AppChevron :size="12" /></span>
+            <span v-else class="flex items-center gap-1 text-[12.5px] text-ink-muted2" data-test="myday-waitlist">{{ waitlistActive === null ? '—' : t(`${waitlistActive} waiting`, `${waitlistActive} en espera`) }}<span v-if="waitlistSelfToday > 0" class="font-semibold text-brand-text" data-test="myday-waitlist-self">· {{ t(`+${waitlistSelfToday} today from the app`, `+${waitlistSelfToday} hoy desde la app`) }}</span><AppChevron :size="12" /></span>
           </NuxtLink>
           <button type="button" class="flex w-full items-center justify-between gap-3 border-t border-line-row py-2 text-left focus:outline-none" :aria-expanded="showTasks" data-test="myday-tasks-toggle" @click="showTasks = !showTasks">
             <span class="text-[14px] text-ink-900">{{ t('Tasks', 'Tareas') }}</span>

@@ -32,11 +32,12 @@ describe('Patient activity timeline', () => {
         cy.contains('[data-cy="timeline-event"]', 'Called and left a voicemail').find('[data-cy="timeline-actor"]').should('have.text', 'Test Owner')
         cy.contains('[data-cy="timeline-event"]', 'Perfecto, allí estaré').should('contain', 'App').find('[data-cy="timeline-actor"]').should('have.text', 'Patient')
 
-        cy.get('[data-cy="timeline-filter-recall"]').click()
-        cy.get('[data-cy="timeline-event"]').should('have.length', 1).and('contain', 'voicemail')
+        // Contact: the call and the two app messages.
+        cy.get('[data-cy="timeline-filter-contact"]').click()
+        cy.get('[data-cy="timeline-event"]').should('have.length', 3).and('contain', 'voicemail')
         cy.get('[data-cy="timeline-filter-care"]').click()
         cy.get('[data-cy="timeline-event"]').should('have.length', 2)
-        cy.get('[data-cy="timeline-filter-communication"]').click()
+        cy.get('[data-cy="timeline-filter-visit"]').click()
         cy.get('[data-cy="timeline-event"]').should('have.length', 2)
       })
     })

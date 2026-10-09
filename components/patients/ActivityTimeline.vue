@@ -9,20 +9,30 @@ const t = useT()
 const { events, loading, load } = usePatientTimeline(() => props.patientId, () => props.timeZone)
 defineExpose({ reload: (opts: { silent?: boolean } = {}) => load(opts) })
 
-const FILTERS = computed<{ key: 'all' | TimelineCategory | 'care'; label: string }[]>(() => [
+// Messages and calls are one filter, "Contact": a minor's or a do-not-contact
+// patient's record offers nothing that reads as a way to message them
+// (patient-record-actions.cy.ts), and a chip called "Messages" did.
+type FilterKey = 'all' | 'visit' | 'contact' | 'care' | 'document' | 'billing'
+const FILTERS = computed<{ key: FilterKey; label: string }[]>(() => [
   { key: 'all', label: t('All', 'Todo') },
   { key: 'visit', label: t('Visits', 'Visitas') },
-  { key: 'communication', label: t('Messages', 'Mensajes') },
-  { key: 'recall', label: t('Calls', 'Llamadas') },
+  { key: 'contact', label: t('Contact', 'Contacto') },
   { key: 'care', label: t('Plan & exercises', 'Plan y ejercicios') },
   { key: 'document', label: t('Documents', 'Documentos') },
   { key: 'billing', label: t('Billing', 'Facturación') },
 ])
-const filter = ref<'all' | TimelineCategory | 'care'>('all')
+const filter = ref<FilterKey>('all')
+const GROUPS: Record<Exclude<FilterKey, 'all'>, TimelineCategory[]> = {
+  visit: ['visit'],
+  contact: ['communication', 'recall'],
+  care: ['plan', 'exercise'],
+  document: ['document'],
+  billing: ['billing'],
+}
 const shown = ref(8)
 watch(filter, () => (shown.value = 8))
 const filtered = computed(() =>
-  events.value.filter((e) => filter.value === 'all' || e.category === filter.value || (filter.value === 'care' && (e.category === 'plan' || e.category === 'exercise'))),
+  events.value.filter((e) => filter.value === 'all' || GROUPS[filter.value].includes(e.category)),
 )
 
 const CATEGORY: Record<TimelineCategory, { label: () => string; icon: string; tone: string }> = {

@@ -21,20 +21,25 @@ export function usePatientInvoices(patientId: () => string) {
 
   const invoices = ref<PatientInvoiceRow[]>([])
   const loading = ref(true)
+  // A failed read keeps what was shown and says so, rather than reading as
+  // an empty list.
+  const loadError = ref(false)
   const busyId = ref<string | null>(null)
 
   async function load() {
     const id = patientId()
     if (!id) return
     loading.value = true
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('invoices')
       .select('id, invoice_number, total_cents, status, created_at')
       .eq('patient_id', id)
       .order('created_at', { ascending: false })
       .limit(200)
-    invoices.value = data ?? []
     loading.value = false
+    loadError.value = !!error
+    if (error) return
+    invoices.value = data ?? []
   }
 
   // Opened as a URL, not fetched as a blob: the patient app is a
@@ -61,7 +66,7 @@ export function usePatientInvoices(patientId: () => string) {
 
   watch(patientId, load, { immediate: true })
 
-  return { invoices, loading, busyId, download, reload: load }
+  return { invoices, loading, loadError, busyId, download, reload: load }
 }
 
 export const PATIENT_INVOICE_STATUS: Record<string, { chip: string; label: [string, string] }> = {

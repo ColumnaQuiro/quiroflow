@@ -29,11 +29,47 @@ onMounted(() => {
   shownBefore = true
 })
 function onVisible() {
-  if (document.visibilityState === 'visible') refreshMoney()
+  if (document.visibilityState !== 'visible') return
+  refreshMoney()
+  // Back from paying in the browser: the webhook may have marked it paid.
+  if (paidFromHere) {
+    paidFromHere = false
+    reloadInvoices()
+  }
 }
 onMounted(() => document.addEventListener('visibilitychange', onVisible))
 onBeforeUnmount(() => document.removeEventListener('visibilitychange', onVisible))
-const { invoices, loading: invoicesLoading, busyId, download } = usePatientInvoices(() => patientId.value)
+const { invoices, loading: invoicesLoading, loadError: invoicesError, reload: reloadInvoices, busyId, download } = usePatientInvoices(() => patientId.value)
+
+// "Pagar": an unpaid invoice paid by card on a Stripe page in the browser
+// (server/api/portal/invoices/pay-link.post.ts), offered only where the
+// clinic takes card payments online. The webhook records the payment.
+const authedFetch = useAuthedFetch()
+const canPayOnline = ref(false)
+onMounted(async () => {
+  try {
+    canPayOnline.value = (await authedFetch<{ enabled: boolean }>('/api/portal/invoices/payable')).enabled
+  } catch {
+    canPayOnline.value = false
+  }
+})
+const payingId = ref<string | null>(null)
+const payError = ref('')
+let paidFromHere = false
+async function pay(invoiceId: string) {
+  payingId.value = invoiceId
+  payError.value = ''
+  try {
+    await openWhenReady(async () => (await authedFetch<{ url: string }>('/api/portal/invoices/pay-link', { method: 'POST', body: { invoiceId } })).url)
+    paidFromHere = true
+  } catch (err) {
+    payError.value = (err as { data?: { statusMessage?: string } })?.data?.statusMessage === 'This invoice is already settled.'
+      ? t('That invoice is already paid.', 'Esa factura ya está pagada.')
+      : t("Couldn't open the payment. Try again.", 'No se ha podido abrir el pago. Inténtalo de nuevo.')
+  } finally {
+    payingId.value = null
+  }
+}
 
 // What is unpaid, not the balance, as the staff record shows it
 // (components/patient/BalanceCard.vue, utils/owing.ts): a family bono's
@@ -107,6 +143,16 @@ function eur(cents: number) {
               {{ t(PATIENT_INVOICE_STATUS[inv.status]?.label[0] ?? inv.status, PATIENT_INVOICE_STATUS[inv.status]?.label[1] ?? inv.status) }}
             </span>
             <button
+              v-if="canPayOnline && inv.status === 'unpaid'"
+              type="button"
+              class="h-9 shrink-0 rounded-ctlSm bg-brand px-3 text-[12.5px] font-semibold text-white disabled:opacity-60"
+              :disabled="payingId === inv.id"
+              :data-cy="`patient-pay-${inv.id}`"
+              @click="pay(inv.id)"
+            >
+              {{ payingId === inv.id ? t('Opening…', 'Abriendo…') : t('Pay', 'Pagar') }}
+            </button>
+            <button
               type="button"
               class="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctlSm border border-line-control text-ink-600 disabled:opacity-50"
               :disabled="busyId === inv.id"
@@ -119,7 +165,9 @@ function eur(cents: number) {
             </button>
           </li>
         </ul>
+        <PatientLoadError v-else-if="invoicesError" @retry="reloadInvoices" />
         <PatientEmpty v-else :text="t('No invoices yet.', 'Todavía no hay facturas.')" />
+        <p v-if="payError" role="alert" class="border-t border-line-divider px-4 py-2.5 text-[12.5px] text-danger-text">{{ payError }}</p>
         <div v-if="!showAll && invoices.length > PREVIEW" class="border-t border-line-divider px-4 py-2.5">
           <button type="button" class="text-[12.5px] font-medium text-ink-muted" @click="showAll = true">
             {{ t(`Show all ${invoices.length}`, `Ver las ${invoices.length}`) }}

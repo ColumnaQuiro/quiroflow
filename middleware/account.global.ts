@@ -41,6 +41,8 @@ export default defineNuxtRouteMiddleware(async (to) => {
   // Unsubscribing from a clinic's marketing email: a patient's link, never
   // anything to do with a staff session that happens to be open.
   if (to.path.startsWith('/unsubscribe/')) return
+  // Stripe Checkout's return page for a patient paying from the app.
+  if (to.path === '/payment-done') return
 
   const user = useSupabaseUser()
   if (!user.value) return
@@ -59,6 +61,22 @@ export default defineNuxtRouteMiddleware(async (to) => {
   const store = useAccountStore()
   const supabase = useSupabaseClient()
   const twoFactorGate = useTwoFactor()
+
+  // useSupabaseUser() is not the session. @nuxtjs/supabase fills it from
+  // getClaims() calls it never cancels, so one that resolves after signOut()
+  // writes the old claims straight back. Trusted here, that sent "Sign out"
+  // into a loop with no exit: no team member under an anonymous client, so
+  // /onboarding; no session, so the module's own redirect back to /login; and
+  // round again, forever, while the page sat on an emptied /dashboard. The
+  // browser's own session is the answer (a storage read, no request). The
+  // server's ref is built from this request's cookies, so it cannot lag.
+  if (import.meta.client) {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) {
+      user.value = null
+      return
+    }
+  }
 
   // Two-factor goes before anything that reads the account. Until the code
   // is in, the database returns nothing for this person -- and "no

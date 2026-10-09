@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { formatEur } from '~/utils/billing'
-import { isReceipt } from '~/utils/paymentReceipts'
-import { classifyPaymentForFilter } from '~/utils/incomeAttribution'
+import { formatEur } from '../../utils/billing'
+import { isReceipt } from '../../utils/paymentReceipts'
+import { classifyPaymentForFilter } from '../../utils/incomeAttribution'
 const props = defineProps<{ practitionerId?: string; clinicId?: string }>()
 
 const t = useT()

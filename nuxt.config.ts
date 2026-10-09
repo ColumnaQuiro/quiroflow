@@ -144,6 +144,9 @@ export default defineNuxtConfig({
         // The unsubscribe link in a marketing email: opened by a patient
         // with no QuiroFlow login, gated by its own signed token.
         '/unsubscribe/**',
+        // Where Stripe Checkout returns after a patient pays from the app: the
+        // phone's browser, with no QuiroFlow session.
+        '/payment-done',
         '/forgot-password',
         '/reset-password',
         '/legal/**',
@@ -288,10 +291,13 @@ export default defineNuxtConfig({
       // A second Facebook Login for Business configuration on the same app,
       // for Settings > Leads: it asks for the clinic's Pages and the lead
       // permissions (leads_retrieval, pages_manage_metadata, ...) instead of
-      // a WhatsApp Business Account. Blank until it is created in the Meta
-      // dashboard, and blank hides the Connect card -- the same as the one
-      // above was.
-      metaLeadAdsConfigId: '',
+      // a WhatsApp Business Account. "QuiroFlow lead ads", created 8 Oct
+      // 2026: system-user token that never expires (no refresh exists, so a
+      // 60-day token would stop leads silently), Pages required, ad accounts
+      // optional at ANALYZE only, and leads_retrieval, pages_show_list,
+      // pages_read_engagement, pages_manage_metadata, pages_manage_ads and
+      // ads_management. Blank hides the Connect card.
+      metaLeadAdsConfigId: '2889323534772175',
       // Connect "client ID" (ca_...) from Stripe Dashboard > Connect >
       // Settings -- not a secret, it's meant to sit in a redirect URL.
       stripeConnectClientId: '',

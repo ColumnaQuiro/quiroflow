@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { formatEurFromAmount } from '~/utils/billing'
-import { isReceipt } from '~/utils/paymentReceipts'
-import type { DateRange } from '~/composables/useDateRangePresets'
+import { formatEurFromAmount } from '../../utils/billing'
+import { isReceipt } from '../../utils/paymentReceipts'
+import type { DateRange } from '../../composables/useDateRangePresets'
 
 const props = defineProps<{ dateRange: DateRange; practitionerId?: string; clinicId?: string }>()
 

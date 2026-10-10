@@ -846,7 +846,8 @@ async function fetchPackages(): Promise<() => void> {
       ).data
     : null
   return () => {
-    purchases.value = [...(pkgPurchases ?? []), ...sharedPurchases]
+    // In use first, then the rest, own and shared together (utils/bonoOrder.ts).
+    purchases.value = sortBonos([...(pkgPurchases ?? []), ...sharedPurchases])
     schedules.value = scheduleRows
     if (scheduleRows.length > 0) stripeEvents.value = events ?? []
     packagesLoading.value = false

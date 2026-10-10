@@ -165,6 +165,51 @@ describe('Automation canvas', () => {
     })
   })
 
+  it('waits for a form and branches on one of its answers', () => {
+    const fields = [
+      { id: 'q-how', type: 'choice', label: '¿Cómo te encuentras?', options: ['Mejor', 'Igual'] },
+      { id: 'q-recommend', type: 'scale', label: '¿Recomendarías este tratamiento a alguien cercano?' },
+    ]
+    cy.task<{ id: string }>('db:createDocTemplate', { accountId: account.accountId, title: 'Revisión quiropráctica', fields }).then((form) => {
+      cy.visit('/automations/new')
+      cy.get('[data-test="node-trigger"]').should('be.visible')
+      cy.get('[data-test="automation-name"]').clear().type('Reseña tras la revisión')
+
+      add('[data-test="insert-root-root-0"]', 'wait_until')
+      cy.get('[data-test="wait-event"]').select('doc.completed')
+      cy.get('[data-test="wait-doc"]').select(form.id)
+      cy.get('[data-test="wait-timeout"] input').clear().type('7')
+      cy.get('[data-test="wait-timeout"] select').select('days')
+
+      add('[data-test^="insert-"][data-test$="-met-0"]', 'branch')
+      cy.get('[data-test="condition-add"]').click()
+      cy.get('[data-test="condition-0"] [data-test="condition-field"]').select('doc_answer')
+      cy.get('[data-test="condition-0"] [data-test="condition-doc"]').select(form.id)
+      // A score is what a branch most often asks about, so it is offered first.
+      cy.get('[data-test="condition-0"] [data-test="condition-doc-field"]').should('have.value', 'q-recommend')
+      cy.get('[data-test="condition-0"] [data-test="condition-op"]').select('gte')
+      cy.get('[data-test="condition-0"] [data-test="condition-value"]').clear().type('8')
+      // The wait is before it, so no warning about unanswered forms.
+      cy.get('[data-test="branch-needs-wait"]').should('not.exist')
+      // The canvas reads the question, not "Form answer".
+      cy.contains('[data-test^="node-"]', '¿Recomendarías este tratamiento').should('exist')
+
+      cy.get('[data-test="save"]').click()
+      cy.location('pathname').should('match', /^\/automations\/[0-9a-f-]{36}$/)
+      cy.get('[data-test="save-bar"]').should('not.exist')
+      cy.location('pathname').then((path) => {
+        cy.task<Step[]>('auto:actionsForRule', { ruleId: path.split('/').pop()! }).then((steps) => {
+          const wait = steps.find((s) => s.action_type === 'wait_until')!
+          expect(wait.config).to.include({ event: 'doc.completed', doc_template_id: form.id, timeout_minutes: 7 * 1440 })
+          const branch = steps.find((s) => s.action_type === 'branch')!
+          expect(branch.parent_id).to.eq(wait.id)
+          expect(branch.branch).to.eq('met')
+          expect(branch.config.conditions).to.deep.eq([{ field: 'doc_answer', op: 'gte', value: 8, doc_template_id: form.id, doc_field_id: 'q-recommend' }])
+        })
+      })
+    })
+  })
+
   it('keeps step ids across saves, so someone parked on a step is still on it', () => {
     cy.task<{ id: string }>('auto:createFlowRule', {
       accountId: account.accountId,

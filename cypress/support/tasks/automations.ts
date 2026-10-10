@@ -268,9 +268,13 @@ async function createFlowRule(opts: {
  * Pulls a rule's running runs back so the next tick sees them as due -- and any wait as timed out.
  * `minutesAgo` says how long ago they came due (1 by default), for a run left overdue.
  */
-async function makeRunsDue(opts: { ruleId: string; minutesAgo?: number }) {
+async function makeRunsDue(opts: { ruleId: string; minutesAgo?: number; keepDeadline?: boolean }) {
   const past = new Date(Date.now() - (opts.minutesAgo ?? 1) * 60_000).toISOString()
   check(await admin.from('automation_sequence_runs').update({ resume_at: past }).eq('rule_id', opts.ruleId).eq('status', 'running').select('id'))
+  // A wait that is looked at every tick (a form being completed) is due
+  // before its deadline; leaving the deadline in the future is how a test
+  // says "the next tick, not the timeout".
+  if (opts.keepDeadline) return { ok: true }
   check(
     await admin
       .from('automation_sequence_runs')

@@ -1,3 +1,4 @@
+import type { DocField } from '~/utils/docFields'
 import type { InjectionKey } from 'vue'
 import { OUTLETS, isLeadTrigger } from '~/utils/automationCatalog'
 import { chainOf, findProblems, newStepId, normalizePositions, subtreeIds, type DraftRule, type DraftStep, type Problem } from '~/utils/automationTree'
@@ -120,7 +121,9 @@ export function useAutomationBuilder() {
   const lookup = ref<NameLookup>(emptyLookup())
   const templates = ref<WhatsAppTemplate[]>([])
   const templatesError = ref('')
-  const docTemplates = ref<{ id: string; title: string }[]>([])
+  // With their blocks: a branch can ask about an answer, and offers the
+  // questions of the form it is about.
+  const docTemplates = ref<{ id: string; title: string; fields: DocField[] }[]>([])
   // The questions leads have answered on their forms, newest wording first --
   // each one a variable a lead automation can fill ({{answer_…}}).
   const leadQuestions = ref<{ key: string; question: string }[]>([])
@@ -200,7 +203,7 @@ export function useAutomationBuilder() {
       supabase.from('team_members').select('id, full_name, is_practitioner').is('deleted_at', null).order('full_name'),
       supabase.from('account_roles').select('id, name').order('name'),
       supabase.from('memberships').select('id, name').order('name'),
-      supabase.from('doc_templates').select('id, title').order('title'),
+      supabase.from('doc_templates').select('id, title, fields').order('title'),
       // Recent form submissions are enough to know which questions the
       // clinic's forms ask; there is no catalogue of them anywhere else.
       supabase.from('lead_events').select('body').eq('account_id', store.accountId ?? '').eq('kind', 'qualification').order('occurred_at', { ascending: false }).limit(300),
@@ -214,7 +217,8 @@ export function useAutomationBuilder() {
       memberships: (memberships.data ?? []) as { id: string; name: string }[],
       clinics: store.clinics.map((c) => ({ id: c.id, name: c.name })),
     }
-    docTemplates.value = (docs.data ?? []) as { id: string; title: string }[]
+    docTemplates.value = ((docs.data ?? []) as { id: string; title: string; fields: unknown }[]).map((d) => ({ ...d, fields: Array.isArray(d.fields) ? (d.fields as DocField[]) : [] }))
+    lookup.value = { ...lookup.value, docTemplates: docTemplates.value }
     const questions = new Map<string, string>()
     for (const a of leadAnswersFromEvents((forms.data ?? []) as { body: unknown }[])) {
       const key = answerKey(a.question)

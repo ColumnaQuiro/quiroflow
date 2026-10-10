@@ -28,9 +28,11 @@ export interface NameLookup {
   clinics: { id: string; name: string }[]
   memberships: { id: string; name: string }[]
   templates: { name: string; language: string; bodyText: string }[]
+  /** Forms, with their questions, for conditions on an answer. */
+  docTemplates?: { id: string; title: string; fields: { id: string; label: string }[] }[]
 }
 
-export const emptyLookup = (): NameLookup => ({ appointmentTypes: [], practitioners: [], members: [], roles: [], clinics: [], memberships: [], templates: [] })
+export const emptyLookup = (): NameLookup => ({ appointmentTypes: [], practitioners: [], members: [], roles: [], clinics: [], memberships: [], templates: [], docTemplates: [] })
 
 const names = (ids: unknown, list: { id: string; name?: string; full_name?: string }[]) =>
   (Array.isArray(ids) ? ids : [])
@@ -101,10 +103,16 @@ export function stepTitle(t: Translate, step: DraftStep, lookup: NameLookup): st
   }
 }
 
-export function conditionText(t: Translate, cond: { field?: string; op?: string; value?: unknown }, lookup: NameLookup): string {
+export function conditionText(t: Translate, cond: { field?: string; op?: string; value?: unknown; doc_template_id?: string; doc_field_id?: string }, lookup: NameLookup): string {
   const def = conditionFieldDef(String(cond.field ?? ''))
   if (!def) return t('(no question)', '(sin pregunta)')
   const op = def.ops.find((o) => o.op === cond.op)
+  if (def.value === 'doc_answer') {
+    // The question itself reads better on the canvas than "Form answer".
+    const question = lookup.docTemplates?.find((d) => d.id === cond.doc_template_id)?.fields.find((f) => f.id === cond.doc_field_id)?.label
+    const subject = question ? `«${question.length > 60 ? `${question.slice(0, 57)}…` : question}»` : say(t, def.label)
+    return [subject, op ? say(t, op.label) : '', String(cond.value ?? '')].filter(Boolean).join(' ')
+  }
   let value = ''
   if (def.value === 'balance') {
     value = say(t, BALANCE_OPTIONS.find((b) => b.op === cond.op && Number(cond.value) === b.cents)?.label ?? ['?', '?'])

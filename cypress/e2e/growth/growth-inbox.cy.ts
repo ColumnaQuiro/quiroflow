@@ -358,8 +358,8 @@ describe('Growth in the shared Inbox', () => {
         cy.contains('would have been sent').should('be.visible')
         // The raw enum never reaches the screen.
         cy.contains('would_send').should('not.exist')
-        // A genuinely sent message still reads as sent, in plain words.
-        cy.contains('delivered').should('be.visible')
+        // A genuinely sent message carries its ticks, as a patient thread's do.
+        cy.get('[data-test="lead-message-status"][data-status="delivered"]').should('exist')
       })
 
       // Only the recorded one is marked; the real one keeps the normal bubble.
@@ -423,6 +423,34 @@ describe('Growth in the shared Inbox', () => {
       // The server's words, not a blank rectangle.
       cy.contains('This lead has no phone number to reply to').should('be.visible')
       expect(leadId).to.be.a('string')
+    })
+  })
+
+  it('shows a reply at once with a clock, without blanking the thread', () => {
+    // A reply used to clear the thread and read it again: the panel blinked
+    // to a skeleton and came back scrolled to the top, and the message only
+    // appeared once the round trip was over, with no clock in the meantime.
+    cy.visit('/inbox?growth=1')
+    seedConversation(account, 'No Blink', 'paused').then(() => {
+      cy.reload()
+      cy.intercept('POST', '/api/whatsapp/inbox-send', (req) => {
+        req.reply({ delay: 1500, statusCode: 200, body: { ok: true } })
+      }).as('send')
+      cy.intercept('GET', '/api/growth/leads/*/thread').as('thread')
+      cy.contains('[data-test="lead-row"]', 'No Blink').click()
+      cy.wait('@thread')
+
+      // Marked, so a remount -- the blink -- would show as a fresh element.
+      cy.get('[data-test="lead-messages"]').then(($el) => { $el[0]!.dataset.mark = 'same' })
+      cy.get('[data-test="lead-composer"]').find('textarea').type('Te esperamos el jueves{enter}')
+
+      cy.contains('[data-test="lead-messages"] p', 'Te esperamos el jueves').should('be.visible')
+      cy.get('[data-test="lead-message-status"][data-status="pending"]').should('exist')
+
+      cy.wait('@send')
+      cy.wait('@thread')
+      cy.get('[data-test="lead-thread-loading"]').should('not.exist')
+      cy.get('[data-test="lead-messages"]').should('have.attr', 'data-mark', 'same')
     })
   })
 

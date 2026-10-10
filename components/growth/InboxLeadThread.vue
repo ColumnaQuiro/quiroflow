@@ -82,6 +82,7 @@ function statusLabel(status: string) {
   if (status === 'received') return t('received', 'recibido')
   if (status === 'delivered') return t('delivered', 'entregado')
   if (status === 'read') return t('read', 'leído')
+  if (status === 'pending') return t('sending', 'enviando')
   if (status === 'sent') return t('sent', 'enviado')
   if (status === 'failed') return t('failed', 'fallido')
   return status
@@ -92,6 +93,28 @@ function submit() {
   emit('send', draft.value)
   draft.value = ''
 }
+
+// Opens at the newest message and stays there as messages arrive -- unless
+// somebody has scrolled up to read, who is left where they are. Their own
+// reply always brings them down to it.
+const scroller = ref<HTMLElement | null>(null)
+function nearBottom() {
+  const el = scroller.value
+  return !el || el.scrollHeight - el.scrollTop - el.clientHeight < 80
+}
+function toBottom() {
+  nextTick(() => requestAnimationFrame(() => {
+    if (scroller.value) scroller.value.scrollTop = scroller.value.scrollHeight
+  }))
+}
+onMounted(toBottom)
+watch(
+  () => props.thread.messages.length,
+  (now, before) => {
+    if (now <= before) return
+    if (nearBottom() || props.thread.messages[now - 1]?.from === 'clinic') toBottom()
+  },
+)
 </script>
 
 <template>
@@ -127,7 +150,7 @@ function submit() {
       @hand-back="emit('handBack')"
     />
 
-    <div class="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4">
+    <div ref="scroller" class="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4" data-test="lead-messages">
       <p v-if="!thread.messages.length" class="py-8 text-center text-[12px] text-ink-faint">
         {{ t('No messages yet.', 'Aún no hay mensajes.') }}
       </p>
@@ -160,11 +183,19 @@ function submit() {
         <!-- Status comes off the row Meta acknowledged, so "delivered" here
         means delivered. Nothing claims which human or model wrote it,
         because the row does not record that. -->
-        <span class="text-[10px]" :class="isDryRun(message.status) ? 'text-warning-text' : 'text-ink-faint'">
+        <span class="flex items-center gap-1 text-[10px]" :class="isDryRun(message.status) ? 'text-warning-text' : message.status === 'failed' ? 'text-warning-text' : 'text-ink-faint'">
           <template v-if="isDryRun(message.status)">
             {{ t('Test run · not sent', 'Prueba · no enviado') }} ·
           </template>
-          {{ time(message.at) }} · {{ statusLabel(message.status) }}<template v-if="message.templateName && message.text"> · {{ message.templateName }}</template>
+          {{ time(message.at) }}<template v-if="message.templateName && message.text"> · {{ message.templateName }}</template>
+          <!-- Ours: the ticks a patient thread shows, clock to blue double
+          check, named for a screen reader. Theirs need none. A test run keeps
+          its words, because no tick is true of a message nobody was sent. -->
+          <template v-if="message.from === 'clinic' && !isDryRun(message.status)">
+            <template v-if="message.status === 'failed'"> · {{ statusLabel(message.status) }}</template>
+            <InboxMessageStatus :status="message.status" light :title="statusLabel(message.status)" :aria-label="statusLabel(message.status)" data-test="lead-message-status" />
+          </template>
+          <template v-else-if="isDryRun(message.status)"> · {{ statusLabel(message.status) }}</template>
         </span>
       </div>
     </div>

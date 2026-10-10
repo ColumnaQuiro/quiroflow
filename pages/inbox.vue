@@ -356,6 +356,7 @@ const {
   sending: leadSending,
   drafting: leadDrafting,
   load: loadLeadThread,
+  patchStatus: patchLeadMessageStatus,
   reply: replyToLead,
   draftReply: draftLeadReply,
   discardDraft: discardLeadDraft,
@@ -502,12 +503,12 @@ function selectLeadConversation(c: { key: string; leadId: string }) {
 async function onLeadTakeOver() {
   if (!selectedLead.value) return
   await takeOver(selectedLead.value.leadId)
-  await loadLeadThread(selectedLead.value.leadId)
+  await loadLeadThread(selectedLead.value.leadId, { silent: true })
 }
 async function onLeadHandBack() {
   if (!selectedLead.value) return
   await handBack(selectedLead.value.leadId)
-  await loadLeadThread(selectedLead.value.leadId)
+  await loadLeadThread(selectedLead.value.leadId, { silent: true })
 }
 async function onLeadReply(text: string) {
   if (!selectedLead.value) return
@@ -1368,6 +1369,10 @@ function refreshSoon() {
   refreshTimer = setTimeout(() => {
     loadList({ silent: true })
     if (selected.value) loadThread(selected.value, { silent: true })
+    // The open lead thread too: it is not a patient thread, and without this
+    // a lead's new message only appeared once the thread was opened again.
+    if (selectedLead.value && leadThread.value) loadLeadThread(leadThread.value.id, { silent: true })
+    if (hasGrowth.value) reloadLeadConversations({ silent: true })
     refreshNavBadges(['inbox'])
   }, 400)
 }
@@ -1379,6 +1384,12 @@ function refreshSoon() {
 // message would. One outside the open thread changes nothing on screen.
 function onMessageUpdate(payload: { new: Record<string, unknown> }) {
   const next = payload.new as Partial<Message>
+  // A receipt for a message in the open lead thread: its ticks move in
+  // place, as a patient thread's do.
+  const leadId = payload.new.lead_id
+  if (typeof leadId === 'string' && next.id && next.status && leadThread.value?.id === leadId) {
+    patchLeadMessageStatus(leadId, next.id, next.status)
+  }
   // The list shows the last message's ticks too -- including the failed
   // warning, which is the one that matters -- so when this update is for a
   // conversation's newest message, its row takes the new status in place.

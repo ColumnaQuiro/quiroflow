@@ -776,6 +776,8 @@ watch(
             </template>
           </template>
         </section>
+        <!-- Spinal listings for this visit, tapped L/R, beside today's note -->
+        <AppointmentsSpinalListings v-if="canReadNotes && appointment && context" :appointment-id="appointment.id" :account-id="context.accountId" :team-member-id="context.teamMemberId" :editable="canWriteNotes" />
         </div>
 
         <div class="contents lg:flex lg:min-w-0 lg:flex-col lg:gap-2.5">

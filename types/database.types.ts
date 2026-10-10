@@ -6105,6 +6105,36 @@ export type Database = {
           },
         ]
       }
+      visit_listings: {
+        Row: {
+          account_id: string
+          appointment_id: string
+          created_at: string
+          id: string
+          listings: Json
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          account_id: string
+          appointment_id: string
+          created_at?: string
+          id?: string
+          listings?: Json
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          account_id?: string
+          appointment_id?: string
+          created_at?: string
+          id?: string
+          listings?: Json
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       visit_notes: {
         Row: {
           account_id: string

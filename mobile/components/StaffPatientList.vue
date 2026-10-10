@@ -20,6 +20,10 @@ const search = useState('staff-patient-search', () => '')
 const patients = ref<Patient[]>([])
 const loading = ref(true)
 const loadError = ref(false)
+// The Patients tab is kept alive: back on it, the list is where it was left,
+// and re-read in case someone was added or renamed meanwhile.
+const listBox = ref<HTMLElement | null>(null)
+useKeptAlive({ scrollers: [listBox], onReturn: () => load({ silent: true }) })
 const adding = ref(false)
 // A new patient opens straight on their record, where booking is one tap.
 function created(p: { id: string }) {
@@ -35,9 +39,9 @@ function created(p: { id: string }) {
 // used to invalidate the query, which then read as "No patients found". Only
 // the newest search's answer is kept. The same rules as NewVisitSheet.
 let run = 0
-async function load() {
+async function load(opts: { silent?: boolean } = {}) {
   const mine = ++run
-  loading.value = true
+  if (!opts.silent) loading.value = true
   loadError.value = false
   let query = supabase.from('patients').select('id, first_name, last_name, status').eq('status', 'active').order('first_name').limit(100)
   const words = search.value.trim().split(/\s+/).map(sanitizeSearchToken).filter(Boolean)
@@ -48,12 +52,12 @@ async function load() {
   else patients.value = (data as Patient[] | null) ?? []
   loading.value = false
 }
-onMounted(load)
+onMounted(() => load())
 
 let debounceTimer: ReturnType<typeof setTimeout>
 watch(search, () => {
   clearTimeout(debounceTimer)
-  debounceTimer = setTimeout(load, 300)
+  debounceTimer = setTimeout(() => load(), 300)
 })
 </script>
 
@@ -78,11 +82,11 @@ watch(search, () => {
     <AppSkeletonList v-if="loading && patients.length === 0" avatar :rows="8" class="flex-1" />
     <div v-else-if="loadError && patients.length === 0" class="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center" data-cy="patients-load-error">
       <p class="text-sm text-danger-text">{{ t('Could not load the patients.', 'No se han podido cargar los pacientes.') }}</p>
-      <button type="button" class="h-10 rounded-ctl border border-line-control px-4 text-[13.5px] font-medium text-ink-700" @click="load">{{ t('Try again', 'Reintentar') }}</button>
+      <button type="button" class="h-10 rounded-ctl border border-line-control px-4 text-[13.5px] font-medium text-ink-700" @click="load()">{{ t('Try again', 'Reintentar') }}</button>
     </div>
     <p v-else-if="patients.length === 0" class="flex flex-1 items-center justify-center px-6 text-center text-sm text-ink-muted">{{ t('No patients found.', 'No se encontraron pacientes.') }}</p>
 
-    <div v-else class="flex-1 overflow-y-auto">
+    <div v-else ref="listBox" class="flex-1 overflow-y-auto">
       <NuxtLink
         v-for="p in patients"
         :key="p.id"

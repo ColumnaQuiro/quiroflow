@@ -20,7 +20,7 @@
 // asked again of the database right before the insert -- the slots on screen
 // can be minutes old.
 import type { BusinessHours } from '../../utils/businessHours'
-import type { BookingBusyRange } from '../../utils/bookingSlots'
+import type { BookingBusyRange, StaffTime, StaffTimeState } from '../../utils/bookingSlots'
 import type { AppointmentTypeOverride } from '../../utils/appointmentOverrides'
 import type { ClashCandidateAppointment, ClashCandidateBlock } from '../../utils/moveClash'
 
@@ -245,28 +245,33 @@ async function loadBusy() {
 }
 
 const preferredMs = computed(() => (props.preferredStart ? Date.parse(props.preferredStart) : null))
-const slots = computed(() => {
+// Every time of the day: the free ones as before, and the taken and
+// out-of-hours ones greyed but still choosable -- the desk puts a visit over
+// lunch or on top of another on purpose, as the web calendar lets it after
+// asking (utils/bookingSlots.ts staffDayTimes). The time held down on the
+// agenda is listed whether or not it is on the grid of whole visits.
+const times = computed<StaffTime[]>(() => {
   if (!selectedDate.value || !practitionerId.value) return []
-  const list = bookingSlotsForDay({
+  const p = preferredMs.value
+  return staffDayTimes({
     date: selectedDate.value,
     timeZone: timeZone.value,
     clinicHours: clinicHours.value,
     practitionerHours: practitioner.value?.business_hours,
     durationMinutes: duration.value,
     busy: busy.value,
+    extra: p !== null && clinicDateOf(new Date(p), timeZone.value) === selectedDate.value ? [new Date(p)] : [],
   })
-  // The time held down on the agenda, when it is on this day, still ahead
-  // and free -- whether or not it falls on the grid of whole visits.
-  const p = preferredMs.value
-  if (p !== null && clinicDateOf(new Date(p), timeZone.value) === selectedDate.value && p > Date.now() && !list.some((s) => s.getTime() === p)) {
-    const end = p + duration.value * 60000
-    if (!busy.value.some((b) => Date.parse(b.starts_at) < end && Date.parse(b.ends_at) > p)) {
-      list.push(new Date(p))
-      list.sort((a, b) => a.getTime() - b.getTime())
-    }
-  }
-  return list
 })
+const freeCount = computed(() => times.value.filter((x) => x.state === 'free').length)
+const selectedState = computed<StaffTimeState | null>(() => times.value.find((x) => x.at.getTime() === selectedSlot.value)?.state ?? null)
+const forcing = computed(() => selectedState.value === 'busy' || selectedState.value === 'closed')
+function slotClass(s: StaffTime) {
+  const chosen = selectedSlot.value === s.at.getTime()
+  if (s.state === 'free') return chosen ? 'bg-brand font-semibold text-white' : 'border border-line-control bg-surface text-ink-700'
+  if (chosen) return 'border-[1.5px] border-warning-border bg-warning-bg font-semibold text-warning-text'
+  return `border border-dashed border-line bg-surface-subtle text-ink-faint ${s.state === 'busy' ? 'line-through' : ''}`
+}
 
 // The time of day they usually come, preselected when it is free that day --
 // most patients keep their slot.
@@ -274,9 +279,11 @@ const usualTime = computed(() => {
   const visit = nextVisit.value ?? lastVisit.value
   return visit ? clinicTimeLabel(new Date(visit.starts_at), timeZone.value) : null
 })
-watch(slots, (list) => {
-  if (selectedSlot.value !== null && list.some((s) => s.getTime() === selectedSlot.value)) return
-  if (preferredMs.value !== null && list.some((s) => s.getTime() === preferredMs.value)) {
+// A time already chosen stays chosen, free or not: one picked on purpose over
+// another visit must not be dropped when the diary is read again.
+watch(times, (list) => {
+  if (selectedSlot.value !== null && list.some((s) => s.at.getTime() === selectedSlot.value)) return
+  if (preferredMs.value !== null && list.some((s) => s.at.getTime() === preferredMs.value)) {
     selectedSlot.value = preferredMs.value
     return
   }
@@ -284,8 +291,8 @@ watch(slots, (list) => {
     selectedSlot.value = null
     return
   }
-  const usual = usualTime.value ? list.find((s) => clinicTimeLabel(s, timeZone.value) === usualTime.value) : undefined
-  selectedSlot.value = usual ? usual.getTime() : null
+  const usual = usualTime.value ? list.find((s) => s.state === 'free' && clinicTimeLabel(s.at, timeZone.value) === usualTime.value) : undefined
+  selectedSlot.value = usual ? usual.at.getTime() : null
 })
 
 watch([selectedDate, practitionerId], () => {
@@ -394,7 +401,8 @@ const selectedStart = computed(() => (selectedSlot.value === null ? null : new D
 const ctaLabel = computed(() => {
   if (booking.value) return moving.value ? t('Moving…', 'Moviendo…') : t('Booking…', 'Reservando…')
   if (!selectedStart.value) return t('Pick a time', 'Elige una hora')
-  return `${moving.value ? t('Move to', 'Mover al') : t('Book', 'Reservar')} ${longDay(selectedDate.value)}, ${clinicTimeLabel(selectedStart.value, timeZone.value)}`
+  const verb = forcing.value ? (moving.value ? t('Move anyway to', 'Mover igualmente al') : t('Book anyway', 'Reservar igualmente')) : moving.value ? t('Move to', 'Mover al') : t('Book', 'Reservar')
+  return `${verb} ${longDay(selectedDate.value)}, ${clinicTimeLabel(selectedStart.value, timeZone.value)}`
 })
 const heading = computed(() => props.title || (moving.value ? t('Move the visit', 'Mover la cita') : t('Book the next visit', 'Reservar la próxima cita')))
 
@@ -435,6 +443,40 @@ async function saveMove(start: Date, end: Date) {
   emit('booked', { appointmentId: move.appointmentId, startsAt: start.toISOString(), endsAt: end.toISOString() })
 }
 
+// The web's staff booking (NewAppointmentPanel): same columns, source 'staff'.
+async function insertVisit(start: Date, end: Date) {
+  const { data: created, error } = await supabase
+    .from('appointments')
+    .insert({
+      account_id: context.value!.accountId,
+      clinic_id: clinic.value!.id,
+      patient_id: props.patientId,
+      practitioner_id: practitionerId.value || null,
+      appointment_type_id: typeId.value || null,
+      starts_at: start.toISOString(),
+      ends_at: end.toISOString(),
+      status: 'booked',
+      source: 'staff',
+    } as never)
+    .select('id')
+    .single()
+  if (error || !created) {
+    bookError.value = error?.message ?? t('Could not book the visit.', 'No se ha podido reservar la cita.')
+    return
+  }
+  const appointmentId = (created as { id: string }).id
+  // As the web's staff booking does, both fire-and-forget: the visit is
+  // booked whatever happens to them. Through authedFetch, which reaches the
+  // deployed API from inside the app (a relative /api/ call goes nowhere
+  // there). No confirmation to a minor or a do-not-contact patient, whom
+  // nothing messages.
+  authedFetch('/api/automations/fire', { method: 'POST', body: { triggerEvent: 'appointment.booked', patientId: props.patientId, appointmentId } }).catch(() => {})
+  if (!patient.value?.is_minor && !patient.value?.do_not_contact) {
+    authedFetch('/api/appointments/send-confirmation', { method: 'POST', body: { appointmentId } }).catch(() => {})
+  }
+  emit('booked', { appointmentId, startsAt: start.toISOString(), endsAt: end.toISOString() })
+}
+
 async function book() {
   if (!selectedStart.value || !context.value || !clinic.value || booking.value) return
   bookError.value = ''
@@ -442,9 +484,17 @@ async function book() {
   try {
     const start = selectedStart.value
     const end = new Date(start.getTime() + duration.value * 60000)
-    // Asked again now: someone at the desk may have taken the time since the
-    // slots were drawn.
     const roomId = props.move?.roomId ?? null
+    // A taken or out-of-hours time chosen on purpose (greyed, and the button
+    // says "anyway") is booked over, as the web does once asked.
+    if (forcing.value) {
+      if (props.move) await saveMove(start, end)
+      else await insertVisit(start, end)
+      return
+    }
+    // Asked again now: someone at the desk may have taken the time since the
+    // slots were drawn. Refused, it turns grey and stays chosen, so booking
+    // over it after all is one more tap.
     const fresh = await fetchBusy(start.toISOString(), end.toISOString(), practitionerId.value, roomId)
     // A failed read is not an empty diary: nothing in the database refuses a
     // double booking, so booking on would skip the only check there is.
@@ -462,40 +512,8 @@ async function book() {
       await loadBusy()
       return
     }
-    if (props.move) {
-      await saveMove(start, end)
-      return
-    }
-    const { data: created, error } = await supabase
-      .from('appointments')
-      .insert({
-        account_id: context.value.accountId,
-        clinic_id: clinic.value.id,
-        patient_id: props.patientId,
-        practitioner_id: practitionerId.value || null,
-        appointment_type_id: typeId.value || null,
-        starts_at: start.toISOString(),
-        ends_at: end.toISOString(),
-        status: 'booked',
-        source: 'staff',
-      } as never)
-      .select('id')
-      .single()
-    if (error || !created) {
-      bookError.value = error?.message ?? t('Could not book the visit.', 'No se ha podido reservar la cita.')
-      return
-    }
-    const appointmentId = (created as { id: string }).id
-    // As the web's staff booking does, both fire-and-forget: the visit is
-    // booked whatever happens to them. Through authedFetch, which reaches the
-    // deployed API from inside the app (a relative /api/ call goes nowhere
-    // there). No confirmation to a minor or a do-not-contact patient, whom
-    // nothing messages.
-    authedFetch('/api/automations/fire', { method: 'POST', body: { triggerEvent: 'appointment.booked', patientId: props.patientId, appointmentId } }).catch(() => {})
-    if (!patient.value?.is_minor && !patient.value?.do_not_contact) {
-      authedFetch('/api/appointments/send-confirmation', { method: 'POST', body: { appointmentId } }).catch(() => {})
-    }
-    emit('booked', { appointmentId, startsAt: start.toISOString(), endsAt: end.toISOString() })
+    if (props.move) await saveMove(start, end)
+    else await insertVisit(start, end)
   } finally {
     booking.value = false
   }
@@ -565,23 +583,39 @@ async function book() {
         <div class="min-h-[86px]">
           <div v-if="slotsLoading" class="grid grid-cols-4 gap-1.5"><UiSkeleton v-for="i in 8" :key="i" class="h-[38px] rounded-ctl" /></div>
           <p v-else-if="slotsError" class="text-[13px] text-danger-text">{{ slotsError }}</p>
-          <p v-else-if="slots.length === 0" class="py-3 text-center text-[13px] text-ink-muted">
-            {{ isWorkingDay(selectedDate) ? t('No free times left on this day.', 'No quedan horas libres este día.') : t(`${practitioner?.full_name ?? 'They'} doesn't work this day.`, `${practitioner?.full_name ?? 'No'} no trabaja este día.`) }}
-          </p>
-          <div v-else class="grid grid-cols-4 gap-1.5">
-            <button
-              v-for="s in slots"
-              :key="s.getTime()"
-              type="button"
-              class="h-[38px] rounded-ctl text-[14px] tabular-nums"
-              :class="selectedSlot === s.getTime() ? 'bg-brand font-semibold text-white' : 'border border-line-control bg-surface text-ink-700'"
-              :data-cy="`book-slot-${clinicTimeLabel(s, timeZone)}`"
-              @click="selectedSlot = s.getTime()"
-            >
-              {{ clinicTimeLabel(s, timeZone) }}
-            </button>
-          </div>
-          <p v-if="!hoursConfigured" class="mt-2 text-[11.5px] text-ink-faint">{{ t('No working hours set up, so 08:00–20:00 is shown.', 'No hay horario configurado; se muestra de 08:00 a 20:00.') }}</p>
+          <template v-else>
+            <p v-if="freeCount === 0" class="pb-2 text-[12.5px] text-ink-muted" data-cy="book-no-free">
+              {{ isWorkingDay(selectedDate) ? t('No free times left on this day.', 'No quedan horas libres este día.') : t(`${practitioner?.full_name ?? 'They'} doesn't work this day.`, `${practitioner?.full_name ?? 'No'} no trabaja este día.`) }}
+              {{ times.length ? t('You can still choose a grey time.', 'Aún puedes elegir una hora en gris.') : '' }}
+            </p>
+            <div v-if="times.length" class="grid grid-cols-4 gap-1.5">
+              <button
+                v-for="s in times"
+                :key="s.at.getTime()"
+                type="button"
+                class="h-[38px] rounded-ctl text-[14px] tabular-nums"
+                :class="slotClass(s)"
+                :aria-pressed="selectedSlot === s.at.getTime()"
+                :aria-label="`${clinicTimeLabel(s.at, timeZone)}${s.state === 'busy' ? ` (${t('taken', 'ocupada')})` : s.state === 'closed' ? ` (${t('outside hours', 'fuera de horario')})` : ''}`"
+                :data-cy="`book-slot-${clinicTimeLabel(s.at, timeZone)}`"
+                :data-state="s.state"
+                @click="selectedSlot = s.at.getTime()"
+              >
+                {{ clinicTimeLabel(s.at, timeZone) }}
+              </button>
+            </div>
+            <p v-if="freeCount > 0 && freeCount < times.length" class="mt-2 text-[11.5px] text-ink-faint">
+              {{ t('Grey times are taken or outside working hours. You can still choose one.', 'Las horas en gris están ocupadas o fuera de horario. Aun así puedes elegir una.') }}
+            </p>
+            <p v-if="forcing" role="status" class="mt-2 rounded-ctl border border-warning-border bg-warning-bg px-3 py-2 text-[12.5px] text-warning-text" data-cy="book-slot-warning">
+              {{
+                selectedState === 'busy'
+                  ? t('This overlaps another visit or a block. It will be saved anyway, overlapping.', 'Coincide con otra cita o un bloqueo. Se guardará igualmente, solapada.')
+                  : t('This is outside working hours. It will be saved anyway.', 'Está fuera del horario de atención. Se guardará igualmente.')
+              }}
+            </p>
+          </template>
+          <p v-if="!hoursConfigured" class="mt-2 text-[11.5px] text-ink-faint">{{ t('No working hours set up, so 08:00–20:00 counts as open.', 'No hay horario configurado; se toma de 08:00 a 20:00.') }}</p>
         </div>
 
         <template v-if="moving">

@@ -1,5 +1,7 @@
 <script setup lang="ts">
-definePageMeta({ layout: 'practitioner' })
+// Kept alive between tabs, at the same place in the list (StaffPatientList).
+defineOptions({ name: 'StaffPatientsPage' })
+definePageMeta({ layout: 'practitioner', keepalive: true })
 
 const user = useSupabaseUser()
 watch(user, (u) => { if (!u) navigateTo('/login') }, { immediate: true })

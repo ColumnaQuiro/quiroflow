@@ -2,6 +2,7 @@
 import { normalizeSearchTerm } from '~/utils/searchText'
 import { matchPendingToServer, mergePendingIntoThread, newestInConversation } from '~/utils/inboxPendingMessages'
 import { CHANNEL_LABEL } from '~/composables/useGrowthConversations'
+import { snoozeStateOf, type SnoozeRow } from '~/utils/inboxSnooze'
 
 // The Inbox: one row per conversation from the inbox_conversations view
 // (20260924190000), 50 at a time, filtered and searched by the database --
@@ -45,6 +46,12 @@ interface Conversation {
   assignedTo?: string | null
   labelIds?: string[]
   archived?: boolean
+  /** Snoozed by me and still out of sight, until then (inbox_snoozes). */
+  snoozedUntil?: string | null
+  /** A snooze of mine that has come due and not been opened since. */
+  followUp?: boolean
+  /** Where it sits in my list: a follow-up at the time it came due. */
+  sortAt?: string
 }
 interface InboxRow {
   conversation_key: string
@@ -65,6 +72,9 @@ interface InboxRow {
   unread_for_me: boolean
   my_archived: boolean
   my_label_ids: string[]
+  my_snoozed_until: string | null
+  my_follow_up: boolean
+  my_sort_at: string
 }
 interface PatientOption {
   id: string
@@ -153,6 +163,9 @@ function toConversation(r: InboxRow): Conversation {
     assignedTo: r.assigned_to,
     labelIds: r.my_label_ids ?? [],
     archived: r.my_archived,
+    snoozedUntil: r.my_snoozed_until,
+    followUp: r.my_follow_up,
+    sortAt: r.my_sort_at ?? r.last_at,
   }
 }
 const conversations = computed<Conversation[]>(() => rows.value.map(toConversation))
@@ -196,7 +209,9 @@ const PAGE = 50
 // Archived view: toggled by a single icon button rather than a filter chip,
 // since it's a whole different list (not a narrowing of the active one) --
 // compose doesn't make sense there either, see the template.
-const view = ref<'active' | 'archived'>('active')
+// Snoozed: what I have put off, until it comes back by itself (or I take it
+// back). Like archived, a list of its own rather than a filter.
+const view = ref<'active' | 'archived' | 'snoozed'>('active')
 const tab = ref<'all' | 'mine' | 'unassigned'>('all')
 const unreadOnly = ref(false)
 // "awaiting_us"/"awaiting_patient" is deliberately independent from unread:
@@ -243,7 +258,9 @@ function withoutLeadThreads<Q extends { or: (filters: string) => Q }>(q: Q): Q {
 // Every list query and count shares these, so a count always describes the
 // list beside it.
 function inboxQuery(columns: string, opts?: { count: 'exact'; head: true }) {
-  return supabase.from('inbox_conversations').select(columns, opts).eq('my_archived', view.value === 'archived')
+  const q = supabase.from('inbox_conversations').select(columns, opts).eq('my_archived', view.value === 'archived')
+  if (view.value === 'snoozed') return q.not('my_snoozed_until', 'is', null)
+  return view.value === 'active' ? q.is('my_snoozed_until', null) : q
 }
 
 // The counts are not reloaded here for a tab, filter, search or "load more":
@@ -276,7 +293,10 @@ async function loadList(opts: { silent?: boolean; append?: boolean } = {}) {
     if (keys.length) parts.push(`conversation_key.in.(${keys.map((k) => `"${k}"`).join(',')})`)
     q = q.or(parts.join(','))
   }
-  const { data, error } = await q.order('last_at', { ascending: false }).range(from, from + size)
+  // my_sort_at, not last_at: a follow-up comes back to the top at the time
+  // it was due. The snoozed list goes by when each comes back.
+  const ordered = view.value === 'snoozed' ? q.order('my_snoozed_until', { ascending: true }) : q.order('my_sort_at', { ascending: false })
+  const { data, error } = await ordered.range(from, from + size)
   if (token !== listToken) return
   if (error) {
     loading.value = false
@@ -411,7 +431,9 @@ onMounted(() => {
 // leads having gone somewhere.
 const leadConversationsInView = computed(() => {
   if (!hasGrowth.value || view.value === 'archived') return []
-  let list = leadConversations.value
+  // Snoozed leads follow the view's rule, applied here (their list is not
+  // inbox_conversations): out of sight until due, then a follow-up.
+  let list = leadConversations.value.filter((c) => (leadSnoozeState(c) === 'hidden') === (view.value === 'snoozed'))
   if (search.value.trim()) {
     const q = normalizeSearchTerm(search.value.trim())
     list = list.filter((c) => normalizeSearchTerm(`${c.name} ${c.preview}`).includes(q))
@@ -468,23 +490,30 @@ const selectedLead = computed(() => {
 // comes from the Growth endpoint, so both are read here and applied to it.
 const leadReads = ref<Record<string, string>>({})
 const leadOwners = ref<Record<string, string>>({})
+const leadSnoozes = ref<Record<string, SnoozeRow>>({})
+function leadSnoozeState(c: { key: string; lastMessageAt: string }) {
+  return snoozeStateOf(leadSnoozes.value[c.key], c.lastMessageAt, leadReads.value[c.key])
+}
 async function loadLeadState() {
   if (!hasGrowth.value || !store.accountId || !myId.value) return
-  const [reads, owners] = await Promise.all([
+  const [reads, owners, snoozes] = await Promise.all([
     supabase.from('inbox_reads').select('conversation_key, last_read_at').eq('team_member_id', myId.value).like('conversation_key', 'lead:%'),
     supabase.from('inbox_assignments').select('conversation_key, team_member_id').eq('account_id', store.accountId).like('conversation_key', 'lead:%'),
+    supabase.from('inbox_snoozes').select('conversation_key, snoozed_until, created_at').eq('team_member_id', myId.value).like('conversation_key', 'lead:%'),
   ])
   leadReads.value = Object.fromEntries((reads.data ?? []).map((r) => [r.conversation_key, r.last_read_at]))
   leadOwners.value = Object.fromEntries((owners.data ?? []).map((r) => [r.conversation_key, r.team_member_id]))
+  leadSnoozes.value = Object.fromEntries(((snoozes.data ?? []) as (SnoozeRow & { conversation_key: string })[]).map((r) => [r.conversation_key, r]))
 }
 watch([hasGrowth, () => store.teamMember], () => loadLeadState(), { immediate: true })
 // The endpoint calls a lead unread whenever they wrote last; read since then
 // (by me) it is not -- unless I marked it unread (a read time of the epoch),
 // which holds whoever wrote last, as it does in inbox_conversations.
-watch([leadConversations, leadReads], () => {
+watch([leadConversations, leadReads, leadSnoozes], () => {
   for (const c of leadConversations.value) {
     const readAt = leadReads.value[c.key]
     if (readAt && Date.parse(readAt) === 0) c.unread = true
+    else if (leadSnoozeState(c) === 'follow_up') c.unread = true
     else if (c.unread && readAt && readAt >= c.lastMessageAt) c.unread = false
   }
 })
@@ -543,6 +572,11 @@ function leadRowTime(at: string) {
 // blank the list and show nothing in its place. The filter only bites where
 // there are two kinds of row to tell apart.
 const filteredConversations = computed(() => (sourceFilter.value === 'leads' && hasGrowth.value && view.value !== 'archived' ? [] : conversations.value))
+// A follow-up sits at the time it came due, as the list query orders it.
+function leadSortAt(c: { key: string; lastMessageAt: string }) {
+  const s = leadSnoozes.value[c.key]
+  return leadSnoozeState(c) === 'follow_up' && s ? Math.max(Date.parse(c.lastMessageAt), Date.parse(s.snoozed_until)) : Date.parse(c.lastMessageAt)
+}
 
 // Leads and patient threads in one list, ordered by their last message.
 // Leads used to sit above every patient thread, so a lead from last week
@@ -557,8 +591,8 @@ const listRows = computed<ListRow[]>(() => {
   const oldest = hasMore.value && patients.length ? Date.parse(patients[patients.length - 1]!.lastMessage!.created_at) : null
   const leads = visibleLeadConversations.value.filter((c) => oldest === null || Date.parse(c.lastMessageAt) >= oldest)
   return [
-    ...leads.map((c): ListRow => ({ kind: 'lead', c, at: Date.parse(c.lastMessageAt) })),
-    ...patients.map((c): ListRow => ({ kind: 'patient', c, at: Date.parse(c.lastMessage!.created_at) })),
+    ...leads.map((c): ListRow => ({ kind: 'lead', c, at: view.value === 'snoozed' ? -Date.parse(leadSnoozes.value[c.key]?.snoozed_until ?? c.lastMessageAt) : leadSortAt(c) })),
+    ...patients.map((c): ListRow => ({ kind: 'patient', c, at: view.value === 'snoozed' ? -Date.parse(c.snoozedUntil ?? c.lastMessage!.created_at) : Date.parse(c.sortAt ?? c.lastMessage!.created_at) })),
   ].sort((a, b) => b.at - a.at)
 })
 
@@ -840,7 +874,8 @@ async function setReadAt(keys: string[], at: string) {
   if (!store.accountId || !myId.value || keys.length === 0) return
   const unread = at === new Date(0).toISOString()
   // Marked unread holds whoever wrote last (inbox_conversations.unread_for_me).
-  rows.value = rows.value.map((r) => (keys.includes(r.conversation_key) ? { ...r, unread_for_me: unread } : r))
+  // Read now, a follow-up has been seen; marked unread, it stays one.
+  rows.value = rows.value.map((r) => (keys.includes(r.conversation_key) ? { ...r, unread_for_me: unread, my_follow_up: unread && r.my_follow_up } : r))
   const leadKeys = keys.filter((k) => k.startsWith('lead:'))
   if (leadKeys.length) leadReads.value = { ...leadReads.value, ...Object.fromEntries(leadKeys.map((k) => [k, at])) }
   await supabase
@@ -936,6 +971,37 @@ async function bulkMarkUnreadSelected() {
 function toggleArchiveSelected(key: string) {
   const isArchived = !!selected.value?.archived
   setArchived([key], !isArchived)
+}
+
+// Snooze (just for me): out of my list until then, back as a follow-up. A
+// snoozed conversation leaves the list it was open in, so it is closed.
+const snoozeWhen = (iso: string) => new Date(iso).toLocaleString(t('en-GB', 'es-ES'), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+const snoozeNotice = ref('')
+let snoozeNoticeTimer: ReturnType<typeof setTimeout> | undefined
+async function snoozeKey(key: string, at: string | null) {
+  if (!store.teamMember || !store.accountId) return
+  const { error } = at
+    ? await supabase.from('inbox_snoozes').upsert({ account_id: store.accountId, team_member_id: store.teamMember.id, conversation_key: key, snoozed_until: at, created_at: new Date().toISOString() } as never)
+    : await supabase.from('inbox_snoozes').delete().eq('team_member_id', store.teamMember.id).eq('conversation_key', key)
+  if (error) {
+    snoozeNotice.value = t("Couldn't snooze it. Try again.", 'No se ha podido posponer. Inténtalo de nuevo.')
+  } else {
+    snoozeNotice.value = at
+      ? t(`Snoozed until ${new Date(at).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.`, `Pospuesta hasta el ${new Date(at).toLocaleString('es-ES', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.`)
+      : t('Back in your Inbox.', 'De vuelta en tu bandeja.')
+    if (at && selectedKey.value === key) selectedKey.value = null
+  }
+  clearTimeout(snoozeNoticeTimer)
+  snoozeNoticeTimer = setTimeout(() => (snoozeNotice.value = ''), 4000)
+  if (key.startsWith('lead:')) await loadLeadState()
+  await loadList({ silent: true })
+  refreshNavBadges(['inbox'])
+}
+async function snoozeLead(at: string | null) {
+  const lead = selectedLead.value
+  if (!lead) return
+  if (at) closeLeadThread()
+  await snoozeKey(lead.key, at)
 }
 
 // Who is looking after a conversation. Shared by the whole team, unlike the
@@ -1523,6 +1589,18 @@ function avatarInitials(name: string) {
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18v4H3z" /><path d="M5 9v10h14V9" /><path d="M10 13h4" /></svg>
               </button>
+              <button
+                type="button"
+                data-cy="inbox-snoozed-toggle"
+                class="flex h-9 touch:h-11 w-9 touch:w-11 shrink-0 items-center justify-center rounded-ctl border"
+                :class="view === 'snoozed' ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted hover:bg-surface-subtle'"
+                :aria-pressed="view === 'snoozed'"
+                :aria-label="view === 'snoozed' ? t('Show active conversations', 'Mostrar conversaciones activas') : t('Show what I snoozed', 'Mostrar mis pospuestas')"
+                :title="view === 'snoozed' ? t('Show active conversations', 'Mostrar conversaciones activas') : t('Show what I snoozed', 'Mostrar mis pospuestas')"
+                @click="view = view === 'snoozed' ? 'active' : 'snoozed'"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8" /><path d="M12 9v4l2.5 2.5M5 3L2 6M19 3l3 3" /></svg>
+              </button>
               <div v-if="view === 'active'" ref="composeEl" class="relative shrink-0">
                 <button type="button" data-cy="inbox-new" class="h-9 touch:h-11 rounded-ctl bg-brand px-3.5 text-[14px] font-bold text-surface hover:bg-brand-hover" @click="composeOpen = !composeOpen">
                   {{ t('New', 'Nueva') }}
@@ -1750,6 +1828,7 @@ function avatarInitials(name: string) {
           </div>
           <p v-else-if="filteredConversations.length === 0 && visibleLeadConversations.length === 0" class="p-6 text-center text-[14px] text-ink-faint" data-cy="inbox-empty">
             <template v-if="view === 'archived'">{{ t('No archived conversations.', 'No hay conversaciones archivadas.') }}</template>
+            <template v-else-if="view === 'snoozed'">{{ t('Nothing snoozed. Snooze a conversation from its header to have it come back later.', 'Nada pospuesto. Pospón una conversación desde su cabecera para que vuelva más tarde.') }}</template>
             <template v-else-if="search.trim() || tab !== 'all' || unreadOnly || replyFilter !== 'all' || labelFilter">{{ t('Nothing matches these filters.', 'Nada coincide con estos filtros.') }}</template>
             <template v-else>{{ t('No conversations yet.', 'Aún no hay conversaciones.') }}</template>
           </p>
@@ -1784,6 +1863,8 @@ function avatarInitials(name: string) {
                   this is the one badge that says what kind of row it is. The
                   channel beside it is "how they wrote in"; this is "who". -->
                   <span class="rounded-pill border border-info-border bg-info-bg px-2 py-px text-[11.5px] font-bold text-info-text" data-test="lead-badge">{{ t('Lead', 'Lead') }}</span>
+                  <span v-if="leadSnoozeState(row.c) === 'follow_up'" class="rounded-pill border border-warning-border bg-warning-bg px-2 py-px text-[11.5px] font-bold text-warning-text">{{ t('Follow up', 'Seguimiento') }}</span>
+                  <span v-else-if="view === 'snoozed' && leadSnoozes[row.c.key]" class="rounded-pill border border-chip-border bg-chip-bg px-2 py-px text-[11.5px] text-ink-muted">{{ t('Back', 'Vuelve') }} {{ snoozeWhen(leadSnoozes[row.c.key]!.snoozed_until) }}</span>
                   <span class="rounded-pill border border-chip-border bg-chip-bg px-2 py-px text-[11.5px] text-ink-muted">{{ CHANNEL_LABEL[row.c.channel] }}</span>
                   <span v-if="row.c.hasDraft" class="rounded-pill border border-brand-tintBorder bg-brand-tint px-2 py-px text-[11.5px] font-bold text-brand-text" data-test="draft-ready-badge">{{ t('Draft ready', 'Borrador listo') }}</span>
                   <span v-if="row.c.aiState === 'handling'" class="rounded-pill bg-brand px-2 py-px text-[11.5px] font-bold text-surface">{{ t('AI handling', 'IA gestionando') }}</span>
@@ -1841,7 +1922,9 @@ function avatarInitials(name: string) {
                   </p>
                   <span v-if="row.c.unread" class="h-2.5 w-2.5 shrink-0 rounded-full bg-brand" :aria-label="t('Unread', 'No leída')" data-cy="inbox-row-unread" />
                 </div>
-                <div v-if="row.c.labelIds?.length || row.c.assignedTo" class="mt-1 flex flex-wrap items-center gap-1">
+                <div v-if="row.c.labelIds?.length || row.c.assignedTo || row.c.followUp || row.c.snoozedUntil" class="mt-1 flex flex-wrap items-center gap-1">
+                  <span v-if="row.c.followUp" class="rounded-pill border border-warning-border bg-warning-bg px-2 py-px text-[11.5px] font-bold text-warning-text" data-cy="inbox-row-follow-up">{{ t('Follow up', 'Seguimiento') }}</span>
+                  <span v-else-if="row.c.snoozedUntil" class="rounded-pill border border-chip-border bg-chip-bg px-2 py-px text-[11.5px] text-ink-muted" data-cy="inbox-row-snoozed">{{ t('Back', 'Vuelve') }} {{ snoozeWhen(row.c.snoozedUntil) }}</span>
                   <span
                     v-for="lid in row.c.labelIds"
                     :key="lid"
@@ -1918,6 +2001,11 @@ function avatarInitials(name: string) {
                 </div>
               </div>
             </div>
+            <InboxSnoozeMenu
+              :snoozed-until="leadSnoozeState(selectedLead) === 'hidden' ? leadSnoozes[selectedLead.key]?.snoozed_until : null"
+              @snooze="(at: string) => snoozeLead(at)"
+              @unsnooze="snoozeLead(null)"
+            />
             <button
               type="button"
               data-cy="lead-mark-unread"
@@ -2026,6 +2114,7 @@ function avatarInitials(name: string) {
             @toggle-label="(id: string) => toggleLabelForKeys(id, [selected!.key])"
             @create-label="(name: string, color: string) => createLabel(name, color, [selected!.key])"
           />
+          <InboxSnoozeMenu v-if="!isNewConversation" :snoozed-until="selected.snoozedUntil" @snooze="(at: string) => snoozeKey(selected!.key, at)" @unsnooze="snoozeKey(selected!.key, null)" />
           <button
             v-if="!isNewConversation"
             type="button"
@@ -2242,6 +2331,10 @@ function avatarInitials(name: string) {
       @close="templateModalOpen = false"
       @sent="onTemplateSent"
     />
+
+    <div v-if="snoozeNotice" class="pointer-events-none fixed inset-x-0 bottom-6 z-40 flex justify-center px-4" role="status" data-cy="inbox-snooze-notice">
+      <p class="rounded-full bg-ink-900 px-4 py-2 text-[13.5px] font-medium text-surface shadow-popover">{{ snoozeNotice }}</p>
+    </div>
 
     <div v-if="lightboxUrl" class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-6" @click="lightboxUrl = null">
       <img :src="lightboxUrl" class="max-h-full max-w-full rounded-ctl object-contain" @click.stop />

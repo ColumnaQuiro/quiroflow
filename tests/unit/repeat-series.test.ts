@@ -7,7 +7,7 @@
 process.env.TZ = 'Europe/Madrid'
 
 import { describe, it, expect } from 'vitest'
-import { seriesStarts, seriesProblems } from '../../utils/repeatSeries'
+import { seriesStarts, seriesStartsInZone, seriesProblems } from '../../utils/repeatSeries'
 
 const hhmm = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -130,5 +130,28 @@ describe('A care plan of several visits a period', () => {
   it('is the plain series with 1 a period', () => {
     const plain = seriesStarts(new Date(2026, 9, 5, 10, 0), { unit: 'week', every: 2, count: 3 })
     expect(seriesStarts(new Date(2026, 9, 5, 10, 0), { unit: 'week', every: 2, count: 3, perPeriod: 1 })).toEqual(plain)
+  })
+})
+
+// The staff app books in the clinic's zone, whatever zone the phone is in
+// (seriesStartsInZone).
+describe("A series in the app keeps the clinic's wall-clock time", () => {
+  it('stays at 10:00 in Madrid across the October clock change', () => {
+    // Monday 19 Oct 2026, 10:00 in Madrid (08:00Z); the clocks go back on 25 Oct.
+    const starts = seriesStartsInZone(new Date('2026-10-19T08:00:00Z'), { unit: 'week', every: 1, count: 3 }, 'Europe/Madrid')
+    expect(starts.map((d) => d.toISOString())).toEqual(['2026-10-19T08:00:00.000Z', '2026-10-26T09:00:00.000Z', '2026-11-02T09:00:00.000Z'])
+  })
+
+  it("spreads 2 a week on the clinic's days", () => {
+    // 2 a week from Monday 12 Oct at 18:30 in the Canaries (17:30Z): Monday and Thursday.
+    const starts = seriesStartsInZone(new Date('2026-10-12T17:30:00Z'), { unit: 'week', every: 1, count: 4, perPeriod: 2 }, 'Atlantic/Canary')
+    expect(starts.map((d) => d.toISOString())).toEqual(['2026-10-12T17:30:00.000Z', '2026-10-15T17:30:00.000Z', '2026-10-19T17:30:00.000Z', '2026-10-22T17:30:00.000Z'])
+  })
+
+  it('keeps a late-evening visit on its own clinic date', () => {
+    // 23:30 in Madrid on Monday 12 Oct is already Tuesday in UTC+3 and still
+    // Monday in UTC; the date is the clinic's.
+    const starts = seriesStartsInZone(new Date('2026-10-12T21:30:00Z'), { unit: 'week', every: 1, count: 2 }, 'Europe/Madrid')
+    expect(starts.map((d) => d.toISOString())).toEqual(['2026-10-12T21:30:00.000Z', '2026-10-19T21:30:00.000Z'])
   })
 })

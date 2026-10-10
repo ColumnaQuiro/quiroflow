@@ -219,7 +219,7 @@ const attention = computed<AttentionRow[]>(() => {
 })
 
 // -- Care plan -------------------------------------------------------------
-interface PlanRow { id: string; name: string; total_visits: number; frequency_value: number; frequency_unit: string; visits_per_period: number | null; started_at: string | null }
+interface PlanRow { id: string; name: string; total_visits: number; frequency_value: number; frequency_unit: string; visits_per_period: number | null; started_at: string | null; payment_kind: string | null; package_purchase_id: string | null; patient_membership_id: string | null }
 const plan = ref<PlanRow | null>(null)
 const planCompleted = ref(0)
 const planLoading = ref(true)
@@ -232,7 +232,7 @@ async function loadPlan({ silent = false } = {}) {
   if (!silent) planLoading.value = true
   const { data: plans } = await supabase
     .from('care_plans')
-    .select('id, name, total_visits, frequency_value, frequency_unit, visits_per_period, started_at')
+    .select('id, name, total_visits, frequency_value, frequency_unit, visits_per_period, started_at, payment_kind, package_purchase_id, patient_membership_id')
     .eq('patient_id', props.patient.id)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -448,6 +448,7 @@ function onDetailsUpdated() {
           <div class="mt-2 h-[6px] w-full overflow-hidden rounded-full bg-chip-bg2">
             <div class="h-full rounded-full bg-brand" :style="{ width: `${planPercent}%` }" />
           </div>
+          <PatientsPlanPayment :plan="plan" :visits-left="Math.max(0, plan.total_visits - planCompleted)" />
           <!-- Period by period: only for someone who sees every visit, or a
                colleague's attended visit would read as one missed. -->
           <PatientsPlanPeriods v-if="plan.started_at && seesAllVisits" :patient-id="patient.id" :plan="{ ...plan, started_at: plan.started_at }" />

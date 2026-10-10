@@ -285,6 +285,36 @@ export type Database = {
         }
         Relationships: []
       }
+      inbox_notes: {
+        Row: {
+          account_id: string
+          author_id: string | null
+          body: string
+          conversation_key: string
+          created_at: string
+          id: string
+          mentions: string[]
+        }
+        Insert: {
+          account_id: string
+          author_id?: string | null
+          body: string
+          conversation_key: string
+          created_at?: string
+          id?: string
+          mentions?: string[]
+        }
+        Update: {
+          account_id?: string
+          author_id?: string | null
+          body?: string
+          conversation_key?: string
+          created_at?: string
+          id?: string
+          mentions?: string[]
+        }
+        Relationships: []
+      }
       account_credits: {
         Row: {
           account_id: string

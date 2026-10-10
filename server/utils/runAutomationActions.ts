@@ -313,14 +313,14 @@ async function runForRecipient(
   // first active one. Its time zone formats the appointment variables, and its
   // name, phone and address are variables of their own (clinic_*), so a
   // clinic's WhatsApp template can say how to reach that location.
-  let clinic: { name: string | null; phone: string | null; address: string | null; timezone: string | null } | null = null
+  let clinic: { name: string | null; phone: string | null; address: string | null; timezone: string | null; logo_storage_path?: string | null } | null = null
   if (appointmentId) {
-    const { data: appt } = await supabase.from('appointments').select('starts_at, clinics(name, phone, address, timezone)').eq('id', appointmentId).maybeSingle()
+    const { data: appt } = await supabase.from('appointments').select('starts_at, clinics(name, phone, address, timezone, logo_storage_path)').eq('id', appointmentId).maybeSingle()
     nextAppointmentAt = appt?.starts_at ?? undefined
     clinic = (appt?.clinics as typeof clinic) ?? null
   }
   if (!clinic) {
-    const { data } = await supabase.from('clinics').select('name, phone, address, timezone').eq('account_id', accountId).is('archived_at', null).order('created_at').limit(1).maybeSingle()
+    const { data } = await supabase.from('clinics').select('name, phone, address, timezone, logo_storage_path').eq('account_id', accountId).is('archived_at', null).order('created_at').limit(1).maybeSingle()
     clinic = data ?? null
   }
   // Also resolved once per firing, not per-action -- backs {{google_review_link}}
@@ -328,7 +328,7 @@ async function runForRecipient(
   // wants it). A cheap extra query even when unused, same tradeoff as
   // nextAppointmentAt above, kept simple rather than conditioned on whether
   // any action actually references the token.
-  const { data: account } = await supabase.from('accounts').select('google_review_url').eq('id', accountId).maybeSingle()
+  const { data: account } = await supabase.from('accounts').select('google_review_url, slug').eq('id', accountId).maybeSingle()
   const googleReviewUrl = await trackedReviewLink(supabase, accountId, recipient, origin, account?.google_review_url ?? null, {
     appointmentId,
     // Only when this rule actually sends the link. Minting on every firing
@@ -349,6 +349,9 @@ async function runForRecipient(
     clinicPhone: clinic?.phone ?? undefined,
     clinicAddress: clinic?.address ?? undefined,
     clinicTimezone: clinic?.timezone ?? undefined,
+    // For an email step's logo and booking button (automationEmailHtml).
+    clinicLogoUrl: clinic?.logo_storage_path ? supabase.storage.from('clinic-logos').getPublicUrl(clinic.logo_storage_path).data.publicUrl : undefined,
+    bookingUrl: account?.slug ? `${origin}/book/${account.slug}` : undefined,
   }
 
   // Why an action did nothing, in the sender's words. Actions stay
@@ -960,7 +963,12 @@ async function runEmailAction(
   // channel is set up is the order a clinic actually does things in.
   if (!dryRun && !runtimeConfig.resendApiKey) throw new Error('Email sending is not configured (no Resend API key on this deployment).')
 
-  const html = automationEmailHtml(styleLinks(mergeHtml(rawBody)), { unsubscribe, clinicName: context?.clinicName })
+  const html = automationEmailHtml(styleLinks(mergeHtml(rawBody)), {
+    unsubscribe,
+    clinicName: context?.clinicName,
+    logoUrl: config.include_logo ? context?.clinicLogoUrl : null,
+    button: config.booking_button && context?.bookingUrl ? { text: config.booking_button_text ?? '', url: context.bookingUrl } : null,
+  })
 
   // Deliberately NOT `.catch(() => null)` any more. Resend refuses sends for
   // reasons that are entirely fixable and entirely invisible from here -- an

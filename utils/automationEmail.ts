@@ -21,13 +21,35 @@ export function unsubscribeFooterHtml(link: string, clinicName?: string | null):
   return `<div style="max-width:560px;margin:16px auto 0;padding:0 8px;font-size:12px;line-height:1.5;color:#8A8A96;text-align:center;">Recibes este email porque aceptaste recibir comunicaciones de ${who}. <a href="${escapeHtml(link)}" style="color:#8A8A96;text-decoration:underline;">Darse de baja</a></div>`
 }
 
-/** The whole HTML of an automation email. `bodyHtml` is already merged and styled. */
-export function automationEmailHtml(bodyHtml: string, opts: { unsubscribe?: UnsubscribeLinks | null; clinicName?: string | null } = {}): string {
+/** What an email's preview shows while the step has no message yet, in the email's own (always light) colours. */
+export function emptyBodyPlaceholderHtml(text: string): string {
+  return `<p style="color:#9A9AA6">${escapeHtml(text)}</p>`
+}
+
+/** The default words on the booking button, when the step does not set its own. */
+export const DEFAULT_BOOKING_BUTTON_TEXT = 'Reserva tu próxima cita'
+
+/**
+ * The whole HTML of an automation email. `bodyHtml` is already merged and
+ * styled. Optional blocks an email step can switch on (Settings of the step):
+ * the clinic's logo above the message, and a button to the clinic's online
+ * booking page under it -- the same envelope the step's live preview shows.
+ */
+export function automationEmailHtml(
+  bodyHtml: string,
+  opts: { unsubscribe?: UnsubscribeLinks | null; clinicName?: string | null; logoUrl?: string | null; button?: { text: string; url: string } | null } = {},
+): string {
   const footer = opts.unsubscribe ? unsubscribeFooterHtml(opts.unsubscribe.page, opts.clinicName) : ''
+  const logo = opts.logoUrl
+    ? `<div style="padding:28px 32px 0;text-align:center;"><img src="${escapeHtml(opts.logoUrl)}" alt="${escapeHtml(opts.clinicName?.trim() || '')}" style="max-height:56px;max-width:200px;" /></div>`
+    : ''
+  const button = opts.button?.url
+    ? `<div style="padding:0 32px 32px;text-align:center;"><a href="${escapeHtml(opts.button.url)}" style="display:inline-block;background:#111827;color:#FFFFFF;text-decoration:none;font-weight:600;font-size:14px;padding:12px 22px;border-radius:10px;">${escapeHtml(opts.button.text?.trim() || DEFAULT_BOOKING_BUTTON_TEXT)}</a></div>`
+    : ''
   return `
     <div style="background:#F4F4F6;padding:40px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
-      <div style="max-width:560px;margin:0 auto;background:#FFFFFF;border-radius:14px;border:1px solid #E4E4EA;overflow:hidden;">
-        <div style="padding:24px 32px 32px;font-size:14px;line-height:1.6;color:#4A4A57;">${bodyHtml}</div>
+      <div style="max-width:560px;margin:0 auto;background:#FFFFFF;border-radius:14px;border:1px solid #E4E4EA;overflow:hidden;">${logo}
+        <div style="padding:24px 32px 32px;font-size:14px;line-height:1.6;color:#4A4A57;">${bodyHtml}</div>${button}
       </div>${footer}
     </div>
   `

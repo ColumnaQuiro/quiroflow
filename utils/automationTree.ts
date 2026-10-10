@@ -257,7 +257,7 @@ export function findProblems(rule: DraftRule, steps: DraftStep[], templates: Tem
         break
       }
       case 'branch': {
-        const conditions: { field?: string; op?: string; value?: unknown }[] = Array.isArray(c.conditions) ? c.conditions : []
+        const conditions: { field?: string; op?: string; value?: unknown; doc_template_id?: string; doc_field_id?: string }[] = Array.isArray(c.conditions) ? c.conditions : []
         if (conditions.length === 0) add(step.id, 'An if/else step asks nothing, so everyone would take "Yes".', 'Un paso «Si / si no» no pregunta nada: todos irían por «Sí».')
         for (const cond of conditions) {
           const def = conditionFieldDef(String(cond.field ?? ''))
@@ -266,6 +266,10 @@ export function findProblems(rule: DraftRule, steps: DraftStep[], templates: Tem
             continue
           }
           if (def.subject === 'lead' && !isLeadTrigger(rule.trigger_event)) add(step.id, `"${def.label[0]}" only applies to leads.`, `«${def.label[1]}» solo aplica a leads.`)
+          if (def.subject === 'patient' && def.value === 'doc_answer' && isLeadTrigger(rule.trigger_event)) add(step.id, 'Form answers only apply to patients.', 'Las respuestas de formularios solo aplican a pacientes.')
+          if (def.value === 'doc_answer' && !(isUuid(cond.doc_template_id) && cond.doc_field_id)) {
+            add(step.id, 'A form-answer condition does not say which form and question.', 'Una condición de respuesta no dice qué formulario y qué pregunta.')
+          }
           if (!cond.op) add(step.id, `The condition "${def.label[0]}" has no comparison.`, `La condición «${def.label[1]}» no tiene comparación.`)
           const valueless = VALUELESS_OPS.includes(String(cond.op))
           const empty = cond.value === undefined || cond.value === null || cond.value === '' || (Array.isArray(cond.value) && cond.value.length === 0)
@@ -291,6 +295,33 @@ export function findProblems(rule: DraftRule, steps: DraftStep[], templates: Tem
     }
   }
   return problems
+}
+
+/**
+ * The steps every person has been through by the time they reach `id`: the
+ * ones before it in its own chain, then the step it hangs from and the ones
+ * before that, up to the root.
+ */
+export function stepsBefore(steps: DraftStep[], id: string): DraftStep[] {
+  const out: DraftStep[] = []
+  let step = steps.find((s) => s.id === id)
+  while (step) {
+    const at = step
+    out.push(...chainOf(steps, at.parent_id, at.branch).filter((s) => s.position < at.position))
+    step = at.parent_id ? steps.find((s) => s.id === at.parent_id) : undefined
+    if (step) out.push(step)
+  }
+  return out
+}
+
+/** The forms the WhatsApp steps before `id` send, in no particular order. */
+export function formsSentBefore(steps: DraftStep[], id: string): string[] {
+  const ids = new Set<string>()
+  for (const s of stepsBefore(steps, id)) {
+    if (s.action_type !== 'whatsapp_template') continue
+    for (const d of Array.isArray(s.config?.doc_template_ids) ? s.config.doc_template_ids : []) if (isUuid(d)) ids.add(d)
+  }
+  return [...ids]
 }
 
 /** The message steps of a flow, as "Send test to me" sends them: in tree order, flow steps left out. */

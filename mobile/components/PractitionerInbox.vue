@@ -87,6 +87,18 @@ function settlePending(tempId: string, server: Message[]) {
 }
 
 const messages = ref<Message[]>([])
+// The list used to be built from the newest 500 messages alone, so any
+// conversation whose last message was older than that window -- four days, at
+// a busy clinic -- was simply not in the app: 201 lead threads on the web, 49
+// here. The list now also takes every conversation from inbox_conversations
+// (what the web Inbox lists) and, for a Growth account, its lead threads from
+// /api/growth/conversations (what the web merges in), and a thread's own
+// messages are fetched when it is opened. threadExtra holds those, apart from
+// `messages`, so the 15-second poll does not wipe a thread being read.
+const summaries = ref<Conversation[]>([])
+const threadExtra = ref<Message[]>([])
+const MESSAGE_COLUMNS = 'id, patient_id, phone_number, external_contact_id, lead_id, direction, status, body_preview, template_name, media_type, media_storage_path, media_mime_type, media_filename, channel, created_at'
+const SUMMARY_LIMIT = 400
 const patientNames = ref<Record<string, string>>({})
 const loading = ref(true)
 const readTimestamps = ref<Record<string, string>>({})
@@ -145,7 +157,7 @@ async function load(opts: { silent?: boolean } = {}) {
   const [{ data: waData, error: waError }, { data: appData, error: appError }] = await Promise.all([
     supabase
       .from('whatsapp_messages')
-      .select('id, patient_id, phone_number, external_contact_id, lead_id, direction, status, body_preview, template_name, media_type, media_storage_path, media_mime_type, media_filename, channel, created_at')
+      .select(MESSAGE_COLUMNS)
       .order('created_at', { ascending: false })
       .limit(500),
     supabase.from('patient_app_messages').select('id, patient_id, direction, body, created_at').order('created_at', { ascending: false }).limit(500),
@@ -190,16 +202,153 @@ async function load(opts: { silent?: boolean } = {}) {
     for (const l of leads ?? []) if (l.full_name) names[l.id] = l.full_name
     leadNames.value = names
   }
+  await loadSummaries()
   if (!opts.silent) loading.value = false
+}
+
+interface LeadSummary { key: string; leadId: string; name: string; channel: string; unread: boolean; lastMessageAt: string; preview: string; previewWasNotSent?: boolean; phone: string | null; patientId: string | null }
+function summaryConversation(o: { key: string; patientId: string | null; phone: string | null; externalId: string | null; leadId: string | null; name: string; channel: string; direction: string; status: string; body: string | null; template: string | null; media: string | null; at: string }): Conversation {
+  return {
+    key: o.key,
+    patientId: o.patientId,
+    phoneNumber: o.phone,
+    externalContactId: o.externalId,
+    leadId: o.leadId,
+    name: o.name,
+    channel: o.channel,
+    lastMessage: {
+      id: `summary:${o.key}`,
+      patient_id: o.patientId,
+      phone_number: o.phone,
+      external_contact_id: o.externalId,
+      lead_id: o.leadId,
+      direction: o.direction,
+      status: o.status,
+      body_preview: o.body,
+      template_name: o.template,
+      media_type: o.media,
+      media_storage_path: null,
+      media_mime_type: null,
+      media_filename: null,
+      channel: o.channel,
+      created_at: o.at,
+    },
+    unread: false,
+  }
+}
+const SUMMARY_COLUMNS = 'conversation_key, patient_id, phone_number, external_contact_id, first_name, last_name, last_channel, last_direction, last_status, last_body, last_template_name, last_media_type, last_at'
+type SummaryRow = { conversation_key: string; patient_id: string | null; phone_number: string | null; external_contact_id: string | null; first_name: string | null; last_name: string | null; last_channel: string | null; last_direction: string | null; last_status: string | null; last_body: string | null; last_template_name: string | null; last_media_type: string | null; last_at: string }
+function fromSummaryRow(row: SummaryRow): Conversation {
+  const name = row.first_name ? `${row.first_name} ${row.last_name ?? ''}`.trim() : row.phone_number || (row.external_contact_id ? t('Instagram user', 'Usuario de Instagram') : t('Unknown', 'Desconocido'))
+  return summaryConversation({ key: row.conversation_key, patientId: row.patient_id, phone: row.phone_number, externalId: row.external_contact_id, leadId: null, name, channel: row.last_channel ?? 'whatsapp', direction: row.last_direction ?? 'inbound', status: row.last_status ?? 'sent', body: row.last_body, template: row.last_template_name, media: row.last_media_type, at: row.last_at })
+}
+/** Adds conversations to the summaries, keeping one per key. */
+function mergeSummaries(more: Conversation[]) {
+  const have = new Set(summaries.value.map((c) => c.key))
+  summaries.value = [...summaries.value, ...more.filter((c) => !have.has(c.key))]
+}
+// How far down inbox_conversations the list has read, for "Load more".
+const summaryCount = ref(0)
+const hasMoreSummaries = ref(false)
+const loadingMore = ref(false)
+
+// Every conversation, newest first, whatever the message window above holds.
+async function loadSummaries() {
+  const size = Math.max(SUMMARY_LIMIT, summaryCount.value)
+  const [{ data: rows }, leads] = await Promise.all([
+    supabase.from('inbox_conversations').select(SUMMARY_COLUMNS).eq('account_id', props.accountId).order('last_at', { ascending: false }).range(0, size),
+    leadThreadsAreSeparate.value ? authedFetch<{ conversations: LeadSummary[] }>('/api/growth/conversations').catch(() => null) : Promise.resolve(null),
+  ])
+  const page = (rows ?? []) as SummaryRow[]
+  hasMoreSummaries.value = page.length > size
+  summaryCount.value = Math.min(page.length, size)
+  const list: Conversation[] = page.slice(0, size).map(fromSummaryRow)
+  for (const l of leads?.conversations ?? []) {
+    if (l.leadId && !leadNames.value[l.leadId]) leadNames.value = { ...leadNames.value, [l.leadId]: l.name }
+    list.push(summaryConversation({ key: l.key, patientId: null, phone: l.phone, externalId: null, leadId: l.leadId, name: l.name, channel: l.channel, direction: l.unread ? 'inbound' : 'outbound', status: l.previewWasNotSent ? 'would_send' : 'sent', body: l.preview, template: null, media: null, at: l.lastMessageAt }))
+  }
+  // Kept: what a search or "Load more" found earlier stays in the list.
+  const fresh = new Set(list.map((c) => c.key))
+  summaries.value = [...list, ...summaries.value.filter((c) => !fresh.has(c.key))]
+}
+async function loadMoreSummaries() {
+  if (loadingMore.value) return
+  loadingMore.value = true
+  const from = summaryCount.value
+  const { data } = await supabase.from('inbox_conversations').select(SUMMARY_COLUMNS).eq('account_id', props.accountId).order('last_at', { ascending: false }).range(from, from + SUMMARY_LIMIT)
+  const page = (data ?? []) as SummaryRow[]
+  hasMoreSummaries.value = page.length > SUMMARY_LIMIT
+  summaryCount.value = from + Math.min(page.length, SUMMARY_LIMIT)
+  mergeSummaries(page.slice(0, SUMMARY_LIMIT).map(fromSummaryRow))
+  loadingMore.value = false
+}
+// A search reaches every conversation, not only the loaded ones: by name or
+// number on inbox_conversations, and by anything said in a message -- as the
+// web Inbox searches. What it finds joins the list.
+async function searchServer(term: string) {
+  const clean = term.replace(/[,()*%\\]/g, ' ').trim()
+  if (clean.length < 2) return
+  const [byName, wa, app] = await Promise.all([
+    supabase.from('inbox_conversations').select(SUMMARY_COLUMNS).eq('account_id', props.accountId).or(`search_name.ilike.*${normalizeSearchTerm(clean)}*,phone_number.ilike.*${clean}*`).order('last_at', { ascending: false }).limit(50),
+    supabase.from('whatsapp_messages').select('patient_id, phone_number, external_contact_id, lead_id').ilike('body_preview', `%${clean}%`).limit(200),
+    supabase.from('patient_app_messages').select('patient_id').ilike('body', `%${clean}%`).limit(200),
+  ])
+  if (search.value.trim() !== term) return
+  mergeSummaries(((byName.data ?? []) as SummaryRow[]).map(fromSummaryRow))
+  const keys = new Set<string>()
+  for (const m of (wa.data ?? []) as { patient_id: string | null; phone_number: string | null; external_contact_id: string | null; lead_id: string | null }[]) keys.add(keyOf(m))
+  for (const m of (app.data ?? []) as { patient_id: string }[]) keys.add(m.patient_id)
+  const missing = [...keys].filter((k) => !conversations.value.some((c) => c.key === k) && !k.startsWith('lead:'))
+  if (missing.length) {
+    const { data } = await supabase.from('inbox_conversations').select(SUMMARY_COLUMNS).eq('account_id', props.accountId).in('conversation_key', missing.slice(0, 100))
+    mergeSummaries(((data ?? []) as SummaryRow[]).map(fromSummaryRow))
+  }
+  // Message text matches inside threads not loaded yet: fetched so the
+  // filter below, which searches loaded messages, finds them.
+  for (const k of [...keys].slice(0, 20)) if (!allMessages.value.some((m) => keyOf(m) === k)) loadThreadFor(k)
+}
+
+// A thread's own messages, newest 200, fetched when it is opened -- by the
+// same identity inbox_conversations keys it by.
+async function loadThreadFor(key: string) {
+  const c = conversations.value.find((x) => x.key === key)
+  if (!c) return
+  const leadId = leadIdOfKey(key)
+  let q = supabase.from('whatsapp_messages').select(MESSAGE_COLUMNS).order('created_at', { ascending: false }).limit(200)
+  if (leadId) q = q.eq('lead_id', leadId).is('patient_id', null)
+  else if (c.patientId) q = q.eq('patient_id', c.patientId)
+  else if (c.phoneNumber) q = q.eq('phone_number', c.phoneNumber).is('patient_id', null)
+  else if (c.externalContactId) q = q.eq('external_contact_id', c.externalContactId).is('patient_id', null)
+  else return
+  // Without the lead filter a number's thread would take a Growth lead's
+  // messages too, which are their own conversation there.
+  if (!leadId && !c.patientId && leadThreadsAreSeparate.value) q = q.is('lead_id', null)
+  const [{ data: wa }, { data: app }] = await Promise.all([
+    q,
+    c.patientId
+      ? supabase.from('patient_app_messages').select('id, patient_id, direction, body, created_at').eq('patient_id', c.patientId).order('created_at', { ascending: false }).limit(200)
+      : Promise.resolve({ data: [] as { id: string; patient_id: string; direction: string; body: string; created_at: string }[] }),
+  ])
+  const fetched: Message[] = [
+    ...((wa ?? []) as Message[]),
+    ...((app ?? []) as { id: string; patient_id: string; direction: string; body: string; created_at: string }[]).map((m) => ({
+      id: m.id, patient_id: m.patient_id, phone_number: null, external_contact_id: null, lead_id: null, direction: m.direction, status: 'sent', body_preview: m.body,
+      template_name: null, media_type: null, media_storage_path: null, media_mime_type: null, media_filename: null, channel: 'in_app', created_at: m.created_at,
+    })),
+  ]
+  const known = new Set(threadExtra.value.map((m) => m.id))
+  threadExtra.value = [...threadExtra.value, ...fetched.filter((m) => !known.has(m.id))]
 }
 onMounted(async () => {
   await loadGrowth()
   await load()
 })
 
-const allMessages = computed(() =>
-  mergePendingIntoThread(messages.value, pendingMessages.value, keptKeys.value).sort((a, b) => b.created_at.localeCompare(a.created_at)),
-)
+const allMessages = computed(() => {
+  const inWindow = new Set(messages.value.map((m) => m.id))
+  const server = [...messages.value, ...threadExtra.value.filter((m) => !inWindow.has(m.id))]
+  return mergePendingIntoThread(server, pendingMessages.value, keptKeys.value).sort((a, b) => b.created_at.localeCompare(a.created_at))
+})
 
 // The conversation a message belongs to, keyed exactly as the web Inbox and
 // inbox_conversations key it (a Growth account's lead, else patient, else
@@ -247,6 +396,13 @@ const conversations = computed<Conversation[]>(() => {
       unread: last.direction === 'inbound' && (!readTimestamps.value[key] || readTimestamps.value[key] < last.created_at),
     })
   }
+  // Conversations the loaded messages do not reach, from the summaries.
+  for (const sum of summaries.value) {
+    if (byKey.has(sum.key)) continue
+    const at = sum.lastMessage.created_at
+    list.push({ ...sum, unread: sum.lastMessage.direction === 'inbound' && (!readTimestamps.value[sum.key] || readTimestamps.value[sum.key] < at) })
+    byKey.set(sum.key, [])
+  }
   return list.sort((a, b) => b.lastMessage.created_at.localeCompare(a.lastMessage.created_at))
 })
 
@@ -254,6 +410,14 @@ const conversations = computed<Conversation[]>(() => {
 // -- not just the last message -- so finding "that time they mentioned X"
 // works the same as finding a patient by name or number.
 const search = ref('')
+let searchTimer: ReturnType<typeof setTimeout> | undefined
+watch(search, (term) => {
+  clearTimeout(searchTimer)
+  const q = term.trim()
+  searchTimer = setTimeout(() => {
+    if (search.value.trim() === q && q) searchServer(q)
+  }, 350)
+})
 const conversationSearchText = computed(() => {
   const map: Record<string, string> = {}
   for (const m of allMessages.value) {
@@ -315,6 +479,11 @@ function exitSelectionMode() {
 }
 
 const selectedKey = ref<string | null>(null)
+// Opening a thread fetches its own messages (loadThreadFor), so one the
+// newest-500 window never reached still shows its history.
+watch(selectedKey, (key) => {
+  if (key) loadThreadFor(key)
+})
 // A patient opened from their record (WhatsApp on the patient screen) who has
 // never exchanged a message has no conversation to find, and the thread view
 // rendered nothing at all. This stands in for it until a message exists: the
@@ -1247,6 +1416,16 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
           <span v-if="c.unread" class="mt-2 h-[9px] w-[9px] shrink-0 rounded-full bg-brand" />
           </button>
         </div>
+        <button
+          v-if="!loading && hasMoreSummaries && !search.trim()"
+          type="button"
+          class="block w-full py-4 text-center text-[13.5px] font-semibold text-brand-text disabled:text-ink-muted"
+          :disabled="loadingMore"
+          data-cy="inbox-load-more"
+          @click="loadMoreSummaries"
+        >
+          {{ loadingMore ? t('Loading…', 'Cargando…') : t('Load older conversations', 'Cargar conversaciones anteriores') }}
+        </button>
       </div>
     </div>
 

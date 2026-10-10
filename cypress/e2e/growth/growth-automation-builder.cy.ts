@@ -211,6 +211,18 @@ describe('Automation builder: step panels', () => {
     cy.get('[data-test="test-result"]').should('contain', 'not configured').and('not.contain', 'Failed to send')
   })
 
+  it('previews the email as it goes out, with the booking button', () => {
+    addStep('email')
+    cy.get('[data-test="email-subject"]').type('Te echamos de menos, {{first_name}}', { parseSpecialCharSequences: false })
+    cy.get('[data-test="email-body"]').type('Hace tiempo que no vienes.')
+    cy.get('[data-test="email-preview-subject"]').should('have.text', 'Te echamos de menos, Lucía')
+    cy.get('[data-test="email-preview"] iframe').should('have.attr', 'srcdoc').and('contain', 'Hace tiempo que no vienes.').and('not.contain', 'Reserva tu próxima cita')
+    cy.get('[data-test="email-booking-button"]').check()
+    cy.get('[data-test="email-preview"] iframe').should('have.attr', 'srcdoc').and('contain', 'Reserva tu próxima cita').and('match', /href="http[^"]+\/book\/[^"]+"/)
+    cy.get('[data-test="email-booking-button-text"]').type('Pide tu cita')
+    cy.get('[data-test="email-preview"] iframe').should('have.attr', 'srcdoc').and('contain', 'Pide tu cita')
+  })
+
   it('offers a test mode that records instead of sending', () => {
     cy.get('[data-test="tab-settings"]').click()
     cy.get('[data-test="dry-run-toggle"]').should('have.attr', 'aria-checked', 'false').click()

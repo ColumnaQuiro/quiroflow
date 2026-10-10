@@ -1985,6 +1985,9 @@ export type Database = {
           frequency_value: number
           id: string
           name: string
+          package_purchase_id: string | null
+          patient_membership_id: string | null
+          payment_kind: string
           patient_id: string
           started_at: string
           total_visits: number
@@ -1998,6 +2001,9 @@ export type Database = {
           frequency_value?: number
           id?: string
           name?: string
+          package_purchase_id?: string | null
+          patient_membership_id?: string | null
+          payment_kind?: string
           patient_id: string
           started_at?: string
           total_visits: number
@@ -2011,6 +2017,9 @@ export type Database = {
           frequency_value?: number
           id?: string
           name?: string
+          package_purchase_id?: string | null
+          patient_membership_id?: string | null
+          payment_kind?: string
           patient_id?: string
           started_at?: string
           total_visits?: number
@@ -2436,6 +2445,8 @@ export type Database = {
           fields: Json
           id: string
           title: string
+          language: string | null
+          translation_of: string | null
           updated_at: string
           updated_by: string | null
         }
@@ -2448,6 +2459,8 @@ export type Database = {
           fields?: Json
           id?: string
           title?: string
+          language?: string | null
+          translation_of?: string | null
           updated_at?: string
           updated_by?: string | null
         }
@@ -2460,6 +2473,8 @@ export type Database = {
           fields?: Json
           id?: string
           title?: string
+          language?: string | null
+          translation_of?: string | null
           updated_at?: string
           updated_by?: string | null
         }

@@ -24,6 +24,9 @@ export interface Condition {
   field: string
   op: ConditionOp
   value?: unknown
+  /** 'doc_answer' only: which form, and which question on it. */
+  doc_template_id?: string
+  doc_field_id?: string
 }
 
 export interface BranchConfig {
@@ -56,10 +59,22 @@ export const CONDITION_FIELDS = [
   'lead_stage',
   'lead_source',
   'lead_channel',
+  // An answer on a form the automation sent: a review request for whoever
+  // scored the visit 8 or more, a call for whoever scored it low.
+  'doc_answer',
 ] as const
 
 export type ConditionField = (typeof CONDITION_FIELDS)[number]
-export type ConditionFacts = Partial<Record<ConditionField, unknown>>
+/**
+ * Keyed by factKey(), not by field: a branch may ask about two answers, and
+ * both are 'doc_answer'.
+ */
+export type ConditionFacts = Partial<Record<ConditionField, unknown>> & { [key: string]: unknown }
+
+/** Where a condition's fact is kept in ConditionFacts. */
+export function factKey(c: Pick<Condition, 'field' | 'doc_template_id' | 'doc_field_id'>): string {
+  return c.field === 'doc_answer' ? `doc_answer:${c.doc_template_id ?? ''}:${c.doc_field_id ?? ''}` : c.field
+}
 
 const lower = (v: unknown) => String(v ?? '').toLowerCase()
 
@@ -110,7 +125,7 @@ export function conditionHolds(actual: unknown, op: ConditionOp, expected: unkno
 export function evaluateBranch(config: BranchConfig | null | undefined, facts: ConditionFacts): boolean {
   const conditions = config?.conditions ?? []
   if (conditions.length === 0) return true
-  const results = conditions.map((c) => conditionHolds(facts[c.field as ConditionField], c.op, c.value))
+  const results = conditions.map((c) => conditionHolds(facts[factKey(c)], c.op, c.value))
   return config?.match === 'any' ? results.some(Boolean) : results.every(Boolean)
 }
 

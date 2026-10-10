@@ -233,6 +233,139 @@ describe('Automation engine', () => {
     })
   })
 
+  describe('branching on a form answer', () => {
+    // The revision form: wait for it to come back, then ask for a review
+    // only from whoever would recommend the clinic (8 or more out of 10).
+    const RECOMMEND = 'q-recommend'
+    const answered = (formId: string) => ({
+      triggerEvent: 'appointment.completed',
+      steps: [
+        {
+          type: 'wait_until',
+          config: { event: 'doc.completed', doc_template_id: formId, timeout_minutes: 7 * 1440 },
+          met: [
+            {
+              type: 'branch',
+              config: { conditions: [{ field: 'doc_answer', op: 'gte', value: 8, doc_template_id: formId, doc_field_id: RECOMMEND }] },
+              yes: [whatsapp('pide_resena')],
+              no: [whatsapp('gracias_revision')],
+            },
+          ],
+          timeout: [whatsapp('recuerda_formulario')],
+        },
+      ],
+    })
+    const completeForm = (patientId: string, templateId: string, score: number) =>
+      cy.task('db:createPatientDoc', {
+        accountId: account.accountId,
+        patientId,
+        title: 'Revisión quiropráctica',
+        templateId,
+        completed: true,
+        fields: [{ id: RECOMMEND, type: 'scale', label: '¿Recomendarías este tratamiento a alguien cercano?', value: score }],
+      })
+
+    it('asks whoever scored 8 or more for a review, at the next tick after they answer', () => {
+      cy.task<{ id: string }>('db:createDocTemplate', { accountId: account.accountId, title: 'Revisión quiropráctica' }).then((form) => {
+        flow(answered(form.id)).then((rule) => {
+          patient().then((p) => {
+            fire({ triggerEvent: 'appointment.completed', patientId: p.id })
+            runs(rule.id).then((rs) => {
+              expect(rs[0]!.waiting_for).to.eq('doc.completed')
+              // Looked at again within a tick, not left until the deadline.
+              expect(new Date(rs[0]!.resume_at).getTime()).to.be.lessThan(Date.now() + 20 * 60_000)
+            })
+
+            // Due, but nothing completed yet: still waiting, nothing sent.
+            cy.task('auto:makeRunsDue', { ruleId: rule.id, keepDeadline: true })
+            tick()
+            templates(p.id).should('deep.eq', [])
+            runs(rule.id).its('0.waiting_for').should('eq', 'doc.completed')
+
+            completeForm(p.id, form.id, 9)
+            cy.task('auto:makeRunsDue', { ruleId: rule.id, keepDeadline: true })
+            tick()
+            templates(p.id).should('deep.eq', ['pide_resena'])
+            runs(rule.id).then((rs) => {
+              expect(rs[0]!.status).to.eq('done')
+              events(rs[0]!.id).then((ev) => expect(ev.map((e) => e.outcome)).to.deep.eq(['started', 'waiting', 'met', 'branched', 'dry_run', 'finished']))
+            })
+          })
+        })
+      })
+    })
+
+    it('thanks whoever scored below 8, without asking for a review', () => {
+      cy.task<{ id: string }>('db:createDocTemplate', { accountId: account.accountId, title: 'Revisión quiropráctica' }).then((form) => {
+        flow(answered(form.id)).then((rule) => {
+          patient().then((p) => {
+            fire({ triggerEvent: 'appointment.completed', patientId: p.id })
+            completeForm(p.id, form.id, 6)
+            cy.task('auto:makeRunsDue', { ruleId: rule.id, keepDeadline: true })
+            tick()
+            templates(p.id).should('deep.eq', ['gracias_revision'])
+          })
+        })
+      })
+    })
+
+    it('sends each patient the form in their language, and reads the answer from either version', () => {
+      const blocks = (label: string) => [{ id: RECOMMEND, type: 'scale', label, value: null }]
+      cy.task<{ id: string }>('db:createDocTemplate', { accountId: account.accountId, title: 'Revisión quiropráctica', fields: blocks('¿Recomendarías este tratamiento?') }).then((form) => {
+        cy.task<{ id: string }>('db:createDocTemplate', {
+          accountId: account.accountId,
+          title: 'Chiropractic review',
+          fields: blocks('Would you recommend this treatment?'),
+          language: 'en',
+          translationOf: form.id,
+        }).then((english) => {
+          const sendForm = { type: 'whatsapp_template', config: { template_name: 'revision_form', template_language: 'es', doc_template_ids: [form.id], match_patient_language: true } }
+          flow({ ...answered(form.id), steps: [sendForm, ...answered(form.id).steps] }).then((rule) => {
+            patient({ preferredLanguage: 'en' }).then((en) => {
+              patient().then((es) => {
+                fire({ triggerEvent: 'appointment.completed', patientId: en.id })
+                fire({ triggerEvent: 'appointment.completed', patientId: es.id })
+                // The automation names the Spanish form; each is sent their own.
+                cy.task<{ template_id: string }[]>('auto:docsFor', { patientId: es.id }).then((docs) => expect(docs.map((d) => d.template_id)).to.deep.eq([form.id]))
+                cy.task<{ template_id: string; public_token: string }[]>('auto:docsFor', { patientId: en.id }).then((docs) => {
+                  expect(docs.map((d) => d.template_id)).to.deep.eq([english.id])
+                  // Answered the way the patient's browser does.
+                  cy.task('auto:answerDoc', { token: docs[0]!.public_token, answers: { [RECOMMEND]: 9 } })
+                })
+                cy.task('auto:makeRunsDue', { ruleId: rule.id, keepDeadline: true })
+                tick()
+                templates(en.id).should('deep.eq', ['revision_form', 'pide_resena'])
+                // Not answered yet: still waiting.
+                templates(es.id).should('deep.eq', ['revision_form'])
+              })
+            })
+          })
+        })
+      })
+    })
+
+    it('does not count a copy of the form answered before the automation started', () => {
+      cy.task<{ id: string }>('db:createDocTemplate', { accountId: account.accountId, title: 'Revisión quiropráctica' }).then((form) => {
+        flow(answered(form.id)).then((rule) => {
+          patient().then((p) => {
+            // Last year's revision, a perfect 10.
+            completeForm(p.id, form.id, 10)
+            fire({ triggerEvent: 'appointment.completed', patientId: p.id })
+            cy.task('auto:makeRunsDue', { ruleId: rule.id, keepDeadline: true })
+            tick()
+            templates(p.id).should('deep.eq', [])
+            runs(rule.id).its('0.waiting_for').should('eq', 'doc.completed')
+
+            // Never answered this time: the deadline takes the timeout path.
+            cy.task('auto:makeRunsDue', { ruleId: rule.id })
+            tick()
+            templates(p.id).should('deep.eq', ['recuerda_formulario'])
+          })
+        })
+      })
+    })
+  })
+
   it('notifies the chosen team member', () => {
     flow({
       triggerEvent: 'appointment.no_show',

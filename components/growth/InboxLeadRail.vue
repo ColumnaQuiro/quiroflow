@@ -49,7 +49,7 @@ const t = useT()
 
     <section class="flex flex-col gap-2 border-t border-line-divider pt-3.5">
       <NuxtLink
-        to="/growth/leads"
+        :to="`/growth/leads?lead=${thread.id}`"
         class="flex h-8 items-center justify-center rounded-ctl border border-line-control bg-surface px-3 text-[12px] font-medium text-ink-700 hover:bg-surface-subtle"
       >{{ t('Open lead', 'Abrir contacto') }}</NuxtLink>
     </section>

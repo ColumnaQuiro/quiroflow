@@ -172,6 +172,34 @@ describe('Inbox, as a team', () => {
     })
   })
 
+  it('marks a conversation unread even when the clinic wrote last', () => {
+    // Unread used to mean only "their message, not read since", so the
+    // button did nothing on a thread we had already answered -- the one
+    // somebody most often wants to come back to.
+    cy.seedStaffAccount().then((account) => {
+      cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Olga', lastName: 'Ortega' }).then((olga) => {
+        cy.task('db:createWhatsappMessage', { accountId: account.accountId, patientId: olga.id, phoneNumber: '+34600333444', direction: 'inbound', bodyPreview: '¿Tenéis hueco el jueves?', createdAt: minutesAgo(30) })
+        cy.task('db:createWhatsappMessage', { accountId: account.accountId, patientId: olga.id, phoneNumber: '+34600333444', direction: 'outbound', bodyPreview: 'Sí, a las 18:00', createdAt: minutesAgo(10) })
+
+        cy.login(account.email, account.password)
+        openInbox()
+        row(olga.id).find('[data-cy=inbox-row-unread]').should('not.exist')
+        row(olga.id).click()
+        cy.get('[data-cy=thread-mark-unread]').click()
+        row(olga.id).find('[data-cy=inbox-row-unread]').should('exist')
+
+        // Stored, not only drawn: the list and the badge agree after a reload.
+        openInbox()
+        row(olga.id).find('[data-cy=inbox-row-unread]').should('exist')
+        cy.get('[data-cy=inbox-filter-unread]').should('contain.text', '1')
+
+        // Opening it reads it again.
+        row(olga.id).click()
+        row(olga.id).find('[data-cy=inbox-row-unread]').should('not.exist')
+      })
+    })
+  })
+
   it('opens the patient panel over the thread on a narrower screen, and links from there', () => {
     cy.seedStaffAccount().then((account) => {
       cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Irene', lastName: 'Iglesias', phone: '677001122' }).then((irene) => {

@@ -15,6 +15,7 @@ const t = useT()
   <button
     type="button"
     draggable="true"
+    data-test="lead-card"
     class="flex w-full flex-col gap-1.5 rounded-card border bg-surface p-2.5 text-left shadow-card transition-opacity hover:border-brand-tintBorder focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
     :class="dragging ? 'border-brand-tintBorder opacity-40' : 'border-line'"
     @click="$emit('open')"

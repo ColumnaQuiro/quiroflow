@@ -862,6 +862,9 @@ const within24h = computed(() => {
 const { can, restricted, context: staffContext } = usePractitionerContext()
 // From a patient's thread: their record, and booking them (the record's own
 // sheet, via ?book=1), as the record's Book button allows it.
+// The deployed site, where the clinic's booking page lives (the app itself is
+// served from capacitor://, which no patient can open).
+const apiBase = useRuntimeConfig().public.apiBase as string
 const canBookFromThread = computed(() => !!staffContext.value && !restricted('calendar_read_only') && (staffContext.value.isOwner || staffContext.value.permissions.calendar_scope !== 'none'))
 const templateSheetOpen = ref(false)
 const contactBlocked = ref(false)
@@ -1532,11 +1535,21 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M6.5 7.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM2 13.5c0-2.2 2-3.5 4.5-3.5 1 0 1.9.2 2.6.6M12 9.5v4M10 11.5h4" /></svg>
         </button>
         <button v-if="canLinkSelected" type="button" class="flex h-9 shrink-0 items-center rounded-ctl bg-brand px-2.5 text-[13px] font-semibold text-white" data-cy="inbox-link" @click="linkOpen = true">{{ t('Link', 'Vincular') }}</button>
+        <!-- Record, the booking link and a payment link (InboxChatActions, as
+             on the web); Book stays a button of its own, the one used most. -->
+        <InboxChatActions
+          v-if="!selected.leadId"
+          :account-id="accountId"
+          :patient-id="selected.patientId"
+          :base-url="apiBase"
+          :can-book="canBookFromThread"
+          :can-pay="!!staffContext && (staffContext.isOwner || can('billing_access'))"
+          :pay-link="(invoiceId: string) => authedFetch<{ url: string; remainingCents: number }>(`/api/invoices/${invoiceId}/pay-link`, { method: 'POST' })"
+          @insert="insertReply"
+          @book="navigateTo(`/patients/${selected!.patientId}?book=1`)"
+          @open-record="navigateTo(`/patients/${selected!.patientId}`)"
+        />
         <template v-if="selected.patientId">
-          <NuxtLink :to="`/patients/${selected.patientId}`" class="flex h-9 shrink-0 items-center gap-1 rounded-ctl border border-line-control px-2.5 text-[13px] font-medium text-ink-700" data-cy="inbox-open-record">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M8 8a2.6 2.6 0 100-5.2A2.6 2.6 0 008 8zM3.2 13.4c0-2.3 2.1-3.6 4.8-3.6s4.8 1.3 4.8 3.6" /></svg>
-            {{ t('Record', 'Ficha') }}
-          </NuxtLink>
           <NuxtLink v-if="canBookFromThread" :to="`/patients/${selected.patientId}?book=1`" class="flex h-9 shrink-0 items-center rounded-ctl bg-brand px-2.5 text-[13px] font-semibold text-white" data-cy="inbox-book">
             {{ t('Book', 'Reservar') }}
           </NuxtLink>

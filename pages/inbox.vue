@@ -1069,6 +1069,11 @@ const templateModalOpen = ref(false)
 // Inserts at the cursor rather than replacing composerText outright, so
 // picking a saved reply doesn't clobber anything the practitioner already
 // typed.
+// "Acciones" in the header (InboxChatActions): book them, open their record,
+// or put the booking or a payment link in the reply.
+const requestOrigin = useRequestURL().origin
+const canBookFromChat = computed(() => isRouteAllowed(store, '/calendar'))
+const canPayFromChat = computed(() => store.isOwner || store.permissions.billing_access === true)
 function insertReply(text: string) {
   const el = composerTextarea.value
   if (!el) {
@@ -2019,6 +2024,17 @@ function avatarInitials(name: string) {
               </p>
             </div>
           </div>
+          <InboxChatActions
+            :account-id="store.accountId!"
+            :patient-id="selected.patientId"
+            :base-url="requestOrigin"
+            :can-book="canBookFromChat"
+            :can-pay="canPayFromChat"
+            :pay-link="(invoiceId: string) => useStaffFetch<{ url: string; remainingCents: number }>(`/api/invoices/${invoiceId}/pay-link`, { method: 'POST' })"
+            @insert="insertReply"
+            @book="navigateTo(`/calendar?patient=${selected!.patientId}`)"
+            @open-record="navigateTo(`/patients/${selected!.patientId}`)"
+          />
           <InboxLabelPicker
             v-if="!isNewConversation"
             :labels="labels"

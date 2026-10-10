@@ -12,6 +12,7 @@
 // Pure, so the rules are pinned without a browser (tests/unit/
 // repeat-series.test.ts).
 
+import { clinicDateOf, wallClock, wallClockToUtc } from './clinicClock'
 import { firstClash, type Busy } from './freeSlots'
 
 export type RepeatUnit = 'day' | 'week' | 'month'
@@ -95,6 +96,24 @@ export function seriesStarts(first: Date, rule: RepeatRule): Date[] {
     out.push(day)
   }
   return out
+}
+
+/**
+ * seriesStarts on the CLINIC's clock rather than the device's: the staff app
+ * books in the clinic's zone (bookingSlotsForDay), and a phone set to another
+ * zone, or a series crossing a clock change, would otherwise drift by the
+ * difference. The dates are worked out as seriesStarts does; each lands at
+ * the first visit's wall-clock time in `timeZone`.
+ */
+export function seriesStartsInZone(first: Date, rule: RepeatRule, timeZone: string): Date[] {
+  const [y, m, d] = clinicDateOf(first, timeZone).split('-').map(Number)
+  const { hour, minute } = wallClock(first, timeZone)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const hhmm = `${pad(hour)}:${pad(minute)}`
+  // A device-local stand-in carrying the clinic's date, for the calendar
+  // arithmetic only. Its own time is never read back (a device clock change
+  // could have moved it).
+  return seriesStarts(new Date(y, m - 1, d, 12, 0), rule).map((s) => new Date(wallClockToUtc(`${s.getFullYear()}-${pad(s.getMonth() + 1)}-${pad(s.getDate())}`, hhmm, timeZone)))
 }
 
 export interface SeriesProblem {

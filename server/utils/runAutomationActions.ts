@@ -2,6 +2,7 @@ import { createHmac, randomUUID } from 'node:crypto'
 import { automationFieldValue as recipientFieldValue, withAnswerFallback, leadAnswersFromEvents, type MergeContext } from '~/utils/automationFields'
 import { toE164 } from '~/utils/phone'
 import { renderTemplateFields } from '~/utils/docFields'
+import { templateVariantForLanguage } from '~/utils/templateLanguage'
 import { automationEmailHtml, unsubscribeHeaders, type UnsubscribeLinks } from '~/utils/automationEmail'
 import { serviceSupabase } from '~/server/utils/serviceSupabase'
 import { unsubscribeLinks } from '~/server/utils/unsubscribe'
@@ -34,6 +35,8 @@ export interface PatientForAction {
   occupation?: string | null
   gender?: string | null
   emergency_contact?: string | null
+  /** 'es', 'en'… -- which version of a form or a template they are sent. */
+  preferred_language?: string | null
 }
 /**
  * A lead, for the purposes of being messaged. Deliberately not shaped like a
@@ -586,13 +589,29 @@ async function trackedReviewLink(
 // shapes: appended as `${origin}/doc/${token}` in a message body, or as the
 // bare token substituted into a WhatsApp URL button's {{n}} placeholder
 // (Meta stores the rest of the URL, e.g. ".../doc/{{1}}", on the button itself).
+/** A form's translation into `language`, or the form itself when it has none. */
+export async function docTemplateForLanguage(supabase: any, docTemplateId: string, language: string | null | undefined): Promise<string> {
+  if (!language) return docTemplateId
+  const { data } = await supabase
+    .from('doc_templates')
+    .select('id')
+    .eq('translation_of', docTemplateId)
+    .eq('language', language)
+    .limit(1)
+    .maybeSingle()
+  return data?.id ?? docTemplateId
+}
+
 async function generateDocLink(supabase: any, accountId: string, patient: PatientForAction | undefined, docTemplateId: string): Promise<string | null> {
   // Patient-only by construction. A doc is the patient's own copy of a health
   // history or consent form and hangs off patient_id, so a lead has nothing
   // to attach one to -- the button falls back to Meta's example suffix
   // rather than the send being rejected.
   if (!patient) return null
-  const { data: template } = await supabase.from('doc_templates').select('title, fields').eq('id', docTemplateId).maybeSingle()
+  // The version in the patient's own language, when the form has one. The
+  // automation names the original; a wait or a branch on it counts either.
+  const templateId = await docTemplateForLanguage(supabase, docTemplateId, patient.preferred_language)
+  const { data: template } = await supabase.from('doc_templates').select('title, fields').eq('id', templateId).maybeSingle()
   if (!template) return null
   const rendered = renderTemplateFields(template.fields, {
     first_name: patient.first_name ?? '',
@@ -610,7 +629,7 @@ async function generateDocLink(supabase: any, accountId: string, patient: Patien
   })
   const { data: doc } = await supabase
     .from('patient_docs')
-    .insert({ account_id: accountId, patient_id: patient.id, title: template.title, fields: rendered, template_id: docTemplateId })
+    .insert({ account_id: accountId, patient_id: patient.id, title: template.title, fields: rendered, template_id: templateId })
     .select('public_token')
     .single()
   return doc?.public_token ?? null
@@ -631,7 +650,7 @@ async function runWhatsAppAction(
   attribution?: { ruleId?: string; actionId?: string },
 ): Promise<'sent' | 'dry_run'> {
   const templateName: string | undefined = config.template_name
-  const templateLanguage: string = config.template_language || 'es'
+  let templateLanguage: string = config.template_language || 'es'
   if (!templateName) throw new Error('No WhatsApp template is chosen for this step.')
 
   const { data: account } = await supabase
@@ -726,13 +745,19 @@ async function runWhatsAppAction(
   if (account?.whatsapp_business_account_id) {
     const templates = await $fetch<{ data: { name: string; language: string; components: any[] }[] }>(
       `${useRuntimeConfig().metaGraphBaseUrl}/${account.whatsapp_business_account_id}/message_templates`,
-      { params: { name: templateName, fields: 'name,language,components' }, headers: { Authorization: `Bearer ${account.whatsapp_access_token}` } },
+      { params: { name: templateName, fields: 'name,language,components,status' }, headers: { Authorization: `Bearer ${account.whatsapp_access_token}` } },
     ).catch(() => null)
     // Meta's `name` query param is a fuzzy/substring match, not an exact
     // filter -- e.g. querying "new_patient_arrived_tasks" also returns
     // "new_patient_arrived_tasks_2" -- so the exact name has to be checked
     // again client-side or the wrong template's body/buttons get used.
     const candidates = (templates?.data ?? []).filter((t: { name: string }) => t.name === templateName)
+    // Meta approves a template one language at a time under the same name.
+    // A step that sends in the patient's language picks theirs when it is
+    // approved -- exact, then by base language ('en' for 'en_US') -- and
+    // otherwise the language the step was set to, exactly as before.
+    const own = templateVariantForLanguage(candidates, config.match_patient_language ? recipient.patient?.preferred_language : null)
+    if (own) templateLanguage = own
     const match = candidates.find((t: { language: string }) => t.language === templateLanguage) ?? candidates[0]
 
     const buttons = match?.components?.find((c: any) => c.type === 'BUTTONS')?.buttons ?? []

@@ -623,8 +623,21 @@ async function bookingAndWhatsappSettingsOf(opts: { accountId: string }) {
   )
 }
 
-async function createDocTemplate(opts: { accountId: string; title: string; category?: string }) {
-  return unwrap(await admin.from('doc_templates').insert({ account_id: opts.accountId, title: opts.title, fields: [], category: opts.category ?? null }).select('id').single()) as { id: string }
+async function createDocTemplate(opts: { accountId: string; title: string; category?: string; fields?: unknown[]; language?: string; translationOf?: string }) {
+  return unwrap(
+    await admin
+      .from('doc_templates')
+      .insert({
+        account_id: opts.accountId,
+        title: opts.title,
+        fields: (opts.fields ?? []) as never,
+        category: opts.category ?? null,
+        language: opts.language ?? null,
+        translation_of: opts.translationOf ?? null,
+      })
+      .select('id')
+      .single(),
+  ) as { id: string }
 }
 
 async function commsSettingsOf(opts: { accountId: string }) {

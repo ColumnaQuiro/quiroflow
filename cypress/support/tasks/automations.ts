@@ -44,6 +44,8 @@ async function patient(opts: {
   dateOfBirth?: string
   /** 'inactive' is how the record's Archive leaves a patient. */
   status?: 'active' | 'inactive'
+  /** Which version of a form or template they are sent. */
+  preferredLanguage?: string
 }) {
   const row = check(
     await admin
@@ -60,6 +62,7 @@ async function patient(opts: {
         do_not_contact: opts.doNotContact ?? false,
         date_of_birth: opts.dateOfBirth ?? null,
         status: opts.status ?? 'active',
+        ...(opts.preferredLanguage ? { preferred_language: opts.preferredLanguage } : {}),
       })
       .select('id')
       .single(),
@@ -268,9 +271,35 @@ async function createFlowRule(opts: {
  * Pulls a rule's running runs back so the next tick sees them as due -- and any wait as timed out.
  * `minutesAgo` says how long ago they came due (1 by default), for a run left overdue.
  */
-async function makeRunsDue(opts: { ruleId: string; minutesAgo?: number }) {
+/** The copies of forms a patient has been sent, oldest first. */
+async function docsFor(opts: { patientId: string }) {
+  return check(await admin.from('patient_docs').select('id, template_id, public_token, completed_at').eq('patient_id', opts.patientId).order('created_at')) as {
+    id: string
+    template_id: string | null
+    public_token: string
+    completed_at: string | null
+  }[]
+}
+
+/**
+ * Answers a form the way the patient's browser does: through
+ * save_public_patient_doc, by its public token, completing it.
+ */
+async function answerDoc(opts: { token: string; answers: Record<string, unknown> }) {
+  const doc = check(await admin.from('patient_docs').select('fields').eq('public_token', opts.token).single()) as { fields: { id: string; value?: unknown }[] }
+  const fields = (doc.fields ?? []).map((f) => (f.id in opts.answers ? { ...f, value: opts.answers[f.id] } : f))
+  const { error } = await admin.rpc('save_public_patient_doc' as never, { p_token: opts.token, p_fields: fields, p_complete: true } as never)
+  if (error) throw error
+  return { ok: true }
+}
+
+async function makeRunsDue(opts: { ruleId: string; minutesAgo?: number; keepDeadline?: boolean }) {
   const past = new Date(Date.now() - (opts.minutesAgo ?? 1) * 60_000).toISOString()
   check(await admin.from('automation_sequence_runs').update({ resume_at: past }).eq('rule_id', opts.ruleId).eq('status', 'running').select('id'))
+  // A wait that is looked at every tick (a form being completed) is due
+  // before its deadline; leaving the deadline in the future is how a test
+  // says "the next tick, not the timeout".
+  if (opts.keepDeadline) return { ok: true }
   check(
     await admin
       .from('automation_sequence_runs')
@@ -613,6 +642,8 @@ export const automationTasks = {
   'auto:signStripe': signStripe,
   'auto:createFlowRule': createFlowRule,
   'auto:makeRunsDue': makeRunsDue,
+  'auto:docsFor': docsFor,
+  'auto:answerDoc': answerDoc,
   'auto:patientTags': patientTags,
   'auto:leadRow': leadRow,
   'auto:mergeAsStaff': mergeAsStaff,

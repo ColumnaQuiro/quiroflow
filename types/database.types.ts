@@ -2436,6 +2436,8 @@ export type Database = {
           fields: Json
           id: string
           title: string
+          language: string | null
+          translation_of: string | null
           updated_at: string
           updated_by: string | null
         }
@@ -2448,6 +2450,8 @@ export type Database = {
           fields?: Json
           id?: string
           title?: string
+          language?: string | null
+          translation_of?: string | null
           updated_at?: string
           updated_by?: string | null
         }
@@ -2460,6 +2464,8 @@ export type Database = {
           fields?: Json
           id?: string
           title?: string
+          language?: string | null
+          translation_of?: string | null
           updated_at?: string
           updated_by?: string | null
         }

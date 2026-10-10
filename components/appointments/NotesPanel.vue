@@ -86,6 +86,7 @@ async function removeNote(id: string) {
 
 <template>
   <div>
+    <AppointmentsSpinalListings v-if="store.accountId" class="mb-3" :appointment-id="appointmentId" :account-id="store.accountId" :team-member-id="store.teamMember?.id ?? null" :editable="can('visit_notes_edit')" />
     <div v-if="loading" class="space-y-2">
       <UiSkeleton v-for="i in 2" :key="i" class="h-16 w-full rounded-ctl" />
     </div>

@@ -23,7 +23,7 @@ import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluat
 import { mapWithConcurrency } from '~/server/utils/concurrency'
 import { sendPushToUsers } from '~/server/utils/pushNotifications'
 import { STAGE_TITLES, isLeadStage, type LeadStage } from '~/server/utils/leads'
-import { evaluateBranch, fieldsUsed, type BranchConfig, type ConditionFacts } from '~/utils/automationConditions'
+import { evaluateBranch, factKey, fieldsUsed, type BranchConfig, type ConditionFacts } from '~/utils/automationConditions'
 import { isValidQuietHours, nextAllowedSendTime, segmentIsDue, type QuietHours, type SegmentSchedule } from '~/utils/automationTiming'
 import { automationFieldValue, type MergeContext } from '~/utils/automationFields'
 import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
@@ -58,7 +58,7 @@ import { fetchAllRows } from '~/composables/useFetchAllRows'
 export const MESSAGE_ACTIONS = ['whatsapp_template', 'email', 'webhook'] as const
 
 /** What a wait_until can wait for. */
-export const WAIT_EVENTS = ['appointment.booked', 'whatsapp.replied', 'invoice.paid', 'email.opened', 'email.clicked', 'appointment.checked_in'] as const
+export const WAIT_EVENTS = ['appointment.booked', 'whatsapp.replied', 'invoice.paid', 'email.opened', 'email.clicked', 'appointment.checked_in', 'doc.completed'] as const
 
 /** What can end a run early (automation_rules.exit_on). */
 export const EXIT_EVENTS = ['appointment.booked', 'whatsapp.replied', 'lead.converted'] as const
@@ -67,7 +67,7 @@ export const EXIT_EVENTS = ['appointment.booked', 'whatsapp.replied', 'lead.conv
 const DEFAULT_WAIT_MINUTES = 7 * 24 * 60
 
 const PATIENT_COLUMNS =
-  'id, account_id, first_name, last_name, email, is_minor, do_not_contact, marketing_channels, date_of_birth, address, city, postal_code, country, national_id, occupation, gender, emergency_contact, tags'
+  'id, account_id, first_name, last_name, email, is_minor, do_not_contact, marketing_channels, date_of_birth, address, city, postal_code, country, national_id, occupation, gender, emergency_contact, tags, preferred_language'
 
 export interface EngineAction {
   id: string
@@ -446,10 +446,15 @@ async function walkRun(supabase: any, run: SequenceRun, origin: string, opts: { 
   let start: EngineAction | null
   if (current && waitingEvent && current.action_type === 'wait_until') {
     const deadlinePassed = !run.wait_deadline || new Date(run.wait_deadline).getTime() <= Date.now()
-    const outlet = opts.resume ?? (deadlinePassed ? 'timeout' : null)
+    let outlet: 'met' | 'timeout' | null = opts.resume ?? null
+    // A form is completed in the browser, by the patient, straight against
+    // the database -- or on the reception tablet, or by staff -- so there is
+    // no one place to raise an event from. The wait looks instead, every tick.
+    if (!outlet && waitingEvent === 'doc.completed' && (await completedDocSince(supabase, run, current.config?.doc_template_id))) outlet = 'met'
+    if (!outlet && deadlinePassed) outlet = 'timeout'
     if (!outlet) {
       // Woken early by the tick (a retry, or a clock edge): nothing to do yet.
-      await supabase.from('automation_sequence_runs').update({ resume_at: run.wait_deadline }).eq('id', run.id)
+      await supabase.from('automation_sequence_runs').update({ resume_at: waitResumeAt(waitingEvent, run.wait_deadline) }).eq('id', run.id)
       return
     }
     if (!(await takeWaitOutlet(supabase, run, current, waitingEvent, outlet))) return
@@ -502,12 +507,20 @@ async function walkRun(supabase: any, run: SequenceRun, origin: string, opts: { 
         action = chainOf(action.id, 'timeout')[0] ?? null
         continue
       }
+      // Already done by the time the run gets here: nothing to wait for.
+      if (event === 'doc.completed' && (await completedDocSince(supabase, run, action.config?.doc_template_id))) {
+        await supabase.from('automation_sequence_runs').update({ ...position, current_action_id: action.id, branch_taken: 'met', waiting_for: null, wait_deadline: null }).eq('id', run.id)
+        await logRunEvent(supabase, run, { outcome: 'met', position: eventPosition, action, detail: `${event} happened` })
+        last = action
+        action = chainOf(action.id, 'met')[0] ?? null
+        continue
+      }
       const minutes = Number(action.config?.timeout_minutes)
       const timeout = Number.isFinite(minutes) && minutes > 0 ? Math.max(minutes, SEQUENCE_TICK_MINUTES) : DEFAULT_WAIT_MINUTES
       const deadline = new Date(Date.now() + timeout * 60_000).toISOString()
       await supabase
         .from('automation_sequence_runs')
-        .update({ ...position, current_action_id: action.id, waiting_for: event, wait_deadline: deadline, resume_at: deadline, attempts: 0, last_error: null })
+        .update({ ...position, current_action_id: action.id, waiting_for: event, wait_deadline: deadline, resume_at: waitResumeAt(event, deadline), attempts: 0, last_error: null })
         .eq('id', run.id)
       await logRunEvent(supabase, run, { outcome: 'waiting', position: eventPosition, action, detail: `Until ${event}, or ${deadline}` })
       return
@@ -1068,6 +1081,45 @@ async function notifyRecipients(supabase: any, run: SequenceRun, config: Record<
   return (members ?? []).map((m: { id: string }) => m.id)
 }
 
+/**
+ * When a parked wait_until should next be looked at. Events are delivered, so
+ * those sleep until their deadline; a form completion is looked for, so that
+ * wait is woken every tick until the deadline.
+ */
+function waitResumeAt(event: string, deadline: string | null | undefined): string | null {
+  if (event !== 'doc.completed' || !deadline) return deadline ?? null
+  const poll = Date.now() + SEQUENCE_TICK_MINUTES * 60_000
+  return new Date(Math.min(poll, new Date(deadline).getTime())).toISOString()
+}
+
+/**
+ * The newest of the patient's forms completed since this run started -- of
+ * one template, or of any. "Since this run started" is what ties it to the
+ * form the run itself sent: an old copy of the same form, answered last year,
+ * says nothing about this visit.
+ */
+async function completedDocSince(supabase: any, run: SequenceRun, templateId?: string | null): Promise<{ fields: unknown } | null> {
+  if (!run.patient_id) return null
+  const { data: started } = await supabase.from('automation_sequence_runs').select('started_at').eq('id', run.id).maybeSingle()
+  let query = supabase
+    .from('patient_docs')
+    .select('fields')
+    .eq('patient_id', run.patient_id)
+    .not('completed_at', 'is', null)
+    .gte('created_at', started?.started_at ?? new Date(0).toISOString())
+  // Any version of the form: the patient may have been sent the one in
+  // their own language.
+  if (templateId) query = query.in('template_id', await formAndTranslations(supabase, templateId))
+  const { data } = await query.order('completed_at', { ascending: false }).limit(1).maybeSingle()
+  return data ?? null
+}
+
+/** A form and every translation of it. */
+async function formAndTranslations(supabase: any, templateId: string): Promise<string[]> {
+  const { data } = await supabase.from('doc_templates').select('id').eq('translation_of', templateId)
+  return [templateId, ...((data ?? []) as { id: string }[]).map((d) => d.id)]
+}
+
 /** The facts a branch asks about, looked up only for the fields it uses. */
 async function branchFacts(supabase: any, run: SequenceRun, subject: Subject, config: BranchConfig): Promise<ConditionFacts> {
   const used = fieldsUsed(config)
@@ -1107,6 +1159,16 @@ async function branchFacts(supabase: any, run: SequenceRun, subject: Subject, co
     if (used.has('membership_active')) {
       const { count } = await supabase.from('patient_memberships').select('id', { count: 'exact', head: true }).eq('patient_id', p.id).eq('status', 'active')
       facts.membership_active = (count ?? 0) > 0
+    }
+    if (used.has('doc_answer')) {
+      for (const c of config.conditions ?? []) {
+        if (c.field !== 'doc_answer' || !c.doc_template_id || !c.doc_field_id) continue
+        const doc = await completedDocSince(supabase, run, c.doc_template_id)
+        const blocks = Array.isArray(doc?.fields) ? (doc!.fields as { id?: string; value?: unknown }[]) : []
+        // Absent when the form is not back yet: undefined fails every
+        // comparison, so an unanswered form goes down "No".
+        facts[factKey(c)] = blocks.find((f) => f.id === c.doc_field_id)?.value ?? undefined
+      }
     }
     if ((used.has('appointment_type_id') || used.has('practitioner_id')) && run.appointment_id) {
       const { data } = await supabase.from('appointments').select('appointment_type_id, practitioner_id').eq('id', run.appointment_id).maybeSingle()

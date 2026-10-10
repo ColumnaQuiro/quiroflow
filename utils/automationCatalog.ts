@@ -306,6 +306,7 @@ export const WAIT_EVENTS: WaitEventDef[] = [
   { value: 'email.opened', until: ['Wait until they open the email', 'Esperar hasta que abra el email'], label: ['They open the email', 'Abra el email'], met: ['Opened', 'Lo abrió'], timeoutPrefix: ['Not opened in', 'No lo abrió en'] },
   { value: 'email.clicked', until: ['Wait until they click the email', 'Esperar hasta que haga clic'], label: ['They click a link in the email', 'Haga clic en el email'], met: ['Clicked', 'Hizo clic'], timeoutPrefix: ['No click in', 'No hizo clic en'] },
   { value: 'appointment.checked_in', until: ['Wait until they check in', 'Esperar hasta que haga check-in'], label: ['They check in', 'Haga check-in'], met: ['Checked in', 'Hizo check-in'], timeoutPrefix: ['No check-in in', 'Sin check-in en'] },
+  { value: 'doc.completed', until: ['Wait until they complete the form', 'Esperar hasta que complete el formulario'], label: ['They complete a form', 'Complete un formulario'], met: ['Completed', 'Lo completó'], timeoutPrefix: ['Not completed in', 'No lo completó en'] },
 ]
 export const waitEventDef = (value: string) => WAIT_EVENTS.find((w) => w.value === value) ?? null
 
@@ -347,7 +348,7 @@ export function quietHoursText(t: Translate, q: { from: string; to: string; days
 
 // ------------------------------------------------------------------ conditions
 
-export type ValueKind = 'none' | 'text' | 'number' | 'multi' | 'balance' | 'channel'
+export type ValueKind = 'none' | 'text' | 'number' | 'multi' | 'balance' | 'channel' | 'doc_answer'
 export type OptionSource = 'appointment_types' | 'practitioners' | 'lead_stages' | 'lead_channels' | 'clinics' | 'memberships'
 
 export interface ConditionFieldDef {
@@ -410,6 +411,18 @@ export const BRANCH_FIELDS: ConditionFieldDef[] = [
       { op: 'is_not', label: ['did not accept', 'no aceptó'] },
     ],
     value: 'channel',
+    subject: 'patient',
+  },
+  {
+    field: 'doc_answer',
+    label: ['Form answer', 'Respuesta de un formulario'],
+    ops: [
+      { op: 'gte', label: ['at least', 'al menos'] },
+      { op: 'lte', label: ['at most', 'como mucho'] },
+      { op: 'is', label: ['is', 'es'] },
+      { op: 'contains', label: ['contains', 'contiene'] },
+    ],
+    value: 'doc_answer',
     subject: 'patient',
   },
   { field: 'replied_since_start', label: ['Replied on WhatsApp', 'Respondió por WhatsApp'], ops: BOOL_OPS, value: 'none' },

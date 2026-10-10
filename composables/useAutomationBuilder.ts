@@ -1,3 +1,4 @@
+import type { DocField } from '~/utils/docFields'
 import type { InjectionKey } from 'vue'
 import { OUTLETS, isLeadTrigger } from '~/utils/automationCatalog'
 import { chainOf, findProblems, newStepId, normalizePositions, subtreeIds, type DraftRule, type DraftStep, type Problem } from '~/utils/automationTree'
@@ -71,7 +72,7 @@ const blankRule = (): DraftRule => ({
 export function defaultConfig(type: string): Record<string, any> {
   switch (type) {
     case 'whatsapp_template':
-      return { template_name: '', template_language: 'es', variables: [], doc_template_ids: [] }
+      return { template_name: '', template_language: 'es', variables: [], doc_template_ids: [], match_patient_language: true }
     case 'email':
       return { subject: '', body: '' }
     case 'webhook':
@@ -96,6 +97,7 @@ export function defaultConfig(type: string): Record<string, any> {
 }
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v))
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export function useAutomationBuilder() {
   const t = useT()
@@ -120,7 +122,9 @@ export function useAutomationBuilder() {
   const lookup = ref<NameLookup>(emptyLookup())
   const templates = ref<WhatsAppTemplate[]>([])
   const templatesError = ref('')
-  const docTemplates = ref<{ id: string; title: string }[]>([])
+  // With their blocks: a branch can ask about an answer, and offers the
+  // questions of the form it is about.
+  const docTemplates = ref<{ id: string; title: string; fields: DocField[] }[]>([])
   // The questions leads have answered on their forms, newest wording first --
   // each one a variable a lead automation can fill ({{answer_…}}).
   const leadQuestions = ref<{ key: string; question: string }[]>([])
@@ -200,7 +204,9 @@ export function useAutomationBuilder() {
       supabase.from('team_members').select('id, full_name, is_practitioner').is('deleted_at', null).order('full_name'),
       supabase.from('account_roles').select('id, name').order('name'),
       supabase.from('memberships').select('id, name').order('name'),
-      supabase.from('doc_templates').select('id, title').order('title'),
+      // Originals only: an automation names the form, and each patient is
+      // sent the version in their language (docTemplateForLanguage).
+      supabase.from('doc_templates').select('id, title, fields').is('translation_of', null).order('title'),
       // Recent form submissions are enough to know which questions the
       // clinic's forms ask; there is no catalogue of them anywhere else.
       supabase.from('lead_events').select('body').eq('account_id', store.accountId ?? '').eq('kind', 'qualification').order('occurred_at', { ascending: false }).limit(300),
@@ -214,7 +220,8 @@ export function useAutomationBuilder() {
       memberships: (memberships.data ?? []) as { id: string; name: string }[],
       clinics: store.clinics.map((c) => ({ id: c.id, name: c.name })),
     }
-    docTemplates.value = (docs.data ?? []) as { id: string; title: string }[]
+    docTemplates.value = ((docs.data ?? []) as { id: string; title: string; fields: unknown }[]).map((d) => ({ ...d, fields: Array.isArray(d.fields) ? (d.fields as DocField[]) : [] }))
+    lookup.value = { ...lookup.value, docTemplates: docTemplates.value }
     const questions = new Map<string, string>()
     for (const a of leadAnswersFromEvents((forms.data ?? []) as { body: unknown }[])) {
       const key = answerKey(a.question)
@@ -235,9 +242,60 @@ export function useAutomationBuilder() {
   }
 
   /**
+   * The rule and its steps, read straight from the database under the
+   * caller's own RLS (any member reads automation_rules). That is one hop
+   * from the browser; going through /api/automations/:id was a Netlify
+   * function, then the caller's team member, then their permission, then
+   * nine queries for the stats -- each hop a round trip from the function to
+   * the database -- and the canvas waited on all of it, seconds to open.
+   * Null when there is no such rule on this account.
+   */
+  async function readTree(id: string) {
+    if (!UUID.test(id)) return null
+    const accountId = store.accountId ?? ''
+    const [rule, steps] = await Promise.all([
+      supabase.from('automation_rules').select('name, trigger_event, enabled, filters, is_marketing, dry_run, entry_mode, exit_on, quiet_hours, segment, created_at').eq('id', id).eq('account_id', accountId).maybeSingle(),
+      supabase.from('automation_actions').select('id, action_type, position, config, parent_id, branch').eq('rule_id', id).eq('account_id', accountId).order('position'),
+    ])
+    if (rule.error) throw rule.error
+    if (steps.error) throw steps.error
+    return rule.data ? { rule: rule.data as any, steps: (steps.data ?? []) as DraftStep[] } : null
+  }
+
+  /**
+   * What the canvas shows beside the steps -- each step's last 30 days, and
+   * the flags only the server can answer. It arrives after the canvas does
+   * and fills in under it, rather than holding the whole builder on a
+   * skeleton. A failure leaves the figures as they were; nothing to edit
+   * depends on them.
+   */
+  let extrasSeq = 0
+  async function loadExtras(id: string) {
+    const seq = ++extrasSeq
+    try {
+      const res = await useStaffFetch<{
+        stats: { rule: RuleTotals; steps: Record<string, RuleStepStats> }
+        canReadWhatsApp: boolean
+        hasGrowth: boolean
+        delayNowWaits: boolean
+      }>(`/api/automations/${id}`)
+      // Another automation opened, or a newer re-read went out, meanwhile.
+      if (seq !== extrasSeq || ruleId.value !== id) return
+      stats.value = res.stats
+      canReadWhatsApp.value = res.canReadWhatsApp
+      hasGrowth.value = res.hasGrowth
+      delayNowWaits.value = res.delayNowWaits
+    } catch {
+      // Kept as they were: see above.
+    }
+  }
+
+  /**
    * `silent` re-reads the rule already on screen -- after a save, a pause, a
    * change on the People tab -- without dropping `loaded`, which blanked the
    * canvas to a skeleton and redrew it every time.
+   *
+   * Resolves once the draft is on screen; the stats follow on their own.
    */
   async function load(id: string, opts: { silent?: boolean } = {}) {
     const silent = !!opts.silent && loaded.value && ruleId.value === id
@@ -245,17 +303,23 @@ export function useAutomationBuilder() {
     if (!silent) {
       loaded.value = false
       missing.value = false
+      loadError.value = ''
+      // Not the figures of the automation that was open before this one.
+      stats.value = { rule: null, steps: {} }
+      hasGrowth.value = store.hasGrowthAddon
+      delayNowWaits.value = false
     }
+    // Sent before the tree is read, so the two travel together.
+    loadExtras(id)
     try {
-      const res = await useStaffFetch<{
-        rule: DraftRule & { id: string; enabled: boolean; created_at: string }
-        steps: DraftStep[]
-        stats: { rule: RuleTotals; steps: Record<string, RuleStepStats> }
-        canReadWhatsApp: boolean
-        hasGrowth: boolean
-        delayNowWaits: boolean
-      }>(`/api/automations/${id}`)
-      const { id: _id, enabled, created_at, ...rest } = res.rule as any
+      const tree = await readTree(id)
+      if (ruleId.value !== id) return
+      if (!tree) {
+        if (silent) resetBaseline()
+        else missing.value = true
+        return
+      }
+      const { enabled, created_at, ...rest } = tree.rule
       // Replacing the draft under a loaded canvas is not an edit to undo.
       if (silent) restoring = true
       draft.value = {
@@ -271,13 +335,9 @@ export function useAutomationBuilder() {
           segment: rest.segment ?? null,
         },
         enabled,
-        steps: normalizePositions(res.steps.map((s) => ({ id: s.id, action_type: s.action_type, config: s.config ?? {}, parent_id: s.parent_id ?? null, branch: s.branch ?? null, position: s.position }))),
+        steps: normalizePositions(tree.steps.map((s) => ({ id: s.id, action_type: s.action_type, config: s.config ?? {}, parent_id: s.parent_id ?? null, branch: s.branch ?? null, position: s.position }))),
       }
       createdAt.value = created_at
-      stats.value = res.stats
-      canReadWhatsApp.value = res.canReadWhatsApp
-      hasGrowth.value = res.hasGrowth
-      delayNowWaits.value = res.delayNowWaits
       loaded.value = true
       resetBaseline()
       if (silent) nextTick(() => (restoring = false))
@@ -289,8 +349,8 @@ export function useAutomationBuilder() {
         resetBaseline()
         return
       }
-      if (e?.statusCode === 404 || e?.response?.status === 404) missing.value = true
-      else loadError.value = serverMessage(e) ?? t('Could not load this automation.', 'No se ha podido cargar esta automatización.')
+      if (ruleId.value !== id) return
+      loadError.value = t('Could not load this automation.', 'No se ha podido cargar esta automatización.')
     }
   }
 

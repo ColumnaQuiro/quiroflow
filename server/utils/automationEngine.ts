@@ -67,7 +67,7 @@ export const EXIT_EVENTS = ['appointment.booked', 'whatsapp.replied', 'lead.conv
 const DEFAULT_WAIT_MINUTES = 7 * 24 * 60
 
 const PATIENT_COLUMNS =
-  'id, account_id, first_name, last_name, email, is_minor, do_not_contact, marketing_channels, date_of_birth, address, city, postal_code, country, national_id, occupation, gender, emergency_contact, tags'
+  'id, account_id, first_name, last_name, email, is_minor, do_not_contact, marketing_channels, date_of_birth, address, city, postal_code, country, national_id, occupation, gender, emergency_contact, tags, preferred_language'
 
 export interface EngineAction {
   id: string
@@ -1107,9 +1107,17 @@ async function completedDocSince(supabase: any, run: SequenceRun, templateId?: s
     .eq('patient_id', run.patient_id)
     .not('completed_at', 'is', null)
     .gte('created_at', started?.started_at ?? new Date(0).toISOString())
-  if (templateId) query = query.eq('template_id', templateId)
+  // Any version of the form: the patient may have been sent the one in
+  // their own language.
+  if (templateId) query = query.in('template_id', await formAndTranslations(supabase, templateId))
   const { data } = await query.order('completed_at', { ascending: false }).limit(1).maybeSingle()
   return data ?? null
+}
+
+/** A form and every translation of it. */
+async function formAndTranslations(supabase: any, templateId: string): Promise<string[]> {
+  const { data } = await supabase.from('doc_templates').select('id').eq('translation_of', templateId)
+  return [templateId, ...((data ?? []) as { id: string }[]).map((d) => d.id)]
 }
 
 /** The facts a branch asks about, looked up only for the fields it uses. */

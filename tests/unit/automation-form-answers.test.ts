@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { evaluateBranch, factKey } from '../../utils/automationConditions'
 import { findProblems, formsSentBefore, stepsBefore, type DraftRule, type DraftStep } from '../../utils/automationTree'
 import { conditionText } from '../../utils/automationDescribe'
+import { templateVariantForLanguage } from '../../utils/templateLanguage'
 import { emptyLookup } from '../../utils/automationDescribe'
 
 // A branch on an answer the patient gave on a form the automation sent: the
@@ -111,5 +112,24 @@ describe('the forms sent before a step', () => {
     const lookup = { ...emptyLookup(), docTemplates: [{ id: FORM, title: 'Revisión', fields: [{ id: QUESTION, label: '¿Recomendarías este tratamiento?' }] }] }
     const es = (_en: string, es: string) => es
     expect(conditionText(es, recommends('gte', 8), lookup)).toBe('«¿Recomendarías este tratamiento?» al menos 8')
+  })
+})
+
+describe('sending in the patient language', () => {
+  const variants = [
+    { language: 'es', status: 'APPROVED' },
+    { language: 'en_US', status: 'APPROVED' },
+    { language: 'fr', status: 'PENDING' },
+  ]
+
+  it('picks the approved variant in their language, by base language too', () => {
+    expect(templateVariantForLanguage(variants, 'es')).toBe('es')
+    expect(templateVariantForLanguage(variants, 'en')).toBe('en_US')
+  })
+
+  it('falls back to the step language when theirs is missing or not approved', () => {
+    expect(templateVariantForLanguage(variants, 'fr')).toBeNull()
+    expect(templateVariantForLanguage(variants, 'de')).toBeNull()
+    expect(templateVariantForLanguage(variants, null)).toBeNull()
   })
 })

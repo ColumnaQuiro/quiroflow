@@ -72,7 +72,7 @@ const blankRule = (): DraftRule => ({
 export function defaultConfig(type: string): Record<string, any> {
   switch (type) {
     case 'whatsapp_template':
-      return { template_name: '', template_language: 'es', variables: [], doc_template_ids: [] }
+      return { template_name: '', template_language: 'es', variables: [], doc_template_ids: [], match_patient_language: true }
     case 'email':
       return { subject: '', body: '' }
     case 'webhook':
@@ -203,7 +203,9 @@ export function useAutomationBuilder() {
       supabase.from('team_members').select('id, full_name, is_practitioner').is('deleted_at', null).order('full_name'),
       supabase.from('account_roles').select('id, name').order('name'),
       supabase.from('memberships').select('id, name').order('name'),
-      supabase.from('doc_templates').select('id, title, fields').order('title'),
+      // Originals only: an automation names the form, and each patient is
+      // sent the version in their language (docTemplateForLanguage).
+      supabase.from('doc_templates').select('id, title, fields').is('translation_of', null).order('title'),
       // Recent form submissions are enough to know which questions the
       // clinic's forms ask; there is no catalogue of them anywhere else.
       supabase.from('lead_events').select('body').eq('account_id', store.accountId ?? '').eq('kind', 'qualification').order('occurred_at', { ascending: false }).limit(300),

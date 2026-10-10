@@ -55,6 +55,59 @@ onMounted(load)
 
 const category = ref<string>('')
 
+// ---- versions in other languages
+// A translation is its own template pointing at the original. Patients are
+// sent the version in their preferred language, and automations that wait
+// for the form or read an answer count either -- answers are read by the
+// question's id, which is why a version starts as a copy of the original.
+const LANGUAGES = [
+  { code: 'en', label: ['English', 'Inglés'] as const },
+  { code: 'fr', label: ['French', 'Francés'] as const },
+  { code: 'es', label: ['Spanish', 'Español'] as const },
+]
+const languageName = (code: string | null) => {
+  const l = LANGUAGES.find((x) => x.code === code)
+  return l ? t(l.label[0], l.label[1]) : (code ?? '')
+}
+const originalOf = (tpl: Template) => templates.value.find((x) => x.id === tpl.translation_of) ?? null
+const versionsOf = (tpl: Template) => templates.value.filter((x) => x.translation_of === tpl.id)
+const missingLanguages = computed(() => {
+  const tpl = activeTemplate.value
+  if (!tpl || tpl.translation_of) return []
+  const have = new Set(versionsOf(tpl).map((v) => v.language))
+  // The original is in the clinic's own language, Spanish here.
+  return LANGUAGES.filter((l) => l.code !== 'es' && !have.has(l.code))
+})
+
+async function addVersion(language: string) {
+  const original = activeTemplate.value
+  if (!original) return
+  if (dirty.value) await save()
+  const { data, error } = await supabase
+    .from('doc_templates')
+    .insert({
+      account_id: store.accountId!,
+      title: `${title.value.trim() || original.title} (${languageName(language)})`,
+      // The same blocks, ids and all, so an automation that reads an answer
+      // finds it whichever version came back. Only the words are to change.
+      fields: fields.value as any,
+      category: category.value || null,
+      language,
+      translation_of: original.id,
+      created_by: store.teamMember?.id ?? null,
+      updated_by: store.teamMember?.id ?? null,
+    })
+    .select('*')
+    .single()
+  if (error || !data) {
+    if (error) showToast(error.message, 'error')
+    return
+  }
+  const created = data as unknown as Template
+  templates.value = [created, ...templates.value]
+  openTemplate(created)
+}
+
 function openTemplate(t: Template) {
   activeTemplate.value = t
   title.value = t.title
@@ -210,6 +263,7 @@ async function confirmDelete() {
                     <span class="flex flex-wrap items-center gap-2">
                       <strong class="truncate text-[15px] text-ink-900" data-cy="doc-title">{{ tpl.title }}</strong>
                       <UiPill v-if="categoryLabel(tpl.category)" tone="brand">{{ categoryLabel(tpl.category) }}</UiPill>
+                      <UiPill v-if="tpl.translation_of" data-cy="doc-language">{{ languageName(tpl.language) }}</UiPill>
                     </span>
                     <span class="text-[12.5px] text-ink-muted">{{ questionCount(tpl) }} · {{ t('edited', 'editada el') }} {{ new Date(tpl.updated_at).toLocaleDateString('es-ES') }}</span>
                   </span>
@@ -257,6 +311,30 @@ async function confirmDelete() {
                   <option value="consent">{{ t('Consent', 'Consentimiento') }}</option>
                 </select>
                 <span class="text-[12.5px] text-ink-muted">{{ t("Lets Reports track who's missing this form.", 'Permite que Informes registre a quién le falta este formulario.') }}</span>
+              </div>
+              <div class="flex flex-col gap-1.5 rounded-ctl border border-line bg-surface-subtle px-3.5 py-3" data-cy="doc-versions">
+                <template v-if="activeTemplate.translation_of">
+                  <span class="text-[13.5px] text-ink-700">
+                    {{ t(`${languageName(activeTemplate.language)} version of “${originalOf(activeTemplate)?.title ?? '…'}”.`, `Versión en ${languageName(activeTemplate.language).toLowerCase()} de «${originalOf(activeTemplate)?.title ?? '…'}».`) }}
+                  </span>
+                  <span class="text-[12.5px] leading-snug text-ink-muted">
+                    {{ t('Patients whose language is this one are sent this version. Translate the words, but keep the same questions: an automation that reads an answer finds it by the question, in either version.', 'Los pacientes con este idioma reciben esta versión. Traduce los textos, pero mantén las mismas preguntas: una automatización que lee una respuesta la encuentra por la pregunta, en cualquiera de las dos versiones.') }}
+                  </span>
+                </template>
+                <template v-else>
+                  <span class="text-[13px] font-semibold text-ink-700">{{ t('Other languages', 'Otros idiomas') }}</span>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <button v-for="v in versionsOf(activeTemplate)" :key="v.id" type="button" class="text-[13.5px] font-semibold text-brand-text hover:underline" @click="openTemplate(v)">
+                      {{ languageName(v.language) }}
+                    </button>
+                    <UiBtn v-for="l in missingLanguages" :key="l.code" size="sm" :data-cy="`doc-add-version-${l.code}`" @click="addVersion(l.code)">
+                      + {{ t(`${l.label[0]} version`, `Versión en ${l.label[1].toLowerCase()}`) }}
+                    </UiBtn>
+                  </div>
+                  <span class="text-[12.5px] leading-snug text-ink-muted">
+                    {{ t("Each patient is sent the version in their preferred language, and this one if there is none.", 'Cada paciente recibe la versión en su idioma preferido, y esta si no hay ninguna.') }}
+                  </span>
+                </template>
               </div>
               <DocBlocks :fields="fields" mode="build" @update:fields="fields = $event" />
             </div>

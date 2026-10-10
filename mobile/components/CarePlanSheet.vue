@@ -9,7 +9,17 @@
 // care_plans") scopes it the way it scopes the patient.
 const props = defineProps<{
   patientId: string
-  plan?: { name: string; frequency_value: number; frequency_unit: string; visits_per_period?: number | null; total_visits: number; started_at: string } | null
+  plan?: {
+    name: string
+    frequency_value: number
+    frequency_unit: string
+    visits_per_period?: number | null
+    total_visits: number
+    started_at: string
+    payment_kind?: string | null
+    package_purchase_id?: string | null
+    patient_membership_id?: string | null
+  } | null
   /** The clinic's date today, the default start. */
   today: string
 }>()
@@ -30,6 +40,29 @@ const startedAt = ref(props.plan?.started_at?.slice(0, 10) ?? props.today)
 const saving = ref(false)
 const error = ref('')
 
+// How it is paid, as on the web (EditCarePlanModal): visit by visit, from one
+// of the patient's open bonos (their own or one shared with them), or under
+// an active membership. Nothing is charged from here; the plan only names it.
+type PaymentKind = 'per_visit' | 'bono' | 'membership'
+const paymentKind = ref<PaymentKind>((props.plan?.payment_kind as PaymentKind) ?? 'per_visit')
+const bonoId = ref(props.plan?.package_purchase_id ?? '')
+const membershipId = ref(props.plan?.patient_membership_id ?? '')
+const bonos = ref<{ id: string; label: string }[]>([])
+const memberships = ref<{ id: string; label: string }[]>([])
+onMounted(async () => {
+  const [{ data: own }, { data: shared }, { data: mems }] = await Promise.all([
+    supabase.from('package_purchases').select('id, package_name, sessions_total, sessions_used, is_closed').eq('patient_id', props.patientId).eq('is_closed', false),
+    supabase.from('package_purchase_shares').select('package_purchases(id, package_name, sessions_total, sessions_used, is_closed)').eq('patient_id', props.patientId),
+    supabase.from('patient_memberships').select('id, membership_name, price_cents, status').eq('patient_id', props.patientId).eq('status', 'active'),
+  ])
+  type P = { id: string; package_name: string; sessions_total: number; sessions_used: number; is_closed: boolean }
+  const open = [...((own ?? []) as P[]), ...(((shared ?? []) as unknown as { package_purchases: P | null }[]).map((r) => r.package_purchases).filter((p): p is P => !!p && !p.is_closed))]
+    .filter((p) => p.sessions_total - p.sessions_used > 0)
+  bonos.value = open.map((p) => ({ id: p.id, label: t(`${p.package_name} · ${p.sessions_total - p.sessions_used} left`, `${p.package_name} · quedan ${p.sessions_total - p.sessions_used}`) }))
+  memberships.value = ((mems ?? []) as { id: string; membership_name: string; price_cents: number }[]).map((m) => ({ id: m.id, label: `${m.membership_name} · ${formatEur(m.price_cents)}` }))
+})
+const PAY_LABEL = computed<Record<PaymentKind, string>>(() => ({ per_visit: t('Per visit', 'Por visita'), bono: t('Bono', 'Bono'), membership: t('Membership', 'Membresía') }))
+
 // The cadences a clinic sets most, one tap each; the steppers do the rest.
 const PRESETS = computed(() => [
   { every: 1, unit: 'week' as const, per: 3, label: t('3× a week', '3 veces por semana') },
@@ -48,6 +81,14 @@ async function save() {
     error.value = t('Choose a start date.', 'Elige la fecha de inicio.')
     return
   }
+  if (paymentKind.value === 'bono' && !bonoId.value) {
+    error.value = t('Choose the bono that pays for it.', 'Elige el bono con el que se paga.')
+    return
+  }
+  if (paymentKind.value === 'membership' && !membershipId.value) {
+    error.value = t('Choose the membership that pays for it.', 'Elige la membresía con la que se paga.')
+    return
+  }
   saving.value = true
   const { error: e } = await supabase.from('care_plans').insert({
     account_id: context.value.accountId,
@@ -59,6 +100,9 @@ async function save() {
     total_visits: clamp(total.value, 1, 200),
     started_at: startedAt.value,
     created_by: context.value.teamMemberId,
+    payment_kind: paymentKind.value,
+    package_purchase_id: paymentKind.value === 'bono' ? bonoId.value : null,
+    patient_membership_id: paymentKind.value === 'membership' ? membershipId.value : null,
   } as never)
   saving.value = false
   if (e) {
@@ -136,6 +180,34 @@ const stepBtn = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl
         {{ t('Starts', 'Empieza') }}
         <input v-model="startedAt" type="date" :class="field" data-cy="plan-start" />
       </label>
+
+      <div class="flex flex-col gap-1.5" data-cy="plan-payment">
+        <p class="text-[12.5px] font-medium text-ink-muted">{{ t('How it is paid', 'Cómo se paga') }}</p>
+        <div class="flex gap-1.5" role="radiogroup" :aria-label="t('How it is paid', 'Cómo se paga')">
+          <button
+            v-for="k in (['per_visit', 'bono', 'membership'] as const)"
+            :key="k"
+            type="button"
+            role="radio"
+            class="h-10 flex-1 rounded-ctl border text-[13.5px] font-medium"
+            :class="paymentKind === k ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-700'"
+            :aria-checked="paymentKind === k"
+            :data-cy="`plan-pay-${k}`"
+            @click="paymentKind = k"
+          >
+            {{ PAY_LABEL[k] }}
+          </button>
+        </div>
+        <select v-if="paymentKind === 'bono'" v-model="bonoId" :class="field" data-cy="plan-pay-bono-select">
+          <option value="" disabled>{{ bonos.length ? t('Choose a bono…', 'Elige un bono…') : t('No open bono — sell one first', 'Sin bono abierto — véndelo primero') }}</option>
+          <option v-for="b in bonos" :key="b.id" :value="b.id">{{ b.label }}</option>
+        </select>
+        <select v-if="paymentKind === 'membership'" v-model="membershipId" :class="field" data-cy="plan-pay-membership-select">
+          <option value="" disabled>{{ memberships.length ? t('Choose a membership…', 'Elige una membresía…') : t('No active membership — start one first', 'Sin membresía activa — empiézala primero') }}</option>
+          <option v-for="m in memberships" :key="m.id" :value="m.id">{{ m.label }}</option>
+        </select>
+        <p v-if="paymentKind === 'per_visit'" class="text-[12px] text-ink-muted">{{ t('Each visit is charged at its normal price.', 'Cada visita se cobra a su precio habitual.') }}</p>
+      </div>
 
       <p v-if="plan" class="text-[12px] leading-snug text-ink-muted">
         {{ t('Saving keeps the current plan in the history and starts this one; progress counts from its start date.', 'Al guardar, el plan actual queda en el historial y empieza este; el progreso se cuenta desde su fecha de inicio.') }}

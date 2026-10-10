@@ -7,6 +7,9 @@ interface CarePlan {
   frequency_value: number
   frequency_unit: 'week' | 'month'
   visits_per_period?: number | null
+  payment_kind?: string | null
+  package_purchase_id?: string | null
+  patient_membership_id?: string | null
   total_visits: number
   started_at: string
 }
@@ -36,7 +39,7 @@ async function load() {
     supabase.from('appointments').select('status, starts_at').eq('patient_id', props.patientId).is('deleted_at', null),
     supabase
       .from('care_plans')
-      .select('id, name, frequency_value, frequency_unit, visits_per_period, total_visits, started_at')
+      .select('id, name, frequency_value, frequency_unit, visits_per_period, total_visits, started_at, payment_kind, package_purchase_id, patient_membership_id')
       .eq('patient_id', props.patientId)
       .order('created_at', { ascending: false })
       .limit(1),
@@ -102,6 +105,7 @@ function bookPlan() {
         <p class="mt-2 text-[12px] text-ink-muted2">
           <span class="font-medium text-ink-600">{{ completedInPlan }} {{ t('completed', 'completadas') }}</span> / {{ remaining }} {{ t('remaining', 'restantes') }}
         </p>
+        <PatientsPlanPayment :plan="plan" :visits-left="remaining" />
       </template>
       <p v-else class="mt-1 text-[12.5px] text-ink-faint">{{ t('No plan set up for this patient yet.', 'Aún no se ha configurado un plan para este paciente.') }}</p>
 

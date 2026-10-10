@@ -1,4 +1,4 @@
-import { toE164 } from '~/utils/phone'
+import { toE164, toE164Loose } from '~/utils/phone'
 
 // Sends via Meta's WhatsApp Business Cloud API directly. Business-initiated
 // messages like recalls and confirmations require a pre-approved template
@@ -11,6 +11,8 @@ export default defineEventHandler(async (event) => {
      *  yet -- the bare number the conversation is with. */
     patientId?: string
     phoneNumber?: string
+    /** A lead's own thread in the Growth Inbox, past WhatsApp's 24h window. */
+    leadId?: string
     templateName: string
     templateLanguage: string
     variables: string[]
@@ -20,18 +22,22 @@ export default defineEventHandler(async (event) => {
     appointmentId?: string
   }>(event)
 
-  if ((!body?.patientId && !body?.phoneNumber) || !body?.templateName || !body?.templateLanguage) {
-    throw createError({ statusCode: 400, statusMessage: 'patientId (or phoneNumber), templateName and templateLanguage are required' })
+  if ((!body?.patientId && !body?.phoneNumber && !body?.leadId) || !body?.templateName || !body?.templateLanguage) {
+    throw createError({ statusCode: 400, statusMessage: 'patientId (or phoneNumber, or leadId), templateName and templateLanguage are required' })
   }
 
   // A bare number is only ever an Inbox conversation, so it takes the
-  // Inbox's permission; a patient send keeps the one it always had.
-  const { supabase, teamMember } = await requirePermission(event, body.patientId ? 'recalls_access' : 'inbox_access')
+  // Inbox's permission; a patient send keeps the one it always had; a lead
+  // takes the one a free-form reply to a lead does (whatsapp/inbox-send).
+  const { supabase, teamMember } = await requirePermission(
+    event,
+    body.patientId ? 'recalls_access' : body.leadId ? 'communication_config' : 'inbox_access',
+  )
 
   const { data: account } = await supabase
     .from('accounts')
     .select(
-      'whatsapp_phone_number_id, whatsapp_access_token, whatsapp_confirmation_template_name, whatsapp_reminder_template_name, whatsapp_recall_template_name',
+      'whatsapp_phone_number_id, whatsapp_access_token, whatsapp_confirmation_template_name, whatsapp_reminder_template_name, whatsapp_recall_template_name, default_phone_country',
     )
     .eq('id', teamMember.account_id)
     .maybeSingle()
@@ -65,6 +71,23 @@ export default defineEventHandler(async (event) => {
     if (!to) {
       throw createError({ statusCode: 400, statusMessage: 'This patient\'s phone number could not be formatted for WhatsApp' })
     }
+  } else if (body.leadId) {
+    // Past the 24h window a lead can only be reached with a template, and
+    // the lead's thread reads strictly by lead_id -- so the row below carries
+    // it, or the template went out and never appeared in their thread. The
+    // number is resolved as inboxSend resolves it for a free-form reply to a
+    // lead: stored as international digits with no "+", hence Loose.
+    const { data: lead } = await supabase
+      .from('leads')
+      .select('id, phone')
+      .eq('id', body.leadId)
+      .eq('account_id', teamMember.account_id)
+      .is('deleted_at', null)
+      .maybeSingle()
+    if (!lead) throw createError({ statusCode: 404, statusMessage: 'Lead not found' })
+    if (!lead.phone) throw createError({ statusCode: 400, statusMessage: 'This lead has no phone number to send to' })
+    to = toE164Loose(`+${lead.phone}`, account.default_phone_country ?? 'ES')
+    if (!to) throw createError({ statusCode: 400, statusMessage: "This lead's phone number could not be formatted for WhatsApp" })
   } else {
     // Meta takes digits; the message is recorded under the number exactly as
     // the conversation has it (below), so it lands in the same thread.
@@ -155,8 +178,9 @@ export default defineEventHandler(async (event) => {
     supabase.from('whatsapp_messages').insert({
       account_id: teamMember.account_id,
       patient_id: body.patientId ?? null,
+      lead_id: body.patientId ? null : (body.leadId ?? null),
       appointment_id: body.appointmentId ?? null,
-      phone_number: body.patientId ? to : body.phoneNumber,
+      phone_number: body.patientId || body.leadId ? to : body.phoneNumber,
       wamid,
       purpose,
       template_name: body.templateName,

@@ -31,6 +31,10 @@ export interface GrowthLeadColumn {
   cards: GrowthLead[]
   /** "+16 more" footer where the stage holds more than the board renders. */
   more?: string
+  /** How many matching cards are not drawn: what "Show N more" draws. */
+  hidden?: number
+  /** Cards matching the search in this stage, all of them, drawn or not. */
+  found?: number
   /** Shown instead of cards when the stage is genuinely empty. */
   emptyTitle?: string
   emptyDetail?: string
@@ -65,9 +69,21 @@ export function useGrowthLeads() {
   const { showToast } = useToast()
   const t = useT()
 
+  // What the board asks for: a search (run on the server, across every
+  // lead), and the stages drawn in full -- 'all' for the table view.
+  const query = ref('')
+  const expanded = ref<string[]>([])
+  let latest = 0
+
   async function load() {
+    const mine = ++latest
     try {
-      const data = await useStaffFetch<LeadsResponse>('/api/growth/leads')
+      const params: Record<string, string> = {}
+      if (query.value.trim()) params.q = query.value.trim()
+      if (expanded.value.length) params.expand = expanded.value.join(',')
+      const data = await useStaffFetch<LeadsResponse>('/api/growth/leads', { query: params })
+      // Typing fires a load per pause; only the newest answer is drawn.
+      if (mine !== latest) return
       columns.value = data.columns.map((column) => {
         const empty = EMPTY_STAGE_COPY[column.key]
         return empty ? { ...column, emptyTitle: empty.title, emptyDetail: empty.detail } : column
@@ -79,13 +95,27 @@ export function useGrowthLeads() {
       // is '[GET] "/api/growth/leads": 500 Internal Server Error'. That
       // belongs in the console, which already has it, not on the screen of
       // someone trying to work a pipeline.
-      error.value = t('Could not load leads. Refresh to try again.', 'No se han podido cargar los contactos. Actualiza para reintentar.')
+      if (mine === latest) error.value = t('Could not load leads. Refresh to try again.', 'No se han podido cargar los contactos. Actualiza para reintentar.')
     } finally {
       loading.value = false
     }
   }
 
   onMounted(load)
+
+  function search(term: string) {
+    query.value = term
+    return load()
+  }
+  function expand(stage: string) {
+    if (!expanded.value.includes(stage)) expanded.value = [...expanded.value, stage]
+    return load()
+  }
+  /** The table lists every lead; the board goes back to 25 per stage. */
+  function showAll(all: boolean) {
+    expanded.value = all ? ['all'] : []
+    return load()
+  }
 
   /**
    * Moves a lead into `toKey`. The board is updated first and the request
@@ -124,5 +154,5 @@ export function useGrowthLeads() {
     }
   }
 
-  return { columns, summary, loading, error, moveLead, reload: load }
+  return { columns, summary, loading, error, moveLead, reload: load, search, expand, showAll }
 }

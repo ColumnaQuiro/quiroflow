@@ -89,14 +89,30 @@ function newMigrations() {
     }
   }
 
-  // Anything new in the working tree: untracked, or staged but not committed.
-  // --porcelain marks both '??' and 'A ', and renames carry ' -> '.
+  // Anything new in the working tree: untracked ('??'), or added but not
+  // committed -- 'A ' staged, 'AM' staged then edited, ' A' from `add -N`.
+  //
+  // Only those. Porcelain also lists MODIFIED files (' M', 'M '), and an edit
+  // to an old migration is not a new migration: it was applied months ago and
+  // nothing re-runs it. Counting it made a comment fix in
+  // 0116_availability_blocks_practitioner.sql fail preflight for a foreign key
+  // that had existed since it first applied -- and then pass once committed,
+  // because the committed pass above only takes --diff-filter=A.
+  //
+  // A rename ('R  old -> new') is the same file under another name, so it is
+  // new only if the old name was: renaming a migration this branch added (to
+  // fix a version collision, say) keeps it checked, while renaming one main
+  // already has is left to check:migrations, the same as the committed pass,
+  // where git reports it as R rather than A.
   try {
     const status = git('status', '--porcelain', '--', 'supabase/migrations/')
     for (const line of status.split('\n')) {
       if (!line) continue
-      const path = line.slice(3).split(' -> ').pop().replace(/^"|"$/g, '')
-      if (path.endsWith('.sql')) found.add(path)
+      const code = line.slice(0, 2)
+      const [from, to = from] = line.slice(3).split(' -> ').map((p) => p.replace(/^"|"$/g, ''))
+      if (!to.endsWith('.sql')) continue
+      if (code === '??' || code.includes('A')) found.add(to)
+      else if (code[0] === 'R' && found.has(from)) found.add(to)
     }
   } catch {
     // not a git checkout, or no working tree to inspect

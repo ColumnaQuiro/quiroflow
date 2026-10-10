@@ -147,7 +147,7 @@ function telHref(n: ContactNumber) {
 }
 
 // -- Care plan and the next visit -------------------------------------------
-interface Plan { id: string; name: string; total_visits: number; frequency_value: number; frequency_unit: string; visits_per_period: number | null; started_at: string }
+interface Plan { id: string; name: string; total_visits: number; frequency_value: number; frequency_unit: string; visits_per_period: number | null; started_at: string; payment_kind: string | null; package_purchase_id: string | null; patient_membership_id: string | null }
 interface NextAppt { id: string; starts_at: string; appointment_types: { name: string } | null }
 const plan = ref<Plan | null>(null)
 const completedInPlan = ref(0)
@@ -160,7 +160,7 @@ const planError = ref('')
 async function loadPlan() {
   planError.value = ''
   const [{ data: plans, error: planErr }, { data: upcoming, error: apptErr }] = await Promise.all([
-    supabase.from('care_plans').select('id, name, total_visits, frequency_value, frequency_unit, visits_per_period, started_at').eq('patient_id', patientId).order('created_at', { ascending: false }).limit(1),
+    supabase.from('care_plans').select('id, name, total_visits, frequency_value, frequency_unit, visits_per_period, started_at, payment_kind, package_purchase_id, patient_membership_id').eq('patient_id', patientId).order('created_at', { ascending: false }).limit(1),
     supabase
       .from('appointments')
       .select('id, starts_at, appointment_types(name)')
@@ -298,11 +298,21 @@ function openWhatsApp() {
 const actionCount = computed(() => [!!primaryNumber.value, canWhatsApp.value, canBook.value].filter(Boolean).length)
 
 const bookOpen = ref(false)
+// Opened from the plan card: the sheet starts with "the rest of the plan" on.
+const bookPlan = ref(false)
+function openBookPlan() {
+  bookPlan.value = true
+  bookOpen.value = true
+}
+// Visits the plan has with nothing booked yet, roughly -- the sheet counts
+// them properly; this only decides whether to offer it.
+const planUnbooked = computed(() => (plan.value ? plan.value.total_visits - completedInPlan.value - upcomingVisits.value.filter((a) => a.starts_at >= plan.value!.started_at).length : 0))
 const bookedNotice = ref('')
 let noticeTimer: ReturnType<typeof setTimeout> | undefined
-function onBooked(e: { startsAt: string }) {
+function onBooked(e: { startsAt: string; count?: number }) {
   bookOpen.value = false
-  bookedNotice.value = `${t('Booked', 'Reservada')} ${apptWhen(e.startsAt)}`
+  bookPlan.value = false
+  bookedNotice.value = (e.count ?? 1) > 1 ? t(`${e.count} visits booked, from ${apptWhen(e.startsAt)}`, `${e.count} citas reservadas, desde ${apptWhen(e.startsAt)}`) : `${t('Booked', 'Reservada')} ${apptWhen(e.startsAt)}`
   clearTimeout(noticeTimer)
   noticeTimer = setTimeout(() => (bookedNotice.value = ''), 5000)
   loadPlan()
@@ -458,6 +468,9 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
             </div>
             <PatientsPlanPeriods v-if="plan.started_at" :patient-id="patient!.id" :plan="plan" :time-zone="timeZone" />
           </template>
+          <!-- How it is paid (the web's line on the plan card). Without the
+               whole diary the visits left are unknown, so no coverage then. -->
+          <PatientsPlanPayment v-if="plan" :plan="plan" :visits-left="ownDiaryOnly ? 0 : Math.max(0, plan.total_visits - completedInPlan)" />
           <p class="mt-1.5 text-[12.5px]" :class="nextAppt ? 'text-ink-muted2' : 'text-warning-text'">
             <template v-if="nextAppt">{{ t('Next', 'Próxima') }}: {{ apptWhen(nextAppt.starts_at) }}<template v-if="nextAppt.appointment_types?.name"> · {{ nextAppt.appointment_types.name }}</template></template>
             <template v-else-if="ownDiaryOnly">{{ t('Nothing booked with you.', 'Nada reservado contigo.') }}</template>
@@ -477,6 +490,9 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
               </li>
             </ul>
           </template>
+          <button v-if="plan && canBook && !ownDiaryOnly && planUnbooked > 1" type="button" class="mt-2 flex h-9 w-full items-center justify-center rounded-ctl border border-brand text-[13px] font-semibold text-brand-text" data-cy="patient-book-plan" @click="openBookPlan">
+            {{ t(`Book the plan's visits (${planUnbooked} left)`, `Reservar las visitas del plan (quedan ${planUnbooked})`) }}
+          </button>
         </template>
       </section>
 
@@ -587,7 +603,7 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
       </section>
     </div>
 
-    <BookVisitSheet v-if="bookOpen" :patient-id="patientId" @booked="onBooked" @close="bookOpen = false" />
+    <BookVisitSheet v-if="bookOpen" :patient-id="patientId" :follow-plan="bookPlan" @booked="onBooked" @close="bookOpen = false; bookPlan = false" />
     <RecordMoneySheet v-if="moneyMode" :patient-id="patientId" :mode="moneyMode" :can-pay="canTakePayments" :can-sell="canSellBonos" @done="onMoneyDone" @close="moneyMode = null" />
     <CarePlanSheet v-if="planSheetOpen" :patient-id="patientId" :plan="plan" :today="clinicToday" @saved="onPlanSaved" @close="planSheetOpen = false" />
     <DocViewSheet v-if="viewDocId" :doc-id="viewDocId" @close="viewDocId = null" />

@@ -139,7 +139,9 @@ async function checkIn() {
 }
 
 // -- Care plan -----------------------------------------------------------------
-interface Plan { name: string; total_visits: number; frequency_value: number; frequency_unit: string; visits_per_period: number | null; started_at: string }
+// The payment fields too: CarePlanSheet edits from here, and a plan saved
+// without them would quietly go back to per visit.
+interface Plan { name: string; total_visits: number; frequency_value: number; frequency_unit: string; visits_per_period: number | null; started_at: string; payment_kind: string | null; package_purchase_id: string | null; patient_membership_id: string | null }
 const plan = ref<Plan | null>(null)
 const visitNumber = ref<number | null>(null)
 // Which visit of the plan THIS one is: the visits completed since the plan
@@ -150,7 +152,7 @@ async function loadPlan() {
   if (!a) return
   const { data } = await supabase
     .from('care_plans')
-    .select('name, total_visits, frequency_value, frequency_unit, visits_per_period, started_at')
+    .select('name, total_visits, frequency_value, frequency_unit, visits_per_period, started_at, payment_kind, package_purchase_id, patient_membership_id')
     .eq('patient_id', a.patient_id)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -514,9 +516,9 @@ function openBookNext() {
   afterFinish()
 }
 
-function onBooked(e: { startsAt: string }) {
+function onBooked(e: { startsAt: string; count?: number }) {
   bookOpen.value = false
-  bookedNotice.value = `${t('Next visit booked', 'Próxima cita reservada')}: ${when(e.startsAt)}`
+  bookedNotice.value = (e.count ?? 1) > 1 ? t(`${e.count} visits booked, from ${when(e.startsAt)}`, `${e.count} citas reservadas, desde ${when(e.startsAt)}`) : `${t('Next visit booked', 'Próxima cita reservada')}: ${when(e.startsAt)}`
 }
 
 // Moving or cancelling from here: the same sheets as the agenda.

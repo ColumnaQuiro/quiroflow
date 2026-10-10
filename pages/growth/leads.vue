@@ -5,7 +5,7 @@ const t = useT()
 const route = useRoute()
 const { can } = usePermission()
 const { hasGrowth, resolved } = useGrowthTier()
-const { columns, summary, loading, error, moveLead, reload } = useGrowthLeads()
+const { columns, summary, loading, error, moveLead, reload, search: searchLeads, expand, showAll } = useGrowthLeads()
 const { lead: openLead, loading: leadLoading, loadLead, refreshLead, close: closeLead } = useGrowthLeadDetail()
 
 // Same key that gates the Growth dashboard and Campaigns -- see
@@ -23,20 +23,30 @@ onMounted(() => {
 // page rather than as separate routes, so the three states cannot drift apart
 // and the empty state is reachable without emptying an account.
 const forcedState = computed(() => route.query.state)
-const showEmpty = computed(() => forcedState.value === 'empty' || (!loading.value && columns.value.every((c) => !c.cards.length)))
+// Not while searching: a search that finds nobody is not an empty pipeline,
+// and the empty state would replace the very box being typed in.
+const showEmpty = computed(() => forcedState.value === 'empty' || (!loading.value && !search.value.trim() && columns.value.every((c) => !c.cards.length)))
 const showLoading = computed(() => forcedState.value === 'loading' || !resolved.value || loading.value)
 
 const search = ref('')
 const view = ref<'board' | 'table'>('board')
 
-const visibleColumns = computed<GrowthLeadColumn[]>(() => {
-  const term = search.value.trim().toLowerCase()
-  if (!term) return columns.value
-  // Filters the cards but leaves count and value alone: those describe the
-  // stage, not the search, and rewriting them would make a search look like
-  // the pipeline had shrunk.
-  return columns.value.map((c) => ({ ...c, cards: c.cards.filter((l) => l.name.toLowerCase().includes(term)) }))
+// Searched on the server, across every lead. It used to filter the cards the
+// board had drawn -- 25 a stage -- so anyone further down a busy stage could
+// not be found at all, and the box promised phone and email while matching
+// names only. Counts and values stay the stage's: see the endpoint.
+let searchTimer: ReturnType<typeof setTimeout> | undefined
+watch(search, (term) => {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => searchLeads(term), 250)
 })
+const searching = computed(() => search.value.trim().length > 0)
+const nothingFound = computed(() => searching.value && !loading.value && columns.value.every((c) => !c.found))
+
+// The table is a list: every lead, not 25 a stage.
+watch(view, (v) => showAll(v === 'table'))
+
+const visibleColumns = computed<GrowthLeadColumn[]>(() => columns.value)
 
 const draggingId = ref<string | null>(null)
 const dropTargetKey = ref<string | null>(null)
@@ -155,6 +165,10 @@ async function onLeadChanged() {
 
       <p v-if="error" class="px-4 py-10 text-center text-[13px] text-danger-text sm:px-6" data-test="leads-error">{{ error }}</p>
 
+      <p v-else-if="nothingFound" class="px-4 py-10 text-center text-[13px] text-ink-muted sm:px-6" data-test="leads-no-match">
+        {{ t('No lead matches that name, phone or email.', 'Ningún contacto coincide con ese nombre, teléfono o email.') }}
+      </p>
+
       <GrowthLeadsBoardSkeleton v-else-if="showLoading" class="pt-4" />
 
       <div v-else-if="view === 'board'" class="flex flex-1 gap-3 overflow-x-auto px-4 pb-4 pt-4 sm:px-6">
@@ -169,6 +183,7 @@ async function onLeadChanged() {
           @dragend="onDragEnd"
           @dragenter="onDragEnter(column.key)"
           @drop="onDrop(column.key)"
+          @more="expand(column.key)"
         />
       </div>
 

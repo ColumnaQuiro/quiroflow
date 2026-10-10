@@ -51,7 +51,7 @@ describe('Growth leads pipeline', () => {
     cy.visit('/growth/leads?growth=1')
 
     cy.get('[data-test="lead-column-contacted"] [data-test="lead-count"]').should('have.text', '27')
-    cy.contains('+2 more').scrollIntoView().should('be.visible')
+    cy.contains('[data-test="lead-column-contacted"] button', 'Show 2 more').scrollIntoView().should('be.visible')
     // 27 x EUR 1,000 summed server-side, not from the 25 cards on screen.
     cy.get('[data-test="lead-column-contacted"]').should('contain', '27.000 € est.')
 
@@ -63,6 +63,53 @@ describe('Growth leads pipeline', () => {
 
     // An empty stage explains itself rather than rendering a blank gutter.
     cy.contains('No lost leads').scrollIntoView().should('be.visible')
+  })
+
+  it('reaches every card: past the first 25, by search, and in the table', () => {
+    // A stage drew 25 cards and the rest were a caption, and the search
+    // filtered only those 25 -- so a lead further down a busy stage could not
+    // be found from the board at all.
+    for (let i = 0; i < 27; i++) {
+      cy.task('db:createLead', {
+        accountId: account.accountId,
+        fullName: `Busy Lead ${String(i + 1).padStart(2, '0')}`,
+        stage: 'new',
+        phone: `3460055${String(i + 1).padStart(4, '0')}`,
+        email: `busy${i + 1}@example.test`,
+      })
+    }
+
+    cy.visit('/growth/leads?growth=1')
+    const column = '[data-test="lead-column-new"]'
+    cy.get(`${column} [data-test="lead-card"]`).should('have.length', 25)
+    // The two oldest are the ones not drawn.
+    cy.get(column).should('not.contain', 'Busy Lead 01')
+
+    // By name, by phone however it is typed, by email: all on the server.
+    cy.get('input[type="search"]').type('Busy Lead 01')
+    cy.get(`${column} [data-test="lead-card"]`).should('have.length', 1).and('contain', 'Busy Lead 01')
+    // The column still says what the stage holds, not what the search found.
+    cy.get(`${column} [data-test="lead-count"]`).should('have.text', '27')
+
+    cy.get('input[type="search"]').clear().type('600 55 0002')
+    cy.get(`${column} [data-test="lead-card"]`).should('have.length', 1).and('contain', 'Busy Lead 02')
+
+    cy.get('input[type="search"]').clear().type('busy3@example')
+    cy.get(`${column} [data-test="lead-card"]`).should('have.length', 1).and('contain', 'Busy Lead 03')
+
+    cy.get('input[type="search"]').clear().type('nobody by this name')
+    cy.get('[data-test="leads-no-match"]').should('be.visible')
+
+    // "Show 2 more" draws the rest of the stage.
+    cy.get('input[type="search"]').clear()
+    cy.get(`${column} [data-test="lead-card"]`).should('have.length', 25)
+    cy.get(`${column} [data-test="lead-column-more"]`).should('have.text', 'Show 2 more').click()
+    cy.get(`${column} [data-test="lead-card"]`).should('have.length', 27)
+    cy.get(column).should('contain', 'Busy Lead 01')
+
+    // And the table lists everybody.
+    cy.contains('button', 'Table').click()
+    cy.get('table tbody tr').should('have.length', 27)
   })
 
   it('reports how long a lead has sat in its stage', () => {

@@ -549,6 +549,27 @@ watch(selectedKey, (key) => {
   if (key) scrollThreadToBottom()
 })
 
+// Internal notes (inbox_notes), as in the web Inbox: the team's, in the
+// thread between the messages, never sent; a mention reaches the colleague
+// as an unread conversation and a push. Not on a lead's own thread or a
+// conversation with no messages yet.
+const { notes: threadNotes, saving: noteSaving, error: noteError, add: addNote, remove: removeNote } = useInboxNotes({
+  accountId: () => props.accountId,
+  conversationKey: () => (selected.value && !selected.value.leadId && thread.value.length > 0 ? selected.value.key : null),
+  authorId: () => props.teamMemberId,
+  notifyMentions: (noteId) => authedFetch('/api/inbox/note-mentions', { method: 'POST', body: { noteId } }),
+})
+const noteMode = ref(false)
+watch(selectedKey, () => (noteMode.value = false))
+async function saveNote(body: string, mentions: string[]) {
+  if (await addNote(body, mentions)) {
+    noteMode.value = false
+    scrollThreadToBottom()
+  }
+}
+const notesBefore = (i: number) => notesBetween(threadNotes.value, i === 0 ? null : thread.value[i - 1]!.created_at, thread.value[i]!.created_at)
+const notesAfterLast = computed(() => notesBetween(threadNotes.value, thread.value.length ? thread.value[thread.value.length - 1]!.created_at : null, null))
+
 // Opens straight to the conversation a push notification tap wants -- fires
 // on mount (app was closed/backgrounded, tap launched/foregrounded it) and
 // again on change (tap arrives while already sitting on this tab, where
@@ -1551,6 +1572,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
           >
             <span class="rounded-pill bg-chip-bg px-2.5 py-0.5 text-[11px] font-medium text-chip-text">{{ relativeDay(m.created_at) }}</span>
           </div>
+        <InboxNoteBubble v-for="n in notesBefore(i)" :key="n.id" :note="n" :team="teamNames" :mine="n.author_id === teamMemberId" @delete="removeNote(n.id)" />
         <div class="flex" :class="m.direction === 'outbound' ? 'justify-end' : 'justify-start'">
           <div
             class="max-w-[80%] rounded-card px-[8px] py-[6px] shadow-card"
@@ -1612,11 +1634,22 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
           </div>
         </div>
         </template>
+        <InboxNoteBubble v-for="n in notesAfterLast" :key="n.id" :note="n" :team="teamNames" :mine="n.author_id === teamMemberId" @delete="removeNote(n.id)" />
       </div>
 
       <div class="shrink-0 border-t border-line bg-surface p-3">
-        <p v-if="sendError" class="mb-2 text-[12.5px] text-danger-text">{{ sendError }}</p>
-        <div v-if="thread.length === 0 || !within24h" class="rounded-ctl border border-warning-border bg-warning-bg px-3 py-2 text-[12.5px] text-warning-text" data-cy="inbox-window-closed">
+        <!-- A note for the team is always possible, whatever WhatsApp's
+             window says: it is never sent. -->
+        <div v-if="thread.length > 0 && !selected.leadId && !noteMode" class="mb-2 flex">
+          <button type="button" class="flex h-9 items-center gap-1.5 rounded-pill border border-warning-border bg-warning-bg px-3 text-[13px] font-semibold text-warning-text" data-cy="thread-note-open" @click="noteMode = true">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z" /></svg>
+            {{ t('Internal note', 'Nota interna') }}
+          </button>
+        </div>
+        <InboxNoteComposer v-if="noteMode" size="lg" :team="teamNames" :my-id="teamMemberId" :saving="noteSaving" :error="noteError" @save="saveNote" @cancel="noteMode = false" />
+        <p v-if="sendError && !noteMode" class="mb-2 text-[12.5px] text-danger-text">{{ sendError }}</p>
+        <template v-if="noteMode" />
+        <div v-else-if="thread.length === 0 || !within24h" class="rounded-ctl border border-warning-border bg-warning-bg px-3 py-2 text-[12.5px] text-warning-text" data-cy="inbox-window-closed">
           <p>
             {{
               thread.length === 0

@@ -22,6 +22,17 @@ watch(
     if (m % per !== 0) unit.value = splitMinutes(m).unit
   },
 )
+// What is in the box while someone is typing. Emitting on every keystroke
+// turned an emptied box into "1" (the minimum) under the cursor, so clearing
+// it and typing 7 read "71" -- seven days saved as seventy-one. Only a whole
+// number of at least 1 is committed; on leaving the box it shows the value
+// again, so an empty box goes back to what was saved.
+const draft = ref<string | null>(null)
+function onInput(raw: string) {
+  draft.value = raw
+  const n = Number(raw)
+  if (raw.trim() !== '' && Number.isFinite(n) && n >= 1) update(n)
+}
 function update(value: number, nextUnit = unit.value) {
   unit.value = nextUnit
   const per = DELAY_UNITS.find((u) => u.value === nextUnit)!.minutes
@@ -31,7 +42,7 @@ function update(value: number, nextUnit = unit.value) {
 
 <template>
   <div class="flex flex-wrap items-center gap-2" :data-test="testId">
-    <input type="number" min="1" :class="FIELD_NUMBER" :value="amount" :aria-label="label" @input="update(Number(($event.target as HTMLInputElement).value))" />
+    <input type="number" min="1" :class="FIELD_NUMBER" :value="draft ?? amount" :aria-label="label" @input="onInput(($event.target as HTMLInputElement).value)" @blur="draft = null" />
     <select :class="[FIELD, 'w-32']" :value="unit" :aria-label="t('Unit', 'Unidad')" @change="update(amount, ($event.target as HTMLSelectElement).value as 'minutes' | 'hours' | 'days')">
       <option v-for="u in DELAY_UNITS" :key="u.value" :value="u.value">{{ say(t, u.label) }}{{ suffix ? ` ${suffix}` : '' }}</option>
     </select>

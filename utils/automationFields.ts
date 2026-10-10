@@ -23,6 +23,10 @@ export interface MergeContext {
   clinicPhone?: string
   clinicAddress?: string
   clinicTimezone?: string
+  /** The clinic's logo (clinic-logos bucket), for an email step that shows it. */
+  clinicLogoUrl?: string
+  /** The account's online booking page, for an email step's booking button. */
+  bookingUrl?: string
   /**
    * What a lead answered on the form they came in through (a Meta lead ad's
    * questions, stored on lead_events as a 'qualification' event). Each one is

@@ -49,7 +49,7 @@ export default defineEventHandler(async (event) => {
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabase
       .from('patients')
-      .select('id, account_id, clinic_id, first_name, last_name, email, is_minor, do_not_contact, marketing_channels, date_of_birth, address, city, postal_code, country, national_id, occupation, gender, emergency_contact')
+      .select('id, account_id, clinic_id, first_name, last_name, email, is_minor, do_not_contact, marketing_channels, date_of_birth, address, city, postal_code, country, national_id, occupation, gender, emergency_contact, preferred_language')
       .not('date_of_birth', 'is', null)
       .order('id')
       .range(from, from + PAGE - 1)

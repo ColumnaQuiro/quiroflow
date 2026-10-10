@@ -22,6 +22,9 @@ const key = (name: string, language: string) => `${name}::${language}`
 const current = computed(() => b.templates.value.find((x) => x.name === config.value.template_name && x.language === (config.value.template_language || 'es')) ?? null)
 const currentKey = computed(() => (current.value ? key(current.value.name, current.value.language) : ''))
 
+// Every language Meta has approved this template in.
+const languages = computed(() => (current.value ? b.templates.value.filter((x) => x.name === current.value!.name).map((x) => x.language) : []))
+
 function selectTemplate(value: string) {
   const tpl = b.templates.value.find((x) => key(x.name, x.language) === value)
   if (!tpl) return
@@ -168,6 +171,17 @@ const isMarketingTemplate = computed(() => current.value?.category === 'MARKETIN
         <option value="" disabled>{{ b.templates.value.length === 0 ? t('No approved templates found', 'No hay plantillas aprobadas') : t('Choose a template…', 'Elige una plantilla…') }}</option>
         <option v-for="tpl in b.templates.value" :key="key(tpl.name, tpl.language)" :value="key(tpl.name, tpl.language)">{{ tpl.name }} · {{ tpl.language }} · {{ tpl.category === 'MARKETING' ? t('Marketing', 'Marketing') : tpl.category === 'UTILITY' ? t('Utility', 'Servicio') : tpl.category }}</option>
       </select>
+    </label>
+    <label v-if="current && !b.isLead.value" class="flex items-start gap-2 text-[13px] leading-snug text-ink-700">
+      <input type="checkbox" class="mt-0.5" :checked="!!config.match_patient_language" data-test="match-language" @change="set({ match_patient_language: ($event.target as HTMLInputElement).checked })" />
+      <span class="flex flex-col gap-0.5">
+        {{ t("Send it in the patient's language", 'Enviarla en el idioma del paciente') }}
+        <span :class="HINT">
+          {{ languages.length > 1
+            ? t(`Approved in ${languages.join(', ')}. Anyone else gets ${current.language}. A form attached below goes in their language too, when it has that version.`, `Aprobada en ${languages.join(', ')}. El resto la recibe en ${current.language}. Un formulario adjunto también va en su idioma, si tiene esa versión.`)
+            : t(`Only approved in ${current.language} so far: everyone gets that until Meta approves another language under the same name.`, `Por ahora solo está aprobada en ${current.language}: todos la reciben así hasta que Meta apruebe otro idioma con el mismo nombre.`) }}
+        </span>
+      </span>
     </label>
     <p v-if="config.template_name && !current && !b.templatesError.value" :class="WARN">
       {{ t(`Set to "${config.template_name}" (${config.template_language || 'es'}), which is not in the approved list any more.`, `Configurada con «${config.template_name}» (${config.template_language || 'es'}), que ya no está entre las aprobadas.`) }}

@@ -1150,32 +1150,18 @@ const notesAfterLast = computed(() => notesBetween(threadNotes.value, thread.val
 const composerText = ref('')
 const sending = ref(false)
 const sendError = ref('')
-const fileInput = ref<HTMLInputElement>()
-const composerTextarea = ref<HTMLTextAreaElement>()
 const templateModalOpen = ref(false)
 
-// Inserts at the cursor rather than replacing composerText outright, so
-// picking a saved reply doesn't clobber anything the practitioner already
-// typed.
 // "Acciones" in the header (InboxChatActions): book them, open their record,
-// or put the booking or a payment link in the reply.
+// or put the booking or a payment link in the reply -- at the cursor of the
+// message bar (InboxComposer), which owns the box.
 const requestOrigin = useRequestURL().origin
 const canBookFromChat = computed(() => isRouteAllowed(store, '/calendar'))
 const canPayFromChat = computed(() => store.isOwner || store.permissions.billing_access === true)
+const composerBar = ref<{ insertReply: (text: string) => void } | null>(null)
 function insertReply(text: string) {
-  const el = composerTextarea.value
-  if (!el) {
-    composerText.value += text
-    return
-  }
-  const start = el.selectionStart ?? composerText.value.length
-  const end = el.selectionEnd ?? composerText.value.length
-  composerText.value = composerText.value.slice(0, start) + text + composerText.value.slice(end)
-  nextTick(() => {
-    el.focus()
-    const cursor = start + text.length
-    el.setSelectionRange(cursor, cursor)
-  })
+  if (composerBar.value) composerBar.value.insertReply(text)
+  else composerText.value += text
 }
 
 // What it takes to redo a send: kept per pending/failed message id so a
@@ -1266,13 +1252,6 @@ async function sendText() {
   await performTextSend(tempId, text, channel, target)
 }
 
-const MAX_MEDIA_BYTES = 16 * 1024 * 1024
-function mediaKindForFile(file: File): 'image' | 'video' | 'audio' | 'document' {
-  if (file.type.startsWith('image/')) return 'image'
-  if (file.type.startsWith('video/')) return 'video'
-  if (file.type.startsWith('audio/')) return 'audio'
-  return 'document'
-}
 async function performMediaSend(
   tempId: string,
   mediaBase64: string,
@@ -1351,56 +1330,11 @@ async function retryMessage(m: Message) {
   }
 }
 
-async function onFileChosen(e: Event) {
-  const file = (e.target as HTMLInputElement).files?.[0]
-  if (!file || !selected.value) return
-  if (file.size > MAX_MEDIA_BYTES) {
-    sendError.value = t('File is too large (max 16 MB).', 'El archivo es demasiado grande (máx. 16 MB).')
-    return
-  }
-  const kind = mediaKindForFile(file)
-  if (kind === 'image') {
-    try {
-      const { blob, mimeType } = await normalizeImageForWhatsApp(file)
-      const base64 = await blobToBase64(blob)
-      await sendMedia(base64, mimeType, file.name.replace(/\.\w+$/, '.jpg'), 'image')
-    } catch (err: any) {
-      sendError.value = err?.message ?? t('Could not process this image.', 'No se pudo procesar esta imagen.')
-    }
-  } else {
-    const base64 = await blobToBase64(file)
-    await sendMedia(base64, file.type, file.name, kind)
-  }
-  if (fileInput.value) fileInput.value.value = ''
-}
 
-const { recording: audioRecording, seconds: audioSeconds, start: startAudioRecording, stop: stopAudioRecording, cancel: cancelAudioRecording } =
-  useAudioRecorder()
-
-async function toggleAudioRecording() {
-  if (audioRecording.value) {
-    const result = await stopAudioRecording()
-    if (!result) return
-    const filename = `voice-note.${extensionForAudioMimeType(result.mimeType)}`
-    const base64 = await blobToBase64(result.blob)
-    await sendMedia(base64, result.mimeType, filename, 'audio')
-  } else {
-    try {
-      await startAudioRecording()
-    } catch {
-      sendError.value = t('Could not access the microphone -- check your browser permissions.', 'No se pudo acceder al micrófono; comprueba los permisos del navegador.')
-    }
-  }
-}
 
 // Fullscreen viewer for tapping any image in the thread (mine or theirs) --
 // mediaUrls' signed URL already works as a direct download link.
 const lightboxUrl = ref<string | null>(null)
-function recordingLabel(secs: number) {
-  const m = Math.floor(secs / 60)
-  const s = secs % 60
-  return `${m}:${s.toString().padStart(2, '0')}`
-}
 
 async function onTemplateSent() {
   templateModalOpen.value = false
@@ -2319,51 +2253,17 @@ function avatarInitials(name: string) {
             </p>
             <UiBtn v-if="(selected.patientId || selected.phoneNumber) && replyChannel !== 'instagram'" variant="primary" size="sm" @click="templateModalOpen = true">{{ t('Send template', 'Enviar plantilla') }}</UiBtn>
           </div>
-          <div v-else-if="audioRecording" class="flex items-center gap-3 rounded-ctl border border-line-control bg-surface-subtle px-3 py-2">
-            <span class="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-danger-text" />
-            <span class="flex-1 text-[13.5px] text-ink-700">{{ t('Recording…', 'Grabando…') }} {{ recordingLabel(audioSeconds) }}</span>
-            <button type="button" class="shrink-0 text-[12.5px] text-ink-faint hover:text-ink-muted" @click="cancelAudioRecording">{{ t('Cancel', 'Cancelar') }}</button>
-            <UiBtn variant="primary" size="sm" @click="toggleAudioRecording">{{ t('Send', 'Enviar') }}</UiBtn>
-          </div>
-          <!-- On a phone the message box takes the full width on a row of its
-          own, with attach, voice, saved replies and Send under it: inline it
-          was left about 130px between them. -->
-          <div v-else class="flex flex-wrap items-end gap-2 sm:flex-nowrap">
-            <!-- Attachments and voice notes are WhatsApp-only: both upload
-            through whatsapp/inbox-send, and instagram/send posts text alone.
-            Offering the buttons on an Instagram thread would take a file,
-            upload it and fail at the very end. -->
-            <button v-if="replyChannel !== 'instagram'" type="button" class="flex h-9 touch:h-11 w-9 touch:w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-500 hover:bg-surface-subtle" :disabled="sending || !threadReady" :aria-label="t('Attach a file', 'Adjuntar archivo')" @click="fileInput?.click()">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
-                <path d="M11.5 5.5L6.4 10.6a2 2 0 002.8 2.8l5.1-5.1a3.5 3.5 0 00-4.95-4.95L4.25 8.45a5 5 0 007.07 7.07" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-            </button>
-            <input ref="fileInput" type="file" class="hidden" accept="image/*,video/*,audio/*,.pdf,.doc,.docx" @change="onFileChosen" />
-            <button
-              v-if="replyChannel !== 'instagram'"
-              type="button"
-              class="flex h-9 touch:h-11 w-9 touch:w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-500 hover:bg-surface-subtle disabled:opacity-50"
-              :disabled="sending || !threadReady"
-              :title="t('Record a voice note', 'Grabar una nota de voz')"
-              :aria-label="t('Record a voice note', 'Grabar una nota de voz')"
-              @click="toggleAudioRecording"
-            >
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
-                <rect x="5.5" y="1.5" width="5" height="8" rx="2.5" />
-                <path d="M3 8a5 5 0 0 0 10 0M8 13v1.5" stroke-linecap="round" />
-              </svg>
-            </button>
-            <InboxSavedRepliesPicker @insert="insertReply" />
-            <textarea
-              ref="composerTextarea"
-              v-model="composerText"
-              rows="1"
-              :placeholder="t('Type a message…', 'Escribe un mensaje…')"
-              class="order-first max-h-32 min-h-9 w-full touch:min-h-11 resize-none rounded-ctl border border-line-control bg-surface px-3 py-[10px] text-[15px] text-ink-900 focus:border-brand focus:outline-none sm:order-none sm:w-auto sm:flex-1"
-              @keydown.enter.exact.prevent="sendText"
-            />
-            <button type="button" data-cy="thread-send" class="ml-auto h-9 touch:h-11 shrink-0 rounded-ctl bg-brand sm:ml-0 px-4 text-[14px] font-bold text-surface hover:bg-brand-hover disabled:opacity-50" :disabled="sending || !composerText.trim() || !threadReady" @click="sendText">{{ sending ? '…' : t('Send', 'Enviar') }}</button>
-          </div>
+          <InboxComposer
+            v-else
+            ref="composerBar"
+            v-model="composerText"
+            :sending="sending"
+            :disabled="!threadReady"
+            :media="replyChannel !== 'instagram'"
+            @send="sendText"
+            @media="(m) => sendMedia(m.base64, m.mimeType, m.filename, m.kind)"
+            @error="(message) => (sendError = message)"
+          />
         </div>
       </div>
       <!-- Beside the thread on a wide screen: who this is, without leaving

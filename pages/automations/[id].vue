@@ -35,10 +35,12 @@ function setTab(next: Tab) {
 }
 
 async function init() {
+  // The automation first: it is what the canvas waits on, so its requests go
+  // out ahead of the lookups and the WhatsApp templates (which reach Meta).
+  const loading = idParam.value === 'new' ? b.initNew() : b.load(idParam.value)
   b.loadLookups()
   b.loadTemplates()
-  if (idParam.value === 'new') b.initNew()
-  else await b.load(idParam.value)
+  await loading
   if (typeof route.query.step === 'string' && b.stepsById.value.has(route.query.step)) b.selection.value = { kind: 'step', id: route.query.step }
 }
 onMounted(async () => {

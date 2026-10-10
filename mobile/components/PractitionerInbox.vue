@@ -1078,7 +1078,7 @@ onBeforeUnmount(() => {
 let pollTimer: ReturnType<typeof setInterval> | null = null
 onMounted(() => {
   pollTimer = setInterval(() => {
-    if (document.visibilityState === 'visible') load({ silent: true })
+    if (document.visibilityState === 'visible' && active.value) load({ silent: true })
   }, 15000)
 })
 onUnmounted(() => {
@@ -1086,6 +1086,16 @@ onUnmounted(() => {
 })
 
 const listEl = ref<HTMLElement | null>(null)
+// The Inbox page is kept alive between tabs, so an open chat is still open on
+// the way back. The poll rests meanwhile; coming back catches up, and a chat
+// that was left open is read again, so what arrived is marked read as seen.
+const { active } = useKeptAlive({
+  scrollers: [listEl, messagesEl],
+  onReturn: () => {
+    scheduleLoad()
+    if (selectedKey.value) markRead(selectedKey.value)
+  },
+})
 const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouchMove, onTouchEnd } = usePullToRefresh(listEl, () => load({ silent: true }))
 </script>
 

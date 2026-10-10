@@ -1,5 +1,8 @@
 <script setup lang="ts">
-definePageMeta({ layout: 'practitioner' })
+// Kept alive between tabs: back from the Calendar, the Inbox is on the same
+// conversation (or the same place in the list) -- see useKeptAlive.
+defineOptions({ name: 'StaffInboxPage' })
+definePageMeta({ layout: 'practitioner', keepalive: true })
 
 const user = useSupabaseUser()
 watch(user, (u) => { if (!u) navigateTo('/login') }, { immediate: true })
@@ -17,6 +20,8 @@ const { context, loading, can } = usePractitionerContext()
     <p v-else-if="!can('inbox_access')" class="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-sm text-ink-muted" data-cy="inbox-no-access">
       {{ t('Your role does not include the Inbox.', 'Tu rol no incluye la Bandeja.') }}
     </p>
-    <PractitionerInbox v-else :account-id="context.accountId" :team-member-id="context.teamMemberId" :open-conversation-key="pendingConversationKey" />
+    <!-- Keyed by who is reading: kept alive, a switch of account would
+         otherwise keep showing the last one's conversations. -->
+    <PractitionerInbox v-else :key="`${context.accountId}:${context.teamMemberId}`" :account-id="context.accountId" :team-member-id="context.teamMemberId" :open-conversation-key="pendingConversationKey" />
   </div>
 </template>

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { bookingSlotsForDay, calendarDateKey, clinicHourOf, clinicTimeLabel, weekdayKeyOf } from '../../utils/bookingSlots'
+import { bookingSlotsForDay, calendarDateKey, clinicHourOf, clinicTimeLabel, staffDayTimes, weekdayKeyOf } from '../../utils/bookingSlots'
 import { clinicDateOf, wallClockToUtc } from '../../utils/clinicClock'
 
 // The slots the booking page and the patient app offer (utils/bookingSlots.ts).
@@ -73,5 +73,40 @@ describe('Wall-clock times at the clinic', () => {
   it("names the clinic's date, which near midnight is not the device's", () => {
     expect(clinicDateOf(new Date('2026-10-05T22:30:00Z'), 'Europe/Madrid')).toBe('2026-10-06')
     expect(clinicDateOf(new Date('2026-10-05T22:30:00Z'), 'Atlantic/Canary')).toBe('2026-10-05')
+  })
+})
+
+// The staff app's book and move sheets list every time of the day, the taken
+// and out-of-hours ones marked rather than left out: the desk books over them
+// on purpose (staffDayTimes).
+describe('Every time of the day, for staff', () => {
+  const weekdays = { mon: [['09:00', '12:00']], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [] } as Record<string, [string, string][]>
+  const base = { timeZone: 'Europe/Madrid', clinicHours: weekdays, practitionerHours: null, durationMinutes: 60, busy: [], notBefore: new Date('2020-01-01T00:00:00Z') }
+  const label = (list: { at: Date; state: string }[]) => list.map((x) => `${clinicTimeLabel(x.at, 'Europe/Madrid')} ${x.state}`)
+
+  it('marks taken times and times outside the hours, and keeps the free ones', () => {
+    // A visit 10:00-11:00 on Monday 5 Oct.
+    const busy = [{ starts_at: '2026-10-05T08:00:00Z', ends_at: '2026-10-05T09:00:00Z' }]
+    const times = label(staffDayTimes({ ...base, date: '2026-10-05', busy, latest: '13:00' }))
+    expect(times).toEqual(['08:00 closed', '09:00 free', '10:00 busy', '11:00 free', '12:00 closed'])
+    // The free ones are exactly what a patient would be offered.
+    const free = staffDayTimes({ ...base, date: '2026-10-05', busy }).filter((x) => x.state === 'free').map((x) => x.at.toISOString())
+    expect(free).toEqual(bookingSlotsForDay({ ...base, date: '2026-10-05', busy }).map((d) => d.toISOString()))
+  })
+
+  it('lists a day nobody works, all of it outside the hours', () => {
+    const times = staffDayTimes({ ...base, date: '2026-10-06', latest: '11:00' })
+    expect(label(times)).toEqual(['08:00 closed', '09:00 closed', '10:00 closed'])
+  })
+
+  it('adds a start off the grid, marked by the same rule', () => {
+    const extra = [new Date(wallClockToUtc('2026-10-05', '09:15', 'Europe/Madrid'))]
+    const times = label(staffDayTimes({ ...base, date: '2026-10-05', extra, latest: '12:00' }))
+    expect(times).toContain('09:15 free')
+  })
+
+  it('leaves out times already past', () => {
+    const notBefore = new Date(wallClockToUtc('2026-10-05', '10:30', 'Europe/Madrid'))
+    expect(label(staffDayTimes({ ...base, date: '2026-10-05', notBefore, latest: '12:00' }))).toEqual(['11:00 free'])
   })
 })

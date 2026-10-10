@@ -1,5 +1,9 @@
 <script setup lang="ts">
-definePageMeta({ layout: 'practitioner' })
+// Kept alive between tabs: back from the Inbox, the agenda is on the same
+// day and view, scrolled where it was (useKeptAlive). Named, because the
+// keep-alive matches pages by name and every index.vue is called "index".
+defineOptions({ name: 'StaffCalendarPage' })
+definePageMeta({ layout: 'practitioner', keepalive: true })
 
 // The agenda: the day as a timeline, read in the CLINIC's time zone.
 //
@@ -207,10 +211,12 @@ watch([() => context.value?.clinicId, () => (isWeek.value ? `w${weekStart.value}
 // without leaving the tab.
 let poll: ReturnType<typeof setInterval> | undefined
 function onVisible() {
-  if (document.visibilityState === 'visible') load(true)
+  if (document.visibilityState === 'visible' && active.value) load(true)
 }
 onMounted(() => {
-  poll = setInterval(() => load(true), 60000)
+  poll = setInterval(() => {
+    if (active.value) load(true)
+  }, 60000)
   document.addEventListener('visibilitychange', onVisible)
 })
 onBeforeUnmount(() => {
@@ -355,6 +361,8 @@ const nowTop = computed(() => {
 
 // Scrolled to now (or the first visit) when a day opens.
 const scroller = ref<HTMLElement | null>(null)
+// While another tab is showing, the poll rests; coming back catches up.
+const { active } = useKeptAlive({ scrollers: [scroller], onReturn: () => load(true) })
 watch([loading, day, view], async ([l]) => {
   if (l) return
   await nextTick()

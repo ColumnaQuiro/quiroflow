@@ -124,11 +124,11 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
       // apart from "an invoice that was voided" needs the status in hand.
       supabase.from('invoices').select('id, total_cents, status, is_refund').eq('patient_id', currentId),
       supabase.from('patient_memberships').select('id, membership_name, status').eq('patient_id', currentId).eq('status', 'active'),
-      supabase.from('package_purchases').select('id, package_name, sessions_total, sessions_used, price_cents, invoice_id, owed_cents, is_closed').eq('patient_id', currentId).order('purchased_at', { ascending: false }),
+      supabase.from('package_purchases').select('id, package_name, sessions_total, sessions_used, price_cents, invoice_id, owed_cents, is_closed, purchased_at').eq('patient_id', currentId).order('purchased_at', { ascending: false }),
       supabase.from('account_credits').select('amount_cents, external_reference, payment_id').eq('patient_id', currentId),
       supabase
         .from('package_purchase_shares')
-        .select('package_purchases(id, package_name, sessions_total, sessions_used, price_cents, is_closed, patients(first_name, last_name))')
+        .select('package_purchases(id, package_name, sessions_total, sessions_used, price_cents, is_closed, purchased_at, patients(first_name, last_name))')
         .eq('patient_id', currentId),
       // No invoice join any more -- it existed only for the void-invoice
       // credit-on-void check, which the 'credit' exclusion below now does
@@ -257,8 +257,10 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     // value to bonoValueCents below -- one patient's August bono, closed in
     // PracticeHub and re-issued in September, showed as a second live bono
     // worth 440 EUR they could draw on. See the is_closed migration.
-    state.activePackages.value = [...(packages ?? []), ...sharedPackages].filter(
-      (p) => !p.is_closed && p.sessions_used < p.sessions_total,
+    // Newest first, own and shared together (utils/bonoOrder.ts): a family
+    // bono shared to them no longer trails after their own.
+    state.activePackages.value = sortBonos(
+      [...(packages ?? []), ...sharedPackages].filter((p) => !p.is_closed && p.sessions_used < p.sessions_total),
     )
 
     // sessions_left x the bono's own per-session rate, with the same rounding

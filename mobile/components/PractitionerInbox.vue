@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { snoozeStateOf, type SnoozeRow } from '../../utils/inboxSnooze'
+
 const props = defineProps<{ accountId: string; teamMemberId: string; openConversationKey?: string | null }>()
 
 interface Message {
@@ -33,6 +35,10 @@ interface Conversation {
   channel: string
   lastMessage: Message
   unread: boolean
+  /** Snoozed by me and still out of sight, until then (inbox_snoozes). */
+  snoozedUntil?: string | null
+  /** A snooze of mine come due and not opened since: back on top, unread. */
+  followUp?: boolean
 }
 
 const supabase = useSupabaseClient()
@@ -123,13 +129,19 @@ interface LabelDef { id: string; name: string; color: string }
 const archivedKeys = ref<Set<string>>(new Set())
 const myLabelsByKey = ref<Record<string, string[]>>({})
 const labels = ref<LabelDef[]>([])
+// Snoozed by me (inbox_snoozes), with the web's rule (inbox_conversations
+// my_snoozed_until / my_follow_up) applied here, since this list is built on
+// the device: out of sight until due, then a follow-up until opened.
+const snoozes = ref<Record<string, SnoozeRow>>({})
 async function loadArchivesAndLabels() {
-  const [{ data: archives }, { data: assigns }, { data: labelRows }] = await Promise.all([
+  const [{ data: archives }, { data: assigns }, { data: labelRows }, { data: snoozeRows }] = await Promise.all([
     supabase.from('whatsapp_conversation_archives').select('conversation_key').eq('team_member_id', props.teamMemberId),
     supabase.from('whatsapp_conversation_labels').select('conversation_key, label_id').eq('team_member_id', props.teamMemberId),
     supabase.from('whatsapp_labels').select('id, name, color').order('name'),
+    supabase.from('inbox_snoozes').select('conversation_key, snoozed_until, created_at').eq('team_member_id', props.teamMemberId),
   ])
   archivedKeys.value = new Set((archives ?? []).map((a) => a.conversation_key))
+  snoozes.value = Object.fromEntries(((snoozeRows ?? []) as (SnoozeRow & { conversation_key: string })[]).map((r) => [r.conversation_key, r]))
   const byKey: Record<string, string[]> = {}
   for (const a of assigns ?? []) (byKey[a.conversation_key] ??= []).push(a.label_id)
   myLabelsByKey.value = byKey
@@ -410,7 +422,20 @@ const conversations = computed<Conversation[]>(() => {
     list.push({ ...sum, unread: markedUnread(sum.key) || (sum.lastMessage.direction === 'inbound' && (!readTimestamps.value[sum.key] || readTimestamps.value[sum.key] < at)) })
     byKey.set(sum.key, [])
   }
-  return list.sort((a, b) => b.lastMessage.created_at.localeCompare(a.lastMessage.created_at))
+  // Snoozes: what they last wrote is what brings one back early (the view
+  // reads its last inbound message; the newest one, when it is theirs, is
+  // the closest thing this list has).
+  const sortAt = new Map<string, number>()
+  for (const c of list) {
+    const last = c.lastMessage
+    const state = snoozeStateOf(snoozes.value[c.key], last.direction === 'inbound' ? last.created_at : null, readTimestamps.value[c.key])
+    c.snoozedUntil = state === 'hidden' ? snoozes.value[c.key]!.snoozed_until : null
+    c.followUp = state === 'follow_up'
+    if (c.followUp) c.unread = true
+    // A follow-up sits at the time it came due, as on the web.
+    sortAt.set(c.key, c.followUp ? Math.max(Date.parse(last.created_at), Date.parse(snoozes.value[c.key]!.snoozed_until)) : Date.parse(last.created_at))
+  }
+  return list.sort((a, b) => sortAt.get(b.key)! - sortAt.get(a.key)!)
 })
 
 // Search matches name, phone number, and anything said in the conversation
@@ -448,14 +473,15 @@ async function loadAssignments() {
 const assigneeName = (key: string) => teamNames.value.find((m) => m.id === assignments.value[key])?.full_name ?? null
 const assignFilter = ref<'all' | 'mine' | 'unassigned'>('all')
 
-const view = ref<'active' | 'archived'>('active')
+const view = ref<'active' | 'archived' | 'snoozed'>('active')
 const unreadOnly = ref(false)
 const replyFilter = ref<'all' | 'awaiting_us' | 'awaiting_patient'>('all')
 const labelFilter = ref<string | null>(null)
 const filterSheetOpen = ref(false)
 
 const filteredConversations = computed(() => {
-  let list = conversations.value.filter((c) => archivedKeys.value.has(c.key) === (view.value === 'archived'))
+  let list = conversations.value.filter((c) => archivedKeys.value.has(c.key) === (view.value === 'archived') && (view.value === 'archived' || !!c.snoozedUntil === (view.value === 'snoozed')))
+  if (view.value === 'snoozed') list = [...list].sort((a, b) => Date.parse(a.snoozedUntil!) - Date.parse(b.snoozedUntil!))
   if (search.value.trim()) {
     const q = normalizeSearchTerm(search.value.trim())
     list = list.filter((c) => normalizeSearchTerm(`${c.name} ${c.phoneNumber ?? ''} ${conversationSearchText.value[c.key] ?? ''}`).includes(q))
@@ -548,6 +574,27 @@ watch(thread, () => scrollThreadToBottom())
 watch(selectedKey, (key) => {
   if (key) scrollThreadToBottom()
 })
+
+// Internal notes (inbox_notes), as in the web Inbox: the team's, in the
+// thread between the messages, never sent; a mention reaches the colleague
+// as an unread conversation and a push. Not on a lead's own thread or a
+// conversation with no messages yet.
+const { notes: threadNotes, saving: noteSaving, error: noteError, add: addNote, remove: removeNote } = useInboxNotes({
+  accountId: () => props.accountId,
+  conversationKey: () => (selected.value && !selected.value.leadId && thread.value.length > 0 ? selected.value.key : null),
+  authorId: () => props.teamMemberId,
+  notifyMentions: (noteId) => authedFetch('/api/inbox/note-mentions', { method: 'POST', body: { noteId } }),
+})
+const noteMode = ref(false)
+watch(selectedKey, () => (noteMode.value = false))
+async function saveNote(body: string, mentions: string[]) {
+  if (await addNote(body, mentions)) {
+    noteMode.value = false
+    scrollThreadToBottom()
+  }
+}
+const notesBefore = (i: number) => notesBetween(threadNotes.value, i === 0 ? null : thread.value[i - 1]!.created_at, thread.value[i]!.created_at)
+const notesAfterLast = computed(() => notesBetween(threadNotes.value, thread.value.length ? thread.value[thread.value.length - 1]!.created_at : null, null))
 
 // Opens straight to the conversation a push notification tap wants -- fires
 // on mount (app was closed/backgrounded, tap launched/foregrounded it) and
@@ -681,6 +728,34 @@ async function bulkArchiveSelected(archive: boolean) {
 }
 
 // Single-conversation archive toggle, used from the row swipe action.
+// Snooze (just for me): out of my list until then, back as a follow-up --
+// the same row the web Inbox writes. Snoozing closes the thread, which has
+// just left the list it was opened from.
+const snoozeNotice = ref('')
+let snoozeNoticeTimer: ReturnType<typeof setTimeout> | undefined
+async function snoozeKey(key: string, at: string | null) {
+  const created = new Date().toISOString()
+  const { error } = at
+    ? await supabase.from('inbox_snoozes').upsert({ account_id: props.accountId, team_member_id: props.teamMemberId, conversation_key: key, snoozed_until: at, created_at: created } as never)
+    : await supabase.from('inbox_snoozes').delete().eq('team_member_id', props.teamMemberId).eq('conversation_key', key)
+  if (error) {
+    snoozeNotice.value = t("Couldn't snooze it. Try again.", 'No se ha podido posponer. Inténtalo de nuevo.')
+  } else {
+    const next = { ...snoozes.value }
+    if (at) next[key] = { snoozed_until: at, created_at: created }
+    else delete next[key]
+    snoozes.value = next
+    if (at && selectedKey.value === key) selectedKey.value = null
+    snoozeNotice.value = at
+      ? t(`Snoozed until ${new Date(at).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.`, `Pospuesta hasta el ${new Date(at).toLocaleString('es-ES', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.`)
+      : t('Back in your Inbox.', 'De vuelta en tu bandeja.')
+  }
+  clearTimeout(snoozeNoticeTimer)
+  snoozeNoticeTimer = setTimeout(() => (snoozeNotice.value = ''), 3500)
+  refreshBadge()
+}
+const snoozeWhen = (iso: string) => new Date(iso).toLocaleString(t('en-GB', 'es-ES'), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+
 async function toggleArchive(c: Conversation) {
   swipedKey.value = null
   const isArchived = archivedKeys.value.has(c.key)
@@ -1305,6 +1380,16 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
         </button>
         <button
           type="button"
+          class="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl border"
+          :class="view === 'snoozed' ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted'"
+          :aria-label="view === 'snoozed' ? t('Show active conversations', 'Mostrar conversaciones activas') : t('Show what I snoozed', 'Mostrar mis pospuestas')"
+          data-cy="inbox-snoozed-toggle"
+          @click="view = view === 'snoozed' ? 'active' : 'snoozed'"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8" /><path d="M12 9v4l2.5 2.5M5 3L2 6M19 3l3 3" /></svg>
+        </button>
+        <button
+          type="button"
           class="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl border"
           :class="unreadOnly || replyFilter !== 'all' || labelFilter || assignFilter !== 'all' ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted'"
           :title="t('Filter', 'Filtrar')" :aria-label="t('Filter', 'Filtrar')"
@@ -1360,7 +1445,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
         </div>
         <AppSkeletonList v-if="loading" avatar :rows="7" />
         <p v-else-if="filteredConversations.length === 0" class="p-6 text-center text-[13px] text-ink-faint">
-          {{ view === 'archived' ? t('No archived conversations.', 'No hay conversaciones archivadas.') : t('No conversations yet.', 'Aún no hay conversaciones.') }}
+          {{ view === 'archived' ? t('No archived conversations.', 'No hay conversaciones archivadas.') : view === 'snoozed' ? t('Nothing snoozed.', 'Nada pospuesto.') : t('No conversations yet.', 'Aún no hay conversaciones.') }}
         </p>
         <div v-for="c in filteredConversations" :key="c.key" class="relative overflow-hidden border-b border-line-row">
           <div class="absolute inset-y-0 right-0 flex">
@@ -1412,7 +1497,9 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             <p class="truncate text-[13px]" :class="c.unread ? 'font-medium text-ink-800' : 'text-ink-muted2'">
               {{ c.lastMessage.direction === 'outbound' ? t('You: ', 'Tú: ') : '' }}{{ previewText(c.lastMessage) }}
             </p>
-            <div v-if="myLabelsByKey[c.key]?.length" class="mt-1 flex flex-wrap gap-1">
+            <div v-if="myLabelsByKey[c.key]?.length || c.followUp || c.snoozedUntil" class="mt-1 flex flex-wrap gap-1">
+              <span v-if="c.followUp" class="rounded-pill border border-warning-border bg-warning-bg px-1.5 py-px text-[10px] font-bold text-warning-text" data-cy="inbox-row-follow-up">{{ t('Follow up', 'Seguimiento') }}</span>
+              <span v-else-if="c.snoozedUntil" class="rounded-pill bg-chip-bg px-1.5 py-px text-[10px] text-ink-muted" data-cy="inbox-row-snoozed">{{ t('Back', 'Vuelve') }} {{ snoozeWhen(c.snoozedUntil) }}</span>
               <span
                 v-for="lid in myLabelsByKey[c.key]"
                 :key="lid"
@@ -1531,6 +1618,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             <span v-if="assigneeName(selected.key)" class="ml-1.5" data-cy="inbox-assignee">· {{ assigneeName(selected.key) }}</span>
           </p>
         </div>
+        <InboxSnoozeMenu :snoozed-until="selected.snoozedUntil" :time-zone="staffContext?.timeZone" @snooze="(at: string) => snoozeKey(selected!.key, at)" @unsnooze="snoozeKey(selected!.key, null)" />
         <button type="button" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-700" :aria-label="t('Assign', 'Asignar')" data-cy="inbox-assign" @click="assignOpen = true">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M6.5 7.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM2 13.5c0-2.2 2-3.5 4.5-3.5 1 0 1.9.2 2.6.6M12 9.5v4M10 11.5h4" /></svg>
         </button>
@@ -1564,6 +1652,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
           >
             <span class="rounded-pill bg-chip-bg px-2.5 py-0.5 text-[11px] font-medium text-chip-text">{{ relativeDay(m.created_at) }}</span>
           </div>
+        <InboxNoteBubble v-for="n in notesBefore(i)" :key="n.id" :note="n" :team="teamNames" :mine="n.author_id === teamMemberId" @delete="removeNote(n.id)" />
         <div class="flex" :class="m.direction === 'outbound' ? 'justify-end' : 'justify-start'">
           <div
             class="max-w-[80%] rounded-card px-[8px] py-[6px] shadow-card"
@@ -1625,11 +1714,22 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
           </div>
         </div>
         </template>
+        <InboxNoteBubble v-for="n in notesAfterLast" :key="n.id" :note="n" :team="teamNames" :mine="n.author_id === teamMemberId" @delete="removeNote(n.id)" />
       </div>
 
       <div class="shrink-0 border-t border-line bg-surface p-3">
-        <p v-if="sendError" class="mb-2 text-[12.5px] text-danger-text">{{ sendError }}</p>
-        <div v-if="thread.length === 0 || !within24h" class="rounded-ctl border border-warning-border bg-warning-bg px-3 py-2 text-[12.5px] text-warning-text" data-cy="inbox-window-closed">
+        <!-- A note for the team is always possible, whatever WhatsApp's
+             window says: it is never sent. -->
+        <div v-if="thread.length > 0 && !selected.leadId && !noteMode" class="mb-2 flex">
+          <button type="button" class="flex h-9 items-center gap-1.5 rounded-pill border border-warning-border bg-warning-bg px-3 text-[13px] font-semibold text-warning-text" data-cy="thread-note-open" @click="noteMode = true">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z" /></svg>
+            {{ t('Internal note', 'Nota interna') }}
+          </button>
+        </div>
+        <InboxNoteComposer v-if="noteMode" size="lg" :team="teamNames" :my-id="teamMemberId" :saving="noteSaving" :error="noteError" @save="saveNote" @cancel="noteMode = false" />
+        <p v-if="sendError && !noteMode" class="mb-2 text-[12.5px] text-danger-text">{{ sendError }}</p>
+        <template v-if="noteMode" />
+        <div v-else-if="thread.length === 0 || !within24h" class="rounded-ctl border border-warning-border bg-warning-bg px-3 py-2 text-[12.5px] text-warning-text" data-cy="inbox-window-closed">
           <p>
             {{
               thread.length === 0
@@ -1785,6 +1885,9 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
           </svg>
         </button>
       </div>
+    </div>
+    <div v-if="snoozeNotice" class="pointer-events-none absolute inset-x-0 bottom-20 z-50 flex justify-center px-4" role="status" data-cy="inbox-snooze-notice">
+      <p class="rounded-full bg-ink-900 px-4 py-2 text-[13px] font-medium text-surface shadow-popover">{{ snoozeNotice }}</p>
     </div>
   </div>
 </template>

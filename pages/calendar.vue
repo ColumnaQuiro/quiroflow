@@ -12,6 +12,7 @@ import type { MoveClash } from '~/utils/moveClash'
 import { FILTER_DOT_CLASS, STAGE_TONE, STAGE_TONE_CLASS } from '~/composables/useAppointmentStage'
 import type { BlockView } from '~/components/calendar/AppointmentBlock.vue'
 import type { FlowRow } from '~/components/calendar/FlowTracker.vue'
+import { isRouteAllowed } from '~/utils/routePermissions'
 
 const START_HOUR = 8
 const END_HOUR = 20
@@ -613,6 +614,10 @@ const todayOwedByPatient = ref<Record<string, number>>({})
 // Until the first answer, the glance and the tracker show placeholders, not
 // zeros: "0 booked" on a full day reads as a fact.
 const todayLoaded = ref(false)
+// Collected and invoiced today, beside the counts -- for a role that can open
+// the day sheet it comes from (Reports > Daily Transactions).
+const takings = useDayTakings()
+const seesTakings = computed(() => isRouteAllowed(store, '/reports/daily-transactions'))
 let todayToken = 0
 async function loadToday() {
   const clinicId = store.currentClinicId
@@ -625,6 +630,7 @@ async function loadToday() {
   const token = ++todayToken
   const start = startOfDay(new Date())
   const end = addDays(start, 1)
+  if (seesTakings.value) takings.load(clinicId, start, end)
   const [{ data: rows }, { data: moves }] = await Promise.all([
     supabase.from('appointments').select(APPOINTMENT_SELECT).eq('clinic_id', clinicId).gte('starts_at', start.toISOString()).lt('starts_at', end.toISOString()).order('starts_at'),
     supabase
@@ -670,6 +676,14 @@ function glancePct(count: number) {
   const booked = todayGlance.value.booked
   return `${booked > 0 ? Math.round((count / booked) * 100) : 0}\u00a0%`
 }
+const takingsRows = computed(() =>
+  seesTakings.value
+    ? [
+        { key: 'collected', label: t('Collected', 'Cobrado'), value: formatEur(takings.collectedCents.value) },
+        { key: 'invoiced', label: t('Invoiced', 'Facturado'), value: formatEur(takings.invoicedCents.value) },
+      ]
+    : [],
+)
 const glanceRows = computed(() => [
   { key: 'booked', label: t('Booked', 'Reservadas'), value: String(todayGlance.value.booked), tone: 'text-ink-900' },
   { key: 'seen', label: t('Seen', 'Atendidas'), value: `${todayGlance.value.seen} (${glancePct(todayGlance.value.seen)})`, tone: 'text-success-text' },
@@ -2489,6 +2503,14 @@ function showNowLineOn(day: Date) {
 
         <div data-cy="today-glance" class="mx-3 mb-3 rounded-card border border-line bg-surface p-3">
           <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-faint">{{ t('Today at a glance', 'Hoy de un vistazo') }}</p>
+          <!-- Money first, as a shift is closed: what came in, and what was charged. -->
+          <NuxtLink v-if="takingsRows.length" to="/reports/daily-transactions" class="mt-2 grid grid-cols-2 gap-2" data-cy="glance-takings" :title="t('Open the day sheet', 'Abrir las transacciones del día')">
+            <span v-for="row in takingsRows" :key="row.key" class="rounded-ctl bg-surface-subtle px-2.5 py-2" :data-cy="`glance-${row.key}`">
+              <span class="block text-[11px] text-ink-muted">{{ row.label }}</span>
+              <UiSkeleton v-if="!takings.loaded.value" class="mt-1 h-4 w-14 rounded-ctlSm" />
+              <span v-else class="block font-mono text-[14px] font-semibold text-ink-900">{{ row.value }}</span>
+            </span>
+          </NuxtLink>
           <div class="mt-2 space-y-1.5">
             <div v-for="row in glanceRows" :key="row.key" :data-cy="`glance-${row.key}`" class="flex items-center justify-between text-[12.5px]">
               <span :class="row.key === 'booked' ? 'text-ink-600' : row.tone">{{ row.label }}</span>

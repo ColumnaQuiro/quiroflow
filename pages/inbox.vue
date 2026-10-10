@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { normalizeSearchTerm } from '~/utils/searchText'
+import { notesBetween } from '~/utils/inboxNotes'
 import { matchPendingToServer, mergePendingIntoThread, newestInConversation } from '~/utils/inboxPendingMessages'
 import { CHANNEL_LABEL } from '~/composables/useGrowthConversations'
 import { snoozeStateOf, type SnoozeRow } from '~/utils/inboxSnooze'
@@ -1125,6 +1126,27 @@ const within24h = computed(() => {
 })
 const isNewConversation = computed(() => threadReady.value && thread.value.length === 0)
 
+// Internal notes (inbox_notes): the team's, in the thread between the
+// messages, never sent. Mentions reach a colleague as an unread conversation
+// and a push. Not on a conversation that has no messages yet.
+const { notes: threadNotes, saving: noteSaving, error: noteError, add: addNote, remove: removeNote } = useInboxNotes({
+  accountId: () => store.accountId,
+  conversationKey: () => (selected.value && !isNewConversation.value ? selected.value.key : null),
+  authorId: () => myId.value,
+  notifyMentions: (noteId) => useStaffFetch('/api/inbox/note-mentions', { method: 'POST', body: { noteId } }),
+})
+const noteMode = ref(false)
+watch(selectedKey, () => (noteMode.value = false))
+async function saveNote(body: string, mentions: string[]) {
+  if (await addNote(body, mentions)) {
+    noteMode.value = false
+    scrollThreadToBottomNextFrame(true)
+  }
+}
+const notesBefore = (i: number) => notesBetween(threadNotes.value, i === 0 ? null : thread.value[i - 1]!.created_at, thread.value[i]!.created_at)
+const notesAfterLast = computed(() => notesBetween(threadNotes.value, thread.value.length ? thread.value[thread.value.length - 1]!.created_at : null, null))
+
+
 const composerText = ref('')
 const sending = ref(false)
 const sendError = ref('')
@@ -2159,6 +2181,7 @@ function avatarInitials(name: string) {
             >
               <span class="rounded-pill bg-chip-bg px-2.5 py-0.5 text-[11px] font-medium text-chip-text">{{ relativeDay(m.created_at) }}</span>
             </div>
+            <InboxNoteBubble v-for="n in notesBefore(i)" :key="n.id" :note="n" :team="team" :mine="n.author_id === myId" @delete="removeNote(n.id)" />
             <div class="flex" :class="m.direction === 'outbound' ? 'justify-end' : 'justify-start'">
               <div
                 data-cy="thread-message"
@@ -2221,6 +2244,7 @@ function avatarInitials(name: string) {
               </div>
             </div>
           </template>
+          <InboxNoteBubble v-for="n in notesAfterLast" :key="n.id" :note="n" :team="team" :mine="n.author_id === myId" @delete="removeNote(n.id)" />
           </div>
 
           <button
@@ -2237,8 +2261,18 @@ function avatarInitials(name: string) {
         </div>
 
         <div class="shrink-0 border-t border-line bg-surface p-3">
-          <p v-if="sendError" class="mb-2 text-[12.5px] text-danger-text">{{ sendError }}</p>
-          <div v-if="!within24h" class="flex items-center justify-between gap-3 rounded-ctl border border-warning-border bg-warning-bg px-3 py-2">
+          <!-- A note for the team is always possible, whatever WhatsApp's
+          window says: it is never sent. -->
+          <div v-if="!isNewConversation && !noteMode" class="mb-2 flex">
+            <button type="button" class="flex h-8 items-center gap-1.5 rounded-pill border border-warning-border bg-warning-bg px-3 text-[12.5px] font-semibold text-warning-text" data-cy="thread-note-open" @click="noteMode = true">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z" /></svg>
+              {{ t('Internal note', 'Nota interna') }}
+            </button>
+          </div>
+          <InboxNoteComposer v-if="noteMode" :team="team" :my-id="myId" :saving="noteSaving" :error="noteError" @save="saveNote" @cancel="noteMode = false" />
+          <p v-if="sendError && !noteMode" class="mb-2 text-[12.5px] text-danger-text">{{ sendError }}</p>
+          <template v-if="noteMode" />
+          <div v-else-if="!within24h" class="flex items-center justify-between gap-3 rounded-ctl border border-warning-border bg-warning-bg px-3 py-2">
             <p class="text-[12.5px] text-warning-text">
               <template v-if="isNewConversation">{{ selected.name }} {{ t("hasn't messaged you before — start with an approved template.", 'no te ha escrito antes — comienza con una plantilla aprobada.') }}</template>
               <!-- Instagram has no template escape hatch: outside the window

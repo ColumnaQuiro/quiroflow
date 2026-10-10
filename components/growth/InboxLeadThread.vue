@@ -7,6 +7,8 @@ const emit = defineEmits<{
   takeOver: []
   handBack: []
   send: [text: string]
+  sendMedia: [media: { base64: string; mimeType: string; filename: string; kind: 'image' | 'video' | 'audio' | 'document' }]
+  sendTemplate: []
   draftReply: []
   approveDraft: [text: string]
   discardDraft: []
@@ -92,6 +94,75 @@ function submit() {
   if (!draft.value.trim() || props.sending) return
   emit('send', draft.value)
   draft.value = ''
+}
+
+// What a patient thread's composer offers beside the box: a file, a voice
+// note, a saved reply. Files and voice notes are WhatsApp only, as they are
+// there -- instagram/send posts text alone, so on an Instagram lead the
+// buttons would take a file and fail at the very end.
+const { showToast } = useToast()
+const isWhatsApp = computed(() => props.thread.channel !== 'instagram')
+const textarea = ref<HTMLTextAreaElement | null>(null)
+const fileInput = ref<HTMLInputElement | null>(null)
+const MAX_MEDIA_BYTES = 16 * 1024 * 1024
+
+// At the cursor, so picking a saved reply does not clobber what is typed.
+function insertReply(text: string) {
+  const el = textarea.value
+  const start = el?.selectionStart ?? draft.value.length
+  const end = el?.selectionEnd ?? draft.value.length
+  draft.value = draft.value.slice(0, start) + text + draft.value.slice(end)
+  nextTick(() => {
+    if (!el) return
+    el.focus()
+    el.setSelectionRange(start + text.length, start + text.length)
+  })
+}
+
+function kindOf(file: File): 'image' | 'video' | 'audio' | 'document' {
+  if (file.type.startsWith('image/')) return 'image'
+  if (file.type.startsWith('video/')) return 'video'
+  if (file.type.startsWith('audio/')) return 'audio'
+  return 'document'
+}
+
+async function onFileChosen(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (fileInput.value) fileInput.value.value = ''
+  if (!file) return
+  if (file.size > MAX_MEDIA_BYTES) {
+    showToast(t('File is too large (max 16 MB).', 'El archivo es demasiado grande (máx. 16 MB).'), 'error')
+    return
+  }
+  const kind = kindOf(file)
+  try {
+    if (kind === 'image') {
+      const { blob, mimeType } = await normalizeImageForWhatsApp(file)
+      emit('sendMedia', { base64: await blobToBase64(blob), mimeType, filename: file.name.replace(/\.\w+$/, '.jpg'), kind })
+    } else {
+      emit('sendMedia', { base64: await blobToBase64(file), mimeType: file.type, filename: file.name, kind })
+    }
+  } catch (err: any) {
+    showToast(err?.message ?? t('Could not process this file.', 'No se pudo procesar este archivo.'), 'error')
+  }
+}
+
+const { recording, seconds, start: startRecording, stop: stopRecording, cancel: cancelRecording } = useAudioRecorder()
+async function toggleRecording() {
+  if (recording.value) {
+    const result = await stopRecording()
+    if (!result) return
+    emit('sendMedia', { base64: await blobToBase64(result.blob), mimeType: result.mimeType, filename: `voice-note.${extensionForAudioMimeType(result.mimeType)}`, kind: 'audio' })
+    return
+  }
+  try {
+    await startRecording()
+  } catch {
+    showToast(t('Could not access the microphone -- check your browser permissions.', 'No se pudo acceder al micrófono; comprueba los permisos del navegador.'), 'error')
+  }
+}
+function recordingLabel(secs: number) {
+  return `${Math.floor(secs / 60)}:${(secs % 60).toString().padStart(2, '0')}`
 }
 
 // Opens at the newest message and stays there as messages arrive -- unless
@@ -275,17 +346,31 @@ watch(
     <!-- WhatsApp refuses free text more than 24h after the last inbound
     message. Said here rather than discovered on send, because the alternative
     is someone writing a careful reply and losing it to a 400. -->
-    <div v-else-if="!thread.canReplyFreeText" class="shrink-0 border-t border-line bg-surface px-4 py-3" data-test="window-closed">
+    <div v-else-if="!thread.canReplyFreeText" class="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-line bg-surface px-4 py-3" data-test="window-closed">
       <span class="text-[12px] text-ink-muted">
         {{ t(
           'More than 24 hours since they last wrote, so WhatsApp will not carry a free-form reply. A template has to go out instead.',
           'Han pasado más de 24 horas desde su último mensaje, así que WhatsApp no admite una respuesta libre. Hay que enviar una plantilla.',
         ) }}
       </span>
+      <!-- The way out the message names, as a patient thread offers it.
+      Instagram has no templates, and a lead with no number has nowhere for
+      one to go. -->
+      <UiBtn v-if="isWhatsApp && thread.phone" variant="primary" size="sm" data-test="lead-send-template" @click="emit('sendTemplate')">
+        {{ t('Send template', 'Enviar plantilla') }}
+      </UiBtn>
     </div>
 
     <div v-else-if="canReply" class="shrink-0 border-t border-line bg-surface px-4 py-3" data-test="lead-composer">
+      <div v-if="recording" class="flex items-center gap-3" data-test="lead-recording">
+        <span class="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-danger-text" />
+        <span class="flex-1 text-[13px] text-ink-700">{{ t('Recording…', 'Grabando…') }} {{ recordingLabel(seconds) }}</span>
+        <button type="button" class="shrink-0 text-[12px] text-ink-faint hover:text-ink-muted" @click="cancelRecording">{{ t('Cancel', 'Cancelar') }}</button>
+        <UiBtn variant="primary" size="sm" @click="toggleRecording">{{ t('Send', 'Enviar') }}</UiBtn>
+      </div>
+      <template v-else>
       <textarea
+        ref="textarea"
         v-model="draft"
         rows="2"
         class="w-full resize-none rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none"
@@ -293,6 +378,38 @@ watch(
         @keydown.enter.exact.prevent="submit"
       />
       <div class="mt-2 flex items-center justify-end gap-2">
+        <template v-if="isWhatsApp">
+          <button
+            type="button"
+            class="flex h-8 w-8 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-muted hover:bg-surface-subtle disabled:opacity-50"
+            :disabled="sending"
+            :title="t('Attach a file', 'Adjuntar archivo')"
+            :aria-label="t('Attach a file', 'Adjuntar archivo')"
+            data-test="lead-attach"
+            @click="fileInput?.click()"
+          >
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
+              <path d="M11.5 5.5L6.4 10.6a2 2 0 002.8 2.8l5.1-5.1a3.5 3.5 0 00-4.95-4.95L4.25 8.45a5 5 0 007.07 7.07" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+          <input ref="fileInput" type="file" class="hidden" accept="image/*,video/*,audio/*,.pdf,.doc,.docx" data-test="lead-file-input" @change="onFileChosen" />
+          <button
+            type="button"
+            class="flex h-8 w-8 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-muted hover:bg-surface-subtle disabled:opacity-50"
+            :disabled="sending"
+            :title="t('Record a voice note', 'Grabar una nota de voz')"
+            :aria-label="t('Record a voice note', 'Grabar una nota de voz')"
+            data-test="lead-voice"
+            @click="toggleRecording"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
+              <rect x="5.5" y="1.5" width="5" height="8" rx="2.5" />
+              <path d="M3 8a5 5 0 0 0 10 0M8 13v1.5" stroke-linecap="round" />
+            </svg>
+          </button>
+        </template>
+        <InboxSavedRepliesPicker @insert="insertReply" />
+        <span class="flex-1" />
         <!-- Useful even with a person holding the thread: a starting point
         beats a blank box, and they still edit and send it themselves. -->
         <UiBtn
@@ -309,6 +426,7 @@ watch(
           {{ sending ? t('Sending…', 'Enviando…') : t('Send', 'Enviar') }}
         </UiBtn>
       </div>
+      </template>
     </div>
   </div>
 </template>

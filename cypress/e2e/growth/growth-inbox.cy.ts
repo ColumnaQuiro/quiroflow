@@ -454,6 +454,44 @@ describe('Growth in the shared Inbox', () => {
     })
   })
 
+  it('offers a lead what a patient thread offers: a file, a voice note, a saved reply', () => {
+    // The lead composer was a bare box and a Send button.
+    cy.visit('/inbox?growth=1')
+    seedConversation(account, 'Has A Toolbar', 'paused').then((leadId) => {
+      cy.reload()
+      cy.intercept('POST', '/api/whatsapp/inbox-send', { statusCode: 200, body: { success: true } }).as('send')
+      cy.contains('[data-test="lead-row"]', 'Has A Toolbar').click()
+
+      cy.get('[data-test="lead-composer"]').within(() => {
+        cy.get('[data-test="lead-voice"]').should('be.visible')
+        cy.get('button[title="Saved replies"]').should('be.visible')
+        cy.get('[data-test="lead-attach"]').should('be.visible')
+        cy.get('[data-test="lead-file-input"]').selectFile(
+          { contents: Cypress.Buffer.from('%PDF-1.4 test'), fileName: 'presupuesto.pdf', mimeType: 'application/pdf' },
+          { force: true },
+        )
+      })
+
+      // Sent as the lead's, through the route every attachment takes.
+      cy.wait('@send').its('request.body').should((body) => {
+        expect(body.leadId).to.eq(leadId)
+        expect(body.mediaKind).to.eq('document')
+        expect(body.mediaFilename).to.eq('presupuesto.pdf')
+        expect(body.mediaBase64).to.be.a('string').and.not.be.empty
+      })
+    })
+  })
+
+  it('offers a template once the 24 hours are up, addressed to the lead', () => {
+    cy.visit('/inbox?growth=1')
+    seedConversation(account, 'Template Time', 'paused', { lastInboundMinutesAgo: 60 * 48 })
+    cy.reload()
+    cy.contains('[data-test="lead-row"]', 'Template Time').click()
+
+    cy.get('[data-test="window-closed"]').find('[data-test="lead-send-template"]').click()
+    cy.contains('Send WhatsApp message').should('be.visible')
+  })
+
   it('refuses a free-text reply more than 24 hours after they last wrote', () => {
     cy.visit('/inbox?growth=1')
     // Two days since the last inbound message, which is outside WhatsApp's

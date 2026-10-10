@@ -130,6 +130,37 @@ describe('WhatsApp sends from the Inbox', () => {
     })
   })
 
+  it('sends a template to a lead and files it in their thread', () => {
+    // Past the 24h window a template is the only way to reach a lead, and the
+    // send route took a patient or a bare number only: a row with no lead_id
+    // never appears in the lead's own thread, which reads by lead_id.
+    const phone = `34${localNumber()}`
+    cy.task('db:startMetaGraphStub', {})
+    cy.task<{ id: string }>('db:createLead', { accountId: account.accountId, fullName: 'Template Lead', stage: 'contacted', phone }).then((lead) => {
+      cy.login(account.email, account.password)
+      cy.visit('/dashboard')
+      cy.request({
+        method: 'POST',
+        url: '/api/whatsapp/send',
+        failOnStatusCode: false,
+        body: { leadId: lead.id, templateName: 'seguimiento', templateLanguage: 'es', variables: [] },
+      }).then((res) => {
+        expect(res.status, JSON.stringify(res.body)).to.eq(200)
+      })
+      cy.task<any[]>('db:metaGraphStubSends').then((sends) => {
+        expect(sends.map((s) => [s?.to, s?.type])).to.deep.equal([[phone, 'template']])
+      })
+      cy.task<{ lead_id: string | null; template_name: string | null }[]>('db:selectRows', {
+        table: 'whatsapp_messages',
+        columns: 'lead_id, template_name',
+        match: { lead_id: lead.id },
+      }).then((rows) => {
+        expect(rows).to.have.length(1)
+        expect(rows[0]!.template_name).to.eq('seguimiento')
+      })
+    })
+  })
+
   it('holds early statuses forward-only, whichever sender stores the row', () => {
     const wamid = `wamid.held.${Date.now()}`
     statusArrives(wamid, 'read')

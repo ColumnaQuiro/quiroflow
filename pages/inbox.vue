@@ -358,6 +358,7 @@ const {
   load: loadLeadThread,
   patchStatus: patchLeadMessageStatus,
   reply: replyToLead,
+  sendMedia: sendLeadMedia,
   draftReply: draftLeadReply,
   discardDraft: discardLeadDraft,
   approveDraft: approveLeadDraft,
@@ -510,11 +511,23 @@ async function onLeadHandBack() {
   await handBack(selectedLead.value.leadId)
   await loadLeadThread(selectedLead.value.leadId, { silent: true })
 }
+async function onLeadMedia(media: Parameters<typeof sendLeadMedia>[1]) {
+  if (!selectedLead.value) return
+  if (await sendLeadMedia(selectedLead.value.leadId, media)) await reloadLeadConversations({ silent: true })
+}
+// A template to a lead, past the 24h window: the same modal a patient
+// thread opens, addressed by lead so the message lands in their thread.
+const leadTemplateOpen = ref(false)
+async function onLeadTemplateSent() {
+  leadTemplateOpen.value = false
+  if (!leadThread.value) return
+  await Promise.all([loadLeadThread(leadThread.value.id, { silent: true }), reloadLeadConversations({ silent: true })])
+}
 async function onLeadReply(text: string) {
   if (!selectedLead.value) return
   // The list's preview and unread flag come from the same rows the thread
   // does, so both are refreshed rather than patched in two places.
-  if (await replyToLead(selectedLead.value.leadId, text)) await reloadLeadConversations()
+  if (await replyToLead(selectedLead.value.leadId, text)) await reloadLeadConversations({ silent: true })
 }
 
 // Today shows a clock, anything older shows a date -- the same shorthand the
@@ -1874,6 +1887,8 @@ function avatarInitials(name: string) {
           @take-over="onLeadTakeOver"
           @hand-back="onLeadHandBack"
           @send="onLeadReply"
+          @send-media="onLeadMedia"
+          @send-template="leadTemplateOpen = true"
           @draft-reply="leadThread && draftLeadReply(leadThread.id)"
           @approve-draft="(text) => leadThread && approveLeadDraft(leadThread.id, text)"
           @discard-draft="leadThread && discardLeadDraft(leadThread.id)"
@@ -2212,6 +2227,13 @@ function avatarInitials(name: string) {
       />
     </div>
 
+    <SendWhatsAppModal
+      v-if="leadTemplateOpen && leadThread"
+      :lead-id="leadThread.id"
+      :patient-first-name="leadThread.name.split(' ')[0]"
+      @close="leadTemplateOpen = false"
+      @sent="onLeadTemplateSent"
+    />
     <SendWhatsAppModal
       v-if="templateModalOpen && (selected?.patientId || selected?.phoneNumber)"
       :patient-id="selected.patientId ?? undefined"

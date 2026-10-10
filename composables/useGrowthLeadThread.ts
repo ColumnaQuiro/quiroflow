@@ -92,12 +92,12 @@ export function useGrowthLeadThread() {
     thread.value = { ...current, messages }
   }
 
-  function appendPending(leadId: string, id: string, text: string) {
+  function appendPending(leadId: string, id: string, text: string, media?: { kind: string; filename: string }) {
     const current = thread.value
     if (!current || current.id !== leadId) return
     const message: LeadThreadMessage = {
       id, from: 'clinic', text, channel: current.channel, status: 'pending', at: new Date().toISOString(),
-      templateName: null, mediaType: null, mediaUrl: null, mediaFilename: null,
+      templateName: null, mediaType: media?.kind ?? null, mediaUrl: null, mediaFilename: media?.filename ?? null,
     }
     thread.value = { ...current, messages: [...current.messages, message] }
   }
@@ -124,6 +124,32 @@ export function useGrowthLeadThread() {
     } catch (e) {
       if (pendingId) patchStatus(leadId, pendingId, 'failed')
       showToast(serverMessage(e) ?? t('Could not send that reply.', 'No se ha podido enviar la respuesta.'), 'error')
+      return false
+    } finally {
+      sending.value = false
+    }
+  }
+
+  /**
+   * A file or voice note, through the same route a patient thread's go
+   * (whatsapp/inbox-send already takes a leadId), so the 24h window, Meta's
+   * errors and the stored copy are the ones every other attachment gets.
+   * WhatsApp only: instagram/send posts text alone.
+   */
+  async function sendMedia(leadId: string, media: { base64: string; mimeType: string; filename: string; kind: 'image' | 'video' | 'audio' | 'document' }) {
+    sending.value = true
+    const pendingId = `pending:${Date.now()}`
+    appendPending(leadId, pendingId, '', { kind: media.kind, filename: media.filename })
+    try {
+      await useStaffFetch('/api/whatsapp/inbox-send', {
+        method: 'POST',
+        body: { leadId, mediaBase64: media.base64, mediaMimeType: media.mimeType, mediaFilename: media.filename, mediaKind: media.kind },
+      })
+      await load(leadId, { silent: true })
+      return true
+    } catch (e) {
+      patchStatus(leadId, pendingId, 'failed')
+      showToast(serverMessage(e) ?? t('Could not send that file.', 'No se ha podido enviar el archivo.'), 'error')
       return false
     } finally {
       sending.value = false
@@ -186,5 +212,5 @@ export function useGrowthLeadThread() {
     thread.value = null
   }
 
-  return { thread, loading, sending, drafting, load, patchStatus, reply, draftReply, discardDraft, approveDraft, close }
+  return { thread, loading, sending, drafting, load, patchStatus, reply, sendMedia, draftReply, discardDraft, approveDraft, close }
 }

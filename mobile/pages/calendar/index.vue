@@ -13,12 +13,15 @@ definePageMeta({ layout: 'practitioner', keepalive: true })
 //   side, hold and drag as in the day); on iPhone, seven columns do not fit,
 //   so the week is a list grouped by day. Tapping the date opens a picker to
 //   jump to any day.
+// - "3 días" (iPhone): the day and the two after it as columns, to see the
+//   gaps the week list cannot show; the arrows step three days.
 // - iPad: a column per practitioner (the canvas's AppIpadAgenda), and at
 //   landscape width the selected visit on the right with Mover / Cancelar.
 // - Hold a free slot, or "+", to book (NewVisitSheet -> BookVisitSheet: the
-//   same free times and clash check as "Book the next visit"). On iPad, hold a
-//   visit and drag it to move it; letting go opens the move sheet at the new
-//   time, which re-checks clashes and logs the reschedule as the web does.
+//   same free times and clash check as "Book the next visit"). Hold a visit
+//   and drag it to move it (iPhone and iPad; near the top or bottom edge the
+//   day scrolls along); letting go opens the move sheet at the new time,
+//   which re-checks clashes and logs the reschedule as the web does.
 // - A read-only calendar (calendar_read_only) sees all of it and changes
 //   nothing; someone who sees only their own diary gets only their column.
 //
@@ -63,13 +66,17 @@ watch(tz, () => { if (!day.value) day.value = today() }, { immediate: true })
 const todayDate = computed(() => clinicDateOf(now.value, tz.value))
 const isToday = computed(() => day.value === todayDate.value)
 
-// -- Day or week ----------------------------------------------------------------
+// -- Day, three days or week ------------------------------------------------------
 // Remembered on the device: someone who plans by the week keeps seeing it.
+// Three days is the phone's: the day and the two after it as columns, to
+// scan for gaps the week list cannot show. An iPad has room for the week's
+// columns and the practitioners', so it offers day and week only.
 const VIEW_KEY = 'quiroflow_agenda_view'
-const view = ref<'day' | 'week'>('day')
+const view = ref<'day' | 'three' | 'week'>('day')
 onMounted(() => {
   try {
-    if (localStorage.getItem(VIEW_KEY) === 'week') view.value = 'week'
+    const saved = localStorage.getItem(VIEW_KEY)
+    if (saved === 'week' || saved === 'three') view.value = saved
   } catch {}
 })
 watch(view, (v) => {
@@ -79,20 +86,26 @@ watch(view, (v) => {
   } catch {}
 })
 const isWeek = computed(() => view.value === 'week')
+const isThree = computed(() => view.value === 'three' && !wide.value)
+// Columns by date rather than by practitioner.
+const multiDay = computed(() => isWeek.value || isThree.value)
 // Monday to Sunday around the day being looked at.
 const weekStart = computed(() => {
   const dow = new Date(`${day.value}T00:00:00Z`).getUTCDay()
   return addDaysToDate(day.value, -((dow + 6) % 7))
 })
 const weekDates = computed(() => Array.from({ length: 7 }, (_, i) => addDaysToDate(weekStart.value, i)))
-const shownToday = computed(() => (isWeek.value ? weekDates.value.includes(todayDate.value) : isToday.value))
+// Every date on screen.
+const spanDates = computed(() => (isWeek.value ? weekDates.value : isThree.value ? [0, 1, 2].map((i) => addDaysToDate(day.value, i)) : [day.value]))
+const shownToday = computed(() => (multiDay.value ? spanDates.value.includes(todayDate.value) : isToday.value))
 
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 const fmt = (date: string, o: Intl.DateTimeFormatOptions) => new Date(`${date}T12:00:00Z`).toLocaleDateString(locale.value, { ...o, timeZone: 'UTC' })
 const title = computed(() => {
-  if (!isWeek.value) return capital(shortDayLabel(new Date(`${day.value}T12:00:00Z`), locale.value, 'UTC'))
-  const first = weekDates.value[0]
-  const last = weekDates.value[6]
+  if (!multiDay.value) return capital(shortDayLabel(new Date(`${day.value}T12:00:00Z`), locale.value, 'UTC'))
+  const dates = spanDates.value
+  const first = dates[0]
+  const last = dates[dates.length - 1]
   const sameMonth = first.slice(0, 7) === last.slice(0, 7)
   return `${sameMonth ? fmt(first, { day: 'numeric' }) : fmt(first, { day: 'numeric', month: 'short' })} – ${fmt(last, { day: 'numeric', month: 'short' })}`
 })
@@ -119,6 +132,9 @@ function openDay(date: string) {
 
 // -- Width: columns from iPad portrait, the side panel from landscape --------
 const wide = ref(false)
+const viewOptions = computed(() => (wide.value ? (['day', 'week'] as const) : (['day', 'three', 'week'] as const)))
+// Three days remembered from the phone reads as the day on an iPad.
+const activeView = computed(() => (view.value === 'three' && wide.value ? 'day' : view.value))
 const panelWide = ref(false)
 onMounted(() => {
   const md = window.matchMedia('(min-width: 768px)')
@@ -163,9 +179,9 @@ async function load(quiet = false) {
   const run = ++loadRun
   if (!quiet) loading.value = true
   loadError.value = ''
-  const first = isWeek.value ? weekStart.value : day.value
-  const from = startOfLocalDate(first, tz.value).toISOString()
-  const to = startOfLocalDate(isWeek.value ? addDaysToDate(first, 7) : nextDate(first), tz.value).toISOString()
+  const dates = spanDates.value
+  const from = startOfLocalDate(dates[0], tz.value).toISOString()
+  const to = startOfLocalDate(nextDate(dates[dates.length - 1]), tz.value).toISOString()
   const clinicId = context.value.clinicId
   const needStatic = !quiet || staticFor !== clinicId
   const none = Promise.resolve({ data: null, error: null })
@@ -205,7 +221,7 @@ async function load(quiet = false) {
   loading.value = false
 }
 // A day inside the week already shown needs no new read.
-watch([() => context.value?.clinicId, () => (isWeek.value ? `w${weekStart.value}` : day.value)], () => load(), { immediate: true })
+watch([() => context.value?.clinicId, () => (isWeek.value ? `w${weekStart.value}` : isThree.value ? `3${day.value}` : day.value)], () => load(), { immediate: true })
 
 // Kept current while it is open: a booking at the desk or online shows up
 // without leaving the tab.
@@ -225,7 +241,7 @@ onBeforeUnmount(() => {
 })
 
 function shiftDay(n: number) {
-  day.value = addDaysToDate(day.value, isWeek.value ? n * 7 : n)
+  day.value = addDaysToDate(day.value, n * (isWeek.value ? 7 : isThree.value ? 3 : 1))
   selectedId.value = null
 }
 
@@ -253,7 +269,7 @@ const windowsOn = (date: string) => {
 // any day of the week shown (8 to 20 when no hours are set), stretched to
 // whatever is actually booked.
 const range = computed(() => {
-  const windows = (isWeek.value ? weekDates.value : [day.value]).flatMap(windowsOn)
+  const windows = spanDates.value.flatMap(windowsOn)
   let start = windows.length ? Math.min(...windows.map((w) => toMinutes(w[0]))) : 8 * 60
   let end = windows.length ? Math.max(...windows.map((w) => toMinutes(w[1]))) : 20 * 60
   for (const a of appointments.value) {
@@ -285,12 +301,13 @@ const weekColumnsDates = computed(() => {
 })
 const columns = computed<Column[]>(() => {
   if (isWeek.value) return weekColumnsDates.value.map((date) => ({ key: date, practitionerId: scopePractitioner.value, name: dayHead(date), date }))
+  if (isThree.value) return spanDates.value.map((date) => ({ key: date, practitionerId: scopePractitioner.value, name: dayHead(date), date }))
   const me = context.value?.teamMemberId ?? null
   if (effectiveScope.value === 'mine') return [{ key: 'mine', practitionerId: me, name: context.value?.fullName ?? '', date: day.value }]
   if (!wide.value || practitioners.value.length === 0) return [{ key: 'all', practitionerId: null, name: '', date: day.value }]
   return practitioners.value.map((p) => ({ key: p.id, practitionerId: p.id, name: p.full_name, date: day.value }))
 })
-const showColumnHeads = computed(() => columns.value.length > 1 || isWeek.value)
+const showColumnHeads = computed(() => columns.value.length > 1 || multiDay.value)
 
 const MIN_TILE = 22
 interface Placed { a: Appointment; top: number; height: number; lane: number; lanes: number }
@@ -331,7 +348,7 @@ function layout(list: Appointment[], date: string): Placed[] {
 const placedByColumn = computed(() => {
   const map: Record<string, Placed[]> = {}
   for (const c of columns.value) {
-    const list = appointments.value.filter((a) => (!c.practitionerId || a.practitioner_id === c.practitionerId) && (!isWeek.value || dateOfIso(a.starts_at) === c.date))
+    const list = appointments.value.filter((a) => (!c.practitionerId || a.practitioner_id === c.practitionerId) && (!multiDay.value || dateOfIso(a.starts_at) === c.date))
     map[c.key] = layout(list, c.date)
   }
   return map
@@ -476,8 +493,8 @@ function onPointerMove(e: PointerEvent) {
 }
 watch(newVisit, (v) => { if (!v) ghost.value = null })
 
-// Dragging (iPad): hold a visit, then move it -- across the day and between
-// practitioners' columns. Nothing is written on letting go: the move sheet
+// Dragging: hold a visit, then move it -- across the day and, on iPad,
+// between practitioners' columns. Nothing is written on letting go: the move sheet
 // opens at the new time, which checks clashes again and asks whether to tell
 // the patient.
 const drag = ref<{ a: Appointment; columnKey: string; offsetMin: number; minute: number; duration: number } | null>(null)
@@ -486,7 +503,7 @@ function setColumnEl(key: string, el: unknown) {
   if (el) columnEls.value[key] = el as HTMLElement
 }
 function onApptDown(e: PointerEvent, a: Appointment, c: Column) {
-  if (!wide.value || !canChange(a)) return
+  if (!canChange(a)) return
   pressStart = { x: e.clientX, y: e.clientY }
   const y = e.clientY
   clearTimeout(holdTimer)
@@ -496,10 +513,35 @@ function onApptDown(e: PointerEvent, a: Appointment, c: Column) {
     const col = columnEls.value[c.key]
     const at = col ? minuteAtY(col, y) : s
     drag.value = { a, columnKey: c.key, offsetMin: at - s, minute: s, duration: minuteOfDay(a.ends_at, c.date) - s }
+    lastPointer = { clientX: e.clientX, clientY: y }
     navigator.vibrate?.(10)
+    clearInterval(edgeTimer)
+    edgeTimer = setInterval(edgeScroll, 16)
   }, HOLD_MS)
 }
-function moveDrag(e: PointerEvent) {
+// A phone shows a few hours of the day: held near the top or bottom edge,
+// the timeline scrolls on its own, faster the closer the finger is, and the
+// visit keeps following the finger.
+const EDGE = 64
+let lastPointer: { clientX: number; clientY: number } | null = null
+let edgeTimer: ReturnType<typeof setInterval> | undefined
+function edgeScroll() {
+  const el = scroller.value
+  if (!drag.value || !el || !lastPointer) {
+    clearInterval(edgeTimer)
+    return
+  }
+  const r = el.getBoundingClientRect()
+  const y = lastPointer.clientY
+  const speed = y < r.top + EDGE ? -Math.ceil(((r.top + EDGE - y) / EDGE) * 14) : y > r.bottom - EDGE ? Math.ceil(((y - (r.bottom - EDGE)) / EDGE) * 14) : 0
+  if (speed) {
+    el.scrollTop += speed
+    moveDrag(lastPointer)
+  }
+}
+onBeforeUnmount(() => clearInterval(edgeTimer))
+function moveDrag(e: { clientX: number; clientY: number }) {
+  lastPointer = { clientX: e.clientX, clientY: e.clientY }
   const d = drag.value!
   for (const [key, el] of Object.entries(columnEls.value)) {
     const r = el.getBoundingClientRect()
@@ -546,10 +588,10 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
         <input ref="datePicker" type="date" :value="day" class="absolute inset-0 h-full w-full cursor-pointer opacity-0" tabindex="-1" aria-hidden="true" data-cy="agenda-date-input" @change="jumpTo" />
       </div>
       <button v-if="!shownToday" type="button" class="h-9 rounded-ctl border border-line-control px-3 text-[13px] font-medium text-ink-700" data-cy="agenda-today" @click="day = today(); selectedId = null">{{ t('Today', 'Hoy') }}</button>
-      <button type="button" class="flex h-9 w-9 items-center justify-center rounded-ctl border border-line-control text-ink-700" :aria-label="isWeek ? t('Previous week', 'Semana anterior') : t('Previous day', 'Día anterior')" data-cy="agenda-prev" @click="shiftDay(-1)">
+      <button type="button" class="flex h-9 w-9 items-center justify-center rounded-ctl border border-line-control text-ink-700" :aria-label="isWeek ? t('Previous week', 'Semana anterior') : isThree ? t('Previous three days', 'Tres días antes') : t('Previous day', 'Día anterior')" data-cy="agenda-prev" @click="shiftDay(-1)">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg>
       </button>
-      <button type="button" class="flex h-9 w-9 items-center justify-center rounded-ctl border border-line-control text-ink-700" :aria-label="isWeek ? t('Next week', 'Semana siguiente') : t('Next day', 'Día siguiente')" data-cy="agenda-next" @click="shiftDay(1)">
+      <button type="button" class="flex h-9 w-9 items-center justify-center rounded-ctl border border-line-control text-ink-700" :aria-label="isWeek ? t('Next week', 'Semana siguiente') : isThree ? t('Next three days', 'Tres días después') : t('Next day', 'Día siguiente')" data-cy="agenda-next" @click="shiftDay(1)">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
       </button>
       <template v-if="!readOnly">
@@ -574,9 +616,9 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
         </button>
       </div>
       <div v-else class="flex-1" />
-      <div role="tablist" :aria-label="t('View', 'Vista')" class="grid w-[148px] shrink-0 grid-cols-2 gap-1 rounded-ctl bg-chip-bg p-[3px]">
-        <button v-for="v in (['day', 'week'] as const)" :key="v" type="button" role="tab" :aria-selected="view === v" class="h-8 rounded-ctlSm text-[13px] font-semibold" :class="view === v ? 'bg-surface text-ink-900 shadow-card' : 'text-ink-muted'" :data-cy="`agenda-view-${v}`" @click="view = v">
-          {{ v === 'day' ? t('Day', 'Día') : t('Week', 'Semana') }}
+      <div role="tablist" :aria-label="t('View', 'Vista')" class="grid shrink-0 gap-1 rounded-ctl bg-chip-bg p-[3px]" :class="wide ? 'w-[148px] grid-cols-2' : 'w-[156px] grid-cols-3'">
+        <button v-for="v in viewOptions" :key="v" type="button" role="tab" :aria-selected="activeView === v" class="h-8 rounded-ctlSm px-0.5 text-[13px] font-semibold" :class="activeView === v ? 'bg-surface text-ink-900 shadow-card' : 'text-ink-muted'" :data-cy="`agenda-view-${v}`" @click="view = v">
+          {{ v === 'day' ? t('Day', 'Día') : v === 'three' ? t('3 days', '3 días') : t('Week', 'Semana') }}
         </button>
       </div>
     </div>
@@ -609,7 +651,7 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
         <template v-else>
           <div v-if="showColumnHeads" class="flex shrink-0 border-b border-line pl-12">
             <template v-for="c in columns" :key="c.key">
-              <button v-if="isWeek" type="button" class="min-w-0 flex-1 truncate border-l border-line-row px-2 py-2 text-left text-[12.5px] font-semibold" :class="c.date === todayDate ? 'text-brand-text' : 'text-ink-700'" :data-cy="`agenda-week-open-${c.date}`" @click="openDay(c.date)">{{ c.name }}</button>
+              <button v-if="multiDay" type="button" class="min-w-0 flex-1 truncate border-l border-line-row px-2 py-2 text-left text-[12.5px] font-semibold" :class="c.date === todayDate ? 'text-brand-text' : 'text-ink-700'" :data-cy="`agenda-week-open-${c.date}`" @click="openDay(c.date)">{{ c.name }}</button>
               <div v-else class="min-w-0 flex-1 truncate border-l border-line-row px-2 py-2 text-[12.5px] font-semibold text-ink-700">{{ c.name }}</div>
             </template>
           </div>
@@ -664,7 +706,7 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
                 </button>
 
                 <!-- Now, in today's column of the week -->
-                <div v-if="isWeek && nowTop !== null && c.date === todayDate" class="pointer-events-none absolute left-0 right-0 z-10 border-t-2 border-danger-text" :style="{ top: `${nowTop}px` }" data-cy="agenda-now" />
+                <div v-if="multiDay && nowTop !== null && c.date === todayDate" class="pointer-events-none absolute left-0 right-0 z-10 border-t-2 border-danger-text" :style="{ top: `${nowTop}px` }" data-cy="agenda-now" />
                 <!-- Where a held slot will book -->
                 <div v-if="ghost && ghost.columnKey === c.key" class="pointer-events-none absolute left-1 right-1 flex items-center rounded-[8px] border-[1.5px] border-dashed border-brand bg-brand-tint px-2 text-[12px] font-semibold text-brand-text" :style="{ top: `${ghost.top + 1}px`, height: `${HOUR / 2 - 2}px` }">
                   + {{ t('New visit at', 'Nueva cita a las') }} {{ ghost.label }}
@@ -676,7 +718,7 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
                 </div>
               </div>
 
-              <div v-if="!isWeek && nowTop !== null" class="pointer-events-none absolute left-10 right-0 z-10 border-t-2 border-danger-text" :style="{ top: `${nowTop}px` }" data-cy="agenda-now">
+              <div v-if="!multiDay && nowTop !== null" class="pointer-events-none absolute left-10 right-0 z-10 border-t-2 border-danger-text" :style="{ top: `${nowTop}px` }" data-cy="agenda-now">
                 <span class="absolute -left-1 -top-[5px] h-2 w-2 rounded-full bg-danger-text" />
               </div>
             </div>

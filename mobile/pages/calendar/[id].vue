@@ -516,9 +516,9 @@ function openBookNext() {
   afterFinish()
 }
 
-function onBooked(e: { startsAt: string }) {
+function onBooked(e: { startsAt: string; count?: number }) {
   bookOpen.value = false
-  bookedNotice.value = `${t('Next visit booked', 'Próxima cita reservada')}: ${when(e.startsAt)}`
+  bookedNotice.value = (e.count ?? 1) > 1 ? t(`${e.count} visits booked, from ${when(e.startsAt)}`, `${e.count} citas reservadas, desde ${when(e.startsAt)}`) : `${t('Next visit booked', 'Próxima cita reservada')}: ${when(e.startsAt)}`
 }
 
 // Moving or cancelling from here: the same sheets as the agenda.

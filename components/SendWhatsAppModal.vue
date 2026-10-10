@@ -15,6 +15,8 @@ const props = withDefaults(
     /** Either a patient, or (from the Inbox) a number no patient has yet. */
     patientId?: string
     phoneNumber?: string
+    /** Or a lead, from their thread in the Growth Inbox. */
+    leadId?: string
     patientFirstName?: string
     patientPreferredLanguage?: string
     appointmentId?: string
@@ -114,7 +116,8 @@ async function send() {
       method: 'POST',
       body: {
         patientId: props.patientId,
-        phoneNumber: props.patientId ? undefined : props.phoneNumber,
+        phoneNumber: props.patientId || props.leadId ? undefined : props.phoneNumber,
+        leadId: props.patientId ? undefined : props.leadId,
         templateName: selectedTemplate.value.name,
         templateLanguage: selectedTemplate.value.language,
         variables: variables.value,

@@ -358,8 +358,8 @@ describe('Growth in the shared Inbox', () => {
         cy.contains('would have been sent').should('be.visible')
         // The raw enum never reaches the screen.
         cy.contains('would_send').should('not.exist')
-        // A genuinely sent message still reads as sent, in plain words.
-        cy.contains('delivered').should('be.visible')
+        // A genuinely sent message carries its ticks, as a patient thread's do.
+        cy.get('[data-test="lead-message-status"][data-status="delivered"]').should('exist')
       })
 
       // Only the recorded one is marked; the real one keeps the normal bubble.
@@ -426,6 +426,72 @@ describe('Growth in the shared Inbox', () => {
     })
   })
 
+  it('shows a reply at once with a clock, without blanking the thread', () => {
+    // A reply used to clear the thread and read it again: the panel blinked
+    // to a skeleton and came back scrolled to the top, and the message only
+    // appeared once the round trip was over, with no clock in the meantime.
+    cy.visit('/inbox?growth=1')
+    seedConversation(account, 'No Blink', 'paused').then(() => {
+      cy.reload()
+      cy.intercept('POST', '/api/whatsapp/inbox-send', (req) => {
+        req.reply({ delay: 1500, statusCode: 200, body: { ok: true } })
+      }).as('send')
+      cy.intercept('GET', '/api/growth/leads/*/thread').as('thread')
+      cy.contains('[data-test="lead-row"]', 'No Blink').click()
+      cy.wait('@thread')
+
+      // Marked, so a remount -- the blink -- would show as a fresh element.
+      cy.get('[data-test="lead-messages"]').then(($el) => { $el[0]!.dataset.mark = 'same' })
+      cy.get('[data-test="lead-composer"]').find('textarea').type('Te esperamos el jueves{enter}')
+
+      cy.contains('[data-test="lead-messages"] p', 'Te esperamos el jueves').should('be.visible')
+      cy.get('[data-test="lead-message-status"][data-status="pending"]').should('exist')
+
+      cy.wait('@send')
+      cy.wait('@thread')
+      cy.get('[data-test="lead-thread-loading"]').should('not.exist')
+      cy.get('[data-test="lead-messages"]').should('have.attr', 'data-mark', 'same')
+    })
+  })
+
+  it('offers a lead what a patient thread offers: a file, a voice note, a saved reply', () => {
+    // The lead composer was a bare box and a Send button.
+    cy.visit('/inbox?growth=1')
+    seedConversation(account, 'Has A Toolbar', 'paused').then((leadId) => {
+      cy.reload()
+      cy.intercept('POST', '/api/whatsapp/inbox-send', { statusCode: 200, body: { success: true } }).as('send')
+      cy.contains('[data-test="lead-row"]', 'Has A Toolbar').click()
+
+      cy.get('[data-test="lead-composer"]').within(() => {
+        cy.get('[data-test="lead-voice"]').should('be.visible')
+        cy.get('button[title="Saved replies"]').should('be.visible')
+        cy.get('[data-test="lead-attach"]').should('be.visible')
+        cy.get('[data-test="lead-file-input"]').selectFile(
+          { contents: Cypress.Buffer.from('%PDF-1.4 test'), fileName: 'presupuesto.pdf', mimeType: 'application/pdf' },
+          { force: true },
+        )
+      })
+
+      // Sent as the lead's, through the route every attachment takes.
+      cy.wait('@send').its('request.body').should((body) => {
+        expect(body.leadId).to.eq(leadId)
+        expect(body.mediaKind).to.eq('document')
+        expect(body.mediaFilename).to.eq('presupuesto.pdf')
+        expect(body.mediaBase64).to.be.a('string').and.not.be.empty
+      })
+    })
+  })
+
+  it('offers a template once the 24 hours are up, addressed to the lead', () => {
+    cy.visit('/inbox?growth=1')
+    seedConversation(account, 'Template Time', 'paused', { lastInboundMinutesAgo: 60 * 48 })
+    cy.reload()
+    cy.contains('[data-test="lead-row"]', 'Template Time').click()
+
+    cy.get('[data-test="window-closed"]').find('[data-test="lead-send-template"]').click()
+    cy.contains('Send WhatsApp message').should('be.visible')
+  })
+
   it('refuses a free-text reply more than 24 hours after they last wrote', () => {
     cy.visit('/inbox?growth=1')
     // Two days since the last inbound message, which is outside WhatsApp's
@@ -454,6 +520,45 @@ describe('Growth in the shared Inbox', () => {
       cy.contains('Not created').should('be.visible')
       // A lead has no balance, so no balance row is drawn rather than 0,00 €.
       cy.contains('Balance').should('not.exist')
+    })
+  })
+
+  it('marks a lead conversation unread again from its header', () => {
+    // Patient threads had this button and lead threads did not. Answered
+    // last by the clinic, too: marked unread holds whoever wrote last.
+    cy.visit('/inbox?growth=1')
+    seedConversation(account, 'Back To Unread', 'paused').then((leadId) => {
+      cy.task('db:createLeadMessage', { accountId: account.accountId, leadId, direction: 'outbound', body: 'Hola, te llamamos mañana', createdAt: new Date().toISOString() })
+    })
+    cy.reload()
+
+    cy.contains('[data-test="lead-row"]', 'Back To Unread').click()
+    cy.contains('[data-test="lead-row"] span', 'Back To Unread').should('have.class', 'font-medium')
+
+    cy.get('[data-cy="lead-mark-unread"]').click()
+    cy.get('[data-test="lead-thread"]').should('not.exist')
+    cy.contains('[data-test="lead-row"] span', 'Back To Unread').should('have.class', 'font-bold')
+
+    // Mine, and stored: still unread after a reload.
+    cy.reload()
+    cy.contains('[data-test="lead-row"] span', 'Back To Unread').should('have.class', 'font-bold')
+  })
+
+  it('opens that lead from the rail, not just the board', () => {
+    // The button linked to /growth/leads with nothing after it, so it landed
+    // on the whole pipeline and left the receptionist to find the person
+    // again. ?lead= is what opens that lead's drawer.
+    cy.viewport(1440, 900)
+    cy.visit('/inbox?growth=1')
+    seedConversation(account, 'Open From Rail', 'paused').then((leadId) => {
+      cy.reload()
+      cy.contains('[data-test="lead-row"]', 'Open From Rail').click()
+
+      cy.get('[data-test="lead-rail"]').contains('Open lead').click()
+
+      cy.location('pathname').should('eq', '/growth/leads')
+      cy.location('search').should('eq', `?lead=${leadId}`)
+      cy.get('[data-test="convert-lead"]').should('be.visible')
     })
   })
 

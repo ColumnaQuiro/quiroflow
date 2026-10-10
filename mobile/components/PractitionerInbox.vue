@@ -111,6 +111,13 @@ async function loadReadTimestamps() {
   readTimestamps.value = next
 }
 onMounted(loadReadTimestamps)
+// "Mark as unread" writes the epoch, and that holds whoever wrote last -- the
+// same rule as inbox_conversations.unread_for_me and the badge. Parsed rather
+// than compared as text: the database hands it back as +00:00, not as Z.
+function markedUnread(key: string) {
+  const at = readTimestamps.value[key]
+  return !!at && Date.parse(at) === 0
+}
 
 interface LabelDef { id: string; name: string; color: string }
 const archivedKeys = ref<Set<string>>(new Set())
@@ -393,14 +400,14 @@ const conversations = computed<Conversation[]>(() => {
         (last.external_contact_id ? t('Instagram user', 'Usuario de Instagram') : t('Unknown', 'Desconocido')),
       channel: last.channel,
       lastMessage: last,
-      unread: last.direction === 'inbound' && (!readTimestamps.value[key] || readTimestamps.value[key] < last.created_at),
+      unread: markedUnread(key) || (last.direction === 'inbound' && (!readTimestamps.value[key] || readTimestamps.value[key] < last.created_at)),
     })
   }
   // Conversations the loaded messages do not reach, from the summaries.
   for (const sum of summaries.value) {
     if (byKey.has(sum.key)) continue
     const at = sum.lastMessage.created_at
-    list.push({ ...sum, unread: sum.lastMessage.direction === 'inbound' && (!readTimestamps.value[sum.key] || readTimestamps.value[sum.key] < at) })
+    list.push({ ...sum, unread: markedUnread(sum.key) || (sum.lastMessage.direction === 'inbound' && (!readTimestamps.value[sum.key] || readTimestamps.value[sum.key] < at)) })
     byKey.set(sum.key, [])
   }
   return list.sort((a, b) => b.lastMessage.created_at.localeCompare(a.lastMessage.created_at))

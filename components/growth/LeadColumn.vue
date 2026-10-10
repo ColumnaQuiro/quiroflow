@@ -14,7 +14,11 @@ const emit = defineEmits<{
   dragend: []
   dragenter: []
   drop: []
+  /** Draw every card in this stage, not just the first 25. */
+  more: []
 }>()
+
+const t = useT()
 
 // dragover must be prevented on every move or the browser refuses the drop --
 // the default action for a dragover is "this is not a drop target".
@@ -62,7 +66,15 @@ function onDragOver(e: DragEvent) {
         @dragend="emit('dragend')"
       />
 
-      <span v-if="column.more" class="px-0.5 py-1 text-[9.5px] font-medium text-ink-faint">{{ column.more }}</span>
+      <!-- A button, not a caption: the cards past the first 25 were simply
+      unreachable from the board. -->
+      <button
+        v-if="column.hidden"
+        type="button"
+        class="px-0.5 py-1 text-left text-[10.5px] font-medium text-brand-text hover:underline"
+        data-test="lead-column-more"
+        @click="emit('more')"
+      >{{ t(`Show ${column.hidden} more`, `Ver ${column.hidden} más`) }}</button>
     </div>
   </section>
 </template>

@@ -46,10 +46,17 @@ const props = defineProps<{
    * the web's reschedule (calendar.vue confirmReschedule).
    */
   move?: { appointmentId: string; startsAt: string; endsAt: string; roomId: string | null } | null
+  /**
+   * Start with "the rest of the plan" on: every visit the care plan still has
+   * unbooked, at its cadence from the time chosen (the record's "Book the
+   * plan's visits", the web's Repeat → Follow care plan).
+   */
+  followPlan?: boolean
 }>()
 
 const emit = defineEmits<{
-  booked: [{ appointmentId: string; startsAt: string; endsAt: string }]
+  /** `count`: how many were booked, when it was a series. */
+  booked: [{ appointmentId: string; startsAt: string; endsAt: string; count?: number }]
   close: []
 }>()
 
@@ -64,7 +71,7 @@ interface TypeRow { id: string; name: string; duration_minutes: number; sort_ord
 interface PractitionerRow { id: string; full_name: string; business_hours: BusinessHours | null }
 interface ClinicRow { id: string; timezone: string | null; business_hours: BusinessHours | null }
 interface VisitRow { starts_at: string; appointment_type_id: string | null; practitioner_id: string | null }
-interface PlanRow { frequency_value: number; frequency_unit: 'week' | 'month'; visits_per_period: number | null }
+interface PlanRow { frequency_value: number; frequency_unit: 'week' | 'month'; visits_per_period: number | null; total_visits: number; started_at: string }
 interface PatientRow { first_name: string; default_practitioner_id: string | null; clinic_id: string | null; is_minor: boolean; do_not_contact: boolean }
 
 const loading = ref(true)
@@ -323,7 +330,7 @@ async function load() {
     supabase.from('team_member_clinics').select('team_member_id, clinic_id'),
     supabase.from('appointment_type_overrides').select('appointment_type_id, team_member_id, duration_minutes, price_cents'),
     supabase.from('clinics').select('id, timezone, business_hours').is('archived_at', null).order('name'),
-    supabase.from('care_plans').select('frequency_value, frequency_unit, visits_per_period').eq('patient_id', props.patientId).order('created_at', { ascending: false }).limit(1),
+    supabase.from('care_plans').select('frequency_value, frequency_unit, visits_per_period, total_visits, started_at').eq('patient_id', props.patientId).order('created_at', { ascending: false }).limit(1),
     supabase
       .from('appointments')
       .select('starts_at, appointment_type_id, practitioner_id')
@@ -354,6 +361,7 @@ async function load() {
   plan.value = ((pl.data as PlanRow[]) ?? [])[0] ?? null
   lastVisit.value = ((last.data as VisitRow[]) ?? [])[0] ?? null
   nextVisit.value = ((next.data as VisitRow[]) ?? [])[0] ?? null
+  await loadPlanRemaining()
 
   const clinics = (cl.data as ClinicRow[]) ?? []
   // The clinic the app is working in (the agenda, My Day), as the web books
@@ -394,6 +402,123 @@ watch(() => context.value?.teamMemberId, (id) => id && load(), { immediate: true
 const booking = ref(false)
 const bookError = ref('')
 
+// -- The rest of the care plan, as one series --------------------------------
+// The plan's visits with no appointment yet: total, less those completed or
+// booked since it started -- the web panel's count, so opening this twice
+// does not book the plan twice. Not offered to someone who sees only their
+// own diary: a colleague's visits would not be counted and the plan would be
+// booked over again. Capped at 26, as on the web.
+const MAX_PLAN_SERIES = 26
+const planRemaining = ref(0)
+const seriesOn = ref(false)
+async function loadPlanRemaining() {
+  planRemaining.value = 0
+  const p = plan.value
+  if (!p || props.move || ownDiaryOnly.value) return
+  const { count } = await supabase
+    .from('appointments')
+    .select('id', { count: 'exact', head: true })
+    .eq('patient_id', props.patientId)
+    .in('status', ['completed', 'booked'])
+    .is('deleted_at', null)
+    .gte('starts_at', p.started_at)
+  planRemaining.value = Math.max(0, p.total_visits - (count ?? 0))
+  seriesOn.value = !!props.followPlan && planRemaining.value > 1
+}
+const seriesAvailable = computed(() => !moving.value && planRemaining.value > 1)
+const series = computed<Date[]>(() => {
+  if (!seriesOn.value || !seriesAvailable.value || !plan.value || !selectedStart.value) return []
+  const p = plan.value
+  return seriesStartsInZone(selectedStart.value, { unit: p.frequency_unit, every: p.frequency_value, perPeriod: planVisitsPerPeriod(p), count: Math.min(planRemaining.value, MAX_PLAN_SERIES) }, timeZone.value)
+})
+const seriesPreview = computed(() => series.value.map((d) => new Date(d).toLocaleDateString(locale.value, { day: 'numeric', month: 'short', timeZone: timeZone.value })).join(', '))
+
+// Dates in the series that do not fit, waiting for the desk's answer: skip
+// them, book them anyway, or go back -- the web panel's three choices.
+interface SeriesClash { start: Date; reason: string }
+const pendingSeries = ref<{ starts: Date[]; problems: (SeriesClash & { index: number })[] } | null>(null)
+watch([selectedSlot, selectedDate, practitionerId, typeId, seriesOn], () => (pendingSeries.value = null))
+async function checkSeries(starts: Date[]) {
+  const last = starts[starts.length - 1]
+  const fresh = await fetchBusy(starts[0].toISOString(), new Date(last.getTime() + duration.value * 60000).toISOString(), practitionerId.value)
+  if (fresh.error) return { error: fresh.error, problems: [] }
+  const blocks = fresh.blocks.filter((b) => b.practitioner_id === practitionerId.value || (b.practitioner_id === null && b.room_id === null))
+  const problems: (SeriesClash & { index: number })[] = []
+  starts.forEach((start, index) => {
+    const s = start.getTime()
+    const e = s + duration.value * 60000
+    const reasons: string[] = []
+    const appt = fresh.appts.find((a) => Date.parse(a.starts_at) < e && Date.parse(a.ends_at) > s)
+    if (appt) {
+      const who = `${appt.patients?.first_name ?? ''} ${appt.patients?.last_name ?? ''}`.trim()
+      reasons.push(who ? t(`With ${who} at ${clinicTimeLabel(new Date(appt.starts_at), timeZone.value)}`, `Con ${who} a las ${clinicTimeLabel(new Date(appt.starts_at), timeZone.value)}`) : t('Taken', 'Ocupada'))
+    } else if (blocks.some((b) => Date.parse(b.starts_at) < e && Date.parse(b.ends_at) > s)) {
+      reasons.push(t('Blocked', 'Bloqueada'))
+    }
+    const date = clinicDateOf(start, timeZone.value)
+    const inHours = staffDayTimes({ date, timeZone: timeZone.value, clinicHours: clinicHours.value, practitionerHours: practitioner.value?.business_hours, durationMinutes: duration.value, busy: [], notBefore: new Date(0), extra: [start] }).find((x) => x.at.getTime() === s)?.state === 'free'
+    if (!inHours) reasons.push(t('Not working then', 'Fuera de horario'))
+    if (reasons.length) problems.push({ index, start, reason: reasons.join(' · ') })
+  })
+  return { error: null, problems }
+}
+
+// Every visit, then one message for the lot (send-series-confirmation): the
+// first visit's confirmation and the list of dates, not one per visit.
+async function insertSeries(starts: Date[]) {
+  const created: string[] = []
+  for (const [i, start] of starts.entries()) {
+    const end = new Date(start.getTime() + duration.value * 60000)
+    const { data, error } = await supabase
+      .from('appointments')
+      .insert({
+        account_id: context.value!.accountId,
+        clinic_id: clinic.value!.id,
+        patient_id: props.patientId,
+        practitioner_id: practitionerId.value || null,
+        appointment_type_id: typeId.value || null,
+        starts_at: start.toISOString(),
+        ends_at: end.toISOString(),
+        status: 'booked',
+        source: 'staff',
+      } as never)
+      .select('id')
+      .single()
+    if (error || !data) {
+      const why = error?.message ?? t('Could not book the visit.', 'No se ha podido reservar la cita.')
+      // Part of the series is in: say how much, so a retry is not a blind second copy.
+      bookError.value = i === 0 ? why : t(`Booked ${i} of ${starts.length}; ${longDay(clinicDateOf(start, timeZone.value))} failed: ${why}`, `Reservadas ${i} de ${starts.length}; ${longDay(clinicDateOf(start, timeZone.value))} ha fallado: ${why}`)
+      break
+    }
+    const appointmentId = (data as { id: string }).id
+    created.push(appointmentId)
+    authedFetch('/api/automations/fire', { method: 'POST', body: { triggerEvent: 'appointment.booked', patientId: props.patientId, appointmentId } }).catch(() => {})
+  }
+  if (created.length && !patient.value?.is_minor && !patient.value?.do_not_contact) {
+    if (created.length === 1) authedFetch('/api/appointments/send-confirmation', { method: 'POST', body: { appointmentId: created[0] } }).catch(() => {})
+    else authedFetch('/api/appointments/send-series-confirmation', { method: 'POST', body: { appointmentIds: created } }).catch(() => {})
+  }
+  if (created.length === starts.length) {
+    emit('booked', { appointmentId: created[0], startsAt: starts[0].toISOString(), endsAt: new Date(starts[0].getTime() + duration.value * 60000).toISOString(), count: created.length })
+  } else if (created.length) {
+    await loadPlanRemaining()
+  }
+}
+async function resolveSeries(choice: 'skip' | 'all') {
+  const pending = pendingSeries.value
+  if (!pending || booking.value) return
+  const skip = new Set(pending.problems.map((p) => p.index))
+  const starts = choice === 'all' ? pending.starts : pending.starts.filter((_, i) => !skip.has(i))
+  pendingSeries.value = null
+  if (!starts.length) return
+  booking.value = true
+  try {
+    await insertSeries(starts)
+  } finally {
+    booking.value = false
+  }
+}
+
 // -- Moving: whether the patient hears about it ------------------------------
 const canNotify = computed(() => !!patient.value && !patient.value.is_minor && !patient.value.do_not_contact)
 
@@ -401,6 +526,7 @@ const selectedStart = computed(() => (selectedSlot.value === null ? null : new D
 const ctaLabel = computed(() => {
   if (booking.value) return moving.value ? t('Moving…', 'Moviendo…') : t('Booking…', 'Reservando…')
   if (!selectedStart.value) return t('Pick a time', 'Elige una hora')
+  if (series.value.length > 1) return t(`Book ${series.value.length} visits from ${longDay(selectedDate.value)}, ${clinicTimeLabel(selectedStart.value, timeZone.value)}`, `Reservar ${series.value.length} visitas desde el ${longDay(selectedDate.value)}, ${clinicTimeLabel(selectedStart.value, timeZone.value)}`)
   const verb = forcing.value ? (moving.value ? t('Move anyway to', 'Mover igualmente al') : t('Book anyway', 'Reservar igualmente')) : moving.value ? t('Move to', 'Mover al') : t('Book', 'Reservar')
   return `${verb} ${longDay(selectedDate.value)}, ${clinicTimeLabel(selectedStart.value, timeZone.value)}`
 })
@@ -482,6 +608,22 @@ async function book() {
   bookError.value = ''
   booking.value = true
   try {
+    if (series.value.length > 1) {
+      // Every date checked, not only the first; a clash or a closed day is
+      // put to the desk rather than booked over or quietly dropped.
+      const starts = series.value
+      const { error, problems } = await checkSeries(starts)
+      if (error) {
+        bookError.value = t("Couldn't check the other dates. Try again.", 'No se han podido comprobar las demás fechas. Inténtalo de nuevo.')
+        return
+      }
+      if (problems.length) {
+        pendingSeries.value = { starts, problems }
+        return
+      }
+      await insertSeries(starts)
+      return
+    }
     const start = selectedStart.value
     const end = new Date(start.getTime() + duration.value * 60000)
     const roomId = props.move?.roomId ?? null
@@ -638,6 +780,39 @@ async function book() {
             <input v-model="notifyPatient" type="checkbox" class="h-5 w-5 accent-brand" data-cy="move-notify" />
           </label>
         </template>
+
+        <!-- The rest of the care plan in one go -->
+        <div v-if="seriesAvailable" class="rounded-card border border-line bg-surface px-3.5 py-2.5" data-cy="book-plan-series">
+          <label class="flex items-center justify-between gap-3 text-[13.5px] font-medium text-ink-800">
+            <span>
+              {{ t(`Book the rest of the plan (${Math.min(planRemaining, MAX_PLAN_SERIES)} visits)`, `Reservar el resto del plan (${Math.min(planRemaining, MAX_PLAN_SERIES)} visitas)`) }}
+              <span class="block text-[12px] font-normal text-ink-muted2">{{ plan ? cadenceLabel(plan, t) : '' }}</span>
+            </span>
+            <input v-model="seriesOn" type="checkbox" class="h-5 w-5 shrink-0 accent-brand" data-cy="book-plan-series-toggle" />
+          </label>
+          <p v-if="series.length > 1" class="mt-1.5 text-[12px] leading-snug text-ink-muted" data-cy="book-plan-series-dates">{{ seriesPreview }}</p>
+          <p v-if="seriesOn && planRemaining > MAX_PLAN_SERIES" class="mt-1 text-[11.5px] text-ink-faint">{{ t(`The first ${MAX_PLAN_SERIES}; book the rest later.`, `Las primeras ${MAX_PLAN_SERIES}; el resto, más adelante.`) }}</p>
+        </div>
+
+        <div v-if="pendingSeries" role="alert" class="flex flex-col gap-2 rounded-card border border-warning-border bg-warning-bg px-3.5 py-2.5 text-[13px]" data-cy="book-series-conflicts">
+          <p class="font-semibold text-warning-text">
+            {{ t(`${pendingSeries.problems.length} of ${pendingSeries.starts.length} dates don’t fit`, `${pendingSeries.problems.length} de ${pendingSeries.starts.length} fechas no caben`) }}
+          </p>
+          <ul class="space-y-0.5">
+            <li v-for="p in pendingSeries.problems" :key="p.index" class="text-ink-700" data-cy="book-series-conflict">
+              <span class="font-medium">{{ longDay(clinicDateOf(p.start, timeZone)) }}, {{ clinicTimeLabel(p.start, timeZone) }}</span> · {{ p.reason }}
+            </li>
+          </ul>
+          <div class="flex flex-wrap gap-2">
+            <button v-if="pendingSeries.problems.length < pendingSeries.starts.length" type="button" class="h-10 rounded-ctl bg-brand px-3 text-[13px] font-semibold text-white" data-cy="book-series-skip" @click="resolveSeries('skip')">
+              {{ t(`Book the other ${pendingSeries.starts.length - pendingSeries.problems.length}`, `Reservar las otras ${pendingSeries.starts.length - pendingSeries.problems.length}`) }}
+            </button>
+            <button type="button" class="h-10 rounded-ctl border border-line-control bg-surface px-3 text-[13px] font-semibold text-ink-700" data-cy="book-series-anyway" @click="resolveSeries('all')">
+              {{ t('Book all anyway', 'Reservar todas igualmente') }}
+            </button>
+            <button type="button" class="h-10 rounded-ctl px-3 text-[13px] font-semibold text-brand-text" @click="pendingSeries = null">{{ t('Back', 'Volver') }}</button>
+          </div>
+        </div>
 
         <p v-if="bookError" class="text-[13px] text-danger-text" data-cy="book-visit-error">{{ bookError }}</p>
 

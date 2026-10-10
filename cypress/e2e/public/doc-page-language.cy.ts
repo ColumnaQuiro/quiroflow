@@ -6,7 +6,7 @@
 // "Submit". A patient is not signed in, so their language is their browser's,
 // or a choice saved on the device.
 
-function seedDoc() {
+function seedLanguageDoc() {
   return cy.seedStaffAccount().then((account) =>
     cy
       .task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Idioma', lastName: 'Formulario' })
@@ -34,7 +34,7 @@ const inEnglish = browserIn(['en-GB', 'en'])
 
 describe('The public form page', () => {
   it('is in Spanish for a Spanish browser, through to the thank-you', () => {
-    seedDoc().then(({ publicToken }) => {
+    seedLanguageDoc().then(({ publicToken }) => {
       cy.visit(`/doc/${publicToken}`, inSpanish)
       cy.contains('button', 'Enviar').should('be.visible')
       cy.contains('Submit').should('not.exist')
@@ -45,7 +45,7 @@ describe('The public form page', () => {
   })
 
   it('stays in English for an English browser', () => {
-    seedDoc().then(({ publicToken }) => {
+    seedLanguageDoc().then(({ publicToken }) => {
       cy.visit(`/doc/${publicToken}`, inEnglish)
       cy.contains('button', 'Submit').should('be.visible')
     })

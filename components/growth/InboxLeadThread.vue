@@ -194,7 +194,7 @@ watch(
   flex child's minimum height is its content -- so a long thread grew past
   the screen and pushed the composer out of sight instead of scrolling. -->
   <div class="flex min-h-0 min-w-0 flex-1 flex-col bg-surface-page" data-test="lead-thread">
-    <div class="flex min-h-16 shrink-0 items-center gap-2.5 border-b border-line bg-surface px-3 py-2.5 sm:px-4">
+    <div class="flex min-h-16 shrink-0 flex-wrap items-center gap-2.5 border-b border-line bg-surface px-3 py-2.5 sm:px-4">
       <button
         type="button"
         class="flex h-9 touch:h-11 w-9 touch:w-11 shrink-0 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle md:hidden"
@@ -203,7 +203,10 @@ watch(
       >
         <svg width="8" height="13" viewBox="0 0 8 13" fill="none"><path d="M7 1L1 6.5L7 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
       </button>
-      <div class="min-w-0 flex-1">
+      <!-- min-w on a phone so the actions after it (convert, assign) wrap
+      onto a second row, as on a patient thread, instead of squeezing the
+      name to its first letter. -->
+      <div class="min-w-[11rem] flex-1 md:min-w-0">
         <p class="truncate text-[15px] font-bold text-ink-900">{{ thread.name }}</p>
         <p class="truncate text-[12.5px] text-ink-muted2">
           {{ t('Lead', 'Contacto') }}<template v-if="thread.phone"> · {{ thread.phone }}</template>

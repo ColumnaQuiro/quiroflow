@@ -1938,6 +1938,25 @@ function avatarInitials(name: string) {
           @discard-draft="leadThread && discardLeadDraft(leadThread.id)"
         >
           <template #actions>
+            <!-- Where the conversation that makes someone a patient happens,
+            so converting them, and then booking them, happens here too
+            rather than through the lead's drawer on another page. -->
+            <NuxtLink
+              v-if="leadThread.patientId"
+              :to="{ path: '/calendar', query: { patient: leadThread.patientId } }"
+              class="flex h-9 touch:h-11 shrink-0 items-center rounded-ctl border border-line-control bg-surface px-3 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle"
+              data-test="lead-thread-book"
+            >{{ t('Book appointment', 'Reservar cita') }}</NuxtLink>
+            <GrowthConvertLeadButton
+              v-else
+              v-slot="{ converting }"
+              :lead-id="leadThread.id"
+              :lead-name="leadThread.name"
+              class="flex h-9 touch:h-11 shrink-0 items-center rounded-ctl bg-brand px-3 text-[14px] font-bold text-surface hover:bg-brand-hover disabled:opacity-60"
+              data-test="lead-thread-convert"
+            >
+              {{ converting ? t('Converting…', 'Convirtiendo…') : t('Convert to patient', 'Convertir en paciente') }}
+            </GrowthConvertLeadButton>
             <div class="flex items-center gap-2" data-assign-menu>
               <span class="hidden text-[13px] text-ink-muted lg:inline">{{ t('Assigned to', 'Asignada a') }}</span>
               <div class="relative">

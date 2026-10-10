@@ -75,6 +75,7 @@ export default defineEventHandler(async (event) => {
     valueIsDefault: lead.estimated_value_cents === null && defaultCents !== null,
     owner: lead.team_members?.full_name ?? 'Unassigned',
     patientId: lead.patient_id,
+    phone: lead.phone,
     contact: [lead.phone, lead.email, lead.clinics?.name].filter((line): line is string => Boolean(line)),
     attribution: attributionRows,
     timeline: (events ?? []).map((entry) => ({

@@ -458,10 +458,12 @@ describe('Growth in the shared Inbox', () => {
   })
 
   it('marks a lead conversation unread again from its header', () => {
-    // Patient threads had this button and lead threads did not, and marking
-    // a lead unread in bulk never redrew its row.
+    // Patient threads had this button and lead threads did not. Answered
+    // last by the clinic, too: marked unread holds whoever wrote last.
     cy.visit('/inbox?growth=1')
-    seedConversation(account, 'Back To Unread', 'paused')
+    seedConversation(account, 'Back To Unread', 'paused').then((leadId) => {
+      cy.task('db:createLeadMessage', { accountId: account.accountId, leadId, direction: 'outbound', body: 'Hola, te llamamos mañana', createdAt: new Date().toISOString() })
+    })
     cy.reload()
 
     cy.contains('[data-test="lead-row"]', 'Back To Unread').click()

@@ -477,11 +477,13 @@ async function loadLeadState() {
 }
 watch([hasGrowth, () => store.teamMember], () => loadLeadState(), { immediate: true })
 // The endpoint calls a lead unread whenever they wrote last; read since then
-// (by me) it is not.
+// (by me) it is not -- unless I marked it unread (a read time of the epoch),
+// which holds whoever wrote last, as it does in inbox_conversations.
 watch([leadConversations, leadReads], () => {
   for (const c of leadConversations.value) {
     const readAt = leadReads.value[c.key]
-    if (c.unread && readAt && readAt >= c.lastMessageAt) c.unread = false
+    if (readAt && Date.parse(readAt) === 0) c.unread = true
+    else if (c.unread && readAt && readAt >= c.lastMessageAt) c.unread = false
   }
 })
 
@@ -823,16 +825,13 @@ function startConversationWith(p: PatientOption) {
 async function setReadAt(keys: string[], at: string) {
   if (!store.accountId || !myId.value || keys.length === 0) return
   const unread = at === new Date(0).toISOString()
-  rows.value = rows.value.map((r) => (keys.includes(r.conversation_key) ? { ...r, unread_for_me: unread && r.last_direction === 'inbound' } : r))
+  // Marked unread holds whoever wrote last (inbox_conversations.unread_for_me).
+  rows.value = rows.value.map((r) => (keys.includes(r.conversation_key) ? { ...r, unread_for_me: unread } : r))
   const leadKeys = keys.filter((k) => k.startsWith('lead:'))
   if (leadKeys.length) leadReads.value = { ...leadReads.value, ...Object.fromEntries(leadKeys.map((k) => [k, at])) }
   await supabase
     .from('inbox_reads')
     .upsert(keys.map((k) => ({ account_id: store.accountId!, team_member_id: myId.value!, conversation_key: k, last_read_at: at })) as never)
-  // A lead row only ever goes from unread to read in place (the watcher on
-  // leadReads), so making one unread again means asking the endpoint, which
-  // calls it unread whenever they wrote last.
-  if (unread && leadKeys.length) await reloadLeadConversations()
   loadCounts()
   refreshNavBadges(['inbox'])
 }

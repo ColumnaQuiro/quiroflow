@@ -80,6 +80,56 @@ export function bookingSlotsForDay(q: BookingSlotQuery): Date[] {
   return out
 }
 
+export type StaffTimeState = 'free' | 'busy' | 'closed'
+export interface StaffTime {
+  at: Date
+  /** free: inside their hours and clear. busy: overlaps a visit or a block. closed: outside their hours. */
+  state: StaffTimeState
+}
+
+/**
+ * Every time of a day staff can put a visit at (the staff app's book and move
+ * sheets). A patient is only ever offered the free ones, but the desk books
+ * over a lunch break or on top of another visit on purpose, as the web
+ * calendar lets it after asking -- so the taken and out-of-hours times are
+ * listed too, marked, rather than left out.
+ *
+ * The free starts of bookingSlotsForDay, plus a grid in steps of the visit's
+ * length (half an hour for anything longer than an hour) from the first
+ * window back to `earliest` and on to `latest` or the last window's close.
+ * `extra` adds starts off the grid (a time held down on the agenda). Each is
+ * marked on its own, so a start off the grid is still called free or not by
+ * the same rule.
+ */
+export function staffDayTimes(q: BookingSlotQuery & { extra?: Date[]; earliest?: string; latest?: string }): StaffTime[] {
+  const timeZone = q.timeZone || DEFAULT_CLINIC_TIMEZONE
+  const duration = q.durationMinutes * 60000
+  if (duration <= 0) return []
+  const notBefore = (q.notBefore ?? new Date()).getTime()
+  const windows = bookingWindowsFor(q.date, q.clinicHours, q.practitionerHours).map(([open, close]) => ({
+    open: wallClockToUtc(q.date, open, timeZone),
+    close: wallClockToUtc(q.date, close, timeZone),
+  }))
+  const busy = q.busy.map((b) => ({ start: Date.parse(b.starts_at), end: Date.parse(b.ends_at) }))
+  const step = (q.durationMinutes <= 60 ? Math.max(q.durationMinutes, 10) : 30) * 60000
+  const earliest = wallClockToUtc(q.date, q.earliest ?? '08:00', timeZone)
+  const latest = Math.max(wallClockToUtc(q.date, q.latest ?? '21:00', timeZone), ...windows.map((w) => w.close))
+  let first = windows.length ? Math.min(...windows.map((w) => w.open)) : earliest
+  while (first - step >= earliest) first -= step
+  const starts = new Set<number>()
+  for (let at = first; at + duration <= latest; at += step) starts.add(at)
+  for (const d of bookingSlotsForDay(q)) starts.add(d.getTime())
+  for (const d of q.extra ?? []) starts.add(d.getTime())
+  return [...starts]
+    .filter((at) => at > notBefore && (q.notAfter === undefined || at <= q.notAfter.getTime()))
+    .sort((a, b) => a - b)
+    .map((at) => {
+      const end = at + duration
+      const state: StaffTimeState = busy.some((b) => b.start < end && b.end > at) ? 'busy' : windows.some((w) => at >= w.open && end <= w.close) ? 'free' : 'closed'
+      return { at: new Date(at), state }
+    })
+}
+
 /** "09:30" -- a slot as the clinic's clock shows it. */
 export function clinicTimeLabel(at: Date, timeZone: string | null | undefined): string {
   return at.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: timeZone || DEFAULT_CLINIC_TIMEZONE })

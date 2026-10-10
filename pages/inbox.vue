@@ -824,9 +824,15 @@ async function setReadAt(keys: string[], at: string) {
   if (!store.accountId || !myId.value || keys.length === 0) return
   const unread = at === new Date(0).toISOString()
   rows.value = rows.value.map((r) => (keys.includes(r.conversation_key) ? { ...r, unread_for_me: unread && r.last_direction === 'inbound' } : r))
+  const leadKeys = keys.filter((k) => k.startsWith('lead:'))
+  if (leadKeys.length) leadReads.value = { ...leadReads.value, ...Object.fromEntries(leadKeys.map((k) => [k, at])) }
   await supabase
     .from('inbox_reads')
     .upsert(keys.map((k) => ({ account_id: store.accountId!, team_member_id: myId.value!, conversation_key: k, last_read_at: at })) as never)
+  // A lead row only ever goes from unread to read in place (the watcher on
+  // leadReads), so making one unread again means asking the endpoint, which
+  // calls it unread whenever they wrote last.
+  if (unread && leadKeys.length) await reloadLeadConversations()
   loadCounts()
   refreshNavBadges(['inbox'])
 }
@@ -1887,6 +1893,16 @@ function avatarInitials(name: string) {
                 </div>
               </div>
             </div>
+            <button
+              type="button"
+              data-cy="lead-mark-unread"
+              class="flex h-9 touch:h-11 w-9 touch:w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control bg-surface text-ink-500 hover:bg-surface-subtle"
+              :aria-label="t('Mark as unread (just for you)', 'Marcar como no leída (solo para ti)')"
+              :title="t('Mark as unread (just for you)', 'Marcar como no leída (solo para ti)')"
+              @click="setReadAt([selectedLead!.key], new Date(0).toISOString()); selectedKey = null; closeLeadThread()"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h11M4 12h8M4 18h11" /><circle cx="19" cy="7" r="3" fill="currentColor" /></svg>
+            </button>
           </template>
         </GrowthInboxLeadThread>
         <div v-else class="flex min-w-0 flex-1 flex-col gap-3 bg-surface-page p-4" data-test="lead-thread-loading">

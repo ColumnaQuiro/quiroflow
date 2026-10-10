@@ -457,6 +457,43 @@ describe('Growth in the shared Inbox', () => {
     })
   })
 
+  it('marks a lead conversation unread again from its header', () => {
+    // Patient threads had this button and lead threads did not, and marking
+    // a lead unread in bulk never redrew its row.
+    cy.visit('/inbox?growth=1')
+    seedConversation(account, 'Back To Unread', 'paused')
+    cy.reload()
+
+    cy.contains('[data-test="lead-row"]', 'Back To Unread').click()
+    cy.contains('[data-test="lead-row"] span', 'Back To Unread').should('have.class', 'font-medium')
+
+    cy.get('[data-cy="lead-mark-unread"]').click()
+    cy.get('[data-test="lead-thread"]').should('not.exist')
+    cy.contains('[data-test="lead-row"] span', 'Back To Unread').should('have.class', 'font-bold')
+
+    // Mine, and stored: still unread after a reload.
+    cy.reload()
+    cy.contains('[data-test="lead-row"] span', 'Back To Unread').should('have.class', 'font-bold')
+  })
+
+  it('opens that lead from the rail, not just the board', () => {
+    // The button linked to /growth/leads with nothing after it, so it landed
+    // on the whole pipeline and left the receptionist to find the person
+    // again. ?lead= is what opens that lead's drawer.
+    cy.viewport(1440, 900)
+    cy.visit('/inbox?growth=1')
+    seedConversation(account, 'Open From Rail', 'paused').then((leadId) => {
+      cy.reload()
+      cy.contains('[data-test="lead-row"]', 'Open From Rail').click()
+
+      cy.get('[data-test="lead-rail"]').contains('Open lead').click()
+
+      cy.location('pathname').should('eq', '/growth/leads')
+      cy.location('search').should('eq', `?lead=${leadId}`)
+      cy.get('[data-test="convert-lead"]').should('be.visible')
+    })
+  })
+
   it('filters to just what the AI is handling', () => {
     cy.visit('/inbox?growth=1')
     seedConversation(account, 'Handled By Ai', 'handling')

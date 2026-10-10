@@ -477,7 +477,37 @@ const view = ref<'active' | 'archived' | 'snoozed'>('active')
 const unreadOnly = ref(false)
 const replyFilter = ref<'all' | 'awaiting_us' | 'awaiting_patient'>('all')
 const labelFilter = ref<string | null>(null)
-const filterSheetOpen = ref(false)
+// Patients' conversations or leads' own threads (Growth): the web Inbox's
+// Patients / Leads chips.
+const sourceFilter = ref<'all' | 'patients' | 'leads'>('all')
+
+// The filters as one row of chips under the search, as on the web, instead
+// of a sheet behind an icon: what is narrowing the list is always in sight.
+// "All" clears every one of them.
+const activeList = computed(() => conversations.value.filter((c) => !archivedKeys.value.has(c.key) && !c.snoozedUntil))
+const unreadCount = computed(() => activeList.value.filter((c) => c.unread).length)
+const filtersActive = computed(() => view.value !== 'active' || unreadOnly.value || assignFilter.value !== 'all' || replyFilter.value !== 'all' || !!labelFilter.value || sourceFilter.value !== 'all')
+function clearFilters() {
+  view.value = 'active'
+  unreadOnly.value = false
+  assignFilter.value = 'all'
+  replyFilter.value = 'all'
+  labelFilter.value = null
+  sourceFilter.value = 'all'
+}
+const chipBase = 'flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 text-[13px] font-medium'
+const chipClass = (on: boolean) => `${chipBase} ${on ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control bg-surface text-ink-700'}`
+
+// "AG" for Ana García; a number or an Instagram account has no initials,
+// and showing "+3" for every phone said nothing, so those get an icon.
+function initialsOf(name: string) {
+  const letters = name.split(/\s+/).filter((w) => /^\p{L}/u.test(w)).slice(0, 2).map((w) => w[0]!.toUpperCase())
+  return letters.join('')
+}
+const memberInitials = (id: string | undefined) => {
+  const name = teamNames.value.find((m) => m.id === id)?.full_name ?? ''
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('')
+}
 
 const filteredConversations = computed(() => {
   let list = conversations.value.filter((c) => archivedKeys.value.has(c.key) === (view.value === 'archived') && (view.value === 'archived' || !!c.snoozedUntil === (view.value === 'snoozed')))
@@ -492,6 +522,8 @@ const filteredConversations = computed(() => {
   if (replyFilter.value === 'awaiting_us') list = list.filter((c) => c.lastMessage.direction === 'inbound')
   else if (replyFilter.value === 'awaiting_patient') list = list.filter((c) => c.lastMessage.direction === 'outbound')
   if (labelFilter.value) list = list.filter((c) => myLabelsByKey.value[c.key]?.includes(labelFilter.value!))
+  if (sourceFilter.value === 'leads') list = list.filter((c) => !!c.leadId)
+  else if (sourceFilter.value === 'patients') list = list.filter((c) => !c.leadId)
   return list
 })
 
@@ -574,6 +606,10 @@ watch(thread, () => scrollThreadToBottom())
 watch(selectedKey, (key) => {
   if (key) scrollThreadToBottom()
 })
+
+// The patient's next visit, in the thread header (useNextVisit).
+const { next: nextVisit, loaded: nextVisitLoaded } = useNextVisit(() => selected.value?.patientId)
+const nextVisitWhen = (iso: string) => new Date(iso).toLocaleString(t('en-GB', 'es-ES'), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: staffContext.value?.timeZone ?? undefined })
 
 // Internal notes (inbox_notes), as in the web Inbox: the team's, in the
 // thread between the messages, never sent; a mention reaches the colleague
@@ -1365,41 +1401,40 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
           :placeholder="t('Search name, number, messages…', 'Nombre, nº o mensaje')"
           class="h-9 flex-1 rounded-ctl border border-line-control bg-surface-subtle px-3 text-[14px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none"
         />
-        <button
-          type="button"
-          class="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl border"
-          :class="view === 'archived' ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted'"
-          :title="view === 'archived' ? t('Show active conversations', 'Mostrar conversaciones activas') : t('Show archived conversations', 'Mostrar conversaciones archivadas')" :aria-label="view === 'archived' ? t('Show active conversations', 'Mostrar conversaciones activas') : t('Show archived conversations', 'Mostrar conversaciones archivadas')"
-          @click="view = view === 'archived' ? 'active' : 'archived'"
-        >
-          <svg viewBox="0 0 16 16" class="h-[18px] w-[18px]" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M2 3.5h12v2.5H2z" />
-            <path d="M2.8 6v6.5a1 1 0 0 0 1 1h8.4a1 1 0 0 0 1-1V6" />
-            <path d="M6.5 8.5h3" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          class="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl border"
-          :class="view === 'snoozed' ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted'"
-          :aria-label="view === 'snoozed' ? t('Show active conversations', 'Mostrar conversaciones activas') : t('Show what I snoozed', 'Mostrar mis pospuestas')"
-          data-cy="inbox-snoozed-toggle"
-          @click="view = view === 'snoozed' ? 'active' : 'snoozed'"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8" /><path d="M12 9v4l2.5 2.5M5 3L2 6M19 3l3 3" /></svg>
-        </button>
-        <button
-          type="button"
-          class="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl border"
-          :class="unreadOnly || replyFilter !== 'all' || labelFilter || assignFilter !== 'all' ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted'"
-          :title="t('Filter', 'Filtrar')" :aria-label="t('Filter', 'Filtrar')"
-          @click="filterSheetOpen = true"
-        >
-          <svg viewBox="0 0 16 16" class="h-[18px] w-[18px]" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M2 4h12M4.5 8h7M7 12h2" />
-          </svg>
-        </button>
         <button type="button" class="shrink-0 px-1 text-[13px] font-medium text-brand-text" @click="selectionMode = true">{{ t('Select', 'Seleccionar') }}</button>
+      </div>
+      <div v-if="!selectionMode" class="flex shrink-0 gap-1.5 overflow-x-auto border-b border-line bg-surface px-3 pb-2.5 pt-0.5 [scrollbar-width:none]" role="toolbar" :aria-label="t('Filters', 'Filtros')" data-cy="inbox-chips">
+        <button type="button" :class="chipClass(!filtersActive)" data-cy="inbox-chip-all" @click="clearFilters">{{ t('All', 'Todas') }}</button>
+        <button type="button" :class="chipClass(unreadOnly)" :aria-pressed="unreadOnly" data-cy="inbox-chip-unread" @click="unreadOnly = !unreadOnly">
+          {{ t('Unread', 'No leídas') }}
+          <span v-if="unreadCount" class="rounded-full bg-brand px-1.5 text-[11px] font-bold leading-[18px] text-white">{{ unreadCount }}</span>
+        </button>
+        <button type="button" :class="chipClass(assignFilter === 'mine')" :aria-pressed="assignFilter === 'mine'" data-cy="inbox-filter-mine" @click="assignFilter = assignFilter === 'mine' ? 'all' : 'mine'">{{ t('Mine', 'Mías') }}</button>
+        <button type="button" :class="chipClass(assignFilter === 'unassigned')" :aria-pressed="assignFilter === 'unassigned'" data-cy="inbox-filter-unassigned" @click="assignFilter = assignFilter === 'unassigned' ? 'all' : 'unassigned'">{{ t('Unassigned', 'Sin asignar') }}</button>
+        <template v-if="leadThreadsAreSeparate">
+          <button type="button" :class="chipClass(sourceFilter === 'patients')" :aria-pressed="sourceFilter === 'patients'" data-cy="inbox-chip-patients" @click="sourceFilter = sourceFilter === 'patients' ? 'all' : 'patients'">{{ t('Patients', 'Pacientes') }}</button>
+          <button type="button" :class="chipClass(sourceFilter === 'leads')" :aria-pressed="sourceFilter === 'leads'" data-cy="inbox-chip-leads" @click="sourceFilter = sourceFilter === 'leads' ? 'all' : 'leads'">{{ t('Leads', 'Leads') }}</button>
+        </template>
+        <button type="button" :class="chipClass(replyFilter === 'awaiting_us')" :aria-pressed="replyFilter === 'awaiting_us'" data-cy="inbox-chip-awaiting" @click="replyFilter = replyFilter === 'awaiting_us' ? 'all' : 'awaiting_us'">{{ t('Awaiting us', 'Esperan respuesta') }}</button>
+        <button
+          v-for="l in labels"
+          :key="l.id"
+          type="button"
+          :class="chipClass(labelFilter === l.id)"
+          :aria-pressed="labelFilter === l.id"
+          @click="labelFilter = labelFilter === l.id ? null : l.id"
+        >
+          <span class="h-2 w-2 shrink-0 rounded-full" :style="{ backgroundColor: l.color }" />{{ l.name }}
+        </button>
+        <span class="mx-0.5 w-px shrink-0 self-stretch bg-line" aria-hidden="true" />
+        <button type="button" :class="chipClass(view === 'snoozed')" :aria-pressed="view === 'snoozed'" data-cy="inbox-snoozed-toggle" @click="view = view === 'snoozed' ? 'active' : 'snoozed'">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8" /><path d="M12 9v4l2.5 2.5" /></svg>
+          {{ t('Snoozed', 'Pospuestas') }}
+        </button>
+        <button type="button" :class="chipClass(view === 'archived')" :aria-pressed="view === 'archived'" data-cy="inbox-archived-toggle" @click="view = view === 'archived' ? 'active' : 'archived'">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5h12v2.5H2zM2.8 6v6.5a1 1 0 001 1h8.4a1 1 0 001-1V6M6.5 8.5h3" /></svg>
+          {{ t('Archived', 'Archivadas') }}
+        </button>
       </div>
       <div v-else class="flex shrink-0 items-center justify-between gap-2 border-b border-line bg-surface px-3 py-2">
         <button type="button" class="shrink-0 px-1 text-[13px] text-ink-muted2" @click="exitSelectionMode">{{ t('Cancel', 'Cancelar') }}</button>
@@ -1448,7 +1483,9 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
           {{ view === 'archived' ? t('No archived conversations.', 'No hay conversaciones archivadas.') : view === 'snoozed' ? t('Nothing snoozed.', 'Nada pospuesto.') : t('No conversations yet.', 'Aún no hay conversaciones.') }}
         </p>
         <div v-for="c in filteredConversations" :key="c.key" class="relative overflow-hidden border-b border-line-row">
-          <div class="absolute inset-y-0 right-0 flex">
+          <!-- Only there while the row is swiped: left drawn underneath, a
+               sliver of it showed below every row as a coloured line. -->
+          <div class="absolute inset-y-0 right-0 flex" :class="swipedKey === c.key || draggingKey === c.key ? '' : 'invisible'">
             <button type="button" class="flex w-[76px] items-center justify-center bg-brand text-[12px] font-medium text-white" @click="toggleUnread(c)">
               {{ c.unread ? t('Read', 'Leída') : t('Unread', 'No leída') }}
             </button>
@@ -1478,7 +1515,8 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             </svg>
           </span>
           <span class="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[13px] font-semibold text-brand-text">
-            {{ c.name.slice(0, 2).toUpperCase() }}
+            <template v-if="initialsOf(c.name)">{{ initialsOf(c.name) }}</template>
+            <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8.5" r="3.5" /><path d="M5 20c0-3.6 3.1-5.5 7-5.5s7 1.9 7 5.5" /></svg>
             <span v-if="c.channel === 'whatsapp'" class="absolute -bottom-0.5 -right-0.5 flex h-[15px] w-[15px] items-center justify-center rounded-full border border-surface bg-[#25D366]" title="WhatsApp">
               <svg viewBox="0 0 24 24" class="h-[9px] w-[9px] fill-white"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm5.6 14.2c-.2.6-1.2 1.1-1.7 1.2-.4.1-1 .1-1.6-.1-.4-.1-.9-.3-1.5-.6-2.6-1.1-4.3-3.8-4.4-4-.1-.2-1-1.4-1-2.6 0-1.2.6-1.8.9-2.1.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .5.4.2.5.7 1.7.7 1.8.1.1.1.3 0 .4-.1.2-.1.3-.3.4-.1.2-.3.4-.4.5-.1.1-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.4 2.5 1.5.3.1.5.1.6-.1.2-.2.7-.8.9-1.1.2-.3.4-.2.6-.1.2.1 1.5.7 1.8.8.3.1.4.2.5.3.1.2.1.7-.1 1.3z" /></svg>
             </span>
@@ -1497,7 +1535,8 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             <p class="truncate text-[13px]" :class="c.unread ? 'font-medium text-ink-800' : 'text-ink-muted2'">
               {{ c.lastMessage.direction === 'outbound' ? t('You: ', 'Tú: ') : '' }}{{ previewText(c.lastMessage) }}
             </p>
-            <div v-if="myLabelsByKey[c.key]?.length || c.followUp || c.snoozedUntil" class="mt-1 flex flex-wrap gap-1">
+            <div v-if="myLabelsByKey[c.key]?.length || c.followUp || c.snoozedUntil || c.leadId || assignments[c.key]" class="mt-1 flex flex-wrap items-center gap-1">
+              <span v-if="c.leadId" class="rounded-pill border border-info-border bg-info-bg px-1.5 py-px text-[10px] font-bold text-info-text">{{ t('Lead', 'Lead') }}</span>
               <span v-if="c.followUp" class="rounded-pill border border-warning-border bg-warning-bg px-1.5 py-px text-[10px] font-bold text-warning-text" data-cy="inbox-row-follow-up">{{ t('Follow up', 'Seguimiento') }}</span>
               <span v-else-if="c.snoozedUntil" class="rounded-pill bg-chip-bg px-1.5 py-px text-[10px] text-ink-muted" data-cy="inbox-row-snoozed">{{ t('Back', 'Vuelve') }} {{ snoozeWhen(c.snoozedUntil) }}</span>
               <span
@@ -1508,6 +1547,13 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
               >
                 {{ labels.find((l) => l.id === lid)?.name }}
               </span>
+              <!-- Who has it, as initials: the web list shows the same. -->
+              <span
+                v-if="assignments[c.key]"
+                class="ml-auto flex h-[18px] min-w-[18px] items-center justify-center rounded-full border border-chip-border bg-chip-bg px-1 text-[9.5px] font-bold text-ink-700"
+                :aria-label="t(`Assigned to ${assigneeName(c.key)}`, `Asignada a ${assigneeName(c.key)}`)"
+                data-cy="inbox-row-owner"
+              >{{ memberInitials(assignments[c.key]) }}</span>
             </div>
           </div>
           <span v-if="c.unread" class="mt-2 h-[9px] w-[9px] shrink-0 rounded-full bg-brand" />
@@ -1523,68 +1569,6 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
         >
           {{ loadingMore ? t('Loading…', 'Cargando…') : t('Load older conversations', 'Cargar conversaciones anteriores') }}
         </button>
-      </div>
-    </div>
-
-    <!-- Filter bottom sheet -->
-    <div v-if="filterSheetOpen" class="absolute inset-0 z-40 flex items-end bg-black/30" @click="filterSheetOpen = false">
-      <div class="w-full rounded-t-card border-t border-line bg-surface p-4 pb-[calc(env(safe-area-inset-bottom)+16px)]" @click.stop>
-        <p class="mb-3 text-[13px] font-[600] text-ink-900">{{ t('Filter conversations', 'Filtrar conversaciones') }}</p>
-        <div class="flex flex-col gap-1">
-          <button
-            v-for="f in (['mine', 'unassigned'] as const)"
-            :key="f"
-            type="button"
-            class="flex items-center justify-between rounded-ctl px-3 py-2.5 text-left text-[14px]"
-            :class="assignFilter === f ? 'bg-brand-tint text-brand-text' : 'text-ink-700'"
-            :data-cy="`inbox-filter-${f}`"
-            @click="assignFilter = assignFilter === f ? 'all' : f"
-          >
-            {{ f === 'mine' ? t('Assigned to me', 'Asignadas a mí') : t('Unassigned', 'Sin asignar') }}
-            <svg v-if="assignFilter === f" viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l3.5 3.5L13 5" /></svg>
-          </button>
-          <div class="my-1.5 border-t border-line-divider" />
-          <button
-            type="button"
-            class="flex items-center justify-between rounded-ctl px-3 py-2.5 text-left text-[14px]"
-            :class="unreadOnly ? 'bg-brand-tint text-brand-text' : 'text-ink-700'"
-            @click="unreadOnly = !unreadOnly"
-          >
-            {{ t('Unread', 'No leídas') }}
-            <svg v-if="unreadOnly" viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l3.5 3.5L13 5" /></svg>
-          </button>
-          <button
-            type="button"
-            class="flex items-center justify-between rounded-ctl px-3 py-2.5 text-left text-[14px]"
-            :class="replyFilter === 'awaiting_us' ? 'bg-brand-tint text-brand-text' : 'text-ink-700'"
-            @click="replyFilter = replyFilter === 'awaiting_us' ? 'all' : 'awaiting_us'"
-          >
-            {{ t('Awaiting us', 'Esperan respuesta') }}
-            <svg v-if="replyFilter === 'awaiting_us'" viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l3.5 3.5L13 5" /></svg>
-          </button>
-          <button
-            type="button"
-            class="flex items-center justify-between rounded-ctl px-3 py-2.5 text-left text-[14px]"
-            :class="replyFilter === 'awaiting_patient' ? 'bg-brand-tint text-brand-text' : 'text-ink-700'"
-            @click="replyFilter = replyFilter === 'awaiting_patient' ? 'all' : 'awaiting_patient'"
-          >
-            {{ t('Awaiting patient', 'Esperan al paciente') }}
-            <svg v-if="replyFilter === 'awaiting_patient'" viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l3.5 3.5L13 5" /></svg>
-          </button>
-          <div v-if="labels.length > 0" class="my-1.5 border-t border-line-divider" />
-          <button
-            v-for="l in labels"
-            :key="l.id"
-            type="button"
-            class="flex items-center gap-2.5 rounded-ctl px-3 py-2.5 text-left text-[14px]"
-            :class="labelFilter === l.id ? 'bg-brand-tint text-brand-text' : 'text-ink-700'"
-            @click="labelFilter = labelFilter === l.id ? null : l.id"
-          >
-            <span class="h-[9px] w-[9px] shrink-0 rounded-full" :style="{ backgroundColor: l.color }" />
-            <span class="flex-1 truncate">{{ l.name }}</span>
-            <svg v-if="labelFilter === l.id" viewBox="0 0 16 16" class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l3.5 3.5L13 5" /></svg>
-          </button>
-        </div>
       </div>
     </div>
 
@@ -1605,19 +1589,12 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
       }"
     >
       <template v-if="selected">
-      <div class="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
+      <div class="shrink-0 border-b border-line bg-surface">
+      <div class="flex h-14 items-center gap-2 px-3">
         <button type="button" class="flex h-11 w-11 shrink-0 items-center justify-center text-brand-text lg:hidden" :aria-label="t('Back to conversations', 'Volver a las conversaciones')" @click="selectedKey = null">
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7" /></svg>
         </button>
-        <div class="min-w-0 flex-1">
-          <p class="truncate text-[14px] font-[600] text-ink-900">{{ selected.name }}</p>
-          <p class="truncate text-[12px] text-ink-muted2">
-            <span v-if="selected.channel === 'whatsapp'" class="rounded-pill bg-[#25D366]/10 px-1.5 py-px font-medium text-[#128C4B]">WhatsApp</span>
-            <span v-else class="rounded-pill bg-brand-tint px-1.5 py-px font-medium text-brand-text">{{ t('In-app', 'App') }}</span>
-            <span v-if="selected.phoneNumber" class="ml-1.5">{{ selected.phoneNumber }}</span>
-            <span v-if="assigneeName(selected.key)" class="ml-1.5" data-cy="inbox-assignee">· {{ assigneeName(selected.key) }}</span>
-          </p>
-        </div>
+        <p class="min-w-0 flex-1 truncate text-[15px] font-[650] text-ink-900" data-cy="thread-name">{{ selected.name }}</p>
         <InboxSnoozeMenu :snoozed-until="selected.snoozedUntil" :time-zone="staffContext?.timeZone" @snooze="(at: string) => snoozeKey(selected!.key, at)" @unsnooze="snoozeKey(selected!.key, null)" />
         <button type="button" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-700" :aria-label="t('Assign', 'Asignar')" data-cy="inbox-assign" @click="assignOpen = true">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M6.5 7.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM2 13.5c0-2.2 2-3.5 4.5-3.5 1 0 1.9.2 2.6.6M12 9.5v4M10 11.5h4" /></svg>
@@ -1642,6 +1619,25 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             {{ t('Book', 'Reservar') }}
           </NuxtLink>
         </template>
+      </div>
+      <!-- Who this is, under the bar and the full width of it: the channel,
+           their next visit (what most replies are about; tap to open it), or
+           the number when there is no patient, and who has it. Squeezed in
+           beside the name it was cut to "WhatsApp…" on a phone. -->
+      <div class="flex items-center gap-1.5 overflow-x-auto px-3 pb-2 text-[12px] [scrollbar-width:none]">
+        <span v-if="selected.channel === 'whatsapp'" class="shrink-0 rounded-pill bg-[#25D366]/10 px-2 py-0.5 font-medium text-[#128C4B]">WhatsApp</span>
+        <span v-else-if="selected.channel === 'instagram'" class="shrink-0 rounded-pill bg-info-bg px-2 py-0.5 font-medium text-info-text">Instagram</span>
+        <span v-else class="shrink-0 rounded-pill bg-brand-tint px-2 py-0.5 font-medium text-brand-text">{{ t('In-app', 'App') }}</span>
+        <template v-if="selected.patientId && nextVisitLoaded">
+          <NuxtLink v-if="nextVisit" :to="`/calendar/${nextVisit.id}`" class="flex shrink-0 items-center gap-1 rounded-pill border border-line-control px-2 py-0.5 font-medium text-ink-700" data-cy="thread-next-visit">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M8 3v4M16 3v4M3 10h18" /></svg>
+            {{ t('Next', 'Próxima') }}: {{ nextVisitWhen(nextVisit.starts_at) }}
+          </NuxtLink>
+          <span v-else class="shrink-0 rounded-pill border border-warning-border bg-warning-bg px-2 py-0.5 font-medium text-warning-text" data-cy="thread-next-visit">{{ t('Nothing booked', 'Sin cita') }}</span>
+        </template>
+        <span v-else-if="selected.phoneNumber" class="shrink-0 text-ink-muted2">{{ selected.phoneNumber }}</span>
+        <span v-if="assigneeName(selected.key)" class="shrink-0 text-ink-muted2" data-cy="inbox-assignee">· {{ assigneeName(selected.key) }}</span>
+      </div>
       </div>
 
       <div ref="messagesEl" class="flex-1 space-y-2.5 overflow-y-auto px-3 py-3">

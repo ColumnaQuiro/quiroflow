@@ -298,11 +298,21 @@ function openWhatsApp() {
 const actionCount = computed(() => [!!primaryNumber.value, canWhatsApp.value, canBook.value].filter(Boolean).length)
 
 const bookOpen = ref(false)
+// Opened from the plan card: the sheet starts with "the rest of the plan" on.
+const bookPlan = ref(false)
+function openBookPlan() {
+  bookPlan.value = true
+  bookOpen.value = true
+}
+// Visits the plan has with nothing booked yet, roughly -- the sheet counts
+// them properly; this only decides whether to offer it.
+const planUnbooked = computed(() => (plan.value ? plan.value.total_visits - completedInPlan.value - upcomingVisits.value.filter((a) => a.starts_at >= plan.value!.started_at).length : 0))
 const bookedNotice = ref('')
 let noticeTimer: ReturnType<typeof setTimeout> | undefined
-function onBooked(e: { startsAt: string }) {
+function onBooked(e: { startsAt: string; count?: number }) {
   bookOpen.value = false
-  bookedNotice.value = `${t('Booked', 'Reservada')} ${apptWhen(e.startsAt)}`
+  bookPlan.value = false
+  bookedNotice.value = (e.count ?? 1) > 1 ? t(`${e.count} visits booked, from ${apptWhen(e.startsAt)}`, `${e.count} citas reservadas, desde ${apptWhen(e.startsAt)}`) : `${t('Booked', 'Reservada')} ${apptWhen(e.startsAt)}`
   clearTimeout(noticeTimer)
   noticeTimer = setTimeout(() => (bookedNotice.value = ''), 5000)
   loadPlan()
@@ -480,6 +490,9 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
               </li>
             </ul>
           </template>
+          <button v-if="plan && canBook && !ownDiaryOnly && planUnbooked > 1" type="button" class="mt-2 flex h-9 w-full items-center justify-center rounded-ctl border border-brand text-[13px] font-semibold text-brand-text" data-cy="patient-book-plan" @click="openBookPlan">
+            {{ t(`Book the plan's visits (${planUnbooked} left)`, `Reservar las visitas del plan (quedan ${planUnbooked})`) }}
+          </button>
         </template>
       </section>
 
@@ -590,7 +603,7 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
       </section>
     </div>
 
-    <BookVisitSheet v-if="bookOpen" :patient-id="patientId" @booked="onBooked" @close="bookOpen = false" />
+    <BookVisitSheet v-if="bookOpen" :patient-id="patientId" :follow-plan="bookPlan" @booked="onBooked" @close="bookOpen = false; bookPlan = false" />
     <RecordMoneySheet v-if="moneyMode" :patient-id="patientId" :mode="moneyMode" :can-pay="canTakePayments" :can-sell="canSellBonos" @done="onMoneyDone" @close="moneyMode = null" />
     <CarePlanSheet v-if="planSheetOpen" :patient-id="patientId" :plan="plan" :today="clinicToday" @saved="onPlanSaved" @close="planSheetOpen = false" />
     <DocViewSheet v-if="viewDocId" :doc-id="viewDocId" @close="viewDocId = null" />

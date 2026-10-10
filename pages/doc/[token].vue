@@ -3,6 +3,10 @@ import type { DocField } from '~/utils/docFields'
 
 definePageMeta({ layout: false })
 
+// The patient's own language, as the rest of the form is shown in: their
+// saved choice on this device, else what their browser asks for (useLang).
+// Resolved before the first await, where the server still has the request.
+const t = useT()
 const route = useRoute()
 const token = route.params.token as string
 const supabase = useSupabaseClient()
@@ -55,13 +59,13 @@ async function submit() {
       </div>
 
       <div v-else-if="phase === 'not_found'" class="rounded-card border border-line bg-surface p-10 text-center">
-        <p class="text-ink-muted">This link is no longer valid.</p>
+        <p class="text-ink-muted">{{ t('This link is no longer valid.', 'Este enlace ya no es válido.') }}</p>
       </div>
 
       <div v-else-if="phase === 'done'" class="mx-auto mt-10 rounded-card border border-line bg-surface p-8 text-center">
         <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-success-bg text-2xl text-success-text">✓</div>
-        <h2 class="mt-4 text-lg font-semibold text-ink-900">Thank you</h2>
-        <p class="mt-2 text-sm text-ink-muted">This document has been completed.</p>
+        <h2 class="mt-4 text-lg font-semibold text-ink-900">{{ t('Thank you', 'Gracias') }}</h2>
+        <p class="mt-2 text-sm text-ink-muted">{{ t('This document has been completed.', 'Este documento se ha completado.') }}</p>
       </div>
 
       <template v-else>
@@ -73,7 +77,7 @@ async function submit() {
           </div>
           <p v-if="error" class="mt-3 text-sm text-danger-text">{{ error }}</p>
           <UiBtn type="button" variant="primary" class="mt-5 w-full" :disabled="saving" @click="submit">
-            {{ saving ? 'Submitting…' : 'Submit' }}
+            {{ saving ? t('Submitting…', 'Enviando…') : t('Submit', 'Enviar') }}
           </UiBtn>
         </div>
       </template>

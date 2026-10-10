@@ -147,7 +147,7 @@ function telHref(n: ContactNumber) {
 }
 
 // -- Care plan and the next visit -------------------------------------------
-interface Plan { id: string; name: string; total_visits: number; frequency_value: number; frequency_unit: string; visits_per_period: number | null; started_at: string }
+interface Plan { id: string; name: string; total_visits: number; frequency_value: number; frequency_unit: string; visits_per_period: number | null; started_at: string; payment_kind: string | null; package_purchase_id: string | null; patient_membership_id: string | null }
 interface NextAppt { id: string; starts_at: string; appointment_types: { name: string } | null }
 const plan = ref<Plan | null>(null)
 const completedInPlan = ref(0)
@@ -160,7 +160,7 @@ const planError = ref('')
 async function loadPlan() {
   planError.value = ''
   const [{ data: plans, error: planErr }, { data: upcoming, error: apptErr }] = await Promise.all([
-    supabase.from('care_plans').select('id, name, total_visits, frequency_value, frequency_unit, visits_per_period, started_at').eq('patient_id', patientId).order('created_at', { ascending: false }).limit(1),
+    supabase.from('care_plans').select('id, name, total_visits, frequency_value, frequency_unit, visits_per_period, started_at, payment_kind, package_purchase_id, patient_membership_id').eq('patient_id', patientId).order('created_at', { ascending: false }).limit(1),
     supabase
       .from('appointments')
       .select('id, starts_at, appointment_types(name)')
@@ -458,6 +458,9 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
             </div>
             <PatientsPlanPeriods v-if="plan.started_at" :patient-id="patient!.id" :plan="plan" :time-zone="timeZone" />
           </template>
+          <!-- How it is paid (the web's line on the plan card). Without the
+               whole diary the visits left are unknown, so no coverage then. -->
+          <PatientsPlanPayment v-if="plan" :plan="plan" :visits-left="ownDiaryOnly ? 0 : Math.max(0, plan.total_visits - completedInPlan)" />
           <p class="mt-1.5 text-[12.5px]" :class="nextAppt ? 'text-ink-muted2' : 'text-warning-text'">
             <template v-if="nextAppt">{{ t('Next', 'Próxima') }}: {{ apptWhen(nextAppt.starts_at) }}<template v-if="nextAppt.appointment_types?.name"> · {{ nextAppt.appointment_types.name }}</template></template>
             <template v-else-if="ownDiaryOnly">{{ t('Nothing booked with you.', 'Nada reservado contigo.') }}</template>

@@ -66,6 +66,9 @@ function insertReply(reply: string) {
   })
 }
 
+// The thread's header puts links in the reply too (InboxChatActions).
+defineExpose({ insertReply })
+
 function submit() {
   if (props.sending || props.disabled || !text.value.trim()) return
   emit('send')

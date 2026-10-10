@@ -240,6 +240,30 @@ export type Database = {
         }
         Relationships: []
       }
+      inbox_snoozes: {
+        Row: {
+          account_id: string
+          conversation_key: string
+          created_at: string
+          snoozed_until: string
+          team_member_id: string
+        }
+        Insert: {
+          account_id: string
+          conversation_key: string
+          created_at?: string
+          snoozed_until: string
+          team_member_id: string
+        }
+        Update: {
+          account_id?: string
+          conversation_key?: string
+          created_at?: string
+          snoozed_until?: string
+          team_member_id?: string
+        }
+        Relationships: []
+      }
       inbox_reads: {
         Row: {
           account_id: string
@@ -258,6 +282,36 @@ export type Database = {
           conversation_key?: string
           last_read_at?: string
           team_member_id?: string
+        }
+        Relationships: []
+      }
+      inbox_notes: {
+        Row: {
+          account_id: string
+          author_id: string | null
+          body: string
+          conversation_key: string
+          created_at: string
+          id: string
+          mentions: string[]
+        }
+        Insert: {
+          account_id: string
+          author_id?: string | null
+          body: string
+          conversation_key: string
+          created_at?: string
+          id?: string
+          mentions?: string[]
+        }
+        Update: {
+          account_id?: string
+          author_id?: string | null
+          body?: string
+          conversation_key?: string
+          created_at?: string
+          id?: string
+          mentions?: string[]
         }
         Relationships: []
       }
@@ -6776,8 +6830,11 @@ export type Database = {
           last_status: string | null
           last_template_name: string | null
           my_archived: boolean | null
+          my_follow_up: boolean | null
           my_label_ids: string[] | null
           my_last_read_at: string | null
+          my_snoozed_until: string | null
+          my_sort_at: string | null
           patient_id: string | null
           phone_number: string | null
           search_name: string | null

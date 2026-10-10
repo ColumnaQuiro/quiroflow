@@ -89,3 +89,26 @@ describe('Inbox, actions from the chat', () => {
     })
   })
 })
+
+describe('Inbox, the thread header', () => {
+  it("says the patient's next visit, or that nothing is booked", () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Zoe', lastName: 'Zamora' }).then((zoe) => {
+        cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Abel', lastName: 'Arias' }).then((abel) => {
+          cy.task('db:createWhatsappMessage', { accountId: account.accountId, patientId: zoe.id, phoneNumber: '+34600444555', direction: 'inbound', bodyPreview: '¿A qué hora era?', createdAt: minutesAgo(10) })
+          cy.task('db:createWhatsappMessage', { accountId: account.accountId, patientId: abel.id, phoneNumber: '+34600444666', direction: 'inbound', bodyPreview: 'Hola', createdAt: minutesAgo(20) })
+          const inThreeDays = new Date(Date.now() + 3 * 86400000)
+          inThreeDays.setUTCHours(8, 0, 0, 0)
+          cy.task('db:createAppointment', { accountId: account.accountId, clinicId: account.clinicId, patientId: zoe.id, startsAt: inThreeDays.toISOString(), status: 'booked' })
+
+          cy.login(account.email, account.password)
+          openInbox()
+          row(zoe.id).click()
+          cy.get('[data-cy=thread-next-visit]').should('contain.text', 'Next:')
+          row(abel.id).click()
+          cy.get('[data-cy=thread-next-visit]').should('contain.text', 'Nothing booked')
+        })
+      })
+    })
+  })
+})

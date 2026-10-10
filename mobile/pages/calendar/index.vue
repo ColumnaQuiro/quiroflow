@@ -16,9 +16,10 @@ definePageMeta({ layout: 'practitioner', keepalive: true })
 // - iPad: a column per practitioner (the canvas's AppIpadAgenda), and at
 //   landscape width the selected visit on the right with Mover / Cancelar.
 // - Hold a free slot, or "+", to book (NewVisitSheet -> BookVisitSheet: the
-//   same free times and clash check as "Book the next visit"). On iPad, hold a
-//   visit and drag it to move it; letting go opens the move sheet at the new
-//   time, which re-checks clashes and logs the reschedule as the web does.
+//   same free times and clash check as "Book the next visit"). Hold a visit
+//   and drag it to move it (iPhone and iPad; near the top or bottom edge the
+//   day scrolls along); letting go opens the move sheet at the new time,
+//   which re-checks clashes and logs the reschedule as the web does.
 // - A read-only calendar (calendar_read_only) sees all of it and changes
 //   nothing; someone who sees only their own diary gets only their column.
 //
@@ -476,8 +477,8 @@ function onPointerMove(e: PointerEvent) {
 }
 watch(newVisit, (v) => { if (!v) ghost.value = null })
 
-// Dragging (iPad): hold a visit, then move it -- across the day and between
-// practitioners' columns. Nothing is written on letting go: the move sheet
+// Dragging: hold a visit, then move it -- across the day and, on iPad,
+// between practitioners' columns. Nothing is written on letting go: the move sheet
 // opens at the new time, which checks clashes again and asks whether to tell
 // the patient.
 const drag = ref<{ a: Appointment; columnKey: string; offsetMin: number; minute: number; duration: number } | null>(null)
@@ -486,7 +487,7 @@ function setColumnEl(key: string, el: unknown) {
   if (el) columnEls.value[key] = el as HTMLElement
 }
 function onApptDown(e: PointerEvent, a: Appointment, c: Column) {
-  if (!wide.value || !canChange(a)) return
+  if (!canChange(a)) return
   pressStart = { x: e.clientX, y: e.clientY }
   const y = e.clientY
   clearTimeout(holdTimer)
@@ -496,10 +497,35 @@ function onApptDown(e: PointerEvent, a: Appointment, c: Column) {
     const col = columnEls.value[c.key]
     const at = col ? minuteAtY(col, y) : s
     drag.value = { a, columnKey: c.key, offsetMin: at - s, minute: s, duration: minuteOfDay(a.ends_at, c.date) - s }
+    lastPointer = { clientX: e.clientX, clientY: y }
     navigator.vibrate?.(10)
+    clearInterval(edgeTimer)
+    edgeTimer = setInterval(edgeScroll, 16)
   }, HOLD_MS)
 }
-function moveDrag(e: PointerEvent) {
+// A phone shows a few hours of the day: held near the top or bottom edge,
+// the timeline scrolls on its own, faster the closer the finger is, and the
+// visit keeps following the finger.
+const EDGE = 64
+let lastPointer: { clientX: number; clientY: number } | null = null
+let edgeTimer: ReturnType<typeof setInterval> | undefined
+function edgeScroll() {
+  const el = scroller.value
+  if (!drag.value || !el || !lastPointer) {
+    clearInterval(edgeTimer)
+    return
+  }
+  const r = el.getBoundingClientRect()
+  const y = lastPointer.clientY
+  const speed = y < r.top + EDGE ? -Math.ceil(((r.top + EDGE - y) / EDGE) * 14) : y > r.bottom - EDGE ? Math.ceil(((y - (r.bottom - EDGE)) / EDGE) * 14) : 0
+  if (speed) {
+    el.scrollTop += speed
+    moveDrag(lastPointer)
+  }
+}
+onBeforeUnmount(() => clearInterval(edgeTimer))
+function moveDrag(e: { clientX: number; clientY: number }) {
+  lastPointer = { clientX: e.clientX, clientY: e.clientY }
   const d = drag.value!
   for (const [key, el] of Object.entries(columnEls.value)) {
     const r = el.getBoundingClientRect()

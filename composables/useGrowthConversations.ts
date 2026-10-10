@@ -56,9 +56,13 @@ export function useGrowthConversations(enabled: Ref<boolean> | ComputedRef<boole
   const { showToast } = useToast()
   const t = useT()
 
-  async function load() {
+  // `silent` is the Inbox's live refresh (realtime and its minute poll),
+  // which used to leave this list alone: a new lead's first WhatsApp only
+  // appeared once the page was reloaded. A failed background refresh keeps
+  // what is on screen rather than emptying it.
+  async function load(opts: { silent?: boolean } = {}) {
     if (!enabled.value) return
-    loading.value = true
+    if (!opts.silent) loading.value = true
     try {
       const data = await useStaffFetch<{ conversations: LeadConversation[] }>('/api/growth/conversations')
       conversations.value = data.conversations
@@ -66,9 +70,9 @@ export function useGrowthConversations(enabled: Ref<boolean> | ComputedRef<boole
       // Deliberately quiet. This list is merged into an Inbox that works
       // perfectly well without it -- a failure here must not take the
       // patient threads down with it.
-      conversations.value = []
+      if (!opts.silent) conversations.value = []
     } finally {
-      loading.value = false
+      if (!opts.silent) loading.value = false
     }
   }
 

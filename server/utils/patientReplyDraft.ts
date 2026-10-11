@@ -1,6 +1,7 @@
-import type Anthropic from '@anthropic-ai/sdk'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
 import { loadOfferedTypes, loadReceptionistCalendar, toConfig, toneWording } from '~/server/utils/receptionist'
+import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptionistModel'
+import { typesForAudience } from '~/utils/receptionistTypes'
 import { carePlanCadenceLabel } from '~/utils/carePlanCadence'
 import { buildPatientReplyPrompt, type PatientReplyFacts } from '~/utils/patientReplyPrompt'
 
@@ -74,7 +75,7 @@ export async function draftPatientReply(supabase: any, service: any, accountId: 
   const nowIso = new Date().toISOString()
   const [{ data: upcoming }, { data: last }, { data: plans }, { data: balance }] = await Promise.all([
     supabase.from('appointments').select('starts_at, appointment_types(name), team_members(full_name)').eq('patient_id', patientId).eq('status', 'booked').is('deleted_at', null).gte('starts_at', nowIso).order('starts_at').limit(3),
-    supabase.from('appointments').select('starts_at').eq('patient_id', patientId).eq('status', 'completed').is('deleted_at', null).lt('starts_at', nowIso).order('starts_at', { ascending: false }).limit(1),
+    supabase.from('appointments').select('starts_at, appointment_types(name)').eq('patient_id', patientId).eq('status', 'completed').is('deleted_at', null).lt('starts_at', nowIso).order('starts_at', { ascending: false }).limit(1),
     supabase.from('care_plans').select('name, total_visits, started_at, frequency_value, frequency_unit, visits_per_period').eq('patient_id', patientId).order('created_at', { ascending: false }).limit(1),
     supabase.from('patient_live_balances').select('outstanding_cents').eq('patient_id', patientId).maybeSingle(),
   ])
@@ -93,27 +94,23 @@ export async function draftPatientReply(supabase: any, service: any, accountId: 
       practitionerName: a.team_members?.full_name ?? null,
     })),
     lastVisitAt: (last ?? [])[0]?.starts_at ?? null,
+    lastVisitType: ((last ?? [])[0] as { appointment_types?: { name: string } | null } | undefined)?.appointment_types?.name ?? null,
     plan: plan ? { name: plan.name, totalVisits: plan.total_visits, done, cadence: carePlanCadenceLabel(plan, en) } : null,
     outstandingCents: typeof balance?.outstanding_cents === 'number' ? balance.outstanding_cents : null,
   }
 
-  const offeredTypes = await loadOfferedTypes(supabase, accountId, config)
-  const calendar = await loadReceptionistCalendar(service, accountId, config, offeredTypes)
+  // A patient who writes is somebody the clinic knows: never a first visit.
+  const { types } = typesForAudience(await loadOfferedTypes(supabase, accountId, config), 'existing')
+  const calendar = await loadReceptionistCalendar(service, accountId, config, types)
+  const findFreeTimes = calendar.availability ? freeTimesLookup(service, accountId, config, types, calendar.timeZone) : null
 
-  const client = createAnthropicClient(apiKey)
-  const message = await client.messages.create({
+  const { text: draft, refused } = await runReceptionistModel(createAnthropicClient(apiKey), {
     model: MODEL,
-    max_tokens: MAX_TOKENS,
-    thinking: { type: 'adaptive' },
-    output_config: { effort: 'low' },
-    system: buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes, calendar }),
+    maxTokens: MAX_TOKENS,
+    system: buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, calendar, searchTool: Boolean(findFreeTimes) }),
     messages: history,
+    findFreeTimes,
   })
-  if (message.stop_reason === 'refusal') return { status: 'refused' }
-  const draft = message.content
-    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-    .map((block) => block.text)
-    .join('')
-    .trim()
+  if (refused) return { status: 'refused' }
   return draft ? { status: 'drafted', draft } : { status: 'refused' }
 }

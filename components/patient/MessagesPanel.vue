@@ -26,7 +26,9 @@ interface Message {
 const messages = ref<Message[]>([])
 const loading = ref(true)
 const messagesEl = ref<HTMLElement>()
-const composerText = ref('')
+// Starts with whatever another screen left for it (the care plan card's
+// "ask to change this time"), for them to edit before sending.
+const composerText = ref(usePatientMessageDraft().take())
 const sending = ref(false)
 const sendError = ref('')
 

@@ -109,6 +109,15 @@ function eur(cents: number) {
       </template>
     </section>
 
+    <!-- The plan: how far along, its booked dates, and changing one -->
+    <PatientCarePlanCard
+      class="mt-3"
+      :patient-id="props.patientId"
+      messages-to="/messages"
+      :reschedule-to="(id) => `/book?reschedule=${id}`"
+      :book-to="settings.bookingEnabled ? '/book' : null"
+    />
+
     <!-- Earlier, if a slot frees up: the clinic's waitlist -->
     <PatientWaitlistCard v-if="settings.bookingEnabled && !apptLoading" class="mt-3" :clinic-id="waitlistClinicId" :has-next-visit="!!next" />
 
@@ -156,12 +165,5 @@ function eur(cents: number) {
 
     <!-- The clinic: where it is and how to reach it -->
     <PatientClinicCards class="mt-3" messages-to="/messages" />
-
-    <section class="mt-5">
-      <h2 class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ t('Care plan', 'Plan de tratamiento') }}</h2>
-      <div class="mt-2">
-        <PatientsPhaseStats :patient-id="props.patientId" :editable="false" />
-      </div>
-    </section>
   </div>
 </template>

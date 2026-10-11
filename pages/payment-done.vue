@@ -8,11 +8,23 @@ definePageMeta({ layout: false })
 const route = useRoute()
 const t = useT()
 const success = computed(() => route.query.status === 'success')
+// From a reminder's pay link (server/api/pay/[token].get.ts): nothing to pay
+// any more, a link that is not ours, or no card payments at that clinic.
+const other = computed(() => {
+  if (route.query.status === 'already_paid') return { title: t('Already paid', 'Ya está pagada'), body: t('This invoice has already been paid. Nothing else to do.', 'Esta factura ya está pagada. No tienes que hacer nada más.') }
+  if (route.query.status === 'invalid') return { title: t('Link not valid', 'Enlace no válido'), body: t('This payment link is not valid. Ask the clinic for a new one.', 'Este enlace de pago no es válido. Pide uno nuevo a la clínica.') }
+  if (route.query.status === 'unavailable') return { title: t('Card payment unavailable', 'Pago con tarjeta no disponible'), body: t('This clinic does not take card payments online right now. Please contact them.', 'Esta clínica no acepta ahora pagos con tarjeta online. Ponte en contacto con ella.') }
+  return null
+})
 </script>
 
 <template>
   <div class="flex min-h-screen items-center justify-center bg-surface-page px-4">
-    <div class="max-w-sm text-center" data-cy="payment-done">
+    <div v-if="other" class="max-w-sm text-center" data-cy="payment-done" :data-status="String(route.query.status)">
+      <p class="text-[15px] font-medium text-ink-900">{{ other.title }}</p>
+      <p class="mt-1.5 text-[13px] text-ink-muted2">{{ other.body }}</p>
+    </div>
+    <div v-else class="max-w-sm text-center" data-cy="payment-done">
       <p class="text-[15px] font-medium text-ink-900">{{ success ? t('Payment received', 'Pago recibido') : t('Payment not made', 'Pago no realizado') }}</p>
       <p class="mt-1.5 text-[13px] text-ink-muted2">
         {{

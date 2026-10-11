@@ -134,6 +134,20 @@ export const FLOW_TEMPLATES: AutomationTemplate[] = [
     ],
   },
   {
+    key: 'payment-reminder',
+    section: 'flows',
+    name: ['Payment reminder', 'Recordatorio de pago'],
+    description: ['A week after an unpaid invoice: the amount and a link to pay by card.', 'Una semana después de una factura sin pagar: el importe y un enlace para pagar con tarjeta.'],
+    summary: ['Invoice unpaid after 7 days · 1 step', 'Factura sin pagar a los 7 días · 1 paso'],
+    rule: baseRule('invoice.overdue', { filters: { days_overdue: 7 }, quiet_hours: DEFAULT_QUIET_HOURS }),
+    steps: [
+      email(
+        'Tu factura {{invoice_number}} de {{clinic_name}}',
+        '<p>Hola {{first_name}},</p><p>Te recordamos que la factura {{invoice_number}} tiene pendientes {{invoice_amount_owed}}.</p><p>Puedes pagarla con tarjeta aquí: <a href="{{invoice_pay_link}}">{{invoice_pay_link}}</a></p><p>Si ya la has pagado, no hagas caso de este mensaje. ¡Gracias!</p><p>{{clinic_name}}</p>',
+      ),
+    ],
+  },
+  {
     key: 'birthday',
     section: 'flows',
     name: ['Birthday', 'Cumpleaños'],

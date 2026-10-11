@@ -101,6 +101,17 @@ export const TRIGGERS: TriggerDef[] = [
     appointmentContext: true,
   },
   {
+    value: 'invoice.overdue',
+    label: ['Invoice unpaid', 'Factura sin pagar'],
+    sentence: ['A set number of days after an invoice, still unpaid', 'Un número de días después de una factura, sin pagar'],
+    description: [
+      'Checked once a day. Use the payment link variable so they can pay by card; a second reminder is another automation with more days. Patients with reminders paused are skipped.',
+      'Se comprueba una vez al día. Usa la variable del enlace de pago para que paguen con tarjeta; un segundo recordatorio es otra automatización con más días. Se omite a los pacientes con los recordatorios pausados.',
+    ],
+    group: 'money',
+    appointmentContext: false,
+  },
+  {
     value: 'invoice.paid',
     label: ['Invoice paid', 'Factura pagada'],
     sentence: ['An invoice is paid in full', 'Se paga una factura por completo'],
@@ -197,6 +208,10 @@ export function triggerTitle(t: Translate, event: string, filters?: Record<strin
   if (event === 'appointment.review_request') {
     const d = Number(filters?.days_after) || 2
     return t(`${d} day${d === 1 ? '' : 's'} after the visit`, `${d} día${d === 1 ? '' : 's'} después de la cita`)
+  }
+  if (event === 'invoice.overdue') {
+    const d = Number(filters?.days_overdue) || 7
+    return t(`Invoice unpaid after ${d} day${d === 1 ? '' : 's'}`, `Factura sin pagar a los ${d} día${d === 1 ? '' : 's'}`)
   }
   const def = triggerDef(event)
   return def ? say(t, def.label) : event
@@ -571,6 +586,9 @@ export const VARIABLE_SOURCES: { value: string; label: Pair }[] = [
   { value: 'google_review_link', label: ['Google review link', 'Enlace de reseña de Google'] },
   { value: 'waitlist_claim_link', label: ['Waitlist claim link', 'Enlace para reservar el hueco'] },
   { value: 'waitlist_slot_datetime', label: ['Offered slot date & time', 'Fecha y hora del hueco ofrecido'] },
+  { value: 'invoice_number', label: ['Invoice number', 'Número de factura'] },
+  { value: 'invoice_amount_owed', label: ['Amount owed', 'Importe pendiente'] },
+  { value: 'invoice_pay_link', label: ['Payment link (card)', 'Enlace de pago (tarjeta)'] },
   { value: 'clinic_name', label: ['Clinic name', 'Nombre de la clínica'] },
   { value: 'clinic_phone', label: ['Clinic phone', 'Teléfono de la clínica'] },
   { value: 'clinic_address', label: ['Clinic address', 'Dirección de la clínica'] },

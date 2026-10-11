@@ -19,6 +19,10 @@ export interface MergeContext {
   googleReviewUrl?: string
   waitlistClaimLink?: string
   waitlistSlotDatetime?: string
+  /** An unpaid invoice's reminder (invoice.overdue): its number, what is owed, and /api/pay/<token>. */
+  invoiceNumber?: string
+  invoiceAmountOwed?: string
+  invoicePayLink?: string
   clinicName?: string
   clinicPhone?: string
   clinicAddress?: string
@@ -98,6 +102,9 @@ export function automationFieldValue(recipient: MergeRecipient, source: string, 
   if (source === 'google_review_link') return context?.googleReviewUrl ?? ''
   if (source === 'waitlist_claim_link') return context?.waitlistClaimLink ?? ''
   if (source === 'waitlist_slot_datetime') return context?.waitlistSlotDatetime ?? ''
+  if (source === 'invoice_number') return context?.invoiceNumber ?? ''
+  if (source === 'invoice_amount_owed') return context?.invoiceAmountOwed ?? ''
+  if (source === 'invoice_pay_link') return context?.invoicePayLink ?? ''
   if (source === 'clinic_name') return context?.clinicName ?? ''
   if (source === 'clinic_phone') return context?.clinicPhone ?? ''
   // One line: a template variable cannot hold a line break.

@@ -188,6 +188,9 @@ export function findProblems(rule: DraftRule, steps: DraftStep[], templates: Tem
   if (rule.trigger_event === 'appointment.review_request' && !(Number(rule.filters?.days_after) > 0)) {
     add(null, 'Say how many days after the visit.', 'Indica cuántos días después de la cita.')
   }
+  if (rule.trigger_event === 'invoice.overdue' && !(Number(rule.filters?.days_overdue) > 0)) {
+    add(null, 'Say how many days after the invoice.', 'Indica cuántos días después de la factura.')
+  }
   if (rule.trigger_event === 'segment') {
     const schedule = rule.segment?.schedule
     if (!schedule || !['once', 'daily', 'weekly'].includes(schedule.kind)) add(null, 'Choose when the group is checked.', 'Elige cuándo se revisa el grupo.')

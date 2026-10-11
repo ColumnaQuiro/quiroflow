@@ -78,6 +78,15 @@ function eur(cents: number) {
         </template>
       </section>
 
+      <!-- No "Change time" here: moving a visit needs the app's slot
+           picker, so the portal's card asks the clinic instead. -->
+      <PatientCarePlanCard
+        class="mt-4"
+        :patient-id="patient.id"
+        messages-to="/portal/messages"
+        :book-to="settings.bookingEnabled && settings.bookingSlug ? `/book/${settings.bookingSlug}` : null"
+      />
+
       <PatientWaitlistCard v-if="settings.bookingEnabled && !apptLoading" class="mt-4" :clinic-id="waitlistClinicId" :has-next-visit="!!next" />
 
       <!-- Two numbers, never netted into one: sessions are not money, and a

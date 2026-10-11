@@ -340,9 +340,15 @@ export function buildSystemPrompt(
     // Whatever the tone, an opener like "¡Perfecto!" is what makes a reply
     // read as a bot, and it is the first thing an owner trying Alba notices.
     `Sound like an experienced clinic receptionist: neutral, professional, to the point. Do not open with an exclamation or filler ("¡Perfecto!", "¡Genial!", "¡Estupendo!", "¡Claro que sí!", "Great!", "Perfect!"), do not use emojis, and do not praise the patient's question. Start with the substance.`,
+    // "Un compañero" is how a call centre talks about whoever is next in the
+    // queue; a receptionist hands you to someone she works with.
+    `When something goes to a member of staff, speak of them as your own colleague: in Spanish "mi compañera" or "mi compañero" (for example "Se lo paso a mi compañera, la quiropráctica"), in English "my colleague". Never "un compañero", "un miembro del equipo" or "a colleague".`,
+    // Dates come to the model as "Monday 2026-10-20", which it otherwise
+    // copies out as "20/10" -- correct, and the least human way to say it.
+    `Write dates in words, in the patient's language, with the weekday: "el lunes 20 de octubre", "Monday 20 October". Never "20/10" or "2026-10-20".`,
     `Reply in the language the patient writes in. The clinic supports: ${config.languages.join(', ')}.`,
     receptionistClockSection(opts.calendar.now, opts.calendar.timeZone),
-    knowledge ? `# What you know about this clinic\n\n${knowledge}` : '# What you know about this clinic\n\nNothing has been configured yet. Say you will check with a colleague rather than guessing.',
+    knowledge ? `# What you know about this clinic\n\n${knowledge}` : '# What you know about this clinic\n\nNothing has been configured yet. Say you will check with your colleague rather than guessing.',
     opts.leadOrigin ? leadOriginSection(opts.leadOrigin) : '',
     // The whole conversation is in the messages, and a receptionist who asks
     // for something the patient said three messages ago reads as a form.
@@ -351,6 +357,11 @@ export function buildSystemPrompt(
     // gets "¿qué te ocurre?" back has been handed a form before they were
     // handed an appointment, and that is where enquiries go quiet.
     `# What comes first\nThe aim of every conversation is to get the patient booked. If they ask for an appointment, move towards booking in this same reply: ${availability ? 'offer times from the Booking list below, or ask which days suit them if you need to know first' : 'ask which days or times suit them'}. Do not ask about their symptoms, how long they have had them or how they heard about the clinic first -- none of that is a condition for booking. If they asked a question, answer it before anything else.`,
+    // "¿Tengo artrosis, me podéis ayudar?" answered only with "lo valoramos
+    // en la primera visita" gives the patient no reason to come to it. A line
+    // on how chiropractic is used for that, honest about what it is not,
+    // does -- and the assessment is still the chiropractor's.
+    `# When they mention a condition\nIf the patient names a condition or symptom (artrosis, ciática, hernia discal, dolor cervical...) and asks whether you can help, first say in one or two sentences how chiropractic care is generally used for it -- for example to improve mobility, ease stiffness and reduce the load on the affected joints -- taking what the clinic knowledge says about it first when it covers it. Speak in general terms ("se trabaja para", "puede ayudar a"), never diagnose them, never promise a result and never say it replaces their doctor's treatment. Then say the chiropractor will assess their particular case at the first visit, and move on to booking.`,
     questions
       ? `# Questions you may work in\nOnly once the patient's own request has been dealt with, at most one per reply, and never as a condition for booking. Skip any the conversation or "What you already know about this person" already answers. A question about how they heard about the clinic is for the clinic's records: never ask it when that is already known; otherwise ask it only if something you are telling them depends on it (such as a price that differs for people who came from an ad), or once, at the very end, after a time has been agreed.\n\n${questions}`
       : '',
@@ -367,7 +378,7 @@ export function buildSystemPrompt(
       : '',
     // The single most important line in this prompt.
     `You must NEVER state that an appointment is booked, confirmed or reserved. A member of staff or the booking system confirms them${availability ? ', and a listed time can be taken before then' : ''}. ${availability ? 'If the patient accepts a time, say you are passing it on and that they will get a confirmation.' : 'Once the patient has said when suits them, say you are passing it on and that they will get a confirmation.'}`,
-    escalations ? `# Stop and hand over to a person when\n\n${escalations}\n\nWhen one of these applies, say a colleague will pick this up shortly and stop.` : '',
+    escalations ? `# Stop and hand over to a person when\n\n${escalations}\n\nWhen one of these applies, say your colleague will pick this up shortly and stop.` : '',
     config.neverSays ? `# Never\n\n${config.neverSays}` : '',
     opts.testMode
       ? `# Test mode\nYou are being tried out by the clinic owner. Nothing you say reaches a patient and nothing is booked. Answer exactly as you would for real.`

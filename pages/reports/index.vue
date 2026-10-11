@@ -31,6 +31,7 @@ const allGroups = computed(() => [
   {
     label: t('Growth & Performance', 'Crecimiento y rendimiento'),
     items: [
+      { to: '/reports/retention', label: t('Retention', 'Retención'), description: t('Who comes back by month of first visit, rebooking by practitioner, and care plans left unfinished.', 'Quién vuelve según el mes de su primera visita, reservas por profesional y planes sin terminar.'), icon: ICONS.trendingUp },
       { to: '/reports/statistics', label: t('Statistics', 'Estadísticas'), description: t('First visits, reports, revisions, PVA, conversion, and retention.', 'Primeras visitas, informes, revisiones, PVA, conversión y retención.'), icon: ICONS.chartBar },
       { to: '/reports/income-performance', label: t('Income Performance', 'Rendimiento de ingresos'), description: t('Compare practitioners and months side by side, with growth curves.', 'Compara profesionales y meses uno junto a otro, con curvas de crecimiento.'), icon: ICONS.trendingUp },
     ],

@@ -1152,6 +1152,10 @@ const sending = ref(false)
 const sendError = ref('')
 const templateModalOpen = ref(false)
 
+// The patient's next visit, in the thread header (useNextVisit).
+const { next: nextVisit, loaded: nextVisitLoaded } = useNextVisit(() => selected.value?.patientId)
+const nextVisitWhen = (iso: string) => new Date(iso).toLocaleString(t('en-GB', 'es-ES'), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+
 // "Acciones" in the header (InboxChatActions): book them, open their record,
 // or put the booking or a payment link in the reply -- at the cursor of the
 // message bar (InboxComposer), which owns the box.
@@ -2035,6 +2039,10 @@ function avatarInitials(name: string) {
               >{{ channelName(replyChannel) }}</span>
               <span v-if="selected.phoneNumber">{{ selected.phoneNumber }}</span>
               <span v-else-if="!selected.patientId && replyChannel !== 'instagram'">{{ t('No patient linked', 'Sin paciente vinculado') }}</span>
+              <!-- What a reply is usually about: their next visit, or none. -->
+              <span v-if="selected.patientId && nextVisitLoaded" class="truncate" :class="nextVisit ? 'text-ink-700' : 'text-warning-text'" data-cy="thread-next-visit">
+                · {{ nextVisit ? `${t('Next', 'Próxima')}: ${nextVisitWhen(nextVisit.starts_at)}` : t('Nothing booked', 'Sin cita') }}
+              </span>
             </p>
           </div>
           <button

@@ -24,9 +24,11 @@ interface Template {
 }
 
 const props = defineProps<{
-  /** Either a patient, or a number no patient has yet. */
+  /** A patient, a number no patient has yet, or a Growth lead's own thread. */
   patientId?: string | null
   phoneNumber?: string | null
+  /** A lead (Growth): sent to their number and filed in their thread, as the web's lead thread does. */
+  leadId?: string | null
   patientFirstName?: string
   /** Chosen on opening when approved (Recordatorios: the account's recall template), in the patient's language if there is that variant. */
   defaultTemplateName?: string | null
@@ -90,7 +92,7 @@ onMounted(async () => {
 function choose(tpl: Template) {
   selectedKey.value = keyOf(tpl)
   // {{1}} is the first name, the way the web fills it; the rest start empty.
-  const guesses = [props.patientId ? (props.patientFirstName ?? '') : '']
+  const guesses = [props.patientId || props.leadId ? (props.patientFirstName ?? '') : '']
   variables.value = Array.from({ length: tpl.variableCount }, (_, i) => guesses[i] ?? '')
   attachmentFileId.value = ''
   latitude.value = ''
@@ -110,7 +112,8 @@ async function send() {
       method: 'POST',
       body: {
         patientId: props.patientId ?? undefined,
-        phoneNumber: props.patientId ? undefined : (props.phoneNumber ?? undefined),
+        phoneNumber: props.patientId || props.leadId ? undefined : (props.phoneNumber ?? undefined),
+        leadId: props.patientId ? undefined : (props.leadId ?? undefined),
         templateName: tpl.name,
         templateLanguage: tpl.language,
         variables: variables.value,

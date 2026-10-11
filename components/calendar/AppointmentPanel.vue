@@ -207,6 +207,9 @@ async function commitEdit() {
       created_by: store.teamMember?.id ?? null,
     })
     if (logError) console.error('Cambiar: reschedule not logged', logError)
+    // The time it left, to the waitlist, when the clinic offers freed slots
+    // automatically (offer-next decides, against the row just logged).
+    else useStaffFetch('/api/waitlist/offer-next', { method: 'POST', body: { appointmentId: props.appointment.id, movedFrom: props.appointment.starts_at } }).catch(() => {})
     fire('appointment.rescheduled', { patientId: props.appointment.patient_id, appointmentId: props.appointment.id })
   }
   editing.value = false

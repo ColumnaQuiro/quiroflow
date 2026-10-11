@@ -72,7 +72,7 @@ export default defineEventHandler(async (event) => {
   })
   let offered = false
   await after('waitlist offer', async () => {
-    offered = await offerNextWaitlistEntry(service, origin, {
+    offered = (await offerNextWaitlistEntry(service, origin, {
       accountId: appt.account_id,
       clinicId: appt.clinic_id,
       roomId: appt.room_id,
@@ -80,7 +80,7 @@ export default defineEventHandler(async (event) => {
       appointmentTypeId: appt.appointment_type_id,
       startsAt: appt.starts_at,
       endsAt: appt.ends_at,
-    })
+    })) > 0
   })
   return { cancelled: true, offered }
 })

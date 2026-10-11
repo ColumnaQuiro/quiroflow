@@ -41,6 +41,7 @@ import type { InstagramMessagingEvent } from '~/server/utils/instagramWebhook'
 import { leadForWhatsAppSender } from '~/server/utils/whatsappLeads'
 import { receptionistDraftsFor } from '~/server/utils/receptionist'
 import { findLeadIdByPhone, findPatientIdsByPhone, pickInboundPatientId } from '~/server/utils/whatsappOwner'
+import { offerCancelledSlotIfAutomatic } from '~/server/utils/waitlistOffer'
 
 interface MetaChangeValue {
   metadata?: { phone_number_id: string }
@@ -567,6 +568,9 @@ export default defineEventHandler(async (event) => {
                   })
                 }
               }
+              // The freed slot, to the waitlist, when the clinic offers them
+              // automatically (accounts.waitlist_auto_offer).
+              await offerCancelledSlotIfAutomatic(supabase, getRequestURL(event).origin, appt.id)
             } else {
               await supabase.from('appointments').update({ confirmation_status: intent }).eq('id', appt.id)
             }

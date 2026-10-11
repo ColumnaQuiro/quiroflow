@@ -638,6 +638,8 @@ export type Database = {
           whatsapp_recall_template_name: string | null
           whatsapp_reminder_template_language: string | null
           whatsapp_reminder_template_name: string | null
+          waitlist_auto_offer: boolean
+          waitlist_offer_mode: string
         }
         Insert: {
           appointment_confirmation_channels?: string[]
@@ -725,6 +727,8 @@ export type Database = {
           whatsapp_recall_template_name?: string | null
           whatsapp_reminder_template_language?: string | null
           whatsapp_reminder_template_name?: string | null
+          waitlist_auto_offer?: boolean
+          waitlist_offer_mode?: string
         }
         Update: {
           appointment_confirmation_channels?: string[]
@@ -813,6 +817,8 @@ export type Database = {
           whatsapp_recall_template_name?: string | null
           whatsapp_reminder_template_language?: string | null
           whatsapp_reminder_template_name?: string | null
+          waitlist_auto_offer?: boolean
+          waitlist_offer_mode?: string
         }
         Relationships: [
           {
@@ -1617,6 +1623,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      automation_invoice_sends: {
+        Row: {
+          account_id: string
+          invoice_id: string
+          rule_id: string
+          sent_at: string
+        }
+        Insert: {
+          account_id: string
+          invoice_id: string
+          rule_id: string
+          sent_at?: string
+        }
+        Update: {
+          account_id?: string
+          invoice_id?: string
+          rule_id?: string
+          sent_at?: string
+        }
+        Relationships: []
       }
       automation_rules: {
         Row: {
@@ -3266,6 +3293,7 @@ export type Database = {
           refunds_payment_id: string | null
           status: string
           total_cents: number
+          pay_token: string | null
         }
         Insert: {
           account_id: string
@@ -3280,6 +3308,7 @@ export type Database = {
           refunds_payment_id?: string | null
           status?: string
           total_cents?: number
+          pay_token?: string | null
         }
         Update: {
           account_id?: string
@@ -3294,6 +3323,7 @@ export type Database = {
           refunds_payment_id?: string | null
           status?: string
           total_cents?: number
+          pay_token?: string | null
         }
         Relationships: [
           {
@@ -4766,6 +4796,7 @@ export type Database = {
           tutor_patient_id: string | null
           user_id: string | null
           yellow_flags: string | null
+          invoice_reminders_paused: boolean
         }
         Insert: {
           account_id: string
@@ -4815,6 +4846,7 @@ export type Database = {
           tutor_patient_id?: string | null
           user_id?: string | null
           yellow_flags?: string | null
+          invoice_reminders_paused?: boolean
         }
         Update: {
           account_id?: string
@@ -4864,6 +4896,7 @@ export type Database = {
           tutor_patient_id?: string | null
           user_id?: string | null
           yellow_flags?: string | null
+          invoice_reminders_paused?: boolean
         }
         Relationships: [
           {
@@ -6273,6 +6306,7 @@ export type Database = {
           patient_id: string
           practitioner_id: string | null
           status: string
+          offered_to_all: boolean
         }
         Insert: {
           account_id: string
@@ -6293,6 +6327,7 @@ export type Database = {
           patient_id: string
           practitioner_id?: string | null
           status?: string
+          offered_to_all?: boolean
         }
         Update: {
           account_id?: string
@@ -6313,6 +6348,7 @@ export type Database = {
           patient_id?: string
           practitioner_id?: string | null
           status?: string
+          offered_to_all?: boolean
         }
         Relationships: [
           {

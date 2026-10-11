@@ -18,7 +18,7 @@ const totals = computed(() => b.stats.value.rule)
 function setFilters(filters: Record<string, any>) {
   b.updateRule({ filters })
 }
-function setNumberFilter(key: 'hours_before' | 'days_after', raw: string, fallback: number) {
+function setNumberFilter(key: 'hours_before' | 'days_after' | 'days_overdue', raw: string, fallback: number) {
   b.updateRule({ filters: { ...rule.value.filters, [key]: Math.max(1, Math.round(Number(raw) || fallback)) } })
 }
 
@@ -106,6 +106,11 @@ watch(
     <label v-if="rule.trigger_event === 'appointment.review_request'" :class="LABEL">
       {{ t('Days after the visit', 'Días después de la cita') }}
       <input type="number" min="1" :class="FIELD_NUMBER" :value="rule.filters.days_after ?? 2" data-test="trigger-days-after" @input="setNumberFilter('days_after', ($event.target as HTMLInputElement).value, 2)" />
+    </label>
+    <label v-if="rule.trigger_event === 'invoice.overdue'" :class="LABEL">
+      {{ t('Days after the invoice, still unpaid', 'Días después de la factura, sin pagar') }}
+      <input type="number" min="1" :class="FIELD_NUMBER" :value="rule.filters.days_overdue ?? 7" data-test="trigger-days-overdue" @input="setNumberFilter('days_overdue', ($event.target as HTMLInputElement).value, 7)" />
+      <span :class="HINT">{{ t('Only invoices that reach this many days from now on: switching it on does not message old debts. For a second reminder, create another automation with more days.', 'Solo las facturas que cumplan estos días a partir de ahora: activarla no avisa de deudas antiguas. Para un segundo recordatorio, crea otra automatización con más días.') }}</span>
     </label>
 
     <!-- A group of patients -->

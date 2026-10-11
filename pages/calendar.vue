@@ -1721,6 +1721,9 @@ async function confirmReschedule(payload: { reasonId: string | null; note: strin
     fee_applied: payload.applyFee,
     created_by: store.teamMember?.id ?? null,
   })
+  // The time it left, to the waitlist -- when the clinic offers freed slots
+  // automatically; the server decides (offer-next, movedFrom).
+  useStaffFetch('/api/waitlist/offer-next', { method: 'POST', body: { appointmentId: pending.appointmentId, movedFrom: pending.origStartsAt } }).catch(() => {})
 
   if (payload.applyFee && store.schedulingPolicyFeeCents) {
     // No number, no invoice: an unnumbered fee is worse than an uncharged one.

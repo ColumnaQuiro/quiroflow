@@ -20,7 +20,7 @@ export default defineEventHandler(async (event) => {
   const supabase = serverSupabaseServiceRole<Database>(event)
   const { data: expiring } = await supabase
     .from('waitlist_entries')
-    .select('id, account_id, clinic_id, offered_room_id, offered_practitioner_id, offered_appointment_type_id, offered_starts_at, offered_ends_at')
+    .select('id, account_id, clinic_id, offered_room_id, offered_practitioner_id, offered_appointment_type_id, offered_starts_at, offered_ends_at, offered_to_all')
     .eq('status', 'offered')
     .lt('offer_expires_at', new Date().toISOString())
   if (!expiring || expiring.length === 0) return { expired: 0, reoffered: 0 }
@@ -29,6 +29,17 @@ export default defineEventHandler(async (event) => {
 
   let reoffered = 0
   await mapWithConcurrency(expiring, SEND_CONCURRENCY, async (entry) => {
+    // Offered to everyone at once (waitlist_offer_mode all_at_once): nobody
+    // took it in time, so all of them go back to waiting and nothing is
+    // re-offered -- everyone who matched has already had it.
+    if (entry.offered_to_all) {
+      await supabase
+        .from('waitlist_entries')
+        .update({ status: 'waiting', claim_token: null, offered_at: null, offer_expires_at: null, offered_room_id: null, offered_practitioner_id: null, offered_appointment_type_id: null, offered_starts_at: null, offered_ends_at: null, offered_to_all: false })
+        .eq('id', entry.id)
+        .eq('status', 'offered')
+      return
+    }
     // .eq('status', 'offered') guards against a claim landing between the
     // select above and this update -- if so, leave it as 'booked', don't
     // stomp it back to 'expired'.

@@ -169,6 +169,7 @@ function formatDate(iso: string | null) {
     </PageHeader>
 
     <div class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] sm:px-6">
+      <WaitlistOfferSettings />
       <label class="mb-3 flex w-fit items-center gap-1.5 text-[12.5px] text-ink-600">
         <input v-model="showOnlyActive" type="checkbox" class="rounded border-line-control text-brand focus:ring-brand" />
         {{ t('Show only waiting / offered', 'Mostrar solo esperando / con oferta') }}

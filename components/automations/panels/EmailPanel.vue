@@ -39,6 +39,9 @@ const SAMPLE: Record<string, string> = {
   google_review_link: 'https://g.page/r/ejemplo/review',
   waitlist_claim_link: 'https://app.quiroflow.com/w/ejemplo',
   waitlist_slot_datetime: 'viernes 17, 18:30',
+  invoice_number: 'F-2026-0142',
+  invoice_amount_owed: '45,00 €',
+  invoice_pay_link: 'https://app.quiroflow.com/api/pay/ejemplo',
 }
 const esc = (v: string) => v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 const sample = (key: string) => {

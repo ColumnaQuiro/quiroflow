@@ -1,6 +1,6 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
-import { waitlistSlotIsFree } from '~/server/utils/waitlistOffer'
+import { releaseOffersForSlot, waitlistSlotIsFree } from '~/server/utils/waitlistOffer'
 
 const SLOT_TAKEN = 'This slot was just taken. Please contact the clinic.'
 
@@ -90,6 +90,8 @@ export default defineEventHandler(async (event) => {
   }
 
   await supabase.from('waitlist_entries').update({ booked_appointment_id: appt.id }).eq('id', row.id)
+  // Offered to several at once: theirs is gone, they stay on the waitlist.
+  await releaseOffersForSlot(supabase, { accountId: row.account_id, clinicId: row.clinic_id, practitionerId: row.offered_practitioner_id, startsAt }, row.id)
 
   return { success: true }
 })

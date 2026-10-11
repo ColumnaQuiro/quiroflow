@@ -62,6 +62,9 @@ export interface AutomationFilters {
   // reasoning as hours_before -- how many days after a completed appointment
   // the review-request campaign fires.
   days_after?: number
+  // Only read by the invoice.overdue reminders (server/utils/
+  // invoiceReminders.ts): how many days after the invoice was raised.
+  days_overdue?: number
 }
 
 export async function ruleFiltersMatch(

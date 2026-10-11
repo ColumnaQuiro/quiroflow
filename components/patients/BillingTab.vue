@@ -2248,6 +2248,7 @@ function money(cents: number) {
             {{ removingCard ? t('Removing…', 'Eliminando…') : t('Remove card', 'Eliminar tarjeta') }}
           </UiBtn>
         </div>
+        <PatientsInvoiceReminders :patient-id="patientId" :can-edit="can('patients_edit')" />
       </section>
     </div>
 

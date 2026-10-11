@@ -1,9 +1,10 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { serverSupabaseServiceRole } from '#supabase/server'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
 import { requireGrowth } from '~/server/utils/requireGrowth'
 import { buildSystemPrompt, loadOfferedTypes, loadReceptionistCalendar, loadReceptionistConfig, type LeadOrigin } from '~/server/utils/receptionist'
+import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptionistModel'
 import { modelFailureMessage } from '~/utils/modelFailure'
+import { typesForAudience } from '~/utils/receptionistTypes'
 
 // "Try Alba" -- the clinic owner talking to their own configuration.
 //
@@ -66,41 +67,28 @@ export default defineEventHandler(async (event) => {
   if (!apiKey) return { available: false as const, reply: '' }
 
   const config = await loadReceptionistConfig(supabase, teamMember.account_id)
-  // The same list the drafts are given, so trying the receptionist shows the
-  // types a patient would actually be offered.
-  const offeredTypes = await loadOfferedTypes(supabase, teamMember.account_id, config)
+  const fromAd = body.origin === 'ad'
+  const leadOrigin = TEST_ORIGINS[fromAd ? 'ad' : 'unknown']
+  // The same narrowing the drafts get: an owner pretending to come from the
+  // ad is offered the ad's first visit, anyone else the plain one.
+  const audience = fromAd ? ('new_from_ad' as const) : ('new' as const)
+  const { types, adOnly } = typesForAudience(await loadOfferedTypes(supabase, teamMember.account_id, config), audience)
+  const bookable = [...types, ...adOnly]
   // And the same free times, read with the service role for the reason given
   // in loadReceptionistCalendar.
-  const calendar = await loadReceptionistCalendar(serverSupabaseServiceRole(event), teamMember.account_id, config, offeredTypes)
+  const service = serverSupabaseServiceRole(event)
+  const calendar = await loadReceptionistCalendar(service, teamMember.account_id, config, bookable)
+  const findFreeTimes = calendar.availability ? freeTimesLookup(service, teamMember.account_id, config, bookable, calendar.timeZone) : null
 
-  const leadOrigin = TEST_ORIGINS[body.origin === 'ad' ? 'ad' : 'unknown']
-
-  const client = createAnthropicClient(apiKey)
   try {
-    const message = await client.messages.create({
+    const { text: reply, refused } = await runReceptionistModel(createAnthropicClient(apiKey), {
       model: MODEL,
-      max_tokens: MAX_TOKENS,
-      // Low effort on purpose: this is a short conversational reply, and the
-      // owner is waiting for it. Raising it would buy nothing a receptionist
-      // reply needs.
-      thinking: { type: 'adaptive' },
-      output_config: { effort: 'low' },
-      system: buildSystemPrompt(config, { testMode: true, offeredTypes, calendar, leadOrigin }),
+      maxTokens: MAX_TOKENS,
+      system: buildSystemPrompt(config, { testMode: true, offeredTypes: types, adOnlyTypes: adOnly, audience, calendar, leadOrigin, searchTool: Boolean(findFreeTimes) }),
       messages: turns.map((turn) => ({ role: turn.role, content: turn.content })),
+      findFreeTimes,
     })
-
-    // Refusals arrive as HTTP 200 with stop_reason 'refusal', so the content
-    // has to be checked rather than assumed.
-    if (message.stop_reason === 'refusal') {
-      return { available: true as const, reply: '', refused: true }
-    }
-
-    const reply = message.content
-      .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-      .map((block) => block.text)
-      .join('')
-      .trim()
-
+    if (refused) return { available: true as const, reply: '', refused: true }
     return { available: true as const, reply, refused: false }
   } catch (err) {
     console.error('[growth/receptionist/test-chat] Anthropic request failed:', (err as Error)?.message ?? err)

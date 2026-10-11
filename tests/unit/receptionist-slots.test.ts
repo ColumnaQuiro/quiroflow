@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
+  FREE_TIMES_MAX_DAYS,
   MAX_TIMES_PER_LIST,
+  parseFreeTimesInput,
   receptionistBookingSection,
   receptionistClockSection,
   receptionistSlotGroups,
@@ -168,5 +170,53 @@ describe('Receptionist booking prompt', () => {
     // 23:30Z on Sunday is already Monday in Madrid.
     expect(receptionistClockSection(new Date('2026-10-11T23:30:00Z'), 'Europe/Madrid')).toContain('It is Monday, 12 October 2026, 01:30 at the clinic (Europe/Madrid)')
     expect(receptionistClockSection(new Date('2026-10-11T23:30:00Z'), null)).toContain('(Europe/Madrid)')
+  })
+})
+
+describe('find_free_times', () => {
+  const weekdays = { mon: [['09:00', '12:00']], tue: [['09:00', '12:00']], wed: [['09:00', '12:00']], thu: [['09:00', '12:00']], fri: [['09:00', '12:00']], sat: [], sun: [] } as Record<string, [string, string][]>
+  const base: ReceptionistSlotQuery = {
+    // Monday 5 Oct 2026, 08:00 in Madrid.
+    now: new Date('2026-10-05T06:00:00Z'),
+    clinics: [{ id: 'c1', name: 'Centro', timeZone: 'Europe/Madrid', businessHours: weekdays }],
+    practitioners: [{ id: 'p1', businessHours: null, clinicIds: ['c1'] }],
+    types: [{ id: 't1', name: 'Primera visita', durationMinutes: 60 }],
+    appointments: [],
+    blocks: [],
+    bookingWindowDays: 1,
+    minimumNoticeMinutes: 120,
+  }
+
+  it('looks at a later window when given one, a whole day from its midnight', () => {
+    // Monday 7 Dec 2026, midnight in Madrid (UTC+1 by then).
+    const result = receptionistSlotGroups({ ...base, from: new Date('2026-12-06T23:00:00Z') })!
+    expect(result.groups[0]!.days).toEqual([{ date: '2026-12-07', times: ['09:00', '10:00', '11:00'] }])
+  })
+
+  it('still keeps the minimum notice from now when the window starts today', () => {
+    const result = receptionistSlotGroups({ ...base, from: new Date('2026-10-04T22:00:00Z') })!
+    expect(result.groups[0]!.days[0]).toEqual({ date: '2026-10-05', times: ['11:00'] })
+  })
+
+  it('reads the dates the model asks for, and refuses what it cannot answer', () => {
+    expect(parseFreeTimesInput({ from_date: '2026-12-01', to_date: '2026-12-10' }, '2026-10-11')).toEqual({ from: '2026-12-01', days: 10, typeName: null })
+    expect(parseFreeTimesInput({ from_date: '2026-12-01' }, '2026-10-11')).toEqual({ from: '2026-12-01', days: 1, typeName: null })
+    // A range starting in the past starts today.
+    expect(parseFreeTimesInput({ from_date: '2026-10-01', to_date: '2026-10-12' }, '2026-10-11')).toEqual({ from: '2026-10-11', days: 2, typeName: null })
+    // At most a month per call.
+    expect(parseFreeTimesInput({ from_date: '2026-11-01', to_date: '2027-03-01' }, '2026-10-11')).toMatchObject({ from: '2026-11-01', days: FREE_TIMES_MAX_DAYS })
+    expect(parseFreeTimesInput({ from_date: '2026-11-01', appointment_type: ' Ajuste ' }, '2026-10-11')).toMatchObject({ typeName: 'Ajuste' })
+
+    expect(parseFreeTimesInput({ from_date: '1 December' }, '2026-10-11')).toHaveProperty('error')
+    expect(parseFreeTimesInput({ from_date: '2026-02-31' }, '2026-10-11')).toHaveProperty('error')
+    expect(parseFreeTimesInput({ from_date: '2026-12-10', to_date: '2026-12-01' }, '2026-10-11')).toHaveProperty('error')
+    expect(parseFreeTimesInput({ from_date: '2026-09-01', to_date: '2026-09-10' }, '2026-10-11')).toHaveProperty('error')
+    expect(parseFreeTimesInput({ from_date: '2028-01-01' }, '2026-10-11')).toHaveProperty('error')
+  })
+
+  it('tells the model it can look further when the tool is on', () => {
+    const availability = receptionistSlotGroups(base)!
+    expect(receptionistBookingSection({ availability, slotsPerReply: 2, bookingWindowDays: 1, searchTool: true })).toContain('call find_free_times')
+    expect(receptionistBookingSection({ availability, slotsPerReply: 2, bookingWindowDays: 1 })).not.toContain('find_free_times')
   })
 })

@@ -1,6 +1,8 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
 import { buildSystemPrompt, loadOfferedTypes, loadReceptionistCalendar, toConfig, type LeadOrigin } from '~/server/utils/receptionist'
+import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptionistModel'
+import { cameFromAd } from '~/utils/receptionistLeadOrigin'
+import { typesForAudience, type ReceptionistAudience } from '~/utils/receptionistTypes'
 
 // Writing a receptionist reply for one lead.
 //
@@ -70,7 +72,7 @@ export async function draftLeadReply(supabase: any, accountId: string, leadId: s
     .from('leads')
     // Where they came from, so a reply that depends on it (an ad-only price)
     // is given without asking a question the record already answers.
-    .select('id, full_name, ai_state, channel, source, external_source, lead_attribution(campaign, ad)')
+    .select('id, full_name, ai_state, patient_id, channel, source, external_source, lead_attribution(campaign, ad)')
     .eq('id', leadId)
     .eq('account_id', accountId)
     .is('deleted_at', null)
@@ -122,13 +124,6 @@ export async function draftLeadReply(supabase: any, accountId: string, leadId: s
   // one the moment somebody discards this.
   const newestInboundAt = [...ordered].reverse().find((m: { direction: string }) => m.direction === 'inbound')?.created_at ?? null
 
-  // Read now, not when the receptionist was configured: a type archived or
-  // withheld since then is gone from this reply.
-  const offeredTypes = await loadOfferedTypes(supabase, accountId, config)
-  // And the calendar as it is now, so the times offered are ones that are
-  // free rather than ones the model made up.
-  const calendar = await loadReceptionistCalendar(calendarClient, accountId, config, offeredTypes)
-
   // One-to-one on lead_id, so PostgREST embeds an object -- read as either
   // shape, because an array here would otherwise read as "no attribution".
   const attribution = Array.isArray(lead.lead_attribution) ? lead.lead_attribution[0] : lead.lead_attribution
@@ -140,34 +135,42 @@ export async function draftLeadReply(supabase: any, accountId: string, leadId: s
     ad: attribution?.ad ?? null,
   }
 
-  const client = createAnthropicClient(apiKey)
-  const message = await client.messages.create({
+  // Which appointment this person is after: a first visit -- the ad's offer
+  // when they came from the ad -- unless the lead is somebody who has been
+  // to the clinic before, who is never offered a first visit again.
+  const audience: ReceptionistAudience = (await hasBeenBefore(supabase, accountId, lead.patient_id))
+    ? 'existing'
+    : cameFromAd(leadOrigin)
+      ? 'new_from_ad'
+      : 'new'
+
+  // Read now, not when the receptionist was configured: a type archived or
+  // withheld since then is gone from this reply.
+  const { types, adOnly } = typesForAudience(await loadOfferedTypes(supabase, accountId, config), audience)
+  const bookable = [...types, ...adOnly]
+  // And the calendar as it is now, so the times offered are ones that are
+  // free rather than ones the model made up.
+  const calendar = await loadReceptionistCalendar(calendarClient, accountId, config, bookable)
+  const findFreeTimes = calendar.availability ? freeTimesLookup(calendarClient, accountId, config, bookable, calendar.timeZone) : null
+
+  const { text: draft, refused } = await runReceptionistModel(createAnthropicClient(apiKey), {
     model: MODEL,
-    max_tokens: MAX_TOKENS,
-    thinking: { type: 'adaptive' },
-    // Low effort for the same reason as the test chat: this is a short
-    // conversational reply, and on the button path somebody is waiting.
-    output_config: { effort: 'low' },
+    maxTokens: MAX_TOKENS,
     system: [
-      buildSystemPrompt(config, { testMode: false, offeredTypes, calendar, leadOrigin }),
+      buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, audience, calendar, leadOrigin, searchTool: Boolean(findFreeTimes) }),
       `# This reply is a draft\nA member of staff will read what you write before it is sent, and may edit it. Write the message itself and nothing else -- no preamble, no options to choose between, no notes to the reader.`,
       lead.full_name ? `The person you are replying to is ${lead.full_name}.` : '',
     ]
       .filter(Boolean)
       .join('\n\n'),
     messages: history,
+    findFreeTimes,
   })
 
   // A refusal is the model declining to write this, which is a real answer
   // and not an error -- reported as such rather than dressed up as a failed
   // request or, worse, saved as a reply.
-  if (message.stop_reason === 'refusal') return { status: 'refused' }
-
-  const draft = message.content
-    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-    .map((block) => block.text)
-    .join('')
-    .trim()
+  if (refused) return { status: 'refused' }
 
   if (!draft) return { status: 'refused' }
 
@@ -184,4 +187,21 @@ export async function draftLeadReply(supabase: any, accountId: string, leadId: s
     .eq('account_id', accountId)
 
   return { status: 'drafted', draft }
+}
+
+/**
+ * Whether the lead's patient has had a visit. A lead is linked to a patient
+ * once converted, which is usually when they book their first visit -- so
+ * "linked" alone is not "been before"; a completed visit is.
+ */
+async function hasBeenBefore(supabase: any, accountId: string, patientId: string | null): Promise<boolean> {
+  if (!patientId) return false
+  const { count } = await supabase
+    .from('appointments')
+    .select('id', { count: 'exact', head: true })
+    .eq('account_id', accountId)
+    .eq('patient_id', patientId)
+    .eq('status', 'completed')
+    .is('deleted_at', null)
+  return (count ?? 0) > 0
 }

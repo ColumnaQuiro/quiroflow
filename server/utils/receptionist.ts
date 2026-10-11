@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
-import { offeredAppointmentTypes, offeredTypesSection, type PromptType } from '~/utils/receptionistTypes'
+import { audienceSection, offeredAppointmentTypes, offeredTypesSection, type PromptType, type ReceptionistAudience } from '~/utils/receptionistTypes'
 import { leadOriginSection, type LeadOrigin } from '~/utils/receptionistLeadOrigin'
 import {
   receptionistBookingSection,
@@ -134,7 +134,7 @@ export async function loadOfferedTypes(supabase: SupabaseClient<Database>, accou
 export function readAccountTypes(supabase: SupabaseClient<Database>, accountId: string) {
   return supabase
     .from('appointment_types')
-    .select('id, name, duration_minutes, archived_at, sort_order')
+    .select('id, name, duration_minutes, archived_at, sort_order, stage, online_bookable_by')
     .eq('account_id', accountId)
 }
 
@@ -157,8 +157,8 @@ export async function loadTypeChoices(supabase: SupabaseClient<Database>, accoun
   }
 }
 
-function toOfferedType(type: { id: string; name: string; duration_minutes: number }): OfferedType {
-  return { id: type.id, name: type.name, durationMinutes: type.duration_minutes }
+function toOfferedType(type: { id: string; name: string; duration_minutes: number; stage?: string | null; online_bookable_by?: string | null }): OfferedType {
+  return { id: type.id, name: type.name, durationMinutes: type.duration_minutes, stage: type.stage ?? null, bookableBy: type.online_bookable_by ?? null }
 }
 
 /** What the prompt knows about the clinic's calendar at the moment of drafting. */
@@ -196,6 +196,9 @@ export async function loadReceptionistCalendar(
   config: ReceptionistConfig,
   offeredTypes: OfferedType[],
   now = new Date(),
+  // A later stretch than the configured window, for the find_free_times
+  // tool: `days` from `from`, the minimum notice still counted from now.
+  window?: { from: Date; days: number; maxTimesPerList?: number },
 ): Promise<ReceptionistCalendar> {
   const fallback = (timeZone = DEFAULT_CLINIC_TIMEZONE): ReceptionistCalendar => ({ now, timeZone, availability: null })
 
@@ -213,9 +216,11 @@ export async function loadReceptionistCalendar(
   if (!clinics?.length || offeredTypes.length === 0) return fallback(timeZone)
 
   try {
-    const from = now.toISOString()
+    const start = window && window.from > now ? window.from : now
+    const windowDays = window?.days ?? config.bookingWindowDays
+    const from = start.toISOString()
     // A day past the window: the last day's slots end after its last start.
-    const to = new Date(now.getTime() + (config.bookingWindowDays + 1) * 86400000).toISOString()
+    const to = new Date(start.getTime() + (windowDays + 1) * 86400000).toISOString()
     const [practitioners, overrides, appointments, blocks] = await Promise.all([
       supabase
         .from('team_members')
@@ -275,8 +280,10 @@ export async function loadReceptionistCalendar(
       types,
       appointments: appointments.map((a) => ({ practitionerId: a.practitioner_id, starts_at: a.starts_at, ends_at: a.ends_at })),
       blocks: blocks.map((b): SlotBlock => ({ clinicId: b.clinic_id, practitionerId: b.practitioner_id, starts_at: b.starts_at, ends_at: b.ends_at })),
-      bookingWindowDays: config.bookingWindowDays,
+      bookingWindowDays: windowDays,
       minimumNoticeMinutes: config.minimumNoticeMinutes,
+      from: window?.from,
+      maxTimesPerList: window?.maxTimesPerList,
     })
     return { now, timeZone, availability }
   } catch (err) {
@@ -322,8 +329,20 @@ async function readAll<T>(page: (range: { from: number; to: number }) => Promise
  */
 export function buildSystemPrompt(
   config: ReceptionistConfig,
-  opts: { testMode: boolean; offeredTypes: PromptType[]; calendar: ReceptionistCalendar; leadOrigin?: LeadOrigin | null },
+  opts: {
+    testMode: boolean
+    /** Already narrowed to this person (typesForAudience). */
+    offeredTypes: PromptType[]
+    /** The ad's first-visit offer, for someone not known to come from the ad. */
+    adOnlyTypes?: PromptType[]
+    audience?: ReceptionistAudience
+    calendar: ReceptionistCalendar
+    leadOrigin?: LeadOrigin | null
+    /** Whether the find_free_times tool is on this request. */
+    searchTool?: boolean
+  },
 ) {
+  const adOnly = opts.adOnlyTypes ?? []
   const knowledge = config.knowledge
     .map((card) => `## ${card.title}\n${card.lines.map((line) => `- ${line}`).join('\n')}`)
     .join('\n\n')
@@ -332,7 +351,7 @@ export function buildSystemPrompt(
   const escalations = config.escalationRules.map((rule) => `- ${rule.rule} -> ${rule.action}`).join('\n')
   // Only when there are types to offer: with none, the types section already
   // says booking goes to a colleague, and a list would contradict it.
-  const availability = opts.offeredTypes.length ? opts.calendar.availability : null
+  const availability = opts.offeredTypes.length || adOnly.length ? opts.calendar.availability : null
 
   return [
     `You are ${config.personaName}, the receptionist for a chiropractic clinic. You answer enquiries from prospective patients.`,
@@ -350,6 +369,7 @@ export function buildSystemPrompt(
     receptionistClockSection(opts.calendar.now, opts.calendar.timeZone),
     knowledge ? `# What you know about this clinic\n\n${knowledge}` : '# What you know about this clinic\n\nNothing has been configured yet. Say you will check with your colleague rather than guessing.',
     opts.leadOrigin ? leadOriginSection(opts.leadOrigin) : '',
+    opts.audience ? audienceSection(opts.audience) : '',
     // The whole conversation is in the messages, and a receptionist who asks
     // for something the patient said three messages ago reads as a form.
     `Read the whole conversation before replying. Never ask for something the patient has already told you or that is already known about them, and never repeat a question that has been answered.`,
@@ -368,13 +388,13 @@ export function buildSystemPrompt(
     // The types come from the database at the moment of drafting, not from
     // the model's reading of the knowledge cards: an owner who withholds a
     // type, or archives it, has it gone from the next reply.
-    offeredTypesSection(opts.offeredTypes),
+    offeredTypesSection(opts.offeredTypes, adOnly),
     // The real free times, computed by loadReceptionistCalendar, as a list to
     // offer from. Without one -- the calendar could not be read -- the model
     // asks when suits and a colleague picks the time (#691): a model told to
     // "offer times" with nothing to offer from invents them.
-    opts.offeredTypes.length
-      ? receptionistBookingSection({ availability, slotsPerReply: config.slotsPerReply, bookingWindowDays: config.bookingWindowDays })
+    opts.offeredTypes.length || adOnly.length
+      ? receptionistBookingSection({ availability, slotsPerReply: config.slotsPerReply, bookingWindowDays: config.bookingWindowDays, searchTool: opts.searchTool && Boolean(availability) })
       : '',
     // The single most important line in this prompt.
     `You must NEVER state that an appointment is booked, confirmed or reserved. A member of staff or the booking system confirms them${availability ? ', and a listed time can be taken before then' : ''}. ${availability ? 'If the patient accepts a time, say you are passing it on and that they will get a confirmation.' : 'Once the patient has said when suits them, say you are passing it on and that they will get a confirmation.'}`,

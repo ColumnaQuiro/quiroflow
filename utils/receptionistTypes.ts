@@ -51,18 +51,79 @@ export function receptionistOffersType(type: Pick<OfferableType, 'id' | 'archive
 export interface PromptType {
   name: string
   durationMinutes: number
+  /** appointment_types.stage: 'first_visit', 'first_visit_offer', 'adjustment'... */
+  stage?: string | null
+  /** appointment_types.online_bookable_by: 'all', 'new_patients' or 'existing_patients'. */
+  bookableBy?: string | null
+}
+
+/**
+ * Who the receptionist is talking to, as far as booking goes. A first visit
+ * is the only thing a new person can book, and the ad's offer price is for
+ * people who answered the ad -- so the same "quiero una cita" means a
+ * different appointment for each of these.
+ */
+export type ReceptionistAudience = 'new_from_ad' | 'new' | 'existing'
+
+const isFirstVisit = (type: PromptType) => type.stage === 'first_visit' || type.stage === 'first_visit_offer'
+
+/**
+ * Which of the receptionist's types this person may be offered.
+ *
+ * Read from each type's stage (set on the type's settings page) and who it is
+ * bookable by online, so no new setting is needed:
+ * - from an ad: the first-visit offer (stage first_visit_offer), else the
+ *   plain first visit;
+ * - new, not known to be from an ad: the plain first visit, and the offer
+ *   only if they say they came from the ad (`adOnly`) -- the record not
+ *   knowing is not the same as them not having seen it;
+ * - a patient who has been before: anything but a first visit.
+ *
+ * A clinic that has set no stages gets what it had before: every offered
+ * type, for everyone.
+ */
+export function typesForAudience<T extends PromptType>(offered: T[], audience: ReceptionistAudience): { types: T[]; adOnly: T[] } {
+  if (audience === 'existing') {
+    return { types: offered.filter((type) => !isFirstVisit(type) && type.bookableBy !== 'new_patients'), adOnly: [] }
+  }
+  const forNew = offered.filter((type) => type.bookableBy !== 'existing_patients')
+  const offers = forNew.filter((type) => type.stage === 'first_visit_offer')
+  const firsts = forNew.filter((type) => type.stage === 'first_visit' || (type.bookableBy === 'new_patients' && type.stage !== 'first_visit_offer'))
+  if (audience === 'new_from_ad') {
+    if (offers.length) return { types: offers, adOnly: [] }
+    return { types: firsts.length ? firsts : forNew, adOnly: [] }
+  }
+  if (firsts.length) return { types: firsts, adOnly: offers }
+  const others = forNew.filter((type) => type.stage !== 'first_visit_offer')
+  return others.length ? { types: others, adOnly: offers } : { types: offers, adOnly: [] }
+}
+
+/** What the prompt says about who this is, for booking. */
+export function audienceSection(audience: ReceptionistAudience): string {
+  if (audience === 'new_from_ad') {
+    return `# Who you are talking to\nSomeone who has not been to the clinic yet and came through one of its ads. Their first appointment is the one listed under "What you can offer".`
+  }
+  if (audience === 'new') {
+    return `# Who you are talking to\nSomeone who has not been to the clinic yet. Their first appointment is a first visit, as listed under "What you can offer".`
+  }
+  return `# Who you are talking to\nA patient who has been to the clinic before. Never offer them a first visit.`
 }
 
 /** The prompt section that says what may be offered. */
-export function offeredTypesSection(offeredTypes: PromptType[]) {
+export function offeredTypesSection(offeredTypes: PromptType[], adOnly: PromptType[] = []) {
   if (offeredTypes.length === 0) {
     return `# What you can offer\nNo type of appointment can be booked through you. Do not offer times. If the patient wants an appointment, say your colleague will arrange it with them.`
   }
-  const list = offeredTypes.map((type) => `- ${type.name} (${type.durationMinutes} min)`).join('\n')
+  const line = (type: PromptType) => `- ${type.name} (${type.durationMinutes} min)`
   return [
-    `# What you can offer\nOnly these types of appointment can be booked through you:\n${list}`,
+    `# What you can offer\nOnly these types of appointment can be booked through you:\n${offeredTypes.map(line).join('\n')}`,
+    adOnly.length
+      ? `Only if the patient says they came from one of the clinic's ads or offers, offer this instead, with its offer price from the clinic knowledge:\n${adOnly.map(line).join('\n')}\nNever offer it to anyone else. Ask whether they came from an ad only if they ask about the price, and then once.`
+      : '',
     `Offer only these, by these names. If the patient wants something that is not on this list, do not offer a time for it: say your colleague will arrange it.`,
-  ].join('\n\n')
+  ]
+    .filter(Boolean)
+    .join('\n\n')
 }
 
 /**

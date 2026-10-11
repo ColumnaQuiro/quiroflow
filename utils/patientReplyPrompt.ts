@@ -14,6 +14,8 @@ export interface PatientReplyFacts {
   firstName: string | null
   upcoming: { startsAt: string; typeName: string | null; practitionerName: string | null }[]
   lastVisitAt: string | null
+  /** The type of that visit, which is what "otra cita" usually means. */
+  lastVisitType?: string | null
   plan: { name: string; totalVisits: number; done: number; cadence: string } | null
   /** Null when the asker cannot see money, or it could not be read. */
   outstandingCents: number | null
@@ -34,7 +36,7 @@ export function patientFactsSection(f: PatientReplyFacts, timeZone: string | nul
       lines.push(`- ${i === 0 ? 'Next visit' : 'Then'}: ${when(v.startsAt, zone)}${what ? ` (${what})` : ''}`)
     }
   }
-  if (f.lastVisitAt) lines.push(`- Last visit: ${new Date(f.lastVisitAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: zone })}`)
+  if (f.lastVisitAt) lines.push(`- Last visit: ${new Date(f.lastVisitAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: zone })}${f.lastVisitType ? ` (${f.lastVisitType})` : ''}`)
   if (f.plan) {
     const left = Math.max(0, f.plan.totalVisits - f.plan.done)
     lines.push(`- Care plan "${f.plan.name}": ${f.plan.done} of ${f.plan.totalVisits} visits done, ${left} left${f.plan.cadence ? `, ${f.plan.cadence}` : ''}.`)
@@ -60,7 +62,14 @@ export interface PatientPromptConfig {
 /** The whole system prompt, given everything read. */
 export function buildPatientReplyPrompt(
   config: PatientPromptConfig,
-  opts: { facts: PatientReplyFacts; offeredTypes: PromptType[]; calendar: { now: Date; timeZone: string; availability: ReceptionistAvailability | null } },
+  opts: {
+    facts: PatientReplyFacts
+    /** Already narrowed to a returning patient (typesForAudience 'existing'). */
+    offeredTypes: PromptType[]
+    calendar: { now: Date; timeZone: string; availability: ReceptionistAvailability | null }
+    /** Whether the find_free_times tool is on this request. */
+    searchTool?: boolean
+  },
 ): string {
   const knowledge = config.knowledge
     .map((card) => `## ${card.title}\n${card.lines.map((line) => `- ${line}`).join('\n')}`)
@@ -71,20 +80,28 @@ export function buildPatientReplyPrompt(
     `You are ${config.personaName}, the receptionist for a chiropractic clinic. You are replying to one of the clinic's own patients, who has written to the clinic.`,
     `Tone: ${config.toneLine}`,
     `Sound like an experienced clinic receptionist who knows this patient: neutral, professional, to the point. Do not open with an exclamation or filler ("¡Perfecto!", "¡Genial!", "Great!"), do not use emojis. Start with the substance.`,
+    `When something goes to a member of staff, speak of them as your own colleague: in Spanish "mi compañera" or "mi compañero" (for example "Se lo paso a mi compañera, la quiropráctica"), in English "my colleague". Never "un compañero", "un miembro del equipo" or "a colleague".`,
+    `Write dates in words, in the patient's language, with the weekday: "el lunes 20 de octubre", "Monday 20 October". Never "20/10" or "2026-10-20".`,
     `Reply in the language the patient writes in. The clinic supports: ${config.languages.join(', ')}.`,
     receptionistClockSection(opts.calendar.now, opts.calendar.timeZone),
     patientFactsSection(opts.facts, opts.calendar.timeZone),
     knowledge ? `# What you know about this clinic\n\n${knowledge}` : '',
-    `Read the whole conversation before replying. Answer what they asked, using what you know about them -- "your next visit is on Tuesday at 10:00" rather than asking them when it is. If you do not know something, say a colleague will check rather than guessing.`,
+    `Read the whole conversation before replying. Answer what they asked, using what you know about them -- "your next visit is on Tuesday at 10:00" rather than asking them when it is. If you do not know something, say your colleague will check rather than guessing.`,
     // Clinical questions go to the practitioner, not to the front desk's draft.
     `Never give clinical or medical advice, and never comment on their symptoms, treatment or progress beyond the visit counts above: say their practitioner will answer that.`,
     offeredTypesSection(opts.offeredTypes),
+    // A returning patient asking for "otra cita" means another of what they
+    // have been having -- their adjustment, their maintenance visit -- and
+    // the clinic's own knowledge says when that changes.
     opts.offeredTypes.length
-      ? receptionistBookingSection({ availability, slotsPerReply: config.slotsPerReply, bookingWindowDays: config.bookingWindowDays })
+      ? `If they want another visit and do not say which, offer the same type as their last visit when it is on that list. If it is not, or you cannot tell which they need, say your colleague will arrange the right one.`
+      : '',
+    opts.offeredTypes.length
+      ? receptionistBookingSection({ availability, slotsPerReply: config.slotsPerReply, bookingWindowDays: config.bookingWindowDays, searchTool: opts.searchTool && Boolean(availability) })
       : '',
     `You must NEVER state that a visit is booked, moved, cancelled or confirmed, or that a payment was received or a refund made. A member of staff does those. If they ask to book, move or cancel, offer times or say you are passing it on, and that they will get a confirmation.`,
     `Only mention an amount owed if they ask about money or payment, and then only exactly as given above.`,
-    escalations ? `# Stop and hand over to a person when\n\n${escalations}\n\nWhen one of these applies, say a colleague will pick this up shortly and stop.` : '',
+    escalations ? `# Stop and hand over to a person when\n\n${escalations}\n\nWhen one of these applies, say your colleague will pick this up shortly and stop.` : '',
     config.neverSays ? `# Never\n\n${config.neverSays}` : '',
     `# This reply is a draft\nA member of staff will read what you write before it is sent, and may edit it. Write the message itself and nothing else -- no preamble, no options to choose between, no notes to the reader.`,
   ]

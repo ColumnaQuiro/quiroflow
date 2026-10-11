@@ -16,7 +16,7 @@ const props = defineProps<{
   canPay: boolean
   /** Asks the API for a payment link (the web's own fetch, or the app's). */
   payLink: (invoiceId: string) => Promise<{ url: string; remainingCents: number }>
-  size?: 'sm' | 'lg'
+  size?: 'sm' | 'md' | 'lg'
 }>()
 const emit = defineEmits<{ insert: [text: string]; book: []; 'open-record': [] }>()
 
@@ -81,7 +81,7 @@ function onDocClick(e: MouseEvent) {
 onMounted(() => document.addEventListener('click', onDocClick))
 onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
 const item = 'flex min-h-11 w-full items-center gap-2.5 rounded-ctlSm px-2.5 text-left text-[14px] text-ink-900 hover:bg-surface-subtle disabled:opacity-50'
-const btn = computed(() => (props.size === 'lg' ? 'h-11 w-11' : 'h-9 touch:h-11 w-9 touch:w-11'))
+const btn = computed(() => (props.size === 'lg' ? 'h-11 w-11' : props.size === 'md' ? 'h-9 w-9' : 'h-9 touch:h-11 w-9 touch:w-11'))
 </script>
 
 <template>

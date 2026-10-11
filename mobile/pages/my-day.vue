@@ -518,12 +518,16 @@ function initialsOf(a: Appointment) {
       <div
         v-if="pulling || refreshing || pullDistance > 0"
         class="flex items-center justify-center overflow-hidden transition-[height]"
-        :style="{ height: refreshing ? '40px' : `${pullDistance}px` }"
+        :style="{ height: refreshing ? '56px' : `${pullDistance}px` }"
       >
-        <svg viewBox="0 0 24 24" class="h-4 w-4 text-brand" :class="{ 'animate-spin': refreshing }" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+        <!-- A thumb-sized disc, turning as it is pulled: the bare 16px icon was
+             hard to see under a finger. -->
+          <span class="flex h-10 w-10 items-center justify-center rounded-full border border-line bg-surface shadow-card">
+            <svg viewBox="0 0 24 24" class="h-[22px] w-[22px] text-brand" :class="{ 'animate-spin': refreshing }" :style="refreshing ? undefined : { transform: `rotate(${pullDistance * 3}deg)` }" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
           <path d="M4 12a8 8 0 0 1 14.5-4.6M20 12a8 8 0 0 1-14.5 4.6" />
           <path d="M17.5 3v5h-5M6.5 21v-5h5" />
         </svg>
+          </span>
       </div>
 
       <!-- One column on a phone; on an iPad (lg) the visits on the left and the

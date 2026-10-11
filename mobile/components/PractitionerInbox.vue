@@ -989,18 +989,26 @@ watch(
   },
   { immediate: true },
 )
-// A Growth lead's own thread is not offered one: the web sends a lead nothing
-// through this route either (its thread is GrowthInboxLeadThread), and a send
-// to the bare number would be filed under the number, not the lead.
+// A Growth lead's own thread sends with leadId, as the web's lead thread
+// does: to their number, filed in their thread (whatsapp/send). A lead from
+// an ad form has often never written, so this is the only way to reach them
+// at all -- the app used to offer nothing there.
 const templateTarget = computed(() => {
   const c = selected.value
-  if (!c || replyChannel.value !== 'whatsapp' || (c.leadId && !c.patientId)) return false
-  return !!(c.patientId || c.phoneNumber)
+  if (!c || replyChannel.value !== 'whatsapp') return false
+  return !!(c.patientId || c.leadId || c.phoneNumber)
 })
 const templateAllowed = computed(() => {
   const c = selected.value
-  return !!c && can('communication_config') && can(c.patientId ? 'recalls_access' : 'inbox_access')
+  if (!c) return false
+  // The route's own rule: a lead needs communication_config alone.
+  if (c.leadId && !c.patientId) return can('communication_config')
+  return can('communication_config') && can(c.patientId ? 'recalls_access' : 'inbox_access')
 })
+// Whether they have ever written on this channel: "more than 24 hours since
+// they last wrote" is only true of someone who did. A lead reached first by
+// our own messages has not, and was told the opposite.
+const everWrote = computed(() => thread.value.some((m) => m.direction === 'inbound' && m.channel === replyChannel.value))
 const canSendTemplate = computed(() => templateTarget.value && templateAllowed.value && !contactBlocked.value)
 async function onTemplateSent() {
   templateSheetOpen.value = false
@@ -1471,12 +1479,16 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
         <div
           v-if="pulling || pullRefreshing || pullDistance > 0"
           class="flex items-center justify-center overflow-hidden transition-[height]"
-          :style="{ height: pullRefreshing ? '40px' : `${pullDistance}px` }"
+          :style="{ height: pullRefreshing ? '56px' : `${pullDistance}px` }"
         >
-          <svg viewBox="0 0 24 24" class="h-4 w-4 text-brand" :class="{ 'animate-spin': pullRefreshing }" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+          <!-- A thumb-sized disc, turning as it is pulled: the bare 16px icon was
+             hard to see under a finger. -->
+          <span class="flex h-10 w-10 items-center justify-center rounded-full border border-line bg-surface shadow-card">
+            <svg viewBox="0 0 24 24" class="h-[22px] w-[22px] text-brand" :class="{ 'animate-spin': pullRefreshing }" :style="pullRefreshing ? undefined : { transform: `rotate(${pullDistance * 3}deg)` }" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
             <path d="M4 12a8 8 0 0 1 14.5-4.6M20 12a8 8 0 0 1-14.5 4.6" />
             <path d="M17.5 3v5h-5M6.5 21v-5h5" />
           </svg>
+          </span>
         </div>
         <AppSkeletonList v-if="loading" avatar :rows="7" />
         <p v-else-if="filteredConversations.length === 0" class="p-6 text-center text-[13px] text-ink-faint">
@@ -1589,13 +1601,15 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
       }"
     >
       <template v-if="selected">
+      <!-- The bar and the strip under it spaced alike: 8px between the
+           buttons and the strip's pills, and 8px under them. -->
       <div class="shrink-0 border-b border-line bg-surface">
-      <div class="flex h-14 items-center gap-2 px-3">
+      <div class="flex h-[52px] items-center gap-2 px-3">
         <button type="button" class="flex h-11 w-11 shrink-0 items-center justify-center text-brand-text lg:hidden" :aria-label="t('Back to conversations', 'Volver a las conversaciones')" @click="selectedKey = null">
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7" /></svg>
         </button>
         <p class="min-w-0 flex-1 truncate text-[15px] font-[650] text-ink-900" data-cy="thread-name">{{ selected.name }}</p>
-        <InboxSnoozeMenu :snoozed-until="selected.snoozedUntil" :time-zone="staffContext?.timeZone" @snooze="(at: string) => snoozeKey(selected!.key, at)" @unsnooze="snoozeKey(selected!.key, null)" />
+        <InboxSnoozeMenu size="md" :snoozed-until="selected.snoozedUntil" :time-zone="staffContext?.timeZone" @snooze="(at: string) => snoozeKey(selected!.key, at)" @unsnooze="snoozeKey(selected!.key, null)" />
         <button type="button" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-700" :aria-label="t('Assign', 'Asignar')" data-cy="inbox-assign" @click="assignOpen = true">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M6.5 7.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM2 13.5c0-2.2 2-3.5 4.5-3.5 1 0 1.9.2 2.6.6M12 9.5v4M10 11.5h4" /></svg>
         </button>
@@ -1604,6 +1618,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
              on the web); Book stays a button of its own, the one used most. -->
         <InboxChatActions
           v-if="!selected.leadId"
+          size="md"
           :account-id="accountId"
           :patient-id="selected.patientId"
           :base-url="apiBase"
@@ -1733,6 +1748,11 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
                     `No messages with ${selected.name} yet. WhatsApp only lets a clinic start a conversation with an approved template.`,
                     `Aún no hay mensajes con ${selected.name}. WhatsApp solo permite a una clínica iniciar una conversación con una plantilla aprobada.`,
                   )
+                : !everWrote
+                  ? t(
+                      `${selected.name} hasn't written to you yet. Until they reply, WhatsApp only lets the clinic send an approved template.`,
+                      `${selected.name} aún no te ha escrito. Hasta que responda, WhatsApp solo permite enviarle una plantilla aprobada.`,
+                    )
                 : replyChannel === 'instagram'
                   ? t(
                       `More than 24h since ${selected.name} last messaged — free-form replies are blocked by Instagram.`,
@@ -1862,7 +1882,8 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
       v-if="templateSheetOpen && selected && canSendTemplate"
       :patient-id="selected.patientId"
       :phone-number="selected.patientId ? null : selected.phoneNumber"
-      :patient-first-name="selected.patientId ? selected.name.split(' ')[0] : undefined"
+      :lead-id="selected.patientId ? null : selected.leadId"
+      :patient-first-name="selected.patientId || selected.leadId ? selected.name.split(' ')[0] : undefined"
       @close="templateSheetOpen = false"
       @sent="onTemplateSent"
     />

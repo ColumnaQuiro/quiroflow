@@ -1013,7 +1013,7 @@ const canSendTemplate = computed(() => templateTarget.value && templateAllowed.v
 async function onTemplateSent() {
   templateSheetOpen.value = false
   sendError.value = ''
-  await load()
+  await load({ silent: true })
 }
 
 const composerText = ref('')
@@ -1079,7 +1079,10 @@ async function performTextSend(tempId: string, text: string, channel: string, ta
     // id), forcing a full remount at the exact moment the icon changes,
     // which is what read as a visible "jump" on the sent tick appearing.
     pendingMessages.value = pendingMessages.value.map((m) => (m.id === tempId ? { ...m, status: 'sent' } : m))
-    await load()
+    // Quietly: a loud reload sets `loading`, which drops a thread that is
+    // only a draft so far and skeletons the list behind it -- the sent
+    // message blinked, and the list showed placeholders over real rows.
+    await load({ silent: true })
     settlePending(tempId, messages.value)
     delete retryPayloads.value[tempId]
   } catch (err: any) {
@@ -1154,7 +1157,10 @@ async function performMediaSend(
       },
     })
     pendingMessages.value = pendingMessages.value.map((m) => (m.id === tempId ? { ...m, status: 'sent' } : m))
-    await load()
+    // Quietly: a loud reload sets `loading`, which drops a thread that is
+    // only a draft so far and skeletons the list behind it -- the sent
+    // message blinked, and the list showed placeholders over real rows.
+    await load({ silent: true })
     settlePending(tempId, messages.value)
     delete retryPayloads.value[tempId]
   } catch (err: any) {
@@ -1411,7 +1417,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
         />
         <button type="button" class="shrink-0 px-1 text-[13px] font-medium text-brand-text" @click="selectionMode = true">{{ t('Select', 'Seleccionar') }}</button>
       </div>
-      <div v-if="!selectionMode" class="flex shrink-0 gap-1.5 overflow-x-auto border-b border-line bg-surface px-3 pb-2.5 pt-0.5 [scrollbar-width:none]" role="toolbar" :aria-label="t('Filters', 'Filtros')" data-cy="inbox-chips">
+      <div v-if="!selectionMode" class="flex shrink-0 gap-1.5 overflow-x-auto border-b border-line bg-surface px-3 py-2 [scrollbar-width:none]" role="toolbar" :aria-label="t('Filters', 'Filtros')" data-cy="inbox-chips">
         <button type="button" :class="chipClass(!filtersActive)" data-cy="inbox-chip-all" @click="clearFilters">{{ t('All', 'Todas') }}</button>
         <button type="button" :class="chipClass(unreadOnly)" :aria-pressed="unreadOnly" data-cy="inbox-chip-unread" @click="unreadOnly = !unreadOnly">
           {{ t('Unread', 'No leídas') }}
@@ -1490,8 +1496,11 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
           </svg>
           </span>
         </div>
-        <AppSkeletonList v-if="loading" avatar :rows="7" />
-        <p v-else-if="filteredConversations.length === 0" class="p-6 text-center text-[13px] text-ink-faint">
+        <!-- Only while there is nothing to show yet. The rows below render
+             whatever `loading` says, so a skeleton drawn over a list that is
+             already there read as placeholders mixed in with conversations. -->
+        <AppSkeletonList v-if="loading && filteredConversations.length === 0" avatar :rows="7" />
+        <p v-else-if="!loading && filteredConversations.length === 0" class="p-6 text-center text-[13px] text-ink-faint">
           {{ view === 'archived' ? t('No archived conversations.', 'No hay conversaciones archivadas.') : view === 'snoozed' ? t('Nothing snoozed.', 'Nada pospuesto.') : t('No conversations yet.', 'Aún no hay conversaciones.') }}
         </p>
         <div v-for="c in filteredConversations" :key="c.key" class="relative overflow-hidden border-b border-line-row">
@@ -1805,15 +1814,27 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
                Android keyboards show a newline key on a textarea anyway, so
                once there is text the camera and microphone give way to a Send
                button, as in WhatsApp. -->
-          <textarea
-            ref="composerTextarea"
-            v-model="composerText"
-            rows="1"
-            enterkeyhint="send"
-            :placeholder="t('Type a message…', 'Mensaje…')"
-            class="max-h-24 min-h-11 flex-1 resize-none rounded-ctl border border-line-control bg-surface px-3 py-2.5 text-[14px] text-ink-700 focus:border-brand focus:outline-none"
-            @keydown.enter.exact.prevent="sendText"
-          />
+          <!-- The placeholder is drawn here rather than by the textarea. The
+               buttons beside it swap (camera and microphone, or Send) the
+               moment the text is cleared, and iOS's WebKit repainted the
+               native placeholder at the box's old width as well as its new
+               one: two copies, overlapping. An element of our own is simply
+               re-rendered. -->
+          <div class="relative min-w-0 flex-1">
+            <textarea
+              ref="composerTextarea"
+              v-model="composerText"
+              rows="1"
+              enterkeyhint="send"
+              :aria-label="t('Message', 'Mensaje')"
+              class="block max-h-24 min-h-11 w-full resize-none rounded-ctl border border-line-control bg-surface px-3 py-2.5 text-[14px] text-ink-700 focus:border-brand focus:outline-none"
+              data-cy="inbox-composer"
+              @keydown.enter.exact.prevent="sendText"
+            />
+            <span v-if="!composerText" aria-hidden="true" class="pointer-events-none absolute inset-x-3 top-2.5 truncate text-[14px] text-ink-faint" data-cy="inbox-composer-placeholder">
+              {{ t('Type a message…', 'Mensaje…') }}
+            </span>
+          </div>
           <input ref="cameraInput" type="file" accept="image/*" capture="environment" class="hidden" @change="onFileChosen" />
           <button
             v-if="composerText.trim()"

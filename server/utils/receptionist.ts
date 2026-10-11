@@ -46,7 +46,7 @@ export function toneWording(tone: string) {
 }
 
 const TONE_WORDING: Record<string, string> = {
-  warm_brief: 'Warm and brief. Two or three sentences at most.',
+  warm_brief: 'Courteous and brief. Two or three sentences at most.',
   clinical: 'Precise and clinical. No small talk.',
   chatty: 'Friendly and conversational.',
   formal: 'Formal Spanish, addressing the patient as "usted".',
@@ -174,22 +174,35 @@ export function buildSystemPrompt(
   return [
     `You are ${config.personaName}, the receptionist for a chiropractic clinic. You answer enquiries from prospective patients.`,
     `Tone: ${TONE_WORDING[config.tone] ?? TONE_WORDING.warm_brief}`,
+    // Whatever the tone, an opener like "¡Perfecto!" is what makes a reply
+    // read as a bot, and it is the first thing an owner trying Alba notices.
+    `Sound like an experienced clinic receptionist: neutral, professional, to the point. Do not open with an exclamation or filler ("¡Perfecto!", "¡Genial!", "¡Estupendo!", "¡Claro que sí!", "Great!", "Perfect!"), do not use emojis, and do not praise the patient's question. Start with the substance.`,
     `Reply in the language the patient writes in. The clinic supports: ${config.languages.join(', ')}.`,
     knowledge ? `# What you know about this clinic\n\n${knowledge}` : '# What you know about this clinic\n\nNothing has been configured yet. Say you will check with a colleague rather than guessing.',
     opts.leadOrigin ? leadOriginSection(opts.leadOrigin) : '',
     // The whole conversation is in the messages, and a receptionist who asks
     // for something the patient said three messages ago reads as a form.
     `Read the whole conversation before replying. Never ask for something the patient has already told you or that is already known about them, and never repeat a question that has been answered.`,
-    questions ? `# Qualify the enquiry by working these in naturally, one at a time, skipping any the conversation already answers\n\n${questions}` : '',
+    // Booking outranks qualifying. A patient who writes "quiero una cita" and
+    // gets "¿qué te ocurre?" back has been handed a form before they were
+    // handed an appointment, and that is where enquiries go quiet.
+    `# What comes first\nThe aim of every conversation is to get the patient booked. If they ask for an appointment, move towards booking in this same reply: ask which days or times suit them. Do not ask about their symptoms, how long they have had them or how they heard about the clinic first -- none of that is a condition for booking. If they asked a question, answer it before anything else.`,
+    questions
+      ? `# Questions you may work in\nOnly once the patient's own request has been dealt with, at most one per reply, and never as a condition for booking. Skip any the conversation or "What you already know about this person" already answers. A question about how they heard about the clinic is for the clinic's records: never ask it when that is already known; otherwise ask it only if something you are telling them depends on it (such as a price that differs for people who came from an ad), or once, at the very end, after a time has been agreed.\n\n${questions}`
+      : '',
     // The types come from the database at the moment of drafting, not from
     // the model's reading of the knowledge cards: an owner who withholds a
     // type, or archives it, has it gone from the next reply.
     offeredTypesSection(opts.offeredTypes),
+    // Nothing gives the model the calendar -- no free slots, not even today's
+    // date -- so "offer up to N times" could only ever be answered with times
+    // it made up, which a colleague then has to take back. Until real slots
+    // reach the prompt, it asks for the preference and the team confirms.
     opts.offeredTypes.length
-      ? `# Booking\nYou may offer up to ${config.slotsPerReply} time${config.slotsPerReply === 1 ? '' : 's'} per reply, within the next ${config.bookingWindowDays} days, no sooner than ${config.minimumNoticeMinutes} minutes from now.`
+      ? `# Booking\nYou cannot see the clinic's calendar, so never propose a specific day or time and never say a time is free. Ask which days and whether mornings or afternoons suit them (within the next ${config.bookingWindowDays} days), then say a colleague will confirm an exact time shortly.`
       : '',
     // The single most important line in this prompt.
-    `You must NEVER state that an appointment is booked, confirmed or reserved. You offer times; a member of staff or the booking system confirms them. If the patient accepts a time, say you are putting it through and that they will get a confirmation.`,
+    `You must NEVER state that an appointment is booked, confirmed or reserved. A member of staff or the booking system confirms them. Once the patient has said when suits them, say you are passing it on and that they will get a confirmation.`,
     escalations ? `# Stop and hand over to a person when\n\n${escalations}\n\nWhen one of these applies, say a colleague will pick this up shortly and stop.` : '',
     config.neverSays ? `# Never\n\n${config.neverSays}` : '',
     opts.testMode

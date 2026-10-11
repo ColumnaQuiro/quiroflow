@@ -56,12 +56,12 @@ export interface PromptType {
 /** The prompt section that says what may be offered. */
 export function offeredTypesSection(offeredTypes: PromptType[]) {
   if (offeredTypes.length === 0) {
-    return `# What you can offer\nNo type of appointment can be booked through you. Do not offer times. If the patient wants an appointment, say a colleague will arrange it with them.`
+    return `# What you can offer\nNo type of appointment can be booked through you. Do not offer times. If the patient wants an appointment, say your colleague will arrange it with them.`
   }
   const list = offeredTypes.map((type) => `- ${type.name} (${type.durationMinutes} min)`).join('\n')
   return [
     `# What you can offer\nOnly these types of appointment can be booked through you:\n${list}`,
-    `Offer only these, by these names. If the patient wants something that is not on this list, do not offer a time for it: say a colleague will arrange it.`,
+    `Offer only these, by these names. If the patient wants something that is not on this list, do not offer a time for it: say your colleague will arrange it.`,
   ].join('\n\n')
 }
 

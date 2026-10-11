@@ -48,13 +48,73 @@ export interface LeadThread {
 
 
 
+// A thread that has not answered in this long is treated as failed, so the
+// panel offers to try again instead of holding a skeleton until the page is
+// reloaded. The route runs in a Netlify function, and a cold one -- or a
+// browser session stuck refreshing its token -- could leave the request
+// pending for as long as the tab stayed open.
+const THREAD_TIMEOUT_MS = 15000
+
+// Each lead's last-loaded thread, newest-used last, so going back to one is
+// instant, as the patient threads beside them are. Always refreshed on open;
+// only ever a head start. Media links are signed for 30 minutes, and the
+// refresh brings fresh ones.
+const THREAD_CACHE_SIZE = 40
+
 export function useGrowthLeadThread() {
   const thread = ref<LeadThread | null>(null)
   const loading = ref(false)
+  /** The open lead's thread failed to load and there is nothing of it to show. */
+  const failed = ref(false)
   const sending = ref(false)
   const drafting = ref(false)
   const { showToast } = useToast()
   const t = useT()
+
+  const cache = new Map<string, LeadThread>()
+  function remember(next: LeadThread) {
+    cache.delete(next.id)
+    cache.set(next.id, next)
+    if (cache.size > THREAD_CACHE_SIZE) cache.delete(cache.keys().next().value!)
+  }
+  // One request per lead at a time: a hover that started loading it and the
+  // click that follows share the same request instead of sending two. A
+  // re-read after a change (`fresh`) does not share one that began before it,
+  // which would not have the change in it.
+  const inflight = new Map<string, Promise<LeadThread>>()
+  // The newest request per lead. An older answer arriving after a newer one
+  // gives back what the newer one cached rather than its own, older copy.
+  const newest = new Map<string, number>()
+  let requests = 0
+  function fetchThread(leadId: string, fresh = false): Promise<LeadThread> {
+    const running = inflight.get(leadId)
+    if (running && !fresh) return running
+    const n = ++requests
+    newest.set(leadId, n)
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const request: Promise<LeadThread> = Promise.race([
+      useStaffFetch<LeadThread>(`/api/growth/leads/${leadId}/thread`),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('timeout')), THREAD_TIMEOUT_MS)
+      }),
+    ])
+      .then((next) => {
+        if (newest.get(leadId) !== n) return cache.get(leadId) ?? next
+        remember(next)
+        return next
+      })
+      .finally(() => {
+        clearTimeout(timer)
+        if (inflight.get(leadId) === request) inflight.delete(leadId)
+      })
+    inflight.set(leadId, request)
+    return request
+  }
+
+  // The lead whose thread is on screen, or on its way there. An answer for any
+  // other lead is not this panel's: opening A and then B used to let A's
+  // slower answer land under B's name.
+  let wanted: string | null = null
 
   /**
    * Opens a lead's thread, or with `silent` re-reads the one already open.
@@ -62,23 +122,42 @@ export function useGrowthLeadThread() {
    * Silent keeps what is on screen until the answer lands. Every re-read used
    * to clear the thread first, which unmounted it: after each reply the whole
    * panel blinked to a skeleton and came back scrolled to the top.
+   *
+   * Opening a lead seen recently shows its last-known thread at once and
+   * refreshes it behind, rather than a skeleton.
    */
   async function load(leadId: string, opts: { silent?: boolean } = {}) {
-    const silent = opts.silent && thread.value?.id === leadId
-    if (!silent) {
-      loading.value = true
-      thread.value = null
+    // A silent re-read for a lead no longer open (a reply that finished after
+    // someone moved on) refreshes its cache and leaves the screen alone.
+    if (opts.silent && wanted !== leadId) {
+      await fetchThread(leadId, true).catch(() => {})
+      return
     }
+    wanted = leadId
+    failed.value = false
+    if (thread.value?.id !== leadId) thread.value = cache.get(leadId) ?? null
+    if (!thread.value) loading.value = true
     try {
-      const next = await useStaffFetch<LeadThread>(`/api/growth/leads/${leadId}/thread`)
-      // Another lead opened while this was in flight: not this answer's place.
-      if (silent && thread.value?.id !== leadId) return
+      const next = await fetchThread(leadId, !!opts.silent)
+      if (wanted !== leadId) return
       thread.value = next
     } catch {
-      if (!silent) showToast(t('Could not open that conversation.', 'No se ha podido abrir la conversación.'), 'error')
+      if (wanted !== leadId) return
+      // A failed background refresh keeps what is on screen; only with
+      // nothing of theirs to show is it worth saying.
+      if (!thread.value) {
+        failed.value = true
+        showToast(t('Could not open that conversation.', 'No se ha podido abrir la conversación.'), 'error')
+      }
     } finally {
-      if (!silent) loading.value = false
+      if (wanted === leadId) loading.value = false
     }
+  }
+
+  /** Started when the pointer rests on a lead's row, so the click finds it loaded. */
+  function prefetch(leadId: string) {
+    if (cache.has(leadId) || inflight.has(leadId)) return
+    fetchThread(leadId).catch(() => {})
   }
 
   /** A delivery receipt for one message of the open thread, patched in place. */
@@ -209,8 +288,10 @@ export function useGrowthLeadThread() {
   }
 
   function close() {
+    wanted = null
     thread.value = null
+    failed.value = false
   }
 
-  return { thread, loading, sending, drafting, load, patchStatus, reply, sendMedia, draftReply, discardDraft, approveDraft, close }
+  return { thread, loading, failed, sending, drafting, load, prefetch, patchStatus, reply, sendMedia, draftReply, discardDraft, approveDraft, close }
 }

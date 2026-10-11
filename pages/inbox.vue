@@ -374,6 +374,8 @@ const { hasGrowth } = useGrowthTier()
 const { conversations: leadConversations, reload: reloadLeadConversations, takeOver, handBack } = useGrowthConversations(hasGrowth)
 const {
   thread: leadThread,
+  failed: leadThreadFailed,
+  prefetch: prefetchLeadThreadNow,
   sending: leadSending,
   drafting: leadDrafting,
   load: loadLeadThread,
@@ -519,7 +521,19 @@ watch([leadConversations, leadReads, leadSnoozes], () => {
   }
 })
 
+// As a patient row does: resting the pointer on a lead's row starts loading
+// its thread, so the click usually finds it there.
+let leadPrefetchTimer: ReturnType<typeof setTimeout> | undefined
+function prefetchLeadThread(c: { leadId: string }) {
+  clearTimeout(leadPrefetchTimer)
+  leadPrefetchTimer = setTimeout(() => prefetchLeadThreadNow(c.leadId), 120)
+}
+function cancelLeadPrefetch() {
+  clearTimeout(leadPrefetchTimer)
+}
+
 function selectLeadConversation(c: { key: string; leadId: string }) {
+  cancelLeadPrefetch()
   draftConversation.value = null
   selectedKey.value = c.key
   const match = leadConversations.value.find((l) => l.key === c.key)
@@ -1424,7 +1438,10 @@ function refreshSoon() {
     if (selected.value) loadThread(selected.value, { silent: true })
     // The open lead thread too: it is not a patient thread, and without this
     // a lead's new message only appeared once the thread was opened again.
-    if (selectedLead.value && leadThread.value) loadLeadThread(leadThread.value.id, { silent: true })
+    // Also when it never arrived: this used to need a thread on screen, so a
+    // first load that failed was never tried again and the panel held its
+    // skeleton until the page was reloaded.
+    if (selectedLead.value) loadLeadThread(selectedLead.value.leadId, { silent: true })
     if (hasGrowth.value) reloadLeadConversations({ silent: true })
     refreshNavBadges(['inbox'])
   }, 400)
@@ -1818,6 +1835,8 @@ function avatarInitials(name: string) {
               :class="selectedKey === row.c.key && !selectionMode ? 'border-l-brand bg-brand-tint' : 'border-l-transparent'"
               data-test="lead-row"
               @click="selectLeadConversation(row.c)"
+              @mouseenter="prefetchLeadThread(row.c)"
+              @mouseleave="cancelLeadPrefetch"
             >
               <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[13px] font-bold text-brand-text">
                 {{ row.c.initials }}
@@ -2011,6 +2030,10 @@ function avatarInitials(name: string) {
             </button>
           </template>
         </GrowthInboxLeadThread>
+        <div v-else-if="leadThreadFailed" role="alert" class="flex min-w-0 flex-1 flex-col items-center justify-center gap-2 bg-surface-page p-4 text-center text-[13.5px] text-ink-muted" data-test="lead-thread-failed">
+          {{ t('This conversation could not be loaded.', 'No se ha podido cargar la conversación.') }}
+          <UiBtn variant="secondary" size="sm" @click="loadLeadThread(selectedLead.leadId)">{{ t('Try again', 'Reintentar') }}</UiBtn>
+        </div>
         <div v-else class="flex min-w-0 flex-1 flex-col gap-3 bg-surface-page p-4" data-test="lead-thread-loading">
           <UiSkeleton class="h-9 touch:h-11 w-56 rounded-ctl" />
           <UiSkeleton class="h-16 w-3/4 rounded-card" />

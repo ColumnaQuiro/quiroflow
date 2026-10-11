@@ -1,3 +1,4 @@
+import { serverSupabaseServiceRole } from '#supabase/server'
 import { requireGrowth } from '~/server/utils/requireGrowth'
 import { draftLeadReply } from '~/server/utils/receptionistDraft'
 import { modelFailureMessage } from '~/utils/modelFailure'
@@ -21,7 +22,10 @@ export default defineEventHandler(async (event) => {
 
   let outcome
   try {
-    outcome = await draftLeadReply(supabase, teamMember.account_id, id)
+    // The free times are read with the service role: appointments are
+    // row-scoped, and a member who sees only their own diary would otherwise
+    // be offered every colleague's visits as free.
+    outcome = await draftLeadReply(supabase, teamMember.account_id, id, serverSupabaseServiceRole(event))
   } catch (err: any) {
     console.error('[growth/draft-reply] model call failed:', err?.message ?? err)
     throw createError({ statusCode: 502, statusMessage: modelFailureMessage(err) })

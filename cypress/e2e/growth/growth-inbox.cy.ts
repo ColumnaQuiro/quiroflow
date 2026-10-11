@@ -463,10 +463,12 @@ describe('Growth in the shared Inbox', () => {
       cy.contains('[data-test="lead-row"]', 'Has A Toolbar').click()
 
       cy.get('[data-test="lead-composer"]').within(() => {
-        cy.get('[data-test="lead-voice"]').should('be.visible')
+        cy.get('[data-cy="composer-voice"]').should('be.visible')
         cy.get('button[title="Saved replies"]').should('be.visible')
-        cy.get('[data-test="lead-attach"]').should('be.visible')
-        cy.get('[data-test="lead-file-input"]').selectFile(
+        cy.get('[data-cy="composer-attach"]').should('be.visible')
+        // The patient thread's bar, not a look-alike.
+        cy.get('textarea[placeholder="Type a message…"]').should('be.visible')
+        cy.get('[data-cy="composer-file"]').selectFile(
           { contents: Cypress.Buffer.from('%PDF-1.4 test'), fileName: 'presupuesto.pdf', mimeType: 'application/pdf' },
           { force: true },
         )

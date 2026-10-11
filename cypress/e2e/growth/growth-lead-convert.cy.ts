@@ -71,6 +71,105 @@ describe('Converting a lead to a patient', () => {
     })
   })
 
+  // A lead is converted because they are about to come in, so the next step
+  // is offered right there: book them, or open their record.
+  it('offers to book straight after converting, and books for the new patient', () => {
+    cy.task('db:createLead', { accountId: account.accountId, fullName: 'Booking Next', stage: 'showed' }).then((lead) => {
+      const leadId = (lead as { id: string }).id
+
+      cy.visit('/growth/leads?growth=1')
+      cy.contains('button', 'Booking Next').click()
+      cy.get('[data-test="convert-lead"]').click()
+
+      cy.get('[data-test="book-after-convert"]').within(() => {
+        cy.contains('Booking Next is now a patient').should('be.visible')
+        cy.get('[data-cy="confirm-dialog-confirm"]').should('contain', 'Book appointment').click()
+      })
+
+      cy.request('/api/growth/leads/' + leadId).its('body.patientId').then((patientId) => {
+        cy.location('pathname').should('eq', '/calendar')
+        cy.location('search').should('contain', `patient=${patientId}`)
+      })
+      cy.get('[data-cy="booking-for"]').should('contain', 'Booking Next')
+    })
+  })
+
+  it('opens the new patient record when booking can wait', () => {
+    cy.task('db:createLead', { accountId: account.accountId, fullName: 'Later Booking', stage: 'showed' }).then((lead) => {
+      const leadId = (lead as { id: string }).id
+
+      cy.visit('/growth/leads?growth=1')
+      cy.contains('button', 'Later Booking').click()
+      cy.get('[data-test="convert-lead"]').click()
+      cy.get('[data-test="book-after-convert"] [data-cy="confirm-dialog-cancel"]').click()
+
+      cy.request('/api/growth/leads/' + leadId).its('body.patientId').then((patientId) => {
+        cy.location('pathname').should('eq', `/patients/${patientId}`)
+      })
+    })
+  })
+
+  // These three did nothing at all, on every lead.
+  it('makes the drawer footer work -- book a converted lead, message and call any', () => {
+    cy.task('db:createLead', {
+      accountId: account.accountId,
+      fullName: 'Footer Actions',
+      stage: 'showed',
+      phone: '+34 600 444 902',
+    }).then((lead) => {
+      const leadId = (lead as { id: string }).id
+      cy.request({ method: 'POST', url: `/api/growth/leads/${leadId}/convert` }).its('body.patientId').then((patientId) => {
+        cy.visit('/growth/leads?growth=1')
+        cy.contains('button', 'Footer Actions').click()
+
+        cy.get('[data-test="lead-call"]').should('have.attr', 'href', 'tel:+34600444902')
+        cy.get('[data-test="lead-message"]').should('have.attr', 'href', `/inbox?open=lead:${leadId}`)
+
+        cy.get('[data-test="lead-book"]').click()
+        cy.location('pathname').should('eq', '/calendar')
+        cy.location('search').should('contain', `patient=${patientId}`)
+      })
+    })
+  })
+
+  it('converts first when "Book appointment" is pressed on a lead who is not a patient yet', () => {
+    cy.task('db:createLead', { accountId: account.accountId, fullName: 'Book First', stage: 'showed' }).then((lead) => {
+      const leadId = (lead as { id: string }).id
+
+      cy.visit('/growth/leads?growth=1')
+      cy.contains('button', 'Book First').click()
+      cy.get('[data-test="lead-book"]').click()
+
+      // Booking was what the click asked for, so it does not ask again.
+      cy.location('pathname').should('eq', '/calendar')
+      cy.request('/api/growth/leads/' + leadId).its('body.patientId').then((patientId) => {
+        cy.location('search').should('contain', `patient=${patientId}`)
+      })
+      cy.task('db:patientCount', { accountId: account.accountId }).should('eq', 1)
+    })
+  })
+
+  it('converts and books from the lead\'s thread in the Inbox', () => {
+    cy.task('db:createLead', { accountId: account.accountId, fullName: 'Inbox Convert', stage: 'contacted', phone: '+34600444903' }).then((lead) => {
+      const leadId = (lead as { id: string }).id
+      cy.task('db:createLeadMessage', { accountId: account.accountId, leadId, direction: 'inbound', body: 'Hola, quiero una cita' })
+
+      cy.visit('/inbox?growth=1')
+      cy.contains('[data-test="lead-row"]', 'Inbox Convert').click()
+      cy.get('[data-test="lead-thread-convert"]').click()
+
+      cy.get('[data-test="book-after-convert"]').within(() => {
+        cy.contains('Inbox Convert is now a patient').should('be.visible')
+        cy.get('[data-cy="confirm-dialog-confirm"]').click()
+      })
+
+      cy.request('/api/growth/leads/' + leadId).its('body.patientId').then((patientId) => {
+        cy.location('pathname').should('eq', '/calendar')
+        cy.location('search').should('contain', `patient=${patientId}`)
+      })
+    })
+  })
+
   it('is idempotent -- converting twice yields one patient, not two', () => {
     cy.task('db:createLead', { accountId: account.accountId, fullName: 'Double Click', stage: 'showed' }).then((lead) => {
       const leadId = (lead as { id: string }).id

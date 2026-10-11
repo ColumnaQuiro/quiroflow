@@ -54,6 +54,8 @@ export interface GrowthLeadDetail {
   valueIsDefault: boolean
   owner: string
   patientId: string | null
+  /** For the drawer's Call button; also the first line of `contact`. */
+  phone: string | null
   contact: string[]
   attribution: LeadAttributionRow[]
   /** Consent lines. Not stored yet -- see the note in the drawer. */

@@ -1023,6 +1023,13 @@ const composerTextarea = ref<HTMLTextAreaElement>()
 const fileInput = ref<HTMLInputElement>()
 const cameraInput = ref<HTMLInputElement>()
 
+// One-tap Send on the receptionist's suggested reply (InboxReplyDraft): the
+// way a typed reply goes.
+function sendDraft(text: string) {
+  composerText.value = text
+  sendText()
+}
+
 function insertReply(text: string) {
   const el = composerTextarea.value
   if (!el) {
@@ -1748,6 +1755,16 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
         </div>
         <InboxNoteComposer v-if="noteMode" size="lg" :team="teamNames" :my-id="teamMemberId" :saving="noteSaving" :error="noteError" @save="saveNote" @cancel="noteMode = false" />
         <p v-if="sendError && !noteMode" class="mb-2 text-[12.5px] text-danger-text">{{ sendError }}</p>
+        <!-- The receptionist's suggested reply, when the patient wrote last. -->
+        <InboxReplyDraft
+          v-if="!noteMode && within24h && leadThreadsAreSeparate && selected.patientId && !selected.leadId && thread.at(-1)?.direction === 'inbound'"
+          size="lg"
+          :patient-id="selected.patientId"
+          :draft-for="(id: string) => authedFetch<{ available: boolean; draft: string; refused?: boolean }>(`/api/inbox/patients/${id}/draft-reply`, { method: 'POST' })"
+          :sending="sending"
+          @send="sendDraft"
+          @edit="(text: string) => (composerText = text)"
+        />
         <template v-if="noteMode" />
         <div v-else-if="thread.length === 0 || !within24h" class="rounded-ctl border border-warning-border bg-warning-bg px-3 py-2 text-[12.5px] text-warning-text" data-cy="inbox-window-closed">
           <p>

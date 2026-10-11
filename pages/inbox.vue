@@ -1163,6 +1163,15 @@ const requestOrigin = useRequestURL().origin
 const canBookFromChat = computed(() => isRouteAllowed(store, '/calendar'))
 const canPayFromChat = computed(() => store.isOwner || store.permissions.billing_access === true)
 const composerBar = ref<{ insertReply: (text: string) => void } | null>(null)
+
+// "Redactar respuesta" (InboxReplyDraft) is offered when the patient wrote
+// last -- there is something to answer -- and its one-tap Send goes the way
+// a typed reply does.
+const theyWroteLast = computed(() => thread.value.at(-1)?.direction === 'inbound')
+function sendDraft(text: string) {
+  composerText.value = text
+  sendText()
+}
 function insertReply(text: string) {
   if (composerBar.value) composerBar.value.insertReply(text)
   else composerText.value += text
@@ -2248,6 +2257,15 @@ function avatarInitials(name: string) {
           </div>
           <InboxNoteComposer v-if="noteMode" :team="team" :my-id="myId" :saving="noteSaving" :error="noteError" @save="saveNote" @cancel="noteMode = false" />
           <p v-if="sendError && !noteMode" class="mb-2 text-[12.5px] text-danger-text">{{ sendError }}</p>
+          <!-- The receptionist's suggested reply, when the patient wrote last. -->
+          <InboxReplyDraft
+            v-if="!noteMode && within24h && threadReady && hasGrowth && selected.patientId && theyWroteLast"
+            :patient-id="selected.patientId"
+            :draft-for="(id: string) => useStaffFetch<{ available: boolean; draft: string; refused?: boolean }>(`/api/inbox/patients/${id}/draft-reply`, { method: 'POST' })"
+            :sending="sending"
+            @send="sendDraft"
+            @edit="(text: string) => (composerText = text)"
+          />
           <template v-if="noteMode" />
           <div v-else-if="!within24h" class="flex items-center justify-between gap-3 rounded-ctl border border-warning-border bg-warning-bg px-3 py-2">
             <p class="text-[12.5px] text-warning-text">

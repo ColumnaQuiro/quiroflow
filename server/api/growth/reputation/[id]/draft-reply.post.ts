@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { createAnthropicClient } from '~/server/utils/anthropicClient'
 import { requireGrowth } from '~/server/utils/requireGrowth'
 import { modelFailureMessage } from '~/utils/modelFailure'
 import { toConfig, toneWording } from '~/server/utils/receptionist'
@@ -46,7 +47,7 @@ export default defineEventHandler(async (event) => {
     .maybeSingle()
   const persona = toConfig(configRow)
 
-  const client = new Anthropic({ apiKey })
+  const client = createAnthropicClient(apiKey)
   try {
     const message = await client.messages.create({
       model: MODEL,

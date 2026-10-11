@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { createAnthropicClient } from '~/server/utils/anthropicClient'
 import { buildSystemPrompt, loadOfferedTypes, toConfig, type LeadOrigin } from '~/server/utils/receptionist'
 
 // Writing a receptionist reply for one lead.
@@ -132,7 +133,7 @@ export async function draftLeadReply(supabase: any, accountId: string, leadId: s
     ad: attribution?.ad ?? null,
   }
 
-  const client = new Anthropic({ apiKey })
+  const client = createAnthropicClient(apiKey)
   const message = await client.messages.create({
     model: MODEL,
     max_tokens: MAX_TOKENS,

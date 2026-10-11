@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
-import { buildSystemPrompt, loadOfferedTypes, toConfig, type LeadOrigin } from '~/server/utils/receptionist'
+import { buildSystemPrompt, loadOfferedTypes, loadReceptionistCalendar, toConfig, type LeadOrigin } from '~/server/utils/receptionist'
 
 // Writing a receptionist reply for one lead.
 //
@@ -60,8 +60,12 @@ export type DraftOutcome =
  * Returns rather than throws: the cron needs to skip a lead and carry on,
  * and the HTTP route needs to turn the same outcomes into status codes. A
  * shared function that threw would force the cron to catch strings.
+ *
+ * `calendarClient` reads the free times and must be the service role (see
+ * loadReceptionistCalendar): the Inbox button passes one alongside the
+ * member's own client, the cron's is already that.
  */
-export async function draftLeadReply(supabase: any, accountId: string, leadId: string): Promise<DraftOutcome> {
+export async function draftLeadReply(supabase: any, accountId: string, leadId: string, calendarClient: any = supabase): Promise<DraftOutcome> {
   const { data: lead } = await supabase
     .from('leads')
     // Where they came from, so a reply that depends on it (an ad-only price)
@@ -121,6 +125,9 @@ export async function draftLeadReply(supabase: any, accountId: string, leadId: s
   // Read now, not when the receptionist was configured: a type archived or
   // withheld since then is gone from this reply.
   const offeredTypes = await loadOfferedTypes(supabase, accountId, config)
+  // And the calendar as it is now, so the times offered are ones that are
+  // free rather than ones the model made up.
+  const calendar = await loadReceptionistCalendar(calendarClient, accountId, config, offeredTypes)
 
   // One-to-one on lead_id, so PostgREST embeds an object -- read as either
   // shape, because an array here would otherwise read as "no attribution".
@@ -142,7 +149,7 @@ export async function draftLeadReply(supabase: any, accountId: string, leadId: s
     // conversational reply, and on the button path somebody is waiting.
     output_config: { effort: 'low' },
     system: [
-      buildSystemPrompt(config, { testMode: false, offeredTypes, leadOrigin }),
+      buildSystemPrompt(config, { testMode: false, offeredTypes, calendar, leadOrigin }),
       `# This reply is a draft\nA member of staff will read what you write before it is sent, and may edit it. Write the message itself and nothing else -- no preamble, no options to choose between, no notes to the reader.`,
       lead.full_name ? `The person you are replying to is ${lead.full_name}.` : '',
     ]

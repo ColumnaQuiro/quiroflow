@@ -1,7 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { serverSupabaseServiceRole } from '#supabase/server'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
 import { requireGrowth } from '~/server/utils/requireGrowth'
-import { buildSystemPrompt, loadOfferedTypes, loadReceptionistConfig, type LeadOrigin } from '~/server/utils/receptionist'
+import { buildSystemPrompt, loadOfferedTypes, loadReceptionistCalendar, loadReceptionistConfig, type LeadOrigin } from '~/server/utils/receptionist'
 import { modelFailureMessage } from '~/utils/modelFailure'
 
 // "Try Alba" -- the clinic owner talking to their own configuration.
@@ -68,6 +69,9 @@ export default defineEventHandler(async (event) => {
   // The same list the drafts are given, so trying the receptionist shows the
   // types a patient would actually be offered.
   const offeredTypes = await loadOfferedTypes(supabase, teamMember.account_id, config)
+  // And the same free times, read with the service role for the reason given
+  // in loadReceptionistCalendar.
+  const calendar = await loadReceptionistCalendar(serverSupabaseServiceRole(event), teamMember.account_id, config, offeredTypes)
 
   const leadOrigin = TEST_ORIGINS[body.origin === 'ad' ? 'ad' : 'unknown']
 
@@ -81,7 +85,7 @@ export default defineEventHandler(async (event) => {
       // reply needs.
       thinking: { type: 'adaptive' },
       output_config: { effort: 'low' },
-      system: buildSystemPrompt(config, { testMode: true, offeredTypes, leadOrigin }),
+      system: buildSystemPrompt(config, { testMode: true, offeredTypes, calendar, leadOrigin }),
       messages: turns.map((turn) => ({ role: turn.role, content: turn.content })),
     })
 

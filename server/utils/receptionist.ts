@@ -2,6 +2,16 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
 import { offeredAppointmentTypes, offeredTypesSection, type PromptType } from '~/utils/receptionistTypes'
 import { leadOriginSection, type LeadOrigin } from '~/utils/receptionistLeadOrigin'
+import {
+  receptionistBookingSection,
+  receptionistClockSection,
+  receptionistSlotGroups,
+  type ReceptionistAvailability,
+  type SlotBlock,
+  type SlotType,
+} from '~/utils/receptionistSlots'
+import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
+import type { BusinessHours } from '~/utils/businessHours'
 import { hasGrowth } from '~/server/utils/requireGrowth'
 
 export type { LeadOrigin }
@@ -151,18 +161,168 @@ function toOfferedType(type: { id: string; name: string; duration_minutes: numbe
   return { id: type.id, name: type.name, durationMinutes: type.duration_minutes }
 }
 
+/** What the prompt knows about the clinic's calendar at the moment of drafting. */
+export interface ReceptionistCalendar {
+  now: Date
+  /** The clinic's zone, for "now". The first clinic's when there are several. */
+  timeZone: string
+  /** Null when the free times could not be computed: the prompt then offers none. */
+  availability: ReceptionistAvailability | null
+}
+
+/**
+ * Reads the calendar and computes the times the receptionist may offer.
+ *
+ * `supabase` must be the SERVICE-ROLE client. Appointments are row-scoped by
+ * calendar_scope, so a member who sees only their own diary would read every
+ * colleague's visits as free time -- and offer it. Only start and end times
+ * leave this function, and only for `accountId`, which the caller has already
+ * established is the caller's.
+ *
+ * Practitioners are those the clinic publishes to online booking
+ * (online_booking_enabled, on by default): switching somebody off there is
+ * how a clinic says patients do not pick them, and a prospective patient
+ * offered their time would be offered something a colleague then takes back.
+ *
+ * Fails closed. Any read that fails, a list too long to read, or nothing to
+ * compute from (see receptionistSlotGroups) gives availability null, and the
+ * prompt falls back to asking when suits and handing the time to a colleague.
+ * A partial calendar would be worse than none: a missing appointment reads as
+ * a free slot.
+ */
+export async function loadReceptionistCalendar(
+  supabase: SupabaseClient<Database>,
+  accountId: string,
+  config: ReceptionistConfig,
+  offeredTypes: OfferedType[],
+  now = new Date(),
+): Promise<ReceptionistCalendar> {
+  const fallback = (timeZone = DEFAULT_CLINIC_TIMEZONE): ReceptionistCalendar => ({ now, timeZone, availability: null })
+
+  const { data: clinics, error: clinicError } = await supabase
+    .from('clinics')
+    .select('id, name, timezone, business_hours, created_at')
+    .eq('account_id', accountId)
+    .is('archived_at', null)
+    .order('created_at')
+  if (clinicError) {
+    console.error('[receptionist] could not read clinics:', clinicError.message)
+    return fallback()
+  }
+  const timeZone = clinics?.[0]?.timezone || DEFAULT_CLINIC_TIMEZONE
+  if (!clinics?.length || offeredTypes.length === 0) return fallback(timeZone)
+
+  try {
+    const from = now.toISOString()
+    // A day past the window: the last day's slots end after its last start.
+    const to = new Date(now.getTime() + (config.bookingWindowDays + 1) * 86400000).toISOString()
+    const [practitioners, overrides, appointments, blocks] = await Promise.all([
+      supabase
+        .from('team_members')
+        .select('id, business_hours, team_member_clinics(clinic_id)')
+        .eq('account_id', accountId)
+        .eq('is_practitioner', true)
+        .eq('online_booking_enabled', true)
+        .is('deleted_at', null)
+        .then(must),
+      supabase
+        .from('appointment_type_overrides')
+        .select('appointment_type_id, team_member_id, duration_minutes')
+        .eq('account_id', accountId)
+        .in('appointment_type_id', offeredTypes.map((type) => type.id))
+        .then(must),
+      // Every clinic's: a practitioner who works at two is busy here while
+      // seeing somebody at the other.
+      readAll((range) =>
+        supabase
+          .from('appointments')
+          .select('id, practitioner_id, starts_at, ends_at')
+          .eq('account_id', accountId)
+          .is('deleted_at', null)
+          .neq('status', 'cancelled')
+          .lt('starts_at', to)
+          .gt('ends_at', from)
+          .order('id')
+          .range(range.from, range.to),
+      ),
+      readAll((range) =>
+        supabase
+          .from('availability_blocks')
+          .select('id, clinic_id, practitioner_id, starts_at, ends_at')
+          .eq('account_id', accountId)
+          .lt('starts_at', to)
+          .gt('ends_at', from)
+          .order('id')
+          .range(range.from, range.to),
+      ),
+    ])
+
+    const types: SlotType[] = offeredTypes.map((type) => ({
+      ...type,
+      durationByPractitioner: Object.fromEntries(
+        overrides.filter((o) => o.appointment_type_id === type.id && o.duration_minutes).map((o) => [o.team_member_id, o.duration_minutes!]),
+      ),
+    }))
+
+    const availability = receptionistSlotGroups({
+      now,
+      clinics: clinics.map((c) => ({ id: c.id, name: c.name, timeZone: c.timezone, businessHours: c.business_hours as BusinessHours | null })),
+      practitioners: practitioners.map((p) => ({
+        id: p.id,
+        businessHours: p.business_hours as BusinessHours | null,
+        clinicIds: (p.team_member_clinics ?? []).map((tmc) => tmc.clinic_id),
+      })),
+      types,
+      appointments: appointments.map((a) => ({ practitionerId: a.practitioner_id, starts_at: a.starts_at, ends_at: a.ends_at })),
+      blocks: blocks.map((b): SlotBlock => ({ clinicId: b.clinic_id, practitionerId: b.practitioner_id, starts_at: b.starts_at, ends_at: b.ends_at })),
+      bookingWindowDays: config.bookingWindowDays,
+      minimumNoticeMinutes: config.minimumNoticeMinutes,
+    })
+    return { now, timeZone, availability }
+  } catch (err) {
+    console.error('[receptionist] could not compute free times:', (err as Error)?.message ?? err)
+    return fallback(timeZone)
+  }
+}
+
+function must<T>(result: { data: T[] | null; error: { message: string } | null }): T[] {
+  if (result.error) throw new Error(result.error.message)
+  return result.data ?? []
+}
+
+/**
+ * Every row, past PostgREST's max_rows (1000 here). A busy clinic over a
+ * 90-day window passes it, and a list cut short at the cap would turn every
+ * appointment after it into a free slot. Advances by what each page actually
+ * returned, so a server cap lower than the page asked for still reads
+ * everything; an empty page ends it.
+ */
+async function readAll<T>(page: (range: { from: number; to: number }) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>): Promise<T[]> {
+  const PAGE = 1000
+  const MAX_ROWS = 20000
+  const rows: T[] = []
+  for (;;) {
+    const batch = must(await page({ from: rows.length, to: rows.length + PAGE - 1 }))
+    if (batch.length === 0) return rows
+    rows.push(...batch)
+    if (rows.length > MAX_ROWS) throw new Error(`more than ${MAX_ROWS} rows`)
+  }
+}
+
 /**
  * Builds the system prompt from the config.
  *
  * Every constraint the clinic set is stated as a rule the model must follow,
  * and the guardrails come last so they are the most recent thing in the
- * prompt. Note what is NOT delegated to the model: it is told to offer times,
- * never to confirm a booking. Writing to the calendar is the booking code's
- * job, and a model that believes it booked something will say so to a patient.
+ * prompt. Note what is NOT delegated to the model: it offers times from a
+ * list computed here, never confirms a booking. Writing to the calendar is
+ * the booking code's job, and a model that believes it booked something will
+ * say so to a patient -- and a listed time can be taken between this draft
+ * and a person sending it.
  */
 export function buildSystemPrompt(
   config: ReceptionistConfig,
-  opts: { testMode: boolean; offeredTypes: PromptType[]; leadOrigin?: LeadOrigin | null },
+  opts: { testMode: boolean; offeredTypes: PromptType[]; calendar: ReceptionistCalendar; leadOrigin?: LeadOrigin | null },
 ) {
   const knowledge = config.knowledge
     .map((card) => `## ${card.title}\n${card.lines.map((line) => `- ${line}`).join('\n')}`)
@@ -170,6 +330,9 @@ export function buildSystemPrompt(
 
   const questions = config.qualificationQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')
   const escalations = config.escalationRules.map((rule) => `- ${rule.rule} -> ${rule.action}`).join('\n')
+  // Only when there are types to offer: with none, the types section already
+  // says booking goes to a colleague, and a list would contradict it.
+  const availability = opts.offeredTypes.length ? opts.calendar.availability : null
 
   return [
     `You are ${config.personaName}, the receptionist for a chiropractic clinic. You answer enquiries from prospective patients.`,
@@ -178,6 +341,7 @@ export function buildSystemPrompt(
     // read as a bot, and it is the first thing an owner trying Alba notices.
     `Sound like an experienced clinic receptionist: neutral, professional, to the point. Do not open with an exclamation or filler ("¡Perfecto!", "¡Genial!", "¡Estupendo!", "¡Claro que sí!", "Great!", "Perfect!"), do not use emojis, and do not praise the patient's question. Start with the substance.`,
     `Reply in the language the patient writes in. The clinic supports: ${config.languages.join(', ')}.`,
+    receptionistClockSection(opts.calendar.now, opts.calendar.timeZone),
     knowledge ? `# What you know about this clinic\n\n${knowledge}` : '# What you know about this clinic\n\nNothing has been configured yet. Say you will check with a colleague rather than guessing.',
     opts.leadOrigin ? leadOriginSection(opts.leadOrigin) : '',
     // The whole conversation is in the messages, and a receptionist who asks
@@ -186,7 +350,7 @@ export function buildSystemPrompt(
     // Booking outranks qualifying. A patient who writes "quiero una cita" and
     // gets "¿qué te ocurre?" back has been handed a form before they were
     // handed an appointment, and that is where enquiries go quiet.
-    `# What comes first\nThe aim of every conversation is to get the patient booked. If they ask for an appointment, move towards booking in this same reply: ask which days or times suit them. Do not ask about their symptoms, how long they have had them or how they heard about the clinic first -- none of that is a condition for booking. If they asked a question, answer it before anything else.`,
+    `# What comes first\nThe aim of every conversation is to get the patient booked. If they ask for an appointment, move towards booking in this same reply: ${availability ? 'offer times from the Booking list below, or ask which days suit them if you need to know first' : 'ask which days or times suit them'}. Do not ask about their symptoms, how long they have had them or how they heard about the clinic first -- none of that is a condition for booking. If they asked a question, answer it before anything else.`,
     questions
       ? `# Questions you may work in\nOnly once the patient's own request has been dealt with, at most one per reply, and never as a condition for booking. Skip any the conversation or "What you already know about this person" already answers. A question about how they heard about the clinic is for the clinic's records: never ask it when that is already known; otherwise ask it only if something you are telling them depends on it (such as a price that differs for people who came from an ad), or once, at the very end, after a time has been agreed.\n\n${questions}`
       : '',
@@ -194,15 +358,15 @@ export function buildSystemPrompt(
     // the model's reading of the knowledge cards: an owner who withholds a
     // type, or archives it, has it gone from the next reply.
     offeredTypesSection(opts.offeredTypes),
-    // Nothing gives the model the calendar -- no free slots, not even today's
-    // date -- so "offer up to N times" could only ever be answered with times
-    // it made up, which a colleague then has to take back. Until real slots
-    // reach the prompt, it asks for the preference and the team confirms.
+    // The real free times, computed by loadReceptionistCalendar, as a list to
+    // offer from. Without one -- the calendar could not be read -- the model
+    // asks when suits and a colleague picks the time (#691): a model told to
+    // "offer times" with nothing to offer from invents them.
     opts.offeredTypes.length
-      ? `# Booking\nYou cannot see the clinic's calendar, so never propose a specific day or time and never say a time is free. Ask which days and whether mornings or afternoons suit them (within the next ${config.bookingWindowDays} days), then say a colleague will confirm an exact time shortly.`
+      ? receptionistBookingSection({ availability, slotsPerReply: config.slotsPerReply, bookingWindowDays: config.bookingWindowDays })
       : '',
     // The single most important line in this prompt.
-    `You must NEVER state that an appointment is booked, confirmed or reserved. A member of staff or the booking system confirms them. Once the patient has said when suits them, say you are passing it on and that they will get a confirmation.`,
+    `You must NEVER state that an appointment is booked, confirmed or reserved. A member of staff or the booking system confirms them${availability ? ', and a listed time can be taken before then' : ''}. ${availability ? 'If the patient accepts a time, say you are passing it on and that they will get a confirmation.' : 'Once the patient has said when suits them, say you are passing it on and that they will get a confirmation.'}`,
     escalations ? `# Stop and hand over to a person when\n\n${escalations}\n\nWhen one of these applies, say a colleague will pick this up shortly and stop.` : '',
     config.neverSays ? `# Never\n\n${config.neverSays}` : '',
     opts.testMode

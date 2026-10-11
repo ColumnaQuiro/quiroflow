@@ -6,7 +6,7 @@ import { DEFAULT_CLINIC_TIMEZONE, clinicDateOf, wallClockToUtc } from '../../uti
 // back to the top as a follow-up (inbox_snoozes; the rule is in the view).
 // Just for the person who snoozes it, like archiving. The web Inbox and the
 // staff app's both use this menu.
-const props = defineProps<{ snoozedUntil?: string | null; timeZone?: string | null; size?: 'sm' | 'lg' }>()
+const props = defineProps<{ snoozedUntil?: string | null; timeZone?: string | null; size?: 'sm' | 'md' | 'lg' }>()
 const emit = defineEmits<{ snooze: [at: string]; unsnooze: [] }>()
 
 const t = useT()
@@ -46,7 +46,7 @@ function onDocClick(e: MouseEvent) {
 onMounted(() => document.addEventListener('click', onDocClick))
 onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
 const snoozed = computed(() => !!props.snoozedUntil && Date.parse(props.snoozedUntil) > Date.now())
-const btn = computed(() => (props.size === 'lg' ? 'h-11 w-11' : 'h-9 touch:h-11 w-9 touch:w-11'))
+const btn = computed(() => (props.size === 'lg' ? 'h-11 w-11' : props.size === 'md' ? 'h-9 w-9' : 'h-9 touch:h-11 w-9 touch:w-11'))
 </script>
 
 <template>

@@ -2,6 +2,7 @@ import { ApiError, defineApiHandler, notFound } from '~/server/utils/publicApi'
 import { asRow, loose } from '~/server/utils/publicApiHandlers'
 import { assertUuid } from '~/server/utils/publicApiQuery'
 import { appointmentsResource } from '~/server/utils/publicApiResources'
+import { offerCancelledSlotIfAutomatic } from '~/server/utils/waitlistOffer'
 
 // DELETE *cancels*: it sets status to 'cancelled' and leaves the row alone.
 //
@@ -42,6 +43,9 @@ export default defineApiHandler({ scope: 'appointments:write' }, async ({ event,
     .single()
   if (error) throw new ApiError('server_error', error.message)
   await pushAppointmentEvent(supabase, id, 'cancelled')
+  // The freed slot, to the waitlist, when the clinic offers them
+  // automatically (accounts.waitlist_auto_offer).
+  await offerCancelledSlotIfAutomatic(supabase, getRequestURL(event).origin, id)
 
   return { data: appointmentsResource.serialize(updated) }
 })

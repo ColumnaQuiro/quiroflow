@@ -563,6 +563,9 @@ async function saveMove(start: Date, end: Date) {
     fee_applied: false,
     created_by: context.value!.teamMemberId,
   } as never)
+  // The time it left, to the waitlist, when the clinic offers freed slots
+  // automatically (offer-next decides, against the row just logged).
+  authedFetch('/api/waitlist/offer-next', { method: 'POST', body: { appointmentId: move.appointmentId, movedFrom: move.startsAt } }).catch(() => {})
   if (notifyPatient.value && canNotify.value) {
     authedFetch('/api/automations/fire', { method: 'POST', body: { triggerEvent: 'appointment.rescheduled', patientId: props.patientId, appointmentId: move.appointmentId } }).catch(() => {})
   }

@@ -73,12 +73,15 @@ const matches = ref<WaitingEntry[]>([])
 
 const fee = ref<'none' | 'balance' | 'card'>('none')
 const offer = ref(false)
+// Settings > Waitlist: everyone who fits at once, the first to accept wins.
+const toAll = ref(false)
+const offeredCount = computed(() => (toAll.value ? Math.min(matches.value.length, 25) : 1))
 const busy = ref(false)
 const error = ref('')
 
 onMounted(async () => {
   const [{ data: account }, cardRes, { data: waiting }] = await Promise.all([
-    supabase.from('accounts').select('cancellation_fee_cents').eq('id', store.accountId!).maybeSingle(),
+    supabase.from('accounts').select('cancellation_fee_cents, waitlist_offer_mode').eq('id', store.accountId!).maybeSingle(),
     // Which card, if any. Only shown to staff who may see it (billing_config);
     // anyone else simply gets no card option.
     useStaffFetch<{ card: { brand: string; last4: string } | null }>('/api/stripe/card-details', { method: 'POST', body: { patientId: props.appointment.patient_id } }).catch(() => ({ card: null })),
@@ -89,6 +92,7 @@ onMounted(async () => {
     supabase.rpc('waitlist_waiting_in_clinic', { p_clinic_id: store.currentClinicId! }),
   ])
   feeCents.value = account?.cancellation_fee_cents ?? 0
+  toAll.value = account?.waitlist_offer_mode === 'all_at_once'
   card.value = cardRes?.card ?? null
   // The same rule, in the same order, as offerNextWaitlistEntry -- so the
   // person named here is the person the server will offer it to.
@@ -157,7 +161,11 @@ const summary = computed(() => {
       : feeCents.value > 0 && fee.value === 'card'
         ? t(`, ${feeText.value} is charged to the card`, `, se cobran ${feeText.value} a la tarjeta`)
         : ''
-  const slotPart = offer.value ? t(` and ${first} gets the offer now.`, ` y ${first} recibe la oferta ahora.`) : t(' and the slot stays free.', ' y el hueco queda libre.')
+  const slotPart = !offer.value
+    ? t(' and the slot stays free.', ' y el hueco queda libre.')
+    : toAll.value && offeredCount.value > 1
+      ? t(` and ${offeredCount.value} people on the waitlist get the offer now.`, ` y ${offeredCount.value} personas de la lista de espera reciben la oferta ahora.`)
+      : t(` and ${first} gets the offer now.`, ` y ${first} recibe la oferta ahora.`)
   return t(`The appointment is kept as cancelled in their history${feePart}${slotPart}`, `La cita queda como cancelada en su historial${feePart}${slotPart}`)
 })
 
@@ -201,8 +209,9 @@ async function confirmCancel() {
 
   // Only when asked: leaving the slot free is a real choice now.
   if (offer.value) {
-    const res = await useStaffFetch<{ offered: boolean }>('/api/waitlist/offer-next', { method: 'POST', body: { appointmentId: props.appointment.id } }).catch(() => ({ offered: false }))
-    if (res.offered && firstMatch.value) showToast(t(`Slot offered to ${waitingName(firstMatch.value.patients)}`, `Hueco ofrecido a ${waitingName(firstMatch.value.patients)}`))
+    const res = await useStaffFetch<{ offered: boolean; count?: number }>('/api/waitlist/offer-next', { method: 'POST', body: { appointmentId: props.appointment.id } }).catch(() => ({ offered: false, count: 0 }))
+    if (res.offered && (res.count ?? 1) > 1) showToast(t(`Slot offered to ${res.count} people on the waitlist`, `Hueco ofrecido a ${res.count} personas de la lista de espera`))
+    else if (res.offered && firstMatch.value) showToast(t(`Slot offered to ${waitingName(firstMatch.value.patients)}`, `Hueco ofrecido a ${waitingName(firstMatch.value.patients)}`))
   }
   busy.value = false
   emit('done')
@@ -287,10 +296,12 @@ async function confirmCancel() {
             >
               <input v-model="offer" type="radio" name="slot" :value="true" :disabled="!deadline" class="mt-1 accent-brand" />
               <span class="flex flex-col gap-0.5">
-                <span class="text-[14px] font-semibold text-ink-900">{{ t(`Offer it to ${waitingName(firstMatch.patients)} by WhatsApp`, `Ofrecérselo a ${waitingName(firstMatch.patients)} por WhatsApp`) }}</span>
+                <span v-if="toAll && offeredCount > 1" class="text-[14px] font-semibold text-ink-900">{{ t(`Offer it to the ${offeredCount} people who fit`, `Ofrecérselo a las ${offeredCount} personas que encajan`) }}</span>
+                <span v-else class="text-[14px] font-semibold text-ink-900">{{ t(`Offer it to ${waitingName(firstMatch.patients)} by WhatsApp`, `Ofrecérselo a ${waitingName(firstMatch.patients)} por WhatsApp`) }}</span>
                 <span v-if="deadline" class="text-[12.5px] text-ink-muted" data-cy="cancel-offer-deadline">
-                  {{ t(`They have until ${formatTime(deadline)} to accept (20 min before the visit at the latest).`, `Tiene hasta las ${formatTime(deadline)} para aceptar (como tarde 20 min antes de la cita).`) }}
-                  <template v-if="secondMatch">{{ t(` If not, it goes to ${waitingFirstName(secondMatch.patients)}.`, ` Si no, pasa a ${waitingFirstName(secondMatch.patients)}.`) }}</template>
+                  {{ toAll && offeredCount > 1 ? t(`They have until ${formatTime(deadline)} to accept (20 min before the visit at the latest).`, `Tienen hasta las ${formatTime(deadline)} para aceptar (como tarde 20 min antes de la cita).`) : t(`They have until ${formatTime(deadline)} to accept (20 min before the visit at the latest).`, `Tiene hasta las ${formatTime(deadline)} para aceptar (como tarde 20 min antes de la cita).`) }}
+                  <template v-if="toAll && offeredCount > 1">{{ t(' The first to accept gets it; the others stay on the waitlist.', ' El primero que acepte se lo queda; los demás siguen en la lista.') }}</template>
+                  <template v-else-if="secondMatch">{{ t(` If not, it goes to ${waitingFirstName(secondMatch.patients)}.`, ` Si no, pasa a ${waitingFirstName(secondMatch.patients)}.`) }}</template>
                 </span>
                 <span v-else class="text-[12.5px] text-ink-muted">{{ t('It starts too soon for anyone to take it.', 'Empieza demasiado pronto para que alguien lo aproveche.') }}</span>
               </span>

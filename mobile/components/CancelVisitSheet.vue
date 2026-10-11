@@ -59,6 +59,9 @@ const card = ref<{ brand: string; last4: string } | null>(null)
 const matches = ref<{ id: string; name: string }[]>([])
 const fee = ref<'none' | 'balance' | 'card'>('none')
 const offer = ref(false)
+// Settings > Waitlist (web): everyone who fits at once, the first to accept wins.
+const toAll = ref(false)
+const offeredCount = computed(() => (toAll.value ? Math.min(matches.value.length, 25) : 1))
 const busy = ref(false)
 const error = ref('')
 
@@ -66,13 +69,14 @@ async function load() {
   if (!context.value) return
   const clinicId = props.appointment.clinic_id ?? context.value.clinicId
   const [{ data: account }, cardRes, { data: waiting }] = await Promise.all([
-    supabase.from('accounts').select('cancellation_fee_cents').eq('id', context.value.accountId).maybeSingle(),
+    supabase.from('accounts').select('cancellation_fee_cents, waitlist_offer_mode').eq('id', context.value.accountId).maybeSingle(),
     authedFetch<{ card: { brand: string; last4: string } | null }>('/api/stripe/card-details', { method: 'POST', body: { patientId: props.appointment.patient_id } }).catch(() => ({ card: null })),
     // The whole clinic's queue without who is on it: the slot goes to whoever
     // is first, whether or not this person may see that patient.
     supabase.rpc('waitlist_waiting_in_clinic' as never, { p_clinic_id: clinicId } as never),
   ])
   feeCents.value = (account as { cancellation_fee_cents: number | null } | null)?.cancellation_fee_cents ?? 0
+  toAll.value = (account as { waitlist_offer_mode?: string | null } | null)?.waitlist_offer_mode === 'all_at_once'
   card.value = cardRes?.card ?? null
   const slot = { appointmentTypeId: props.appointment.appointment_type_id, practitionerId: props.appointment.practitioner_id }
   const fitting = ((waiting as WaitingRow[] | null) ?? []).filter((w) => waitlistEntryMatches(w, slot))
@@ -143,8 +147,9 @@ async function confirmCancel() {
     }
   }
   if (offer.value) {
-    const res = await authedFetch<{ offered: boolean }>('/api/waitlist/offer-next', { method: 'POST', body: { appointmentId: props.appointment.id } }).catch(() => ({ offered: false }))
-    if (res.offered && matches.value[0]) message = t(`Cancelled. Slot offered to ${matches.value[0].name}.`, `Cancelada. Hueco ofrecido a ${matches.value[0].name}.`)
+    const res = await authedFetch<{ offered: boolean; count?: number }>('/api/waitlist/offer-next', { method: 'POST', body: { appointmentId: props.appointment.id } }).catch(() => ({ offered: false, count: 0 }))
+    if (res.offered && (res.count ?? 1) > 1) message = t(`Cancelled. Slot offered to ${res.count} people on the waitlist.`, `Cancelada. Hueco ofrecido a ${res.count} personas de la lista de espera.`)
+    else if (res.offered && matches.value[0]) message = t(`Cancelled. Slot offered to ${matches.value[0].name}.`, `Cancelada. Hueco ofrecido a ${matches.value[0].name}.`)
   }
   busy.value = false
   emit('done', message)
@@ -202,11 +207,12 @@ async function confirmCancel() {
             >
               <input v-model="offer" type="radio" name="slot" :value="true" :disabled="!deadline" class="mt-1 accent-brand" />
               <span class="flex flex-col gap-0.5">
-                <span class="text-[14px] font-medium text-ink-900">{{ t(`Offer it to ${matches[0].name} by WhatsApp`, `Ofrecérselo a ${matches[0].name} por WhatsApp`) }}</span>
+                <span class="text-[14px] font-medium text-ink-900">{{ toAll && offeredCount > 1 ? t(`Offer it to the ${offeredCount} people who fit`, `Ofrecérselo a las ${offeredCount} personas que encajan`) : t(`Offer it to ${matches[0].name} by WhatsApp`, `Ofrecérselo a ${matches[0].name} por WhatsApp`) }}</span>
                 <span class="text-[12.5px] text-ink-muted">
                   <template v-if="deadline">
                     {{ t(`Until ${time(deadline)} to accept.`, `Tiene hasta las ${time(deadline)} para aceptar.`) }}
-                    <template v-if="matches[1]">{{ t(` If not, it goes to ${matches[1].name}.`, ` Si no, pasa a ${matches[1].name}.`) }}</template>
+                    <template v-if="toAll && offeredCount > 1">{{ t(' The first to accept gets it.', ' El primero que acepte se lo queda.') }}</template>
+                    <template v-else-if="matches[1]">{{ t(` If not, it goes to ${matches[1].name}.`, ` Si no, pasa a ${matches[1].name}.`) }}</template>
                   </template>
                   <template v-else>{{ t('It starts too soon for anyone to take it.', 'Empieza demasiado pronto para que alguien lo aproveche.') }}</template>
                 </span>

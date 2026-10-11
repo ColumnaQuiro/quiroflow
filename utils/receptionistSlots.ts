@@ -199,7 +199,7 @@ export function receptionistBookingSection(opts: {
   bookingWindowDays: number
 }): string {
   if (!opts.availability) {
-    return `# Booking\nYou cannot see the clinic's calendar, so never propose a specific day or time and never say a time is free. Ask which days and whether mornings or afternoons suit them (within the next ${opts.bookingWindowDays} days), then say a colleague will confirm an exact time shortly.`
+    return `# Booking\nYou cannot see the clinic's calendar, so never propose a specific day or time and never say a time is free. Ask which days and whether mornings or afternoons suit them (within the next ${opts.bookingWindowDays} days), then say your colleague will confirm an exact time shortly.`
   }
 
   const lists = opts.availability.groups.map((group) => {
@@ -217,10 +217,10 @@ export function receptionistBookingSection(opts: {
     `# Booking\nThese are the free start times in the clinic's calendar for the next ${opts.bookingWindowDays} days, in the clinic's local time. A day missing from a list has nothing free for those appointments, unless the list says it stops before that day.`,
     ...lists,
     [
-      `Offer times ONLY from this list, exactly as written, and at most ${n} time${n === 1 ? '' : 's'} per reply. Never offer a day, time or type that is not listed, never shift a listed time, and never say a time is free unless it is listed.`,
+      `Offer times ONLY from this list, at exactly the listed times, and at most ${n} time${n === 1 ? '' : 's'} per reply. Never offer a day, time or type that is not listed, never shift a listed time, and never say a time is free unless it is listed.`,
       `Choose times that fit what the patient has said about when suits them; if they have not said, offer the earliest ones, on different days where possible.`,
       multiClinic ? `Times are per clinic: offer the clinic the patient wants, and ask which one if it is not clear.` : '',
-      `If nothing listed suits them, or they want a day that is not listed, do not invent one: ask which days and whether mornings or afternoons suit them, and say a colleague will confirm an exact time shortly.`,
+      `If nothing listed suits them, or they want a day that is not listed, do not invent one: ask which days and whether mornings or afternoons suit them, and say your colleague will confirm an exact time shortly.`,
     ]
       .filter(Boolean)
       .join(' '),

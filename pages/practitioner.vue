@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { AppointmentPanelInputs } from '~/composables/useAppointmentPanelLoader'
 import { orderTypes } from '~/utils/appointmentTypes'
+import type { NoShowRisk } from '~/utils/noShowRisk'
 // PracticeHub's "Practitioner Dashboard" is a chronological worklist of a
 // practitioner's own day, click a patient to jump straight into charting.
 // Not built: PH's grid mode (patients currently "with practitioner") --
@@ -222,6 +223,14 @@ async function onPanelChanged() {
   await refreshDay()
 }
 
+// Each booked visit's no-show risk, beside the status on its row.
+const { riskFor } = useNoShowRisk()
+const riskByPatient = ref<Map<string, NoShowRisk>>(new Map())
+watch(appointments, async (list) => {
+  const ids = list.filter((a) => a.status === 'booked' && a.patient_id).map((a) => a.patient_id)
+  riskByPatient.value = await riskFor(ids)
+})
+
 const { fire } = useAutomations()
 
 async function toggleCheckedIn(appt: AppointmentRow) {
@@ -350,6 +359,17 @@ const headerMeta = computed(() => {
       the loading switch, so changing day does not reload it. -->
       <PractitionerMyDayTasks :privacy-mode="privacyMode" />
 
+      <!-- Who has not confirmed between now and tomorrow night, riskiest
+      first. Also outside the loading switch: it is not about the day shown. -->
+      <PractitionerNeedsConfirming
+        class="mx-4 mt-4 sm:mx-6"
+        :clinic-id="store.currentClinicId"
+        :practitioner-id="practitionerId || null"
+        :can-see-all="canSeeAll"
+        :privacy-mode="privacyMode"
+        @message="(id) => navigateTo(`/inbox?open=${encodeURIComponent(id)}`)"
+      />
+
       <div v-if="loading" class="flex flex-col gap-4 p-4 sm:p-6">
         <UiSkeleton class="h-16 w-full rounded-card" />
         <div class="space-y-2">
@@ -404,6 +424,7 @@ const headerMeta = computed(() => {
                       {{ a.appointment_types?.name ?? t('No type', 'Sin tipo') }}
                     </span>
                   </span>
+                  <PractitionerNoShowRiskPill v-if="a.status === 'booked' && !a.checked_in_at" :risk="riskByPatient.get(a.patient_id)" />
                   <UiPill :tone="statusTone(a.status)" dot>{{ statusLabel(a.status) }}</UiPill>
                 </div>
                 <div class="flex items-center gap-2">

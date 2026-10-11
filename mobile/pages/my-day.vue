@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { NoShowRisk } from '../../utils/noShowRisk'
 // My Day: the signed-in person's own day, at a glance.
 //
 // Everything here is about the viewer -- their visits, their patients, their
@@ -384,7 +385,29 @@ onMounted(() => document.addEventListener('visibilitychange', onVisible))
 onBeforeUnmount(() => document.removeEventListener('visibilitychange', onVisible))
 
 const scroller = ref<HTMLElement | null>(null)
-const { pulling, refreshing, pullDistance, onTouchStart, onTouchMove, onTouchEnd } = usePullToRefresh(scroller, () => load({ silent: true }))
+// A visit's no-show risk on its row (utils/noShowRisk). A first visit says so
+// already ("New patient"), so only a history of missing one is shown.
+const { riskFor } = useNoShowRisk()
+const riskByPatient = ref<Map<string, NoShowRisk>>(new Map())
+watch(appointments, async (list) => {
+  riskByPatient.value = await riskFor(list.filter((a) => a.status === 'booked' && !a.checked_in_at).map((a) => a.patient_id))
+})
+function riskShown(a: Appointment) {
+  const r = riskByPatient.value.get(a.patient_id)
+  return r && (r.level === 'high' || r.level === 'some') ? r : null
+}
+
+// The "needs confirming" card loads itself; a pull refreshes it with the rest.
+const needsConfirming = ref<{ reload: () => Promise<void> } | null>(null)
+const { pulling, refreshing, pullDistance, onTouchStart, onTouchMove, onTouchEnd } = usePullToRefresh(scroller, async () => {
+  await Promise.all([load({ silent: true }), needsConfirming.value?.reload()])
+})
+
+// The app's own Inbox thread with them, as the patient record's WhatsApp button opens it.
+function messagePatient(patientId: string) {
+  pendingConversationKey.value = patientId
+  navigateTo('/inbox')
+}
 
 // --- Per visit ---
 
@@ -598,6 +621,7 @@ function initialsOf(a: Appointment) {
             <span v-if="rowState(a) === 'done'" class="text-[12.5px] font-medium text-success-text">{{ t('Done', 'Hecha') }}</span>
             <span v-else-if="rowState(a) === 'in'" class="inline-flex h-6 items-center rounded-pill bg-brand-tint px-2.5 text-[11.5px] font-semibold text-brand-text">{{ t('In clinic', 'En clínica') }}</span>
             <span v-else-if="rowState(a) === 'noshow'" class="text-[12.5px] font-medium text-danger-text">{{ t('No-show', 'No vino') }}</span>
+            <PractitionerNoShowRiskPill v-if="riskShown(a) && rowState(a) !== 'done' && rowState(a) !== 'noshow'" :risk="riskShown(a)" />
             <span v-if="isNewPatientVisit(a)" class="inline-flex h-6 items-center rounded-pill bg-brand-tint px-2.5 text-[11.5px] font-semibold text-brand-text" data-test="myday-flag-new">{{ t('New patient', 'Paciente nuevo') }}</span>
             <span v-if="owes(a) > 0" class="inline-flex h-6 items-center whitespace-nowrap rounded-pill bg-danger-bg px-2.5 text-[11.5px] font-semibold text-danger-text" data-test="myday-flag-owes">{{ t(`Owes ${formatEur(owes(a))}`, `Debe ${formatEur(owes(a))}`) }}</span>
             <span v-if="needsNext(a)" class="inline-flex h-6 items-center whitespace-nowrap rounded-pill bg-warning-bg px-2.5 text-[11.5px] font-semibold text-warning-text" data-test="myday-flag-no-next">{{ t('No next visit', 'Sin próxima') }}</span>
@@ -634,6 +658,19 @@ function initialsOf(a: Appointment) {
             </NuxtLink>
           </div>
         </div>
+
+        <!-- Who has not confirmed between now and tomorrow night, riskiest
+             first: the calls to make before the day fills up. -->
+        <PractitionerNeedsConfirming
+          v-if="context"
+          ref="needsConfirming"
+          class="order-2 lg:order-none"
+          :clinic-id="null"
+          :practitioner-id="context.teamMemberId"
+          :time-zone="timeZone"
+          :privacy-mode="privacy"
+          @message="messagePatient"
+        />
 
         <!-- Who is in the room now, with their last note: only where there is
              room for it (the iPad's second column). -->

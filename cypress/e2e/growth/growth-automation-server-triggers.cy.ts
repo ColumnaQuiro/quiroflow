@@ -173,7 +173,7 @@ describe('Automations fired by the server', () => {
             startsAt: new Date(Date.now() + 26 * 3600 * 1000).toISOString(),
           }).then((appt) => {
             cy.login(account.email, account.password)
-            cy.request({ method: 'POST', url: '/api/waitlist/offer-next', body: { appointmentId: appt.id } }).its('body').should('deep.eq', { offered: true })
+            cy.request({ method: 'POST', url: '/api/waitlist/offer-next', body: { appointmentId: appt.id } }).its('body').should('deep.eq', { offered: true, count: 1 })
             cy.task<WhatsAppRow[]>('auto:whatsappFor', { patientId: waiting.id }).then((rows) => {
               expect(rows.map((r) => r.template_name)).to.deep.eq(['hueco_libre'])
               expect(rows[0]!.status).to.eq('would_send')

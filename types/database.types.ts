@@ -638,6 +638,8 @@ export type Database = {
           whatsapp_recall_template_name: string | null
           whatsapp_reminder_template_language: string | null
           whatsapp_reminder_template_name: string | null
+          waitlist_auto_offer: boolean
+          waitlist_offer_mode: string
         }
         Insert: {
           appointment_confirmation_channels?: string[]
@@ -725,6 +727,8 @@ export type Database = {
           whatsapp_recall_template_name?: string | null
           whatsapp_reminder_template_language?: string | null
           whatsapp_reminder_template_name?: string | null
+          waitlist_auto_offer?: boolean
+          waitlist_offer_mode?: string
         }
         Update: {
           appointment_confirmation_channels?: string[]
@@ -813,6 +817,8 @@ export type Database = {
           whatsapp_recall_template_name?: string | null
           whatsapp_reminder_template_language?: string | null
           whatsapp_reminder_template_name?: string | null
+          waitlist_auto_offer?: boolean
+          waitlist_offer_mode?: string
         }
         Relationships: [
           {
@@ -6273,6 +6279,7 @@ export type Database = {
           patient_id: string
           practitioner_id: string | null
           status: string
+          offered_to_all: boolean
         }
         Insert: {
           account_id: string
@@ -6293,6 +6300,7 @@ export type Database = {
           patient_id: string
           practitioner_id?: string | null
           status?: string
+          offered_to_all?: boolean
         }
         Update: {
           account_id?: string
@@ -6313,6 +6321,7 @@ export type Database = {
           patient_id?: string
           practitioner_id?: string | null
           status?: string
+          offered_to_all?: boolean
         }
         Relationships: [
           {

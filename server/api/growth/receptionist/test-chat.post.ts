@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { createAnthropicClient } from '~/server/utils/anthropicClient'
 import { requireGrowth } from '~/server/utils/requireGrowth'
 import { buildSystemPrompt, loadOfferedTypes, loadReceptionistConfig, type LeadOrigin } from '~/server/utils/receptionist'
 import { modelFailureMessage } from '~/utils/modelFailure'
@@ -70,7 +71,7 @@ export default defineEventHandler(async (event) => {
 
   const leadOrigin = TEST_ORIGINS[body.origin === 'ad' ? 'ad' : 'unknown']
 
-  const client = new Anthropic({ apiKey })
+  const client = createAnthropicClient(apiKey)
   try {
     const message = await client.messages.create({
       model: MODEL,

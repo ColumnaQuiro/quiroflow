@@ -4,6 +4,8 @@ import {
   autoReplyHeldBack,
   autoReplyNow,
   clinicOpenAt,
+  isNoReply,
+  isNoReplyMessage,
   personRepliedSince,
   type ConversationMessage,
 } from '../../utils/receptionistAutoReply'
@@ -136,3 +138,34 @@ describe('A reply that is sent as it is', () => {
     expect(prompt).not.toContain('call book_appointment')
   })
 })
+
+// Messages that want no answer: on its first day answering, 15 of 22 waiting
+// conversations were "Confirmar" tapped on the reminder, each with a draft
+// re-confirming the visit.
+describe('Messages it leaves alone', () => {
+  const phrases = ['Confirmar', 'Gracias', 'Ok', '👍']
+
+  it('matches the whole message, whatever the case, accents or punctuation', () => {
+    expect(isNoReplyMessage(['Confirmar'], phrases)).toBe(true)
+    expect(isNoReplyMessage(['¡¡Gracias!!'], phrases)).toBe(true)
+    expect(isNoReplyMessage(['OK.'], phrases)).toBe(true)
+    expect(isNoReplyMessage(['👍'], phrases)).toBe(true)
+    // Several since the clinic last wrote, all of them on the list.
+    expect(isNoReplyMessage(['Confirmar', 'Gracias'], phrases)).toBe(true)
+  })
+
+  it('still answers anything more than that', () => {
+    expect(isNoReplyMessage(['Gracias, ¿y el jueves?'], phrases)).toBe(false)
+    expect(isNoReplyMessage(['Cambiar cita'], phrases)).toBe(false)
+    expect(isNoReplyMessage(['Confirmar', 'Podemos hacerlo jueves 22?'], phrases)).toBe(false)
+    expect(isNoReplyMessage([], phrases)).toBe(false)
+    expect(isNoReplyMessage(['Gracias'], [])).toBe(false)
+  })
+
+  it("reads the model's own decision to stay quiet", () => {
+    expect(isNoReply('NO_REPLY')).toBe(true)
+    expect(isNoReply('  NO_REPLY.')).toBe(true)
+    expect(isNoReply('Gracias a ti, ¡hasta el martes!')).toBe(false)
+  })
+})
+

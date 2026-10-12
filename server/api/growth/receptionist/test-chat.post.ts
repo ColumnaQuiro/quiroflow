@@ -5,6 +5,7 @@ import { buildSystemPrompt, loadOfferedTypes, loadReceptionistCalendar, loadRece
 import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptionistModel'
 import { modelFailureMessage } from '~/utils/modelFailure'
 import { typesForAudience } from '~/utils/receptionistTypes'
+import { isNoReply } from '~/utils/receptionistAutoReply'
 import { internalNotes } from '~/utils/receptionistGuard'
 
 // "Try Alba" -- the clinic owner talking to their own configuration.
@@ -92,6 +93,8 @@ export default defineEventHandler(async (event) => {
       logLabel: `Try Alba (account ${teamMember.account_id})`,
     })
     if (refused) return { available: true as const, reply: '', refused: true }
+    // The owner sees that it would stay quiet, rather than the marker itself.
+    if (isNoReply(reply)) return { available: true as const, reply: '(Sin respuesta: este mensaje no necesita contestación. No se enviaría nada.)', refused: false }
     return { available: true as const, reply, refused: false }
   } catch (err) {
     console.error('[growth/receptionist/test-chat] Anthropic request failed:', (err as Error)?.message ?? err)

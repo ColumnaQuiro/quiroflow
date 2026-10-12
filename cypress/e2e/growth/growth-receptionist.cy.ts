@@ -178,6 +178,17 @@ describe('Growth AI receptionist', () => {
     cy.get('[data-test="test-chat"]').should('not.exist')
   })
 
+  // "Confirmar" on the reminder needs no answer: a list the clinic edits.
+  it('lists the messages it leaves alone, and takes one more', () => {
+    cy.visit('/growth/receptionist?growth=1')
+    cy.get('[data-test="no-reply-phrases"]').scrollIntoView().should('contain', 'Confirmar').and('contain', 'Gracias')
+    cy.get('[data-test="no-reply-text"]').type('Recibido')
+    cy.get('[data-test="add-no-reply"]').click()
+    cy.contains('Saved.').should('be.visible')
+    cy.reload()
+    cy.get('[data-test="no-reply-phrases"]').scrollIntoView().should('contain', 'Recibido')
+  })
+
   describe('what the receptionist knows and asks', () => {
     // These three lists are what the system prompt is built from, and all
     // three were rendered read-only -- so the knowledge base stayed

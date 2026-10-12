@@ -6,7 +6,7 @@ import { FIELD, HINT, LABEL } from '~/utils/automationUi'
 // unless switched off, a task in their My Day with the patient linked. A role
 // gets ONE shared task anyone in it can tick; a person gets their own.
 //
-// config: { to: { team_member_id? | role_id? | practitioner_of_appointment? },
+// config: { to: { team_member_id? | role_id? | practitioner_of_appointment? | patients_practitioner? },
 //           title, create_task (anything but false is on), due_in_minutes? }
 
 const props = defineProps<{ stepId: string }>()
@@ -15,10 +15,11 @@ const t = useT()
 const config = computed(() => b.stepsById.value.get(props.stepId)!.config)
 const set = (patch: Record<string, any>) => b.updateStepConfig(props.stepId, patch)
 
-const to = computed(() => (config.value.to ?? {}) as { team_member_id?: string; role_id?: string; practitioner_of_appointment?: boolean })
-const who = computed(() => (to.value.role_id ? `role:${to.value.role_id}` : to.value.team_member_id ? `member:${to.value.team_member_id}` : to.value.practitioner_of_appointment ? 'practitioner' : ''))
+const to = computed(() => (config.value.to ?? {}) as { team_member_id?: string; role_id?: string; practitioner_of_appointment?: boolean; patients_practitioner?: boolean })
+const who = computed(() => (to.value.role_id ? `role:${to.value.role_id}` : to.value.team_member_id ? `member:${to.value.team_member_id}` : to.value.practitioner_of_appointment ? 'practitioner' : to.value.patients_practitioner ? 'patients_practitioner' : ''))
 function setWho(value: string) {
   if (value === 'practitioner') set({ to: { practitioner_of_appointment: true } })
+  else if (value === 'patients_practitioner') set({ to: { patients_practitioner: true } })
   else if (value.startsWith('role:')) set({ to: { role_id: value.slice(5) } })
   else if (value.startsWith('member:')) set({ to: { team_member_id: value.slice(7) } })
   else set({ to: {} })
@@ -37,6 +38,7 @@ function setDue(on: boolean) {
       <select :class="FIELD" :value="who" data-test="notify-who" @change="setWho(($event.target as HTMLSelectElement).value)">
         <option value="" disabled>{{ t('Choose…', 'Elige…') }}</option>
         <option value="practitioner">{{ t("The appointment's practitioner", 'El profesional de la cita') }}</option>
+        <option value="patients_practitioner">{{ t("The patient's own practitioner", 'El profesional habitual del paciente') }}</option>
         <optgroup :label="t('A whole role', 'Todo un rol')">
           <option v-for="r in b.lookup.value.roles" :key="r.id" :value="`role:${r.id}`">{{ t(`Everyone in ${r.name} (role)`, `Todo ${r.name} (rol)`) }}</option>
         </optgroup>

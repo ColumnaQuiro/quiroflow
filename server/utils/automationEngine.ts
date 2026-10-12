@@ -1027,12 +1027,18 @@ async function createNotifyTasks(
   config: Record<string, any>,
   title: string,
 ): Promise<{ count: number; error: string | null }> {
-  const to = (config.to ?? {}) as { team_member_id?: string; role_id?: string; practitioner_of_appointment?: boolean }
+  const to = (config.to ?? {}) as { team_member_id?: string; role_id?: string; practitioner_of_appointment?: boolean; patients_practitioner?: boolean }
   const people = new Set<string>()
   if (to.team_member_id) people.add(to.team_member_id)
   if (to.practitioner_of_appointment && run.appointment_id) {
     const { data } = await supabase.from('appointments').select('practitioner_id').eq('id', run.appointment_id).maybeSingle()
     if (data?.practitioner_id) people.add(data.practitioner_id)
+  }
+  // The patient's own practitioner (patients.default_practitioner_id): for a
+  // run with no appointment in it -- a weekly group, a lapsed plan.
+  if (to.patients_practitioner && run.patient_id) {
+    const { data } = await supabase.from('patients').select('default_practitioner_id').eq('id', run.patient_id).maybeSingle()
+    if (data?.default_practitioner_id) people.add(data.default_practitioner_id)
   }
   // Only this clinic's people and roles, whatever the config says.
   const { data: members } = people.size
@@ -1064,7 +1070,7 @@ async function createNotifyTasks(
 
 /** Which team members a notify step reaches. */
 async function notifyRecipients(supabase: any, run: SequenceRun, config: Record<string, any>): Promise<string[]> {
-  const to = (config.to ?? {}) as { team_member_id?: string; role_id?: string; practitioner_of_appointment?: boolean }
+  const to = (config.to ?? {}) as { team_member_id?: string; role_id?: string; practitioner_of_appointment?: boolean; patients_practitioner?: boolean }
   const ids = new Set<string>()
   if (to.team_member_id) ids.add(to.team_member_id)
   if (to.role_id) {
@@ -1074,6 +1080,10 @@ async function notifyRecipients(supabase: any, run: SequenceRun, config: Record<
   if (to.practitioner_of_appointment && run.appointment_id) {
     const { data } = await supabase.from('appointments').select('practitioner_id').eq('id', run.appointment_id).maybeSingle()
     if (data?.practitioner_id) ids.add(data.practitioner_id)
+  }
+  if (to.patients_practitioner && run.patient_id) {
+    const { data } = await supabase.from('patients').select('default_practitioner_id').eq('id', run.patient_id).maybeSingle()
+    if (data?.default_practitioner_id) ids.add(data.default_practitioner_id)
   }
   if (ids.size === 0) return []
   // Only this clinic's people, whatever the config says.

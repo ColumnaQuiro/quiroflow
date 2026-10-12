@@ -114,6 +114,11 @@ function setLastVisit(value: number, unit = lastVisitUnit.value) {
           </select>
           <span :class="HINT">{{ t('ago', 'atrás') }}</span>
         </div>
+        <div v-else-if="key === 'care_plan_overdue'" class="flex flex-wrap items-center gap-2 text-[13px] text-ink-700" data-cy="filter-care-plan-overdue">
+          <span>{{ t('a visit overdue by', 'una visita atrasada') }}</span>
+          <input type="number" min="1" :class="FIELD_NUMBER" :value="Number(modelValue.care_plan_overdue_days) || 1" :aria-label="label(key)" @input="set({ care_plan_overdue_days: Math.max(1, Math.round(Number(($event.target as HTMLInputElement).value) || 1)) })" />
+          <span :class="HINT">{{ t('days or more, nothing booked', 'días o más, sin cita') }}</span>
+        </div>
         <input
           v-else-if="key === 'tag_contains'"
           type="text"

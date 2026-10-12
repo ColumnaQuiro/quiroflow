@@ -2,7 +2,7 @@
 import { computePresetRange, rangeBounds } from '~/composables/useDateRangePresets'
 import { fetchAllRows } from '~/composables/useFetchAllRows'
 import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
-import { cohortRetention, rebookingByPractitioner, retentionPct, type RetentionVisit } from '~/utils/retentionStats'
+import { cohortRetention, rebookingByPractitioner, retentionPct, winBackStats, type RetentionVisit, type WinBackContact } from '~/utils/retentionStats'
 
 // Retention: do patients come back, and do they finish what they started.
 //
@@ -13,6 +13,9 @@ import { cohortRetention, rebookingByPractitioner, retentionPct, type RetentionV
 //      how many were still coming three and six months later.
 //   3. By practitioner: how many visits left with the next one booked, and
 //      how many came back within 30 days.
+//   4. Win-back: of the patients someone reached out to, how many booked
+//      within 30 days (winBackStats) -- and, from the unfinished plans, a
+//      WhatsApp to the ones picked, the same bulk send Recalls has.
 //
 // Every visit is read, not only the range's: "first visit" means the first
 // ever, so a patient returning after a year is not counted as new. The
@@ -42,12 +45,17 @@ const clinicFilter = ref('')
 const loading = ref(true)
 const visits = ref<RetentionVisit[]>([])
 const plans = ref<PlanAlert[]>([])
+const contacts = ref<WinBackContact[]>([])
+// contact_log is behind recalls_access; a role without it reads nothing, and
+// is shown nothing rather than "nobody contacted".
+const seesContacts = ref(false)
+const store = useAccountStore()
 
 let run = 0
 async function load() {
   const mine = ++run
   loading.value = true
-  const [all, alerts] = await Promise.all([
+  const [all, alerts, contactRows] = await Promise.all([
     fetchAllRows<RetentionVisit>((f, tt) => {
       let q = supabase.from('appointments').select('patient_id, practitioner_id, starts_at, ends_at, status, created_at').is('deleted_at', null).not('patient_id', 'is', null).order('starts_at')
       if (clinicFilter.value) q = q.eq('clinic_id', clinicFilter.value)
@@ -59,10 +67,18 @@ async function load() {
       .gt('days_overdue', 0)
       .order('days_overdue', { ascending: false })
       .limit(200),
+    // Reaching out, not appointment reminders: those carry the appointment.
+    fetchAllRows<WinBackContact>((f, tt) => supabase.from('contact_log').select('patient_id, created_at').is('appointment_id', null).order('created_at').range(f, tt)).then(
+      (rows) => ({ rows, ok: true }),
+      () => ({ rows: [] as WinBackContact[], ok: false }),
+    ),
   ])
   if (mine !== run) return
   visits.value = all
   plans.value = (alerts.data as PlanAlert[] | null) ?? []
+  contacts.value = contactRows.rows
+  seesContacts.value = contactRows.ok && contactRows.rows.length > 0
+  loadPhones()
   loading.value = false
 }
 onMounted(() => {
@@ -101,6 +117,40 @@ const totals = computed(() => {
 // With a practitioner chosen, the plans of their patients.
 const visiblePlans = computed(() => (practitionerFilter.value ? plans.value.filter((p) => p.default_practitioner_id === practitionerFilter.value) : plans.value))
 const longGone = computed(() => visiblePlans.value.filter((p) => p.days_overdue > 30).length)
+
+// Win-back over the period. Bookings are the visits already read: any
+// appointment made after the contact counts, whoever it is with.
+const winBack = computed(() => winBackStats(contacts.value, visits.value.map((v) => ({ patient_id: v.patient_id, created_at: v.created_at })), { from: bounds.value.from, to: bounds.value.to, now }))
+
+// Picking unfinished plans to message. Nobody without a phone is sent a
+// WhatsApp; the bar says how many are skipped, as on Recalls.
+const shownPlans = computed(() => visiblePlans.value.slice(0, 50))
+const picked = ref<Set<string>>(new Set())
+const phones = ref<Set<string>>(new Set())
+async function loadPhones() {
+  const ids = plans.value.map((p) => p.patient_id)
+  if (!ids.length) return
+  const { data } = await supabase.from('patient_contact_numbers').select('patient_id').in('patient_id', ids)
+  phones.value = new Set(((data ?? []) as { patient_id: string }[]).map((r) => r.patient_id))
+}
+const allPicked = computed(() => shownPlans.value.length > 0 && shownPlans.value.every((p) => picked.value.has(p.patient_id)))
+function togglePick(id: string) {
+  const next = new Set(picked.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  picked.value = next
+}
+function toggleAll() {
+  picked.value = allPicked.value ? new Set() : new Set(shownPlans.value.map((p) => p.patient_id))
+}
+const pickedPlans = computed(() => shownPlans.value.filter((p) => picked.value.has(p.patient_id)))
+const reachable = computed(() => pickedPlans.value.filter((p) => phones.value.has(p.patient_id)))
+const bulkOpen = ref(false)
+function onBulkClosed() {
+  bulkOpen.value = false
+  picked.value = new Set()
+  load()
+}
 
 const show = (n: number | null) => (n === null ? '–' : `${n}%`)
 const cell = (x: { of: number; still: number } | null) => (x ? show(retentionPct(x.still, x.of)) : '–')
@@ -150,6 +200,23 @@ const td = 'px-3 py-2 font-mono text-[13px] text-ink-800'
       </div>
 
       <ReportsModule
+        v-if="seesContacts"
+        class="mt-4"
+        :title="t('Win-back', 'Recuperación')"
+        :description="t('Patients someone called or messaged in the period (Recalls, or the WhatsApp below), and how many booked within 30 days of it.', 'Pacientes a los que alguien llamó o escribió en el periodo (Recalls, o el WhatsApp de abajo), y cuántos reservaron en los 30 días siguientes.')"
+        :loading="loading"
+        skeleton="list"
+        :rows="1"
+      >
+        <p class="mt-2 text-[13.5px] text-ink-700" data-cy="retention-win-back">
+          <span class="font-mono text-[18px] font-semibold text-ink-900">{{ winBack.booked }}</span>
+          {{ t(`of ${winBack.contacted} contacted booked`, `de ${winBack.contacted} contactados reservaron`) }}
+          <template v-if="winBack.contacted"> ({{ show(retentionPct(winBack.booked, winBack.contacted)) }})</template>
+          <span v-if="winBack.waiting" class="text-ink-muted"> &middot; {{ t(`${winBack.waiting} contacted under 30 days ago, still to tell`, `${winBack.waiting} contactados hace menos de 30 días, aún por ver`) }}</span>
+        </p>
+      </ReportsModule>
+
+      <ReportsModule
         class="mt-4"
         :title="t('Care plans left unfinished', 'Planes sin terminar')"
         :description="t('Visits still to go, nothing booked, and past the date their cadence set. Whatever the period above.', 'Con visitas pendientes, nada reservado y pasada la fecha que marcaba su frecuencia. Sea cual sea el periodo de arriba.')"
@@ -161,10 +228,19 @@ const td = 'px-3 py-2 font-mono text-[13px] text-ink-800'
           {{ t(`${visiblePlans.length} plans overdue, ${longGone} of them by more than 30 days.`, `${visiblePlans.length} planes atrasados, ${longGone} de ellos más de 30 días.`) }}
         </p>
         <p v-else class="mt-2 text-[13px] text-ink-muted" data-cy="retention-plans-empty">{{ t('No plan is behind schedule.', 'Ningún plan va atrasado.') }}</p>
+        <div v-if="picked.size > 0" class="mt-2 flex flex-wrap items-center gap-2 rounded-ctl border border-brand-tintBorder bg-brand-tint px-3 py-2" data-pdf-skip data-cy="retention-plans-bulk">
+          <strong class="text-[13.5px] text-brand-text">{{ t(`${picked.size} selected`, `${picked.size} seleccionados`) }}</strong>
+          <button type="button" class="h-9 rounded-ctl bg-brand px-3 text-[13px] font-bold text-surface disabled:opacity-50 touch:h-11" :disabled="reachable.length === 0" data-cy="retention-plans-whatsapp" @click="bulkOpen = true">
+            {{ t(`WhatsApp ${reachable.length}`, `WhatsApp a ${reachable.length}`) }}
+          </button>
+          <span v-if="pickedPlans.length > reachable.length" class="text-[12.5px] text-ink-500">{{ t(`${pickedPlans.length - reachable.length} without a phone, skipped`, `${pickedPlans.length - reachable.length} sin teléfono, se salta`) }}</span>
+          <button type="button" class="ml-auto h-9 px-2 text-[13px] text-ink-muted" @click="picked = new Set()">{{ t('Clear', 'Quitar')}}</button>
+        </div>
         <div v-if="visiblePlans.length" class="mt-2 overflow-x-auto">
           <table class="w-full min-w-[560px]">
             <thead class="border-b border-line bg-surface-subtle">
               <tr>
+                <th class="w-8 px-3 py-2" data-pdf-skip><input type="checkbox" class="h-4 w-4 accent-brand" :checked="allPicked" :aria-label="t('Select all', 'Seleccionar todos')" data-cy="retention-plans-all" @change="toggleAll" /></th>
                 <th :class="th">{{ t('Patient', 'Paciente') }}</th>
                 <th :class="th">{{ t('Plan', 'Plan') }}</th>
                 <th :class="th">{{ t('Done', 'Hechas') }}</th>
@@ -173,7 +249,8 @@ const td = 'px-3 py-2 font-mono text-[13px] text-ink-800'
               </tr>
             </thead>
             <tbody class="divide-y divide-line-divider">
-              <tr v-for="p in visiblePlans.slice(0, 50)" :key="p.patient_id" data-cy="retention-plan-row">
+              <tr v-for="p in shownPlans" :key="p.patient_id" data-cy="retention-plan-row">
+                <td class="px-3 py-2" data-pdf-skip><input type="checkbox" class="h-4 w-4 accent-brand" :checked="picked.has(p.patient_id)" :aria-label="t('Select', 'Seleccionar')" data-cy="retention-plan-pick" @change="togglePick(p.patient_id)" /></td>
                 <td class="px-3 py-2 text-[13px]"><NuxtLink :to="`/patients/${p.patient_id}`" class="font-medium text-ink-900 hover:text-brand-text">{{ `${p.first_name ?? ''} ${p.last_name ?? ''}`.trim() }}</NuxtLink></td>
                 <td class="px-3 py-2 text-[13px] text-ink-700">{{ p.care_plan_name }}</td>
                 <td :class="td">{{ p.completed_in_plan }} / {{ p.total_visits }}</td>
@@ -237,5 +314,12 @@ const td = 'px-3 py-2 font-mono text-[13px] text-ink-800'
         </ReportsModule>
       </div>
     </div>
+
+    <BulkSendWhatsAppModal
+      v-if="bulkOpen"
+      :targets="reachable.map((p) => ({ patientId: p.patient_id, firstName: p.first_name ?? '' }))"
+      :default-template-name="store.whatsappRecallTemplateName"
+      @close="onBulkClosed"
+    />
   </div>
 </template>

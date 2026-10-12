@@ -1,4 +1,5 @@
 import type { AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
+import { carePlanOverdueDays, type OverduePlan, type OverdueVisit } from '~/utils/carePlanOverdue'
 
 // Who a segment matches today -- the live "143 patients match today" under the
 // segment trigger, and the count in the activation dialog.
@@ -95,6 +96,34 @@ export async function segmentAudience(service: any, accountId: string, filters: 
     )
     const has = new Set(future.map((a) => a.patient_id))
     candidates = candidates.filter((p) => has.has(p.id) === f.has_future_appointment)
+  }
+
+  if (candidates.length && typeof f.care_plan_overdue_days === 'number') {
+    const min = Math.max(1, f.care_plan_overdue_days)
+    const plans = await allRows<OverduePlan & { patient_id: string }>((from, to) =>
+      service.from('care_plans').select('patient_id, created_at, started_at, total_visits, frequency_value, frequency_unit, visits_per_period').eq('account_id', accountId).order('id').range(from, to),
+    )
+    const plansBy = new Map<string, OverduePlan[]>()
+    for (const p of plans) plansBy.set(p.patient_id, [...(plansBy.get(p.patient_id) ?? []), p])
+    candidates = candidates.filter((p) => plansBy.has(p.id))
+    if (candidates.length) {
+      // Only those with a plan, in chunks short enough for one URL each.
+      const ids = candidates.map((p) => p.id)
+      const visits: (OverdueVisit & { patient_id: string })[] = []
+      for (let i = 0; i < ids.length; i += 200) {
+        const chunk = ids.slice(i, i + 200)
+        visits.push(...(await allRows<OverdueVisit & { patient_id: string }>((from, to) =>
+          service.from('appointments').select('patient_id, starts_at, status').eq('account_id', accountId).is('deleted_at', null).in('patient_id', chunk).order('id').range(from, to),
+        )))
+      }
+      const visitsBy = new Map<string, OverdueVisit[]>()
+      for (const v of visits) visitsBy.set(v.patient_id, [...(visitsBy.get(v.patient_id) ?? []), v])
+      const now = new Date()
+      candidates = candidates.filter((p) => {
+        const days = carePlanOverdueDays(plansBy.get(p.id)!, visitsBy.get(p.id) ?? [], now)
+        return days !== null && days >= min
+      })
+    }
   }
 
   if (candidates.length && f.tag_contains) {

@@ -42,6 +42,7 @@ const SAMPLE: Record<string, string> = {
   invoice_number: 'F-2026-0142',
   invoice_amount_owed: '45,00 €',
   invoice_pay_link: 'https://app.quiroflow.com/api/pay/ejemplo',
+  booking_link: 'https://app.quiroflow.com/book/clinica-demo',
 }
 const esc = (v: string) => v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 const sample = (key: string) => {

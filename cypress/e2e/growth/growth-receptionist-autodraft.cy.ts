@@ -57,12 +57,15 @@ describe('Who the receptionist drafts for without being asked', () => {
       })
   }
 
-  function runCron() {
+  // typingPauseSeconds 0: these specs deliver a message and run the tick at
+  // once; the 40-second "still typing" pause has its own test below.
+  function runCron(typingPauseSeconds = 0) {
     return cy
       .request<CronResult>({
         method: 'POST',
         url: '/api/automations/receptionist-draft-cron',
         headers: { 'x-cron-secret': Cypress.env('CRON_SECRET') ?? '' },
+        body: { typingPauseSeconds },
       })
       .then((res) => {
         // Not failOnStatusCode:false -- a 401 from a missing secret would
@@ -217,12 +220,15 @@ describe('The receptionist drafts for leads who write in on WhatsApp', () => {
     )
   }
 
-  function runCron() {
+  // typingPauseSeconds 0: these specs deliver a message and run the tick at
+  // once; the 40-second "still typing" pause has its own test below.
+  function runCron(typingPauseSeconds = 0) {
     return cy
       .request<CronResult>({
         method: 'POST',
         url: '/api/automations/receptionist-draft-cron',
         headers: { 'x-cron-secret': Cypress.env('CRON_SECRET') ?? '' },
+        body: { typingPauseSeconds },
       })
       .then((res) => {
         expect(res.status).to.eq(200)
@@ -252,6 +258,23 @@ describe('The receptionist drafts for leads who write in on WhatsApp', () => {
       })
       runCron().then((body) => {
         expect(body.consideredLeadIds, 'due a draft').to.include(lead.id)
+      })
+    })
+  })
+
+  // People write in bursts: a message seconds old waits for the next tick, so
+  // four messages in a row get one answer rather than four.
+  it('waits while they may still be typing, then picks them up', () => {
+    const phone = randomPhone()
+    deliver(phone, 'Sí, claro.')
+    cy.task<{ id: string; external_id: string }[]>('db:leadsByExternalId', { accountId: account.accountId, externalSource: 'whatsapp' }).then((leads) => {
+      const lead = leads.find((l) => l.external_id === phone)
+      expect(lead, 'the message made them a lead').to.not.be.undefined
+      runCron(40).then((body) => {
+        expect(body.consideredLeadIds, 'still typing').to.not.include(lead!.id)
+      })
+      runCron(0).then((body) => {
+        expect(body.consideredLeadIds, 'once they have stopped').to.include(lead!.id)
       })
     })
   })

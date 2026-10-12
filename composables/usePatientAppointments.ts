@@ -19,11 +19,13 @@ export interface PatientAppointmentRow {
   clinic_id?: string | null
   /** 'confirmed' once the patient said they are coming (WhatsApp reply, or the app). */
   confirmation_status?: string | null
+  /** Set on arrival -- by the desk, or by the patient's own "Ya estoy aquí". */
+  checked_in_at?: string | null
 }
 
 // clinic_id so the screens can show a visit at its clinic's hour
 // (usePatientAppInfo().zoneOf), not the phone's.
-const SELECT = 'id, clinic_id, starts_at, ends_at, status, confirmation_status, appointment_types(name), team_members(full_name)'
+const SELECT = 'id, clinic_id, starts_at, ends_at, status, confirmation_status, checked_in_at, appointment_types(name), team_members(full_name)'
 
 export function usePatientAppointments(patientId: () => string, settings: () => PatientAppSettings) {
   const supabase = useSupabaseClient()

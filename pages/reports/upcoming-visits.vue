@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Bar } from 'vue-chartjs'
+import '~/utils/chartSetup'
 
 const supabase = useSupabaseClient()
 const t = useT()

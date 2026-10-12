@@ -3,6 +3,7 @@ import { formatEur } from '~/utils/billing'
 import { classifyPaymentForFilter, practitionerForPayment } from '~/utils/incomeAttribution'
 import { isReceipt } from '~/utils/paymentReceipts'
 import { Line, Bar } from 'vue-chartjs'
+import '~/utils/chartSetup'
 import { computePresetRange, monthKeysInRange, rangeBounds } from '~/composables/useDateRangePresets'
 import { fetchAllRows } from '~/composables/useFetchAllRows'
 

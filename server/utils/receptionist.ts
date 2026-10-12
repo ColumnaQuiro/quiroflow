@@ -512,6 +512,10 @@ export function buildSystemPrompt(
     // a thanks. A re-confirmation nobody asked for is noise in their WhatsApp.
     `If their latest message needs no answer at all -- a thank-you, an "ok", a confirmation of a visit they already have, an emoji -- write exactly ${NO_REPLY} and nothing else. Nothing is then sent.`,
     `Read the whole conversation before replying. Never ask for something the patient has already told you or that is already known about them, and never repeat a question that has been answered.`,
+    // They are writing from their phone: asking for its number is asking for
+    // what the clinic already has, whatever the clinic knowledge says a
+    // booking needs.
+    `Never ask for their phone number when they are writing on WhatsApp: you are talking to them on it. To book someone who is not yet a patient, you need their first name and surname(s) and their email -- ask for both together, once, if they have not given them, and pass them to book_appointment as full_name and email exactly as they wrote them.`,
     // Booking outranks qualifying. A patient who writes "quiero una cita" and
     // gets "¿qué te ocurre?" back has been handed a form before they were
     // handed an appointment, and that is where enquiries go quiet.

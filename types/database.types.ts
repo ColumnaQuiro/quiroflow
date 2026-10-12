@@ -582,6 +582,8 @@ export type Database = {
       }
       accounts: {
         Row: {
+          referral_program_enabled: boolean
+          referral_reward_text: string | null
           appointment_confirmation_channels: string[]
           appointment_confirmation_enabled: boolean
           appointment_reminder_channels: string[]
@@ -672,6 +674,8 @@ export type Database = {
           waitlist_offer_mode: string
         }
         Insert: {
+          referral_program_enabled?: boolean
+          referral_reward_text?: string | null
           appointment_confirmation_channels?: string[]
           appointment_confirmation_enabled?: boolean
           appointment_reminder_channels?: string[]
@@ -761,6 +765,8 @@ export type Database = {
           waitlist_offer_mode?: string
         }
         Update: {
+          referral_program_enabled?: boolean
+          referral_reward_text?: string | null
           appointment_confirmation_channels?: string[]
           appointment_confirmation_enabled?: boolean
           appointment_reminder_channels?: string[]
@@ -4782,6 +4788,8 @@ export type Database = {
       }
       patients: {
         Row: {
+          referral_code: string | null
+          referral_rewarded_at: string | null
           account_id: string
           address: string | null
           balance_cents: number
@@ -4832,6 +4840,8 @@ export type Database = {
           invoice_reminders_paused: boolean
         }
         Insert: {
+          referral_code?: string | null
+          referral_rewarded_at?: string | null
           account_id: string
           address?: string | null
           balance_cents?: number
@@ -4882,6 +4892,8 @@ export type Database = {
           invoice_reminders_paused?: boolean
         }
         Update: {
+          referral_code?: string | null
+          referral_rewarded_at?: string | null
           account_id?: string
           address?: string | null
           balance_cents?: number
@@ -7372,6 +7384,7 @@ export type Database = {
       reorder_appointment_types: { Args: { p_ids: string[] }; Returns: undefined }
       cancel_patient_appointment: { Args: { p_appointment_id: string }; Returns: Json }
       check_in_my_appointment: { Args: { p_appointment_id: string }; Returns: string | null }
+      my_referral_code: { Args: { p_patient_id: string }; Returns: Json }
       record_email_event: {
         Args: {
           p_provider_message_id: string

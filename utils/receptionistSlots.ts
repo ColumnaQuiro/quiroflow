@@ -230,6 +230,8 @@ export function receptionistBookingSection(opts: {
   slotsPerReply: number
   bookingWindowDays: number
   searchTool?: boolean
+  /** Set when the times are only this patient's own practitioner(s). */
+  withWhom?: string[] | null
 }): string {
   if (!opts.availability) {
     return `# Booking\nYou cannot see the clinic's calendar, so never propose a specific day or time and never say a time is free. Ask which days and whether mornings or afternoons suit them (within the next ${opts.bookingWindowDays} days), then say your colleague will confirm an exact time shortly.`
@@ -240,6 +242,11 @@ export function receptionistBookingSection(opts: {
   const multiClinic = opts.availability.groups.some((group) => group.clinicName)
   return [
     `# Booking\nThese are the free start times in the clinic's calendar for the next ${opts.bookingWindowDays} days, in the clinic's local time. A day missing from a list has nothing free for those appointments, unless the list says it stops before that day.`,
+    // A returning patient is seen by their own practitioner, so the list is
+    // theirs alone, and "con Natacha" is part of the answer.
+    opts.withWhom?.length
+      ? `These times are only with ${opts.withWhom.join(' or ')}, who sees this patient${opts.searchTool ? ', and so is everything find_free_times returns' : ''}. Say who the time is with. If they ask to see someone else, say your colleague will arrange it.`
+      : '',
     ...lists,
     [
       `Offer times ONLY from this list${opts.searchTool ? ' or from what find_free_times returns' : ''}, at exactly the listed times, and at most ${n} time${n === 1 ? '' : 's'} per reply. Never offer a day, time or type that is not listed, never shift a listed time, and never say a time is free unless it is listed.`,
@@ -251,7 +258,9 @@ export function receptionistBookingSection(opts: {
     ]
       .filter(Boolean)
       .join(' '),
-  ].join('\n\n')
+  ]
+    .filter(Boolean)
+    .join('\n\n')
 }
 
 /** At most this many days per find_free_times call: a month reads in one answer. */

@@ -4,7 +4,7 @@ import { notesBetween } from '~/utils/inboxNotes'
 import { matchPendingToServer, mergePendingIntoThread, newestInConversation } from '~/utils/inboxPendingMessages'
 import { CHANNEL_LABEL } from '~/composables/useGrowthConversations'
 import { snoozeStateOf, type SnoozeRow } from '~/utils/inboxSnooze'
-import { replyWindowPill } from '~/utils/inboxReplyWindow'
+import { replyWindowPill, REPLY_WINDOW_MS, REPLY_WINDOW_WARN_MS } from '~/utils/inboxReplyWindow'
 
 // The Inbox: one row per conversation from the inbox_conversations view
 // (20260924190000), 50 at a time, filtered and searched by the database --
@@ -216,6 +216,11 @@ const PAGE = 50
 const view = ref<'active' | 'archived' | 'snoozed'>('active')
 const tab = ref<'all' | 'mine' | 'unassigned'>('all')
 const unreadOnly = ref(false)
+// "Por caducar": only what carries the "Caduca en" pill -- they wrote last,
+// the 24h window shuts within the warning period, and it wants an answer.
+// The database narrows to the period; the closings ("gracias", Confirmar)
+// are dropped here, by the same rule as the pill (utils/inboxReplyWindow.ts).
+const expiringOnly = ref(false)
 // "awaiting_us"/"awaiting_patient" is deliberately independent from unread:
 // unread means "I haven't opened this," awaiting-us means "the last message
 // is theirs, regardless of whether I've read it" -- a conversation I've
@@ -285,6 +290,7 @@ async function loadList(opts: { silent?: boolean; append?: boolean } = {}) {
   if (tab.value === 'mine') q = q.eq('assigned_to', myId.value ?? '')
   else if (tab.value === 'unassigned') q = q.is('assigned_to', null)
   if (unreadOnly.value) q = q.eq('unread_for_me', true)
+  if (expiringOnly.value) q = withinWarningPeriod(q)
   if (replyFilter.value === 'awaiting_us') q = q.eq('last_direction', 'inbound')
   else if (replyFilter.value === 'awaiting_patient') q = q.eq('last_direction', 'outbound')
   if (labelFilter.value) q = q.contains('my_label_ids', [labelFilter.value])
@@ -297,7 +303,12 @@ async function loadList(opts: { silent?: boolean; append?: boolean } = {}) {
   }
   // my_sort_at, not last_at: a follow-up comes back to the top at the time
   // it was due. The snoozed list goes by when each comes back.
-  const ordered = view.value === 'snoozed' ? q.order('my_snoozed_until', { ascending: true }) : q.order('my_sort_at', { ascending: false })
+  // Expiring: the least time left first.
+  const ordered = view.value === 'snoozed'
+    ? q.order('my_snoozed_until', { ascending: true })
+    : expiringOnly.value
+      ? q.order('last_at', { ascending: true })
+      : q.order('my_sort_at', { ascending: false })
   const { data, error } = await ordered.range(from, from + size)
   if (token !== listToken) return
   if (error) {
@@ -317,8 +328,33 @@ async function loadList(opts: { silent?: boolean; append?: boolean } = {}) {
 // counts, and each rebuilt every conversation from every message -- a count
 // over inbox_conversations costs what listing it does. Same view and filters
 // as inboxQuery, so a count still describes the list beside it.
+// They wrote last on a channel with a window, and it shuts within the warning
+// period: what the "Caduca en" pill can be on, before closings are dropped.
+function withinWarningPeriod<Q extends { eq: (c: string, v: string) => Q; in: (c: string, v: string[]) => Q; gt: (c: string, v: string) => Q; lte: (c: string, v: string) => Q }>(q: Q): Q {
+  const at = Date.now()
+  return q
+    .eq('last_direction', 'inbound')
+    .in('last_channel', ['whatsapp', 'instagram'])
+    .gt('last_at', new Date(at - REPLY_WINDOW_MS).toISOString())
+    .lte('last_at', new Date(at - REPLY_WINDOW_MS + REPLY_WINDOW_WARN_MS).toISOString())
+}
+
+// The conversations in the warning period, for the chip's count. A handful at
+// most, and the pill rule runs on them against `now`, so the count keeps up as
+// windows shut between refreshes.
+const expiringRows = ref<InboxRow[]>([])
+async function loadExpiring() {
+  if (view.value !== 'active') {
+    expiringRows.value = []
+    return
+  }
+  const { data, error } = await withinWarningPeriod(inboxQuery('*')).limit(200)
+  if (!error) expiringRows.value = (data ?? []) as unknown as InboxRow[]
+}
+
 let countsToken = 0
 async function loadCounts() {
+  loadExpiring()
   const token = ++countsToken
   const { data, error } = await supabase.rpc('inbox_counts', { p_view: view.value, p_team_member_id: myId.value ?? '00000000-0000-0000-0000-000000000000' })
   if (token !== countsToken || error) return
@@ -332,10 +368,12 @@ watch(search, () => {
   searchTimer = setTimeout(() => loadList(), 300)
 })
 watch(view, () => {
+  // Only the active list has a window to lose; its chip is not shown elsewhere.
+  if (view.value !== 'active') expiringOnly.value = false
   loadList()
   loadCounts()
 })
-watch([tab, unreadOnly, replyFilter, labelFilter], () => loadList())
+watch([tab, unreadOnly, expiringOnly, replyFilter, labelFilter], () => loadList())
 
 function accountLoaded(): Promise<void> {
   if (store.teamMember) return Promise.resolve()
@@ -450,9 +488,11 @@ const leadConversationsInView = computed(() => {
 
 const visibleLeadConversations = computed(() => {
   if (sourceFilter.value === 'patients') return []
-  if (tab.value === 'mine') return leadConversationsInView.value.filter((c) => leadOwners.value[c.key] === myId.value)
-  if (tab.value === 'unassigned') return leadConversationsInView.value.filter((c) => !leadOwners.value[c.key])
-  return leadConversationsInView.value
+  let list = leadConversationsInView.value
+  if (expiringOnly.value) list = list.filter((c) => leadWindowPill(c))
+  if (tab.value === 'mine') return list.filter((c) => leadOwners.value[c.key] === myId.value)
+  if (tab.value === 'unassigned') return list.filter((c) => !leadOwners.value[c.key])
+  return list
 })
 // The tabs count leads too, so "Mine · 3" means three rows under it.
 const tabCounts = computed(() => {
@@ -604,7 +644,17 @@ function leadRowTime(at: string) {
 // Archived is a view of its own with no leads in it, so "Leads" there would
 // blank the list and show nothing in its place. The filter only bites where
 // there are two kinds of row to tell apart.
-const filteredConversations = computed(() => (sourceFilter.value === 'leads' && hasGrowth.value && view.value !== 'archived' ? [] : conversations.value))
+const filteredConversations = computed(() => {
+  if (sourceFilter.value === 'leads' && hasGrowth.value && view.value !== 'archived') return []
+  // The query brought the warning period; what is left is the closings.
+  return expiringOnly.value ? conversations.value.filter((c) => patientWindowPill(c)) : conversations.value
+})
+// The chip's count: patients' and leads' alike, in this view.
+const expiringCount = computed(() => {
+  if (view.value !== 'active') return 0
+  const patients = expiringRows.value.filter((r) => replyWindowPill({ direction: r.last_direction, channel: r.last_channel, at: r.last_at, body: r.last_body, mediaType: r.last_media_type }, now.value)).length
+  return patients + leadConversationsInView.value.filter((c) => leadWindowPill(c)).length
+})
 // A follow-up sits at the time it came due, as the list query orders it.
 function leadSortAt(c: { key: string; lastMessageAt: string }) {
   const s = leadSnoozes.value[c.key]
@@ -621,11 +671,12 @@ function leadSortAt(c: { key: string; lastMessageAt: string }) {
 type ListRow = { kind: 'lead'; c: (typeof leadConversations.value)[number]; at: number } | { kind: 'patient'; c: Conversation; at: number }
 const listRows = computed<ListRow[]>(() => {
   const patients = filteredConversations.value
-  const oldest = hasMore.value && patients.length ? Date.parse(patients[patients.length - 1]!.lastMessage!.created_at) : null
+  // Expiring runs oldest first, and is a handful: nothing to hold back.
+  const oldest = hasMore.value && patients.length && !expiringOnly.value ? Date.parse(patients[patients.length - 1]!.lastMessage!.created_at) : null
   const leads = visibleLeadConversations.value.filter((c) => oldest === null || Date.parse(c.lastMessageAt) >= oldest)
   return [
-    ...leads.map((c): ListRow => ({ kind: 'lead', c, at: view.value === 'snoozed' ? -Date.parse(leadSnoozes.value[c.key]?.snoozed_until ?? c.lastMessageAt) : leadSortAt(c) })),
-    ...patients.map((c): ListRow => ({ kind: 'patient', c, at: view.value === 'snoozed' ? -Date.parse(c.snoozedUntil ?? c.lastMessage!.created_at) : Date.parse(c.sortAt ?? c.lastMessage!.created_at) })),
+    ...leads.map((c): ListRow => ({ kind: 'lead', c, at: expiringOnly.value ? -Date.parse(c.lastMessageAt) : view.value === 'snoozed' ? -Date.parse(leadSnoozes.value[c.key]?.snoozed_until ?? c.lastMessageAt) : leadSortAt(c) })),
+    ...patients.map((c): ListRow => ({ kind: 'patient', c, at: expiringOnly.value ? -Date.parse(c.lastMessage!.created_at) : view.value === 'snoozed' ? -Date.parse(c.snoozedUntil ?? c.lastMessage!.created_at) : Date.parse(c.sortAt ?? c.lastMessage!.created_at) })),
   ].sort((a, b) => b.at - a.at)
 })
 
@@ -1701,6 +1752,17 @@ function avatarInitials(name: string) {
               >
                 {{ t('Unread', 'No leídas') }}<span v-if="counts.unread > 0"> · {{ counts.unread }}</span>
               </button>
+              <button
+                v-if="view === 'active'"
+                type="button"
+                data-cy="inbox-filter-expiring"
+                :aria-pressed="expiringOnly"
+                :class="[chip, expiringOnly ? chipOn : chipOff]"
+                :title="t('They wrote last and the 24-hour window to reply freely shuts soon.', 'Escribió el último y se cierran pronto las 24 horas para responder libremente.')"
+                @click="expiringOnly = !expiringOnly"
+              >
+                {{ t('Expiring', 'Por caducar') }}<span v-if="expiringCount > 0" class="text-warning-text"> · {{ expiringCount }}</span>
+              </button>
               <InboxLabelFilterPicker v-model="labelFilter" :labels="labels" />
               <!-- Only when there is one. A chip reading "· 0" every day
                    teaches people to stop looking at it, and this is the one
@@ -1848,7 +1910,7 @@ function avatarInitials(name: string) {
           <p v-else-if="filteredConversations.length === 0 && visibleLeadConversations.length === 0" class="p-6 text-center text-[14px] text-ink-faint" data-cy="inbox-empty">
             <template v-if="view === 'archived'">{{ t('No archived conversations.', 'No hay conversaciones archivadas.') }}</template>
             <template v-else-if="view === 'snoozed'">{{ t('Nothing snoozed. Snooze a conversation from its header to have it come back later.', 'Nada pospuesto. Pospón una conversación desde su cabecera para que vuelva más tarde.') }}</template>
-            <template v-else-if="search.trim() || tab !== 'all' || unreadOnly || replyFilter !== 'all' || labelFilter">{{ t('Nothing matches these filters.', 'Nada coincide con estos filtros.') }}</template>
+            <template v-else-if="search.trim() || tab !== 'all' || unreadOnly || expiringOnly || replyFilter !== 'all' || labelFilter">{{ t('Nothing matches these filters.', 'Nada coincide con estos filtros.') }}</template>
             <template v-else>{{ t('No conversations yet.', 'Aún no hay conversaciones.') }}</template>
           </p>
           <!-- Lead conversations share the patient threads' list, in date

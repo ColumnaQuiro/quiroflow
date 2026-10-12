@@ -6,8 +6,9 @@
 // The hard part is which last messages want an answer at all. Most do not:
 // in production the commonest last word from a patient by far is
 // "Confirmar", the reminder's own button, which the webhook already acts on
-// (the appointment is confirmed; "Cancelar" cancels it), and after that come
-// thank-yous and goodbyes. Flagging those would put a pill on most of the
+// (the appointment is confirmed), and after that come thank-yous and
+// goodbyes. "Cancelar"/"Anular" is acted on too -- the appointment is
+// cancelled -- but keeps its pill: it is the moment to offer another time. Flagging those would put a pill on most of the
 // list and teach everyone to ignore it. So a message is passed over only when
 // it is plainly a closing -- every word one a closing is made of, and at least
 // one that actually closes ("gracias", "vale", "perfecto"…) -- and anything
@@ -30,8 +31,9 @@ const CLOSING_WORDS = new Set([
   'ok', 'okay', 'okey', 'oki', 'vale', 'perfecto', 'perfecta', 'perfect', 'genial', 'estupendo', 'estupenda', 'great',
   'entendido', 'entendida', 'acuerdo', 'igualmente', 'saludos', 'saludo', 'hasta', 'luego', 'vemos', 'apuntado', 'apuntada',
   'recibido', 'recibida', 'listo', 'hecho', 'dale', 'fenomenal', 'guay',
-  // The reminder's buttons: the webhook has already acted on them.
-  'confirmar', 'confirmo', 'confirmado', 'confirmada', 'cancelar', 'anular',
+  // The reminder's Confirmar: the webhook has already confirmed the visit.
+  // Not its Cancelar -- a cancellation wants a reply offering another time.
+  'confirmar', 'confirmo', 'confirmado', 'confirmada',
 ])
 // Words that go with those without asking anything ("muchas gracias", "vale,
 // allí estaré", "de momento no, gracias", "hasta mañana").

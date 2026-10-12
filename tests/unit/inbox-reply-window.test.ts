@@ -26,7 +26,6 @@ describe('isClosingMessage', () => {
     'graciasss',
     '👍',
     '❤️',
-    'Anular',
   ])('passes over "%s"', (text) => {
     expect(isClosingMessage(text)).toBe(true)
   })
@@ -40,6 +39,10 @@ describe('isClosingMessage', () => {
     'Más hacia delante',
     'No se descarga',
     'Cancele la cita',
+    // The reminder's cancel button: the visit is cancelled, and this is when
+    // to offer another time.
+    'Cancelar',
+    'Anular',
     'Mañana',
     'Hasta las 5',
     'Ya os contesto...',

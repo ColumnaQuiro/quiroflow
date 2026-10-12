@@ -11,6 +11,13 @@ const props = defineProps<{
   draftFor: (patientId: string) => Promise<{ available: boolean; draft: string; refused?: boolean }>
   sending?: boolean
   size?: 'sm' | 'lg'
+  /**
+   * A draft the receptionist already wrote without being asked (the tick,
+   * inbox_reply_drafts), shown as soon as the thread opens, and marked dealt
+   * with once it is sent, taken into the box or thrown away. Optional: the
+   * staff app does not pass it yet, and keeps the button alone.
+   */
+  stored?: { load: () => Promise<string | null>; dismiss: () => Promise<void> }
 }>()
 const emit = defineEmits<{ send: [text: string]; edit: [text: string] }>()
 
@@ -19,11 +26,27 @@ const drafting = ref(false)
 const draft = ref('')
 const note = ref('')
 
-// Another conversation: whatever was drafted belongs to the last one.
+// Another conversation: whatever was drafted belongs to the last one, and
+// the new one may have a draft waiting.
 watch(() => props.patientId, () => {
   draft.value = ''
   note.value = ''
-})
+  loadStored()
+}, { immediate: true })
+
+async function loadStored() {
+  if (!props.stored) return
+  const forPatient = props.patientId
+  const body = await props.stored.load().catch(() => null)
+  // Still the same conversation, and nothing asked for meanwhile.
+  if (body && forPatient === props.patientId && !draft.value && !drafting.value) draft.value = body
+}
+
+// Dealt with: never shown again, and the tick does not write it again until
+// the patient says something new.
+function dismissStored() {
+  props.stored?.dismiss().catch(() => {})
+}
 
 async function ask() {
   drafting.value = true
@@ -48,12 +71,18 @@ function send() {
   const text = draft.value.trim()
   if (!text) return
   draft.value = ''
+  dismissStored()
   emit('send', text)
 }
 function edit() {
   const text = draft.value
   draft.value = ''
+  dismissStored()
   emit('edit', text)
+}
+function discard() {
+  draft.value = ''
+  dismissStored()
 }
 const btnH = computed(() => (props.size === 'lg' ? 'h-10' : 'h-8 touch:h-10'))
 </script>
@@ -66,7 +95,7 @@ const btnH = computed(() => (props.size === 'lg' ? 'h-10' : 'h-8 touch:h-10'))
       <div class="mt-2 flex flex-wrap items-center gap-2">
         <button type="button" class="flex items-center rounded-ctl bg-brand px-3 text-[13px] font-semibold text-white disabled:opacity-50" :class="btnH" :disabled="sending" data-cy="reply-draft-send" @click="send">{{ t('Send', 'Enviar') }}</button>
         <button type="button" class="flex items-center rounded-ctl border border-line-control bg-surface px-3 text-[13px] font-medium text-ink-700 hover:bg-surface-subtle" :class="btnH" data-cy="reply-draft-edit" @click="edit">{{ t('Edit', 'Editar') }}</button>
-        <button type="button" class="flex items-center px-2 text-[13px] text-ink-muted hover:text-ink-700" :class="btnH" data-cy="reply-draft-discard" @click="draft = ''">{{ t('Discard', 'Descartar') }}</button>
+        <button type="button" class="flex items-center px-2 text-[13px] text-ink-muted hover:text-ink-700" :class="btnH" data-cy="reply-draft-discard" @click="discard">{{ t('Discard', 'Descartar') }}</button>
       </div>
     </div>
     <div v-else class="flex flex-wrap items-center gap-2">

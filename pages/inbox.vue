@@ -1261,6 +1261,25 @@ const composerBar = ref<{ insertReply: (text: string) => void } | null>(null)
 // last -- there is something to answer -- and its one-tap Send goes the way
 // a typed reply does.
 const theyWroteLast = computed(() => thread.value.at(-1)?.direction === 'inbound')
+// A reply the receptionist wrote without being asked (receptionist-draft-cron,
+// inbox_reply_drafts), keyed by the conversation -- the patient's id.
+function storedReplyDraft(patientId: string) {
+  return {
+    load: async () => {
+      const { data } = await supabase
+        .from('inbox_reply_drafts')
+        .select('body')
+        .eq('conversation_key', patientId)
+        .is('dismissed_at', null)
+        .maybeSingle()
+      return data?.body ?? null
+    },
+    dismiss: async () => {
+      await supabase.from('inbox_reply_drafts').update({ dismissed_at: new Date().toISOString() }).eq('conversation_key', patientId).is('dismissed_at', null)
+    },
+  }
+}
+
 function sendDraft(text: string) {
   composerText.value = text
   sendText()
@@ -2400,6 +2419,7 @@ function avatarInitials(name: string) {
             :patient-id="selected.patientId"
             :draft-for="(id: string) => useStaffFetch<{ available: boolean; draft: string; refused?: boolean }>(`/api/inbox/patients/${id}/draft-reply`, { method: 'POST' })"
             :sending="sending"
+            :stored="storedReplyDraft(selected.patientId)"
             @send="sendDraft"
             @edit="(text: string) => (composerText = text)"
           />

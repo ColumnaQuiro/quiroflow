@@ -315,6 +315,33 @@ export type Database = {
         }
         Relationships: []
       }
+      inbox_reply_drafts: {
+        Row: {
+          account_id: string
+          body: string
+          conversation_key: string
+          created_at: string
+          dismissed_at: string | null
+          drafted_through_at: string
+        }
+        Insert: {
+          account_id: string
+          body: string
+          conversation_key: string
+          created_at?: string
+          dismissed_at?: string | null
+          drafted_through_at: string
+        }
+        Update: {
+          account_id?: string
+          body?: string
+          conversation_key?: string
+          created_at?: string
+          dismissed_at?: string | null
+          drafted_through_at?: string
+        }
+        Relationships: []
+      }
       account_credits: {
         Row: {
           account_id: string

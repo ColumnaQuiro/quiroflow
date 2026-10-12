@@ -39,7 +39,17 @@ interface Turn { direction: string; body: string; created_at: string }
  * `supabase` is the asker's own client (RLS decides what of the patient they
  * see); `service` reads only the free times.
  */
-export async function draftPatientReply(supabase: any, service: any, accountId: string, patientId: string): Promise<PatientDraftOutcome> {
+export async function draftPatientReply(
+  supabase: any,
+  service: any,
+  accountId: string,
+  patientId: string,
+  // `store`: written by the tick, without anyone asking, and kept in
+  // inbox_reply_drafts for whoever opens the thread. Then it must not
+  // mention money -- anyone with Inbox access reads it -- and `supabase` is
+  // the service role too.
+  opts: { store?: boolean } = {},
+): Promise<PatientDraftOutcome> {
   const { data: patient } = await supabase.from('patients').select('id, first_name').eq('id', patientId).eq('account_id', accountId).maybeSingle()
   if (!patient) return { status: 'not_found' }
 
@@ -65,6 +75,9 @@ export async function draftPatientReply(supabase: any, service: any, accountId: 
     else history.push({ role, content: m.body })
   }
   while (history.length && history[0]!.role !== 'user') history.shift()
+  // The newest thing they said, which a stored draft answers: the tick writes
+  // another only once they have said something after it.
+  const newestInboundAt = [...turns].reverse().find((m) => m.direction === 'inbound')?.created_at ?? null
   if (history.length === 0 || history[history.length - 1]!.role !== 'user') return { status: 'nothing_to_answer' }
 
   const apiKey = useRuntimeConfig().anthropicApiKey
@@ -97,7 +110,7 @@ export async function draftPatientReply(supabase: any, service: any, accountId: 
     lastVisitAt: (last ?? [])[0]?.starts_at ?? null,
     lastVisitType: ((last ?? [])[0] as { appointment_types?: { name: string } | null } | undefined)?.appointment_types?.name ?? null,
     plan: plan ? { name: plan.name, totalVisits: plan.total_visits, done, cadence: carePlanCadenceLabel(plan, en) } : null,
-    outstandingCents: typeof balance?.outstanding_cents === 'number' ? balance.outstanding_cents : null,
+    outstandingCents: !opts.store && typeof balance?.outstanding_cents === 'number' ? balance.outstanding_cents : null,
   }
 
   // A patient who writes is somebody the clinic knows: never a first visit.
@@ -118,6 +131,12 @@ export async function draftPatientReply(supabase: any, service: any, accountId: 
     internalNotes: internalNotes(config),
     logLabel: `patient ${patientId}`,
   })
-  if (refused) return { status: 'refused' }
-  return draft ? { status: 'drafted', draft } : { status: 'refused' }
+  if (refused || !draft) return { status: 'refused' }
+  if (opts.store && newestInboundAt) {
+    const { error } = await service
+      .from('inbox_reply_drafts')
+      .upsert({ account_id: accountId, conversation_key: patientId, body: draft.slice(0, 4000), drafted_through_at: newestInboundAt, dismissed_at: null, created_at: new Date().toISOString() })
+    if (error) throw new Error(`could not store the draft: ${error.message}`)
+  }
+  return { status: 'drafted', draft }
 }

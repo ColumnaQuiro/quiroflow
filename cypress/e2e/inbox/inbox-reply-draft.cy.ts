@@ -46,4 +46,37 @@ describe('Inbox: reply drafts for patients', () => {
       })
     })
   })
+
+  // Written by the tick without anyone asking (inbox_reply_drafts): there as
+  // soon as the thread opens, and once thrown away, marked so the tick does
+  // not write it again and it does not come back.
+  it('shows a draft the receptionist left, and a discarded one stays gone', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Iris', lastName: 'Esperando' }).then((patient) => {
+        cy.task('db:createPatientAppMessage', { accountId: account.accountId, patientId: patient.id, direction: 'inbound', body: '¿Podéis cambiarme la cita?' })
+        const waiting = 'Claro, ¿te viene bien el jueves 15 de octubre a las 17:00 con tu quiropráctica?'
+        cy.task('db:createStoredReplyDraft', { accountId: account.accountId, patientId: patient.id, body: waiting })
+
+        cy.login(account.email, account.password)
+        cy.visit('/inbox')
+        cy.contains('Iris Esperando').click()
+        cy.get('[data-cy=reply-draft-text]').should('have.text', waiting)
+
+        cy.get('[data-cy=reply-draft-discard]').click()
+        cy.get('[data-cy=reply-draft-text]').should('not.exist')
+        // Marked in the background: polled, rather than read once and raced.
+        const dismissed = (tries = 20): Cypress.Chainable<{ dismissed_at: string | null } | null> =>
+          cy.task<{ dismissed_at: string | null } | null>('db:storedReplyDraft', { patientId: patient.id }).then((row) =>
+            row?.dismissed_at || tries <= 0 ? cy.wrap(row) : cy.wait(250).then(() => dismissed(tries - 1)),
+          )
+        dismissed().its('dismissed_at').should('not.be.null')
+
+        cy.reload()
+        cy.contains('Iris Esperando').click()
+        cy.contains('¿Podéis cambiarme la cita?').should('be.visible')
+        cy.get('[data-cy=reply-draft-ask]').should('be.visible')
+        cy.get('[data-cy=reply-draft-text]').should('not.exist')
+      })
+    })
+  })
 })

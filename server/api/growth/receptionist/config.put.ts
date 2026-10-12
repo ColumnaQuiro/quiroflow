@@ -18,6 +18,7 @@ interface Body {
   afterHours?: unknown
   missedCallTextBack?: unknown
   answerDuringHours?: unknown
+  noReplyPhrases?: unknown
 }
 
 const TONES = ['warm_brief', 'clinical', 'chatty', 'formal']
@@ -79,6 +80,10 @@ export default defineEventHandler(async (event) => {
   if (body.afterHours !== undefined) patch.after_hours = Boolean(body.afterHours)
   if (body.missedCallTextBack !== undefined) patch.missed_call_text_back = Boolean(body.missedCallTextBack)
   if (body.answerDuringHours !== undefined) patch.answer_during_hours = Boolean(body.answerDuringHours)
+  if (body.noReplyPhrases !== undefined) {
+    if (!Array.isArray(body.noReplyPhrases)) throw createError({ statusCode: 400, statusMessage: 'noReplyPhrases must be a list' })
+    patch.no_reply_phrases = [...new Set(body.noReplyPhrases.filter((p): p is string => typeof p === 'string').map((p) => p.trim().slice(0, 60)).filter(Boolean))].slice(0, 40) as never
+  }
 
   if (Object.keys(patch).length === 0) throw createError({ statusCode: 400, statusMessage: 'Nothing to update' })
 

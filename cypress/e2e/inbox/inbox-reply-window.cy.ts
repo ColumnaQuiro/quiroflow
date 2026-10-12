@@ -40,6 +40,37 @@ describe('Inbox, the 24-hour window', () => {
     })
   })
 
+  it('"Por caducar" lists only those, the least time left first', () => {
+    cy.seedStaffAccount().then((account) => {
+      const patient = (firstName: string) =>
+        cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName, lastName: 'Filtro' })
+
+      patient('Urgente').then((urgent) => {
+        patient('Pronto').then((soon) => {
+          patient('Cerrada').then((closing) => {
+            patient('Tranquila').then((calm) => {
+              cy.task('db:createWhatsappMessage', { accountId: account.accountId, patientId: urgent.id, phoneNumber: '+34600222001', direction: 'inbound', bodyPreview: '¿Me confirmáis la hora?', createdAt: hoursAgo(23.5) })
+              cy.task('db:createWhatsappMessage', { accountId: account.accountId, patientId: soon.id, phoneNumber: '+34600222002', direction: 'inbound', bodyPreview: 'Quería pedir cita', createdAt: hoursAgo(19) })
+              cy.task('db:createWhatsappMessage', { accountId: account.accountId, patientId: closing.id, phoneNumber: '+34600222003', direction: 'inbound', bodyPreview: 'Perfecto, gracias', createdAt: hoursAgo(21) })
+              cy.task('db:createWhatsappMessage', { accountId: account.accountId, patientId: calm.id, phoneNumber: '+34600222004', direction: 'inbound', bodyPreview: '¿Y el viernes?', createdAt: hoursAgo(3) })
+
+              cy.login(account.email, account.password)
+              openInbox()
+              cy.get('[data-cy=inbox-filter-expiring]').should('contain.text', '2').click()
+              cy.get('[data-cy=inbox-row]').should('have.length', 2)
+              cy.get('[data-cy=inbox-row]').eq(0).should('have.attr', 'data-key', urgent.id)
+              cy.get('[data-cy=inbox-row]').eq(1).should('have.attr', 'data-key', soon.id)
+
+              cy.get('[data-cy=inbox-filter-expiring]').click()
+              row(calm.id).should('exist')
+              row(closing.id).should('exist')
+            })
+          })
+        })
+      })
+    })
+  })
+
   it('takes the pill off once we answer', () => {
     cy.seedStaffAccount().then((account) => {
       cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Contestada', lastName: 'Ventana' }).then((p) => {

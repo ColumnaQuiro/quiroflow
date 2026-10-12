@@ -506,6 +506,8 @@ const assignFilter = ref<'all' | 'mine' | 'unassigned'>('all')
 
 const view = ref<'active' | 'archived' | 'snoozed'>('active')
 const unreadOnly = ref(false)
+// "Por caducar", as on the web: only what carries the "Caduca en" pill.
+const expiringOnly = ref(false)
 const replyFilter = ref<'all' | 'awaiting_us' | 'awaiting_patient'>('all')
 const labelFilter = ref<string | null>(null)
 // Patients' conversations or leads' own threads (Growth): the web Inbox's
@@ -517,10 +519,12 @@ const sourceFilter = ref<'all' | 'patients' | 'leads'>('all')
 // "All" clears every one of them.
 const activeList = computed(() => conversations.value.filter((c) => !archivedKeys.value.has(c.key) && !c.snoozedUntil))
 const unreadCount = computed(() => activeList.value.filter((c) => c.unread).length)
-const filtersActive = computed(() => view.value !== 'active' || unreadOnly.value || assignFilter.value !== 'all' || replyFilter.value !== 'all' || !!labelFilter.value || sourceFilter.value !== 'all')
+const expiringCount = computed(() => activeList.value.filter((c) => windowPill(c)).length)
+const filtersActive = computed(() => view.value !== 'active' || unreadOnly.value || expiringOnly.value || assignFilter.value !== 'all' || replyFilter.value !== 'all' || !!labelFilter.value || sourceFilter.value !== 'all')
 function clearFilters() {
   view.value = 'active'
   unreadOnly.value = false
+  expiringOnly.value = false
   assignFilter.value = 'all'
   replyFilter.value = 'all'
   labelFilter.value = null
@@ -550,6 +554,8 @@ const filteredConversations = computed(() => {
   if (assignFilter.value === 'mine') list = list.filter((c) => assignments.value[c.key] === props.teamMemberId)
   else if (assignFilter.value === 'unassigned') list = list.filter((c) => !assignments.value[c.key])
   if (unreadOnly.value) list = list.filter((c) => c.unread)
+  // The least time left first.
+  if (expiringOnly.value) list = list.filter((c) => windowPill(c)).sort((a, b) => Date.parse(a.lastMessage.created_at) - Date.parse(b.lastMessage.created_at))
   if (replyFilter.value === 'awaiting_us') list = list.filter((c) => c.lastMessage.direction === 'inbound')
   else if (replyFilter.value === 'awaiting_patient') list = list.filter((c) => c.lastMessage.direction === 'outbound')
   if (labelFilter.value) list = list.filter((c) => myLabelsByKey.value[c.key]?.includes(labelFilter.value!))
@@ -1494,6 +1500,10 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
         <button type="button" :class="chipClass(unreadOnly)" :aria-pressed="unreadOnly" data-cy="inbox-chip-unread" @click="unreadOnly = !unreadOnly">
           {{ t('Unread', 'No leídas') }}
           <span v-if="unreadCount" class="rounded-full bg-brand px-1.5 text-[11px] font-bold leading-[18px] text-white">{{ unreadCount }}</span>
+        </button>
+        <button type="button" :class="chipClass(expiringOnly)" :aria-pressed="expiringOnly" data-cy="inbox-chip-expiring" @click="expiringOnly = !expiringOnly">
+          {{ t('Expiring', 'Por caducar') }}
+          <span v-if="expiringCount" class="rounded-full bg-warning-text px-1.5 text-[11px] font-bold leading-[18px] text-white">{{ expiringCount }}</span>
         </button>
         <button type="button" :class="chipClass(assignFilter === 'mine')" :aria-pressed="assignFilter === 'mine'" data-cy="inbox-filter-mine" @click="assignFilter = assignFilter === 'mine' ? 'all' : 'mine'">{{ t('Mine', 'Mías') }}</button>
         <button type="button" :class="chipClass(assignFilter === 'unassigned')" :aria-pressed="assignFilter === 'unassigned'" data-cy="inbox-filter-unassigned" @click="assignFilter = assignFilter === 'unassigned' ? 'all' : 'unassigned'">{{ t('Unassigned', 'Sin asignar') }}</button>

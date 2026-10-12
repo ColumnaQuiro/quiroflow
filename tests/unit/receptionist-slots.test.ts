@@ -220,3 +220,29 @@ describe('find_free_times', () => {
     expect(receptionistBookingSection({ availability, slotsPerReply: 2, bookingWindowDays: 1 })).not.toContain('find_free_times')
   })
 })
+
+describe("A returning patient's own practitioner", () => {
+  const weekdays = { mon: [['09:00', '12:00']], tue: [['09:00', '12:00']], wed: [['09:00', '12:00']], thu: [['09:00', '12:00']], fri: [['09:00', '12:00']], sat: [], sun: [] } as Record<string, [string, string][]>
+  const availability = receptionistSlotGroups({
+    now: new Date('2026-10-05T06:00:00Z'),
+    clinics: [{ id: 'c1', name: 'Centro', timeZone: 'Europe/Madrid', businessHours: weekdays }],
+    practitioners: [{ id: 'p1', businessHours: null, clinicIds: ['c1'] }],
+    types: [{ id: 't1', name: 'Ajuste', durationMinutes: 15 }],
+    appointments: [],
+    blocks: [],
+    bookingWindowDays: 1,
+    minimumNoticeMinutes: 120,
+  })!
+
+  it('says the times are only with them, and to say so', () => {
+    const section = receptionistBookingSection({ availability, slotsPerReply: 2, bookingWindowDays: 1, searchTool: true, withWhom: ['Natacha Felix'] })
+    expect(section).toContain('These times are only with Natacha Felix, who sees this patient, and so is everything find_free_times returns.')
+    expect(section).toContain('Say who the time is with.')
+  })
+
+  it('names nobody when the times are anyone\'s, as for someone new', () => {
+    const section = receptionistBookingSection({ availability, slotsPerReply: 2, bookingWindowDays: 1 })
+    expect(section).not.toContain('These times are only with')
+    expect(section).not.toMatch(/\n\n\n/)
+  })
+})

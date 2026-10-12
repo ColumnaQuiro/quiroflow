@@ -1,5 +1,5 @@
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
-import { loadBookedVisits, loadOfferedTypes, loadReceptionistCalendar, toConfig, toneWording, uniqueTypes } from '~/server/utils/receptionist'
+import { loadBookedVisits, loadOfferedTypes, loadPatientPractitioners, loadReceptionistCalendar, toConfig, toneWording, uniqueTypes } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptionistModel'
 import { typesForAudience } from '~/utils/receptionistTypes'
 import { internalNotes } from '~/utils/receptionistGuard'
@@ -119,8 +119,12 @@ export async function draftPatientReply(
   // visits themselves under patient facts.
   const booked = await loadBookedVisits(supabase, accountId, patientId)
   const bookable = uniqueTypes(types, booked.types)
-  const calendar = await loadReceptionistCalendar(service, accountId, config, bookable)
-  const findFreeTimes = calendar.availability ? freeTimesLookup(service, accountId, config, bookable, calendar.timeZone) : null
+  // Somebody who has been before is seen by their own practitioner; a
+  // patient record with no visit yet (a first visit booked, say) is still
+  // somebody new, and a first visit is with whoever is free.
+  const practitionerIds = facts.lastVisitAt ? await loadPatientPractitioners(supabase, accountId, patientId, booked.practitionerIds) : null
+  const calendar = await loadReceptionistCalendar(service, accountId, config, bookable, undefined, undefined, practitionerIds)
+  const findFreeTimes = calendar.availability ? freeTimesLookup(service, accountId, config, bookable, calendar.timeZone, practitionerIds) : null
 
   const { text: draft, refused } = await runReceptionistModel(createAnthropicClient(apiKey), {
     model: MODEL,

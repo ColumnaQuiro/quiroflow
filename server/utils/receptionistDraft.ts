@@ -1,5 +1,5 @@
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
-import { buildSystemPrompt, loadBookedVisits, loadOfferedTypes, loadReceptionistCalendar, toConfig, uniqueTypes, type LeadOrigin } from '~/server/utils/receptionist'
+import { buildSystemPrompt, loadBookedVisits, loadOfferedTypes, loadPatientPractitioners, loadReceptionistCalendar, toConfig, uniqueTypes, type LeadOrigin } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptionistModel'
 import { cameFromAd } from '~/utils/receptionistLeadOrigin'
 import { typesForAudience, type ReceptionistAudience } from '~/utils/receptionistTypes'
@@ -154,8 +154,11 @@ export async function draftLeadReply(supabase: any, accountId: string, leadId: s
   const bookable = uniqueTypes(types, adOnly, booked.types)
   // And the calendar as it is now, so the times offered are ones that are
   // free rather than ones the model made up.
-  const calendar = await loadReceptionistCalendar(calendarClient, accountId, config, bookable)
-  const findFreeTimes = calendar.availability ? freeTimesLookup(calendarClient, accountId, config, bookable, calendar.timeZone) : null
+  // A first visit is with whoever is free; somebody who has been before is
+  // seen by their own practitioner.
+  const practitionerIds = audience === 'existing' ? await loadPatientPractitioners(supabase, accountId, lead.patient_id, booked.practitionerIds) : null
+  const calendar = await loadReceptionistCalendar(calendarClient, accountId, config, bookable, undefined, undefined, practitionerIds)
+  const findFreeTimes = calendar.availability ? freeTimesLookup(calendarClient, accountId, config, bookable, calendar.timeZone, practitionerIds) : null
 
   const { text: draft, refused } = await runReceptionistModel(createAnthropicClient(apiKey), {
     model: MODEL,

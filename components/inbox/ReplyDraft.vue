@@ -88,7 +88,9 @@ const btnH = computed(() => (props.size === 'lg' ? 'h-10' : 'h-8 touch:h-10'))
 </script>
 
 <template>
-  <div class="mb-2" data-cy="reply-draft">
+  <!-- Sits in a row beside "Internal note" (pages/inbox.vue): the button
+  shares it, a drafted reply takes the whole row. -->
+  <div :class="draft ? 'basis-full' : ''" data-cy="reply-draft">
     <div v-if="draft" class="rounded-ctl border border-brand-tintBorder bg-brand-tint px-3 py-2.5">
       <p class="text-[11.5px] font-semibold uppercase tracking-[.04em] text-brand-text">{{ t('Suggested reply', 'Respuesta sugerida') }}</p>
       <p class="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap text-[13.5px] leading-snug text-ink-900" data-cy="reply-draft-text">{{ draft }}</p>

@@ -1,5 +1,5 @@
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
-import { loadOfferedTypes, loadReceptionistCalendar, toConfig, toneWording } from '~/server/utils/receptionist'
+import { loadBookedVisits, loadOfferedTypes, loadReceptionistCalendar, toConfig, toneWording, uniqueTypes } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptionistModel'
 import { typesForAudience } from '~/utils/receptionistTypes'
 import { carePlanCadenceLabel } from '~/utils/carePlanCadence'
@@ -101,13 +101,17 @@ export async function draftPatientReply(supabase: any, service: any, accountId: 
 
   // A patient who writes is somebody the clinic knows: never a first visit.
   const { types } = typesForAudience(await loadOfferedTypes(supabase, accountId, config), 'existing')
-  const calendar = await loadReceptionistCalendar(service, accountId, config, types)
-  const findFreeTimes = calendar.availability ? freeTimesLookup(service, accountId, config, types, calendar.timeZone) : null
+  // Moving a visit keeps its type, offered or not -- the prompt lists the
+  // visits themselves under patient facts.
+  const booked = await loadBookedVisits(supabase, accountId, patientId)
+  const bookable = uniqueTypes(types, booked.types)
+  const calendar = await loadReceptionistCalendar(service, accountId, config, bookable)
+  const findFreeTimes = calendar.availability ? freeTimesLookup(service, accountId, config, bookable, calendar.timeZone) : null
 
   const { text: draft, refused } = await runReceptionistModel(createAnthropicClient(apiKey), {
     model: MODEL,
     maxTokens: MAX_TOKENS,
-    system: buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, calendar, searchTool: Boolean(findFreeTimes) }),
+    system: buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits }),
     messages: history,
     findFreeTimes,
   })

@@ -50,7 +50,7 @@ export function leadOriginSection(origin: LeadOrigin): string {
   if (!channel) return ''
   return [
     '# What you already know about this person',
-    `They first contacted the clinic ${channel}. That is how they got in touch, not how they heard about the clinic: if an answer depends on that and the conversation does not already say, ask.`,
+    `They first contacted the clinic ${channel}. That is how they got in touch, not how they heard about the clinic, so you do not know whether they came from an ad. Do not ask: where an answer depends on it, such as the price, give the regular answer and mention the ad's in the same reply.`,
   ].join('\n')
 }
 

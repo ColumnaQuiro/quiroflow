@@ -1,6 +1,8 @@
 import { stripeClientFor } from '~/server/utils/stripe'
+import { patientCardLink } from '~/server/utils/patientCardLink'
 
-// Same customer get-or-create as setup-intent.post.ts, but instead of a
+// Same customer get-or-create as setup-intent.post.ts (here in
+// server/utils/patientCardLink.ts, shared with online booking), but instead of a
 // SetupIntent for our own embedded Stripe Elements form, this creates a
 // Stripe Checkout Session in `setup` mode -- a fully Stripe-hosted page
 // staff can copy a link to and send the patient however they like (WhatsApp,
@@ -30,41 +32,12 @@ export default defineEventHandler(async (event) => {
   }
 
   const { stripe, options } = await stripeClientFor(event, teamMember.account_id, account)
-
-  const { data: existing } = await supabase.from('patient_stripe_customers').select('stripe_customer_id').eq('patient_id', body.patientId).maybeSingle()
-
-  let customerId = existing?.stripe_customer_id
-  if (!customerId) {
-    const customer = await stripe.customers.create(
-      {
-        name: `${patient.first_name} ${patient.last_name}`,
-        email: patient.email ?? undefined,
-        metadata: { patient_id: patient.id, account_id: teamMember.account_id },
-      },
-      options,
-    )
-    customerId = customer.id
-    await supabase.from('patient_stripe_customers').insert({
-      account_id: teamMember.account_id,
-      patient_id: patient.id,
-      stripe_customer_id: customerId,
-    })
-  }
-
   const origin = getRequestURL(event).origin
-  const session = await stripe.checkout.sessions.create(
-    {
-      mode: 'setup',
-      customer: customerId,
-      payment_method_types: ['card'],
-      success_url: `${origin}/card-saved?status=success`,
-      cancel_url: `${origin}/card-saved?status=cancelled`,
-    },
-    options,
-  )
-  if (!session.url) {
-    throw createError({ statusCode: 502, statusMessage: 'Stripe did not return a checkout link' })
-  }
-
-  return { url: session.url }
+  const url = await patientCardLink(supabase, stripe, options, {
+    accountId: teamMember.account_id,
+    patient,
+    successUrl: `${origin}/card-saved?status=success`,
+    cancelUrl: `${origin}/card-saved?status=cancelled`,
+  })
+  return { url }
 })

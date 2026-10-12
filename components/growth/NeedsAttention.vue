@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { GrowthAlert } from '~/composables/useGrowthDashboard'
+import type { GrowthAlert } from '~/utils/growthDashboard'
 
 defineProps<{ alerts: GrowthAlert[] }>()
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { GrowthDashboardData } from '~/composables/useGrowthDashboard'
+import type { GrowthDashboardData } from '~/utils/growthDashboard'
 
 // Its own component because the locked screen renders this same body blurred
 // behind the upgrade card. A clinic evaluating Growth should be looking at

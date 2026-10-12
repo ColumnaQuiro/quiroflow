@@ -457,6 +457,8 @@ export function buildSystemPrompt(
     leadOrigin?: LeadOrigin | null
     /** Whether the find_free_times tool is on this request. */
     searchTool?: boolean
+    /** book_appointment is on this request -- only ever with sendsItself. */
+    canBook?: boolean
     /** Visits they already have, which they may want to move. */
     bookedVisits?: BookedVisit[]
     /** A real draft for staff to send, to this person (not Try Alba). */
@@ -525,7 +527,7 @@ export function buildSystemPrompt(
     // the model's reading of the knowledge cards: an owner who withholds a
     // type, or archives it, has it gone from the next reply.
     offeredTypesSection(opts.offeredTypes, adOnly),
-    rescheduleSection(opts.bookedVisits ?? [], opts.calendar.timeZone, { listVisits: true }),
+    rescheduleSection(opts.bookedVisits ?? [], opts.calendar.timeZone, { listVisits: true, canBook: opts.canBook }),
     // The real free times, computed by loadReceptionistCalendar, as a list to
     // offer from. Without one -- the calendar could not be read -- the model
     // asks when suits and a colleague picks the time (#691): a model told to
@@ -533,8 +535,11 @@ export function buildSystemPrompt(
     hasTimes
       ? receptionistBookingSection({ availability, slotsPerReply: config.slotsPerReply, bookingWindowDays: config.bookingWindowDays, searchTool: opts.searchTool && Boolean(availability), withWhom: opts.calendar.withWhom })
       : '',
-    // The single most important line in this prompt.
-    `You must NEVER state that an appointment is booked, confirmed or reserved. A member of staff or the booking system confirms them${availability ? ', and a listed time can be taken before then' : ''}. ${availability ? 'If the patient accepts a time, say you are passing it on and that they will get a confirmation.' : 'Once the patient has said when suits them, say you are passing it on and that they will get a confirmation.'}`,
+    // The single most important line in this prompt. When it can book, what
+    // it may say is held to what book_appointment actually did.
+    opts.canBook
+      ? `Never say an appointment is booked, moved or confirmed unless book_appointment has just confirmed it in this reply. Never cancel anything.`
+      : `You must NEVER state that an appointment is booked, confirmed or reserved. A member of staff or the booking system confirms them${availability ? ', and a listed time can be taken before then' : ''}. ${availability ? 'If the patient accepts a time, say you are passing it on and that they will get a confirmation.' : 'Once the patient has said when suits them, say you are passing it on and that they will get a confirmation.'}`,
     escalations ? `# Stop and hand over to a person when\n\n${escalations}\n\nWhen one of these applies, ${opts.sendsItself ? 'call hand_over_to_colleague, then ' : ''}say your colleague will pick this up shortly and stop.` : '',
     config.neverSays ? `# Never\n\n${config.neverSays}` : '',
     opts.testMode
@@ -542,7 +547,7 @@ export function buildSystemPrompt(
       : '',
     opts.draft
       ? opts.sendsItself
-        ? `# This reply is sent as it is\nIt goes straight to them: nobody at the clinic reads it first. Write the message itself and nothing else -- no preamble, no options to choose between, no notes to anyone. Whenever a rule under "Stop and hand over to a person when" applies, they want something you cannot do, or you are not sure what to answer, call hand_over_to_colleague with the reason before you reply. When they accept a time, call hand_over_to_colleague saying exactly what to book or move (type, day, time and who with): a colleague books it, and you tell them they will get a confirmation.`
+        ? `# This reply is sent as it is\nIt goes straight to them: nobody at the clinic reads it first. Write the message itself and nothing else -- no preamble, no options to choose between, no notes to anyone. Whenever a rule under "Stop and hand over to a person when" applies, they want something you cannot do, or you are not sure what to answer, call hand_over_to_colleague with the reason before you reply. ${opts.canBook ? 'When they accept a time, call book_appointment with it (to move a visit they already have, with move_visit_on); only once it confirms, tell them it is booked, with the day, time and who with. If it refuses, offer another free time or call hand_over_to_colleague.' : 'When they accept a time, call hand_over_to_colleague saying exactly what to book or move (type, day, time and who with): a colleague books it, and you tell them they will get a confirmation.'}`
         : `# This reply is a draft\nA member of staff will read what you write before it is sent, and may edit it. Write the message itself and nothing else -- no preamble, no options to choose between, no notes to the reader.`
       : '',
     // Flattened by promptSafeName: the name is whatever the person typed into

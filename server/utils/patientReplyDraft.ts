@@ -1,6 +1,7 @@
 import type { H3Event } from 'h3'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
-import { announceHandover, sendAsReceptionist } from '~/server/utils/receptionistSend'
+import { announceHandover, noteInConversation, sendAsReceptionist } from '~/server/utils/receptionistSend'
+import { bookingTool } from '~/server/utils/receptionistBooking'
 import { autoReplyHeldBack, personRepliedSince } from '~/utils/receptionistAutoReply'
 import { loadBookedVisits, loadOfferedTypes, loadPatientPractitioners, loadReceptionistCalendar, toConfig, toneWording, uniqueTypes } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptionistModel'
@@ -153,13 +154,32 @@ export async function draftPatientReply(
   }
   const sends = Boolean(opts.send) && channel !== null && !handoverOpen && autoReplyHeldBack(asTurns, new Date()) === null
 
+  // Booking on its own only when it is also answering on its own, and from a
+  // calendar it could read: never behind a draft nobody has read yet.
+  const book =
+    sends && opts.send && channel && calendar.availability
+      ? bookingTool({
+          event: opts.send.event,
+          service,
+          accountId,
+          config,
+          timeZone: calendar.timeZone,
+          types,
+          booked: { appointments: booked.appointments, types: booked.types },
+          practitionerIds,
+          person: { kind: 'patient', patientId },
+          onBooked: (summary) => noteInConversation(service, accountId, { kind: 'patient', patientId, channel }, summary),
+        })
+      : null
+
   const { text: draft, refused, handedOver } = await runReceptionistModel(createAnthropicClient(apiKey), {
     model: MODEL,
     maxTokens: MAX_TOKENS,
-    system: buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, sendsItself: sends }),
+    system: buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, sendsItself: sends, canBook: Boolean(book) }),
     messages: history,
     findFreeTimes,
     handOver: sends,
+    book,
     internalNotes: internalNotes(config),
     logLabel: `patient ${patientId}`,
   })

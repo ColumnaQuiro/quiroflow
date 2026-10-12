@@ -95,4 +95,22 @@ describe('A reply that is sent as it is', () => {
     expect(prompt).toContain('# This reply is a draft')
     expect(prompt).not.toContain('hand_over_to_colleague')
   })
+
+  // Booking on its own: what it may say is held to what book_appointment did.
+  it('books with book_appointment, and says booked only once it confirms', () => {
+    const visits = [{ startsAt: '2026-10-20T08:00:00Z', typeName: 'Ajuste' }]
+    const prompt = buildPatientReplyPrompt(config, { ...base, bookedVisits: visits, sendsItself: true, canBook: true })
+    expect(prompt).toContain('call book_appointment with it')
+    expect(prompt).toContain('unless book_appointment has just confirmed it in this reply')
+    expect(prompt).toContain('move it with book_appointment (move_visit_on')
+    expect(prompt).not.toContain('a colleague books it')
+    // Never cancels.
+    expect(prompt).toContain('If they ask to cancel, say your colleague will take care of it.')
+  })
+
+  it('hands an accepted time to a colleague when it cannot book', () => {
+    const prompt = buildPatientReplyPrompt(config, { ...base, sendsItself: true })
+    expect(prompt).toContain('a colleague books it')
+    expect(prompt).not.toContain('call book_appointment')
+  })
 })

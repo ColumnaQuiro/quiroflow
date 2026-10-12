@@ -2,7 +2,7 @@ import type { H3Event } from 'h3'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
 import { announceHandover, noteInConversation, sendAsReceptionist } from '~/server/utils/receptionistSend'
 import { bookingTool } from '~/server/utils/receptionistBooking'
-import { autoReplyHeldBack } from '~/utils/receptionistAutoReply'
+import { autoReplyHeldBack, isNoReply, isNoReplyMessage } from '~/utils/receptionistAutoReply'
 import { buildSystemPrompt, loadBookedVisits, loadOfferedTypes, loadPatientPractitioners, loadReceptionistCalendar, toConfig, uniqueTypes, type LeadOrigin } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptionistModel'
 import { cameFromAd } from '~/utils/receptionistLeadOrigin'
@@ -133,13 +133,25 @@ export async function draftLeadReply(
     return { status: 'nothing_to_answer' }
   }
 
-  const apiKey = useRuntimeConfig().anthropicApiKey
-  if (!apiKey) return { status: 'unavailable' }
-
   // The newest inbound message this draft answers. Recorded with the draft so
   // the tick knows it has already read this far, and does not write another
   // one the moment somebody discards this.
   const newestInboundAt = [...ordered].reverse().find((m: { direction: string }) => m.direction === 'inbound')?.created_at ?? null
+
+  // Read as answered, with nothing sent or drafted: the tick moves past it.
+  const leaveAlone = async (): Promise<DraftOutcome> => {
+    if (newestInboundAt) await supabase.from('leads').update({ ai_draft_body: null, ai_drafted_through_at: newestInboundAt }).eq('id', leadId).eq('account_id', accountId)
+    return { status: 'nothing_to_answer' }
+  }
+
+  // "Gracias", "Ok", "👍" since the clinic last wrote: the clinic's own list
+  // of messages that want no answer, checked before any model is asked.
+  const lastOutbound = ordered.map((m: { direction: string }) => m.direction).lastIndexOf('outbound')
+  const sinceOurs = ordered.slice(lastOutbound + 1).map((m: { body_preview: string | null }) => m.body_preview ?? '')
+  if (isNoReplyMessage(sinceOurs, config.noReplyPhrases)) return leaveAlone()
+
+  const apiKey = useRuntimeConfig().anthropicApiKey
+  if (!apiKey) return { status: 'unavailable' }
 
   // One-to-one on lead_id, so PostgREST embeds an object -- read as either
   // shape, because an array here would otherwise read as "no attribution".
@@ -217,6 +229,9 @@ export async function draftLeadReply(
     internalNotes: internalNotes(config),
     logLabel: `lead ${leadId}`,
   })
+
+  // The model judged that nothing needs saying (a thanks the list missed).
+  if (!refused && draft && isNoReply(draft)) return leaveAlone()
 
   // A refusal is the model declining to write this, which is a real answer
   // and not an error -- reported as such rather than dressed up as a failed

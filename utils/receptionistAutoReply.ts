@@ -103,3 +103,35 @@ export function stillTyping(newestInboundAt: string, now: Date, pauseSeconds = T
   return now.getTime() - new Date(newestInboundAt).getTime() < pauseSeconds * 1000
 }
 
+/**
+ * What the model writes, alone, when the message needs no answer -- a thanks,
+ * an "ok", a confirmation the reminder already recorded. Nothing is sent or
+ * drafted for it.
+ */
+export const NO_REPLY = 'NO_REPLY'
+
+/** Whether a reply is the model saying nothing needs to be said. */
+export function isNoReply(text: string): boolean {
+  return /^\W*NO_REPLY\W*$/.test(text.trim())
+}
+
+/** Lower case, no accents, no punctuation; emoji kept ("👍" is a message). */
+function normalized(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}+/gu, '')
+    .replace(/[^\p{L}\p{N}\p{Extended_Pictographic}]+/gu, ' ')
+    .trim()
+}
+
+/**
+ * Whether everything they have said since the clinic last wrote is one of the
+ * clinic's no-reply phrases ("Confirmar", "Gracias", "👍") -- the whole
+ * message, so "Gracias, ¿y el jueves?" is still a question.
+ */
+export function isNoReplyMessage(messagesSinceLastReply: string[], phrases: string[]): boolean {
+  if (messagesSinceLastReply.length === 0 || phrases.length === 0) return false
+  const known = new Set(phrases.map(normalized).filter(Boolean))
+  return messagesSinceLastReply.every((text) => known.has(normalized(text)))
+}

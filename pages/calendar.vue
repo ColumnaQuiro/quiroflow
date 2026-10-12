@@ -33,6 +33,18 @@ const WEEK_HEADER_PX = 70 // day label + per-day counts + room-label rows (week 
 const WEEK_ROOM_COL_PX = 128 // min width per room sub-column
 
 const scrollAreaRef = ref<HTMLElement | null>(null)
+// The panels and dialogs load when first opened (Lazy*): the new- and
+// existing-appointment panels alone are ~110 KB of source the calendar's
+// first paint does not draw. The ones opened all day are fetched while the
+// browser is idle once the calendar is up, so the first click does not wait.
+onMounted(() => {
+  const warm = () => {
+    import('~/components/calendar/NewAppointmentPanel.vue')
+    import('~/components/calendar/AppointmentPanel.vue')
+  }
+  if ('requestIdleCallback' in window) window.requestIdleCallback(warm, { timeout: 3000 })
+  else setTimeout(warm, 1500)
+})
 const scrollAreaHeight = ref(0)
 let scrollAreaObserver: ResizeObserver | null = null
 onMounted(() => {
@@ -3010,7 +3022,7 @@ function showNowLineOn(day: Date) {
       </div>
     </div>
 
-    <CalendarNewAppointmentPanel
+    <LazyCalendarNewAppointmentPanel
       v-if="modalOpen && modalMode === 'create'"
       :rooms="rooms"
       :appointment-types="activeAppointmentTypes"
@@ -3026,7 +3038,7 @@ function showNowLineOn(day: Date) {
       @saved="onCreated"
     />
 
-    <CalendarAppointmentPanel
+    <LazyCalendarAppointmentPanel
       v-if="openAppointment"
       :key="openAppointment.id"
       :appointment="openAppointment"
@@ -3043,7 +3055,7 @@ function showNowLineOn(day: Date) {
       @reschedule="startReschedule(openAppointment!)"
     />
 
-    <CalendarRescheduleConfirmModal
+    <LazyCalendarRescheduleConfirmModal
       v-if="pendingReschedule"
       :appointment-id="pendingReschedule.appointmentId"
       :patient-id="pendingReschedule.patientId"
@@ -3055,9 +3067,9 @@ function showNowLineOn(day: Date) {
       @confirm="confirmReschedule"
     />
 
-    <CalendarMoveClashDialog v-if="moveClash" :clashes="moveClash.clashes" @confirm="onMoveClashConfirm" @cancel="onMoveClashCancel" />
+    <LazyCalendarMoveClashDialog v-if="moveClash" :clashes="moveClash.clashes" @confirm="onMoveClashConfirm" @cancel="onMoveClashCancel" />
 
-    <CalendarAvailabilityBlockModal
+    <LazyCalendarAvailabilityBlockModal
       v-if="blockModalOpen"
       :rooms="rooms"
       :team-members="clinicTeamMembers"
@@ -3070,7 +3082,7 @@ function showNowLineOn(day: Date) {
       @saved="onBlockSaved"
     />
 
-    <CashShiftModal v-if="cashShiftOpen" @close="cashShiftOpen = false" />
+    <LazyCashShiftModal v-if="cashShiftOpen" @close="cashShiftOpen = false" />
 
     <CalendarAppointmentHoverCard
       v-if="hoveredAppt && !modalOpen"

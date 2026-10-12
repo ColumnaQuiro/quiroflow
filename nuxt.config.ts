@@ -124,6 +124,12 @@ export default defineNuxtConfig({
     },
   },
   sourcemap: { client: process.env.SENTRY_AUTH_TOKEN ? 'hidden' : false },
+  // The stylesheet as a file, not inlined into every page's HTML. Inlined, it
+  // was 92 KB of the sign-in page's 112 and arrived again with every full
+  // load or refresh, never cached. The people using this app reload it all
+  // day, so a stylesheet the browser keeps is the better trade than saving a
+  // first-ever visitor one request.
+  features: { inlineStyles: false },
   supabase: {
     redirectOptions: {
       login: '/login',
@@ -323,6 +329,15 @@ export default defineNuxtConfig({
   // Vite's dev server rejects unrecognized Host headers by default; allow
   // booking subdomains through so *.localtest.me works without extra setup.
   vite: {
+    // Sentry runs errors-only here (tracesSampleRate 0, no replay -- see
+    // sentry.client.config.ts), so its tracing and debug-logging code is dead
+    // weight in the bundle every page loads. These are the flags Sentry's own
+    // bundleSizeOptimizations sets, set here so they apply to every build:
+    // the module only adds its plugin when source maps are being uploaded.
+    define: {
+      __SENTRY_DEBUG__: false,
+      __SENTRY_TRACING__: false,
+    },
     server: {
       allowedHosts: ['.localtest.me'],
       watch: {

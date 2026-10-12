@@ -81,6 +81,22 @@ async function loadBannerDetail() {
 }
 onMounted(loadBannerDetail)
 
+// Only the open tab is in the page's own bundle; the others and the dialogs
+// load when first shown (Lazy*), which kept ~270 KB of tabs nobody had opened
+// off the record's first paint. Fetched once the record is up, while the
+// browser is idle, so the first click on a tab does not wait for its code.
+onMounted(() => {
+  const warm = () => {
+    import('~/components/patients/ClinicalTab.vue')
+    import('~/components/patients/AppointmentsTab.vue')
+    import('~/components/patients/BillingTab.vue')
+    import('~/components/patients/CommunicationsTab.vue')
+    import('~/components/patients/AttachmentsTab.vue')
+  }
+  if ('requestIdleCallback' in window) window.requestIdleCallback(warm, { timeout: 3000 })
+  else setTimeout(warm, 1500)
+})
+
 const clinicName = computed(() => store.clinics.find((c) => c.id === patient.value?.clinic_id)?.name ?? null)
 
 // Only the two figures the banner's pill reads; the rest of the account's
@@ -332,9 +348,9 @@ function onTabKeydown(event: KeyboardEvent) {
         >
           <PatientsOverviewTab v-if="activeTab === 'overview'" :patient="patient" @updated="loadPatient" />
 
-          <PatientsClinicalTab v-else-if="activeTab === 'clinical'" :patient-id="patientId" />
+          <LazyPatientsClinicalTab v-else-if="activeTab === 'clinical'" :patient-id="patientId" />
 
-          <PatientsAppointmentsTab
+          <LazyPatientsAppointmentsTab
             v-else-if="activeTab === 'appointments'"
             :patient-id="patientId"
             :first-name="patient.first_name"
@@ -346,7 +362,7 @@ function onTabKeydown(event: KeyboardEvent) {
           <!-- No wrapper card of account figures above this: they are part
                of Billing's own summary strip. A fifth stacked card pushed
                the ledger below the fold. -->
-          <PatientsBillingTab
+          <LazyPatientsBillingTab
             v-else-if="activeTab === 'money'"
             :patient-id="patientId"
             :contact-blocked="!canContact"
@@ -355,7 +371,7 @@ function onTabKeydown(event: KeyboardEvent) {
             @payment-trigger-consumed="chargeRequested = false"
           />
 
-          <PatientsCommunicationsTab
+          <LazyPatientsCommunicationsTab
             v-else-if="activeTab === 'communications'"
             :patient-id="patientId"
             :first-name="patient.first_name"
@@ -363,12 +379,12 @@ function onTabKeydown(event: KeyboardEvent) {
             :can-contact="canContact"
           />
 
-          <PatientsAttachmentsTab v-else-if="activeTab === 'attachments'" :patient-id="patientId" />
+          <LazyPatientsAttachmentsTab v-else-if="activeTab === 'attachments'" :patient-id="patientId" />
         </div>
       </div>
     </div>
 
-    <SendWhatsAppModal
+    <LazySendWhatsAppModal
       v-if="whatsAppOpen"
       :patient-id="patient.id"
       :patient-first-name="patient.first_name"
@@ -377,9 +393,9 @@ function onTabKeydown(event: KeyboardEvent) {
       @sent="whatsAppOpen = false"
     />
 
-    <PatientsMergePatientModal v-if="mergeOpen" :patient="patient" @close="mergeOpen = false" @merged="onMerged" />
+    <LazyPatientsMergePatientModal v-if="mergeOpen" :patient="patient" @close="mergeOpen = false" @merged="onMerged" />
 
-    <PatientsDeleteDialog
+    <LazyPatientsDeleteDialog
       v-if="deleteOpen"
       :patient-id="patientId"
       :patient-name="fullName"

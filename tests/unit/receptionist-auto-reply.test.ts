@@ -4,6 +4,8 @@ import {
   autoReplyHeldBack,
   autoReplyNow,
   clinicOpenAt,
+  isNoReply,
+  isNoReplyMessage,
   personRepliedSince,
   stillTyping,
   TYPING_PAUSE_SECONDS,
@@ -119,6 +121,19 @@ describe('A reply that is sent as it is', () => {
     expect(prompt).toContain('If they ask to cancel, say your colleague will take care of it.')
   })
 
+  // Offered "martes 20 a las 10:00 o miércoles 21 a las 16:00", "Miércoles 21"
+  // can only be the 16:00: booked without asking again. Only a choice that
+  // could be more than one time gets the confirming question.
+  it('books an unambiguous pick at once, and confirms only when it could be more than one time', () => {
+    const visits = [{ startsAt: '2026-10-20T08:00:00Z', typeName: 'Ajuste' }]
+    const prompt = buildPatientReplyPrompt(config, { ...base, bookedVisits: visits, sendsItself: true, canBook: true })
+    expect(prompt).toContain('Book or move only when there is no doubt which exact day and time they want')
+    expect(prompt).toContain('"miércoles 21" means 16:00 and you book it without asking again')
+    expect(prompt).toContain('If it could be more than one time')
+    // Both where it books and where it moves.
+    expect(prompt.split('Book or move only when there is no doubt which exact day and time they want').length - 1).toBe(2)
+  })
+
   it('hands an accepted time to a colleague when it cannot book', () => {
     const prompt = buildPatientReplyPrompt(config, { ...base, sendsItself: true })
     expect(prompt).toContain('a colleague books it')
@@ -136,6 +151,36 @@ describe('Waiting while they type', () => {
     expect(stillTyping('2026-10-12T16:10:00Z', now)).toBe(false)
     // A pause of 0 answers at once (the e2e specs).
     expect(stillTyping('2026-10-12T16:15:30Z', now, 0)).toBe(false)
+  })
+})
+
+// Messages that want no answer: on its first day answering, 15 of 22 waiting
+// conversations were "Confirmar" tapped on the reminder, each with a draft
+// re-confirming the visit.
+describe('Messages it leaves alone', () => {
+  const phrases = ['Confirmar', 'Gracias', 'Ok', '👍']
+
+  it('matches the whole message, whatever the case, accents or punctuation', () => {
+    expect(isNoReplyMessage(['Confirmar'], phrases)).toBe(true)
+    expect(isNoReplyMessage(['¡¡Gracias!!'], phrases)).toBe(true)
+    expect(isNoReplyMessage(['OK.'], phrases)).toBe(true)
+    expect(isNoReplyMessage(['👍'], phrases)).toBe(true)
+    // Several since the clinic last wrote, all of them on the list.
+    expect(isNoReplyMessage(['Confirmar', 'Gracias'], phrases)).toBe(true)
+  })
+
+  it('still answers anything more than that', () => {
+    expect(isNoReplyMessage(['Gracias, ¿y el jueves?'], phrases)).toBe(false)
+    expect(isNoReplyMessage(['Cambiar cita'], phrases)).toBe(false)
+    expect(isNoReplyMessage(['Confirmar', 'Podemos hacerlo jueves 22?'], phrases)).toBe(false)
+    expect(isNoReplyMessage([], phrases)).toBe(false)
+    expect(isNoReplyMessage(['Gracias'], [])).toBe(false)
+  })
+
+  it("reads the model's own decision to stay quiet", () => {
+    expect(isNoReply('NO_REPLY')).toBe(true)
+    expect(isNoReply('  NO_REPLY.')).toBe(true)
+    expect(isNoReply('Gracias a ti, ¡hasta el martes!')).toBe(false)
   })
 })
 

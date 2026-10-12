@@ -2,7 +2,7 @@ import type { H3Event } from 'h3'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
 import { announceHandover, noteInConversation, sendAsReceptionist } from '~/server/utils/receptionistSend'
 import { bookingTool } from '~/server/utils/receptionistBooking'
-import { autoReplyHeldBack, personRepliedSince } from '~/utils/receptionistAutoReply'
+import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personRepliedSince } from '~/utils/receptionistAutoReply'
 import { loadBookedVisits, loadOfferedTypes, loadPatientPractitioners, loadReceptionistCalendar, toConfig, toneWording, uniqueTypes } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptionistModel'
 import { typesForAudience } from '~/utils/receptionistTypes'
@@ -104,6 +104,21 @@ export async function draftPatientReply(
   const { data: configRow } = await supabase.from('receptionist_config').select('*').eq('account_id', accountId).maybeSingle()
   const config = toConfig(configRow)
 
+  // Read as answered, with nothing sent or drafted: the tick moves past it.
+  const leaveAlone = async (): Promise<PatientDraftOutcome> => {
+    if ((opts.store || opts.send) && newestInboundAt) {
+      const at = new Date().toISOString()
+      await service.from('inbox_reply_drafts').upsert({ account_id: accountId, conversation_key: patientId, body: '-', drafted_through_at: newestInboundAt, dismissed_at: at, created_at: at })
+    }
+    return { status: 'nothing_to_answer' }
+  }
+
+  // "Confirmar" tapped on the reminder, "Gracias", "👍" since the clinic last
+  // wrote: the clinic's own list of messages that want no answer, checked
+  // before any model is asked. The reminder flow records a confirmation.
+  const lastOutbound = turns.map((m) => m.direction).lastIndexOf('outbound')
+  if (isNoReplyMessage(turns.slice(lastOutbound + 1).map((m) => m.body), config.noReplyPhrases)) return leaveAlone()
+
   const nowIso = new Date().toISOString()
   const [{ data: upcoming }, { data: last }, { data: plans }, { data: balance }] = await Promise.all([
     supabase.from('appointments').select('starts_at, appointment_types(name), team_members(full_name)').eq('patient_id', patientId).eq('status', 'booked').is('deleted_at', null).gte('starts_at', nowIso).order('starts_at').limit(3),
@@ -185,6 +200,8 @@ export async function draftPatientReply(
     internalNotes: internalNotes(config),
     logLabel: `patient ${patientId}`,
   })
+  // The model judged that nothing needs saying (a thanks the list missed).
+  if (!refused && draft && isNoReply(draft)) return leaveAlone()
   const name = patient.first_name ?? 'Paciente'
   if (sends && opts.send && channel && newestInboundAt) {
     const target = { kind: 'patient' as const, patientId, channel }

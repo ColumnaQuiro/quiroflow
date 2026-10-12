@@ -487,6 +487,7 @@ export type FilterKey =
   | 'balance'
   | 'membership'
   | 'last_visit'
+  | 'care_plan_overdue'
   | 'clinics'
 
 export interface FilterDef {
@@ -509,6 +510,7 @@ export const FILTERS: FilterDef[] = [
   { key: 'no_prior_appointments', label: ['First-time patient', 'Paciente nuevo'], appointment: true },
   { key: 'has_future_appointment', label: ['Future appointment', 'Cita futura'], segment: true },
   { key: 'last_visit', label: ['Last visit', 'Última visita'], segment: true },
+  { key: 'care_plan_overdue', label: ['Behind on their care plan', 'Retrasado en su plan'], segment: true },
   { key: 'tag_contains', label: ['Tag', 'Etiqueta'], segment: true },
   { key: 'balance', label: ['Balance', 'Saldo'], segment: true },
   { key: 'membership', label: ['Membership', 'Membresía'], segment: true },
@@ -526,6 +528,7 @@ export function filtersInUse(filters: Record<string, unknown> | null | undefined
   if (f.no_prior_appointments === true) used.push('no_prior_appointments')
   if (has('has_future_appointment')) used.push('has_future_appointment')
   if (has('last_visit_before_days')) used.push('last_visit')
+  if (has('care_plan_overdue_days')) used.push('care_plan_overdue')
   // Present, even while still empty: a row just added has to stay on screen.
   if (typeof f.tag_contains === 'string') used.push('tag_contains')
   if (f.balance === 'debit' || f.balance === 'credit') used.push('balance')
@@ -542,6 +545,7 @@ export const FILTER_KEYS: Record<FilterKey, string[]> = {
   no_prior_appointments: ['no_prior_appointments'],
   has_future_appointment: ['has_future_appointment'],
   last_visit: ['last_visit_before_days'],
+  care_plan_overdue: ['care_plan_overdue_days'],
   tag_contains: ['tag_contains'],
   balance: ['balance'],
   membership: ['membership_active', 'membership_ids'],
@@ -563,6 +567,8 @@ export function defaultFilterValue(key: FilterKey): Record<string, unknown> {
       return { has_future_appointment: false }
     case 'last_visit':
       return { last_visit_before_days: 180 }
+    case 'care_plan_overdue':
+      return { care_plan_overdue_days: 7 }
     case 'tag_contains':
       return { tag_contains: '' }
     case 'balance':
@@ -589,6 +595,7 @@ export const VARIABLE_SOURCES: { value: string; label: Pair }[] = [
   { value: 'invoice_number', label: ['Invoice number', 'Número de factura'] },
   { value: 'invoice_amount_owed', label: ['Amount owed', 'Importe pendiente'] },
   { value: 'invoice_pay_link', label: ['Payment link (card)', 'Enlace de pago (tarjeta)'] },
+  { value: 'booking_link', label: ['Online booking link', 'Enlace de reserva online'] },
   { value: 'clinic_name', label: ['Clinic name', 'Nombre de la clínica'] },
   { value: 'clinic_phone', label: ['Clinic phone', 'Teléfono de la clínica'] },
   { value: 'clinic_address', label: ['Clinic address', 'Dirección de la clínica'] },

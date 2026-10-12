@@ -1,3 +1,4 @@
+import { carePlanOverdueDays } from '~/utils/carePlanOverdue'
 // automation_rules.filters narrows a trigger down to a specific audience --
 // e.g. "only when the appointment type is Primera visita, and only the
 // first time it's ever completed for this patient" -- mirroring the
@@ -53,6 +54,11 @@ export interface AutomationFilters {
   // At least one completed visit, and the most recent one longer ago than
   // this many days. Somebody who has never completed a visit is not "lapsed".
   last_visit_before_days?: number
+  // Behind on their care plan by at least this many days: an unfinished
+  // latest plan, nothing booked, the next visit overdue by its cadence -- the
+  // Care Plan Alerts page's rule (utils/carePlanOverdue.ts restates it,
+  // because that page's view answers only for a signed-in member).
+  care_plan_overdue_days?: number
   // The patient's own location (patients.clinic_id), any of these.
   clinic_ids?: string[]
   // Only read by hours-before-cron.post.ts to pick its scan window -- not a
@@ -138,6 +144,15 @@ export async function ruleFiltersMatch(
     if (!last?.starts_at) return false
     const cutoff = Date.now() - filters.last_visit_before_days * 24 * 3600 * 1000
     if (new Date(last.starts_at).getTime() >= cutoff) return false
+  }
+
+  if (typeof filters.care_plan_overdue_days === 'number') {
+    const [{ data: plans }, { data: visits }] = await Promise.all([
+      supabase.from('care_plans').select('created_at, started_at, total_visits, frequency_value, frequency_unit, visits_per_period').eq('patient_id', patientId),
+      supabase.from('appointments').select('starts_at, status').eq('patient_id', patientId).is('deleted_at', null),
+    ])
+    const overdue = carePlanOverdueDays(plans ?? [], visits ?? [], new Date())
+    if (overdue === null || overdue < Math.max(1, filters.care_plan_overdue_days)) return false
   }
 
   if (filters.clinic_ids?.length) {

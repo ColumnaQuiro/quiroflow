@@ -41,7 +41,7 @@ describe('What the prompt is told', () => {
     const section = leadOriginSection({ ...blank, channel: 'whatsapp' })
     expect(section).toContain('on WhatsApp')
     expect(section).toContain('Do not ask')
-    expect(section).toContain("mention the ad's in the same reply")
+    expect(section).toContain('answer as "What you can offer" says')
   })
 
   it('says nothing when nothing is known', () => {

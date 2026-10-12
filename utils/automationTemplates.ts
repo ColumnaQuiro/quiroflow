@@ -109,6 +109,33 @@ export const FLOW_TEMPLATES: AutomationTemplate[] = [
     ],
   },
   {
+    key: 'unfinished-care-plans',
+    section: 'flows',
+    name: ['Unfinished care plans', 'Planes sin terminar'],
+    description: [
+      'Every week, to whoever is a visit behind on their care plan and has nothing booked: a WhatsApp with the booking link; if they do not book within 7 days, a notification for their practitioner.',
+      'Cada semana, a quien va con una visita de retraso en su plan y no tiene cita: WhatsApp con el enlace de reserva; si en 7 días no reserva, aviso para su profesional.',
+    ],
+    summary: ['Weekly group · 4 steps · with a wait', 'Segmento semanal · 4 pasos · con espera'],
+    rule: baseRule('segment', {
+      entry_mode: 'one_at_a_time',
+      quiet_hours: DEFAULT_QUIET_HOURS,
+      // Part of the treatment they started, not marketing -- the same footing
+      // as a recall. reentry_days so nobody is chased every week.
+      segment: { filters: { care_plan_overdue_days: 7, has_future_appointment: false }, schedule: { kind: 'weekly', weekday: 1, time: '10:00' }, reentry_days: 30 },
+    }),
+    steps: [
+      { type: 'tag', config: { mode: 'add', tag: 'plan sin terminar' } },
+      wa(['first_name', 'booking_link']),
+      {
+        type: 'wait_until',
+        config: { event: 'appointment.booked', timeout_minutes: 7 * DAY },
+        met: [{ type: 'tag', config: { mode: 'add', tag: 'recuperado' } }],
+        timeout: [{ type: 'notify', config: { to: { patients_practitioner: true }, title: 'Llamar a {{first_name}}: plan sin terminar' } }],
+      },
+    ],
+  },
+  {
     key: 'first-visit-welcome',
     section: 'flows',
     name: ['First visit welcome', 'Bienvenida a primera visita'],

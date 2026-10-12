@@ -212,9 +212,10 @@ watch(
           <template v-else>{{ message.text }}</template>
         </p>
         <!-- Status comes off the row Meta acknowledged, so "delivered" here
-        means delivered. Nothing claims which human or model wrote it,
-        because the row does not record that. -->
+        means delivered. A reply the AI receptionist sent on its own says so
+        -- for the team; the lead got the message alone. -->
         <span class="flex items-center gap-1 text-[10px]" :class="isDryRun(message.status) ? 'text-warning-text' : message.status === 'failed' ? 'text-warning-text' : 'text-ink-faint'">
+          <span v-if="message.sentByAi" class="font-semibold uppercase tracking-[.04em] text-brand-text" data-test="lead-message-ai">{{ t('AI receptionist', 'Recepcionista IA') }} ·</span>
           <template v-if="isDryRun(message.status)">
             {{ t('Test run · not sent', 'Prueba · no enviado') }} ·
           </template>

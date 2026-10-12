@@ -3,6 +3,8 @@ import type { Database } from '~/types/database.types'
 import { draftLeadReply } from '~/server/utils/receptionistDraft'
 import { draftPatientReply } from '~/server/utils/patientReplyDraft'
 import { hasGrowth } from '~/server/utils/requireGrowth'
+import { autoReplyNow, clinicOpenAt } from '~/utils/receptionistAutoReply'
+import type { BusinessHours } from '~/utils/businessHours'
 
 // Drafts a reply for every lead waiting on one, so the draft is there before
 // anybody goes looking.
@@ -57,6 +59,12 @@ export default defineEventHandler(async (event) => {
     (subscriptions ?? []).filter((s) => hasGrowth(s)).map((s) => s.account_id),
   )
   if (entitled.size === 0) return { drafted: 0, considered: 0, consideredLeadIds: [] as string[] }
+
+  // Which of them the receptionist answers for on its own right now, rather
+  // than drafting: their "answer outside / during clinic hours" switches,
+  // read against their first clinic's opening hours on its own clock.
+  const answersNow = await accountsAnsweringNow(supabase, Array.from(entitled), new Date())
+  const sendOpts = (accountId: string) => (answersNow.has(accountId) ? { send: { event } } : {})
 
   // Who is due a draft: a lead the receptionist is handling, with no draft
   // waiting, whose newest inbound message is one drafting has not read yet
@@ -133,7 +141,7 @@ export default defineEventHandler(async (event) => {
     const results = await Promise.all(
       batch.map(async (lead) => {
         try {
-          const outcome = await draftLeadReply(supabase, lead.accountId, lead.id)
+          const outcome = await draftLeadReply(supabase, lead.accountId, lead.id, supabase, sendOpts(lead.accountId))
           // The AI cannot answer this one: the model declined, or this
           // deployment has no model to ask. Left on 'handling' the lead would
           // sit there as the AI's, waiting on a draft that is never coming, so
@@ -142,7 +150,7 @@ export default defineEventHandler(async (event) => {
           if (outcome.status === 'refused' || outcome.status === 'unavailable') {
             await supabase.from('leads').update({ ai_state: 'needs_human' }).eq('id', lead.id).eq('ai_state', 'handling')
           }
-          return outcome.status === 'drafted'
+          return outcome.status === 'drafted' || outcome.status === 'sent'
         } catch (err) {
           // One lead's model call failing must not cost the rest of the tick.
           // Whatever went wrong is still true next tick, and the lead is
@@ -166,8 +174,8 @@ export default defineEventHandler(async (event) => {
     const results = await Promise.all(
       batch.map(async (patient) => {
         try {
-          const outcome = await draftPatientReply(supabase, supabase, patient.accountId, patient.id, { store: true })
-          return outcome.status === 'drafted'
+          const outcome = await draftPatientReply(supabase, supabase, patient.accountId, patient.id, { store: true, ...sendOpts(patient.accountId) })
+          return outcome.status === 'drafted' || outcome.status === 'sent'
         } catch (err) {
           console.error(`[receptionist-draft-cron] patient ${patient.id} failed:`, (err as Error)?.message ?? err)
           return false
@@ -241,4 +249,23 @@ async function patientsDue(supabase: any, accountIds: string[], since: string): 
     .sort((a, b) => b[1].at.localeCompare(a[1].at))
     .slice(0, MAX_PER_TICK)
     .map(([id, m]) => ({ id, accountId: m.accountId }))
+}
+
+/** Accounts whose receptionist answers on its own at `now` (utils/receptionistAutoReply.ts). */
+async function accountsAnsweringNow(supabase: any, accountIds: string[], now: Date): Promise<Set<string>> {
+  const [{ data: configs }, { data: clinics }] = await Promise.all([
+    supabase.from('receptionist_config').select('account_id, after_hours, answer_during_hours').in('account_id', accountIds),
+    supabase.from('clinics').select('account_id, timezone, business_hours, created_at').in('account_id', accountIds).is('archived_at', null).order('created_at'),
+  ])
+  const firstClinic = new Map<string, { timezone: string | null; business_hours: BusinessHours | null }>()
+  for (const clinic of (clinics ?? []) as { account_id: string; timezone: string | null; business_hours: BusinessHours | null }[]) {
+    if (!firstClinic.has(clinic.account_id)) firstClinic.set(clinic.account_id, clinic)
+  }
+  const answering = new Set<string>()
+  for (const config of (configs ?? []) as { account_id: string; after_hours: boolean | null; answer_during_hours: boolean | null }[]) {
+    const clinic = firstClinic.get(config.account_id)
+    const open = clinicOpenAt(now, clinic?.timezone, clinic?.business_hours)
+    if (autoReplyNow({ afterHours: config.after_hours ?? false, answerDuringHours: config.answer_during_hours ?? false }, open)) answering.add(config.account_id)
+  }
+  return answering
 }

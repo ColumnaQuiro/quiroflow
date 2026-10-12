@@ -22,6 +22,8 @@ interface Message {
   media_filename: string | null
   channel: string
   created_at: string
+  /** Sent by the AI receptionist on its own -- labelled for the team, never the patient. */
+  sent_by_ai?: boolean
   pending?: boolean
 }
 interface Conversation {
@@ -107,7 +109,7 @@ const threadExtra = ref<Message[]>([])
 // placeholder rather than an empty conversation, which would say "they have
 // not written to you yet" about somebody who has.
 const loadedThreads = ref<Set<string>>(new Set())
-const MESSAGE_COLUMNS = 'id, patient_id, phone_number, external_contact_id, lead_id, direction, status, body_preview, template_name, media_type, media_storage_path, media_mime_type, media_filename, channel, created_at'
+const MESSAGE_COLUMNS = 'id, patient_id, phone_number, external_contact_id, lead_id, direction, status, body_preview, template_name, media_type, media_storage_path, media_mime_type, media_filename, channel, created_at, sent_by_ai'
 const SUMMARY_LIMIT = 400
 const patientNames = ref<Record<string, string>>({})
 const loading = ref(true)
@@ -323,16 +325,16 @@ async function loadThreadFor(key: string) {
     q,
     c.patientId
       ? (since
-          ? supabase.from('patient_app_messages').select('id, patient_id, direction, body, created_at').eq('patient_id', c.patientId).gt('created_at', since).order('created_at', { ascending: false }).limit(200)
-          : supabase.from('patient_app_messages').select('id, patient_id, direction, body, created_at').eq('patient_id', c.patientId).order('created_at', { ascending: false }).limit(200))
-      : Promise.resolve({ data: [] as { id: string; patient_id: string; direction: string; body: string; created_at: string }[], error: null }),
+          ? supabase.from('patient_app_messages').select('id, patient_id, direction, body, created_at, sent_by_ai').eq('patient_id', c.patientId).gt('created_at', since).order('created_at', { ascending: false }).limit(200)
+          : supabase.from('patient_app_messages').select('id, patient_id, direction, body, created_at, sent_by_ai').eq('patient_id', c.patientId).order('created_at', { ascending: false }).limit(200))
+      : Promise.resolve({ data: [] as { id: string; patient_id: string; direction: string; body: string; created_at: string; sent_by_ai: boolean }[], error: null }),
   ])
   // A failed read keeps what is there, and is tried again on the next refresh.
   if (wa === null || app === null) return
   const fetched: Message[] = [
     ...((wa ?? []) as Message[]),
-    ...((app ?? []) as { id: string; patient_id: string; direction: string; body: string; created_at: string }[]).map((m) => ({
-      id: m.id, patient_id: m.patient_id, phone_number: null, external_contact_id: null, lead_id: null, direction: m.direction, status: 'sent', body_preview: m.body,
+    ...((app ?? []) as { id: string; patient_id: string; direction: string; body: string; created_at: string; sent_by_ai: boolean }[]).map((m) => ({
+      id: m.id, sent_by_ai: m.sent_by_ai, patient_id: m.patient_id, phone_number: null, external_contact_id: null, lead_id: null, direction: m.direction, status: 'sent', body_preview: m.body,
       template_name: null, media_type: null, media_storage_path: null, media_mime_type: null, media_filename: null, channel: 'in_app', created_at: m.created_at,
     })),
   ]
@@ -1753,6 +1755,9 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             ]"
             @click="m.status === 'failed' && retryMessage(m)"
           >
+            <!-- The receptionist answered on its own: said, for the team
+            only -- the patient got the message alone. -->
+            <p v-if="m.sent_by_ai" class="mb-0.5 text-[10.5px] font-semibold uppercase tracking-[.04em] opacity-75" data-testid="message-ai">{{ t('AI receptionist', 'Recepcionista IA') }}</p>
             <img
               v-if="m.media_type === 'image' && m.media_storage_path && mediaUrls[m.media_storage_path]"
               :src="mediaUrls[m.media_storage_path]"

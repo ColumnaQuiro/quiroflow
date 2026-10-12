@@ -139,8 +139,8 @@ const CHANNEL_CLASS: Record<string, string> = {
                 <h2 class="text-[12.5px] font-semibold tracking-tightTitle text-ink-900">{{ t('Answering', 'Respuestas') }}</h2>
                 <p class="max-w-[46ch] text-[11.5px] leading-[1.5] text-ink-muted">
                   {{ t(
-                    'On, the receptionist reads real enquiries in the Inbox and drafts replies for you to approve. It never sends on its own — every message is one somebody read first.',
-                    'Activada, la recepcionista lee las consultas reales en la Bandeja y redacta respuestas para que las apruebes. Nunca envía por su cuenta: cada mensaje lo ha leído antes una persona.',
+                    'On, the receptionist reads real enquiries and patient messages in the Inbox. It drafts a reply for you to approve, or — when you allow it below — answers on its own.',
+                    'Activada, la recepcionista lee las consultas y los mensajes de pacientes en la Bandeja. Redacta una respuesta para que la apruebes o, si lo permites abajo, contesta ella sola.',
                   ) }}
                 </p>
               </div>
@@ -153,6 +153,41 @@ const CHANNEL_CLASS: Record<string, string> = {
               >
                 {{ config.enabled ? t('Turn off', 'Desactivar') : t('Turn on', 'Activar') }}
               </UiBtn>
+            </div>
+
+            <!-- When it answers on its own instead of drafting
+            (utils/receptionistAutoReply.ts). Both off until a clinic turns
+            them on: nobody finds it already sending. -->
+            <div class="flex flex-col gap-2 border-t border-line-divider pt-3" data-test="auto-reply">
+              <span class="text-[9.5px] font-semibold uppercase tracking-[.06em] text-ink-faint">{{ t('Answers on its own', 'Contesta sola') }}</span>
+              <label class="flex items-start gap-2 text-[11.5px] text-ink-700">
+                <input
+                  type="checkbox"
+                  class="mt-0.5 h-3.5 w-3.5 accent-brand"
+                  :checked="config.afterHours"
+                  :disabled="saving"
+                  data-test="toggle-after-hours"
+                  @change="save({ afterHours: ($event.target as HTMLInputElement).checked })"
+                >
+                <span>{{ t('Outside clinic hours (nights, weekends)', 'Fuera del horario de la clínica (noches, fines de semana)') }}</span>
+              </label>
+              <label class="flex items-start gap-2 text-[11.5px] text-ink-700">
+                <input
+                  type="checkbox"
+                  class="mt-0.5 h-3.5 w-3.5 accent-brand"
+                  :checked="config.answerDuringHours"
+                  :disabled="saving"
+                  data-test="toggle-during-hours"
+                  @change="save({ answerDuringHours: ($event.target as HTMLInputElement).checked })"
+                >
+                <span>{{ t('During clinic hours too', 'También en horario de clínica') }}</span>
+              </label>
+              <p class="max-w-[52ch] text-[11px] leading-[1.5] text-ink-muted">
+                {{ t(
+                  'When it does not answer on its own, it leaves a draft. It stays quiet in a conversation someone from the clinic replied to in the last hour, sends at most 8 messages a day in one conversation, and hands anything an escalation rule covers to a person with a note in the conversation.',
+                  'Cuando no contesta sola, deja un borrador. Se calla en una conversación en la que alguien de la clínica ha escrito en la última hora, envía como mucho 8 mensajes al día por conversación y pasa a una persona lo que cubre una regla de escalado, con una nota en la conversación.',
+                ) }}
+              </p>
             </div>
 
             <div class="flex flex-col gap-1.5 border-t border-line-divider pt-3">
@@ -344,8 +379,8 @@ const CHANNEL_CLASS: Record<string, string> = {
               </dl>
               <p class="text-[10.5px] leading-[1.5] text-ink-muted">
                 {{ t(
-                  'The receptionist offers times and never confirms a booking itself. A person or the booking system confirms.',
-                  'La recepcionista ofrece horarios y nunca confirma una reserva. Confirma una persona o el sistema de reservas.',
+                  'When it leaves a draft, it offers times and a person books. When it answers on its own, it books or moves the visit itself once the patient accepts a time — signed "AI receptionist" in the visit\'s history, with a note in the conversation. It never cancels.',
+                  'Cuando deja un borrador, ofrece horas y reserva una persona. Cuando contesta sola, reserva o mueve la cita ella misma cuando el paciente acepta una hora — firmado "Recepcionista IA" en el historial de la cita, con una nota en la conversación. Nunca cancela.',
                 ) }}
               </p>
             </GrowthSettingCard>

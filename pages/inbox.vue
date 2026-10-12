@@ -4,6 +4,7 @@ import { notesBetween } from '~/utils/inboxNotes'
 import { matchPendingToServer, mergePendingIntoThread, newestInConversation } from '~/utils/inboxPendingMessages'
 import { CHANNEL_LABEL } from '~/composables/useGrowthConversations'
 import { snoozeStateOf, type SnoozeRow } from '~/utils/inboxSnooze'
+import { replyWindowPill } from '~/utils/inboxReplyWindow'
 
 // The Inbox: one row per conversation from the inbox_conversations view
 // (20260924190000), 50 at a time, filtered and searched by the database --
@@ -572,6 +573,24 @@ async function onLeadReply(text: string) {
   // does, so both are refreshed rather than patched in two places.
   if (await replyToLead(selectedLead.value.leadId, text)) await reloadLeadConversations({ silent: true })
 }
+
+// "Caduca en 3 h": the patient wrote last, WhatsApp's 24h window shuts soon,
+// and what they wrote wants an answer (utils/inboxReplyWindow.ts). `now`
+// ticks each minute so the pill appears, and counts down, on its own.
+const now = ref(Date.now())
+let nowTimer: ReturnType<typeof setInterval> | undefined
+onMounted(() => (nowTimer = setInterval(() => (now.value = Date.now()), 60000)))
+onUnmounted(() => clearInterval(nowTimer))
+function patientWindowPill(c: Conversation) {
+  const m = c.lastMessage
+  return m ? replyWindowPill({ direction: m.direction, channel: m.channel, at: m.created_at, body: m.body_preview, mediaType: m.media_type }, now.value) : null
+}
+function leadWindowPill(c: (typeof leadConversations.value)[number]) {
+  if (!c.lastDirection) return null
+  return replyWindowPill({ direction: c.lastDirection, channel: c.channel, at: c.lastMessageAt, body: c.preview, mediaType: c.lastMediaType }, now.value)
+}
+const windowPillClass = (urgent: boolean) =>
+  urgent ? 'border-danger-border bg-danger-bg text-danger-text' : 'border-warning-border bg-warning-bg text-warning-text'
 
 // Today shows a clock, anything older shows a date -- the same shorthand the
 // patient rows beside these use.
@@ -1865,6 +1884,13 @@ function avatarInitials(name: string) {
                   this is the one badge that says what kind of row it is. The
                   channel beside it is "how they wrote in"; this is "who". -->
                   <span class="rounded-pill border border-info-border bg-info-bg px-2 py-px text-[11.5px] font-bold text-info-text" data-test="lead-badge">{{ t('Lead', 'Lead') }}</span>
+                  <span
+                    v-if="leadWindowPill(row.c)"
+                    class="rounded-pill border px-2 py-px text-[11.5px] font-bold"
+                    :class="windowPillClass(leadWindowPill(row.c)!.urgent)"
+                    :title="t('They wrote last. A free reply is only possible within 24 hours of their message.', 'Escribió el último. Solo se puede responder libremente durante las 24 horas siguientes a su mensaje.')"
+                    data-cy="inbox-row-window"
+                  >{{ t('Expires in', 'Caduca en') }} {{ leadWindowPill(row.c)!.left }}</span>
                   <span v-if="leadSnoozeState(row.c) === 'follow_up'" class="rounded-pill border border-warning-border bg-warning-bg px-2 py-px text-[11.5px] font-bold text-warning-text">{{ t('Follow up', 'Seguimiento') }}</span>
                   <span v-else-if="view === 'snoozed' && leadSnoozes[row.c.key]" class="rounded-pill border border-chip-border bg-chip-bg px-2 py-px text-[11.5px] text-ink-muted">{{ t('Back', 'Vuelve') }} {{ snoozeWhen(leadSnoozes[row.c.key]!.snoozed_until) }}</span>
                   <span class="rounded-pill border border-chip-border bg-chip-bg px-2 py-px text-[11.5px] text-ink-muted">{{ CHANNEL_LABEL[row.c.channel] }}</span>
@@ -1924,7 +1950,16 @@ function avatarInitials(name: string) {
                   </p>
                   <span v-if="row.c.unread" class="h-2.5 w-2.5 shrink-0 rounded-full bg-brand" :aria-label="t('Unread', 'No leída')" data-cy="inbox-row-unread" />
                 </div>
-                <div v-if="row.c.labelIds?.length || row.c.assignedTo || row.c.followUp || row.c.snoozedUntil" class="mt-1 flex flex-wrap items-center gap-1">
+                <div v-if="row.c.labelIds?.length || row.c.assignedTo || row.c.followUp || row.c.snoozedUntil || patientWindowPill(row.c)" class="mt-1 flex flex-wrap items-center gap-1">
+                  <!-- First: the row truncates from the right, and this is the
+                  one with a deadline on it. -->
+                  <span
+                    v-if="patientWindowPill(row.c)"
+                    class="rounded-pill border px-2 py-px text-[11.5px] font-bold"
+                    :class="windowPillClass(patientWindowPill(row.c)!.urgent)"
+                    :title="t('They wrote last. A free reply is only possible within 24 hours of their message.', 'Escribió el último. Solo se puede responder libremente durante las 24 horas siguientes a su mensaje.')"
+                    data-cy="inbox-row-window"
+                  >{{ t('Expires in', 'Caduca en') }} {{ patientWindowPill(row.c)!.left }}</span>
                   <span v-if="row.c.followUp" class="rounded-pill border border-warning-border bg-warning-bg px-2 py-px text-[11.5px] font-bold text-warning-text" data-cy="inbox-row-follow-up">{{ t('Follow up', 'Seguimiento') }}</span>
                   <span v-else-if="row.c.snoozedUntil" class="rounded-pill border border-chip-border bg-chip-bg px-2 py-px text-[11.5px] text-ink-muted" data-cy="inbox-row-snoozed">{{ t('Back', 'Vuelve') }} {{ snoozeWhen(row.c.snoozedUntil) }}</span>
                   <span

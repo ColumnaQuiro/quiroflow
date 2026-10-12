@@ -452,7 +452,8 @@ describe('Growth in the shared Inbox', () => {
       cy.intercept('POST', '/api/whatsapp/inbox-send', (req) => {
         req.reply({ delay: 1500, statusCode: 200, body: { ok: true } })
       }).as('send')
-      cy.intercept('GET', '/api/growth/leads/*/thread').as('thread')
+      // The lead's thread is read straight from the database (utils/leadThread.ts).
+      cy.intercept('GET', /\/rest\/v1\/whatsapp_messages\?.*lead_id=eq\./).as('thread')
       cy.contains('[data-test="lead-row"]', 'No Blink').click()
       cy.wait('@thread')
 

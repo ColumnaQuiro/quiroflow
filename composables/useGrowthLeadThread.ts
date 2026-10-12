@@ -1,3 +1,5 @@
+import { readLeadThread } from '~/utils/leadThread'
+
 // One lead conversation: its messages, and the context beside them.
 
 export interface LeadThreadMessage {
@@ -52,9 +54,8 @@ export interface LeadThread {
 
 // A thread that has not answered in this long is treated as failed, so the
 // panel offers to try again instead of holding a skeleton until the page is
-// reloaded. The route runs in a Netlify function, and a cold one -- or a
-// browser session stuck refreshing its token -- could leave the request
-// pending for as long as the tab stayed open.
+// reloaded. A browser session stuck refreshing its token could leave the
+// read pending for as long as the tab stayed open.
 const THREAD_TIMEOUT_MS = 15000
 
 // Each lead's last-loaded thread, newest-used last, so going back to one is
@@ -72,6 +73,8 @@ export function useGrowthLeadThread() {
   const drafting = ref(false)
   const { showToast } = useToast()
   const t = useT()
+  const supabase = useSupabaseClient()
+  const store = useAccountStore()
 
   const cache = new Map<string, LeadThread>()
   function remember(next: LeadThread) {
@@ -94,8 +97,14 @@ export function useGrowthLeadThread() {
     const n = ++requests
     newest.set(leadId, n)
     let timer: ReturnType<typeof setTimeout> | undefined
+    // Straight from the database, as a patient thread is (utils/leadThread.ts):
+    // through the server it was a Netlify function, and a cold one, per open.
+    const read = readLeadThread(supabase, leadId, store.accountId ?? '').then((next) => {
+      if (!next) throw new Error('Lead not found')
+      return next
+    })
     const request: Promise<LeadThread> = Promise.race([
-      useStaffFetch<LeadThread>(`/api/growth/leads/${leadId}/thread`),
+      read,
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => reject(new Error('timeout')), THREAD_TIMEOUT_MS)
       }),

@@ -352,7 +352,8 @@ async function runForRecipient(
     clinicPhone: clinic?.phone ?? undefined,
     clinicAddress: clinic?.address ?? undefined,
     clinicTimezone: clinic?.timezone ?? undefined,
-    // For an email step's logo and booking button (automationEmailHtml).
+    // For an email step's logo and booking button (automationEmailHtml), and
+    // the {{booking_link}} variable.
     clinicLogoUrl: clinic?.logo_storage_path ? supabase.storage.from('clinic-logos').getPublicUrl(clinic.logo_storage_path).data.publicUrl : undefined,
     bookingUrl: account?.slug ? `${origin}/book/${account.slug}` : undefined,
   }

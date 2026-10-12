@@ -149,15 +149,15 @@ export function checkBookableIds(value: unknown, types: Pick<OfferableType, 'id'
 }
 
 /**
- * When the receptionist may book or move a visit on its own: once the exact
- * day AND time are settled. A patient offered "martes 20 a las 10:00 o
- * miércoles 21 a las 16:00" who answered "Miércoles 21" had their visit moved
- * there and then -- right as it happened, but the clinic wants the time said
- * back and agreed before anything changes in the diary. Only a person naming
- * both themselves, at a free time, skips the question.
+ * When the receptionist may book or move a visit on its own: once there is no
+ * doubt which exact day and time the person wants. Offered "martes 20 a las
+ * 10:00 o miércoles 21 a las 16:00", "Miércoles 21" can only mean the 16:00
+ * -- asking again would be one message too many. What needs the question is
+ * a choice that could be more than one time: a day offered at two times, a
+ * "vale" to several, a day or time that was not offered.
  */
 export const CONFIRM_BEFORE_BOOKING =
-  'Book or move only once the exact day AND time are settled: either they named both themselves ("el miércoles 21 a las 16:00") and that time is free, or you asked them to confirm that exact day and time ("¿Te lo confirmo el miércoles 21 de octubre a las 16:00 con Jordana?") and they said yes. If they answer with only a day, only a time, or a "vale" to several options, ask that confirming question first and do not book yet.'
+  'Book or move only when there is no doubt which exact day and time they want: they named both themselves ("el miércoles 21 a las 16:00") and it is free, or their answer can only be one of the times you just offered -- offered "martes 20 a las 10:00 o miércoles 21 a las 16:00", "miércoles 21" means 16:00 and you book it without asking again. If it could be more than one time (you offered two times that day, they said "vale" to several options, or a day or time you did not offer), ask "¿Te lo confirmo el miércoles 21 de octubre a las 16:00 con Jordana?" first and do not book yet.'
 
 /** A visit the person already has booked, as the reschedule section names it. */
 export interface BookedVisit {

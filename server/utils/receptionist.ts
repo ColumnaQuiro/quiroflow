@@ -101,7 +101,7 @@ export function toConfig(row: Row | null): ReceptionistConfig {
     minimumNoticeMinutes: row?.minimum_notice_minutes ?? 120,
     slotsPerReply: row?.slots_per_reply ?? 2,
     bookableAppointmentTypeIds: row?.bookable_appointment_type_ids ?? [],
-    afterHours: row?.after_hours ?? true,
+    afterHours: row?.after_hours ?? false,
     missedCallTextBack: row?.missed_call_text_back ?? true,
     answerDuringHours: row?.answer_during_hours ?? false,
   }
@@ -169,11 +169,11 @@ export async function loadBookedVisits(
   supabase: SupabaseClient<Database>,
   accountId: string,
   patientId: string | null,
-): Promise<{ visits: BookedVisit[]; types: OfferedType[]; practitionerIds: string[] }> {
-  if (!patientId) return { visits: [], types: [], practitionerIds: [] }
+): Promise<{ visits: BookedVisit[]; types: OfferedType[]; practitionerIds: string[]; appointments: BookedAppointment[] }> {
+  if (!patientId) return { visits: [], types: [], practitionerIds: [], appointments: [] }
   const { data, error } = await supabase
     .from('appointments')
-    .select('starts_at, practitioner_id, appointment_types(id, name, duration_minutes, stage, online_bookable_by)')
+    .select('id, starts_at, practitioner_id, appointment_types(id, name, duration_minutes, stage, online_bookable_by)')
     .eq('account_id', accountId)
     .eq('patient_id', patientId)
     .eq('status', 'booked')
@@ -183,9 +183,10 @@ export async function loadBookedVisits(
     .limit(3)
   if (error) {
     console.error('[receptionist] could not read booked visits:', error.message)
-    return { visits: [], types: [], practitionerIds: [] }
+    return { visits: [], types: [], practitionerIds: [], appointments: [] }
   }
   const rows = (data ?? []) as unknown as {
+    id: string
     starts_at: string
     practitioner_id: string | null
     appointment_types: { id: string; name: string; duration_minutes: number; stage: string | null; online_bookable_by: string | null } | null
@@ -196,7 +197,16 @@ export async function loadBookedVisits(
     visits: rows.map((row) => ({ startsAt: row.starts_at, typeName: row.appointment_types?.name ?? null })),
     types: [...types.values()],
     practitionerIds: [...new Set(rows.map((row) => row.practitioner_id).filter((id): id is string => Boolean(id)))],
+    appointments: rows.map((row) => ({ id: row.id, startsAt: row.starts_at, typeId: row.appointment_types?.id ?? null, practitionerId: row.practitioner_id })),
   }
+}
+
+/** A booked visit as the booking tool needs it: what to move, and its type and practitioner. */
+export interface BookedAppointment {
+  id: string
+  startsAt: string
+  typeId: string | null
+  practitionerId: string | null
 }
 
 /**
@@ -447,10 +457,18 @@ export function buildSystemPrompt(
     leadOrigin?: LeadOrigin | null
     /** Whether the find_free_times tool is on this request. */
     searchTool?: boolean
+    /** book_appointment is on this request -- only ever with sendsItself. */
+    canBook?: boolean
     /** Visits they already have, which they may want to move. */
     bookedVisits?: BookedVisit[]
     /** A real draft for staff to send, to this person (not Try Alba). */
     draft?: { personName: string | null }
+    /**
+     * Sent without a person reading it first (receptionist-draft-cron, when
+     * the clinic's hours switches say so), rather than left as a draft. The
+     * model is then given hand_over_to_colleague.
+     */
+    sendsItself?: boolean
   },
 ) {
   const personName = promptSafeName(opts.draft?.personName)
@@ -509,7 +527,7 @@ export function buildSystemPrompt(
     // the model's reading of the knowledge cards: an owner who withholds a
     // type, or archives it, has it gone from the next reply.
     offeredTypesSection(opts.offeredTypes, adOnly),
-    rescheduleSection(opts.bookedVisits ?? [], opts.calendar.timeZone, { listVisits: true }),
+    rescheduleSection(opts.bookedVisits ?? [], opts.calendar.timeZone, { listVisits: true, canBook: opts.canBook }),
     // The real free times, computed by loadReceptionistCalendar, as a list to
     // offer from. Without one -- the calendar could not be read -- the model
     // asks when suits and a colleague picks the time (#691): a model told to
@@ -517,15 +535,20 @@ export function buildSystemPrompt(
     hasTimes
       ? receptionistBookingSection({ availability, slotsPerReply: config.slotsPerReply, bookingWindowDays: config.bookingWindowDays, searchTool: opts.searchTool && Boolean(availability), withWhom: opts.calendar.withWhom })
       : '',
-    // The single most important line in this prompt.
-    `You must NEVER state that an appointment is booked, confirmed or reserved. A member of staff or the booking system confirms them${availability ? ', and a listed time can be taken before then' : ''}. ${availability ? 'If the patient accepts a time, say you are passing it on and that they will get a confirmation.' : 'Once the patient has said when suits them, say you are passing it on and that they will get a confirmation.'}`,
-    escalations ? `# Stop and hand over to a person when\n\n${escalations}\n\nWhen one of these applies, say your colleague will pick this up shortly and stop.` : '',
+    // The single most important line in this prompt. When it can book, what
+    // it may say is held to what book_appointment actually did.
+    opts.canBook
+      ? `Never say an appointment is booked, moved or confirmed unless book_appointment has just confirmed it in this reply. Never cancel anything.`
+      : `You must NEVER state that an appointment is booked, confirmed or reserved. A member of staff or the booking system confirms them${availability ? ', and a listed time can be taken before then' : ''}. ${availability ? 'If the patient accepts a time, say you are passing it on and that they will get a confirmation.' : 'Once the patient has said when suits them, say you are passing it on and that they will get a confirmation.'}`,
+    escalations ? `# Stop and hand over to a person when\n\n${escalations}\n\nWhen one of these applies, ${opts.sendsItself ? 'call hand_over_to_colleague, then ' : ''}say your colleague will pick this up shortly and stop.` : '',
     config.neverSays ? `# Never\n\n${config.neverSays}` : '',
     opts.testMode
       ? `# Test mode\nYou are being tried out by the clinic owner. Nothing you say reaches a patient and nothing is booked. Answer exactly as you would for real -- confidentiality included: the owner is trying what a patient would get.`
       : '',
     opts.draft
-      ? `# This reply is a draft\nA member of staff will read what you write before it is sent, and may edit it. Write the message itself and nothing else -- no preamble, no options to choose between, no notes to the reader.`
+      ? opts.sendsItself
+        ? `# This reply is sent as it is\nIt goes straight to them: nobody at the clinic reads it first. Write the message itself and nothing else -- no preamble, no options to choose between, no notes to anyone. Whenever a rule under "Stop and hand over to a person when" applies, they want something you cannot do, or you are not sure what to answer, call hand_over_to_colleague with the reason before you reply. ${opts.canBook ? 'When they accept a time, call book_appointment with it (to move a visit they already have, with move_visit_on); only once it confirms, tell them it is booked, with the day, time and who with. If it refuses, offer another free time or call hand_over_to_colleague.' : 'When they accept a time, call hand_over_to_colleague saying exactly what to book or move (type, day, time and who with): a colleague books it, and you tell them they will get a confirmation.'}`
+        : `# This reply is a draft\nA member of staff will read what you write before it is sent, and may edit it. Write the message itself and nothing else -- no preamble, no options to choose between, no notes to the reader.`
       : '',
     // Flattened by promptSafeName: the name is whatever the person typed into
     // a form, and must not be able to start a section of its own.

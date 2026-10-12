@@ -409,6 +409,8 @@ const messages = computed(() =>
 interface ActivityRow {
   summary: string
   created_at: string
+  /** 'receptionist' for what the AI receptionist did on its own (receptionistAudit.ts). */
+  actor: string | null
   team_members: { full_name: string } | null
 }
 const activity = ref<ActivityRow[]>([])
@@ -416,7 +418,7 @@ async function loadActivity() {
   const id = props.appointment.id
   const { data } = await supabase
     .from('audit_logs')
-    .select('summary, created_at, team_members(full_name)')
+    .select('summary, created_at, actor, team_members(full_name)')
     .eq('entity_type', 'appointment')
     .eq('entity_id', id)
     .order('created_at', { ascending: true })
@@ -477,11 +479,19 @@ const history = computed(() => {
   // No team member on an audit row: nobody signed in made it. For the
   // booking itself on an online visit that is the patient; otherwise the
   // importer or an automation.
+  // The AI receptionist signs its own changes (receptionistAudit.ts).
   const whoOf = (row: ActivityRow, booking = false) =>
-    row.team_members?.full_name ?? (booking && a.source === 'online' ? t('The patient, online', 'El paciente, online') : t('System', 'Sistema'))
+    row.team_members?.full_name ??
+    (row.actor === 'receptionist'
+      ? t('AI receptionist', 'Recepcionista IA')
+      : booking && a.source === 'online'
+        ? t('The patient, online', 'El paciente, online')
+        : t('System', 'Sistema'))
 
   const created = activity.value.find((r) => parseActivitySummary(r.summary).some((c) => c.kind === 'created'))
-  const events: HistoryEvent[] = [{ at: a.created_at, text: a.source === 'online' ? t('Booked online', 'Reservada online') : t('Booked', 'Reservada'), who: created ? whoOf(created, true) : undefined }]
+  const bookedText =
+    a.source === 'online' ? t('Booked online', 'Reservada online') : a.source === 'receptionist' ? t('Booked by the AI receptionist', 'Reservada por la recepcionista IA') : t('Booked', 'Reservada')
+  const events: HistoryEvent[] = [{ at: a.created_at, text: bookedText, who: created ? whoOf(created, true) : undefined }]
   for (const m of messages.value) events.push({ at: m.at, text: t(`${m.label} sent`, `${m.label} enviada`) })
   const moves = (facts.value?.reschedules ?? []).map((r) => {
     const ev: HistoryEvent = { at: r.at, text: t(`Moved from ${formatWeekdayDate(r.from)} ${formatTime(r.from)} to ${formatWeekdayDate(r.to)} ${formatTime(r.to)}`, `Movida del ${formatWeekdayDate(r.from)} ${formatTime(r.from)} al ${formatWeekdayDate(r.to)} ${formatTime(r.to)}`) }

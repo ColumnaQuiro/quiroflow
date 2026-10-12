@@ -127,12 +127,13 @@ describe('Receptionist booking prompt', () => {
   const availability = {
     groups: [
       {
+        clinicId: 'c1',
         clinicName: null,
         types: [{ name: 'Primera visita', durationMinutes: 60 }],
         days: [{ date: '2026-10-06', times: ['09:00', '10:00'] }],
         truncatedAfter: null,
       },
-      { clinicName: null, types: [{ name: 'Ajuste', durationMinutes: 30 }], days: [], truncatedAfter: null },
+      { clinicId: 'c1', clinicName: null, types: [{ name: 'Ajuste', durationMinutes: 30 }], days: [], truncatedAfter: null },
     ],
   }
 

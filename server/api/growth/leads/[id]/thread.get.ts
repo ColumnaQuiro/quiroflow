@@ -27,7 +27,7 @@ export default defineEventHandler(async (event) => {
     // someone was about to answer.
     supabase
       .from('whatsapp_messages')
-      .select('id, direction, body_preview, channel, status, created_at, template_name, media_type, media_storage_path, media_filename')
+      .select('id, direction, body_preview, channel, status, created_at, template_name, media_type, media_storage_path, media_filename, sent_by_ai')
       .eq('lead_id', id)
       .order('created_at', { ascending: false })
       .limit(200),
@@ -90,9 +90,10 @@ export default defineEventHandler(async (event) => {
     messages: messages.map((message) => ({
       id: message.id,
       // A lead's own messages are inbound; everything outbound came from the
-      // clinic. Which human or model sent it is not recorded on the row, so
-      // it is not claimed here either.
+      // clinic -- a person, or the AI receptionist answering on its own
+      // (sentByAi), which the thread labels for the team. Never the lead.
       from: message.direction === 'inbound' ? ('lead' as const) : ('clinic' as const),
+      sentByAi: message.sent_by_ai === true,
       text: message.body_preview ?? '',
       channel: message.channel,
       status: message.status,

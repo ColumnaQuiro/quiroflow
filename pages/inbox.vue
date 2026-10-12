@@ -24,6 +24,8 @@ interface Message {
   direction: string
   status: string
   body_preview: string | null
+  /** Sent by the AI receptionist on its own, not a person (receptionistSend.ts). */
+  sent_by_ai?: boolean
   template_name: string | null
   media_type: string | null
   media_storage_path: string | null
@@ -732,7 +734,7 @@ const threadMessages = ref<Message[]>([])
 const threadKey = ref<string | null>(null)
 const threadLoading = ref(false)
 const threadError = ref(false)
-const THREAD_COLUMNS = 'id, patient_id, phone_number, external_contact_id, direction, status, body_preview, template_name, media_type, media_storage_path, media_mime_type, media_filename, channel, created_at'
+const THREAD_COLUMNS = 'id, patient_id, phone_number, external_contact_id, direction, status, body_preview, template_name, media_type, media_storage_path, media_mime_type, media_filename, channel, created_at, sent_by_ai'
 
 // Each conversation's last-loaded messages, newest-used last, so going back
 // to one is instant. Always refreshed on open; only ever a head start.
@@ -805,8 +807,8 @@ async function fetchThreadUncached(c: Conversation): Promise<Message[] | null> {
   const [{ data: waData, error }, app] = await Promise.all([
     wa.order('created_at', { ascending: false }).limit(300),
     c.patientId
-      ? supabase.from('patient_app_messages').select('id, patient_id, direction, body, created_at').eq('patient_id', c.patientId).order('created_at', { ascending: false }).limit(300)
-      : Promise.resolve({ data: [] as { id: string; patient_id: string; direction: string; body: string; created_at: string }[], error: null }),
+      ? supabase.from('patient_app_messages').select('id, patient_id, direction, body, created_at, sent_by_ai').eq('patient_id', c.patientId).order('created_at', { ascending: false }).limit(300)
+      : Promise.resolve({ data: [] as { id: string; patient_id: string; direction: string; body: string; created_at: string; sent_by_ai: boolean }[], error: null }),
   ])
   // A failed read keeps whatever is on screen rather than emptying the
   // conversation -- an empty thread is what offers to start it with a template.
@@ -828,6 +830,7 @@ async function fetchThreadUncached(c: Conversation): Promise<Message[] | null> {
     media_filename: null,
     channel: 'in_app',
     created_at: m.created_at,
+    sent_by_ai: m.sent_by_ai,
   }))
   return [...((waData ?? []) as Message[]), ...appMessages].sort((a, b) => a.created_at.localeCompare(b.created_at))
 }
@@ -2337,6 +2340,9 @@ function avatarInitials(name: string) {
                 ]"
                 @click="m.status === 'failed' && retryMessage(m)"
               >
+                <!-- The receptionist answered on its own: said, so nobody
+                reads it as a colleague's reply. -->
+                <p v-if="m.sent_by_ai" class="mb-0.5 text-[10.5px] font-semibold uppercase tracking-[.04em] opacity-75" data-cy="thread-message-ai">{{ t('AI receptionist', 'Recepcionista IA') }}</p>
                 <img
                   v-if="m.media_type === 'image' && m.media_storage_path && mediaUrls[m.media_storage_path]"
                   :src="mediaUrls[m.media_storage_path]"

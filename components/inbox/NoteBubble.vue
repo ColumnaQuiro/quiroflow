@@ -7,7 +7,14 @@ import { mentionParts, type InboxNote } from '../../utils/inboxNotes'
 const props = defineProps<{ note: InboxNote; team: { id: string; full_name: string }[]; mine: boolean }>()
 const emit = defineEmits<{ delete: [] }>()
 const t = useT()
-const author = computed(() => props.team.find((m) => m.id === props.note.author_id)?.full_name ?? t('A colleague', 'Un compañero'))
+// No author: written by the AI receptionist when it hands a conversation to a
+// person (server/utils/receptionistSend.ts). An author no longer on the team
+// is still a colleague.
+const author = computed(() =>
+  props.note.author_id
+    ? props.team.find((m) => m.id === props.note.author_id)?.full_name ?? t('A colleague', 'Un compañero')
+    : t('AI receptionist', 'Recepcionista IA'),
+)
 const parts = computed(() => mentionParts(props.note.body, props.team.map((m) => m.full_name)))
 const time = computed(() => new Date(props.note.created_at).toLocaleTimeString(t('en-GB', 'es-ES'), { hour: '2-digit', minute: '2-digit' }))
 const confirming = ref(false)

@@ -5,6 +5,8 @@ import {
   autoReplyNow,
   clinicOpenAt,
   personRepliedSince,
+  stillTyping,
+  TYPING_PAUSE_SECONDS,
   type ConversationMessage,
 } from '../../utils/receptionistAutoReply'
 import { buildPatientReplyPrompt, type PatientPromptConfig } from '../../utils/patientReplyPrompt'
@@ -123,3 +125,17 @@ describe('A reply that is sent as it is', () => {
     expect(prompt).not.toContain('call book_appointment')
   })
 })
+
+// "Sí, claro.", name, email, phone -- seconds apart. Answering the first would
+// ask for what the next three are about to say.
+describe('Waiting while they type', () => {
+  const now = new Date('2026-10-12T16:15:30Z')
+  it('holds a message under the pause, and answers once it has sat', () => {
+    expect(stillTyping('2026-10-12T16:15:10Z', now)).toBe(true)
+    expect(stillTyping(new Date(now.getTime() - TYPING_PAUSE_SECONDS * 1000).toISOString(), now)).toBe(false)
+    expect(stillTyping('2026-10-12T16:10:00Z', now)).toBe(false)
+    // A pause of 0 answers at once (the e2e specs).
+    expect(stillTyping('2026-10-12T16:15:30Z', now, 0)).toBe(false)
+  })
+})
+

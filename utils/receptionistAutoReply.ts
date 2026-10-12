@@ -88,3 +88,18 @@ export function personRepliedSince(messages: ConversationMessage[], since: strin
   const from = new Date(since).getTime()
   return messages.some((m) => byAPerson(m) && new Date(m.createdAt).getTime() > from)
 }
+
+/**
+ * How long the newest message has to sit before it is answered. People write
+ * in bursts -- "Sí, claro.", then their name, then their email, then their
+ * phone, seconds apart -- and a reply to the first would ask for what the
+ * next three are about to say. The tick runs every minute, so a conversation
+ * still being typed is simply picked up on the next one.
+ */
+export const TYPING_PAUSE_SECONDS = 40
+
+/** Whether they may still be typing: their newest message is under TYPING_PAUSE_SECONDS old. */
+export function stillTyping(newestInboundAt: string, now: Date, pauseSeconds = TYPING_PAUSE_SECONDS): boolean {
+  return now.getTime() - new Date(newestInboundAt).getTime() < pauseSeconds * 1000
+}
+

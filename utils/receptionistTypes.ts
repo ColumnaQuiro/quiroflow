@@ -118,7 +118,7 @@ export function offeredTypesSection(offeredTypes: PromptType[], adOnly: PromptTy
   return [
     `# What you can offer\nOnly these types of appointment can be booked through you:\n${offeredTypes.map(line).join('\n')}`,
     adOnly.length
-      ? `The clinic also has a first-visit offer:\n${adOnly.map(line).join('\n')}\nIf they ask the price, never answer with a question: give the regular first-visit price and say that right now there is a first-visit offer, with its price from the clinic knowledge -- in the shape "La primera visita son X €, y ahora mismo tenemos una oferta de primera visita por Y €". If they want the offer, offer times for it; otherwise offer the regular first visit. Never mention ads, campaigns or where they found the clinic when talking about it.`
+      ? `The clinic also has a first-visit offer, which is NOT for everyone:\n${adOnly.map(line).join('\n')}\nDo not mention it, and do not ask how they found the clinic: give them the regular first-visit price. Only if they say themselves that they came from one of the clinic's ads or were recommended -- or whatever else the clinic knowledge says qualifies -- offer it, as an offer the clinic has right now ("ahora mismo tenemos una oferta de primera visita por Y €"), never as "because you came from our ad".`
       : '',
     `Offer only these, by these names. If the patient wants something that is not on this list, do not offer a time for it: say your colleague will arrange it.`,
   ]

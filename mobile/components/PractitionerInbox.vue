@@ -168,20 +168,29 @@ async function loadGrowth() {
 // is kept, and a failed read keeps what is on screen. Replacing the list with
 // an empty one whenever a 15-second poll lost signal emptied every
 // conversation, the open thread included.
+//
+// Everything it needs is asked for at once: the message window, the
+// conversation list and the leads. They used to go one after another --
+// messages, then patient names, then lead names, then the list -- four round
+// trips on a phone's connection before anything showed. The list carries the
+// patients' names, so only someone it does not reach costs a lookup of their
+// own.
 let loadRun = 0
 async function load(opts: { silent?: boolean } = {}) {
   loadAssignments()
   const run = ++loadRun
   if (!opts.silent) loading.value = true
-  const [{ data: waData, error: waError }, { data: appData, error: appError }] = await Promise.all([
+  const [{ data: waData, error: waError }, { data: appData, error: appError }, summaryData] = await Promise.all([
     supabase
       .from('whatsapp_messages')
       .select(MESSAGE_COLUMNS)
       .order('created_at', { ascending: false })
       .limit(500),
     supabase.from('patient_app_messages').select('id, patient_id, direction, body, created_at').order('created_at', { ascending: false }).limit(500),
+    fetchSummaries(),
   ])
   if (run !== loadRun) return
+  applySummaries(summaryData)
   if (waError || appError) {
     loading.value = false
     return
@@ -205,23 +214,25 @@ async function load(opts: { silent?: boolean } = {}) {
   }))
   messages.value = [...(waData ?? []), ...appMessages].sort((a, b) => b.created_at.localeCompare(a.created_at))
 
-  const patientIds = [...new Set(messages.value.map((m) => m.patient_id).filter((id): id is string => !!id))]
-  if (patientIds.length > 0) {
-    const { data: patients, error: namesError } = await supabase.from('patients').select('id, first_name, last_name').in('id', patientIds)
-    if (!namesError) {
-      const names: Record<string, string> = {}
-      for (const p of patients ?? []) names[p.id] = `${p.first_name} ${p.last_name ?? ''}`.trim()
-      patientNames.value = names
-    }
+  // Names the list did not bring: a patient or lead whose conversation is
+  // further down than it reads, but with a message in the window.
+  const patientIds = [...new Set(messages.value.map((m) => m.patient_id).filter((id): id is string => !!id && !patientNames.value[id]))]
+  const leadIds = leadThreadsAreSeparate.value ? [...new Set(messages.value.filter((m) => m.lead_id && !m.patient_id && !leadNames.value[m.lead_id]).map((m) => m.lead_id!))] : []
+  const [patients, leads] = await Promise.all([
+    patientIds.length ? supabase.from('patients').select('id, first_name, last_name').in('id', patientIds) : null,
+    leadIds.length ? supabase.from('leads').select('id, full_name').in('id', leadIds) : null,
+  ])
+  if (run !== loadRun) return
+  if (patients?.data?.length) {
+    const names = { ...patientNames.value }
+    for (const p of patients.data) names[p.id] = `${p.first_name} ${p.last_name ?? ''}`.trim()
+    patientNames.value = names
   }
-  const leadIds = [...new Set(messages.value.filter((m) => m.lead_id && !m.patient_id).map((m) => m.lead_id!))]
-  if (leadThreadsAreSeparate.value && leadIds.length > 0) {
-    const { data: leads } = await supabase.from('leads').select('id, full_name').in('id', leadIds)
-    const names: Record<string, string> = {}
-    for (const l of leads ?? []) if (l.full_name) names[l.id] = l.full_name
+  if (leads?.data?.length) {
+    const names = { ...leadNames.value }
+    for (const l of leads.data) if (l.full_name) names[l.id] = l.full_name
     leadNames.value = names
   }
-  await loadSummaries()
   if (!opts.silent) loading.value = false
 }
 
@@ -272,13 +283,20 @@ const hasMoreSummaries = ref(false)
 const loadingMore = ref(false)
 
 // Every conversation, newest first, whatever the message window above holds.
-async function loadSummaries() {
+async function fetchSummaries() {
   const size = Math.max(SUMMARY_LIMIT, summaryCount.value)
   const [{ data: rows }, leads] = await Promise.all([
     supabase.from('inbox_conversations').select(SUMMARY_COLUMNS).eq('account_id', props.accountId).order('last_at', { ascending: false }).range(0, size),
     leadThreadsAreSeparate.value ? authedFetch<{ conversations: LeadSummary[] }>('/api/growth/conversations').catch(() => null) : Promise.resolve(null),
   ])
-  const page = (rows ?? []) as SummaryRow[]
+  return { size, rows: (rows ?? []) as SummaryRow[], leads }
+}
+function applySummaries({ size, rows: page, leads }: Awaited<ReturnType<typeof fetchSummaries>>) {
+  // The list carries each patient's name, so the window's messages need no
+  // lookup of their own for anyone in it.
+  const names = { ...patientNames.value }
+  for (const row of page) if (row.patient_id && row.first_name) names[row.patient_id] = `${row.first_name} ${row.last_name ?? ''}`.trim()
+  patientNames.value = names
   hasMoreSummaries.value = page.length > size
   summaryCount.value = Math.min(page.length, size)
   const list: Conversation[] = page.slice(0, size).map(fromSummaryRow)
@@ -1337,12 +1355,41 @@ function bubbleText(m: Message): string {
 // Silent -- these can fire on every incoming message, and re-showing the
 // full "Loading…" list on each one was the same layout-jump the poll timer
 // below also caused; load() already merges into the same arrays either way.
+// A delivery receipt -- sent, delivered, read: three or four for every
+// message -- changes one message's ticks, and each used to reload the whole
+// Inbox: 1,000 messages, the list and the leads, from a phone. It is patched
+// in place instead, as the web Inbox does. A message that changed
+// conversation (linked to a patient, a lead converted) is not a receipt and
+// still reloads; one that is not loaded here changes nothing on screen.
+function onMessageUpdate(payload: { new: Record<string, unknown> }) {
+  const next = payload.new as Partial<Message>
+  if (!next.id) return
+  const patch = (list: Message[]) => {
+    const i = list.findIndex((m) => m.id === next.id)
+    if (i === -1) return null
+    const current = list[i]!
+    if (keyOf({ patient_id: next.patient_id ?? null, phone_number: next.phone_number ?? null, external_contact_id: next.external_contact_id ?? null, lead_id: next.lead_id ?? null }) !== keyOf(current)) return 'moved'
+    if (!next.status || next.status === current.status) return list
+    const copy = list.slice()
+    copy[i] = { ...current, status: next.status }
+    return copy
+  }
+  const inWindow = patch(messages.value)
+  const inThread = patch(threadExtra.value)
+  if (inWindow === 'moved' || inThread === 'moved') {
+    scheduleLoad()
+    return
+  }
+  if (inWindow) messages.value = inWindow
+  if (inThread) threadExtra.value = inThread
+}
+
 let channel: ReturnType<typeof supabase.channel> | null = null
 onMounted(() => {
   channel = supabase
     .channel('mobile-inbox-whatsapp-messages')
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'whatsapp_messages', filter: `account_id=eq.${props.accountId}` }, () => scheduleLoad())
-    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'whatsapp_messages', filter: `account_id=eq.${props.accountId}` }, () => scheduleLoad())
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'whatsapp_messages', filter: `account_id=eq.${props.accountId}` }, onMessageUpdate)
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'patient_app_messages', filter: `account_id=eq.${props.accountId}` }, () => scheduleLoad())
     .subscribe()
 })
@@ -1388,9 +1435,11 @@ onBeforeUnmount(() => {
 })
 let pollTimer: ReturnType<typeof setInterval> | null = null
 onMounted(() => {
+  // A minute, as on the web: realtime is what brings a new message in, and
+  // every poll re-reads the message window and the list.
   pollTimer = setInterval(() => {
     if (document.visibilityState === 'visible' && active.value) load({ silent: true })
-  }, 15000)
+  }, 60000)
 })
 onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer)

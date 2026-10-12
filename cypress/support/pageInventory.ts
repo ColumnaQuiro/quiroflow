@@ -142,6 +142,7 @@ export const NOT_SWEPT_HERE: Record<string, string> = {
   '/reports/pages/[id]': 'one report page; covered by dashboard/report-pages.cy.ts',
   '/settings/compress-files': 'now a section of /settings/files and redirects there; asserted in settings/data-settings.cy.ts',
   '/print/desk-sign': 'printable sign opened from /settings/app, no app layout; asserted in settings/app-store-links.cy.ts',
+  '/print/check-in-sign': 'printable check-in QR opened from /settings/app, no app layout; asserted in patients/self-check-in.cy.ts',
   '/settings/practitioners': 'redirects to /settings/team#importados; asserted in settings/team.cy.ts',
   '/portal': 'patient portal -- separate app with its own auth, not the staff sidebar',
   '/portal/login': 'patient portal -- separate app with its own auth',
@@ -152,6 +153,7 @@ export const NOT_SWEPT_HERE: Record<string, string> = {
   '/portal/documents': 'patient portal -- separate app with its own auth',
   '/portal/exercises': 'patient portal -- separate app with its own auth; covered by cypress/e2e/patients/home-exercises.cy.ts',
   '/portal/messages': 'patient portal -- separate app with its own auth',
+  '/portal/check-in': 'patient portal -- separate app with its own auth; covered by cypress/e2e/patients/self-check-in.cy.ts',
 }
 
 // Every authenticated sweep asserts the same three things per page: it landed

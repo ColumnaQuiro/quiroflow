@@ -288,6 +288,11 @@ const activeLast30Days = computed(() => usage.value.active)
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 9V3h10v6M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2M7 14h10v7H7z" /></svg>
                     {{ t('Print a desk sign', 'Imprimir un cartel') }}
                   </NuxtLink>
+                  <!-- Scan on arrival: "Ya estoy aquí" (pages/portal/check-in.vue). -->
+                  <NuxtLink to="/print/check-in-sign" target="_blank" data-cy="app-check-in-sign" class="inline-flex h-9 touch:h-11 items-center gap-1.5 rounded-ctl border border-line-control bg-surface px-3.5 text-[13px] font-medium text-ink-500 hover:border-line-controlHover">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 9V3h10v6M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2M7 14h10v7H7z" /></svg>
+                    {{ t('Print a check-in sign', 'Imprimir cartel de llegada') }}
+                  </NuxtLink>
                   <UiBtn data-cy="app-qr-download" :disabled="!store.accountSlug" @click="downloadQr">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14" /></svg>
                     {{ t('Download QR', 'Descargar QR') }}

@@ -63,6 +63,8 @@ function eur(cents: number) {
             {{ next.appointment_types?.name ?? t('Appointment', 'Cita') }}
             <template v-if="next.team_members?.full_name"> &middot; {{ next.team_members.full_name }}</template>
           </p>
+          <!-- On the day: "Ya estoy aquí" on arrival (utils/selfCheckIn.ts). -->
+          <PatientCheckIn class="mt-3" :appt="next" />
           <PatientConfirmVisit class="mt-3" :appt="next" :busy="confirmingId === next.id" @confirm="confirmAttendance" />
           <PatientNextVisitActions class="mt-3" :appointment-id="next.id" :clinic-id="next.clinic_id" />
           <NuxtLink to="/portal/appointments" class="mt-3 inline-block text-[12.5px] font-medium text-brand-text hover:text-brand-hover">

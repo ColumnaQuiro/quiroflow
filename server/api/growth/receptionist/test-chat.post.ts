@@ -5,6 +5,7 @@ import { buildSystemPrompt, loadOfferedTypes, loadReceptionistCalendar, loadRece
 import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptionistModel'
 import { modelFailureMessage } from '~/utils/modelFailure'
 import { typesForAudience } from '~/utils/receptionistTypes'
+import { internalNotes } from '~/utils/receptionistGuard'
 
 // "Try Alba" -- the clinic owner talking to their own configuration.
 //
@@ -87,6 +88,8 @@ export default defineEventHandler(async (event) => {
       system: buildSystemPrompt(config, { testMode: true, offeredTypes: types, adOnlyTypes: adOnly, audience, calendar, leadOrigin, searchTool: Boolean(findFreeTimes) }),
       messages: turns.map((turn) => ({ role: turn.role, content: turn.content })),
       findFreeTimes,
+      internalNotes: internalNotes(config),
+      logLabel: `Try Alba (account ${teamMember.account_id})`,
     })
     if (refused) return { available: true as const, reply: '', refused: true }
     return { available: true as const, reply, refused: false }

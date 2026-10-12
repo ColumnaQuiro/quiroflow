@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
 import { audienceSection, offeredAppointmentTypes, offeredTypesSection, rescheduleSection, type BookedVisit, type PromptType, type ReceptionistAudience } from '~/utils/receptionistTypes'
 import { leadOriginSection, type LeadOrigin } from '~/utils/receptionistLeadOrigin'
+import { CONFIDENTIALITY_SECTION, promptSafeName } from '~/utils/receptionistGuard'
 import {
   receptionistBookingSection,
   receptionistClockSection,
@@ -378,8 +379,11 @@ export function buildSystemPrompt(
     searchTool?: boolean
     /** Visits they already have, which they may want to move. */
     bookedVisits?: BookedVisit[]
+    /** A real draft for staff to send, to this person (not Try Alba). */
+    draft?: { personName: string | null }
   },
 ) {
+  const personName = promptSafeName(opts.draft?.personName)
   const adOnly = opts.adOnlyTypes ?? []
   const knowledge = config.knowledge
     .map((card) => `## ${card.title}\n${card.lines.map((line) => `- ${line}`).join('\n')}`)
@@ -442,8 +446,16 @@ export function buildSystemPrompt(
     escalations ? `# Stop and hand over to a person when\n\n${escalations}\n\nWhen one of these applies, say your colleague will pick this up shortly and stop.` : '',
     config.neverSays ? `# Never\n\n${config.neverSays}` : '',
     opts.testMode
-      ? `# Test mode\nYou are being tried out by the clinic owner. Nothing you say reaches a patient and nothing is booked. Answer exactly as you would for real.`
+      ? `# Test mode\nYou are being tried out by the clinic owner. Nothing you say reaches a patient and nothing is booked. Answer exactly as you would for real -- confidentiality included: the owner is trying what a patient would get.`
       : '',
+    opts.draft
+      ? `# This reply is a draft\nA member of staff will read what you write before it is sent, and may edit it. Write the message itself and nothing else -- no preamble, no options to choose between, no notes to the reader.`
+      : '',
+    // Flattened by promptSafeName: the name is whatever the person typed into
+    // a form, and must not be able to start a section of its own.
+    personName ? `The person you are replying to is called ${personName}.` : '',
+    // Last, so nothing above can be read as overriding it.
+    CONFIDENTIALITY_SECTION,
   ]
     .filter(Boolean)
     .join('\n\n')

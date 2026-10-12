@@ -3,6 +3,8 @@
 // support/ask.post.ts), and hands off to a real person when it can't -- the
 // escalation becomes a support_conversations thread answered from the admin
 // panel, and the reply comes back into this same panel.
+import { isHelpCentreUrl } from '../../utils/helpAssistantGuard'
+
 const t = useT()
 const supabase = useSupabaseClient()
 const store = useAccountStore()
@@ -225,7 +227,7 @@ function articleTitle(url: string) {
               <p class="whitespace-pre-line text-[12.5px] leading-relaxed text-ink-700">{{ turn.text }}</p>
               <div v-if="turn.sources?.length" class="mt-1.5 flex flex-col gap-0.5">
                 <a
-                  v-for="url in turn.sources"
+                  v-for="url in turn.sources.filter(isHelpCentreUrl)"
                   :key="url"
                   :href="url"
                   target="_blank"

@@ -1,5 +1,6 @@
 import { formatEur } from './billing'
 import { DEFAULT_CLINIC_TIMEZONE } from './clinicClock'
+import { CONFIDENTIALITY_SECTION, promptSafeName } from './receptionistGuard'
 import { offeredTypesSection, rescheduleSection, type BookedVisit, type PromptType } from './receptionistTypes'
 import { receptionistBookingSection, receptionistClockSection, type ReceptionistAvailability } from './receptionistSlots'
 
@@ -28,7 +29,10 @@ function when(iso: string, timeZone: string) {
 export function patientFactsSection(f: PatientReplyFacts, timeZone: string | null | undefined): string {
   const zone = timeZone || DEFAULT_CLINIC_TIMEZONE
   const lines: string[] = []
-  if (f.firstName) lines.push(`- Name: ${f.firstName}`)
+  // A name the patient may have typed themselves: flattened, so it cannot
+  // start a section of the prompt.
+  const name = promptSafeName(f.firstName)
+  if (name) lines.push(`- Name: ${name}`)
   if (f.upcoming.length === 0) lines.push('- Next visit: nothing booked.')
   else {
     for (const [i, v] of f.upcoming.entries()) {
@@ -110,6 +114,8 @@ export function buildPatientReplyPrompt(
     escalations ? `# Stop and hand over to a person when\n\n${escalations}\n\nWhen one of these applies, say your colleague will pick this up shortly and stop.` : '',
     config.neverSays ? `# Never\n\n${config.neverSays}` : '',
     `# This reply is a draft\nA member of staff will read what you write before it is sent, and may edit it. Write the message itself and nothing else -- no preamble, no options to choose between, no notes to the reader.`,
+    // Last, so nothing above can be read as overriding it.
+    CONFIDENTIALITY_SECTION,
   ]
     .filter(Boolean)
     .join('\n\n')

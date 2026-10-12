@@ -3,7 +3,7 @@ import type { Database } from '~/types/database.types'
 import { draftLeadReply } from '~/server/utils/receptionistDraft'
 import { draftPatientReply } from '~/server/utils/patientReplyDraft'
 import { hasGrowth } from '~/server/utils/requireGrowth'
-import { autoReplyNow, clinicOpenAt } from '~/utils/receptionistAutoReply'
+import { TYPING_PAUSE_SECONDS, autoReplyNow, clinicOpenAt, stillTyping } from '~/utils/receptionistAutoReply'
 import type { BusinessHours } from '~/utils/businessHours'
 
 // Drafts a reply for every lead waiting on one, so the draft is there before
@@ -19,10 +19,12 @@ import type { BusinessHours } from '~/utils/businessHours'
 // switch beyond the one it already honours and no answer to "what if it is
 // wrong".
 //
-// Same 15-minute tick as the other automation crons. A tick is fine because
-// nothing is waiting on this: the person who reads the draft is not sitting
-// there watching for it, and a reply drafted 9 minutes after the question is
-// indistinguishable from one drafted instantly by the time anyone looks.
+// Every minute, now that it can answer on its own: somebody in the middle of
+// booking should not wait five minutes per message. The pg_cron job only
+// calls this when an inbound message arrived in the last 15 minutes, so a
+// quiet clinic costs nothing; and a conversation still being typed (the
+// newest message under TYPING_PAUSE_SECONDS old) waits for the next tick, so
+// a burst of four messages gets one answer, not four.
 const MAX_PER_TICK = 25
 const CONCURRENCY = 3
 
@@ -34,6 +36,13 @@ export default defineEventHandler(async (event) => {
   }
 
   const supabase = serverSupabaseServiceRole<Database>(event)
+
+  // How long the newest message must sit before it is answered (stillTyping).
+  // The schedule sends nothing and gets the default; the e2e specs, which
+  // deliver a message and run the tick straight away, pass 0. Behind the
+  // same cron secret as the rest of this route.
+  const body = (await readBody<{ typingPauseSeconds?: unknown }>(event).catch(() => null)) ?? {}
+  const pause = typeof body.typingPauseSeconds === 'number' ? Math.min(Math.max(body.typingPauseSeconds, 0), 300) : TYPING_PAUSE_SECONDS
 
   // Only accounts that switched the receptionist on. Reading this first, and
   // once, rather than per lead: it is the cheapest way to narrow the work and
@@ -127,6 +136,8 @@ export default defineEventHandler(async (event) => {
       // to get rid of it.
       const draftedThrough = message.leads.ai_drafted_through_at
       if (draftedThrough && new Date(message.created_at).getTime() <= new Date(draftedThrough).getTime()) continue
+      // Still typing: the next tick has the whole burst.
+      if (stillTyping(message.created_at, new Date(), pause)) continue
 
       due.push({ id: message.lead_id, accountId: message.leads.account_id })
       if (due.length >= MAX_PER_TICK) break
@@ -167,7 +178,7 @@ export default defineEventHandler(async (event) => {
   // 21:40 has a draft waiting in the morning, as a lead does. Stored in
   // inbox_reply_drafts (patientReplyDraft.ts, `store`), without their
   // balance, since anyone with Inbox access reads it.
-  const duePatients = await patientsDue(supabase, Array.from(entitled), since)
+  const duePatients = await patientsDue(supabase, Array.from(entitled), since, pause)
   let draftedPatients = 0
   for (let i = 0; i < duePatients.length; i += CONCURRENCY) {
     const batch = duePatients.slice(i, i + CONCURRENCY)
@@ -206,7 +217,7 @@ export default defineEventHandler(async (event) => {
  *
  * WhatsApp messages that belong to a lead are the lead tick's above.
  */
-async function patientsDue(supabase: any, accountIds: string[], since: string): Promise<{ id: string; accountId: string }[]> {
+async function patientsDue(supabase: any, accountIds: string[], since: string, pause: number): Promise<{ id: string; accountId: string }[]> {
   const newest = new Map<string, { accountId: string; at: string }>()
   for (const source of ['whatsapp_messages', 'patient_app_messages'] as const) {
     let query = supabase
@@ -244,7 +255,7 @@ async function patientsDue(supabase: any, accountIds: string[], since: string): 
   return Array.from(newest.entries())
     .filter(([id, m]) => {
       const through = draftedThrough.get(id)
-      return !through || new Date(m.at).getTime() > new Date(through).getTime()
+      return (!through || new Date(m.at).getTime() > new Date(through).getTime()) && !stillTyping(m.at, new Date(), pause)
     })
     .sort((a, b) => b[1].at.localeCompare(a[1].at))
     .slice(0, MAX_PER_TICK)

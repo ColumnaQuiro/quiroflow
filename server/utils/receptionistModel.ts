@@ -49,6 +49,9 @@ export function freeTimesLookup(
   config: ReceptionistConfig,
   types: OfferedType[],
   timeZone: string,
+  // The same narrowing as the prompt's list: a returning patient's own
+  // practitioner(s), or null for anyone.
+  practitionerIds: string[] | null = null,
 ): FreeTimesLookup {
   return async (input) => {
     const now = new Date()
@@ -64,7 +67,7 @@ export function freeTimesLookup(
       from: startOfLocalDate(query.from, timeZone),
       days: query.days,
       maxTimesPerList: FREE_TIMES_MAX_TIMES,
-    })
+    }, practitionerIds)
     if (!calendar.availability) {
       return { content: 'The calendar could not be read. Do not offer a time: ask which days suit them and say your colleague will confirm an exact time shortly.', isError: true }
     }

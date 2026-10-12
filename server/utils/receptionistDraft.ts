@@ -114,7 +114,7 @@ export async function draftLeadReply(
 
   const { data: messages } = await supabase
     .from('whatsapp_messages')
-    .select('direction, body_preview, created_at, sent_by_ai, channel')
+    .select('direction, body_preview, created_at, sent_by_ai, channel, template_name, rule_id, automation_action_id')
     .eq('lead_id', leadId)
     .order('created_at', { ascending: false })
     .limit(HISTORY_TURNS)
@@ -184,7 +184,7 @@ export async function draftLeadReply(
     Boolean(opts.send) &&
     (lastInbound?.channel ?? 'whatsapp') === 'whatsapp' &&
     autoReplyHeldBack(
-      ordered.map((m: { direction: string; sent_by_ai?: boolean | null; created_at: string }) => ({ direction: m.direction, sentByAi: m.sent_by_ai === true, createdAt: m.created_at })),
+      ordered.map((m: { direction: string; sent_by_ai?: boolean | null; created_at: string; template_name?: string | null; rule_id?: string | null; automation_action_id?: string | null }) => ({ direction: m.direction, sentByAi: m.sent_by_ai === true, automated: Boolean(m.template_name || m.rule_id || m.automation_action_id), createdAt: m.created_at })),
       new Date(),
     ) === null
 

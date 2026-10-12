@@ -5725,8 +5725,11 @@ export type Database = {
           inbox: boolean
           morning_summary: boolean
           online_bookings: boolean
+          patient_actions: boolean
           quiet_hours: boolean
           summary_sent_on: string | null
+          weekly_digest: boolean
+          digest_sent_week: string | null
           team_member_id: string
           updated_at: string
         }
@@ -5737,8 +5740,11 @@ export type Database = {
           inbox?: boolean
           morning_summary?: boolean
           online_bookings?: boolean
+          patient_actions?: boolean
           quiet_hours?: boolean
           summary_sent_on?: string | null
+          weekly_digest?: boolean
+          digest_sent_week?: string | null
           team_member_id: string
           updated_at?: string
         }
@@ -5749,8 +5755,11 @@ export type Database = {
           inbox?: boolean
           morning_summary?: boolean
           online_bookings?: boolean
+          patient_actions?: boolean
           quiet_hours?: boolean
           summary_sent_on?: string | null
+          weekly_digest?: boolean
+          digest_sent_week?: string | null
           team_member_id?: string
           updated_at?: string
         }

@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
-import { audienceSection, offeredAppointmentTypes, offeredTypesSection, rescheduleSection, type BookedVisit, type PromptType, type ReceptionistAudience } from '~/utils/receptionistTypes'
+import { CONFIRM_BEFORE_BOOKING, audienceSection, offeredAppointmentTypes, offeredTypesSection, rescheduleSection, type BookedVisit, type PromptType, type ReceptionistAudience } from '~/utils/receptionistTypes'
 import { leadOriginSection, type LeadOrigin } from '~/utils/receptionistLeadOrigin'
 import { CONFIDENTIALITY_SECTION, promptSafeName } from '~/utils/receptionistGuard'
 import {
@@ -547,7 +547,7 @@ export function buildSystemPrompt(
       : '',
     opts.draft
       ? opts.sendsItself
-        ? `# This reply is sent as it is\nIt goes straight to them: nobody at the clinic reads it first. Write the message itself and nothing else -- no preamble, no options to choose between, no notes to anyone. Whenever a rule under "Stop and hand over to a person when" applies, they want something you cannot do, or you are not sure what to answer, call hand_over_to_colleague with the reason before you reply. ${opts.canBook ? 'When they accept a time, call book_appointment with it (to move a visit they already have, with move_visit_on); only once it confirms, tell them it is booked, with the day, time and who with. If it refuses, offer another free time or call hand_over_to_colleague.' : 'When they accept a time, call hand_over_to_colleague saying exactly what to book or move (type, day, time and who with): a colleague books it, and you tell them they will get a confirmation.'}`
+        ? `# This reply is sent as it is\nIt goes straight to them: nobody at the clinic reads it first. Write the message itself and nothing else -- no preamble, no options to choose between, no notes to anyone. Whenever a rule under "Stop and hand over to a person when" applies, they want something you cannot do, or you are not sure what to answer, call hand_over_to_colleague with the reason before you reply. ${opts.canBook ? `${CONFIRM_BEFORE_BOOKING} Then call book_appointment with it (to move a visit they already have, with move_visit_on); only once it confirms, tell them it is booked, with the day, time and who with. If it refuses, offer another free time or call hand_over_to_colleague.` : 'When they accept a time, call hand_over_to_colleague saying exactly what to book or move (type, day, time and who with): a colleague books it, and you tell them they will get a confirmation.'}`
         : `# This reply is a draft\nA member of staff will read what you write before it is sent, and may edit it. Write the message itself and nothing else -- no preamble, no options to choose between, no notes to the reader.`
       : '',
     // Flattened by promptSafeName: the name is whatever the person typed into

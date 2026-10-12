@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { offeredTypesSection, typesForAudience, type PromptType } from '../../utils/receptionistTypes'
+import { offeredTypesSection, rescheduleSection, typesForAudience, type PromptType } from '../../utils/receptionistTypes'
 
 // Which appointment the receptionist offers depends on who is asking: the
 // ad's first-visit offer for someone who answered the ad, the plain first
@@ -55,5 +55,16 @@ describe('Receptionist types by audience', () => {
     expect(section).toContain('Only if the patient says they came from one of the clinic\'s ads or offers')
     expect(section).toContain('- Oferta Primera visita (60 min)')
     expect(offeredTypesSection([first])).not.toContain('Oferta')
+  })
+
+  // Moving a visit keeps its type; cancelling stays with a person.
+  it('moves a booked visit to a new time of the same type, and leaves cancelling to a colleague', () => {
+    const visits = [{ startsAt: '2026-10-20T08:00:00Z', typeName: 'Ajuste' }]
+    const section = rescheduleSection(visits, 'Europe/Madrid', { listVisits: true })
+    expect(section).toContain('Tuesday 20 October at 10:00 (Ajuste)')
+    expect(section).toContain('that same type of appointment')
+    expect(section).toContain('cancel it instead, say your colleague will take care of it')
+    expect(rescheduleSection(visits, 'Europe/Madrid', { listVisits: false })).not.toContain('(Ajuste)')
+    expect(rescheduleSection([], 'Europe/Madrid', { listVisits: true })).toBe('')
   })
 })

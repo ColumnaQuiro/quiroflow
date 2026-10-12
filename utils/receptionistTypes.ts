@@ -112,13 +112,13 @@ export function audienceSection(audience: ReceptionistAudience): string {
 /** The prompt section that says what may be offered. */
 export function offeredTypesSection(offeredTypes: PromptType[], adOnly: PromptType[] = []) {
   if (offeredTypes.length === 0) {
-    return `# What you can offer\nNo type of appointment can be booked through you. Do not offer times. If the patient wants an appointment, say your colleague will arrange it with them.`
+    return `# What you can offer\nNo type of appointment can be booked through you. Do not offer times for a new appointment. If the patient wants one, say your colleague will arrange it with them.`
   }
   const line = (type: PromptType) => `- ${type.name} (${type.durationMinutes} min)`
   return [
     `# What you can offer\nOnly these types of appointment can be booked through you:\n${offeredTypes.map(line).join('\n')}`,
     adOnly.length
-      ? `Only if the patient says they came from one of the clinic's ads or offers, offer this instead, with its offer price from the clinic knowledge:\n${adOnly.map(line).join('\n')}\nNever offer it to anyone else. Ask whether they came from an ad only if they ask about the price, and then once.`
+      ? `Only if the patient says they came from one of the clinic's ads or offers, offer this instead, with its offer price from the clinic knowledge:\n${adOnly.map(line).join('\n')}\nNever offer it to anyone else. If they ask the price, never answer with a question: give the regular first-visit price and add, in the same reply, that people who come through the clinic's ad have it at the offer price, stating it -- in the shape "La primera visita son X €; si nos has conocido por nuestro anuncio, tienes la oferta de primera visita por Y €", with the real prices from the clinic knowledge.`
       : '',
     `Offer only these, by these names. If the patient wants something that is not on this list, do not offer a time for it: say your colleague will arrange it.`,
   ]
@@ -146,4 +146,38 @@ export function checkBookableIds(value: unknown, types: Pick<OfferableType, 'id'
     if (type.archived_at) return { error: `«${type.name}» is archived, so the receptionist cannot offer it` }
   }
   return { ids }
+}
+
+/** A visit the person already has booked, as the reschedule section names it. */
+export interface BookedVisit {
+  startsAt: string
+  typeName: string | null
+}
+
+/**
+ * Moving a visit they already have. The receptionist offers new times for
+ * the SAME type -- a patient moving their adjustment is not offered a first
+ * visit, and a lead moving their first-visit offer keeps the offer -- from
+ * the Booking list or find_free_times, which include those types even when
+ * the receptionist does not offer them for new bookings. Cancelling is still
+ * a person's: it can involve a fee, a refund or a package, and a "yes,
+ * cancelled" the clinic then has to take back is worse than a short wait.
+ *
+ * `listVisits` is off where the prompt already lists them (patient facts).
+ */
+export function rescheduleSection(visits: BookedVisit[], timeZone: string, opts: { listVisits: boolean }): string {
+  if (visits.length === 0) return ''
+  const list = visits
+    .map((visit) => {
+      const when = new Date(visit.startsAt).toLocaleString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone })
+      return `- ${when}${visit.typeName ? ` (${visit.typeName})` : ''}`
+    })
+    .join('\n')
+  return [
+    `# Moving a visit they already have`,
+    opts.listVisits ? `They have booked:\n${list}` : '',
+    `If they want to change the day or time of one of these, offer new times for that same type of appointment -- from the Booking list, or find_free_times -- and never a different type. This holds even when that type is not under "What you can offer", which is about new appointments. When they pick one, say you are passing the change on and that they will get a confirmation: it is not moved until then, and their current time stands meanwhile. If they want to cancel it instead, say your colleague will take care of it.`,
+  ]
+    .filter(Boolean)
+    .join('\n')
 }

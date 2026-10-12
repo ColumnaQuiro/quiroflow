@@ -1,6 +1,7 @@
 import type { H3Event } from 'h3'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
-import { announceHandover, sendAsReceptionist } from '~/server/utils/receptionistSend'
+import { announceHandover, noteInConversation, sendAsReceptionist } from '~/server/utils/receptionistSend'
+import { bookingTool } from '~/server/utils/receptionistBooking'
 import { autoReplyHeldBack } from '~/utils/receptionistAutoReply'
 import { buildSystemPrompt, loadBookedVisits, loadOfferedTypes, loadPatientPractitioners, loadReceptionistCalendar, toConfig, uniqueTypes, type LeadOrigin } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptionistModel'
@@ -187,13 +188,32 @@ export async function draftLeadReply(
       new Date(),
     ) === null
 
+  // Booking on its own only when it is also answering on its own, and from a
+  // calendar it could read: never behind a draft nobody has read yet.
+  const book =
+    sends && opts.send && calendar.availability
+      ? bookingTool({
+          event: opts.send.event,
+          service: calendarClient,
+          accountId,
+          config,
+          timeZone: calendar.timeZone,
+          types: [...types, ...adOnly],
+          booked: { appointments: booked.appointments, types: booked.types },
+          practitionerIds,
+          person: { kind: 'lead', leadId, patientId: lead.patient_id ?? null },
+          onBooked: (summary) => noteInConversation(calendarClient, accountId, { kind: 'lead', leadId }, summary),
+        })
+      : null
+
   const { text: draft, refused, handedOver } = await runReceptionistModel(createAnthropicClient(apiKey), {
     model: MODEL,
     maxTokens: MAX_TOKENS,
-    system: buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, audience, calendar, leadOrigin, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, draft: { personName: lead.full_name ?? null }, sendsItself: sends }),
+    system: buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, audience, calendar, leadOrigin, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, draft: { personName: lead.full_name ?? null }, sendsItself: sends, canBook: Boolean(book) }),
     messages: history,
     findFreeTimes,
     handOver: sends,
+    book,
     internalNotes: internalNotes(config),
     logLabel: `lead ${leadId}`,
   })

@@ -40,16 +40,23 @@ export function conversationKeyFor(target: ReceptionistTarget): string {
 }
 
 /**
+ * An internal note in the conversation by "Recepcionista IA" (NoteBubble.vue:
+ * a note with no author) -- seen by the team, never sent. What it did that a
+ * person may need to check or undo: a handover, a visit it booked or moved.
+ */
+export async function noteInConversation(service: any, accountId: string, target: ReceptionistTarget, body: string) {
+  const { error } = await service.from('inbox_notes').insert({ account_id: accountId, conversation_key: conversationKeyFor(target), author_id: null, body: body.slice(0, 2000), mentions: [] })
+  if (error) console.error('[receptionist] could not leave a note in the conversation:', error.message)
+}
+
+/**
  * The receptionist passed this conversation to a person: an internal note in
  * the thread saying why (seen by the team, never sent), and a push to whoever
  * the Inbox notifies about it. The caller records the state that keeps the
  * receptionist quiet there (a lead's ai_state, a patient's handed_over_at).
  */
 export async function announceHandover(service: any, accountId: string, target: ReceptionistTarget, personName: string, reason: string) {
-  // Shown as an internal note by "Recepcionista IA" (NoteBubble.vue: no author).
-  const body = `He pasado esta conversación a una persona. Motivo: ${reason}`.slice(0, 2000)
-  const { error } = await service.from('inbox_notes').insert({ account_id: accountId, conversation_key: conversationKeyFor(target), author_id: null, body, mentions: [] })
-  if (error) console.error('[receptionist] could not leave the handover note:', error.message)
+  await noteInConversation(service, accountId, target, `He pasado esta conversación a una persona. Motivo: ${reason}`)
   await notifyInboxTeamMembers(service, accountId, `${personName} · necesita a una persona`, reason, {
     type: target.kind === 'patient' && target.channel === 'app' ? 'patient_app_message' : 'whatsapp_message',
     key: conversationKeyFor(target),

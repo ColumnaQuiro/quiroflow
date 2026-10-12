@@ -5,6 +5,7 @@ import { loadReceptionistCalendar, type OfferedType, type ReceptionistConfig } f
 import { availabilityLists, FREE_TIMES_MAX_DAYS, FREE_TIMES_MAX_TIMES, parseFreeTimesInput } from '~/utils/receptionistSlots'
 import { clinicDateOf, startOfLocalDate } from '~/utils/clinicClock'
 import { briefingLeak } from '~/utils/receptionistGuard'
+import { BOOK_APPOINTMENT } from '~/server/utils/receptionistBooking'
 
 // How the receptionist talks to the model, for all three of its callers --
 // lead drafts, patient drafts and "Try Alba" -- so they cannot drift apart.
@@ -106,6 +107,12 @@ export async function runReceptionistModel(
      * person anyway. Its reason comes back as `handedOver`.
      */
     handOver?: boolean
+    /**
+     * Offer book_appointment (receptionistBooking.ts): only when the reply is
+     * sent without review, so a calendar change is never made behind a draft
+     * a person has not read yet.
+     */
+    book?: ((input: unknown) => Promise<{ content: string; isError: boolean }>) | null
     /** The clinic's text that is not for patients (internalNotes). */
     internalNotes: string[]
     /** Names the conversation in the log when a draft is withheld; never its content. */
@@ -113,7 +120,11 @@ export async function runReceptionistModel(
   },
 ): Promise<{ text: string; refused: boolean; handedOver: string | null }> {
   const messages: Anthropic.MessageParam[] = [...opts.messages]
-  const tools: Anthropic.Tool[] = [...(opts.findFreeTimes ? [FIND_FREE_TIMES] : []), ...(opts.handOver ? [HAND_OVER] : [])]
+  const tools: Anthropic.Tool[] = [
+    ...(opts.findFreeTimes ? [FIND_FREE_TIMES] : []),
+    ...(opts.handOver ? [HAND_OVER] : []),
+    ...(opts.book ? [BOOK_APPOINTMENT] : []),
+  ]
   let handedOver: string | null = null
   for (let round = 0; ; round++) {
     const message = await client.messages.create({
@@ -150,10 +161,19 @@ export async function runReceptionistModel(
     // every result in one message.
     messages.push({ role: 'assistant', content: message.content })
     const lookup = opts.findFreeTimes
-    const results = await Promise.all(
-      uses.map(async (use): Promise<Anthropic.ToolResultBlockParam> => {
+    // One after another, not in parallel: two book_appointment calls in one
+    // turn must not both pass the "already booked in this reply" check.
+    const results: Anthropic.ToolResultBlockParam[] = []
+    for (const use of uses) {
+      results.push(
+        await (async (): Promise<Anthropic.ToolResultBlockParam> => {
         let result: { content: string; isError: boolean }
-        if (use.name === 'find_free_times' && lookup) {
+        if (use.name === 'book_appointment' && opts.book) {
+          result = await opts.book(use.input).catch((err) => {
+            console.error('[receptionist] book_appointment failed:', (err as Error)?.message ?? err)
+            return { content: 'The booking could not be made. Do not say it is booked: call hand_over_to_colleague with the day, time and type they accepted.', isError: true }
+          })
+        } else if (use.name === 'find_free_times' && lookup) {
           result = await lookup(use.input).catch((err) => {
             console.error('[receptionist] find_free_times failed:', (err as Error)?.message ?? err)
             return { content: 'The calendar could not be read. Do not offer a time: say your colleague will confirm an exact time shortly.', isError: true }
@@ -166,8 +186,9 @@ export async function runReceptionistModel(
           result = { content: `There is no tool called ${use.name}.`, isError: true }
         }
         return { type: 'tool_result', tool_use_id: use.id, content: result.content, is_error: result.isError }
-      }),
-    )
+        })(),
+      )
+    }
     messages.push({ role: 'user', content: results })
   }
 }

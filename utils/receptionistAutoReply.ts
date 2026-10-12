@@ -53,8 +53,16 @@ export const MAX_AUTO_REPLIES_PER_DAY = 8
 export interface ConversationMessage {
   direction: string
   sentByAi: boolean
+  /**
+   * Sent by the system, not by anyone: a WhatsApp template, or a message an
+   * automation sent (a reminder, a drip). Not a person in the conversation.
+   */
+  automated?: boolean
   createdAt: string
 }
+
+/** Somebody from the clinic wrote it themselves: not the receptionist, not an automation. */
+const byAPerson = (m: ConversationMessage) => m.direction === 'outbound' && !m.sentByAi && !m.automated
 
 /**
  * Why the receptionist must not send in this conversation now, or null.
@@ -64,7 +72,9 @@ export interface ConversationMessage {
 export function autoReplyHeldBack(messages: ConversationMessage[], now: Date): 'person' | 'limit' | null {
   const ms = now.getTime()
   const outbound = messages.filter((m) => m.direction === 'outbound')
-  if (outbound.some((m) => !m.sentByAi && ms - new Date(m.createdAt).getTime() < PERSON_ACTIVE_MINUTES * 60_000)) return 'person'
+  // A reminder the clinic's automation sent at 14:45 is not somebody at the
+  // desk answering: it held back the reply to "Cambiar cita" at 14:50.
+  if (messages.some((m) => byAPerson(m) && ms - new Date(m.createdAt).getTime() < PERSON_ACTIVE_MINUTES * 60_000)) return 'person'
   if (outbound.filter((m) => m.sentByAi && ms - new Date(m.createdAt).getTime() < 24 * 3600_000).length >= MAX_AUTO_REPLIES_PER_DAY) return 'limit'
   return null
 }
@@ -76,5 +86,5 @@ export function autoReplyHeldBack(messages: ConversationMessage[], now: Date): '
  */
 export function personRepliedSince(messages: ConversationMessage[], since: string): boolean {
   const from = new Date(since).getTime()
-  return messages.some((m) => m.direction === 'outbound' && !m.sentByAi && new Date(m.createdAt).getTime() > from)
+  return messages.some((m) => byAPerson(m) && new Date(m.createdAt).getTime() > from)
 }

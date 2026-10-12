@@ -50,6 +50,15 @@ describe('Receptionist auto-reply', () => {
     expect(autoReplyHeldBack([msg('outbound', true, 2), msg('inbound', false, 1)], now)).toBeNull()
   })
 
+  // The appointment reminder went out at 14:45, the patient tapped "Cambiar
+  // cita" at 14:50, and the receptionist drafted instead of answering: it took
+  // the automation's template for somebody at the desk.
+  it('does not take an automated send for a person', () => {
+    const reminder: ConversationMessage = { ...msg('outbound', false, 10), automated: true }
+    expect(autoReplyHeldBack([reminder, msg('inbound', false, 5)], now)).toBeNull()
+    expect(personRepliedSince([reminder], at(60))).toBe(false)
+  })
+
   it('sends at most the day\'s limit in one conversation', () => {
     const sent = Array.from({ length: MAX_AUTO_REPLIES_PER_DAY }, (_, i) => msg('outbound', true, 60 * (i + 1)))
     expect(autoReplyHeldBack(sent, now)).toBe('limit')

@@ -39,7 +39,7 @@ export type PatientDraftOutcome =
   | { status: 'nothing_to_answer' }
   | { status: 'not_found' }
 
-interface Turn { direction: string; body: string; created_at: string; sent_by_ai?: boolean | null; channel?: string | null }
+interface Turn { direction: string; body: string; created_at: string; sent_by_ai?: boolean | null; channel?: string | null; automated?: boolean }
 
 /**
  * `supabase` is the asker's own client (RLS decides what of the patient they
@@ -65,15 +65,17 @@ export async function draftPatientReply(
 
   // Both channels the Inbox shows as one conversation: WhatsApp and the app.
   const [{ data: wa }, { data: app }] = await Promise.all([
-    supabase.from('whatsapp_messages').select('direction, body_preview, created_at, sent_by_ai, channel').eq('patient_id', patientId).order('created_at', { ascending: false }).limit(HISTORY_TURNS),
+    supabase.from('whatsapp_messages').select('direction, body_preview, created_at, sent_by_ai, channel, template_name, rule_id, automation_action_id').eq('patient_id', patientId).order('created_at', { ascending: false }).limit(HISTORY_TURNS),
     supabase.from('patient_app_messages').select('direction, body, created_at, sent_by_ai').eq('patient_id', patientId).order('created_at', { ascending: false }).limit(HISTORY_TURNS),
   ])
   const turns: Turn[] = [
-    ...((wa ?? []) as { direction: string; body_preview: string | null; created_at: string; sent_by_ai?: boolean | null; channel?: string | null }[]).map((m) => ({
+    ...((wa ?? []) as { direction: string; body_preview: string | null; created_at: string; sent_by_ai?: boolean | null; channel?: string | null; template_name?: string | null; rule_id?: string | null; automation_action_id?: string | null }[]).map((m) => ({
       direction: m.direction,
       body: m.body_preview ?? '',
       created_at: m.created_at,
       sent_by_ai: m.sent_by_ai,
+      // A template or an automation's send: the system, not a person (autoReplyHeldBack).
+      automated: Boolean(m.template_name || m.rule_id || m.automation_action_id),
       channel: m.channel ?? 'whatsapp',
     })),
     ...((app ?? []) as Turn[]).map((m) => ({ ...m, channel: 'app' })),
@@ -146,7 +148,7 @@ export async function draftPatientReply(
   // (WhatsApp or the app), and nothing in the conversation holding it back.
   const lastInbound = [...turns].reverse().find((m) => m.direction === 'inbound')
   const channel: 'app' | 'whatsapp' | null = lastInbound?.channel === 'app' ? 'app' : lastInbound?.channel === 'whatsapp' ? 'whatsapp' : null
-  const asTurns = turns.map((m) => ({ direction: m.direction, sentByAi: m.sent_by_ai === true, createdAt: m.created_at }))
+  const asTurns = turns.map((m) => ({ direction: m.direction, sentByAi: m.sent_by_ai === true, automated: m.automated === true, createdAt: m.created_at }))
   let handoverOpen = false
   if (opts.send) {
     const { data: state } = await service.from('inbox_reply_drafts').select('handed_over_at').eq('account_id', accountId).eq('conversation_key', patientId).maybeSingle()

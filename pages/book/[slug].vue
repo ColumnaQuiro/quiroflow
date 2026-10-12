@@ -66,7 +66,21 @@ const route = useRoute()
 const slug = route.params.slug as string
 const supabase = useSupabaseClient()
 
-const phase = ref<'loading' | 'not_found' | 'select' | 'datetime' | 'details' | 'payment' | 'success'>('loading')
+const phase = ref<'loading' | 'not_found' | 'select' | 'datetime' | 'details' | 'payment' | 'card' | 'success'>('loading')
+
+// The clinic's fees for a late cancellation or a missed visit, said before
+// anyone books, and whether it asks for a card to hold the booking
+// (get_public_booking_policy). With a card asked for, book.post.ts returns a
+// link to Stripe's own card page, offered as the step after booking.
+const policy = ref<{ card_on_file: boolean; cancellation_fee_cents: number | null; missed_appointment_fee_cents: number | null; notice_hours: number } | null>(null)
+const cardUrl = ref<string | null>(null)
+function openCardPage() {
+  if (!cardUrl.value) return
+  // Stripe's page will not load inside a frame: an embedded booking widget
+  // opens it in a tab of its own.
+  if (window.self !== window.top) window.open(cardUrl.value, '_blank', 'noopener')
+  else window.location.href = cardUrl.value
+}
 
 const info = ref<BookingInfo | null>(null)
 const clinicId = ref('')
@@ -248,6 +262,9 @@ onMounted(async () => {
     return
   }
   info.value = parsed
+  supabase.rpc('get_public_booking_policy', { p_slug: slug }).then(({ data: p }) => {
+    policy.value = (p as typeof policy.value) ?? null
+  })
   dialCode.value = parsed.account.default_phone_country || 'ES'
   clinicId.value = parsed.clinics[0].id
   // Marketing pages can deep-link straight into a specific offer (e.g. a
@@ -596,7 +613,8 @@ async function submitBooking() {
     return
   }
   submitting.value = false
-  const result = data as unknown as { appointment_id: string; starts_at: string; invoice_id: string | null; payment_required_cents: number; discount_applied_cents: number }
+  const result = data as unknown as { appointment_id: string; starts_at: string; invoice_id: string | null; payment_required_cents: number; discount_applied_cents: number; card_url?: string | null }
+  cardUrl.value = result.card_url ?? null
   confirmation.value = result
   discountAppliedCents.value = result.discount_applied_cents ?? 0
   // Conversion event for whatever's listening on the account's GTM container
@@ -642,6 +660,8 @@ async function submitBooking() {
     invoiceId.value = result.invoice_id
     paymentRequiredCents.value = result.payment_required_cents
     phase.value = 'payment'
+  } else if (cardUrl.value) {
+    phase.value = 'card'
   } else {
     goToSuccess()
   }
@@ -711,7 +731,8 @@ function goToSuccess() {
 }
 
 function onPaymentSucceeded() {
-  goToSuccess()
+  if (cardUrl.value) phase.value = 'card'
+  else goToSuccess()
 }
 
 function backToDatetime() {
@@ -983,6 +1004,12 @@ if (import.meta.client) {
                 <label class="block text-sm font-medium text-ink-700">Código de descuento</label>
                 <input v-model="discountCode" type="text" placeholder="Opcional" class="mt-1 w-full max-w-[200px] rounded-ctl border border-line-control px-3 py-2 text-sm uppercase focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
               </div>
+              <!-- The clinic's cancellation and no-show fees, before they book. -->
+              <p v-if="policy && (policy.cancellation_fee_cents || policy.missed_appointment_fee_cents || policy.card_on_file)" class="mt-4 rounded-ctl bg-surface-subtle px-3 py-2.5 text-[13px] leading-snug text-ink-700" data-cy="booking-policy">
+                <template v-if="policy.cancellation_fee_cents">Cancelar con menos de {{ policy.notice_hours }} h de antelación: {{ formatPrice(policy.cancellation_fee_cents) }}. </template>
+                <template v-if="policy.missed_appointment_fee_cents">No presentarse a la cita: {{ formatPrice(policy.missed_appointment_fee_cents) }}. </template>
+                <template v-if="policy.card_on_file">Tras reservar te pediremos una tarjeta para garantizar la cita; ahora no se cobra nada.</template>
+              </p>
               <p v-if="submitError" class="mt-3 text-sm text-danger-text">{{ submitError }}</p>
               <UiBtn type="submit" variant="primary" class="mt-5" :disabled="submitting">
                 {{ submitting ? 'Reservando…' : t('confirm_button', 'Reservar cita') }}
@@ -998,6 +1025,15 @@ if (import.meta.client) {
           <h2 class="text-center text-xl font-semibold text-ink-900">Pago</h2>
           <p class="mt-1 text-center text-sm text-ink-muted">Su cita ya está reservada. Complete el pago para confirmarla.</p>
           <BookingPayment class="mt-6" :account-slug="slug" :invoice-id="invoiceId" :amount-cents="paymentRequiredCents" :format-price="formatPrice" @paid="onPaymentSucceeded" />
+        </div>
+
+        <!-- Step 3b: a card to hold the booking, when the clinic asks for one -->
+        <div v-else-if="phase === 'card'" class="mx-auto mt-10 max-w-md rounded-card border border-line bg-surface p-8 text-center shadow-card" data-cy="booking-card-step">
+          <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-success-bg text-2xl text-success-text">✓</div>
+          <h2 class="mt-4 text-lg font-semibold text-ink-900">Tu cita está reservada</h2>
+          <p class="mt-2 text-sm text-ink-muted">Para garantizarla, añade una tarjeta. No se cobra nada ahora<template v-if="policy && (policy.cancellation_fee_cents || policy.missed_appointment_fee_cents)">; solo se usaría si cancelas con menos de {{ policy.notice_hours }} h o no vienes</template>.</p>
+          <UiBtn variant="primary" class="mt-5 w-full" data-cy="booking-add-card" @click="openCardPage">Añadir tarjeta</UiBtn>
+          <button type="button" class="mt-3 text-[13px] text-ink-muted hover:text-ink-700" data-cy="booking-skip-card" @click="goToSuccess">Ahora no</button>
         </div>
 
         <!-- Success -->

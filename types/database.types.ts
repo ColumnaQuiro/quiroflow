@@ -582,6 +582,7 @@ export type Database = {
       }
       accounts: {
         Row: {
+          online_booking_card_on_file: boolean
           appointment_confirmation_channels: string[]
           appointment_confirmation_enabled: boolean
           appointment_reminder_channels: string[]
@@ -672,6 +673,7 @@ export type Database = {
           waitlist_offer_mode: string
         }
         Insert: {
+          online_booking_card_on_file?: boolean
           appointment_confirmation_channels?: string[]
           appointment_confirmation_enabled?: boolean
           appointment_reminder_channels?: string[]
@@ -761,6 +763,7 @@ export type Database = {
           waitlist_offer_mode?: string
         }
         Update: {
+          online_booking_card_on_file?: boolean
           appointment_confirmation_channels?: string[]
           appointment_confirmation_enabled?: boolean
           appointment_reminder_channels?: string[]
@@ -7372,6 +7375,7 @@ export type Database = {
       reorder_appointment_types: { Args: { p_ids: string[] }; Returns: undefined }
       cancel_patient_appointment: { Args: { p_appointment_id: string }; Returns: Json }
       check_in_my_appointment: { Args: { p_appointment_id: string }; Returns: string | null }
+      get_public_booking_policy: { Args: { p_slug: string }; Returns: Json }
       record_email_event: {
         Args: {
           p_provider_message_id: string

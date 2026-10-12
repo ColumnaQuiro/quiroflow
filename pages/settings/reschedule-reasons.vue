@@ -37,6 +37,12 @@ const reasons = ref<Tables<'reschedule_reasons'>[]>([])
 const uses = ref<Record<string, number>>({})
 const loading = ref(true)
 
+// Ask for a card at online booking (accounts.online_booking_card_on_file):
+// straight after booking the patient is sent to Stripe's card page, so a
+// late cancellation or a no-show can be charged to it. Needs Stripe set up.
+const cardOnFile = ref(false)
+const stripeReady = ref(false)
+
 function toAmount(cents: number | null) {
   return cents != null ? (cents / 100).toFixed(2).replace('.', ',') : ''
 }
@@ -44,7 +50,7 @@ function toAmount(cents: number | null) {
 async function load() {
   const [{ data: reasonRows }, { data: account }] = await Promise.all([
     supabase.from('reschedule_reasons').select('*').order('name'),
-    supabase.from('accounts').select('scheduling_policy_fee_cents, cancellation_fee_cents, missed_appointment_fee_cents').eq('id', store.accountId!).maybeSingle(),
+    supabase.from('accounts').select('scheduling_policy_fee_cents, cancellation_fee_cents, missed_appointment_fee_cents, online_booking_card_on_file, stripe_publishable_key').eq('id', store.accountId!).maybeSingle(),
   ])
   reasons.value = reasonRows ?? []
   for (const f of FEES.value) {
@@ -52,6 +58,8 @@ async function load() {
     feeOn.value[f.key] = cents != null && cents > 0
     feeAmount.value[f.key] = toAmount(cents)
   }
+  cardOnFile.value = account?.online_booking_card_on_file ?? false
+  stripeReady.value = !!account?.stripe_publishable_key
   loading.value = false
   const counts = await Promise.all(reasons.value.map((r) => supabase.from('appointment_reschedules').select('id', { count: 'exact', head: true }).eq('reason_id', r.id)))
   uses.value = Object.fromEntries(reasons.value.map((r, i) => [r.id, counts[i].count ?? 0]))
@@ -60,7 +68,7 @@ onMounted(load)
 
 async function saveFees() {
   feeError.value = ''
-  const update: Partial<Record<FeeKey, number | null>> = {}
+  const update: Partial<Record<FeeKey, number | null>> & { online_booking_card_on_file?: boolean } = { online_booking_card_on_file: cardOnFile.value && stripeReady.value }
   for (const f of FEES.value) {
     if (!feeOn.value[f.key]) {
       update[f.key] = null
@@ -200,6 +208,29 @@ const iconBtn = 'flex h-9 w-9 touch:h-11 touch:w-11 shrink-0 items-center justif
                 €
               </label>
               <span v-else class="text-[13px] text-ink-muted">{{ t('Not offered', 'No se ofrece') }}</span>
+            </div>
+            <!-- A card to charge them to: asked for at online booking. -->
+            <div class="flex flex-wrap items-center gap-3.5 border-t border-line-row px-[18px] py-3" data-cy="card-on-file">
+              <button
+                type="button"
+                role="switch"
+                :aria-checked="cardOnFile"
+                aria-labelledby="card-on-file-title"
+                :disabled="!stripeReady"
+                class="relative h-[26px] w-11 shrink-0 rounded-full disabled:opacity-50"
+                :class="cardOnFile && stripeReady ? 'bg-brand' : 'bg-line-control'"
+                data-cy="card-on-file-toggle"
+                @click="cardOnFile = !cardOnFile"
+              >
+                <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card transition-all" :class="cardOnFile && stripeReady ? 'left-[21px]' : 'left-[3px]'" />
+              </button>
+              <div class="flex min-w-[200px] flex-1 flex-col gap-0.5">
+                <strong id="card-on-file-title" class="text-[14.5px] text-ink-900">{{ t('Ask for a card at online booking', 'Pedir tarjeta al reservar online') }}</strong>
+                <span class="text-[13px] leading-snug text-ink-500">
+                  <template v-if="stripeReady">{{ t("Straight after booking, the patient saves a card on Stripe's own page (nothing is charged), so these fees can be charged to it. The booking page says so before they book.", 'Nada más reservar, el paciente guarda una tarjeta en la página de Stripe (sin cobrar nada), para poder cobrarle estas tarifas. La página de reserva lo avisa antes.') }}</template>
+                  <template v-else>{{ t('Needs online payments set up in Settings › Payments.', 'Necesita los pagos online configurados en Ajustes › Pagos.') }}</template>
+                </span>
+              </div>
             </div>
             <div class="flex flex-wrap items-center justify-end gap-3 border-t border-line bg-surface-subtle px-[18px] py-3">
               <p v-if="feeError" class="flex-1 text-[12.5px] font-semibold text-danger-text" data-cy="fee-error">{{ feeError }}</p>

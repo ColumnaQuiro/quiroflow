@@ -92,6 +92,8 @@ const rules: Rule[] = [
   // them: every block on one is narrowed, or says it cannot be.)
   // "Only their own figures" (reports_own_only) cannot be honoured on them,
   // so they are not offered at all rather than shown whole.
+  // What each person earns: between the clinic and them, so owners only (pay_plans' RLS agrees).
+  { test: (p) => p === '/reports/commissions', check: (s) => s.isOwner },
   { test: (p) => CLINIC_WIDE_REPORTS.includes(p), check: (s) => can(s, 'reports_access') && !restrictedTo(s, 'reports_own_only') },
   { test: (p) => p.startsWith('/reports'), check: (s) => can(s, 'reports_access') },
 ]

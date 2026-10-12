@@ -196,31 +196,33 @@ export async function draftPatientReply(
       await announceHandover(service, accountId, target, name, 'La recepcionista no ha podido responder a su último mensaje.')
       return { status: 'refused' }
     }
-    let sent = true
+    // Recorded BEFORE it is sent: answered up to here, with the words kept as
+    // a waiting draft. Cut off after the send but before the record, the next
+    // tick used to answer the same message again; now the worst a cut-off
+    // can do is leave this draft for a person to send -- never a second reply.
+    const { error: recordError } = await service.from('inbox_reply_drafts').upsert({
+      account_id: accountId,
+      conversation_key: patientId,
+      body: draft.slice(0, 4000),
+      drafted_through_at: newestInboundAt,
+      dismissed_at: null,
+      handed_over_at: handedOver ? now : null,
+      created_at: now,
+    })
+    // Not recorded, not sent: a reply it could not mark would be sent again.
+    if (recordError) throw new Error(`could not record the reply before sending: ${recordError.message}`)
     try {
       await sendAsReceptionist(opts.send.event, service, accountId, target, draft)
     } catch (err) {
-      // Refused (the window closed, "do not contact"...): stored as a draft
-      // below instead, so a person still sees what it would have said.
+      // Refused (the window closed, "do not contact"...): it stays a waiting
+      // draft, so a person still sees what it would have said.
       console.error(`[receptionist] could not send to patient ${patientId}:`, (err as Error)?.message ?? err)
-      sent = false
+      return { status: 'drafted', draft }
     }
-    if (sent) {
-      // Kept as the conversation's marker -- answered up to here, dealt with
-      // -- so the tick does not answer the same message twice.
-      const { error } = await service.from('inbox_reply_drafts').upsert({
-        account_id: accountId,
-        conversation_key: patientId,
-        body: draft.slice(0, 4000),
-        drafted_through_at: newestInboundAt,
-        dismissed_at: now,
-        handed_over_at: handedOver ? now : null,
-        created_at: now,
-      })
-      if (error) console.error(`[receptionist] could not record the reply to patient ${patientId}:`, error.message)
-      if (handedOver) await announceHandover(service, accountId, target, name, handedOver)
-      return { status: 'sent', text: draft, handedOver: Boolean(handedOver) }
-    }
+    // Sent: dealt with, so it no longer shows as a draft.
+    await service.from('inbox_reply_drafts').update({ dismissed_at: new Date().toISOString() }).eq('account_id', accountId).eq('conversation_key', patientId)
+    if (handedOver) await announceHandover(service, accountId, target, name, handedOver)
+    return { status: 'sent', text: draft, handedOver: Boolean(handedOver) }
   }
 
   if (refused || !draft) return { status: 'refused' }

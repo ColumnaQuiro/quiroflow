@@ -67,11 +67,11 @@ describe('Growth dashboard', () => {
     cy.get('[data-test="funnel-stage-qualified"]').should('contain', '0')
   })
 
-  it('does not count a lead as booked or showed just because it was converted', () => {
-    // "Convert to patient" sets Converted straight from New -- often in order
-    // to book them in. Read cumulatively that claimed a visit that had not
-    // happened yet.
-    cy.task('db:createLead', { accountId: account.accountId, fullName: 'Converted First', stage: 'new', phone: '34600111222' }).then((lead) => {
+  it('counts a lead made a patient and booked for next week as booked, not showed or converted', () => {
+    // "Convert to patient" makes the record the desk needs to book them. It
+    // used to set Converted as well, which put people who had never visited
+    // at the end of the funnel.
+    cy.task('db:createLead', { accountId: account.accountId, fullName: 'Booked Next Week', stage: 'new', phone: '34600111222' }).then((lead) => {
       cy.request('POST', `/api/growth/leads/${(lead as { id: string }).id}/convert`).then((res) => {
         cy.task('db:createAppointment', {
           accountId: account.accountId,
@@ -81,21 +81,19 @@ describe('Growth dashboard', () => {
         })
       })
     })
-    cy.task('db:createLead', { accountId: account.accountId, fullName: 'Converted Unbooked', stage: 'new', phone: '34600333444' }).then((lead) => {
+    cy.task('db:createLead', { accountId: account.accountId, fullName: 'Record Only', stage: 'new', phone: '34600333444' }).then((lead) => {
       cy.request('POST', `/api/growth/leads/${(lead as { id: string }).id}/convert`)
     })
 
     cy.visit('/growth?growth=1')
-    cy.get('[data-test="funnel-stage-converted"]').should('contain', '2')
-    // One of them has an appointment, next week, so it has been booked --
     cy.get('[data-test="funnel-stage-booked"]').should('contain', '1')
-    // -- and nobody has turned up to anything.
     cy.get('[data-test="funnel-stage-showed"]').should('contain', '0')
+    cy.get('[data-test="funnel-stage-converted"]').should('contain', '0')
     // Next week's visit has not been missed: no show rate to state yet.
     cy.contains('td', 'All channels').parent().find('td').eq(4).should('contain', '—')
   })
 
-  it('counts a converted lead who attended as booked and showed', () => {
+  it('counts a lead who attended as booked and showed', () => {
     cy.task('db:createLead', { accountId: account.accountId, fullName: 'Came In', stage: 'new', phone: '34600555666' }).then((lead) => {
       cy.request('POST', `/api/growth/leads/${(lead as { id: string }).id}/convert`).then((res) => {
         cy.task('db:createAppointment', {
@@ -113,8 +111,20 @@ describe('Growth dashboard', () => {
     cy.visit('/growth?growth=1')
     cy.get('[data-test="funnel-stage-booked"]').should('contain', '1')
     cy.get('[data-test="funnel-stage-showed"]').should('contain', '1')
-    cy.get('[data-test="funnel-stage-converted"]').should('contain', '1')
+    // No convert-after-visits rule on this account: Converted is a hand move.
+    cy.get('[data-test="funnel-stage-converted"]').should('contain', '0')
     cy.contains('td', 'All channels').parent().find('td').eq(4).should('contain', '100%')
+  })
+
+  it('does not credit a lead moved to Converted by hand with a visit it has not had', () => {
+    // Converted is still the clinic's to set; reading it cumulatively would
+    // claim a booking and a visit that never happened.
+    cy.task('db:createLead', { accountId: account.accountId, fullName: 'Dragged Across', stage: 'converted' })
+
+    cy.visit('/growth?growth=1')
+    cy.get('[data-test="funnel-stage-converted"]').should('contain', '1')
+    cy.get('[data-test="funnel-stage-booked"]').should('contain', '0')
+    cy.get('[data-test="funnel-stage-showed"]').should('contain', '0')
   })
 
   it('speaks the staff member\'s language', () => {

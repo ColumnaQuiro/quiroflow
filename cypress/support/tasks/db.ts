@@ -1946,11 +1946,11 @@ async function patientByName(opts: { accountId: string; firstName: string; lastN
 }
 
 /** A message in the patient app's own channel, as the app writes one. */
-async function createPatientAppMessage(opts: { accountId: string; patientId: string; direction: 'inbound' | 'outbound'; body: string }) {
+async function createPatientAppMessage(opts: { accountId: string; patientId: string; direction: 'inbound' | 'outbound'; body: string; sentByAi?: boolean }) {
   return unwrap(
     await admin
       .from('patient_app_messages')
-      .insert({ account_id: opts.accountId, patient_id: opts.patientId, direction: opts.direction, body: opts.body })
+      .insert({ account_id: opts.accountId, patient_id: opts.patientId, direction: opts.direction, body: opts.body, sent_by_ai: opts.sentByAi === true })
       .select('id')
       .single(),
   )
@@ -2627,6 +2627,8 @@ async function createLeadMessage(opts: {
   templateName?: string
   /** A file with no text, as a photo or voice note arrives. */
   mediaType?: string
+  /** Sent by the AI receptionist on its own. */
+  sentByAi?: boolean
 }) {
   const row = unwrap(
     await admin
@@ -2634,6 +2636,7 @@ async function createLeadMessage(opts: {
       .insert({
         account_id: opts.accountId,
         lead_id: opts.leadId,
+        sent_by_ai: opts.sentByAi === true,
         direction: opts.direction,
         body_preview: opts.body,
         status: opts.status ?? (opts.direction === 'inbound' ? 'received' : 'sent'),

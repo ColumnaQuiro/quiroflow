@@ -5,6 +5,7 @@ import { loadReceptionistCalendar, type OfferedType, type ReceptionistConfig } f
 import { availabilityLists, FREE_TIMES_MAX_DAYS, FREE_TIMES_MAX_TIMES, parseFreeTimesInput } from '~/utils/receptionistSlots'
 import { clinicDateOf, startOfLocalDate } from '~/utils/clinicClock'
 import { briefingLeak } from '~/utils/receptionistGuard'
+import { BOOK_APPOINTMENT } from '~/server/utils/receptionistBooking'
 
 // How the receptionist talks to the model, for all three of its callers --
 // lead drafts, patient drafts and "Try Alba" -- so they cannot drift apart.
@@ -99,13 +100,32 @@ export async function runReceptionistModel(
     system: string
     messages: Anthropic.MessageParam[]
     findFreeTimes?: FreeTimesLookup | null
+    /**
+     * Offer hand_over_to_colleague: on when the reply is sent without a
+     * person reading it first, so that what a draft's reader would have
+     * caught -- an escalation rule, something it cannot do -- reaches a
+     * person anyway. Its reason comes back as `handedOver`.
+     */
+    handOver?: boolean
+    /**
+     * Offer book_appointment (receptionistBooking.ts): only when the reply is
+     * sent without review, so a calendar change is never made behind a draft
+     * a person has not read yet.
+     */
+    book?: ((input: unknown) => Promise<{ content: string; isError: boolean }>) | null
     /** The clinic's text that is not for patients (internalNotes). */
     internalNotes: string[]
     /** Names the conversation in the log when a draft is withheld; never its content. */
     logLabel: string
   },
-): Promise<{ text: string; refused: boolean }> {
+): Promise<{ text: string; refused: boolean; handedOver: string | null }> {
   const messages: Anthropic.MessageParam[] = [...opts.messages]
+  const tools: Anthropic.Tool[] = [
+    ...(opts.findFreeTimes ? [FIND_FREE_TIMES] : []),
+    ...(opts.handOver ? [HAND_OVER] : []),
+    ...(opts.book ? [BOOK_APPOINTMENT] : []),
+  ]
+  let handedOver: string | null = null
   for (let round = 0; ; round++) {
     const message = await client.messages.create({
       model: opts.model,
@@ -115,15 +135,15 @@ export async function runReceptionistModel(
       output_config: { effort: 'low' },
       system: opts.system,
       messages,
-      ...(opts.findFreeTimes ? { tools: [FIND_FREE_TIMES], tool_choice: round < MAX_TOOL_ROUNDS ? { type: 'auto' as const } : { type: 'none' as const } } : {}),
+      ...(tools.length ? { tools, tool_choice: round < MAX_TOOL_ROUNDS ? { type: 'auto' as const } : { type: 'none' as const } } : {}),
     })
 
     // Refusals arrive as HTTP 200, so the content has to be checked rather
     // than assumed.
-    if (message.stop_reason === 'refusal') return { text: '', refused: true }
+    if (message.stop_reason === 'refusal') return { text: '', refused: true, handedOver }
 
     const uses = message.content.filter((block): block is Anthropic.ToolUseBlock => block.type === 'tool_use')
-    if (message.stop_reason !== 'tool_use' || uses.length === 0 || !opts.findFreeTimes) {
+    if (message.stop_reason !== 'tool_use' || uses.length === 0 || tools.length === 0) {
       const text = message.content
         .filter((block): block is Anthropic.TextBlock => block.type === 'text')
         .map((block) => block.text)
@@ -132,27 +152,57 @@ export async function runReceptionistModel(
       const leak = text ? briefingLeak(text, opts.internalNotes) : null
       if (leak) {
         console.warn(`[receptionist] withheld a draft for ${opts.logLabel}: it ${leak}`)
-        return { text: '', refused: true }
+        return { text: '', refused: true, handedOver }
       }
-      return { text, refused: false }
+      return { text, refused: false, handedOver }
     }
 
     // The whole turn goes back, thinking blocks included and unchanged, and
     // every result in one message.
     messages.push({ role: 'assistant', content: message.content })
     const lookup = opts.findFreeTimes
-    const results = await Promise.all(
-      uses.map(async (use): Promise<Anthropic.ToolResultBlockParam> => {
-        const result =
-          use.name === 'find_free_times'
-            ? await lookup(use.input).catch((err) => {
-                console.error('[receptionist] find_free_times failed:', (err as Error)?.message ?? err)
-                return { content: 'The calendar could not be read. Do not offer a time: say your colleague will confirm an exact time shortly.', isError: true }
-              })
-            : { content: `There is no tool called ${use.name}.`, isError: true }
+    // One after another, not in parallel: two book_appointment calls in one
+    // turn must not both pass the "already booked in this reply" check.
+    const results: Anthropic.ToolResultBlockParam[] = []
+    for (const use of uses) {
+      results.push(
+        await (async (): Promise<Anthropic.ToolResultBlockParam> => {
+        let result: { content: string; isError: boolean }
+        if (use.name === 'book_appointment' && opts.book) {
+          result = await opts.book(use.input).catch((err) => {
+            console.error('[receptionist] book_appointment failed:', (err as Error)?.message ?? err)
+            return { content: 'The booking could not be made. Do not say it is booked: call hand_over_to_colleague with the day, time and type they accepted.', isError: true }
+          })
+        } else if (use.name === 'find_free_times' && lookup) {
+          result = await lookup(use.input).catch((err) => {
+            console.error('[receptionist] find_free_times failed:', (err as Error)?.message ?? err)
+            return { content: 'The calendar could not be read. Do not offer a time: say your colleague will confirm an exact time shortly.', isError: true }
+          })
+        } else if (use.name === 'hand_over_to_colleague' && opts.handOver) {
+          const reason = String((use.input as { reason?: unknown })?.reason ?? '').trim().slice(0, 300)
+          handedOver = reason || 'No reason given'
+          result = { content: 'Done: your colleagues have been told, and you will not answer in this conversation until one of them has. Now write your last message: tell them your colleague will pick this up shortly. Do not promise a time.', isError: false }
+        } else {
+          result = { content: `There is no tool called ${use.name}.`, isError: true }
+        }
         return { type: 'tool_result', tool_use_id: use.id, content: result.content, is_error: result.isError }
-      }),
-    )
+        })(),
+      )
+    }
     messages.push({ role: 'user', content: results })
   }
+}
+
+const HAND_OVER: Anthropic.Tool = {
+  name: 'hand_over_to_colleague',
+  description:
+    'Passes this conversation to a person at the clinic. Call it whenever a rule under "Stop and hand over to a person when" applies, when they want something you cannot do, or when you are not sure what to answer. Your colleagues are notified and you stop answering here until one of them has written. After calling it, tell the person your colleague will pick this up shortly.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      reason: { type: 'string', description: 'For your colleagues, in one short sentence in the clinic\'s language: what they need and why you handed it over.' },
+    },
+    required: ['reason'],
+    additionalProperties: false,
+  },
 }

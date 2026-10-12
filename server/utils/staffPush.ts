@@ -80,8 +80,16 @@ function dayAndTime(iso: string, tz: string) {
   return { day, time }
 }
 
-export type AppointmentPushEvent = 'booked_online' | 'cancelled' | 'rescheduled' | 'checked_in'
-const KIND_OF: Record<AppointmentPushEvent, StaffPushKind> = { booked_online: 'online_bookings', cancelled: 'changes', rescheduled: 'changes', checked_in: 'check_in' }
+export type AppointmentPushEvent = 'booked_online' | 'booked_by_receptionist' | 'cancelled' | 'rescheduled' | 'checked_in'
+const KIND_OF: Record<AppointmentPushEvent, StaffPushKind> = {
+  booked_online: 'online_bookings',
+  // Booked by the AI receptionist (receptionistBooking.ts): like an online
+  // booking, a visit no one at the clinic put in the diary.
+  booked_by_receptionist: 'online_bookings',
+  cancelled: 'changes',
+  rescheduled: 'changes',
+  checked_in: 'check_in',
+}
 
 /**
  * Tells a visit's practitioner (the owners, when it has none) what just
@@ -116,6 +124,7 @@ export async function pushAppointmentEvent(service: Service, appointmentId: stri
     const type = a.appointment_types?.name
     const message = {
       booked_online: { title: 'Nueva cita online', body: [name, type, `${day}, ${time}`].filter(Boolean).join(' · ') },
+      booked_by_receptionist: { title: 'Cita reservada por la recepcionista IA', body: [name, type, `${day}, ${time}`].filter(Boolean).join(' · ') },
       cancelled: { title: 'Cita cancelada', body: `${name} · ${day}, ${time}` },
       rescheduled: { title: 'Cita movida', body: `${name} → ${day}, ${time}` },
       checked_in: { title: `Ha llegado ${name}`, body: [`Cita de las ${time}`, type].filter(Boolean).join(' · ') },

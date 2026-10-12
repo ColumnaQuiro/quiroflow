@@ -9,6 +9,21 @@ const { hasGrowth, resolved } = useGrowthTier()
 // "no" may only mean the bootstrap has not landed yet.
 const decided = computed(() => resolved.value && store.loaded)
 const { data, loading, error, saveChannelSpend } = useGrowthDashboard(() => (decided.value ? hasGrowth.value : null))
+const sample = useGrowthDashboardView(() => SAMPLE_GROWTH_DASHBOARD)
+
+// What the figures cover, said once in the header. It used to read
+// "Acquisition across 3 locations" for every clinic, beside two chips --
+// "Month to date", "All locations" -- styled as filters that did nothing.
+// Every clinic of the account is counted and the month is fixed, so that
+// is stated rather than offered as a choice.
+const meta = computed(() => {
+  if (!data.value || !hasGrowth.value) return undefined
+  const n = store.clinics.length
+  const scope = n > 1
+    ? t(`All ${n} locations`, `Los ${n} centros`)
+    : t('Acquisition', 'Captación')
+  return `${scope} · ${t('Month to date', 'Mes en curso')} · ${data.value.periodLabel}`
+})
 
 // Reuses communication_config, the key that already gates Campaigns, rather
 // than introducing a growth_access key. A new permission defaults to
@@ -19,19 +34,7 @@ const allowed = computed(() => can('communication_config'))
 </script>
 
 <template>
-  <PageHeader
-    :title="t('Growth dashboard', 'Panel de crecimiento')"
-    :meta="data && hasGrowth ? `${t('Acquisition across 3 locations', 'Captación en 3 centros')} · ${data.periodLabel}` : undefined"
-  >
-    <template v-if="hasGrowth">
-      <span class="flex h-8 items-center rounded-ctl border border-line-control bg-surface px-[11px] text-[12px] text-ink-500">
-        {{ t('Month to date', 'Mes en curso') }}
-      </span>
-      <span class="flex h-8 items-center rounded-ctl border border-line-control bg-surface px-[11px] text-[12px] text-ink-500">
-        {{ t('All locations', 'Todos los centros') }}
-      </span>
-    </template>
-  </PageHeader>
+  <PageHeader :title="t('Growth dashboard', 'Panel de crecimiento')" :meta="meta" />
 
   <div class="flex-1 overflow-y-auto">
     <div class="p-4 sm:p-6">
@@ -57,7 +60,7 @@ const allowed = computed(() => can('communication_config'))
       <div v-else class="flex flex-col gap-4" data-test="growth-locked">
         <div class="relative isolate overflow-hidden rounded-card">
           <div inert aria-hidden="true" class="pointer-events-none absolute inset-0 -z-10 select-none overflow-hidden blur-[5px]">
-            <GrowthDashboardBody :data="SAMPLE_GROWTH_DASHBOARD" />
+            <GrowthDashboardBody v-if="sample" :data="sample" />
           </div>
           <div aria-hidden="true" class="absolute inset-0 -z-10 bg-surface-page/50" />
           <div class="flex justify-center px-2 py-8 sm:px-4">

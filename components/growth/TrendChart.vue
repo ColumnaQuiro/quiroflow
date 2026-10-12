@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { GrowthTrendPoint } from '~/composables/useGrowthDashboard'
+import type { GrowthTrendPoint } from '~/utils/growthDashboard'
 
 const props = defineProps<{ points: GrowthTrendPoint[]; axis: string[] }>()
 

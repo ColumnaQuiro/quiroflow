@@ -1,6 +1,7 @@
 import { bonoOwedCents, type BonoOwedPayment } from './bonoOwed'
 import { classifyPaymentForFilter, practitionerForPayment } from './incomeAttribution'
 import { isReceipt } from './paymentReceipts'
+import { LEAD_FUNNEL_STAGES, leadReach, type LeadFunnelStage } from './leadReach'
 import type { SplitKey } from './reportBlocks'
 
 // Every metric a report page can show, and how each is computed.
@@ -113,6 +114,11 @@ export interface LeadRow {
   furthest_stage: string | null
   source: string | null
   estimated_value_cents: number | null
+  /**
+   * The funnel stages it reached (utils/leadReach.ts), from furthest_stage
+   * and what actually happened to it. Absent, furthest_stage alone decides.
+   */
+  reached?: Record<LeadFunnelStage, boolean>
 }
 export interface SpendRow {
   channel: string
@@ -323,8 +329,7 @@ function monthKeyOf(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
-const LEAD_FUNNEL = ['new', 'contacted', 'qualified', 'booked', 'showed', 'converted']
-const leadRank = (stage: string | null) => LEAD_FUNNEL.indexOf(stage ?? '')
+const leadReached = (l: LeadRow) => l.reached ?? leadReach(l.furthest_stage)
 /** Growth's channelOf: the text before '·', or Direct. */
 export function leadChannel(source: string | null) {
   if (!source) return 'Direct'
@@ -874,7 +879,13 @@ export const METRICS: MetricDef[] = [
     key: 'lead_funnel',
     area: 'growth',
     label: ['Lead funnel', 'Embudo de leads'],
-    description: ['Leads of the period by the furthest stage they reached', 'Leads del periodo según la etapa más avanzada a la que llegaron'],
+    // Counted as the Growth dashboard counts (utils/leadReach.ts): a lead the
+    // clinic has written to is Contacted though it sits in New, and Booked
+    // and Showed need an appointment, not just a later stage.
+    description: [
+      'Leads of the period by how far they got. Messaged counts as contacted; booked and showed need an appointment',
+      'Leads del periodo según hasta dónde llegaron. Si se les escribió, cuentan como contactados; reservado y asistió requieren una cita',
+    ],
     unit: 'count',
     splits: ['none'],
     needs: ['leads'],
@@ -890,7 +901,7 @@ export const METRICS: MetricDef[] = [
         showed: ['Showed', 'Asistió'],
         converted: ['Converted', 'Convertido'],
       }
-      return LEAD_FUNNEL.map((stage) => ({ label: ctx.t(...titles[stage]!), value: leads.filter((l) => leadRank(l.furthest_stage) >= leadRank(stage)).length }))
+      return LEAD_FUNNEL_STAGES.map((stage) => ({ label: ctx.t(...titles[stage]!), value: leads.filter((l) => leadReached(l)[stage]).length }))
     },
   },
   {

@@ -1,5 +1,6 @@
 import type { InjectionKey } from 'vue'
 import { fetchAllRows } from '~/composables/useFetchAllRows'
+import { leadReach } from '~/utils/leadReach'
 import type { Appt, BonoData, LeadRow, MembershipRow, Money, MoneyLine, Names, Need, PatientRow, RecallRow, ReportData, SpendRow, WhatsappRow } from '~/utils/reportMetrics'
 
 // The data behind a report page, loaded once for the whole page and shared by
@@ -232,23 +233,41 @@ export function useReportDataHub(): ReportDataHub {
   }
 
   async function loadLeads(r: Range) {
-    type Row = { created_at: string; stage: string; furthest_stage: string | null; source: string | null; estimated_value_cents: number | null }
-    const [rows, spend, account] = await Promise.all([
+    type Row = { id: string; created_at: string; stage: string; furthest_stage: string | null; source: string | null; estimated_value_cents: number | null }
+    const [rows, progress, spend, account] = await Promise.all([
       fetchAllRows<Row>((f, t) =>
         supabase
           .from('leads')
-          .select('created_at, stage, furthest_stage, source, estimated_value_cents')
+          .select('id, created_at, stage, furthest_stage, source, estimated_value_cents')
           .is('deleted_at', null)
           .gte('created_at', r.from.toISOString())
           .lte('created_at', r.to.toISOString())
           .order('id')
           .range(f, t),
       ),
+      // What happened to each lead -- messaged, booked, attended -- so the
+      // funnel counts the way the Growth dashboard does (utils/leadReach.ts).
+      store.accountId
+        ? fetchAllRows((f, t) =>
+            supabase
+              .rpc('growth_lead_progress', { p_account_id: store.accountId!, p_since: r.from.toISOString(), p_until: r.to.toISOString() })
+              .order('lead_id')
+              .range(f, t),
+          )
+        : Promise.resolve([]),
       supabase.from('channel_spend').select('channel, amount_cents, period_month'),
       store.accountId ? supabase.from('accounts').select('lead_default_value_cents').eq('id', store.accountId).maybeSingle() : Promise.resolve({ data: null }),
     ])
+    const progressById = new Map(progress.map((p) => [p.lead_id, p]))
     leads.set(rangeKey(r), {
-      leads: rows.map((l) => ({ at: Date.parse(l.created_at), stage: l.stage, furthest_stage: l.furthest_stage, source: l.source, estimated_value_cents: l.estimated_value_cents })),
+      leads: rows.map((l) => ({
+        at: Date.parse(l.created_at),
+        stage: l.stage,
+        furthest_stage: l.furthest_stage,
+        source: l.source,
+        estimated_value_cents: l.estimated_value_cents,
+        reached: leadReach(l.furthest_stage, progressById.get(l.id)),
+      })),
       spend: (spend.data ?? []) as SpendRow[],
       defaultValueCents: (account.data as { lead_default_value_cents: number | null } | null)?.lead_default_value_cents ?? null,
     })

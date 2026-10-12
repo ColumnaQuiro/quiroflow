@@ -1261,6 +1261,9 @@ const composerBar = ref<{ insertReply: (text: string) => void } | null>(null)
 // last -- there is something to answer -- and its one-tap Send goes the way
 // a typed reply does.
 const theyWroteLast = computed(() => thread.value.at(-1)?.direction === 'inbound')
+// The receptionist's "Draft a reply", for a patient who wrote last inside
+// WhatsApp's window. Computed here so the composer row knows whether to show.
+const showReplyDraft = computed(() => !noteMode.value && within24h.value && threadReady.value && unref(hasGrowth) && !!selected.value?.patientId && theyWroteLast.value)
 function sendDraft(text: string) {
   composerText.value = text
   sendText()
@@ -2386,23 +2389,26 @@ function avatarInitials(name: string) {
         <div class="shrink-0 border-t border-line bg-surface p-3">
           <!-- A note for the team is always possible, whatever WhatsApp's
           window says: it is never sent. -->
-          <div v-if="!isNewConversation && !noteMode" class="mb-2 flex">
-            <button type="button" class="flex h-8 items-center gap-1.5 rounded-pill border border-warning-border bg-warning-bg px-3 text-[12.5px] font-semibold text-warning-text" data-cy="thread-note-open" @click="noteMode = true">
+          <!-- One row for the two things beside the composer: a note for the
+          team, always possible whatever WhatsApp's window says (it is never
+          sent), and the receptionist's suggested reply when the patient wrote
+          last. A drafted reply takes the row's full width (ReplyDraft). -->
+          <div v-if="!noteMode && (!isNewConversation || showReplyDraft)" class="mb-2 flex flex-wrap items-center gap-2">
+            <button v-if="!isNewConversation" type="button" class="flex h-8 items-center gap-1.5 rounded-pill border border-warning-border bg-warning-bg px-3 text-[12.5px] font-semibold text-warning-text" data-cy="thread-note-open" @click="noteMode = true">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z" /></svg>
               {{ t('Internal note', 'Nota interna') }}
             </button>
+            <InboxReplyDraft
+              v-if="showReplyDraft && selected?.patientId"
+              :patient-id="selected.patientId"
+              :draft-for="(id: string) => useStaffFetch<{ available: boolean; draft: string; refused?: boolean }>(`/api/inbox/patients/${id}/draft-reply`, { method: 'POST' })"
+              :sending="sending"
+              @send="sendDraft"
+              @edit="(text: string) => (composerText = text)"
+            />
           </div>
           <InboxNoteComposer v-if="noteMode" :team="team" :my-id="myId" :saving="noteSaving" :error="noteError" @save="saveNote" @cancel="noteMode = false" />
           <p v-if="sendError && !noteMode" class="mb-2 text-[12.5px] text-danger-text">{{ sendError }}</p>
-          <!-- The receptionist's suggested reply, when the patient wrote last. -->
-          <InboxReplyDraft
-            v-if="!noteMode && within24h && threadReady && hasGrowth && selected.patientId && theyWroteLast"
-            :patient-id="selected.patientId"
-            :draft-for="(id: string) => useStaffFetch<{ available: boolean; draft: string; refused?: boolean }>(`/api/inbox/patients/${id}/draft-reply`, { method: 'POST' })"
-            :sending="sending"
-            @send="sendDraft"
-            @edit="(text: string) => (composerText = text)"
-          />
           <template v-if="noteMode" />
           <div v-else-if="!within24h" class="flex items-center justify-between gap-3 rounded-ctl border border-warning-border bg-warning-bg px-3 py-2">
             <p class="text-[12.5px] text-warning-text">

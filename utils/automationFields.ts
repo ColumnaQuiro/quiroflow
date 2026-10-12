@@ -105,6 +105,8 @@ export function automationFieldValue(recipient: MergeRecipient, source: string, 
   if (source === 'invoice_number') return context?.invoiceNumber ?? ''
   if (source === 'invoice_amount_owed') return context?.invoiceAmountOwed ?? ''
   if (source === 'invoice_pay_link') return context?.invoicePayLink ?? ''
+  // The clinic's online booking page -- what a "come back" message asks them to use.
+  if (source === 'booking_link') return context?.bookingUrl ?? ''
   if (source === 'clinic_name') return context?.clinicName ?? ''
   if (source === 'clinic_phone') return context?.clinicPhone ?? ''
   // One line: a template variable cannot hold a line break.

@@ -101,7 +101,7 @@ export function typesForAudience<T extends PromptType>(offered: T[], audience: R
 /** What the prompt says about who this is, for booking. */
 export function audienceSection(audience: ReceptionistAudience): string {
   if (audience === 'new_from_ad') {
-    return `# Who you are talking to\nSomeone who has not been to the clinic yet and came through one of its ads. Their first appointment is the one listed under "What you can offer".`
+    return `# Who you are talking to\nSomeone who has not been to the clinic yet and came through one of its ads. Their first appointment is the one listed under "What you can offer": to them it is simply the clinic's first-visit offer, so never mention the ad.`
   }
   if (audience === 'new') {
     return `# Who you are talking to\nSomeone who has not been to the clinic yet. Their first appointment is a first visit, as listed under "What you can offer".`
@@ -118,7 +118,7 @@ export function offeredTypesSection(offeredTypes: PromptType[], adOnly: PromptTy
   return [
     `# What you can offer\nOnly these types of appointment can be booked through you:\n${offeredTypes.map(line).join('\n')}`,
     adOnly.length
-      ? `Only if the patient says they came from one of the clinic's ads or offers, offer this instead, with its offer price from the clinic knowledge:\n${adOnly.map(line).join('\n')}\nNever offer it to anyone else. If they ask the price, never answer with a question: give the regular first-visit price and add, in the same reply, that people who come through the clinic's ad have it at the offer price, stating it -- in the shape "La primera visita son X €; si nos has conocido por nuestro anuncio, tienes la oferta de primera visita por Y €", with the real prices from the clinic knowledge.`
+      ? `The clinic also has a first-visit offer, which is NOT for everyone:\n${adOnly.map(line).join('\n')}\nDo not mention it, and do not ask how they found the clinic: give them the regular first-visit price. Only if they say themselves that they came from one of the clinic's ads or were recommended -- or whatever else the clinic knowledge says qualifies -- offer it, as an offer the clinic has right now ("ahora mismo tenemos una oferta de primera visita por Y €"), never as "because you came from our ad".`
       : '',
     `Offer only these, by these names. If the patient wants something that is not on this list, do not offer a time for it: say your colleague will arrange it.`,
   ]

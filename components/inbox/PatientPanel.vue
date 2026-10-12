@@ -78,14 +78,16 @@ const bonos = computed(() => activePackages.value.filter((b) => b.sessions_total
       </template>
       <strong v-else class="text-[14.5px] text-ink-700">{{ t('Nothing booked', 'Sin próxima cita') }}</strong>
     </div>
-    <div class="grid grid-cols-2 gap-2.5">
+    <!-- The date takes what it needs and the balance the rest, so
+    "40,00 € disponible" stays on one line in a 300px panel. -->
+    <div class="grid grid-cols-[auto_minmax(0,1fr)] gap-2.5">
       <div class="flex flex-col gap-1 rounded-card border border-line bg-surface p-3.5">
         <span class="text-[12px] font-bold uppercase tracking-[.04em] text-ink-muted">{{ t('Last visit', 'Última visita') }}</span>
         <strong class="text-[14.5px] text-ink-900">{{ last ? formatShortDate(last.starts_at) : '—' }}</strong>
       </div>
       <div class="flex flex-col items-start gap-1 rounded-card border border-line bg-surface p-3.5">
         <span class="text-[12px] font-bold uppercase tracking-[.04em] text-ink-muted">{{ t('Balance', 'Saldo') }}</span>
-        <UiBalancePill :available-cents="availableCents" :outstanding-cents="outstandingCents" />
+        <UiBalancePill class="whitespace-nowrap" :available-cents="availableCents" :outstanding-cents="outstandingCents" />
       </div>
     </div>
     <div class="flex flex-col gap-1 rounded-card border border-line bg-surface p-3.5" data-cy="inbox-panel-recall">

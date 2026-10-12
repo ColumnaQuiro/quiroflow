@@ -285,7 +285,7 @@ export function findProblems(rule: DraftRule, steps: DraftStep[], templates: Tem
         break
       case 'notify': {
         const to = c.to ?? {}
-        if (!to.team_member_id && !to.role_id && !to.practitioner_of_appointment) add(step.id, 'A notify step does not say who to tell.', 'Un aviso no dice a quién avisar.')
+        if (!to.team_member_id && !to.role_id && !to.practitioner_of_appointment && !to.patients_practitioner) add(step.id, 'A notify step does not say who to tell.', 'Un aviso no dice a quién avisar.')
         if (!String(c.title ?? '').trim()) add(step.id, 'A notify step has no message.', 'Un aviso no tiene texto.')
         break
       }

@@ -87,7 +87,9 @@ export function stepTitle(t: Translate, step: DraftStep, lookup: NameLookup): st
           ? (lookup.members.find((m) => m.id === to.team_member_id)?.full_name ?? t('a person', 'una persona'))
           : to.practitioner_of_appointment
             ? t('the practitioner', 'el profesional')
-            : t('someone', 'alguien')
+            : to.patients_practitioner
+              ? t('their practitioner', 'su profesional')
+              : t('someone', 'alguien')
       return t(`Notify ${who}`, `Avisar a ${who}`)
     }
     case 'lead_stage': {
@@ -222,6 +224,9 @@ export function filtersText(t: Translate, filters: Record<string, any> | null | 
         break
       case 'last_visit':
         parts.push(t(`Last visit over ${durationText(t, Number(f.last_visit_before_days) * 1440)} ago`, `Última visita hace más de ${durationText(t, Number(f.last_visit_before_days) * 1440)}`))
+        break
+      case 'care_plan_overdue':
+        parts.push(t(`Behind on their care plan by ${f.care_plan_overdue_days}+ days`, `Retrasado en su plan ${f.care_plan_overdue_days}+ días`))
         break
       case 'tag_contains':
         parts.push(t(`Tag contains "${f.tag_contains}"`, `Etiqueta contiene «${f.tag_contains}»`))

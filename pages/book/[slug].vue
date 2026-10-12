@@ -204,7 +204,8 @@ const clinicLogoUrl = computed(() => {
 //
 // Sent after the booking exists, never before -- this is marketing data, and
 // nothing about it should be able to fail a booking.
-const ATTRIBUTION_PARAMS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'fbclid', 'gclid', 'gbraid', 'wbraid', 'ttclid', 'msclkid']
+// `ref` is a patient's referral link (server/utils/bookingReferral.ts).
+const ATTRIBUTION_PARAMS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'fbclid', 'gclid', 'gbraid', 'wbraid', 'ttclid', 'msclkid', 'ref']
 const visitAttribution = ref<{ params: Record<string, string>; referrer: string; landingPath: string } | null>(null)
 
 function captureAttribution() {

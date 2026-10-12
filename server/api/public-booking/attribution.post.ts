@@ -1,5 +1,6 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
+import { applyBookingReferral } from '~/server/utils/bookingReferral'
 
 // Records where a just-completed public booking came from.
 //
@@ -72,13 +73,16 @@ export default defineEventHandler(async (event) => {
 
   const referrer = clean(body.referrer)
   const landingPath = clean(body.landingPath)
+  // A patient's referral link (?ref=): recorded on the new patient, apart
+  // from the ad attribution below (server/utils/bookingReferral.ts).
+  const refCode = clean(params.ref, 16)
 
   // Nothing worth a row. Deliberately does NOT count landingPath: it is
   // always present (it is just this page's own URL), so including it here
   // would write a row for every direct booking and leave every report
   // filtering them back out. It is stored as context when something else
   // already earned the row.
-  if (!clickId && !referrer && Object.values(utm).every((v) => v === null)) {
+  if (!clickId && !referrer && !refCode && Object.values(utm).every((v) => v === null)) {
     return { recorded: false }
   }
 
@@ -97,6 +101,17 @@ export default defineEventHandler(async (event) => {
   const createdRecently = appt ? Date.now() - new Date(appt.created_at).getTime() < 10 * 60 * 1000 : false
   if (!appt || appt.account_id !== account.id || appt.source !== 'online' || !createdRecently) {
     throw createError({ statusCode: 404, statusMessage: 'Appointment not found' })
+  }
+
+  let referred = false
+  if (refCode) {
+    try {
+      referred = await applyBookingReferral(supabase, account.id, appt.id, refCode, getRequestURL(event).origin)
+    } catch (err) {
+      console.error('[public-booking/attribution] referral failed', appt.id, err)
+    }
+    // A referral alone is not ad attribution: nothing for the row below.
+    if (!clickId && !referrer && Object.values(utm).every((v) => v === null)) return { recorded: false, referred }
   }
 
   // ignoreDuplicates leaves the first write standing, which is what makes
@@ -126,5 +141,5 @@ export default defineEventHandler(async (event) => {
   const { error: leadError } = await supabase.rpc('lead_for_attributed_booking', { p_appointment_id: appt.id })
   if (leadError) console.error('[public-booking/attribution] could not create a lead:', leadError.message)
 
-  return { recorded: true }
+  return { recorded: true, referred }
 })

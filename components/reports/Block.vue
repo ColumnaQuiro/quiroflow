@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Bar, Doughnut, Line } from 'vue-chartjs'
+import '~/utils/chartSetup'
 import { computePresetRange, rangeBounds, type DateRange } from '~/composables/useDateRangePresets'
 import { REPORT_DATA_KEY } from '~/composables/useReportData'
 import type { Compare, OwnPeriod, ReportBlock } from '~/utils/reportBlocks'

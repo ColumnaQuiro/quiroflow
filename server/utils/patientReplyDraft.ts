@@ -2,6 +2,7 @@ import { createAnthropicClient } from '~/server/utils/anthropicClient'
 import { loadBookedVisits, loadOfferedTypes, loadReceptionistCalendar, toConfig, toneWording, uniqueTypes } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptionistModel'
 import { typesForAudience } from '~/utils/receptionistTypes'
+import { internalNotes } from '~/utils/receptionistGuard'
 import { carePlanCadenceLabel } from '~/utils/carePlanCadence'
 import { buildPatientReplyPrompt, type PatientReplyFacts } from '~/utils/patientReplyPrompt'
 
@@ -114,6 +115,8 @@ export async function draftPatientReply(supabase: any, service: any, accountId: 
     system: buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits }),
     messages: history,
     findFreeTimes,
+    internalNotes: internalNotes(config),
+    logLabel: `patient ${patientId}`,
   })
   if (refused) return { status: 'refused' }
   return draft ? { status: 'drafted', draft } : { status: 'refused' }

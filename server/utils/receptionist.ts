@@ -169,11 +169,11 @@ export async function loadBookedVisits(
   supabase: SupabaseClient<Database>,
   accountId: string,
   patientId: string | null,
-): Promise<{ visits: BookedVisit[]; types: OfferedType[]; practitionerIds: string[] }> {
-  if (!patientId) return { visits: [], types: [], practitionerIds: [] }
+): Promise<{ visits: BookedVisit[]; types: OfferedType[]; practitionerIds: string[]; appointments: BookedAppointment[] }> {
+  if (!patientId) return { visits: [], types: [], practitionerIds: [], appointments: [] }
   const { data, error } = await supabase
     .from('appointments')
-    .select('starts_at, practitioner_id, appointment_types(id, name, duration_minutes, stage, online_bookable_by)')
+    .select('id, starts_at, practitioner_id, appointment_types(id, name, duration_minutes, stage, online_bookable_by)')
     .eq('account_id', accountId)
     .eq('patient_id', patientId)
     .eq('status', 'booked')
@@ -183,9 +183,10 @@ export async function loadBookedVisits(
     .limit(3)
   if (error) {
     console.error('[receptionist] could not read booked visits:', error.message)
-    return { visits: [], types: [], practitionerIds: [] }
+    return { visits: [], types: [], practitionerIds: [], appointments: [] }
   }
   const rows = (data ?? []) as unknown as {
+    id: string
     starts_at: string
     practitioner_id: string | null
     appointment_types: { id: string; name: string; duration_minutes: number; stage: string | null; online_bookable_by: string | null } | null
@@ -196,7 +197,16 @@ export async function loadBookedVisits(
     visits: rows.map((row) => ({ startsAt: row.starts_at, typeName: row.appointment_types?.name ?? null })),
     types: [...types.values()],
     practitionerIds: [...new Set(rows.map((row) => row.practitioner_id).filter((id): id is string => Boolean(id)))],
+    appointments: rows.map((row) => ({ id: row.id, startsAt: row.starts_at, typeId: row.appointment_types?.id ?? null, practitionerId: row.practitioner_id })),
   }
+}
+
+/** A booked visit as the booking tool needs it: what to move, and its type and practitioner. */
+export interface BookedAppointment {
+  id: string
+  startsAt: string
+  typeId: string | null
+  practitionerId: string | null
 }
 
 /**

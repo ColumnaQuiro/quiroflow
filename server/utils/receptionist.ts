@@ -101,7 +101,7 @@ export function toConfig(row: Row | null): ReceptionistConfig {
     minimumNoticeMinutes: row?.minimum_notice_minutes ?? 120,
     slotsPerReply: row?.slots_per_reply ?? 2,
     bookableAppointmentTypeIds: row?.bookable_appointment_type_ids ?? [],
-    afterHours: row?.after_hours ?? true,
+    afterHours: row?.after_hours ?? false,
     missedCallTextBack: row?.missed_call_text_back ?? true,
     answerDuringHours: row?.answer_during_hours ?? false,
   }
@@ -381,6 +381,12 @@ export function buildSystemPrompt(
     bookedVisits?: BookedVisit[]
     /** A real draft for staff to send, to this person (not Try Alba). */
     draft?: { personName: string | null }
+    /**
+     * Sent without a person reading it first (receptionist-draft-cron, when
+     * the clinic's hours switches say so), rather than left as a draft. The
+     * model is then given hand_over_to_colleague.
+     */
+    sendsItself?: boolean
   },
 ) {
   const personName = promptSafeName(opts.draft?.personName)
@@ -443,13 +449,15 @@ export function buildSystemPrompt(
       : '',
     // The single most important line in this prompt.
     `You must NEVER state that an appointment is booked, confirmed or reserved. A member of staff or the booking system confirms them${availability ? ', and a listed time can be taken before then' : ''}. ${availability ? 'If the patient accepts a time, say you are passing it on and that they will get a confirmation.' : 'Once the patient has said when suits them, say you are passing it on and that they will get a confirmation.'}`,
-    escalations ? `# Stop and hand over to a person when\n\n${escalations}\n\nWhen one of these applies, say your colleague will pick this up shortly and stop.` : '',
+    escalations ? `# Stop and hand over to a person when\n\n${escalations}\n\nWhen one of these applies, ${opts.sendsItself ? 'call hand_over_to_colleague, then ' : ''}say your colleague will pick this up shortly and stop.` : '',
     config.neverSays ? `# Never\n\n${config.neverSays}` : '',
     opts.testMode
       ? `# Test mode\nYou are being tried out by the clinic owner. Nothing you say reaches a patient and nothing is booked. Answer exactly as you would for real -- confidentiality included: the owner is trying what a patient would get.`
       : '',
     opts.draft
-      ? `# This reply is a draft\nA member of staff will read what you write before it is sent, and may edit it. Write the message itself and nothing else -- no preamble, no options to choose between, no notes to the reader.`
+      ? opts.sendsItself
+        ? `# This reply is sent as it is\nIt goes straight to them: nobody at the clinic reads it first. Write the message itself and nothing else -- no preamble, no options to choose between, no notes to anyone. Whenever a rule under "Stop and hand over to a person when" applies, they want something you cannot do, or you are not sure what to answer, call hand_over_to_colleague with the reason before you reply. When they accept a time, call hand_over_to_colleague saying exactly what to book or move (type, day, time and who with): a colleague books it, and you tell them they will get a confirmation.`
+        : `# This reply is a draft\nA member of staff will read what you write before it is sent, and may edit it. Write the message itself and nothing else -- no preamble, no options to choose between, no notes to the reader.`
       : '',
     // Flattened by promptSafeName: the name is whatever the person typed into
     // a form, and must not be able to start a section of its own.

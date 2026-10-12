@@ -1,4 +1,7 @@
+import type { H3Event } from 'h3'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
+import { announceHandover, sendAsReceptionist } from '~/server/utils/receptionistSend'
+import { autoReplyHeldBack, personRepliedSince } from '~/utils/receptionistAutoReply'
 import { loadBookedVisits, loadOfferedTypes, loadReceptionistCalendar, toConfig, toneWording, uniqueTypes } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptionistModel'
 import { typesForAudience } from '~/utils/receptionistTypes'
@@ -28,12 +31,14 @@ const HISTORY_TURNS = 24
 
 export type PatientDraftOutcome =
   | { status: 'drafted'; draft: string }
+  /** Sent by the receptionist itself (`send`). */
+  | { status: 'sent'; text: string; handedOver: boolean }
   | { status: 'unavailable' }
   | { status: 'refused' }
   | { status: 'nothing_to_answer' }
   | { status: 'not_found' }
 
-interface Turn { direction: string; body: string; created_at: string }
+interface Turn { direction: string; body: string; created_at: string; sent_by_ai?: boolean | null; channel?: string | null }
 
 /**
  * `supabase` is the asker's own client (RLS decides what of the patient they
@@ -48,19 +53,29 @@ export async function draftPatientReply(
   // inbox_reply_drafts for whoever opens the thread. Then it must not
   // mention money -- anyone with Inbox access reads it -- and `supabase` is
   // the service role too.
-  opts: { store?: boolean } = {},
+  opts: { store?: boolean; send?: { event: H3Event } } = {},
+  // `send`: from the tick, when the clinic's hours switches say the
+  // receptionist answers now -- sent rather than stored, unless the
+  // conversation holds it back (a person in it, the day's limit, a handover
+  // nobody has picked up yet), when it is stored as a draft as before.
 ): Promise<PatientDraftOutcome> {
   const { data: patient } = await supabase.from('patients').select('id, first_name').eq('id', patientId).eq('account_id', accountId).maybeSingle()
   if (!patient) return { status: 'not_found' }
 
   // Both channels the Inbox shows as one conversation: WhatsApp and the app.
   const [{ data: wa }, { data: app }] = await Promise.all([
-    supabase.from('whatsapp_messages').select('direction, body_preview, created_at').eq('patient_id', patientId).order('created_at', { ascending: false }).limit(HISTORY_TURNS),
-    supabase.from('patient_app_messages').select('direction, body, created_at').eq('patient_id', patientId).order('created_at', { ascending: false }).limit(HISTORY_TURNS),
+    supabase.from('whatsapp_messages').select('direction, body_preview, created_at, sent_by_ai, channel').eq('patient_id', patientId).order('created_at', { ascending: false }).limit(HISTORY_TURNS),
+    supabase.from('patient_app_messages').select('direction, body, created_at, sent_by_ai').eq('patient_id', patientId).order('created_at', { ascending: false }).limit(HISTORY_TURNS),
   ])
   const turns: Turn[] = [
-    ...((wa ?? []) as { direction: string; body_preview: string | null; created_at: string }[]).map((m) => ({ direction: m.direction, body: m.body_preview ?? '', created_at: m.created_at })),
-    ...((app ?? []) as Turn[]),
+    ...((wa ?? []) as { direction: string; body_preview: string | null; created_at: string; sent_by_ai?: boolean | null; channel?: string | null }[]).map((m) => ({
+      direction: m.direction,
+      body: m.body_preview ?? '',
+      created_at: m.created_at,
+      sent_by_ai: m.sent_by_ai,
+      channel: m.channel ?? 'whatsapp',
+    })),
+    ...((app ?? []) as Turn[]).map((m) => ({ ...m, channel: 'app' })),
   ]
     .filter((m) => m.body.trim().length > 0)
     .sort((a, b) => a.created_at.localeCompare(b.created_at))
@@ -122,17 +137,68 @@ export async function draftPatientReply(
   const calendar = await loadReceptionistCalendar(service, accountId, config, bookable)
   const findFreeTimes = calendar.availability ? freeTimesLookup(service, accountId, config, bookable, calendar.timeZone) : null
 
-  const { text: draft, refused } = await runReceptionistModel(createAnthropicClient(apiKey), {
+  // Sent rather than stored: asked for, on the channel they last wrote on
+  // (WhatsApp or the app), and nothing in the conversation holding it back.
+  const lastInbound = [...turns].reverse().find((m) => m.direction === 'inbound')
+  const channel: 'app' | 'whatsapp' | null = lastInbound?.channel === 'app' ? 'app' : lastInbound?.channel === 'whatsapp' ? 'whatsapp' : null
+  const asTurns = turns.map((m) => ({ direction: m.direction, sentByAi: m.sent_by_ai === true, createdAt: m.created_at }))
+  let handoverOpen = false
+  if (opts.send) {
+    const { data: state } = await service.from('inbox_reply_drafts').select('handed_over_at').eq('account_id', accountId).eq('conversation_key', patientId).maybeSingle()
+    handoverOpen = Boolean(state?.handed_over_at) && !personRepliedSince(asTurns, state.handed_over_at)
+  }
+  const sends = Boolean(opts.send) && channel !== null && !handoverOpen && autoReplyHeldBack(asTurns, new Date()) === null
+
+  const { text: draft, refused, handedOver } = await runReceptionistModel(createAnthropicClient(apiKey), {
     model: MODEL,
     maxTokens: MAX_TOKENS,
-    system: buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits }),
+    system: buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, sendsItself: sends }),
     messages: history,
     findFreeTimes,
+    handOver: sends,
     internalNotes: internalNotes(config),
     logLabel: `patient ${patientId}`,
   })
+  const name = patient.first_name ?? 'Paciente'
+  if (sends && opts.send && channel && newestInboundAt) {
+    const target = { kind: 'patient' as const, patientId, channel }
+    const now = new Date().toISOString()
+    // Nothing to send: their question goes to a person now, and the
+    // receptionist stays quiet here until somebody has answered.
+    if (refused || !draft) {
+      await service.from('inbox_reply_drafts').upsert({ account_id: accountId, conversation_key: patientId, body: '-', drafted_through_at: newestInboundAt, dismissed_at: now, handed_over_at: now })
+      await announceHandover(service, accountId, target, name, 'La recepcionista no ha podido responder a su último mensaje.')
+      return { status: 'refused' }
+    }
+    let sent = true
+    try {
+      await sendAsReceptionist(opts.send.event, service, accountId, target, draft)
+    } catch (err) {
+      // Refused (the window closed, "do not contact"...): stored as a draft
+      // below instead, so a person still sees what it would have said.
+      console.error(`[receptionist] could not send to patient ${patientId}:`, (err as Error)?.message ?? err)
+      sent = false
+    }
+    if (sent) {
+      // Kept as the conversation's marker -- answered up to here, dealt with
+      // -- so the tick does not answer the same message twice.
+      const { error } = await service.from('inbox_reply_drafts').upsert({
+        account_id: accountId,
+        conversation_key: patientId,
+        body: draft.slice(0, 4000),
+        drafted_through_at: newestInboundAt,
+        dismissed_at: now,
+        handed_over_at: handedOver ? now : null,
+        created_at: now,
+      })
+      if (error) console.error(`[receptionist] could not record the reply to patient ${patientId}:`, error.message)
+      if (handedOver) await announceHandover(service, accountId, target, name, handedOver)
+      return { status: 'sent', text: draft, handedOver: Boolean(handedOver) }
+    }
+  }
+
   if (refused || !draft) return { status: 'refused' }
-  if (opts.store && newestInboundAt) {
+  if ((opts.store || opts.send) && newestInboundAt) {
     const { error } = await service
       .from('inbox_reply_drafts')
       .upsert({ account_id: accountId, conversation_key: patientId, body: draft.slice(0, 4000), drafted_through_at: newestInboundAt, dismissed_at: null, created_at: new Date().toISOString() })

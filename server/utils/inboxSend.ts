@@ -29,6 +29,8 @@ export interface InboxSendParams {
   mediaFilename?: string
   mediaKind?: MediaKind
   caption?: string
+  /** Sent by the AI receptionist on its own (receptionistSend.ts), not a person. */
+  sentByAi?: boolean
 }
 
 type Access = Pick<Awaited<ReturnType<typeof requirePermission>>, 'supabase' | 'teamMember'>
@@ -186,6 +188,7 @@ export async function sendInboxMessage(event: H3Event, { supabase, teamMember }:
     direction: 'outbound',
     status: 'sent',
     purpose: 'other',
+    sent_by_ai: params.sentByAi === true,
   }
 
   // The row is stored the moment Meta answers with its wamid, and the copy

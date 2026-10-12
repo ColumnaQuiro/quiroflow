@@ -323,6 +323,7 @@ export type Database = {
           created_at: string
           dismissed_at: string | null
           drafted_through_at: string
+          handed_over_at: string | null
         }
         Insert: {
           account_id: string
@@ -331,6 +332,7 @@ export type Database = {
           created_at?: string
           dismissed_at?: string | null
           drafted_through_at: string
+          handed_over_at?: string | null
         }
         Update: {
           account_id?: string
@@ -339,6 +341,7 @@ export type Database = {
           created_at?: string
           dismissed_at?: string | null
           drafted_through_at?: string
+          handed_over_at?: string | null
         }
         Relationships: []
       }
@@ -4251,6 +4254,7 @@ export type Database = {
           direction: string
           id: string
           patient_id: string
+          sent_by_ai: boolean
         }
         Insert: {
           account_id: string
@@ -4259,6 +4263,7 @@ export type Database = {
           direction: string
           id?: string
           patient_id: string
+          sent_by_ai?: boolean
         }
         Update: {
           account_id?: string
@@ -4267,6 +4272,7 @@ export type Database = {
           direction?: string
           id?: string
           patient_id?: string
+          sent_by_ai?: boolean
         }
         Relationships: [
           {
@@ -6769,6 +6775,7 @@ export type Database = {
           template_name: string | null
           updated_at: string
           wamid: string | null
+          sent_by_ai: boolean
         }
         Insert: {
           account_id: string
@@ -6795,6 +6802,7 @@ export type Database = {
           template_name?: string | null
           updated_at?: string
           wamid?: string | null
+          sent_by_ai?: boolean
         }
         Update: {
           account_id?: string
@@ -6821,6 +6829,7 @@ export type Database = {
           template_name?: string | null
           updated_at?: string
           wamid?: string | null
+          sent_by_ai?: boolean
         }
         Relationships: [
           {

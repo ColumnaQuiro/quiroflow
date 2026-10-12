@@ -31,6 +31,9 @@ export default defineEventHandler(async (event) => {
   switch (outcome.status) {
     case 'drafted':
       return { available: true as const, draft: outcome.draft }
+    // Only the tick sends; the button never asks it to.
+    case 'sent':
+      return { available: true as const, draft: outcome.text }
     case 'unavailable':
       return { available: false as const, draft: '' }
     case 'refused':

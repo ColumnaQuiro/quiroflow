@@ -5758,8 +5758,11 @@ export type Database = {
           inbox: boolean
           morning_summary: boolean
           online_bookings: boolean
+          patient_actions: boolean
           quiet_hours: boolean
           summary_sent_on: string | null
+          weekly_digest: boolean
+          digest_sent_week: string | null
           team_member_id: string
           updated_at: string
         }
@@ -5770,8 +5773,11 @@ export type Database = {
           inbox?: boolean
           morning_summary?: boolean
           online_bookings?: boolean
+          patient_actions?: boolean
           quiet_hours?: boolean
           summary_sent_on?: string | null
+          weekly_digest?: boolean
+          digest_sent_week?: string | null
           team_member_id: string
           updated_at?: string
         }
@@ -5782,8 +5788,11 @@ export type Database = {
           inbox?: boolean
           morning_summary?: boolean
           online_bookings?: boolean
+          patient_actions?: boolean
           quiet_hours?: boolean
           summary_sent_on?: string | null
+          weekly_digest?: boolean
+          digest_sent_week?: string | null
           team_member_id?: string
           updated_at?: string
         }
@@ -7320,6 +7329,7 @@ export type Database = {
       get_appointment_type_usage: { Args: { p_account_id: string }; Returns: Json }
       reorder_appointment_types: { Args: { p_ids: string[] }; Returns: undefined }
       cancel_patient_appointment: { Args: { p_appointment_id: string }; Returns: Json }
+      check_in_my_appointment: { Args: { p_appointment_id: string }; Returns: string | null }
       record_email_event: {
         Args: {
           p_provider_message_id: string

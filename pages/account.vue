@@ -27,6 +27,35 @@ const supabase = useSupabaseClient()
 const authPasswordError = useAuthPasswordError()
 const user = useSupabaseUser()
 const store = useAccountStore()
+
+// The owner's weekly summary (server/utils/weeklyDigest.ts): their own
+// staff_push_preferences row, which the app's Avisos also writes. Only this
+// one column, so the push choices made in the app are left alone.
+const weeklyDigest = ref(true)
+const digestLoading = ref(true)
+const digestError = ref('')
+async function loadDigest() {
+  if (!store.teamMember?.id) return
+  const { data } = await supabase.from('staff_push_preferences').select('weekly_digest').eq('team_member_id', store.teamMember.id).maybeSingle()
+  weeklyDigest.value = (data as { weekly_digest: boolean } | null)?.weekly_digest ?? true
+  digestLoading.value = false
+}
+watch(() => store.teamMember?.id, loadDigest, { immediate: true })
+async function toggleDigest() {
+  if (!store.teamMember?.id || !store.accountId) return
+  const next = !weeklyDigest.value
+  weeklyDigest.value = next
+  digestError.value = ''
+  const id = store.teamMember.id
+  const { data: existing } = await supabase.from('staff_push_preferences').select('team_member_id').eq('team_member_id', id).maybeSingle()
+  const { error } = existing
+    ? await supabase.from('staff_push_preferences').update({ weekly_digest: next, updated_at: new Date().toISOString() }).eq('team_member_id', id)
+    : await supabase.from('staff_push_preferences').insert({ team_member_id: id, account_id: store.accountId, weekly_digest: next })
+  if (error) {
+    weeklyDigest.value = !next
+    digestError.value = t('Could not save. Try again.', 'No se ha podido guardar. Inténtalo de nuevo.')
+  }
+}
 const { preference: langPreference, setPreference: setLangPreference } = useLang()
 const t = useT()
 const { showToast } = useToast()
@@ -515,6 +544,29 @@ const phoneSections = computed(() => sections.value.filter((s) => s.id !== 'acce
                 {{ opt.label }}
               </button>
             </div>
+          </section>
+
+          <!-- Owners: the Monday summary of last week, by email (and push in
+          the app, where Avisos has the same switch). -->
+          <section v-if="store.isOwner" id="resumen" aria-labelledby="h-resumen" class="flex scroll-mt-6 items-center gap-4 rounded-card border border-line bg-surface p-4 sm:gap-6 sm:p-6" data-cy="account-weekly-digest">
+            <div class="flex-1">
+              <h2 id="h-resumen" class="text-[16px] font-bold text-ink-900">{{ t('Weekly summary', 'Resumen semanal') }}</h2>
+              <p class="mt-1 text-[13px] text-ink-muted">{{ t("Every Monday at 8:00, last week's takings and payments, visits, no-shows and new patients, by email.", 'Cada lunes a las 8:00, lo cobrado y los pagos, las visitas, quién no vino y los pacientes nuevos de la semana pasada, por email.') }}</p>
+              <p v-if="digestError" role="alert" class="mt-1 text-[12.5px] text-danger-text">{{ digestError }}</p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              data-cy="account-weekly-digest-toggle"
+              :aria-checked="weeklyDigest"
+              aria-labelledby="h-resumen"
+              :disabled="digestLoading"
+              class="relative h-[26px] w-11 shrink-0 rounded-full disabled:opacity-50"
+              :class="weeklyDigest ? 'bg-brand' : 'bg-line-control'"
+              @click="toggleDigest"
+            >
+              <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card transition-all" :class="weeklyDigest ? 'left-[21px]' : 'left-[3px]'" />
+            </button>
           </section>
 
           <!-- 4. Seguridad -->

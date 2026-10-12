@@ -13,7 +13,9 @@ export default defineNuxtRouteMiddleware(async (to) => {
   const supabase = useSupabaseClient()
   const user = useSupabaseUser()
   const userId = user.value?.sub ?? (await supabase.auth.getSession()).data.session?.user.id
-  if (!userId) return navigateTo('/portal/login')
+  // Back to where they were going after signing in: the desk's check-in QR
+  // opens /portal/check-in, often on a phone not signed in yet.
+  if (!userId) return navigateTo(to.path === '/portal' ? '/portal/login' : { path: '/portal/login', query: { next: to.fullPath } })
 
   const { data: patient } = await supabase.from('patients').select('id').eq('user_id', userId).maybeSingle()
 

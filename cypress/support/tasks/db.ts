@@ -2086,11 +2086,12 @@ async function seedWhatsappReplyScenario(opts: {
   return appointment as { id: string }
 }
 
-// Proof that the webhook actually reached this account and processed the
-// message -- every inbound message is stored before any intent is applied.
-// A test asserting a status STAYED put passes just as happily when the
-// endpoint silently no-opped, so the negative cases check this too.
-/** One more number on a patient, as the patient form adds a second phone. */
+/** A team member's push/digest preferences row, or null when they never saved one. */
+async function staffPushPreferences(opts: { teamMemberId: string }) {
+  const { data } = await admin.from('staff_push_preferences').select('*').eq('team_member_id', opts.teamMemberId).maybeSingle()
+  return data ?? null
+}
+
 /** A contact_log row, as Recalls writes one ("called", "sent_whatsapp"). */
 async function logContact(opts: { accountId: string; patientId: string; action?: string; createdAt?: string }) {
   assertOk(
@@ -2104,6 +2105,11 @@ async function logContact(opts: { accountId: string; patientId: string; action?:
   return { ok: true }
 }
 
+// Proof that the webhook actually reached this account and processed the
+// message -- every inbound message is stored before any intent is applied.
+// A test asserting a status STAYED put passes just as happily when the
+// endpoint silently no-opped, so the negative cases check this too.
+/** One more number on a patient, as the patient form adds a second phone. */
 async function addPatientContactNumber(opts: { accountId: string; patientId: string; number: string; countryCode?: string; isWhatsapp?: boolean }) {
   assertOk(
     await admin.from('patient_contact_numbers').insert({
@@ -4193,6 +4199,7 @@ export const dbTasks = {
   'db:createApiToken': createApiToken,
   'db:signWhatsappBody': signWhatsappBody,
   'db:addPatientContactNumber': addPatientContactNumber,
+  'db:staffPushPreferences': staffPushPreferences,
   'db:logContact': logContact,
   'db:patientContactNumbers': patientContactNumbers,
   'db:clearWhatsappAppSecret': clearWhatsappAppSecret,

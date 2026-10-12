@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { GrowthKpi } from '~/composables/useGrowthDashboard'
+import type { GrowthKpi } from '~/utils/growthDashboard'
 
 defineProps<{ kpis: GrowthKpi[] }>()
 

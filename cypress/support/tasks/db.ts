@@ -2773,7 +2773,9 @@ async function messagesOnChannel(opts: { accountId: string; channel: string }) {
 
 /** Records ad spend for a channel in the current month. */
 async function setChannelSpend(opts: { accountId: string; channel: string; amountCents: number; month?: string }) {
-  const month = opts.month ?? new Date().toISOString().slice(0, 8) + '01'
+  // The clinic's month, as the dashboard reads it -- the UTC one is still
+  // the previous month for the first hours of a month in Madrid.
+  const month = opts.month ?? new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Madrid' }).slice(0, 8) + '01'
   assertOk(
     await admin.from('channel_spend').upsert(
       { account_id: opts.accountId, channel: opts.channel, period_month: month, amount_cents: opts.amountCents },
@@ -2781,6 +2783,12 @@ async function setChannelSpend(opts: { accountId: string; channel: string; amoun
     ),
   )
   return { channel: opts.channel, month }
+}
+
+/** The language a staff member's screens are in (Settings > Appearance). */
+async function setStaffLanguage(opts: { teamMemberId: string; language: 'en' | 'es' }) {
+  assertOk(await admin.from('team_members').update({ language_preference: opts.language }).eq('id', opts.teamMemberId))
+  return null
 }
 
 /** Seeds a review, as a platform importer or a hand-entry would. */
@@ -4016,6 +4024,7 @@ export const dbTasks = {
   'db:setInstagramAccount': setInstagramAccount,
   'db:messagesOnChannel': messagesOnChannel,
   'db:setChannelSpend': setChannelSpend,
+  'db:setStaffLanguage': setStaffLanguage,
   'db:reviewRequestsFor': reviewRequestsFor,
   'db:latestAutomationActions': latestAutomationActions,
   'db:latestAutomationRules': latestAutomationRules,

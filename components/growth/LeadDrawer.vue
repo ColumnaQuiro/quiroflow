@@ -277,7 +277,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
           would have been false the first time anyone relied on it. -->
           <span class="text-[10px] text-ink-faint">
             {{ lead.patientId
-              ? t('Already converted', 'Ya convertido')
+              ? t('Already a patient', 'Ya es paciente')
               : t('Creates the patient record and keeps the attribution', 'Crea la ficha del paciente y conserva la atribución') }}
           </span>
         </div>

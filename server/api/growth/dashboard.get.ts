@@ -1,5 +1,9 @@
 import { requireGrowth } from '~/server/utils/requireGrowth'
-import { LEAD_STAGES, STAGE_TITLES, formatEuros, leadDefaultValueCents, type LeadStage } from '~/server/utils/leads'
+import { leadDefaultValueCents } from '~/server/utils/leads'
+import { DEFAULT_CLINIC_TIMEZONE, clinicDateOf, startOfLocalDate } from '~/utils/clinicClock'
+import { LEAD_FUNNEL_STAGES, leadReach } from '~/utils/leadReach'
+import { fetchAllRows } from '~/composables/useFetchAllRows'
+import { GROWTH_DIRECT_CHANNEL, type GrowthAlertPayload, type GrowthChannelPayload, type GrowthDashboardPayload } from '~/utils/growthDashboard'
 
 // The Growth dashboard, computed from the leads a clinic actually has.
 //
@@ -17,18 +21,10 @@ import { LEAD_STAGES, STAGE_TITLES, formatEuros, leadDefaultValueCents, type Lea
 //   AI receptionist summary
 //     -- needs a conversations table that does not exist. Omitted entirely;
 //        the page hides the card rather than inventing a number for it.
-
-/**
- * Stages that count as being on the funnel ladder, in order. 'lost' is not
- * one of them: a lead that reached Booked and was then lost still reached
- * Booked, which is the drop-off the funnel exists to show.
- */
-const FUNNEL_STAGES: readonly string[] = LEAD_STAGES.filter((stage) => stage !== 'lost')
-
-/** -1 for anything off the ladder, so `lost` never clears a threshold. */
-function stageRank(stage: string) {
-  return FUNNEL_STAGES.indexOf(stage)
-}
+//
+// It sends figures, not sentences. The labels are put on in the browser
+// (utils/growthDashboard.ts), which knows the staff member's language; this
+// used to answer in English to a Spanish front desk.
 
 /**
  * "Meta Ads · Sciatica" -> "Meta Ads". Channel spend is recorded per channel,
@@ -37,89 +33,111 @@ function stageRank(stage: string) {
  * the budget.
  */
 function channelOf(source: string | null) {
-  if (!source) return 'Direct'
+  if (!source) return GROWTH_DIRECT_CHANNEL
   const [head] = source.split('·')
-  return head!.trim() || 'Direct'
+  return head!.trim() || GROWTH_DIRECT_CHANNEL
 }
 
-export default defineEventHandler(async (event) => {
+export default defineEventHandler(async (event): Promise<GrowthDashboardPayload> => {
   const { supabase, teamMember } = await requireGrowth(event)
+  const accountId = teamMember.account_id
+
+  // "This month" is the clinic's month, not UTC's: a lead arriving at 01:00
+  // in Madrid on the 1st belongs to the new month, and in UTC it is still
+  // the old one.
+  const { data: clinic } = await supabase
+    .from('clinics')
+    .select('timezone')
+    .eq('account_id', accountId)
+    .is('archived_at', null)
+    .order('created_at')
+    .limit(1)
+    .maybeSingle()
+  const tz = clinic?.timezone || DEFAULT_CLINIC_TIMEZONE
 
   const now = new Date()
-  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
-  const windowStart = new Date(now.getTime() - 90 * 24 * 3600 * 1000)
+  const DAY = 24 * 3600 * 1000
+  const month = clinicDateOf(now, tz).slice(0, 7)
+  const monthStart = startOfLocalDate(`${month}-01`, tz)
+  // Thirteen whole weeks for the trend, which is 91 days -- one more than
+  // the "in 90 days" figure, which is counted from within it.
+  const WEEKS = 13
+  const windowStart = new Date(now.getTime() - WEEKS * 7 * DAY)
+  const ninetyDaysAgo = new Date(now.getTime() - 90 * DAY)
 
-  const [{ data: rows, error }, { data: spendRows }, { count: pendingReplies }, defaultCents] = await Promise.all([
-    supabase
-      .from('leads')
-      .select('id, stage, furthest_stage, source, estimated_value_cents, created_at, converted_at')
-      .eq('account_id', teamMember.account_id)
-      .is('deleted_at', null)
-      .gte('created_at', windowStart.toISOString()),
+  // Paged, both: PostgREST stops at 1000 rows without saying so, and a busy
+  // clinic's 13 weeks of leads can pass that.
+  const [rows, progressRows, { data: spendRows }, { count: pendingReplies }, defaultCents] = await Promise.all([
+    fetchAllRows((from, to) =>
+      supabase
+        .from('leads')
+        .select('id, stage, furthest_stage, source, estimated_value_cents, created_at')
+        .eq('account_id', accountId)
+        .is('deleted_at', null)
+        .gte('created_at', windowStart.toISOString())
+        .order('id')
+        .range(from, to),
+    ),
+    // What actually happened to each lead -- messaged, booked, attended --
+    // which furthest_stage alone does not say (see the migration that adds
+    // it, 20261012142147_growth_lead_progress.sql).
+    fetchAllRows((from, to) =>
+      supabase
+        .rpc('growth_lead_progress', { p_account_id: accountId, p_since: windowStart.toISOString() })
+        .order('lead_id')
+        .range(from, to),
+    ),
     supabase
       .from('channel_spend')
-      .select('channel, amount_cents, period_month')
-      .eq('account_id', teamMember.account_id)
-      .gte('period_month', monthStart.toISOString().slice(0, 10)),
+      .select('channel, amount_cents')
+      .eq('account_id', accountId)
+      .eq('period_month', `${month}-01`),
     // Review drafts waiting for a person. Counted, not fetched -- the
     // dashboard needs the number, and the bodies belong on the Reputation
     // screen where someone can actually read them before approving.
     supabase
       .from('reviews')
       .select('id', { count: 'exact', head: true })
-      .eq('account_id', teamMember.account_id)
+      .eq('account_id', accountId)
       .not('draft_body', 'is', null)
       .is('replied_at', null),
-    leadDefaultValueCents(supabase, teamMember.account_id),
+    leadDefaultValueCents(supabase, accountId),
   ])
 
-  if (error) throw createError({ statusCode: 500, statusMessage: error.message })
+  const progress = new Map(progressRows.map((row) => [row.lead_id, row]))
 
-  const leads = rows ?? []
-  const thisMonth = leads.filter((lead) => new Date(lead.created_at) >= monthStart)
-
-  // --- Funnel -------------------------------------------------------------
-  // Cumulative: a lead counts at every stage it ever reached, which is what
-  // furthest_stage records. Counting current stages would report Booked as
-  // whoever happens to be sitting there right now.
-  const funnelStages = FUNNEL_STAGES.map((stage) => ({
-    key: stage,
-    // Indexed off the same map the board titles its columns from, so the
-    // funnel and the pipeline can never disagree on what a stage is called.
-    label: STAGE_TITLES[stage as LeadStage],
-    count: thisMonth.filter((lead) => stageRank(lead.furthest_stage) >= stageRank(stage)).length,
-  }))
-
-  interface FunnelStep {
-    pct: number
-    delta: string
-    tone: 'neutral' | 'warning' | 'danger'
-    /** Set on the worst step, which the funnel renders as a filled pill. */
-    emphasis?: boolean
-  }
-
-  const funnelSteps: FunnelStep[] = funnelStages.slice(1).map((stage, i) => {
-    const previous = funnelStages[i]!
-    const lost = previous.count - stage.count
-    const pct = previous.count === 0 ? 0 : Math.round((stage.count / previous.count) * 100)
+  // --- What each lead reached -------------------------------------------
+  // Cumulative, from furthest_stage, corrected by what actually happened:
+  // a delivered message counts as Contacted, and Booked/Showed need an
+  // appointment. The rule is utils/leadReach.ts, shared with Reports.
+  const leads = rows.map((lead) => {
+    const p = progress.get(lead.id)
+    const reached = leadReach(lead.furthest_stage, p)
     return {
-      pct,
-      delta: `−${lost}`,
-      // The worst surviving step is called out, not a fixed threshold: a
-      // clinic converting well everywhere should not be shown a red number
-      // just for having a stage below 60%.
-      tone: pct >= 75 ? ('neutral' as const) : pct >= 50 ? ('warning' as const) : ('danger' as const),
+      ...lead,
+      createdAt: new Date(lead.created_at),
+      reached,
+      // Whether a booked lead has had the chance to turn up. One booked for
+      // next week has not missed anything yet. Without any appointment on
+      // record (dragged to Booked by hand) there is no date to wait for, so
+      // it counts as before.
+      due: reached.showed || Boolean(p?.appointment_due) || !p?.booked,
     }
   })
+  type Lead = (typeof leads)[number]
 
-  const worstStep = funnelSteps.reduce((worst, step, i) => (step.pct < (funnelSteps[worst]?.pct ?? 101) ? i : worst), 0)
-  if (funnelSteps[worstStep] && funnelSteps.length > 0) funnelSteps[worstStep]!.emphasis = true
+  const thisMonth = leads.filter((lead) => lead.createdAt >= monthStart)
 
-  const firstStage = funnelStages[0]!
-  const lastStage = funnelStages[funnelStages.length - 1]!
-  const endToEnd = firstStage.count === 0 ? 0 : (lastStage.count / firstStage.count) * 100
+  // 'lost' is not a step: a lead that reached Booked and was then lost still
+  // reached Booked, which is the drop-off the funnel exists to show.
+  const funnel = LEAD_FUNNEL_STAGES.map((stage) => ({
+    key: stage,
+    count: thisMonth.filter((lead) => lead.reached[stage]).length,
+  }))
 
-  // --- Spend and the money that depends on it -----------------------------
+  // --- Spend --------------------------------------------------------------
+  // Only this month's row: the filter used to be ">= this month", which
+  // would have added any figure typed in ahead for next month.
   const spendByChannel = new Map<string, number>()
   for (const row of spendRows ?? []) {
     spendByChannel.set(row.channel, (spendByChannel.get(row.channel) ?? 0) + row.amount_cents)
@@ -127,87 +145,34 @@ export default defineEventHandler(async (event) => {
   const totalSpend = [...spendByChannel.values()].reduce((sum, cents) => sum + cents, 0)
   const hasSpend = totalSpend > 0
 
-  const convertedThisMonth = thisMonth.filter((lead) => lead.furthest_stage === 'converted')
+  const convertedThisMonth = thisMonth.filter((lead) => lead.reached.converted)
   const revenueCents = convertedThisMonth.reduce((sum, lead) => sum + (lead.estimated_value_cents ?? defaultCents ?? 0), 0)
 
-  const kpis: { key: string; label: string; value: string; delta: string; tone: 'positive' | 'negative' | 'neutral' }[] = [
-    { key: 'leads', label: 'New leads this month', value: String(thisMonth.length), delta: `${leads.length} in 90 days`, tone: 'neutral' },
-  ]
-
-  // Only rendered when a clinic has told us what it spent. "€0.00 per lead"
-  // would be a claim, not a gap.
-  if (hasSpend) {
-    kpis.push(
-      {
-        key: 'cpl',
-        label: 'Cost per lead',
-        value: thisMonth.length === 0 ? '—' : formatEuros(Math.round(totalSpend / thisMonth.length))!,
-        delta: `${formatEuros(totalSpend)} spend`,
-        tone: 'neutral',
-      },
-      {
-        key: 'cpnp',
-        label: 'Cost per new patient',
-        value: convertedThisMonth.length === 0 ? '—' : formatEuros(Math.round(totalSpend / convertedThisMonth.length))!,
-        delta: `${convertedThisMonth.length} converted`,
-        tone: 'neutral',
-      },
-    )
-  }
-
-  kpis.push({
-    key: 'revenue',
-    label: 'Revenue attributed',
-    value: formatEuros(revenueCents) ?? '€0',
-    delta: 'Estimated value of converted leads',
-    tone: 'neutral',
-  })
-
-  if (hasSpend) {
-    kpis.push({
-      key: 'roas',
-      label: 'ROAS',
-      value: `${(revenueCents / totalSpend).toFixed(1)}×`,
-      delta: `${formatEuros(totalSpend)} spend`,
-      tone: revenueCents >= totalSpend ? 'positive' : 'negative',
-    })
-  }
-
   // --- Channels -----------------------------------------------------------
+  function channelFigures(mine: Lead[], spend: number | null): Omit<GrowthChannelPayload, 'channel'> {
+    const booked = mine.filter((lead) => lead.reached.booked)
+    // Of the booked leads whose appointment has come round, how many came.
+    const due = booked.filter((lead) => lead.due)
+    const showed = due.filter((lead) => lead.reached.showed).length
+    const converted = mine.filter((lead) => lead.reached.converted).length
+    return {
+      spendCents: spend,
+      leads: mine.length,
+      booked: booked.length,
+      showRate: due.length === 0 ? null : Math.round((showed / due.length) * 100),
+      costPerNewPatientCents: spend === null || converted === 0 ? null : Math.round(spend / converted),
+    }
+  }
+
   const channelNames = new Set<string>([...leads.map((lead) => channelOf(lead.source)), ...spendByChannel.keys()])
-  const channels = [...channelNames]
-    .map((channel) => {
-      const mine = thisMonth.filter((lead) => channelOf(lead.source) === channel)
-      const booked = mine.filter((lead) => stageRank(lead.furthest_stage) >= stageRank('booked')).length
-      const showed = mine.filter((lead) => stageRank(lead.furthest_stage) >= stageRank('showed')).length
-      const converted = mine.filter((lead) => lead.furthest_stage === 'converted').length
-      const spend = spendByChannel.get(channel) ?? null
-      return {
-        channel,
-        spend: spend === null ? null : formatEuros(spend),
-        // The raw figure alongside the formatted one, so the table can put a
-        // clinic back into the box it typed rather than making it re-read
-        // "€1,480" and work out what to type.
-        spendCents: spend,
-        leads: mine.length,
-        booked,
-        showRate: booked === 0 ? null : Math.round((showed / booked) * 100),
-        costPerNewPatient: spend === null || converted === 0 ? null : formatEuros(Math.round(spend / converted)),
-      }
-    })
+  const channels: GrowthChannelPayload[] = [...channelNames]
+    .map((channel) => ({
+      channel,
+      ...channelFigures(thisMonth.filter((lead) => channelOf(lead.source) === channel), spendByChannel.get(channel) ?? null),
+    }))
     .sort((a, b) => b.leads - a.leads)
 
-  const totals = {
-    channel: 'All channels',
-    spend: hasSpend ? formatEuros(totalSpend) : null,
-    spendCents: hasSpend ? totalSpend : null,
-    leads: thisMonth.length,
-    booked: thisMonth.filter((lead) => stageRank(lead.furthest_stage) >= stageRank('booked')).length,
-    showRate: null as number | null,
-    costPerNewPatient: hasSpend && convertedThisMonth.length > 0 ? formatEuros(Math.round(totalSpend / convertedThisMonth.length)) : null,
-  }
-  const totalShowed = thisMonth.filter((lead) => stageRank(lead.furthest_stage) >= stageRank('showed')).length
-  totals.showRate = totals.booked === 0 ? null : Math.round((totalShowed / totals.booked) * 100)
+  const totals = channelFigures(thisMonth, hasSpend ? totalSpend : null)
 
   // --- Trend --------------------------------------------------------------
   // A cohort view, not a calendar of events: of the leads that ARRIVED in a
@@ -215,86 +180,55 @@ export default defineEventHandler(async (event) => {
   // any good", which is the question this chart is on the page to answer --
   // and unlike "bookings per week" it needs no record of when each lead
   // crossed each stage.
-  const WEEKS = 13
   const trend = Array.from({ length: WEEKS }, (_, i) => {
-    const from = new Date(now.getTime() - (WEEKS - i) * 7 * 24 * 3600 * 1000)
-    const to = new Date(now.getTime() - (WEEKS - i - 1) * 7 * 24 * 3600 * 1000)
-    const cohort = leads.filter((lead) => {
-      const at = new Date(lead.created_at)
-      return at >= from && at < to
-    })
+    const from = new Date(now.getTime() - (WEEKS - i) * 7 * DAY)
+    const to = new Date(now.getTime() - (WEEKS - i - 1) * 7 * DAY)
+    const cohort = leads.filter((lead) => lead.createdAt >= from && lead.createdAt < to)
     return {
-      label: from.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
+      weekStart: clinicDateOf(from, tz),
       leads: cohort.length,
-      booked: cohort.filter((lead) => stageRank(lead.furthest_stage) >= stageRank('booked')).length,
+      booked: cohort.filter((lead) => lead.reached.booked).length,
     }
   })
 
   // --- Needs attention ----------------------------------------------------
   // Derived from the leads themselves rather than invented. Both of these are
-  // things a front desk can act on this afternoon.
-  const staleCutoff = new Date(now.getTime() - 7 * 24 * 3600 * 1000)
+  // things a front desk can act on this afternoon -- which is why "waiting"
+  // looks back 30 days, not the whole 90: a lead untouched since summer is
+  // not this afternoon's work, and counting them buried the ones that are.
+  // It used to say "contacted or qualified" while most of what it counted
+  // was New, so the detail now says how many were never contacted at all.
+  const staleCutoff = new Date(now.getTime() - 7 * DAY)
+  const staleFloor = new Date(now.getTime() - 30 * DAY)
   const stale = leads.filter(
-    (lead) => stageRank(lead.furthest_stage) >= 0 && stageRank(lead.furthest_stage) < stageRank('booked') && new Date(lead.created_at) < staleCutoff && lead.stage !== 'lost',
+    (lead) => lead.createdAt < staleCutoff && lead.createdAt >= staleFloor && lead.stage !== 'lost' && !lead.reached.booked && !lead.reached.converted,
   )
   const unattributed = thisMonth.filter((lead) => !lead.source).length
 
-  const alerts: { key: string; tone: 'negative' | 'neutral'; title: string; detail: string }[] = []
+  const alerts: GrowthAlertPayload[] = []
   if (stale.length > 0) {
-    alerts.push({
-      key: 'stale',
-      tone: 'negative',
-      title: `${stale.length} leads waiting more than a week`,
-      detail: 'Contacted or qualified, never booked',
-    })
+    alerts.push({ key: 'stale', count: stale.length, neverContacted: stale.filter((lead) => !lead.reached.contacted).length })
   }
-  if (!hasSpend) {
-    alerts.push({
-      key: 'no-spend',
-      tone: 'neutral',
-      title: 'No ad spend recorded this month',
-      detail: 'Cost per lead, cost per new patient and ROAS stay hidden until it is',
-    })
-  }
+  if (!hasSpend) alerts.push({ key: 'no-spend' })
   // An AI draft nobody approves is the failure mode the design tried to solve
   // with a 22-hour auto-post timer. Posting unread text under the clinic's
   // name on a public review is not an acceptable answer to it -- in a
   // healthcare business a reply can confirm that an identifiable person was a
   // patient -- so the queue is surfaced here instead. Visible beats automatic.
-  if (pendingReplies && pendingReplies > 0) {
-    alerts.push({
-      key: 'pending-replies',
-      tone: 'neutral',
-      title: `${pendingReplies} AI ${pendingReplies === 1 ? 'reply is' : 'replies are'} waiting for approval`,
-      detail: 'Drafted for reviews, and nothing posts until someone approves them',
-    })
-  }
-  if (unattributed > 0) {
-    alerts.push({
-      key: 'unattributed',
-      tone: 'neutral',
-      title: `${unattributed} leads with no source`,
-      detail: 'They count in the funnel but not in any channel',
-    })
-  }
+  if (pendingReplies && pendingReplies > 0) alerts.push({ key: 'pending-replies', count: pendingReplies })
+  if (unattributed > 0) alerts.push({ key: 'unattributed', count: unattributed })
 
   return {
-    periodLabel: monthStart.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }),
-    kpis,
-    funnelStages: funnelStages.map((stage) => ({ ...stage, caption: '' })),
-    funnelSteps,
-    endToEndRate: `${endToEnd.toFixed(1)}%`,
-    dropOff:
-      funnelSteps.length > 0 && funnelStages[worstStep + 1]
-        ? {
-            summary: `Biggest drop-off: ${funnelStages[worstStep]!.count - funnelStages[worstStep + 1]!.count} leads did not reach ${funnelStages[worstStep + 1]!.label}.`,
-            action: 'Review the pipeline',
-          }
-        : null,
+    month,
+    newLeads: thisMonth.length,
+    leads90d: leads.filter((lead) => lead.createdAt >= ninetyDaysAgo).length,
+    spendCents: hasSpend ? totalSpend : null,
+    converted: convertedThisMonth.length,
+    revenueCents,
+    funnel,
     channels,
-    channelTotals: totals,
+    totals,
     trend,
-    trendAxis: [trend[0]?.label, trend[Math.floor(WEEKS / 2)]?.label, trend[WEEKS - 1]?.label].filter(Boolean) as string[],
     alerts,
     // Explicitly null rather than absent, so the page knows the difference
     // between "no AI yet" and "failed to load".

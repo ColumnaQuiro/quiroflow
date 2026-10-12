@@ -70,8 +70,9 @@ function onOpen(lead: GrowthLead) {
   loadLead(lead.id)
 }
 
-// Converting moves the lead to its last stage, so the board behind the drawer
-// is now wrong. Reloaded rather than patched in place: conversion also
+// Converting links a patient, and the lead catches up with any appointment
+// that patient already has -- it can move a column, so the board behind the
+// drawer may now be wrong. Reloaded rather than patched in place: conversion also
 // changes the stage totals and the open-leads count in the header, and
 // reproducing all of that here would be a second implementation of the
 // grouping the API already does.

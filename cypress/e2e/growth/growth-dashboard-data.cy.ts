@@ -12,7 +12,10 @@ interface SeededAccount {
   password: string
   accountId: string
   clinicId: string
+  teamMemberId: string
 }
+
+const daysFromNow = (days: number) => new Date(Date.now() + days * 24 * 3600 * 1000).toISOString()
 
 describe('Growth dashboard', () => {
   let account: SeededAccount
@@ -25,13 +28,12 @@ describe('Growth dashboard', () => {
   })
 
   it('counts the funnel by how far a lead got, not where it sits now', () => {
-    // Four leads, each parked at a different stage. Every one of them has
+    // Three leads, each parked at a different stage. Every one of them has
     // been through every stage below it.
     for (const [name, stage] of [
       ['Only Enquired', 'new'],
       ['Got Contacted', 'contacted'],
       ['Got Booked', 'booked'],
-      ['Became A Patient', 'converted'],
     ] as const) {
       cy.task('db:createLead', { accountId: account.accountId, fullName: name, stage, estimatedValueCents: 100_000 })
     }
@@ -39,11 +41,106 @@ describe('Growth dashboard', () => {
     cy.visit('/growth?growth=1')
 
     cy.contains('Acquisition funnel').should('be.visible')
-    cy.get('[data-test="funnel-stage-new"]').should('contain', '4')
-    cy.get('[data-test="funnel-stage-contacted"]').should('contain', '3')
-    cy.get('[data-test="funnel-stage-booked"]').should('contain', '2')
+    cy.get('[data-test="funnel-stage-new"]').should('contain', '3')
+    cy.get('[data-test="funnel-stage-contacted"]').should('contain', '2')
+    cy.get('[data-test="funnel-stage-qualified"]').should('contain', '1')
+    cy.get('[data-test="funnel-stage-booked"]').should('contain', '1')
+    cy.get('[data-test="funnel-stage-showed"]').should('contain', '0')
+  })
+
+  it('counts a lead the clinic has written to as contacted, though it still sits in New', () => {
+    // The follow-up sequence and Inbox replies send WhatsApp messages and
+    // leave the lead in New. 74 of 75 "New" leads had been messaged when the
+    // funnel said a sixth of them had been contacted.
+    cy.task('db:createLead', { accountId: account.accountId, fullName: 'Messaged', stage: 'new' }).then((lead) => {
+      cy.task('db:createLeadMessage', { accountId: account.accountId, leadId: (lead as { id: string }).id, direction: 'outbound', body: 'Hola', status: 'delivered' })
+    })
+    // A message that failed, or a dry run, reached nobody.
+    cy.task('db:createLead', { accountId: account.accountId, fullName: 'Failed Send', stage: 'new' }).then((lead) => {
+      cy.task('db:createLeadMessage', { accountId: account.accountId, leadId: (lead as { id: string }).id, direction: 'outbound', body: 'Hola', status: 'failed' })
+    })
+    cy.task('db:createLead', { accountId: account.accountId, fullName: 'Untouched', stage: 'new' })
+
+    cy.visit('/growth?growth=1')
+    cy.get('[data-test="funnel-stage-new"]').should('contain', '3')
+    cy.get('[data-test="funnel-stage-contacted"]').should('contain', '1')
+    cy.get('[data-test="funnel-stage-qualified"]').should('contain', '0')
+  })
+
+  it('counts a lead made a patient and booked for next week as booked, not showed or converted', () => {
+    // "Convert to patient" makes the record the desk needs to book them. It
+    // used to set Converted as well, which put people who had never visited
+    // at the end of the funnel.
+    cy.task('db:createLead', { accountId: account.accountId, fullName: 'Booked Next Week', stage: 'new', phone: '34600111222' }).then((lead) => {
+      cy.request('POST', `/api/growth/leads/${(lead as { id: string }).id}/convert`).then((res) => {
+        cy.task('db:createAppointment', {
+          accountId: account.accountId,
+          clinicId: account.clinicId,
+          patientId: res.body.patientId,
+          startsAt: daysFromNow(7),
+        })
+      })
+    })
+    cy.task('db:createLead', { accountId: account.accountId, fullName: 'Record Only', stage: 'new', phone: '34600333444' }).then((lead) => {
+      cy.request('POST', `/api/growth/leads/${(lead as { id: string }).id}/convert`)
+    })
+
+    cy.visit('/growth?growth=1')
+    cy.get('[data-test="funnel-stage-booked"]').should('contain', '1')
+    cy.get('[data-test="funnel-stage-showed"]').should('contain', '0')
+    cy.get('[data-test="funnel-stage-converted"]').should('contain', '0')
+    // Next week's visit has not been missed: no show rate to state yet.
+    cy.contains('td', 'All channels').parent().find('td').eq(4).should('contain', '—')
+  })
+
+  it('counts a lead who attended as booked and showed', () => {
+    cy.task('db:createLead', { accountId: account.accountId, fullName: 'Came In', stage: 'new', phone: '34600555666' }).then((lead) => {
+      cy.request('POST', `/api/growth/leads/${(lead as { id: string }).id}/convert`).then((res) => {
+        cy.task('db:createAppointment', {
+          accountId: account.accountId,
+          clinicId: account.clinicId,
+          patientId: res.body.patientId,
+          // Minutes ago, not hours: the visit has to fall on or after the day the
+          // lead came in, and an hour back can cross midnight.
+          startsAt: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
+          status: 'completed',
+        })
+      })
+    })
+
+    cy.visit('/growth?growth=1')
+    cy.get('[data-test="funnel-stage-booked"]').should('contain', '1')
     cy.get('[data-test="funnel-stage-showed"]').should('contain', '1')
+    // No convert-after-visits rule on this account: Converted is a hand move.
+    cy.get('[data-test="funnel-stage-converted"]').should('contain', '0')
+    cy.contains('td', 'All channels').parent().find('td').eq(4).should('contain', '100%')
+  })
+
+  it('does not credit a lead moved to Converted by hand with a visit it has not had', () => {
+    // Converted is still the clinic's to set; reading it cumulatively would
+    // claim a booking and a visit that never happened.
+    cy.task('db:createLead', { accountId: account.accountId, fullName: 'Dragged Across', stage: 'converted' })
+
+    cy.visit('/growth?growth=1')
     cy.get('[data-test="funnel-stage-converted"]').should('contain', '1')
+    cy.get('[data-test="funnel-stage-booked"]').should('contain', '0')
+    cy.get('[data-test="funnel-stage-showed"]').should('contain', '0')
+  })
+
+  it('speaks the staff member\'s language', () => {
+    // The endpoint used to send finished English sentences into a Spanish
+    // screen.
+    cy.task('db:setStaffLanguage', { teamMemberId: account.teamMemberId, language: 'es' })
+    cy.task('db:createLead', { accountId: account.accountId, fullName: 'Sin Origen', stage: 'contacted' })
+
+    cy.visit('/growth?growth=1')
+    cy.contains('Embudo de captación').should('be.visible')
+    cy.get('[data-test="funnel-stage-contacted"]').should('contain', 'Contactado')
+    cy.contains('Leads nuevos este mes').should('be.visible')
+    cy.contains('1 lead sin origen').scrollIntoView().should('be.visible')
+    cy.contains('td', 'Todos los canales').scrollIntoView().should('be.visible')
+    cy.contains('td', 'Directo').should('exist')
+    cy.contains('New leads this month').should('not.exist')
   })
 
   it('keeps a lost lead counted at the stage it reached', () => {
@@ -113,16 +210,15 @@ describe('Growth dashboard', () => {
   })
 
   it('flags leads that have been waiting more than a week', () => {
-    const longAgo = new Date(Date.now() - 10 * 24 * 3600 * 1000).toISOString()
-    cy.task('db:createLead', {
-      accountId: account.accountId,
-      fullName: 'Forgotten Enquiry',
-      stage: 'contacted',
-      createdAt: longAgo,
-    })
+    cy.task('db:createLead', { accountId: account.accountId, fullName: 'Forgotten Enquiry', stage: 'contacted', createdAt: daysFromNow(-10) })
+    cy.task('db:createLead', { accountId: account.accountId, fullName: 'Never Answered', stage: 'new', createdAt: daysFromNow(-12) })
+    // Since summer is not this afternoon's work.
+    cy.task('db:createLead', { accountId: account.accountId, fullName: 'Long Gone', stage: 'new', createdAt: daysFromNow(-60) })
 
     cy.visit('/growth?growth=1')
-    cy.contains('leads waiting more than a week').scrollIntoView().should('be.visible')
+    cy.contains('2 leads waiting more than a week').scrollIntoView().should('be.visible')
+    // It used to say "contacted or qualified" whatever they were.
+    cy.contains('not booked · 1 never contacted').should('be.visible')
   })
 
   it('lets a clinic type in what it spent, and the cost figures follow', () => {

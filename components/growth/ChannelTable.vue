@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { GrowthChannelRow } from '~/composables/useGrowthDashboard'
+import type { GrowthChannelRow } from '~/utils/growthDashboard'
 
 defineProps<{ rows: GrowthChannelRow[]; totals: GrowthChannelRow }>()
 const emit = defineEmits<{ saveSpend: [channel: string, amountCents: number | null] }>()
@@ -84,7 +84,7 @@ function percent(value: number | null) {
             class="border-b border-line-divider text-ink-700"
             :class="i % 2 === 1 ? 'bg-surface-subtle' : ''"
           >
-            <td class="px-4 py-[9px] sm:pl-[18px]">{{ row.channel }}</td>
+            <td class="px-4 py-[9px] sm:pl-[18px]">{{ row.label }}</td>
             <td class="px-2 py-[9px] text-right">
               <input
                 v-if="editing === row.channel"
@@ -118,7 +118,7 @@ function percent(value: number | null) {
             >{{ money(row.costPerNewPatient) }}</td>
           </tr>
           <tr class="bg-chip-bg text-[12px] font-semibold text-ink-900">
-            <td class="px-4 py-2.5 sm:pl-[18px]">{{ totals.channel }}</td>
+            <td class="px-4 py-2.5 sm:pl-[18px]">{{ totals.label }}</td>
             <td class="px-2 py-2.5 text-right">{{ money(totals.spend) }}</td>
             <td class="px-2 py-2.5 text-right">{{ totals.leads }}</td>
             <td class="px-2 py-2.5 text-right">{{ totals.booked }}</td>

@@ -148,6 +148,17 @@ export function checkBookableIds(value: unknown, types: Pick<OfferableType, 'id'
   return { ids }
 }
 
+/**
+ * When the receptionist may book or move a visit on its own: once there is no
+ * doubt which exact day and time the person wants. Offered "martes 20 a las
+ * 10:00 o miércoles 21 a las 16:00", "Miércoles 21" can only mean the 16:00
+ * -- asking again would be one message too many. What needs the question is
+ * a choice that could be more than one time: a day offered at two times, a
+ * "vale" to several, a day or time that was not offered.
+ */
+export const CONFIRM_BEFORE_BOOKING =
+  'Book or move only when there is no doubt which exact day and time they want: they named both themselves ("el miércoles 21 a las 16:00") and it is free, or their answer can only be one of the times you just offered -- offered "martes 20 a las 10:00 o miércoles 21 a las 16:00", "miércoles 21" means 16:00 and you book it without asking again. If it could be more than one time (you offered two times that day, they said "vale" to several options, or a day or time you did not offer), ask "¿Te lo confirmo el miércoles 21 de octubre a las 16:00 con Jordana?" first and do not book yet.'
+
 /** A visit the person already has booked, as the reschedule section names it. */
 export interface BookedVisit {
   startsAt: string
@@ -176,7 +187,7 @@ export function rescheduleSection(visits: BookedVisit[], timeZone: string, opts:
   return [
     `# Moving a visit they already have`,
     opts.listVisits ? `They have booked:\n${list}` : '',
-    `If they want to change the day or time of one of these, offer new times for that same type of appointment -- from the Booking list, or find_free_times -- and never a different type. This holds even when that type is not under "What you can offer", which is about new appointments. ${opts.canBook ? 'When they pick one, move it with book_appointment (move_visit_on = its current day and time), and only once that confirms tell them it is moved.' : 'When they pick one, say you are passing the change on and that they will get a confirmation: it is not moved until then, and their current time stands meanwhile.'} If they want to cancel it instead, say your colleague will take care of it.`,
+    `If they want to change the day or time of one of these, offer new times for that same type of appointment -- from the Booking list, or find_free_times -- and never a different type. This holds even when that type is not under "What you can offer", which is about new appointments. ${opts.canBook ? `${CONFIRM_BEFORE_BOOKING} Then move it with book_appointment (move_visit_on = its current day and time), and only once that confirms tell them it is moved.` : 'When they pick one, say you are passing the change on and that they will get a confirmation: it is not moved until then, and their current time stands meanwhile.'} If they want to cancel it instead, say your colleague will take care of it.`,
   ]
     .filter(Boolean)
     .join('\n')

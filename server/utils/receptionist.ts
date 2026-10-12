@@ -165,11 +165,15 @@ export async function loadTypeChoices(supabase: SupabaseClient<Database>, accoun
  * keeps its type, and a clinic that offers only first visits to new people
  * still has patients moving their adjustment.
  */
-export async function loadBookedVisits(supabase: SupabaseClient<Database>, accountId: string, patientId: string | null): Promise<{ visits: BookedVisit[]; types: OfferedType[] }> {
-  if (!patientId) return { visits: [], types: [] }
+export async function loadBookedVisits(
+  supabase: SupabaseClient<Database>,
+  accountId: string,
+  patientId: string | null,
+): Promise<{ visits: BookedVisit[]; types: OfferedType[]; practitionerIds: string[] }> {
+  if (!patientId) return { visits: [], types: [], practitionerIds: [] }
   const { data, error } = await supabase
     .from('appointments')
-    .select('starts_at, appointment_types(id, name, duration_minutes, stage, online_bookable_by)')
+    .select('starts_at, practitioner_id, appointment_types(id, name, duration_minutes, stage, online_bookable_by)')
     .eq('account_id', accountId)
     .eq('patient_id', patientId)
     .eq('status', 'booked')
@@ -179,12 +183,56 @@ export async function loadBookedVisits(supabase: SupabaseClient<Database>, accou
     .limit(3)
   if (error) {
     console.error('[receptionist] could not read booked visits:', error.message)
-    return { visits: [], types: [] }
+    return { visits: [], types: [], practitionerIds: [] }
   }
-  const rows = (data ?? []) as unknown as { starts_at: string; appointment_types: { id: string; name: string; duration_minutes: number; stage: string | null; online_bookable_by: string | null } | null }[]
+  const rows = (data ?? []) as unknown as {
+    starts_at: string
+    practitioner_id: string | null
+    appointment_types: { id: string; name: string; duration_minutes: number; stage: string | null; online_bookable_by: string | null } | null
+  }[]
   const types = new Map<string, OfferedType>()
   for (const row of rows) if (row.appointment_types) types.set(row.appointment_types.id, toOfferedType(row.appointment_types))
-  return { visits: rows.map((row) => ({ startsAt: row.starts_at, typeName: row.appointment_types?.name ?? null })), types: [...types.values()] }
+  return {
+    visits: rows.map((row) => ({ startsAt: row.starts_at, typeName: row.appointment_types?.name ?? null })),
+    types: [...types.values()],
+    practitionerIds: [...new Set(rows.map((row) => row.practitioner_id).filter((id): id is string => Boolean(id)))],
+  }
+}
+
+/**
+ * Whose diary a patient's times come from: the practitioner of each visit
+ * they have booked (moving one keeps it with them), and their own --
+ * patients.default_practitioner_id, or failing that whoever saw them last.
+ * Null for someone with none of those, whose times are anyone's.
+ *
+ * Without this the times were merged across every practitioner, so a
+ * patient of one was offered an hour only the other had free.
+ */
+export async function loadPatientPractitioners(
+  supabase: SupabaseClient<Database>,
+  accountId: string,
+  patientId: string | null,
+  bookedPractitionerIds: string[],
+): Promise<string[] | null> {
+  if (!patientId) return bookedPractitionerIds.length ? bookedPractitionerIds : null
+  const { data: patient } = await supabase.from('patients').select('default_practitioner_id').eq('id', patientId).eq('account_id', accountId).maybeSingle()
+  let own = patient?.default_practitioner_id ?? null
+  if (!own) {
+    const { data: last } = await supabase
+      .from('appointments')
+      .select('practitioner_id')
+      .eq('account_id', accountId)
+      .eq('patient_id', patientId)
+      .eq('status', 'completed')
+      .is('deleted_at', null)
+      .not('practitioner_id', 'is', null)
+      .order('starts_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    own = last?.practitioner_id ?? null
+  }
+  const ids = [...new Set([...bookedPractitionerIds, ...(own ? [own] : [])])]
+  return ids.length ? ids : null
 }
 
 /** Each type once, the first seen kept: the calendar and the tool list a type once. */
@@ -205,6 +253,11 @@ export interface ReceptionistCalendar {
   timeZone: string
   /** Null when the free times could not be computed: the prompt then offers none. */
   availability: ReceptionistAvailability | null
+  /**
+   * Who the times are with, when they were narrowed to this patient's own
+   * practitioner(s); null when they are anyone's, as for someone new.
+   */
+  withWhom: string[] | null
 }
 
 /**
@@ -236,8 +289,13 @@ export async function loadReceptionistCalendar(
   // A later stretch than the configured window, for the find_free_times
   // tool: `days` from `from`, the minimum notice still counted from now.
   window?: { from: Date; days: number; maxTimesPerList?: number },
+  // Only these practitioners' diaries (loadPatientPractitioners); null for
+  // anyone's. Narrowing to people who cannot be booked online leaves nothing,
+  // and the prompt then hands the time to a colleague rather than offering
+  // someone else's.
+  practitionerIds: string[] | null = null,
 ): Promise<ReceptionistCalendar> {
-  const fallback = (timeZone = DEFAULT_CLINIC_TIMEZONE): ReceptionistCalendar => ({ now, timeZone, availability: null })
+  const fallback = (timeZone = DEFAULT_CLINIC_TIMEZONE): ReceptionistCalendar => ({ now, timeZone, availability: null, withWhom: null })
 
   const { data: clinics, error: clinicError } = await supabase
     .from('clinics')
@@ -259,14 +317,23 @@ export async function loadReceptionistCalendar(
     // A day past the window: the last day's slots end after its last start.
     const to = new Date(start.getTime() + (windowDays + 1) * 86400000).toISOString()
     const [practitioners, overrides, appointments, blocks] = await Promise.all([
-      supabase
-        .from('team_members')
-        .select('id, business_hours, team_member_clinics(clinic_id)')
-        .eq('account_id', accountId)
-        .eq('is_practitioner', true)
-        .eq('online_booking_enabled', true)
-        .is('deleted_at', null)
-        .then(must),
+      (practitionerIds
+        ? supabase
+            .from('team_members')
+            .select('id, full_name, business_hours, team_member_clinics(clinic_id)')
+            .eq('account_id', accountId)
+            .eq('is_practitioner', true)
+            .eq('online_booking_enabled', true)
+            .is('deleted_at', null)
+            .in('id', practitionerIds)
+        : supabase
+            .from('team_members')
+            .select('id, full_name, business_hours, team_member_clinics(clinic_id)')
+            .eq('account_id', accountId)
+            .eq('is_practitioner', true)
+            .eq('online_booking_enabled', true)
+            .is('deleted_at', null)
+      ).then(must),
       supabase
         .from('appointment_type_overrides')
         .select('appointment_type_id, team_member_id, duration_minutes')
@@ -322,7 +389,10 @@ export async function loadReceptionistCalendar(
       from: window?.from,
       maxTimesPerList: window?.maxTimesPerList,
     })
-    return { now, timeZone, availability }
+    // Named only when narrowed: "with Natacha" is what a patient of hers
+    // expects to hear, and a list of everyone tells a new person nothing.
+    const withWhom = practitionerIds && availability ? practitioners.map((p) => p.full_name).filter(Boolean) : null
+    return { now, timeZone, availability, withWhom }
   } catch (err) {
     console.error('[receptionist] could not compute free times:', (err as Error)?.message ?? err)
     return fallback(timeZone)
@@ -445,7 +515,7 @@ export function buildSystemPrompt(
     // asks when suits and a colleague picks the time (#691): a model told to
     // "offer times" with nothing to offer from invents them.
     hasTimes
-      ? receptionistBookingSection({ availability, slotsPerReply: config.slotsPerReply, bookingWindowDays: config.bookingWindowDays, searchTool: opts.searchTool && Boolean(availability) })
+      ? receptionistBookingSection({ availability, slotsPerReply: config.slotsPerReply, bookingWindowDays: config.bookingWindowDays, searchTool: opts.searchTool && Boolean(availability), withWhom: opts.calendar.withWhom })
       : '',
     // The single most important line in this prompt.
     `You must NEVER state that an appointment is booked, confirmed or reserved. A member of staff or the booking system confirms them${availability ? ', and a listed time can be taken before then' : ''}. ${availability ? 'If the patient accepts a time, say you are passing it on and that they will get a confirmation.' : 'Once the patient has said when suits them, say you are passing it on and that they will get a confirmation.'}`,

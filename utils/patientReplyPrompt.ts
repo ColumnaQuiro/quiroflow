@@ -70,7 +70,7 @@ export function buildPatientReplyPrompt(
     facts: PatientReplyFacts
     /** Already narrowed to a returning patient (typesForAudience 'existing'). */
     offeredTypes: PromptType[]
-    calendar: { now: Date; timeZone: string; availability: ReceptionistAvailability | null }
+    calendar: { now: Date; timeZone: string; availability: ReceptionistAvailability | null; withWhom?: string[] | null }
     /** Whether the find_free_times tool is on this request. */
     searchTool?: boolean
     /** Their booked visits, whose types they can be offered new times for. */
@@ -107,7 +107,7 @@ export function buildPatientReplyPrompt(
     // Listed under "What you already know", so not again here.
     rescheduleSection(booked, opts.calendar.timeZone || DEFAULT_CLINIC_TIMEZONE, { listVisits: false }),
     hasTimes
-      ? receptionistBookingSection({ availability, slotsPerReply: config.slotsPerReply, bookingWindowDays: config.bookingWindowDays, searchTool: opts.searchTool && Boolean(availability) })
+      ? receptionistBookingSection({ availability, slotsPerReply: config.slotsPerReply, bookingWindowDays: config.bookingWindowDays, searchTool: opts.searchTool && Boolean(availability), withWhom: opts.calendar.withWhom })
       : '',
     `You must NEVER state that a visit is booked, moved, cancelled or confirmed, or that a payment was received or a refund made. A member of staff does those. If they ask to book or move a visit, offer times and say you are passing it on, and that they will get a confirmation; if they ask to cancel, say your colleague will take care of it.`,
     `Only mention an amount owed if they ask about money or payment, and then only exactly as given above.`,

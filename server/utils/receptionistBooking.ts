@@ -44,7 +44,7 @@ type Supa = SupabaseClient<Database>
 export const BOOK_APPOINTMENT: Anthropic.Tool = {
   name: 'book_appointment',
   description:
-    'Books a visit in the clinic calendar, or moves one they already have, at a time you offered from the Booking list or find_free_times. Call it only once the person has clearly accepted a specific day and time. Only after it confirms may you tell them it is booked; it tells you who it is with.',
+    'Books a visit in the clinic calendar, or moves one they already have, at a time you offered from the Booking list or find_free_times. Call it only once the exact day AND time are settled: they named both themselves, or said yes when you asked them to confirm that exact day and time. A day alone, a time alone, or a "vale" to several options is not enough -- ask them to confirm first. Only after it confirms may you tell them it is booked; it tells you who it is with.',
   input_schema: {
     type: 'object',
     properties: {

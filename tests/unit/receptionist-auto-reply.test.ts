@@ -117,6 +117,17 @@ describe('A reply that is sent as it is', () => {
     expect(prompt).toContain('If they ask to cancel, say your colleague will take care of it.')
   })
 
+  // "Miércoles 21" moved a visit on the spot: a day alone is not a yes to a
+  // time. The exact day and time are said back and agreed first.
+  it('confirms the exact day and time before booking or moving, unless they gave both', () => {
+    const visits = [{ startsAt: '2026-10-20T08:00:00Z', typeName: 'Ajuste' }]
+    const prompt = buildPatientReplyPrompt(config, { ...base, bookedVisits: visits, sendsItself: true, canBook: true })
+    expect(prompt).toContain('Book or move only once the exact day AND time are settled')
+    expect(prompt).toContain('If they answer with only a day, only a time, or a "vale" to several options, ask that confirming question first and do not book yet.')
+    // Both where it books and where it moves.
+    expect(prompt.split('Book or move only once the exact day AND time are settled').length - 1).toBe(2)
+  })
+
   it('hands an accepted time to a colleague when it cannot book', () => {
     const prompt = buildPatientReplyPrompt(config, { ...base, sendsItself: true })
     expect(prompt).toContain('a colleague books it')

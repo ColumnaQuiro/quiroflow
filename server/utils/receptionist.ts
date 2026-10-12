@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
 import { audienceSection, offeredAppointmentTypes, offeredTypesSection, rescheduleSection, type BookedVisit, type PromptType, type ReceptionistAudience } from '~/utils/receptionistTypes'
 import { leadOriginSection, type LeadOrigin } from '~/utils/receptionistLeadOrigin'
+import { NO_REPLY } from '~/utils/receptionistAutoReply'
 import { CONFIDENTIALITY_SECTION, promptSafeName } from '~/utils/receptionistGuard'
 import {
   receptionistBookingSection,
@@ -48,6 +49,8 @@ export interface ReceptionistConfig {
   afterHours: boolean
   missedCallTextBack: boolean
   answerDuringHours: boolean
+  /** Whole messages it leaves alone -- "Confirmar", "Gracias" (isNoReplyMessage). */
+  noReplyPhrases: string[]
 }
 
 /** The clinic's chosen tone, as an instruction. Shared with review replies
@@ -104,6 +107,7 @@ export function toConfig(row: Row | null): ReceptionistConfig {
     afterHours: row?.after_hours ?? false,
     missedCallTextBack: row?.missed_call_text_back ?? true,
     answerDuringHours: row?.answer_during_hours ?? false,
+    noReplyPhrases: row?.no_reply_phrases ?? [],
   }
 }
 
@@ -504,6 +508,9 @@ export function buildSystemPrompt(
     opts.audience ? audienceSection(opts.audience) : '',
     // The whole conversation is in the messages, and a receptionist who asks
     // for something the patient said three messages ago reads as a form.
+    // Not every message wants an answer: a "Confirmar" tapped on the reminder,
+    // a thanks. A re-confirmation nobody asked for is noise in their WhatsApp.
+    `If their latest message needs no answer at all -- a thank-you, an "ok", a confirmation of a visit they already have, an emoji -- write exactly ${NO_REPLY} and nothing else. Nothing is then sent.`,
     `Read the whole conversation before replying. Never ask for something the patient has already told you or that is already known about them, and never repeat a question that has been answered.`,
     // Booking outranks qualifying. A patient who writes "quiero una cita" and
     // gets "¿qué te ocurre?" back has been handed a form before they were

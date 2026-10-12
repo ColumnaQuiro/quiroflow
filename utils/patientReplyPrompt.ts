@@ -1,6 +1,7 @@
 import { formatEur } from './billing'
 import { DEFAULT_CLINIC_TIMEZONE } from './clinicClock'
 import { CONFIDENTIALITY_SECTION, promptSafeName } from './receptionistGuard'
+import { NO_REPLY } from './receptionistAutoReply'
 import { offeredTypesSection, rescheduleSection, type BookedVisit, type PromptType } from './receptionistTypes'
 import { receptionistBookingSection, receptionistClockSection, type ReceptionistAvailability } from './receptionistSlots'
 
@@ -98,6 +99,9 @@ export function buildPatientReplyPrompt(
     receptionistClockSection(opts.calendar.now, opts.calendar.timeZone),
     patientFactsSection(opts.facts, opts.calendar.timeZone),
     knowledge ? `# What you know about this clinic\n\n${knowledge}` : '',
+    // Not every message wants an answer: a "Confirmar" tapped on the reminder,
+    // a thanks. A re-confirmation nobody asked for is noise in their WhatsApp.
+    `If their latest message needs no answer at all -- a thank-you, an "ok", a confirmation of a visit they already have, an emoji -- write exactly ${NO_REPLY} and nothing else. Nothing is then sent.`,
     `Read the whole conversation before replying. Answer what they asked, using what you know about them -- "your next visit is on Tuesday at 10:00" rather than asking them when it is. If you do not know something, say your colleague will check rather than guessing.`,
     // Clinical questions go to the practitioner, not to the front desk's draft.
     `Never give clinical or medical advice, and never comment on their symptoms, treatment or progress beyond the visit counts above: say their practitioner will answer that.`,

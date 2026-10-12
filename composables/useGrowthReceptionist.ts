@@ -32,6 +32,7 @@ export interface ReceptionistConfig {
   afterHours: boolean
   missedCallTextBack: boolean
   answerDuringHours: boolean
+  noReplyPhrases: string[]
 }
 
 export type ChannelStatus = 'connected' | 'not_set_up' | 'not_built'

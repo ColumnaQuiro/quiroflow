@@ -5422,6 +5422,7 @@ export type Database = {
           slots_per_reply: number
           tone: string
           updated_at: string
+          no_reply_phrases: string[]
         }
         Insert: {
           account_id: string
@@ -5442,6 +5443,7 @@ export type Database = {
           slots_per_reply?: number
           tone?: string
           updated_at?: string
+          no_reply_phrases?: string[]
         }
         Update: {
           account_id?: string
@@ -5462,6 +5464,7 @@ export type Database = {
           slots_per_reply?: number
           tone?: string
           updated_at?: string
+          no_reply_phrases?: string[]
         }
         Relationships: [
           {

@@ -39,7 +39,7 @@ export async function readLeadThread(supabase: SupabaseClient<Database>, leadId:
     // someone was about to answer.
     supabase
       .from('whatsapp_messages')
-      .select('id, direction, body_preview, channel, status, created_at, template_name, media_type, media_storage_path, media_filename')
+      .select('id, direction, body_preview, channel, status, created_at, template_name, media_type, media_storage_path, media_filename, sent_by_ai')
       .eq('lead_id', leadId)
       .order('created_at', { ascending: false })
       .limit(200),
@@ -92,17 +92,20 @@ export async function readLeadThread(supabase: SupabaseClient<Database>, leadId:
     patientId: lead.patient_id,
     patientBalance: patient?.data ? euros(patient.data.balance_cents) : null,
     canReplyFreeText: withinWindow,
-    // A reply the receptionist wrote, waiting on a person, with its own
-    // timestamp so the Inbox can say how stale it is.
+    // A reply the receptionist wrote, waiting on a person. Sent separately
+    // with its own timestamp so the Inbox can say how stale it is: a draft
+    // written before the patient said three more things is worth re-reading
+    // rather than approving on sight.
     draft: lead.ai_draft_body,
     draftAt: lead.ai_draft_created_at,
     receptionistEnabled: receptionist?.enabled ?? false,
     messages: messages.map((message) => ({
       id: message.id,
       // A lead's own messages are inbound; everything outbound came from the
-      // clinic. Which human or model sent it is not recorded on the row, so
-      // it is not claimed here either.
+      // clinic -- a person, or the AI receptionist answering on its own
+      // (sentByAi), which the thread labels for the team. Never the lead.
       from: message.direction === 'inbound' ? ('lead' as const) : ('clinic' as const),
+      sentByAi: message.sent_by_ai === true,
       text: message.body_preview ?? '',
       channel: message.channel,
       status: message.status,

@@ -1,6 +1,7 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { draftLeadReply } from '~/server/utils/receptionistDraft'
+import { draftPatientReply } from '~/server/utils/patientReplyDraft'
 import { hasGrowth } from '~/server/utils/requireGrowth'
 
 // Drafts a reply for every lead waiting on one, so the draft is there before
@@ -91,7 +92,11 @@ export default defineEventHandler(async (event) => {
       // inbound message, so a draft nobody could send is a draft not worth
       // paying a model to write.
       .gt('created_at', since)
-      .eq('leads.ai_state', 'handling')
+      // 'none' too: a lead nobody has taken over or handed to a person. Only
+      // new leads arrive on 'handling', so with just that, switching the
+      // receptionist on drafted for nobody already in the Inbox. Never for
+      // 'paused' (a person took it), 'needs_human' or 'blocked'.
+      .in('leads.ai_state', ['handling', 'none'])
       .is('leads.deleted_at', null)
       // A draft already sitting there is somebody's to deal with, not ours to
       // replace. Overwriting it would discard an edit in progress.
@@ -150,8 +155,90 @@ export default defineEventHandler(async (event) => {
     drafted += results.filter(Boolean).length
   }
 
+  // Patients too, not only leads: a patient asking to move their visit at
+  // 21:40 has a draft waiting in the morning, as a lead does. Stored in
+  // inbox_reply_drafts (patientReplyDraft.ts, `store`), without their
+  // balance, since anyone with Inbox access reads it.
+  const duePatients = await patientsDue(supabase, Array.from(entitled), since)
+  let draftedPatients = 0
+  for (let i = 0; i < duePatients.length; i += CONCURRENCY) {
+    const batch = duePatients.slice(i, i + CONCURRENCY)
+    const results = await Promise.all(
+      batch.map(async (patient) => {
+        try {
+          const outcome = await draftPatientReply(supabase, supabase, patient.accountId, patient.id, { store: true })
+          return outcome.status === 'drafted'
+        } catch (err) {
+          console.error(`[receptionist-draft-cron] patient ${patient.id} failed:`, (err as Error)?.message ?? err)
+          return false
+        }
+      }),
+    )
+    draftedPatients += results.filter(Boolean).length
+  }
+
   // The ids, not just the count: a tick that drafted nothing and a tick that
   // drafted for somebody unexpected look identical in a number, and this is a
   // background job whose choices nobody watches. Bounded by MAX_PER_TICK.
-  return { drafted, considered: due.length, consideredLeadIds: due.map((l) => l.id) }
+  return {
+    drafted,
+    considered: due.length,
+    consideredLeadIds: due.map((l) => l.id),
+    draftedPatients,
+    consideredPatientIds: duePatients.map((p) => p.id),
+  }
 })
+
+/**
+ * Patients due a draft: newest message from them in the last 24 hours (on
+ * WhatsApp or in the app), newer than whatever their stored draft answers.
+ * Newest first, so the latest question is answered first; whether they are
+ * still the last to have written is draftPatientReply's to check, before any
+ * model is asked.
+ *
+ * WhatsApp messages that belong to a lead are the lead tick's above.
+ */
+async function patientsDue(supabase: any, accountIds: string[], since: string): Promise<{ id: string; accountId: string }[]> {
+  const newest = new Map<string, { accountId: string; at: string }>()
+  for (const source of ['whatsapp_messages', 'patient_app_messages'] as const) {
+    let query = supabase
+      .from(source)
+      .select('patient_id, account_id, created_at')
+      .in('account_id', accountIds)
+      .eq('direction', 'inbound')
+      .not('patient_id', 'is', null)
+      .gt('created_at', since)
+    if (source === 'whatsapp_messages') query = query.is('lead_id', null)
+    const { data, error } = await query.order('created_at', { ascending: false }).limit(500)
+    if (error) {
+      console.error(`[receptionist-draft-cron] could not read ${source}:`, error.message)
+      continue
+    }
+    for (const row of (data ?? []) as { patient_id: string; account_id: string; created_at: string }[]) {
+      const seen = newest.get(row.patient_id)
+      if (!seen || row.created_at > seen.at) newest.set(row.patient_id, { accountId: row.account_id, at: row.created_at })
+    }
+  }
+  if (newest.size === 0) return []
+
+  // Already answered: a stored draft that reads up to (or past) their newest
+  // message. What stops a discarded draft being written again next tick.
+  const { data: drafts, error } = await supabase
+    .from('inbox_reply_drafts')
+    .select('conversation_key, drafted_through_at')
+    .in('conversation_key', Array.from(newest.keys()))
+  if (error) {
+    console.error('[receptionist-draft-cron] could not read stored drafts:', error.message)
+    return []
+  }
+  const draftedThrough = new Map<string, string>((drafts ?? []).map((d: { conversation_key: string; drafted_through_at: string }) => [d.conversation_key, d.drafted_through_at]))
+
+  return Array.from(newest.entries())
+    .filter(([id, m]) => {
+      const through = draftedThrough.get(id)
+      return !through || new Date(m.at).getTime() > new Date(through).getTime()
+    })
+    .sort((a, b) => b[1].at.localeCompare(a[1].at))
+    .slice(0, MAX_PER_TICK)
+    .map(([id, m]) => ({ id, accountId: m.accountId }))
+}

@@ -1956,6 +1956,24 @@ async function createPatientAppMessage(opts: { accountId: string; patientId: str
   )
 }
 
+// A reply the receptionist wrote without being asked (inbox_reply_drafts),
+// as the drafting tick would leave it.
+async function createStoredReplyDraft(opts: { accountId: string; patientId: string; body: string }) {
+  unwrap(
+    await admin
+      .from('inbox_reply_drafts')
+      .upsert({ account_id: opts.accountId, conversation_key: opts.patientId, body: opts.body, drafted_through_at: new Date().toISOString(), dismissed_at: null })
+      .select('conversation_key')
+      .single(),
+  )
+  return null
+}
+
+async function storedReplyDraft(opts: { patientId: string }) {
+  const { data } = await admin.from('inbox_reply_drafts').select('body, dismissed_at').eq('conversation_key', opts.patientId).maybeSingle()
+  return data ?? null
+}
+
 async function createWhatsappMessage(opts: {
   accountId: string
   patientId?: string
@@ -4141,6 +4159,8 @@ export const dbTasks = {
   'db:usePackageSession': usePackageSession,
   'db:createWhatsappMessage': createWhatsappMessage,
   'db:createPatientAppMessage': createPatientAppMessage,
+  'db:createStoredReplyDraft': createStoredReplyDraft,
+  'db:storedReplyDraft': storedReplyDraft,
   'db:seedWhatsappReplyScenario': seedWhatsappReplyScenario,
   'db:createAppointment': createAppointment,
   'db:setStickyNote': setStickyNote,

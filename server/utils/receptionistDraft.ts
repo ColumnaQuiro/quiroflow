@@ -3,6 +3,7 @@ import { buildSystemPrompt, loadBookedVisits, loadOfferedTypes, loadReceptionist
 import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptionistModel'
 import { cameFromAd } from '~/utils/receptionistLeadOrigin'
 import { typesForAudience, type ReceptionistAudience } from '~/utils/receptionistTypes'
+import { internalNotes } from '~/utils/receptionistGuard'
 
 // Writing a receptionist reply for one lead.
 //
@@ -159,15 +160,11 @@ export async function draftLeadReply(supabase: any, accountId: string, leadId: s
   const { text: draft, refused } = await runReceptionistModel(createAnthropicClient(apiKey), {
     model: MODEL,
     maxTokens: MAX_TOKENS,
-    system: [
-      buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, audience, calendar, leadOrigin, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits }),
-      `# This reply is a draft\nA member of staff will read what you write before it is sent, and may edit it. Write the message itself and nothing else -- no preamble, no options to choose between, no notes to the reader.`,
-      lead.full_name ? `The person you are replying to is ${lead.full_name}.` : '',
-    ]
-      .filter(Boolean)
-      .join('\n\n'),
+    system: buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, audience, calendar, leadOrigin, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, draft: { personName: lead.full_name ?? null } }),
     messages: history,
     findFreeTimes,
+    internalNotes: internalNotes(config),
+    logLabel: `lead ${leadId}`,
   })
 
   // A refusal is the model declining to write this, which is a real answer

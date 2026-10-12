@@ -131,6 +131,9 @@ function eur(cents: number) {
         </NuxtLink>
       </div>
 
+      <!-- Their referral link, when the clinic has the programme on -->
+      <PatientReferralCard class="mt-4" :patient-id="patient.id" />
+
       <div class="mt-4 grid gap-3 sm:grid-cols-2">
         <PatientClinicCards messages-to="/portal/messages" />
       </div>

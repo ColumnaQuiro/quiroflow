@@ -165,6 +165,9 @@ function eur(cents: number) {
       <span class="text-ink-faint"><AppChevron /></span>
     </NuxtLink>
 
+    <!-- Their referral link, when the clinic has the programme on -->
+    <PatientReferralCard class="mt-3" :patient-id="props.patientId" />
+
     <!-- The clinic: where it is and how to reach it -->
     <PatientClinicCards class="mt-3" messages-to="/messages" />
   </div>

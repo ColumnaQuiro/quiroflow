@@ -42,12 +42,19 @@ const { showToast } = useToast()
 const loading = ref(true)
 const saving = ref(false)
 
+// The referral programme: each patient gets a link to this booking page, and
+// a newcomer who books through it is recorded as referred by them
+// (server/utils/bookingReferral.ts). The reward is only words shown to the
+// patient; the clinic gives it, and marks it in Reports > Referrals.
+const referralsOn = ref(false)
+const referralReward = ref('')
+
 async function loadAccountSettings() {
   loading.value = true
   const { data } = await supabase
     .from('accounts')
     .select(
-      'online_booking_max_days_ahead, online_booking_gtm_id, online_booking_success_url, online_booking_primary_color, online_booking_secondary_color, online_booking_background_color, online_booking_hide_logo, online_booking_practitioner_order, online_booking_text_overrides, online_booking_notify_email, online_booking_notify_whatsapp',
+      'online_booking_max_days_ahead, online_booking_gtm_id, online_booking_success_url, online_booking_primary_color, online_booking_secondary_color, online_booking_background_color, online_booking_hide_logo, online_booking_practitioner_order, online_booking_text_overrides, online_booking_notify_email, online_booking_notify_whatsapp, referral_program_enabled, referral_reward_text',
     )
     .eq('id', store.accountId!)
     .maybeSingle()
@@ -68,6 +75,8 @@ async function loadAccountSettings() {
   textOverrides.value = overrides
   notifyEmail.value = data?.online_booking_notify_email ?? ''
   notifyWhatsapp.value = data?.online_booking_notify_whatsapp ?? ''
+  referralsOn.value = data?.referral_program_enabled ?? false
+  referralReward.value = data?.referral_reward_text ?? ''
   loading.value = false
 }
 onMounted(loadAccountSettings)
@@ -124,6 +133,8 @@ async function saveAccountSettings() {
     online_booking_text_overrides: textOverrides.value,
     online_booking_notify_email: notifyEmailValue,
     online_booking_notify_whatsapp: notifyWhatsappValue,
+    referral_program_enabled: referralsOn.value,
+    referral_reward_text: referralReward.value.trim() || null,
   }
   const { error: updateError } = await supabase.from('accounts').update(update).eq('id', store.accountId!)
   saving.value = false
@@ -617,6 +628,26 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
           </section>
 
           <template v-if="!loading">
+            <!-- Referral programme -->
+            <section id="referrals" aria-labelledby="h-referrals" class="scroll-mt-4 overflow-hidden rounded-card border border-line bg-surface" data-cy="settings-referrals">
+              <div class="flex items-start gap-4 px-[18px] pb-3 pt-4">
+                <div class="flex-1">
+                  <h2 id="h-referrals" class="text-[16px] font-bold text-ink-900">{{ t('Referral programme', 'Programa de recomendación') }}</h2>
+                  <p class="mt-1 text-[13px] leading-snug text-ink-500">{{ t("Each patient gets their own link to this page in the app and the portal. Someone new who books through it is saved as referred by them, and the clinic's \"patient referred\" automations run.", 'Cada paciente tiene su propio enlace a esta página en la app y el portal. Quien reserve por primera vez con él queda guardado como recomendado por esa persona, y se lanzan las automatizaciones de «paciente recomendado».') }}</p>
+                </div>
+                <button type="button" role="switch" :aria-checked="referralsOn" aria-labelledby="h-referrals" class="relative h-[26px] w-11 shrink-0 rounded-full" :class="referralsOn ? 'bg-brand' : 'bg-line-control'" data-cy="settings-referrals-toggle" @click="referralsOn = !referralsOn">
+                  <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card transition-all" :class="referralsOn ? 'left-[21px]' : 'left-[3px]'" />
+                </button>
+              </div>
+              <div v-if="referralsOn" class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
+                <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
+                  <label for="referral-reward" class="text-[14.5px] font-bold text-ink-900">{{ t('What they get', 'Qué reciben') }}</label>
+                  <span class="text-[13px] text-ink-500">{{ t('Shown to the patient beside their link. You give it; mark it in Reports › Referrals.', 'Se muestra al paciente junto a su enlace. Lo das tú; márcalo en Informes › Recomendaciones.') }}</span>
+                </div>
+                <input id="referral-reward" v-model="referralReward" type="text" maxlength="160" :placeholder="t('A free session when your friend comes to their first visit', 'Una sesión gratis cuando tu amigo venga a su primera visita')" :class="[inputClass, 'w-full sm:w-[340px]']" data-cy="settings-referrals-reward" />
+              </div>
+            </section>
+
             <!-- Notifications -->
             <section id="notify" aria-labelledby="h-notify" class="scroll-mt-4 overflow-hidden rounded-card border border-line bg-surface">
               <h2 id="h-notify" class="px-[18px] pb-2 pt-4 text-[16px] font-bold text-ink-900">{{ t('Tell the clinic about new bookings', 'Avisar a la clínica de las reservas') }}</h2>

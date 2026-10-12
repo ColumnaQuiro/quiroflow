@@ -103,6 +103,9 @@ export function buildPatientReplyPrompt(
     // a thanks. A re-confirmation nobody asked for is noise in their WhatsApp.
     `If their latest message needs no answer at all -- a thank-you, an "ok", a confirmation of a visit they already have, an emoji -- write exactly ${NO_REPLY} and nothing else. Nothing is then sent.`,
     `Read the whole conversation before replying. Answer what they asked, using what you know about them -- "your next visit is on Tuesday at 10:00" rather than asking them when it is. If you do not know something, say your colleague will check rather than guessing.`,
+    // A patient's details are on their record; asking for them again reads as
+    // the clinic not knowing who they are.
+    `Never ask a patient for their name, email or phone number: the clinic has them.`,
     // Clinical questions go to the practitioner, not to the front desk's draft.
     `Never give clinical or medical advice, and never comment on their symptoms, treatment or progress beyond the visit counts above: say their practitioner will answer that.`,
     offeredTypesSection(opts.offeredTypes),

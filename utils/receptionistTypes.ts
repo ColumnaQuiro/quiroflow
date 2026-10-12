@@ -192,3 +192,19 @@ export function rescheduleSection(visits: BookedVisit[], timeZone: string, opts:
     .filter(Boolean)
     .join('\n')
 }
+
+/**
+ * The name and email a new patient wrote in the conversation, checked. A
+ * lead from WhatsApp carries only their profile name (a nickname, say), so the
+ * record the receptionist made from one had that nickname, no surname, no
+ * email -- while the conversation had both. The phone it already has: they are writing
+ * from it.
+ */
+export function newPatientDetails(fullName: unknown, email: unknown): { fullName: string | null; email: string | null } {
+  const name = typeof fullName === 'string' ? fullName.replace(/[\p{Cc}\p{Cf}]+/gu, ' ').replace(/\s+/g, ' ').trim().replace(/[.,;]+$/, '').slice(0, 120) : ''
+  const mail = typeof email === 'string' ? email.trim().toLowerCase() : ''
+  return {
+    fullName: name.length >= 2 ? name : null,
+    email: /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(mail) && mail.length <= 254 ? mail : null,
+  }
+}

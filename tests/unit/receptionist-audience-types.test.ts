@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { offeredTypesSection, rescheduleSection, typesForAudience, type PromptType } from '../../utils/receptionistTypes'
+import { newPatientDetails } from '../../utils/receptionistTypes'
 
 // Which appointment the receptionist offers depends on who is asking: the
 // ad's first-visit offer for someone who answered the ad, the plain first
@@ -71,5 +72,22 @@ describe('Receptionist types by audience', () => {
     expect(section).toContain('cancel it instead, say your colleague will take care of it')
     expect(rescheduleSection(visits, 'Europe/Madrid', { listVisits: false })).not.toContain('(Ajuste)')
     expect(rescheduleSection([], 'Europe/Madrid', { listVisits: true })).toBe('')
+  })
+})
+
+
+// A WhatsApp lead carries only a profile name; the patient record the
+// receptionist makes from it takes the name and email they wrote instead.
+describe('New patient details from the conversation', () => {
+  it('takes the name as written, tidied', () => {
+    expect(newPatientDetails('  Ana   García López. ', null)).toEqual({ fullName: 'Ana García López', email: null })
+    expect(newPatientDetails('A', null).fullName).toBeNull()
+    expect(newPatientDetails(42, null).fullName).toBeNull()
+  })
+
+  it('takes an email only when it is one', () => {
+    expect(newPatientDetails(null, ' Ana.Garcia81@Gmail.com ').email).toBe('ana.garcia81@gmail.com')
+    expect(newPatientDetails(null, 'not an email').email).toBeNull()
+    expect(newPatientDetails(null, 'a@b').email).toBeNull()
   })
 })

@@ -78,9 +78,16 @@ export async function createPatientFromLead(
 }
 
 /**
- * Marks the lead converted to `patientId`, only if nothing else already did,
- * and notes it on the lead. `claimed: false` means someone won the race; the
- * patient returned is the one the lead actually points at.
+ * Links the lead to `patientId`, only if nothing else already did, and notes
+ * it on the lead. `claimed: false` means someone won the race; the patient
+ * returned is the one the lead actually points at.
+ *
+ * It does not move the lead to Converted. Becoming a patient record is what
+ * lets the front desk book someone, not the outcome the funnel measures:
+ * setting Converted here put people who had never visited at the end of the
+ * funnel, and parked them there, since the calendar only moves leads
+ * forward. The stage now follows the calendar -- see
+ * 20261012144928_becoming_a_patient_is_not_converted.sql.
  */
 export async function claimConvertedLead(
   supabase: Supa,
@@ -94,7 +101,7 @@ export async function claimConvertedLead(
   // first's patient_id and orphaning a record nobody will notice.
   const { data: claimed } = await supabase
     .from('leads')
-    .update({ stage: 'converted', patient_id: patientId, converted_at: new Date().toISOString() } as never)
+    .update({ patient_id: patientId } as never)
     .eq('id', leadId)
     .eq('account_id', accountId)
     .is('patient_id', null)
@@ -110,9 +117,16 @@ export async function claimConvertedLead(
     account_id: accountId,
     lead_id: leadId,
     kind: 'note',
-    title: opts.linked ? 'Linked to an existing patient' : 'Converted to a patient',
+    title: opts.linked ? 'Linked to an existing patient' : 'Patient record created',
     detail: opts.source ? `Attribution kept: ${opts.source}` : null,
   } as never)
+
+  // A patient linked here may already have an appointment since the lead
+  // came in -- an existing patient most of all. The appointments trigger
+  // only notices the next change to one, so the lead catches up now.
+  const { error } = await supabase.rpc('lead_catch_up_with_appointments', { p_lead_id: leadId })
+  if (error) console.warn('[leads] could not catch the lead up with its appointments', leadId, error.message)
+
   return { claimed: true, patientId }
 }
 

@@ -43,8 +43,11 @@ describe('Converting a lead to a patient', () => {
 
       cy.contains('Patient record created.').should('be.visible')
 
+      // A patient record, not the funnel's last step: nobody has been seen
+      // yet, so the lead stays where it was until the calendar moves it.
       cy.task('db:leadById', { id: leadId }).should((row) => {
-        expect((row as { stage: string }).stage).to.eq('converted')
+        expect((row as { patient_id: string | null }).patient_id).to.be.a('string')
+        expect((row as { stage: string }).stage).to.eq('showed')
       })
 
       cy.request('/api/growth/leads/' + leadId).its('body.patientId').should('be.a', 'string')
@@ -229,8 +232,11 @@ describe('Converting a lead to a patient', () => {
       // One patient, still -- the lead now points at the record that already
       // existed rather than a second copy of it.
       cy.task('db:patientCount', { accountId: account.accountId }).should('eq', 1)
+      // A patient record, not the funnel's last step: nobody has been seen
+      // yet, so the lead stays where it was until the calendar moves it.
       cy.task('db:leadById', { id: leadId }).should((row) => {
-        expect((row as { stage: string }).stage).to.eq('converted')
+        expect((row as { patient_id: string | null }).patient_id).to.be.a('string')
+        expect((row as { stage: string }).stage).to.eq('showed')
       })
     })
   })
@@ -270,8 +276,11 @@ describe('Converting a lead to a patient', () => {
       // Two existing patients plus the new one: the warning informs, it does
       // not forbid.
       cy.task('db:patientCount', { accountId: account.accountId }).should('eq', 3)
+      // A patient record, not the funnel's last step: nobody has been seen
+      // yet, so the lead stays where it was until the calendar moves it.
       cy.task('db:leadById', { id: leadId }).should((row) => {
-        expect((row as { stage: string }).stage).to.eq('converted')
+        expect((row as { patient_id: string | null }).patient_id).to.be.a('string')
+        expect((row as { stage: string }).stage).to.eq('showed')
       })
     })
   })

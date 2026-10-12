@@ -62,7 +62,7 @@ describe('Converting a lead with own-patients scope', () => {
             }).then((rows) => {
               expect(rows[0]!.default_practitioner_id, 'the converter can see the patient they created').to.eq(member.teamMemberId)
             })
-            cy.task('db:leadById', { id: lead.id }).its('stage').should('eq', 'converted')
+            cy.task('db:leadById', { id: lead.id }).its('patient_id').should('eq', patientId)
           })
         })
       })

@@ -1,6 +1,8 @@
 import { requireGrowth } from '~/server/utils/requireGrowth'
-import { LEAD_STAGES, leadDefaultValueCents } from '~/server/utils/leads'
+import { leadDefaultValueCents } from '~/server/utils/leads'
 import { DEFAULT_CLINIC_TIMEZONE, clinicDateOf, startOfLocalDate } from '~/utils/clinicClock'
+import { LEAD_FUNNEL_STAGES, leadReach } from '~/utils/leadReach'
+import { fetchAllRows } from '~/composables/useFetchAllRows'
 import { GROWTH_DIRECT_CHANNEL, type GrowthAlertPayload, type GrowthChannelPayload, type GrowthDashboardPayload } from '~/utils/growthDashboard'
 
 // The Growth dashboard, computed from the leads a clinic actually has.
@@ -23,18 +25,6 @@ import { GROWTH_DIRECT_CHANNEL, type GrowthAlertPayload, type GrowthChannelPaylo
 // It sends figures, not sentences. The labels are put on in the browser
 // (utils/growthDashboard.ts), which knows the staff member's language; this
 // used to answer in English to a Spanish front desk.
-
-/**
- * Stages that count as being on the funnel ladder, in order. 'lost' is not
- * one of them: a lead that reached Booked and was then lost still reached
- * Booked, which is the drop-off the funnel exists to show.
- */
-const FUNNEL_STAGES: readonly string[] = LEAD_STAGES.filter((stage) => stage !== 'lost')
-
-/** -1 for anything off the ladder, so `lost` never clears a threshold. */
-function stageRank(stage: string) {
-  return FUNNEL_STAGES.indexOf(stage)
-}
 
 /**
  * "Meta Ads · Sciatica" -> "Meta Ads". Channel spend is recorded per channel,
@@ -75,17 +65,28 @@ export default defineEventHandler(async (event): Promise<GrowthDashboardPayload>
   const windowStart = new Date(now.getTime() - WEEKS * 7 * DAY)
   const ninetyDaysAgo = new Date(now.getTime() - 90 * DAY)
 
-  const [{ data: rows, error }, { data: progressRows, error: progressError }, { data: spendRows }, { count: pendingReplies }, defaultCents] = await Promise.all([
-    supabase
-      .from('leads')
-      .select('id, stage, furthest_stage, source, estimated_value_cents, created_at')
-      .eq('account_id', accountId)
-      .is('deleted_at', null)
-      .gte('created_at', windowStart.toISOString()),
+  // Paged, both: PostgREST stops at 1000 rows without saying so, and a busy
+  // clinic's 13 weeks of leads can pass that.
+  const [rows, progressRows, { data: spendRows }, { count: pendingReplies }, defaultCents] = await Promise.all([
+    fetchAllRows((from, to) =>
+      supabase
+        .from('leads')
+        .select('id, stage, furthest_stage, source, estimated_value_cents, created_at')
+        .eq('account_id', accountId)
+        .is('deleted_at', null)
+        .gte('created_at', windowStart.toISOString())
+        .order('id')
+        .range(from, to),
+    ),
     // What actually happened to each lead -- messaged, booked, attended --
     // which furthest_stage alone does not say (see the migration that adds
     // it, 20261012142147_growth_lead_progress.sql).
-    supabase.rpc('growth_lead_progress', { p_account_id: accountId, p_since: windowStart.toISOString() }),
+    fetchAllRows((from, to) =>
+      supabase
+        .rpc('growth_lead_progress', { p_account_id: accountId, p_since: windowStart.toISOString() })
+        .order('lead_id')
+        .range(from, to),
+    ),
     supabase
       .from('channel_spend')
       .select('channel, amount_cents')
@@ -103,54 +104,33 @@ export default defineEventHandler(async (event): Promise<GrowthDashboardPayload>
     leadDefaultValueCents(supabase, accountId),
   ])
 
-  // Both, loudly. A failed progress read would otherwise turn every lead
-  // back into "never contacted, never booked" and draw that as a funnel.
-  if (error) throw createError({ statusCode: 500, statusMessage: error.message })
-  if (progressError) throw createError({ statusCode: 500, statusMessage: progressError.message })
-
-  const progress = new Map((progressRows ?? []).map((row) => [row.lead_id, row]))
+  const progress = new Map(progressRows.map((row) => [row.lead_id, row]))
 
   // --- What each lead reached -------------------------------------------
-  // Cumulative: a lead counts at every stage it reached, which is mostly
-  // what furthest_stage records. Counting current stages would report Booked
-  // as whoever happens to be sitting there right now.
-  //
-  // Corrected by evidence in two places, both of which made the funnel
-  // wrong in production:
-  //
-  //   Contacted -- nothing moves a lead out of New when the clinic writes to
-  //     it, so 74 of 75 "New" leads had in fact been sent a WhatsApp. A
-  //     delivered message counts.
-  //   Booked and Showed under Converted -- "Convert to patient" sets
-  //     Converted straight from New, often in order to book them in. Read
-  //     cumulatively that claimed Booked and Showed before any appointment
-  //     had happened. Those two now need an appointment, or an attended one.
-  //     Converted itself stays the clinic's decision, so it can outnumber
-  //     Showed; the funnel caps that step rather than inventing visits.
-  const leads = (rows ?? []).map((lead) => {
+  // Cumulative, from furthest_stage, corrected by what actually happened:
+  // a delivered message counts as Contacted, and Booked/Showed need an
+  // appointment. The rule is utils/leadReach.ts, shared with Reports.
+  const leads = rows.map((lead) => {
     const p = progress.get(lead.id)
-    const rank = stageRank(lead.furthest_stage)
-    const converted = lead.furthest_stage === 'converted'
-    const showed = lead.furthest_stage === 'showed' || Boolean(p?.attended)
-    const booked = showed || lead.furthest_stage === 'booked' || Boolean(p?.booked)
-    const qualified = booked || converted || rank >= stageRank('qualified')
-    const contacted = qualified || rank >= stageRank('contacted') || Boolean(p?.contacted)
+    const reached = leadReach(lead.furthest_stage, p)
     return {
       ...lead,
       createdAt: new Date(lead.created_at),
-      reached: { new: true, contacted, qualified, booked, showed, converted } as Record<string, boolean>,
+      reached,
       // Whether a booked lead has had the chance to turn up. One booked for
       // next week has not missed anything yet. Without any appointment on
       // record (dragged to Booked by hand) there is no date to wait for, so
       // it counts as before.
-      due: showed || Boolean(p?.appointment_due) || !p?.booked,
+      due: reached.showed || Boolean(p?.appointment_due) || !p?.booked,
     }
   })
   type Lead = (typeof leads)[number]
 
   const thisMonth = leads.filter((lead) => lead.createdAt >= monthStart)
 
-  const funnel = FUNNEL_STAGES.map((stage) => ({
+  // 'lost' is not a step: a lead that reached Booked and was then lost still
+  // reached Booked, which is the drop-off the funnel exists to show.
+  const funnel = LEAD_FUNNEL_STAGES.map((stage) => ({
     key: stage,
     count: thisMonth.filter((lead) => lead.reached[stage]).length,
   }))

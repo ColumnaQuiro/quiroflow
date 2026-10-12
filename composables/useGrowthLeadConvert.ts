@@ -42,7 +42,7 @@ export function useGrowthLeadConvert() {
       candidates.value = []
       showToast(
         result.alreadyConverted
-          ? t('That lead was already converted.', 'Ese contacto ya se había convertido.')
+          ? t('That lead is already a patient.', 'Ese contacto ya es paciente.')
           : result.created
             ? t('Patient record created.', 'Ficha de paciente creada.')
             : t('Lead linked to the existing patient.', 'Contacto vinculado al paciente existente.'),

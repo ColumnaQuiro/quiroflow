@@ -7462,8 +7462,9 @@ export type Database = {
       get_clinic_by_code: { Args: { p_slug: string }; Returns: Json }
       get_public_patient_doc: { Args: { p_token: string }; Returns: Json }
       lead_for_attributed_booking: { Args: { p_appointment_id: string }; Returns: string | null }
+      lead_catch_up_with_appointments: { Args: { p_lead_id: string }; Returns: string | null }
       growth_lead_progress: {
-        Args: { p_account_id: string; p_since: string }
+        Args: { p_account_id: string; p_since: string; p_until?: string | null }
         Returns: { lead_id: string; contacted: boolean; booked: boolean; attended: boolean; appointment_due: boolean }[]
       }
       has_permission: {

@@ -77,6 +77,47 @@ describe('Lead stages follow the calendar', () => {
     })
   })
 
+  // "Convert to patient" used to set Converted on the spot -- usually so the
+  // desk could book them, since nobody can be booked without a record. That
+  // put people who had never visited at the end of the funnel and left them
+  // there: the calendar only moves leads forward.
+  it('makes a patient record without converting, and the calendar takes the lead on from there', () => {
+    cy.login(account.email, account.password)
+    cy.task<{ id: string }>('db:createLead', { accountId: account.accountId, fullName: 'Nueva Ficha', phone: '34611222333' }).then(({ id: leadId }) => {
+      cy.request('POST', `/api/growth/leads/${leadId}/convert`).then((res) => {
+        const patientId = res.body.patientId as string
+        lead(leadId).then((row) => {
+          expect(row.patient_id).to.eq(patientId)
+          expect(row.stage).to.eq('new')
+          expect(row.converted_at).to.be.null
+        })
+
+        book(patientId).then((appointment) => {
+          lead(leadId).its('stage').should('eq', 'booked')
+          cy.task('db:checkInAppointment', { appointmentId: appointment.id })
+          lead(leadId).its('stage').should('eq', 'showed')
+          // No convert rule on this account: Converted stays a hand move.
+          lead(leadId).its('converted_at').should('be.null')
+        })
+      })
+    })
+  })
+
+  it('catches up at once when the lead is linked to a patient who is already booked', () => {
+    cy.login(account.email, account.password)
+    cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Ya', lastName: 'Reservada' }).then((patient) => {
+      cy.task<{ id: string }>('db:createLead', { accountId: account.accountId, fullName: 'Ya Reservada' }).then(({ id: leadId }) => {
+        // Booked as a patient before anyone tied the enquiry to them: no
+        // email or phone to match on, so the trigger could not.
+        book(patient.id).then(() => {
+          lead(leadId).its('stage').should('eq', 'new')
+          cy.request('POST', `/api/growth/leads/${leadId}/convert`, { linkPatientId: patient.id })
+          lead(leadId).its('stage').should('eq', 'booked')
+        })
+      })
+    })
+  })
+
   it('never moves a lead out of Lost, or on a visit from before it came in', () => {
     cy.task<{ id: string }>('db:createLead', { accountId: account.accountId, fullName: 'Perdida', email: 'perdida@example.com', stage: 'lost' }).then(({ id: lostId }) => {
       cy.task<{ id: string }>('db:createLead', { accountId: account.accountId, fullName: 'Antigua', email: 'antigua@example.com' }).then(({ id: oldId }) => {

@@ -9,14 +9,15 @@
 --     had been messaged -- with a red "75 leads did not reach Contacted"
 --     banner under it.
 --
---   * "Convert to patient" sets stage = 'converted' straight from New, and
---     the funnel counts cumulatively, so a lead converted to book them in
---     counted as Booked AND Showed before any appointment had happened.
+--   * A lead can be Converted without a visit -- by hand, and until
+--     20261012144928 by "Convert to patient" -- and the funnel counts
+--     cumulatively, so it counted as Booked AND Showed before any
+--     appointment had happened.
 --
 -- The stages themselves are left alone: moving a lead on the board changes
 -- what automations see, and the board is the clinic's to arrange. This only
--- reports the evidence, one row per lead, and the dashboard decides what a
--- stage means from it.
+-- reports the evidence, one row per lead; utils/leadReach.ts decides what a
+-- stage means from it, for the dashboard and the Reports funnel alike.
 --
 -- Security invoker, so the caller's own RLS (including the two-factor
 -- restrictive policies) decides what it can see; it creates no table.
@@ -25,7 +26,7 @@
 -- on or after the day the lead came in. A five-year patient who fills in an
 -- ad form has not been "booked" by a visit in 2023.
 
-create or replace function public.growth_lead_progress(p_account_id uuid, p_since timestamptz)
+create or replace function public.growth_lead_progress(p_account_id uuid, p_since timestamptz, p_until timestamptz default null)
 returns table (lead_id uuid, contacted boolean, booked boolean, attended boolean, appointment_due boolean)
 language sql
 stable
@@ -75,11 +76,12 @@ as $function$
     from leads l
    where l.account_id = p_account_id
      and l.deleted_at is null
-     and l.created_at >= p_since;
+     and l.created_at >= p_since
+     and (p_until is null or l.created_at <= p_until);
 $function$;
 
-revoke all on function public.growth_lead_progress(uuid, timestamptz) from public, anon;
-grant execute on function public.growth_lead_progress(uuid, timestamptz) to authenticated;
+revoke all on function public.growth_lead_progress(uuid, timestamptz, timestamptz) from public, anon;
+grant execute on function public.growth_lead_progress(uuid, timestamptz, timestamptz) to authenticated;
 
 -- email_messages had no lead index; the whatsapp one exists
 -- (whatsapp_messages_lead_idx).

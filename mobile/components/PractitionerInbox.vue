@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { snoozeStateOf, type SnoozeRow } from '../../utils/inboxSnooze'
+import { replyWindowPill } from '../../utils/inboxReplyWindow'
 
 const props = defineProps<{ accountId: string; teamMemberId: string; openConversationKey?: string | null }>()
 
@@ -236,7 +237,7 @@ async function load(opts: { silent?: boolean } = {}) {
   if (!opts.silent) loading.value = false
 }
 
-interface LeadSummary { key: string; leadId: string; name: string; channel: string; unread: boolean; lastMessageAt: string; preview: string; previewWasNotSent?: boolean; phone: string | null; patientId: string | null }
+interface LeadSummary { key: string; leadId: string; name: string; channel: string; unread: boolean; lastMessageAt: string; lastDirection?: string; lastMediaType?: string | null; preview: string; previewWasNotSent?: boolean; phone: string | null; patientId: string | null }
 function summaryConversation(o: { key: string; patientId: string | null; phone: string | null; externalId: string | null; leadId: string | null; name: string; channel: string; direction: string; status: string; body: string | null; template: string | null; media: string | null; at: string }): Conversation {
   return {
     key: o.key,
@@ -302,7 +303,7 @@ function applySummaries({ size, rows: page, leads }: Awaited<ReturnType<typeof f
   const list: Conversation[] = page.slice(0, size).map(fromSummaryRow)
   for (const l of leads?.conversations ?? []) {
     if (l.leadId && !leadNames.value[l.leadId]) leadNames.value = { ...leadNames.value, [l.leadId]: l.name }
-    list.push(summaryConversation({ key: l.key, patientId: null, phone: l.phone, externalId: null, leadId: l.leadId, name: l.name, channel: l.channel, direction: l.unread ? 'inbound' : 'outbound', status: l.previewWasNotSent ? 'would_send' : 'sent', body: l.preview, template: null, media: null, at: l.lastMessageAt }))
+    list.push(summaryConversation({ key: l.key, patientId: null, phone: l.phone, externalId: null, leadId: l.leadId, name: l.name, channel: l.channel, direction: l.lastDirection ?? (l.unread ? 'inbound' : 'outbound'), status: l.previewWasNotSent ? 'would_send' : 'sent', body: l.preview, template: null, media: l.lastMediaType ?? null, at: l.lastMessageAt }))
   }
   // Kept: what a search or "Load more" found earlier stays in the list.
   const fresh = new Set(list.map((c) => c.key))
@@ -455,6 +456,18 @@ const conversations = computed<Conversation[]>(() => {
   }
   return list.sort((a, b) => sortAt.get(b.key)! - sortAt.get(a.key)!)
 })
+
+// "Caduca en 3 h", as on the web: the patient wrote last, the 24h window
+// shuts soon, and what they wrote wants an answer (utils/inboxReplyWindow.ts).
+// `now` ticks each minute so the pill appears, and counts down, on its own.
+const now = ref(Date.now())
+let nowTimer: ReturnType<typeof setInterval> | undefined
+onMounted(() => (nowTimer = setInterval(() => (now.value = Date.now()), 60000)))
+onUnmounted(() => clearInterval(nowTimer))
+function windowPill(c: Conversation) {
+  const m = c.lastMessage
+  return replyWindowPill({ direction: m.direction, channel: m.channel, at: m.created_at, body: m.body_preview, mediaType: m.media_type }, now.value)
+}
 
 // Search matches name, phone number, and anything said in the conversation
 // -- not just the last message -- so finding "that time they mentioned X"
@@ -1615,7 +1628,13 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             <p class="truncate text-[13px]" :class="c.unread ? 'font-medium text-ink-800' : 'text-ink-muted2'">
               {{ c.lastMessage.direction === 'outbound' ? t('You: ', 'Tú: ') : '' }}{{ previewText(c.lastMessage) }}
             </p>
-            <div v-if="myLabelsByKey[c.key]?.length || c.followUp || c.snoozedUntil || c.leadId || assignments[c.key]" class="mt-1 flex flex-wrap items-center gap-1">
+            <div v-if="myLabelsByKey[c.key]?.length || c.followUp || c.snoozedUntil || c.leadId || assignments[c.key] || windowPill(c)" class="mt-1 flex flex-wrap items-center gap-1">
+              <span
+                v-if="windowPill(c)"
+                class="rounded-pill border px-1.5 py-px text-[10px] font-bold"
+                :class="windowPill(c)!.urgent ? 'border-danger-border bg-danger-bg text-danger-text' : 'border-warning-border bg-warning-bg text-warning-text'"
+                data-cy="inbox-row-window"
+              >{{ t('Expires in', 'Caduca en') }} {{ windowPill(c)!.left }}</span>
               <span v-if="c.leadId" class="rounded-pill border border-info-border bg-info-bg px-1.5 py-px text-[10px] font-bold text-info-text">{{ t('Lead', 'Lead') }}</span>
               <span v-if="c.followUp" class="rounded-pill border border-warning-border bg-warning-bg px-1.5 py-px text-[10px] font-bold text-warning-text" data-cy="inbox-row-follow-up">{{ t('Follow up', 'Seguimiento') }}</span>
               <span v-else-if="c.snoozedUntil" class="rounded-pill bg-chip-bg px-1.5 py-px text-[10px] text-ink-muted" data-cy="inbox-row-snoozed">{{ t('Back', 'Vuelve') }} {{ snoozeWhen(c.snoozedUntil) }}</span>

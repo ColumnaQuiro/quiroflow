@@ -22,7 +22,7 @@ export default defineEventHandler(async (event) => {
   const { data: leads, error } = await supabase
     .from('leads')
     .select(
-      'id, full_name, phone, source, stage, ai_state, estimated_value_cents, patient_id, ai_taken_over_at, ai_draft_body, team_members:ai_taken_over_by(full_name), whatsapp_messages!inner(direction, body_preview, channel, created_at, status)',
+      'id, full_name, phone, source, stage, ai_state, estimated_value_cents, patient_id, ai_taken_over_at, ai_draft_body, team_members:ai_taken_over_by(full_name), whatsapp_messages!inner(direction, body_preview, channel, created_at, status, media_type)',
     )
     .eq('account_id', teamMember.account_id)
     .is('deleted_at', null)
@@ -57,6 +57,10 @@ export default defineEventHandler(async (event) => {
         // message is theirs and nobody has answered since.
         unread: last.direction === 'inbound',
         lastMessageAt: last.created_at,
+        // For the "window closing" pill (utils/inboxReplyWindow.ts), which
+        // needs who wrote last after `unread` has been read away.
+        lastDirection: last.direction,
+        lastMediaType: last.media_type,
         preview: last.body_preview ?? '',
         // A dry-run rule records what it WOULD have sent as an outbound row,
         // so the newest row on a lead in test mode is routinely a message

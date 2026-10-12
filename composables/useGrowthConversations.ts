@@ -24,6 +24,10 @@ export interface LeadConversation {
   takenOverBy: string | null
   unread: boolean
   lastMessageAt: string
+  /** Who wrote last -- `unread` stops saying once someone has read it. */
+  lastDirection?: string
+  /** A file or voice note, when the newest message is one. */
+  lastMediaType?: string | null
   preview: string
   /** The previewed message was only recorded by a dry run, never sent. */
   previewWasNotSent?: boolean

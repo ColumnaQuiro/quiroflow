@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Line } from 'vue-chartjs'
+import '~/utils/chartSetup'
 import { computePresetRange, rangeBounds } from '~/composables/useDateRangePresets'
 import { fetchAllRows } from '~/composables/useFetchAllRows'
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { formatEurFromAmount } from '~/utils/billing'
 import { Line } from 'vue-chartjs'
+import '~/utils/chartSetup'
 import { computePresetRange, monthKeysInRange, rangeBounds } from '~/composables/useDateRangePresets'
 import { fetchAllRows } from '~/composables/useFetchAllRows'
 import { isReceipt } from '~/utils/paymentReceipts'

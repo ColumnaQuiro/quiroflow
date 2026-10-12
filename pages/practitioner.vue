@@ -306,6 +306,15 @@ const headerMeta = computed(() => {
   const visitWord = total === 1 ? t('visit', 'visita') : t('visits', 'visitas')
   return `${dayLabel.value} · ${total} ${visitWord} · ${charted} ${t('charted', 'registradas')}`
 })
+// The appointment panel loads when first opened (Lazy*), and is fetched
+// while the browser is idle once the page is up, so opening one does not wait.
+onMounted(() => {
+  const warm = () => {
+    import('~/components/calendar/AppointmentPanel.vue')
+  }
+  if ('requestIdleCallback' in window) window.requestIdleCallback(warm, { timeout: 3000 })
+  else setTimeout(warm, 1500)
+})
 </script>
 
 <template>
@@ -501,7 +510,7 @@ const headerMeta = computed(() => {
       </div>
     </div>
 
-    <CalendarAppointmentPanel
+    <LazyCalendarAppointmentPanel
       v-if="panelInputs"
       :key="panelInputs.appointment.id"
       :appointment="panelInputs.appointment"

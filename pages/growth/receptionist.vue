@@ -379,8 +379,8 @@ const CHANNEL_CLASS: Record<string, string> = {
               </dl>
               <p class="text-[10.5px] leading-[1.5] text-ink-muted">
                 {{ t(
-                  'The receptionist offers times and never confirms a booking itself. A person or the booking system confirms.',
-                  'La recepcionista ofrece horarios y nunca confirma una reserva. Confirma una persona o el sistema de reservas.',
+                  'When it leaves a draft, it offers times and a person books. When it answers on its own, it books or moves the visit itself once the patient accepts a time — signed "AI receptionist" in the visit\'s history, with a note in the conversation. It never cancels.',
+                  'Cuando deja un borrador, ofrece horas y reserva una persona. Cuando contesta sola, reserva o mueve la cita ella misma cuando el paciente acepta una hora — firmado "Recepcionista IA" en el historial de la cita, con una nota en la conversación. Nunca cancela.',
                 ) }}
               </p>
             </GrowthSettingCard>

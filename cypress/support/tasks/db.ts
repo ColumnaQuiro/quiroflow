@@ -2621,6 +2621,8 @@ async function createLeadMessage(opts: {
   templateName?: string
   /** A file with no text, as a photo or voice note arrives. */
   mediaType?: string
+  /** Sent by the AI receptionist on its own. */
+  sentByAi?: boolean
 }) {
   const row = unwrap(
     await admin
@@ -2628,6 +2630,7 @@ async function createLeadMessage(opts: {
       .insert({
         account_id: opts.accountId,
         lead_id: opts.leadId,
+        sent_by_ai: opts.sentByAi === true,
         direction: opts.direction,
         body_preview: opts.body,
         status: opts.status ?? (opts.direction === 'inbound' ? 'received' : 'sent'),

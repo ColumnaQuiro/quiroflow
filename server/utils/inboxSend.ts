@@ -4,7 +4,7 @@ import type { Database } from '~/types/database.types'
 import { toE164, toE164Loose, whatsappDigits } from '~/utils/phone'
 import { sanitizeStorageFilename } from '~/utils/storageFilename'
 import { isWithin24hWindow, sendWhatsAppText, sendWhatsAppMedia, uploadMediaToMeta, type MediaKind } from '~/server/utils/whatsappSend'
-import { findLeadIdByPhone, findPatientIdsByPhone } from '~/server/utils/whatsappOwner'
+import { findLeadIdByPhone, findPatientIdsByPhone, pickInboundPatientId } from '~/server/utils/whatsappOwner'
 import type { requirePermission } from '~/server/utils/requirePermission'
 
 // What the Inbox composer's send does, for any caller that has already
@@ -53,10 +53,13 @@ export async function sendInboxMessage(event: H3Event, { supabase, teamMember }:
   // the Inbox reads. A parallel lead-reply endpoint would have had to
   // reimplement all four, and would have drifted from them the first time
   // one changed.
+  // A converted lead's patient: a reply from the lead's thread still belongs
+  // in the patient's thread, which conversion folded the lead's into.
+  let leadPatientId: string | null = null
   if (params.leadId) {
     const { data: lead } = await supabase
       .from('leads')
-      .select('id, phone')
+      .select('id, phone, patient_id')
       .eq('id', params.leadId)
       .eq('account_id', teamMember.account_id)
       .is('deleted_at', null)
@@ -85,6 +88,7 @@ export async function sendInboxMessage(event: H3Event, { supabase, teamMember }:
     const e164 = toE164Loose(`+${lead.phone}`, account.default_phone_country ?? 'ES')
     if (!e164) throw createError({ statusCode: 400, statusMessage: "This lead's phone number could not be formatted for WhatsApp" })
     to = e164
+    leadPatientId = lead.patient_id
   }
 
   if (params.patientId) {
@@ -159,17 +163,24 @@ export async function sendInboxMessage(event: H3Event, { supabase, teamMember }:
   // account inside both helpers: Inbox access does not imply Growth access,
   // and under the sender's own RLS a role that cannot list leads would find
   // none and quietly leave the reply off the lead again.
+  //
+  // And when a patient does own the number, the reply is theirs -- picked by
+  // the same rule an inbound message from it is. It used to be filed under
+  // nobody: no lead, and no patient either, so a reply to somebody just
+  // converted from a lead turned up as a third conversation with a bare
+  // number, beside both of theirs.
   let leadId = params.leadId ?? null
-  if (!leadId && !params.patientId) {
+  let patientId = params.patientId ?? leadPatientId
+  if (!leadId && !patientId) {
     const admin = serverSupabaseServiceRole<Database>(event)
-    if ((await findPatientIdsByPhone(admin, account.id, to)).length === 0) {
-      leadId = await findLeadIdByPhone(admin, account.id, to)
-    }
+    const owners = await findPatientIdsByPhone(admin, account.id, to)
+    if (owners.length === 0) leadId = await findLeadIdByPhone(admin, account.id, to)
+    else patientId = await pickInboundPatientId(admin, account.id, to, owners)
   }
 
   const insert: Record<string, unknown> = {
     account_id: account.id,
-    patient_id: params.patientId ?? null,
+    patient_id: patientId,
     lead_id: leadId,
     phone_number: to,
     direction: 'outbound',

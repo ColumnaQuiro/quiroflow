@@ -1,6 +1,6 @@
 import { formatEur } from './billing'
 import { DEFAULT_CLINIC_TIMEZONE } from './clinicClock'
-import { offeredTypesSection, type PromptType } from './receptionistTypes'
+import { offeredTypesSection, rescheduleSection, type BookedVisit, type PromptType } from './receptionistTypes'
 import { receptionistBookingSection, receptionistClockSection, type ReceptionistAvailability } from './receptionistSlots'
 
 // What the receptionist knows about a patient when drafting a reply to them
@@ -69,13 +69,17 @@ export function buildPatientReplyPrompt(
     calendar: { now: Date; timeZone: string; availability: ReceptionistAvailability | null }
     /** Whether the find_free_times tool is on this request. */
     searchTool?: boolean
+    /** Their booked visits, whose types they can be offered new times for. */
+    bookedVisits?: BookedVisit[]
   },
 ): string {
   const knowledge = config.knowledge
     .map((card) => `## ${card.title}\n${card.lines.map((line) => `- ${line}`).join('\n')}`)
     .join('\n\n')
   const escalations = config.escalationRules.map((rule) => `- ${rule.rule} -> ${rule.action}`).join('\n')
-  const availability = opts.offeredTypes.length ? opts.calendar.availability : null
+  const booked = opts.bookedVisits ?? []
+  const hasTimes = opts.offeredTypes.length > 0 || booked.length > 0
+  const availability = hasTimes ? opts.calendar.availability : null
   return [
     `You are ${config.personaName}, the receptionist for a chiropractic clinic. You are replying to one of the clinic's own patients, who has written to the clinic.`,
     `Tone: ${config.toneLine}`,
@@ -96,10 +100,12 @@ export function buildPatientReplyPrompt(
     opts.offeredTypes.length
       ? `If they want another visit and do not say which, offer the same type as their last visit when it is on that list. If it is not, or you cannot tell which they need, say your colleague will arrange the right one.`
       : '',
-    opts.offeredTypes.length
+    // Listed under "What you already know", so not again here.
+    rescheduleSection(booked, opts.calendar.timeZone || DEFAULT_CLINIC_TIMEZONE, { listVisits: false }),
+    hasTimes
       ? receptionistBookingSection({ availability, slotsPerReply: config.slotsPerReply, bookingWindowDays: config.bookingWindowDays, searchTool: opts.searchTool && Boolean(availability) })
       : '',
-    `You must NEVER state that a visit is booked, moved, cancelled or confirmed, or that a payment was received or a refund made. A member of staff does those. If they ask to book, move or cancel, offer times or say you are passing it on, and that they will get a confirmation.`,
+    `You must NEVER state that a visit is booked, moved, cancelled or confirmed, or that a payment was received or a refund made. A member of staff does those. If they ask to book or move a visit, offer times and say you are passing it on, and that they will get a confirmation; if they ask to cancel, say your colleague will take care of it.`,
     `Only mention an amount owed if they ask about money or payment, and then only exactly as given above.`,
     escalations ? `# Stop and hand over to a person when\n\n${escalations}\n\nWhen one of these applies, say your colleague will pick this up shortly and stop.` : '',
     config.neverSays ? `# Never\n\n${config.neverSays}` : '',

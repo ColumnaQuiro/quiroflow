@@ -1,8 +1,23 @@
 <script setup lang="ts">
 import type { LeadThread } from '~/composables/useGrowthLeadThread'
+import { notesBetween, type InboxNote } from '~/utils/inboxNotes'
 
-const props = defineProps<{ thread: LeadThread; sending: boolean; drafting: boolean }>()
+const props = defineProps<{
+  thread: LeadThread
+  sending: boolean
+  drafting: boolean
+  // Internal notes, as on a patient thread (the Inbox owns them, keyed
+  // lead:<id>). Converting the lead takes them to the patient's thread.
+  notes: InboxNote[]
+  team: { id: string; full_name: string }[]
+  myId: string | null
+  noteSaving: boolean
+  noteError?: string
+}>()
+const noteMode = defineModel<boolean>('noteMode', { default: false })
 const emit = defineEmits<{
+  saveNote: [body: string, mentions: string[]]
+  deleteNote: [id: string]
   back: []
   takeOver: []
   handBack: []
@@ -90,6 +105,13 @@ function statusLabel(status: string) {
   return status
 }
 
+// Each note sits after the message it was written after, as on a patient thread.
+const notesBefore = (i: number) => notesBetween(props.notes, i === 0 ? null : props.thread.messages[i - 1]!.at, props.thread.messages[i]!.at)
+const notesAfterLast = computed(() => notesBetween(props.notes, props.thread.messages.at(-1)?.at ?? null, null))
+watch(() => props.notes.length, (now, before) => {
+  if (now > before && nearBottom()) toBottom()
+})
+
 function submit() {
   if (!draft.value.trim() || props.sending) return
   emit('send', draft.value)
@@ -164,9 +186,9 @@ watch(
         {{ t('No messages yet.', 'Aún no hay mensajes.') }}
       </p>
 
+      <template v-for="(message, i) in thread.messages" :key="message.id">
+      <InboxNoteBubble v-for="n in notesBefore(i)" :key="n.id" :note="n" :team="team" :mine="n.author_id === myId" @delete="emit('deleteNote', n.id)" />
       <div
-        v-for="message in thread.messages"
-        :key="message.id"
         class="flex flex-col gap-1"
         :class="message.from === 'lead' ? 'items-start' : 'items-end'"
       >
@@ -207,12 +229,26 @@ watch(
           <template v-else-if="isDryRun(message.status)"> · {{ statusLabel(message.status) }}</template>
         </span>
       </div>
+      </template>
+      <InboxNoteBubble v-for="n in notesAfterLast" :key="n.id" :note="n" :team="team" :mine="n.author_id === myId" @delete="emit('deleteNote', n.id)" />
+    </div>
+
+    <!-- A note can be left whatever state the reply box is in -- the AI
+    answering, the window shut -- since it is never sent to anybody. -->
+    <div v-if="thread.messages.length && !noteMode" class="flex shrink-0 px-4 pb-2">
+      <button type="button" class="flex h-8 items-center gap-1.5 rounded-pill border border-warning-border bg-warning-bg px-3 text-[12.5px] font-semibold text-warning-text" data-cy="lead-note-open" @click="noteMode = true">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z" /></svg>
+        {{ t('Internal note', 'Nota interna') }}
+      </button>
+    </div>
+    <div v-if="noteMode" class="shrink-0 border-t border-line bg-surface p-3">
+      <InboxNoteComposer :team="team" :my-id="myId" :saving="noteSaving" :error="noteError" @save="(body, mentions) => emit('saveNote', body, mentions)" @cancel="noteMode = false" />
     </div>
 
     <!-- The receptionist's draft, waiting on a person. Same shape as the one
     on a review (PendingReplyCard) because it is the same promise: the model
     writes, a human decides, and nothing reaches anyone unread. -->
-    <div v-if="thread.draft" class="flex shrink-0 flex-col gap-2.5 border-t border-brand-tintBorder bg-brand-tint p-4" data-test="lead-draft">
+    <div v-if="thread.draft && !noteMode" class="flex shrink-0 flex-col gap-2.5 border-t border-brand-tintBorder bg-brand-tint p-4" data-test="lead-draft">
       <div class="flex flex-wrap items-center gap-2">
         <span class="flex h-[18px] w-[18px] items-center justify-center rounded-[6px] bg-brand text-[9px] font-bold text-white">AI</span>
         <span class="text-[12px] font-semibold text-brand-text">
@@ -256,7 +292,8 @@ watch(
       </div>
     </div>
 
-    <div v-if="aiIsAnswering" class="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-line bg-surface p-3">
+    <template v-if="noteMode" />
+    <div v-else-if="aiIsAnswering" class="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-line bg-surface p-3">
       <span class="text-[12px] text-ink-muted">
         {{ t('Composer locked while the AI is replying. Take over to write yourself.', 'Redacción bloqueada mientras responde la IA. Toma el control para escribir tú.') }}
       </span>

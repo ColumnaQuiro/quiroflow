@@ -631,11 +631,12 @@ const nextVisitWhen = (iso: string) => new Date(iso).toLocaleString(t('en-GB', '
 
 // Internal notes (inbox_notes), as in the web Inbox: the team's, in the
 // thread between the messages, never sent; a mention reaches the colleague
-// as an unread conversation and a push. Not on a lead's own thread or a
-// conversation with no messages yet.
+// as an unread conversation and a push. On a lead's thread too, keyed
+// lead:<id>; converting the lead moves them to the patient's thread with the
+// messages (20261012055054). Not on a conversation with no messages yet.
 const { notes: threadNotes, saving: noteSaving, error: noteError, add: addNote, remove: removeNote } = useInboxNotes({
   accountId: () => props.accountId,
-  conversationKey: () => (selected.value && !selected.value.leadId && thread.value.length > 0 ? selected.value.key : null),
+  conversationKey: () => (selected.value && thread.value.length > 0 ? selected.value.key : null),
   authorId: () => props.teamMemberId,
   notifyMentions: (noteId) => authedFetch('/api/inbox/note-mentions', { method: 'POST', body: { noteId } }),
 })
@@ -662,12 +663,14 @@ watch(
     pendingConversationKey.value = null
     // A lead's notification names lead:<id>. That is the thread itself for a
     // Growth account; without Growth the lead's messages are a conversation
-    // with their number, so the key is looked up from their newest message.
-    // Both need to know which it is, which the first load decides.
+    // with their number, and once the lead is converted they are the
+    // patient's (20261012055054) -- so the key is read off their newest
+    // message, which knows all three. A lead nobody has written to yet has
+    // none, and is its own thread. Which applies needs the first load.
     const leadId = leadIdOfKey(key)
     if (leadId) {
       await whenLoaded()
-      const resolved = leadThreadsAreSeparate.value ? key : await conversationKeyForLead(leadId)
+      const resolved = (await conversationKeyForLead(leadId)) ?? (leadThreadsAreSeparate.value ? key : null)
       if (!resolved) return
       selectedKey.value = resolved
       markRead(resolved)
@@ -1796,7 +1799,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
       <div class="shrink-0 border-t border-line bg-surface p-3">
         <!-- A note for the team is always possible, whatever WhatsApp's
              window says: it is never sent. -->
-        <div v-if="thread.length > 0 && !selected.leadId && !noteMode" class="mb-2 flex">
+        <div v-if="thread.length > 0 && !noteMode" class="mb-2 flex">
           <button type="button" class="flex h-9 items-center gap-1.5 rounded-pill border border-warning-border bg-warning-bg px-3 text-[13px] font-semibold text-warning-text" data-cy="thread-note-open" @click="noteMode = true">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z" /></svg>
             {{ t('Internal note', 'Nota interna') }}

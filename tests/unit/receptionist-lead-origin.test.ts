@@ -35,11 +35,13 @@ describe('What the prompt is told', () => {
     expect(section).not.toContain('27/01/24')
   })
 
-  it('leaves it to ask when the source is unknown', () => {
+  // "¿Cuánto cuesta?" answered with "¿cómo nos has conocido?" -- a question
+  // for a question, on the one message most likely to be the last.
+  it('answers rather than asking when the source is unknown', () => {
     const section = leadOriginSection({ ...blank, channel: 'whatsapp' })
     expect(section).toContain('on WhatsApp')
-    expect(section).toContain('ask')
-    expect(section).not.toContain('never ask')
+    expect(section).toContain('Do not ask')
+    expect(section).toContain("mention the ad's in the same reply")
   })
 
   it('says nothing when nothing is known', () => {

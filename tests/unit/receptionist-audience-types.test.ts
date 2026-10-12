@@ -52,8 +52,12 @@ describe('Receptionist types by audience', () => {
   it('says when the ad offer applies', () => {
     const section = offeredTypesSection([first], [offer])
     expect(section).toContain('- Primera visita (60 min)')
-    expect(section).toContain('Only if the patient says they came from one of the clinic\'s ads or offers')
+    expect(section).toContain('The clinic also has a first-visit offer')
     expect(section).toContain('- Oferta Primera visita (60 min)')
+    // The offer is the clinic's offer; the ad is never named to the patient.
+    expect(section).toContain('ahora mismo tenemos una oferta de primera visita')
+    expect(section).toContain('Never mention ads')
+    expect(section).not.toContain('nos has conocido por nuestro anuncio')
     expect(offeredTypesSection([first])).not.toContain('Oferta')
   })
 

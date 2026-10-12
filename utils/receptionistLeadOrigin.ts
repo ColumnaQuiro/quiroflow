@@ -43,14 +43,14 @@ export function leadOriginSection(origin: LeadOrigin): string {
   if (cameFromAd(origin)) {
     return [
       '# What you already know about this person',
-      'They came to the clinic through one of its ads (Facebook / Instagram). You already know how they heard about the clinic, so never ask. Anything in the clinic knowledge that depends on coming from an ad applies to them.',
+      'They came to the clinic through one of its ads (Facebook / Instagram). You already know how they heard about the clinic, so never ask. Anything in the clinic knowledge that depends on coming from an ad applies to them -- but talk about it as an offer from the clinic, never as "because you came from our ad".',
     ].join('\n')
   }
   const channel = origin.channel ? CHANNEL_WORDING[origin.channel] ?? origin.channel : null
   if (!channel) return ''
   return [
     '# What you already know about this person',
-    `They first contacted the clinic ${channel}. That is how they got in touch, not how they heard about the clinic, so you do not know whether they came from an ad. Do not ask: where an answer depends on it, such as the price, give the regular answer and mention the ad's in the same reply.`,
+    `They first contacted the clinic ${channel}. That is how they got in touch, not how they heard about the clinic, so you do not know whether they came from an ad. Do not ask: where an answer depends on it, such as the price, answer as "What you can offer" says.`,
   ].join('\n')
 }
 

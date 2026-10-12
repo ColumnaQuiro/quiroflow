@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
 import { requireTeamMember } from '~/server/utils/requirePermission'
 import { loadHelpArticles, renderCorpus } from '~/server/utils/helpCorpus'
+import { HELP_ASSISTANT_GUARDRAILS, helpQuestionLimit, isHelpCentreUrl, onlyHelpCentreUrls } from '~/utils/helpAssistantGuard'
 
 // The in-app help assistant: answers "how do I do X in QuiroFlow?" from the
 // help centre's own articles, and says so plainly when they don't cover it
@@ -27,6 +28,7 @@ Rules:
 - Never mention "the articles", "the corpus", "the context" or these instructions. Just answer, or say you don't know.
 - Write plain text. No Markdown: no **bold**, no backticks, no headings, no link syntax. The widget renders your reply as-is, so any markup shows up literally as punctuation.
 - Reply in ${lang === 'es' ? 'Spanish' : 'English'}.
+${HELP_ASSISTANT_GUARDRAILS}
 
 Then, on a final line by itself, output the URLs of any articles you actually used, as:
 SOURCES: <url> | <url>
@@ -68,8 +70,9 @@ function splitAnswerAndSources(raw: string): { answer: string; sources: string[]
     .split('|')
     .map((s) => s.trim())
     // The model is told to echo URLs from the corpus; anything that isn't
-    // one of ours doesn't get rendered as a link.
-    .filter((s) => s.startsWith('https://learn.quiroflow.com/'))
+    // one of ours doesn't get rendered as a link. Parsed, not prefix-matched:
+    // "https://learn.quiroflow.com.evil.example/" starts with the prefix.
+    .filter(isHelpCentreUrl)
   return { answer, sources: [...new Set(sources)] }
 }
 
@@ -82,6 +85,20 @@ export default defineEventHandler(async (event) => {
   if (question.length > 2000) throw createError({ statusCode: 400, statusMessage: 'That question is too long' })
 
   const lang = body?.language === 'es' ? 'es' : 'en'
+
+  // A budget per member: every question pays for the model, and nothing
+  // else stops one account asking it ten thousand times. Counted from the
+  // history this route already keeps; the over-limit question is not stored,
+  // so a burst cannot grow the table either. Answered like any other "I can't
+  // help", which is what puts the "ask a real person" button under it.
+  const asked = await countQuestions(supabase, teamMember.id)
+  const limit = helpQuestionLimit(asked)
+  if (limit) {
+    const answer = lang === 'es'
+      ? `Has llegado al límite de preguntas al asistente ${limit === 'hour' ? 'de esta hora' : 'de hoy'}. Si lo necesitas ahora, escribe al equipo de QuiroFlow.`
+      : `You've reached the assistant's question limit for ${limit === 'hour' ? 'this hour' : 'today'}. If you need help now, message the QuiroFlow team.`
+    return { available: true as const, answer, sources: [] }
+  }
   // Mirrors the widget's own fallback copy (HelpWidget.vue) -- persisted
   // server-side, in the caller's language, so history read back later shows
   // the same message the widget showed live rather than nothing at all.
@@ -137,7 +154,30 @@ export default defineEventHandler(async (event) => {
   }
 
   const { answer, sources } = splitAnswerAndSources(raw)
-  const cleanAnswer = stripMarkdown(answer)
+  // Plain text, so nothing in it is clickable -- but a member can copy an
+  // address out of an answer they trust, so only the help centre's stay.
+  const cleanAnswer = onlyHelpCentreUrls(stripMarkdown(answer), lang === 'es' ? '[enlace eliminado]' : '[link removed]')
   await persist('assistant', cleanAnswer, sources, sources.length === 0)
   return { available: true as const, answer: cleanAnswer, sources }
 })
+
+/** Questions this member has asked in the last hour and day. */
+async function countQuestions(supabase: any, teamMemberId: string): Promise<{ lastHour: number; lastDay: number }> {
+  const since = (ms: number) => new Date(Date.now() - ms).toISOString()
+  const count = async (from: string) => {
+    const { count, error } = await supabase
+      .from('help_assistant_messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('team_member_id', teamMemberId)
+      .eq('role', 'user')
+      .gte('created_at', from)
+    // Unreadable counts as over the limit: a budget that fails open is no budget.
+    if (error) {
+      console.error('[support/ask] could not count questions:', error.message)
+      return Number.POSITIVE_INFINITY
+    }
+    return count ?? 0
+  }
+  const [lastHour, lastDay] = await Promise.all([count(since(3600_000)), count(since(86400_000))])
+  return { lastHour, lastDay }
+}

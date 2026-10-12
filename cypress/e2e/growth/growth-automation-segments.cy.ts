@@ -79,4 +79,48 @@ describe('Segment trigger', () => {
       cy.task<{ patient_id: string }[]>('auto:runsForRule', { ruleId }).should('have.length', 3)
     })
   })
+
+  it('a group of patients behind on their care plan: counted, then enrolled', () => {
+    const tag = `plan-${Math.random().toString(36).slice(2, 8)}`
+    const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000)
+    const day = (d: Date) => d.toISOString().slice(0, 10)
+    const withPlan = (firstName: string, opts: { futureVisit?: boolean } = {}) =>
+      cy.task<{ id: string }>('auto:patient', { accountId: account.accountId, clinicId: account.clinicId, firstName, tags: [tag] }).then((p) => {
+        // Weekly, ten visits, one done a month ago: three weeks overdue.
+        cy.task('db:createCarePlan', { accountId: account.accountId, patientId: p.id, totalVisits: 10, startedAt: day(daysAgo(60)) })
+        cy.task('db:createAppointment', { accountId: account.accountId, clinicId: account.clinicId, patientId: p.id, startsAt: daysAgo(30).toISOString(), status: 'completed' })
+        if (opts.futureVisit) cy.task('db:createAppointment', { accountId: account.accountId, clinicId: account.clinicId, patientId: p.id, startsAt: new Date(Date.now() + 3 * 86_400_000).toISOString() })
+      })
+    withPlan('Atrasada')
+    // Booked again: not behind any more.
+    withPlan('Reservada', { futureVisit: true })
+    // No plan at all.
+    cy.task('auto:patient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Sinplan', tags: [tag] })
+
+    cy.visit('/automations/new')
+    cy.get('[data-test="trigger-select"]').select('segment')
+    cy.get('[data-test="segment-once"]').click()
+    cy.get('[data-test="segment-filter-add"]').select('tag_contains')
+    cy.get('[data-test="segment-filter-tag_contains"] input').type(tag)
+    cy.get('[data-test="segment-count"]').should('contain', '3')
+    cy.get('[data-test="segment-filter-add"]').select('care_plan_overdue')
+    cy.get('[data-test="segment-filter-care_plan_overdue"] input').should('have.value', '7')
+    cy.get('[data-test="segment-count"]').should('contain', '1')
+    cy.get('[data-test="segment-count"]').contains('See the list').click()
+    cy.get('[data-test="segment-count"]').should('contain', 'Atrasada').and('not.contain', 'Reservada').and('not.contain', 'Sinplan')
+
+    cy.get('[data-test="insert-root-root-0"]').click({ force: true })
+    cy.get('[data-test="add-step-tag"]').click()
+    cy.get('[data-test="tag-input"]').type('plan sin terminar')
+    cy.get('[data-test="save"]').click()
+    cy.location('pathname').should('match', /^\/automations\/[0-9a-f-]{36}$/)
+    cy.get('[data-test="automation-enabled"]').click()
+    cy.get('[data-test="segment-activate"]').should('contain', '1 patient')
+    cy.get('[data-test="segment-activate-test"]').click()
+    cy.location('pathname').then((path) => {
+      const ruleId = path.split('/').pop()!
+      cy.request({ method: 'POST', url: '/api/automations/lead-sequence-cron', headers: { 'x-cron-secret': Cypress.env('CRON_SECRET') ?? '' } })
+      cy.task<{ patient_id: string }[]>('auto:runsForRule', { ruleId }).should('have.length', 1)
+    })
+  })
 })

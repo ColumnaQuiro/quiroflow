@@ -102,3 +102,34 @@ export function rebookingByPractitioner(visits: RetentionVisit[], opts: { from: 
 export function retentionPct(part: number, of: number): number | null {
   return of > 0 ? Math.round((part / of) * 100) : null
 }
+
+/**
+ * Win-back: of the patients someone reached out to (a call, a WhatsApp from
+ * Recalls or the bulk send -- contact_log rows not about an appointment), how
+ * many booked within 30 days of it. Each patient counts once, from their
+ * first contact in the period. A contact under 30 days old that has not
+ * booked yet is still `waiting`, not a failure.
+ */
+export interface WinBackContact { patient_id: string; created_at: string }
+export interface WinBackBooking { patient_id: string; created_at: string }
+export interface WinBackStats { contacted: number; booked: number; waiting: number }
+
+export function winBackStats(contacts: WinBackContact[], bookings: WinBackBooking[], opts: { from: Date; to: Date; now: Date }): WinBackStats {
+  const WINDOW = 30 * 86_400_000
+  const first = new Map<string, number>()
+  for (const c of contacts) {
+    const at = Date.parse(c.created_at)
+    if (at < opts.from.getTime() || at >= opts.to.getTime()) continue
+    if (!first.has(c.patient_id) || at < first.get(c.patient_id)!) first.set(c.patient_id, at)
+  }
+  const booked = new Set<string>()
+  for (const b of bookings) {
+    const at = first.get(b.patient_id)
+    if (at === undefined) continue
+    const made = Date.parse(b.created_at)
+    if (made > at && made <= at + WINDOW) booked.add(b.patient_id)
+  }
+  let waiting = 0
+  for (const [patient, at] of first) if (!booked.has(patient) && opts.now.getTime() - at < WINDOW) waiting++
+  return { contacted: first.size, booked: booked.size, waiting }
+}

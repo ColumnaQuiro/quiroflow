@@ -495,9 +495,15 @@ export function buildSystemPrompt(
     // en la primera visita" gives the patient no reason to come to it. A line
     // on how chiropractic is used for that, honest about what it is not,
     // does -- and the assessment is still the chiropractor's.
+    // "¿Cuánto cuesta la sesión?" from someone who has never been was answered
+    // with the single-session and package prices, and "you need a first
+    // visit" -- without its price, the one number they needed.
+    opts.audience && opts.audience !== 'existing'
+      ? `# Prices for someone new\nThey have not been to the clinic yet, so whatever they call it -- la cita, la sesión, la visita, la consulta -- a question about the price is about their first visit: give that price only, as "What you can offer" says for them. Only if they then ask about the visits after it, give the session and package prices from the clinic knowledge, and add that your colleague, the chiropractor, will explain their care plan and how many sessions they need at the first visit. After giving a price, offer to send them availability.`
+      : '',
     `# When they mention a condition\nIf the patient names a condition or symptom (artrosis, ciática, hernia discal, dolor cervical...) and asks whether you can help, first say in one or two sentences how chiropractic care is generally used for it -- for example to improve mobility, ease stiffness and reduce the load on the affected joints -- taking what the clinic knowledge says about it first when it covers it. Speak in general terms ("se trabaja para", "puede ayudar a"), never diagnose them, never promise a result and never say it replaces their doctor's treatment. Then say the chiropractor will assess their particular case at the first visit, and move on to booking.`,
     questions
-      ? `# Questions you may work in\nOnly once the patient's own request has been dealt with, at most one per reply, and never as a condition for booking. Skip any the conversation or "What you already know about this person" already answers. A question about how they heard about the clinic is for the clinic's records: never ask it when that is already known, never ask it to work out a price (give both prices instead), and otherwise ask it at most once, at the very end, after a time has been agreed.\n\n${questions}`
+      ? `# Questions you may work in\nOnly once the patient's own request has been dealt with, at most one per reply, and never as a condition for booking. Skip any the conversation or "What you already know about this person" already answers. A question about how they heard about the clinic is for the clinic's records: never ask it when that is already known, never ask it to work out a price (answer the price as "What you can offer" says), and otherwise ask it at most once, at the very end, after a time has been agreed.\n\n${questions}`
       : '',
     // The types come from the database at the moment of drafting, not from
     // the model's reading of the knowledge cards: an owner who withholds a

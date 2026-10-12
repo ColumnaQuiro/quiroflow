@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { cohortRetention, rebookingByPractitioner, retentionPct, type RetentionVisit } from '../../utils/retentionStats'
+import { cohortRetention, rebookingByPractitioner, retentionPct, winBackStats, type RetentionVisit } from '../../utils/retentionStats'
 
 // The Retention report (utils/retentionStats.ts): who came back, by the month
 // they first came, and who left each practitioner with the next visit booked.
@@ -84,5 +84,33 @@ describe('Percentages', () => {
   it('rounds, and says nothing when there is nothing to divide by', () => {
     expect(retentionPct(1, 3)).toBe(33)
     expect(retentionPct(0, 0)).toBe(null)
+  })
+})
+
+describe('winBackStats', () => {
+  const now = new Date('2026-10-12T10:00:00Z')
+  const opts = { from: new Date('2026-07-01T00:00:00Z'), to: new Date('2026-10-13T00:00:00Z'), now }
+  it('counts each contacted patient once, booked if they booked within 30 days of the first contact', () => {
+    const s = winBackStats(
+      [
+        { patient_id: 'a', created_at: '2026-08-01T10:00:00Z' },
+        { patient_id: 'a', created_at: '2026-08-20T10:00:00Z' },
+        { patient_id: 'b', created_at: '2026-08-01T10:00:00Z' },
+        { patient_id: 'c', created_at: '2026-10-05T10:00:00Z' },
+        { patient_id: 'old', created_at: '2026-05-01T10:00:00Z' },
+      ],
+      [
+        { patient_id: 'a', created_at: '2026-08-10T10:00:00Z' },
+        // Too late to put down to the contact.
+        { patient_id: 'b', created_at: '2026-09-15T10:00:00Z' },
+        { patient_id: 'old', created_at: '2026-05-02T10:00:00Z' },
+      ],
+      opts,
+    )
+    expect(s).toEqual({ contacted: 3, booked: 1, waiting: 1 })
+  })
+  it('does not count a booking made before the contact', () => {
+    const s = winBackStats([{ patient_id: 'a', created_at: '2026-08-10T10:00:00Z' }], [{ patient_id: 'a', created_at: '2026-08-09T10:00:00Z' }], opts)
+    expect(s).toEqual({ contacted: 1, booked: 0, waiting: 0 })
   })
 })

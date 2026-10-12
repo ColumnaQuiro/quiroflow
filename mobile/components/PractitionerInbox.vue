@@ -93,17 +93,20 @@ function settlePending(tempId: string, server: Message[]) {
   pendingMessages.value = pendingMessages.value.filter((m) => m.id !== tempId)
 }
 
-const messages = ref<Message[]>([])
-// The list used to be built from the newest 500 messages alone, so any
-// conversation whose last message was older than that window -- four days, at
-// a busy clinic -- was simply not in the app: 201 lead threads on the web, 49
-// here. The list now also takes every conversation from inbox_conversations
-// (what the web Inbox lists) and, for a Growth account, its lead threads from
-// /api/growth/conversations (what the web merges in), and a thread's own
-// messages are fetched when it is opened. threadExtra holds those, apart from
-// `messages`, so the 15-second poll does not wipe a thread being read.
+// The list is inbox_conversations (what the web Inbox lists) and, for a Growth
+// account, its lead threads from /api/growth/conversations (what the web
+// merges in). Messages are fetched only for a thread that is opened, into
+// threadExtra, and a refresh brings only what is newer than it already has.
+//
+// It used to download the newest 500 WhatsApp and 500 in-app messages on
+// every refresh -- every minute and after every message -- to draw previews
+// the list already carries.
 const summaries = ref<Conversation[]>([])
 const threadExtra = ref<Message[]>([])
+// Threads whose messages have been fetched: until then the thread shows a
+// placeholder rather than an empty conversation, which would say "they have
+// not written to you yet" about somebody who has.
+const loadedThreads = ref<Set<string>>(new Set())
 const MESSAGE_COLUMNS = 'id, patient_id, phone_number, external_contact_id, lead_id, direction, status, body_preview, template_name, media_type, media_storage_path, media_mime_type, media_filename, channel, created_at'
 const SUMMARY_LIMIT = 400
 const patientNames = ref<Record<string, string>>({})
@@ -170,71 +173,18 @@ async function loadGrowth() {
 // an empty one whenever a 15-second poll lost signal emptied every
 // conversation, the open thread included.
 //
-// Everything it needs is asked for at once: the message window, the
-// conversation list and the leads. They used to go one after another --
-// messages, then patient names, then lead names, then the list -- four round
-// trips on a phone's connection before anything showed. The list carries the
-// patients' names, so only someone it does not reach costs a lookup of their
-// own.
+// The list (with its patients' names) and the leads come in one round trip;
+// the open thread then takes whatever arrived in it since.
 let loadRun = 0
 async function load(opts: { silent?: boolean } = {}) {
   loadAssignments()
   const run = ++loadRun
   if (!opts.silent) loading.value = true
-  const [{ data: waData, error: waError }, { data: appData, error: appError }, summaryData] = await Promise.all([
-    supabase
-      .from('whatsapp_messages')
-      .select(MESSAGE_COLUMNS)
-      .order('created_at', { ascending: false })
-      .limit(500),
-    supabase.from('patient_app_messages').select('id, patient_id, direction, body, created_at').order('created_at', { ascending: false }).limit(500),
-    fetchSummaries(),
-  ])
+  const summaryData = await fetchSummaries()
   if (run !== loadRun) return
   applySummaries(summaryData)
-  if (waError || appError) {
-    loading.value = false
-    return
-  }
-  const appMessages: Message[] = (appData ?? []).map((m) => ({
-    id: m.id,
-    patient_id: m.patient_id,
-    phone_number: null,
-    external_contact_id: null,
-    lead_id: null,
-    direction: m.direction,
-    status: 'sent',
-    body_preview: m.body,
-    template_name: null,
-    media_type: null,
-    media_storage_path: null,
-    media_mime_type: null,
-    media_filename: null,
-    channel: 'in_app',
-    created_at: m.created_at,
-  }))
-  messages.value = [...(waData ?? []), ...appMessages].sort((a, b) => b.created_at.localeCompare(a.created_at))
-
-  // Names the list did not bring: a patient or lead whose conversation is
-  // further down than it reads, but with a message in the window.
-  const patientIds = [...new Set(messages.value.map((m) => m.patient_id).filter((id): id is string => !!id && !patientNames.value[id]))]
-  const leadIds = leadThreadsAreSeparate.value ? [...new Set(messages.value.filter((m) => m.lead_id && !m.patient_id && !leadNames.value[m.lead_id]).map((m) => m.lead_id!))] : []
-  const [patients, leads] = await Promise.all([
-    patientIds.length ? supabase.from('patients').select('id, first_name, last_name').in('id', patientIds) : null,
-    leadIds.length ? supabase.from('leads').select('id, full_name').in('id', leadIds) : null,
-  ])
-  if (run !== loadRun) return
-  if (patients?.data?.length) {
-    const names = { ...patientNames.value }
-    for (const p of patients.data) names[p.id] = `${p.first_name} ${p.last_name ?? ''}`.trim()
-    patientNames.value = names
-  }
-  if (leads?.data?.length) {
-    const names = { ...leadNames.value }
-    for (const l of leads.data) if (l.full_name) names[l.id] = l.full_name
-    leadNames.value = names
-  }
   if (!opts.silent) loading.value = false
+  if (selectedKey.value) await loadThreadFor(selectedKey.value)
 }
 
 interface LeadSummary { key: string; leadId: string; name: string; channel: string; unread: boolean; lastMessageAt: string; lastDirection?: string; lastMediaType?: string | null; preview: string; previewWasNotSent?: boolean; phone: string | null; patientId: string | null }
@@ -347,12 +297,20 @@ async function searchServer(term: string) {
 }
 
 // A thread's own messages, newest 200, fetched when it is opened -- by the
-// same identity inbox_conversations keys it by.
+// same identity inbox_conversations keys it by -- and after that only the
+// ones newer than the newest it has.
 async function loadThreadFor(key: string) {
   const c = conversations.value.find((x) => x.key === key)
-  if (!c) return
+  if (!c) {
+    // Nothing to fetch for a conversation that does not exist yet (a patient
+    // never written to) -- once the list has loaded and still lacks it.
+    if (!loading.value) markThreadLoaded(key)
+    return
+  }
+  const since = loadedThreads.value.has(key) ? newestInThread(key) : null
   const leadId = leadIdOfKey(key)
   let q = supabase.from('whatsapp_messages').select(MESSAGE_COLUMNS).order('created_at', { ascending: false }).limit(200)
+  if (since) q = q.gt('created_at', since)
   if (leadId) q = q.eq('lead_id', leadId).is('patient_id', null)
   else if (c.patientId) q = q.eq('patient_id', c.patientId)
   else if (c.phoneNumber) q = q.eq('phone_number', c.phoneNumber).is('patient_id', null)
@@ -364,9 +322,13 @@ async function loadThreadFor(key: string) {
   const [{ data: wa }, { data: app }] = await Promise.all([
     q,
     c.patientId
-      ? supabase.from('patient_app_messages').select('id, patient_id, direction, body, created_at').eq('patient_id', c.patientId).order('created_at', { ascending: false }).limit(200)
-      : Promise.resolve({ data: [] as { id: string; patient_id: string; direction: string; body: string; created_at: string }[] }),
+      ? (since
+          ? supabase.from('patient_app_messages').select('id, patient_id, direction, body, created_at').eq('patient_id', c.patientId).gt('created_at', since).order('created_at', { ascending: false }).limit(200)
+          : supabase.from('patient_app_messages').select('id, patient_id, direction, body, created_at').eq('patient_id', c.patientId).order('created_at', { ascending: false }).limit(200))
+      : Promise.resolve({ data: [] as { id: string; patient_id: string; direction: string; body: string; created_at: string }[], error: null }),
   ])
+  // A failed read keeps what is there, and is tried again on the next refresh.
+  if (wa === null || app === null) return
   const fetched: Message[] = [
     ...((wa ?? []) as Message[]),
     ...((app ?? []) as { id: string; patient_id: string; direction: string; body: string; created_at: string }[]).map((m) => ({
@@ -375,18 +337,22 @@ async function loadThreadFor(key: string) {
     })),
   ]
   const known = new Set(threadExtra.value.map((m) => m.id))
-  threadExtra.value = [...threadExtra.value, ...fetched.filter((m) => !known.has(m.id))]
+  const fresh = fetched.filter((m) => !known.has(m.id))
+  if (fresh.length) threadExtra.value = [...threadExtra.value, ...fresh]
+  markThreadLoaded(key)
+}
+function markThreadLoaded(key: string) {
+  if (loadedThreads.value.has(key)) return
+  loadedThreads.value = new Set(loadedThreads.value).add(key)
 }
 onMounted(async () => {
   await loadGrowth()
   await load()
 })
 
-const allMessages = computed(() => {
-  const inWindow = new Set(messages.value.map((m) => m.id))
-  const server = [...messages.value, ...threadExtra.value.filter((m) => !inWindow.has(m.id))]
-  return mergePendingIntoThread(server, pendingMessages.value, keptKeys.value).sort((a, b) => b.created_at.localeCompare(a.created_at))
-})
+const allMessages = computed(() =>
+  mergePendingIntoThread(threadExtra.value, pendingMessages.value, keptKeys.value).sort((a, b) => b.created_at.localeCompare(a.created_at)),
+)
 
 // The conversation a message belongs to, keyed exactly as the web Inbox and
 // inbox_conversations key it (a Growth account's lead, else patient, else
@@ -400,7 +366,9 @@ function keyOf(m: Pick<Message, 'patient_id' | 'phone_number' | 'external_contac
 }
 /** The newest message a conversation already had, so a pending bubble is only matched to a row newer than it. */
 function newestInThread(key: string): string | null {
-  return messages.value.find((m) => keyOf(m) === key)?.created_at ?? null
+  let newest: string | null = null
+  for (const m of threadExtra.value) if (keyOf(m) === key && (!newest || m.created_at > newest)) newest = m.created_at
+  return newest
 }
 
 const conversations = computed<Conversation[]>(() => {
@@ -411,8 +379,16 @@ const conversations = computed<Conversation[]>(() => {
     byKey.get(key)!.push(m)
   }
   const list: Conversation[] = []
+  const summaryByKey = new Map(summaries.value.map((c) => [c.key, c]))
+  const drawn = new Set<string>()
   for (const [key, msgs] of byKey) {
     const last = msgs[0]
+    // A thread loaded earlier and not open since has not been brought up to
+    // date; the list has, so when it knows of something newer it is drawn
+    // from the list instead.
+    const sum = summaryByKey.get(key)
+    if (sum && sum.lastMessage.created_at > last.created_at) continue
+    drawn.add(key)
     list.push({
       key,
       patientId: last.patient_id,
@@ -427,6 +403,7 @@ const conversations = computed<Conversation[]>(() => {
       name:
         (last.patient_id && patientNames.value[last.patient_id]) ||
         (leadIdOfKey(key) && leadNames.value[leadIdOfKey(key)!]) ||
+        sum?.name ||
         msgs.find((m) => m.phone_number)?.phone_number ||
         (last.external_contact_id ? t('Instagram user', 'Usuario de Instagram') : t('Unknown', 'Desconocido')),
       channel: last.channel,
@@ -434,12 +411,12 @@ const conversations = computed<Conversation[]>(() => {
       unread: markedUnread(key) || (last.direction === 'inbound' && (!readTimestamps.value[key] || readTimestamps.value[key] < last.created_at)),
     })
   }
-  // Conversations the loaded messages do not reach, from the summaries.
+  // Every other conversation, from the list.
   for (const sum of summaries.value) {
-    if (byKey.has(sum.key)) continue
+    if (drawn.has(sum.key)) continue
     const at = sum.lastMessage.created_at
     list.push({ ...sum, unread: markedUnread(sum.key) || (sum.lastMessage.direction === 'inbound' && (!readTimestamps.value[sum.key] || readTimestamps.value[sum.key] < at)) })
-    byKey.set(sum.key, [])
+    drawn.add(sum.key)
   }
   // Snoozes: what they last wrote is what brings one back early (the view
   // reads its last inbound message; the newest one, when it is theirs, is
@@ -636,6 +613,9 @@ async function prepareDraftConversation(patientId: string) {
 const thread = computed(() =>
   selectedKey.value ? allMessages.value.filter((m) => keyOf(m) === selectedKey.value).slice().reverse() : [],
 )
+// Whether the open thread's messages have arrived. The composer's 24-hour
+// rule and "they have not written yet" are read from them, so they wait.
+const threadReady = computed(() => !selectedKey.value || loadedThreads.value.has(selectedKey.value) || thread.value.length > 0)
 // Follows the bottom of the thread automatically -- a reply the practitioner
 // just sent, or a message that just arrived, used to sit hidden behind the
 // composer bar until they scrolled by hand.
@@ -714,7 +694,7 @@ function whenLoaded(): Promise<void> {
 }
 
 async function conversationKeyForLead(leadId: string): Promise<string | null> {
-  const loaded = messages.value.find((m) => m.lead_id === leadId)
+  const loaded = threadExtra.value.find((m) => m.lead_id === leadId)
   if (loaded) return keyOf(loaded)
   const { data } = await supabase
     .from('whatsapp_messages')
@@ -1130,7 +1110,7 @@ async function performTextSend(tempId: string, text: string, channel: string, ta
     // only a draft so far and skeletons the list behind it -- the sent
     // message blinked, and the list showed placeholders over real rows.
     await load({ silent: true })
-    settlePending(tempId, messages.value)
+    settlePending(tempId, threadExtra.value)
     delete retryPayloads.value[tempId]
   } catch (err: any) {
     sendError.value = err?.data?.statusMessage ?? t('Failed to send', 'Error al enviar')
@@ -1208,7 +1188,7 @@ async function performMediaSend(
     // only a draft so far and skeletons the list behind it -- the sent
     // message blinked, and the list showed placeholders over real rows.
     await load({ silent: true })
-    settlePending(tempId, messages.value)
+    settlePending(tempId, threadExtra.value)
     delete retryPayloads.value[tempId]
   } catch (err: any) {
     sendError.value = err?.data?.statusMessage ?? t('Failed to send', 'Error al enviar')
@@ -1396,13 +1376,11 @@ function onMessageUpdate(payload: { new: Record<string, unknown> }) {
     copy[i] = { ...current, status: next.status }
     return copy
   }
-  const inWindow = patch(messages.value)
   const inThread = patch(threadExtra.value)
-  if (inWindow === 'moved' || inThread === 'moved') {
+  if (inThread === 'moved') {
     scheduleLoad()
     return
   }
-  if (inWindow) messages.value = inWindow
   if (inThread) threadExtra.value = inThread
 }
 
@@ -1753,6 +1731,11 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
       </div>
 
       <div ref="messagesEl" class="flex-1 space-y-2.5 overflow-y-auto px-3 py-3">
+        <div v-if="!threadReady" class="flex flex-col gap-2.5" data-cy="thread-loading">
+          <div class="h-10 w-2/5 animate-pulse self-start rounded-card bg-surface-subtle" />
+          <div class="h-14 w-3/5 animate-pulse self-start rounded-card bg-surface-subtle" />
+          <div class="h-10 w-1/3 animate-pulse self-end rounded-card bg-surface-subtle" />
+        </div>
         <template v-for="(m, i) in thread" :key="m.renderKey">
           <div
             v-if="i === 0 || relativeDay(m.created_at) !== relativeDay(thread[i - 1].created_at)"
@@ -1846,7 +1829,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
           @send="sendDraft"
           @edit="(text: string) => (composerText = text)"
         />
-        <template v-if="noteMode" />
+        <template v-if="noteMode || !threadReady" />
         <div v-else-if="thread.length === 0 || !within24h" class="rounded-ctl border border-warning-border bg-warning-bg px-3 py-2 text-[12.5px] text-warning-text" data-cy="inbox-window-closed">
           <p>
             {{

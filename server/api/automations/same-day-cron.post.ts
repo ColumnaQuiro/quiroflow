@@ -4,6 +4,7 @@ import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluat
 import { dispatchPatientRule } from '~/server/utils/automationEngine'
 import { DEFAULT_CLINIC_TIMEZONE, localDay } from '~/utils/clinicClock'
 import { sendExerciseReminders } from '~/server/utils/exerciseReminders'
+import { sendOwnerWeeklyDigests } from '~/server/utils/weeklyDigest'
 
 // Fires 'appointment.same_day' for every booked appointment happening today,
 // for accounts with an enabled rule on that trigger -- same reasoning/auth
@@ -44,6 +45,8 @@ export default defineEventHandler(async (event) => {
   await sendStaffMorningSummaries(supabase, now)
   // Patients' daily exercise reminder rides here for the same reason.
   await sendExerciseReminders(supabase, now)
+  // And the owners' Monday summary of last week (server/utils/weeklyDigest.ts).
+  await sendOwnerWeeklyDigests(supabase, getRequestURL(event).origin, now)
 
   const { data: rules } = await supabase
     .from('automation_rules')

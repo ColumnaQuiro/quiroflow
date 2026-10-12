@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { GrowthFunnelStage, GrowthFunnelStep } from '~/composables/useGrowthDashboard'
+import type { GrowthFunnelStage, GrowthFunnelStep } from '~/utils/growthDashboard'
 
 const props = defineProps<{
   stages: GrowthFunnelStage[]
@@ -12,9 +12,10 @@ const props = defineProps<{
 const t = useT()
 
 // Indigo stepping lighter down the funnel, as alpha over the card rather
-// than five hardcoded hexes -- brand is a theme variable, so this is the
-// only version of the ramp that survives the dark palette.
-const SHADE = ['bg-brand', 'bg-brand/85', 'bg-brand/[.65]', 'bg-brand/[.48]', 'bg-brand/[.26]']
+// than hardcoded hexes -- brand is a theme variable, so this is the only
+// version of the ramp that survives the dark palette. One per stage: there
+// are six, and with five the Converted bar got no class and drew nothing.
+const SHADE = ['bg-brand', 'bg-brand/85', 'bg-brand/[.68]', 'bg-brand/[.52]', 'bg-brand/[.38]', 'bg-brand/[.26]']
 
 const MAX_BAR = 74
 const MIN_BAR = 18
@@ -77,11 +78,7 @@ const RATE_TONE: Record<GrowthFunnelStep['tone'], string> = {
 
     <div v-if="dropOff" class="mt-4 flex flex-col gap-2 rounded-ctl border border-danger-border bg-danger-bg px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
       <p class="text-[11.5px] text-danger-text">{{ dropOff.summary }}</p>
-      <!-- The design points this at the AI receptionist's booking rules,
-      which do not have a page yet. Left as plain text rather than a link
-      that 404s; it becomes a NuxtLink to /growth/receptionist when that
-      screen lands. -->
-      <span class="shrink-0 whitespace-nowrap text-[11.5px] font-semibold text-danger-text">{{ dropOff.action }}</span>
+      <NuxtLink to="/growth/leads" class="shrink-0 whitespace-nowrap text-[11.5px] font-semibold text-danger-text hover:underline">{{ dropOff.action }}</NuxtLink>
     </div>
   </section>
 </template>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { GrowthAiSummary } from '~/composables/useGrowthDashboard'
+import type { GrowthAiSummary } from '~/utils/growthDashboard'
 
 defineProps<{ ai: GrowthAiSummary }>()
 

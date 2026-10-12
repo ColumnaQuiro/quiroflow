@@ -119,6 +119,19 @@ describe('A reply that is sent as it is', () => {
     expect(prompt).toContain('If they ask to cancel, say your colleague will take care of it.')
   })
 
+  // Offered "martes 20 a las 10:00 o miércoles 21 a las 16:00", "Miércoles 21"
+  // can only be the 16:00: booked without asking again. Only a choice that
+  // could be more than one time gets the confirming question.
+  it('books an unambiguous pick at once, and confirms only when it could be more than one time', () => {
+    const visits = [{ startsAt: '2026-10-20T08:00:00Z', typeName: 'Ajuste' }]
+    const prompt = buildPatientReplyPrompt(config, { ...base, bookedVisits: visits, sendsItself: true, canBook: true })
+    expect(prompt).toContain('Book or move only when there is no doubt which exact day and time they want')
+    expect(prompt).toContain('"miércoles 21" means 16:00 and you book it without asking again')
+    expect(prompt).toContain('If it could be more than one time')
+    // Both where it books and where it moves.
+    expect(prompt.split('Book or move only when there is no doubt which exact day and time they want').length - 1).toBe(2)
+  })
+
   it('hands an accepted time to a colleague when it cannot book', () => {
     const prompt = buildPatientReplyPrompt(config, { ...base, sendsItself: true })
     expect(prompt).toContain('a colleague books it')

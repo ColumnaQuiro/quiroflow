@@ -1,7 +1,8 @@
 import { stripeClientFor } from '~/server/utils/stripe'
 
-// The cancellation fee, as the cancel step asks for it: added to the
-// patient's balance, or charged to the card on file now.
+// The cancellation fee, as the cancel step asks for it, or the missed-
+// appointment fee for a no-show (kind: 'missed'): added to the patient's
+// balance, or charged to the card on file now.
 //
 // It used to be written from the browser -- an invoice and a line item
 // inserted client-side after a confirm() -- which could only ever do the
@@ -18,6 +19,8 @@ import { stripeClientFor } from '~/server/utils/stripe'
 interface Body {
   appointmentId: string
   charge: 'balance' | 'card'
+  /** Which fee: a late cancellation (the default, as every caller sent before) or a no-show. */
+  kind?: 'cancellation' | 'missed'
 }
 
 export default defineEventHandler(async (event) => {
@@ -32,11 +35,16 @@ export default defineEventHandler(async (event) => {
 
   const { data: appt } = await supabase.from('appointments').select('id, patient_id, status').eq('id', body.appointmentId).maybeSingle()
   if (!appt) throw createError({ statusCode: 404, statusMessage: 'Appointment not found' })
-  if (appt.status !== 'cancelled') throw createError({ statusCode: 409, statusMessage: 'Only a cancelled appointment carries a cancellation fee' })
+  // The same two choices for a no-show: the missed-appointment fee, on the
+  // balance or the card on file (the online booking can ask for one).
+  const missed = body.kind === 'missed'
+  if (!missed && appt.status !== 'cancelled') throw createError({ statusCode: 409, statusMessage: 'Only a cancelled appointment carries a cancellation fee' })
+  if (missed && appt.status !== 'no_show') throw createError({ statusCode: 409, statusMessage: 'Only a missed appointment carries a missed-appointment fee' })
 
-  const { data: account } = await supabase.from('accounts').select('cancellation_fee_cents, stripe_connect_account_id').eq('id', teamMember.account_id).maybeSingle()
-  const feeCents = account?.cancellation_fee_cents ?? 0
-  if (!account || feeCents <= 0) throw createError({ statusCode: 400, statusMessage: 'No cancellation fee is configured' })
+  const { data: account } = await supabase.from('accounts').select('cancellation_fee_cents, missed_appointment_fee_cents, stripe_connect_account_id').eq('id', teamMember.account_id).maybeSingle()
+  const feeCents = (missed ? account?.missed_appointment_fee_cents : account?.cancellation_fee_cents) ?? 0
+  if (!account || feeCents <= 0) throw createError({ statusCode: 400, statusMessage: missed ? 'No missed-appointment fee is configured' : 'No cancellation fee is configured' })
+  const description = missed ? 'Missed appointment fee' : 'Cancellation fee'
 
   // No number, no invoice: an unnumbered fee is worse than an uncharged one.
   const { data: invoiceNumber } = await supabase.rpc('next_invoice_number', { p_account_id: teamMember.account_id })
@@ -50,7 +58,7 @@ export default defineEventHandler(async (event) => {
   await supabase.from('invoice_line_items').insert({
     account_id: teamMember.account_id,
     invoice_id: invoice.id,
-    description: 'Cancellation fee',
+    description,
     quantity: 1,
     price_cents: feeCents,
   })
@@ -74,7 +82,7 @@ export default defineEventHandler(async (event) => {
         payment_method: customer.default_payment_method_id,
         off_session: true,
         confirm: true,
-        description: 'Cancellation fee',
+        description,
         metadata: { invoice_id: invoice.id, account_id: teamMember.account_id },
       },
       options,

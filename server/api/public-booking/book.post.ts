@@ -1,5 +1,7 @@
 import { serverSupabaseClient, serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
+import { stripeClientFor } from '~/server/utils/stripe'
+import { patientCardLink } from '~/server/utils/patientCardLink'
 
 // The public booking page's booking, made here rather than by the page calling
 // create_public_booking itself, so the clinic's "new online booking" alert goes
@@ -49,5 +51,32 @@ export default defineEventHandler(async (event) => {
     console.error('[public-booking] staff alert failed', result.appointment_id, err)
   }
 
-  return data
+  // The clinic asks for a card to hold online bookings: the patient goes from
+  // here to Stripe's card page (server/utils/patientCardLink.ts). The booking
+  // is made either way; a card not given only means there is none to charge.
+  let cardUrl: string | null = null
+  try {
+    cardUrl = await cardLinkForBooking(event, result.appointment_id)
+  } catch (err) {
+    console.error('[public-booking] card link failed', result.appointment_id, err)
+  }
+
+  return { ...(data as Record<string, unknown>), card_url: cardUrl }
 })
+
+async function cardLinkForBooking(event: Parameters<typeof serverSupabaseServiceRole>[0], appointmentId: string): Promise<string | null> {
+  const service = serverSupabaseServiceRole<Database>(event)
+  const { data: appt } = await service.from('appointments').select('account_id, patient_id, patients(id, first_name, last_name, email)').eq('id', appointmentId).maybeSingle()
+  const patient = (appt as unknown as { patients: { id: string; first_name: string; last_name: string | null; email: string | null } | null } | null)?.patients
+  if (!appt || !patient) return null
+  const { data: account } = await service.from('accounts').select('online_booking_card_on_file, stripe_connect_account_id, stripe_publishable_key').eq('id', appt.account_id).maybeSingle()
+  if (!account?.online_booking_card_on_file || !account.stripe_publishable_key) return null
+  const { stripe, options } = await stripeClientFor(event, appt.account_id, account)
+  const origin = getRequestURL(event).origin
+  return await patientCardLink(service, stripe, options, {
+    accountId: appt.account_id,
+    patient,
+    successUrl: `${origin}/card-saved?status=success&booking=1`,
+    cancelUrl: `${origin}/card-saved?status=cancelled&booking=1`,
+  })
+}

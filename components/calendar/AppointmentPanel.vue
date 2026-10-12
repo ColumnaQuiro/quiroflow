@@ -520,17 +520,37 @@ const history = computed(() => {
 })
 
 // --- Footer actions ---------------------------------------------------------------
-// The missed-appointment fee from Settings > Scheduling Policies, as before:
-// the configured fee, confirmed once. (Cancelling asks about its own fee in
-// the cancel step.)
-// The charge itself is utils/missedAppointmentFee, which the staff app's
-// visit screen raises too.
+// The missed-appointment fee from Settings > Scheduling Policies, offered once
+// the visit is marked a no-show, as the cancel step offers its own: nothing,
+// onto the balance, or charged to the card on file (which online booking can
+// ask for). Both go through /api/appointments/cancellation-fee (kind
+// 'missed'), so the invoice and the charge cannot disagree. The card is only
+// offered to someone who may see it (billing_config, as card-details checks).
+const missedFee = ref<{ cents: number; card: { brand: string; last4: string } | null } | null>(null)
+const missedFeeBusy = ref(false)
+const missedFeeResult = ref('')
 async function maybeApplyMissedFee() {
   const feeCents = await missedAppointmentFeeCents(supabase, store.accountId!)
   if (!feeCents) return
-  const question = t(`Add the ${formatEur(feeCents)} missed-appointment fee to this patient's balance?`, `¿Añadir el cargo por no presentarse de ${formatEur(feeCents)} a su saldo?`)
-  if (!confirm(question)) return
-  await chargeMissedAppointmentFee(supabase, { accountId: store.accountId!, patientId: props.appointment.patient_id, feeCents })
+  const res = await useStaffFetch<{ card: { brand: string; last4: string } | null }>('/api/stripe/card-details', { method: 'POST', body: { patientId: props.appointment.patient_id } }).catch(() => ({ card: null }))
+  missedFee.value = { cents: feeCents, card: can('billing_access') ? (res?.card ?? null) : null }
+}
+async function applyMissedFee(charge: 'balance' | 'card') {
+  missedFeeBusy.value = true
+  try {
+    const r = await useStaffFetch<{ charged: boolean; reason?: string }>('/api/appointments/cancellation-fee', { method: 'POST', body: { appointmentId: props.appointment.id, charge, kind: 'missed' } })
+    missedFeeResult.value = charge === 'card' && !r.charged
+      ? t('The card was declined; the fee is on their balance.', 'La tarjeta fue rechazada; el cargo queda en su saldo.')
+      : charge === 'card'
+        ? t('Fee charged to the card.', 'Cargo cobrado a la tarjeta.')
+        : t('Fee added to their balance.', 'Cargo añadido a su saldo.')
+    missedFee.value = null
+    emit('changed')
+  } catch {
+    missedFeeResult.value = t("Couldn't add the fee. Try again.", 'No se ha podido añadir el cargo. Inténtalo de nuevo.')
+  } finally {
+    missedFeeBusy.value = false
+  }
 }
 function cancelAppointment() {
   step.value = 'cancel'
@@ -763,6 +783,19 @@ const canAct = computed(() => props.appointment.status === 'booked' && !readOnly
           </span>
         </li>
       </ol>
+    </div>
+
+    <!-- After a no-show: the missed-appointment fee, if the clinic has one. -->
+    <div v-if="missedFee || missedFeeResult" class="shrink-0 border-t border-line bg-warning-bg px-5 py-3 sm:px-6" data-cy="missed-fee">
+      <template v-if="missedFee">
+        <p class="text-[13.5px] font-semibold text-ink-900">{{ t(`Missed-appointment fee: ${formatEur(missedFee.cents)}`, `Cargo por no presentarse: ${formatEur(missedFee.cents)}`) }}</p>
+        <div class="mt-2 flex flex-wrap gap-2">
+          <button v-if="missedFee.card" type="button" class="h-9 touch:h-11 rounded-ctl bg-brand px-3 text-[13px] font-semibold text-surface disabled:opacity-60" :disabled="missedFeeBusy" data-cy="missed-fee-card" @click="applyMissedFee('card')">{{ t(`Charge ${missedFee.card.brand} ·${missedFee.card.last4}`, `Cobrar a ${missedFee.card.brand} ·${missedFee.card.last4}`) }}</button>
+          <button type="button" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[13px] font-semibold text-ink-700 disabled:opacity-60" :disabled="missedFeeBusy" data-cy="missed-fee-balance" @click="applyMissedFee('balance')">{{ t('Add to balance', 'Añadir al saldo') }}</button>
+          <button type="button" class="h-9 touch:h-11 px-2 text-[13px] text-ink-muted" :disabled="missedFeeBusy" data-cy="missed-fee-none" @click="missedFee = null">{{ t('No fee', 'Sin cargo') }}</button>
+        </div>
+      </template>
+      <p v-else class="text-[13px] text-ink-700" data-cy="missed-fee-result">{{ missedFeeResult }}</p>
     </div>
 
     <!-- Footer: the consequential actions, each its own button. -->

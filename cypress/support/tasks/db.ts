@@ -1974,6 +1974,24 @@ async function storedReplyDraft(opts: { patientId: string }) {
   return data ?? null
 }
 
+// A receptionist-reply call still working on a conversation, as
+// claim_receptionist_lease leaves it.
+async function holdReceptionistLease(opts: { accountId: string; conversationKey: string }) {
+  unwrap(
+    await (admin as any)
+      .from('receptionist_reply_leases')
+      .upsert({ account_id: opts.accountId, conversation_key: opts.conversationKey, leased_until: new Date(Date.now() + 90_000).toISOString() })
+      .select('conversation_key')
+      .single(),
+  )
+  return null
+}
+
+async function receptionistLease(opts: { conversationKey: string }) {
+  const { data } = await (admin as any).from('receptionist_reply_leases').select('leased_until').eq('conversation_key', opts.conversationKey).maybeSingle()
+  return data ?? null
+}
+
 async function createWhatsappMessage(opts: {
   accountId: string
   patientId?: string
@@ -4171,6 +4189,8 @@ export const dbTasks = {
   'db:usePackageSession': usePackageSession,
   'db:createWhatsappMessage': createWhatsappMessage,
   'db:createPatientAppMessage': createPatientAppMessage,
+  'db:holdReceptionistLease': holdReceptionistLease,
+  'db:receptionistLease': receptionistLease,
   'db:createStoredReplyDraft': createStoredReplyDraft,
   'db:storedReplyDraft': storedReplyDraft,
   'db:seedWhatsappReplyScenario': seedWhatsappReplyScenario,

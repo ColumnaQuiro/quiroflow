@@ -1,7 +1,5 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
-import { draftLeadReply } from '~/server/utils/receptionistDraft'
-import { draftPatientReply } from '~/server/utils/patientReplyDraft'
 import { hasGrowth } from '~/server/utils/requireGrowth'
 import { TYPING_PAUSE_SECONDS, autoReplyNow, clinicOpenAt, stillTyping } from '~/utils/receptionistAutoReply'
 import type { BusinessHours } from '~/utils/businessHours'
@@ -26,7 +24,6 @@ import type { BusinessHours } from '~/utils/businessHours'
 // newest message under TYPING_PAUSE_SECONDS old) waits for the next tick, so
 // a burst of four messages gets one answer, not four.
 const MAX_PER_TICK = 25
-const CONCURRENCY = 3
 
 export default defineEventHandler(async (event) => {
   const runtimeConfig = useRuntimeConfig()
@@ -53,7 +50,7 @@ export default defineEventHandler(async (event) => {
     .eq('enabled', true)
 
   const accountIds = (enabledConfigs ?? []).map((c) => c.account_id)
-  if (accountIds.length === 0) return { drafted: 0, considered: 0, consideredLeadIds: [] as string[] }
+  if (accountIds.length === 0) return { considered: 0, consideredLeadIds: [] as string[], consideredPatientIds: [] as string[], dispatchedLeadIds: [] as string[], dispatchedPatientIds: [] as string[] }
 
   // Growth is a paid add-on, and the cron runs as the service role -- outside
   // requireGrowth, which is what enforces that everywhere else. Checked here
@@ -67,13 +64,12 @@ export default defineEventHandler(async (event) => {
   const entitled = new Set(
     (subscriptions ?? []).filter((s) => hasGrowth(s)).map((s) => s.account_id),
   )
-  if (entitled.size === 0) return { drafted: 0, considered: 0, consideredLeadIds: [] as string[] }
+  if (entitled.size === 0) return { considered: 0, consideredLeadIds: [] as string[], consideredPatientIds: [] as string[], dispatchedLeadIds: [] as string[], dispatchedPatientIds: [] as string[] }
 
   // Which of them the receptionist answers for on its own right now, rather
   // than drafting: their "answer outside / during clinic hours" switches,
   // read against their first clinic's opening hours on its own clock.
   const answersNow = await accountsAnsweringNow(supabase, Array.from(entitled), new Date())
-  const sendOpts = (accountId: string) => (answersNow.has(accountId) ? { send: { event } } : {})
 
   // Who is due a draft: a lead the receptionist is handling, with no draft
   // waiting, whose newest inbound message is one drafting has not read yet
@@ -145,68 +141,55 @@ export default defineEventHandler(async (event) => {
     if (rows.length < PAGE) break
   }
 
-  let drafted = 0
-
-  for (let i = 0; i < due.length; i += CONCURRENCY) {
-    const batch = due.slice(i, i + CONCURRENCY)
-    const results = await Promise.all(
-      batch.map(async (lead) => {
-        try {
-          const outcome = await draftLeadReply(supabase, lead.accountId, lead.id, supabase, sendOpts(lead.accountId))
-          // The AI cannot answer this one: the model declined, or this
-          // deployment has no model to ask. Left on 'handling' the lead would
-          // sit there as the AI's, waiting on a draft that is never coming, so
-          // it goes to a person -- the one other way it gets an answer. Only
-          // from 'handling', so a person who took it over meanwhile keeps it.
-          if (outcome.status === 'refused' || outcome.status === 'unavailable') {
-            await supabase.from('leads').update({ ai_state: 'needs_human' }).eq('id', lead.id).eq('ai_state', 'handling')
-          }
-          return outcome.status === 'drafted' || outcome.status === 'sent'
-        } catch (err) {
-          // One lead's model call failing must not cost the rest of the tick.
-          // Whatever went wrong is still true next tick, and the lead is
-          // still due then.
-          console.error(`[receptionist-draft-cron] lead ${lead.id} failed:`, (err as Error)?.message ?? err)
-          return false
-        }
-      }),
-    )
-    drafted += results.filter(Boolean).length
-  }
-
   // Patients too, not only leads: a patient asking to move their visit at
   // 21:40 has a draft waiting in the morning, as a lead does. Stored in
   // inbox_reply_drafts (patientReplyDraft.ts, `store`), without their
   // balance, since anyone with Inbox access reads it.
   const duePatients = await patientsDue(supabase, Array.from(entitled), since, pause)
-  let draftedPatients = 0
-  for (let i = 0; i < duePatients.length; i += CONCURRENCY) {
-    const batch = duePatients.slice(i, i + CONCURRENCY)
-    const results = await Promise.all(
-      batch.map(async (patient) => {
-        try {
-          const outcome = await draftPatientReply(supabase, supabase, patient.accountId, patient.id, { store: true, ...sendOpts(patient.accountId) })
-          return outcome.status === 'drafted' || outcome.status === 'sent'
-        } catch (err) {
-          console.error(`[receptionist-draft-cron] patient ${patient.id} failed:`, (err as Error)?.message ?? err)
-          return false
-        }
-      }),
-    )
-    draftedPatients += results.filter(Boolean).length
+
+  // Each conversation in its own call (/api/automations/receptionist-reply),
+  // made by the database so this tick does not wait for any of them: a reply
+  // takes 3-10 seconds, a function has 60, and 25 leads and 25 patients done
+  // here in one call would be cut off half way. Skipped when another call
+  // still holds the conversation's lease -- the next tick will see it.
+  const busy = await leasedConversations(supabase, [...due.map((l) => `lead:${l.id}`), ...duePatients.map((p) => p.id)])
+  const url = `${getRequestURL(event).origin}/api/automations/receptionist-reply`
+  const dispatch = async (kind: 'lead' | 'patient', id: string, accountId: string) => {
+    const { error } = await (supabase as any).rpc('dispatch_receptionist_reply', {
+      p_url: url,
+      p_secret: runtimeConfig.cronSecret,
+      p_body: { kind, id, accountId, send: answersNow.has(accountId) },
+    })
+    if (error) console.error(`[receptionist-draft-cron] could not dispatch ${kind} ${id}:`, error.message)
+    return !error
+  }
+  const dispatchedLeadIds: string[] = []
+  for (const lead of due) {
+    if (!busy.has(`lead:${lead.id}`) && (await dispatch('lead', lead.id, lead.accountId))) dispatchedLeadIds.push(lead.id)
+  }
+  const dispatchedPatientIds: string[] = []
+  for (const patient of duePatients) {
+    if (!busy.has(patient.id) && (await dispatch('patient', patient.id, patient.accountId))) dispatchedPatientIds.push(patient.id)
   }
 
-  // The ids, not just the count: a tick that drafted nothing and a tick that
-  // drafted for somebody unexpected look identical in a number, and this is a
+  // The ids, not just the count: a tick that sent nothing and a tick that
+  // sent somebody unexpected look identical in a number, and this is a
   // background job whose choices nobody watches. Bounded by MAX_PER_TICK.
   return {
-    drafted,
     considered: due.length,
     consideredLeadIds: due.map((l) => l.id),
-    draftedPatients,
     consideredPatientIds: duePatients.map((p) => p.id),
+    dispatchedLeadIds,
+    dispatchedPatientIds,
   }
 })
+
+/** Conversations a receptionist-reply call is still working on. */
+async function leasedConversations(supabase: any, keys: string[]): Promise<Set<string>> {
+  if (keys.length === 0) return new Set()
+  const { data } = await supabase.from('receptionist_reply_leases').select('conversation_key').in('conversation_key', keys).gt('leased_until', new Date().toISOString())
+  return new Set(((data ?? []) as { conversation_key: string }[]).map((r) => r.conversation_key))
+}
 
 /**
  * Patients due a draft: newest message from them in the last 24 hours (on

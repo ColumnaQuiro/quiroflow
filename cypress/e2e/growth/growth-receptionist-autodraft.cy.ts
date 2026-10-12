@@ -326,3 +326,53 @@ describe('The receptionist drafts for leads who write in on WhatsApp', () => {
     })
   })
 })
+
+// One conversation per call: the tick hands each due conversation to
+// /api/automations/receptionist-reply, which holds a lease on it so a second
+// call -- the next tick, while this one is still writing -- stops at once.
+describe('The receptionist answers one conversation per call', () => {
+  let account: SeededAccount
+
+  beforeEach(() => {
+    cy.seedStaffAccount().then((a) => {
+      account = a
+      cy.task('db:setReceptionistEnabled', { accountId: a.accountId, enabled: true })
+    })
+  })
+
+  function reply(body: Record<string, unknown>, secret = Cypress.env('CRON_SECRET') ?? '') {
+    return cy.request<{ status: string }>({
+      method: 'POST',
+      url: '/api/automations/receptionist-reply',
+      headers: { 'x-cron-secret': secret },
+      body,
+      failOnStatusCode: false,
+    })
+  }
+
+  it('refuses a call without the cron secret', () => {
+    reply({ kind: 'lead', id: '00000000-0000-0000-0000-000000000000', accountId: '00000000-0000-0000-0000-000000000000' }, 'wrong').its('status').should('eq', 401)
+  })
+
+  it('stops at once when another call holds the conversation', () => {
+    cy.task<{ id: string }>('db:createLead', { accountId: account.accountId, fullName: 'Held Elsewhere', stage: 'contacted', phone: '+34600444902' }).then((lead) => {
+      cy.task('db:holdReceptionistLease', { accountId: account.accountId, conversationKey: `lead:${lead.id}` })
+      reply({ kind: 'lead', id: lead.id, accountId: account.accountId }).then((res) => {
+        expect(res.status).to.eq(200)
+        expect(res.body.status).to.eq('busy')
+      })
+    })
+  })
+
+  it('takes a free conversation, and lets go of it when done', () => {
+    cy.task<{ id: string }>('db:createLead', { accountId: account.accountId, fullName: 'Free To Answer', stage: 'contacted', phone: '+34600444903' }).then((lead) => {
+      reply({ kind: 'lead', id: lead.id, accountId: account.accountId }).then((res) => {
+        expect(res.status).to.eq(200)
+        // Nothing to answer (they have not written), but it was its to try.
+        expect(res.body.status).to.not.eq('busy')
+      })
+      cy.task('db:receptionistLease', { conversationKey: `lead:${lead.id}` }).should('equal', null)
+    })
+  })
+})
+

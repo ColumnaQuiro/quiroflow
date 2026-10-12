@@ -246,16 +246,23 @@ export async function draftLeadReply(
       await announceHandover(supabase, accountId, target, name, 'La recepcionista no ha podido responder a su último mensaje.')
       return { status: 'refused' }
     }
+    // Recorded BEFORE it is sent: answered up to here, with the words kept as
+    // a draft. Cut off after the send but before the record, the next tick
+    // used to answer the same message again; now the worst a cut-off can do
+    // is leave this draft for a person to send -- never a second reply.
+    const { error: recordError } = await supabase.from('leads').update({ ai_draft_body: draft, ai_draft_created_at: new Date().toISOString(), ...(newestInboundAt ? { ai_drafted_through_at: newestInboundAt } : {}) }).eq('id', leadId).eq('account_id', accountId)
+    // Not recorded, not sent: a reply it could not mark would be sent again.
+    if (recordError) throw new Error(`could not record the reply before sending: ${recordError.message}`)
     try {
       await sendAsReceptionist(opts.send.event, supabase, accountId, target, draft)
     } catch (err) {
-      // Refused by WhatsApp (the window closed, a bad number): left as a draft,
-      // so a person still sees what it would have said.
+      // Refused by WhatsApp (the window closed, a bad number): it stays a
+      // draft, so a person still sees what it would have said.
       console.error(`[receptionist] could not send to lead ${leadId}:`, (err as Error)?.message ?? err)
-      await supabase.from('leads').update({ ai_draft_body: draft, ai_draft_created_at: new Date().toISOString(), ...(newestInboundAt ? { ai_drafted_through_at: newestInboundAt } : {}) }).eq('id', leadId).eq('account_id', accountId)
       return { status: 'drafted', draft }
     }
-    await supabase.from('leads').update({ ai_draft_body: null, ...(newestInboundAt ? { ai_drafted_through_at: newestInboundAt } : {}) }).eq('id', leadId).eq('account_id', accountId)
+    // Sent: no draft waiting any more.
+    await supabase.from('leads').update({ ai_draft_body: null }).eq('id', leadId).eq('account_id', accountId)
     if (handedOver) {
       await handToPerson(supabase, accountId, leadId)
       await announceHandover(supabase, accountId, target, name, handedOver)

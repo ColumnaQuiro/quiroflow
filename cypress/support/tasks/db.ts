@@ -1946,11 +1946,11 @@ async function patientByName(opts: { accountId: string; firstName: string; lastN
 }
 
 /** A message in the patient app's own channel, as the app writes one. */
-async function createPatientAppMessage(opts: { accountId: string; patientId: string; direction: 'inbound' | 'outbound'; body: string }) {
+async function createPatientAppMessage(opts: { accountId: string; patientId: string; direction: 'inbound' | 'outbound'; body: string; sentByAi?: boolean }) {
   return unwrap(
     await admin
       .from('patient_app_messages')
-      .insert({ account_id: opts.accountId, patient_id: opts.patientId, direction: opts.direction, body: opts.body })
+      .insert({ account_id: opts.accountId, patient_id: opts.patientId, direction: opts.direction, body: opts.body, sent_by_ai: opts.sentByAi === true })
       .select('id')
       .single(),
   )

@@ -79,4 +79,22 @@ describe('Inbox: reply drafts for patients', () => {
       })
     })
   })
+
+  // Answered on its own (receptionist-draft-cron): labelled, so nobody takes
+  // it for a colleague's reply.
+  it("labels the receptionist's own replies", () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Olga', lastName: 'Atendida' }).then((patient) => {
+        cy.task('db:createPatientAppMessage', { accountId: account.accountId, patientId: patient.id, direction: 'inbound', body: '¿Abrís el sábado?' })
+        cy.task('db:createPatientAppMessage', { accountId: account.accountId, patientId: patient.id, direction: 'outbound', body: 'Los sábados estamos cerrados.', sentByAi: true })
+        cy.task('db:createPatientAppMessage', { accountId: account.accountId, patientId: patient.id, direction: 'outbound', body: 'Te esperamos el lunes.' })
+
+        cy.login(account.email, account.password)
+        cy.visit('/inbox')
+        cy.contains('Olga Atendida').click()
+        cy.get('[data-cy="thread-message"]').filter(':contains("Los sábados estamos cerrados.")').find('[data-cy="thread-message-ai"]').should('be.visible')
+        cy.get('[data-cy="thread-message"]').filter(':contains("Te esperamos el lunes.")').find('[data-cy="thread-message-ai"]').should('not.exist')
+      })
+    })
+  })
 })

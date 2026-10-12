@@ -46,7 +46,8 @@ export function conversationKeyFor(target: ReceptionistTarget): string {
  * receptionist quiet there (a lead's ai_state, a patient's handed_over_at).
  */
 export async function announceHandover(service: any, accountId: string, target: ReceptionistTarget, personName: string, reason: string) {
-  const body = `Recepcionista IA: he pasado esta conversación a una persona. Motivo: ${reason}`.slice(0, 2000)
+  // Shown as an internal note by "Recepcionista IA" (NoteBubble.vue: no author).
+  const body = `He pasado esta conversación a una persona. Motivo: ${reason}`.slice(0, 2000)
   const { error } = await service.from('inbox_notes').insert({ account_id: accountId, conversation_key: conversationKeyFor(target), author_id: null, body, mentions: [] })
   if (error) console.error('[receptionist] could not leave the handover note:', error.message)
   await notifyInboxTeamMembers(service, accountId, `${personName} · necesita a una persona`, reason, {

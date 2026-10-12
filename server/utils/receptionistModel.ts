@@ -4,6 +4,7 @@ import type { Database } from '~/types/database.types'
 import { loadReceptionistCalendar, type OfferedType, type ReceptionistConfig } from '~/server/utils/receptionist'
 import { availabilityLists, FREE_TIMES_MAX_DAYS, FREE_TIMES_MAX_TIMES, parseFreeTimesInput } from '~/utils/receptionistSlots'
 import { clinicDateOf, startOfLocalDate } from '~/utils/clinicClock'
+import { briefingLeak } from '~/utils/receptionistGuard'
 
 // How the receptionist talks to the model, for all three of its callers --
 // lead drafts, patient drafts and "Try Alba" -- so they cannot drift apart.
@@ -80,11 +81,26 @@ export function freeTimesLookup(
  * to MAX_TOOL_ROUNDS -- after which it is told to answer without the tool
  * rather than left looping.
  *
+ * The finished text is checked before it is returned (briefingLeak): one
+ * that quotes the clinic's internal notes, or describes the briefing, comes
+ * back as refused -- not shown, not stored, and on the lead tick handed to a
+ * person -- whatever the prompt managed to prevent.
+ *
  * Throws the SDK's errors, for the caller to word (modelFailureMessage).
  */
 export async function runReceptionistModel(
   client: Anthropic,
-  opts: { model: string; maxTokens: number; system: string; messages: Anthropic.MessageParam[]; findFreeTimes?: FreeTimesLookup | null },
+  opts: {
+    model: string
+    maxTokens: number
+    system: string
+    messages: Anthropic.MessageParam[]
+    findFreeTimes?: FreeTimesLookup | null
+    /** The clinic's text that is not for patients (internalNotes). */
+    internalNotes: string[]
+    /** Names the conversation in the log when a draft is withheld; never its content. */
+    logLabel: string
+  },
 ): Promise<{ text: string; refused: boolean }> {
   const messages: Anthropic.MessageParam[] = [...opts.messages]
   for (let round = 0; ; round++) {
@@ -110,6 +126,11 @@ export async function runReceptionistModel(
         .map((block) => block.text)
         .join('')
         .trim()
+      const leak = text ? briefingLeak(text, opts.internalNotes) : null
+      if (leak) {
+        console.warn(`[receptionist] withheld a draft for ${opts.logLabel}: it ${leak}`)
+        return { text: '', refused: true }
+      }
       return { text, refused: false }
     }
 

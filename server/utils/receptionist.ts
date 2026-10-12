@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
-import { audienceSection, offeredAppointmentTypes, offeredTypesSection, type PromptType, type ReceptionistAudience } from '~/utils/receptionistTypes'
+import { audienceSection, offeredAppointmentTypes, offeredTypesSection, rescheduleSection, type BookedVisit, type PromptType, type ReceptionistAudience } from '~/utils/receptionistTypes'
 import { leadOriginSection, type LeadOrigin } from '~/utils/receptionistLeadOrigin'
 import {
   receptionistBookingSection,
@@ -155,6 +155,42 @@ export async function loadTypeChoices(supabase: SupabaseClient<Database>, accoun
     appointmentTypes: offeredAppointmentTypes(rows, []).map(toOfferedType),
     offeredTypes: offeredAppointmentTypes(rows, config.bookableAppointmentTypeIds).map(toOfferedType),
   }
+}
+
+/**
+ * The visits a patient has booked from now on, and their types -- what the
+ * receptionist offers new times for when they want to move one. The types
+ * are returned whatever the receptionist's own list says: moving a visit
+ * keeps its type, and a clinic that offers only first visits to new people
+ * still has patients moving their adjustment.
+ */
+export async function loadBookedVisits(supabase: SupabaseClient<Database>, accountId: string, patientId: string | null): Promise<{ visits: BookedVisit[]; types: OfferedType[] }> {
+  if (!patientId) return { visits: [], types: [] }
+  const { data, error } = await supabase
+    .from('appointments')
+    .select('starts_at, appointment_types(id, name, duration_minutes, stage, online_bookable_by)')
+    .eq('account_id', accountId)
+    .eq('patient_id', patientId)
+    .eq('status', 'booked')
+    .is('deleted_at', null)
+    .gte('starts_at', new Date().toISOString())
+    .order('starts_at')
+    .limit(3)
+  if (error) {
+    console.error('[receptionist] could not read booked visits:', error.message)
+    return { visits: [], types: [] }
+  }
+  const rows = (data ?? []) as unknown as { starts_at: string; appointment_types: { id: string; name: string; duration_minutes: number; stage: string | null; online_bookable_by: string | null } | null }[]
+  const types = new Map<string, OfferedType>()
+  for (const row of rows) if (row.appointment_types) types.set(row.appointment_types.id, toOfferedType(row.appointment_types))
+  return { visits: rows.map((row) => ({ startsAt: row.starts_at, typeName: row.appointment_types?.name ?? null })), types: [...types.values()] }
+}
+
+/** Each type once, the first seen kept: the calendar and the tool list a type once. */
+export function uniqueTypes(...lists: OfferedType[][]): OfferedType[] {
+  const seen = new Map<string, OfferedType>()
+  for (const type of lists.flat()) if (!seen.has(type.id)) seen.set(type.id, type)
+  return [...seen.values()]
 }
 
 function toOfferedType(type: { id: string; name: string; duration_minutes: number; stage?: string | null; online_bookable_by?: string | null }): OfferedType {
@@ -340,6 +376,8 @@ export function buildSystemPrompt(
     leadOrigin?: LeadOrigin | null
     /** Whether the find_free_times tool is on this request. */
     searchTool?: boolean
+    /** Visits they already have, which they may want to move. */
+    bookedVisits?: BookedVisit[]
   },
 ) {
   const adOnly = opts.adOnlyTypes ?? []
@@ -351,7 +389,9 @@ export function buildSystemPrompt(
   const escalations = config.escalationRules.map((rule) => `- ${rule.rule} -> ${rule.action}`).join('\n')
   // Only when there are types to offer: with none, the types section already
   // says booking goes to a colleague, and a list would contradict it.
-  const availability = opts.offeredTypes.length || adOnly.length ? opts.calendar.availability : null
+  // Times are listed when there is something to book or a visit to move.
+  const hasTimes = Boolean(opts.offeredTypes.length || adOnly.length || opts.bookedVisits?.length)
+  const availability = hasTimes ? opts.calendar.availability : null
 
   return [
     `You are ${config.personaName}, the receptionist for a chiropractic clinic. You answer enquiries from prospective patients.`,
@@ -383,17 +423,18 @@ export function buildSystemPrompt(
     // does -- and the assessment is still the chiropractor's.
     `# When they mention a condition\nIf the patient names a condition or symptom (artrosis, ciática, hernia discal, dolor cervical...) and asks whether you can help, first say in one or two sentences how chiropractic care is generally used for it -- for example to improve mobility, ease stiffness and reduce the load on the affected joints -- taking what the clinic knowledge says about it first when it covers it. Speak in general terms ("se trabaja para", "puede ayudar a"), never diagnose them, never promise a result and never say it replaces their doctor's treatment. Then say the chiropractor will assess their particular case at the first visit, and move on to booking.`,
     questions
-      ? `# Questions you may work in\nOnly once the patient's own request has been dealt with, at most one per reply, and never as a condition for booking. Skip any the conversation or "What you already know about this person" already answers. A question about how they heard about the clinic is for the clinic's records: never ask it when that is already known; otherwise ask it only if something you are telling them depends on it (such as a price that differs for people who came from an ad), or once, at the very end, after a time has been agreed.\n\n${questions}`
+      ? `# Questions you may work in\nOnly once the patient's own request has been dealt with, at most one per reply, and never as a condition for booking. Skip any the conversation or "What you already know about this person" already answers. A question about how they heard about the clinic is for the clinic's records: never ask it when that is already known, never ask it to work out a price (give both prices instead), and otherwise ask it at most once, at the very end, after a time has been agreed.\n\n${questions}`
       : '',
     // The types come from the database at the moment of drafting, not from
     // the model's reading of the knowledge cards: an owner who withholds a
     // type, or archives it, has it gone from the next reply.
     offeredTypesSection(opts.offeredTypes, adOnly),
+    rescheduleSection(opts.bookedVisits ?? [], opts.calendar.timeZone, { listVisits: true }),
     // The real free times, computed by loadReceptionistCalendar, as a list to
     // offer from. Without one -- the calendar could not be read -- the model
     // asks when suits and a colleague picks the time (#691): a model told to
     // "offer times" with nothing to offer from invents them.
-    opts.offeredTypes.length || adOnly.length
+    hasTimes
       ? receptionistBookingSection({ availability, slotsPerReply: config.slotsPerReply, bookingWindowDays: config.bookingWindowDays, searchTool: opts.searchTool && Boolean(availability) })
       : '',
     // The single most important line in this prompt.

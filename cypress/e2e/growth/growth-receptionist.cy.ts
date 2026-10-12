@@ -36,13 +36,15 @@ describe('Growth AI receptionist', () => {
     // failure this feature could have.
     cy.get('[data-test="receptionist-status"]').should('contain', 'Off')
 
-    // And says what being on would mean, which is drafting for approval --
-    // not sending. The switch used to gate nothing and the copy used to say
-    // the feature did not exist; both changed once it started drafting
-    // replies to real enquiries, and the page has to keep up or it is telling
-    // an owner something untrue about their own clinic.
-    cy.contains('drafts replies for you to approve').should('be.visible')
-    cy.contains('never sends on its own').should('be.visible')
+    // And says what being on would mean: a draft to approve, or -- only if
+    // allowed below -- an answer of its own. The page has to keep up with
+    // what the receptionist actually does, or it is telling an owner
+    // something untrue about their own clinic.
+    cy.contains('It drafts a reply for you to approve').should('be.visible')
+    // Answering on its own is something a clinic turns on, never something
+    // it finds already on: both switches start unticked.
+    cy.get('[data-test="toggle-after-hours"]').should('not.be.checked')
+    cy.get('[data-test="toggle-during-hours"]').should('not.be.checked')
   })
 
   it('saves the persona and tone, and they survive a reload', () => {
@@ -183,7 +185,8 @@ describe('Growth AI receptionist', () => {
 
     it('takes a knowledge card and keeps it', () => {
       cy.visit('/growth/receptionist?growth=1')
-      cy.get('[data-test="knowledge-empty"]').should('be.visible')
+      // Below the "answers on its own" switches: scrolled to, as a person would.
+      cy.get('[data-test="knowledge-empty"]').scrollIntoView().should('be.visible')
 
       cy.get('[data-test="card-title"]').scrollIntoView().type('Prices')
       cy.get('[data-test="card-lines"]').type('First visit 50€\nFollow-up 40€')
@@ -218,7 +221,7 @@ describe('Growth AI receptionist', () => {
       cy.get('[data-test="knowledge-card"]').should('have.length', 1)
 
       cy.get('[data-test^="remove-card-"]').click()
-      cy.get('[data-test="knowledge-empty"]').should('be.visible')
+      cy.get('[data-test="knowledge-empty"]').scrollIntoView().should('be.visible')
     })
 
     it('takes qualification questions in the order they will be asked', () => {

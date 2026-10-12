@@ -10,6 +10,7 @@ const password = ref('')
 const error = ref('')
 const loading = ref(false)
 
+const route = useRoute()
 async function onSubmit() {
   error.value = ''
   loading.value = true
@@ -43,7 +44,9 @@ async function onSubmit() {
     error.value = authErrorMessage(signInError)
     return
   }
-  await navigateTo('/portal')
+  // Only somewhere inside the portal: a ?next= from anywhere else is ignored.
+  const next = typeof route.query.next === 'string' && route.query.next.startsWith('/portal/') && !route.query.next.startsWith('//') ? route.query.next : '/portal'
+  await navigateTo(next)
 }
 
 // The clinic's link is passed along to sign-up, so a patient who taps

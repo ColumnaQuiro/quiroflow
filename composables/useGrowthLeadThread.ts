@@ -2,8 +2,10 @@
 
 export interface LeadThreadMessage {
   id: string
-  /** `lead` is them; `clinic` is us. Who on our side is not recorded. */
+  /** `lead` is them; `clinic` is us. */
   from: 'lead' | 'clinic'
+  /** Ours, sent by the AI receptionist on its own -- labelled for the team only. */
+  sentByAi?: boolean
   text: string
   channel: string
   status: string

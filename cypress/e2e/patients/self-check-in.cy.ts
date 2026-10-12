@@ -68,4 +68,15 @@ describe('Patient self check-in', () => {
       })
     })
   })
+
+  it('the desk sign carries a QR to the check-in, linked from Settings', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.login(account.email, account.password)
+      cy.visit('/settings/app')
+      cy.get('[data-cy="app-check-in-sign"]').should('have.attr', 'href', '/print/check-in-sign').and('have.attr', 'target', '_blank')
+      cy.visit('/print/check-in-sign', { onBeforeLoad: (win) => cy.stub(win, 'print').as('print') })
+      cy.get('[data-cy="check-in-sign-qr"]').should('have.attr', 'data-url').and('match', /\/portal\/check-in$/)
+      cy.get('@print').should('have.been.called')
+    })
+  })
 })

@@ -256,10 +256,10 @@ function withoutLeadThreads<Q extends { or: (filters: string) => Q }>(q: Q): Q {
   return hasGrowth.value ? q.or('lead_id.is.null,patient_id.not.is.null') : q
 }
 
-// Every list query and count shares these, so a count always describes the
-// list beside it.
-function inboxQuery(columns: string, opts?: { count: 'exact'; head: true }) {
-  const q = supabase.from('inbox_conversations').select(columns, opts).eq('my_archived', view.value === 'archived')
+// Every list query shares these, and inbox_counts applies the same ones, so a
+// count always describes the list beside it.
+function inboxQuery(columns: string) {
+  const q = supabase.from('inbox_conversations').select(columns).eq('my_archived', view.value === 'archived')
   if (view.value === 'snoozed') return q.not('my_snoozed_until', 'is', null)
   return view.value === 'active' ? q.is('my_snoozed_until', null) : q
 }
@@ -312,18 +312,17 @@ async function loadList(opts: { silent?: boolean; append?: boolean } = {}) {
   loadingMore.value = false
 }
 
+// All four in one pass (inbox_counts, 20261012060040): they were four exact
+// counts, and each rebuilt every conversation from every message -- a count
+// over inbox_conversations costs what listing it does. Same view and filters
+// as inboxQuery, so a count still describes the list beside it.
 let countsToken = 0
 async function loadCounts() {
   const token = ++countsToken
-  const count = (fn: (q: ReturnType<typeof inboxQuery>) => PromiseLike<{ count: number | null }>) => fn(inboxQuery('conversation_key', { count: 'exact', head: true })).then((r) => r.count ?? 0)
-  const [all, mine, unassigned, unread] = await Promise.all([
-    count((q) => q),
-    count((q) => q.eq('assigned_to', myId.value ?? '')),
-    count((q) => q.is('assigned_to', null)),
-    count((q) => q.eq('unread_for_me', true)),
-  ])
-  if (token !== countsToken) return
-  counts.value = { all, mine, unassigned, unread }
+  const { data, error } = await supabase.rpc('inbox_counts', { p_view: view.value, p_team_member_id: myId.value ?? '00000000-0000-0000-0000-000000000000' })
+  if (token !== countsToken || error) return
+  const row = data?.[0]
+  counts.value = { all: row?.all_count ?? 0, mine: row?.mine ?? 0, unassigned: row?.unassigned ?? 0, unread: row?.unread ?? 0 }
 }
 
 let searchTimer: ReturnType<typeof setTimeout> | undefined

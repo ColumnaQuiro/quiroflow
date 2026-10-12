@@ -52,6 +52,8 @@ export interface SlotDay {
 
 /** One list in the prompt: the free times of one or more types at one clinic. */
 export interface SlotGroup {
+  /** Which clinic the times are at -- what a booking from them is made at. */
+  clinicId: string
   /** Set only when the account has more than one clinic with times. */
   clinicName: string | null
   types: PromptType[]
@@ -179,7 +181,7 @@ export function receptionistSlotGroups(q: ReceptionistSlotQuery): ReceptionistAv
   if (perClinic.length === 0) return null
   const named = perClinic.length > 1
   return {
-    groups: perClinic.flatMap(({ clinic, lists }) => lists.map((list) => ({ clinicName: named ? clinic.name : null, ...list }))),
+    groups: perClinic.flatMap(({ clinic, lists }) => lists.map((list) => ({ clinicId: clinic.id, clinicName: named ? clinic.name : null, ...list }))),
   }
 }
 

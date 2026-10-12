@@ -5011,6 +5011,48 @@ export type Database = {
           },
         ]
       }
+      pay_plans: {
+        Row: {
+          account_id: string
+          base_cents: number
+          new_patient_cents: number
+          payments_pct: number
+          sales_pct: number
+          team_member_id: string
+          tier_mode: string
+          tiers: Json
+          updated_at: string
+          updated_by: string | null
+          visit_cents: number
+        }
+        Insert: {
+          account_id: string
+          base_cents?: number
+          new_patient_cents?: number
+          payments_pct?: number
+          sales_pct?: number
+          team_member_id: string
+          tier_mode?: string
+          tiers?: Json
+          updated_at?: string
+          updated_by?: string | null
+          visit_cents?: number
+        }
+        Update: {
+          account_id?: string
+          base_cents?: number
+          new_patient_cents?: number
+          payments_pct?: number
+          sales_pct?: number
+          team_member_id?: string
+          tier_mode?: string
+          tiers?: Json
+          updated_at?: string
+          updated_by?: string | null
+          visit_cents?: number
+        }
+        Relationships: []
+      }
       payment_methods: {
         Row: {
           account_id: string

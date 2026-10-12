@@ -83,8 +83,9 @@ describe('Growth AI receptionist', () => {
     cy.get('[data-test="knowledge-empty"]').should('contain', 'says it will check with a colleague')
     cy.contains('Nothing yet').scrollIntoView().should('be.visible')
 
-    // And the rule that keeps it from telling a patient something is booked.
-    cy.contains('offers times and never confirms a booking itself').scrollIntoView().should('be.visible')
+    // And when it books: only answering on its own, signed, never cancelling.
+    cy.contains('When it leaves a draft, it offers times and a person books.').scrollIntoView().should('be.visible')
+    cy.contains('It never cancels.').should('exist')
   })
 
   it('shows which channels exist rather than hiding the ones that do not', () => {

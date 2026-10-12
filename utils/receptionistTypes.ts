@@ -165,7 +165,7 @@ export interface BookedVisit {
  *
  * `listVisits` is off where the prompt already lists them (patient facts).
  */
-export function rescheduleSection(visits: BookedVisit[], timeZone: string, opts: { listVisits: boolean }): string {
+export function rescheduleSection(visits: BookedVisit[], timeZone: string, opts: { listVisits: boolean; canBook?: boolean }): string {
   if (visits.length === 0) return ''
   const list = visits
     .map((visit) => {
@@ -176,7 +176,7 @@ export function rescheduleSection(visits: BookedVisit[], timeZone: string, opts:
   return [
     `# Moving a visit they already have`,
     opts.listVisits ? `They have booked:\n${list}` : '',
-    `If they want to change the day or time of one of these, offer new times for that same type of appointment -- from the Booking list, or find_free_times -- and never a different type. This holds even when that type is not under "What you can offer", which is about new appointments. When they pick one, say you are passing the change on and that they will get a confirmation: it is not moved until then, and their current time stands meanwhile. If they want to cancel it instead, say your colleague will take care of it.`,
+    `If they want to change the day or time of one of these, offer new times for that same type of appointment -- from the Booking list, or find_free_times -- and never a different type. This holds even when that type is not under "What you can offer", which is about new appointments. ${opts.canBook ? 'When they pick one, move it with book_appointment (move_visit_on = its current day and time), and only once that confirms tell them it is moved.' : 'When they pick one, say you are passing the change on and that they will get a confirmation: it is not moved until then, and their current time stands meanwhile.'} If they want to cancel it instead, say your colleague will take care of it.`,
   ]
     .filter(Boolean)
     .join('\n')

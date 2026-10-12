@@ -1,10 +1,8 @@
-import { randomUUID } from 'node:crypto'
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { requireGrowth } from '~/server/utils/requireGrowth'
 import { automationEvent } from '~/server/utils/automationEngine'
-import { fetchAllRows } from '~/composables/useFetchAllRows'
-import { leadPhoneAsContactNumber, phoneMatches, whatsappDigits } from '~/utils/phone'
+import { claimConvertedLead, createPatientFromLead, findLikelyExistingPatients } from '~/server/utils/leadConversion'
 
 interface Body {
   /** Attach the lead to this existing patient instead of creating one. */
@@ -98,79 +96,17 @@ export default defineEventHandler(async (event) => {
       })
     }
 
-    const [firstName, ...rest] = lead.full_name.trim().split(/\s+/)
-    // The id is made here and the row is not read back in the same statement.
-    // RLS checks a returned row against the SELECT policy using the snapshot
-    // the INSERT started with, and for someone who sees only their own
-    // patients that policy asks my_own_patient_ids() -- which cannot yet
-    // contain the patient being inserted. So `.insert().select('id')` was a
-    // row-level-security error for every 'own'-scope converter. The same fix
-    // as AddPatientModal's.
-    const newPatientId = randomUUID()
-    const { error } = await supabase
-      .from('patients')
-      .insert({
-        id: newPatientId,
-        account_id: teamMember.account_id,
-        clinic_id: lead.clinic_id,
-        first_name: firstName || lead.full_name,
-        last_name: rest.join(' ') || null,
-        email: lead.email,
-        // Where they came from, kept on the patient so the acquisition story
-        // survives on the record itself and not only on the lead.
-        referral_source: lead.source,
-        // Someone who sees only their own patients has to be this patient's
-        // practitioner, or the record they have just created is one they
-        // cannot open -- and the phone number below would be refused with it.
-        default_practitioner_id: scope === 'own' ? teamMember.id : null,
-      })
-
-    if (error) {
-      // The RLS policy is the real gate; this is what it looks like when the
-      // explicit check above has been outgrown by a policy change.
-      throw createError({ statusCode: 403, statusMessage: `Could not create the patient record: ${error.message}` })
-    }
-    patientId = newPatientId
-
-    const contact = lead.phone ? leadPhoneAsContactNumber(lead.phone, defaultCountry) : null
-    if (contact) {
-      await supabase.from('patient_contact_numbers').insert({
-        account_id: teamMember.account_id,
-        patient_id: patientId,
-        number: contact.number,
-        country_code: contact.countryCode,
-        is_whatsapp: true,
-      })
-    }
+    patientId = await createPatientFromLead(supabase, teamMember.account_id, lead, {
+      // Someone who sees only their own patients has to be this patient's
+      // practitioner, or the record they have just created is one they
+      // cannot open -- and the phone number would be refused with it.
+      defaultPractitionerId: scope === 'own' ? teamMember.id : null,
+      defaultCountry,
+    })
   }
 
-  // Claim the lead only if nothing else already did. Two requests racing --
-  // a double click, or two people on the same lead -- both get here, and
-  // this is what stops the second from overwriting the first's patient_id
-  // and orphaning a record nobody will notice.
-  const { data: claimed } = await supabase
-    .from('leads')
-    .update({ stage: 'converted', patient_id: patientId, converted_at: new Date().toISOString() })
-    .eq('id', id)
-    .eq('account_id', teamMember.account_id)
-    .is('patient_id', null)
-    .select('id')
-    .maybeSingle()
-
-  if (!claimed) {
-    // Someone won the race. Return whichever patient the lead actually
-    // points at, not the one this request may have just created.
-    const { data: settled } = await supabase.from('leads').select('patient_id').eq('id', id).maybeSingle()
-    return { patientId: settled?.patient_id ?? patientId, created: false, alreadyConverted: true }
-  }
-
-  await supabase.from('lead_events').insert({
-    account_id: teamMember.account_id,
-    lead_id: id,
-    kind: 'note',
-    title: linkPatientId ? 'Linked to an existing patient' : 'Converted to a patient',
-    detail: lead.source ? `Attribution kept: ${lead.source}` : null,
-  })
+  const claim = await claimConvertedLead(supabase, teamMember.account_id, id, patientId!, { linked: Boolean(linkPatientId), source: lead.source })
+  if (!claim.claimed) return { patientId: claim.patientId, created: false, alreadyConverted: true }
 
   // Ends at once any run whose rule exits on conversion, rather than at its
   // next step (where the converted check would stop it anyway).
@@ -178,49 +114,3 @@ export default defineEventHandler(async (event) => {
 
   return { patientId, created: !linkPatientId, alreadyConverted: false }
 })
-
-type Supa = Awaited<ReturnType<typeof requireGrowth>>['supabase']
-
-/** Existing patients sharing this lead's phone or email. */
-async function findLikelyExistingPatients(supabase: Supa, accountId: string, phone: string | null, email: string | null) {
-  const found = new Map<string, { id: string; name: string; reason: string }>()
-
-  // Compared as E.164, not as text: a patient's number is stored local
-  // ("611732681") and the lead's international ("34611732681"), so an exact
-  // match on the column never found anyone -- a returning patient converted
-  // from an ad sailed past this check by phone. Every number, paged: the
-  // first 1000 alone would miss the rest of a clinic's patients.
-  const leadDigits = phone ? whatsappDigits(phone) : ''
-  if (leadDigits) {
-    const numbers = await fetchAllRows((from, to) =>
-      supabase
-        .from('patient_contact_numbers')
-        .select('number, country_code, patients(id, first_name, last_name)')
-        .eq('account_id', accountId)
-        .order('id')
-        .range(from, to),
-    )
-
-    for (const row of numbers) {
-      const p = row.patients
-      if (p && phoneMatches(row.number, row.country_code, leadDigits)) {
-        found.set(p.id, { id: p.id, name: [p.first_name, p.last_name].filter(Boolean).join(' '), reason: 'Same phone number' })
-      }
-    }
-  }
-
-  if (email) {
-    const { data } = await supabase
-      .from('patients')
-      .select('id, first_name, last_name')
-      .eq('account_id', accountId)
-      .ilike('email', email)
-      .limit(5)
-
-    for (const p of data ?? []) {
-      if (!found.has(p.id)) found.set(p.id, { id: p.id, name: [p.first_name, p.last_name].filter(Boolean).join(' '), reason: 'Same email address' })
-    }
-  }
-
-  return [...found.values()]
-}

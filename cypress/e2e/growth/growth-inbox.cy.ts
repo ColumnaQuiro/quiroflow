@@ -324,6 +324,22 @@ describe('Growth in the shared Inbox', () => {
     })
   })
 
+  // Answered on its own (#714): labelled for the team, so nobody takes it for
+  // a colleague's reply. The lead got the message alone.
+  it("labels the receptionist's own replies in a lead's thread", () => {
+    cy.visit('/inbox?growth=1')
+    seedConversation(account, 'AI Answered', 'handling').then((leadId) => {
+      cy.task('db:createLeadMessage', { accountId: account.accountId, leadId, direction: 'outbound', body: 'La primera visita son 70 €.', sentByAi: true })
+      cy.task('db:createLeadMessage', { accountId: account.accountId, leadId, direction: 'outbound', body: 'Te llamo yo mañana.' })
+      cy.reload()
+      cy.contains('[data-test="lead-row"]', 'AI Answered').click()
+      cy.get('[data-test="lead-thread"]').within(() => {
+        cy.contains('La primera visita son 70 €.').parent().find('[data-test="lead-message-ai"]').should('contain', 'AI receptionist')
+        cy.contains('Te llamo yo mañana.').parent().find('[data-test="lead-message-ai"]').should('not.exist')
+      })
+    })
+  })
+
   it('does not show a message the dry run only recorded as one that was sent', () => {
     // A rule in test mode writes what it WOULD have sent as an outbound row,
     // which is the same shape as a real one. This screen is where somebody

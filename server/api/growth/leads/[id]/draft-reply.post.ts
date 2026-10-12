@@ -34,6 +34,9 @@ export default defineEventHandler(async (event) => {
   switch (outcome.status) {
     case 'drafted':
       return { available: true as const, draft: outcome.draft }
+    // Only the tick sends; the button never asks it to.
+    case 'sent':
+      return { available: true as const, draft: outcome.text }
     // Not configured is a normal state, not a failure -- same handling as the
     // test chat and the review drafter.
     case 'unavailable':

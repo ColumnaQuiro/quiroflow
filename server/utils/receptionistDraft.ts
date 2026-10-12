@@ -1,4 +1,7 @@
+import type { H3Event } from 'h3'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
+import { announceHandover, sendAsReceptionist } from '~/server/utils/receptionistSend'
+import { autoReplyHeldBack } from '~/utils/receptionistAutoReply'
 import { buildSystemPrompt, loadBookedVisits, loadOfferedTypes, loadPatientPractitioners, loadReceptionistCalendar, toConfig, uniqueTypes, type LeadOrigin } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptionistModel'
 import { cameFromAd } from '~/utils/receptionistLeadOrigin'
@@ -44,6 +47,8 @@ const HISTORY_TURNS = 24
 export type DraftOutcome =
   /** Written to ai_draft_body. */
   | { status: 'drafted'; draft: string }
+  /** Sent to the lead by the receptionist itself (`send`); nothing stored. */
+  | { status: 'sent'; text: string; handedOver: boolean }
   /** No model key on this deployment -- a normal state, not a failure. */
   | { status: 'unavailable' }
   /** The model declined. An answer, not an error. */
@@ -68,7 +73,17 @@ export type DraftOutcome =
  * loadReceptionistCalendar): the Inbox button passes one alongside the
  * member's own client, the cron's is already that.
  */
-export async function draftLeadReply(supabase: any, accountId: string, leadId: string, calendarClient: any = supabase): Promise<DraftOutcome> {
+export async function draftLeadReply(
+  supabase: any,
+  accountId: string,
+  leadId: string,
+  calendarClient: any = supabase,
+  // From the tick, when the clinic's hours switches say the receptionist
+  // answers now (utils/receptionistAutoReply.ts): the reply is sent rather
+  // than stored -- unless a person is in the conversation, the day's limit is
+  // reached, or it is not a WhatsApp conversation, when it drafts as before.
+  opts: { send?: { event: H3Event } } = {},
+): Promise<DraftOutcome> {
   const { data: lead } = await supabase
     .from('leads')
     // Where they came from, so a reply that depends on it (an ad-only price)
@@ -98,7 +113,7 @@ export async function draftLeadReply(supabase: any, accountId: string, leadId: s
 
   const { data: messages } = await supabase
     .from('whatsapp_messages')
-    .select('direction, body_preview, created_at')
+    .select('direction, body_preview, created_at, sent_by_ai, channel')
     .eq('lead_id', leadId)
     .order('created_at', { ascending: false })
     .limit(HISTORY_TURNS)
@@ -160,12 +175,25 @@ export async function draftLeadReply(supabase: any, accountId: string, leadId: s
   const calendar = await loadReceptionistCalendar(calendarClient, accountId, config, bookable, undefined, undefined, practitionerIds)
   const findFreeTimes = calendar.availability ? freeTimesLookup(calendarClient, accountId, config, bookable, calendar.timeZone, practitionerIds) : null
 
-  const { text: draft, refused } = await runReceptionistModel(createAnthropicClient(apiKey), {
+  // Sent rather than drafted: asked for, a WhatsApp conversation (the one
+  // channel the composer's send reaches for a lead), and nothing holding it
+  // back in the conversation itself.
+  const lastInbound = [...ordered].reverse().find((m: { direction: string }) => m.direction === 'inbound') as { channel?: string | null } | undefined
+  const sends =
+    Boolean(opts.send) &&
+    (lastInbound?.channel ?? 'whatsapp') === 'whatsapp' &&
+    autoReplyHeldBack(
+      ordered.map((m: { direction: string; sent_by_ai?: boolean | null; created_at: string }) => ({ direction: m.direction, sentByAi: m.sent_by_ai === true, createdAt: m.created_at })),
+      new Date(),
+    ) === null
+
+  const { text: draft, refused, handedOver } = await runReceptionistModel(createAnthropicClient(apiKey), {
     model: MODEL,
     maxTokens: MAX_TOKENS,
-    system: buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, audience, calendar, leadOrigin, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, draft: { personName: lead.full_name ?? null } }),
+    system: buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, audience, calendar, leadOrigin, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, draft: { personName: lead.full_name ?? null }, sendsItself: sends }),
     messages: history,
     findFreeTimes,
+    handOver: sends,
     internalNotes: internalNotes(config),
     logLabel: `lead ${leadId}`,
   })
@@ -173,6 +201,33 @@ export async function draftLeadReply(supabase: any, accountId: string, leadId: s
   // A refusal is the model declining to write this, which is a real answer
   // and not an error -- reported as such rather than dressed up as a failed
   // request or, worse, saved as a reply.
+  if (sends && opts.send) {
+    const target = { kind: 'lead' as const, leadId }
+    const name = lead.full_name ?? 'Lead'
+    // Nothing to send: the lead still has a question nobody answers, so it
+    // goes to a person now rather than waiting for the next tick to fail too.
+    if (refused || !draft) {
+      await handToPerson(supabase, accountId, leadId)
+      await announceHandover(supabase, accountId, target, name, 'La recepcionista no ha podido responder a su último mensaje.')
+      return { status: 'refused' }
+    }
+    try {
+      await sendAsReceptionist(opts.send.event, supabase, accountId, target, draft)
+    } catch (err) {
+      // Refused by WhatsApp (the window closed, a bad number): left as a draft,
+      // so a person still sees what it would have said.
+      console.error(`[receptionist] could not send to lead ${leadId}:`, (err as Error)?.message ?? err)
+      await supabase.from('leads').update({ ai_draft_body: draft, ai_draft_created_at: new Date().toISOString(), ...(newestInboundAt ? { ai_drafted_through_at: newestInboundAt } : {}) }).eq('id', leadId).eq('account_id', accountId)
+      return { status: 'drafted', draft }
+    }
+    await supabase.from('leads').update({ ai_draft_body: null, ...(newestInboundAt ? { ai_drafted_through_at: newestInboundAt } : {}) }).eq('id', leadId).eq('account_id', accountId)
+    if (handedOver) {
+      await handToPerson(supabase, accountId, leadId)
+      await announceHandover(supabase, accountId, target, name, handedOver)
+    }
+    return { status: 'sent', text: draft, handedOver: Boolean(handedOver) }
+  }
+
   if (refused) return { status: 'refused' }
 
   if (!draft) return { status: 'refused' }
@@ -207,4 +262,13 @@ async function hasBeenBefore(supabase: any, accountId: string, patientId: string
     .eq('status', 'completed')
     .is('deleted_at', null)
   return (count ?? 0) > 0
+}
+
+/**
+ * The lead is a person's now: 'needs_human', which the tick never answers.
+ * Only from the states the receptionist answers in, so somebody who took it
+ * over meanwhile keeps it.
+ */
+async function handToPerson(supabase: any, accountId: string, leadId: string) {
+  await supabase.from('leads').update({ ai_state: 'needs_human' }).eq('id', leadId).eq('account_id', accountId).in('ai_state', ['handling', 'none'])
 }

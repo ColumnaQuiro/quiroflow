@@ -1,4 +1,7 @@
+import { serverSupabaseServiceRole } from '#supabase/server'
+import type { Database } from '~/types/database.types'
 import { toE164, toE164Loose } from '~/utils/phone'
+import { findPatientIdsByPhone, pickInboundPatientId } from '~/server/utils/whatsappOwner'
 
 // Sends via Meta's WhatsApp Business Cloud API directly. Business-initiated
 // messages like recalls and confirmations require a pre-approved template
@@ -47,6 +50,11 @@ export default defineEventHandler(async (event) => {
   }
 
   let to: string | null
+  // Whose thread the row is filed in, when that is not body.patientId: a
+  // converted lead's patient, or the patient who owns a bare number. As in
+  // inboxSend -- without it the template was filed under nobody, and showed
+  // as a conversation of its own with just the number.
+  let ownerPatientId: string | null = null
   if (body.patientId) {
     const { data: patient } = await supabase.from('patients').select('id, is_minor, do_not_contact').eq('id', body.patientId).maybeSingle()
     if (!patient) {
@@ -79,7 +87,7 @@ export default defineEventHandler(async (event) => {
     // lead: stored as international digits with no "+", hence Loose.
     const { data: lead } = await supabase
       .from('leads')
-      .select('id, phone')
+      .select('id, phone, patient_id')
       .eq('id', body.leadId)
       .eq('account_id', teamMember.account_id)
       .is('deleted_at', null)
@@ -88,6 +96,7 @@ export default defineEventHandler(async (event) => {
     if (!lead.phone) throw createError({ statusCode: 400, statusMessage: 'This lead has no phone number to send to' })
     to = toE164Loose(`+${lead.phone}`, account.default_phone_country ?? 'ES')
     if (!to) throw createError({ statusCode: 400, statusMessage: "This lead's phone number could not be formatted for WhatsApp" })
+    ownerPatientId = lead.patient_id
   } else {
     // Meta takes digits; the message is recorded under the number exactly as
     // the conversation has it (below), so it lands in the same thread.
@@ -95,6 +104,9 @@ export default defineEventHandler(async (event) => {
     if (!to || to.length < 8) {
       throw createError({ statusCode: 400, statusMessage: 'That phone number could not be formatted for WhatsApp' })
     }
+    const admin = serverSupabaseServiceRole<Database>(event)
+    const owners = await findPatientIdsByPhone(admin, teamMember.account_id, to)
+    ownerPatientId = await pickInboundPatientId(admin, teamMember.account_id, to, owners)
   }
 
   const components: Record<string, unknown>[] = []
@@ -177,7 +189,7 @@ export default defineEventHandler(async (event) => {
     }),
     supabase.from('whatsapp_messages').insert({
       account_id: teamMember.account_id,
-      patient_id: body.patientId ?? null,
+      patient_id: body.patientId ?? ownerPatientId,
       lead_id: body.patientId ? null : (body.leadId ?? null),
       appointment_id: body.appointmentId ?? null,
       phone_number: body.patientId || body.leadId ? to : body.phoneNumber,

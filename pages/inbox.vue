@@ -929,6 +929,14 @@ onMounted(async () => {
       if (leadKey) openConversationByKey(leadKey)
       return
     }
+    // A converted lead has no row of its own: its thread is the patient's
+    // now (20261012055054). The lead's page in Growth still links here by
+    // lead, and so does a push sent before the conversion.
+    const { data: lead } = await supabase.from('leads').select('patient_id').eq('id', key.slice('lead:'.length)).maybeSingle()
+    if (lead?.patient_id) {
+      openConversationByKey(lead.patient_id)
+      return
+    }
     // Lead rows arrive from the Growth endpoint, after mount.
     const stop = watch(leadConversations, (list) => {
       const lead = list.find((c) => c.key === key)
@@ -1145,7 +1153,9 @@ const isNewConversation = computed(() => threadReady.value && thread.value.lengt
 // and a push. Not on a conversation that has no messages yet.
 const { notes: threadNotes, saving: noteSaving, error: noteError, add: addNote, remove: removeNote } = useInboxNotes({
   accountId: () => store.accountId,
-  conversationKey: () => (selected.value && !isNewConversation.value ? selected.value.key : null),
+  // A lead's thread is keyed lead:<id>, as its reads and assignment are;
+  // converting the lead moves its notes to the patient's thread.
+  conversationKey: () => (selectedLead.value ? selectedLead.value.key : selected.value && !isNewConversation.value ? selected.value.key : null),
   authorId: () => myId.value,
   notifyMentions: (noteId) => useStaffFetch('/api/inbox/note-mentions', { method: 'POST', body: { noteId } }),
 })
@@ -1956,7 +1966,15 @@ function avatarInitials(name: string) {
         <!-- Leads are assigned like any other conversation, from the thread's own header. -->
         <GrowthInboxLeadThread
           v-if="leadThread"
+          v-model:note-mode="noteMode"
           :thread="leadThread"
+          :notes="threadNotes"
+          :team="team"
+          :my-id="myId"
+          :note-saving="noteSaving"
+          :note-error="noteError"
+          @save-note="saveNote"
+          @delete-note="removeNote"
           :sending="leadSending"
           :drafting="leadDrafting"
           @back="selectedKey = null; closeLeadThread()"

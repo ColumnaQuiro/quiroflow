@@ -26,6 +26,10 @@ export default defineEventHandler(async (event) => {
     )
     .eq('account_id', teamMember.account_id)
     .is('deleted_at', null)
+    // A converted lead's thread is the patient's now: conversion folds the
+    // lead's messages into it (20261012055054), and listing the lead too was
+    // the same person twice -- with replies landing in whichever row was open.
+    .is('patient_id', null)
     .order('created_at', { referencedTable: 'whatsapp_messages', ascending: false })
     .limit(1, { referencedTable: 'whatsapp_messages' })
 

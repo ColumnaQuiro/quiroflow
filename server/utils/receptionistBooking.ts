@@ -10,6 +10,7 @@ import { pushAppointmentEvent } from '~/server/utils/staffPush'
 import { claimAutomaticConfirmation, sendAppointmentConfirmation } from '~/server/utils/appointmentNotifications'
 import { receptionistServiceClient } from '~/server/utils/receptionistAudit'
 import { clinicDateOf, startOfLocalDate, wallClockToUtc } from '~/utils/clinicClock'
+import { newPatientDetails } from '~/utils/receptionistTypes'
 
 // The AI receptionist booking a visit, or moving one, on its own -- only when
 // it is answering on its own (utils/receptionistAutoReply.ts): a draft a
@@ -52,6 +53,8 @@ export const BOOK_APPOINTMENT: Anthropic.Tool = {
       date: { type: 'string', description: 'The day, as YYYY-MM-DD.' },
       time: { type: 'string', description: "The start time on the clinic's clock, as HH:MM, exactly as listed." },
       move_visit_on: { type: 'string', description: 'To move a visit they already have instead of booking a new one: that visit\'s current day and time, as "YYYY-MM-DD HH:MM".' },
+      full_name: { type: 'string', description: 'For someone not yet a patient: their first name and surname(s) exactly as they wrote them in the conversation. Leave out if they have not given it.' },
+      email: { type: 'string', description: 'For someone not yet a patient: the email address they wrote in the conversation. Leave out if they have not given one.' },
     },
     required: ['date', 'time'],
     additionalProperties: false,
@@ -86,7 +89,7 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
   let used = false
   return async (input) => {
     if (used) return { content: 'You have already booked or moved a visit in this reply. Do not book again: tell them what was booked.', isError: true }
-    const value = (input ?? {}) as { appointment_type?: unknown; date?: unknown; time?: unknown; move_visit_on?: unknown }
+    const value = (input ?? {}) as { appointment_type?: unknown; date?: unknown; time?: unknown; move_visit_on?: unknown; full_name?: unknown; email?: unknown }
     const date = typeof value.date === 'string' ? value.date.trim() : ''
     const time = typeof value.time === 'string' ? value.time.trim() : ''
     if (!DAY.test(date) || !HH_MM.test(time)) return { content: 'date must be YYYY-MM-DD and time HH:MM, exactly as listed.', isError: true }
@@ -139,7 +142,7 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
     const writer = receptionistServiceClient(ctx.event) as unknown as Supa
 
     // The patient: a lead becomes one first, as the Convert button does it.
-    const patient = await ensurePatient(ctx, writer, chosen.practitionerId)
+    const patient = await ensurePatient(ctx, writer, chosen.practitionerId, newPatientDetails(value.full_name, value.email))
     if ('error' in patient) return { content: patient.error, isError: true }
 
     const { data: practitioner } = await ctx.service.from('team_members').select('full_name').eq('id', chosen.practitionerId).maybeSingle()
@@ -225,8 +228,13 @@ async function candidatePractitioners(ctx: BookingContext, moving: BookedAppoint
   return [...new Set([...preferred, ...((data ?? []) as { id: string }[]).map((m) => m.id)])]
 }
 
-/** The patient the visit is for; a lead is converted first. */
-async function ensurePatient(ctx: BookingContext, writer: Supa, practitionerId: string): Promise<{ patientId: string } | { error: string }> {
+/** The patient the visit is for; a lead is converted first, with the name and email they gave. */
+async function ensurePatient(
+  ctx: BookingContext,
+  writer: Supa,
+  practitionerId: string,
+  given: { fullName: string | null; email: string | null },
+): Promise<{ patientId: string } | { error: string }> {
   let patientId: string | null = ctx.person.patientId
   if (!patientId && ctx.person.kind === 'lead') {
     const { data: lead } = await ctx.service
@@ -235,8 +243,10 @@ async function ensurePatient(ctx: BookingContext, writer: Supa, practitionerId: 
       .eq('id', ctx.person.leadId)
       .eq('account_id', ctx.accountId)
       .maybeSingle()
-    const l = lead as { id: string; clinic_id: string | null; full_name: string; phone: string | null; email: string | null; source: string | null; patient_id: string | null } | null
-    if (!l) return { error: 'This enquiry could not be found. Call hand_over_to_colleague.' }
+    const found = lead as { id: string; clinic_id: string | null; full_name: string; phone: string | null; email: string | null; source: string | null; patient_id: string | null } | null
+    if (!found) return { error: 'This enquiry could not be found. Call hand_over_to_colleague.' }
+    // What they told us in the conversation wins over the WhatsApp profile name.
+    const l = { ...found, full_name: given.fullName ?? found.full_name, email: given.email ?? found.email }
     patientId = l.patient_id
     if (!patientId) {
       // Maybe already a patient: a person decides which record, never a guess.
@@ -249,6 +259,10 @@ async function ensurePatient(ctx: BookingContext, writer: Supa, practitionerId: 
         defaultPractitionerId: practitionerId,
         defaultCountry: (account as { default_phone_country: string | null } | null)?.default_phone_country ?? 'ES',
       })
+      // The lead keeps the same name and email the patient record got.
+      if (given.fullName || given.email) {
+        await writer.from('leads').update({ ...(given.fullName ? { full_name: given.fullName } : {}), ...(given.email ? { email: given.email } : {}) } as never).eq('id', l.id).eq('account_id', ctx.accountId)
+      }
       const claim = await claimConvertedLead(writer, ctx.accountId, l.id, created, { linked: false, source: l.source })
       patientId = claim.patientId
       if (claim.claimed) await automationEvent(ctx.service as any, ctx.accountId, { leadId: l.id }, 'lead.converted', getRequestURL(ctx.event).origin)

@@ -4,6 +4,7 @@ import { notesBetween } from '~/utils/inboxNotes'
 import { matchPendingToServer, mergePendingIntoThread, newestInConversation } from '~/utils/inboxPendingMessages'
 import { CHANNEL_LABEL } from '~/composables/useGrowthConversations'
 import { snoozeStateOf, type SnoozeRow } from '~/utils/inboxSnooze'
+import { threadTailSince, mergeThreadTail } from '~/utils/inboxThreadTail'
 import { replyWindowPill, REPLY_WINDOW_MS, REPLY_WINDOW_WARN_MS } from '~/utils/inboxReplyWindow'
 
 // The Inbox: one row per conversation from the inbox_conversations view
@@ -767,7 +768,11 @@ async function loadThread(c: Conversation | null, opts: { silent?: boolean } = {
   }
   if (!opts.silent) threadLoading.value = true
   threadError.value = false
-  const messages = await fetchThread(c)
+  // A refresh of the thread already on screen asks only for what can have
+  // changed -- what is newer, and the last day's, whose ticks can still move --
+  // instead of its newest 300 again, every minute and after every message.
+  const onScreen = opts.silent && threadKey.value === c.key && threadMessages.value.length > 0
+  const messages = onScreen ? await refreshThreadTail(c, threadMessages.value) : await fetchThread(c)
   if (token !== threadToken) return
   threadLoading.value = false
   if (!messages) {
@@ -798,8 +803,16 @@ function cancelPrefetch() {
   clearTimeout(prefetchTimer)
 }
 
-async function fetchThreadUncached(c: Conversation): Promise<Message[] | null> {
+/** The thread on screen with its last day read again (utils/inboxThreadTail.ts). */
+async function refreshThreadTail(c: Conversation, current: Message[]): Promise<Message[] | null> {
+  const sinceMs = threadTailSince(current)
+  const tail = await fetchThreadUncached(c, new Date(sinceMs).toISOString())
+  return tail ? mergeThreadTail(current, tail, sinceMs) : null
+}
+
+async function fetchThreadUncached(c: Conversation, since?: string): Promise<Message[] | null> {
   let wa = withoutLeadThreads(supabase.from('whatsapp_messages').select(THREAD_COLUMNS))
+  if (since) wa = wa.gt('created_at', since)
   if (c.patientId) wa = wa.eq('patient_id', c.patientId)
   else if (c.phoneNumber) wa = wa.eq('phone_number', c.phoneNumber).is('patient_id', null)
   else if (c.externalContactId) wa = wa.eq('external_contact_id', c.externalContactId).is('patient_id', null)
@@ -807,7 +820,9 @@ async function fetchThreadUncached(c: Conversation): Promise<Message[] | null> {
   const [{ data: waData, error }, app] = await Promise.all([
     wa.order('created_at', { ascending: false }).limit(300),
     c.patientId
-      ? supabase.from('patient_app_messages').select('id, patient_id, direction, body, created_at, sent_by_ai').eq('patient_id', c.patientId).order('created_at', { ascending: false }).limit(300)
+      ? (since
+          ? supabase.from('patient_app_messages').select('id, patient_id, direction, body, created_at, sent_by_ai').eq('patient_id', c.patientId).gt('created_at', since).order('created_at', { ascending: false }).limit(300)
+          : supabase.from('patient_app_messages').select('id, patient_id, direction, body, created_at, sent_by_ai').eq('patient_id', c.patientId).order('created_at', { ascending: false }).limit(300))
       : Promise.resolve({ data: [] as { id: string; patient_id: string; direction: string; body: string; created_at: string; sent_by_ai: boolean }[], error: null }),
   ])
   // A failed read keeps whatever is on screen rather than emptying the
@@ -1534,8 +1549,14 @@ function bubbleText(m: Message): string {
 // Live updates: new inbound/outbound messages land without a manual refresh,
 // silently -- re-showing the skeleton on each one was a layout jump. Only the
 // list's head and the open thread are re-read, not every message.
+//
+// A tab nobody is looking at does none of it, and catches up the moment it is
+// shown again. Inbox tabs left open
+// overnight were re-reading the list, the counts, the badge, the leads and the
+// open thread every minute, with nobody there to see it.
 let refreshTimer: ReturnType<typeof setTimeout> | undefined
 function refreshSoon() {
+  if (document.visibilityState === 'hidden') return
   clearTimeout(refreshTimer)
   refreshTimer = setTimeout(() => {
     loadList({ silent: true })
@@ -1610,11 +1631,18 @@ onUnmounted(() => {
 // inbox stale. A minute is enough now that each refresh reads the list's
 // head rather than 2,000 messages.
 let pollTimer: ReturnType<typeof setInterval> | null = null
+// Shown again: whatever changed meanwhile, at once -- and the websocket may
+// have dropped while the tab was in the background, so once either way.
+function onInboxVisible() {
+  if (document.visibilityState === 'visible') refreshSoon()
+}
 onMounted(() => {
   pollTimer = setInterval(() => refreshSoon(), 60000)
+  document.addEventListener('visibilitychange', onInboxVisible)
 })
 onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer)
+  document.removeEventListener('visibilitychange', onInboxVisible)
 })
 
 const listEl = ref<HTMLElement | null>(null)

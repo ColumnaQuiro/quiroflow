@@ -1,6 +1,7 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { H3Event } from 'h3'
 import type { Database } from '~/types/database.types'
+import { inboundNonTextBody, skipReaction, type InboundNonTextMessage } from '~/utils/whatsappInbound'
 import { downloadMetaMedia, extensionForMimeType, type MediaKind } from '~/server/utils/whatsappSend'
 import { notifyInboxTeamMembers } from '~/server/utils/pushNotifications'
 import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
@@ -36,6 +37,9 @@ interface MetaMessage {
   audio?: MetaMedia
   document?: MetaMedia
   sticker?: MetaMedia
+  reaction?: InboundNonTextMessage['reaction']
+  location?: InboundNonTextMessage['location']
+  contacts?: InboundNonTextMessage['contacts']
 }
 import type { InstagramMessagingEvent } from '~/server/utils/instagramWebhook'
 import { leadForWhatsAppSender } from '~/server/utils/whatsappLeads'
@@ -389,6 +393,8 @@ export default defineEventHandler(async (event) => {
         // shortcut -- two copies arriving at once both get past it, which is
         // what the insert's own duplicate check below is for.
         if (await alreadyStored(supabase, msg.id)) continue
+        // A reaction being taken back: not a message.
+        if (skipReaction(msg)) continue
 
         const patientIds = await findPatientIdsByPhone(supabase, account.id, msg.from)
         // One of them, chosen by a fixed rule rather than by whichever row
@@ -439,7 +445,10 @@ export default defineEventHandler(async (event) => {
             insert.body_preview = media.caption?.slice(0, 200) ?? '(media download failed)'
           }
         } else {
-          const text = replyText(msg)
+          // Text and buttons; otherwise a reaction, a location, a contact or
+          // a type the API does not pass on -- each of which used to be an
+          // empty bubble.
+          const text = replyText(msg) || inboundNonTextBody(msg) || ''
           insert.body_preview = text.slice(0, 2000) || null
         }
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { AppointmentPanelInputs } from '~/composables/useAppointmentPanelLoader'
 import { orderTypes } from '~/utils/appointmentTypes'
+import { listingSummary, sideLettersFor, type Listings } from '~/utils/spinalListings'
 import type { NoShowRisk } from '~/utils/noShowRisk'
 // PracticeHub's "Practitioner Dashboard" is a chronological worklist of a
 // practitioner's own day, click a patient to jump straight into charting.
@@ -39,6 +40,8 @@ interface AppointmentRow {
   source: string
   patients: { first_name: string; last_name: string | null } | null
   appointment_types: { name: string; color: string } | null
+  /** The visit's listing, as a line: "C5 D · L5 I/D". */
+  listing?: string
 }
 
 const supabase = useSupabaseClient()
@@ -144,7 +147,7 @@ async function loadDay(silent = false) {
   const { data } = await supabase
     .from('appointments')
     .select(
-      'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, confirmation_status, source, patients(first_name, last_name), appointment_types(name, color), visit_notes(appointment_id)',
+      'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, confirmation_status, source, patients(first_name, last_name), appointment_types(name, color), visit_notes(appointment_id), visit_listings(listings)',
     )
     .eq('clinic_id', store.currentClinicId)
     .eq('practitioner_id', practitionerId.value)
@@ -158,8 +161,14 @@ async function loadDay(silent = false) {
 
   // Whether each visit has a note comes embedded in the same request, rather
   // than as a second round trip once the list is back.
-  const rows = (data as unknown as (AppointmentRow & { visit_notes: { appointment_id: string }[] | null })[]) ?? []
-  appointments.value = rows.map(({ visit_notes: _notes, ...a }) => a)
+  type Row = AppointmentRow & { visit_notes: { appointment_id: string }[] | null; visit_listings: { listings: Listings } | { listings: Listings }[] | null }
+  const rows = (data as unknown as Row[]) ?? []
+  // One-to-one on appointment_id, so PostgREST may embed an object or a list.
+  const listingOf = (r: Row) => (Array.isArray(r.visit_listings) ? r.visit_listings[0]?.listings : r.visit_listings?.listings) ?? null
+  appointments.value = rows.map((r) => {
+    const { visit_notes: _notes, visit_listings: _listings, ...a } = r
+    return { ...a, listing: listingSummary(listingOf(r), (x) => x, sideLettersFor(t)) }
+  })
   chartedAppointmentIds.value = new Set(rows.filter((a) => (a.visit_notes ?? []).length > 0).map((a) => a.id))
 
   // Keep the selection pointed at the fresh row (not the stale pre-reload
@@ -432,6 +441,7 @@ onMounted(() => {
                       <span class="h-[6px] w-[6px] shrink-0 rounded-full" :style="{ backgroundColor: a.appointment_types?.color ?? '#9CA3AF' }" />
                       {{ a.appointment_types?.name ?? t('No type', 'Sin tipo') }}
                     </span>
+                    <span v-if="a.listing" class="block truncate text-[11.5px] font-medium text-ink-600" data-cy="worklist-listing">{{ a.listing }}</span>
                   </span>
                   <PractitionerNoShowRiskPill v-if="a.status === 'booked' && !a.checked_in_at" :risk="riskByPatient.get(a.patient_id)" />
                   <UiPill :tone="statusTone(a.status)" dot>{{ statusLabel(a.status) }}</UiPill>

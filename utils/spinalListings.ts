@@ -31,12 +31,45 @@ export function hasSide(listings: Listings, level: string, side: 'L' | 'R'): boo
   return v === side || v === 'B'
 }
 
-/** "C5 R · T4 L · L5 L/R", head to foot, then the extremities. */
-export function listingSummary(listings: Listings | null | undefined, extremityName: (level: string) => string = (l) => l): string {
+/** The letters for each side in the reader's language: L / R, or I / D (izquierda / derecha). */
+export interface SideLetters { L: string; R: string }
+export const SIDES_EN: SideLetters = { L: 'L', R: 'R' }
+export function sideLettersFor(t: (en: string, es: string) => string): SideLetters {
+  return { L: t('L', 'I'), R: t('R', 'D') }
+}
+export function sideText(side: ListingSide, letters: SideLetters = SIDES_EN): string {
+  return side === 'B' ? `${letters.L}/${letters.R}` : letters[side]
+}
+
+/** "C5 R · T4 L · L5 L/R" (or "C5 D · T4 I · L5 I/D"), head to foot, then the extremities. */
+export function listingSummary(listings: Listings | null | undefined, extremityName: (level: string) => string = (l) => l, letters: SideLetters = SIDES_EN): string {
   if (!listings) return ''
   return Object.keys(listings)
     .filter((k) => listings[k] === 'L' || listings[k] === 'R' || listings[k] === 'B')
     .sort((a, b) => (ORDER.indexOf(a) === -1 ? 999 : ORDER.indexOf(a)) - (ORDER.indexOf(b) === -1 ? 999 : ORDER.indexOf(b)))
-    .map((k) => `${(EXTREMITY_LEVELS as readonly string[]).includes(k) ? extremityName(k) : k} ${listings[k] === 'B' ? 'L/R' : listings[k]}`)
+    .map((k) => `${(EXTREMITY_LEVELS as readonly string[]).includes(k) ? extremityName(k) : k} ${sideText(listings[k]!, letters)}`)
     .join(' · ')
+}
+
+// The listing, written into the note's Action as its first line -- "Ajustado:
+// C5 D · L5 I/D" -- so the signed note and the notes history carry it. The
+// line is recognised by its prefix in either language and kept in step as the
+// segments are tapped; everything after it in Action is the practitioner's.
+const LISTING_LINE_PREFIXES = ['Adjusted:', 'Ajustado:']
+
+export function listingActionLine(summary: string, t: (en: string, es: string) => string): string {
+  return summary ? t(`Adjusted: ${summary}`, `Ajustado: ${summary}`) : ''
+}
+
+/** Action with its listing line set to `line` -- replaced, added at the top, or removed when empty. */
+export function syncListingLine(action: string, line: string): string {
+  const lines = action ? action.split('\n') : []
+  const has = lines.length > 0 && LISTING_LINE_PREFIXES.some((p) => lines[0]!.startsWith(p))
+  if (has) {
+    if (line) lines[0] = line
+    else lines.shift()
+  } else if (line) {
+    lines.unshift(line)
+  }
+  return lines.join('\n')
 }

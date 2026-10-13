@@ -631,6 +631,7 @@ export const STOP_REASONS: Record<string, Pair> = {
   step_removed: ['The step they were on was removed', 'Se quitó el paso en el que estaba'],
   appointment_deleted: ['The appointment was deleted', 'Se eliminó la cita'],
   appointment_cancelled: ['The appointment was cancelled', 'Se canceló la cita'],
+  appointment_answered: ['They already confirmed or asked to change the appointment', 'Ya confirmó o pidió cambiar la cita'],
 }
 
 /** A run history row's outcome, in words. */

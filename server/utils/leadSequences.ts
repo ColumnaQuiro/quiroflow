@@ -55,6 +55,9 @@ export type StopReason =
   | 'appointment_deleted'
   // The visit a reminder run was counting down to was cancelled.
   | 'appointment_cancelled'
+  // The patient already answered the reminder -- confirmed, or asked to
+  // change the visit -- so the rest of it has nothing left to ask.
+  | 'appointment_answered'
 
 /**
  * 'defer' is the third answer, and the reason this is not a boolean.
@@ -231,6 +234,7 @@ export const STOP_REASON_TEXT: Record<StopReason, string> = {
   step_removed: 'The step they were on was removed from the automation',
   appointment_deleted: 'The appointment it was about was deleted',
   appointment_cancelled: 'The appointment it was reminding them of was cancelled',
+  appointment_answered: 'The patient already confirmed the appointment or asked to change it',
 }
 
 /** What a step is called in the history, copied at the time it ran. */

@@ -3665,6 +3665,21 @@ async function setAppointmentStatus(opts: { appointmentId: string; status: strin
   return { ok: true }
 }
 
+/** The patient's answer to a reminder: 'confirmed', 'reschedule_requested', 'pending' or null. */
+async function setConfirmationStatus(opts: { appointmentId: string; confirmationStatus: string | null }) {
+  assertOk(await admin.from('appointments').update({ confirmation_status: opts.confirmationStatus }).eq('id', opts.appointmentId))
+  return { ok: true }
+}
+
+/** Moves a visit to another time, keeping its length, as the calendar does. */
+async function moveAppointment(opts: { appointmentId: string; startsAt: string }) {
+  const row = unwrap(await admin.from('appointments').select('starts_at, ends_at').eq('id', opts.appointmentId).single()) as { starts_at: string; ends_at: string }
+  const length = Date.parse(row.ends_at) - Date.parse(row.starts_at)
+  const startsAt = new Date(opts.startsAt)
+  assertOk(await admin.from('appointments').update({ starts_at: startsAt.toISOString(), ends_at: new Date(startsAt.getTime() + length).toISOString() }).eq('id', opts.appointmentId))
+  return { ok: true }
+}
+
 /** What /account saves on a team member, read back. */
 async function teamMemberById(opts: { teamMemberId: string }) {
   const row = unwrap(
@@ -4218,6 +4233,8 @@ export const dbTasks = {
   'db:inboxAssignment': inboxAssignment,
   'db:messagesFromNumber': messagesFromNumber,
   'db:setAppointmentStatus': setAppointmentStatus,
+  'db:setConfirmationStatus': setConfirmationStatus,
+  'db:moveAppointment': moveAppointment,
   'db:checkInAppointment': checkInAppointment,
   'db:setLeadPipelineSettings': setLeadPipelineSettings,
   'db:setCancellationFee': setCancellationFee,

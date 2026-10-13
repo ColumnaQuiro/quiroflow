@@ -70,14 +70,22 @@ const RECALLS_MIN_DAYS = 21
 // alone must not discard a recalls count still on its way from a full load.
 const badgeTokens: Record<NavBadge, number> = { myday: 0, recalls: 0, automations: 0, inbox: 0 }
 let lastFullLoad = 0
+// The recalls count on its own, longer clock. Who is due a recall changes
+// over days, and the count runs patient_visit_facts over every appointment
+// the account has (~340 ms on production's database) -- it was asked on every
+// return to the tab, hundreds of times a day. A refresh that names 'recalls'
+// (snoozing someone on /recalls) still gets a fresh count at once.
+const RECALLS_TTL_MS = 10 * 60_000
+let lastRecallsLoad = 0
 async function loadBadges(only: NavBadge[] | null = null) {
-  const wants = (b: NavBadge) => !only || only.includes(b)
+  const wants = (b: NavBadge) => (!only ? b !== 'recalls' || Date.now() - lastRecallsLoad >= RECALLS_TTL_MS : only.includes(b))
   if (!only) lastFullLoad = Date.now()
   // Each badge assigns its own count as its own query returns. They used to
   // share a Promise.all, so all four waited on the slowest and then appeared
   // in one jump -- the recalls and inbox numbers landing together is exactly
   // that, not a coincidence of timing.
   if (wants('recalls') && can('recalls_access')) {
+    lastRecallsLoad = Date.now()
     const token = ++badgeTokens.recalls
     let recalls = supabase
       .from('recall_candidates')
@@ -169,7 +177,11 @@ onUnmounted(() => document.removeEventListener('visibilitychange', onVisible))
 watch(() => route.path, () => {
   if (Date.now() - lastFullLoad >= NAV_BADGES_TTL_MS) loadBadges()
 })
-watch(() => store.currentClinicId, () => loadBadges())
+// Another clinic is another count: asked at once, whatever the clock says.
+watch(() => store.currentClinicId, () => {
+  lastRecallsLoad = 0
+  loadBadges()
+})
 watch(() => badgesRequest.value.seq, () => loadBadges(badgesRequest.value.only))
 
 interface NavItem {

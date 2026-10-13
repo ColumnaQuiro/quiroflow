@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import { listingSummary, sideLettersFor, type Listings } from '~/utils/spinalListings'
 const props = defineProps<{ patientId: string }>()
 
 interface VisitNoteRow {
   id: string
+  appointment_id: string
   body: string
   created_at: string
   appointments: {
@@ -33,12 +35,26 @@ async function load() {
   const { data } = await supabase
     .from('visit_notes')
     .select(
-      'id, body, created_at, appointments!inner(starts_at, patient_id, appointment_types(name), team_members(full_name), practitioner_name)',
+      'id, appointment_id, body, created_at, appointments!inner(starts_at, patient_id, appointment_types(name), team_members(full_name), practitioner_name)',
     )
     .eq('appointments.patient_id', props.patientId)
     .order('created_at', { ascending: false })
   notes.value = (data as unknown as VisitNoteRow[]) ?? []
+  // Each visit's listing beside its note -- unless the note already carries
+  // it, as one charted on My Day does in its "Ajustado: …" line.
+  const ids = [...new Set(notes.value.map((n) => n.appointment_id))]
+  const byAppt = new Map<string, Listings>()
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data: rows } = await supabase.from('visit_listings').select('appointment_id, listings').in('appointment_id', ids.slice(i, i + 200))
+    for (const r of (rows as { appointment_id: string; listings: Listings }[] | null) ?? []) byAppt.set(r.appointment_id, r.listings)
+  }
+  listingByAppt.value = byAppt
   loading.value = false
+}
+const listingByAppt = ref<Map<string, Listings>>(new Map())
+function listingLine(note: VisitNoteRow) {
+  const summary = listingSummary(listingByAppt.value.get(note.appointment_id), (x) => x, sideLettersFor(t))
+  return summary && !note.body.includes(summary) ? summary : ''
 }
 onMounted(load)
 // Defense-in-depth alongside practitioner.vue's :key on the charting pane:
@@ -118,6 +134,9 @@ async function deleteNote(note: VisitNoteRow) {
           <template v-if="practitionerLabel(note)"> &middot; {{ practitionerLabel(note) }}</template>
         </p>
       </div>
+      <p v-if="listingLine(note)" class="mt-1.5 text-[12.5px] text-ink-700" data-cy="note-history-listing">
+        <span class="font-semibold">{{ t('Listing', 'Listado') }}:</span> {{ listingLine(note) }}
+      </p>
       <div class="mt-2.5">
         <p class="text-[10.5px] font-semibold uppercase tracking-wide text-ink-faint">{{ t('Note', 'Nota') }}</p>
 

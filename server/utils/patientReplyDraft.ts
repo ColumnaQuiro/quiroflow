@@ -1,7 +1,9 @@
 import type { H3Event } from 'h3'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
 import { announceHandover, noteInConversation, sendAsReceptionist } from '~/server/utils/receptionistSend'
-import { bookingTool } from '~/server/utils/receptionistBooking'
+import { bookingTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
+import { recentImages, withImages, type StoredImage } from '~/server/utils/receptionistImages'
+import { historyLine } from '~/utils/receptionistHistory'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personRepliedSince } from '~/utils/receptionistAutoReply'
 import { loadBookedVisits, loadOfferedTypes, loadPatientPractitioners, loadReceptionistCalendar, toConfig, toneWording, uniqueTypes } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptionistModel'
@@ -39,7 +41,7 @@ export type PatientDraftOutcome =
   | { status: 'nothing_to_answer' }
   | { status: 'not_found' }
 
-interface Turn { direction: string; body: string; created_at: string; sent_by_ai?: boolean | null; channel?: string | null; automated?: boolean }
+interface Turn extends StoredImage { direction: string; body: string; created_at: string; sent_by_ai?: boolean | null; channel?: string | null; automated?: boolean }
 
 /**
  * `supabase` is the asker's own client (RLS decides what of the patient they
@@ -65,13 +67,18 @@ export async function draftPatientReply(
 
   // Both channels the Inbox shows as one conversation: WhatsApp and the app.
   const [{ data: wa }, { data: app }] = await Promise.all([
-    supabase.from('whatsapp_messages').select('direction, body_preview, created_at, sent_by_ai, channel, template_name, rule_id, automation_action_id').eq('patient_id', patientId).order('created_at', { ascending: false }).limit(HISTORY_TURNS),
+    supabase.from('whatsapp_messages').select('direction, body_preview, created_at, sent_by_ai, channel, template_name, rule_id, automation_action_id, media_type, media_storage_path, media_mime_type, media_filename').eq('patient_id', patientId).order('created_at', { ascending: false }).limit(HISTORY_TURNS),
     supabase.from('patient_app_messages').select('direction, body, created_at, sent_by_ai').eq('patient_id', patientId).order('created_at', { ascending: false }).limit(HISTORY_TURNS),
   ])
   const turns: Turn[] = [
-    ...((wa ?? []) as { direction: string; body_preview: string | null; created_at: string; sent_by_ai?: boolean | null; channel?: string | null; template_name?: string | null; rule_id?: string | null; automation_action_id?: string | null }[]).map((m) => ({
+    ...((wa ?? []) as { direction: string; body_preview: string | null; created_at: string; sent_by_ai?: boolean | null; channel?: string | null; template_name?: string | null; rule_id?: string | null; automation_action_id?: string | null; media_type?: string | null; media_storage_path?: string | null; media_mime_type?: string | null; media_filename?: string | null }[]).map((m) => ({
       direction: m.direction,
-      body: m.body_preview ?? '',
+      // As the model reads it: a reminder marked as the system's, a voice
+      // note or a photo as what it is rather than dropped (historyLine).
+      body: historyLine({ direction: m.direction, body: m.body_preview, automated: Boolean(m.template_name || m.rule_id || m.automation_action_id), mediaType: m.media_type, mediaFilename: m.media_filename }),
+      media_type: m.media_type,
+      media_storage_path: m.media_storage_path,
+      media_mime_type: m.media_mime_type,
       created_at: m.created_at,
       sent_by_ai: m.sent_by_ai,
       // A template or an automation's send: the system, not a person (autoReplyHeldBack).
@@ -173,9 +180,9 @@ export async function draftPatientReply(
 
   // Booking on its own only when it is also answering on its own, and from a
   // calendar it could read: never behind a draft nobody has read yet.
-  const book =
+  const actions: BookingContext | null =
     sends && opts.send && channel && calendar.availability
-      ? bookingTool({
+      ? {
           event: opts.send.event,
           service,
           accountId,
@@ -186,17 +193,23 @@ export async function draftPatientReply(
           practitionerIds,
           person: { kind: 'patient', patientId },
           onBooked: (summary) => noteInConversation(service, accountId, { kind: 'patient', patientId, channel }, summary),
-        })
+        }
       : null
+  const book = actions ? bookingTool(actions) : null
+  const waitlist = actions ? waitlistTool(actions) : null
+  // What they sent since the clinic last wrote, pictures included.
+  const images = await recentImages(service, turns.slice(lastOutbound + 1))
 
   const { text: draft, refused, handedOver } = await runReceptionistModel(createAnthropicClient(apiKey), {
     model: MODEL,
     maxTokens: MAX_TOKENS,
-    system: buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, sendsItself: sends, canBook: Boolean(book) }),
-    messages: history,
+    system: buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist) }),
+    messages: withImages(history, images),
     findFreeTimes,
     handOver: sends,
     book,
+    waitlist,
+    maxTimesPerReply: config.slotsPerReply,
     internalNotes: internalNotes(config),
     logLabel: `patient ${patientId}`,
   })

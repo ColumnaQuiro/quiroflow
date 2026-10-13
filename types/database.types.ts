@@ -6399,6 +6399,7 @@ export type Database = {
           created_by: string | null
           id: string
           offer_expires_at: string | null
+          notes: string | null
           offered_appointment_type_id: string | null
           offered_at: string | null
           offered_ends_at: string | null
@@ -6420,6 +6421,7 @@ export type Database = {
           created_by?: string | null
           id?: string
           offer_expires_at?: string | null
+          notes?: string | null
           offered_appointment_type_id?: string | null
           offered_at?: string | null
           offered_ends_at?: string | null
@@ -6441,6 +6443,7 @@ export type Database = {
           created_by?: string | null
           id?: string
           offer_expires_at?: string | null
+          notes?: string | null
           offered_appointment_type_id?: string | null
           offered_at?: string | null
           offered_ends_at?: string | null

@@ -5,7 +5,8 @@ import { loadReceptionistCalendar, type OfferedType, type ReceptionistConfig } f
 import { availabilityLists, FREE_TIMES_MAX_DAYS, FREE_TIMES_MAX_TIMES, parseFreeTimesInput } from '~/utils/receptionistSlots'
 import { clinicDateOf, startOfLocalDate } from '~/utils/clinicClock'
 import { briefingLeak } from '~/utils/receptionistGuard'
-import { BOOK_APPOINTMENT } from '~/server/utils/receptionistBooking'
+import { ADD_TO_WAITLIST, BOOK_APPOINTMENT } from '~/server/utils/receptionistBooking'
+import { offeredTimeCount, tooManyTimesNote } from '~/utils/receptionistHistory'
 
 // How the receptionist talks to the model, for all three of its callers --
 // lead drafts, patient drafts and "Try Alba" -- so they cannot drift apart.
@@ -113,6 +114,14 @@ export async function runReceptionistModel(
      * a person has not read yet.
      */
     book?: ((input: unknown) => Promise<{ content: string; isError: boolean }>) | null
+    /** Offer add_to_waitlist (receptionistBooking.ts): same terms as `book`. */
+    waitlist?: ((input: unknown) => Promise<{ content: string; isError: boolean }>) | null
+    /**
+     * The clinic's limit on times offered in one reply. A reply over it is
+     * written again once (offeredTimeCount): told "at most 2", it offered one
+     * person five.
+     */
+    maxTimesPerReply?: number
     /** The clinic's text that is not for patients (internalNotes). */
     internalNotes: string[]
     /** Names the conversation in the log when a draft is withheld; never its content. */
@@ -124,8 +133,13 @@ export async function runReceptionistModel(
     ...(opts.findFreeTimes ? [FIND_FREE_TIMES] : []),
     ...(opts.handOver ? [HAND_OVER] : []),
     ...(opts.book ? [BOOK_APPOINTMENT] : []),
+    ...(opts.waitlist ? [ADD_TO_WAITLIST] : []),
   ]
   let handedOver: string | null = null
+  // A booking's confirmation names its time (and a move, the old one too):
+  // not an offer, so not counted.
+  let booked = false
+  let rewritten = false
   for (let round = 0; ; round++) {
     const message = await client.messages.create({
       model: opts.model,
@@ -149,6 +163,13 @@ export async function runReceptionistModel(
         .map((block) => block.text)
         .join('')
         .trim()
+      const offered = opts.maxTimesPerReply && !booked && !rewritten ? offeredTimeCount(text) : 0
+      if (opts.maxTimesPerReply && offered > opts.maxTimesPerReply) {
+        rewritten = true
+        messages.push({ role: 'assistant', content: message.content })
+        messages.push({ role: 'user', content: tooManyTimesNote(offered, opts.maxTimesPerReply) })
+        continue
+      }
       const leak = text ? briefingLeak(text, opts.internalNotes) : null
       if (leak) {
         console.warn(`[receptionist] withheld a draft for ${opts.logLabel}: it ${leak}`)
@@ -172,6 +193,12 @@ export async function runReceptionistModel(
           result = await opts.book(use.input).catch((err) => {
             console.error('[receptionist] book_appointment failed:', (err as Error)?.message ?? err)
             return { content: 'The booking could not be made. Do not say it is booked: call hand_over_to_colleague with the day, time and type they accepted.', isError: true }
+          })
+          if (!result.isError) booked = true
+        } else if (use.name === 'add_to_waitlist' && opts.waitlist) {
+          result = await opts.waitlist(use.input).catch((err) => {
+            console.error('[receptionist] add_to_waitlist failed:', (err as Error)?.message ?? err)
+            return { content: 'They could not be added to the waiting list. Call hand_over_to_colleague saying when they can come.', isError: true }
           })
         } else if (use.name === 'find_free_times' && lookup) {
           result = await lookup(use.input).catch((err) => {

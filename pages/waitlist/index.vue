@@ -9,8 +9,10 @@ interface WaitlistRow {
   id: string
   status: 'waiting' | 'offered' | 'booked' | 'expired' | 'cancelled'
   created_at: string
-  /** 'patient' when they joined it themselves from the app or portal. */
+  /** 'patient' when they joined it themselves from the app or portal; 'receptionist' when the AI receptionist added them. */
   source?: string | null
+  /** When they can come, in words. */
+  notes?: string | null
   offer_expires_at: string | null
   offered_starts_at: string | null
   patients: { id: string; first_name: string; last_name: string | null } | null
@@ -54,7 +56,7 @@ async function load() {
     // (appointment_type_id, offered_appointment_type_id), and the bare embed
     // is refused as ambiguous (PGRST201) -- the WHOLE select, so this page
     // read nothing and said "No one on the waitlist" whatever was on it.
-    .select('id, status, source, created_at, offer_expires_at, offered_starts_at, patients(id, first_name, last_name), appointment_types:appointment_type_id(name), team_members:practitioner_id(full_name)')
+    .select('id, status, source, notes, created_at, offer_expires_at, offered_starts_at, patients(id, first_name, last_name), appointment_types:appointment_type_id(name), team_members:practitioner_id(full_name)')
     .order('created_at', { ascending: true })
   if (showOnlyActive.value) query = query.in('status', ['waiting', 'offered'])
   const { data, error } = await query
@@ -205,6 +207,8 @@ function formatDate(iso: string | null) {
               <td class="px-3 py-2 text-ink-900">
                 {{ patientName(row) }}
                 <span v-if="row.source === 'patient'" class="ml-1.5 text-[11.5px] text-ink-muted2" data-cy="waitlist-self-added">{{ t('Joined themselves', 'Se apuntó el paciente') }}</span>
+                <span v-else-if="row.source === 'receptionist'" class="ml-1.5 text-[11.5px] text-ink-muted2" data-cy="waitlist-receptionist-added">{{ t('Added by the AI receptionist', 'Apuntado por la recepcionista IA') }}</span>
+                <div v-if="row.notes" class="mt-0.5 text-[12px] text-ink-muted2" data-cy="waitlist-notes">{{ row.notes }}</div>
               </td>
               <td class="px-3 py-2 text-ink-muted2">
                 {{ row.appointment_types?.name ?? t('Any type', 'Cualquier tipo') }} ·

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
 import { CONFIRM_BEFORE_BOOKING, audienceSection, newPatientDetailsSection, offeredAppointmentTypes, offeredTypesSection, rescheduleSection, type BookedVisit, type PromptType, type ReceptionistAudience } from '~/utils/receptionistTypes'
+import { HISTORY_MARKERS_SECTION, INFORMAL_ADDRESS_LINE, WAITLIST_SECTION } from '~/utils/receptionistHistory'
 import { leadOriginSection, type LeadOrigin } from '~/utils/receptionistLeadOrigin'
 import { NO_REPLY } from '~/utils/receptionistAutoReply'
 import { CONFIDENTIALITY_SECTION, promptSafeName } from '~/utils/receptionistGuard'
@@ -463,6 +464,8 @@ export function buildSystemPrompt(
     searchTool?: boolean
     /** book_appointment is on this request -- only ever with sendsItself. */
     canBook?: boolean
+    /** add_to_waitlist is on this request -- only ever with sendsItself. */
+    canWaitlist?: boolean
     /** Visits they already have, which they may want to move. */
     bookedVisits?: BookedVisit[]
     /** A real draft for staff to send, to this person (not Try Alba). */
@@ -514,6 +517,8 @@ export function buildSystemPrompt(
     // a thanks. A re-confirmation nobody asked for is noise in their WhatsApp.
     `If their latest message needs no answer at all -- a thank-you, an "ok", a confirmation of a visit they already have, an emoji -- write exactly ${NO_REPLY} and nothing else. Nothing is then sent.`,
     `Read the whole conversation before replying. Never ask for something the patient has already told you or that is already known about them, and never repeat a question that has been answered.`,
+    HISTORY_MARKERS_SECTION,
+    INFORMAL_ADDRESS_LINE,
     // They are writing from their phone: asking for its number is asking for
     // what the clinic already has, whatever the clinic knowledge says a
     // booking needs.
@@ -553,6 +558,7 @@ export function buildSystemPrompt(
     opts.canBook
       ? `Never say an appointment is booked, moved or confirmed unless book_appointment has just confirmed it in this reply. Never cancel anything.`
       : `You must NEVER state that an appointment is booked, confirmed or reserved. A member of staff or the booking system confirms them${availability ? ', and a listed time can be taken before then' : ''}. ${availability ? 'If the patient accepts a time, say you are passing it on and that they will get a confirmation.' : 'Once the patient has said when suits them, say you are passing it on and that they will get a confirmation.'}`,
+    opts.canWaitlist ? WAITLIST_SECTION : '',
     escalations ? `# Stop and hand over to a person when\n\n${escalations}\n\nWhen one of these applies, ${opts.sendsItself ? 'call hand_over_to_colleague, then ' : ''}say your colleague will pick this up shortly and stop.` : '',
     config.neverSays ? `# Never\n\n${config.neverSays}` : '',
     opts.testMode

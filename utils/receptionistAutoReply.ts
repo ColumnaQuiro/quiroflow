@@ -15,6 +15,7 @@
 // its build `~` resolves to mobile/.
 import type { BusinessHours } from './businessHours'
 import { DEFAULT_CLINIC_TIMEZONE, clinicDateOf, wallClock } from './clinicClock'
+import { isReactionBody } from './whatsappInbound'
 
 const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const
 
@@ -131,7 +132,9 @@ function normalized(text: string): string {
  * message, so "Gracias, ¿y el jueves?" is still a question.
  */
 export function isNoReplyMessage(messagesSinceLastReply: string[], phrases: string[]): boolean {
-  if (messagesSinceLastReply.length === 0 || phrases.length === 0) return false
+  if (messagesSinceLastReply.length === 0) return false
   const known = new Set(phrases.map(normalized).filter(Boolean))
-  return messagesSinceLastReply.every((text) => known.has(normalized(text)))
+  // A reaction (a 👍 on the last reply) is never a question, whatever the
+  // clinic's list says.
+  return messagesSinceLastReply.every((text) => isReactionBody(text) || known.has(normalized(text)))
 }

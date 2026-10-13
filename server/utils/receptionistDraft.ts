@@ -1,7 +1,9 @@
 import type { H3Event } from 'h3'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
 import { announceHandover, noteInConversation, sendAsReceptionist } from '~/server/utils/receptionistSend'
-import { bookingTool } from '~/server/utils/receptionistBooking'
+import { bookingTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
+import { recentImages, withImages } from '~/server/utils/receptionistImages'
+import { historyLine } from '~/utils/receptionistHistory'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage } from '~/utils/receptionistAutoReply'
 import { buildSystemPrompt, loadBookedVisits, loadOfferedTypes, loadPatientPractitioners, loadReceptionistCalendar, toConfig, uniqueTypes, type LeadOrigin } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptionistModel'
@@ -114,18 +116,19 @@ export async function draftLeadReply(
 
   const { data: messages } = await supabase
     .from('whatsapp_messages')
-    .select('direction, body_preview, created_at, sent_by_ai, channel, template_name, rule_id, automation_action_id')
+    .select('direction, body_preview, created_at, sent_by_ai, channel, template_name, rule_id, automation_action_id, media_type, media_storage_path, media_mime_type, media_filename')
     .eq('lead_id', leadId)
     .order('created_at', { ascending: false })
     .limit(HISTORY_TURNS)
 
   const ordered = [...(messages ?? [])].reverse()
+  // As the model reads each one: reminders marked as the system's, a voice
+  // note or a photo as what it is rather than dropped (historyLine).
+  const lineOf = (m: { direction: string; body_preview: string | null; template_name?: string | null; rule_id?: string | null; automation_action_id?: string | null; media_type?: string | null; media_filename?: string | null }) =>
+    historyLine({ direction: m.direction, body: m.body_preview, automated: Boolean(m.template_name || m.rule_id || m.automation_action_id), mediaType: m.media_type, mediaFilename: m.media_filename })
   const history = ordered
-    .filter((m: { body_preview: string | null }) => (m.body_preview ?? '').trim().length > 0)
-    .map((m: { direction: string; body_preview: string }) => ({
-      role: m.direction === 'inbound' ? ('user' as const) : ('assistant' as const),
-      content: m.body_preview,
-    }))
+    .map((m: Parameters<typeof lineOf>[0]) => ({ role: m.direction === 'inbound' ? ('user' as const) : ('assistant' as const), content: lineOf(m) }))
+    .filter((m: { content: string }) => m.content.length > 0)
 
   // Nothing to answer. Better than drafting a greeting nobody asked for and
   // presenting it as a reply to something.
@@ -147,7 +150,7 @@ export async function draftLeadReply(
   // "Gracias", "Ok", "👍" since the clinic last wrote: the clinic's own list
   // of messages that want no answer, checked before any model is asked.
   const lastOutbound = ordered.map((m: { direction: string }) => m.direction).lastIndexOf('outbound')
-  const sinceOurs = ordered.slice(lastOutbound + 1).map((m: { body_preview: string | null }) => m.body_preview ?? '')
+  const sinceOurs = ordered.slice(lastOutbound + 1).map(lineOf)
   if (isNoReplyMessage(sinceOurs, config.noReplyPhrases)) return leaveAlone()
 
   const apiKey = useRuntimeConfig().anthropicApiKey
@@ -202,9 +205,9 @@ export async function draftLeadReply(
 
   // Booking on its own only when it is also answering on its own, and from a
   // calendar it could read: never behind a draft nobody has read yet.
-  const book =
+  const actions: BookingContext | null =
     sends && opts.send && calendar.availability
-      ? bookingTool({
+      ? {
           event: opts.send.event,
           service: calendarClient,
           accountId,
@@ -215,17 +218,23 @@ export async function draftLeadReply(
           practitionerIds,
           person: { kind: 'lead', leadId, patientId: lead.patient_id ?? null },
           onBooked: (summary) => noteInConversation(calendarClient, accountId, { kind: 'lead', leadId }, summary),
-        })
+        }
       : null
+  const book = actions ? bookingTool(actions) : null
+  const waitlist = actions ? waitlistTool(actions) : null
+  // What they sent since the clinic last wrote, pictures included.
+  const images = await recentImages(calendarClient, ordered.slice(lastOutbound + 1))
 
   const { text: draft, refused, handedOver } = await runReceptionistModel(createAnthropicClient(apiKey), {
     model: MODEL,
     maxTokens: MAX_TOKENS,
-    system: buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, audience, calendar, leadOrigin, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, draft: { personName: lead.full_name ?? null }, knownDetails: { name: leadNameIsTheirs(lead.channel) && Boolean(lead.full_name?.trim()), email: Boolean(lead.email?.trim()) }, sendsItself: sends, canBook: Boolean(book) }),
-    messages: history,
+    system: buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, audience, calendar, leadOrigin, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, draft: { personName: lead.full_name ?? null }, knownDetails: { name: leadNameIsTheirs(lead.channel) && Boolean(lead.full_name?.trim()), email: Boolean(lead.email?.trim()) }, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist) }),
+    messages: withImages(history, images),
     findFreeTimes,
     handOver: sends,
     book,
+    waitlist,
+    maxTimesPerReply: config.slotsPerReply,
     internalNotes: internalNotes(config),
     logLabel: `lead ${leadId}`,
   })

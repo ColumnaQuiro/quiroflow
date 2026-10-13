@@ -4,6 +4,7 @@ import { CONFIDENTIALITY_SECTION, promptSafeName } from './receptionistGuard'
 import { NO_REPLY } from './receptionistAutoReply'
 import { CONFIRM_BEFORE_BOOKING, offeredTypesSection, rescheduleSection, type BookedVisit, type PromptType } from './receptionistTypes'
 import { receptionistBookingSection, receptionistClockSection, type ReceptionistAvailability } from './receptionistSlots'
+import { HISTORY_MARKERS_SECTION, INFORMAL_ADDRESS_LINE, WAITLIST_SECTION } from './receptionistHistory'
 
 // What the receptionist knows about a patient when drafting a reply to them
 // in the Inbox: their next visits, their care plan, what they owe. Read at
@@ -80,6 +81,8 @@ export function buildPatientReplyPrompt(
     sendsItself?: boolean
     /** book_appointment is on this request -- only ever with sendsItself. */
     canBook?: boolean
+    /** add_to_waitlist is on this request -- only ever with sendsItself. */
+    canWaitlist?: boolean
   },
 ): string {
   const knowledge = config.knowledge
@@ -103,6 +106,8 @@ export function buildPatientReplyPrompt(
     // a thanks. A re-confirmation nobody asked for is noise in their WhatsApp.
     `If their latest message needs no answer at all -- a thank-you, an "ok", a confirmation of a visit they already have, an emoji -- write exactly ${NO_REPLY} and nothing else. Nothing is then sent.`,
     `Read the whole conversation before replying. Answer what they asked, using what you know about them -- "your next visit is on Tuesday at 10:00" rather than asking them when it is. If you do not know something, say your colleague will check rather than guessing.`,
+    HISTORY_MARKERS_SECTION,
+    INFORMAL_ADDRESS_LINE,
     // A patient's details are on their record; asking for them again reads as
     // the clinic not knowing who they are.
     `Never ask a patient for their name, email or phone number: the clinic has them.`,
@@ -124,6 +129,7 @@ export function buildPatientReplyPrompt(
       ? `Never say a visit is booked or moved unless book_appointment has just confirmed it in this reply, and never that one is cancelled, or that a payment was received or a refund made. If they ask to cancel, say your colleague will take care of it.`
       : `You must NEVER state that a visit is booked, moved, cancelled or confirmed, or that a payment was received or a refund made. A member of staff does those. If they ask to book or move a visit, offer times and say you are passing it on, and that they will get a confirmation; if they ask to cancel, say your colleague will take care of it.`,
     `Only mention an amount owed if they ask about money or payment, and then only exactly as given above.`,
+    opts.canWaitlist ? WAITLIST_SECTION : '',
     escalations ? `# Stop and hand over to a person when\n\n${escalations}\n\nWhen one of these applies, ${opts.sendsItself ? 'call hand_over_to_colleague, then ' : ''}say your colleague will pick this up shortly and stop.` : '',
     config.neverSays ? `# Never\n\n${config.neverSays}` : '',
     opts.sendsItself

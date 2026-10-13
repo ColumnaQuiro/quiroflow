@@ -61,6 +61,23 @@ export const BOOK_APPOINTMENT: Anthropic.Tool = {
   },
 }
 
+export const ADD_TO_WAITLIST: Anthropic.Tool = {
+  name: 'add_to_waitlist',
+  description:
+    "Puts them on the clinic's waiting list, so a colleague can offer them a time that frees up. Call it only when no free time suits them and they have said when they could come, and they agree to be on the list. Afterwards tell them the clinic will let them know if a time that suits them frees up -- never promise one.",
+  input_schema: {
+    type: 'object',
+    properties: {
+      appointment_type: { type: 'string', description: 'The type they want, by its exact name from "What you can offer". Leave out if there is only one.' },
+      preference: { type: 'string', description: 'When they can come, in a few words in the clinic\'s language, for your colleagues: "solo viernes por la tarde", "lunes o martes a partir de las 18:00".' },
+      full_name: { type: 'string', description: 'For someone not yet a patient: their first name and surname(s) exactly as they wrote them. Leave out if they have not given it.' },
+      email: { type: 'string', description: 'For someone not yet a patient: the email address they wrote. Leave out if they have not given one.' },
+    },
+    required: ['preference'],
+    additionalProperties: false,
+  },
+}
+
 export interface BookingContext {
   event: H3Event
   /** Reads (the calendar, the lead, the patient). Writes use receptionistServiceClient. */
@@ -200,10 +217,94 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
     }
 
     const whenEn = new Date(window.startsAt).toLocaleString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: ctx.timeZone })
+    // Their other visits close to the new time. One moved "to next week"
+    // landed the day after a visit they already had there, and nobody told
+    // them they now had two in a row.
+    const near = ctx.booked.appointments
+      .filter((a) => a.id !== moving?.id && Math.abs(new Date(a.startsAt).getTime() - start.getTime()) < 2 * DAY_MS)
+      .map((a) => new Date(a.startsAt).toLocaleString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: ctx.timeZone }))
+    // Someone coming for the first time is told where to go.
+    const address = moving ? null : await firstVisitAddress(ctx.service, patient.patientId, chosen.clinicId)
     return {
-      content: `${moving ? 'Moved' : 'Booked'}: ${type.name}, ${whenEn}${practitionerName ? `, with ${practitionerName}` : ''}. ${moving ? 'Their old time is free again.' : "They will also get the clinic's usual confirmation."} Tell them, with the day and time in words.`,
+      content: [
+        `${moving ? 'Moved' : 'Booked'}: ${type.name}, ${whenEn}${practitionerName ? `, with ${practitionerName}` : ''}. ${moving ? 'Their old time is free again.' : "They will also get the clinic's usual confirmation."} Tell them, with the day and time in words.`,
+        near.length ? `They also have ${near.length === 1 ? 'a visit' : 'visits'} on ${near.join(' and ')}: mention ${near.length === 1 ? 'it' : 'them'}, and ask whether they want to keep ${near.length === 1 ? 'it' : 'them'}.` : '',
+        address ? `It is their first visit: give them the clinic's address, ${address}.` : '',
+      ].filter(Boolean).join(' '),
       isError: false,
     }
+  }
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+/** The clinic's address, when this patient has never been; null otherwise or when it has none. */
+async function firstVisitAddress(service: Supa, patientId: string, clinicId: string): Promise<string | null> {
+  const [{ count }, { data: clinic }] = await Promise.all([
+    service.from('appointments').select('id', { count: 'exact', head: true }).eq('patient_id', patientId).eq('status', 'completed').is('deleted_at', null),
+    service.from('clinics').select('address').eq('id', clinicId).maybeSingle(),
+  ])
+  if ((count ?? 0) > 0) return null
+  const address = ((clinic as { address: string | null } | null)?.address ?? '').replace(/\s+,/g, ',').replace(/\s+/g, ' ').trim()
+  return address || null
+}
+
+/**
+ * add_to_waitlist for one person in one reply: the waiting list the front
+ * desk already works from (pages/waitlist), with when they can come in its
+ * notes. A lead is made a patient first, as booking does -- the list is of
+ * patients. One entry per person: a second call updates it.
+ */
+export function waitlistTool(ctx: BookingContext): (input: unknown) => Promise<ToolResult> {
+  let used = false
+  return async (input) => {
+    if (used) return { content: 'They are already on the waiting list from this reply.', isError: true }
+    const value = (input ?? {}) as { appointment_type?: unknown; preference?: unknown; full_name?: unknown; email?: unknown }
+    const preference = typeof value.preference === 'string' ? value.preference.replace(/\s+/g, ' ').trim().slice(0, 300) : ''
+    if (!preference) return { content: 'Say when they can come (preference).', isError: true }
+    const name = typeof value.appointment_type === 'string' ? value.appointment_type.trim().toLowerCase() : ''
+    const type = ctx.types.find((t) => t.name.toLowerCase() === name) ?? (!name && ctx.types.length === 1 ? ctx.types[0] : undefined) ?? (!name ? ctx.booked.types[0] : undefined)
+    if (!type) return { content: `Say which type, exactly as named: ${ctx.types.map((t) => t.name).join(', ')}.`, isError: true }
+
+    const writer = receptionistServiceClient(ctx.event) as unknown as Supa
+    const patient = await ensurePatient(ctx, writer, ctx.practitionerIds?.[0] ?? null, newPatientDetails(value.full_name, value.email))
+    // ensurePatient's reasons are worded for a booking; the answer here is the same hand-over.
+    if ('error' in patient) return { content: 'A colleague has to add them to the waiting list. Call hand_over_to_colleague saying when they can come.', isError: true }
+
+    const { data: p } = await ctx.service.from('patients').select('clinic_id').eq('id', patient.patientId).maybeSingle()
+    let clinicId = (p as { clinic_id: string | null } | null)?.clinic_id ?? null
+    if (!clinicId) {
+      const { data: clinics } = await ctx.service.from('clinics').select('id').eq('account_id', ctx.accountId).is('archived_at', null).order('created_at').limit(1)
+      clinicId = ((clinics ?? []) as { id: string }[])[0]?.id ?? null
+    }
+    if (!clinicId) return { content: 'The waiting list is not available. Call hand_over_to_colleague saying when they can come.', isError: true }
+
+    used = true
+    const { data: existing } = await ctx.service.from('waitlist_entries').select('id').eq('account_id', ctx.accountId).eq('patient_id', patient.patientId).eq('status', 'waiting').limit(1)
+    const entryId = ((existing ?? []) as { id: string }[])[0]?.id
+    const { error } = entryId
+      ? await writer.from('waitlist_entries').update({ notes: preference, appointment_type_id: type.id } as never).eq('id', entryId)
+      : await writer.from('waitlist_entries').insert({
+          account_id: ctx.accountId,
+          clinic_id: clinicId,
+          patient_id: patient.patientId,
+          appointment_type_id: type.id,
+          practitioner_id: ctx.practitionerIds?.[0] ?? null,
+          status: 'waiting',
+          source: 'receptionist',
+          notes: preference,
+        } as never)
+    if (error) {
+      used = false
+      console.error('[receptionist] waitlist refused:', error.message)
+      return { content: 'They could not be added to the waiting list. Call hand_over_to_colleague saying when they can come.', isError: true }
+    }
+    try {
+      await ctx.onBooked(`He apuntado a la lista de espera para ${type.name}: ${preference}.`)
+    } catch (err) {
+      console.error('[receptionist] after waitlist:', (err as Error)?.message ?? err)
+    }
+    return { content: `On the waiting list for ${type.name} (${preference}). Tell them the clinic will let them know if a time that suits them frees up; do not promise one.`, isError: false }
   }
 }
 
@@ -232,7 +333,7 @@ async function candidatePractitioners(ctx: BookingContext, moving: BookedAppoint
 async function ensurePatient(
   ctx: BookingContext,
   writer: Supa,
-  practitionerId: string,
+  practitionerId: string | null,
   given: { fullName: string | null; email: string | null },
 ): Promise<{ patientId: string } | { error: string }> {
   let patientId: string | null = ctx.person.patientId

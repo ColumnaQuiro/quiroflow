@@ -45,7 +45,7 @@ export default defineEventHandler(async (event) => {
 
     const { data: appointments } = await supabase
       .from('appointments')
-      .select('id, patient_id')
+      .select('id, patient_id, confirmation_status')
       .eq('account_id', rule.account_id)
       .eq('status', 'booked')
       // A deleted appointment keeps status 'booked' (only deleted_at is set).
@@ -64,8 +64,15 @@ export default defineEventHandler(async (event) => {
       .in('appointment_id', appointments.map((a) => a.id))
     const sentIds = new Set((alreadySent ?? []).map((s) => s.appointment_id))
 
+    // The patient already answered for this time -- "Confirmar", or asked to
+    // change it -- so a reminder has nothing left to ask. Moving a visit
+    // clears its answer (20261013153850_appointments_answer_is_for_its_time),
+    // so a visit moved to a new time is reminded of that one as usual.
+    const skipAnswered = filters.skip_if_answered !== false
+
     for (const appt of appointments) {
       if (sentIds.has(appt.id)) continue
+      if (skipAnswered && (appt.confirmation_status === 'confirmed' || appt.confirmation_status === 'reschedule_requested')) continue
       dueByRule.push({ ruleId: rule.id, accountId: rule.account_id, appointmentId: appt.id, patientId: appt.patient_id })
     }
   }

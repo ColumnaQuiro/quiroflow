@@ -14,6 +14,7 @@
 //     (calendar_read_only), which the database refuses anyway (0047);
 //   - booking the next visit as the patient record offers it.
 import { formatEur } from '../../../utils/billing'
+import { listingActionLine, listingSummary, sideLettersFor, syncListingLine, type Listings } from '../../../utils/spinalListings'
 
 definePageMeta({ layout: 'practitioner' })
 
@@ -296,6 +297,31 @@ watch(
     if (!l && parseVisitNote(noteDraft.value).structured) noteMode.value = 'soap'
   },
 )
+// The listing writes itself into the note as one line ("Ajustado: …"): Action's
+// first line in sections, the note's first line as free text. And a section
+// brought over from the last visit (AppointmentsPreviousVisit) lands in the
+// same place in today's. Both go through the note's own save-as-you-type.
+const soapRef = ref<{ setListingLine: (line: string) => void; bringSection: (section: 'Subjective' | 'Objective' | 'Action' | 'Plan' | 'Note', text: string) => void } | null>(null)
+const listingsRef = ref<{ setAll: (l: Listings) => void } | null>(null)
+function onListingsChange(l: Listings) {
+  if (!canWriteNotes.value) return
+  const line = listingActionLine(listingSummary(l, (x) => x, sideLettersFor(t)), t)
+  if (noteMode.value === 'soap' && soapRef.value) soapRef.value.setListingLine(line)
+  else {
+    const next = syncListingLine(noteDraft.value, line)
+    if (next === noteDraft.value) return
+    noteDraft.value = next
+    note.onInput()
+  }
+}
+function bringToNote(section: 'Subjective' | 'Objective' | 'Action' | 'Plan' | 'Note', text: string) {
+  if (noteMode.value === 'soap' && soapRef.value) soapRef.value.bringSection(section, text)
+  else {
+    noteDraft.value = noteDraft.value.trim() ? `${noteDraft.value.replace(/\s+$/, '')}\n${text}` : text
+    note.onInput()
+  }
+}
+
 function setNoteMode(m: 'free' | 'soap') {
   noteMode.value = m
   try {
@@ -394,7 +420,19 @@ async function loadPastNotes() {
     const yt = y.appointments?.starts_at ?? y.created_at
     return yt.localeCompare(xt)
   })
+  // Each earlier visit's listing beside its note.
+  const ids = [...new Set(pastNotes.value.map((n) => n.appointment_id))].slice(0, 200)
+  if (ids.length) {
+    const { data: rows } = await supabase.from('visit_listings').select('appointment_id, listings').in('appointment_id', ids)
+    pastListings.value = new Map(((rows as { appointment_id: string; listings: Listings }[] | null) ?? []).map((r) => [r.appointment_id, r.listings]))
+  }
   pastLoading.value = false
+}
+const pastListings = ref<Map<string, Listings>>(new Map())
+// Unless the note already says it, as one charted with the listing beside it does.
+function pastListing(n: PastNote) {
+  const summary = listingSummary(pastListings.value.get(n.appointment_id), (x) => x, sideLettersFor(t))
+  return summary && !n.body.includes(summary) ? summary : ''
 }
 function pastHeading(n: PastNote) {
   const at = new Date(n.appointments?.starts_at ?? n.created_at)
@@ -753,7 +791,7 @@ watch(
                   {{ m === 'free' ? t('Free text', 'Libre') : t('S · O · A · P', 'Por apartados') }}
                 </button>
               </div>
-              <SoapNoteFields v-if="noteMode === 'soap'" v-model="noteDraft" @input="note.onInput()" @blur="note.save()" />
+              <SoapNoteFields v-if="noteMode === 'soap'" ref="soapRef" v-model="noteDraft" @input="note.onInput()" @blur="note.save()" />
               <textarea
                 v-else
                 ref="noteBox"
@@ -778,11 +816,14 @@ watch(
             </template>
           </template>
         </section>
-        <!-- Spinal listings for this visit, tapped L/R, beside today's note -->
-        <AppointmentsSpinalListings v-if="canReadNotes && appointment && context" :appointment-id="appointment.id" :account-id="context.accountId" :team-member-id="context.teamMemberId" :editable="canWriteNotes" />
+        <!-- Spinal listings for this visit, open beside today's note; what is
+             listed is written into the note as one line. -->
+        <AppointmentsSpinalListings v-if="canReadNotes && appointment && context" ref="listingsRef" :appointment-id="appointment.id" :account-id="context.accountId" :team-member-id="context.teamMemberId" :editable="canWriteNotes" default-open @change="onListingsChange" />
         </div>
 
         <div class="contents lg:flex lg:min-w-0 lg:flex-col lg:gap-2.5">
+        <!-- The last visit, section by section, to bring over into today's note -->
+        <AppointmentsPreviousVisit v-if="canReadNotes && appointment" :appointment-id="appointment.id" :editable="canWriteNotes" @bring="bringToNote" @use-listings="(l) => listingsRef?.setAll(l)" />
         <!-- Previous notes -->
         <section v-if="canReadNotes" class="rounded-card border border-line bg-surface shadow-card px-3.5 py-3" data-cy="visit-previous-notes">
           <h2 class="mb-1.5 text-[10.5px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Previous notes', 'Notas anteriores') }}</h2>
@@ -795,6 +836,7 @@ watch(
           <div v-else class="flex flex-col gap-2 border-l-2 border-line-control pl-2.5">
             <div v-for="n in pastNotes.slice(0, PAST_PREVIEW)" :key="n.id">
               <p class="truncate text-[12.5px] font-semibold text-ink-700">{{ pastHeading(n) }}</p>
+              <p v-if="pastListing(n)" class="truncate text-[12.5px] font-medium text-ink-900" data-cy="visit-past-listing">{{ pastListing(n) }}</p>
               <p class="line-clamp-3 whitespace-pre-line text-[13px] leading-snug text-ink-900">{{ noteText(n.body) }}</p>
             </div>
             <button v-if="pastNotes.length > PAST_PREVIEW" type="button" class="self-start text-[12.5px] font-medium text-brand-text" data-cy="visit-all-notes" @click="allNotesOpen = true">

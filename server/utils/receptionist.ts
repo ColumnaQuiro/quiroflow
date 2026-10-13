@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
-import { CONFIRM_BEFORE_BOOKING, audienceSection, offeredAppointmentTypes, offeredTypesSection, rescheduleSection, type BookedVisit, type PromptType, type ReceptionistAudience } from '~/utils/receptionistTypes'
+import { CONFIRM_BEFORE_BOOKING, audienceSection, newPatientDetailsSection, offeredAppointmentTypes, offeredTypesSection, rescheduleSection, type BookedVisit, type PromptType, type ReceptionistAudience } from '~/utils/receptionistTypes'
 import { leadOriginSection, type LeadOrigin } from '~/utils/receptionistLeadOrigin'
 import { NO_REPLY } from '~/utils/receptionistAutoReply'
 import { CONFIDENTIALITY_SECTION, promptSafeName } from '~/utils/receptionistGuard'
@@ -467,6 +467,8 @@ export function buildSystemPrompt(
     bookedVisits?: BookedVisit[]
     /** A real draft for staff to send, to this person (not Try Alba). */
     draft?: { personName: string | null }
+    /** What the lead already holds, so a new patient is not asked for it again. */
+    knownDetails?: { name: boolean; email: boolean }
     /**
      * Sent without a person reading it first (receptionist-draft-cron, when
      * the clinic's hours switches say so), rather than left as a draft. The
@@ -515,7 +517,7 @@ export function buildSystemPrompt(
     // They are writing from their phone: asking for its number is asking for
     // what the clinic already has, whatever the clinic knowledge says a
     // booking needs.
-    `Never ask for their phone number when they are writing on WhatsApp: you are talking to them on it. To book someone who is not yet a patient, you need their first name and surname(s) and their email -- ask for both together, once, if they have not given them, and pass them to book_appointment as full_name and email exactly as they wrote them.`,
+    `Never ask for their phone number when they are writing on WhatsApp: you are talking to them on it. ${newPatientDetailsSection(opts.knownDetails ?? { name: false, email: false })}`,
     // Booking outranks qualifying. A patient who writes "quiero una cita" and
     // gets "¿qué te ocurre?" back has been handed a form before they were
     // handed an appointment, and that is where enquiries go quiet.

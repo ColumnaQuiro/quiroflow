@@ -9,7 +9,7 @@
 // Under Objective, quick findings: a spine level and side, then a finding;
 // each tap adds a line, which can be edited before it is saved.
 import { parseVisitNote } from '../../utils/visitNote'
-import { syncListingLine } from '../../utils/spinalListings'
+import { splitListingLine, syncListingLine } from '../../utils/spinalListings'
 
 const props = defineProps<{ modelValue: string; disabled?: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string]; input: []; blur: [] }>()
@@ -44,8 +44,11 @@ function fill(body: string) {
     for (const s of parsed.sections) if (KEYS.includes(s.label as Key)) fields[s.label as Key] = s.text
     if (parsed.preamble) fields.Subjective = [parsed.preamble, fields.Subjective].filter(Boolean).join('\n\n')
   } else {
-    // Free text written before switching: kept, as what the patient said.
-    fields.Subjective = body.trim()
+    // Free text written before switching: kept, as what the patient said --
+    // except the listing's "Ajustado: …" line, which goes back to Action.
+    const { line, rest } = splitListingLine(body.trim())
+    fields.Subjective = rest
+    fields.Action = line
   }
 }
 watch(

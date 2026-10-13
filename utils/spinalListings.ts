@@ -61,6 +61,17 @@ export function listingActionLine(summary: string, t: (en: string, es: string) =
   return summary ? t(`Adjusted: ${summary}`, `Ajustado: ${summary}`) : ''
 }
 
+/**
+ * Free text split into its listing line (the first line, when it is one) and
+ * the rest -- for turning a free-text note into sections, where that line
+ * belongs at the top of Action rather than in Subjective.
+ */
+export function splitListingLine(text: string): { line: string; rest: string } {
+  const lines = text ? text.split('\n') : []
+  if (!lines.length || !LISTING_LINE_PREFIXES.some((p) => lines[0]!.startsWith(p))) return { line: '', rest: text }
+  return { line: lines[0]!, rest: lines.slice(1).join('\n').trim() }
+}
+
 /** Action with its listing line set to `line` -- replaced, added at the top, or removed when empty. */
 export function syncListingLine(action: string, line: string): string {
   const lines = action ? action.split('\n') : []

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { hasSide, listingActionLine, listingSummary, sideLettersFor, syncListingLine, toggleListing } from '../../utils/spinalListings'
+import { hasSide, listingActionLine, listingSummary, sideLettersFor, splitListingLine, syncListingLine, toggleListing } from '../../utils/spinalListings'
 
 describe('spinal listings', () => {
   it('toggles a side on and off, and to both', () => {
@@ -39,5 +39,12 @@ describe('the listing in the note', () => {
     expect(syncListingLine('Ajustado: C5 D\nMovilización de cadera.', '')).toBe('Movilización de cadera.')
     expect(syncListingLine('', '')).toBe('')
     expect(syncListingLine('', line)).toBe('Ajustado: C5 D')
+  })
+
+  it('splits the listing line off free text, and leaves other text whole', () => {
+    expect(splitListingLine('Ajustado: C5 D · L5 I/D\nDolor 3/10.')).toEqual({ line: 'Ajustado: C5 D · L5 I/D', rest: 'Dolor 3/10.' })
+    expect(splitListingLine('Adjusted: T6 L')).toEqual({ line: 'Adjusted: T6 L', rest: '' })
+    expect(splitListingLine('Dolor 3/10.\nAjustado: C5 D')).toEqual({ line: '', rest: 'Dolor 3/10.\nAjustado: C5 D' })
+    expect(splitListingLine('')).toEqual({ line: '', rest: '' })
   })
 })

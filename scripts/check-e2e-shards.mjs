@@ -1,130 +1,73 @@
 #!/usr/bin/env node
-// Fails if any spec under cypress/e2e is not run by a shard in
-// .github/workflows/e2e.yml, or is run by more than one.
+// Fails if any spec under cypress/e2e would not run in exactly one CI shard.
 //
-// The shard matrix lists globs, and nothing cross-checks them against what is
-// actually on disk. Adding a spec CI never runs is therefore silent: it
-// exists, it passes locally, every job stays green, and it never executes.
-// That is exactly what happened to cypress/e2e/growth -- two spec files
-// merged before anyone noticed CI had never run either.
+// The hole this exists for: a spec CI never runs is silent. It exists, it
+// passes locally, every job stays green, and it never executes. That is what
+// happened to cypress/e2e/growth -- two spec files merged before anyone
+// noticed CI had never run either -- back when the shards were folder globs
+// written into e2e.yml by hand and a new folder matched none of them.
 //
-// This used to compare FOLDERS, which was enough while every shard was a
-// `cypress/e2e/<folder>/**` glob. Growth outgrew that: at 237s it was the
-// entire critical path of the run, and splitting it means naming specs, not
-// folders. So the check now works at file level -- it expands each shard's
-// globs and compares against every .cy.ts on disk.
+// The shards are now computed by scripts/e2e-shard.mjs from the files on
+// disk, so a new spec or folder is assigned by construction. What is left to
+// prove is that it stays that way:
 //
-// Two rules, and the second is new:
+//   - the plan covers every spec on disk exactly once, at the shard count
+//     the workflow actually runs;
+//   - e2e.yml really runs the splitter, rather than having drifted back to
+//     hand-written globs that nothing here would check;
+//   - no shard is empty, which would mean a runner set up Supabase to run
+//     nothing.
 //
-//   - every spec is covered by at least one shard. An uncovered spec never
-//     runs, which is the original hole.
-//   - no spec is covered by two. A spec matched twice runs twice, which is
-//     silent wasted minutes on the very thing this file exists to keep short.
-//
-// Folder globs still work and are still the right default: a spec added to a
-// folder-globbed shard is picked up with no workflow edit. A folder split
-// across shards by file glob trades that away deliberately -- a new spec
-// there fails this check until someone assigns it, which is the safe way to
-// be told. Runs as part of `npm run preflight`, so it fires locally and in
-// the typecheck job.
+// Runs as part of `npm run preflight`, so it fires locally and in the
+// typecheck job.
 
-import { readFileSync, readdirSync } from 'node:fs'
-import { dirname, join, relative } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { planShards, readTimings, root, specsOnDisk } from './e2e-shard.mjs'
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const workflow = join(root, '.github/workflows/e2e.yml')
-const e2eDir = join(root, 'cypress/e2e')
-
-/** Every `specs: "a,b"` in the matrix, as a flat list of globs. */
-function shardGlobs() {
-  const yaml = readFileSync(workflow, 'utf8')
-  const globs = []
-  for (const [, list] of yaml.matchAll(/^\s*specs:\s*"([^"]+)"/gm)) {
-    for (const glob of list.split(',')) globs.push(glob.trim())
-  }
-  return globs
-}
-
-/** Every spec file, as a repo-relative path with forward slashes. */
-function specsOnDisk(dir = e2eDir) {
-  const out = []
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const full = join(dir, entry.name)
-    if (entry.isDirectory()) out.push(...specsOnDisk(full))
-    else if (entry.name.endsWith('.cy.ts')) out.push(relative(root, full).split('\\').join('/'))
-  }
-  return out
-}
-
-// Only the constructs the matrix uses: `**` for any depth, `*` for any run of
-// characters inside one path segment, and a character class `[a-o]` or its
-// negation `[!a-o]` for one character (which is how patients is split in two).
-// Deliberately not a glob library -- this needs no dependency, and the
-// workflow documents the shape it takes.
-function globToRegExp(glob) {
-  const classes = []
-  const withoutClasses = glob.replace(/\[(!?)([^\]]+)\]/g, (_, negated, body) => {
-    classes.push(negated ? `[^/${body}]` : `[${body}]`)
-    return `\u0001${classes.length - 1}\u0001`
-  })
-  const escaped = withoutClasses.replace(/[.+^${}()|[\]\\]/g, '\\$&')
-  const pattern = escaped
-    .replace(/\*\*/g, '\u0000')
-    .replace(/\*/g, '[^/]*')
-    .replace(/\u0000/g, '.*')
-    .replace(/\u0001(\d+)\u0001/g, (_, i) => classes[Number(i)])
-  return new RegExp(`^${pattern}$`)
-}
-
-const globs = shardGlobs()
-if (globs.length === 0) {
-  console.error('check-e2e-shards: found no spec globs in .github/workflows/e2e.yml.')
-  console.error('The matrix format must have changed -- update this script to match.')
+const workflow = readFileSync(join(root, '.github/workflows/e2e.yml'), 'utf8')
+const fail = (lines) => {
+  for (const line of lines) console.error(line)
   process.exit(1)
 }
 
+const matrix = workflow.match(/^\s*shard:\s*\[([\d,\s]+)\]/m)
+if (!matrix) {
+  fail([
+    'check-e2e-shards: found no `shard: [1, 2, ...]` matrix in .github/workflows/e2e.yml.',
+    'The matrix format must have changed -- update this script to match.',
+  ])
+}
+const shardNumbers = matrix[1].split(',').map((n) => Number(n.trim()))
+const total = shardNumbers.length
+if (shardNumbers.some((n, i) => n !== i + 1)) {
+  fail([`check-e2e-shards: the shard matrix must be 1..${total} in order, found [${shardNumbers.join(', ')}].`])
+}
+if (!/node scripts\/e2e-shard\.mjs \$\{\{ matrix\.shard \}\} \$\{\{ strategy\.job-total \}\}/.test(workflow)) {
+  fail([
+    'check-e2e-shards: e2e.yml no longer picks each shard\'s specs with',
+    '`node scripts/e2e-shard.mjs ${{ matrix.shard }} ${{ strategy.job-total }}`,',
+    'so nothing proves every spec still runs. Restore that, or update this script.',
+  ])
+}
+
 const specs = specsOnDisk()
-const matchers = globs.map((glob) => ({ glob, re: globToRegExp(glob) }))
+const shards = planShards(specs, readTimings(), total)
 
-const uncovered = []
-const duplicated = []
-for (const spec of specs) {
-  const hits = matchers.filter((m) => m.re.test(spec))
-  if (hits.length === 0) uncovered.push(spec)
-  else if (hits.length > 1) duplicated.push({ spec, globs: hits.map((h) => h.glob) })
-}
+const seen = new Map()
+for (const spec of shards.flatMap((s) => s.specs)) seen.set(spec, (seen.get(spec) ?? 0) + 1)
+const uncovered = specs.filter((spec) => !seen.has(spec))
+const duplicated = [...seen].filter(([, n]) => n > 1).map(([spec]) => spec)
+const empty = shards.map((s, i) => (s.specs.length === 0 ? i + 1 : null)).filter(Boolean)
 
-const emptyGlobs = matchers.filter((m) => !specs.some((spec) => m.re.test(spec))).map((m) => m.glob)
+const problems = []
+if (uncovered.length) problems.push(`${uncovered.length} spec(s) run in no shard:`, ...uncovered.map((s) => `  ${s}`))
+if (duplicated.length) problems.push(`${duplicated.length} spec(s) run in more than one shard:`, ...duplicated.map((s) => `  ${s}`))
+if (empty.length) problems.push(`shard(s) ${empty.join(', ')} would run no spec -- fewer shards, or more specs.`)
+if (problems.length) fail(['check-e2e-shards:', ...problems])
 
-let failed = false
-
-if (uncovered.length > 0) {
-  failed = true
-  console.error(`check-e2e-shards: ${uncovered.length} spec(s) run in no CI shard:`)
-  for (const spec of uncovered) console.error(`  ${spec}`)
-  console.error('')
-  console.error('Add them to the `shard` matrix in .github/workflows/e2e.yml -- either')
-  console.error('onto an existing shard or as a new one. An unsharded spec passes')
-  console.error('locally and never runs in CI.')
-}
-
-if (duplicated.length > 0) {
-  failed = true
-  console.error(`check-e2e-shards: ${duplicated.length} spec(s) run in more than one shard:`)
-  for (const { spec, globs: hits } of duplicated) console.error(`  ${spec}  <- ${hits.join(' + ')}`)
-  console.error('')
-  console.error('Each one runs twice, on two runners, for no extra coverage.')
-}
-
-if (emptyGlobs.length > 0) {
-  failed = true
-  console.error(`check-e2e-shards: ${emptyGlobs.length} shard glob(s) match no spec:`)
-  for (const glob of emptyGlobs) console.error(`  ${glob}`)
-  console.error('')
-  console.error('A renamed or deleted spec leaves a shard running nothing.')
-}
-
-if (failed) process.exit(1)
-
-console.log(`${specs.length} e2e specs, each covered by exactly one CI shard.`)
+const slowest = Math.max(...shards.map((s) => s.seconds))
+const fastest = Math.min(...shards.map((s) => s.seconds))
+console.log(
+  `${specs.length} e2e specs, each in exactly one of ${total} CI shards (~${Math.round(fastest)}-${Math.round(slowest)}s each).`,
+)

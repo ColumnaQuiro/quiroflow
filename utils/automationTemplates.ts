@@ -190,7 +190,7 @@ export const FLOW_TEMPLATES: AutomationTemplate[] = [
     name: ['24 h reminder', 'Recordatorio 24 h'],
     description: ['With buttons to confirm or change.', 'Con botones para confirmar o cambiar.'],
     summary: ['24 h before · 1 step', '24 h antes · 1 paso'],
-    rule: baseRule('appointment.hours_before', { filters: { hours_before: 24 } }),
+    rule: baseRule('appointment.hours_before', { filters: { hours_before: 24, skip_if_answered: true } }),
     steps: [wa(['first_name', 'appointment_date', 'appointment_time'])],
   },
   {

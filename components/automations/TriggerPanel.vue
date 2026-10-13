@@ -103,6 +103,21 @@ watch(
       <input type="number" min="1" :class="FIELD_NUMBER" :value="rule.filters.hours_before ?? 24" data-test="trigger-hours-before" @input="setNumberFilter('hours_before', ($event.target as HTMLInputElement).value, 24)" />
       <span :class="HINT">{{ t('For a second reminder at another time, create another automation on this trigger.', 'Para un segundo recordatorio en otro momento, crea otra automatización con este disparador.') }}</span>
     </label>
+    <!-- On unless switched off (server/utils/evaluateAutomationFilters.ts):
+    off is for an automation here that is not a reminder. -->
+    <label v-if="rule.trigger_event === 'appointment.hours_before'" class="flex cursor-pointer items-start gap-2 text-[13px] text-ink-700 touch:min-h-11">
+      <input
+        type="checkbox"
+        class="mt-0.5 h-4 w-4 accent-brand"
+        :checked="rule.filters.skip_if_answered !== false"
+        data-test="trigger-skip-if-answered"
+        @change="setFilters({ ...rule.filters, skip_if_answered: ($event.target as HTMLInputElement).checked })"
+      />
+      <span>
+        {{ t('Not if they have already confirmed or asked to change the appointment', 'No si ya ha confirmado o pedido cambiar la cita') }}
+        <span :class="['block', HINT]">{{ t('So a second reminder does not ask again what the first already got an answer to.', 'Así un segundo recordatorio no vuelve a preguntar lo que el primero ya respondió.') }}</span>
+      </span>
+    </label>
     <label v-if="rule.trigger_event === 'appointment.review_request'" :class="LABEL">
       {{ t('Days after the visit', 'Días después de la cita') }}
       <input type="number" min="1" :class="FIELD_NUMBER" :value="rule.filters.days_after ?? 2" data-test="trigger-days-after" @input="setNumberFilter('days_after', ($event.target as HTMLInputElement).value, 2)" />

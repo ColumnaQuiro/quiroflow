@@ -86,6 +86,7 @@ interface EngineRule {
   enabled: boolean
   dry_run: boolean
   quiet_hours: QuietHours | null
+  filters?: Record<string, unknown> | null
 }
 
 type Subject =
@@ -417,7 +418,7 @@ async function releaseRun(supabase: any, runId: string, until: string) {
 
 async function walkRun(supabase: any, run: SequenceRun, origin: string, opts: { resume?: 'met' }) {
   const [{ data: ruleRow }, { data: actionRows }] = await Promise.all([
-    supabase.from('automation_rules').select('id, account_id, name, trigger_event, enabled, dry_run, quiet_hours').eq('id', run.rule_id).maybeSingle(),
+    supabase.from('automation_rules').select('id, account_id, name, trigger_event, enabled, dry_run, quiet_hours, filters').eq('id', run.rule_id).maybeSingle(),
     supabase.from('automation_actions').select('id, action_type, position, config, parent_id, branch').eq('rule_id', run.rule_id).order('position'),
   ])
   const rule: EngineRule = ruleRow ?? { id: run.rule_id, account_id: run.account_id, name: '', trigger_event: '', enabled: true, dry_run: false, quiet_hours: null }
@@ -437,7 +438,7 @@ async function walkRun(supabase: any, run: SequenceRun, origin: string, opts: { 
   if (!subject) return
 
   const appointment = run.appointment_id
-    ? ((await supabase.from('appointments').select('status, deleted_at, starts_at').eq('id', run.appointment_id).maybeSingle()).data as AppointmentState | null)
+    ? ((await supabase.from('appointments').select('status, deleted_at, starts_at, confirmation_status').eq('id', run.appointment_id).maybeSingle()).data as AppointmentState | null)
     : null
   if (await appointmentGone(supabase, run, rule, appointment)) return
   const late = lateForVisit(run, rule, appointment)
@@ -808,6 +809,20 @@ async function appointmentGone(supabase: any, run: SequenceRun, rule: EngineRule
     await stopRun(supabase, run, 'appointment_cancelled')
     return true
   }
+  // "Remind; wait two days; remind again" in one automation: the patient
+  // answered the first -- Confirmar, or asked to change it -- so the second
+  // has nothing left to ask. The same rule hours-before-cron applies before a
+  // run starts, with the same switch (filters.skip_if_answered, on unless
+  // false). Moving the visit clears the answer, so a run for a moved visit
+  // carries on.
+  if (
+    UPCOMING_VISIT_TRIGGERS.includes(rule.trigger_event) &&
+    (rule.filters as { skip_if_answered?: boolean } | null | undefined)?.skip_if_answered !== false &&
+    (appt.confirmation_status === 'confirmed' || appt.confirmation_status === 'reschedule_requested')
+  ) {
+    await stopRun(supabase, run, 'appointment_answered')
+    return true
+  }
   return false
 }
 
@@ -815,6 +830,7 @@ interface AppointmentState {
   status: string
   deleted_at: string | null
   starts_at: string
+  confirmation_status?: string | null
 }
 
 /**

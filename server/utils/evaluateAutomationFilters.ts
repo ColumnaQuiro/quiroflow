@@ -64,6 +64,13 @@ export interface AutomationFilters {
   // Only read by hours-before-cron.post.ts to pick its scan window -- not a
   // patient-targeting filter, so ruleFiltersMatch below never looks at it.
   hours_before?: number
+  // Also only read by hours-before-cron.post.ts: whether to pass over a visit
+  // the patient has already answered -- confirmed, or asked to change -- so a
+  // second reminder (3 days, then 24 hours) does not ask again what the first
+  // one already got an answer to. On unless set to false: off is for an
+  // automation on this trigger that is not a reminder (a form to fill in
+  // before the visit, say), which everyone should still get.
+  skip_if_answered?: boolean
   // Only read by review-request-cron.post.ts to pick its scan window, same
   // reasoning as hours_before -- how many days after a completed appointment
   // the review-request campaign fires.

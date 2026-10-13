@@ -12,6 +12,7 @@
     "check:migrations-applied": "./scripts/with-node.sh node scripts/check-migrations-applied.mjs",
     "check:crons-scheduled": "./scripts/with-node.sh node scripts/check-crons-scheduled.mjs",
     "check:e2e-shards": "./scripts/with-node.sh node scripts/check-e2e-shards.mjs",
+    "e2e:timings": "./scripts/with-node.sh node scripts/e2e-timings.mjs",
     "check:theme-tokens": "./scripts/with-node.sh node scripts/check-theme-tokens.mjs",
     "check:rls-initplan": "./scripts/with-node.sh node scripts/check-rls-initplan.mjs",
     "check:rls-two-factor": "./scripts/with-node.sh node scripts/check-rls-two-factor.mjs",

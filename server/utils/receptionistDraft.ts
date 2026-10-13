@@ -6,7 +6,7 @@ import { autoReplyHeldBack, isNoReply, isNoReplyMessage } from '~/utils/receptio
 import { buildSystemPrompt, loadBookedVisits, loadOfferedTypes, loadPatientPractitioners, loadReceptionistCalendar, toConfig, uniqueTypes, type LeadOrigin } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptionistModel'
 import { cameFromAd } from '~/utils/receptionistLeadOrigin'
-import { typesForAudience, type ReceptionistAudience } from '~/utils/receptionistTypes'
+import { leadNameIsTheirs, typesForAudience, type ReceptionistAudience } from '~/utils/receptionistTypes'
 import { internalNotes } from '~/utils/receptionistGuard'
 
 // Writing a receptionist reply for one lead.
@@ -89,7 +89,7 @@ export async function draftLeadReply(
     .from('leads')
     // Where they came from, so a reply that depends on it (an ad-only price)
     // is given without asking a question the record already answers.
-    .select('id, full_name, ai_state, patient_id, channel, source, external_source, lead_attribution(campaign, ad)')
+    .select('id, full_name, email, ai_state, patient_id, channel, source, external_source, lead_attribution(campaign, ad)')
     .eq('id', leadId)
     .eq('account_id', accountId)
     .is('deleted_at', null)
@@ -221,7 +221,7 @@ export async function draftLeadReply(
   const { text: draft, refused, handedOver } = await runReceptionistModel(createAnthropicClient(apiKey), {
     model: MODEL,
     maxTokens: MAX_TOKENS,
-    system: buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, audience, calendar, leadOrigin, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, draft: { personName: lead.full_name ?? null }, sendsItself: sends, canBook: Boolean(book) }),
+    system: buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, audience, calendar, leadOrigin, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, draft: { personName: lead.full_name ?? null }, knownDetails: { name: leadNameIsTheirs(lead.channel) && Boolean(lead.full_name?.trim()), email: Boolean(lead.email?.trim()) }, sendsItself: sends, canBook: Boolean(book) }),
     messages: history,
     findFreeTimes,
     handOver: sends,
@@ -263,6 +263,11 @@ export async function draftLeadReply(
     }
     // Sent: no draft waiting any more.
     await supabase.from('leads').update({ ai_draft_body: null }).eq('id', leadId).eq('account_id', accountId)
+    // It answers leads on 'none' too (the ones in the Inbox before it was
+    // switched on), but only 'handling' wears the "AI handling" chip -- so
+    // half the conversations it was answering looked like nobody's. Once it
+    // has written to them, they are its.
+    await supabase.from('leads').update({ ai_state: 'handling' }).eq('id', leadId).eq('account_id', accountId).eq('ai_state', 'none')
     if (handedOver) {
       await handToPerson(supabase, accountId, leadId)
       await announceHandover(supabase, accountId, target, name, handedOver)

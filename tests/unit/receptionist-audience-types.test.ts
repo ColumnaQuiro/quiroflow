@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { offeredTypesSection, rescheduleSection, typesForAudience, type PromptType } from '../../utils/receptionistTypes'
-import { newPatientDetails } from '../../utils/receptionistTypes'
+import { leadNameIsTheirs, newPatientDetails, newPatientDetailsSection } from '../../utils/receptionistTypes'
 
 // Which appointment the receptionist offers depends on who is asking: the
 // ad's first-visit offer for someone who answered the ad, the plain first
@@ -89,5 +89,26 @@ describe('New patient details from the conversation', () => {
     expect(newPatientDetails(null, ' Ana.Garcia81@Gmail.com ').email).toBe('ana.garcia81@gmail.com')
     expect(newPatientDetails(null, 'not an email').email).toBeNull()
     expect(newPatientDetails(null, 'a@b').email).toBeNull()
+  })
+})
+
+// A lead from the ad form already gave its name and email; it was asked for
+// the email again just before booking.
+describe('What a new patient is asked for before booking', () => {
+  it('trusts the name a form asked for, not a profile name', () => {
+    expect(leadNameIsTheirs('facebook')).toBe(true)
+    expect(leadNameIsTheirs('web')).toBe(true)
+    expect(leadNameIsTheirs('whatsapp')).toBe(false)
+    expect(leadNameIsTheirs('instagram')).toBe(false)
+    expect(leadNameIsTheirs(null)).toBe(false)
+  })
+
+  it('asks for nothing the lead already holds', () => {
+    const both = newPatientDetailsSection({ name: true, email: true })
+    expect(both).toContain('never ask for either')
+    expect(both).toContain('leave full_name and email out')
+    expect(newPatientDetailsSection({ name: false, email: true })).toMatch(/email is already on record.*first name and surname/s)
+    expect(newPatientDetailsSection({ name: true, email: false })).toMatch(/name is already on record.*need their email/s)
+    expect(newPatientDetailsSection({ name: false, email: false })).toContain('first name and surname(s) and their email')
   })
 })

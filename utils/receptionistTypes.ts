@@ -194,6 +194,34 @@ export function rescheduleSection(visits: BookedVisit[], timeZone: string, opts:
 }
 
 /**
+ * Whether the name on a lead is the one the person gave. A form -- the ad's,
+ * the website's -- asks for it; a WhatsApp or Instagram lead carries only the
+ * profile name ("Mari", "Javi 🏄"), which is not what goes on a patient record.
+ */
+export function leadNameIsTheirs(channel: string | null | undefined): boolean {
+  return Boolean(channel) && channel !== 'whatsapp' && channel !== 'instagram'
+}
+
+/**
+ * What to ask someone not yet a patient before booking them, given what the
+ * lead already holds. A lead from the ad form has both and was asked for them
+ * again ("solo necesito tu email"), which is the form a second time.
+ */
+export function newPatientDetailsSection(known: { name: boolean; email: boolean }): string {
+  const pass = 'pass them to book_appointment as full_name and email exactly as they wrote them'
+  if (known.name && known.email) {
+    return `This person's name and email are already on record, from the form they filled in: never ask for either. Book them without (leave full_name and email out of book_appointment) unless they give you different ones.`
+  }
+  if (known.email) {
+    return `Their email is already on record, so never ask for it. To book them you need their first name and surname(s) -- ask for that, once, if they have not given it, and pass it to book_appointment as full_name exactly as they wrote it.`
+  }
+  if (known.name) {
+    return `Their name is already on record, from the form they filled in, so never ask for it. To book them you need their email -- ask for it, once, if they have not given it, and pass it to book_appointment as email exactly as they wrote it.`
+  }
+  return `To book someone who is not yet a patient, you need their first name and surname(s) and their email -- ask for both together, once, if they have not given them, and ${pass}.`
+}
+
+/**
  * The name and email a new patient wrote in the conversation, checked. A
  * lead from WhatsApp carries only their profile name (a nickname, say), so the
  * record the receptionist made from one had that nickname, no surname, no

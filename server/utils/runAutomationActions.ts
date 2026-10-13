@@ -3,6 +3,7 @@ import { automationFieldValue as recipientFieldValue, withAnswerFallback, leadAn
 import { toE164 } from '~/utils/phone'
 import { renderTemplateFields } from '~/utils/docFields'
 import { templateVariantForLanguage } from '~/utils/templateLanguage'
+import { phoneForUrlButton } from '~/utils/whatsappUrlButton'
 import { automationEmailHtml, unsubscribeHeaders, type UnsubscribeLinks } from '~/utils/automationEmail'
 import { serviceSupabase } from '~/server/utils/serviceSupabase'
 import { unsubscribeLinks } from '~/server/utils/unsubscribe'
@@ -454,9 +455,16 @@ function attributionColumns(a?: { ruleId?: string; actionId?: string }) {
  * `&`-separated pairs. Anything else is URL-encoded, since a name with a
  * space or an accent would otherwise end the value early.
  */
-function buttonParamValue(param: { source: string; text?: string }, to: string, recipient: Recipient, context?: MergeContext): string {
+function buttonParamValue(
+  param: { source: string; text?: string },
+  to: string,
+  recipient: Recipient,
+  context?: MergeContext,
+  /** The template's button, whose example says what surrounds the phone (phoneForUrlButton). */
+  button?: { url?: string; example?: string[] },
+): string {
   if (param.source === 'text') return param.text ?? ''
-  if (param.source === 'phone') return to.replace(/\D/g, '')
+  if (param.source === 'phone') return phoneForUrlButton(to.replace(/\D/g, ''), button?.url, button?.example?.[0])
   return encodeURIComponent(recipientFieldValue(recipient, param.source, context))
 }
 
@@ -710,7 +718,8 @@ async function runWhatsAppAction(
   //
   // Meta stores the fixed half of the link and appends whatever we send, so
   // the right value depends entirely on the template: quiroads_welcome_message_3
-  // ends in `?phone=` and the booking page reads that back to prefill the
+  // ends in `/` and wants `?phone=<number>` in the blank (phoneForUrlButton reads
+  // that from its example), which the booking page reads back to prefill the
   // field, while new_patient_arrived_tasks ends in `/doc/` and wants a
   // document token. Nothing in the API says which, and Meta validates only
   // that a parameter is present -- never that it suits the URL. So a wrong
@@ -792,7 +801,7 @@ async function runWhatsAppAction(
       const paramText = token
         ? token
         : configured
-          ? buttonParamValue(configured, to, recipient, context)
+          ? buttonParamValue(configured, to, recipient, context, buttons[dynamicUrlButtonIndexes[i]])
           : `name=${encodeURIComponent(recipient.firstName ?? '')}&id=${recipient.id}`
       buttonComponents.push({ type: 'button', sub_type: 'url', index: String(dynamicUrlButtonIndexes[i]), parameters: [{ type: 'text', text: paramText }] })
     }

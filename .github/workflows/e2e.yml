@@ -26,6 +26,11 @@ concurrency:
   group: ci-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
+# One place for the version: the cache key and the download URL below both
+# read it, and so does warm-caches.yml, which fills that cache on main.
+env:
+  SUPABASE_CLI_VERSION: 2.116.0
+
 jobs:
   typecheck:
     runs-on: ubuntu-latest
@@ -123,6 +128,11 @@ jobs:
         run: npm run build
         env:
           NITRO_PRESET: node-server
+          # No server sourcemaps (see nuxt.config.ts). Every shard waits for
+          # this build before its first spec, so its length is added to the
+          # whole run; the maps cost ~40% of the server and Nitro bundling and
+          # nobody reads an e2e stack trace against them.
+          E2E_BUILD: '1'
 
       - uses: actions/upload-artifact@v4
         with:
@@ -143,128 +153,26 @@ jobs:
     strategy:
       fail-fast: false
       # Manual sharding, no Cypress Cloud recording configured (that's what
-      # unlocks --parallel/--record). Each shard still pays its own npm
-      # ci + supabase start cost, but in parallel with the others -- a
-      # worthwhile trade once actual Cypress runtime dominates the fixed
-      # per-job setup cost, as it does once there's more than a couple
-      # specs.
+      # unlocks --parallel/--record). Each shard pays its own fixed setup --
+      # Supabase, the app build -- but in parallel with the others, and the
+      # run lasts as long as its slowest shard.
       #
-      # Balanced by folder, not by individual spec file, so a spec added to
-      # an existing folder is auto-included in its shard -- slicing at
-      # file granularity would silently drop a new spec from every shard.
+      # Which specs a shard runs is computed, not written here: see "Pick
+      # this shard's specs" below and scripts/e2e-shard.mjs, which spreads
+      # every spec on disk across the shards by its measured time. This
+      # matrix used to list folder globs by hand, rebalanced at least five
+      # times as one folder or another grew into the critical path -- and by
+      # 2026-10-13 settings ran 383s while three shards finished in under
+      # 110s. Computed shards are even (~220s each at that date), and a new
+      # spec or folder is assigned by construction rather than running
+      # nowhere until someone notices.
       #
-      # Measured on the run for commit 71ecdfd (2026-09-11), Cypress time
-      # only, excluding the ~2min 20s of fixed setup every shard pays:
-      # settings 115s, patients+public 83s, auth+calendar+inbox ~65s,
-      # navigation 59s. Settings was nearly double the narrowest and its job
-      # was the one that decided how long CI took, so its four subscription
-      # specs move to their own folder and their own shard.
-      #
-      # They move FOLDER rather than being picked out by filename glob: a
-      # shard is a folder glob so that a spec added to an existing folder is
-      # auto-included, and there is no way to express "settings except
-      # subscription-*" that keeps that property -- a new settings spec would
-      # have landed in no shard at all.
-      #
-      # public/** rides with subscription/** purely for balance (74s together
-      # against 62s for settings). That is only ~8s better than leaving it
-      # with patients, which is inside the run-to-run variance seen on these
-      # specs, so it is not worth defending if a later regrouping wants it
-      # back.
-      #
-      # Cypress time per shard, measured against the built server (see the
-      # `build` job above) rather than estimated: growth-leads 2m41,
-      # growth-platform 2m16, patients 1m27, settings 50s, calendar 47s,
-      # navigation 17s, the rest under 30s each.
-      # Those numbers replace a set that had gone badly stale -- it claimed
-      # every shard ran in about a minute while growth was taking 8m25.
-      #
-      # Growth is now the whole critical path and cannot be split here:
-      # shards are folder globs on purpose, because that is what lets
-      # check-e2e-shards.mjs prove every folder runs somewhere. Listing
-      # individual spec files would balance the clock and reopen the hole it
-      # closed -- a new growth spec would belong to no shard and never run.
-      # Splitting growth means splitting the folder, or teaching that script
-      # about file-level shards first.
-      #
-      # Rebalance from the real per-spec numbers in the "All specs passed"
-      # table, never by guessing: that is how settings came to be mis-sized
-      # before, from a stale table with a truncated spec name.
+      # To rebalance after the suite has grown or shifted:
+      # `npm run e2e:timings` rewrites cypress/e2e-timings.json from the last
+      # few green runs. To change the shard count, edit this list; it must
+      # stay 1..N, which check-e2e-shards.mjs enforces.
       matrix:
-        shard:
-          - name: settings
-            specs: "cypress/e2e/settings/**"
-          # Two shards until 2026-09-23, when they were the two quickest by far
-          # (navigation 49s, subscription+public 56s against 155s+ elsewhere);
-          # merged so their runner could take a third patients shard instead.
-          # dashboard rides along because it is the same kind of spec -- "does
-          # an app page render the right thing".
-          - name: navigation-subscription-public
-            specs: "cypress/e2e/navigation/**,cypress/e2e/dashboard/**,cypress/e2e/subscription/**,cypress/e2e/public/**"
-          # Its own shard rather than folded into an existing one: Growth is
-          # mid-build and this folder is the one still growing -- receptionist,
-          # automations and reputation specs are still to come. scripts/
-          # check-e2e-shards.mjs is what noticed it had no shard at all, after
-          # two spec files had already merged and never run.
-          # Growth is split because as one shard it was the whole critical
-          # path: 237s against the next-slowest 87s. The halves are balanced
-          # on measured time, not spec count: leads 2m41, platform 2m16.
-          #
-          # growth-leads takes a prefix glob, so a new growth-lead-*.cy.ts
-          # joins it with no workflow edit; growth-receptionist* is a glob for
-          # the same reason. The rest of growth-platform names its specs,
-          # which means a new non-lead growth spec matches nothing and
-          # check-e2e-shards.mjs fails until someone assigns it. That is the
-          # trade for splitting a folder, and the failure is the point: the
-          # alternative is a spec that never runs and says nothing.
-          # growth-automation*.cy.ts is a prefix glob too, for the same reason as
-          # growth-lead*: the automation characterization specs grow with the
-          # engine, and each new one should run without a workflow edit.
-          # inbox/** rides with the growth lead specs rather than with auth and
-          # calendar, which made that shard one of the three slowest (155s).
-          # Measured 2026-09-23: leads 80s + inbox 43s.
-          - name: growth-leads-and-inbox
-            specs: "cypress/e2e/growth/growth-lead*.cy.ts,cypress/e2e/growth/growth-inbox.cy.ts,cypress/e2e/inbox/**"
-          - name: growth-platform
-            specs: "cypress/e2e/growth/growth-receptionist*.cy.ts,cypress/e2e/growth/growth-reputation.cy.ts,cypress/e2e/growth/growth-dashboard-data.cy.ts,cypress/e2e/growth/growth-dashboard.cy.ts,cypress/e2e/growth/growth-addon-entitlement.cy.ts,cypress/e2e/growth/growth-review-links.cy.ts"
-          # Split out of growth-platform on 2026-09-26, when the Automations
-          # builder brought four more specs: at twenty specs one Cypress
-          # process ran for 3m+ and its Electron renderer crashed (exit 139)
-          # partway through. growth-automation*.cy.ts is a prefix glob, so the
-          # engine and builder specs still to come join it with no edit here.
-          #
-          # Split again on 2026-09-30: at fourteen specs the renderer was
-          # crashing again, every time at the start of the 8th spec
-          # (growth-automation-segments) -- on #504, #508 and #512 -- and
-          # freeing snapshots (#509) did not stop it. The halves are
-          # complementary character classes on the name after
-          # "growth-automation-", like the patients shards: every automation
-          # spec, including ones still to come, matches exactly one.
-          - name: growth-automations-a-p
-            specs: "cypress/e2e/growth/growth-automation-[a-p]*.cy.ts"
-          - name: growth-automations-q-z
-            specs: "cypress/e2e/growth/growth-automation-[!a-p]*.cy.ts,cypress/e2e/growth/growth-automations.cy.ts,cypress/e2e/growth/growth-campaign-templates.cy.ts,cypress/e2e/growth/growth-email-metrics.cy.ts"
-          # Patients is split by first letter because it is the biggest folder
-          # by far: 57 specs, ~300s of Cypress, far more than any one runner
-          # should carry. Cut into three on measured per-spec time
-          # (2026-09-23): a-f 105s, g-p 109s, the rest plus booking 98s. It was
-          # cut in two (at "p") until those halves grew to 153s and 159s and
-          # were again the slowest shards.
-          #
-          # Character classes rather than named files, because [a-f], [g-p]
-          # and [!a-p] are complementary: every file in the folder matches
-          # exactly one of them, so a new patients spec still lands in a shard
-          # with no workflow edit, which is the property folder globs exist
-          # for. Move the letters to rebalance; check-e2e-shards.mjs proves the
-          # three still cover the folder exactly once.
-          - name: patients-a-f
-            specs: "cypress/e2e/patients/[a-f]*.cy.ts"
-          - name: patients-g-p
-            specs: "cypress/e2e/patients/[g-p]*.cy.ts"
-          - name: patients-q-z-and-booking
-            specs: "cypress/e2e/patients/[!a-p]*.cy.ts,cypress/e2e/public-booking/**"
-          - name: auth-and-calendar
-            specs: "cypress/e2e/auth/**,cypress/e2e/calendar/**"
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -274,6 +182,17 @@ jobs:
         with:
           node-version: 22
           cache: npm
+
+      # Every shard computes the same plan from the same checkout and takes
+      # its own slice of it, so between them they run each spec once. The
+      # step log lists the slice, which is where to look for "which shard ran
+      # my spec".
+      - name: Pick this shard's specs
+        id: specs
+        run: |
+          specs="$(node scripts/e2e-shard.mjs ${{ matrix.shard }} ${{ strategy.job-total }})"
+          echo "$specs" | tr ',' '\n'
+          echo "list=$specs" >> "$GITHUB_OUTPUT"
 
       # The CLI is cached and fetched by hand rather than through
       # supabase/setup-cli, which downloads it on every job of every run --
@@ -285,15 +204,16 @@ jobs:
       # that.
       #
       # So: restore from cache, and on a miss fetch it with retries that
-      # actually cover an outage. Keyed by version, so bumping VERSION below
-      # is all it takes to pick up a new one -- and the tarball is 54MB
-      # fetched once per version rather than seven times per push.
+      # actually cover an outage. Keyed by version, so bumping
+      # SUPABASE_CLI_VERSION at the top of this file is all it takes to pick
+      # up a new one -- and the tarball is 54MB fetched once per version
+      # rather than once per shard.
       - name: Restore the Supabase CLI
         id: supabase-cli
         uses: actions/cache@v4
         with:
           path: ~/.supabase-cli
-          key: supabase-cli-${{ runner.os }}-${{ runner.arch }}-2.116.0
+          key: supabase-cli-${{ runner.os }}-${{ runner.arch }}-${{ env.SUPABASE_CLI_VERSION }}
 
       - name: Download the Supabase CLI
         if: steps.supabase-cli.outputs.cache-hit != 'true'
@@ -302,7 +222,7 @@ jobs:
           # --retry-all-errors is what makes this survive the 5xx that beat
           # the action: plain --retry ignores HTTP errors entirely.
           curl -fsSL --retry 6 --retry-all-errors --retry-delay 5 \
-            https://github.com/supabase/cli/releases/download/v2.116.0/supabase_linux_amd64.tar.gz \
+            https://github.com/supabase/cli/releases/download/v${SUPABASE_CLI_VERSION}/supabase_linux_amd64.tar.gz \
             | tar -xz -C ~/.supabase-cli supabase
           chmod +x ~/.supabase-cli/supabase
 
@@ -358,41 +278,31 @@ jobs:
 
       # The Cypress binary lives in ~/.cache/Cypress, not node_modules, and is
       # fetched by Cypress's postinstall -- which never runs when the
-      # node_modules cache hits. Cached separately so neither half can be
-      # restored without the other, and installed explicitly in the one case
-      # where the tree is cached but the binary isn't.
+      # node_modules cache hits, nor when setup-node's npm cache makes `npm ci`
+      # treat cypress as already installed. The second is what took out a
+      # shard on PR #163 with "the Cypress binary is missing" while the others
+      # passed: a cache-state coincidence, not a test failure. So the binary
+      # has a cache of its own, keyed on the Cypress version the lockfile
+      # resolves -- a bump misses and re-downloads rather than restoring a
+      # stale binary -- and is installed explicitly whatever the caches did.
+      #
+      # Read from the lockfile, not node_modules, so the binary is restored
+      # BEFORE `npm ci`: on a node_modules miss the postinstall then finds it
+      # in place instead of downloading it again. It used to be cached twice,
+      # by lockfile hash and by version, restoring the same 215MB twice on
+      # every shard.
+      - name: Read the Cypress version
+        id: cypress-version
+        run: echo "version=$(node -p "require('./package-lock.json').packages['node_modules/cypress'].version")" >> "$GITHUB_OUTPUT"
+
       - name: Restore the Cypress binary
-        id: cypress-binary
         uses: actions/cache@v4
         with:
           path: ~/.cache/Cypress
-          key: cypress-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          key: cypress-${{ runner.os }}-${{ steps.cypress-version.outputs.version }}
 
       - run: npm ci
         if: steps.modules.outputs.cache-hit != 'true'
-
-      - name: Install the Cypress binary
-        if: steps.modules.outputs.cache-hit == 'true' && steps.cypress-binary.outputs.cache-hit != 'true'
-        run: npx cypress install
-
-      # `cache: npm` on setup-node caches npm's own package cache, not the
-      # Cypress binary, which lives outside node_modules in ~/.cache/Cypress.
-      # When the npm cache hits, `npm ci` treats cypress as already installed
-      # and skips the postinstall that downloads the binary -- so the job dies
-      # with "the Cypress binary is missing" before a single test runs. That
-      # is what took out the navigation-and-booking shard on PR #163 while the
-      # other two shards passed: a cache-state coincidence, not a test failure.
-      #
-      # Keyed on the resolved Cypress version so a version bump misses the
-      # cache and re-downloads rather than restoring a stale binary.
-      - name: Read the Cypress version
-        id: cypress-version
-        run: echo "version=$(node -p "require('cypress/package.json').version")" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/cache@v4
-        with:
-          path: ~/.cache/Cypress
-          key: cypress-${{ runner.os }}-${{ steps.cypress-version.outputs.version }}
 
       # Idempotent: a no-op costing under a second when the cache restored the
       # binary, and the thing that makes a cache miss recoverable instead of
@@ -473,11 +383,11 @@ jobs:
           sed -n 's/^API_URL="\(.*\)"/NUXT_PUBLIC_SUPABASE_URL=\1/p;s/^ANON_KEY="\(.*\)"/NUXT_PUBLIC_SUPABASE_KEY=\1/p;s/^SERVICE_ROLE_KEY="\(.*\)"/NUXT_SUPABASE_SECRET_KEY=\1/p' \
             /tmp/supabase-status.env >> "$GITHUB_ENV"
 
-      - name: Run Cypress (${{ matrix.shard.name }})
+      - name: Run Cypress (shard ${{ matrix.shard }})
         # The built server from the `build` job, not `nuxt dev`. Env reaches
         # it at runtime (NUXT_PUBLIC_*), which is why building with no Supabase
         # anywhere is fine.
-        run: npx start-server-and-test "node .output/server/index.mjs" http://localhost:3000 "cypress run --spec '${{ matrix.shard.specs }}'"
+        run: npx start-server-and-test "node .output/server/index.mjs" http://localhost:3000 "cypress run --spec '${{ steps.specs.outputs.list }}'"
         env:
           CYPRESS_baseUrl: http://localhost:3000
           PORT: 3000
@@ -520,7 +430,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: cypress-screenshots-${{ matrix.shard.name }}
+          name: cypress-screenshots-${{ matrix.shard }}
           path: cypress/screenshots
           if-no-files-found: ignore
 

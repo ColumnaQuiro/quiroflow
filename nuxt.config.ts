@@ -123,7 +123,15 @@ export default defineNuxtConfig({
       filesToDeleteAfterUpload: ['dist/**/*.map', '.output/**/public/**/*.map'],
     },
   },
-  sourcemap: { client: process.env.SENTRY_AUTH_TOKEN ? 'hidden' : false },
+  // The CI e2e build (E2E_BUILD) has no server maps: they were 19s of its 75s
+  // locally, on the path every Cypress shard waits on, and the node-server
+  // bundle they map is unminified anyway. Everywhere else `server` stays
+  // UNSET rather than true -- @sentry/nuxt turns an unset one into 'hidden'
+  // and deletes the maps after upload, and an explicit true opts out of both.
+  sourcemap: {
+    client: process.env.SENTRY_AUTH_TOKEN ? 'hidden' : false,
+    ...(process.env.E2E_BUILD ? { server: false } : {}),
+  },
   // The stylesheet as a file, not inlined into every page's HTML. Inlined, it
   // was 92 KB of the sign-in page's 112 and arrived again with every full
   // load or refresh, never cached. The people using this app reload it all

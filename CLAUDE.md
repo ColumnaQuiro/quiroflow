@@ -30,14 +30,15 @@ gate behind it. Because of that:
   `v-else` shipped — preflight clean, every route 500ing, and the only
   signal was three Cypress shards failing on pages unrelated to the
   change. `npm run build` names it outright in about a minute.
-- **A new folder of e2e specs runs in no shard until the matrix names
-  it.** The shard list in `e2e.yml` is a set of folder globs, so a spec
-  added to an *existing* folder is picked up automatically — but a brand
-  new folder belongs to nothing, and the specs inside it then pass
-  locally while CI never executes one of them. Every job stays green,
-  which is what makes it hard to spot: `cypress/e2e/growth` had two spec
-  files merged before anyone noticed. `npm run check:e2e-shards` now
-  fails on any folder no shard covers, and runs as part of `preflight`.
+- **CI's Cypress shards are computed, not listed.** `scripts/e2e-shard.mjs`
+  spreads every spec on disk across the shards by its measured time in
+  `cypress/e2e-timings.json`, so a new spec or folder runs with no workflow
+  edit. (It used to be hand-written folder globs, and a new folder belonged
+  to none of them: `cypress/e2e/growth` had two spec files merged that CI
+  never ran.) `npm run check:e2e-shards`, part of `preflight`, proves the
+  plan covers every spec exactly once. When one shard has become clearly
+  slower than the rest, `npm run e2e:timings` refreshes the timings from
+  the last green runs; never hand-edit them.
 - Merges are manual (no auto-merge configured) — CI green is a
   precondition for merging, not a signal to merge automatically.
 - This applies the same way whether the change was requested by a person

@@ -1,0 +1,96 @@
+name: Warm CI caches
+
+# CI (e2e.yml) runs on pull requests only, so every cache it saves is scoped
+# to that PR's merge ref -- and a cache saved there can be restored by that PR
+# and nothing else. A PR's caches are visible to the PR; main's are visible to
+# every PR. Nothing ran on main, so nothing was ever saved there: each new PR
+# missed node_modules, npm's cache and the Supabase CLI, paid for `npm ci` on
+# all twelve jobs (~45s each, and on the `build` job every shard waits for),
+# then saved ~500MB of copies no other PR could use. On 2026-10-13 that had
+# the repo at 10.97GB against GitHub's 10GB cache limit, evicting itself.
+#
+# This fills the same caches on main, under the exact keys e2e.yml restores.
+# A PR whose lockfile matches main's hits them; an exact hit saves nothing, so
+# PRs stop adding copies too. A PR that changes the lockfile misses as before,
+# and once it merges the push below re-warms.
+#
+# The keys must stay identical to e2e.yml's -- a key that drifts warms a cache
+# nobody restores, and CI quietly goes back to missing.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - package-lock.json
+      - .github/workflows/e2e.yml
+      - .github/workflows/warm-caches.yml
+  # Caches unread for 7 days are evicted. PR runs reading them keeps them
+  # alive; this covers a quiet week, and costs seconds when everything hits.
+  schedule:
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
+
+jobs:
+  warm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      # Also warms setup-node's own npm cache, which e2e.yml uses on a
+      # node_modules miss.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Restore node_modules
+        id: modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: modules-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
+
+      - name: Read the Cypress version
+        id: cypress-version
+        run: echo "version=$(node -p "require('./package-lock.json').packages['node_modules/cypress'].version")" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the Cypress binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/Cypress
+          key: cypress-${{ runner.os }}-${{ steps.cypress-version.outputs.version }}
+
+      - run: npm ci
+        if: steps.modules.outputs.cache-hit != 'true'
+
+      - run: npx cypress install
+
+      # Read from e2e.yml rather than repeated here, so a version bump there
+      # cannot leave this warming the old one.
+      - name: Read the Supabase CLI version
+        id: supabase-version
+        run: |
+          version="$(sed -n 's/^  SUPABASE_CLI_VERSION: *//p' .github/workflows/e2e.yml)"
+          if [ -z "$version" ]; then
+            echo "::error::No SUPABASE_CLI_VERSION in e2e.yml's top-level env -- update this step to match"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the Supabase CLI
+        id: supabase-cli
+        uses: actions/cache@v4
+        with:
+          path: ~/.supabase-cli
+          key: supabase-cli-${{ runner.os }}-${{ runner.arch }}-${{ steps.supabase-version.outputs.version }}
+
+      - name: Download the Supabase CLI
+        if: steps.supabase-cli.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.supabase-cli
+          curl -fsSL --retry 6 --retry-all-errors --retry-delay 5 \
+            https://github.com/supabase/cli/releases/download/v${{ steps.supabase-version.outputs.version }}/supabase_linux_amd64.tar.gz \
+            | tar -xz -C ~/.supabase-cli supabase
+          chmod +x ~/.supabase-cli/supabase
+          ~/.supabase-cli/supabase --version

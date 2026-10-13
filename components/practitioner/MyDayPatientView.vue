@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { listingActionLine, listingSummary, sideLettersFor, type Listings } from '~/utils/spinalListings'
 interface RoomOption { id: string; name: string }
 interface Appointment {
   id: string
@@ -45,7 +46,38 @@ watch(() => props.appointment.patient_id, loadAttendance, { immediate: true })
 // PatientsExamAutofill owns the SOAP fields and the visit_notes save --
 // this view just drives it (save on "Sign & complete", populate on "Copy
 // last note") via the methods it exposes.
-const examRef = ref<{ save: () => Promise<void>; copyLastNote: () => Promise<void> } | null>(null)
+const examRef = ref<{
+  save: () => Promise<void>
+  copyLastNote: () => Promise<void>
+  setListingLine: (line: string) => void
+  bringSection: (section: 'Subjective' | 'Objective' | 'Action' | 'Plan' | 'Note', text: string) => void
+} | null>(null)
+const listingsRef = ref<{ setAll: (l: Listings) => void } | null>(null)
+const store = useAccountStore()
+const { can } = usePermission()
+const canEditNotes = computed(() => can('visit_notes_edit'))
+
+// The listing beside the note writes itself into Action as one line, kept in
+// step as segments are tapped (utils/spinalListings).
+function onListingsChange(l: Listings) {
+  examRef.value?.setListingLine(listingActionLine(listingSummary(l, (x) => x, sideLettersFor(t)), t))
+}
+
+// Laid out by the width this pane actually has, not the window's: the day's
+// worklist takes 404px beside it, so at a 1280-1500px window a viewport
+// breakpoint put three columns into ~550-780px and left the note a sliver.
+// Wide: note | listing | last visit. Medium: note | listing, last visit
+// below. Narrow: one column, the listing in its own two-column grid.
+const bodyEl = ref<HTMLElement | null>(null)
+const bodyWidth = ref(0)
+let resizeObserver: ResizeObserver | null = null
+onMounted(() => {
+  if (!bodyEl.value) return
+  resizeObserver = new ResizeObserver(([entry]) => (bodyWidth.value = entry?.contentRect.width ?? 0))
+  resizeObserver.observe(bodyEl.value)
+})
+onBeforeUnmount(() => resizeObserver?.disconnect())
+const layout = computed<'wide' | 'medium' | 'narrow'>(() => (bodyWidth.value >= 1040 ? 'wide' : bodyWidth.value >= 600 || !bodyWidth.value ? 'medium' : 'narrow'))
 
 async function loadVisitNumber() {
   const { count } = await supabase
@@ -97,9 +129,11 @@ async function signAndComplete() {
 
 <template>
   <div class="flex flex-col gap-4">
-    <!-- Charting card -->
-    <div class="overflow-hidden rounded-card border border-line bg-surface shadow-card">
-      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4">
+    <!-- The visit: today's note with its listing beside it, and the last
+    visit beside that. The bar with Sign & complete stays in view while the
+    rest scrolls (no overflow-hidden on the card: it would stop the sticky bar). -->
+    <div class="rounded-card border border-line bg-surface shadow-card">
+      <div class="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-t-card border-b border-line bg-surface px-5 py-4">
         <div class="flex min-w-0 items-center gap-3">
           <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[13px] font-[650] text-brand">
             {{ initials }}
@@ -114,11 +148,38 @@ async function signAndComplete() {
             {{ t('View profile →', 'Ver perfil →') }}
           </NuxtLink>
           <UiBtn variant="secondary" size="sm" @click="copyLastNote">{{ t('Copy last note', 'Copiar última nota') }}</UiBtn>
-          <UiBtn variant="primary" size="sm" :disabled="signing" @click="signAndComplete">{{ signing ? t('Signing…', 'Firmando…') : t('Sign & complete', 'Firmar y completar') }}</UiBtn>
+          <UiBtn variant="primary" size="sm" :disabled="signing" data-cy="myday-sign" @click="signAndComplete">{{ signing ? t('Signing…', 'Firmando…') : t('Sign & complete', 'Firmar y completar') }}</UiBtn>
         </div>
       </div>
 
-      <PatientsExamAutofill ref="examRef" :appointment-id="appointment.id" :patient-id="appointment.patient_id" @saved="emit('charted')" />
+      <div ref="bodyEl" class="grid gap-4 p-4" :class="layout === 'wide' ? 'grid-cols-[minmax(0,1fr)_300px]' : 'grid-cols-1'" :data-layout="layout">
+        <section class="min-w-0" data-cy="myday-today">
+          <h2 class="px-1 text-[13.5px] font-semibold text-ink-900">{{ t('Today', 'Hoy') }}</h2>
+          <div class="mt-2 grid gap-4" :class="layout === 'narrow' ? 'grid-cols-1' : 'grid-cols-[minmax(0,1fr)_236px]'">
+            <div class="min-w-0 rounded-ctl border border-line-row">
+              <PatientsExamAutofill ref="examRef" :appointment-id="appointment.id" :patient-id="appointment.patient_id" @saved="emit('charted')" />
+            </div>
+            <AppointmentsSpinalListings
+              v-if="store.accountId"
+              ref="listingsRef"
+              :appointment-id="appointment.id"
+              :account-id="store.accountId"
+              :team-member-id="store.teamMember?.id ?? null"
+              :editable="canEditNotes"
+              default-open
+              :narrow="layout !== 'narrow'"
+              @change="onListingsChange"
+            />
+          </div>
+        </section>
+        <AppointmentsPreviousVisit
+          :appointment-id="appointment.id"
+          :editable="canEditNotes"
+          class="self-start"
+          @bring="(section, text) => examRef?.bringSection(section, text)"
+          @use-listings="(l) => listingsRef?.setAll(l)"
+        />
+      </div>
     </div>
 
     <!-- At-a-glance context sits across the top as a row rather than down a
@@ -155,7 +216,7 @@ async function signAndComplete() {
     <div class="rounded-card border border-line bg-surface p-4 shadow-card">
       <h3 class="text-[13.5px] font-semibold text-ink-700">{{ t('Quick Note', 'Nota rápida') }}</h3>
       <div class="mt-2.5">
-        <AppointmentsNotesPanel :appointment-id="appointment.id" />
+        <AppointmentsNotesPanel :appointment-id="appointment.id" :listings="false" />
       </div>
     </div>
     <div class="rounded-card border border-line bg-surface p-4 shadow-card">

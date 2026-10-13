@@ -1,18 +1,25 @@
 <script setup lang="ts">
-import { EXTREMITY_LEVELS, SPINE_LEVELS, hasSide, listingSummary, toggleListing, type Listings } from '../../utils/spinalListings'
+import { EXTREMITY_LEVELS, SPINE_LEVELS, hasSide, listingSummary, sideLettersFor, sideText, toggleListing, type Listings } from '../../utils/spinalListings'
 
 // Spinal listings for one visit (visit_listings): a grid of segments, tap L
-// or R, saved as you tap. Shows what was listed on the patient's previous
-// visit, which is what a chiropractor checks first. Beside the visit notes on
-// the web (AppointmentsNotesPanel) and in the staff app's visit screen.
-const props = defineProps<{ appointmentId: string; accountId: string; teamMemberId: string | null; editable: boolean }>()
+// or R (I / D in Spanish), saved as you tap. Shows what was listed on the
+// patient's previous visit, segment by segment and as a line, which is what a
+// chiropractor checks first. Beside today's note on My Day and in the staff
+// app's visit screen, and in AppointmentsNotesPanel elsewhere.
+//
+// Every change the practitioner makes is emitted (`change`), so the note
+// beside it can keep its "Ajustado: …" line in step (utils/spinalListings,
+// syncListingLine). Loading a visit emits nothing: opening a visit charted
+// before must not rewrite its note.
+const props = withDefaults(defineProps<{ appointmentId: string; accountId: string; teamMemberId: string | null; editable: boolean; defaultOpen?: boolean; narrow?: boolean }>(), { defaultOpen: false, narrow: false })
+const emit = defineEmits<{ change: [listings: Listings] }>()
 
 const t = useT()
 const supabase = useSupabaseClient()
 const listings = ref<Listings>({})
 const previous = ref<{ listings: Listings; day: string } | null>(null)
 const loading = ref(true)
-const open = ref(false)
+const open = ref(props.defaultOpen)
 const showExtremities = ref(false)
 const saving = ref(false)
 const saveError = ref('')
@@ -46,11 +53,20 @@ async function load() {
 }
 watch(() => props.appointmentId, load, { immediate: true })
 
-// Saved per tap; a tap while one is in flight waits for it, so the last tap wins.
+// Saved per change; a change while one is in flight waits for it, so the last one wins.
 let chain: Promise<void> = Promise.resolve()
 function tap(level: string, side: 'L' | 'R') {
   if (!props.editable) return
-  listings.value = toggleListing(listings.value, level, side)
+  commit(toggleListing(listings.value, level, side))
+}
+/** Replaces the whole listing (the previous visit's "Use today"). */
+function setAll(next: Listings) {
+  if (!props.editable) return
+  commit({ ...next })
+}
+function commit(next: Listings) {
+  listings.value = next
+  emit('change', { ...next })
   const snapshot = { ...listings.value }
   chain = chain.then(async () => {
     saving.value = true
@@ -63,17 +79,18 @@ function tap(level: string, side: 'L' | 'R') {
   })
 }
 function copyPrevious() {
-  if (!previous.value) return
-  for (const [level, side] of Object.entries(previous.value.listings)) {
-    if (side === 'B') {
-      tap(level, 'L')
-      tap(level, 'R')
-    } else tap(level, side)
-  }
+  if (previous.value) setAll(previous.value.listings)
 }
+defineExpose({ setAll, copyPrevious })
 
-const summary = computed(() => listingSummary(listings.value, extremityName))
-const prevSummary = computed(() => (previous.value ? listingSummary(previous.value.listings, extremityName) : ''))
+const letters = computed(() => sideLettersFor(t))
+const summary = computed(() => listingSummary(listings.value, extremityName, letters.value))
+const prevSummary = computed(() => (previous.value ? listingSummary(previous.value.listings, extremityName, letters.value) : ''))
+// What this segment was last time, beside it: "antes I/D".
+const prevSide = (level: string) => {
+  const v = previous.value?.listings[level]
+  return v ? sideText(v, letters.value) : ''
+}
 const prevDay = computed(() => (previous.value ? new Date(previous.value.day).toLocaleDateString(t('en-GB', 'es-ES'), { day: 'numeric', month: 'short' }) : ''))
 const sideBtn = (on: boolean) =>
   `h-7 w-7 rounded-ctlSm text-[11.5px] font-bold ${on ? 'bg-brand text-white' : 'border border-line-control bg-surface text-ink-muted'} ${props.editable ? '' : 'cursor-default'}`
@@ -98,22 +115,24 @@ const sideBtn = (on: boolean) =>
       </div>
 
       <!-- Head to foot down each column, as a spine is read. -->
-      <div class="grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-flow-col sm:grid-cols-2 sm:grid-rows-[repeat(15,minmax(0,auto))]">
+      <!-- One column beside the note (narrow), two on their own. -->
+      <div class="grid grid-cols-1 gap-x-6 gap-y-1" :class="narrow ? '' : 'sm:grid-flow-col sm:grid-cols-2 sm:grid-rows-[repeat(15,minmax(0,auto))]'">
         <div v-for="level in SPINE_LEVELS" :key="level" class="flex items-center gap-1.5" :data-cy="`listing-${level}`">
-          <button type="button" :class="sideBtn(hasSide(listings, level, 'L'))" :aria-pressed="hasSide(listings, level, 'L')" :aria-label="`${level} ${t('left', 'izquierda')}`" :disabled="!editable" data-cy="listing-L" @click="tap(level, 'L')">L</button>
+          <button type="button" :class="sideBtn(hasSide(listings, level, 'L'))" :aria-pressed="hasSide(listings, level, 'L')" :aria-label="`${level} ${t('left', 'izquierda')}`" :disabled="!editable" data-cy="listing-L" @click="tap(level, 'L')">{{ letters.L }}</button>
           <span class="w-14 text-center text-[12.5px] font-medium text-ink-800">{{ level }}</span>
-          <button type="button" :class="sideBtn(hasSide(listings, level, 'R'))" :aria-pressed="hasSide(listings, level, 'R')" :aria-label="`${level} ${t('right', 'derecha')}`" :disabled="!editable" data-cy="listing-R" @click="tap(level, 'R')">R</button>
+          <button type="button" :class="sideBtn(hasSide(listings, level, 'R'))" :aria-pressed="hasSide(listings, level, 'R')" :aria-label="`${level} ${t('right', 'derecha')}`" :disabled="!editable" data-cy="listing-R" @click="tap(level, 'R')">{{ letters.R }}</button>
+          <span v-if="prevSide(level)" class="text-[11px] text-ink-faint" :title="t('Last visit', 'Visita anterior')" data-cy="listing-prev">{{ t('before', 'antes') }} {{ prevSide(level) }}</span>
         </div>
       </div>
 
       <button type="button" class="mt-2.5 text-[12.5px] font-medium text-brand-text" data-cy="listings-extremities" @click="showExtremities = !showExtremities">
         {{ showExtremities ? t('Hide extremities', 'Ocultar extremidades') : t('+ Extremities', '+ Extremidades') }}
       </button>
-      <div v-if="showExtremities" class="mt-1.5 grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2">
+      <div v-if="showExtremities" class="mt-1.5 grid grid-cols-1 gap-x-6 gap-y-1" :class="narrow ? '' : 'sm:grid-cols-2'">
         <div v-for="level in EXTREMITY_LEVELS" :key="level" class="flex items-center gap-1.5" :data-cy="`listing-${level}`">
-          <button type="button" :class="sideBtn(hasSide(listings, level, 'L'))" :aria-pressed="hasSide(listings, level, 'L')" :aria-label="`${extremityName(level)} ${t('left', 'izquierda')}`" :disabled="!editable" data-cy="listing-L" @click="tap(level, 'L')">L</button>
+          <button type="button" :class="sideBtn(hasSide(listings, level, 'L'))" :aria-pressed="hasSide(listings, level, 'L')" :aria-label="`${extremityName(level)} ${t('left', 'izquierda')}`" :disabled="!editable" data-cy="listing-L" @click="tap(level, 'L')">{{ letters.L }}</button>
           <span class="w-20 text-center text-[12.5px] font-medium text-ink-800">{{ extremityName(level) }}</span>
-          <button type="button" :class="sideBtn(hasSide(listings, level, 'R'))" :aria-pressed="hasSide(listings, level, 'R')" :aria-label="`${extremityName(level)} ${t('right', 'derecha')}`" :disabled="!editable" data-cy="listing-R" @click="tap(level, 'R')">R</button>
+          <button type="button" :class="sideBtn(hasSide(listings, level, 'R'))" :aria-pressed="hasSide(listings, level, 'R')" :aria-label="`${extremityName(level)} ${t('right', 'derecha')}`" :disabled="!editable" data-cy="listing-R" @click="tap(level, 'R')">{{ letters.R }}</button>
         </div>
       </div>
       <p v-if="saveError" role="alert" class="mt-2 text-[12.5px] text-danger-text">{{ saveError }}</p>

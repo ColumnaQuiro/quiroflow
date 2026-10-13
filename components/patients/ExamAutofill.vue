@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { parseVisitNote } from '~/utils/visitNote'
+import { syncListingLine } from '~/utils/spinalListings'
 // First version of the chiropractic exam-finding grid, replicating the
 // reference tool: pick a spine segment + side, an optional directional
 // modifier, then a finding code -- each click appends one line to
@@ -218,7 +219,64 @@ watch(
   },
 )
 
-defineExpose({ save, copyLastNote })
+// The visit's note as it stands, when there is one. Without this, reopening a
+// visit charted earlier showed four empty boxes, and typing into them saved a
+// SECOND note on the visit rather than editing the first.
+const loadingNote = ref(true)
+async function loadExisting() {
+  loadingNote.value = true
+  const id = props.appointmentId
+  const { data } = await supabase.from('visit_notes').select('id, body').eq('appointment_id', id).order('created_at', { ascending: false }).limit(1)
+  if (id !== props.appointmentId) return
+  const row = (data as { id: string; body: string }[] | null)?.[0]
+  if (row && !dirty.value) {
+    noteId.value = row.id
+    const parsed = parseVisitNote(row.body)
+    if (parsed.structured) {
+      const sections = parseBody(row.body)
+      subjective.value = [parsed.preamble, sections.Subjective ?? ''].filter(Boolean).join('\n\n')
+      objective.value = sections.Objective ?? ''
+      action.value = sections.Action ?? ''
+      plan.value = sections.Plan ?? ''
+    } else {
+      // A free-text note (written elsewhere) is kept, as what was said.
+      subjective.value = row.body.trim()
+    }
+  }
+  loadingNote.value = false
+}
+onMounted(loadExisting)
+watch(() => props.appointmentId, loadExisting)
+
+// Saved a moment after the last change made from outside the boxes -- the
+// listing beside the note, "Bring over" from the last visit -- since those
+// never blur a field, which is what saves a typed change.
+let saveTimer: ReturnType<typeof setTimeout> | undefined
+function saveSoon() {
+  dirty.value = true
+  clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => save(), 700)
+}
+onBeforeUnmount(() => {
+  clearTimeout(saveTimer)
+  if (dirty.value) save()
+})
+
+/** The listing's "Ajustado: …" line, kept as Action's first line. */
+function setListingLine(line: string) {
+  const next = syncListingLine(action.value, line)
+  if (next === action.value) return
+  action.value = next
+  saveSoon()
+}
+/** A section from the previous visit, added to today's (or the whole note into Subjective). */
+function bringSection(section: 'Subjective' | 'Objective' | 'Action' | 'Plan' | 'Note', text: string) {
+  const target = section === 'Note' ? subjective : section === 'Subjective' ? subjective : section === 'Objective' ? objective : section === 'Action' ? action : plan
+  target.value = target.value.trim() ? `${target.value}\n${text}` : text
+  saveSoon()
+}
+
+defineExpose({ save, copyLastNote, setListingLine, bringSection })
 </script>
 
 <template>
@@ -254,11 +312,12 @@ defineExpose({ save, copyLastNote })
     </div>
 
     <!-- S/O/A/P grid -->
-    <div class="grid grid-cols-2 gap-3 p-5">
+    <div class="grid grid-cols-1 gap-3 p-5">
       <div>
         <label class="mb-1 block text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">{{ t('Subjective', 'Subjetivo') }}</label>
         <textarea
           v-model="subjective"
+          data-cy="soap-subjective"
           class="w-full min-h-[96px] rounded-[9px] border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
           @input="dirty = true"
         ></textarea>
@@ -267,6 +326,7 @@ defineExpose({ save, copyLastNote })
         <label class="mb-1 block text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">{{ t('Objective', 'Objetivo') }}</label>
         <textarea
           v-model="objective"
+          data-cy="soap-objective"
           class="w-full min-h-[96px] rounded-[9px] border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
           @input="dirty = true"
         ></textarea>
@@ -275,6 +335,7 @@ defineExpose({ save, copyLastNote })
         <label class="mb-1 block text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">{{ t('Action', 'Acción') }}</label>
         <textarea
           v-model="action"
+          data-cy="soap-action"
           class="w-full min-h-[76px] rounded-[9px] border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
           @input="dirty = true"
         ></textarea>
@@ -283,6 +344,7 @@ defineExpose({ save, copyLastNote })
         <label class="mb-1 block text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">{{ t('Plan', 'Plan') }}</label>
         <textarea
           v-model="plan"
+          data-cy="soap-plan"
           class="w-full min-h-[76px] rounded-[9px] border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
           @input="dirty = true"
         ></textarea>

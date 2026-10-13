@@ -9,6 +9,7 @@
 // Under Objective, quick findings: a spine level and side, then a finding;
 // each tap adds a line, which can be edited before it is saved.
 import { parseVisitNote } from '../../utils/visitNote'
+import { syncListingLine } from '../../utils/spinalListings'
 
 const props = defineProps<{ modelValue: string; disabled?: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string]; input: []; blur: [] }>()
@@ -61,6 +62,21 @@ function changed() {
   emit('update:modelValue', body)
   emit('input')
 }
+
+// The listing's "Ajustado: …" line, kept as Action's first line (the listing
+// beside the note emits it), and a section brought over from the last visit.
+function setListingLine(line: string) {
+  const next = syncListingLine(fields.Action, line)
+  if (next === fields.Action) return
+  fields.Action = next
+  changed()
+}
+function bringSection(section: Key | 'Note', text: string) {
+  const k: Key = section === 'Note' ? 'Subjective' : section
+  fields[k] = fields[k].trim() ? `${fields[k].replace(/\s+$/, '')}\n${text}` : text
+  changed()
+}
+defineExpose({ setListingLine, bringSection })
 
 // -- Quick findings ---------------------------------------------------------------
 const LEVELS = ['OCC', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T12', 'L1', 'L2', 'L3', 'L4', 'L5', 'S1', 'SI']

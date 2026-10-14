@@ -4,7 +4,7 @@ import { CONFIDENTIALITY_SECTION, promptSafeName } from './receptionistGuard'
 import { NO_REPLY } from './receptionistAutoReply'
 import { CONFIRM_BEFORE_BOOKING, offeredTypesSection, rescheduleSection, type BookedVisit, type PromptType } from './receptionistTypes'
 import { receptionistBookingSection, receptionistClockSection, type ReceptionistAvailability } from './receptionistSlots'
-import { HISTORY_MARKERS_SECTION, INFORMAL_ADDRESS_LINE, WAITLIST_SECTION } from './receptionistHistory'
+import { historyMarkersSection, INFORMAL_ADDRESS_LINE, NO_INVENTION_LINE, WAITLIST_SECTION } from './receptionistHistory'
 
 // What the receptionist knows about a patient when drafting a reply to them
 // in the Inbox: their next visits, their care plan, what they owe. Read at
@@ -106,8 +106,9 @@ export function buildPatientReplyPrompt(
     // a thanks. A re-confirmation nobody asked for is noise in their WhatsApp.
     `If their latest message needs no answer at all -- a thank-you, an "ok", a confirmation of a visit they already have, an emoji -- write exactly ${NO_REPLY} and nothing else. Nothing is then sent.`,
     `Read the whole conversation before replying. Answer what they asked, using what you know about them -- "your next visit is on Tuesday at 10:00" rather than asking them when it is. If you do not know something, say your colleague will check rather than guessing.`,
-    HISTORY_MARKERS_SECTION,
+    historyMarkersSection(Boolean(opts.sendsItself)),
     INFORMAL_ADDRESS_LINE,
+    NO_INVENTION_LINE,
     // A patient's details are on their record; asking for them again reads as
     // the clinic not knowing who they are.
     `Never ask a patient for their name, email or phone number: the clinic has them.`,

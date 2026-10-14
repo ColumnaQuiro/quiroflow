@@ -6,7 +6,7 @@ import { availabilityLists, FREE_TIMES_MAX_DAYS, FREE_TIMES_MAX_TIMES, parseFree
 import { clinicDateOf, startOfLocalDate } from '~/utils/clinicClock'
 import { briefingLeak } from '~/utils/receptionistGuard'
 import { ADD_TO_WAITLIST, BOOK_APPOINTMENT } from '~/server/utils/receptionistBooking'
-import { offeredTimeCount, tooManyTimesNote } from '~/utils/receptionistHistory'
+import { cleanReply, offeredTimeCount, tooManyTimesNote } from '~/utils/receptionistHistory'
 
 // How the receptionist talks to the model, for all three of its callers --
 // lead drafts, patient drafts and "Try Alba" -- so they cannot drift apart.
@@ -158,11 +158,12 @@ export async function runReceptionistModel(
 
     const uses = message.content.filter((block): block is Anthropic.ToolUseBlock => block.type === 'tool_use')
     if (message.stop_reason !== 'tool_use' || uses.length === 0 || tools.length === 0) {
-      const text = message.content
-        .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-        .map((block) => block.text)
-        .join('')
-        .trim()
+      const text = cleanReply(
+        message.content
+          .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+          .map((block) => block.text)
+          .join(''),
+      )
       const offered = opts.maxTimesPerReply && !booked && !rewritten ? offeredTimeCount(text) : 0
       if (opts.maxTimesPerReply && offered > opts.maxTimesPerReply) {
         rewritten = true

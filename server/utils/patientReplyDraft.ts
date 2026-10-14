@@ -5,7 +5,7 @@ import { bookingTool, waitlistTool, type BookingContext } from '~/server/utils/r
 import { recentImages, withImages, type StoredImage } from '~/server/utils/receptionistImages'
 import { historyLine } from '~/utils/receptionistHistory'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personRepliedSince } from '~/utils/receptionistAutoReply'
-import { loadBookedVisits, loadOfferedTypes, loadPatientPractitioners, loadReceptionistCalendar, toConfig, toneWording, uniqueTypes } from '~/server/utils/receptionist'
+import { loadBookedVisits, loadOfferedTypes, loadPatientPractitioners, loadReceptionistCalendar, toConfig, toneWording, uniqueTypes, clinicTodayStart } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptionistModel'
 import { typesForAudience } from '~/utils/receptionistTypes'
 import { internalNotes } from '~/utils/receptionistGuard'
@@ -75,7 +75,7 @@ export async function draftPatientReply(
       direction: m.direction,
       // As the model reads it: a reminder marked as the system's, a voice
       // note or a photo as what it is rather than dropped (historyLine).
-      body: historyLine({ direction: m.direction, body: m.body_preview, automated: Boolean(m.template_name || m.rule_id || m.automation_action_id), mediaType: m.media_type, mediaFilename: m.media_filename }),
+      body: historyLine({ direction: m.direction, body: m.body_preview, automated: Boolean(m.template_name || m.rule_id || m.automation_action_id), sentByAi: m.sent_by_ai === true, mediaType: m.media_type, mediaFilename: m.media_filename }),
       media_type: m.media_type,
       media_storage_path: m.media_storage_path,
       media_mime_type: m.media_mime_type,
@@ -85,7 +85,7 @@ export async function draftPatientReply(
       automated: Boolean(m.template_name || m.rule_id || m.automation_action_id),
       channel: m.channel ?? 'whatsapp',
     })),
-    ...((app ?? []) as Turn[]).map((m) => ({ ...m, channel: 'app' })),
+    ...((app ?? []) as Turn[]).map((m) => ({ ...m, body: historyLine({ direction: m.direction, body: m.body, sentByAi: m.sent_by_ai === true }), channel: 'app' })),
   ]
     .filter((m) => m.body.trim().length > 0)
     .sort((a, b) => a.created_at.localeCompare(b.created_at))
@@ -127,8 +127,10 @@ export async function draftPatientReply(
   if (isNoReplyMessage(turns.slice(lastOutbound + 1).map((m) => m.body), config.noReplyPhrases)) return leaveAlone()
 
   const nowIso = new Date().toISOString()
+  // From midnight, so a visit earlier today is still one they can ask about.
+  const todayStart = await clinicTodayStart(supabase, accountId)
   const [{ data: upcoming }, { data: last }, { data: plans }, { data: balance }] = await Promise.all([
-    supabase.from('appointments').select('starts_at, appointment_types(name), team_members(full_name)').eq('patient_id', patientId).eq('status', 'booked').is('deleted_at', null).gte('starts_at', nowIso).order('starts_at').limit(3),
+    supabase.from('appointments').select('starts_at, appointment_types(name), team_members(full_name)').eq('patient_id', patientId).eq('status', 'booked').is('deleted_at', null).gte('starts_at', todayStart).order('starts_at').limit(3),
     supabase.from('appointments').select('starts_at, appointment_types(name)').eq('patient_id', patientId).eq('status', 'completed').is('deleted_at', null).lt('starts_at', nowIso).order('starts_at', { ascending: false }).limit(1),
     supabase.from('care_plans').select('name, total_visits, started_at, frequency_value, frequency_unit, visits_per_period').eq('patient_id', patientId).order('created_at', { ascending: false }).limit(1),
     supabase.from('patient_live_balances').select('outstanding_cents').eq('patient_id', patientId).maybeSingle(),

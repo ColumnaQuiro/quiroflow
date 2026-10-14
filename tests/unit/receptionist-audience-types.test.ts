@@ -69,7 +69,7 @@ describe('Receptionist types by audience', () => {
     const section = rescheduleSection(visits, 'Europe/Madrid', { listVisits: true })
     expect(section).toContain('Tuesday 20 October at 10:00 (Ajuste)')
     expect(section).toContain('that same type of appointment')
-    expect(section).toContain('cancel it instead, say your colleague will take care of it')
+    expect(section).toContain('If they want to cancel it, or say they cannot come, say your colleague will take care of it: never ask whether to cancel it')
     expect(rescheduleSection(visits, 'Europe/Madrid', { listVisits: false })).not.toContain('(Ajuste)')
     expect(rescheduleSection([], 'Europe/Madrid', { listVisits: true })).toBe('')
   })

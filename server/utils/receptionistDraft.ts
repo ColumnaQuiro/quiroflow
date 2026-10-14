@@ -124,8 +124,8 @@ export async function draftLeadReply(
   const ordered = [...(messages ?? [])].reverse()
   // As the model reads each one: reminders marked as the system's, a voice
   // note or a photo as what it is rather than dropped (historyLine).
-  const lineOf = (m: { direction: string; body_preview: string | null; template_name?: string | null; rule_id?: string | null; automation_action_id?: string | null; media_type?: string | null; media_filename?: string | null }) =>
-    historyLine({ direction: m.direction, body: m.body_preview, automated: Boolean(m.template_name || m.rule_id || m.automation_action_id), mediaType: m.media_type, mediaFilename: m.media_filename })
+  const lineOf = (m: { direction: string; body_preview: string | null; sent_by_ai?: boolean | null; template_name?: string | null; rule_id?: string | null; automation_action_id?: string | null; media_type?: string | null; media_filename?: string | null }) =>
+    historyLine({ direction: m.direction, body: m.body_preview, automated: Boolean(m.template_name || m.rule_id || m.automation_action_id), sentByAi: m.sent_by_ai === true, mediaType: m.media_type, mediaFilename: m.media_filename })
   const history = ordered
     .map((m: Parameters<typeof lineOf>[0]) => ({ role: m.direction === 'inbound' ? ('user' as const) : ('assistant' as const), content: lineOf(m) }))
     .filter((m: { content: string }) => m.content.length > 0)

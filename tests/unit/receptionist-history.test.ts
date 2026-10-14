@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { AUTOMATED_MARK, historyLine, offeredTimeCount } from '../../utils/receptionistHistory'
+import { AUTOMATED_MARK, COLLEAGUE_MARK, cleanReply, historyLine, offeredTimeCount } from '../../utils/receptionistHistory'
 import { rescheduleSection } from '../../utils/receptionistTypes'
 
 // The reminder in the history read as one of the receptionist's own replies,
@@ -35,5 +35,22 @@ describe('Moving a visit next to another', () => {
   it('asks it to look at their other visits first', () => {
     const section = rescheduleSection([{ startsAt: '2026-10-21T15:30:00Z', typeName: 'Ajuste', practitionerName: null }] as never, 'Europe/Madrid', { listVisits: true, canBook: true })
     expect(section).toContain('Look at their other booked visits first')
+  })
+})
+
+// It "corrected" a time a colleague had agreed, and opened with "Perfecto,
+// Sonia" on its second day despite the rule.
+describe('Day two', () => {
+  it('marks what a colleague wrote, and not its own replies', () => {
+    expect(historyLine({ direction: 'outbound', body: 'Te veo el miércoles a las 19:00', sentByAi: false })).toBe(`${COLLEAGUE_MARK}\nTe veo el miércoles a las 19:00`)
+    expect(historyLine({ direction: 'outbound', body: 'Te veo el miércoles a las 19:00', sentByAi: true })).toBe('Te veo el miércoles a las 19:00')
+  })
+
+  it('takes off a forbidden opener and any mark it copied', () => {
+    expect(cleanReply('Perfecto, Sonia: te he movido la cita al jueves.')).toBe('Te he movido la cita al jueves.')
+    expect(cleanReply('¡Perfecto! Tu cita queda el jueves.')).toBe('Tu cita queda el jueves.')
+    expect(cleanReply(`${COLLEAGUE_MARK}\nTe espero el jueves.`)).toBe('Te espero el jueves.')
+    expect(cleanReply('Perfectamente puedes venir el jueves.')).toBe('Perfectamente puedes venir el jueves.')
+    expect(cleanReply('NO_REPLY')).toBe('NO_REPLY')
   })
 })

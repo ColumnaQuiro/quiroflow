@@ -5,12 +5,16 @@
 
 /** Starts a message the clinic's automations sent: a reminder, a welcome. */
 export const AUTOMATED_MARK = '[Automatic message from the clinic system]'
+/** Starts a message a person at the clinic wrote, as opposed to the receptionist. */
+export const COLLEAGUE_MARK = '[Written by a colleague at the clinic]'
 
 export interface HistoryMessage {
   direction: string
   body: string | null
   /** A template or an automation's send rather than a person or the receptionist. */
   automated?: boolean
+  /** Written by the receptionist; an outbound message that is neither this nor automated is a person's. */
+  sentByAi?: boolean
   mediaType?: string | null
   mediaFilename?: string | null
 }
@@ -26,7 +30,13 @@ export interface HistoryMessage {
  */
 export function historyLine(m: HistoryMessage): string {
   const body = (m.body ?? '').trim()
-  if (m.direction !== 'inbound') return body && m.automated ? `${AUTOMATED_MARK}\n${body}` : body
+  if (m.direction !== 'inbound') {
+    if (!body) return ''
+    if (m.automated) return `${AUTOMATED_MARK}\n${body}`
+    // A colleague's offer read as the receptionist's own, so it "corrected"
+    // a time a person had already agreed with them.
+    return m.sentByAi === false ? `${COLLEAGUE_MARK}\n${body}` : body
+  }
   const mark = mediaMark(m.mediaType, m.mediaFilename)
   if (!mark) return body
   return body ? `${mark}\n${body}` : mark
@@ -49,12 +59,40 @@ function mediaMark(type: string | null | undefined, filename: string | null | un
   }
 }
 
-/** What the markers above mean, for the system prompt. */
-export const HISTORY_MARKERS_SECTION = [
+/** What the markers above mean, for the system prompt; `handOver` when hand_over_to_colleague is on the request. */
+export function historyMarkersSection(handOver: boolean): string {
+  return [
   '# Marks in the conversation',
   `- A message that starts with ${AUTOMATED_MARK} was sent by the clinic's automations (a reminder, a welcome message). You did not write it. Never copy its wording, layout, asterisks or emojis, and never send it again as your reply.`,
+  `- A message that starts with ${COLLEAGUE_MARK} was written by a person at the clinic. Never contradict what they offered or agreed: if the patient accepts a time or an arrangement a colleague offered, ${handOver ? 'call hand_over_to_colleague and ' : ''}say your colleague will confirm it, instead of offering something else.`,
+  '- Never say an automatic message is wrong or out of date. If they misread one, explain what it means using the clinic knowledge.',
   '- [Voice note], [Video], [Document] and [Sticker] stand for what they sent, which you cannot see or hear. [Image] is a picture; when it is attached to their message you can see it, so use what it shows.',
-].join('\n')
+  '- Never start your own reply with any of these marks.',
+  ].join('\n')
+}
+
+/** What a reply opened with that reads as a bot; taken off even though the prompt forbids it. */
+const FILLER_OPENER = /^\s*¡?\s*(?:perfecto|genial|estupendo|fenomenal|great|perfect)(?!\p{L})\s*[!.,]*\s*/iu
+
+/**
+ * The reply as it is sent: a mark copied from the conversation taken off, and
+ * an opener the prompt forbids ("¡Perfecto, Sonia!") removed -- told not to,
+ * it still opened that way on its second day.
+ */
+export function cleanReply(text: string): string {
+  let out = text.trim()
+  for (const mark of [AUTOMATED_MARK, COLLEAGUE_MARK]) if (out.startsWith(mark)) out = out.slice(mark.length).trim()
+  const opener = out.match(FILLER_OPENER)
+  if (opener && opener[0].length < out.length) {
+    out = out.slice(opener[0].length)
+    // "Perfecto, Sonia: te la muevo..." would read "Sonia: te la muevo...":
+    // after "Perfecto," a single word followed by a comma or colon is the
+    // name it was addressed to, and goes with it.
+    if (opener[0].trimEnd().endsWith(',')) out = out.replace(/^[A-ZÁÉÍÓÚÑ][\p{L}]+\s*[,:]\s*/u, '')
+    out = out.charAt(0).toUpperCase() + out.slice(1)
+  }
+  return out
+}
 
 /**
  * Ranges ("de 9:00 a 13:00", "9:00-14:00", "entre las 9:00 y las 13:00") are
@@ -91,3 +129,10 @@ export const WAITLIST_SECTION = [
   '# The waiting list',
   'If none of the free times suit them -- they can only come on days or at hours that are not free, or when the clinic is closed -- offer to put them on the waiting list. If they agree, call add_to_waitlist with when they can come, then tell them the clinic will let them know if a time that suits them frees up. Never promise one.',
 ].join('\n')
+
+/**
+ * Asked to change a visit for a long trip, it said "te apunto en la lista de
+ * espera" -- something the clinic did not have -- and explained to a lead that
+ * an adjustment "relieves the pressure on the affected nerve".
+ */
+export const NO_INVENTION_LINE = 'Only offer what the clinic knowledge and these instructions give you: never invent a process, service or option the clinic has not described (a call back, a discount, a list to join). Never explain what an adjustment does inside their body or to their condition ("alivia la presión sobre el nervio"): that is for the chiropractor at the visit.'

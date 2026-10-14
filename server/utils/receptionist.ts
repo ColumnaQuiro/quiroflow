@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
 import { CONFIRM_BEFORE_BOOKING, audienceSection, newPatientDetailsSection, offeredAppointmentTypes, offeredTypesSection, rescheduleSection, type BookedVisit, type PromptType, type ReceptionistAudience } from '~/utils/receptionistTypes'
-import { HISTORY_MARKERS_SECTION, INFORMAL_ADDRESS_LINE, WAITLIST_SECTION } from '~/utils/receptionistHistory'
+import { historyMarkersSection, INFORMAL_ADDRESS_LINE, NO_INVENTION_LINE, WAITLIST_SECTION } from '~/utils/receptionistHistory'
 import { leadOriginSection, type LeadOrigin } from '~/utils/receptionistLeadOrigin'
 import { NO_REPLY } from '~/utils/receptionistAutoReply'
 import { CONFIDENTIALITY_SECTION, promptSafeName } from '~/utils/receptionistGuard'
@@ -13,7 +13,7 @@ import {
   type SlotBlock,
   type SlotType,
 } from '~/utils/receptionistSlots'
-import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
+import { DEFAULT_CLINIC_TIMEZONE, clinicDateOf, startOfLocalDate } from '~/utils/clinicClock'
 import type { BusinessHours } from '~/utils/businessHours'
 import { hasGrowth } from '~/server/utils/requireGrowth'
 
@@ -170,12 +170,25 @@ export async function loadTypeChoices(supabase: SupabaseClient<Database>, accoun
  * keeps its type, and a clinic that offers only first visits to new people
  * still has patients moving their adjustment.
  */
+/**
+ * Midnight today on the clinic's clock. Visits are read from here rather than
+ * from now: a patient writing "salgo de un examen, ¿podemos mover la cita?"
+ * at 13:30 about their 13:30 visit was offered to move next week's instead,
+ * because today's had already started and so was not among their visits.
+ */
+export async function clinicTodayStart(supabase: SupabaseClient<Database>, accountId: string): Promise<string> {
+  const { data } = await supabase.from('clinics').select('timezone').eq('account_id', accountId).is('archived_at', null).order('created_at').limit(1)
+  const timeZone = ((data ?? []) as { timezone: string | null }[])[0]?.timezone || DEFAULT_CLINIC_TIMEZONE
+  return startOfLocalDate(clinicDateOf(new Date(), timeZone), timeZone).toISOString()
+}
+
 export async function loadBookedVisits(
   supabase: SupabaseClient<Database>,
   accountId: string,
   patientId: string | null,
 ): Promise<{ visits: BookedVisit[]; types: OfferedType[]; practitionerIds: string[]; appointments: BookedAppointment[] }> {
   if (!patientId) return { visits: [], types: [], practitionerIds: [], appointments: [] }
+  const todayStart = await clinicTodayStart(supabase, accountId)
   const { data, error } = await supabase
     .from('appointments')
     .select('id, starts_at, practitioner_id, appointment_types(id, name, duration_minutes, stage, online_bookable_by)')
@@ -183,7 +196,7 @@ export async function loadBookedVisits(
     .eq('patient_id', patientId)
     .eq('status', 'booked')
     .is('deleted_at', null)
-    .gte('starts_at', new Date().toISOString())
+    .gte('starts_at', todayStart)
     .order('starts_at')
     .limit(3)
   if (error) {
@@ -517,8 +530,9 @@ export function buildSystemPrompt(
     // a thanks. A re-confirmation nobody asked for is noise in their WhatsApp.
     `If their latest message needs no answer at all -- a thank-you, an "ok", a confirmation of a visit they already have, an emoji -- write exactly ${NO_REPLY} and nothing else. Nothing is then sent.`,
     `Read the whole conversation before replying. Never ask for something the patient has already told you or that is already known about them, and never repeat a question that has been answered.`,
-    HISTORY_MARKERS_SECTION,
+    historyMarkersSection(Boolean(opts.sendsItself)),
     INFORMAL_ADDRESS_LINE,
+    NO_INVENTION_LINE,
     // They are writing from their phone: asking for its number is asking for
     // what the clinic already has, whatever the clinic knowledge says a
     // booking needs.
@@ -537,7 +551,7 @@ export function buildSystemPrompt(
     opts.audience && opts.audience !== 'existing'
       ? `# Prices for someone new\nThey have not been to the clinic yet, so whatever they call it -- la cita, la sesión, la visita, la consulta -- a question about the price is about their first visit: give that price only, as "What you can offer" says for them. Only if they then ask about the visits after it, give the session and package prices from the clinic knowledge, and add that your colleague, the chiropractor, will explain their care plan and how many sessions they need at the first visit. After giving a price, offer to send them availability.`
       : '',
-    `# When they mention a condition\nIf the patient names a condition or symptom (artrosis, ciática, hernia discal, dolor cervical...) and asks whether you can help, first say in one or two sentences how chiropractic care is generally used for it -- for example to improve mobility, ease stiffness and reduce the load on the affected joints -- taking what the clinic knowledge says about it first when it covers it. Speak in general terms ("se trabaja para", "puede ayudar a"), never diagnose them, never promise a result and never say it replaces their doctor's treatment. Then say the chiropractor will assess their particular case at the first visit, and move on to booking.`,
+    `# When they mention a condition\nIf the patient names a condition or symptom (artrosis, ciática, hernia discal, dolor cervical...) and asks whether you can help, first say in one or two sentences how chiropractic care is generally used for it -- for example to improve mobility, ease stiffness and reduce the load on the affected joints -- taking what the clinic knowledge says about it first when it covers it. Speak in general terms ("se trabaja para", "puede ayudar a"), never diagnose them, never promise a result, never describe what an adjustment does to the nerve, joint or disc, and never say it replaces their doctor's treatment. Then say the chiropractor will assess their particular case at the first visit, and move on to booking.`,
     questions
       ? `# Questions you may work in\nOnly once the patient's own request has been dealt with, at most one per reply, and never as a condition for booking. Skip any the conversation or "What you already know about this person" already answers. A question about how they heard about the clinic is for the clinic's records: never ask it when that is already known, never ask it to work out a price (answer the price as "What you can offer" says), and otherwise ask it at most once, at the very end, after a time has been agreed.\n\n${questions}`
       : '',

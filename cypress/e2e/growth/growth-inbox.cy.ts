@@ -712,4 +712,22 @@ describe('Growth in the shared Inbox', () => {
       cy.get('[data-test="filter-leads-only"]').should('not.exist')
     })
   })
+
+  // Only leads carried an ai_state, so a patient the receptionist was
+  // answering showed nothing on the row.
+  it('marks a patient conversation the receptionist is answering', () => {
+    cy.task('db:setReceptionistEnabled', { accountId: account.accountId, enabled: true })
+    cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Ana', lastName: 'Answered' }).then((patient) => {
+      cy.task('db:createWhatsappMessage', { accountId: account.accountId, patientId: patient.id, phoneNumber: '+34600555101', direction: 'inbound', bodyPreview: '¿Puedo cambiar la cita?', createdAt: new Date(Date.now() - 120000).toISOString() })
+      cy.task('db:createWhatsappMessage', { accountId: account.accountId, patientId: patient.id, phoneNumber: '+34600555101', direction: 'outbound', bodyPreview: 'Claro, tengo el jueves a las 10:00.', sentByAi: true })
+    })
+    cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Bea', lastName: 'Staffed' }).then((patient) => {
+      cy.task('db:createWhatsappMessage', { accountId: account.accountId, patientId: patient.id, phoneNumber: '+34600555102', direction: 'inbound', bodyPreview: 'Hola', createdAt: new Date(Date.now() - 120000).toISOString() })
+      cy.task('db:createWhatsappMessage', { accountId: account.accountId, patientId: patient.id, phoneNumber: '+34600555102', direction: 'outbound', bodyPreview: 'Hola Bea, dime.' })
+    })
+    cy.visit('/inbox?growth=1')
+
+    cy.contains('[data-cy=inbox-row]', 'Ana Answered').find('[data-cy=inbox-row-ai-handling]').should('be.visible')
+    cy.contains('[data-cy=inbox-row]', 'Bea Staffed').find('[data-cy=inbox-row-ai-handling]').should('not.exist')
+  })
 })

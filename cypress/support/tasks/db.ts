@@ -2013,6 +2013,8 @@ async function createWhatsappMessage(opts: {
   wamid?: string
   /** A lead's message, stored the way the webhook attributes one. */
   leadId?: string
+  /** Written by the AI receptionist. */
+  sentByAi?: boolean
 }) {
   const { accountId, patientId, phoneNumber, direction, bodyPreview } = opts
   const row = unwrap(
@@ -2033,6 +2035,7 @@ async function createWhatsappMessage(opts: {
         ...(opts.externalContactId ? { external_contact_id: opts.externalContactId } : {}),
         ...(opts.wamid ? { wamid: opts.wamid } : {}),
         ...(opts.leadId ? { lead_id: opts.leadId } : {}),
+        ...(opts.sentByAi ? { sent_by_ai: true } : {}),
       })
       .select('id, channel')
       .single(),

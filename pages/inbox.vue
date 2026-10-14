@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { fetchPatientAiStates, type InboxAiState } from '~/utils/inboxAiState'
 import { normalizeSearchTerm } from '~/utils/searchText'
 import { notesBetween } from '~/utils/inboxNotes'
 import { matchPendingToServer, mergePendingIntoThread, newestInConversation } from '~/utils/inboxPendingMessages'
@@ -507,8 +508,23 @@ const tabCounts = computed(() => {
   }
 })
 
-const aiHandlingCount = computed(() => leadConversations.value.filter((c) => c.aiState === 'handling').length)
-const needsHumanCount = computed(() => leadConversations.value.filter((c) => c.aiState === 'needs_human' || c.aiState === 'blocked').length)
+// The same two states for a patient's conversation, which has no ai_state
+// column: only leads carried one, so the receptionist answering a patient
+// left no sign on the row. Read from what it did instead -- it wrote last for
+// the clinic (handling), or it handed the conversation over and no person has
+// written since (needs a person). Only for the rows loaded.
+const patientAiStates = ref<Record<string, InboxAiState>>({})
+let patientAiToken = 0
+async function loadPatientAiStates(ids: string[]) {
+  const token = ++patientAiToken
+  const states = hasGrowth.value ? await fetchPatientAiStates(supabase, ids) : {}
+  if (token === patientAiToken) patientAiStates.value = states
+}
+watch(() => rows.value.map((r) => r.patient_id).filter(Boolean).join(','), (ids) => loadPatientAiStates(ids ? ids.split(',') : []), { immediate: true })
+watch(hasGrowth, () => loadPatientAiStates(rows.value.map((r) => r.patient_id).filter((id): id is string => Boolean(id))))
+
+const aiHandlingCount = computed(() => leadConversations.value.filter((c) => c.aiState === 'handling').length + Object.values(patientAiStates.value).filter((s) => s === 'handling').length)
+const needsHumanCount = computed(() => leadConversations.value.filter((c) => c.aiState === 'needs_human' || c.aiState === 'blocked').length + Object.values(patientAiStates.value).filter((s) => s === 'needs_human').length)
 // Threads where a reply is written and waiting on a decision. This is the
 // queue the receptionist actually creates -- without it the drafts it writes
 // unprompted are only found by opening threads one at a time, which is the
@@ -650,7 +666,10 @@ function leadRowTime(at: string) {
 const filteredConversations = computed(() => {
   if (sourceFilter.value === 'leads' && hasGrowth.value && view.value !== 'archived') return []
   // The query brought the warning period; what is left is the closings.
-  return expiringOnly.value ? conversations.value.filter((c) => patientWindowPill(c)) : conversations.value
+  let list = expiringOnly.value ? conversations.value.filter((c) => patientWindowPill(c)) : conversations.value
+  if (aiFilter.value === 'ai_handling') list = list.filter((c) => c.patientId && patientAiStates.value[c.patientId] === 'handling')
+  else if (aiFilter.value === 'needs_human') list = list.filter((c) => c.patientId && patientAiStates.value[c.patientId] === 'needs_human')
+  return list
 })
 // The chip's count: patients' and leads' alike, in this view.
 const expiringCount = computed(() => {
@@ -2065,7 +2084,7 @@ function avatarInitials(name: string) {
                   </p>
                   <span v-if="row.c.unread" class="h-2.5 w-2.5 shrink-0 rounded-full bg-brand" :aria-label="t('Unread', 'No leída')" data-cy="inbox-row-unread" />
                 </div>
-                <div v-if="row.c.labelIds?.length || row.c.assignedTo || row.c.followUp || row.c.snoozedUntil || patientWindowPill(row.c)" class="mt-1 flex flex-wrap items-center gap-1">
+                <div v-if="row.c.labelIds?.length || row.c.assignedTo || row.c.followUp || row.c.snoozedUntil || patientWindowPill(row.c) || (row.c.patientId && patientAiStates[row.c.patientId])" class="mt-1 flex flex-wrap items-center gap-1">
                   <!-- First: the row truncates from the right, and this is the
                   one with a deadline on it. -->
                   <span
@@ -2077,6 +2096,8 @@ function avatarInitials(name: string) {
                   >{{ t('Expires in', 'Caduca en') }} {{ patientWindowPill(row.c)!.left }}</span>
                   <span v-if="row.c.followUp" class="rounded-pill border border-warning-border bg-warning-bg px-2 py-px text-[11.5px] font-bold text-warning-text" data-cy="inbox-row-follow-up">{{ t('Follow up', 'Seguimiento') }}</span>
                   <span v-else-if="row.c.snoozedUntil" class="rounded-pill border border-chip-border bg-chip-bg px-2 py-px text-[11.5px] text-ink-muted" data-cy="inbox-row-snoozed">{{ t('Back', 'Vuelve') }} {{ snoozeWhen(row.c.snoozedUntil) }}</span>
+                  <span v-if="row.c.patientId && patientAiStates[row.c.patientId] === 'handling'" class="rounded-pill bg-brand px-2 py-px text-[11.5px] font-bold text-surface" data-cy="inbox-row-ai-handling">{{ t('AI handling', 'IA gestionando') }}</span>
+                  <span v-else-if="row.c.patientId && patientAiStates[row.c.patientId] === 'needs_human'" class="rounded-pill border border-warning-border bg-warning-bg px-2 py-px text-[11.5px] font-medium text-warning-text" data-cy="inbox-row-needs-human">{{ t('Needs human', 'Requiere persona') }}</span>
                   <span
                     v-for="lid in row.c.labelIds"
                     :key="lid"

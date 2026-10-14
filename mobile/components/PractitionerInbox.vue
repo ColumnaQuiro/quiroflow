@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { snoozeStateOf, type SnoozeRow } from '../../utils/inboxSnooze'
 import { replyWindowPill } from '../../utils/inboxReplyWindow'
+import { fetchPatientAiStates, leadAiState, type InboxAiState } from '../../utils/inboxAiState'
 
 const props = defineProps<{ accountId: string; teamMemberId: string; openConversationKey?: string | null }>()
 
@@ -189,7 +190,7 @@ async function load(opts: { silent?: boolean } = {}) {
   if (selectedKey.value) await loadThreadFor(selectedKey.value)
 }
 
-interface LeadSummary { key: string; leadId: string; name: string; channel: string; unread: boolean; lastMessageAt: string; lastDirection?: string; lastMediaType?: string | null; preview: string; previewWasNotSent?: boolean; phone: string | null; patientId: string | null }
+interface LeadSummary { key: string; leadId: string; name: string; channel: string; unread: boolean; lastMessageAt: string; lastDirection?: string; lastMediaType?: string | null; preview: string; previewWasNotSent?: boolean; phone: string | null; patientId: string | null; aiState?: string | null }
 function summaryConversation(o: { key: string; patientId: string | null; phone: string | null; externalId: string | null; leadId: string | null; name: string; channel: string; direction: string; status: string; body: string | null; template: string | null; media: string | null; at: string }): Conversation {
   return {
     key: o.key,
@@ -244,6 +245,26 @@ async function fetchSummaries() {
   ])
   return { size, rows: (rows ?? []) as SummaryRow[], leads }
 }
+// Whether the AI receptionist has each conversation, as the web Inbox shows
+// it: a lead's own ai_state, and for a patient what happened in the thread
+// (utils/inboxAiState.ts).
+const leadAiStates = ref<Record<string, InboxAiState>>({})
+const patientAiStates = ref<Record<string, InboxAiState>>({})
+let patientAiToken = 0
+watch(
+  // Growth decides it, and that is read after the first list may have arrived.
+  () => [leadThreadsAreSeparate.value, [...new Set(summaries.value.map((c) => c.patientId).filter((id): id is string => Boolean(id)))].join(',')] as const,
+  async ([growth, ids]) => {
+    const token = ++patientAiToken
+    const states = growth && ids ? await fetchPatientAiStates(supabase, ids.split(',')) : {}
+    if (token === patientAiToken) patientAiStates.value = states
+  },
+)
+function aiStateOf(c: Conversation): InboxAiState | null {
+  if (c.leadId) return leadAiStates.value[c.leadId] ?? null
+  return c.patientId ? patientAiStates.value[c.patientId] ?? null : null
+}
+
 function applySummaries({ size, rows: page, leads }: Awaited<ReturnType<typeof fetchSummaries>>) {
   // The list carries each patient's name, so the window's messages need no
   // lookup of their own for anyone in it.
@@ -253,6 +274,7 @@ function applySummaries({ size, rows: page, leads }: Awaited<ReturnType<typeof f
   hasMoreSummaries.value = page.length > size
   summaryCount.value = Math.min(page.length, size)
   const list: Conversation[] = page.slice(0, size).map(fromSummaryRow)
+  if (leads) leadAiStates.value = Object.fromEntries(leads.conversations.flatMap((l) => (leadAiState(l.aiState) ? [[l.leadId, leadAiState(l.aiState)!]] : [])))
   for (const l of leads?.conversations ?? []) {
     if (l.leadId && !leadNames.value[l.leadId]) leadNames.value = { ...leadNames.value, [l.leadId]: l.name }
     list.push(summaryConversation({ key: l.key, patientId: null, phone: l.phone, externalId: null, leadId: l.leadId, name: l.name, channel: l.channel, direction: l.lastDirection ?? (l.unread ? 'inbound' : 'outbound'), status: l.previewWasNotSent ? 'would_send' : 'sent', body: l.preview, template: null, media: l.lastMediaType ?? null, at: l.lastMessageAt }))
@@ -1618,7 +1640,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             <p class="truncate text-[13px]" :class="c.unread ? 'font-medium text-ink-800' : 'text-ink-muted2'">
               {{ c.lastMessage.direction === 'outbound' ? t('You: ', 'Tú: ') : '' }}{{ previewText(c.lastMessage) }}
             </p>
-            <div v-if="myLabelsByKey[c.key]?.length || c.followUp || c.snoozedUntil || c.leadId || assignments[c.key] || windowPill(c)" class="mt-1 flex flex-wrap items-center gap-1">
+            <div v-if="myLabelsByKey[c.key]?.length || c.followUp || c.snoozedUntil || c.leadId || assignments[c.key] || windowPill(c) || aiStateOf(c)" class="mt-1 flex flex-wrap items-center gap-1">
               <span
                 v-if="windowPill(c)"
                 class="rounded-pill border px-1.5 py-px text-[10px] font-bold"
@@ -1626,6 +1648,8 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
                 data-cy="inbox-row-window"
               >{{ t('Expires in', 'Caduca en') }} {{ windowPill(c)!.left }}</span>
               <span v-if="c.leadId" class="rounded-pill border border-info-border bg-info-bg px-1.5 py-px text-[10px] font-bold text-info-text">{{ t('Lead', 'Lead') }}</span>
+              <span v-if="aiStateOf(c) === 'handling'" class="rounded-pill bg-brand px-1.5 py-px text-[10px] font-bold text-white" data-cy="inbox-row-ai-handling">{{ t('AI handling', 'IA gestionando') }}</span>
+              <span v-else-if="aiStateOf(c) === 'needs_human'" class="rounded-pill border border-warning-border bg-warning-bg px-1.5 py-px text-[10px] font-bold text-warning-text" data-cy="inbox-row-needs-human">{{ t('Needs human', 'Requiere persona') }}</span>
               <span v-if="c.followUp" class="rounded-pill border border-warning-border bg-warning-bg px-1.5 py-px text-[10px] font-bold text-warning-text" data-cy="inbox-row-follow-up">{{ t('Follow up', 'Seguimiento') }}</span>
               <span v-else-if="c.snoozedUntil" class="rounded-pill bg-chip-bg px-1.5 py-px text-[10px] text-ink-muted" data-cy="inbox-row-snoozed">{{ t('Back', 'Vuelve') }} {{ snoozeWhen(c.snoozedUntil) }}</span>
               <span

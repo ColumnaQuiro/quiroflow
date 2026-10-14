@@ -37,6 +37,7 @@ const SAMPLE: Record<string, string> = {
   appointment_date: 'jueves 16 de octubre',
   appointment_time: '10:00',
   google_review_link: 'https://g.page/r/ejemplo/review',
+  satisfaction_link: 'https://app.quiroflow.com/valorar/ejemplo',
   waitlist_claim_link: 'https://app.quiroflow.com/w/ejemplo',
   waitlist_slot_datetime: 'viernes 17, 18:30',
   invoice_number: 'F-2026-0142',

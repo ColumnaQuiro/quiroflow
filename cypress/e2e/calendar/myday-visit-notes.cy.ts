@@ -22,7 +22,7 @@ describe('My Day visit notes', () => {
           cy.intercept({ url: '**/rest/v1/visit_notes*', method: /^(POST|PATCH)$/ }).as('noteSave')
           cy.login(account.email, account.password)
           cy.visit('/practitioner')
-          cy.contains('li', 'Iris Molina', { timeout: 20000 }).click()
+          cy.contains('li:not([data-cy=needs-confirming-row])', 'Iris Molina', { timeout: 20000 }).click()
 
           cy.get('[data-cy=previous-visit-listing]').should('contain', 'L5 L/R · Sacrum R')
           cy.get('[data-cy=previous-visit-section]').should('have.length', 4)
@@ -48,7 +48,7 @@ describe('My Day visit notes', () => {
           // worklist shows what was adjusted.
           cy.reload()
           cy.get('[data-cy=worklist-listing]', { timeout: 20000 }).should('have.text', 'L5 L/R · Sacrum R')
-          cy.contains('li', 'Iris Molina').click()
+          cy.contains('li:not([data-cy=needs-confirming-row])', 'Iris Molina').click()
           cy.get('[data-cy=soap-action]').should('have.value', 'Adjusted: L5 L/R · Sacrum R')
           cy.get('[data-cy=soap-plan]').should('have.value', 'Weekly plan, reassess at visit 6.')
           cy.get('[data-cy=soap-subjective]').type('Pain 3/10.')

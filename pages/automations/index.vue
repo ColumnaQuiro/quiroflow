@@ -226,7 +226,8 @@ async function activateSegment(testMode: boolean) {
   }
 }
 
-const templatesOpen = ref(false)
+// ?templates=1 opens the gallery (Reputation's "Set it up" for the satisfaction check).
+const templatesOpen = ref(useRoute().query.templates === '1')
 function onCreated(id: string) {
   cached.value = null
   templatesOpen.value = false

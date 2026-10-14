@@ -217,6 +217,8 @@ function when(iso: string) {
           </p>
         </section>
       </div>
+
+      <GrowthSatisfactionPanel v-if="allowed && resolved && hasGrowth && data" class="mt-4" />
     </div>
   </div>
 </template>

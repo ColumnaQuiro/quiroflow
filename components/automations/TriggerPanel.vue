@@ -18,8 +18,12 @@ const totals = computed(() => b.stats.value.rule)
 function setFilters(filters: Record<string, any>) {
   b.updateRule({ filters })
 }
-function setNumberFilter(key: 'hours_before' | 'days_after' | 'days_overdue', raw: string, fallback: number) {
+function setNumberFilter(key: 'hours_before' | 'days_after' | 'days_overdue' | 'hours_after', raw: string, fallback: number) {
   b.updateRule({ filters: { ...rule.value.filters, [key]: Math.max(1, Math.round(Number(raw) || fallback)) } })
+}
+// Every Nth visit; 0 turns it off, leaving the first visit only.
+function setEveryVisits(raw: string) {
+  b.updateRule({ filters: { ...rule.value.filters, every_visits: Math.max(0, Math.round(Number(raw) || 0)) } })
 }
 
 // ---- segment
@@ -122,6 +126,21 @@ watch(
       {{ t('Days after the visit', 'Días después de la cita') }}
       <input type="number" min="1" :class="FIELD_NUMBER" :value="rule.filters.days_after ?? 2" data-test="trigger-days-after" @input="setNumberFilter('days_after', ($event.target as HTMLInputElement).value, 2)" />
     </label>
+    <template v-if="rule.trigger_event === 'appointment.satisfaction'">
+      <label :class="LABEL">
+        {{ t('Hours after the visit', 'Horas después de la visita') }}
+        <input type="number" min="1" :class="FIELD_NUMBER" :value="rule.filters.hours_after ?? 2" data-test="trigger-hours-after" @input="setNumberFilter('hours_after', ($event.target as HTMLInputElement).value, 2)" />
+      </label>
+      <label class="flex cursor-pointer items-start gap-2 text-[13px] text-ink-700 touch:min-h-11">
+        <input type="checkbox" class="mt-0.5 h-4 w-4 accent-brand" :checked="rule.filters.first_visit !== false" data-test="trigger-first-visit" @change="setFilters({ ...rule.filters, first_visit: ($event.target as HTMLInputElement).checked })" />
+        <span>{{ t('After the first visit', 'Tras la primera visita') }}</span>
+      </label>
+      <label :class="LABEL">
+        {{ t('And every … visits (0 = never)', 'Y cada … visitas (0 = nunca)') }}
+        <input type="number" min="0" :class="FIELD_NUMBER" :value="rule.filters.every_visits ?? 10" data-test="trigger-every-visits" @input="setEveryVisits(($event.target as HTMLInputElement).value)" />
+        <span :class="HINT">{{ t('Never more than once a month per patient, whatever these say.', 'Nunca más de una vez al mes por paciente, digan lo que digan estos ajustes.') }}</span>
+      </label>
+    </template>
     <label v-if="rule.trigger_event === 'invoice.overdue'" :class="LABEL">
       {{ t('Days after the invoice, still unpaid', 'Días después de la factura, sin pagar') }}
       <input type="number" min="1" :class="FIELD_NUMBER" :value="rule.filters.days_overdue ?? 7" data-test="trigger-days-overdue" @input="setNumberFilter('days_overdue', ($event.target as HTMLInputElement).value, 7)" />

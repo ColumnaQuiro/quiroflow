@@ -61,6 +61,7 @@ function routeTap(data: Record<string, string> | undefined) {
 
 export function usePushNotifications() {
   const authedFetch = useAuthedFetch()
+  const { gate } = useTwoFactor()
 
   async function send(token: string) {
     await authedFetch('/api/mobile/register-push-token', { method: 'POST', body: { token, platform: Capacitor.getPlatform() } })
@@ -69,6 +70,11 @@ export function usePushNotifications() {
   async function register() {
     if (!Capacitor.isNativePlatform()) return
     try {
+      // A staff page opened straight from a notification tap or a relaunch
+      // never passes through index.vue's code step. With the second factor
+      // still owed, the database refuses the token write; the next layout
+      // mount after the code is entered registers it.
+      if ((await gate()) !== 'ok') return
       const permission = await FirebaseMessaging.requestPermissions()
       if (permission.receive !== 'granted') return
 

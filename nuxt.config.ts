@@ -158,12 +158,25 @@ export default defineNuxtConfig({
         // The unsubscribe link in a marketing email: opened by a patient
         // with no QuiroFlow login, gated by its own signed token.
         '/unsubscribe/**',
+        // A satisfaction survey ("¿qué tal te hemos atendido?"): a patient's
+        // link from a message, with no login, gated by its own token.
+        '/valorar/**',
         // A clinic's gift voucher page: bought by someone with no QuiroFlow
         // login, like the booking page.
         '/regalo/**',
         // Where Stripe Checkout returns after a patient pays from the app: the
         // phone's browser, with no QuiroFlow session.
         '/payment-done',
+        // The waitlist claim link and the photo-upload QR: opened on a
+        // patient's phone with no QuiroFlow login, gated by their own token.
+        // Not a '*' glob: the module turns each pattern into a regex by
+        // swapping '*' for '.*', so '/waitlist/*' also matched '/waitlist/'
+        // with an empty token -- and the router serves the STAFF waitlist page
+        // (pages/waitlist/index.vue) there, which rendered logged-out. Written
+        // as the regex itself, a token of one segment is required, and
+        // /waitlist and /waitlist/ stay behind the login.
+        '/waitlist/[^/]+',
+        '/photo-upload/[^/]+',
         '/forgot-password',
         '/reset-password',
         '/legal/**',

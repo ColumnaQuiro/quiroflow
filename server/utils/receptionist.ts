@@ -5,6 +5,7 @@ import { historyMarkersSection, INFORMAL_ADDRESS_LINE, NO_INVENTION_LINE, WAITLI
 import { leadOriginSection, type LeadOrigin } from '~/utils/receptionistLeadOrigin'
 import { NO_REPLY } from '~/utils/receptionistAutoReply'
 import { CONFIDENTIALITY_SECTION, promptSafeName } from '~/utils/receptionistGuard'
+import type { ReceptionistPrompt } from '~/utils/receptionistPrompt'
 import {
   receptionistBookingSection,
   receptionistClockSection,
@@ -492,7 +493,7 @@ export function buildSystemPrompt(
      */
     sendsItself?: boolean
   },
-) {
+): ReceptionistPrompt {
   const personName = promptSafeName(opts.draft?.personName)
   const adOnly = opts.adOnlyTypes ?? []
   const knowledge = config.knowledge
@@ -507,7 +508,11 @@ export function buildSystemPrompt(
   const hasTimes = Boolean(opts.offeredTypes.length || adOnly.length || opts.bookedVisits?.length)
   const availability = hasTimes ? opts.calendar.availability : null
 
-  return [
+  // What is the same for every conversation at this clinic first, and what
+  // is about this person and this moment after it: see utils/receptionistPrompt.ts.
+  // Sections that refer to one another ("the Booking list below", "Stop and
+  // hand over to a person when") still read in the right direction.
+  const clinic = [
     `You are ${config.personaName}, the receptionist for a chiropractic clinic. You answer enquiries from prospective patients.`,
     `Tone: ${TONE_WORDING[config.tone] ?? TONE_WORDING.warm_brief}`,
     // Whatever the tone, an opener like "¡Perfecto!" is what makes a reply
@@ -520,10 +525,7 @@ export function buildSystemPrompt(
     // copies out as "20/10" -- correct, and the least human way to say it.
     `Write dates in words, in the patient's language, with the weekday: "el lunes 20 de octubre", "Monday 20 October". Never "20/10" or "2026-10-20".`,
     `Reply in the language the patient writes in. The clinic supports: ${config.languages.join(', ')}.`,
-    receptionistClockSection(opts.calendar.now, opts.calendar.timeZone),
     knowledge ? `# What you know about this clinic\n\n${knowledge}` : '# What you know about this clinic\n\nNothing has been configured yet. Say you will check with your colleague rather than guessing.',
-    opts.leadOrigin ? leadOriginSection(opts.leadOrigin) : '',
-    opts.audience ? audienceSection(opts.audience) : '',
     // The whole conversation is in the messages, and a receptionist who asks
     // for something the patient said three messages ago reads as a form.
     // Not every message wants an answer: a "Confirmar" tapped on the reminder,
@@ -533,6 +535,30 @@ export function buildSystemPrompt(
     historyMarkersSection(Boolean(opts.sendsItself)),
     INFORMAL_ADDRESS_LINE,
     NO_INVENTION_LINE,
+    // "¿Tengo artrosis, me podéis ayudar?" answered only with "lo valoramos
+    // en la primera visita" gives the patient no reason to come to it. A line
+    // on how chiropractic is used for that, honest about what it is not,
+    // does -- and the assessment is still the chiropractor's.
+    `# When they mention a condition\nIf the patient names a condition or symptom (artrosis, ciática, hernia discal, dolor cervical...) and asks whether you can help, first say in one or two sentences how chiropractic care is generally used for it -- for example to improve mobility, ease stiffness and reduce the load on the affected joints -- taking what the clinic knowledge says about it first when it covers it. Speak in general terms ("se trabaja para", "puede ayudar a"), never diagnose them, never promise a result, never describe what an adjustment does to the nerve, joint or disc, and never say it replaces their doctor's treatment. Then say the chiropractor will assess their particular case at the first visit, and move on to booking.`,
+    questions
+      ? `# Questions you may work in\nOnly once the patient's own request has been dealt with, at most one per reply, and never as a condition for booking. Skip any the conversation or "What you already know about this person" already answers. A question about how they heard about the clinic is for the clinic's records: never ask it when that is already known, never ask it to work out a price (answer the price as "What you can offer" says), and otherwise ask it at most once, at the very end, after a time has been agreed.\n\n${questions}`
+      : '',
+    escalations ? `# Stop and hand over to a person when\n\n${escalations}\n\nWhen one of these applies, ${opts.sendsItself ? 'call hand_over_to_colleague, then ' : ''}say your colleague will pick this up shortly and stop.` : '',
+    config.neverSays ? `# Never\n\n${config.neverSays}` : '',
+    opts.testMode
+      ? `# Test mode\nYou are being tried out by the clinic owner. Nothing you say reaches a patient and nothing is booked. Answer exactly as you would for real -- confidentiality included: the owner is trying what a patient would get.`
+      : '',
+    opts.draft
+      ? opts.sendsItself
+        ? `# This reply is sent as it is\nIt goes straight to them: nobody at the clinic reads it first. Write the message itself and nothing else -- no preamble, no options to choose between, no notes to anyone. Whenever a rule under "Stop and hand over to a person when" applies, they want something you cannot do, or you are not sure what to answer, call hand_over_to_colleague with the reason before you reply. ${opts.canBook ? `${CONFIRM_BEFORE_BOOKING} Then call book_appointment with it (to move a visit they already have, with move_visit_on); only once it confirms, tell them it is booked, with the day, time and who with. If it refuses, offer another free time or call hand_over_to_colleague.` : 'When they accept a time, call hand_over_to_colleague saying exactly what to book or move (type, day, time and who with): a colleague books it, and you tell them they will get a confirmation.'}`
+        : `# This reply is a draft\nA member of staff will read what you write before it is sent, and may edit it. Write the message itself and nothing else -- no preamble, no options to choose between, no notes to the reader.`
+      : '',
+  ]
+
+  const conversation = [
+    receptionistClockSection(opts.calendar.now, opts.calendar.timeZone),
+    opts.leadOrigin ? leadOriginSection(opts.leadOrigin) : '',
+    opts.audience ? audienceSection(opts.audience) : '',
     // They are writing from their phone: asking for its number is asking for
     // what the clinic already has, whatever the clinic knowledge says a
     // booking needs.
@@ -541,19 +567,11 @@ export function buildSystemPrompt(
     // gets "¿qué te ocurre?" back has been handed a form before they were
     // handed an appointment, and that is where enquiries go quiet.
     `# What comes first\nThe aim of every conversation is to get the patient booked. If they ask for an appointment, move towards booking in this same reply: ${availability ? 'offer times from the Booking list below, or ask which days suit them if you need to know first' : 'ask which days or times suit them'}. Do not ask about their symptoms, how long they have had them or how they heard about the clinic first -- none of that is a condition for booking. If they asked a question, answer it before anything else.`,
-    // "¿Tengo artrosis, me podéis ayudar?" answered only with "lo valoramos
-    // en la primera visita" gives the patient no reason to come to it. A line
-    // on how chiropractic is used for that, honest about what it is not,
-    // does -- and the assessment is still the chiropractor's.
     // "¿Cuánto cuesta la sesión?" from someone who has never been was answered
     // with the single-session and package prices, and "you need a first
     // visit" -- without its price, the one number they needed.
     opts.audience && opts.audience !== 'existing'
       ? `# Prices for someone new\nThey have not been to the clinic yet, so whatever they call it -- la cita, la sesión, la visita, la consulta -- a question about the price is about their first visit: give that price only, as "What you can offer" says for them. Only if they then ask about the visits after it, give the session and package prices from the clinic knowledge, and add that your colleague, the chiropractor, will explain their care plan and how many sessions they need at the first visit. After giving a price, offer to send them availability.`
-      : '',
-    `# When they mention a condition\nIf the patient names a condition or symptom (artrosis, ciática, hernia discal, dolor cervical...) and asks whether you can help, first say in one or two sentences how chiropractic care is generally used for it -- for example to improve mobility, ease stiffness and reduce the load on the affected joints -- taking what the clinic knowledge says about it first when it covers it. Speak in general terms ("se trabaja para", "puede ayudar a"), never diagnose them, never promise a result, never describe what an adjustment does to the nerve, joint or disc, and never say it replaces their doctor's treatment. Then say the chiropractor will assess their particular case at the first visit, and move on to booking.`,
-    questions
-      ? `# Questions you may work in\nOnly once the patient's own request has been dealt with, at most one per reply, and never as a condition for booking. Skip any the conversation or "What you already know about this person" already answers. A question about how they heard about the clinic is for the clinic's records: never ask it when that is already known, never ask it to work out a price (answer the price as "What you can offer" says), and otherwise ask it at most once, at the very end, after a time has been agreed.\n\n${questions}`
       : '',
     // The types come from the database at the moment of drafting, not from
     // the model's reading of the knowledge cards: an owner who withholds a
@@ -573,24 +591,14 @@ export function buildSystemPrompt(
       ? `Never say an appointment is booked, moved or confirmed unless book_appointment has just confirmed it in this reply. Never cancel anything.`
       : `You must NEVER state that an appointment is booked, confirmed or reserved. A member of staff or the booking system confirms them${availability ? ', and a listed time can be taken before then' : ''}. ${availability ? 'If the patient accepts a time, say you are passing it on and that they will get a confirmation.' : 'Once the patient has said when suits them, say you are passing it on and that they will get a confirmation.'}`,
     opts.canWaitlist ? WAITLIST_SECTION : '',
-    escalations ? `# Stop and hand over to a person when\n\n${escalations}\n\nWhen one of these applies, ${opts.sendsItself ? 'call hand_over_to_colleague, then ' : ''}say your colleague will pick this up shortly and stop.` : '',
-    config.neverSays ? `# Never\n\n${config.neverSays}` : '',
-    opts.testMode
-      ? `# Test mode\nYou are being tried out by the clinic owner. Nothing you say reaches a patient and nothing is booked. Answer exactly as you would for real -- confidentiality included: the owner is trying what a patient would get.`
-      : '',
-    opts.draft
-      ? opts.sendsItself
-        ? `# This reply is sent as it is\nIt goes straight to them: nobody at the clinic reads it first. Write the message itself and nothing else -- no preamble, no options to choose between, no notes to anyone. Whenever a rule under "Stop and hand over to a person when" applies, they want something you cannot do, or you are not sure what to answer, call hand_over_to_colleague with the reason before you reply. ${opts.canBook ? `${CONFIRM_BEFORE_BOOKING} Then call book_appointment with it (to move a visit they already have, with move_visit_on); only once it confirms, tell them it is booked, with the day, time and who with. If it refuses, offer another free time or call hand_over_to_colleague.` : 'When they accept a time, call hand_over_to_colleague saying exactly what to book or move (type, day, time and who with): a colleague books it, and you tell them they will get a confirmation.'}`
-        : `# This reply is a draft\nA member of staff will read what you write before it is sent, and may edit it. Write the message itself and nothing else -- no preamble, no options to choose between, no notes to the reader.`
-      : '',
     // Flattened by promptSafeName: the name is whatever the person typed into
     // a form, and must not be able to start a section of its own.
     personName ? `The person you are replying to is called ${personName}.` : '',
     // Last, so nothing above can be read as overriding it.
     CONFIDENTIALITY_SECTION,
   ]
-    .filter(Boolean)
-    .join('\n\n')
+
+  return { clinic: clinic.filter(Boolean).join('\n\n'), conversation: conversation.filter(Boolean).join('\n\n') }
 }
 
 /**

@@ -5,6 +5,7 @@ import { loadReceptionistCalendar, type OfferedType, type ReceptionistConfig } f
 import { availabilityLists, FREE_TIMES_MAX_DAYS, FREE_TIMES_MAX_TIMES, parseFreeTimesInput } from '~/utils/receptionistSlots'
 import { clinicDateOf, startOfLocalDate } from '~/utils/clinicClock'
 import { briefingLeak } from '~/utils/receptionistGuard'
+import type { ReceptionistPrompt } from '~/utils/receptionistPrompt'
 import { ADD_TO_WAITLIST, BOOK_APPOINTMENT } from '~/server/utils/receptionistBooking'
 import { cleanReply, offeredTimeCount, tooManyTimesNote } from '~/utils/receptionistHistory'
 
@@ -98,7 +99,7 @@ export async function runReceptionistModel(
   opts: {
     model: string
     maxTokens: number
-    system: string
+    system: ReceptionistPrompt
     messages: Anthropic.MessageParam[]
     findFreeTimes?: FreeTimesLookup | null
     /**
@@ -129,6 +130,23 @@ export async function runReceptionistModel(
   },
 ): Promise<{ text: string; refused: boolean; handedOver: string | null }> {
   const messages: Anthropic.MessageParam[] = [...opts.messages]
+  // Cached in two places (utils/receptionistPrompt.ts says why it is split):
+  //
+  //  - the clinic's part, for an hour. It is the same for every conversation
+  //    at the clinic, and a clinic's replies are minutes apart in the day but
+  //    rarely five -- the 5-minute default would expire between most of
+  //    them. A read refreshes the hour, so a busy day writes it about once.
+  //    The tools render before it and are cached with it; they differ only
+  //    between drafting and sending, which makes two entries, not a miss.
+  //  - the rest of the request, for five minutes, through the top-level
+  //    cache_control: a reply that looks up free times or is written again
+  //    sends the same conversation two to four times within seconds.
+  //
+  // The hour must come first: Anthropic refuses a longer TTL after a shorter.
+  const system: Anthropic.TextBlockParam[] = [
+    { type: 'text', text: opts.system.clinic, cache_control: { type: 'ephemeral', ttl: '1h' } },
+    { type: 'text', text: opts.system.conversation },
+  ]
   const tools: Anthropic.Tool[] = [
     ...(opts.findFreeTimes ? [FIND_FREE_TIMES] : []),
     ...(opts.handOver ? [HAND_OVER] : []),
@@ -147,7 +165,8 @@ export async function runReceptionistModel(
       // Low effort: a short conversational reply, and somebody is waiting.
       thinking: { type: 'adaptive' },
       output_config: { effort: 'low' },
-      system: opts.system,
+      system,
+      cache_control: { type: 'ephemeral' },
       messages,
       ...(tools.length ? { tools, tool_choice: round < MAX_TOOL_ROUNDS ? { type: 'auto' as const } : { type: 'none' as const } } : {}),
     })

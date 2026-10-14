@@ -161,6 +161,15 @@ export const FLOW_TEMPLATES: AutomationTemplate[] = [
     ],
   },
   {
+    key: 'satisfaction-check',
+    section: 'flows',
+    name: ['How did we do?', '¿Qué tal te hemos atendido?'],
+    description: ['A 1 to 5 two hours after the first visit and every 10th. Low scores alert the owners; high ones are offered your Google review page.', 'Del 1 al 5, dos horas después de la primera visita y cada 10. Las notas bajas avisan a los propietarios; las altas, a dejar reseña en Google.'],
+    summary: ['2 h after the visit · 1 step', '2 h después de la visita · 1 paso'],
+    rule: baseRule('appointment.satisfaction', { filters: { hours_after: 2, first_visit: true, every_visits: 10 }, quiet_hours: DEFAULT_QUIET_HOURS }),
+    steps: [wa(['first_name', 'satisfaction_link'])],
+  },
+  {
     key: 'payment-reminder',
     section: 'flows',
     name: ['Payment reminder', 'Recordatorio de pago'],

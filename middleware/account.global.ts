@@ -41,10 +41,19 @@ export default defineNuxtRouteMiddleware(async (to) => {
   // Unsubscribing from a clinic's marketing email: a patient's link, never
   // anything to do with a staff session that happens to be open.
   if (to.path.startsWith('/unsubscribe/')) return
+  // A satisfaction survey link, answered with no login (pages/valorar).
+  if (to.path.startsWith('/valorar/')) return
   // A clinic's gift voucher page (pages/regalo), public like its booking page.
   if (to.path.startsWith('/regalo/')) return
   // Stripe Checkout's return page for a patient paying from the app.
   if (to.path === '/payment-done') return
+  // A waitlist claim link and the photo-upload QR, both token-gated. A token
+  // is required, so /waitlist and /waitlist/ (the staff page) still go
+  // through the checks below. Without these, a phone that happens to be
+  // signed in is sent wherever its session belongs -- a patient's portal
+  // login to /portal, an account still owing its second factor to
+  // /two-factor -- instead of the link it opened.
+  if (/^\/(waitlist|photo-upload)\/[^/]+$/.test(to.path)) return
 
   const user = useSupabaseUser()
   if (!user.value) return

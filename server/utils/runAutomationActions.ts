@@ -345,10 +345,19 @@ async function runForRecipient(
     record: !dryRun && !whatsappOverrideNumber && actionsUseReviewLink(actions),
   })
 
+  // {{satisfaction_link}}: the visit's "how did we do" page. Minted only when
+  // a step here sends it, for a real patient and a real visit -- a test send
+  // or a dry run reaches nobody, and Reputation counts the rows as sent.
+  const satisfactionUrl =
+    !dryRun && !whatsappOverrideNumber && appointmentId && recipient.kind === 'patient' && actionsUse(actions, 'satisfaction_link')
+      ? await satisfactionLink(supabase, accountId, appointmentId, origin, ruleId)
+      : undefined
+
   const context: MergeContext = {
     ...extraContext,
     nextAppointmentAt,
     googleReviewUrl,
+    satisfactionUrl,
     clinicName: clinic?.name ?? undefined,
     clinicPhone: clinic?.phone ?? undefined,
     clinicAddress: clinic?.address ?? undefined,
@@ -539,11 +548,35 @@ async function buildHeaderComponent(supabase: any, header: Record<string, any> |
  * an email body.
  */
 function actionsUseReviewLink(actions: ActionRow[]) {
+  return actionsUse(actions, 'google_review_link')
+}
+
+/** Whether any action sends this variable, in a WhatsApp template or an email body. */
+function actionsUse(actions: ActionRow[], source: string) {
   return actions.some((action) => {
     const config = action.config ?? {}
-    if (Array.isArray(config.variables) && config.variables.some((v: { source?: string }) => v?.source === 'google_review_link')) return true
-    return typeof config.body === 'string' && config.body.includes('{{google_review_link}}')
+    if (Array.isArray(config.variables) && config.variables.some((v: { source?: string }) => v?.source === source)) return true
+    return typeof config.body === 'string' && config.body.includes(`{{${source}}}`)
   })
+}
+
+/**
+ * The visit's satisfaction page: one survey per appointment, so a second
+ * firing for the same visit sends the same link rather than a second
+ * question. Undefined when it cannot be stored -- the step then sends an
+ * empty variable rather than a link that leads nowhere.
+ */
+async function satisfactionLink(supabase: any, accountId: string, appointmentId: string, origin: string, ruleId?: string): Promise<string | undefined> {
+  const { data: existing } = await supabase.from('satisfaction_surveys').select('token').eq('appointment_id', appointmentId).maybeSingle()
+  if (existing?.token) return `${origin}/valorar/${existing.token}`
+  const token = randomUUID().replace(/-/g, '')
+  const { error } = await supabase.from('satisfaction_surveys').insert({ account_id: accountId, appointment_id: appointmentId, rule_id: ruleId ?? null, token })
+  if (error) {
+    // Two firings racing for the same visit: the other one's row stands.
+    const { data: again } = await supabase.from('satisfaction_surveys').select('token').eq('appointment_id', appointmentId).maybeSingle()
+    return again?.token ? `${origin}/valorar/${again.token}` : undefined
+  }
+  return `${origin}/valorar/${token}`
 }
 
 /**

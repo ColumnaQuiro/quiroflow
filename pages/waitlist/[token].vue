@@ -59,10 +59,10 @@ async function claim() {
     <div class="w-full max-w-sm rounded-card border border-line bg-surface p-6 text-center shadow-card">
       <div v-if="phase === 'loading'" class="text-sm text-ink-faint">Cargando…</div>
 
-      <div v-else-if="phase === 'invalid'" class="text-sm text-danger-text">{{ error }}</div>
+      <div v-else-if="phase === 'invalid'" data-cy="waitlist-claim-invalid" class="text-sm text-danger-text">{{ error }}</div>
 
       <template v-else-if="phase === 'ready' || phase === 'claiming'">
-        <h1 class="text-lg font-semibold text-ink-900">¡Se ha liberado una cita!</h1>
+        <h1 data-cy="waitlist-claim-offer" class="text-lg font-semibold text-ink-900">¡Se ha liberado una cita!</h1>
         <p class="mt-1 text-sm text-ink-muted">{{ offer?.clinicName }}</p>
 
         <div class="mt-4 rounded-ctl border border-line-control bg-surface-subtle p-3 text-left">

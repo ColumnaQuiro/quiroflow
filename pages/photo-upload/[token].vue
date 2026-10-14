@@ -44,10 +44,10 @@ async function onFileChosen(event: Event) {
     <div class="w-full max-w-sm rounded-card border border-line bg-surface p-6 text-center shadow-card">
       <div v-if="phase === 'loading'" class="text-sm text-ink-faint">Cargando…</div>
 
-      <div v-else-if="phase === 'invalid'" class="text-sm text-danger-text">{{ error }}</div>
+      <div v-else-if="phase === 'invalid'" data-cy="photo-upload-invalid" class="text-sm text-danger-text">{{ error }}</div>
 
       <template v-else-if="phase === 'ready' || phase === 'uploading'">
-        <h1 class="text-lg font-semibold text-ink-900">Foto de perfil{{ patientFirstName ? ` de ${patientFirstName}` : '' }}</h1>
+        <h1 data-cy="photo-upload-ready" class="text-lg font-semibold text-ink-900">Foto de perfil{{ patientFirstName ? ` de ${patientFirstName}` : '' }}</h1>
         <p class="mt-1 text-sm text-ink-muted">Toma una foto con tu cámara.</p>
         <label
           class="mt-5 flex w-full cursor-pointer items-center justify-center rounded-ctl bg-brand px-4 py-3 text-sm font-medium text-white hover:bg-brand-hover"

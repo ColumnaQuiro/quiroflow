@@ -45,6 +45,13 @@ export default defineNuxtRouteMiddleware(async (to) => {
   if (to.path.startsWith('/valorar/')) return
   // Stripe Checkout's return page for a patient paying from the app.
   if (to.path === '/payment-done') return
+  // A waitlist claim link and the photo-upload QR, both token-gated. A token
+  // is required, so /waitlist and /waitlist/ (the staff page) still go
+  // through the checks below. Without these, a phone that happens to be
+  // signed in is sent wherever its session belongs -- a patient's portal
+  // login to /portal, an account still owing its second factor to
+  // /two-factor -- instead of the link it opened.
+  if (/^\/(waitlist|photo-upload)\/[^/]+$/.test(to.path)) return
 
   const user = useSupabaseUser()
   if (!user.value) return

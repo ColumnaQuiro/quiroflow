@@ -5875,6 +5875,7 @@ export type Database = {
       }
       staff_tasks: {
         Row: {
+          appointment_id: string | null
           account_id: string
           created_at: string
           done_at: string | null
@@ -5890,6 +5891,7 @@ export type Database = {
           title: string
         }
         Insert: {
+          appointment_id?: string | null
           account_id: string
           created_at?: string
           done_at?: string | null
@@ -5905,6 +5907,7 @@ export type Database = {
           title: string
         }
         Update: {
+          appointment_id?: string | null
           account_id?: string
           created_at?: string
           done_at?: string | null
@@ -7170,6 +7173,7 @@ export type Database = {
       }
     }
     Functions: {
+      inbox_task_role_id: { Args: { p_account_id: string }; Returns: string }
       save_exercise_program: {
         Args: {
           p_account_id: string

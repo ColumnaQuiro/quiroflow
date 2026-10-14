@@ -12,6 +12,7 @@ import {
   type ConversationMessage,
 } from '../../utils/receptionistAutoReply'
 import { buildPatientReplyPrompt, type PatientPromptConfig } from '../../utils/patientReplyPrompt'
+import { receptionistPromptText } from '../../utils/receptionistPrompt'
 
 // When the AI receptionist answers on its own rather than drafting: the
 // clinic's two switches against its opening hours, and what holds it back in
@@ -97,14 +98,14 @@ describe('A reply that is sent as it is', () => {
   }
 
   it('says nobody reads it first, and to hand over rather than guess', () => {
-    const prompt = buildPatientReplyPrompt(config, { ...base, sendsItself: true })
+    const prompt = receptionistPromptText(buildPatientReplyPrompt(config, { ...base, sendsItself: true }))
     expect(prompt).toContain('# This reply is sent as it is')
     expect(prompt).toContain('call hand_over_to_colleague')
     expect(prompt).not.toContain('# This reply is a draft')
   })
 
   it('is still a draft for a person to read otherwise', () => {
-    const prompt = buildPatientReplyPrompt(config, base)
+    const prompt = receptionistPromptText(buildPatientReplyPrompt(config, base))
     expect(prompt).toContain('# This reply is a draft')
     expect(prompt).not.toContain('hand_over_to_colleague')
   })
@@ -112,7 +113,7 @@ describe('A reply that is sent as it is', () => {
   // Booking on its own: what it may say is held to what book_appointment did.
   it('books with book_appointment, and says booked only once it confirms', () => {
     const visits = [{ startsAt: '2026-10-20T08:00:00Z', typeName: 'Ajuste' }]
-    const prompt = buildPatientReplyPrompt(config, { ...base, bookedVisits: visits, sendsItself: true, canBook: true })
+    const prompt = receptionistPromptText(buildPatientReplyPrompt(config, { ...base, bookedVisits: visits, sendsItself: true, canBook: true }))
     expect(prompt).toContain('call book_appointment with it')
     expect(prompt).toContain('unless book_appointment has just confirmed it in this reply')
     expect(prompt).toContain('move it with book_appointment (move_visit_on')
@@ -126,7 +127,7 @@ describe('A reply that is sent as it is', () => {
   // could be more than one time gets the confirming question.
   it('books an unambiguous pick at once, and confirms only when it could be more than one time', () => {
     const visits = [{ startsAt: '2026-10-20T08:00:00Z', typeName: 'Ajuste' }]
-    const prompt = buildPatientReplyPrompt(config, { ...base, bookedVisits: visits, sendsItself: true, canBook: true })
+    const prompt = receptionistPromptText(buildPatientReplyPrompt(config, { ...base, bookedVisits: visits, sendsItself: true, canBook: true }))
     expect(prompt).toContain('Book or move only when there is no doubt which exact day and time they want')
     expect(prompt).toContain('"miércoles 21" means 16:00 and you book it without asking again')
     expect(prompt).toContain('If it could be more than one time')
@@ -135,7 +136,7 @@ describe('A reply that is sent as it is', () => {
   })
 
   it('hands an accepted time to a colleague when it cannot book', () => {
-    const prompt = buildPatientReplyPrompt(config, { ...base, sendsItself: true })
+    const prompt = receptionistPromptText(buildPatientReplyPrompt(config, { ...base, sendsItself: true }))
     expect(prompt).toContain('a colleague books it')
     expect(prompt).not.toContain('call book_appointment')
   })

@@ -785,6 +785,7 @@ watch(
               </div>
             </template>
 
+            <AppointmentsPainScore v-if="canReadNotes && appointment && context" class="mb-3" :appointment-id="appointment.id" :account-id="context.accountId" :team-member-id="context.teamMemberId" :editable="canWriteNotes" />
             <template v-if="canWriteNotes">
               <div role="tablist" :aria-label="t('Note format', 'Formato de la nota')" class="mb-2 grid grid-cols-2 gap-1 rounded-ctl bg-chip-bg p-[3px]">
                 <button v-for="m in (['free', 'soap'] as const)" :key="m" type="button" role="tab" :aria-selected="noteMode === m" class="h-8 rounded-ctlSm text-[12.5px] font-semibold" :class="noteMode === m ? 'bg-surface text-ink-900 shadow-card' : 'text-ink-muted'" :data-cy="`visit-note-mode-${m}`" @click="setNoteMode(m)">

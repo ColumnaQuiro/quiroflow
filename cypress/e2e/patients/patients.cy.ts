@@ -43,7 +43,7 @@ describe('Patients', () => {
         lastName: 'White',
       }).then((patient: any) => {
         cy.login(account.email, account.password)
-        for (const tab of ['overview', 'clinical', 'appointments', 'money', 'communications', 'attachments']) {
+        for (const tab of ['overview', 'clinical', 'progress', 'appointments', 'money', 'communications', 'attachments']) {
           cy.visit(`/patients/${patient.id}?tab=${tab}`)
           cy.contains('Carol White').should('be.visible')
         }

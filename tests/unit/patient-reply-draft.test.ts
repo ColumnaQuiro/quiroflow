@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildPatientReplyPrompt, patientFactsSection, type PatientPromptConfig, type PatientReplyFacts } from '../../utils/patientReplyPrompt'
+import { receptionistPromptText } from '../../utils/receptionistPrompt'
 
 // A reply to a patient in the Inbox, drafted by the receptionist
 // (server/utils/patientReplyDraft.ts): what it is told about them, and the
@@ -36,11 +37,11 @@ describe('patientFactsSection', () => {
 describe('buildPatientReplyPrompt', () => {
   it('speaks to a patient, carries the facts, and never lets the draft claim a booking or payment', () => {
     const config: PatientPromptConfig = { personaName: 'Alba', toneLine: 'Courteous and brief.', languages: ['es', 'en'], knowledge: [], escalationRules: [], neverSays: '', slotsPerReply: 2, bookingWindowDays: 14 }
-    const prompt = buildPatientReplyPrompt(config, {
+    const prompt = receptionistPromptText(buildPatientReplyPrompt(config, {
       facts,
       offeredTypes: [],
       calendar: { now: new Date('2026-10-11T10:00:00Z'), timeZone: 'Europe/Madrid', availability: null },
-    })
+    }))
     expect(prompt).toContain("replying to one of the clinic's own patients")
     expect(prompt).toContain('# What you already know about this patient')
     expect(prompt).toContain('NEVER state that a visit is booked, moved, cancelled or confirmed')

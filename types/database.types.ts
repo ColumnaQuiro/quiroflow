@@ -5920,6 +5920,7 @@ export type Database = {
       }
       staff_tasks: {
         Row: {
+          appointment_id: string | null
           account_id: string
           created_at: string
           done_at: string | null
@@ -5935,6 +5936,7 @@ export type Database = {
           title: string
         }
         Insert: {
+          appointment_id?: string | null
           account_id: string
           created_at?: string
           done_at?: string | null
@@ -5950,6 +5952,7 @@ export type Database = {
           title: string
         }
         Update: {
+          appointment_id?: string | null
           account_id?: string
           created_at?: string
           done_at?: string | null
@@ -6381,6 +6384,45 @@ export type Database = {
           listings?: Json
           updated_at?: string
           updated_by?: string | null
+        }
+        Relationships: []
+      }
+      visit_pain_scores: {
+        Row: {
+          account_id: string
+          appointment_id: string
+          created_at: string
+          id: string
+          patient_score: number | null
+          patient_scored_at: string | null
+          practitioner_id: string | null
+          practitioner_score: number | null
+          practitioner_scored_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          appointment_id: string
+          created_at?: string
+          id?: string
+          patient_score?: number | null
+          patient_scored_at?: string | null
+          practitioner_id?: string | null
+          practitioner_score?: number | null
+          practitioner_scored_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          appointment_id?: string
+          created_at?: string
+          id?: string
+          patient_score?: number | null
+          patient_scored_at?: string | null
+          practitioner_id?: string | null
+          practitioner_score?: number | null
+          practitioner_scored_at?: string | null
+          updated_at?: string
         }
         Relationships: []
       }
@@ -7176,6 +7218,7 @@ export type Database = {
       }
     }
     Functions: {
+      inbox_task_role_id: { Args: { p_account_id: string }; Returns: string }
       save_exercise_program: {
         Args: {
           p_account_id: string
@@ -7438,6 +7481,8 @@ export type Database = {
       reorder_appointment_types: { Args: { p_ids: string[] }; Returns: undefined }
       cancel_patient_appointment: { Args: { p_appointment_id: string }; Returns: Json }
       check_in_my_appointment: { Args: { p_appointment_id: string }; Returns: string | null }
+      set_my_pain_score: { Args: { p_appointment_id: string; p_score: number }; Returns: boolean }
+      my_pain_context: { Args: { p_appointment_id: string }; Returns: Json }
       get_public_booking_policy: { Args: { p_slug: string }; Returns: Json }
       my_referral_code: { Args: { p_patient_id: string }; Returns: Json }
       record_email_event: {

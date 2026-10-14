@@ -15,6 +15,9 @@ import type { Tables } from '~/types/database.types'
 //
 // The seven tabs became six by merging Docs and Files into Attachments --
 // see AttachmentsTab for why that split was never a distinction staff made.
+// Progress (pain visit by visit) is a seventh for those who can read visit
+// notes; it is a different question from Clinical's "what happened", namely
+// "is it working".
 const route = useRoute()
 const supabase = useSupabaseClient()
 const store = useAccountStore()
@@ -88,6 +91,7 @@ onMounted(loadBannerDetail)
 onMounted(() => {
   const warm = () => {
     import('~/components/patients/ClinicalTab.vue')
+    import('~/components/patients/ProgressTab.vue')
     import('~/components/patients/AppointmentsTab.vue')
     import('~/components/patients/BillingTab.vue')
     import('~/components/patients/CommunicationsTab.vue')
@@ -113,6 +117,9 @@ const canContact = computed(() => !patient.value?.is_minor && !patient.value?.do
 const tabs = computed(() => [
   { key: 'overview', label: t('Overview', 'Resumen') },
   { key: 'clinical', label: t('Clinical', 'Clínico') },
+  // Pain visit by visit (visit_pain_scores) -- clinical, so under the visit
+  // notes permission like the notes themselves.
+  ...(can('visit_notes_access') ? [{ key: 'progress', label: t('Progress', 'Progreso') }] : []),
   { key: 'appointments', label: t('Appointments', 'Citas') },
   // billing_history_view ("See billing history"): the whole ledger -- every
   // receipt, payment, bono and the statement -- lives on this tab. Stored and
@@ -349,6 +356,7 @@ function onTabKeydown(event: KeyboardEvent) {
           <PatientsOverviewTab v-if="activeTab === 'overview'" :patient="patient" @updated="loadPatient" />
 
           <LazyPatientsClinicalTab v-else-if="activeTab === 'clinical'" :patient-id="patientId" />
+          <LazyPatientsProgressTab v-else-if="activeTab === 'progress' && patient" :patient-id="patientId" :patient="patient" />
 
           <LazyPatientsAppointmentsTab
             v-else-if="activeTab === 'appointments'"

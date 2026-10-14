@@ -10,7 +10,7 @@ export default defineEventHandler(async (event) => {
   const { error } = await supabase
     .from('device_push_tokens')
     .upsert({ user_id: user.id, platform: body.platform, fcm_token: body.token }, { onConflict: 'user_id,fcm_token' })
-  if (error) throw createError({ statusCode: 500, statusMessage: error.message })
+  if (error) throw createError(pushTokenFailure(error.message))
 
   return { success: true }
 })

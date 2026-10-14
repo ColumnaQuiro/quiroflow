@@ -1,5 +1,5 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
-import { hasGrowth } from '~/server/utils/requireGrowth'
+import { hasReceptionist } from '~/server/utils/requireGrowth'
 import { draftPatientReply } from '~/server/utils/patientReplyDraft'
 import { modelFailureMessage } from '~/utils/modelFailure'
 
@@ -9,15 +9,15 @@ import { modelFailureMessage } from '~/utils/modelFailure'
 // asked reads it and sends it through the Inbox like anything they type.
 //
 // Behind the Inbox's own permission, not Growth's settings permission: the
-// front desk answering patients is who this is for. Growth is still what
-// pays for it, so the subscription must include it.
+// front desk answering patients is who this is for. The receptionist -- on
+// its own or inside Growth -- is still what pays for it.
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id')
   if (!id) throw createError({ statusCode: 400, statusMessage: 'Missing patient id' })
 
   const { supabase, teamMember, subscription } = await requirePermission(event, 'inbox_access')
-  if (!hasGrowth(subscription)) {
-    throw createError({ statusCode: 402, statusMessage: 'Reply drafts are part of Growth. Add it under Billing.' })
+  if (!hasReceptionist(subscription)) {
+    throw createError({ statusCode: 402, statusMessage: 'Reply drafts come with the AI receptionist. Add it, or Growth, under Billing.' })
   }
 
   let outcome

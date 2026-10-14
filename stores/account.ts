@@ -72,6 +72,7 @@ export const useAccountStore = defineStore('account', {
     subscriptionStatus: null as string | null,
     trialEndsAt: null as string | null,
     growthAddon: false,
+    receptionistAddon: false,
     planId: null as string | null,
     comped: false,
     hasStripeSubscription: false,
@@ -94,6 +95,11 @@ export const useAccountStore = defineStore('account', {
       state.subscriptionStatus === 'trialing' ||
       ((state.growthAddon || planIncludesGrowth(state.planId))
         && state.subscriptionStatus !== 'locked' && state.subscriptionStatus !== 'canceled'),
+    // hasReceptionist() on the server: Growth includes the receptionist, and
+    // it is also sold on its own.
+    hasReceptionist(): boolean {
+      return this.hasGrowthAddon || (this.receptionistAddon && this.subscriptionStatus !== 'locked' && this.subscriptionStatus !== 'canceled')
+    },
     // Only meaningful while still trialing -- null once on a real plan (no
     // trial_ends_at) or already past it (negative), so the banner can just
     // check `!== null`.
@@ -157,7 +163,7 @@ export const useAccountStore = defineStore('account', {
         account: { name: string; slug: string; whatsapp_confirmation_template_name: string | null; whatsapp_recall_template_name: string | null; scheduling_policy_fee_cents: number | null; default_phone_country: string | null; require_two_factor?: boolean } | null
         clinics: Clinic[]
         permissions: Record<string, PermissionValue>
-        subscription: { status: string; trial_ends_at: string | null; growth_addon?: boolean; plan_id?: string | null; comped?: boolean; has_stripe_subscription?: boolean } | null
+        subscription: { status: string; trial_ends_at: string | null; growth_addon?: boolean; receptionist_addon?: boolean; plan_id?: string | null; comped?: boolean; has_stripe_subscription?: boolean } | null
       }
       const teamMember = bootstrap.team_member
 
@@ -194,6 +200,7 @@ export const useAccountStore = defineStore('account', {
       this.subscriptionStatus = subscription?.status ?? null
       this.trialEndsAt = subscription?.trial_ends_at ?? null
       this.growthAddon = subscription?.growth_addon ?? false
+      this.receptionistAddon = subscription?.receptionist_addon ?? false
       this.planId = subscription?.plan_id ?? null
       this.comped = subscription?.comped ?? false
       this.hasStripeSubscription = subscription?.has_stripe_subscription ?? false
@@ -228,6 +235,7 @@ export const useAccountStore = defineStore('account', {
       this.subscriptionStatus = null
       this.trialEndsAt = null
       this.growthAddon = false
+      this.receptionistAddon = false
       this.planId = null
       this.comped = false
       this.hasStripeSubscription = false

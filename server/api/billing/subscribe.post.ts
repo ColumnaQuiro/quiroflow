@@ -1,6 +1,6 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
-import { planIncludesGrowth } from '~/utils/growthPlans'
+import { planIncludesGrowth, receptionistLineWanted } from '~/utils/growthPlans'
 import { checkoutTrialEnd } from '~/utils/billing'
 import { retrieveChangeableSubscription, stripeForPlatformBilling } from '~/server/utils/platformBillingStripe'
 import { verifactuFeeItemFor } from '~/server/utils/verifactuFee'
@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, statusMessage: 'Only the account owner can manage billing' })
   }
 
-  const body = await readBody<{ planId: string; interval: 'monthly' | 'annual'; extraProfessionals?: number; growth?: boolean }>(event)
+  const body = await readBody<{ planId: string; interval: 'monthly' | 'annual'; extraProfessionals?: number; growth?: boolean; receptionist?: boolean }>(event)
   if (!body?.planId || (body.interval !== 'monthly' && body.interval !== 'annual')) {
     throw createError({ statusCode: 400, statusMessage: 'planId and interval are required' })
   }
@@ -28,6 +28,8 @@ export default defineEventHandler(async (event) => {
   // included" would be the invoice nobody can explain, and the entitlement
   // does not need it either -- hasGrowth() reads the plan.
   const wantsGrowth = body.growth === true && !planIncludesGrowth(body.planId)
+  // And the receptionist never alongside Growth, which includes it.
+  const wantsReceptionist = receptionistLineWanted({ receptionist: body.receptionist, growth: wantsGrowth, planId: body.planId })
 
   const serviceRole = serverSupabaseServiceRole<Database>(event)
   const { data: plan } = await serviceRole.from('plans').select('*').eq('id', body.planId).maybeSingle()
@@ -56,6 +58,7 @@ export default defineEventHandler(async (event) => {
   // add-on and not a fourth tier. Whether a missing price is fatal is decided
   // below, after the seat check.
   const growth = await growthAddonPrices(serviceRole, body.interval)
+  const receptionist = await receptionistAddonPrices(serviceRole, body.interval)
 
   // enforce_practitioner_seats (0150) only blocks a plan limit from being
   // breached going FORWARD -- it has nothing to say about an account that's
@@ -90,6 +93,9 @@ export default defineEventHandler(async (event) => {
   // that pays for it must not lose it as a side effect of changing plan.
   if (wantsGrowth && !growth.priceId) {
     throw createError({ statusCode: 500, statusMessage: 'Growth has no Stripe price configured for this billing interval' })
+  }
+  if (wantsReceptionist && !receptionist.priceId) {
+    throw createError({ statusCode: 500, statusMessage: 'The AI receptionist has no Stripe price configured for this billing interval' })
   }
 
   const { data: subscription } = await serviceRole
@@ -156,6 +162,14 @@ export default defineEventHandler(async (event) => {
     } else if (growthItem) {
       items.push({ id: growthItem.id, deleted: true })
     }
+    // Removed when Growth comes in: that is how an account moves from the
+    // receptionist alone to Growth without paying for it twice.
+    const receptionistItem = current.items.data.find((item) => receptionist.allPriceIds.has(item.price.id))
+    if (wantsReceptionist && receptionist.priceId) {
+      items.push(receptionistItem ? { id: receptionistItem.id, price: receptionist.priceId, quantity: 1 } : { price: receptionist.priceId, quantity: 1 })
+    } else if (receptionistItem) {
+      items.push({ id: receptionistItem.id, deleted: true })
+    }
     // The VeriFactu fee is not the owner's to choose here, but it has to
     // follow the new interval: Stripe refuses items on mixed intervals.
     const verifactuFee = await verifactuFeeItemFor(serviceRole, teamMember.account_id, body.interval, current.items.data)
@@ -206,6 +220,7 @@ export default defineEventHandler(async (event) => {
       { price: planPriceId, quantity: 1 },
       ...(extraProfessionals > 0 && addOnPriceId ? [{ price: addOnPriceId, quantity: extraProfessionals }] : []),
       ...(wantsGrowth && growth.priceId ? [{ price: growth.priceId, quantity: 1 }] : []),
+      ...(wantsReceptionist && receptionist.priceId ? [{ price: receptionist.priceId, quantity: 1 }] : []),
       ...verifactuFeeLine,
     ],
     // On the subscription rather than the line items: line-item tax_rates

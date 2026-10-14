@@ -2688,6 +2688,12 @@ async function setGrowthAddon(opts: { accountId: string; enabled: boolean }) {
   return { ok: true }
 }
 
+/** Adds or removes the AI receptionist bought on its own (hasReceptionist). */
+async function setReceptionistAddon(opts: { accountId: string; enabled: boolean }) {
+  assertOk(await admin.from('subscriptions').update({ receptionist_addon: opts.enabled }).eq('account_id', opts.accountId))
+  return { ok: true }
+}
+
 /**
  * Puts an account on a plan and billing interval.
  *
@@ -4057,6 +4063,7 @@ export const dbTasks = {
   'db:createLeadMessage': createLeadMessage,
   'db:leadAiState': leadAiState,
   'db:setGrowthAddon': setGrowthAddon,
+  'db:setReceptionistAddon': setReceptionistAddon,
   'db:setSubscriptionPlan': setSubscriptionPlan,
   'db:setLeadAiState': setLeadAiState,
   'db:setWhatsappPhoneNumberId': setWhatsappPhoneNumberId,

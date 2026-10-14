@@ -6203,6 +6203,7 @@ export type Database = {
           verifactu_fee_attempted_at: string | null
           id: string
           plan_id: string
+          receptionist_addon: boolean
           status: string
           stripe_customer_id: string | null
           stripe_subscription_id: string | null
@@ -6220,6 +6221,7 @@ export type Database = {
           verifactu_fee_attempted_at?: string | null
           id?: string
           plan_id: string
+          receptionist_addon?: boolean
           status?: string
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
@@ -6237,6 +6239,7 @@ export type Database = {
           verifactu_fee_attempted_at?: string | null
           id?: string
           plan_id?: string
+          receptionist_addon?: boolean
           status?: string
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null

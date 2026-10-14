@@ -112,7 +112,7 @@ export async function requireActiveAccount(event: H3Event) {
   // do not spend a round trip reading it again.
   const { data: row } = await supabase
     .from('team_members')
-    .select('id, account_id, is_owner, role_id, accounts(subscriptions(status, plan_id, growth_addon, comped))')
+    .select('id, account_id, is_owner, role_id, accounts(subscriptions(status, plan_id, growth_addon, receptionist_addon, comped))')
     .eq('user_id', userId)
     .is('deleted_at', null)
     .maybeSingle()
@@ -140,6 +140,7 @@ export interface AccountSubscription {
   status: string
   plan_id: string | null
   growth_addon: boolean | null
+  receptionist_addon: boolean | null
   comped: boolean | null
 }
 

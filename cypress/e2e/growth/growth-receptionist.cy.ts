@@ -174,7 +174,7 @@ describe('Growth AI receptionist', () => {
   it('points an account without the tier at the upgrade screen', () => {
     cy.visit('/growth/receptionist?growth=0')
 
-    cy.contains('The AI receptionist is part of the Growth tier.').should('be.visible')
+    cy.contains('Add the AI receptionist on its own, or get it with Growth.').should('be.visible')
     cy.get('[data-test="test-chat"]').should('not.exist')
   })
 

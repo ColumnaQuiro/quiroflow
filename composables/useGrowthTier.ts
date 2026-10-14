@@ -26,6 +26,10 @@ export function useGrowthTier() {
   // their skeleton until `resolved` flips, the same way the rest of the app
   // waits on the account store.
   const hasGrowth = ref(false)
+  // Growth includes the receptionist, and it is also sold on its own: the
+  // receptionist's page and the Inbox's reply drafts ask this, not hasGrowth.
+  // The preview flag previews Growth, which includes it.
+  const hasReceptionist = ref(false)
   const resolved = ref(false)
 
   function decide() {
@@ -42,6 +46,7 @@ export function useGrowthTier() {
     }
 
     hasGrowth.value = preview === null ? account.hasGrowthAddon : preview === '1'
+    hasReceptionist.value = preview === null ? account.hasReceptionist : preview === '1'
     resolved.value = true
   }
 
@@ -50,8 +55,8 @@ export function useGrowthTier() {
     // The store fills in after its own bootstrap request, so a page mounted
     // before that lands would otherwise sit on the upgrade screen while the
     // account it is describing does have Growth.
-    watch(() => account.hasGrowthAddon, decide)
+    watch(() => [account.hasGrowthAddon, account.hasReceptionist], decide)
   })
 
-  return { hasGrowth, resolved }
+  return { hasGrowth, hasReceptionist, resolved }
 }

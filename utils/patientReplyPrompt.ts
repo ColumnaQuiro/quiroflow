@@ -5,6 +5,7 @@ import { NO_REPLY } from './receptionistAutoReply'
 import { CONFIRM_BEFORE_BOOKING, offeredTypesSection, rescheduleSection, type BookedVisit, type PromptType } from './receptionistTypes'
 import { receptionistBookingSection, receptionistClockSection, type ReceptionistAvailability } from './receptionistSlots'
 import { historyMarkersSection, INFORMAL_ADDRESS_LINE, NO_INVENTION_LINE, WAITLIST_SECTION } from './receptionistHistory'
+import type { ReceptionistPrompt } from './receptionistPrompt'
 
 // What the receptionist knows about a patient when drafting a reply to them
 // in the Inbox: their next visits, their care plan, what they owe. Read at
@@ -84,7 +85,7 @@ export function buildPatientReplyPrompt(
     /** add_to_waitlist is on this request -- only ever with sendsItself. */
     canWaitlist?: boolean
   },
-): string {
+): ReceptionistPrompt {
   const knowledge = config.knowledge
     .map((card) => `## ${card.title}\n${card.lines.map((line) => `- ${line}`).join('\n')}`)
     .join('\n\n')
@@ -92,15 +93,15 @@ export function buildPatientReplyPrompt(
   const booked = opts.bookedVisits ?? []
   const hasTimes = opts.offeredTypes.length > 0 || booked.length > 0
   const availability = hasTimes ? opts.calendar.availability : null
-  return [
+  // Clinic first, this patient and this moment after it: see
+  // utils/receptionistPrompt.ts, and buildSystemPrompt, which is split the same way.
+  const clinic = [
     `You are ${config.personaName}, the receptionist for a chiropractic clinic. You are replying to one of the clinic's own patients, who has written to the clinic.`,
     `Tone: ${config.toneLine}`,
     `Sound like an experienced clinic receptionist who knows this patient: neutral, professional, to the point. Do not open with an exclamation or filler ("¡Perfecto!", "¡Genial!", "Great!"), do not use emojis. Start with the substance.`,
     `When something goes to a member of staff, speak of them as your own colleague: in Spanish "mi compañera" or "mi compañero" (for example "Se lo paso a mi compañera, la quiropráctica"), in English "my colleague". Never "un compañero", "un miembro del equipo" or "a colleague".`,
     `Write dates in words, in the patient's language, with the weekday: "el lunes 20 de octubre", "Monday 20 October". Never "20/10" or "2026-10-20".`,
     `Reply in the language the patient writes in. The clinic supports: ${config.languages.join(', ')}.`,
-    receptionistClockSection(opts.calendar.now, opts.calendar.timeZone),
-    patientFactsSection(opts.facts, opts.calendar.timeZone),
     knowledge ? `# What you know about this clinic\n\n${knowledge}` : '',
     // Not every message wants an answer: a "Confirmar" tapped on the reminder,
     // a thanks. A re-confirmation nobody asked for is noise in their WhatsApp.
@@ -113,7 +114,17 @@ export function buildPatientReplyPrompt(
     // the clinic not knowing who they are.
     `Never ask a patient for their name, email or phone number: the clinic has them.`,
     // Clinical questions go to the practitioner, not to the front desk's draft.
-    `Never give clinical or medical advice, and never comment on their symptoms, treatment or progress beyond the visit counts above: say their practitioner will answer that.`,
+    `Never give clinical or medical advice, and never comment on their symptoms, treatment or progress beyond the visit counts under "What you already know about this patient": say their practitioner will answer that.`,
+    escalations ? `# Stop and hand over to a person when\n\n${escalations}\n\nWhen one of these applies, ${opts.sendsItself ? 'call hand_over_to_colleague, then ' : ''}say your colleague will pick this up shortly and stop.` : '',
+    config.neverSays ? `# Never\n\n${config.neverSays}` : '',
+    opts.sendsItself
+      ? `# This reply is sent as it is\nIt goes straight to them: nobody at the clinic reads it first. Write the message itself and nothing else -- no preamble, no options to choose between, no notes to anyone. Whenever a rule under "Stop and hand over to a person when" applies, they want something you cannot do, or you are not sure what to answer, call hand_over_to_colleague with the reason before you reply. ${opts.canBook ? `${CONFIRM_BEFORE_BOOKING} Then call book_appointment with it (to move a visit they already have, with move_visit_on); only once it confirms, tell them it is booked, with the day, time and who with. If it refuses, offer another free time or call hand_over_to_colleague.` : 'When they accept a time, call hand_over_to_colleague saying exactly what to book or move (type, day, time and who with): a colleague books it, and you tell them they will get a confirmation.'}`
+      : `# This reply is a draft\nA member of staff will read what you write before it is sent, and may edit it. Write the message itself and nothing else -- no preamble, no options to choose between, no notes to the reader.`,
+  ]
+
+  const conversation = [
+    receptionistClockSection(opts.calendar.now, opts.calendar.timeZone),
+    patientFactsSection(opts.facts, opts.calendar.timeZone),
     offeredTypesSection(opts.offeredTypes),
     // A returning patient asking for "otra cita" means another of what they
     // have been having -- their adjustment, their maintenance visit -- and
@@ -131,14 +142,9 @@ export function buildPatientReplyPrompt(
       : `You must NEVER state that a visit is booked, moved, cancelled or confirmed, or that a payment was received or a refund made. A member of staff does those. If they ask to book or move a visit, offer times and say you are passing it on, and that they will get a confirmation; if they ask to cancel, say your colleague will take care of it.`,
     `Only mention an amount owed if they ask about money or payment, and then only exactly as given above.`,
     opts.canWaitlist ? WAITLIST_SECTION : '',
-    escalations ? `# Stop and hand over to a person when\n\n${escalations}\n\nWhen one of these applies, ${opts.sendsItself ? 'call hand_over_to_colleague, then ' : ''}say your colleague will pick this up shortly and stop.` : '',
-    config.neverSays ? `# Never\n\n${config.neverSays}` : '',
-    opts.sendsItself
-      ? `# This reply is sent as it is\nIt goes straight to them: nobody at the clinic reads it first. Write the message itself and nothing else -- no preamble, no options to choose between, no notes to anyone. Whenever a rule under "Stop and hand over to a person when" applies, they want something you cannot do, or you are not sure what to answer, call hand_over_to_colleague with the reason before you reply. ${opts.canBook ? `${CONFIRM_BEFORE_BOOKING} Then call book_appointment with it (to move a visit they already have, with move_visit_on); only once it confirms, tell them it is booked, with the day, time and who with. If it refuses, offer another free time or call hand_over_to_colleague.` : 'When they accept a time, call hand_over_to_colleague saying exactly what to book or move (type, day, time and who with): a colleague books it, and you tell them they will get a confirmation.'}`
-      : `# This reply is a draft\nA member of staff will read what you write before it is sent, and may edit it. Write the message itself and nothing else -- no preamble, no options to choose between, no notes to the reader.`,
     // Last, so nothing above can be read as overriding it.
     CONFIDENTIALITY_SECTION,
   ]
-    .filter(Boolean)
-    .join('\n\n')
+
+  return { clinic: clinic.filter(Boolean).join('\n\n'), conversation: conversation.filter(Boolean).join('\n\n') }
 }

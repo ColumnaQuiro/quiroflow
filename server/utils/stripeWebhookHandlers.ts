@@ -5,6 +5,7 @@ import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluat
 import { dispatchPatientRule } from '~/server/utils/automationEngine'
 import { pushPatientAction } from '~/server/utils/staffPush'
 import { formatEur } from '~/utils/billing'
+import { deliverGiftVoucher, madridToday, type GiftVoucher } from '~/server/utils/giftVouchers'
 
 // The subscription an invoice belongs to, in either shape Stripe sends it.
 // Up to 2025-02-24.acacia it is `invoice.subscription`; from 2025-03-31.basil
@@ -326,6 +327,15 @@ export async function handleStripeEvent(supabase: SupabaseClient<Database>, acco
   // temporarily unpaid, never an orphaned charge or a lost appointment.
   if (stripeEvent.type === 'payment_intent.succeeded') {
     const intent = stripeEvent.data.object as Stripe.PaymentIntent
+    // A gift voucher bought on /regalo/<slug> (public-booking/gift-voucher.post.ts):
+    // paid now, so it counts from today and goes out unless it was bought for
+    // a later day (deliverDueGiftVouchers sends those). No payment row and no
+    // factura yet -- both are written when it is redeemed onto a patient
+    // (server/utils/giftVouchers.ts, redeemGiftVoucher).
+    if (intent.metadata?.gift_voucher_id) {
+      await giftVoucherPaid(supabase, accountId, intent, origin)
+      return
+    }
     const invoiceId = intent.metadata?.invoice_id
     if (invoiceId) {
       const { data: existingPayment } = await supabase
@@ -379,5 +389,28 @@ export async function handleStripeEvent(supabase: SupabaseClient<Database>, acco
         }
       }
     }
+  }
+}
+
+async function giftVoucherPaid(supabase: SupabaseClient<Database>, accountId: string, intent: Stripe.PaymentIntent, origin: string) {
+  const { data: settings } = await supabase.from('gift_voucher_settings').select('valid_months').eq('account_id', accountId).maybeSingle()
+  const paidAt = new Date()
+  const expires = new Date(paidAt)
+  expires.setMonth(expires.getMonth() + (settings?.valid_months ?? 12))
+  // Only a pending one, so a webhook delivered twice changes nothing.
+  const { data: rows } = await supabase
+    .from('gift_vouchers')
+    .update({ status: 'paid', paid_at: paidAt.toISOString(), expires_at: expires.toISOString(), stripe_payment_intent_id: intent.id })
+    .eq('id', intent.metadata.gift_voucher_id!)
+    .eq('account_id', accountId)
+    .eq('status', 'pending')
+    .select('*')
+  const voucher = (rows?.[0] ?? null) as GiftVoucher | null
+  if (!voucher || (voucher.send_on && voucher.send_on > madridToday(paidAt))) return
+  try {
+    await deliverGiftVoucher(supabase, voucher, origin)
+  } catch (err) {
+    // Paid and kept; the cron finds it unsent and tries again.
+    console.error('[gift-voucher] delivery after payment failed', voucher.id, err)
   }
 }

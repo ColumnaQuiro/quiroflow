@@ -5,6 +5,7 @@ import { dispatchPatientRule } from '~/server/utils/automationEngine'
 import { DEFAULT_CLINIC_TIMEZONE, localDay } from '~/utils/clinicClock'
 import { sendExerciseReminders } from '~/server/utils/exerciseReminders'
 import { sendOwnerWeeklyDigests } from '~/server/utils/weeklyDigest'
+import { deliverDueGiftVouchers } from '~/server/utils/giftVouchers'
 
 // Fires 'appointment.same_day' for every booked appointment happening today,
 // for accounts with an enabled rule on that trigger -- same reasoning/auth
@@ -47,6 +48,9 @@ export default defineEventHandler(async (event) => {
   await sendExerciseReminders(supabase, now)
   // And the owners' Monday summary of last week (server/utils/weeklyDigest.ts).
   await sendOwnerWeeklyDigests(supabase, getRequestURL(event).origin, now)
+  // And gift vouchers bought to arrive on a given day, from 09:00 Madrid on it
+  // (server/utils/giftVouchers.ts); those with no day go out from the webhook.
+  await deliverDueGiftVouchers(supabase, getRequestURL(event).origin, now)
 
   const { data: rules } = await supabase
     .from('automation_rules')

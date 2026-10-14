@@ -2,6 +2,7 @@ import { serverSupabaseClient, serverSupabaseServiceRole } from '#supabase/serve
 import type { Database } from '~/types/database.types'
 import { stripeClientFor } from '~/server/utils/stripe'
 import { patientCardLink } from '~/server/utils/patientCardLink'
+import { GIFT_REFUSAL, giftLabel, giftVoucherFor, redeemGiftVoucher } from '~/server/utils/giftVouchers'
 
 // The public booking page's booking, made here rather than by the page calling
 // create_public_booking itself, so the clinic's "new online booking" alert goes
@@ -22,7 +23,9 @@ import { patientCardLink } from '~/server/utils/patientCardLink'
 type BookingArgs = Database['public']['Functions']['create_public_booking']['Args']
 
 export default defineEventHandler(async (event) => {
-  const body = await readBody<BookingArgs>(event)
+  // gift_code is ours, not the function's: a gift voucher to redeem onto the
+  // patient once the booking has made or found them (below).
+  const { gift_code: giftCode, ...body } = (await readBody<BookingArgs & { gift_code?: string }>(event)) ?? ({} as BookingArgs)
   if (!body?.p_account_slug) {
     throw createError({ statusCode: 400, statusMessage: 'p_account_slug is required' })
   }
@@ -30,7 +33,7 @@ export default defineEventHandler(async (event) => {
   // As whoever is at the page -- anonymous, as the page itself was. The
   // function is security definer and checks everything it is given.
   const caller = await serverSupabaseClient<Database>(event)
-  const { data, error } = await caller.rpc('create_public_booking', body)
+  const { data, error } = await caller.rpc('create_public_booking', body as BookingArgs)
   if (error) {
     // The function's own refusals are written for the patient ("Esa hora ya
     // no está disponible…"), and the page shows them as they are.
@@ -61,8 +64,32 @@ export default defineEventHandler(async (event) => {
     console.error('[public-booking] card link failed', result.appointment_id, err)
   }
 
-  return { ...(data as Record<string, unknown>), card_url: cardUrl }
+  // "Tengo un bono regalo": checked on the page before booking
+  // (gift-check.post.ts) and redeemed here onto whoever the booking is for.
+  // The booking stands either way; a voucher that cannot be redeemed is said,
+  // and stays as it was for the desk.
+  let gift: { redeemed: boolean; label?: string; message?: string } | null = null
+  if (giftCode?.trim()) {
+    try {
+      gift = await redeemGiftAtBooking(event, result.appointment_id, giftCode)
+    } catch (err: any) {
+      console.error('[public-booking] gift voucher redeem failed', result.appointment_id, err)
+      gift = { redeemed: false, message: err?.statusMessage ?? 'No se ha podido canjear el bono regalo. Dalo en recepción.' }
+    }
+  }
+
+  return { ...(data as Record<string, unknown>), card_url: cardUrl, gift }
 })
+
+async function redeemGiftAtBooking(event: Parameters<typeof serverSupabaseServiceRole>[0], appointmentId: string, code: string) {
+  const service = serverSupabaseServiceRole<Database>(event)
+  const { data: appt } = await service.from('appointments').select('account_id, patient_id').eq('id', appointmentId).maybeSingle()
+  if (!appt?.patient_id) return { redeemed: false, message: 'No se ha podido canjear el bono regalo. Dalo en recepción.' }
+  const check = await giftVoucherFor(service, appt.account_id, code)
+  if (!check.ok) return { redeemed: false, message: GIFT_REFUSAL[check.reason] }
+  await redeemGiftVoucher(service, check.voucher, appt.patient_id, null)
+  return { redeemed: true, label: giftLabel(check.voucher) }
+}
 
 async function cardLinkForBooking(event: Parameters<typeof serverSupabaseServiceRole>[0], appointmentId: string): Promise<string | null> {
   const service = serverSupabaseServiceRole<Database>(event)

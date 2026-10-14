@@ -14,6 +14,120 @@ export type Database = {
   }
   public: {
     Tables: {
+      gift_voucher_settings: {
+        Row: {
+          account_id: string
+          allow_custom_amount: boolean
+          amounts_cents: number[]
+          appointment_type_ids: string[]
+          enabled: boolean
+          package_ids: string[]
+          updated_at: string
+          valid_months: number
+        }
+        Insert: {
+          account_id: string
+          allow_custom_amount?: boolean
+          amounts_cents?: number[]
+          appointment_type_ids?: string[]
+          enabled?: boolean
+          package_ids?: string[]
+          updated_at?: string
+          valid_months?: number
+        }
+        Update: {
+          account_id?: string
+          allow_custom_amount?: boolean
+          amounts_cents?: number[]
+          appointment_type_ids?: string[]
+          enabled?: boolean
+          package_ids?: string[]
+          updated_at?: string
+          valid_months?: number
+        }
+        Relationships: []
+      }
+      gift_vouchers: {
+        Row: {
+          account_id: string
+          appointment_type_id: string | null
+          buyer_email: string
+          code: string
+          created_at: string
+          deliver_to: string
+          expires_at: string | null
+          from_name: string
+          id: string
+          item_name: string
+          kind: string
+          message: string | null
+          package_id: string | null
+          paid_at: string | null
+          recipient_email: string | null
+          redeemed_at: string | null
+          redeemed_by: string | null
+          redeemed_payment_id: string | null
+          send_on: string | null
+          sent_at: string | null
+          status: string
+          stripe_payment_intent_id: string | null
+          to_name: string
+          value_cents: number
+        }
+        Insert: {
+          account_id: string
+          appointment_type_id?: string | null
+          buyer_email: string
+          code: string
+          created_at?: string
+          deliver_to: string
+          expires_at?: string | null
+          from_name: string
+          id?: string
+          item_name: string
+          kind: string
+          message?: string | null
+          package_id?: string | null
+          paid_at?: string | null
+          recipient_email?: string | null
+          redeemed_at?: string | null
+          redeemed_by?: string | null
+          redeemed_payment_id?: string | null
+          send_on?: string | null
+          sent_at?: string | null
+          status?: string
+          stripe_payment_intent_id?: string | null
+          to_name: string
+          value_cents: number
+        }
+        Update: {
+          account_id?: string
+          appointment_type_id?: string | null
+          buyer_email?: string
+          code?: string
+          created_at?: string
+          deliver_to?: string
+          expires_at?: string | null
+          from_name?: string
+          id?: string
+          item_name?: string
+          kind?: string
+          message?: string | null
+          package_id?: string | null
+          paid_at?: string | null
+          recipient_email?: string | null
+          redeemed_at?: string | null
+          redeemed_by?: string | null
+          redeemed_payment_id?: string | null
+          send_on?: string | null
+          sent_at?: string | null
+          status?: string
+          stripe_payment_intent_id?: string | null
+          to_name?: string
+          value_cents?: number
+        }
+        Relationships: []
+      }
       patient_push_log: {
         Row: {
           account_id: string

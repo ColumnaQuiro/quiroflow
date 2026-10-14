@@ -23,6 +23,7 @@ export const SETTINGS_PAGES = [
   '/settings/docs',
   '/settings/exercises',
   '/settings/files',
+  '/settings/gift-vouchers',
   '/settings/verifactu',
   '/settings/import',
   '/settings/invoicing',

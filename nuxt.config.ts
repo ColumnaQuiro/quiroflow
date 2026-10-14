@@ -161,6 +161,9 @@ export default defineNuxtConfig({
         // A satisfaction survey ("¿qué tal te hemos atendido?"): a patient's
         // link from a message, with no login, gated by its own token.
         '/valorar/**',
+        // A clinic's gift voucher page: bought by someone with no QuiroFlow
+        // login, like the booking page.
+        '/regalo/**',
         // Where Stripe Checkout returns after a patient pays from the app: the
         // phone's browser, with no QuiroFlow session.
         '/payment-done',

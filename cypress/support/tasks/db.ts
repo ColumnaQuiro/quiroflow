@@ -3668,6 +3668,13 @@ async function setAppointmentStatus(opts: { appointmentId: string; status: strin
   return { ok: true }
 }
 
+/** Mi día tasks about one visit, open and done (appointment_change_request_task). */
+async function appointmentTasks(opts: { appointmentId: string }) {
+  const { data } = await (admin as any).from('staff_tasks').select('title, done_at').eq('appointment_id', opts.appointmentId)
+  const rows = (data ?? []) as { title: string; done_at: string | null }[]
+  return { open: rows.filter((r) => !r.done_at).length, done: rows.filter((r) => r.done_at).length, titles: rows.map((r) => r.title) }
+}
+
 /** The patient's answer to a reminder: 'confirmed', 'reschedule_requested', 'pending' or null. */
 async function setConfirmationStatus(opts: { appointmentId: string; confirmationStatus: string | null }) {
   assertOk(await admin.from('appointments').update({ confirmation_status: opts.confirmationStatus }).eq('id', opts.appointmentId))
@@ -4236,6 +4243,7 @@ export const dbTasks = {
   'db:inboxAssignment': inboxAssignment,
   'db:messagesFromNumber': messagesFromNumber,
   'db:setAppointmentStatus': setAppointmentStatus,
+  'db:appointmentTasks': appointmentTasks,
   'db:setConfirmationStatus': setConfirmationStatus,
   'db:moveAppointment': moveAppointment,
   'db:checkInAppointment': checkInAppointment,

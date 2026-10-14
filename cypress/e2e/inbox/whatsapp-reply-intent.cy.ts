@@ -289,6 +289,30 @@ describe('What a WhatsApp reply does to an appointment', () => {
     })
   })
 
+  // A request to change a visit was a flag on the calendar, easy to read
+  // past: one was agreed in the chat and never moved, and became a no-show.
+  it('puts a change request in Mi día until the visit is dealt with', () => {
+    seed(null, (appointmentId) => {
+      deliverButton('Cambiar cita')
+      statusOf(appointmentId).should('eq', 'reschedule_requested')
+      cy.task<{ open: number; titles: string[] }>('db:appointmentTasks', { appointmentId }).should((t) => {
+        expect(t.open).to.eq(1)
+        expect(t.titles[0]).to.match(/^Cambiar la cita del \d{2}\/\d{2} a las \d{2}:\d{2}/)
+      })
+
+      // Asking again does not add a second one.
+      deliverText('Necesito cambiar la cita, porfa')
+      cy.task<{ open: number }>('db:appointmentTasks', { appointmentId }).its('open').should('eq', 1)
+
+      // Dealt with (here, cancelled): the task closes itself.
+      cy.task('db:setAppointmentStatus', { appointmentId, status: 'cancelled' })
+      cy.task<{ open: number; done: number }>('db:appointmentTasks', { appointmentId }).should((t) => {
+        expect(t.open).to.eq(0)
+        expect(t.done).to.eq(1)
+      })
+    })
+  })
+
   it('still lets the patient change their mind by tapping the other button', () => {
     seed('confirmed', (appointmentId) => {
       deliverButton('Cambiar cita')

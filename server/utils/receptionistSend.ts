@@ -61,4 +61,30 @@ export async function announceHandover(service: any, accountId: string, target: 
     type: target.kind === 'patient' && target.channel === 'app' ? 'patient_app_message' : 'whatsapp_message',
     key: conversationKeyFor(target),
   })
+  await handoverTask(service, accountId, target, personName, reason)
+}
+
+/**
+ * The handover in Mi día as well: a task for whoever answers patients
+ * (inbox_task_role_id), until somebody ticks it off. A push is gone once it is
+ * swiped away, and a patient told "mi compañera te escribirá" about cancelling
+ * a visit still had it booked the next morning. Best-effort -- the note and
+ * the push have already gone out.
+ */
+async function handoverTask(service: any, accountId: string, target: ReceptionistTarget, personName: string, reason: string) {
+  try {
+    const { data: roleId } = await service.rpc('inbox_task_role_id', { p_account_id: accountId })
+    if (!roleId) return
+    const { error } = await service.from('staff_tasks').insert({
+      account_id: accountId,
+      role_id: roleId,
+      patient_id: target.kind === 'patient' ? target.patientId : null,
+      lead_id: target.kind === 'lead' ? target.leadId : null,
+      title: `Responder a ${personName}: ${reason}`.slice(0, 300),
+      due_at: new Date(Date.now() + 2 * 3600_000).toISOString(),
+    })
+    if (error) console.error('[receptionist] could not add the handover task:', error.message)
+  } catch (err) {
+    console.error('[receptionist] could not add the handover task:', (err as Error)?.message ?? err)
+  }
 }

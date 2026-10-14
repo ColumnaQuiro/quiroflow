@@ -188,6 +188,12 @@ export function findProblems(rule: DraftRule, steps: DraftStep[], templates: Tem
   if (rule.trigger_event === 'appointment.review_request' && !(Number(rule.filters?.days_after) > 0)) {
     add(null, 'Say how many days after the visit.', 'Indica cuántos días después de la cita.')
   }
+  if (rule.trigger_event === 'appointment.satisfaction' && !(Number(rule.filters?.hours_after) > 0)) {
+    add(null, 'Say how many hours after the visit.', 'Indica cuántas horas después de la visita.')
+  }
+  if (rule.trigger_event === 'appointment.satisfaction' && rule.filters?.first_visit === false && !(Number(rule.filters?.every_visits) > 0)) {
+    add(null, 'Ask after the first visit, every few visits, or both.', 'Pregunta tras la primera visita, cada pocas visitas, o ambas.')
+  }
   if (rule.trigger_event === 'invoice.overdue' && !(Number(rule.filters?.days_overdue) > 0)) {
     add(null, 'Say how many days after the invoice.', 'Indica cuántos días después de la factura.')
   }

@@ -5720,6 +5720,51 @@ export type Database = {
           },
         ]
       }
+      satisfaction_surveys: {
+        Row: {
+          account_id: string
+          answered_at: string | null
+          appointment_id: string
+          comment: string | null
+          id: string
+          resolved_at: string | null
+          resolved_by: string | null
+          review_offered_at: string | null
+          rule_id: string | null
+          score: number | null
+          sent_at: string
+          token: string
+        }
+        Insert: {
+          account_id: string
+          answered_at?: string | null
+          appointment_id: string
+          comment?: string | null
+          id?: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          review_offered_at?: string | null
+          rule_id?: string | null
+          score?: number | null
+          sent_at?: string
+          token: string
+        }
+        Update: {
+          account_id?: string
+          answered_at?: string | null
+          appointment_id?: string
+          comment?: string | null
+          id?: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          review_offered_at?: string | null
+          rule_id?: string | null
+          score?: number | null
+          sent_at?: string
+          token?: string
+        }
+        Relationships: []
+      }
       saved_replies: {
         Row: {
           account_id: string

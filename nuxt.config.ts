@@ -158,6 +158,9 @@ export default defineNuxtConfig({
         // The unsubscribe link in a marketing email: opened by a patient
         // with no QuiroFlow login, gated by its own signed token.
         '/unsubscribe/**',
+        // A satisfaction survey ("¿qué tal te hemos atendido?"): a patient's
+        // link from a message, with no login, gated by its own token.
+        '/valorar/**',
         // Where Stripe Checkout returns after a patient pays from the app: the
         // phone's browser, with no QuiroFlow session.
         '/payment-done',

@@ -101,6 +101,17 @@ export const TRIGGERS: TriggerDef[] = [
     appointmentContext: true,
   },
   {
+    value: 'appointment.satisfaction',
+    label: ['After the visit (satisfaction)', 'Después de la visita (satisfacción)'],
+    sentence: ['Hours after the first visit and every few visits', 'Unas horas después de la primera visita y cada pocas visitas'],
+    description: [
+      'Asks "how did we do?" from 1 to 5 with the satisfaction link variable. Never more than once a month per patient; low scores reach the owners on Reputation.',
+      'Pregunta «¿qué tal te hemos atendido?» del 1 al 5 con la variable del enlace para valorar. Nunca más de una vez al mes por paciente; las notas bajas llegan a los propietarios en Reputación.',
+    ],
+    group: 'appointment',
+    appointmentContext: true,
+  },
+  {
     value: 'invoice.overdue',
     label: ['Invoice unpaid', 'Factura sin pagar'],
     sentence: ['A set number of days after an invoice, still unpaid', 'Un número de días después de una factura, sin pagar'],
@@ -208,6 +219,13 @@ export function triggerTitle(t: Translate, event: string, filters?: Record<strin
   if (event === 'appointment.review_request') {
     const d = Number(filters?.days_after) || 2
     return t(`${d} day${d === 1 ? '' : 's'} after the visit`, `${d} día${d === 1 ? '' : 's'} después de la cita`)
+  }
+  if (event === 'appointment.satisfaction') {
+    const h = Number(filters?.hours_after) || 2
+    const n = filters?.every_visits === undefined ? 10 : Number(filters.every_visits) || 0
+    const first = filters?.first_visit !== false
+    const when = [first ? t('the first visit', 'la primera visita') : '', n > 0 ? t(`every ${n} visits`, `cada ${n} visitas`) : ''].filter(Boolean).join(t(' and ', ' y '))
+    return t(`${h} h after ${when || 'the visit'}`, `${h} h después de ${when || 'la visita'}`)
   }
   if (event === 'invoice.overdue') {
     const d = Number(filters?.days_overdue) || 7
@@ -590,6 +608,7 @@ export const VARIABLE_SOURCES: { value: string; label: Pair }[] = [
   { value: 'appointment_date', label: ['Appointment date', 'Fecha de la cita'] },
   { value: 'appointment_time', label: ['Appointment time', 'Hora de la cita'] },
   { value: 'google_review_link', label: ['Google review link', 'Enlace de reseña de Google'] },
+  { value: 'satisfaction_link', label: ['Satisfaction question link', 'Enlace para valorar la visita'] },
   { value: 'waitlist_claim_link', label: ['Waitlist claim link', 'Enlace para reservar el hueco'] },
   { value: 'waitlist_slot_datetime', label: ['Offered slot date & time', 'Fecha y hora del hueco ofrecido'] },
   { value: 'invoice_number', label: ['Invoice number', 'Número de factura'] },

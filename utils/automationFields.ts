@@ -17,6 +17,8 @@ export interface MergeRecipient {
 export interface MergeContext {
   nextAppointmentAt?: string
   googleReviewUrl?: string
+  /** The visit's "how did we do" page, /valorar/<token> (satisfaction_surveys). */
+  satisfactionUrl?: string
   waitlistClaimLink?: string
   waitlistSlotDatetime?: string
   /** An unpaid invoice's reminder (invoice.overdue): its number, what is owed, and /api/pay/<token>. */
@@ -100,6 +102,7 @@ export function automationFieldValue(recipient: MergeRecipient, source: string, 
   if (source === 'last_name') return recipient.lastName ?? ''
   if (source === 'email') return recipient.email ?? ''
   if (source === 'google_review_link') return context?.googleReviewUrl ?? ''
+  if (source === 'satisfaction_link') return context?.satisfactionUrl ?? ''
   if (source === 'waitlist_claim_link') return context?.waitlistClaimLink ?? ''
   if (source === 'waitlist_slot_datetime') return context?.waitlistSlotDatetime ?? ''
   if (source === 'invoice_number') return context?.invoiceNumber ?? ''

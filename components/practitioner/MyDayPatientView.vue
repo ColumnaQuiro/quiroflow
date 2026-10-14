@@ -157,6 +157,14 @@ async function signAndComplete() {
           <h2 class="px-1 text-[13.5px] font-semibold text-ink-900">{{ t('Today', 'Hoy') }}</h2>
           <div class="mt-2 grid gap-4" :class="layout === 'narrow' ? 'grid-cols-1' : 'grid-cols-[minmax(0,1fr)_236px]'">
             <div class="min-w-0 rounded-ctl border border-line-row">
+              <AppointmentsPainScore
+                v-if="store.accountId"
+                class="border-b border-line-row px-5 py-3"
+                :appointment-id="appointment.id"
+                :account-id="store.accountId"
+                :team-member-id="store.teamMember?.id ?? null"
+                :editable="canEditNotes"
+              />
               <PatientsExamAutofill ref="examRef" :appointment-id="appointment.id" :patient-id="appointment.patient_id" @saved="emit('charted')" />
             </div>
             <AppointmentsSpinalListings

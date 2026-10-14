@@ -5,7 +5,8 @@ import { canSelfCheckIn } from '../../utils/selfCheckIn'
 // patient tells the clinic they have arrived (check_in_my_appointment, via
 // /api/portal/appointments/check-in), the practitioner gets "Ha llegado" and
 // the visit shows as arrived on My Day. Only from 90 minutes before the visit
-// until it ends (utils/selfCheckIn.ts); once done it says so instead.
+// until it ends (utils/selfCheckIn.ts); once done it says so instead, and
+// asks for today's pain (PatientPainAsk).
 const props = defineProps<{ appt: { id: string; starts_at: string; ends_at: string; status: string; checked_in_at?: string | null } }>()
 const emit = defineEmits<{ 'checked-in': [at: string] }>()
 
@@ -37,9 +38,12 @@ async function checkIn() {
 </script>
 
 <template>
-  <div v-if="arrivedAt" class="flex items-center gap-2 rounded-ctl bg-success-bg px-3 py-2.5 text-[13.5px] font-medium text-success-text" data-cy="patient-checked-in">
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
-    {{ t("You're checked in. Take a seat, we'll call you.", 'Llegada registrada. Toma asiento, te llamamos.') }}
+  <div v-if="arrivedAt">
+    <div class="flex items-center gap-2 rounded-ctl bg-success-bg px-3 py-2.5 text-[13.5px] font-medium text-success-text" data-cy="patient-checked-in">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+      {{ t("You're checked in. Take a seat, we'll call you.", 'Llegada registrada. Toma asiento, te llamamos.') }}
+    </div>
+    <PatientPainAsk class="mt-3" :appointment-id="appt.id" />
   </div>
   <div v-else-if="open">
     <button type="button" class="flex min-h-11 w-full items-center justify-center gap-2 rounded-ctl bg-brand px-4 text-[15px] font-semibold text-white disabled:opacity-60" :disabled="busy" data-cy="patient-check-in" @click="checkIn">

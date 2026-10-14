@@ -130,19 +130,18 @@ export async function runReceptionistModel(
   },
 ): Promise<{ text: string; refused: boolean; handedOver: string | null }> {
   const messages: Anthropic.MessageParam[] = [...opts.messages]
-  // Cached in two places (utils/receptionistPrompt.ts says why it is split):
+  // The clinic's part is cached for an hour (utils/receptionistPrompt.ts
+  // says why it is split). It is the same for every conversation at the
+  // clinic, and a clinic's replies are minutes apart in the day but rarely
+  // five -- the 5-minute default would expire between most of them. A read
+  // refreshes the hour, so a busy day writes it a handful of times. The tools
+  // render before it and are cached with it; they differ only between
+  // drafting and sending, which makes two entries, not a miss.
   //
-  //  - the clinic's part, for an hour. It is the same for every conversation
-  //    at the clinic, and a clinic's replies are minutes apart in the day but
-  //    rarely five -- the 5-minute default would expire between most of
-  //    them. A read refreshes the hour, so a busy day writes it about once.
-  //    The tools render before it and are cached with it; they differ only
-  //    between drafting and sending, which makes two entries, not a miss.
-  //  - the rest of the request, for five minutes, through the top-level
-  //    cache_control: a reply that looks up free times or is written again
-  //    sends the same conversation two to four times within seconds.
-  //
-  // The hour must come first: Anthropic refuses a longer TTL after a shorter.
+  // The rest of the request is deliberately not cached. Tried and measured
+  // on 24 real replies: writing it costs 25% extra on every call, and only
+  // about one reply in six makes a second call (find_free_times, a rewrite)
+  // that would read it back -- it added ~$0.0015 a reply and saved less.
   const system: Anthropic.TextBlockParam[] = [
     { type: 'text', text: opts.system.clinic, cache_control: { type: 'ephemeral', ttl: '1h' } },
     { type: 'text', text: opts.system.conversation },
@@ -166,7 +165,6 @@ export async function runReceptionistModel(
       thinking: { type: 'adaptive' },
       output_config: { effort: 'low' },
       system,
-      cache_control: { type: 'ephemeral' },
       messages,
       ...(tools.length ? { tools, tool_choice: round < MAX_TOOL_ROUNDS ? { type: 'auto' as const } : { type: 'none' as const } } : {}),
     })

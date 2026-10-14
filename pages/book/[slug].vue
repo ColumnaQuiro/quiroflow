@@ -243,6 +243,37 @@ function captureAttribution() {
 const discountCode = ref('')
 const discountAppliedCents = ref(0)
 
+// --- gift voucher ("Tengo un bono regalo") ---
+// Checked here before booking (gift-check.post.ts) and redeemed by the
+// booking itself (book.post.ts), onto whoever the booking is for. ?regalo=
+// carries the code from the voucher's own email.
+const giftOpen = ref(typeof route.query.regalo === 'string')
+const giftOffered = ref(typeof route.query.regalo === 'string')
+const giftCode = ref(typeof route.query.regalo === 'string' ? route.query.regalo : '')
+const giftChecked = ref<{ ok: boolean; label?: string; description?: string; message?: string } | null>(null)
+const checkingGift = ref(false)
+const giftResult = ref<{ redeemed: boolean; label?: string; message?: string } | null>(null)
+async function checkGift() {
+  if (!giftCode.value.trim()) return
+  checkingGift.value = true
+  try {
+    giftChecked.value = await $fetch('/api/public-booking/gift-check', { method: 'POST', body: { slug, code: giftCode.value } })
+  } catch {
+    giftChecked.value = { ok: false, message: 'No se ha podido comprobar el código.' }
+  } finally {
+    checkingGift.value = false
+  }
+}
+onMounted(async () => {
+  try {
+    const o = await $fetch<{ enabled: boolean }>('/api/public-booking/gift-options', { query: { slug } })
+    if (o.enabled) giftOffered.value = true
+  } catch {
+    // Nothing to offer is the same as not selling them.
+  }
+  if (giftCode.value) checkGift()
+})
+
 onMounted(async () => {
   // This is a public storefront other sites embed -- it must never follow
   // the visitor's OS/browser dark-mode preference (or an internal staff
@@ -605,6 +636,7 @@ async function submitBooking() {
         p_country_code: dialCode.value,
         p_note: note.value,
         p_discount_code: discountCode.value.trim() || undefined,
+        gift_code: giftChecked.value?.ok ? giftCode.value.trim() : undefined,
       },
     })
   } catch (err: any) {
@@ -614,8 +646,9 @@ async function submitBooking() {
     return
   }
   submitting.value = false
-  const result = data as unknown as { appointment_id: string; starts_at: string; invoice_id: string | null; payment_required_cents: number; discount_applied_cents: number; card_url?: string | null }
+  const result = data as unknown as { appointment_id: string; starts_at: string; invoice_id: string | null; payment_required_cents: number; discount_applied_cents: number; card_url?: string | null; gift?: { redeemed: boolean; label?: string; message?: string } | null }
   cardUrl.value = result.card_url ?? null
+  giftResult.value = result.gift ?? null
   confirmation.value = result
   discountAppliedCents.value = result.discount_applied_cents ?? 0
   // Conversion event for whatever's listening on the account's GTM container
@@ -1001,6 +1034,18 @@ if (import.meta.client) {
                 <label class="block text-sm font-medium text-ink-700">Notas</label>
                 <textarea v-model="note" rows="3" placeholder="¿Algo que quiera que sepamos?" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"></textarea>
               </div>
+              <div v-if="giftOffered" class="mt-4" data-cy="booking-gift">
+                <button v-if="!giftOpen" type="button" class="text-sm font-medium text-brand-text hover:underline" data-cy="booking-gift-open" @click="giftOpen = true">Tengo un bono regalo</button>
+                <template v-else>
+                  <label for="gift-code" class="block text-sm font-medium text-ink-700">Código del bono regalo</label>
+                  <div class="mt-1 flex max-w-[320px] gap-2">
+                    <input id="gift-code" v-model="giftCode" type="text" placeholder="REGALO-…" class="w-full rounded-ctl border border-line-control px-3 py-2 text-sm uppercase focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" data-cy="booking-gift-code" @input="giftChecked = null" />
+                    <UiBtn type="button" variant="secondary" :disabled="checkingGift || !giftCode.trim()" data-cy="booking-gift-check" @click="checkGift">{{ checkingGift ? 'Comprobando…' : 'Aplicar' }}</UiBtn>
+                  </div>
+                  <p v-if="giftChecked?.ok" class="mt-1.5 text-sm text-success-text" data-cy="booking-gift-ok">✓ {{ giftChecked.description }}</p>
+                  <p v-else-if="giftChecked" class="mt-1.5 text-sm text-danger-text" data-cy="booking-gift-error">{{ giftChecked.message }}</p>
+                </template>
+              </div>
               <div v-if="info.account.discount_codes_enabled" class="mt-4">
                 <label class="block text-sm font-medium text-ink-700">Código de descuento</label>
                 <input v-model="discountCode" type="text" placeholder="Opcional" class="mt-1 w-full max-w-[200px] rounded-ctl border border-line-control px-3 py-2 text-sm uppercase focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
@@ -1056,6 +1101,8 @@ if (import.meta.client) {
             </span>
           </div>
           <p v-if="discountAppliedCents > 0" class="mt-1 text-sm text-success-text">Descuento aplicado: {{ formatPrice(discountAppliedCents) }}</p>
+          <p v-if="giftResult?.redeemed" class="mt-1 text-sm text-success-text" data-cy="booking-gift-redeemed">Bono regalo canjeado: {{ giftResult.label }}, ya en tu cuenta de la clínica.</p>
+          <p v-else-if="giftResult" class="mt-1 text-sm text-danger-text" data-cy="booking-gift-not-redeemed">{{ giftResult.message }}</p>
           <p
             v-if="info.account.appointment_confirmation_enabled && info.account.appointment_confirmation_channels.includes('email')"
             class="mt-4 text-xs text-ink-faint"

@@ -5,6 +5,8 @@ export interface WidgetDef {
   label: string
   defaultSize: WidgetSize
   component: string
+  /** Offered only to owners (the monthly goals: targets include income). */
+  ownerOnly?: boolean
 }
 
 // Core widgets seed the default layout and are always "this week" scoped.
@@ -36,6 +38,7 @@ export const WIDGET_REGISTRY: WidgetDef[] = [
   { type: 'statistics_mini', label: 'Visit value & retention', defaultSize: 'sm', component: 'DashboardStatisticsMiniWidget' },
   { type: 'memberships_mini', label: 'Memberships', defaultSize: 'sm', component: 'DashboardMembershipsMiniWidget' },
   { type: 'upcoming_visits_mini', label: 'Appointment volume trend', defaultSize: 'sm', component: 'DashboardUpcomingVisitsMiniWidget' },
+  { type: 'monthly_goals', label: 'Monthly goals', defaultSize: 'md', component: 'DashboardMonthlyGoalsWidget', ownerOnly: true },
 ]
 
 // The default dashboard layout, in grid order.

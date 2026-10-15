@@ -21,7 +21,9 @@
 //   - widgets whose figures are measured against the database's own clock
 //     (days since a last visit, days overdue), not the frozen browser one.
 //     Those are compared against the view directly, in their own test.
-export const SERVER_CLOCK_WIDGETS = ['Recalls due', 'Care plans behind schedule']
+//     Monthly goals is one too: its month is the server's this month
+//     (/api/goals), and dashboard/monthly-goals.cy.ts pins it instead.
+export const SERVER_CLOCK_WIDGETS = ['Recalls due', 'Care plans behind schedule', 'Monthly goals']
 
 export interface FigureSnapshot {
   lines: string[]

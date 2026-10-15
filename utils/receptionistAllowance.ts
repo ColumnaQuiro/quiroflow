@@ -34,3 +34,17 @@ export function receptionistAllowanceLevel(replies: number): 'ok' | 'near' | 'ov
 export function receptionistLimitReached(replies: number, limit: number | null | undefined): boolean {
   return typeof limit === 'number' && limit > 0 && replies >= limit
 }
+
+/** The month before `today` (YYYY-MM-DD on the clinic's clock), as its first day. */
+export function previousMonthStart(today: string): string {
+  const [y, m] = today.split('-').map(Number) as [number, number]
+  const year = m === 1 ? y - 1 : y
+  const month = m === 1 ? 12 : m - 1
+  return `${year}-${String(month).padStart(2, '0')}-01`
+}
+
+/** "octubre de 2026", for the invoice line a Spanish clinic reads. */
+export function monthNameEs(monthStart: string): string {
+  const [y, m] = monthStart.split('-').map(Number) as [number, number]
+  return new Date(Date.UTC(y, m - 1, 15)).toLocaleDateString('es-ES', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+}

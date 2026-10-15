@@ -2688,9 +2688,9 @@ async function setGrowthAddon(opts: { accountId: string; enabled: boolean }) {
   return { ok: true }
 }
 
-/** Writes `count` receptionist replies this month, as if it had written them. */
-async function seedReceptionistReplies(opts: { accountId: string; count: number }) {
-  const rows = Array.from({ length: opts.count }, (_, i) => ({ account_id: opts.accountId, conversation_key: `seed:${i}`, delivery: 'draft' }))
+/** Writes `count` receptionist replies, as if it had written them -- now, or at `createdAt`. */
+async function seedReceptionistReplies(opts: { accountId: string; count: number; createdAt?: string }) {
+  const rows = Array.from({ length: opts.count }, (_, i) => ({ account_id: opts.accountId, conversation_key: `seed:${i}`, delivery: 'draft', ...(opts.createdAt ? { created_at: opts.createdAt } : {}) }))
   for (let i = 0; i < rows.length; i += 500) assertOk(await admin.from('receptionist_replies').insert(rows.slice(i, i + 500)))
   return { ok: true }
 }

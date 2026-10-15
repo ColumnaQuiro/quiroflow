@@ -1,8 +1,10 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
-import { releaseOffersForSlot, waitlistSlotIsFree } from '~/server/utils/waitlistOffer'
+import { classHasPlace, releaseOffersForSlot, waitlistSlotIsFree } from '~/server/utils/waitlistOffer'
 
 const SLOT_TAKEN = 'This slot was just taken. Please contact the clinic.'
+// What appointments_class_place says when a class place cannot be had.
+const CLASS_REFUSALS = ['That class is full', 'That class has been cancelled']
 
 // Claims an offered waitlist slot -- turns it into a real appointments row.
 // No session (same as the GET beside this file); the token is the only
@@ -15,7 +17,7 @@ export default defineEventHandler(async (event) => {
   const supabase = serverSupabaseServiceRole<Database>(event)
   const { data: row } = await supabase
     .from('waitlist_entries')
-    .select('id, account_id, clinic_id, patient_id, status, offer_expires_at, offered_room_id, offered_practitioner_id, offered_appointment_type_id, offered_starts_at, offered_ends_at')
+    .select('id, account_id, clinic_id, patient_id, status, offer_expires_at, offered_room_id, offered_practitioner_id, offered_appointment_type_id, offered_starts_at, offered_ends_at, class_session_id')
     .eq('claim_token', token)
     .maybeSingle()
 
@@ -34,7 +36,9 @@ export default defineEventHandler(async (event) => {
   const startsAt = row.offered_starts_at
   const endsAt = row.offered_ends_at
   if (!startsAt || !endsAt) throw createError({ statusCode: 410, statusMessage: 'This offer is no longer available.' })
-  const free = await waitlistSlotIsFree(supabase, {
+  // A group class: a place left, rather than nobody booked at that time (the
+  // other places are booked at that time by design).
+  const free = row.class_session_id ? await classHasPlace(supabase, row.class_session_id) : await waitlistSlotIsFree(supabase, {
     accountId: row.account_id,
     clinicId: row.clinic_id,
     roomId: row.offered_room_id,
@@ -59,7 +63,30 @@ export default defineEventHandler(async (event) => {
   // The same question again, asked by the database under the lock every
   // booking path takes for this practitioner, together with the insert -- so
   // a booking landing between the check above and this one is still caught.
-  const { data: apptId, error: apptError } = await (supabase as any).rpc('save_appointment_if_free', {
+  //
+  // A group class books into its session instead: the place takes the
+  // session's time, and appointments_class_place refuses it if the class
+  // filled up or was cancelled meanwhile.
+  const { data: apptId, error: apptError } = row.class_session_id
+    ? await supabase
+        .from('appointments')
+        .insert({
+          account_id: row.account_id,
+          clinic_id: row.clinic_id,
+          patient_id: row.patient_id,
+          room_id: row.offered_room_id,
+          practitioner_id: row.offered_practitioner_id!,
+          appointment_type_id: row.offered_appointment_type_id!,
+          starts_at: startsAt,
+          ends_at: endsAt,
+          status: 'booked',
+          source: 'waitlist',
+          class_session_id: row.class_session_id,
+        })
+        .select('id')
+        .single()
+        .then(({ data, error }) => ({ data: data?.id ?? null, error: error ? { message: CLASS_REFUSALS.some((r) => error.message.includes(r)) || error.code === '23505' ? 'appointment_overlap' : error.message } : null }))
+    : await (supabase as any).rpc('save_appointment_if_free', {
     p_account_id: row.account_id,
     p_appointment_id: null,
     p_values: {
@@ -90,7 +117,9 @@ export default defineEventHandler(async (event) => {
   }
 
   await supabase.from('waitlist_entries').update({ booked_appointment_id: appt.id }).eq('id', row.id)
-  // Offered to several at once: theirs is gone, they stay on the waitlist.
+  // Offered to several at once: theirs is gone, they stay on the waitlist --
+  // for a class, only once its last place has gone.
+  if (row.class_session_id && (await classHasPlace(supabase, row.class_session_id))) return { success: true }
   await releaseOffersForSlot(supabase, { accountId: row.account_id, clinicId: row.clinic_id, practitionerId: row.offered_practitioner_id, startsAt }, row.id)
 
   return { success: true }

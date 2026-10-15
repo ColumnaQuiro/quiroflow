@@ -13,6 +13,26 @@ interface SlotToOffer {
   appointmentTypeId: string | null
   startsAt: string
   endsAt: string
+  /**
+   * A place in a group class (class_sessions): offered only to that class's
+   * own waitlist, and "free" means a place is left rather than nobody being
+   * booked at that time -- the other places fill the time by design.
+   */
+  classSessionId?: string | null
+}
+
+/**
+ * Whether a group class still has a place: not cancelled, not yet started,
+ * and fewer live places than it has. The claim asks again, and the database
+ * once more when it books (appointments_class_place).
+ */
+export async function classHasPlace(supabase: any, sessionId: string): Promise<boolean> {
+  const [{ data: session }, { count }] = await Promise.all([
+    supabase.from('class_sessions').select('capacity, cancelled_at, starts_at').eq('id', sessionId).maybeSingle(),
+    supabase.from('appointments').select('id', { count: 'exact', head: true }).eq('class_session_id', sessionId).neq('status', 'cancelled').is('deleted_at', null),
+  ])
+  if (!session || session.cancelled_at || new Date(session.starts_at).getTime() <= Date.now()) return false
+  return (count ?? 0) < session.capacity
 }
 
 /**
@@ -94,23 +114,28 @@ export async function offerNextWaitlistEntry(supabase: any, origin: string, slot
   // have been booked or blocked since; offering it would send somebody a link
   // to a time that is not there. (Straight after a cancellation it is free,
   // and this costs one look.)
-  if (!(await waitlistSlotIsFree(supabase, slot))) return 0
+  if (slot.classSessionId ? !(await classHasPlace(supabase, slot.classSessionId)) : !(await waitlistSlotIsFree(supabase, slot))) return 0
 
+  // A class's place goes to that class's queue; any other slot to the
+  // entries that name no class.
+  let entries = supabase
+    .from('waitlist_entries')
+    .select('id, patient_id, appointment_type_id, practitioner_id')
+    .eq('account_id', slot.accountId)
+    .eq('clinic_id', slot.clinicId)
+    .eq('status', 'waiting')
+    .order('created_at', { ascending: true })
+  entries = slot.classSessionId ? entries.eq('class_session_id', slot.classSessionId) : entries.is('class_session_id', null)
   const [{ data: account }, { data: candidates }] = await Promise.all([
     supabase.from('accounts').select('waitlist_offer_mode').eq('id', slot.accountId).maybeSingle(),
-    supabase
-      .from('waitlist_entries')
-      .select('id, patient_id, appointment_type_id, practitioner_id')
-      .eq('account_id', slot.accountId)
-      .eq('clinic_id', slot.clinicId)
-      .eq('status', 'waiting')
-      .order('created_at', { ascending: true }),
+    entries,
   ])
   const toAll = account?.waitlist_offer_mode === 'all_at_once'
 
   // First-come-first-served: entries whose preference is either "any" (null)
-  // or matches this exact slot's type/practitioner, oldest first.
-  const matching = (candidates ?? []).filter((c: { appointment_type_id: string | null; practitioner_id: string | null }) => waitlistEntryMatches(c, slot))
+  // or matches this exact slot's type/practitioner, oldest first. A class's
+  // own queue already names its class.
+  const matching = slot.classSessionId ? (candidates ?? []) : (candidates ?? []).filter((c: { appointment_type_id: string | null; practitioner_id: string | null }) => waitlistEntryMatches(c, slot))
   const chosen = toAll ? matching.slice(0, MAX_OFFERED_TOGETHER) : matching.slice(0, 1)
   if (chosen.length === 0) return 0
 
@@ -221,7 +246,7 @@ export async function offerCancelledSlotIfAutomatic(service: any, origin: string
   try {
     const { data: appt } = await service
       .from('appointments')
-      .select('account_id, clinic_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, accounts(waitlist_auto_offer)')
+      .select('account_id, clinic_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, class_session_id, accounts(waitlist_auto_offer)')
       .eq('id', appointmentId)
       .maybeSingle()
     if (!appt || appt.status !== 'cancelled' || !appt.accounts?.waitlist_auto_offer) return 0
@@ -233,6 +258,7 @@ export async function offerCancelledSlotIfAutomatic(service: any, origin: string
       appointmentTypeId: appt.appointment_type_id,
       startsAt: appt.starts_at,
       endsAt: appt.ends_at,
+      classSessionId: appt.class_session_id,
     })
   } catch (e) {
     console.error('[waitlist] automatic offer failed', e)

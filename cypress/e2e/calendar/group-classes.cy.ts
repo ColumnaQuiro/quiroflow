@@ -125,7 +125,7 @@ describe('Group classes', () => {
               cy.get('[data-cy=class-place][data-name="Diego Nuevo"]').should('exist')
               cy.get('[data-cy=class-places]').should('contain', '2 of 2')
               cy.get('[data-cy=class-panel]').should('contain', 'Full')
-              cy.get('[data-cy=class-add-search]').should('not.exist')
+              cy.get('label[for=class-add]').should('contain', 'Add to the waitlist')
               cy.get(`[data-cy=class-block][data-session-id=${s.id}]`).should('contain', '2/2')
 
               // A third place is refused by the database itself, whoever asks.
@@ -162,7 +162,7 @@ describe('Group classes', () => {
                 cy.visit(`/book/${account.accountSlug}?type=${type.id}`)
                 cy.get('[data-cy=class-sessions]', { timeout: 20000 })
                 cy.get('[data-cy=class-session-option]').should('have.length', 2)
-                cy.get('[data-cy=class-session-option]').eq(1).should('be.disabled').and('contain', 'Completa')
+                cy.get('[data-cy=class-session-option]').eq(1).should('contain', 'Completa')
                 cy.get('[data-cy=class-session-option]').eq(0).should('contain', 'Queda 1 plaza').click()
 
                 cy.contains('Introduzca sus datos').should('be.visible')
@@ -179,7 +179,7 @@ describe('Group classes', () => {
                   expect(rows.every((r) => Date.parse(r.starts_at) === inTwoDays.getTime())).to.eq(true)
                 })
                 cy.visit(`/book/${account.accountSlug}?type=${type.id}`)
-                cy.get('[data-cy=class-session-option]', { timeout: 20000 }).eq(0).should('be.disabled').and('contain', 'Completa')
+                cy.get('[data-cy=class-session-option]', { timeout: 20000 }).eq(0).should('contain', 'Completa')
               })
             })
           })

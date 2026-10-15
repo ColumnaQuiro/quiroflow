@@ -20,7 +20,7 @@ export default defineEventHandler(async (event) => {
   const supabase = serverSupabaseServiceRole<Database>(event)
   const { data: expiring } = await supabase
     .from('waitlist_entries')
-    .select('id, account_id, clinic_id, offered_room_id, offered_practitioner_id, offered_appointment_type_id, offered_starts_at, offered_ends_at, offered_to_all')
+    .select('id, account_id, clinic_id, offered_room_id, offered_practitioner_id, offered_appointment_type_id, offered_starts_at, offered_ends_at, offered_to_all, class_session_id')
     .eq('status', 'offered')
     .lt('offer_expires_at', new Date().toISOString())
   if (!expiring || expiring.length === 0) return { expired: 0, reoffered: 0 }
@@ -60,6 +60,7 @@ export default defineEventHandler(async (event) => {
       appointmentTypeId: entry.offered_appointment_type_id,
       startsAt: entry.offered_starts_at,
       endsAt: entry.offered_ends_at,
+      classSessionId: entry.class_session_id,
     })
     if (reofferedThis) reoffered++
   })

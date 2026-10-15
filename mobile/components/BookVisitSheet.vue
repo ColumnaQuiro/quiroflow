@@ -325,7 +325,8 @@ async function load() {
   const nowIso = new Date().toISOString()
   const [p, ty, pr, links, ov, cl, pl, last, next] = await Promise.all([
     supabase.from('patients').select('first_name, default_practitioner_id, clinic_id, is_minor, do_not_contact').eq('id', props.patientId).maybeSingle(),
-    supabase.from('appointment_types').select('id, name, duration_minutes, sort_order').is('archived_at', null).order('sort_order', { nullsFirst: false }).order('name'),
+    // Not group classes: a class place is taken in its session, from the web calendar.
+    supabase.from('appointment_types').select('id, name, duration_minutes, sort_order').is('archived_at', null).is('class_capacity', null).order('sort_order', { nullsFirst: false }).order('name'),
     supabase.from('team_members').select('id, full_name, business_hours').is('deleted_at', null).eq('is_practitioner', true).order('full_name'),
     supabase.from('team_member_clinics').select('team_member_id, clinic_id'),
     supabase.from('appointment_type_overrides').select('appointment_type_id, team_member_id, duration_minutes, price_cents'),

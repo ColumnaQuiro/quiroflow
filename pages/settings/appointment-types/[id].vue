@@ -37,6 +37,8 @@ interface Form {
   bookableBy: string
   bypass: boolean
   maxDays: string | number
+  /** Places, when the type is a class; '' for an individual visit. */
+  places: string | number
   payment: boolean
   deposit: string
   overrides: Record<string, OverrideForm>
@@ -80,6 +82,7 @@ function toForm(row: any, overrides: { team_member_id: string; duration_minutes:
     bookableBy: row.online_bookable_by ?? 'all',
     bypass: !!row.online_bypass_practitioner,
     maxDays: row.online_max_days_ahead != null ? String(row.online_max_days_ahead) : '',
+    places: row.class_capacity != null ? String(row.class_capacity) : '',
     payment: !!row.online_payment_required,
     deposit: centsToInput(row.online_deposit_cents),
     overrides: Object.fromEntries(
@@ -165,6 +168,7 @@ const changes = computed(() => {
   if (f.bookableBy !== before.bookableBy) out.online_bookable_by = f.bookableBy
   if (f.bypass !== before.bypass) out.online_bypass_practitioner = f.bypass
   if (!same(f.maxDays, before.maxDays)) out.online_max_days_ahead = parseMinutes(f.maxDays)
+  if (!same(f.places, before.places)) out.class_capacity = String(f.places).trim() === '' ? null : Number(f.places)
   if (f.payment !== before.payment) out.online_payment_required = f.payment
   // A deposit only means something while payment is taken at booking, and
   // the field is hidden otherwise. So: written as typed while payment is on;
@@ -209,7 +213,15 @@ const overrideProblems = computed(() => {
   }
   return out
 })
-const canSave = computed(() => Object.keys(problems.value).length === 0 && Object.keys(overrideProblems.value).length === 0)
+// A class has between 2 and 200 places (the column's own check); empty is an
+// individual visit.
+const placesProblem = computed(() => {
+  const v = String(form.value?.places ?? '').trim()
+  if (v === '') return false
+  const n = Number(v)
+  return !Number.isInteger(n) || n < 2 || n > 200
+})
+const canSave = computed(() => Object.keys(problems.value).length === 0 && Object.keys(overrideProblems.value).length === 0 && !placesProblem.value)
 const priceCents = computed(() => {
   const p = parseEurosToCents(form.value?.price ?? '')
   return p === null || Number.isNaN(p) ? 0 : p
@@ -498,6 +510,15 @@ const errorText = 'text-[12.5px] font-semibold text-danger-text'
                   <option v-for="s in STAGES" :key="s.value" :value="s.value">{{ s.label }}</option>
                 </select>
                 <span :class="hint">{{ t('For the Statistics report: first visit, first visit with offer, report, revision, maintenance, adjustment or other. Without a stage, these appointments are not counted there.', 'Para el informe de Estadísticas: primera visita, primera visita con oferta, informe, revisión, mantenimiento, ajuste u otra. Sin etapa, estas citas no cuentan ahí.') }}</span>
+              </label>
+              <label class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
+                {{ t('Group class', 'Clase en grupo') }}
+                <span class="flex items-center gap-2">
+                  <input v-model="form.places" data-cy="type-places" type="number" min="2" max="200" inputmode="numeric" :placeholder="t('Individual', 'Individual')" :class="[inputClass, 'w-[120px]', placesProblem ? 'border-danger-text' : 'border-line-control']" />
+                  <span class="text-[13px] font-normal text-ink-muted">{{ t('places', 'plazas') }}</span>
+                </span>
+                <span v-if="placesProblem" :class="errorText" data-cy="type-error-places">{{ t('Between 2 and 200 places, or empty for an individual visit.', 'Entre 2 y 200 plazas, o vacío para una visita individual.') }}</span>
+                <span v-else :class="hint">{{ t('With places, this type is a class: you put sessions on the calendar ("New class") and each patient takes a place, booked, reminded and billed like a visit. Online booking offers the sessions with the places left.', 'Con plazas, este tipo es una clase: pones sesiones en la agenda («Nueva clase») y cada paciente ocupa una plaza, que se reserva, recuerda y cobra como una visita. La reserva online ofrece las sesiones con las plazas que quedan.') }}</span>
               </label>
             </section>
 

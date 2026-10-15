@@ -123,7 +123,7 @@ async function setExempt(memberId: string, value: boolean) {
 
 const selectedRow = computed(() => rows.value.find((r) => r.member.id === selected.value) ?? null)
 const th = 'px-3 py-2 text-left text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted'
-const td = 'border-t border-line-subtle px-3 py-2.5 text-[13px] text-ink-900'
+const td = 'border-t border-line-divider px-3 py-2.5 text-[13px] text-ink-900'
 </script>
 
 <template>

@@ -247,6 +247,8 @@ function stopBookingFor() {
 }
 
 const blockModalOpen = ref(false)
+// "Ausencia imprevista": block a practitioner's days and move or cancel their visits in one go.
+const absenceOpen = ref(false)
 const editingBlock = ref<AvailabilityBlock | null>(null)
 const blockPrefill = ref<{ date: string; time: string; roomId: string } | null>(null)
 
@@ -918,6 +920,10 @@ function openBlockEditModal(block: AvailabilityBlock) {
 async function onBlockSaved() {
   blockModalOpen.value = false
   await loadAvailabilityBlocks()
+}
+// The absence panel blocked their days and moved or cancelled visits: both show.
+function refreshAfterAbsence() {
+  loadRange()
 }
 
 function isApptVisible(appt: AppointmentRow) {
@@ -2357,6 +2363,7 @@ function showNowLineOn(day: Date) {
             >&times;</button>
           </span>
           <UiBtn variant="secondary" size="sm" @click="openBlockCreateModal()">{{ t('Block time', 'Bloquear horario') }}</UiBtn>
+          <UiBtn variant="secondary" size="sm" data-cy="absence-open" @click="absenceOpen = true">{{ t('Unplanned absence', 'Ausencia imprevista') }}</UiBtn>
           <UiBtn variant="primary" size="sm" data-cy="new-appointment" @click="openCreateModal()">{{ t('+ New Appointment', '+ Nueva Cita') }}</UiBtn>
         </template>
         <span v-else class="inline-flex h-8 items-center rounded-pill bg-chip-bg px-3 text-[12.5px] font-semibold text-chip-text" data-cy="calendar-read-only">{{ t('Read-only', 'Solo lectura') }}</span>
@@ -3069,6 +3076,7 @@ function showNowLineOn(day: Date) {
 
     <LazyCalendarMoveClashDialog v-if="moveClash" :clashes="moveClash.clashes" @confirm="onMoveClashConfirm" @cancel="onMoveClashCancel" />
 
+    <LazyCalendarUnplannedAbsence v-if="absenceOpen" @close="absenceOpen = false" @done="refreshAfterAbsence" />
     <LazyCalendarAvailabilityBlockModal
       v-if="blockModalOpen"
       :rooms="rooms"

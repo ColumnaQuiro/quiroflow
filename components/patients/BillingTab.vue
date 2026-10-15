@@ -1174,7 +1174,7 @@ async function refundablePaymentCentsFor(paymentId: string): Promise<{ cents: nu
 // `paymentId` set means this refund names the single payment it gives back --
 // capped at that payment, and able to say exactly which factura it corrects.
 // Null means the older receipt-wide refund, which stays exactly as it was.
-async function createRefund(invoiceId: string | null, paymentId: string | null, amountCents: number, reason: string, method: string) {
+async function createRefund(invoiceId: string | null, paymentId: string | null, amountCents: number, reason: string, method: string, restock: { productId: string; units: number }[] = []) {
   if (amountCents <= 0) return
   const invoice = invoiceId ? (invoices.value.find((i) => i.id === invoiceId) ?? null) : null
   if (invoiceId && !invoice) return
@@ -1279,6 +1279,18 @@ async function createRefund(invoiceId: string | null, paymentId: string | null, 
       rectifiesNumber: only?.number ?? null,
       reason: reason.trim(),
     })
+  }
+
+  // Products brought back go back on the shelf, against the sale they came
+  // from (return_product_stock). After the money: a refund that could not
+  // restock is still a refund, and says so.
+  if (restock.length && invoiceId) {
+    const { error: restockError } = await supabase.rpc('return_product_stock', {
+      p_invoice_id: invoiceId,
+      p_items: restock.map((r) => ({ product_id: r.productId, units: r.units })),
+      p_reason: reason.trim() || null,
+    })
+    if (restockError) showToast(t(`Refunded, but the stock could not be updated: ${restockError.message}`, `Reembolsado, pero no se ha podido actualizar el stock: ${restockError.message}`), 'error')
   }
 
   await Promise.all([loadAll(), refreshCreditSummary(), loadFacturas()])
@@ -2897,7 +2909,7 @@ function money(cents: number) {
       @write-off-invoice="writeOffInvoice"
       @delete-payment="(p: { paymentId: string; invoiceId: string | null; amountCents: number }) => deletePayment(p.paymentId, p.invoiceId, p.amountCents)"
       @change-payment-method="(p: { paymentId: string; method: string }) => changePaymentMethod(p.paymentId, p.method)"
-      @refund-invoice="(payload: { invoiceId: string | null; paymentId: string | null; amountCents: number; reason: string; method: string }) => createRefund(payload.invoiceId, payload.paymentId, payload.amountCents, payload.reason, payload.method)"
+      @refund-invoice="(payload: { invoiceId: string | null; paymentId: string | null; amountCents: number; reason: string; method: string; restock: { productId: string; units: number }[] }) => createRefund(payload.invoiceId, payload.paymentId, payload.amountCents, payload.reason, payload.method, payload.restock)"
       @credits-changed="onLedgerCreditsChanged"
     />
     </template>

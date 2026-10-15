@@ -19,6 +19,7 @@ interface Body {
   missedCallTextBack?: unknown
   answerDuringHours?: unknown
   noReplyPhrases?: unknown
+  monthlyReplyLimit?: unknown
 }
 
 const TONES = ['warm_brief', 'clinical', 'chatty', 'formal']
@@ -68,6 +69,8 @@ export default defineEventHandler(async (event) => {
   if (body.bookingWindowDays !== undefined) patch.booking_window_days = intInRange(body.bookingWindowDays, 1, 90, 'Booking window')
   if (body.minimumNoticeMinutes !== undefined) patch.minimum_notice_minutes = intInRange(body.minimumNoticeMinutes, 0, 10080, 'Minimum notice')
   if (body.slotsPerReply !== undefined) patch.slots_per_reply = intInRange(body.slotsPerReply, 1, 5, 'Slots per reply')
+  // null clears the ceiling.
+  if (body.monthlyReplyLimit !== undefined) patch.monthly_reply_limit = body.monthlyReplyLimit === null ? null : intInRange(body.monthlyReplyLimit, 1, 100000, 'Monthly reply limit')
   // [] is "any active type" (utils/receptionistTypes.ts). The screen sends it
   // only from its "Any type" choice, never as an emptied "only these" list.
   if (body.bookableAppointmentTypeIds !== undefined) {

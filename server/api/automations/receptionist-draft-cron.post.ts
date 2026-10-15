@@ -1,6 +1,7 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { hasGrowth, hasReceptionist } from '~/server/utils/requireGrowth'
+import { overMonthlyLimit } from '~/server/utils/receptionistUsage'
 import { TYPING_PAUSE_SECONDS, autoReplyNow, clinicOpenAt, stillTyping } from '~/utils/receptionistAutoReply'
 import type { BusinessHours } from '~/utils/businessHours'
 
@@ -46,7 +47,7 @@ export default defineEventHandler(async (event) => {
   // it is the answer least likely to change within a tick.
   const { data: enabledConfigs } = await supabase
     .from('receptionist_config')
-    .select('account_id')
+    .select('account_id, monthly_reply_limit')
     .eq('enabled', true)
 
   const accountIds = (enabledConfigs ?? []).map((c) => c.account_id)
@@ -65,6 +66,14 @@ export default defineEventHandler(async (event) => {
   const entitled = new Set(
     (subscriptions ?? []).filter((s) => hasReceptionist(s)).map((s) => s.account_id),
   )
+  if (entitled.size === 0) return { considered: 0, consideredLeadIds: [] as string[], consideredPatientIds: [] as string[], dispatchedLeadIds: [] as string[], dispatchedPatientIds: [] as string[] }
+
+  // A clinic at its own monthly ceiling is left alone until the 1st. The
+  // draft functions refuse it anyway, but only after this tick has dispatched
+  // every waiting conversation to be refused -- every minute, all month.
+  for (const c of enabledConfigs ?? []) {
+    if (entitled.has(c.account_id) && (await overMonthlyLimit(supabase, c.account_id, c.monthly_reply_limit))) entitled.delete(c.account_id)
+  }
   if (entitled.size === 0) return { considered: 0, consideredLeadIds: [] as string[], consideredPatientIds: [] as string[], dispatchedLeadIds: [] as string[], dispatchedPatientIds: [] as string[] }
 
   // Which of them the receptionist answers for on its own right now, rather

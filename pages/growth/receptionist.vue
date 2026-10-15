@@ -2,7 +2,7 @@
 const t = useT()
 const { can } = usePermission()
 const { hasReceptionist, resolved } = useGrowthTier()
-const { config, channels, appointmentTypes, offeredTypes, testModelAvailable, loading, saving, error, save, liveChannelCount } = useGrowthReceptionist()
+const { config, channels, appointmentTypes, offeredTypes, testModelAvailable, repliesThisMonth, loading, saving, error, save, liveChannelCount } = useGrowthReceptionist()
 const route = useRoute()
 
 // Linked from each appointment type's own page ("Where it is used"). The
@@ -218,6 +218,13 @@ const CHANNEL_CLASS: Record<string, string> = {
               </div>
             </div>
           </section>
+
+          <GrowthReceptionistUsage
+            :replies="repliesThisMonth"
+            :limit="config.monthlyReplyLimit"
+            :saving="saving"
+            :save="(limit: number | null) => save({ monthlyReplyLimit: limit })"
+          />
 
           <GrowthSettingCard :title="t('Persona', 'Personalidad')">
             <div class="grid gap-3 sm:grid-cols-2">

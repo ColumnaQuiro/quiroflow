@@ -33,6 +33,8 @@ export interface ReceptionistConfig {
   missedCallTextBack: boolean
   answerDuringHours: boolean
   noReplyPhrases: string[]
+  /** Replies a month after which it writes no more; null for no ceiling. */
+  monthlyReplyLimit: number | null
 }
 
 export type ChannelStatus = 'connected' | 'not_set_up' | 'not_built'
@@ -63,12 +65,14 @@ interface ConfigResponse extends TypeChoices {
   config: ReceptionistConfig
   channels: ReceptionistChannel[]
   testModelAvailable: boolean
+  repliesThisMonth: number
 }
 
 export function useGrowthReceptionist() {
   const config = ref<ReceptionistConfig | null>(null)
   const channels = ref<ReceptionistChannel[]>([])
   const testModelAvailable = ref(false)
+  const repliesThisMonth = ref(0)
   const appointmentTypes = ref<ReceptionistType[]>([])
   const offeredTypes = ref<ReceptionistType[]>([])
   const loading = ref(true)
@@ -85,6 +89,7 @@ export function useGrowthReceptionist() {
       offeredTypes.value = data.offeredTypes
       channels.value = data.channels
       testModelAvailable.value = data.testModelAvailable
+      repliesThisMonth.value = data.repliesThisMonth ?? 0
     } catch {
       error.value = t('Could not load the receptionist settings.', 'No se ha podido cargar la configuración de la recepcionista.')
     } finally {
@@ -112,5 +117,5 @@ export function useGrowthReceptionist() {
 
   const liveChannelCount = computed(() => channels.value.filter((c) => c.status === 'connected').length)
 
-  return { config, channels, appointmentTypes, offeredTypes, testModelAvailable, loading, saving, error, save, liveChannelCount }
+  return { config, channels, appointmentTypes, offeredTypes, testModelAvailable, repliesThisMonth, loading, saving, error, save, liveChannelCount }
 }

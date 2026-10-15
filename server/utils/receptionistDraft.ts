@@ -1,5 +1,6 @@
 import type { H3Event } from 'h3'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
+import { overMonthlyLimit, recordReceptionistReply } from '~/server/utils/receptionistUsage'
 import { announceHandover, noteInConversation, sendAsReceptionist } from '~/server/utils/receptionistSend'
 import { bookingTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
 import { recentImages, withImages } from '~/server/utils/receptionistImages'
@@ -64,6 +65,8 @@ export type DraftOutcome =
   | { status: 'nothing_to_answer' }
   /** The lead is gone or not this account's. */
   | { status: 'not_found' }
+  /** The clinic's monthly ceiling is reached (receptionist_config.monthly_reply_limit). */
+  | { status: 'limit_reached' }
 
 /**
  * Drafts a reply and stores it, or says why it did not.
@@ -225,6 +228,10 @@ export async function draftLeadReply(
   // What they sent since the clinic last wrote, pictures included.
   const images = await recentImages(calendarClient, ordered.slice(lastOutbound + 1))
 
+  // The clinic's monthly ceiling, if it set one: checked before the model is
+  // asked, because the model call is what the ceiling is there to stop.
+  if (await overMonthlyLimit(supabase, accountId, config.monthlyReplyLimit)) return { status: 'limit_reached' }
+
   const { text: draft, refused, handedOver } = await runReceptionistModel(createAnthropicClient(apiKey), {
     model: MODEL,
     maxTokens: MAX_TOKENS,
@@ -241,6 +248,10 @@ export async function draftLeadReply(
 
   // The model judged that nothing needs saying (a thanks the list missed).
   if (!refused && draft && isNoReply(draft)) return leaveAlone()
+
+  // Counted for the monthly allowance: every reply it writes, sent or left as
+  // a draft -- writing it is what cost money, whatever happens to it next.
+  if (!refused && draft) await recordReceptionistReply(supabase, accountId, `lead:${leadId}`, sends && opts.send ? 'sent' : 'draft')
 
   // A refusal is the model declining to write this, which is a real answer
   // and not an error -- reported as such rather than dressed up as a failed

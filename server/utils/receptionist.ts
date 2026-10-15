@@ -53,6 +53,8 @@ export interface ReceptionistConfig {
   answerDuringHours: boolean
   /** Whole messages it leaves alone -- "Confirmar", "Gracias" (isNoReplyMessage). */
   noReplyPhrases: string[]
+  /** Replies a month after which it writes no more; null for no ceiling. */
+  monthlyReplyLimit: number | null
 }
 
 /** The clinic's chosen tone, as an instruction. Shared with review replies
@@ -110,6 +112,7 @@ export function toConfig(row: Row | null): ReceptionistConfig {
     missedCallTextBack: row?.missed_call_text_back ?? true,
     answerDuringHours: row?.answer_during_hours ?? false,
     noReplyPhrases: row?.no_reply_phrases ?? [],
+    monthlyReplyLimit: row?.monthly_reply_limit ?? null,
   }
 }
 

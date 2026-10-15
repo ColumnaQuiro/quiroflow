@@ -51,12 +51,13 @@ export default defineEventHandler(async (event) => {
   try {
     if (kind === 'lead') {
       const outcome = await draftLeadReply(supabase, accountId, id, supabase, sendOpts)
-      // The AI cannot answer this one: the model declined, or this deployment
-      // has no model to ask. Left on 'handling' the lead would sit there as
-      // the AI's, waiting on a draft that is never coming, so it goes to a
-      // person -- the one other way it gets an answer. Only from 'handling',
-      // so a person who took it over meanwhile keeps it.
-      if (outcome.status === 'refused' || outcome.status === 'unavailable') {
+      // The AI cannot answer this one: the model declined, this deployment
+      // has no model to ask, or the clinic's monthly ceiling is reached. Left
+      // on 'handling' the lead would sit there as the AI's, waiting on a
+      // draft that is never coming, so it goes to a person -- the one other
+      // way it gets an answer. Only from 'handling', so a person who took it
+      // over meanwhile keeps it.
+      if (outcome.status === 'refused' || outcome.status === 'unavailable' || outcome.status === 'limit_reached') {
         await supabase.from('leads').update({ ai_state: 'needs_human' }).eq('id', id).eq('ai_state', 'handling')
       }
       return { status: outcome.status }

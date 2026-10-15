@@ -40,6 +40,8 @@ export default defineEventHandler(async (event) => {
       return { available: true as const, draft: '', refused: true as const }
     case 'not_found':
       throw createError({ statusCode: 404, statusMessage: 'Patient not found' })
+    case 'limit_reached':
+      throw createError({ statusCode: 409, statusMessage: 'The receptionist has reached this month\'s reply limit. Raise it under Receptionist, or write this one yourself.' })
     case 'nothing_to_answer':
       throw createError({ statusCode: 400, statusMessage: 'There is nothing new from this patient to reply to' })
   }

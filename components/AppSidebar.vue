@@ -206,6 +206,8 @@ const navGroups = computed<{ id: string; label: string; tier?: string; items: Na
       { label: t('Dashboard', 'Panel'), to: '/dashboard', perm: () => scope('dashboard_scope') !== 'none', icon: 'M2 2h5v5H2zM9 2h5v5H9zM2 9h5v5H2zM9 9h5v5H9z' },
       { label: t('My Day', 'Mi día'), to: '/practitioner', perm: () => scope('calendar_scope') !== 'none', icon: 'M2.5 2.5h11v11h-11zM5.5 8.2l1.8 1.8 3.2-3.4', badge: 'myday' },
       { label: t('Calendar', 'Calendario'), to: '/calendar', perm: () => scope('calendar_scope') !== 'none', icon: 'M2.5 3.5h11v10h-11zM2.5 6.6h11M5.6 2v2M10.4 2v2' },
+      // Registro de jornada: everyone clocks, so everyone has it.
+      { label: t('Working time', 'Registro de jornada'), to: '/jornada', perm: () => true, icon: 'M8 1.8a6.2 6.2 0 100 12.4A6.2 6.2 0 008 1.8zM8 4.6V8l2.4 1.5' },
     ],
   },
   {

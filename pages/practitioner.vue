@@ -48,6 +48,7 @@ interface AppointmentRow {
 const supabase = useSupabaseClient()
 const logAccess = useAccessLog()
 const store = useAccountStore()
+const { timeZone: accountTimeZone } = useAccountTimeZone()
 const { scope } = usePermission()
 const t = useT()
 
@@ -397,6 +398,16 @@ onMounted(() => {
           <button type="button" class="border-l border-line-control px-3" :class="viewMode === 'week' ? 'bg-brand font-semibold text-white' : 'text-ink-500 hover:bg-surface-subtle'" @click="viewMode = 'week'">{{ t('Week', 'Semana') }}</button>
         </div>
       </div>
+
+      <!-- Registro de jornada: the viewer's own clock, whoever's day is shown. -->
+      <TimeclockClockCard
+        v-if="store.accountId && store.teamMember"
+        class="mx-4 mt-4 sm:mx-6"
+        :account-id="store.accountId"
+        :team-member-id="store.teamMember.id"
+        :time-zone="accountTimeZone"
+        month-to="/jornada?tab=mine"
+      />
 
       <!-- What automations asked this person (or their role) to do. Outside
       the loading switch, so changing day does not reload it. -->

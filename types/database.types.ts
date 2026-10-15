@@ -6640,6 +6640,217 @@ export type Database = {
         }
         Relationships: []
       }
+      time_clock_exemptions: {
+        Row: {
+          account_id: string
+          created_at: string
+          team_member_id: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          team_member_id: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          team_member_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "time_clock_exemptions_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "time_clock_exemptions_team_member_id_fkey"
+            columns: ["team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      time_clock_reminders: {
+        Row: {
+          account_id: string
+          sent_at: string
+          team_member_id: string
+          work_date: string
+        }
+        Insert: {
+          account_id: string
+          sent_at?: string
+          team_member_id: string
+          work_date: string
+        }
+        Update: {
+          account_id?: string
+          sent_at?: string
+          team_member_id?: string
+          work_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "time_clock_reminders_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "time_clock_reminders_team_member_id_fkey"
+            columns: ["team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      time_corrections: {
+        Row: {
+          account_id: string
+          at: string
+          decided_at: string | null
+          decided_by: string | null
+          id: string
+          kind: string
+          reason: string
+          replaces_entry_id: string | null
+          requested_at: string
+          status: string
+          team_member_id: string
+          work_date: string
+        }
+        Insert: {
+          account_id: string
+          at: string
+          decided_at?: string | null
+          decided_by?: string | null
+          id?: string
+          kind: string
+          reason: string
+          replaces_entry_id?: string | null
+          requested_at?: string
+          status?: string
+          team_member_id: string
+          work_date: string
+        }
+        Update: {
+          account_id?: string
+          at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          id?: string
+          kind?: string
+          reason?: string
+          replaces_entry_id?: string | null
+          requested_at?: string
+          status?: string
+          team_member_id?: string
+          work_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "time_corrections_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "time_corrections_decided_by_fkey"
+            columns: ["decided_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "time_corrections_replaces_entry_id_fkey"
+            columns: ["replaces_entry_id"]
+            isOneToOne: false
+            referencedRelation: "time_entries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "time_corrections_team_member_id_fkey"
+            columns: ["team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      time_entries: {
+        Row: {
+          account_id: string
+          at: string
+          correction_id: string | null
+          created_at: string
+          id: string
+          kind: string
+          source: string
+          superseded_by: string | null
+          team_member_id: string
+          work_date: string
+        }
+        Insert: {
+          account_id: string
+          at?: string
+          correction_id?: string | null
+          created_at?: string
+          id?: string
+          kind: string
+          source?: string
+          superseded_by?: string | null
+          team_member_id: string
+          work_date: string
+        }
+        Update: {
+          account_id?: string
+          at?: string
+          correction_id?: string | null
+          created_at?: string
+          id?: string
+          kind?: string
+          source?: string
+          superseded_by?: string | null
+          team_member_id?: string
+          work_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "time_entries_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "time_entries_correction_id_fkey"
+            columns: ["correction_id"]
+            isOneToOne: false
+            referencedRelation: "time_corrections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "time_entries_superseded_by_fkey"
+            columns: ["superseded_by"]
+            isOneToOne: false
+            referencedRelation: "time_corrections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "time_entries_team_member_id_fkey"
+            columns: ["team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       visit_notes: {
         Row: {
           account_id: string
@@ -7706,6 +7917,13 @@ export type Database = {
       get_appointment_type_usage: { Args: { p_account_id: string }; Returns: Json }
       reorder_appointment_types: { Args: { p_ids: string[] }; Returns: undefined }
       cancel_patient_appointment: { Args: { p_appointment_id: string }; Returns: Json }
+      clock_time: { Args: { p_account_id: string; p_kind: string }; Returns: Database["public"]["Tables"]["time_entries"]["Row"] }
+      request_time_correction: {
+        Args: { p_account_id: string; p_work_date: string; p_kind: string; p_at: string; p_replaces_entry_id: string | null; p_reason: string }
+        Returns: Database["public"]["Tables"]["time_corrections"]["Row"]
+      }
+      decide_time_correction: { Args: { p_correction_id: string; p_approve: boolean }; Returns: Database["public"]["Tables"]["time_corrections"]["Row"] }
+      account_local_date: { Args: { p_account_id: string; p_at?: string }; Returns: string }
       check_in_my_appointment: { Args: { p_appointment_id: string }; Returns: string | null }
       set_my_pain_score: { Args: { p_appointment_id: string; p_score: number }; Returns: boolean }
       my_pain_context: { Args: { p_appointment_id: string }; Returns: Json }

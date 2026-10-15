@@ -558,6 +558,8 @@ function initialsOf(a: Appointment) {
              below lg, so on a phone their children fall back into this single
              flex column, kept in the phone's order by order-*. -->
         <div class="flex flex-col gap-2.5 px-3.5 py-3 lg:grid lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start lg:gap-5 lg:px-5 lg:py-4">
+        <!-- Registro de jornada: the clock, first thing (components/timeclock/ClockCard.vue). -->
+        <TimeclockClockCard v-if="context" class="order-first lg:col-span-2" :account-id="context.accountId" :team-member-id="context.teamMemberId" :time-zone="timeZone" month-to="/jornada" />
         <div v-if="errors.length > 0" class="rounded-card border border-danger-border bg-danger-bg px-3.5 py-2.5 lg:col-span-2" data-test="myday-error">
           <p class="text-[13px] font-semibold text-danger-text">{{ t('Some of today could not load', 'No se ha podido cargar parte del día') }}</p>
           <p v-for="e in errors" :key="e" class="mt-0.5 text-[12px] text-danger-text">{{ e }}</p>

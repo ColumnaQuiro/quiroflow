@@ -59,6 +59,7 @@ export const APP_PAGES = [
   '/growth/reputation',
   '/patients',
   '/practitioner',
+  '/jornada',
   '/recalls',
   '/waitlist',
   '/billing',

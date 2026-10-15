@@ -31,7 +31,7 @@ describe('Subscription proration preview', () => {
 
       cy.get('.grid.lg\\:grid-cols-3').contains('.rounded-card', 'Practice').as('practiceCard')
       cy.get('@practiceCard').contains('button', 'Switch to Practice').click()
-      cy.wait('@preview').its('request.body').should('deep.equal', { planId: 'pro', interval: 'monthly', extraProfessionals: 0, growth: true })
+      cy.wait('@preview').its('request.body').should('deep.equal', { planId: 'pro', interval: 'monthly', extraProfessionals: 0, growth: true, receptionist: false })
 
       // Not committed yet -- the preview lands on the card, and nothing is
       // charged until the footer bar is confirmed.
@@ -39,7 +39,7 @@ describe('Subscription proration preview', () => {
       cy.get('@subscribe.all').should('have.length', 0)
 
       cy.contains('button', 'Confirm change').click()
-      cy.wait('@subscribe').its('request.body').should('deep.equal', { planId: 'pro', interval: 'monthly', extraProfessionals: 0, growth: true })
+      cy.wait('@subscribe').its('request.body').should('deep.equal', { planId: 'pro', interval: 'monthly', extraProfessionals: 0, growth: true, receptionist: false })
     })
   })
 

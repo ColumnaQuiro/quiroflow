@@ -107,4 +107,35 @@ describe('Products and stock', () => {
       })
     })
   })
+
+  it('refunds a product at its own IVA, not the clinic exemption', () => {
+    cy.seedStaffAccount().then((account) => {
+      // Exempt for its services, as a physiotherapy clinic is.
+      cy.task('db:updateRows', { table: 'accounts', values: { factura_tax_exemption_code: 'E1', factura_tax_rate_bp: 0 }, match: { id: account.accountId } })
+      cy.task<{ id: string }[]>('db:insertRows', { table: 'services_products', rows: [{ account_id: account.accountId, kind: 'product', name: 'Almohada cervical', price_cents: 3630, tax_rate: 21, stock_units: 5 }] }).then(([product]) => {
+        cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Ana', lastName: 'Devuelve' }).then((patient) => {
+          cy.login(account.email, account.password)
+          cy.visit(`/patients/${patient.id}?tab=money`)
+          cy.get('[data-cy=sell-product-open]', { timeout: 20000 })
+          cy.request({ method: 'POST', url: '/api/products/sell', body: { patientId: patient.id, method: 'card', items: [{ productId: product!.id, quantity: 1 }] } }).its('body.sales.0.factura').should('match', /^F-/)
+          cy.reload()
+          cy.contains('tr', 'Receipt', { timeout: 20000 }).click()
+          cy.contains('button', 'Refund…').click()
+          cy.contains('Reason (optional)').parent().find('input').type('devolución')
+          cy.get('.fixed').contains('button', 'Refund').click()
+          cy.contains('Reason (optional)').should('not.exist')
+          cy.contains('button', 'Facturas & receipts').click()
+          cy.contains('li', 'R-').should('be.visible')
+          cy.task<{ kind: string; amount_cents: number; tax_rate_bp: number; tax_base_cents: number; tax_amount_cents: number; tax_exemption_code: string | null }[]>('db:selectRows', {
+            table: 'facturas',
+            columns: 'kind, amount_cents, tax_rate_bp, tax_base_cents, tax_amount_cents, tax_exemption_code',
+            match: { patient_id: patient.id },
+          }).then((rows) => {
+            const rectifying = rows.find((r) => r.kind === 'rectificativa')!
+            expect(rectifying).to.include({ amount_cents: -3630, tax_rate_bp: 2100, tax_base_cents: -3000, tax_amount_cents: -630, tax_exemption_code: null })
+          })
+        })
+      })
+    })
+  })
 })

@@ -5593,6 +5593,44 @@ export type Database = {
           },
         ]
       }
+      receptionist_overage_charges: {
+        Row: {
+          account_id: string
+          amount_cents: number
+          blocks: number
+          created_at: string
+          month: string
+          replies: number
+          stripe_invoice_id: string | null
+        }
+        Insert: {
+          account_id: string
+          amount_cents: number
+          blocks: number
+          created_at?: string
+          month: string
+          replies: number
+          stripe_invoice_id?: string | null
+        }
+        Update: {
+          account_id?: string
+          amount_cents?: number
+          blocks?: number
+          created_at?: string
+          month?: string
+          replies?: number
+          stripe_invoice_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "receptionist_overage_charges_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       receptionist_replies: {
         Row: {
           account_id: string
@@ -7400,6 +7438,10 @@ export type Database = {
       receptionist_replies_this_month: {
         Args: { p_account_id: string }
         Returns: number
+      }
+      receptionist_replies_in_month: {
+        Args: { p_month: string }
+        Returns: { account_id: string; replies: number }[]
       }
       clinic_location_allowance: {
         Args: { target_account_id: string }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { receptionistAllowanceLevel, receptionistExtraBlocks, receptionistLimitReached } from '../../utils/receptionistAllowance'
+import { monthNameEs, previousMonthStart, receptionistAllowanceLevel, receptionistExtraBlocks, receptionistLimitReached } from '../../utils/receptionistAllowance'
 
 // What the receptionist's price includes (1,000 replies a month) and what is
 // charged past it (EUR 15 per further 1,000, a part block counting whole).
@@ -33,5 +33,17 @@ describe("The clinic's own monthly ceiling", () => {
     expect(receptionistLimitReached(50, 50)).toBe(true)
     expect(receptionistLimitReached(5000, null)).toBe(false)
     expect(receptionistLimitReached(5000, undefined)).toBe(false)
+  })
+})
+
+// The charge on the 1st is for the month before, on the clinic's clock.
+describe('The month the charge is for', () => {
+  it('is the month before, across a year end too', () => {
+    expect(previousMonthStart('2026-11-01')).toBe('2026-10-01')
+    expect(previousMonthStart('2027-01-01')).toBe('2026-12-01')
+  })
+
+  it('is named the way a Spanish clinic reads its invoice', () => {
+    expect(monthNameEs('2026-10-01')).toBe('octubre de 2026')
   })
 })

@@ -40,6 +40,7 @@ export const SETTINGS_PAGES = [
   '/settings/rooms',
   '/settings/saved-replies',
   '/settings/services',
+  '/settings/products',
   '/settings/team',
   '/settings/webhooks',
   '/settings/whatsapp',

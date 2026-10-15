@@ -37,7 +37,9 @@ onMounted(async () => {
   // separate modal, so this page needs to skip its own patient search step).
   const requestedId = route.query.patient_id
   const [{ data: svc }, requested] = await Promise.all([
-    supabase.from('services_products').select('id, name, price_cents').order('name'),
+    // Products are sold from the patient's Money tab, which takes their stock
+    // and issues the factura at their own IVA; a manual receipt does neither.
+    supabase.from('services_products').select('id, name, price_cents').eq('kind', 'service').order('name'),
     typeof requestedId === 'string'
       ? supabase.from('patients').select('id, first_name, last_name').eq('id', requestedId).maybeSingle()
       : Promise.resolve({ data: null }),

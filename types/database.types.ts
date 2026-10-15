@@ -14,6 +14,30 @@ export type Database = {
   }
   public: {
     Tables: {
+      monthly_goals: {
+        Row: {
+          account_id: string
+          metric: string
+          month: string
+          target: number
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          metric: string
+          month: string
+          target: number
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          metric?: string
+          month?: string
+          target?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       gift_voucher_settings: {
         Row: {
           account_id: string

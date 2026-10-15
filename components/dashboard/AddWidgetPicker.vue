@@ -5,7 +5,8 @@ const props = defineProps<{ existingTypes: string[] }>()
 const emit = defineEmits<{ add: [type: string] }>()
 
 const t = useT()
-const available = computed(() => WIDGET_REGISTRY.filter((w) => !props.existingTypes.includes(w.type)))
+const store = useAccountStore()
+const available = computed(() => WIDGET_REGISTRY.filter((w) => !props.existingTypes.includes(w.type) && (!w.ownerOnly || store.isOwner)))
 </script>
 
 <template>

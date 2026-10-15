@@ -182,13 +182,21 @@ export function useFacturas() {
     // the original was -- and it must be set, because a factura with no base
     // is rejected, which is how this path was found: it inserted separately
     // from issueFactura and silently produced nothing.
-    const { data: taxDefaults } = await supabase
-      .from('accounts')
-      .select('factura_tax_rate_bp, factura_tax_exemption_code')
-      .eq('id', input.accountId)
-      .maybeSingle()
+    //
+    // When the factura being corrected is known, ITS treatment is the one to
+    // carry: a product sold at 21 % (server/api/products/sell.post.ts) is
+    // refunded at 21 %, not under the clinic's exemption for its services.
+    const [{ data: taxDefaults }, { data: original }] = await Promise.all([
+      supabase.from('accounts').select('factura_tax_rate_bp, factura_tax_exemption_code').eq('id', input.accountId).maybeSingle(),
+      input.rectifiesFacturaId
+        ? supabase.from('facturas').select('tax_rate_bp, tax_exemption_code').eq('id', input.rectifiesFacturaId).maybeSingle()
+        : Promise.resolve({ data: null }),
+    ])
     const refunded = -Math.abs(input.amountCents)
-    const tax = facturaTaxFor(Math.abs(input.amountCents), taxDefaults)
+    const tax = facturaTaxFor(
+      Math.abs(input.amountCents),
+      original ? { factura_tax_rate_bp: original.tax_rate_bp, factura_tax_exemption_code: original.tax_exemption_code } : taxDefaults,
+    )
 
     return insertFactura({
       accountId: input.accountId,

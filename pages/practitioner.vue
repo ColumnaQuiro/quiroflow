@@ -408,6 +408,7 @@ onMounted(() => {
         :time-zone="accountTimeZone"
         month-to="/jornada?tab=mine"
       />
+      <PractitionerLowStock v-if="store.isOwner" class="mx-4 mt-3 sm:mx-6" to="/settings/products" />
 
       <!-- What automations asked this person (or their role) to do. Outside
       the loading switch, so changing day does not reload it. -->

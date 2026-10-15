@@ -29,7 +29,7 @@ const taxRule = ref<{ factura_tax_rate_bp: number; factura_tax_exemption_code: s
 
 async function load() {
   const [{ data }, { data: account }] = await Promise.all([
-    supabase.from('services_products').select('id, name, price_cents').order('name'),
+    supabase.from('services_products').select('id, name, price_cents').eq('kind', 'service').order('name'),
     supabase.from('accounts').select('factura_tax_rate_bp, factura_tax_exemption_code').eq('id', store.accountId!).maybeSingle(),
   ])
   services.value = data ?? []

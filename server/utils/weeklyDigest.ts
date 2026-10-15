@@ -2,6 +2,7 @@ import type { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { sendPushToUsers } from '~/server/utils/pushNotifications'
 import { goalsProgress } from '~/server/utils/monthlyGoals'
+import { stockStatus } from '~/utils/products'
 import { sendResendEmail } from '~/server/utils/resend'
 import { DEFAULT_CLINIC_TIMEZONE, clinicDateOf, nextDate, startOfLocalDate } from '~/utils/clinicClock'
 import { digestDue, digestEmailHtml, digestPushBody, digestWeek, type DigestPayment, type DigestWeek } from '~/utils/weeklyDigest'
@@ -134,6 +135,17 @@ export async function sendOwnerWeeklyDigests(service: Service, origin: string, n
         goals: await goalsProgress(service, accountId, now)
           .then((g) => (g.goals.length ? { monthLabel: new Date(`${g.month}-15T12:00:00Z`).toLocaleDateString('es-ES', { month: 'long', timeZone: 'UTC' }), elapsed: g.elapsed, items: g.goals } : undefined))
           .catch(() => undefined),
+        // Products at or under their minimum, to order this week.
+        lowStock: await service
+          .from('services_products')
+          .select('name, stock_units, min_stock')
+          .eq('account_id', accountId)
+          .eq('kind', 'product')
+          .not('stock_units', 'is', null)
+          .order('name')
+          .then(({ data }) => ((data as { name: string; stock_units: number; min_stock: number | null }[] | null) ?? [])
+            .filter((p) => ['low', 'out'].includes(stockStatus(p.stock_units, p.min_stock)))
+            .map((p) => ({ name: p.name, units: p.stock_units }))),
       }
 
       const html = digestEmailHtml(digest)

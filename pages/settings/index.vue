@@ -61,6 +61,7 @@ const allGroups = computed(() => [
     label: t('Billing', 'Facturación'),
     items: [
       { to: '/settings/services', label: t('Services & Products', 'Servicios y productos'), description: t('What you bill for.', 'Lo que facturas.'), icon: ICONS.shoppingBag },
+      { to: '/settings/products', label: t('Products & stock', 'Productos y stock'), description: t('What you sell over the counter: stock, deliveries and margin.', 'Lo que vendes en mostrador: stock, entradas de mercancía y margen.'), icon: ICONS.shoppingBag },
       { to: '/settings/packages', label: t('Packages / Bonos', 'Paquetes / Bonos'), description: t('Session bundle templates you can sell to patients.', 'Plantillas de bonos de sesiones que puedes vender a pacientes.'), icon: ICONS.gift },
       { to: '/settings/memberships', label: t('Memberships', 'Membresías'), description: t('Recurring plan templates for patients.', 'Plantillas de planes recurrentes para pacientes.'), icon: ICONS.badgeCheck },
       { to: '/settings/payments', label: t('Payments', 'Pagos'), description: t('The methods staff record payments with, and card payments through Stripe.', 'Los métodos con los que se registran los pagos, y los cobros con tarjeta mediante Stripe.'), icon: ICONS.creditCard },

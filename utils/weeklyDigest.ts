@@ -71,6 +71,8 @@ export interface DigestEmail {
   origin: string
   /** This month's goals so far (utils/monthlyGoals.ts), when the owner set any. */
   goals?: { monthLabel: string; elapsed: number; items: GoalProgress[] }
+  /** Products at or under their minimum (utils/products.ts), when there are any. */
+  lowStock?: { name: string; units: number }[]
 }
 
 /** The push: one line, the headline figures. */
@@ -128,6 +130,10 @@ export function digestEmailHtml(d: DigestEmail): string {
       ${d.goals?.items.length ? `<h2 style="margin:20px 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:#6B7183">Objetivos de ${esc(d.goals.monthLabel)}</h2>
       <table role="presentation" style="width:100%;border-collapse:collapse">
         ${d.goals.items.map((g) => row(GOAL_LABELS[g.metric][1], `${goalValue(g.metric, g.actual)} / ${goalValue(g.metric, g.target)}`, GOAL_PACE_ES[goalPace(g, d.goals!.elapsed)], '/dashboard')).join('')}
+      </table>` : ''}
+      ${d.lowStock?.length ? `<h2 style="margin:20px 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:#6B7183">Stock bajo</h2>
+      <table role="presentation" style="width:100%;border-collapse:collapse">
+        ${d.lowStock.map((p) => row(p.name, p.units === 0 ? 'Agotado' : `Quedan ${p.units}`, '', '/settings/products')).join('')}
       </table>` : ''}
       <p style="margin:20px 0 0"><a href="${d.origin}/reports" style="display:inline-block;background:#4F46E5;color:#fff;text-decoration:none;font-weight:600;font-size:14px;padding:10px 16px;border-radius:9px">Ver los informes</a></p>
     </div>

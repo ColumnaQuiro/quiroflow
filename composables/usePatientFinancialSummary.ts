@@ -2,7 +2,7 @@
 // where '~' is mobile/ -- so the alias resolved to mobile/utils/bonoOwed,
 // which does not exist, and Xcode Cloud died on it. Nothing in CI compiles
 // the mobile app, so the only signal was a red cloud build four days later.
-import { bonoOwedCents } from '../utils/bonoOwed'
+import { BONO_PAYMENTS_EMBED, bonoOwedCents } from '../utils/bonoOwed'
 import { outstandingCentsOf } from '../utils/owing'
 
 interface ActiveMembership {
@@ -124,7 +124,9 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
       // apart from "an invoice that was voided" needs the status in hand.
       supabase.from('invoices').select('id, total_cents, status, is_refund').eq('patient_id', currentId),
       supabase.from('patient_memberships').select('id, membership_name, status').eq('patient_id', currentId).eq('status', 'active'),
-      supabase.from('package_purchases').select('id, package_name, sessions_total, sessions_used, price_cents, invoice_id, owed_cents, is_closed, purchased_at').eq('patient_id', currentId).order('purchased_at', { ascending: false }),
+      // The bono's payments come with it, whoever's record they were taken
+      // on -- a shared bono's beneficiary pays towards it too (BONO_PAYMENTS_EMBED).
+      supabase.from('package_purchases').select(`id, package_name, sessions_total, sessions_used, price_cents, invoice_id, owed_cents, is_closed, purchased_at, ${BONO_PAYMENTS_EMBED}`).eq('patient_id', currentId).order('purchased_at', { ascending: false }),
       supabase.from('account_credits').select('amount_cents, external_reference, payment_id').eq('patient_id', currentId),
       supabase
         .from('package_purchase_shares')
@@ -165,6 +167,13 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     // to create, and hiding it here would bury real over-collection instead
     // of surfacing it. Only 'credit' itself, unconditionally, is never money.
     const countablePayments = (payments ?? []).filter((p) => p.method !== 'credit')
+
+    // Payments towards the patient's own bonos that were taken on someone
+    // else's record -- a shared bono's beneficiary paying their part. They
+    // count towards what the bono is owed, never towards this patient's money:
+    // their own payments are `payments` above, so these are kept apart.
+    const bonoPaymentsFromOthers = (packages ?? []).flatMap((p) => p.payments ?? []).filter((pay) => pay.patient_id !== currentId)
+    const ownPackages = (packages ?? []).map(({ payments: _payments, ...p }) => p)
 
     const paidCents = countablePayments.reduce((sum, p) => sum + p.amount_cents, 0)
     state.lifetimeCents.value = paidCents
@@ -260,7 +269,7 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     // Newest first, own and shared together (utils/bonoOrder.ts): a family
     // bono shared to them no longer trails after their own.
     state.activePackages.value = sortBonos(
-      [...(packages ?? []), ...sharedPackages].filter((p) => !p.is_closed && p.sessions_used < p.sessions_total),
+      [...ownPackages, ...sharedPackages].filter((p) => !p.is_closed && p.sessions_used < p.sessions_total),
     )
 
     // sessions_left x the bono's own per-session rate, with the same rounding
@@ -295,13 +304,16 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
           priceCents: p.price_cents,
           owedCents: p.owed_cents ?? null,
           invoice: saleInvoice ? { status: saleInvoice.status, total_cents: saleInvoice.total_cents } : null,
-          payments: (payments ?? []).map((pay) => ({
-            amount_cents: pay.amount_cents,
-            invoice_id: pay.invoice_id,
-            package_purchase_id: pay.package_purchase_id,
-            external_reference: pay.external_reference,
-            purpose: (pay as { purpose: string | null }).purpose,
-          })),
+          payments: [
+            ...(payments ?? []).map((pay) => ({
+              amount_cents: pay.amount_cents,
+              invoice_id: pay.invoice_id,
+              package_purchase_id: pay.package_purchase_id,
+              external_reference: pay.external_reference,
+              purpose: (pay as { purpose: string | null }).purpose,
+            })),
+            ...bonoPaymentsFromOthers,
+          ],
         })
         return sum + Math.max(0, remainingCents - owedCents)
       }, 0)

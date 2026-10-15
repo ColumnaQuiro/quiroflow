@@ -1,5 +1,6 @@
 import type { H3Event } from 'h3'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
+import { overMonthlyLimit, recordReceptionistReply } from '~/server/utils/receptionistUsage'
 import { announceHandover, noteInConversation, sendAsReceptionist } from '~/server/utils/receptionistSend'
 import { bookingTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
 import { recentImages, withImages, type StoredImage } from '~/server/utils/receptionistImages'
@@ -40,6 +41,8 @@ export type PatientDraftOutcome =
   | { status: 'refused' }
   | { status: 'nothing_to_answer' }
   | { status: 'not_found' }
+  /** The clinic's monthly ceiling is reached (receptionist_config.monthly_reply_limit). */
+  | { status: 'limit_reached' }
 
 interface Turn extends StoredImage { direction: string; body: string; created_at: string; sent_by_ai?: boolean | null; channel?: string | null; automated?: boolean }
 
@@ -202,6 +205,10 @@ export async function draftPatientReply(
   // What they sent since the clinic last wrote, pictures included.
   const images = await recentImages(service, turns.slice(lastOutbound + 1))
 
+  // The clinic's monthly ceiling, if it set one: checked before the model is
+  // asked, because the model call is what the ceiling is there to stop.
+  if (await overMonthlyLimit(service, accountId, config.monthlyReplyLimit)) return { status: 'limit_reached' }
+
   const { text: draft, refused, handedOver } = await runReceptionistModel(createAnthropicClient(apiKey), {
     model: MODEL,
     maxTokens: MAX_TOKENS,
@@ -217,6 +224,10 @@ export async function draftPatientReply(
   })
   // The model judged that nothing needs saying (a thanks the list missed).
   if (!refused && draft && isNoReply(draft)) return leaveAlone()
+
+  // Counted for the monthly allowance: every reply it writes, sent or left as
+  // a draft -- writing it is what cost money, whatever happens to it next.
+  if (!refused && draft) await recordReceptionistReply(service, accountId, patientId, sends && opts.send ? 'sent' : 'draft')
   const name = patient.first_name ?? 'Paciente'
   if (sends && opts.send && channel && newestInboundAt) {
     const target = { kind: 'patient' as const, patientId, channel }

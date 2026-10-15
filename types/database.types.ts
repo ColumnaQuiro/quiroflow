@@ -5536,6 +5536,7 @@ export type Database = {
           slots_per_reply: number
           tone: string
           updated_at: string
+          monthly_reply_limit: number | null
           no_reply_phrases: string[]
         }
         Insert: {
@@ -5557,6 +5558,7 @@ export type Database = {
           slots_per_reply?: number
           tone?: string
           updated_at?: string
+          monthly_reply_limit?: number | null
           no_reply_phrases?: string[]
         }
         Update: {
@@ -5578,6 +5580,7 @@ export type Database = {
           slots_per_reply?: number
           tone?: string
           updated_at?: string
+          monthly_reply_limit?: number | null
           no_reply_phrases?: string[]
         }
         Relationships: [
@@ -5585,6 +5588,38 @@ export type Database = {
             foreignKeyName: "receptionist_config_account_id_fkey"
             columns: ["account_id"]
             isOneToOne: true
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      receptionist_replies: {
+        Row: {
+          account_id: string
+          conversation_key: string
+          created_at: string
+          delivery: string
+          id: number
+        }
+        Insert: {
+          account_id: string
+          conversation_key: string
+          created_at?: string
+          delivery: string
+          id?: never
+        }
+        Update: {
+          account_id?: string
+          conversation_key?: string
+          created_at?: string
+          delivery?: string
+          id?: never
+        }
+        Relationships: [
+          {
+            foreignKeyName: "receptionist_replies_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
             referencedRelation: "accounts"
             referencedColumns: ["id"]
           },
@@ -7357,6 +7392,14 @@ export type Database = {
       record_whatsapp_status: {
         Args: { p_account_id: string; p_wamid: string; p_status: string; p_error_code: string | null; p_error_message: string | null }
         Returns: string
+      }
+      record_receptionist_reply: {
+        Args: { p_account_id: string; p_conversation_key: string; p_delivery: string }
+        Returns: undefined
+      }
+      receptionist_replies_this_month: {
+        Args: { p_account_id: string }
+        Returns: number
       }
       clinic_location_allowance: {
         Args: { target_account_id: string }

@@ -178,6 +178,23 @@ describe('Growth AI receptionist', () => {
     cy.get('[data-test="test-chat"]').should('not.exist')
   })
 
+  // 1,000 replies a month are included and each further 1,000 is charged,
+  // so the clinic is shown the count, warned from 80%, and can set a ceiling.
+  it('shows this month\'s replies, warns near the allowance, and stops at the clinic\'s limit', () => {
+    cy.task('db:seedReceptionistReplies', { accountId: account.accountId, count: 850 })
+    cy.visit('/growth/receptionist?growth=1')
+    cy.get('[data-test="receptionist-usage"]').scrollIntoView()
+    cy.get('[data-test="usage-count"]').should('contain', '850')
+    cy.get('[data-test="usage-near"]').should('be.visible')
+
+    cy.get('[data-test="usage-limit"]').type('500')
+    cy.get('[data-test="usage-limit-save"]').click()
+    cy.contains('Saved.').should('be.visible')
+    cy.get('[data-test="usage-stopped"]').should('be.visible')
+    cy.reload()
+    cy.get('[data-test="usage-limit"]').should('have.value', '500')
+  })
+
   // "Confirmar" on the reminder needs no answer: a list the clinic edits.
   it('lists the messages it leaves alone, and takes one more', () => {
     cy.visit('/growth/receptionist?growth=1')

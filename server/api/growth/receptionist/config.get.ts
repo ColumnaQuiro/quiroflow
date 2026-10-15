@@ -1,5 +1,6 @@
 import { requireReceptionist } from '~/server/utils/requireGrowth'
 import { loadReceptionistConfig, loadTypeChoices } from '~/server/utils/receptionist'
+import { repliesThisMonth } from '~/server/utils/receptionistUsage'
 
 export default defineEventHandler(async (event) => {
   const { supabase, teamMember } = await requireReceptionist(event)
@@ -47,5 +48,7 @@ export default defineEventHandler(async (event) => {
       { key: 'web-chat', name: 'Web chat', status: 'not_built', statusLabel: 'Not available yet' },
     ],
     testModelAvailable: Boolean(useRuntimeConfig().anthropicApiKey),
+    // This month's replies, for the usage card and its warnings.
+    repliesThisMonth: await repliesThisMonth(supabase, teamMember.account_id),
   }
 })

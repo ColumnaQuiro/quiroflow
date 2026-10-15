@@ -52,6 +52,8 @@ export default defineEventHandler(async (event) => {
         statusCode: 400,
         statusMessage: 'The receptionist is switched off. Turn it on under Growth > Receptionist.',
       })
+    case 'limit_reached':
+      throw createError({ statusCode: 409, statusMessage: 'The receptionist has reached this month\'s reply limit. Raise it under Receptionist, or write this one yourself.' })
     case 'nothing_to_answer':
       throw createError({ statusCode: 400, statusMessage: 'There is nothing new from this lead to reply to' })
   }

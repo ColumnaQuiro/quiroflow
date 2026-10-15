@@ -2688,6 +2688,13 @@ async function setGrowthAddon(opts: { accountId: string; enabled: boolean }) {
   return { ok: true }
 }
 
+/** Writes `count` receptionist replies this month, as if it had written them. */
+async function seedReceptionistReplies(opts: { accountId: string; count: number }) {
+  const rows = Array.from({ length: opts.count }, (_, i) => ({ account_id: opts.accountId, conversation_key: `seed:${i}`, delivery: 'draft' }))
+  for (let i = 0; i < rows.length; i += 500) assertOk(await admin.from('receptionist_replies').insert(rows.slice(i, i + 500)))
+  return { ok: true }
+}
+
 /** Adds or removes the AI receptionist bought on its own (hasReceptionist). */
 async function setReceptionistAddon(opts: { accountId: string; enabled: boolean }) {
   assertOk(await admin.from('subscriptions').update({ receptionist_addon: opts.enabled }).eq('account_id', opts.accountId))
@@ -4064,6 +4071,7 @@ export const dbTasks = {
   'db:leadAiState': leadAiState,
   'db:setGrowthAddon': setGrowthAddon,
   'db:setReceptionistAddon': setReceptionistAddon,
+  'db:seedReceptionistReplies': seedReceptionistReplies,
   'db:setSubscriptionPlan': setSubscriptionPlan,
   'db:setLeadAiState': setLeadAiState,
   'db:setWhatsappPhoneNumberId': setWhatsappPhoneNumberId,

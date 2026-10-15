@@ -22,6 +22,12 @@ export async function issueFacturaServer(
     purpose: 'visit' | 'bono' | 'membership' | 'on_account'
     bono?: { packageName: string; priceCents: number; sessionsTotal: number }
     serviceName?: string
+    /**
+     * Goods sold over the counter (server/api/products/sell.post.ts) carry
+     * their own IVA, 21 / 10 / 4 %, whatever the account's rule for its
+     * services is (exempt, for a physiotherapy clinic).
+     */
+    taxRateBp?: number
   },
 ): Promise<string | null> {
   const money = (cents: number) => `€${(cents / 100).toFixed(2)}`
@@ -51,7 +57,10 @@ export async function issueFacturaServer(
     .select('factura_tax_rate_bp, factura_tax_exemption_code')
     .eq('id', input.accountId)
     .maybeSingle()
-  const tax = facturaTaxFor(input.amountCents, taxDefaults)
+  const tax = facturaTaxFor(
+    input.amountCents,
+    input.taxRateBp !== undefined ? { factura_tax_rate_bp: input.taxRateBp, factura_tax_exemption_code: null } : taxDefaults,
+  )
 
   const { data, error } = await supabase.rpc('issue_factura', {
     p_account_id: input.accountId,

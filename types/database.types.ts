@@ -6031,29 +6031,112 @@ export type Database = {
           },
         ]
       }
-      services_products: {
+      product_stock_movements: {
         Row: {
           account_id: string
           created_at: string
+          created_by: string | null
+          delta: number
           id: string
-          name: string
-          price_cents: number
-          tax_rate: number
+          invoice_id: string | null
+          kind: string
+          product_id: string
+          reason: string | null
+          supplier: string | null
+          unit_cost_cents: number | null
         }
         Insert: {
           account_id: string
           created_at?: string
+          created_by?: string | null
+          delta: number
           id?: string
-          name: string
-          price_cents?: number
-          tax_rate?: number
+          invoice_id?: string | null
+          kind: string
+          product_id: string
+          reason?: string | null
+          supplier?: string | null
+          unit_cost_cents?: number | null
         }
         Update: {
           account_id?: string
           created_at?: string
+          created_by?: string | null
+          delta?: number
           id?: string
+          invoice_id?: string | null
+          kind?: string
+          product_id?: string
+          reason?: string | null
+          supplier?: string | null
+          unit_cost_cents?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_stock_movements_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_stock_movements_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_stock_movements_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_stock_movements_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "services_products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      services_products: {
+        Row: {
+          account_id: string
+          cost_cents: number | null
+          created_at: string
+          id: string
+          kind: string
+          min_stock: number | null
+          name: string
+          price_cents: number
+          stock_units: number | null
+          tax_rate: number
+        }
+        Insert: {
+          account_id: string
+          cost_cents?: number | null
+          created_at?: string
+          id?: string
+          kind?: string
+          min_stock?: number | null
+          name: string
+          price_cents?: number
+          stock_units?: number | null
+          tax_rate?: number
+        }
+        Update: {
+          account_id?: string
+          cost_cents?: number | null
+          created_at?: string
+          id?: string
+          kind?: string
+          min_stock?: number | null
           name?: string
           price_cents?: number
+          stock_units?: number | null
           tax_rate?: number
         }
         Relationships: [
@@ -7924,6 +8007,14 @@ export type Database = {
       }
       decide_time_correction: { Args: { p_correction_id: string; p_approve: boolean }; Returns: Database["public"]["Tables"]["time_corrections"]["Row"] }
       account_local_date: { Args: { p_account_id: string; p_at?: string }; Returns: string }
+      adjust_product_stock: {
+        Args: { p_product_id: string; p_delta: number; p_kind: string; p_reason?: string | null; p_unit_cost_cents?: number | null; p_supplier?: string | null }
+        Returns: number
+      }
+      sell_products: {
+        Args: { p_patient_id: string; p_items: Json; p_method: string }
+        Returns: { invoice_id: string; payment_id: string; amount_cents: number; tax_rate_bp: number; description: string }[]
+      }
       check_in_my_appointment: { Args: { p_appointment_id: string }; Returns: string | null }
       set_my_pain_score: { Args: { p_appointment_id: string; p_score: number }; Returns: boolean }
       my_pain_context: { Args: { p_appointment_id: string }; Returns: Json }

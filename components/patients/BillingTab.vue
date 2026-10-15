@@ -253,10 +253,10 @@ const applyingCredit = ref(false)
 const creditError = ref('')
 
 // Which quick-action panel (if any) is expanded below the summary strip.
-const activePanel = ref<'credit' | 'payment' | 'gift' | null>(null)
+const activePanel = ref<'credit' | 'payment' | 'gift' | 'product' | null>(null)
 // A gift voucher redeemed here (PatientsRedeemGiftVoucher) is a payment, a
 // credit row or a bono, and a factura: everything this tab shows moves.
-async function onGiftRedeemed() {
+async function onMoneyAdded() {
   await Promise.all([loadAll(), refreshCreditSummary(), loadFacturas()])
 }
 
@@ -2190,6 +2190,9 @@ function money(cents: number) {
           <UiBtn variant="primary" size="sm" @click="activePanel === 'payment' ? (activePanel = null) : openTakePayment()">
             {{ t('Take payment', 'Registrar pago') }}
           </UiBtn>
+          <UiBtn variant="secondary" size="sm" data-cy="sell-product-open" @click="activePanel = activePanel === 'product' ? null : 'product'">
+            {{ t('Sell product', 'Vender producto') }}
+          </UiBtn>
         </div>
       </section>
 
@@ -2290,8 +2293,11 @@ function money(cents: number) {
 
     <!-- The panels the cards above open. -->
     <div v-if="activePanel && canTakePayments" class="rounded-card border border-line bg-surface p-4 shadow-card">
+      <div v-if="activePanel === 'product'" class="mt-4 border-t border-line-divider pt-4">
+        <PatientsSellProduct :patient-id="patientId" @sold="onMoneyAdded" />
+      </div>
       <div v-if="activePanel === 'gift'" class="mt-4 border-t border-line-divider pt-4">
-        <PatientsRedeemGiftVoucher :patient-id="patientId" @redeemed="onGiftRedeemed" />
+        <PatientsRedeemGiftVoucher :patient-id="patientId" @redeemed="onMoneyAdded" />
       </div>
       <div v-if="activePanel === 'credit'" class="mt-4 border-t border-line-divider pt-4">
         <form class="flex flex-wrap items-end gap-2" @submit.prevent="addCredit">

@@ -59,6 +59,16 @@ describe('the push and the email', () => {
     expect(html).toMatch(/320,00\s€/)
     expect(html).toContain('https://app.quiroflow.com/reports/daily-transactions')
     expect(html).toContain('Citas reservadas para esta semana')
+    expect(html).not.toContain('Stock bajo')
+  })
+
+  it('lists the products to reorder when there are any', () => {
+    const html = digestEmailHtml({ clinicName: 'Clínica Demo', weekLabel: '5–11 oct', thisWeek: week, lastWeek, owedCents: 0, nextWeekBooked: 0, methodName: (k) => k, origin: 'https://app.quiroflow.com', lowStock: [{ name: 'Banda elástica', units: 0 }, { name: 'Magnesio', units: 3 }] })
+    expect(html).toContain('Stock bajo')
+    expect(html).toContain('Banda elástica')
+    expect(html).toContain('Agotado')
+    expect(html).toContain('Quedan 3')
+    expect(html).toContain('https://app.quiroflow.com/settings/products')
   })
 })
 

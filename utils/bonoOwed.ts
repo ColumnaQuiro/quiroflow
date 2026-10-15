@@ -50,9 +50,28 @@ export interface BonoOwedInput {
   owedCents: number | null
   /** The bono's own sale invoice, where one exists. Void counts as none. */
   invoice: { status: string; total_cents: number } | null
-  /** Every payment on the patient's ledger; this picks out the relevant ones. */
+  /**
+   * Every payment that could touch the bono; this picks out the relevant ones.
+   * The patient's own ledger is NOT enough on its own for a shared bono: see
+   * BONO_PAYMENTS_EMBED.
+   */
   payments: BonoOwedPayment[]
 }
+
+// A bono's payments read through the bono itself, for embedding in a
+// package_purchases select.
+//
+// A shared bono is paid by whoever is at the desk, and each payment is taken
+// on THEIR record and linked to the bono. Reading one patient's payments and
+// filtering by package_purchase_id therefore misses every one taken on the
+// other's: a couple's 1,200 EUR family bono, paid 60 + 60 + 600, read "660
+// paid" on the owner's card, because the beneficiary's 60 sat on the
+// beneficiary's record. The Debtors report never had this problem -- it reads
+// every linked payment in the account -- so the two disagreed about the same
+// bono. Anything that works out what a bono is owed from one patient's
+// screen needs this embed as well as that patient's ledger.
+export const BONO_PAYMENTS_EMBED =
+  'payments!payments_package_purchase_id_fkey(id, invoice_id, amount_cents, method, paid_at, package_purchase_id, external_reference, purpose, patient_id, patients!payments_patient_id_fkey(first_name, last_name))' as const
 
 /** A payment that came across from PracticeHub rather than one taken here. */
 export function wasImportedFromPracticeHub(payment: { external_reference: string | null }): boolean {

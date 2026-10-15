@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { formatEur, formatLongDate, formatShortDate } from '~/utils/billing'
 import { normalizeSearchTerm } from '~/utils/searchText'
-import { bonoOwedCents } from '~/utils/bonoOwed'
+import { BONO_PAYMENTS_EMBED, bonoOwedCents } from '~/utils/bonoOwed'
 import { settleInvoiceIfCovered } from '~/utils/settleInvoice'
 import { validSpanishTaxId } from '~/utils/spanishTaxId'
 import { isReceipt } from '~/utils/paymentReceipts'
@@ -83,6 +83,10 @@ interface PaymentScheduleRow {
 }
 interface StripeEventRow { id: string; payment_schedule_id: string; period_start: string; amount_cents: number; status: string }
 interface LedgerPaymentRow { id: string; invoice_id: string | null; amount_cents: number; method: string; paid_at: string; package_purchase_id: string | null; external_reference: string | null; purpose: string | null; created_by: string | null; stripe_payment_intent_id: string | null; team_members: { full_name: string | null } | null }
+// A payment linked to one of this patient's own bonos but taken
+// on ANOTHER patient's record -- see fetchPackages(). Not part of this
+// patient's ledger, only of what the bono has been paid.
+interface OtherBonoPaymentRow { id: string; invoice_id: string | null; amount_cents: number; method: string; paid_at: string; package_purchase_id: string | null; external_reference: string | null; purpose: string | null; patient_id: string; patients: { first_name: string; last_name: string | null } | null }
 interface LedgerCreditRow { id: string; amount_cents: number; reason: string | null; method: string | null; invoice_id: string | null; payment_id: string | null; created_at: string }
 
 const supabase = useSupabaseClient()
@@ -522,6 +526,7 @@ const autopayError = ref('')
 const invoices = ref<InvoiceRow[]>([])
 const lineItemDescriptions = ref<Record<string, string[]>>({})
 const ledgerPayments = ref<LedgerPaymentRow[]>([])
+const otherBonoPayments = ref<OtherBonoPaymentRow[]>([])
 const ledgerCredits = ref<LedgerCreditRow[]>([])
 // Visits drawn from a package. Read alongside the ledger rather than with the
 // packages panel: the panel answers "how many left", this answers "which
@@ -822,7 +827,7 @@ async function fetchPackages(): Promise<() => void> {
   // "Take payment") and purchased_at (for sort order), neither of which
   // that composable's activePackages carries.
   const [{ data: pkgPurchases }, { data: sch }, { data: shares }] = await Promise.all([
-    supabase.from('package_purchases').select('id, package_name, sessions_total, sessions_used, price_cents, purchased_at, invoice_id, owed_cents, is_closed').eq('patient_id', props.patientId).order('purchased_at', { ascending: false }),
+    supabase.from('package_purchases').select(`id, package_name, sessions_total, sessions_used, price_cents, purchased_at, invoice_id, owed_cents, is_closed, ${BONO_PAYMENTS_EMBED}`).eq('patient_id', props.patientId).order('purchased_at', { ascending: false }),
     supabase
       .from('payment_schedules')
       .select('id, package_purchase_id, patient_membership_id, interval, interval_count, installments_total, installments_paid, status')
@@ -832,6 +837,20 @@ async function fetchPackages(): Promise<() => void> {
       .select('package_purchases(id, package_name, sessions_total, sessions_used, price_cents, purchased_at, invoice_id, owed_cents, is_closed, patients(first_name, last_name))')
       .eq('patient_id', props.patientId),
   ])
+  // A bono shared between two people is paid by either of them, and the front
+  // desk records each payment on whoever handed it over. Every one of those is
+  // linked to the bono, but the ledger above reads only THIS patient's
+  // payments -- so a couple's family bono, 60 EUR from each and 600 more from
+  // one, read "660 paid" on the owner's card where 720 had been paid. The
+  // bono's payments are therefore read through the bono itself, and the ones
+  // on another patient's record are kept here, beside the ledger rather than
+  // in it: they settle the bono, but they are not this patient's money.
+  // Only the owner's card shows what a bono has been paid, so only their own
+  // bonos need it.
+  const fromOthers = ((pkgPurchases ?? []) as unknown as { payments: OtherBonoPaymentRow[] | null }[])
+    .flatMap((p) => p.payments ?? [])
+    .filter((pay) => pay.patient_id !== props.patientId)
+  const ownPurchases = (pkgPurchases ?? []).map(({ payments: _payments, ...p }) => p)
   const sharedPurchases = (shares ?? [])
     .map((s) => s.package_purchases)
     .filter((p): p is NonNullable<typeof p> => p !== null)
@@ -852,7 +871,8 @@ async function fetchPackages(): Promise<() => void> {
     : null
   return () => {
     // In use first, then the rest, own and shared together (utils/bonoOrder.ts).
-    purchases.value = sortBonos([...(pkgPurchases ?? []), ...sharedPurchases])
+    purchases.value = sortBonos([...ownPurchases, ...sharedPurchases])
+    otherBonoPayments.value = fromOthers
     schedules.value = scheduleRows
     if (scheduleRows.length > 0) stripeEvents.value = events ?? []
     packagesLoading.value = false
@@ -1550,7 +1570,7 @@ function packageOwedCents(purchase: PackagePurchaseRow): number {
     priceCents: purchase.price_cents,
     owedCents: purchase.owed_cents,
     invoice: packageInvoice(purchase) ?? null,
-    payments: ledgerPayments.value,
+    payments: [...ledgerPayments.value, ...otherBonoPayments.value],
   })
 }
 
@@ -1621,8 +1641,16 @@ function candidatePaymentsFor(purchase: PackagePurchaseRow) {
   return ledgerPayments.value.filter((p) => !p.package_purchase_id && !(countedViaInvoice && p.invoice_id === purchase.invoice_id))
 }
 
-function linkedPaymentsFor(purchase: PackagePurchaseRow) {
-  return ledgerPayments.value.filter((p) => p.package_purchase_id === purchase.id)
+// Every payment the bono counts, whoever's record it was taken on -- the list
+// has to add up to the "paid of" figure above it. One taken on another
+// patient's record names them.
+function linkedPaymentsFor(purchase: PackagePurchaseRow): (LedgerPaymentRow | OtherBonoPaymentRow)[] {
+  return [...ledgerPayments.value, ...otherBonoPayments.value].filter((p) => p.package_purchase_id === purchase.id)
+}
+
+function paidByOtherPatient(pay: LedgerPaymentRow | OtherBonoPaymentRow): string | null {
+  if (!('patient_id' in pay) || !pay.patients) return null
+  return `${pay.patients.first_name} ${pay.patients.last_name ?? ''}`.trim()
 }
 
 function invoiceNumberFor(invoiceId: string | null): string {
@@ -2551,7 +2579,7 @@ function money(cents: number) {
             <div v-if="openLinkPaymentId === p.id" class="mt-2.5 rounded-ctl border border-line-divider bg-surface-subtle p-2.5">
               <ul v-if="linkedPaymentsFor(p).length" class="space-y-1">
                 <li v-for="pay in linkedPaymentsFor(p)" :key="pay.id" class="flex items-center justify-between text-[11.5px] text-ink-600">
-                  <span>{{ money(pay.amount_cents) }} &middot; {{ pay.method }} &middot; {{ new Date(pay.paid_at).toLocaleDateString() }}</span>
+                  <span>{{ money(pay.amount_cents) }} &middot; {{ pay.method }} &middot; {{ new Date(pay.paid_at).toLocaleDateString() }}<template v-if="paidByOtherPatient(pay)"> &middot; {{ t('paid by', 'pagado por') }} {{ paidByOtherPatient(pay) }}</template></span>
                   <button type="button" class="text-ink-faint hover:text-danger-text" @click="unlinkPayment(pay.id)">✕</button>
                 </li>
               </ul>

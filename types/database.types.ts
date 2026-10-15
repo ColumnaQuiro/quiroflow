@@ -8106,6 +8106,7 @@ export type Database = {
         Args: { p_slug: string; p_session_id: string; p_first_name: string; p_last_name: string; p_email: string; p_phone: string; p_country_code?: string }
         Returns: Json
       }
+      return_product_stock: { Args: { p_invoice_id: string; p_items: Json; p_reason?: string | null }; Returns: number }
       check_in_my_appointment: { Args: { p_appointment_id: string }; Returns: string | null }
       set_my_pain_score: { Args: { p_appointment_id: string; p_score: number }; Returns: boolean }
       my_pain_context: { Args: { p_appointment_id: string }; Returns: Json }

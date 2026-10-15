@@ -45,7 +45,8 @@ const monthName = new Date().toLocaleDateString(lang.value === 'es' ? 'es-ES' : 
 async function load() {
   const [{ data }, { data: sales }] = await Promise.all([
     supabase.from('services_products').select('id, name, price_cents, tax_rate, stock_units, min_stock, cost_cents').eq('kind', 'product').order('name'),
-    supabase.from('product_stock_movements').select('product_id, delta').eq('kind', 'sale').gte('created_at', monthStart),
+    // Sold less brought back, this month.
+    supabase.from('product_stock_movements').select('product_id, delta').in('kind', ['sale', 'return']).gte('created_at', monthStart),
   ])
   products.value = (data as Product[] | null) ?? []
   const sold = new Map<string, number>()
@@ -80,6 +81,10 @@ function movementLabel(m: Movement) {
   if (m.kind === 'sale') {
     const p = m.invoices?.patients
     return `${t('Sale', 'Venta')}${p ? ` · ${p.first_name} ${p.last_name ?? ''}`.trimEnd() : ''}`
+  }
+  if (m.kind === 'return') {
+    const p = m.invoices?.patients
+    return `${t('Returned', 'Devolución')}${p ? ` · ${p.first_name} ${p.last_name ?? ''}`.trimEnd() : ''}${m.reason ? ` · ${m.reason}` : ''}`
   }
   if (m.kind === 'receive') return `${t('Delivery', 'Entrada')} · ${m.delta} ${t('units', 'uds.')}${m.supplier ? ` · ${m.supplier}` : ''}`
   return `${t('Adjustment', 'Ajuste')} · ${m.reason ?? ''}`

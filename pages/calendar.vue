@@ -81,7 +81,7 @@ const WEEK_MAX_LANES = 4
 const OVERFLOW_CHIP_PX = 20
 
 interface Room { id: string; name: string }
-interface AppointmentType { id: string; name: string; duration_minutes: number; color: string; default_price_cents: number; sort_order: number | null; archived_at: string | null }
+interface AppointmentType { id: string; name: string; duration_minutes: number; color: string; default_price_cents: number; sort_order: number | null; archived_at: string | null; class_capacity?: number | null }
 interface TeamMember { id: string; full_name: string; color: string; business_hours: BusinessHours | null }
 interface TeamMemberClinic { team_member_id: string; clinic_id: string }
 
@@ -118,6 +118,22 @@ interface AppointmentRow {
    */
   _movedFrom?: AppointmentRow
   _movedTo?: string
+  /** A place in a group class (class_sessions); drawn as part of the class's one block. */
+  class_session_id?: string | null
+  /** Set only on a class's block: the session, and how full it is. */
+  _class?: { sessionId: string; taken: number; capacity: number }
+}
+
+interface ClassSessionRow {
+  id: string
+  room_id: string | null
+  practitioner_id: string
+  appointment_type_id: string
+  starts_at: string
+  ends_at: string
+  capacity: number
+  appointment_types: { name: string; color: string } | null
+  team_members: { full_name: string; color: string } | null
 }
 
 const supabase = useSupabaseClient()
@@ -188,6 +204,9 @@ const appointmentTypes = ref<AppointmentType[]>([])
 // appointment's own panel -- otherwise opening "Change" on an old visit would
 // show no type and saving would quietly clear it.
 const activeAppointmentTypes = computed(() => appointmentTypes.value.filter((x) => !x.archived_at))
+// A class's places are taken in its session ("New class", the class's panel),
+// never as a visit on their own: the database refuses one.
+const visitTypes = computed(() => activeAppointmentTypes.value.filter((x) => x.class_capacity == null))
 function typesForPanel(currentTypeId: string | null | undefined) {
   return appointmentTypes.value.filter((x) => !x.archived_at || x.id === currentTypeId)
 }
@@ -195,6 +214,10 @@ const teamMembers = ref<TeamMember[]>([])
 const teamMemberClinics = ref<TeamMemberClinic[]>([])
 const overrides = ref<AppointmentTypeOverride[]>([])
 const appointments = ref<AppointmentRow[]>([])
+const classSessions = ref<ClassSessionRow[]>([])
+// The class open in its panel, and the "New class" dialog.
+const classPanelId = ref<string | null>(null)
+const newClassOpen = ref(false)
 const availabilityBlocks = ref<AvailabilityBlock[]>([])
 const loading = ref(true)
 
@@ -358,7 +381,7 @@ const miniWeekdayAbbrevs = computed(() => [
 
 async function loadReferenceData() {
   const [{ data: types }, { data: members }, { data: ovr }, { data: memberClinics }] = await Promise.all([
-    supabase.from('appointment_types').select('id, name, duration_minutes, color, default_price_cents, sort_order, archived_at'),
+    supabase.from('appointment_types').select('id, name, duration_minutes, color, default_price_cents, sort_order, archived_at, class_capacity'),
     supabase.from('team_members').select('id, full_name, color, business_hours').is('deleted_at', null).eq('is_practitioner', true).order('full_name'),
     supabase.from('appointment_type_overrides').select('appointment_type_id, team_member_id, duration_minutes, price_cents'),
     supabase.from('team_member_clinics').select('team_member_id, clinic_id'),
@@ -431,7 +454,7 @@ async function loadRooms() {
 // `silent` reloads without the skeleton: after a step in the open panel the
 // grid should update in place, not blink.
 const APPOINTMENT_SELECT =
-  'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, rescheduled, confirmation_status, confirmation_sent_at, reminder_sent_at, same_day_info_sent_at, created_at, deleted_at, note, source, patients(first_name, last_name, sticky_note), appointment_types(name, color, default_price_cents), team_members(full_name, color)'
+  'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, rescheduled, confirmation_status, confirmation_sent_at, reminder_sent_at, same_day_info_sent_at, created_at, deleted_at, note, source, patients(first_name, last_name, sticky_note), appointment_types(name, color, default_price_cents), team_members(full_name, color), class_session_id'
 
 async function loadAppointments(silent = false) {
   if (!store.currentClinicId) {
@@ -454,9 +477,20 @@ async function loadAppointments(silent = false) {
     .order('starts_at')
   if (practitionerFilter.value === UNASSIGNED_PRACTITIONER) query = query.is('practitioner_id', null)
   else if (practitionerFilter.value && practitionerFilter.value !== ALL_PRACTITIONERS) query = query.eq('practitioner_id', practitionerFilter.value)
-  const { data } = await query
+  // The group classes on in the range, drawn as one block each (classBlocks).
+  let classQuery = supabase
+    .from('class_sessions')
+    .select('id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, capacity, appointment_types(name, color), team_members!class_sessions_practitioner_id_fkey(full_name, color)')
+    .eq('clinic_id', store.currentClinicId)
+    .is('cancelled_at', null)
+    .gte('starts_at', rangeStart.toISOString())
+    .lt('starts_at', rangeEnd.toISOString())
+  if (practitionerFilter.value === UNASSIGNED_PRACTITIONER) classQuery = classQuery.is('practitioner_id', null)
+  else if (practitionerFilter.value && practitionerFilter.value !== ALL_PRACTITIONERS) classQuery = classQuery.eq('practitioner_id', practitionerFilter.value)
+  const [{ data }, { data: sessions }] = await Promise.all([query, classQuery])
   if (token !== loadToken) return
 
+  classSessions.value = (sessions as unknown as ClassSessionRow[] | null) ?? []
   appointments.value = (data as unknown as AppointmentRow[]) ?? []
   const patientIds = [...new Set(appointments.value.map((a) => a.patient_id))]
   const appointmentIds = appointments.value.map((a) => a.id)
@@ -1326,6 +1360,8 @@ const layoutByColumn = computed(() => {
   const columns = new Map<string, AppointmentRow[]>()
   const place = (dayKey: string, a: AppointmentRow) => {
     if (!isApptVisible(a)) return
+    // A class's places are drawn as the class's one block, below.
+    if (a.class_session_id && !a._class) return
     const key = columnKey(dayKey, a.room_id ?? '__none')
     const col = columns.get(key)
     if (col) col.push(a)
@@ -1339,6 +1375,7 @@ const layoutByColumn = computed(() => {
   // covering the other. Counts, today's glance and conflict checks read
   // appointmentsByDay, which the markers never enter.
   for (const m of movedAwayMarkers.value) place(toDateKey(new Date(m.starts_at)), m)
+  for (const c of classBlocks.value) place(toDateKey(new Date(c.starts_at)), c)
   const layouts = new Map<string, LayoutBlock[]>()
   for (const [key, rows] of columns) {
     rows.sort((a, b) => a.starts_at.localeCompare(b.starts_at))
@@ -1351,6 +1388,48 @@ const layoutByColumn = computed(() => {
   }
   return layouts
 })
+// Each group class as one block: its time, room and type, and how many of
+// its places are taken -- counted from the places loaded with the range.
+const classBlocks = computed<AppointmentRow[]>(() => {
+  const taken = new Map<string, number>()
+  for (const a of appointments.value) {
+    if (a.class_session_id && a.status !== 'cancelled' && !a.deleted_at) taken.set(a.class_session_id, (taken.get(a.class_session_id) ?? 0) + 1)
+  }
+  return classSessions.value.map((c) => ({
+    id: `class:${c.id}`,
+    patient_id: '',
+    room_id: c.room_id,
+    practitioner_id: c.practitioner_id,
+    appointment_type_id: c.appointment_type_id,
+    starts_at: c.starts_at,
+    ends_at: c.ends_at,
+    status: 'booked',
+    checked_in_at: null,
+    flow_with_practitioner_at: null,
+    flow_checkout_at: null,
+    rescheduled: false,
+    confirmation_status: null,
+    deleted_at: null,
+    note: null,
+    source: 'staff',
+    confirmation_sent_at: null,
+    reminder_sent_at: null,
+    same_day_info_sent_at: null,
+    created_at: c.starts_at,
+    patients: null,
+    appointment_types: c.appointment_types ? { ...c.appointment_types, default_price_cents: 0 } : null,
+    team_members: c.team_members,
+    _class: { sessionId: c.id, taken: taken.get(c.id) ?? 0, capacity: c.capacity },
+  }))
+})
+// A place opened from its class's panel: the visit's own panel, for charging,
+// a bono session or undoing it.
+function openClassPlace(id: string) {
+  const appt = appointments.value.find((a) => a.id === id)
+  if (!appt) return
+  classPanelId.value = null
+  openEditModal(appt)
+}
 function layoutForRoomOnDay(day: Date, roomId: string): LayoutBlock[] {
   return layoutByColumn.value.get(columnKey(toDateKey(day), roomId)) ?? []
 }
@@ -2364,6 +2443,7 @@ function showNowLineOn(day: Date) {
           </span>
           <UiBtn variant="secondary" size="sm" @click="openBlockCreateModal()">{{ t('Block time', 'Bloquear horario') }}</UiBtn>
           <UiBtn variant="secondary" size="sm" data-cy="absence-open" @click="absenceOpen = true">{{ t('Unplanned absence', 'Ausencia imprevista') }}</UiBtn>
+          <UiBtn variant="secondary" size="sm" data-cy="new-class-open" @click="newClassOpen = true">{{ t('New class', 'Nueva clase') }}</UiBtn>
           <UiBtn variant="primary" size="sm" data-cy="new-appointment" @click="openCreateModal()">{{ t('+ New Appointment', '+ Nueva Cita') }}</UiBtn>
         </template>
         <span v-else class="inline-flex h-8 items-center rounded-pill bg-chip-bg px-3 text-[12.5px] font-semibold text-chip-text" data-cy="calendar-read-only">{{ t('Read-only', 'Solo lectura') }}</span>
@@ -2744,6 +2824,19 @@ function showNowLineOn(day: Date) {
                     >
                       +{{ appt.count }} {{ t('more', 'más') }}
                     </div>
+                    <button
+                      v-else-if="appt._class"
+                      type="button"
+                      data-cy="class-block"
+                      :data-session-id="appt._class.sessionId"
+                      class="absolute flex flex-col items-start overflow-hidden rounded-ctl border border-brand bg-brand px-2.5 py-1 text-left text-[12px] leading-tight text-white shadow-card"
+                      :style="columnStyle(appt, timeToPx(appt.starts_at, DAY_HOUR_PX) + 1, Math.max(0, durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) - 3))"
+                      @click.stop="classPanelId = appt._class.sessionId"
+                    >
+                      <strong class="truncate font-semibold">{{ appt.appointment_types?.name }}</strong>
+                      <span class="font-mono" data-cy="class-block-places">{{ appt._class.taken }}/{{ appt._class.capacity }}</span>
+                      <span class="truncate opacity-85">{{ appt._class.capacity - appt._class.taken > 0 ? t(`${appt._class.capacity - appt._class.taken} places left`, `${appt._class.capacity - appt._class.taken} plazas libres`) : t('Full', 'Completa') }}</span>
+                    </button>
                     <div
                       v-else-if="appt._movedFrom"
                       data-cy="moved-away-marker"
@@ -2952,6 +3045,18 @@ function showNowLineOn(day: Date) {
                       >
                         +{{ appt.count }}
                       </button>
+                      <button
+                        v-else-if="appt._class"
+                        type="button"
+                        data-cy="class-block"
+                        :data-session-id="appt._class.sessionId"
+                        class="absolute flex flex-col items-start overflow-hidden rounded-[7px] border border-brand bg-brand px-1.5 py-0.5 text-left text-[10.5px] leading-tight text-white"
+                        :style="columnStyle(appt, timeToPx(appt.starts_at, WEEK_HOUR_PX), Math.max(0, durationToPx(appt.starts_at, appt.ends_at, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX) - 2))"
+                        @click.stop="classPanelId = appt._class.sessionId"
+                      >
+                        <strong class="truncate font-semibold">{{ appt.appointment_types?.name }}</strong>
+                        <span class="font-mono">{{ appt._class.taken }}/{{ appt._class.capacity }}</span>
+                      </button>
                       <div
                         v-else-if="appt._movedFrom"
                         data-cy="moved-away-marker"
@@ -3032,7 +3137,7 @@ function showNowLineOn(day: Date) {
     <LazyCalendarNewAppointmentPanel
       v-if="modalOpen && modalMode === 'create'"
       :rooms="rooms"
-      :appointment-types="activeAppointmentTypes"
+      :appointment-types="visitTypes"
       :team-members="teamMembers"
       :prefill-date="prefill?.date"
       :prefill-time="prefill?.time"
@@ -3077,6 +3182,8 @@ function showNowLineOn(day: Date) {
     <LazyCalendarMoveClashDialog v-if="moveClash" :clashes="moveClash.clashes" @confirm="onMoveClashConfirm" @cancel="onMoveClashCancel" />
 
     <LazyCalendarUnplannedAbsence v-if="absenceOpen" @close="absenceOpen = false" @done="refreshAfterAbsence" />
+    <LazyCalendarNewClassPanel v-if="newClassOpen" :date="toDateKey(anchorDate)" @close="newClassOpen = false" @created="newClassOpen = false; loadRange()" />
+    <LazyCalendarClassSessionPanel v-if="classPanelId" :session-id="classPanelId" :read-only="readOnly" @close="classPanelId = null" @changed="loadRange()" @open-appointment="openClassPlace" />
     <LazyCalendarAvailabilityBlockModal
       v-if="blockModalOpen"
       :rooms="rooms"

@@ -174,7 +174,7 @@ const field = 'h-11 rounded-ctl border border-line-control bg-surface px-3 text-
 
     <div class="rounded-card border border-line bg-surface px-4 py-1">
       <p v-if="loaded && !days.length" class="py-3 text-[13px] text-ink-muted">{{ t('No days clocked this month.', 'Ningún día fichado este mes.') }}</p>
-      <div v-for="d in days" :key="d.date" class="border-b border-line-subtle last:border-b-0">
+      <div v-for="d in days" :key="d.date" class="border-b border-line-divider last:border-b-0">
         <button type="button" class="flex w-full items-center justify-between gap-2 py-2.5 text-left" data-cy="my-month-day" :data-date="d.date" @click="open(d.date)">
           <span class="flex flex-wrap items-center gap-2 text-[13.5px] capitalize text-ink-900">
             {{ dayLabel(d.date) }}
@@ -203,7 +203,7 @@ const field = 'h-11 rounded-ctl border border-line-control bg-surface px-3 text-
 
     <div v-if="corrections.length" class="rounded-card border border-line bg-surface px-4 py-2">
       <p class="py-1 text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ t('Your corrections', 'Tus correcciones') }}</p>
-      <div v-for="c in corrections" :key="c.id" class="flex items-center justify-between gap-2 border-b border-line-subtle py-2 text-[13px] last:border-b-0" data-cy="my-correction" :data-status="c.status">
+      <div v-for="c in corrections" :key="c.id" class="flex items-center justify-between gap-2 border-b border-line-divider py-2 text-[13px] last:border-b-0" data-cy="my-correction" :data-status="c.status">
         <span class="text-ink-900"><span class="capitalize">{{ dayLabel(c.work_date) }}</span> · {{ workEntryLabel(c.kind, t) }} <span class="font-mono">{{ clock(c.at) }}</span> <span class="text-ink-muted">· «{{ c.reason }}»</span></span>
         <span class="shrink-0 text-[12px] font-semibold" :class="c.status === 'approved' ? 'text-success-text' : c.status === 'rejected' ? 'text-danger-text' : 'text-warning-text'">{{ statusLabel(c.status) }}</span>
       </div>

@@ -1337,6 +1337,7 @@ export type Database = {
       }
       appointment_types: {
         Row: {
+          class_capacity: number | null
           account_id: string
           archived_at: string | null
           color: string
@@ -1355,6 +1356,7 @@ export type Database = {
           stage: string | null
         }
         Insert: {
+          class_capacity?: number | null
           account_id: string
           archived_at?: string | null
           color?: string
@@ -1373,6 +1375,7 @@ export type Database = {
           stage?: string | null
         }
         Update: {
+          class_capacity?: number | null
           account_id?: string
           archived_at?: string | null
           color?: string
@@ -1402,6 +1405,7 @@ export type Database = {
       }
       appointments: {
         Row: {
+          class_session_id: string | null
           auto_confirmation_claimed_at: string | null
           account_id: string
           appointment_type_id: string | null
@@ -1430,6 +1434,7 @@ export type Database = {
           status: string
         }
         Insert: {
+          class_session_id?: string | null
           auto_confirmation_claimed_at?: string | null
           account_id: string
           appointment_type_id?: string | null
@@ -1458,6 +1463,7 @@ export type Database = {
           status?: string
         }
         Update: {
+          class_session_id?: string | null
           auto_confirmation_claimed_at?: string | null
           account_id?: string
           appointment_type_id?: string | null
@@ -1486,6 +1492,13 @@ export type Database = {
           status?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "appointments_class_session_id_fkey"
+            columns: ["class_session_id"]
+            isOneToOne: false
+            referencedRelation: "class_sessions"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "appointments_account_id_fkey"
             columns: ["account_id"]
@@ -2472,6 +2485,73 @@ export type Database = {
             columns: ["account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      class_sessions: {
+        Row: {
+          account_id: string
+          appointment_type_id: string
+          cancelled_at: string | null
+          capacity: number
+          clinic_id: string
+          created_at: string
+          created_by: string | null
+          ends_at: string
+          id: string
+          practitioner_id: string
+          room_id: string | null
+          starts_at: string
+        }
+        Insert: {
+          account_id: string
+          appointment_type_id: string
+          cancelled_at?: string | null
+          capacity: number
+          clinic_id: string
+          created_at?: string
+          created_by?: string | null
+          ends_at: string
+          id?: string
+          practitioner_id: string
+          room_id?: string | null
+          starts_at: string
+        }
+        Update: {
+          account_id?: string
+          appointment_type_id?: string
+          cancelled_at?: string | null
+          capacity?: number
+          clinic_id?: string
+          created_at?: string
+          created_by?: string | null
+          ends_at?: string
+          id?: string
+          practitioner_id?: string
+          room_id?: string | null
+          starts_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "class_sessions_appointment_type_id_fkey"
+            columns: ["appointment_type_id"]
+            isOneToOne: false
+            referencedRelation: "appointment_types"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "class_sessions_practitioner_id_fkey"
+            columns: ["practitioner_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "class_sessions_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "calendar_resources"
             referencedColumns: ["id"]
           },
         ]
@@ -7924,6 +8004,7 @@ export type Database = {
       }
       decide_time_correction: { Args: { p_correction_id: string; p_approve: boolean }; Returns: Database["public"]["Tables"]["time_corrections"]["Row"] }
       account_local_date: { Args: { p_account_id: string; p_at?: string }; Returns: string }
+      get_public_class_sessions: { Args: { p_slug: string; p_clinic_id: string; p_appointment_type_id: string }; Returns: Json }
       check_in_my_appointment: { Args: { p_appointment_id: string }; Returns: string | null }
       set_my_pain_score: { Args: { p_appointment_id: string; p_score: number }; Returns: boolean }
       my_pain_context: { Args: { p_appointment_id: string }; Returns: Json }

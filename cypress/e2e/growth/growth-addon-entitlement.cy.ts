@@ -51,6 +51,22 @@ describe('The Growth add-on', () => {
     get('/api/growth/receptionist/config').its('status').should('eq', 402)
   })
 
+  // The receptionist is also sold on its own: an account that bought only it
+  // gets the receptionist and nothing else of Growth.
+  it('gives the receptionist, and only the receptionist, to an account that bought it alone', () => {
+    neverBought()
+    cy.task('db:setReceptionistAddon', { accountId: account.accountId, enabled: true })
+
+    get('/api/growth/receptionist/config').its('status').should('eq', 200)
+    get('/api/growth/dashboard').its('status').should('eq', 402)
+    get('/api/growth/leads').its('status').should('eq', 402)
+    get('/api/growth/reputation').its('status').should('eq', 402)
+
+    // And not past the statuses that stop Growth.
+    cy.setSubscriptionStatus(account.accountId, 'canceled')
+    get('/api/growth/receptionist/config').its('status').should('not.eq', 200)
+  })
+
   it('allows it once the add-on is on', () => {
     get('/api/growth/dashboard').its('status').should('eq', 200)
   })

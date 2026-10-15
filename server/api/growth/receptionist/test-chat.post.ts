@@ -1,6 +1,6 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
-import { requireGrowth } from '~/server/utils/requireGrowth'
+import { requireReceptionist } from '~/server/utils/requireGrowth'
 import { buildSystemPrompt, loadOfferedTypes, loadReceptionistCalendar, loadReceptionistConfig, type LeadOrigin } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptionistModel'
 import { modelFailureMessage } from '~/utils/modelFailure'
@@ -55,7 +55,7 @@ function isTurn(value: unknown): value is Turn {
 }
 
 export default defineEventHandler(async (event) => {
-  const { supabase, teamMember } = await requireGrowth(event)
+  const { supabase, teamMember } = await requireReceptionist(event)
   const body = (await readBody<Body>(event).catch(() => null)) ?? ({} as Body)
 
   const turns = Array.isArray(body.messages) ? body.messages.filter(isTurn).slice(-MAX_TURNS) : []

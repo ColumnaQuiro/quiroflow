@@ -1,6 +1,6 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
-import { hasGrowth } from '~/server/utils/requireGrowth'
+import { hasGrowth, hasReceptionist } from '~/server/utils/requireGrowth'
 import { TYPING_PAUSE_SECONDS, autoReplyNow, clinicOpenAt, stillTyping } from '~/utils/receptionistAutoReply'
 import type { BusinessHours } from '~/utils/businessHours'
 
@@ -52,17 +52,18 @@ export default defineEventHandler(async (event) => {
   const accountIds = (enabledConfigs ?? []).map((c) => c.account_id)
   if (accountIds.length === 0) return { considered: 0, consideredLeadIds: [] as string[], consideredPatientIds: [] as string[], dispatchedLeadIds: [] as string[], dispatchedPatientIds: [] as string[] }
 
-  // Growth is a paid add-on, and the cron runs as the service role -- outside
-  // requireGrowth, which is what enforces that everywhere else. Checked here
-  // rather than assumed: an account that stops paying must stop being worked
-  // on, and a background job is exactly where that would go unnoticed.
+  // The receptionist is paid for -- on its own or inside Growth -- and the
+  // cron runs as the service role, outside requireReceptionist, which is what
+  // enforces that everywhere else. Checked here rather than assumed: an
+  // account that stops paying must stop being worked on, and a background job
+  // is exactly where that would go unnoticed.
   const { data: subscriptions } = await supabase
     .from('subscriptions')
-    .select('account_id, plan_id, growth_addon, status, comped')
+    .select('account_id, plan_id, growth_addon, receptionist_addon, status, comped')
     .in('account_id', accountIds)
 
   const entitled = new Set(
-    (subscriptions ?? []).filter((s) => hasGrowth(s)).map((s) => s.account_id),
+    (subscriptions ?? []).filter((s) => hasReceptionist(s)).map((s) => s.account_id),
   )
   if (entitled.size === 0) return { considered: 0, consideredLeadIds: [] as string[], consideredPatientIds: [] as string[], dispatchedLeadIds: [] as string[], dispatchedPatientIds: [] as string[] }
 
@@ -70,6 +71,15 @@ export default defineEventHandler(async (event) => {
   // than drafting: their "answer outside / during clinic hours" switches,
   // read against their first clinic's opening hours on its own clock.
   const answersNow = await accountsAnsweringNow(supabase, Array.from(entitled), new Date())
+
+  // Whose leads are worked on. A lead's draft is shown in Growth's lead
+  // thread and nowhere else, so for an account with the receptionist but not
+  // Growth a drafted lead reply is one nobody would ever see -- and a model
+  // paid to write it. Those accounts' leads are answered only while it sends
+  // on its own; the sent reply lands in the Inbox like any other message.
+  // Their patients are drafted for at any hour: those drafts are the Inbox's.
+  const withGrowth = new Set((subscriptions ?? []).filter((s) => hasGrowth(s)).map((s) => s.account_id))
+  const leadAccounts = Array.from(entitled).filter((id) => withGrowth.has(id) || answersNow.has(id))
 
   // Who is due a draft: a lead the receptionist is handling, with no draft
   // waiting, whose newest inbound message is one drafting has not read yet
@@ -92,13 +102,13 @@ export default defineEventHandler(async (event) => {
   const seen = new Set<string>()
   const PAGE = 500
 
-  for (let from = 0; due.length < MAX_PER_TICK; from += PAGE) {
+  for (let from = 0; leadAccounts.length > 0 && due.length < MAX_PER_TICK; from += PAGE) {
     // Untyped: the filters on the embedded lead are what make it an inner
     // join, and the generated types do not model filtering through one.
     const { data: page, error } = await (supabase as any)
       .from('whatsapp_messages')
       .select('id, lead_id, created_at, leads!inner(id, account_id, ai_drafted_through_at)')
-      .in('account_id', Array.from(entitled))
+      .in('account_id', leadAccounts)
       .eq('direction', 'inbound')
       .not('lead_id', 'is', null)
       // WhatsApp refuses a free-form reply more than 24h after the last

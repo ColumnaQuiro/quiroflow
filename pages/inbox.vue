@@ -412,7 +412,9 @@ onMounted(async () => {
 // sending -- untouched, and guarantees a real patient thread can never be
 // decorated with AI state that does not exist for it. Without the tier
 // nothing below loads and this page is exactly what it was.
-const { hasGrowth } = useGrowthTier()
+// The receptionist answers patients with or without Growth (it is also sold
+// on its own); the lead threads, which are Growth's, still ask hasGrowth.
+const { hasGrowth, hasReceptionist } = useGrowthTier()
 const { conversations: leadConversations, reload: reloadLeadConversations, takeOver, handBack } = useGrowthConversations(hasGrowth)
 const {
   thread: leadThread,
@@ -517,11 +519,11 @@ const patientAiStates = ref<Record<string, InboxAiState>>({})
 let patientAiToken = 0
 async function loadPatientAiStates(ids: string[]) {
   const token = ++patientAiToken
-  const states = hasGrowth.value ? await fetchPatientAiStates(supabase, ids) : {}
+  const states = hasReceptionist.value ? await fetchPatientAiStates(supabase, ids) : {}
   if (token === patientAiToken) patientAiStates.value = states
 }
 watch(() => rows.value.map((r) => r.patient_id).filter(Boolean).join(','), (ids) => loadPatientAiStates(ids ? ids.split(',') : []), { immediate: true })
-watch(hasGrowth, () => loadPatientAiStates(rows.value.map((r) => r.patient_id).filter((id): id is string => Boolean(id))))
+watch(hasReceptionist, () => loadPatientAiStates(rows.value.map((r) => r.patient_id).filter((id): id is string => Boolean(id))))
 
 const aiHandlingCount = computed(() => leadConversations.value.filter((c) => c.aiState === 'handling').length + Object.values(patientAiStates.value).filter((s) => s === 'handling').length)
 const needsHumanCount = computed(() => leadConversations.value.filter((c) => c.aiState === 'needs_human' || c.aiState === 'blocked').length + Object.values(patientAiStates.value).filter((s) => s === 'needs_human').length)
@@ -1319,7 +1321,7 @@ function storedReplyDraft(patientId: string) {
 
 // The receptionist's "Draft a reply", for a patient who wrote last inside
 // WhatsApp's window. Computed here so the composer row knows whether to show.
-const showReplyDraft = computed(() => !noteMode.value && within24h.value && threadReady.value && unref(hasGrowth) && !!selected.value?.patientId && theyWroteLast.value)
+const showReplyDraft = computed(() => !noteMode.value && within24h.value && threadReady.value && unref(hasReceptionist) && !!selected.value?.patientId && theyWroteLast.value)
 function sendDraft(text: string) {
   composerText.value = text
   sendText()

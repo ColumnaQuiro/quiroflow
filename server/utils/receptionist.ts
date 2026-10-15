@@ -16,7 +16,7 @@ import {
 } from '~/utils/receptionistSlots'
 import { DEFAULT_CLINIC_TIMEZONE, clinicDateOf, startOfLocalDate } from '~/utils/clinicClock'
 import type { BusinessHours } from '~/utils/businessHours'
-import { hasGrowth } from '~/server/utils/requireGrowth'
+import { hasReceptionist } from '~/server/utils/requireGrowth'
 
 export type { LeadOrigin }
 
@@ -629,8 +629,9 @@ export async function receptionistHandlesNewLeads(supabase: any, accountId: stri
 
 /**
  * Whether a lead the receptionist is handling will actually be drafted for:
- * switched on, and the account entitled to Growth -- the same two things the
- * drafting tick (receptionist-draft-cron) checks before it looks at a lead.
+ * switched on, and the account entitled to the receptionist (on its own or
+ * through Growth) -- the same two things the drafting tick
+ * (receptionist-draft-cron) checks before it looks at a lead.
  *
  * What the WhatsApp webhook asks when a lead on 'handling' writes. If the
  * answer is yes, the message is exactly what the tick is waiting for and the
@@ -642,8 +643,8 @@ export async function receptionistDraftsFor(supabase: any, accountId: string): P
   if (!(await receptionistHandlesNewLeads(supabase, accountId))) return false
   const { data: subscription } = await supabase
     .from('subscriptions')
-    .select('plan_id, growth_addon, status, comped')
+    .select('plan_id, growth_addon, receptionist_addon, status, comped')
     .eq('account_id', accountId)
     .maybeSingle()
-  return hasGrowth(subscription)
+  return hasReceptionist(subscription)
 }

@@ -20,6 +20,8 @@ const props = defineProps<{
   currentExtraSeats: number
   currentGrowth: boolean
   growthAddon: { monthly_price_cents: number; annual_price_cents: number } | null
+  currentReceptionist: boolean
+  receptionistAddon: { monthly_price_cents: number; annual_price_cents: number } | null
   card: { brand: string; last4: string } | null
   renewalDate: string | null
 }>()
@@ -31,6 +33,7 @@ const t = useT()
 const interval = ref<'monthly' | 'annual'>(props.currentInterval)
 const extraSeats = ref(props.currentExtraSeats)
 const wantsGrowth = ref(props.currentGrowth)
+const wantsReceptionist = ref(props.currentReceptionist)
 const selectedPlanId = ref(props.currentPlanId)
 
 const selectedPlan = computed(() => props.plans.find((p) => p.id === selectedPlanId.value) ?? null)
@@ -39,6 +42,13 @@ const selectedIncludesGrowth = computed(() => planIncludesGrowth(selectedPlanId.
 // Clinic bundles Growth, so a clinic on it is never quoted a price for it --
 // there is no Stripe line item to quote.
 const growthChargeable = computed(() => wantsGrowth.value && !selectedIncludesGrowth.value)
+
+// Growth includes the receptionist, so with Growth on -- bought or in the
+// plan -- it is shown as included and never charged as well. Turning Growth on
+// for an account that has the receptionist replaces the one with the other
+// (receptionistLineWanted on the server decides the same).
+const receptionistIncluded = computed(() => selectedIncludesGrowth.value || wantsGrowth.value)
+const receptionistChargeable = computed(() => wantsReceptionist.value && !receptionistIncluded.value)
 
 const perMonthCents = computed(() => {
   const plan = selectedPlan.value
@@ -52,7 +62,13 @@ const perMonthCents = computed(() => {
         ? props.growthAddon.annual_price_cents
         : props.growthAddon.monthly_price_cents
       : 0
-  return base + seats + growth
+  const receptionist =
+    receptionistChargeable.value && props.receptionistAddon
+      ? annual
+        ? props.receptionistAddon.annual_price_cents
+        : props.receptionistAddon.monthly_price_cents
+      : 0
+  return base + seats + growth + receptionist
 })
 
 const chargeCents = computed(() =>
@@ -107,7 +123,7 @@ async function preview(planId: string) {
   try {
     const result = await $fetch<{ previewable: boolean; amountDueCents?: number }>('/api/billing/preview', {
       method: 'POST',
-      body: { planId, interval: interval.value, extraProfessionals: extraSeats.value, growth: growthChargeable.value },
+      body: { planId, interval: interval.value, extraProfessionals: extraSeats.value, growth: growthChargeable.value, receptionist: receptionistChargeable.value },
     })
     previewCents.value = result.previewable ? (result.amountDueCents ?? null) : null
   } catch (error: unknown) {
@@ -127,7 +143,8 @@ const dirty = computed(
     selectedPlanId.value !== props.currentPlanId ||
     interval.value !== props.currentInterval ||
     extraSeats.value !== props.currentExtraSeats ||
-    growthChargeable.value !== props.currentGrowth,
+    growthChargeable.value !== props.currentGrowth ||
+    receptionistChargeable.value !== props.currentReceptionist,
 )
 
 // Every knob re-previews, not just the plan cards. Seats and the add-on are
@@ -136,7 +153,7 @@ const dirty = computed(
 // charged a prorated amount they had never been shown. Debounced because the
 // seat stepper would otherwise fire a request per click.
 let previewTimer: ReturnType<typeof setTimeout> | undefined
-watch([selectedPlanId, interval, extraSeats, wantsGrowth], () => {
+watch([selectedPlanId, interval, extraSeats, wantsGrowth, wantsReceptionist], () => {
   clearTimeout(previewTimer)
   previewCents.value = null
   if (!dirty.value) {
@@ -164,6 +181,7 @@ async function confirm() {
         interval: interval.value,
         extraProfessionals: extraSeats.value,
         growth: growthChargeable.value,
+        receptionist: receptionistChargeable.value,
       },
     })
     // An account with no subscription yet goes through Checkout; one with a
@@ -186,6 +204,7 @@ const summary = computed(() => {
     parts.push(t(`${extraSeats.value} extra seat(s)`, `${extraSeats.value} plaza(s) extra`))
   }
   if (growthChargeable.value) parts.push(t('Growth add-on', 'complemento Growth'))
+  if (receptionistChargeable.value) parts.push(t('AI receptionist', 'recepcionista IA'))
   return parts.filter(Boolean).join(' · ')
 })
 </script>
@@ -315,6 +334,52 @@ const summary = computed(() => {
             class="flex h-[26px] w-11 shrink-0 items-center rounded-pill border p-[3px] outline-none focus-visible:shadow-focus disabled:opacity-60"
             :class="selectedIncludesGrowth || wantsGrowth ? 'justify-end border-brand bg-brand' : 'justify-start border-line-control bg-toggle-off'"
             @click="wantsGrowth = !wantsGrowth"
+          >
+            <span class="block h-5 w-5 rounded-full bg-white" />
+          </button>
+        </div>
+      </div>
+    </SubscriptionCard>
+
+    <SubscriptionCard>
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:gap-5">
+        <div class="flex-1">
+          <div class="flex items-center gap-2.5">
+            <h3 class="text-[14px] font-semibold text-ink-900">{{ t('AI receptionist', 'Recepcionista IA') }}</h3>
+            <SubscriptionPill v-if="receptionistIncluded" tone="success">{{ t('Included in Growth', 'Incluida en Growth') }}</SubscriptionPill>
+            <SubscriptionPill v-else-if="wantsReceptionist" tone="success">{{ t('On', 'Activo') }}</SubscriptionPill>
+          </div>
+          <p class="mt-1.5 text-[12.5px] leading-[1.5] text-ink-muted">
+            {{
+              t(
+                'Answers your WhatsApp: replies to patients and new enquiries, offers free times and books them. 1,000 replies a month included; each further 1,000 is €15 + IVA.',
+                'Contesta tu WhatsApp: responde a pacientes y nuevas consultas, ofrece huecos libres y los reserva. Incluye 1.000 respuestas al mes; cada 1.000 más, 15 € + IVA.',
+              )
+            }}
+            <template v-if="receptionistIncluded">
+              {{ t('Growth includes it, so it is not charged on its own.', 'Growth la incluye, así que no se cobra aparte.') }}
+            </template>
+          </p>
+        </div>
+        <div class="flex items-center gap-3.5">
+          <div v-if="!receptionistIncluded && receptionistAddon" class="w-[152px] text-right">
+            <div class="font-mono text-[13.5px] font-semibold text-ink-900">
+              {{ formatEur(interval === 'annual' ? receptionistAddon.annual_price_cents : receptionistAddon.monthly_price_cents) }}{{ t('/mo + IVA', '/mes + IVA') }}
+            </div>
+            <div class="mt-0.5 text-[12px] text-ink-muted">
+              {{ interval === 'annual' ? t('billed annually', 'facturado anualmente') : t('billed monthly', 'facturado mensualmente') }}
+            </div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            :aria-checked="receptionistIncluded || wantsReceptionist"
+            :aria-label="t('AI receptionist', 'Recepcionista IA')"
+            :disabled="receptionistIncluded"
+            data-testid="receptionist-addon-switch"
+            class="flex h-[26px] w-11 shrink-0 items-center rounded-pill border p-[3px] outline-none focus-visible:shadow-focus disabled:opacity-60"
+            :class="receptionistIncluded || wantsReceptionist ? 'justify-end border-brand bg-brand' : 'justify-start border-line-control bg-toggle-off'"
+            @click="wantsReceptionist = !wantsReceptionist"
           >
             <span class="block h-5 w-5 rounded-full bg-white" />
           </button>

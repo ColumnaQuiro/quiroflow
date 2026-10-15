@@ -58,7 +58,7 @@ describe('Buying the Growth add-on', () => {
 
       cy.get('@soloCard').contains('button', /^Switch to |^Stay on /).should('exist')
       cy.contains('button', 'Confirm change').click()
-      cy.wait('@subscribe').its('request.body').should('deep.equal', { planId: 'starter', interval: 'monthly', extraProfessionals: 0, growth: true })
+      cy.wait('@subscribe').its('request.body').should('deep.equal', { planId: 'starter', interval: 'monthly', extraProfessionals: 0, growth: true, receptionist: false })
     })
   })
 
@@ -81,7 +81,58 @@ describe('Buying the Growth add-on', () => {
 
       cy.get('@growthCard').find('[role="switch"]').click()
       cy.get('@soloCard').contains('button', /^Stay on /).should('be.disabled')
-      cy.wait('@preview').its('request.body').should('deep.equal', { planId: 'starter', interval: 'monthly', extraProfessionals: 0, growth: false })
+      cy.wait('@preview').its('request.body').should('deep.equal', { planId: 'starter', interval: 'monthly', extraProfessionals: 0, growth: false, receptionist: false })
+    })
+  })
+})
+
+// The receptionist is also sold on its own, and Growth includes it -- so the
+// one thing that must never reach Stripe is both at once.
+describe('Buying the AI receptionist on its own', () => {
+  it('adds 19 a month and sends receptionist: true with the change', () => {
+    seedActiveSubscriber(false).then(() => {
+      cy.intercept('POST', '/api/billing/preview', {
+        statusCode: 200,
+        body: { previewable: true, amountDueCents: 1900, taxCents: 399, currency: 'eur' },
+      }).as('preview')
+      cy.intercept('POST', '/api/billing/subscribe', { statusCode: 200, body: { updated: true } }).as('subscribe')
+
+      cy.contains('h3', 'AI receptionist').closest('.rounded-card').as('receptionistCard')
+      cy.get('@receptionistCard').scrollIntoView()
+      cy.get('@receptionistCard').contains('19,00').should('be.visible')
+      cy.get('@receptionistCard').find('[role="switch"]').should('have.attr', 'aria-checked', 'false')
+
+      cy.contains('button', 'Confirm change').closest('.rounded-card').as('footer')
+      cy.get('@footer').should('contain', '49,00')
+      cy.get('@receptionistCard').find('[role="switch"]').click()
+      cy.get('@footer').should('contain', '68,00')
+
+      cy.contains('button', 'Confirm change').click()
+      cy.wait('@subscribe').its('request.body').should('deep.equal', { planId: 'starter', interval: 'monthly', extraProfessionals: 0, growth: false, receptionist: true })
+    })
+  })
+
+  it('shows it as included, and drops its line, once Growth is on', () => {
+    seedActiveSubscriber(false).then(() => {
+      cy.intercept('POST', '/api/billing/preview', {
+        statusCode: 200,
+        body: { previewable: true, amountDueCents: 3900, taxCents: 819, currency: 'eur' },
+      }).as('preview')
+      cy.intercept('POST', '/api/billing/subscribe', { statusCode: 200, body: { updated: true } }).as('subscribe')
+
+      cy.contains('h3', 'AI receptionist').closest('.rounded-card').as('receptionistCard')
+      cy.contains('h3', 'Growth add-on').closest('.rounded-card').as('growthCard')
+      cy.get('@receptionistCard').scrollIntoView()
+      cy.get('@receptionistCard').find('[role="switch"]').click()
+      cy.get('@growthCard').find('[role="switch"]').click()
+
+      cy.get('@receptionistCard').should('contain', 'Included in Growth')
+      cy.get('@receptionistCard').find('[role="switch"]').should('be.disabled')
+      // Solo + Growth, and nothing for the receptionist on top.
+      cy.contains('button', 'Confirm change').closest('.rounded-card').should('contain', '88,00')
+
+      cy.contains('button', 'Confirm change').click()
+      cy.wait('@subscribe').its('request.body').should('deep.equal', { planId: 'starter', interval: 'monthly', extraProfessionals: 0, growth: true, receptionist: false })
     })
   })
 })

@@ -23,3 +23,17 @@ export const PLANS_INCLUDING_GROWTH = new Set(['clinic'])
 export function planIncludesGrowth(planId: string | null | undefined): boolean {
   return PLANS_INCLUDING_GROWTH.has(planId ?? '')
 }
+
+/**
+ * Whether a subscription being bought carries the AI receptionist as its own
+ * line item. Never alongside Growth, bought or included in the plan: Growth
+ * includes the receptionist, and charging for it twice is the invoice nobody
+ * can explain. So adding Growth to an account that has the receptionist
+ * replaces the one with the other rather than adding to it.
+ *
+ * Here because subscribe.post.ts and preview.post.ts must agree: the preview
+ * exists to show what subscribe will do moments later.
+ */
+export function receptionistLineWanted(order: { receptionist?: boolean; growth: boolean; planId: string }): boolean {
+  return order.receptionist === true && !order.growth && !planIncludesGrowth(order.planId)
+}

@@ -1,8 +1,8 @@
-import { requireGrowth } from '~/server/utils/requireGrowth'
+import { requireReceptionist } from '~/server/utils/requireGrowth'
 import { loadReceptionistConfig, loadTypeChoices } from '~/server/utils/receptionist'
 
 export default defineEventHandler(async (event) => {
-  const { supabase, teamMember } = await requireGrowth(event)
+  const { supabase, teamMember } = await requireReceptionist(event)
   const config = await loadReceptionistConfig(supabase, teamMember.account_id)
 
   // Channel status is read from where it actually lives rather than stored

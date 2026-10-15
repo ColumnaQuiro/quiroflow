@@ -26,10 +26,29 @@ export async function growthAddonPrices(
   serviceRole: SupabaseClient<Database>,
   interval: 'monthly' | 'annual',
 ): Promise<GrowthAddonPrices> {
+  return addonPrices(serviceRole, 'growth', interval)
+}
+
+/**
+ * The AI receptionist's, sold on its own (20261014184755_receptionist_addon.sql),
+ * for the same three routes and for the same reason.
+ */
+export async function receptionistAddonPrices(
+  serviceRole: SupabaseClient<Database>,
+  interval: 'monthly' | 'annual',
+): Promise<GrowthAddonPrices> {
+  return addonPrices(serviceRole, 'receptionist', interval)
+}
+
+async function addonPrices(
+  serviceRole: SupabaseClient<Database>,
+  id: string,
+  interval: 'monthly' | 'annual',
+): Promise<GrowthAddonPrices> {
   const { data: addon } = await serviceRole
     .from('addons')
     .select('stripe_monthly_price_id, stripe_annual_price_id')
-    .eq('id', 'growth')
+    .eq('id', id)
     .maybeSingle()
 
   const monthly = addon?.stripe_monthly_price_id ?? null

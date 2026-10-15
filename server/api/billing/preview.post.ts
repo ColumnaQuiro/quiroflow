@@ -1,6 +1,7 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { verifactuFeeItemFor } from '~/server/utils/verifactuFee'
+import { receptionistLineWanted } from '~/utils/growthPlans'
 import { retrieveChangeableSubscription, stripeForPlatformBilling } from '~/server/utils/platformBillingStripe'
 
 export interface PreviewResult {
@@ -27,12 +28,14 @@ export default defineEventHandler(async (event): Promise<PreviewResult> => {
     throw createError({ statusCode: 403, statusMessage: 'Only the account owner can manage billing' })
   }
 
-  const body = await readBody<{ planId: string; interval: 'monthly' | 'annual'; extraProfessionals?: number; growth?: boolean }>(event)
+  const body = await readBody<{ planId: string; interval: 'monthly' | 'annual'; extraProfessionals?: number; growth?: boolean; receptionist?: boolean }>(event)
   if (!body?.planId || (body.interval !== 'monthly' && body.interval !== 'annual')) {
     throw createError({ statusCode: 400, statusMessage: 'planId and interval are required' })
   }
   const extraProfessionals = Math.max(0, Math.trunc(body.extraProfessionals ?? 0))
   const wantsGrowth = body.growth === true
+  // Never alongside Growth, exactly as subscribe.post.ts decides it.
+  const wantsReceptionist = receptionistLineWanted({ receptionist: body.receptionist, growth: wantsGrowth, planId: body.planId })
 
   const serviceRole = serverSupabaseServiceRole<Database>(event)
   const { data: plan } = await serviceRole.from('plans').select('*').eq('id', body.planId).maybeSingle()
@@ -48,6 +51,10 @@ export default defineEventHandler(async (event): Promise<PreviewResult> => {
   const growth = await growthAddonPrices(serviceRole, body.interval)
   if (wantsGrowth && !growth.priceId) {
     throw createError({ statusCode: 500, statusMessage: 'Growth has no Stripe price configured for this billing interval' })
+  }
+  const receptionist = await receptionistAddonPrices(serviceRole, body.interval)
+  if (wantsReceptionist && !receptionist.priceId) {
+    throw createError({ statusCode: 500, statusMessage: 'The AI receptionist has no Stripe price configured for this billing interval' })
   }
 
   const { data: subscription } = await serviceRole
@@ -93,6 +100,12 @@ export default defineEventHandler(async (event): Promise<PreviewResult> => {
     items.push(growthItem ? { id: growthItem.id, price: growth.priceId, quantity: 1 } : { price: growth.priceId, quantity: 1 })
   } else if (growthItem) {
     items.push({ id: growthItem.id, deleted: true })
+  }
+  const receptionistItem = current.items.data.find((item) => receptionist.allPriceIds.has(item.price.id))
+  if (wantsReceptionist && receptionist.priceId) {
+    items.push(receptionistItem ? { id: receptionistItem.id, price: receptionist.priceId, quantity: 1 } : { price: receptionist.priceId, quantity: 1 })
+  } else if (receptionistItem) {
+    items.push({ id: receptionistItem.id, deleted: true })
   }
   // Same as subscribe.post.ts: the fee follows the interval.
   const verifactuFee = await verifactuFeeItemFor(serviceRole, teamMember.account_id, body.interval, current.items.data)

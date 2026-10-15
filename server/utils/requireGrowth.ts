@@ -71,3 +71,31 @@ export function hasGrowth(
   if (!entitled) return false
   return subscription.status !== 'locked' && subscription.status !== 'canceled'
 }
+
+// The AI receptionist, which Growth includes and which is also sold on its
+// own (20261014184755_receptionist_addon.sql). Its own question rather than
+// hasGrowth(), because an account with only the receptionist must get it
+// without the lead pipeline, reputation and the rest of Growth -- and the
+// account store's hasReceptionist getter must give the same answer.
+
+export function hasReceptionist(
+  subscription: { plan_id?: string | null; growth_addon?: boolean | null; receptionist_addon?: boolean | null; status?: string | null; comped?: boolean | null } | null,
+): boolean {
+  if (hasGrowth(subscription)) return true
+  if (!subscription?.receptionist_addon) return false
+  // The same two statuses that stop Growth stop this; past_due keeps it, for
+  // the reason hasGrowth gives.
+  return subscription.status !== 'locked' && subscription.status !== 'canceled'
+}
+
+/** requireGrowth's two questions, in the same order, for the receptionist's own routes. */
+export async function requireReceptionist(event: H3Event): Promise<GrowthAccess> {
+  const access = await requirePermission(event, 'communication_config')
+  if (!hasReceptionist(access.subscription)) {
+    throw createError({
+      statusCode: 402,
+      statusMessage: 'The AI receptionist is not on this subscription. Add it, or Growth, under Billing.',
+    })
+  }
+  return access
+}

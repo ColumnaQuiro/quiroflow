@@ -121,6 +121,8 @@ export interface SubscriptionShape {
   growthBilled: boolean
   /** Clinic locations billed the VeriFactu fee (0 until the clinic is live). */
   verifactuLocations?: number
+  /** The AI receptionist bought on its own, as its own line (never alongside Growth). */
+  receptionistBilled?: boolean
 }
 
 /**
@@ -135,13 +137,15 @@ export function pricePerMonth(
   subscription: SubscriptionShape,
   addon: AddonPricing | null,
   verifactuFee: AddonPricing | null = null,
+  receptionist: AddonPricing | null = null,
 ): number {
   const annual = subscription.interval === 'annual'
   const base = annual ? plan.annualPriceCents : plan.monthlyPriceCents
   const seats = subscription.extraProfessionals * (plan.extraProfessionalPriceCents ?? 0)
   const growth = subscription.growthBilled && addon ? (annual ? addon.annualPriceCents : addon.monthlyPriceCents) : 0
   const verifactu = verifactuFee ? (subscription.verifactuLocations ?? 0) * (annual ? verifactuFee.annualPriceCents : verifactuFee.monthlyPriceCents) : 0
-  return base + seats + growth + verifactu
+  const receptionistLine = subscription.receptionistBilled && receptionist ? (annual ? receptionist.annualPriceCents : receptionist.monthlyPriceCents) : 0
+  return base + seats + growth + verifactu + receptionistLine
 }
 
 /**
@@ -159,8 +163,9 @@ export function nextChargeTotal(
   subscription: SubscriptionShape,
   addon: AddonPricing | null,
   verifactuFee: AddonPricing | null = null,
+  receptionist: AddonPricing | null = null,
 ): number {
-  const perMonth = pricePerMonth(plan, subscription, addon, verifactuFee)
+  const perMonth = pricePerMonth(plan, subscription, addon, verifactuFee, receptionist)
   return subscription.interval === 'annual' ? perMonth * MONTHS_PER_YEAR : perMonth
 }
 

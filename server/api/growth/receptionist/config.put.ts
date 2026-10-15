@@ -1,4 +1,4 @@
-import { requireGrowth } from '~/server/utils/requireGrowth'
+import { requireReceptionist } from '~/server/utils/requireGrowth'
 import { loadReceptionistConfig, loadTypeChoices, readAccountTypes } from '~/server/utils/receptionist'
 import { checkBookableIds } from '~/utils/receptionistTypes'
 import type { TablesUpdate } from '~/types/database.types'
@@ -31,7 +31,7 @@ function intInRange(value: unknown, min: number, max: number, label: string) {
 }
 
 export default defineEventHandler(async (event) => {
-  const { supabase, teamMember } = await requireGrowth(event)
+  const { supabase, teamMember } = await requireReceptionist(event)
   const body = (await readBody<Body>(event).catch(() => null)) ?? ({} as Body)
 
   // Ensures the row exists before the update, so a first save works.

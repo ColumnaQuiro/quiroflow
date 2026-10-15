@@ -32,6 +32,7 @@ interface SubscriptionRow {
   billing_interval: string
   extra_professionals: number
   growth_addon: boolean
+  receptionist_addon: boolean
   verifactu_locations: number
   trial_ends_at: string | null
   comped: boolean
@@ -100,6 +101,10 @@ const { loading: loadingPortal, openPortal } = useBillingPortal()
 const subscription = ref<SubscriptionRow | null>(null)
 const plans = ref<PlanRow[]>([])
 const growthAddon = ref<AddonRow | null>(null)
+const receptionistAddon = ref<AddonRow | null>(null)
+const receptionistPricing = computed(() =>
+  receptionistAddon.value ? { monthlyPriceCents: receptionistAddon.value.monthly_price_cents, annualPriceCents: receptionistAddon.value.annual_price_cents } : null,
+)
 // 7,50 EUR a month per location from a clinic's VeriFactu live date. Not
 // chosen here: it follows Settings > VeriFactu and the number of locations.
 const verifactuFee = ref<AddonRow | null>(null)
@@ -120,7 +125,7 @@ async function loadSubscription() {
   const { data } = await supabase
     .from('subscriptions')
     .select(
-      'status, billing_interval, extra_professionals, growth_addon, verifactu_locations, trial_ends_at, comped, created_at, stripe_customer_id, stripe_subscription_id, plan_id, plans(name, monthly_price_cents, annual_price_cents, included_professionals, included_clinics, included_storage_gb, extra_professional_price_cents)',
+      'status, billing_interval, extra_professionals, growth_addon, receptionist_addon, verifactu_locations, trial_ends_at, comped, created_at, stripe_customer_id, stripe_subscription_id, plan_id, plans(name, monthly_price_cents, annual_price_cents, included_professionals, included_clinics, included_storage_gb, extra_professional_price_cents)',
     )
     .eq('account_id', store.accountId!)
     .maybeSingle()
@@ -172,11 +177,14 @@ const currentPlanIncludesGrowth = computed(() => planIncludesGrowth(subscription
 
 /** Whether Growth is a billed line of its own, rather than bundled into the plan. */
 const growthBilled = computed(() => !!subscription.value?.growth_addon && !currentPlanIncludesGrowth.value)
+/** The AI receptionist bought on its own; never billed alongside Growth, which includes it. */
+const receptionistBilled = computed(() => !!subscription.value?.receptionist_addon && !subscription.value?.growth_addon && !currentPlanIncludesGrowth.value)
 
 const shape = computed(() => ({
   interval: interval.value,
   extraProfessionals: subscription.value?.extra_professionals ?? 0,
   growthBilled: growthBilled.value,
+  receptionistBilled: receptionistBilled.value,
   verifactuLocations: subscription.value?.verifactu_locations ?? 0,
 }))
 
@@ -197,7 +205,7 @@ const addonPricing = computed(() =>
 )
 
 const perMonthCents = computed(() =>
-  planPricing.value ? pricePerMonth(planPricing.value, shape.value, addonPricing.value, verifactuFeePricing.value) : 0,
+  planPricing.value ? pricePerMonth(planPricing.value, shape.value, addonPricing.value, verifactuFeePricing.value, receptionistPricing.value) : 0,
 )
 
 // Stripe's own figure wherever it exists. The local computation is the
@@ -206,7 +214,7 @@ const perMonthCents = computed(() =>
 const usingStripeAmount = computed(() => !!billingInfo.value?.upcoming)
 const nextChargeCents = computed(() => {
   if (billingInfo.value?.upcoming) return billingInfo.value.upcoming.totalCents
-  return planPricing.value ? nextChargeTotal(planPricing.value, shape.value, addonPricing.value, verifactuFeePricing.value) : null
+  return planPricing.value ? nextChargeTotal(planPricing.value, shape.value, addonPricing.value, verifactuFeePricing.value, receptionistPricing.value) : null
 })
 const nextChargeSubtotal = computed(() => billingInfo.value?.upcoming?.subtotalCents ?? null)
 const nextChargeTax = computed(() => billingInfo.value?.upcoming?.taxCents ?? null)
@@ -238,6 +246,13 @@ const planLineItems = computed(() => {
       key: 'growth',
       label: t('Growth add-on', 'Complemento Growth'),
       amountCents: annual ? growthAddon.value.annual_price_cents : growthAddon.value.monthly_price_cents,
+    })
+  }
+  if (receptionistBilled.value && receptionistAddon.value) {
+    items.push({
+      key: 'receptionist',
+      label: t('AI receptionist', 'Recepcionista IA'),
+      amountCents: annual ? receptionistAddon.value.annual_price_cents : receptionistAddon.value.monthly_price_cents,
     })
   }
   const locations = sub.verifactu_locations ?? 0
@@ -383,6 +398,7 @@ onMounted(async () => {
   ])
   plans.value = planRows ?? []
   growthAddon.value = (addonRows ?? []).find((a) => a.id === 'growth') ?? null
+  receptionistAddon.value = (addonRows ?? []).find((a) => a.id === 'receptionist') ?? null
   verifactuFee.value = (addonRows ?? []).find((a) => a.id === 'verifactu') ?? null
   loading.value = false
 
@@ -458,6 +474,7 @@ async function addPaymentMethod() {
         interval: interval.value,
         extraProfessionals: sub.extra_professionals ?? 0,
         growth: !!sub.growth_addon,
+        receptionist: !!sub.receptionist_addon,
       },
     })
     if (result.url) {
@@ -534,6 +551,8 @@ async function addPaymentMethod() {
           :current-extra-seats="subscription.extra_professionals"
           :current-growth="!!subscription.growth_addon"
           :growth-addon="growthAddon"
+          :current-receptionist="receptionistBilled"
+          :receptionist-addon="receptionistAddon"
           :card="billingInfo?.card ?? null"
           :renewal-date="billingInfo?.nextPaymentDate ?? null"
           @back="changingPlan = false"

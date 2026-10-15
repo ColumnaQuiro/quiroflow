@@ -108,7 +108,7 @@ describe('Products and stock', () => {
     })
   })
 
-  it('refunds a product at its own IVA, not the clinic exemption', () => {
+  it('refunds a product at its own IVA, not the clinic exemption, and puts it back on the shelf', () => {
     cy.seedStaffAccount().then((account) => {
       // Exempt for its services, as a physiotherapy clinic is.
       cy.task('db:updateRows', { table: 'accounts', values: { factura_tax_exemption_code: 'E1', factura_tax_rate_bp: 0 }, match: { id: account.accountId } })
@@ -121,6 +121,9 @@ describe('Products and stock', () => {
           cy.reload()
           cy.contains('tr', 'Receipt', { timeout: 20000 }).click()
           cy.contains('button', 'Refund…').click()
+          // Back on the shelf with the refund, all of it by default.
+          cy.get('[data-cy=refund-restock]').should('contain', 'Almohada cervical')
+          cy.get('[data-cy="refund-restock-Almohada cervical"]').should('have.value', '1')
           cy.contains('Reason (optional)').parent().find('input').type('devolución')
           cy.get('.fixed').contains('button', 'Refund').click()
           cy.contains('Reason (optional)').should('not.exist')
@@ -133,6 +136,11 @@ describe('Products and stock', () => {
           }).then((rows) => {
             const rectifying = rows.find((r) => r.kind === 'rectificativa')!
             expect(rectifying).to.include({ amount_cents: -3630, tax_rate_bp: 2100, tax_base_cents: -3000, tax_amount_cents: -630, tax_exemption_code: null })
+          })
+          cy.task('db:selectRows', { table: 'services_products', columns: 'stock_units', match: { id: product!.id } }).its('0.stock_units').should('eq', 5)
+          cy.task<{ kind: string; delta: number; reason: string | null }[]>('db:selectRows', { table: 'product_stock_movements', columns: 'kind, delta, reason', match: { product_id: product!.id, kind: 'return' } }).then((rows) => {
+            expect(rows).to.have.length(1)
+            expect(rows[0]).to.include({ delta: 1, reason: 'devolución' })
           })
         })
       })

@@ -76,7 +76,7 @@ const emit = defineEmits<{
   deletePayment: [payload: { paymentId: string; invoiceId: string | null; amountCents: number }]
   changePaymentMethod: [payload: { paymentId: string; method: string }]
   writeOffInvoice: [invoiceId: string]
-  refundInvoice: [payload: { invoiceId: string | null; paymentId: string | null; amountCents: number; reason: string; method: string }]
+  refundInvoice: [payload: { invoiceId: string | null; paymentId: string | null; amountCents: number; reason: string; method: string; restock: { productId: string; units: number }[] }]
   creditsChanged: []
 }>()
 
@@ -479,6 +479,29 @@ function submitMethodChange() {
   closeMethodModal()
 }
 
+// A receipt that sold products (Settings > Products & stock): what can still
+// come back to the shelf -- sold on it, less returned against it already --
+// offered with the refund, all of it by default. Read from the receipt's own
+// stock movements, which is what return_product_stock() checks too.
+const refundProducts = ref<{ productId: string; name: string; returnable: number; units: number }[]>([])
+watch(refundModalInvoiceId, async (invoiceId) => {
+  refundProducts.value = []
+  if (!invoiceId) return
+  const { data } = await supabase
+    .from('product_stock_movements')
+    .select('product_id, kind, delta, services_products(name)')
+    .eq('invoice_id', invoiceId)
+    .in('kind', ['sale', 'return'])
+  const byProduct = new Map<string, { name: string; returnable: number }>()
+  for (const m of (data as unknown as { product_id: string; delta: number; services_products: { name: string } | null }[] | null) ?? []) {
+    const p = byProduct.get(m.product_id) ?? { name: m.services_products?.name ?? '', returnable: 0 }
+    p.returnable -= m.delta
+    byProduct.set(m.product_id, p)
+  }
+  if (refundModalInvoiceId.value !== invoiceId) return
+  refundProducts.value = [...byProduct.entries()].filter(([, p]) => p.returnable > 0).map(([productId, p]) => ({ productId, name: p.name, returnable: p.returnable, units: p.returnable }))
+})
+
 function closeRefundModal() {
   refundModalOpen.value = false
   refundModalInvoiceId.value = null
@@ -495,6 +518,7 @@ function submitRefund() {
     amountCents,
     reason: refundReason.value,
     method: refundMethod.value,
+    restock: refundProducts.value.map((p) => ({ productId: p.productId, units: Math.max(0, Math.min(p.returnable, Math.floor(Number(p.units) || 0))) })).filter((p) => p.units > 0),
   })
   closeRefundModal()
 }
@@ -894,6 +918,17 @@ async function sendStatement() {
         <select v-model="refundMethod" class="bg-surface mt-0.5 w-full rounded-ctlSm border border-line-control px-2 py-1.5 text-[13px]">
           <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
         </select>
+      </div>
+      <div v-if="refundProducts.length" class="mt-3" data-cy="refund-restock">
+        <p class="text-[11px] text-ink-muted">{{ t('Back to stock (units)', 'Vuelve al stock (unidades)') }}</p>
+        <label v-for="p in refundProducts" :key="p.productId" class="mt-1 flex items-center justify-between gap-2 text-[13px] text-ink-700">
+          <span class="min-w-0 truncate">{{ p.name }}</span>
+          <span class="flex items-center gap-1.5">
+            <input v-model.number="p.units" type="number" min="0" :max="p.returnable" class="w-16 rounded-ctlSm border border-line-control px-2 py-1 text-right text-[13px]" :data-cy="`refund-restock-${p.name}`" />
+            <span class="text-[12px] text-ink-faint">/ {{ p.returnable }}</span>
+          </span>
+        </label>
+        <p class="mt-1 text-[11.5px] text-ink-faint">{{ t('0 if it is not coming back (opened, broken).', '0 si no vuelve (abierto, roto).') }}</p>
       </div>
       <div class="mt-3">
         <label class="block text-[11px] text-ink-muted">{{ t('Reason (optional)', 'Motivo (opcional)') }}</label>

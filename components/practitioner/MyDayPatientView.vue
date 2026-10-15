@@ -132,6 +132,16 @@ async function signAndComplete() {
     <!-- The visit: today's note with its listing beside it, and the last
     visit beside that. The bar with Sign & complete stays in view while the
     rest scrolls (no overflow-hidden on the card: it would stop the sticky bar). -->
+    <!-- The plan is ending: the review, and what comes next. Nothing otherwise. -->
+    <AppointmentsPlanRenewal
+      v-if="store.accountId"
+      :patient-id="appointment.patient_id"
+      :account-id="store.accountId"
+      :team-member-id="store.teamMember?.id ?? null"
+      :editable="can('patients_edit')"
+      :can-sell-bono="can('billing_access')"
+      :report-to="`/patients/${appointment.patient_id}?tab=progress`"
+    />
     <div class="rounded-card border border-line bg-surface shadow-card">
       <div class="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-t-card border-b border-line bg-surface px-5 py-4">
         <div class="flex min-w-0 items-center gap-3">

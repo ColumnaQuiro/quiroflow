@@ -728,6 +728,16 @@ watch(
           </div>
         </section>
 
+        <!-- The plan is ending: the review, and what comes next (web My Day has the same). -->
+        <AppointmentsPlanRenewal
+          v-if="appointment?.patient_id && context"
+          :patient-id="appointment.patient_id"
+          :account-id="context.accountId"
+          :team-member-id="context.teamMemberId"
+          :editable="can('patients_edit')"
+          :can-sell-bono="can('billing_access')"
+        />
+
         <!-- Today's note -->
         <section v-if="canReadNotes" class="rounded-card border border-line bg-surface shadow-card px-3.5 py-3" data-cy="visit-note">
           <div class="mb-1.5 flex items-center justify-between">

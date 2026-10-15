@@ -3,6 +3,7 @@ import type { AppointmentPanelInputs } from '~/composables/useAppointmentPanelLo
 import { orderTypes } from '~/utils/appointmentTypes'
 import { listingSummary, sideLettersFor, type Listings } from '~/utils/spinalListings'
 import type { NoShowRisk } from '~/utils/noShowRisk'
+import { renewalDue } from '~/utils/planRenewal'
 // PracticeHub's "Practitioner Dashboard" is a chronological worklist of a
 // practitioner's own day, click a patient to jump straight into charting.
 // Not built: PH's grid mode (patients currently "with practitioner") --
@@ -171,6 +172,7 @@ async function loadDay(silent = false) {
     return { ...a, listing: listingSummary(listingOf(r), (x) => x, sideLettersFor(t)) }
   })
   chartedAppointmentIds.value = new Set(rows.filter((a) => (a.visit_notes ?? []).length > 0).map((a) => a.id))
+  loadRenewals([...new Set(appointments.value.map((a) => a.patient_id).filter(Boolean))])
 
   // Keep the selection pointed at the fresh row (not the stale pre-reload
   // object) so the charting pane's header/status reflect what just changed.
@@ -179,6 +181,29 @@ async function loadDay(silent = false) {
   }
 
   loading.value = false
+}
+
+// "Revisión" beside a patient whose care plan is ending (utils/planRenewal):
+// their latest plan, and how many of its visits they have attended. Read
+// after the list, so it never holds the day up.
+const renewalPatients = ref<Set<string>>(new Set())
+async function loadRenewals(patientIds: string[]) {
+  if (!patientIds.length) {
+    renewalPatients.value = new Set()
+    return
+  }
+  const { data: plans } = await supabase.from('care_plans').select('patient_id, total_visits, started_at').in('patient_id', patientIds).order('started_at', { ascending: false })
+  const latest = new Map<string, { total_visits: number; started_at: string }>()
+  for (const p of (plans as { patient_id: string; total_visits: number; started_at: string }[] | null) ?? []) if (!latest.has(p.patient_id)) latest.set(p.patient_id, p)
+  if (!latest.size) {
+    renewalPatients.value = new Set()
+    return
+  }
+  const since = [...latest.values()].map((p) => p.started_at).sort()[0]!
+  const { data: done } = await supabase.from('appointments').select('patient_id, starts_at').in('patient_id', [...latest.keys()]).eq('status', 'completed').is('deleted_at', null).gte('starts_at', since)
+  const count = new Map<string, number>()
+  for (const a of (done as { patient_id: string; starts_at: string }[] | null) ?? []) if (a.starts_at >= latest.get(a.patient_id)!.started_at) count.set(a.patient_id, (count.get(a.patient_id) ?? 0) + 1)
+  renewalPatients.value = new Set([...latest].filter(([id, p]) => renewalDue(p, count.get(id) ?? 0)).map(([id]) => id))
 }
 
 function appointmentsForDay(day: Date) {
@@ -454,6 +479,7 @@ onMounted(() => {
                     </span>
                     <span v-if="a.listing" class="block truncate text-[11.5px] font-medium text-ink-600" data-cy="worklist-listing">{{ a.listing }}</span>
                   </span>
+                  <span v-if="renewalPatients.has(a.patient_id)" class="inline-flex h-5 shrink-0 items-center rounded-pill bg-warning-bg px-2 text-[11px] font-semibold text-warning-text" data-cy="worklist-renewal">{{ t('Review', 'Revisión') }}</span>
                   <PractitionerNoShowRiskPill v-if="a.status === 'booked' && !a.checked_in_at" :risk="riskByPatient.get(a.patient_id)" />
                   <UiPill :tone="statusTone(a.status)" dot>{{ statusLabel(a.status) }}</UiPill>
                 </div>

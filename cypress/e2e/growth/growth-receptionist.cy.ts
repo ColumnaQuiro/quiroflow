@@ -195,6 +195,24 @@ describe('Growth AI receptionist', () => {
     cy.get('[data-test="usage-limit"]').should('have.value', '500')
   })
 
+  // Past 1,000 a month each further 1,000 is charged on the 1st -- but never
+  // to an account with nothing to charge it to. A seeded account has no
+  // Stripe customer, so it is counted and skipped, and no charge is claimed.
+  it('skips the monthly charge for an account with no Stripe customer', () => {
+    cy.task('db:seedReceptionistReplies', { accountId: account.accountId, count: 1200, createdAt: '2026-03-15T10:00:00Z' })
+    cy.request({
+      method: 'POST',
+      url: '/api/billing/receptionist-overage-cron',
+      headers: { 'x-cron-secret': Cypress.env('CRON_SECRET') ?? '' },
+      body: { month: '2026-03' },
+    }).then((res) => {
+      expect(res.status).to.eq(200)
+      expect(res.body.month).to.eq('2026-03-01')
+      expect(res.body.skipped).to.include(account.accountId)
+      expect(res.body.charged).not.to.include(account.accountId)
+    })
+  })
+
   // "Confirmar" on the reminder needs no answer: a list the clinic edits.
   it('lists the messages it leaves alone, and takes one more', () => {
     cy.visit('/growth/receptionist?growth=1')

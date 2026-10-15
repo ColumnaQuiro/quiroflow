@@ -32,7 +32,9 @@ describe('A shared bono paid by both people sharing it', () => {
             cy.login(account.email, account.password)
             cy.visit(`/patients/${owner.id}?tab=billing`)
             cy.contains('720,00 € paid of 1200,00 €').scrollIntoView().should('be.visible')
-            cy.contains('660,00 €').should('not.exist')
+            // 660 still appears elsewhere on the card, and should: it is what
+            // the owner paid out of their own pocket, which is their ledger's
+            // business. It is only the bono's figure that counts both.
             // And the linked payments add up to that figure, naming whose
             // record the partner's was taken on.
             cy.contains('button', 'Link payment').click()

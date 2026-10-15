@@ -70,6 +70,10 @@ async function load() {
     .eq('practitioner_id', who.value)
     .eq('status', 'booked')
     .is('deleted_at', null)
+    // A place in a group class keeps its class's time and practitioner (the
+    // appointments_class_place trigger): the class is handled from its own
+    // panel, not moved place by place.
+    .is('class_session_id', null)
     .gte('starts_at', range.value.start.toISOString())
     .lt('starts_at', range.value.end.toISOString())
     .order('starts_at')

@@ -354,8 +354,37 @@ watch(appointmentTypeId, () => {
   if (bypassPractitioner.value) teamMemberId.value = availablePractitioners.value[0]?.id ?? ''
 })
 
-const canContinueFromSelect = computed(() => !!clinicId.value && !!appointmentTypeId.value && !!teamMemberId.value)
-const showPractitionerCards = computed(() => !bypassPractitioner.value && availablePractitioners.value.length > 1)
+// --- group classes ---
+// A type with places (appointment_types.class_capacity) is booked into one of
+// its sessions, which the clinic puts on: the page lists them with the
+// places left (get_public_class_sessions) instead of asking for a
+// practitioner and offering free times. Full ones are shown, not offered.
+interface ClassSessionOption { id: string; starts_at: string; ends_at: string; practitioner_id: string; practitioner_name: string; room_name: string | null; places_left: number }
+const classInfo = ref<{ is_class: boolean; sessions: ClassSessionOption[] } | null>(null)
+const isClass = computed(() => !!classInfo.value?.is_class)
+let classToken = 0
+watch([appointmentTypeId, clinicId], async ([typeId, cId]) => {
+  const mine = ++classToken
+  classInfo.value = null
+  if (!typeId || !cId) return
+  const { data } = await supabase.rpc('get_public_class_sessions', { p_slug: slug, p_clinic_id: cId, p_appointment_type_id: typeId })
+  if (mine === classToken) classInfo.value = (data as unknown as { is_class: boolean; sessions: ClassSessionOption[] } | null) ?? { is_class: false, sessions: [] }
+}, { immediate: true })
+function pickClassSession(session: ClassSessionOption) {
+  if (session.places_left <= 0) return
+  teamMemberId.value = session.practitioner_id
+  selectedSlot.value = new Date(session.starts_at)
+  phase.value = 'details'
+}
+function classSessionLabel(session: ClassSessionOption) {
+  const d = new Date(session.starts_at)
+  const day = d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'short', timeZone: clinicTimeZone.value })
+  const time = d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: clinicTimeZone.value })
+  return `${day.charAt(0).toUpperCase()}${day.slice(1)} · ${time}`
+}
+
+const canContinueFromSelect = computed(() => !!clinicId.value && !!appointmentTypeId.value && (!!teamMemberId.value || isClass.value))
+const showPractitionerCards = computed(() => !isClass.value && !bypassPractitioner.value && availablePractitioners.value.length > 1)
 // Covers picking a service (from the dropdown) that resolves down to a
 // single practitioner after the page already mounted -- the onMounted skip
 // above only covers what's known at load time.
@@ -779,7 +808,7 @@ function backToSelect() {
 
 function proceedToDatetime() {
   phase.value = 'datetime'
-  loadMonthAvailability()
+  if (!isClass.value) loadMonthAvailability()
 }
 
 // --- iframe embed: report height to parent so a fixed-height iframe isn't needed ---
@@ -905,7 +934,33 @@ if (import.meta.client) {
             </UiBtn>
           </div>
 
-          <div class="mt-6 grid gap-6 sm:grid-cols-3">
+          <div v-if="isClass" class="mt-6 flex flex-col gap-2.5" data-cy="class-sessions">
+            <p v-if="!classInfo?.sessions.length" class="rounded-card border border-line bg-surface p-4 text-sm text-ink-muted">
+              No hay clases programadas por ahora. Llame a la clínica para apuntarse.
+            </p>
+            <button
+              v-for="session in classInfo?.sessions ?? []"
+              :key="session.id"
+              type="button"
+              class="flex items-center gap-3 rounded-card border p-3.5 text-left shadow-card"
+              :class="session.places_left > 0 ? 'border-line bg-surface hover:border-brand' : 'cursor-not-allowed border-line bg-surface-subtle'"
+              :disabled="session.places_left <= 0"
+              data-cy="class-session-option"
+              :data-places-left="session.places_left"
+              @click="pickClassSession(session)"
+            >
+              <span class="min-w-0 flex-1">
+                <span class="block text-[15px] font-semibold" :class="session.places_left > 0 ? 'text-ink-900' : 'text-ink-faint'">{{ classSessionLabel(session) }}</span>
+                <span class="block text-xs text-ink-muted">{{ session.practitioner_name }}<template v-if="session.room_name"> · {{ session.room_name }}</template></span>
+              </span>
+              <span
+                class="inline-flex h-6 shrink-0 items-center rounded-pill px-2.5 text-xs font-semibold"
+                :class="session.places_left > 0 ? 'bg-brand-tint text-brand-text' : 'bg-warning-bg text-warning-text'"
+              >{{ session.places_left > 0 ? (session.places_left === 1 ? 'Queda 1 plaza' : `Quedan ${session.places_left}`) : 'Completa' }}</span>
+            </button>
+            <p v-if="classInfo?.sessions.some((x) => x.places_left <= 0)" class="text-xs text-ink-muted">Si una clase está completa, llame a la clínica: le avisan si se libera una plaza.</p>
+          </div>
+          <div v-else class="mt-6 grid gap-6 sm:grid-cols-3">
             <div class="rounded-card border border-line bg-surface p-4 shadow-card">
               <div class="flex items-center justify-between">
                 <button type="button" class="rounded p-1 text-ink-faint hover:bg-surface-subtle" @click="prevMonth">&lsaquo;</button>

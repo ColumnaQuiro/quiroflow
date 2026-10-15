@@ -371,10 +371,56 @@ watch([appointmentTypeId, clinicId], async ([typeId, cId]) => {
   if (mine === classToken) classInfo.value = (data as unknown as { is_class: boolean; sessions: ClassSessionOption[] } | null) ?? { is_class: false, sessions: [] }
 }, { immediate: true })
 function pickClassSession(session: ClassSessionOption) {
-  if (session.places_left <= 0) return
+  if (session.places_left <= 0) {
+    waitlistFor.value = session
+    waitlistPosition.value = null
+    waitlistError.value = ''
+    return
+  }
+  waitlistFor.value = null
   teamMemberId.value = session.practitioner_id
   selectedSlot.value = new Date(session.starts_at)
   phase.value = 'details'
+}
+// A full class: the patient's name and how to reach them, and they join its
+// waitlist (join_public_class_waitlist). If a place is cancelled the clinic's
+// waitlist automation sends them a link to take it.
+const waitlistFor = ref<ClassSessionOption | null>(null)
+const waitlistPosition = ref<number | null>(null)
+const waitlistError = ref('')
+const joiningWaitlist = ref(false)
+const WAITLIST_REFUSALS: Record<string, string> = {
+  'That phone number does not look right': 'Ese número no parece correcto. Revíselo, por favor.',
+  'An email address is required': 'Indique su correo electrónico.',
+  'A phone number is required': 'Indique su número de móvil.',
+  'First name required': 'Indique su nombre.',
+  'You already have a place in this class': 'Ya tiene plaza en esta clase.',
+  'That class still has places: book one': 'Se ha liberado una plaza: puede reservarla.',
+}
+async function joinWaitlist() {
+  if (!waitlistFor.value) return
+  waitlistError.value = ''
+  phoneChecked.value = true
+  if (!firstName.value.trim() || !email.value.trim() || !looksLikePhoneNumber(phoneNumber.value, dialCode.value)) {
+    waitlistError.value = 'Indique su nombre, correo y un móvil válido.'
+    return
+  }
+  joiningWaitlist.value = true
+  const { data, error } = await supabase.rpc('join_public_class_waitlist', {
+    p_slug: slug,
+    p_session_id: waitlistFor.value.id,
+    p_first_name: firstName.value,
+    p_last_name: lastName.value,
+    p_email: email.value,
+    p_phone: phoneNumber.value,
+    p_country_code: dialCode.value,
+  })
+  joiningWaitlist.value = false
+  if (error) {
+    waitlistError.value = WAITLIST_REFUSALS[error.message] ?? 'No se ha podido apuntar. Inténtelo de nuevo o llame a la clínica.'
+    return
+  }
+  waitlistPosition.value = (data as { position: number } | null)?.position ?? null
 }
 function classSessionLabel(session: ClassSessionOption) {
   const d = new Date(session.starts_at)
@@ -943,8 +989,7 @@ if (import.meta.client) {
               :key="session.id"
               type="button"
               class="flex items-center gap-3 rounded-card border p-3.5 text-left shadow-card"
-              :class="session.places_left > 0 ? 'border-line bg-surface hover:border-brand' : 'cursor-not-allowed border-line bg-surface-subtle'"
-              :disabled="session.places_left <= 0"
+              :class="session.places_left > 0 ? 'border-line bg-surface hover:border-brand' : waitlistFor?.id === session.id ? 'border-brand bg-surface-subtle' : 'border-line bg-surface-subtle hover:border-warning-border'"
               data-cy="class-session-option"
               :data-places-left="session.places_left"
               @click="pickClassSession(session)"
@@ -956,9 +1001,34 @@ if (import.meta.client) {
               <span
                 class="inline-flex h-6 shrink-0 items-center rounded-pill px-2.5 text-xs font-semibold"
                 :class="session.places_left > 0 ? 'bg-brand-tint text-brand-text' : 'bg-warning-bg text-warning-text'"
-              >{{ session.places_left > 0 ? (session.places_left === 1 ? 'Queda 1 plaza' : `Quedan ${session.places_left}`) : 'Completa' }}</span>
+              >{{ session.places_left > 0 ? (session.places_left === 1 ? 'Queda 1 plaza' : `Quedan ${session.places_left}`) : 'Completa · lista de espera' }}</span>
             </button>
-            <p v-if="classInfo?.sessions.some((x) => x.places_left <= 0)" class="text-xs text-ink-muted">Si una clase está completa, llame a la clínica: le avisan si se libera una plaza.</p>
+            <div v-if="waitlistFor" class="rounded-card border border-line bg-surface p-4 shadow-card" data-cy="class-waitlist-join">
+              <template v-if="waitlistPosition === null">
+                <p class="text-base font-semibold text-ink-900">La clase está completa</p>
+                <p class="mt-1 text-sm text-ink-muted">Apúntese y, si se libera una plaza, le enviaremos un enlace para quedársela.</p>
+                <div class="mt-3 grid gap-3 sm:grid-cols-2">
+                  <label class="block text-sm font-medium text-ink-700">Nombre *<input v-model="firstName" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm" data-cy="waitlist-first-name" /></label>
+                  <label class="block text-sm font-medium text-ink-700">Apellidos<input v-model="lastName" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm" data-cy="waitlist-last-name" /></label>
+                  <label class="block text-sm font-medium text-ink-700">Correo electrónico *<input v-model="email" type="email" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm" data-cy="waitlist-email" /></label>
+                  <label class="block text-sm font-medium text-ink-700">Número de móvil *
+                    <span class="mt-1 flex gap-2">
+                      <select v-model="dialCode" class="rounded-ctl border border-line-control px-2 py-2 text-sm">
+                        <option v-for="c in COUNTRIES_BY_NAME" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }}</option>
+                      </select>
+                      <input v-model="phoneNumber" type="tel" class="w-full rounded-ctl border border-line-control px-3 py-2 text-sm" data-cy="waitlist-phone" />
+                    </span>
+                  </label>
+                </div>
+                <p v-if="waitlistError" role="alert" class="mt-2 text-sm text-danger-text">{{ waitlistError }}</p>
+                <UiBtn variant="primary" class="mt-3 w-full" :disabled="joiningWaitlist" data-cy="waitlist-join" @click="joinWaitlist">Apuntarme a la lista de espera</UiBtn>
+              </template>
+              <template v-else>
+                <p class="text-sm text-ink-muted">Está en la lista de espera en el puesto</p>
+                <p class="text-3xl font-bold text-ink-900" data-cy="waitlist-position">{{ waitlistPosition }}</p>
+                <p class="mt-1 text-sm text-ink-muted">Si se libera una plaza le avisaremos con un enlace para quedársela.</p>
+              </template>
+            </div>
           </div>
           <div v-else class="mt-6 grid gap-6 sm:grid-cols-3">
             <div class="rounded-card border border-line bg-surface p-4 shadow-card">

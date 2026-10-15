@@ -33,7 +33,7 @@ export default defineEventHandler(async (event) => {
   const service = serverSupabaseServiceRole<Database>(event)
   const { data: appt } = await service
     .from('appointments')
-    .select('id, account_id, clinic_id, room_id, practitioner_id, appointment_type_id, patient_id, starts_at, ends_at, status')
+    .select('id, account_id, clinic_id, room_id, practitioner_id, appointment_type_id, patient_id, starts_at, ends_at, status, class_session_id')
     .eq('id', body.appointmentId)
     .maybeSingle()
   if (!appt || appt.status !== 'cancelled') return { cancelled: true }
@@ -80,6 +80,7 @@ export default defineEventHandler(async (event) => {
       appointmentTypeId: appt.appointment_type_id,
       startsAt: appt.starts_at,
       endsAt: appt.ends_at,
+      classSessionId: appt.class_session_id,
     })) > 0
   })
   return { cancelled: true, offered }

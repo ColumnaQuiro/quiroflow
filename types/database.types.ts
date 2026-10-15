@@ -7065,6 +7065,8 @@ export type Database = {
       }
       waitlist_entries: {
         Row: {
+          source: string | null
+          class_session_id: string | null
           account_id: string
           appointment_type_id: string | null
           booked_appointment_id: string | null
@@ -7087,6 +7089,8 @@ export type Database = {
           offered_to_all: boolean
         }
         Insert: {
+          source?: string | null
+          class_session_id?: string | null
           account_id: string
           appointment_type_id?: string | null
           booked_appointment_id?: string | null
@@ -7109,6 +7113,8 @@ export type Database = {
           offered_to_all?: boolean
         }
         Update: {
+          source?: string | null
+          class_session_id?: string | null
           account_id?: string
           appointment_type_id?: string | null
           booked_appointment_id?: string | null
@@ -8096,6 +8102,10 @@ export type Database = {
         Returns: { invoice_id: string; payment_id: string; amount_cents: number; tax_rate_bp: number; description: string }[]
       }
       get_public_class_sessions: { Args: { p_slug: string; p_clinic_id: string; p_appointment_type_id: string }; Returns: Json }
+      join_public_class_waitlist: {
+        Args: { p_slug: string; p_session_id: string; p_first_name: string; p_last_name: string; p_email: string; p_phone: string; p_country_code?: string }
+        Returns: Json
+      }
       check_in_my_appointment: { Args: { p_appointment_id: string }; Returns: string | null }
       set_my_pain_score: { Args: { p_appointment_id: string; p_score: number }; Returns: boolean }
       my_pain_context: { Args: { p_appointment_id: string }; Returns: Json }

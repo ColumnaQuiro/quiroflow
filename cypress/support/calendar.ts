@@ -88,10 +88,23 @@ export function yesterday(): Date {
  */
 export function openNewAppointmentPanel(practitionerName: string = SEEDED_PRACTITIONER) {
   cy.get('[data-testid="practitioner-tabs"]').contains('button', practitionerName).should('be.visible')
-  // First click after a fresh visit can still race Vue hydration (see
-  // commands.ts clickUntil) -- that is a separate problem from the data
-  // above, and both have to be past before the panel is usable.
-  cy.clickUntil('button:contains("New Appointment")', PATIENT_SEARCH)
+  // First click after a fresh visit can still race Vue hydration -- that is a
+  // separate problem from the data above, and both have to be past before the
+  // panel is usable. Not clickUntil: the panel is lazy-loaded, so under CI
+  // load it can still be arriving when clickUntil looks for it, and its second
+  // click then lands on the panel now covering the button ("is being covered
+  // by another element: <label for=patient-q>"). Opening again is harmless --
+  // the same 09:00 prefill -- so the retry is forced and waits a little first.
+  clickNewAppointmentUntilOpen()
+}
+function clickNewAppointmentUntilOpen(attempt = 0) {
+  cy.get('[data-cy=new-appointment]').click({ force: true })
+  cy.wait(400)
+  cy.get('body').then(($body) => {
+    if ($body.find(PATIENT_SEARCH).length) return
+    if (attempt >= 10) throw new Error('The New Appointment panel never opened')
+    clickNewAppointmentUntilOpen(attempt + 1)
+  })
 }
 
 /**

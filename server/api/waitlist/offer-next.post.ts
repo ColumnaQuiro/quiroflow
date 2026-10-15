@@ -21,7 +21,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: appt } = await supabase
     .from('appointments')
-    .select('account_id, clinic_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status')
+    .select('account_id, clinic_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, class_session_id')
     .eq('id', body.appointmentId)
     .maybeSingle()
   if (!appt) return { offered: false, count: 0 }
@@ -70,6 +70,10 @@ export default defineEventHandler(async (event) => {
     practitionerId: appt.practitioner_id,
     appointmentTypeId: appt.appointment_type_id,
     ...slot,
+    // A cancelled place in a group class goes to that class's own queue. (A
+    // place never moves on its own -- it keeps its class's time -- so a move
+    // frees no class place.)
+    classSessionId: body.movedFrom ? null : appt.class_session_id,
   })
 
   return { offered: offered > 0, count: offered }

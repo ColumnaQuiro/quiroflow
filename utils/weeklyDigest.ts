@@ -1,3 +1,4 @@
+import { GOAL_LABELS, goalPace, goalValue, type GoalProgress } from './monthlyGoals'
 import { formatEur } from './billing'
 import { isReceipt } from './paymentReceipts'
 import { clinicDateOf, localDay } from './clinicClock'
@@ -68,6 +69,8 @@ export interface DigestEmail {
   methodName: (key: string) => string
   /** The app's origin, for the links to the reports. */
   origin: string
+  /** This month's goals so far (utils/monthlyGoals.ts), when the owner set any. */
+  goals?: { monthLabel: string; elapsed: number; items: GoalProgress[] }
 }
 
 /** The push: one line, the headline figures. */
@@ -122,11 +125,17 @@ export function digestEmailHtml(d: DigestEmail): string {
         ${row('Pacientes nuevos', String(w.newPatients), digestChange(w.newPatients, b.newPatients), '/reports/retention')}
         ${row('Citas reservadas para esta semana', String(d.nextWeekBooked), '', '/calendar')}
       </table>
+      ${d.goals?.items.length ? `<h2 style="margin:20px 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:#6B7183">Objetivos de ${esc(d.goals.monthLabel)}</h2>
+      <table role="presentation" style="width:100%;border-collapse:collapse">
+        ${d.goals.items.map((g) => row(GOAL_LABELS[g.metric][1], `${goalValue(g.metric, g.actual)} / ${goalValue(g.metric, g.target)}`, GOAL_PACE_ES[goalPace(g, d.goals!.elapsed)], '/dashboard')).join('')}
+      </table>` : ''}
       <p style="margin:20px 0 0"><a href="${d.origin}/reports" style="display:inline-block;background:#4F46E5;color:#fff;text-decoration:none;font-weight:600;font-size:14px;padding:10px 16px;border-radius:9px">Ver los informes</a></p>
     </div>
     <p style="margin:14px 4px 0;color:#9097A6;font-size:12px">Lo recibes por ser propietario de ${esc(d.clinicName)} en QuiroFlow. Puedes desactivarlo en la app: Perfil &gt; Avisos &gt; Resumen semanal.</p>
   </div></body></html>`
 }
+
+const GOAL_PACE_ES = { done: 'Conseguido', on_track: 'En camino', behind: 'Por detrás' } as const
 
 /** Monday, from 8:00 to 8:20 where the clinic is: the cron's window (it runs every 15 minutes). */
 export function digestDue(now: Date, timeZone: string): boolean {

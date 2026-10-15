@@ -22,6 +22,8 @@ const props = defineProps<{
   canContact: boolean
   canEdit: boolean
   canManageRecord: boolean
+  /** "Export their data (GDPR)": owners only, as the endpoint is. */
+  canExport?: boolean
   canBook: boolean
   /** Take payment leads to the Money tab, which billing_history_view gates. */
   canCharge?: boolean
@@ -32,7 +34,7 @@ const props = defineProps<{
   tutor: { id: string; first_name: string; last_name: string | null } | null
 }>()
 
-defineEmits<{ message: []; book: []; charge: []; archive: []; merge: []; remove: []; photoUpdated: [] }>()
+defineEmits<{ message: []; book: []; charge: []; archive: []; merge: []; remove: []; exportData: []; photoUpdated: [] }>()
 
 const t = useT()
 
@@ -220,6 +222,15 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
             @click="closeMenu(false); $emit('merge')"
           >
             {{ t('Merge with another record', 'Fusionar con otra ficha') }}
+          </button>
+          <button
+            v-if="canExport"
+            type="button"
+            class="block w-full px-3 py-3 text-left text-[13px] text-ink-700 outline-none hover:bg-surface-subtle focus-visible:bg-surface-subtle lg:py-2"
+            data-cy="patient-export-data"
+            @click="closeMenu(false); $emit('exportData')"
+          >
+            {{ t('Export their data (GDPR)', 'Exportar sus datos (RGPD)') }}
           </button>
           <!-- Behind a divider, in danger, last. It used to sit next to
                "Book visit". -->

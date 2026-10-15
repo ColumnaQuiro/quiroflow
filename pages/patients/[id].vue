@@ -212,6 +212,27 @@ async function toggleArchived() {
 // Delete is a dialog rather than a confirm() because it has to count what
 // goes, and because it sometimes has to refuse: a patient with an issued
 // factura cannot be deleted at all. See PatientsDeleteDialog.
+// "Exportar sus datos (RGPD)": everything held about the patient as a ZIP
+// (server/api/patients/[id]/gdpr-export.post.ts), for a right of access
+// request. Built on the server, then downloaded from a link valid an hour.
+const authedFetch = useAuthedFetch()
+const exporting = ref(false)
+const exportUrl = ref('')
+async function exportData() {
+  if (exporting.value) return
+  exporting.value = true
+  showToast(t('Preparing their data…', 'Preparando sus datos…'))
+  try {
+    const r = await authedFetch<{ url: string; fileName: string }>(`/api/patients/${patientId}/gdpr-export`, { method: 'POST' })
+    exportUrl.value = r.url
+    window.location.assign(r.url)
+    showToast(t(`Downloaded: ${r.fileName}`, `Descargado: ${r.fileName}`))
+  } catch (e: any) {
+    showToast(e?.data?.statusMessage ?? t("Couldn't export their data.", 'No se han podido exportar sus datos.'), 'error')
+  } finally {
+    exporting.value = false
+  }
+}
 const deleteOpen = ref(false)
 async function onDeleted() {
   deleteOpen.value = false
@@ -293,6 +314,7 @@ function onTabKeydown(event: KeyboardEvent) {
         :can-contact="canContact"
         :can-edit="can('patients_edit')"
         :can-manage-record="can('patients_delete_merge')"
+        :can-export="store.isOwner"
         :can-book="true"
         :can-charge="can('billing_history_view') && can('payments_allocate')"
         :archiving="archiving"
@@ -305,6 +327,7 @@ function onTabKeydown(event: KeyboardEvent) {
         @archive="toggleArchived"
         @merge="mergeOpen = true"
         @remove="deleteOpen = true"
+        @export-data="exportData"
       />
     </div>
 

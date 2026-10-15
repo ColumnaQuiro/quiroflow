@@ -1,6 +1,7 @@
 import type { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { sendPushToUsers } from '~/server/utils/pushNotifications'
+import { goalsProgress } from '~/server/utils/monthlyGoals'
 import { sendResendEmail } from '~/server/utils/resend'
 import { DEFAULT_CLINIC_TIMEZONE, clinicDateOf, nextDate, startOfLocalDate } from '~/utils/clinicClock'
 import { digestDue, digestEmailHtml, digestPushBody, digestWeek, type DigestPayment, type DigestWeek } from '~/utils/weeklyDigest'
@@ -29,8 +30,11 @@ async function allRows<T>(page: (from: number, to: number) => PromiseLike<{ data
   return out
 }
 
-/** Last week's figures for one account, between two instants. */
-async function weekFigures(service: Service, accountId: string, from: Date, to: Date): Promise<DigestWeek> {
+/**
+ * One account's figures between two instants: last week's for the Monday
+ * summary, the month so far for the monthly goals (server/utils/monthlyGoals.ts).
+ */
+export async function figuresBetween(service: Service, accountId: string, from: Date, to: Date): Promise<DigestWeek> {
   const [payments, invoices, visits] = await Promise.all([
     allRows<{ amount_cents: number; method: string; invoices: { status: string } | null }>((a, b) =>
       service.from('payments').select('amount_cents, method, invoices!payments_invoice_id_fkey(status)').eq('account_id', accountId).gte('paid_at', from.toISOString()).lt('paid_at', to.toISOString()).order('id').range(a, b) as never,
@@ -102,8 +106,8 @@ export async function sendOwnerWeeklyDigests(service: Service, origin: string, n
       const at = (d: string) => startOfLocalDate(d, tz)
 
       const [thisWeek, lastWeek, owed, booked, methods, account] = await Promise.all([
-        weekFigures(service, accountId, at(weekStart), at(today)),
-        weekFigures(service, accountId, at(priorStart), at(weekStart)),
+        figuresBetween(service, accountId, at(weekStart), at(today)),
+        figuresBetween(service, accountId, at(priorStart), at(weekStart)),
         allRows<{ outstanding_cents: number | null }>((a, b) => service.from('patient_live_balances').select('outstanding_cents').eq('account_id', accountId).gt('outstanding_cents', 0).order('patient_id').range(a, b) as never),
         service.from('appointments').select('id', { count: 'exact', head: true }).eq('account_id', accountId).eq('status', 'booked').is('deleted_at', null).gte('starts_at', at(today).toISOString()).lt('starts_at', at(nextWeekEnd).toISOString()),
         service.from('payment_methods').select('key, name').eq('account_id', accountId),
@@ -125,6 +129,11 @@ export async function sendOwnerWeeklyDigests(service: Service, origin: string, n
           return name && !['Cash', 'Card', 'Bank transfer', 'Bizum', 'Other'].includes(name) ? name : (SEEDED_METHOD_ES[key] ?? name ?? key)
         },
         origin,
+        // This month's goals so far, when the owner set any: a Monday is a
+        // good moment to see "behind" while there is still month left.
+        goals: await goalsProgress(service, accountId, now)
+          .then((g) => (g.goals.length ? { monthLabel: new Date(`${g.month}-15T12:00:00Z`).toLocaleDateString('es-ES', { month: 'long', timeZone: 'UTC' }), elapsed: g.elapsed, items: g.goals } : undefined))
+          .catch(() => undefined),
       }
 
       const html = digestEmailHtml(digest)

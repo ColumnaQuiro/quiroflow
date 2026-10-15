@@ -16,6 +16,7 @@ import DashboardNoShowRateMiniWidget from '~/components/dashboard/NoShowRateMini
 import DashboardRecallsDueMiniWidget from '~/components/dashboard/RecallsDueMiniWidget.vue'
 import DashboardContinuityAlertsMiniWidget from '~/components/dashboard/ContinuityAlertsMiniWidget.vue'
 import DashboardNextUpTodayMiniWidget from '~/components/dashboard/NextUpTodayMiniWidget.vue'
+import DashboardMonthlyGoalsWidget from '~/components/dashboard/MonthlyGoalsWidget.vue'
 
 // <component :is="'StringName'"> doesn't resolve Nuxt's auto-imported
 // components at runtime -- auto-import only rewrites literal tags found in
@@ -36,6 +37,7 @@ const WIDGET_COMPONENTS: Record<string, unknown> = {
   DashboardRecallsDueMiniWidget,
   DashboardContinuityAlertsMiniWidget,
   DashboardNextUpTodayMiniWidget,
+  DashboardMonthlyGoalsWidget,
 }
 
 // Widgets scoped to "this week" (rather than the period filter below) get a
@@ -63,7 +65,9 @@ const editing = ref(false)
 const { dashboardMode, dashboardPractitionerId } = useOwnScope()
 const CLINIC_WIDE_WIDGETS = new Set(['debtors_mini', 'memberships_mini'])
 const practitionerFilter = ref(dashboardPractitionerId.value ?? '')
-const visibleWidgets = computed(() => (dashboardMode.value === 'own' ? widgets.value.filter((w) => !CLINIC_WIDE_WIDGETS.has(w.type)) : widgets.value))
+// An owner-only widget left in a layout (a role changed since) is not shown.
+const ownerAllowed = (type: string) => !widgetDef(type)?.ownerOnly || store.isOwner
+const visibleWidgets = computed(() => (dashboardMode.value === 'own' ? widgets.value.filter((w) => !CLINIC_WIDE_WIDGETS.has(w.type)) : widgets.value).filter((w) => ownerAllowed(w.type)))
 const hiddenTypes = computed(() => (dashboardMode.value === 'own' ? [...CLINIC_WIDE_WIDGETS] : []))
 const range = ref<DateRange>(computePresetRange({ months: 1 }))
 

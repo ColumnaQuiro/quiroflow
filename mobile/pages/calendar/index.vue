@@ -46,7 +46,12 @@ interface Appointment {
   appointment_type_id: string | null
   patients: { first_name: string; last_name: string | null } | null
   appointment_types: { name: string; color: string | null } | null
+  /** A place in a group class: drawn as part of its class's one tile. */
+  class_session_id?: string | null
+  /** Set only on a class's tile: the session, and how full it is. */
+  _class?: { sessionId: string; taken: number; capacity: number }
 }
+interface ClassSession { id: string; starts_at: string; ends_at: string; practitioner_id: string; room_id: string | null; appointment_type_id: string; capacity: number; appointment_types: { name: string; color: string | null } | null }
 interface Block { id: string; starts_at: string; ends_at: string; practitioner_id: string | null; room_id: string | null; note: string | null }
 interface Practitioner { id: string; full_name: string; business_hours: BusinessHours | null }
 
@@ -185,10 +190,10 @@ async function load(quiet = false) {
   const clinicId = context.value.clinicId
   const needStatic = !quiet || staticFor !== clinicId
   const none = Promise.resolve({ data: null, error: null })
-  const [ap, bl, pr, links, cl] = await Promise.all([
+  const [ap, bl, pr, links, cl, cs] = await Promise.all([
     supabase
       .from('appointments')
-      .select('id, patient_id, clinic_id, starts_at, ends_at, status, checked_in_at, practitioner_id, room_id, appointment_type_id, patients(first_name, last_name), appointment_types(name, color)')
+      .select('id, patient_id, clinic_id, starts_at, ends_at, status, checked_in_at, practitioner_id, room_id, appointment_type_id, class_session_id, patients(first_name, last_name), appointment_types(name, color)')
       .eq('clinic_id', clinicId)
       .neq('status', 'cancelled')
       // Deleted on the web calendar: status stays 'booked', only deleted_at is set.
@@ -200,9 +205,11 @@ async function load(quiet = false) {
     needStatic ? supabase.from('team_members').select('id, full_name, business_hours').is('deleted_at', null).eq('is_practitioner', true).order('full_name') : none,
     needStatic ? supabase.from('team_member_clinics').select('team_member_id, clinic_id').eq('clinic_id', clinicId) : none,
     needStatic ? supabase.from('clinics').select('business_hours').eq('id', clinicId).maybeSingle() : none,
+    // Group classes on in the range, drawn as one tile each (shownAppointments).
+    supabase.from('class_sessions').select('id, starts_at, ends_at, practitioner_id, room_id, appointment_type_id, capacity, appointment_types(name, color)').eq('clinic_id', clinicId).is('cancelled_at', null).lt('starts_at', to).gt('ends_at', from),
   ])
   if (run !== loadRun) return
-  const failed = [ap, bl, pr, links, cl].find((r) => r.error)
+  const failed = [ap, bl, pr, links, cl, cs].find((r) => r.error)
   if (failed) {
     // A failed read keeps what is on screen; a quiet refresh says nothing.
     if (!quiet) loadError.value = failed.error!.message
@@ -210,6 +217,7 @@ async function load(quiet = false) {
     return
   }
   appointments.value = (ap.data as unknown as Appointment[] | null) ?? []
+  classSessions.value = (cs.data as unknown as ClassSession[] | null) ?? []
   blocks.value = (bl.data as Block[] | null) ?? []
   if (needStatic) {
     const linked = new Set(((links.data as { team_member_id: string }[] | null) ?? []).map((l) => l.team_member_id))
@@ -311,6 +319,35 @@ const showColumnHeads = computed(() => columns.value.length > 1 || multiDay.valu
 
 const MIN_TILE = 22
 interface Placed { a: Appointment; top: number; height: number; lane: number; lanes: number }
+// What the timeline draws: every visit, except that a group class's places
+// are one tile for the class -- "Escuela de espalda · 6/8" -- opening the
+// class's own screen (pages/class/[id].vue), as the web calendar does.
+const classSessions = ref<ClassSession[]>([])
+const shownAppointments = computed<Appointment[]>(() => {
+  const taken = new Map<string, number>()
+  for (const a of appointments.value) if (a.class_session_id) taken.set(a.class_session_id, (taken.get(a.class_session_id) ?? 0) + 1)
+  return [
+    ...appointments.value.filter((a) => !a.class_session_id),
+    ...classSessions.value.map((c) => ({
+      id: `class:${c.id}`,
+      patient_id: '',
+      clinic_id: null,
+      starts_at: c.starts_at,
+      ends_at: c.ends_at,
+      status: 'booked',
+      checked_in_at: null,
+      practitioner_id: c.practitioner_id,
+      room_id: c.room_id,
+      appointment_type_id: c.appointment_type_id,
+      patients: null,
+      appointment_types: c.appointment_types,
+      _class: { sessionId: c.id, taken: taken.get(c.id) ?? 0, capacity: c.capacity },
+    })),
+  ]
+})
+// A tile's first line: the patient, or the class and how full it is (never
+// shortened by privacy mode -- it names nobody).
+const tileLabel = (a: Appointment) => (a._class ? `${a.appointment_types?.name ?? t('Class', 'Clase')} · ${a._class.taken}/${a._class.capacity}` : shown(nameOf(a)))
 function layout(list: Appointment[], date: string): Placed[] {
   const sorted = [...list].sort((x, y) => Date.parse(x.starts_at) - Date.parse(y.starts_at))
   const out: Placed[] = []
@@ -348,7 +385,7 @@ function layout(list: Appointment[], date: string): Placed[] {
 const placedByColumn = computed(() => {
   const map: Record<string, Placed[]> = {}
   for (const c of columns.value) {
-    const list = appointments.value.filter((a) => (!c.practitionerId || a.practitioner_id === c.practitionerId) && (!multiDay.value || dateOfIso(a.starts_at) === c.date))
+    const list = shownAppointments.value.filter((a) => (!c.practitionerId || a.practitioner_id === c.practitionerId) && (!multiDay.value || dateOfIso(a.starts_at) === c.date))
     map[c.key] = layout(list, c.date)
   }
   return map
@@ -391,7 +428,7 @@ watch([loading, day, view], async ([l]) => {
 const weekList = computed(() =>
   weekDates.value.map((date) => ({
     date,
-    items: appointments.value.filter((a) => dateOfIso(a.starts_at) === date && (!scopePractitioner.value || a.practitioner_id === scopePractitioner.value)),
+    items: shownAppointments.value.filter((a) => dateOfIso(a.starts_at) === date && (!scopePractitioner.value || a.practitioner_id === scopePractitioner.value)),
   })),
 )
 const timeLabel = (iso: string) => clinicTimeLabel(new Date(iso), tz.value)
@@ -411,10 +448,12 @@ function open(a: Appointment) {
     suppressClick = false
     return
   }
-  if (panelWide.value) selectedId.value = a.id
+  if (a._class) navigateTo(`/class/${a._class.sessionId}`)
+  else if (panelWide.value) selectedId.value = a.id
   else navigateTo(`/calendar/${a.id}`)
 }
-const canChange = (a: Appointment) => !readOnly.value && a.status === 'booked'
+// A class is changed as a whole, on the web; its tile does not drag.
+const canChange = (a: Appointment) => !readOnly.value && a.status === 'booked' && !a._class
 
 // -- Sheets --------------------------------------------------------------------
 const newVisit = ref<{ preferredStart: string | null; practitionerId: string | null; date?: string } | null>(null)
@@ -639,8 +678,8 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
                 <span class="h-8 w-[3px] shrink-0 rounded-full" :style="{ background: tint(a.appointment_types?.color).borderLeftColor }" />
                 <span class="w-11 shrink-0 font-mono text-[12.5px] text-ink-700">{{ timeLabel(a.starts_at) }}</span>
                 <span class="min-w-0 flex-1">
-                  <span class="block truncate text-[14px] font-semibold text-ink-900" :class="a.status === 'no_show' ? 'line-through' : ''">{{ shown(nameOf(a)) }}</span>
-                  <span class="block truncate text-[12px] text-ink-muted">{{ a.appointment_types?.name ?? t('Appointment', 'Cita') }}<template v-if="!scopePractitioner && practitionerName(a.practitioner_id)"> · {{ practitionerName(a.practitioner_id) }}</template></span>
+                  <span class="block truncate text-[14px] font-semibold text-ink-900" :class="a.status === 'no_show' ? 'line-through' : ''">{{ tileLabel(a) }}</span>
+                  <span class="block truncate text-[12px] text-ink-muted"><template v-if="a._class">{{ a._class.capacity - a._class.taken > 0 ? t(`${a._class.capacity - a._class.taken} places left`, `${a._class.capacity - a._class.taken} plazas libres`) : t('Full', 'Completa') }}</template><template v-else>{{ a.appointment_types?.name ?? t('Appointment', 'Cita') }}</template><template v-if="!scopePractitioner && practitionerName(a.practitioner_id)"> · {{ practitionerName(a.practitioner_id) }}</template></span>
                 </span>
                 <span v-if="a.checked_in_at && a.status === 'booked'" class="h-2 w-2 shrink-0 rounded-full bg-success-accent" :title="t('Checked in', 'Ha llegado')" />
               </button>
@@ -698,10 +737,10 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
                 >
                   <span class="flex items-center gap-1.5">
                     <span v-if="p.a.checked_in_at && p.a.status === 'booked'" class="h-1.5 w-1.5 shrink-0 rounded-full bg-success-accent" :title="t('Checked in', 'Ha llegado')" />
-                    <span class="truncate text-[12.5px] font-semibold text-ink-900" :class="p.a.status === 'no_show' ? 'line-through' : ''">{{ shown(nameOf(p.a)) }}</span>
+                    <span class="truncate text-[12.5px] font-semibold text-ink-900" :class="p.a.status === 'no_show' ? 'line-through' : ''">{{ tileLabel(p.a) }}</span>
                   </span>
                   <span v-if="p.height >= 38" class="block truncate text-[11.5px] text-ink-muted">
-                    {{ timeLabel(p.a.starts_at) }} · {{ p.a.appointment_types?.name ?? t('Appointment', 'Cita') }}<template v-if="!c.practitionerId && p.lanes === 1 && practitionerName(p.a.practitioner_id)"> · {{ practitionerName(p.a.practitioner_id) }}</template>
+                    {{ timeLabel(p.a.starts_at) }} · <template v-if="p.a._class">{{ p.a._class.capacity - p.a._class.taken > 0 ? t(`${p.a._class.capacity - p.a._class.taken} places left`, `${p.a._class.capacity - p.a._class.taken} plazas libres`) : t('Full', 'Completa') }}</template><template v-else>{{ p.a.appointment_types?.name ?? t('Appointment', 'Cita') }}</template><template v-if="!c.practitionerId && p.lanes === 1 && practitionerName(p.a.practitioner_id)"> · {{ practitionerName(p.a.practitioner_id) }}</template>
                   </span>
                 </button>
 

@@ -54,3 +54,22 @@ describe('Day two', () => {
     expect(cleanReply('NO_REPLY')).toBe('NO_REPLY')
   })
 })
+
+// Day four: "¡Claro! ¿Qué día te vendría mejor?" to a patient moving a visit,
+// and a fresh draft for a conversation a person had already settled, because
+// the reminder before "Confirmar" kept no text and dropped out of the history.
+describe('Day four', () => {
+  it('takes off "¡Claro!" and "Por supuesto" too', () => {
+    expect(cleanReply('¡Claro! ¿Qué día y hora te vendría mejor?')).toBe('¿Qué día y hora te vendría mejor?')
+    expect(cleanReply('Claro que sí, te la muevo al jueves.')).toBe('Te la muevo al jueves.')
+    expect(cleanReply('Por supuesto. Tengo libre el martes.')).toBe('Tengo libre el martes.')
+    expect(cleanReply('Claramente es mejor por la tarde.')).toBe('Claramente es mejor por la tarde.')
+  })
+
+  it('keeps a template send that stored no text, so "Confirmar" reads as an answer to it', () => {
+    const line = historyLine({ direction: 'outbound', body: null, automated: true, templateName: 'appointment_reminder' })
+    expect(line.startsWith(AUTOMATED_MARK)).toBe(true)
+    expect(line).toContain('appointment_reminder')
+    expect(historyLine({ direction: 'outbound', body: null, automated: false })).toBe('')
+  })
+})

@@ -78,7 +78,7 @@ export async function draftPatientReply(
       direction: m.direction,
       // As the model reads it: a reminder marked as the system's, a voice
       // note or a photo as what it is rather than dropped (historyLine).
-      body: historyLine({ direction: m.direction, body: m.body_preview, automated: Boolean(m.template_name || m.rule_id || m.automation_action_id), sentByAi: m.sent_by_ai === true, mediaType: m.media_type, mediaFilename: m.media_filename }),
+      body: historyLine({ direction: m.direction, body: m.body_preview, automated: Boolean(m.template_name || m.rule_id || m.automation_action_id), sentByAi: m.sent_by_ai === true, templateName: m.template_name, mediaType: m.media_type, mediaFilename: m.media_filename }),
       media_type: m.media_type,
       media_storage_path: m.media_storage_path,
       media_mime_type: m.media_mime_type,

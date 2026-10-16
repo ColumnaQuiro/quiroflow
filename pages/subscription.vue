@@ -179,6 +179,29 @@ const currentPlanIncludesGrowth = computed(() => planIncludesGrowth(subscription
 const growthBilled = computed(() => !!subscription.value?.growth_addon && !currentPlanIncludesGrowth.value)
 /** The AI receptionist bought on its own; never billed alongside Growth, which includes it. */
 const receptionistBilled = computed(() => !!subscription.value?.receptionist_addon && !subscription.value?.growth_addon && !currentPlanIncludesGrowth.value)
+/**
+ * Why the account has the AI receptionist, for its card -- or null when it
+ * does not. Complimentary and trial accounts have everything (the store's
+ * hasReceptionist, and the server's), and are never charged for its replies.
+ */
+const receptionistIncludedBy = computed<'comped' | 'trial' | 'growth' | 'addon' | null>(() => {
+  const sub = subscription.value
+  if (!sub) return null
+  if (comped.value) return 'comped'
+  if (sub.status === 'trialing') return 'trial'
+  if (sub.status === 'locked' || sub.status === 'canceled') return null
+  if (sub.growth_addon || currentPlanIncludesGrowth.value) return 'growth'
+  if (sub.receptionist_addon) return 'addon'
+  return null
+})
+// This calendar month's replies (receptionist_replies_this_month), counted
+// whether or not they are charged.
+const receptionistReplies = ref<number | null>(null)
+async function loadReceptionistReplies() {
+  if (!store.accountId) return
+  const { data } = await supabase.rpc('receptionist_replies_this_month', { p_account_id: store.accountId })
+  receptionistReplies.value = typeof data === 'number' ? data : Number(data ?? 0)
+}
 
 const shape = computed(() => ({
   interval: interval.value,
@@ -395,6 +418,7 @@ onMounted(async () => {
     loadPractitioners(),
     loadUsage(),
     loadBillingInfo(),
+    loadReceptionistReplies(),
   ])
   plans.value = planRows ?? []
   growthAddon.value = (addonRows ?? []).find((a) => a.id === 'growth') ?? null
@@ -619,6 +643,14 @@ async function addPaymentMethod() {
               :open-trial="limitsWaived && !comped"
               :plan-name="subscription.plans?.name ?? null"
               :plan-seats="subscription.plans?.included_professionals ?? null"
+            />
+
+            <SubscriptionReceptionistCard
+              :included-by="receptionistIncludedBy"
+              :replies="receptionistReplies"
+              :monthly-price-cents="receptionistAddon?.monthly_price_cents ?? null"
+              :can-manage="store.isOwner"
+              @add="changingPlan = true"
             />
 
             <SubscriptionCard v-if="!comped">

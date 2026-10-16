@@ -55,7 +55,7 @@ async function load() {
   places.value = (ps as unknown as Place[] | null) ?? []
   const ids = places.value.map((p) => p.patient_id)
   if (ids.length) {
-    const { data: bs } = await supabase.from('package_purchases').select('patient_id, package_name, sessions_used, sessions_total').in('patient_id', ids).eq('is_closed', false).order('created_at', { ascending: false })
+    const { data: bs } = await supabase.from('package_purchases').select('patient_id, package_name, sessions_used, sessions_total').in('patient_id', ids).eq('is_closed', false).order('purchased_at', { ascending: false })
     const map = new Map<string, Bono>()
     for (const b of (bs as Bono[] | null) ?? []) if (b.sessions_used < b.sessions_total && !map.has(b.patient_id)) map.set(b.patient_id, b)
     bonos.value = map
@@ -185,6 +185,65 @@ async function removeWaiting(w: Waiting) {
 }
 const offeredUntil = (w: Waiting) => (w.offer_expires_at ? new Date(w.offer_expires_at).toLocaleTimeString(t('en-GB', 'es-ES'), { hour: '2-digit', minute: '2-digit' }) : '')
 
+// ---- editing it: day and time, room, who gives it, places
+// The places follow the session in the database (class_sessions_move_places,
+// which also logs each one as rescheduled); telling the patients is here, as
+// the calendar does when it moves a visit.
+const editing = ref(false)
+const editPeople = ref<{ id: string; full_name: string }[]>([])
+const editRooms = ref<{ id: string; name: string }[]>([])
+const edit = reactive({ date: '', time: '', practitionerId: '', roomId: '', capacity: 0, notify: true })
+const pad = (n: number) => String(n).padStart(2, '0')
+async function startEdit() {
+  const s = session.value
+  if (!s) return
+  const start = new Date(s.starts_at)
+  Object.assign(edit, {
+    date: `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`,
+    time: `${pad(start.getHours())}:${pad(start.getMinutes())}`,
+    practitionerId: s.practitioner_id,
+    roomId: s.room_id ?? '',
+    capacity: s.capacity,
+    notify: true,
+  })
+  editing.value = true
+  const [{ data: people }, { data: rooms }] = await Promise.all([
+    supabase.from('team_members').select('id, full_name').eq('is_practitioner', true).is('deleted_at', null).order('full_name'),
+    supabase.from('calendar_resources').select('id, name').eq('clinic_id', s.clinic_id).order('name'),
+  ])
+  editPeople.value = people ?? []
+  editRooms.value = rooms ?? []
+}
+async function saveEdit() {
+  const s = session.value
+  if (!s) return
+  const start = new Date(`${edit.date}T${edit.time}`)
+  if (Number.isNaN(start.getTime())) return
+  if (start.getTime() <= Date.now()) {
+    error.value = t('That time has passed.', 'Esa hora ya ha pasado.')
+    return
+  }
+  const length = new Date(s.ends_at).getTime() - new Date(s.starts_at).getTime()
+  const moved = start.getTime() !== new Date(s.starts_at).getTime()
+  busy.value = true
+  error.value = ''
+  const { error: e } = await supabase
+    .from('class_sessions')
+    .update({ starts_at: start.toISOString(), ends_at: new Date(start.getTime() + length).toISOString(), practitioner_id: edit.practitionerId, room_id: edit.roomId || null, capacity: Number(edit.capacity) })
+    .eq('id', s.id)
+  busy.value = false
+  if (e) {
+    error.value = e.code === '23505' ? t('That class is already on at that time.', 'Esa clase ya está puesta a esa hora.') : e.message
+    return
+  }
+  if (moved && edit.notify) {
+    for (const p of places.value.filter((x) => x.status === 'booked')) fire('appointment.rescheduled', { patientId: p.patient_id, appointmentId: p.id })
+  }
+  editing.value = false
+  await load()
+  emit('changed')
+}
+
 // ---- cancelling the whole class
 const confirmCancel = ref(false)
 async function cancelClass() {
@@ -237,6 +296,29 @@ const toggle = 'h-[30px] rounded-ctl border px-2.5 text-[12px] font-semibold dis
 
       <p v-if="error" role="alert" class="text-[12.5px] text-danger-text">{{ error }}</p>
 
+      <UiBtn v-if="session && !readOnly && !session.cancelled_at && !isPast && !editing" size="sm" class="self-start" data-cy="class-edit" @click="startEdit">{{ t('Edit class', 'Editar clase') }}</UiBtn>
+      <form v-if="editing" class="grid grid-cols-2 gap-2.5 rounded-card border border-line bg-surface-subtle p-3" data-cy="class-edit-form" @submit.prevent="saveEdit">
+        <label class="text-[12px] font-medium text-ink-600">{{ t('Day', 'Día') }}<input v-model="edit.date" type="date" class="mt-1 h-9 w-full rounded-ctl border border-line-control bg-surface px-2 text-[13px]" data-cy="class-edit-date" /></label>
+        <label class="text-[12px] font-medium text-ink-600">{{ t('Time', 'Hora') }}<input v-model="edit.time" type="time" class="mt-1 h-9 w-full rounded-ctl border border-line-control bg-surface px-2 text-[13px]" data-cy="class-edit-time" /></label>
+        <label class="text-[12px] font-medium text-ink-600">{{ t('Given by', 'La da') }}
+          <select v-model="edit.practitionerId" class="mt-1 h-9 w-full rounded-ctl border border-line-control bg-surface px-2 text-[13px]" data-cy="class-edit-practitioner">
+            <option v-for="p in editPeople" :key="p.id" :value="p.id">{{ p.full_name }}</option>
+          </select>
+        </label>
+        <label class="text-[12px] font-medium text-ink-600">{{ t('Room', 'Sala') }}
+          <select v-model="edit.roomId" class="mt-1 h-9 w-full rounded-ctl border border-line-control bg-surface px-2 text-[13px]" data-cy="class-edit-room">
+            <option value="">{{ t('None', 'Ninguna') }}</option>
+            <option v-for="r in editRooms" :key="r.id" :value="r.id">{{ r.name }}</option>
+          </select>
+        </label>
+        <label class="text-[12px] font-medium text-ink-600">{{ t('Places', 'Plazas') }}<input v-model.number="edit.capacity" type="number" min="1" max="200" class="mt-1 h-9 w-full rounded-ctl border border-line-control bg-surface px-2 text-[13px]" data-cy="class-edit-capacity" /></label>
+        <label v-if="places.length" class="col-span-2 flex items-center gap-2 text-[12.5px] text-ink-700"><input v-model="edit.notify" type="checkbox" data-cy="class-edit-notify" />{{ t('Tell the patients if the time changes', 'Avisar a los pacientes si cambia la hora') }}</label>
+        <div class="col-span-2 flex justify-end gap-2">
+          <UiBtn size="sm" @click="editing = false">{{ t('Cancel', 'Cancelar') }}</UiBtn>
+          <UiBtn size="sm" variant="primary" type="submit" :disabled="busy" data-cy="class-edit-save">{{ t('Save', 'Guardar') }}</UiBtn>
+        </div>
+      </form>
+
       <div>
         <p v-if="!places.length" class="py-2 text-[13px] text-ink-muted">{{ t('Nobody has a place yet.', 'Todavía no hay nadie apuntado.') }}</p>
         <div v-for="p in places" :key="p.id" class="flex items-center gap-2.5 border-b border-line-divider py-2" data-cy="class-place" :data-name="name(p)" :data-status="p.status">
@@ -246,7 +328,7 @@ const toggle = 'h-[30px] rounded-ctl border px-2.5 text-[12px] font-semibold dis
               <template v-if="bonos.get(p.patient_id)"> · {{ t('bono', 'bono') }} {{ bonos.get(p.patient_id)!.sessions_used }}/{{ bonos.get(p.patient_id)!.sessions_total }}</template>
             </span>
           </button>
-          <template v-if="!readOnly && !session?.cancelled_at">
+          <template v-if="session && !readOnly && !session.cancelled_at">
             <button
               type="button"
               :class="[toggle, p.status === 'completed' ? 'border-success-border bg-success-bg text-success-text' : 'border-line-control bg-surface text-ink-500']"
@@ -267,7 +349,7 @@ const toggle = 'h-[30px] rounded-ctl border px-2.5 text-[12px] font-semibold dis
         </div>
       </div>
 
-      <template v-if="!readOnly && !session?.cancelled_at">
+      <template v-if="session && !readOnly && !session.cancelled_at">
         <UiBtn v-if="isPast && pending.length" variant="primary" :disabled="busy" data-cy="class-all-came" @click="allOthersCame">
           {{ places.length === pending.length ? t('Everyone came', 'Vinieron todos') : t('Everyone else came', 'Todos los demás vinieron') }}
         </UiBtn>

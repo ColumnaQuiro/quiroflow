@@ -82,6 +82,7 @@ describe('Group classes', () => {
       classType(account.accountId).then((type) => {
         session(account, type.id, earlierToday(), 4).then((s) => {
           place(account, type.id, s.id, 'Ana').then((ana) => {
+            cy.task('db:createPackagePurchase', { accountId: account.accountId, patientId: ana.patientId, packageName: 'Bono 10', sessionsTotal: 10, sessionsUsed: 3 })
             place(account, type.id, s.id, 'Bruno').then((bruno) => {
               place(account, type.id, s.id, 'Carla').then((carla) => {
                 cy.login(account.email, account.password)
@@ -89,9 +90,11 @@ describe('Group classes', () => {
                 // One block for the class, none for its places.
                 cy.get(`[data-cy=class-block][data-session-id=${s.id}]`, { timeout: 20000 }).should('contain', '3/4')
                 cy.get(`[data-cy=appt-block][data-appt-id=${ana.appointmentId}]`).should('not.exist')
-                cy.get(`[data-cy=class-block][data-session-id=${s.id}]`).click()
+                cy.get(`[data-cy=class-block][data-session-id=${s.id}]`).scrollIntoView().click({ force: true })
                 cy.get('[data-cy=class-panel]').should('be.visible')
                 cy.get('[data-cy=class-places]').should('contain', '3 of 4')
+                // What each person draws on: Ana has a bono.
+                cy.get('[data-cy=class-place][data-name="Ana Clase"]').should('contain', 'bono 3/10')
                 cy.get('[data-cy=class-place][data-name="Bruno Clase"]').find('[data-cy=class-missed]').click()
                 cy.get('[data-cy=class-place][data-name="Bruno Clase"]').should('have.attr', 'data-status', 'no_show')
                 cy.get('[data-cy=class-all-came]').should('contain', 'Everyone else came').click()
@@ -119,7 +122,7 @@ describe('Group classes', () => {
             cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Diego', lastName: 'Nuevo' }).then(() => {
               cy.login(account.email, account.password)
               cy.visit('/calendar')
-              cy.get(`[data-cy=class-block][data-session-id=${s.id}]`, { timeout: 20000 }).should('contain', '1/2').click()
+              cy.get(`[data-cy=class-block][data-session-id=${s.id}]`, { timeout: 20000 }).should('contain', '1/2').scrollIntoView().click({ force: true })
               cy.get('[data-cy=class-add-search]').type('Diego')
               cy.get('[data-cy=class-add-result]').should('contain', 'Diego').click()
               cy.get('[data-cy=class-place][data-name="Diego Nuevo"]').should('exist')
@@ -181,6 +184,51 @@ describe('Group classes', () => {
                 cy.visit(`/book/${account.accountSlug}?type=${type.id}`)
                 cy.get('[data-cy=class-session-option]', { timeout: 20000 }).eq(0).should('contain', 'Completa')
               })
+            })
+          })
+        })
+      })
+    })
+  })
+
+  it('edits a class and every place moves with it', () => {
+    cy.seedStaffAccount().then((account) => {
+      classType(account.accountId).then((type) => {
+        const tomorrow10 = new Date()
+        tomorrow10.setDate(tomorrow10.getDate() + 1)
+        tomorrow10.setHours(10, 0, 0, 0)
+        session(account, type.id, tomorrow10, 4).then((s) => {
+          place(account, type.id, s.id, 'Ana').then((ana) => {
+            place(account, type.id, s.id, 'Bruno').then((bruno) => {
+              cy.login(account.email, account.password)
+              cy.visit('/calendar')
+              cy.contains('select', 'Work week', { timeout: 20000 }).select('day')
+              cy.get('[aria-label="Next"]').click()
+              cy.get(`[data-cy=class-block][data-session-id=${s.id}]`, { timeout: 20000 }).scrollIntoView().click({ force: true })
+              cy.get('[data-cy=class-edit]').click()
+              // Not below the two people already in it.
+              cy.get('[data-cy=class-edit-capacity]').clear().type('1')
+              cy.get('[data-cy=class-edit-save]').click()
+              cy.get('[data-cy=class-panel]').should('contain', '2 people already have a place')
+              cy.get('[data-cy=class-edit-capacity]').clear().type('6')
+              cy.get('[data-cy=class-edit-time]').clear().type('12:00')
+              cy.get('[data-cy=class-edit-save]').click()
+              cy.get('[data-cy=class-edit-form]').should('not.exist')
+              cy.get('[data-cy=class-places]').should('contain', '2 of 6')
+
+              const noon = new Date(tomorrow10)
+              noon.setHours(12)
+              cy.task<{ starts_at: string; capacity: number }[]>('db:selectRows', { table: 'class_sessions', columns: 'starts_at, capacity', match: { id: s.id } }).then(([row]) => {
+                expect(Date.parse(row!.starts_at)).to.eq(noon.getTime())
+                expect(row!.capacity).to.eq(6)
+              })
+              for (const p of [ana, bruno]) {
+                cy.task<{ starts_at: string; rescheduled: boolean }>('db:appointmentById', { appointmentId: p.appointmentId }).then((a) => {
+                  expect(Date.parse(a.starts_at)).to.eq(noon.getTime())
+                  expect(a.rescheduled).to.eq(true)
+                })
+                cy.task('db:selectRows', { table: 'appointment_reschedules', columns: 'id', match: { appointment_id: p.appointmentId } }).should('have.length', 1)
+              }
             })
           })
         })

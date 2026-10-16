@@ -6229,6 +6229,148 @@ export type Database = {
           },
         ]
       }
+      shift_days: {
+        Row: {
+          account_id: string
+          day: string
+          ranges: Json
+          team_member_id: string
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          day: string
+          ranges?: Json
+          team_member_id: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          day?: string
+          ranges?: Json
+          team_member_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shift_days_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shift_days_team_member_id_fkey"
+            columns: ["team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      staff_absences: {
+        Row: {
+          account_id: string
+          block_ids: string[]
+          decided_at: string | null
+          decided_by: string | null
+          ends_on: string
+          half_day: boolean
+          id: string
+          kind: string
+          note: string | null
+          requested_at: string
+          starts_on: string
+          status: string
+          team_member_id: string
+        }
+        Insert: {
+          account_id: string
+          block_ids?: string[]
+          decided_at?: string | null
+          decided_by?: string | null
+          ends_on: string
+          half_day?: boolean
+          id?: string
+          kind: string
+          note?: string | null
+          requested_at?: string
+          starts_on: string
+          status?: string
+          team_member_id: string
+        }
+        Update: {
+          account_id?: string
+          block_ids?: string[]
+          decided_at?: string | null
+          decided_by?: string | null
+          ends_on?: string
+          half_day?: boolean
+          id?: string
+          kind?: string
+          note?: string | null
+          requested_at?: string
+          starts_on?: string
+          status?: string
+          team_member_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_absences_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staff_absences_decided_by_fkey"
+            columns: ["decided_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staff_absences_team_member_id_fkey"
+            columns: ["team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      staff_leave_allowances: {
+        Row: {
+          account_id: string
+          days_per_year: number
+          team_member_id: string
+        }
+        Insert: {
+          account_id: string
+          days_per_year?: number
+          team_member_id: string
+        }
+        Update: {
+          account_id?: string
+          days_per_year?: number
+          team_member_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_leave_allowances_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staff_leave_allowances_team_member_id_fkey"
+            columns: ["team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       staff_push_preferences: {
         Row: {
           account_id: string
@@ -8107,6 +8249,12 @@ export type Database = {
         Returns: Json
       }
       return_product_stock: { Args: { p_invoice_id: string; p_items: Json; p_reason?: string | null }; Returns: number }
+      request_staff_absence: {
+        Args: { p_account_id: string; p_kind: string; p_starts_on: string; p_ends_on: string; p_half_day?: boolean; p_note?: string | null }
+        Returns: Database["public"]["Tables"]["staff_absences"]["Row"]
+      }
+      decide_staff_absence: { Args: { p_absence_id: string; p_approve: boolean }; Returns: Database["public"]["Tables"]["staff_absences"]["Row"] }
+      cancel_staff_absence: { Args: { p_absence_id: string }; Returns: Database["public"]["Tables"]["staff_absences"]["Row"] }
       check_in_my_appointment: { Args: { p_appointment_id: string }; Returns: string | null }
       set_my_pain_score: { Args: { p_appointment_id: string; p_score: number }; Returns: boolean }
       my_pain_context: { Args: { p_appointment_id: string }; Returns: Json }

@@ -538,6 +538,25 @@ const card = 'flex scroll-mt-4 flex-col gap-4 rounded-card border border-line bg
                   </span>
                 </div>
               </template>
+              <!-- Someone who is not booked still has a shift (Registro de jornada >
+                   Turnos): the same weekly hours, with nothing to do with booking. -->
+              <div v-else class="flex flex-col gap-3 border-t border-line-row pt-4" data-cy="member-shift">
+                <div class="flex items-center gap-3">
+                  <span class="flex-1 text-[14.5px] font-semibold text-ink-900">{{ t('Their shift', 'Su turno') }}</span>
+                  <button v-if="hasOwnHours || ownHoursOpen" type="button" class="h-9 touch:h-11 rounded-ctl px-3 text-[13.5px] font-semibold text-brand-text hover:bg-surface-subtle" @click="clearHours">{{ t('No shift', 'Sin turno') }}</button>
+                </div>
+                <SettingsClinicHoursEditor
+                  v-if="hasOwnHours || ownHoursOpen"
+                  :model-value="editorHours"
+                  :problems="problems"
+                  @update:model-value="form.business_hours = $event"
+                  :empty-note="t('No days set yet.', 'Aún sin días.')"
+                />
+                <div v-else class="flex flex-wrap items-center gap-3 rounded-ctl border border-line bg-surface-subtle px-3.5 py-3">
+                  <span class="min-w-[220px] flex-1 text-[13.5px] leading-snug text-ink-700">{{ t('No shift set: the Turnos tab shows nothing planned for them, and their clocking is not compared with anything.', 'Sin turno: la pestaña Turnos no muestra nada previsto para esta persona, ni compara su fichaje con nada.') }}</span>
+                  <button type="button" data-cy="member-shift-set" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="ownHoursOpen = true">{{ t('Set their shift', 'Poner su turno') }}</button>
+                </div>
+              </div>
             </section>
 
             <!-- Seguridad -->

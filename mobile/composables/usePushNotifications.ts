@@ -46,6 +46,8 @@ function routeTap(data: Record<string, string> | undefined) {
   const type = data?.type ?? ''
   if (type === 'appointment' && data?.appointmentId) return navigateTo(`/calendar/${data.appointmentId}`)
   if (type === 'my_day') return navigateTo('/my-day')
+  // A leave request to decide, or the answer to one (server/api/staff-absences).
+  if (type === 'jornada') return navigateTo('/jornada')
   // The owner's Monday summary: their numbers.
   if (type === 'weekly_digest') return navigateTo('/numbers')
   if (type === 'patient' && data?.patientId) return navigateTo(data.target === 'waitlist' ? '/waitlist' : `/patients/${data.patientId}`)

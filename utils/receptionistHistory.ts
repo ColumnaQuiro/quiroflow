@@ -15,6 +15,8 @@ export interface HistoryMessage {
   automated?: boolean
   /** Written by the receptionist; an outbound message that is neither this nor automated is a person's. */
   sentByAi?: boolean
+  /** The WhatsApp template it was sent from, if any. */
+  templateName?: string | null
   mediaType?: string | null
   mediaFilename?: string | null
 }
@@ -31,6 +33,12 @@ export interface HistoryMessage {
 export function historyLine(m: HistoryMessage): string {
   const body = (m.body ?? '').trim()
   if (m.direction !== 'inbound') {
+    // A template send keeps no text (body_preview is null for every
+    // appointment_reminder), so it used to vanish from the history. The
+    // "Confirmar" a patient tapped on it then read as an answer to whatever
+    // came before -- and a conversation a person had already settled got a
+    // fresh draft.
+    if (!body && m.automated) return `${AUTOMATED_MARK}\n[Template${m.templateName ? ` "${m.templateName.replace(/["\r\n]+/g, ' ').slice(0, 80)}"` : ''}; its text is not shown here]`
     if (!body) return ''
     if (m.automated) return `${AUTOMATED_MARK}\n${body}`
     // A colleague's offer read as the receptionist's own, so it "corrected"
@@ -72,7 +80,7 @@ export function historyMarkersSection(handOver: boolean): string {
 }
 
 /** What a reply opened with that reads as a bot; taken off even though the prompt forbids it. */
-const FILLER_OPENER = /^\s*¡?\s*(?:perfecto|genial|estupendo|fenomenal|great|perfect)(?!\p{L})\s*[!.,]*\s*/iu
+const FILLER_OPENER = /^\s*¡?\s*(?:perfecto|genial|estupendo|fenomenal|claro(?:\s+que\s+s[ií])?|por\s+supuesto|great|perfect|of\s+course|sure)(?!\p{L})\s*[!.,]*\s*/iu
 
 /**
  * The reply as it is sent: a mark copied from the conversation taken off, and

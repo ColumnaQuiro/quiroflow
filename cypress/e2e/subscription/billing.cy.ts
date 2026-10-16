@@ -64,6 +64,34 @@ describe('Platform billing: trial banner, subscription page, and lock screen', (
     })
   })
 
+  it('shows the AI receptionist and its replies even on a comped account, with no charge', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.setComped(account.accountId, true)
+      cy.task('db:insertRows', {
+        table: 'receptionist_replies',
+        rows: [1, 2, 3].map((i) => ({ account_id: account.accountId, conversation_key: `test:${i}`, delivery: 'sent' })),
+      })
+      cy.login(account.email, account.password)
+      cy.visit('/subscription')
+      cy.get('[data-cy=subscription-receptionist]', { timeout: 20000 }).should('be.visible')
+      cy.get('[data-cy=subscription-receptionist-state]').should('have.text', 'No charge')
+      cy.get('[data-cy=subscription-receptionist-replies]').should('have.text', '3')
+      cy.get('[data-cy=subscription-receptionist]').invoke('text').should('match', /of 1\.?000 replies included this month/)
+      cy.get('[data-cy=subscription-receptionist-terms]').should('contain', 'pays nothing for it')
+      // Still no money on a comped account's page.
+      cy.get('[data-cy=subscription-receptionist]').should('not.contain', '€')
+    })
+  })
+
+  it('says a trial includes the AI receptionist', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.login(account.email, account.password)
+      cy.visit('/subscription')
+      cy.get('[data-cy=subscription-receptionist-state]', { timeout: 20000 }).should('have.text', 'In your trial')
+      cy.get('[data-cy=subscription-receptionist-replies]').should('have.text', '0')
+    })
+  })
+
   it('lets a locked owner through to the subscription page to pay', () => {
     cy.seedStaffAccount().then((account) => {
       cy.setSubscriptionStatus(account.accountId, 'locked')

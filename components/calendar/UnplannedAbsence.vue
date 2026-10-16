@@ -19,6 +19,10 @@ import { formatPhoneDisplay } from '~/utils/phone'
 // What was done is listed at the end, with a phone number beside each
 // cancelled visit for anyone the automations will not reach.
 const emit = defineEmits<{ close: []; done: [] }>()
+// Opened from an approved leave request (the Turnos tab): who and which days
+// are already known, and the calendar is already blocked for them
+// (decide_staff_absence), so it is not blocked twice.
+const props = defineProps<{ prefill?: { who: string; from: string; to: string; alreadyBlocked?: boolean } | null }>()
 const t = useT()
 const supabase = useSupabaseClient()
 const store = useAccountStore()
@@ -30,9 +34,9 @@ interface Visit { id: string; starts_at: string; ends_at: string; clinic_id: str
 const today = new Date()
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const practitioners = ref<Member[]>([])
-const who = ref('')
-const from = ref(iso(today))
-const to = ref(iso(today))
+const who = ref(props.prefill?.who ?? '')
+const from = ref(props.prefill?.from ?? iso(today))
+const to = ref(props.prefill?.to ?? iso(today))
 const visits = ref<Visit[] | null>(null)
 const picked = ref<Set<string>>(new Set())
 const action = ref<'move' | 'cancel'>('move')
@@ -49,6 +53,7 @@ onMounted(async () => {
   ])
   practitioners.value = (team as Member[] | null) ?? []
   notifiesOnCancel.value = (count ?? 0) > 0
+  if (props.prefill) await load()
 })
 
 // The days, from local midnight to the midnight after the last, as the
@@ -102,7 +107,7 @@ async function apply() {
   // 1. Block their calendar for the days, in every clinic they had visits in
   //    (and the one on screen), before anything is freed.
   const clinicIds = [...new Set([...(visits.value ?? []).map((v) => v.clinic_id), store.currentClinicId].filter(Boolean) as string[])]
-  const { error: blockError } = await supabase.from('availability_blocks').insert(
+  const { error: blockError } = props.prefill?.alreadyBlocked ? { error: null } : await supabase.from('availability_blocks').insert(
     clinicIds.map((clinicId) => ({
       account_id: store.accountId!,
       clinic_id: clinicId,

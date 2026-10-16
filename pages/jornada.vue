@@ -12,9 +12,9 @@ const router = useRouter()
 const t = useT()
 const { timeZone } = useAccountTimeZone()
 
-type Tab = 'team' | 'mine'
+type Tab = 'team' | 'shifts' | 'mine'
 const tab = computed<Tab>({
-  get: () => (store.isOwner && route.query.tab !== 'mine' ? 'team' : 'mine'),
+  get: () => (!store.isOwner || route.query.tab === 'mine' ? 'mine' : route.query.tab === 'shifts' ? 'shifts' : 'team'),
   set: (v) => router.replace({ query: { ...route.query, tab: v } }),
 })
 const month = ref(clinicDateOf(new Date(), timeZone.value).slice(0, 7))
@@ -33,7 +33,7 @@ const exportUrl = (format: 'csv' | 'pdf') => `/api/time-records/export?month=${m
 
     <div v-if="store.isOwner" role="tablist" class="flex shrink-0 gap-1 border-b border-line bg-surface px-4 sm:px-6">
       <button
-        v-for="tb in ([{ key: 'team', label: t('Team', 'Equipo') }, { key: 'mine', label: t('Mine', 'Mi jornada') }] as const)"
+        v-for="tb in ([{ key: 'team', label: t('Month', 'Mes') }, { key: 'shifts', label: t('Shifts', 'Turnos') }, { key: 'mine', label: t('Mine', 'Mi jornada') }] as const)"
         :key="tb.key"
         type="button"
         role="tab"
@@ -50,9 +50,11 @@ const exportUrl = (format: 'csv' | 'pdf') => `/api/time-records/export?month=${m
     <div class="flex-1 overflow-y-auto bg-surface-page px-4 pb-24 pt-4 sm:px-6">
       <template v-if="store.accountId && store.teamMember">
         <TimeclockTeamMonth v-if="tab === 'team'" :account-id="store.accountId" :time-zone="timeZone" :month="month" />
+        <TimeclockTeamShifts v-else-if="tab === 'shifts'" :account-id="store.accountId" :time-zone="timeZone" />
         <div v-else class="mx-auto flex max-w-xl flex-col gap-4">
           <TimeclockClockCard :account-id="store.accountId" :team-member-id="store.teamMember.id" :time-zone="timeZone" month-to="/jornada?tab=mine" />
           <TimeclockMyMonth :key="timeZone" :account-id="store.accountId" :team-member-id="store.teamMember.id" :time-zone="timeZone" />
+          <TimeclockMyLeave :key="`leave-${timeZone}`" :account-id="store.accountId" :team-member-id="store.teamMember.id" :time-zone="timeZone" />
         </div>
       </template>
     </div>

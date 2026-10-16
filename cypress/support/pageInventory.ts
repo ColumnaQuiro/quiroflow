@@ -78,6 +78,7 @@ export const APP_PAGES = [
   '/reports/retention',
   '/reports/referrals',
   '/reports/commissions',
+  '/reports/gestoria',
   '/reports/scheduled-reminders',
   '/reports/statistics',
   '/reports/upcoming-visits',

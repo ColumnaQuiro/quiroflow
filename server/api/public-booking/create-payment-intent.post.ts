@@ -1,6 +1,7 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { stripeClientFor } from '~/server/utils/stripe'
+import { throttlePublic } from '~/server/utils/publicRateLimit'
 
 // Anonymous-safe -- the public booking widget has no session, so this uses
 // the service-role client (like the webhook routes) instead of
@@ -9,6 +10,7 @@ import { stripeClientFor } from '~/server/utils/stripe'
 // already computed it server-side from the appointment type's effective
 // price at booking time.
 export default defineEventHandler(async (event) => {
+  await throttlePublic(event, { scope: 'create-payment-intent', limit: 20, windowSeconds: 600 })
   const body = await readBody<{ accountSlug: string; invoiceId: string }>(event)
   if (!body?.accountSlug || !body?.invoiceId) {
     throw createError({ statusCode: 400, statusMessage: 'accountSlug and invoiceId are required' })

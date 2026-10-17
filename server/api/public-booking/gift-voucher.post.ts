@@ -2,6 +2,7 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { stripeClientFor } from '~/server/utils/stripe'
 import { madridToday, newGiftCode } from '~/server/utils/giftVouchers'
+import { throttlePublic } from '~/server/utils/publicRateLimit'
 
 // Buying a gift voucher: the voucher is written as pending with a code, then
 // the buyer goes to a Stripe-hosted Checkout on the clinic's own Stripe. The
@@ -16,6 +17,8 @@ const MAX_CUSTOM = 30000
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export default defineEventHandler(async (event) => {
+  // Each call opens a Stripe Checkout session and writes a voucher row.
+  await throttlePublic(event, { scope: 'gift-voucher', limit: 10, windowSeconds: 600 })
   const body = await readBody<{
     slug?: string
     kind?: 'amount' | 'service' | 'package'

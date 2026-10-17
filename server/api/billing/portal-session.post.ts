@@ -27,7 +27,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'No billing account yet -- contact us to start a subscription.' })
   }
 
-  const stripe = stripeForPlatformBilling()
+  const stripe = await stripeForPlatformBilling()
   const origin = getRequestURL(event).origin
 
   // flow: 'cancel' deep-links straight into Stripe's own cancellation flow

@@ -1,4 +1,4 @@
-import PDFDocument from 'pdfkit'
+import type PDFDocument from 'pdfkit'
 import type { serverSupabaseServiceRole } from '#supabase/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
@@ -81,7 +81,8 @@ export function timeRecordsCsv(r: TimeRecords): string {
   return toCsv(rows)
 }
 
-export function timeRecordsPdf(r: TimeRecords): Promise<Buffer> {
+export async function timeRecordsPdf(r: TimeRecords): Promise<Buffer> {
+  const { default: PDFDocument } = await import('pdfkit')
   const monthName = new Date(`${r.month}-15T12:00:00Z`).toLocaleDateString('es-ES', { month: 'long', year: 'numeric', timeZone: 'UTC' })
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 50 })

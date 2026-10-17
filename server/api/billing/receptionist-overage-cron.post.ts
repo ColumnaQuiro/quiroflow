@@ -66,7 +66,7 @@ export default defineEventHandler(async (event) => {
   }
   // Made on the first charge, not before: a month with nobody to charge
   // must not need Stripe configured to say so.
-  let stripe: ReturnType<typeof stripeForPlatformBilling> | null = null
+  let stripe: Awaited<ReturnType<typeof stripeForPlatformBilling>> | null = null
   const name = monthNameEs(month)
 
   const charged: string[] = []
@@ -117,7 +117,7 @@ export default defineEventHandler(async (event) => {
 
     const line = `Recepcionista IA: ${blocks} ${blocks === 1 ? 'bloque' : 'bloques'} de 1.000 respuestas por encima de las ${RECEPTIONIST_INCLUDED_REPLIES.toLocaleString('es-ES')} incluidas (${name}, ${replies.toLocaleString('es-ES')} respuestas)`
     try {
-      stripe ??= stripeForPlatformBilling()
+      stripe ??= await stripeForPlatformBilling()
       const invoice = await stripe.invoices.create(
         {
           customer: subscription.stripe_customer_id,

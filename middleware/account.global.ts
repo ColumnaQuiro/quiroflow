@@ -43,6 +43,8 @@ export default defineNuxtRouteMiddleware(async (to) => {
   if (to.path.startsWith('/unsubscribe/')) return
   // A satisfaction survey link, answered with no login (pages/valorar).
   if (to.path.startsWith('/valorar/')) return
+  // An article sent to a patient without the app (pages/aprende), token-gated.
+  if (to.path.startsWith('/aprende/')) return
   // A clinic's gift voucher page (pages/regalo), public like its booking page.
   if (to.path.startsWith('/regalo/')) return
   // Stripe Checkout's return page for a patient paying from the app.

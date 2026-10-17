@@ -182,6 +182,9 @@ export default defineNuxtConfig({
         // A satisfaction survey ("¿qué tal te hemos atendido?"): a patient's
         // link from a message, with no login, gated by its own token.
         '/valorar/**',
+        // An article a clinic sent a patient without the app: no login, gated
+        // by its own token (pages/aprende).
+        '/aprende/**',
         // A clinic's gift voucher page: bought by someone with no QuiroFlow
         // login, like the booking page.
         '/regalo/**',

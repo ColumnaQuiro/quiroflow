@@ -61,10 +61,15 @@ const rows = computed(() => [
   {
     key: 'receptionist' as const,
     name: t('AI receptionist', 'Recepcionista IA'),
-    description: t(
-      `Answers WhatsApp and books from your calendar. ${RECEPTIONIST_INCLUDED_REPLIES.toLocaleString('en-GB')} replies a month included; each further 1,000 is ${formatEur(RECEPTIONIST_BLOCK_PRICE_CENTS)} + IVA.`,
-      `Contesta WhatsApp y reserva desde tu agenda. ${RECEPTIONIST_INCLUDED_REPLIES.toLocaleString('es-ES')} respuestas al mes incluidas; cada 1.000 más, ${formatEur(RECEPTIONIST_BLOCK_PRICE_CENTS)} + IVA.`,
-    ),
+    // The allowance and its price only for an account that can be charged
+    // for it: a complimentary one pays nothing, extra replies included, and
+    // its page carries no money at all.
+    description: props.comped
+      ? t('Answers WhatsApp and books from your calendar.', 'Contesta WhatsApp y reserva desde tu agenda.')
+      : t(
+          `Answers WhatsApp and books from your calendar. ${RECEPTIONIST_INCLUDED_REPLIES.toLocaleString('en-GB')} replies a month included; each further 1,000 is ${formatEur(RECEPTIONIST_BLOCK_PRICE_CENTS)} + IVA.`,
+          `Contesta WhatsApp y reserva desde tu agenda. ${RECEPTIONIST_INCLUDED_REPLIES.toLocaleString('es-ES')} respuestas al mes incluidas; cada 1.000 más, ${formatEur(RECEPTIONIST_BLOCK_PRICE_CENTS)} + IVA.`,
+        ),
     price: priceOf(props.receptionistPrices),
     state: (props.comped ? 'free' : receptionistIncluded.value ? 'growth' : props.receptionistOn ? 'on' : 'off') as RowState,
   },

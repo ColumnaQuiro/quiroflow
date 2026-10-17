@@ -18,12 +18,13 @@ interface Closure {
   starts_at: string
   ends_at: string
   note: string | null
+  public_holiday: string | null
 }
 const closures = ref<Closure[]>([])
 async function load() {
   const { data } = await supabase
     .from('availability_blocks')
-    .select('id, starts_at, ends_at, note')
+    .select('id, starts_at, ends_at, note, public_holiday')
     .eq('clinic_id', props.clinicId)
     .is('practitioner_id', null)
     .is('room_id', null)
@@ -131,7 +132,7 @@ async function confirmRemove() {
     <p v-if="closures.length === 0" class="text-[13.5px] text-ink-muted">{{ t('No closures coming up.', 'No hay cierres próximos.') }}</p>
     <div v-for="c in closures" :key="c.id" class="flex items-center gap-3 rounded-ctl border border-line px-3.5 py-2.5" data-cy="clinic-closure">
       <div class="flex min-w-0 flex-1 flex-col">
-        <span class="text-[14px] font-semibold text-ink-900">{{ range(c) }}</span>
+        <span class="flex items-center gap-2 text-[14px] font-semibold text-ink-900">{{ range(c) }}<UiPill v-if="c.public_holiday" tone="info" data-cy="clinic-closure-official">{{ t('Official holiday', 'Festivo oficial') }}</UiPill></span>
         <span v-if="c.note" class="text-[13px] text-ink-500">{{ c.note }}</span>
       </div>
       <button type="button" data-cy="clinic-closure-remove" class="h-9 touch:h-11 rounded-ctl px-3 text-[13.5px] font-semibold text-ink-500 hover:bg-surface-subtle hover:text-ink-700" @click="removing = c">

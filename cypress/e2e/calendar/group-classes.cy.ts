@@ -31,6 +31,7 @@ describe('Group classes', () => {
     )
   }
   // Earlier today (still today just after midnight), so attendance is open.
+  // Seen in the day view: the default work week has no today on a weekend.
   const earlierToday = () => {
     const d = new Date(Date.now() - 3600_000)
     return d.getDate() === new Date().getDate() ? d : new Date(Date.now() - 60_000)
@@ -86,7 +87,7 @@ describe('Group classes', () => {
             place(account, type.id, s.id, 'Bruno').then((bruno) => {
               place(account, type.id, s.id, 'Carla').then((carla) => {
                 cy.login(account.email, account.password)
-                cy.visit('/calendar')
+                cy.visit('/calendar', { onBeforeLoad: (win) => win.localStorage.setItem('quiroflow-calendar-view-mode', 'day') })
                 // One block for the class, none for its places.
                 cy.get(`[data-cy=class-block][data-session-id=${s.id}]`, { timeout: 20000 }).should('contain', '3/4')
                 cy.get(`[data-cy=appt-block][data-appt-id=${ana.appointmentId}]`).should('not.exist')
@@ -121,7 +122,7 @@ describe('Group classes', () => {
           place(account, type.id, s.id, 'Ana').then(() => {
             cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Diego', lastName: 'Nuevo' }).then(() => {
               cy.login(account.email, account.password)
-              cy.visit('/calendar')
+              cy.visit('/calendar', { onBeforeLoad: (win) => win.localStorage.setItem('quiroflow-calendar-view-mode', 'day') })
               cy.get(`[data-cy=class-block][data-session-id=${s.id}]`, { timeout: 20000 }).should('contain', '1/2').scrollIntoView().click({ force: true })
               cy.get('[data-cy=class-add-search]').type('Diego')
               cy.get('[data-cy=class-add-result]').should('contain', 'Diego').click()

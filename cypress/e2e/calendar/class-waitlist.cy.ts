@@ -88,7 +88,8 @@ describe('Class waitlist', () => {
 
   it('is kept at the desk: added from the class panel when full, and given the place when one frees', () => {
     cy.seedStaffAccount().then((account) => {
-      // Earlier today, so the class is in today's view.
+      // Earlier today, so the class is in today's view -- the day view, which
+      // shows a Saturday too; the default work week leaves today out then.
       const startsAt = new Date(Date.now() - 3600_000)
       if (startsAt.getDate() !== new Date().getDate()) startsAt.setTime(Date.now() - 60_000)
       cy.task<{ id: string }[]>('db:insertRows', { table: 'appointment_types', rows: [{ account_id: account.accountId, name: 'Pilates', duration_minutes: 60, class_capacity: 4 }] }).then(([type]) => {
@@ -103,7 +104,7 @@ describe('Class waitlist', () => {
             }).then(([place]) => {
               cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Dora', lastName: 'Espera' })
               cy.login(account.email, account.password)
-              cy.visit('/calendar')
+              cy.visit('/calendar', { onBeforeLoad: (win) => win.localStorage.setItem('quiroflow-calendar-view-mode', 'day') })
               cy.get(`[data-cy=class-block][data-session-id=${session!.id}]`, { timeout: 20000 }).scrollIntoView().click({ force: true })
               cy.get('[data-cy=class-panel]').should('contain', 'Full')
               cy.get('[data-cy=class-add-search]').type('Dora')

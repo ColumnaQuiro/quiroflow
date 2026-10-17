@@ -78,7 +78,8 @@ const enriching = ref(true)
 let loadToken = 0
 
 onMounted(async () => {
-  const { data } = await supabase.from('team_members').select('id, full_name').order('full_name')
+  const { data, error } = await supabase.from('team_members').select('id, full_name').order('full_name')
+  if (error) throw error
   teamMembers.value = data ?? []
 })
 const page = ref(1)
@@ -120,7 +121,11 @@ async function loadPatients() {
   const from = (page.value - 1) * PAGE_SIZE
   const to = from + PAGE_SIZE - 1
   const ascending = sortDir.value === 'asc'
-  const { data, count } = await query.order('first_name', { ascending }).order('last_name', { ascending }).range(from, to)
+  const { data, count, error } = await query.order('first_name', { ascending }).order('last_name', { ascending }).range(from, to)
+  // Thrown rather than shown as "no patients": the list keeps what it had (or
+  // its skeleton), utils/supabaseFailures.ts reports the query and the layout
+  // says so.
+  if (error) throw error
   if (token !== loadToken) return
 
   // selectCols is built dynamically (it grows a `care_plans!inner(...)` embed
@@ -136,23 +141,25 @@ async function loadPatients() {
   const ids = patients.value.map((p) => p.id)
   if (ids.length > 0) {
     enriching.value = true
-    const [{ data: visitSummary }, { data: plans }, { data: contactNumbers }, { data: balances }] = await Promise.all([
+    const [visitSummary, plans, contactNumbers, balances] = await Promise.all([
       // Last visit, completed count and next booking, already reduced to one
       // row per patient. These used to come back as every visit of every
       // patient on the page, which PostgREST cuts off at 1000 rows without
       // saying so -- see the migration that adds this function.
-      supabase.rpc('patient_list_visit_summary', { p_patient_ids: ids }),
+      supabase.rpc('patient_list_visit_summary', { p_patient_ids: ids }).then(dataOrThrow),
       supabase
         .from('care_plans')
         .select('patient_id, name, total_visits, created_at')
         .in('patient_id', ids)
-        .order('created_at', { ascending: false }),
+        .order('created_at', { ascending: false })
+        .then(dataOrThrow),
       supabase
         .from('patient_contact_numbers')
         .select('patient_id, number, country_code, is_whatsapp')
         .in('patient_id', ids)
-        .order('created_at'),
-      supabase.from('patient_live_balances').select('patient_id, balance_cents').in('patient_id', ids),
+        .order('created_at')
+        .then(dataOrThrow),
+      supabase.from('patient_live_balances').select('patient_id, balance_cents').in('patient_id', ids).then(dataOrThrow),
     ])
     if (token !== loadToken) return
 

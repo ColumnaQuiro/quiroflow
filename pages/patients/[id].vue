@@ -46,11 +46,15 @@ async function loadPatient() {
   // two more round trips once the patient has landed. The tutor is named by
   // its column: patients references itself, and the constraint-name hint does
   // not resolve on a self-reference, while the column form does.
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('patients')
     .select('*, practitioner:team_members!patients_default_practitioner_id_fkey(full_name), tutor:tutor_patient_id(id, first_name, last_name)')
     .eq('id', patientId)
     .maybeSingle()
+  // A failed read is not "patient not found": thrown, the record stays as it
+  // was (or on its skeleton), utils/supabaseFailures.ts reports the query
+  // and the layout says so.
+  if (error) throw error
   if (data) {
     // Stripped rather than carried on the patient: the edit form and the
     // merge modal both work from this object, and an unknown key in an
@@ -74,12 +78,13 @@ onMounted(loadPatient)
 // whichever tab happens to be open.
 const primaryNumber = ref<Tables<'patient_contact_numbers'> | null>(null)
 async function loadBannerDetail() {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('patient_contact_numbers')
     .select('*')
     .eq('patient_id', patientId)
     .order('created_at')
     .limit(1)
+  if (error) throw error
   primaryNumber.value = data?.[0] ?? null
 }
 onMounted(loadBannerDetail)

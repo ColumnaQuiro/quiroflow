@@ -256,7 +256,8 @@ watch(
       bookingFor.value = null
       return
     }
-    const { data } = await supabase.from('patients').select('id, first_name, last_name').eq('id', id).maybeSingle()
+    const { data, error } = await supabase.from('patients').select('id, first_name, last_name').eq('id', id).maybeSingle()
+    if (error) throw error
     if (route.query.patient !== id) return
     // &repeat=plan: "Reservar las visitas del plan" -- the panel starts
     // repeating by the patient's care plan.
@@ -442,11 +443,12 @@ async function loadRooms() {
     rooms.value = []
     return
   }
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('calendar_resources')
     .select('id, name')
     .eq('clinic_id', store.currentClinicId)
     .order('name')
+  if (error) throw error
   if (token !== roomsToken) return
   rooms.value = data ?? []
 }
@@ -487,7 +489,9 @@ async function loadAppointments(silent = false) {
     .lt('starts_at', rangeEnd.toISOString())
   if (practitionerFilter.value === UNASSIGNED_PRACTITIONER) classQuery = classQuery.is('practitioner_id', null)
   else if (practitionerFilter.value && practitionerFilter.value !== ALL_PRACTITIONERS) classQuery = classQuery.eq('practitioner_id', practitionerFilter.value)
-  const [{ data }, { data: sessions }] = await Promise.all([query, classQuery])
+  // A failed read throws rather than drawing an empty week over the one on
+  // screen (utils/supabaseFailures.ts reports it and the layout says so).
+  const [data, sessions] = await Promise.all([query.then(dataOrThrow), classQuery.then(dataOrThrow)])
   if (token !== loadToken) return
 
   classSessions.value = (sessions as unknown as ClassSessionRow[] | null) ?? []
@@ -530,12 +534,13 @@ async function loadAppointments(silent = false) {
 // today and completed ones from past days.
 const movedAwayMarkers = ref<AppointmentRow[]>([])
 async function loadMovedAwayMarkers(token: number, rangeStart: Date, rangeEnd: Date) {
-  const { data: moves } = await supabase
+  const { data: moves, error } = await supabase
     .from('appointment_reschedules')
     .select('id, appointment_id, from_starts_at')
     .eq('account_id', store.accountId!)
     .gte('from_starts_at', rangeStart.toISOString())
     .lt('from_starts_at', rangeEnd.toISOString())
+  if (error) throw error
   if (token !== loadToken) return
   const loaded = new Map(appointments.value.map((a) => [a.id, a]))
   const missing = [...new Set((moves ?? []).map((m) => m.appointment_id).filter((id) => !loaded.has(id)))]
@@ -854,13 +859,14 @@ async function loadAvailabilityBlocks() {
   const rangeStart = viewMode.value === 'day' ? startOfDay(anchorDate.value) : weekStart.value
   const rangeEnd = viewMode.value === 'day' ? addDays(rangeStart, 1) : addDays(rangeStart, 7)
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('availability_blocks')
     .select('id, room_id, practitioner_id, starts_at, ends_at, note')
     .eq('clinic_id', store.currentClinicId)
     .lt('starts_at', rangeEnd.toISOString())
     .gt('ends_at', rangeStart.toISOString())
     .order('starts_at')
+  if (error) throw error
   if (token !== blocksToken) return
   availabilityBlocks.value = data ?? []
 }

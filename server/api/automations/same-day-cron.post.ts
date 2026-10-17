@@ -7,6 +7,7 @@ import { sendExerciseReminders } from '~/server/utils/exerciseReminders'
 import { sendOwnerWeeklyDigests } from '~/server/utils/weeklyDigest'
 import { deliverDueGiftVouchers } from '~/server/utils/giftVouchers'
 import { sendOpenDayReminders } from '~/server/utils/timeClock'
+import { closeNewPublicHolidays } from '~/server/utils/publicHolidays'
 
 // Fires 'appointment.same_day' for every booked appointment happening today,
 // for accounts with an enabled rule on that trigger -- same reasoning/auth
@@ -54,6 +55,10 @@ export default defineEventHandler(async (event) => {
   await deliverDueGiftVouchers(supabase, getRequestURL(event).origin, now)
   // And the 20:00 "your working day is still open" push (server/utils/timeClock.ts).
   await sendOpenDayReminders(supabase, now)
+  // And the official holidays of a year a deploy has just brought, for clinics
+  // that close on them automatically (server/utils/publicHolidays.ts). A no-op
+  // every other run: their marker is already at the end of what is known.
+  await closeNewPublicHolidays(supabase, now)
 
   const { data: rules } = await supabase
     .from('automation_rules')

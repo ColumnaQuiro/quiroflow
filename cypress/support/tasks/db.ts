@@ -2318,6 +2318,11 @@ async function updateRows(opts: { table: string; values: Record<string, unknown>
   return null
 }
 
+async function deleteRows(opts: { table: string; match: Record<string, unknown> }) {
+  assertOk(await (admin.from(opts.table as never) as any).delete().match(opts.match))
+  return null
+}
+
 /**
  * Any insert or update on a settings table, as a signed-in staff member with
  * the browser's own key -- what the policy allows, whatever the page shows.
@@ -4297,6 +4302,7 @@ export const dbTasks = {
   'db:storageObjectExists': storageObjectExists,
   'db:insertRows': insertRows,
   'db:updateRows': updateRows,
+  'db:deleteRows': deleteRows,
   'db:practiceHubStubLastKey': practiceHubStubLastKeyOf,
   'db:practiceHubKeyColumn': practiceHubKeyColumnOf,
   'db:roleByName': roleByName,

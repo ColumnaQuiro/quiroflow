@@ -2,6 +2,7 @@ import type { Breadcrumb, DataCollection, ErrorEvent } from '@sentry/core'
 
 // What Sentry may and may not see. Shared by sentry.client.config.ts and
 // sentry.server.config.ts, and pure so tests/unit can hold it to its word.
+// Which Supabase failures are worth an alert is utils/supabaseFailures.ts.
 //
 // This app's screens and requests are full of health data, and Sentry is a
 // third party. So nothing goes that is not needed to find a bug:
@@ -71,83 +72,4 @@ export function scrubBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb | null {
     }
   }
   return breadcrumb
-}
-
-// -- The code and the database disagreeing --------------------------------------
-//
-// supabase-js does not throw: a failed query comes back as { data: null,
-// error }, and most callers read `data ?? []`. So a column the code selects
-// and the database does not have yet shows up as an empty list, never as an
-// error -- which is how v1.9.0 shipped every patient's ledger reading
-// `payments.created_by` against a table without it, and how a day went on RLS
-// forensics that was really a missing column (CLAUDE.md, Migrations).
-//
-// These codes are only ever a bug: the request named a column, table,
-// function or relationship that is not there. A refused write (RLS, a check
-// constraint, "not money") is the app working and is NOT reported.
-const SCHEMA_MISMATCH_CODES = new Set([
-  '42703', // undefined_column
-  '42P01', // undefined_table
-  '42883', // undefined_function
-  'PGRST200', // no relationship for an embed
-  'PGRST201', // ambiguous relationship
-  'PGRST202', // function not found in the schema cache
-  'PGRST204', // column not found in the schema cache
-  'PGRST205', // table not found in the schema cache
-])
-
-export interface SchemaMismatch {
-  code: string
-  message: string
-  /** The REST path, e.g. /rest/v1/payments -- never the query. */
-  path: string
-}
-
-/** A Supabase response that means the code and the schema disagree, or null. */
-export function schemaMismatch(url: string, status: number, body: unknown): SchemaMismatch | null {
-  if (status < 400) return null
-  const code = (body as { code?: unknown } | null)?.code
-  if (typeof code !== 'string' || !SCHEMA_MISMATCH_CODES.has(code)) return null
-  let path: string
-  try {
-    path = new URL(url).pathname
-  } catch {
-    path = scrubUrl(url)
-  }
-  if (!path.includes('/rest/v1/')) return null
-  const message = (body as { message?: unknown }).message
-  return { code, message: typeof message === 'string' ? message : code, path }
-}
-
-/**
- * Wraps `target.fetch` so a schema mismatch from Supabase is reported, while
- * every caller still gets the response exactly as before.
- *
- * Works because supabase-js looks `fetch` up on every request
- * (`(...args) => fetch(...args)`) rather than keeping the one it saw when the
- * client was made -- so the wrapper takes effect for clients built before it.
- * The body is read from a clone, after the response has been handed back.
- */
-export function reportSchemaMismatches(target: { fetch: typeof fetch }, supabaseUrl: string, report: (mismatch: SchemaMismatch) => void) {
-  const original = target.fetch
-  if (typeof original !== 'function' || !supabaseUrl) return
-  target.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-    // Called on the global, not on `target`: window.fetch throws "Illegal
-    // invocation" when its receiver is anything but the window.
-    const response = await original.call(globalThis, input, init)
-    if (response.status >= 400) {
-      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
-      if (url.startsWith(supabaseUrl)) {
-        response
-          .clone()
-          .json()
-          .then((body) => {
-            const mismatch = schemaMismatch(url, response.status, body)
-            if (mismatch) report(mismatch)
-          })
-          .catch(() => {})
-      }
-    }
-    return response
-  }
 }

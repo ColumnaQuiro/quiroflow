@@ -104,6 +104,27 @@ export default defineNuxtConfig({
     // the calendar date. No SEO benefit to SSR here (authenticated app),
     // so it's simplest to render this route client-side only.
     '/calendar': { ssr: false },
+    // The public booking page is rendered on the server with the clinic's
+    // practitioners, services and details already in the HTML
+    // (pages/book/[slug].vue), and that HTML is the same for every visitor
+    // of the URL for as long as the clinic's settings hold. `isr` is what
+    // the Netlify preset turns into Netlify-CDN-Cache-Control (max-age 60,
+    // stale-while-revalidate, durable): a repeat visit inside the minute is
+    // answered by the CDN without the function running, and the first one
+    // after it gets the stale copy while a fresh render replaces it.
+    //
+    // Not `swr`. On this Nitro version that is Nitro's OWN in-process cache
+    // -- per Lambda instance, nothing durable about it -- and it would also
+    // run under `nuxt dev` and the node-server build Cypress runs against,
+    // where a spec that changes a clinic's settings and reloads expects to
+    // see them. `isr` is a no-op everywhere but the Netlify runtime
+    // (nitropack/dist/presets/netlify/runtime/netlify.mjs).
+    //
+    // The page sends no-store itself when a copy must not be kept (a staff
+    // preview carrying a session, a failed fetch). The query string is part
+    // of Netlify's cache key, so ?type= and the attribution params each get
+    // their own copy and the embed keeps working unchanged.
+    '/book/**': { isr: 60 },
   },
   modules: ['@nuxtjs/tailwindcss', '@nuxtjs/supabase', '@pinia/nuxt', '@sentry/nuxt/module'],
   // Error monitoring (sentry.client.config.ts, sentry.server.config.ts). It
@@ -161,6 +182,9 @@ export default defineNuxtConfig({
         // A satisfaction survey ("¿qué tal te hemos atendido?"): a patient's
         // link from a message, with no login, gated by its own token.
         '/valorar/**',
+        // An article a clinic sent a patient without the app: no login, gated
+        // by its own token (pages/aprende).
+        '/aprende/**',
         // A clinic's gift voucher page: bought by someone with no QuiroFlow
         // login, like the booking page.
         '/regalo/**',

@@ -498,6 +498,7 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
 
       <!-- Home exercises given to this patient, and how their week has gone -->
       <ExercisesStaff v-if="context && patient" :account-id="context.accountId" :patient-id="patient.id" :team-member-id="context.teamMemberId" />
+      <LearnStaffSend v-if="context && patient" :account-id="context.accountId" :patient-id="patient.id" :complaint="patient.chief_complaint" :diagnosis="patient.diagnosis" />
 
       <!-- Bonos and balance: only for a role that sees money -->
       <div v-if="contextLoading" class="grid grid-cols-2 gap-2">

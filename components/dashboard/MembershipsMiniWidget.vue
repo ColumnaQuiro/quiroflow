@@ -19,11 +19,12 @@ onMounted(async () => {
     membership_payments: PaymentRow[]
     payment_schedules: { patient_membership_id: string | null; stripe_payment_events: { period_start: string; amount_cents: number; status: string }[] }[]
   }
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('patient_memberships')
     .select(
       'id, status, membership_payments(patient_membership_id, period_start, amount_cents, status), payment_schedules!payment_schedules_patient_membership_id_fkey(patient_membership_id, stripe_payment_events(period_start, amount_cents, status))',
     )
+  if (error) throw error
   const rows = (data ?? []) as unknown as Row[]
   memberships.value = rows.map((m) => ({ id: m.id, status: m.status }))
   const stripeAsPayments: PaymentRow[] = rows.flatMap((m) =>

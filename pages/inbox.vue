@@ -186,7 +186,8 @@ interface LabelDef {
 }
 const labels = ref<LabelDef[]>([])
 async function loadLabels() {
-  const { data } = await supabase.from('whatsapp_labels').select('id, name, color').order('name')
+  const { data, error } = await supabase.from('whatsapp_labels').select('id, name, color').order('name')
+  if (error) throw error
   labels.value = data ?? []
 }
 onMounted(loadLabels)
@@ -194,7 +195,8 @@ onMounted(loadLabels)
 // Who a conversation can be assigned to.
 const team = ref<{ id: string; full_name: string }[]>([])
 onMounted(async () => {
-  const { data } = await supabase.from('team_members').select('id, full_name').is('deleted_at', null).order('full_name')
+  const { data, error } = await supabase.from('team_members').select('id, full_name').is('deleted_at', null).order('full_name')
+  if (error) throw error
   team.value = data ?? []
 })
 const myId = computed(() => store.teamMember?.id ?? null)
@@ -400,7 +402,8 @@ onMounted(async () => {
 // Bounded on purpose -- this only backs the "New" picker's empty-query
 // browse list; searchComposePatients below queries the DB directly.
 onMounted(async () => {
-  const { data } = await supabase.from('patients').select('id, first_name, last_name').order('first_name').limit(20)
+  const { data, error } = await supabase.from('patients').select('id, first_name, last_name').order('first_name').limit(20)
+  if (error) throw error
   patients.value = data ?? []
 })
 
@@ -962,12 +965,13 @@ watch(composeQuery, (q) => {
     return
   }
   composeSearchTimer = setTimeout(async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('patients')
       .select('id, first_name, last_name')
       .ilike('search_name', `%${normalizeSearchTerm(q.trim())}%`)
       .order('first_name')
       .limit(20)
+    if (error) throw error
     composeSearchResults.value = data ?? []
   }, 250)
 })
@@ -1059,7 +1063,8 @@ onMounted(async () => {
 })
 
 async function openConversationByKey(key: string) {
-  const { data } = await supabase.from('inbox_conversations').select('*').eq('conversation_key', key).maybeSingle()
+  const { data, error } = await supabase.from('inbox_conversations').select('*').eq('conversation_key', key).maybeSingle()
+  if (error) throw error
   if (!data) return
   openedRow.value = data as unknown as InboxRow
   selectConversation(toConversation(openedRow.value))
@@ -1067,13 +1072,14 @@ async function openConversationByKey(key: string) {
 
 /** The key a lead's messages go by in an account without Growth. */
 async function conversationKeyForLead(leadId: string): Promise<string | null> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('whatsapp_messages')
     .select('patient_id, phone_number, external_contact_id')
     .eq('lead_id', leadId)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
+  if (error) throw error
   return data ? keyOf(data) : null
 }
 

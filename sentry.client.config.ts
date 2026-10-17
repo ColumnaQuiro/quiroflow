@@ -1,5 +1,5 @@
 import * as Sentry from '@sentry/nuxt'
-import { SENTRY_DATA_COLLECTION, reportSchemaMismatches, scrubBreadcrumb, scrubEvent } from '~/utils/sentryPrivacy'
+import { SENTRY_DATA_COLLECTION, scrubBreadcrumb, scrubEvent } from '~/utils/sentryPrivacy'
 
 // Error monitoring in the browser. Off until NUXT_PUBLIC_SENTRY_DSN is set,
 // so local dev, CI and any deploy without it send nothing.
@@ -25,12 +25,5 @@ if (config.sentryDsn) {
     ],
   })
 
-  reportSchemaMismatches(window, config.supabase.url, (m) =>
-    Sentry.captureMessage(`Supabase schema mismatch ${m.code}: ${m.message}`, {
-      level: 'error',
-      tags: { postgrest_code: m.code, side: 'client' },
-      extra: { path: m.path },
-      fingerprint: ['supabase-schema-mismatch', m.code, m.path, m.message],
-    }),
-  )
+  // Failed Supabase queries are reported by plugins/supabase-failures.client.ts.
 }

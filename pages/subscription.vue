@@ -436,6 +436,26 @@ onMounted(async () => {
 // The change is applied by Stripe in place (subscribe.post.ts updates the
 // subscription with create_prorations), so the row here is stale until the
 // webhook lands. Re-reading both is cheaper than guessing what changed.
+// The Add-ons card. Its change lands through the Stripe webhook, a moment
+// after subscribe answers, so the row is re-read until it says what was asked
+// for -- a single reload right away would still show the add-on off.
+const addonsCard = ref<{ start: (key: 'growth' | 'receptionist', on: boolean) => void; $el?: HTMLElement } | null>(null)
+async function onAddonChanged(expect: { growth: boolean; receptionist: boolean }) {
+  for (let i = 0; i < 8; i++) {
+    await loadSubscription()
+    const sub = subscription.value
+    if (sub && !!sub.growth_addon === expect.growth && !!sub.receptionist_addon === expect.receptionist) break
+    await new Promise((r) => setTimeout(r, 1500))
+  }
+  await loadBillingInfo()
+  paymentsLoaded.value = false
+}
+// The receptionist card's "Add" opens the same confirmation, not Change plan.
+function addReceptionist() {
+  addonsCard.value?.start('receptionist', true)
+  addonsCard.value?.$el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+}
+
 async function onPlanChanged() {
   changingPlan.value = false
   loading.value = true
@@ -645,12 +665,28 @@ async function addPaymentMethod() {
               :plan-seats="subscription.plans?.included_professionals ?? null"
             />
 
+            <SubscriptionAddonsCard
+              ref="addonsCard"
+              :plan-id="subscription.plan_id"
+              :interval="interval"
+              :extra-professionals="subscription.extra_professionals ?? 0"
+              :growth-on="!!subscription.growth_addon"
+              :receptionist-on="!!subscription.receptionist_addon"
+              :plan-includes-growth="currentPlanIncludesGrowth"
+              :comped="comped"
+              :trialing="subscription.status === 'trialing'"
+              :growth-prices="growthAddon"
+              :receptionist-prices="receptionistAddon"
+              :can-manage="store.isOwner"
+              @changed="onAddonChanged"
+            />
+
             <SubscriptionReceptionistCard
               :included-by="receptionistIncludedBy"
               :replies="receptionistReplies"
               :monthly-price-cents="receptionistAddon?.monthly_price_cents ?? null"
               :can-manage="store.isOwner"
-              @add="changingPlan = true"
+              @add="addReceptionist"
             />
 
             <SubscriptionCard v-if="!comped">

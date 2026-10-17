@@ -66,12 +66,13 @@ export default defineNuxtConfig({
       link: [
         { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
         { rel: 'alternate icon', href: '/favicon.ico' },
-        { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
-        { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: 'anonymous' },
-        {
-          rel: 'stylesheet',
-          href: 'https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400&family=JetBrains+Mono:wght@400;500&display=swap',
-        },
+        // The body face, fetched alongside the stylesheet instead of after it
+        // (the browser only discovers an @font-face file once the CSS has
+        // parsed and some text needs it). Declared in assets/css/theme.css;
+        // the mono face and the latin-ext subsets are left to load on demand.
+        // `crossorigin` is required even same-origin -- font requests are
+        // CORS-mode, and a preload without it is fetched twice.
+        { rel: 'preload', as: 'font', type: 'font/woff2', href: '/fonts/instrument-sans-latin.woff2', crossorigin: 'anonymous' },
       ],
     },
   },
@@ -104,6 +105,11 @@ export default defineNuxtConfig({
     // the calendar date. No SEO benefit to SSR here (authenticated app),
     // so it's simplest to render this route client-side only.
     '/calendar': { ssr: false },
+    // The font files carry no content hash in their names, so without this
+    // Netlify serves them with max-age=0 and every visit revalidates each
+    // one. Written to dist/_headers by the Netlify preset (and applied by
+    // Nitro elsewhere). A changed font therefore needs a new filename.
+    '/fonts/**': { headers: { 'cache-control': 'public, max-age=31536000, immutable' } },
   },
   modules: ['@nuxtjs/tailwindcss', '@nuxtjs/supabase', '@pinia/nuxt', '@sentry/nuxt/module'],
   // Error monitoring (sentry.client.config.ts, sentry.server.config.ts). It

@@ -40,6 +40,13 @@ export default defineNuxtConfig({
     },
   },
   modules: ['@nuxtjs/tailwindcss', '@nuxtjs/supabase'],
+  // theme.css declares its fonts at /fonts/… (the repo's public/fonts/), and
+  // inside the WebView that path is capacitor://localhost/fonts/…, served
+  // from this build's own output. Listing the directory here has
+  // `nuxt generate` copy the files into .output/public, so the app renders
+  // the same face as the web instead of the system font the missing files
+  // used to fall back to.
+  nitro: { publicAssets: [{ baseURL: '/fonts', dir: `${root}/public/fonts` }] },
   // theme.css is what actually sets the --color-brand/--color-ink/etc custom
   // properties tailwind.config.ts's colors resolve through (rgb(var(--color-x))) --
   // without it every bg-brand/text-brand-text/border-line-control class

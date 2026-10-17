@@ -6,6 +6,7 @@ import { appointmentStage, needsNextBookingFlag } from '~/utils/appointmentStage
 import { shortPatientName } from '~/utils/appointmentBlock'
 import { bonoForVisit, type VisitPayment } from '~/utils/visitPayment'
 import { formatTime } from '~/utils/billing'
+import { dataOrThrow } from '~/utils/supabaseFailures'
 
 // Everything CalendarAppointmentPanel needs, for ONE visit.
 //
@@ -34,19 +35,25 @@ export function useAppointmentPanelLoader() {
   const { fetchVisitPayments } = useVisitPayments()
 
   async function load(appointmentId: string): Promise<AppointmentPanelInputs | null> {
-    const { data: row } = await supabase.from('appointments').select(SELECT).eq('id', appointmentId).maybeSingle()
+    const { data: row, error } = await supabase.from('appointments').select(SELECT).eq('id', appointmentId).maybeSingle()
+    // Thrown, not "no such visit": the panel's caller shows nothing for null.
+    if (error) throw error
     if (!row) return null
     const a = row as unknown as AppointmentPanelInputs['appointment']
 
-    const [payments, { data: balance }, { data: packages }, { count: moved }, { data: later }, { data: overrides }] = await Promise.all([
+    const [payments, balance, packages, moved, later, overrides] = await Promise.all([
       fetchVisitPayments([a.id]),
-      supabase.from('patient_live_balances').select('outstanding_cents').eq('patient_id', a.patient_id).maybeSingle(),
-      supabase.from('package_purchases').select('package_name, sessions_total, sessions_used, is_closed').eq('patient_id', a.patient_id).order('purchased_at', { ascending: false }),
-      supabase.from('appointment_reschedules').select('id', { count: 'exact', head: true }).eq('appointment_id', a.id),
+      supabase.from('patient_live_balances').select('outstanding_cents').eq('patient_id', a.patient_id).maybeSingle().then(dataOrThrow),
+      supabase.from('package_purchases').select('package_name, sessions_total, sessions_used, is_closed').eq('patient_id', a.patient_id).order('purchased_at', { ascending: false }).then(dataOrThrow),
+      supabase
+        .from('appointment_reschedules')
+        .select('id', { count: 'exact', head: true })
+        .eq('appointment_id', a.id)
+        .then((r) => (r.error ? Promise.reject(r.error) : r.count)),
       // The calendar's rule for "has a next visit" (loadFutureAppointmentIds): any
       // visit not cancelled or deleted, from now on, other than this one.
-      supabase.from('appointments').select('id').eq('patient_id', a.patient_id).neq('status', 'cancelled').is('deleted_at', null).gt('starts_at', new Date().toISOString()).neq('id', a.id).limit(1),
-      supabase.from('appointment_type_overrides').select('appointment_type_id, team_member_id, duration_minutes, price_cents'),
+      supabase.from('appointments').select('id').eq('patient_id', a.patient_id).neq('status', 'cancelled').is('deleted_at', null).gt('starts_at', new Date().toISOString()).neq('id', a.id).limit(1).then(dataOrThrow),
+      supabase.from('appointment_type_overrides').select('appointment_type_id, team_member_id, duration_minutes, price_cents').then(dataOrThrow),
     ])
 
     const payment: VisitPayment = payments[a.id] ?? { kind: 'none' }

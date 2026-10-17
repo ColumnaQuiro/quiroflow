@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/nuxt'
-import { SENTRY_DATA_COLLECTION, reportSchemaMismatches, scrubBreadcrumb, scrubEvent } from './utils/sentryPrivacy'
+import { SENTRY_DATA_COLLECTION, scrubBreadcrumb, scrubEvent } from './utils/sentryPrivacy'
+import { watchSupabaseFailures } from './utils/supabaseFailures'
 
 // Error monitoring on the server: every SSR page and /api route, which on
 // Netlify is the one function .netlify/functions-internal/server. The SDK
@@ -21,13 +22,15 @@ if (dsn) {
   })
 
   // The server reads Supabase too -- with the user's session and with the
-  // service role -- and a missing column fails just as quietly here.
-  reportSchemaMismatches(globalThis, process.env.NUXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '', (m) =>
-    Sentry.captureMessage(`Supabase schema mismatch ${m.code}: ${m.message}`, {
+  // service role -- and a failed query is just as quiet here. Same report as
+  // the browser's (plugins/supabase-failures.client.ts), tagged by side.
+  watchSupabaseFailures(globalThis, process.env.NUXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '', (f) => {
+    if (f.code === 'network') return
+    Sentry.captureMessage(`Supabase ${f.code} on ${f.method} ${f.target}: ${f.message}`, {
       level: 'error',
-      tags: { postgrest_code: m.code, side: 'server' },
-      extra: { path: m.path },
-      fingerprint: ['supabase-schema-mismatch', m.code, m.path, m.message],
-    }),
-  )
+      tags: { postgrest_code: f.code, supabase_target: f.target, http_method: f.method, http_status: String(f.status), schema_mismatch: f.schema, side: 'server' },
+      extra: { path: f.path },
+      fingerprint: ['supabase-failure', f.code, f.method, f.target, f.message],
+    })
+  })
 }

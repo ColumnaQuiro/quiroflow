@@ -67,6 +67,15 @@ const slug = route.params.slug as string
 const supabase = useSupabaseClient()
 
 const phase = ref<'loading' | 'not_found' | 'select' | 'datetime' | 'details' | 'payment' | 'card' | 'success'>('loading')
+// False in the server's HTML and in the first client render, true once the
+// page is interactive. The steps are server-rendered with their buttons in
+// place (see the bottom of this script), and a tap before hydration would
+// otherwise land on a button with no listener yet and be lost; disabled
+// until then says so, and keeps a test runner's first click honest.
+const hydrated = ref(false)
+onMounted(() => {
+  hydrated.value = true
+})
 
 // The clinic's fees for a late cancellation or a missed visit, said before
 // anyone books, and whether it asks for a card to hold the booking
@@ -272,62 +281,6 @@ onMounted(async () => {
     // Nothing to offer is the same as not selling them.
   }
   if (giftCode.value) checkGift()
-})
-
-onMounted(async () => {
-  // This is a public storefront other sites embed -- it must never follow
-  // the visitor's OS/browser dark-mode preference (or an internal staff
-  // member's saved theme, if previewed from inside the app). Always light,
-  // with brand colors layered on top via brandStyle above.
-  document.documentElement.setAttribute('data-theme', 'light')
-
-  captureAttribution()
-
-  const { data, error } = await supabase.rpc('get_public_booking_info', { p_slug: slug })
-  if (error || !data) {
-    phase.value = 'not_found'
-    return
-  }
-  const parsed = data as unknown as BookingInfo
-  if (parsed.clinics.length === 0) {
-    phase.value = 'not_found'
-    return
-  }
-  info.value = parsed
-  supabase.rpc('get_public_booking_policy', { p_slug: slug }).then(({ data: p }) => {
-    policy.value = (p as typeof policy.value) ?? null
-  })
-  dialCode.value = parsed.account.default_phone_country || 'ES'
-  clinicId.value = parsed.clinics[0].id
-  // Marketing pages can deep-link straight into a specific offer (e.g. a
-  // promo page's own appointment type/practitioner) via ?type=&practitioner=
-  // -- falls back to the usual auto-select when absent or invalid.
-  const queryTypeId = typeof route.query.type === 'string' ? route.query.type : null
-  const queryPractitionerId = typeof route.query.practitioner === 'string' ? route.query.practitioner : null
-  if (queryTypeId && parsed.appointment_types.some((t) => t.id === queryTypeId)) {
-    appointmentTypeId.value = queryTypeId
-    typeLockedByQuery.value = true
-  } else if (parsed.appointment_types.length === 1) {
-    appointmentTypeId.value = parsed.appointment_types[0].id
-  }
-  const forClinic = parsed.team_members.filter((m) => m.clinic_ids.includes(clinicId.value))
-  if (queryPractitionerId && forClinic.some((m) => m.id === queryPractitionerId)) {
-    teamMemberId.value = queryPractitionerId
-  } else if (forClinic.length === 1 || bypassPractitioner.value) {
-    teamMemberId.value = forClinic[0]?.id ?? ''
-  }
-  phase.value = 'select'
-  // No real choice to present (bypass, or a single available practitioner)
-  // -- skip straight to date/time instead of a screen whose only content is
-  // a "Continuar" button.
-  if (!showPractitionerCards.value && canContinueFromSelect.value) proceedToDatetime()
-
-  if (parsed.account.online_booking_gtm_id) {
-    const script = document.createElement('script')
-    script.async = true
-    script.src = `https://www.googletagmanager.com/gtm.js?id=${encodeURIComponent(parsed.account.online_booking_gtm_id)}`
-    document.head.appendChild(script)
-  }
 })
 
 // Restore whatever theme the visitor actually had if they navigate away
@@ -547,6 +500,12 @@ function selectDate(day: { date: Date; bookable: boolean }) {
 }
 
 async function loadMonthAvailability() {
+  // The browser's job, never the server's: busy and blocked times change by
+  // the minute, and the server's HTML is cached (see '/book/**' in
+  // nuxt.config.ts), so a copy taken there would offer a slot somebody has
+  // just booked. The grid renders every in-range day as bookable until this
+  // has answered, on both sides alike.
+  if (import.meta.server) return
   if (!clinicId.value) return
   monthAvailabilityLoading.value = true
   monthAvailabilityLoaded.value = false
@@ -869,6 +828,132 @@ if (import.meta.client) {
     observer.observe(document.documentElement)
   })
 }
+
+// --- the clinic's data, rendered on the server ---
+//
+// get_public_booking_info and get_public_booking_policy used to be called
+// from onMounted, so the first HTML a patient received said "Cargando…" and
+// the practitioners appeared only once the browser had downloaded the app
+// and made two more round trips (p95 455 ms and 204 ms, measured 17 Oct
+// 2026). Fetched here instead, the server renders the practitioners,
+// services and clinic details into the HTML and the browser hydrates from
+// the payload without calling either RPC again; the '/book/**' rule in
+// nuxt.config.ts then lets Netlify's cache answer repeat visits without
+// running the function at all.
+//
+// Only what holds for a minute is fetched here. Busy and blocked times
+// (loadMonthAvailability) stay in the browser.
+//
+// Last in the script on purpose: applyBooking writes refs declared all the
+// way down, and nothing after an await here may call a composable.
+type BookingPolicy = NonNullable<typeof policy.value>
+type BookingPayload =
+  | { status: 'ok'; info: BookingInfo; policy: BookingPolicy | null }
+  | { status: 'not_found' }
+  // The RPC itself failed (database, network), as opposed to answering that
+  // there is no such clinic. Kept apart so that a blip is not cached as
+  // "booking unavailable" for the next minute, and so the browser tries once
+  // more itself.
+  | { status: 'failed' }
+
+const cdnCacheControl = useResponseHeader('Netlify-CDN-Cache-Control')
+// A signed-in staff member previewing their own page: the payload then
+// carries their session (useSupabaseUser), which must not be served from the
+// CDN to the next visitor of the same URL.
+const previewedByStaff = import.meta.server && !!useSupabaseUser().value
+
+const { data: booking, refresh: refreshBooking } = await useAsyncData<BookingPayload>(`public-booking:${slug}`, async () => {
+  const [infoResult, policyResult] = await Promise.all([
+    supabase.rpc('get_public_booking_info', { p_slug: slug }),
+    supabase.rpc('get_public_booking_policy', { p_slug: slug }),
+  ])
+  // An unknown slug is an exception from the RPC ('Not found'), not a null:
+  // that one is an answer like any other and may be cached. Anything else
+  // from it is the call failing.
+  if (infoResult.error) return infoResult.error.message === 'Not found' ? { status: 'not_found' } : { status: 'failed' }
+  const parsed = infoResult.data as unknown as BookingInfo | null
+  if (!parsed || parsed.clinics.length === 0) return { status: 'not_found' }
+  return { status: 'ok', info: parsed, policy: (policyResult.data as BookingPolicy | null) ?? null }
+})
+
+if (import.meta.server) {
+  const cacheable = booking.value?.status === 'ok' || booking.value?.status === 'not_found'
+  if (previewedByStaff || !cacheable) cdnCacheControl.value = 'no-store'
+}
+
+function monthOf(dateKey: string) {
+  const [year, month] = dateKey.split('-').map(Number)
+  return new Date(year, month - 1, 1)
+}
+
+// Runs during setup on the server and again, from the payload, during
+// hydration -- so the HTML and the first client render agree on every phase
+// and selection. Anything that needs `window` is in onMounted below.
+function applyBooking(payload: BookingPayload | null) {
+  if (!payload || payload.status !== 'ok') {
+    phase.value = 'not_found'
+    return
+  }
+  const parsed = payload.info
+  info.value = parsed
+  policy.value = payload.policy
+  dialCode.value = parsed.account.default_phone_country || 'ES'
+  clinicId.value = parsed.clinics[0].id
+  // Marketing pages can deep-link straight into a specific offer (e.g. a
+  // promo page's own appointment type/practitioner) via ?type=&practitioner=
+  // -- falls back to the usual auto-select when absent or invalid.
+  const queryTypeId = typeof route.query.type === 'string' ? route.query.type : null
+  const queryPractitionerId = typeof route.query.practitioner === 'string' ? route.query.practitioner : null
+  if (queryTypeId && parsed.appointment_types.some((t) => t.id === queryTypeId)) {
+    appointmentTypeId.value = queryTypeId
+    typeLockedByQuery.value = true
+  } else if (parsed.appointment_types.length === 1) {
+    appointmentTypeId.value = parsed.appointment_types[0].id
+  }
+  const forClinic = parsed.team_members.filter((m) => m.clinic_ids.includes(clinicId.value))
+  if (queryPractitionerId && forClinic.some((m) => m.id === queryPractitionerId)) {
+    teamMemberId.value = queryPractitionerId
+  } else if (forClinic.length === 1 || bypassPractitioner.value) {
+    teamMemberId.value = forClinic[0]?.id ?? ''
+  }
+  // The calendar opens on the clinic's current month. new Date() alone is the
+  // month wherever the code runs -- UTC on the server, the visitor's zone in
+  // the browser -- and the two disagree for the first and last hours of every
+  // month, which would hydrate a different grid from the one in the HTML.
+  // The clinic's own date reads the same from both sides.
+  viewMonth.value = monthOf(clinicToday.value)
+  phase.value = 'select'
+  // No real choice to present (bypass, or a single available practitioner)
+  // -- skip straight to date/time instead of a screen whose only content is
+  // a "Continuar" button.
+  if (!showPractitionerCards.value && canContinueFromSelect.value) proceedToDatetime()
+}
+applyBooking(booking.value)
+
+onMounted(async () => {
+  // This is a public storefront other sites embed -- it must never follow
+  // the visitor's OS/browser dark-mode preference (or an internal staff
+  // member's saved theme, if previewed from inside the app). Always light,
+  // with brand colors layered on top via brandStyle above.
+  document.documentElement.setAttribute('data-theme', 'light')
+
+  captureAttribution()
+
+  // The server's fetch failed, so the HTML says the page is unavailable --
+  // which a fetch of the browser's own can still put right.
+  if (booking.value?.status !== 'ok' && booking.value?.status !== 'not_found') {
+    await refreshBooking()
+    applyBooking(booking.value)
+  }
+
+  const gtmId = info.value?.account.online_booking_gtm_id
+  if (gtmId) {
+    const script = document.createElement('script')
+    script.async = true
+    script.src = `https://www.googletagmanager.com/gtm.js?id=${encodeURIComponent(gtmId)}`
+    document.head.appendChild(script)
+  }
+})
 </script>
 
 <template>
@@ -918,6 +1003,7 @@ if (import.meta.client) {
                 <button
                   type="button"
                   class="flex w-full items-center justify-between rounded-card border border-line bg-surface p-4 text-left shadow-card transition hover:border-brand"
+                  :disabled="!hydrated"
                   @click="chooseTeamMember(ANY_PRACTITIONER)"
                 >
                   <div>
@@ -933,6 +1019,7 @@ if (import.meta.client) {
                   :key="m.id"
                   type="button"
                   class="flex w-full items-center justify-between rounded-card border border-line bg-surface p-4 text-left shadow-card transition hover:border-brand"
+                  :disabled="!hydrated"
                   @click="chooseTeamMember(m.id)"
                 >
                   <div class="flex items-center gap-3">
@@ -992,6 +1079,7 @@ if (import.meta.client) {
               :class="session.places_left > 0 ? 'border-line bg-surface hover:border-brand' : waitlistFor?.id === session.id ? 'border-brand bg-surface-subtle' : 'border-line bg-surface-subtle hover:border-warning-border'"
               data-cy="class-session-option"
               :data-places-left="session.places_left"
+              :disabled="!hydrated"
               @click="pickClassSession(session)"
             >
               <span class="min-w-0 flex-1">
@@ -1033,9 +1121,9 @@ if (import.meta.client) {
           <div v-else class="mt-6 grid gap-6 sm:grid-cols-3">
             <div class="rounded-card border border-line bg-surface p-4 shadow-card">
               <div class="flex items-center justify-between">
-                <button type="button" class="rounded p-1 text-ink-faint hover:bg-surface-subtle" @click="prevMonth">&lsaquo;</button>
+                <button type="button" class="rounded p-1 text-ink-faint hover:bg-surface-subtle" :disabled="!hydrated" @click="prevMonth">&lsaquo;</button>
                 <span class="text-sm font-semibold text-ink-900">{{ monthLabel }}</span>
-                <button type="button" class="rounded p-1 text-ink-faint hover:bg-surface-subtle" @click="nextMonth">&rsaquo;</button>
+                <button type="button" class="rounded p-1 text-ink-faint hover:bg-surface-subtle" :disabled="!hydrated" @click="nextMonth">&rsaquo;</button>
               </div>
               <div class="mt-3 grid grid-cols-7 gap-1 text-center text-xs font-medium text-ink-faint">
                 <span v-for="l in WEEKDAY_LABELS" :key="l">{{ l }}</span>
@@ -1045,7 +1133,7 @@ if (import.meta.client) {
                   v-for="(day, i) in calendarDays"
                   :key="i"
                   type="button"
-                  :disabled="!day.bookable"
+                  :disabled="!day.bookable || !hydrated"
                   class="aspect-square rounded-full text-sm font-medium"
                   :class="[
                     !day.inMonth || !day.bookable ? 'text-ink-faint' : '',

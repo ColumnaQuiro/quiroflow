@@ -4,6 +4,7 @@
 // the mobile app, so the only signal was a red cloud build four days later.
 import { BONO_PAYMENTS_EMBED, bonoOwedCents } from '../utils/bonoOwed'
 import { outstandingCentsOf } from '../utils/owing'
+import { dataOrThrow } from '../utils/supabaseFailures'
 
 interface ActiveMembership {
   id: string
@@ -72,6 +73,9 @@ interface FinancialState {
   // real reload.
   loaded: boolean
   inFlight: Promise<void> | null
+  // A read was refused or broke, so the figures above are whatever the last
+  // successful load left (zero on a first load) -- not this patient's money.
+  loadError: Ref<boolean>
 }
 
 // Keyed by patient id and shared across every call site (patient detail page,
@@ -97,6 +101,7 @@ function stateFor(id: string | null | undefined): FinancialState {
       activePackages: ref([]),
       loaded: false,
       inFlight: null,
+      loadError: ref(false),
     }
     cache.set(key, state)
   }
@@ -107,9 +112,26 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
   const supabase = useSupabaseClient()
   const id = computed(() => toValue(patientId))
 
+  // A failed read is caught here, not thrown to the caller: the promise is
+  // mostly nobody's to await (onMounted, a watcher), so a throw would be an
+  // unhandled rejection, and it would fail every Cypress spec that stubs a
+  // query to fail on purpose (patients/ledger-admits-a-failed-load). The
+  // failed request is reported by utils/supabaseFailures.ts; this records
+  // that the figures are not to be trusted.
   async function doLoad(currentId: string) {
     const state = stateFor(currentId)
     state.loading.value = true
+    try {
+      await loadInto(state, currentId)
+      state.loadError.value = false
+    } catch {
+      state.loadError.value = true
+    }
+    state.loading.value = false
+    state.loaded = true
+  }
+
+  async function loadInto(state: FinancialState, currentId: string) {
 
     // payments carries its own patient_id since 0170, so this reads the
     // patient's money directly instead of joining through invoices. That is
@@ -118,16 +140,22 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     // holds for a bono patient -- has none. The invoice is still joined, but
     // only for the status the credit-on-void rule below needs, and left outer
     // so an unallocated payment survives it.
-    const [{ data: invoices }, { data: memberships }, { data: packages }, { data: credits }, { data: shares }, { data: payments }] = await Promise.all([
+    // Each read throws on failure (dataOrThrow) rather than summing to a
+    // balance of zero: a ledger that reads "nothing owed" because one of six
+    // queries was refused is the failure that cost a day of RLS forensics
+    // (CLAUDE.md, Migrations). Except the shares read, which is REFUSED for a
+    // patient by design -- its policy calls is_account_member, which only
+    // staff may execute -- and whose empty result hands over to the RPC below.
+    const [invoices, memberships, packages, credits, { data: shares }, payments] = await Promise.all([
       // Void invoices are filtered in JS rather than here: bonoValueCents
       // below needs the bono's own sale invoice, and telling "no invoice"
       // apart from "an invoice that was voided" needs the status in hand.
-      supabase.from('invoices').select('id, total_cents, status, is_refund').eq('patient_id', currentId),
-      supabase.from('patient_memberships').select('id, membership_name, status').eq('patient_id', currentId).eq('status', 'active'),
+      supabase.from('invoices').select('id, total_cents, status, is_refund').eq('patient_id', currentId).then(dataOrThrow),
+      supabase.from('patient_memberships').select('id, membership_name, status').eq('patient_id', currentId).eq('status', 'active').then(dataOrThrow),
       // The bono's payments come with it, whoever's record they were taken
       // on -- a shared bono's beneficiary pays towards it too (BONO_PAYMENTS_EMBED).
-      supabase.from('package_purchases').select(`id, package_name, sessions_total, sessions_used, price_cents, invoice_id, owed_cents, is_closed, purchased_at, ${BONO_PAYMENTS_EMBED}`).eq('patient_id', currentId).order('purchased_at', { ascending: false }),
-      supabase.from('account_credits').select('amount_cents, external_reference, payment_id').eq('patient_id', currentId),
+      supabase.from('package_purchases').select(`id, package_name, sessions_total, sessions_used, price_cents, invoice_id, owed_cents, is_closed, purchased_at, ${BONO_PAYMENTS_EMBED}`).eq('patient_id', currentId).order('purchased_at', { ascending: false }).then(dataOrThrow),
+      supabase.from('account_credits').select('amount_cents, external_reference, payment_id').eq('patient_id', currentId).then(dataOrThrow),
       supabase
         .from('package_purchase_shares')
         .select('package_purchases(id, package_name, sessions_total, sessions_used, price_cents, is_closed, purchased_at, patients(first_name, last_name))')
@@ -135,7 +163,7 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
       // No invoice join any more -- it existed only for the void-invoice
       // credit-on-void check, which the 'credit' exclusion below now does
       // unconditionally, invoice status or not.
-      supabase.from('payments').select('amount_cents, method, invoice_id, package_purchase_id, external_reference, purpose').eq('patient_id', currentId),
+      supabase.from('payments').select('amount_cents, method, invoice_id, package_purchase_id, external_reference, purpose').eq('patient_id', currentId).then(dataOrThrow),
     ])
 
     // A 'credit' payment is not money and never was: it records a patient
@@ -246,7 +274,8 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     // the patient themselves, with only the counters and the owner's name.
     let shareRows = shares ?? []
     if (shareRows.length === 0) {
-      const { data: mine } = await supabase.rpc('get_my_shared_packages' as never, { p_patient_id: currentId } as never)
+      const { data: mine, error } = await supabase.rpc('get_my_shared_packages' as never, { p_patient_id: currentId } as never)
+      if (error) throw error
       shareRows = ((mine as { id: string; package_name: string; sessions_total: number; sessions_used: number; price_cents: number; is_closed: boolean; owner_first_name: string; owner_last_name: string | null }[] | null) ?? []).map(
         ({ owner_first_name, owner_last_name, ...p }) => ({ package_purchases: { ...p, patients: { first_name: owner_first_name, last_name: owner_last_name } } }),
       ) as unknown as typeof shareRows
@@ -318,9 +347,6 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
         return sum + Math.max(0, remainingCents - owedCents)
       }, 0)
     state.availableCents.value = state.creditLedgerCents.value + state.bonoValueCents.value
-
-    state.loading.value = false
-    state.loaded = true
   }
 
   // Forces a fresh load regardless of cache state -- what every write
@@ -362,6 +388,7 @@ export function usePatientFinancialSummary(patientId: MaybeRefOrGetter<string>) 
     availableCents: computed(() => stateFor(id.value).availableCents.value),
     activeMembership: computed(() => stateFor(id.value).activeMembership.value),
     activePackages: computed(() => stateFor(id.value).activePackages.value),
+    loadError: computed(() => stateFor(id.value).loadError.value),
     refresh,
   }
 }

@@ -2083,6 +2083,7 @@ export type Database = {
           id: string
           note: string | null
           practitioner_id: string | null
+          public_holiday: string | null
           room_id: string | null
           starts_at: string
         }
@@ -2095,6 +2096,7 @@ export type Database = {
           id?: string
           note?: string | null
           practitioner_id?: string | null
+          public_holiday?: string | null
           room_id?: string | null
           starts_at: string
         }
@@ -2107,6 +2109,7 @@ export type Database = {
           id?: string
           note?: string | null
           practitioner_id?: string | null
+          public_holiday?: string | null
           room_id?: string | null
           starts_at?: string
         }
@@ -2564,6 +2567,9 @@ export type Database = {
           business_hours: Json
           created_at: string
           email: string | null
+          holiday_region: string | null
+          holidays_auto: boolean
+          holidays_loaded_through: string | null
           id: string
           invoice_footer_text: string | null
           legal_name: string | null
@@ -2582,6 +2588,9 @@ export type Database = {
           business_hours?: Json
           created_at?: string
           email?: string | null
+          holiday_region?: string | null
+          holidays_auto?: boolean
+          holidays_loaded_through?: string | null
           id?: string
           invoice_footer_text?: string | null
           legal_name?: string | null
@@ -2600,6 +2609,9 @@ export type Database = {
           business_hours?: Json
           created_at?: string
           email?: string | null
+          holiday_region?: string | null
+          holidays_auto?: boolean
+          holidays_loaded_through?: string | null
           id?: string
           invoice_footer_text?: string | null
           legal_name?: string | null

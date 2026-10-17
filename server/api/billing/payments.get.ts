@@ -31,7 +31,7 @@ export default defineEventHandler(async (event) => {
     return { payments: [] as PlatformPaymentRow[] }
   }
 
-  const stripe = stripeForPlatformBilling()
+  const stripe = await stripeForPlatformBilling()
 
   // This API version moved per-invoice payment/charge details behind a
   // separate InvoicePayment sub-resource (no more Invoice.payment_intent),

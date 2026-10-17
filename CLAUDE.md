@@ -304,6 +304,35 @@ Confirming is a statement about the AEAT, so do the AEAT side first:
 A 4112 after confirming means one of those steps is missing or used the wrong
 procedure code. It does not mean the certificate is broken.
 
+## A top-level import in `server/utils` runs on every cold start
+
+Nitro bundles every module under `server/utils` into the one chunk the
+Netlify function evaluates before answering anything
+(`chunks/nitro/nitro.mjs`), whichever route is being served. So a
+`import sharp from 'sharp'` at the top of `compressPatientFile.ts` loaded
+19 MB of native code -- ~800 ms on a fast machine, more on a Lambda -- for a
+login page that would never touch a file. pdfkit, pdf-lib, qrcode, Stripe
+and the Anthropic SDK rode in the same way, and a cold `/login` measured
+1.9 s to first byte on 17 Oct 2026 (warm: 0.5-0.8 s).
+
+A library that only some requests need is loaded inside the function that
+needs it:
+
+```ts
+const { default: PDFDocument } = await import('pdfkit')
+```
+
+with `import type` kept at the top for its types. The factories that hand
+out a client (`stripeForPlatform()`, `createAnthropicClient()`) are async
+for this reason. To check a change has not pulled something back in, build
+and grep the startup chunk:
+
+```bash
+grep -o "from '\(sharp\|pdfkit\|pdf-lib\|stripe\|@anthropic-ai/sdk\|qrcode\)'" .netlify/functions-internal/server/chunks/nitro/nitro.mjs
+```
+
+It prints nothing when the chunk is clean.
+
 ## Deploying — a published release, via GitHub Actions
 
 **Merging does not deploy.** `.github/workflows/deploy.yml` runs when a

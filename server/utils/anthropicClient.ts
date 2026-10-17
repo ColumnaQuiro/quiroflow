@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk'
+import type Anthropic from '@anthropic-ai/sdk'
 
 // The one way the server builds an Anthropic client.
 //
@@ -17,6 +17,10 @@ import Anthropic from '@anthropic-ai/sdk'
 // ("invalid x-api-key").
 export const ANTHROPIC_BASE_URL = 'https://api.anthropic.com'
 
-export function createAnthropicClient(apiKey: string): Anthropic {
+// Async because the SDK is imported here, on first use, rather than at the
+// top of the module: everything in server/utils is evaluated on every cold
+// start of the Netlify function, and most requests never talk to a model.
+export async function createAnthropicClient(apiKey: string): Promise<Anthropic> {
+  const { default: Anthropic } = await import('@anthropic-ai/sdk')
   return new Anthropic({ apiKey, baseURL: ANTHROPIC_BASE_URL })
 }

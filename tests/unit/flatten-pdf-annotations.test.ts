@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import * as pdfLib from 'pdf-lib'
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRawStream } from 'pdf-lib'
 import { flattenPdfAnnotations } from '../../server/utils/flattenPdfAnnotations'
 import { compressPatientFile } from '../../server/utils/compressPatientFile'
@@ -45,7 +46,7 @@ describe('Flattening PDF annotations into the page', () => {
     const { doc, page } = await informe()
     page.node.set(PDFName.of('Annots'), doc.context.obj([annotation(doc, 'FreeText', [100, 600, 300, 640])]))
 
-    expect(flattenPdfAnnotations(doc)).to.equal(1)
+    expect(flattenPdfAnnotations(pdfLib, doc)).to.equal(1)
     expect(annotSubtypes(doc)).to.deep.equal([])
     // BBox 100x20 fitted onto a 200x40 rect at (100, 600): scale 2, then move.
     expect(lastContentStream(doc)).to.match(/q\s+2 0 0 2 100 600 cm\s+\/FlatAnnot-?\d+ Do\s+Q/)
@@ -56,7 +57,7 @@ describe('Flattening PDF annotations into the page', () => {
     const { doc, page } = await informe()
     page.node.set(PDFName.of('Annots'), doc.context.obj([annotation(doc, 'FreeText', [50, 50, 70, 150], {}, { bbox: [0, 0, 100, 20], matrix: [0, 1, -1, 0, 0, 0] })]))
 
-    flattenPdfAnnotations(doc)
+    flattenPdfAnnotations(pdfLib, doc)
     // Rotated box spans x -20..0, y 0..100; fitted onto 50..70 x 50..150.
     expect(lastContentStream(doc)).to.match(/q\s+1 0 0 1 70 50 cm\s+\/FlatAnnot-?\d+ Do\s+Q/)
   })
@@ -64,7 +65,7 @@ describe('Flattening PDF annotations into the page', () => {
   it('wraps the page in q/Q so its own transforms cannot move what is painted after it', async () => {
     const { doc, page } = await informe()
     page.node.set(PDFName.of('Annots'), doc.context.obj([annotation(doc, 'Circle', [10, 10, 60, 60])]))
-    flattenPdfAnnotations(doc)
+    flattenPdfAnnotations(pdfLib, doc)
 
     const contents = doc.getPages()[0]!.node.Contents() as PDFArray
     const first = doc.context.lookup(contents.get(0)) as any
@@ -84,7 +85,7 @@ describe('Flattening PDF annotations into the page', () => {
       ]),
     )
 
-    expect(flattenPdfAnnotations(doc)).to.equal(0)
+    expect(flattenPdfAnnotations(pdfLib, doc)).to.equal(0)
     expect(annotSubtypes(doc)).to.deep.equal(['/Link', '/Widget', '/Text', '/FreeText', '/Square'])
   })
 
@@ -94,14 +95,14 @@ describe('Flattening PDF annotations into the page', () => {
     const popup = annotation(doc, 'Popup', [300, 600, 400, 700], { Parent: freeText }, null)
     page.node.set(PDFName.of('Annots'), doc.context.obj([freeText, popup, annotation(doc, 'Link', [0, 0, 10, 10])]))
 
-    flattenPdfAnnotations(doc)
+    flattenPdfAnnotations(pdfLib, doc)
     expect(annotSubtypes(doc)).to.deep.equal(['/Link'])
   })
 
   it('leaves a document with nothing to flatten untouched', async () => {
     const { doc } = await informe()
     const before = doc.getPages()[0]!.node.Contents()
-    expect(flattenPdfAnnotations(doc)).to.equal(0)
+    expect(flattenPdfAnnotations(pdfLib, doc)).to.equal(0)
     expect(doc.getPages()[0]!.node.Contents()).to.equal(before)
   })
 })

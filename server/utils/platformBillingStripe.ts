@@ -1,4 +1,4 @@
-import Stripe from 'stripe'
+import type Stripe from 'stripe'
 import { canChangeInPlace } from '~/utils/billing'
 
 const API_VERSION = '2026-07-29.dahlia'
@@ -8,11 +8,12 @@ const API_VERSION = '2026-07-29.dahlia'
 // stripeForPlatform() (Connect, used to bill clinics' OWN patients on their
 // behalf). Never share a client between the two: a bug here must not be
 // able to touch real clinic payment data, and vice versa.
-export function stripeForPlatformBilling(): Stripe {
+export async function stripeForPlatformBilling(): Promise<Stripe> {
   const config = useRuntimeConfig()
   if (!config.stripePlatformBillingSecretKey) {
     throw createError({ statusCode: 500, statusMessage: 'Platform billing Stripe is not configured on this deployment' })
   }
+  const { default: Stripe } = await import('stripe')
   return new Stripe(config.stripePlatformBillingSecretKey, { apiVersion: API_VERSION })
 }
 

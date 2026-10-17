@@ -83,7 +83,7 @@ export default defineEventHandler(async (event) => {
   const findFreeTimes = calendar.availability ? freeTimesLookup(service, teamMember.account_id, config, bookable, calendar.timeZone) : null
 
   try {
-    const { text: reply, refused } = await runReceptionistModel(createAnthropicClient(apiKey), {
+    const { text: reply, refused } = await runReceptionistModel(await createAnthropicClient(apiKey), {
       model: MODEL,
       maxTokens: MAX_TOKENS,
       system: buildSystemPrompt(config, { testMode: true, offeredTypes: types, adOnlyTypes: adOnly, audience, calendar, leadOrigin, searchTool: Boolean(findFreeTimes) }),

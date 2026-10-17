@@ -1,6 +1,12 @@
-import { PDFDocument, PDFName } from 'pdf-lib'
-import sharp from 'sharp'
-import { flattenPdfAnnotations } from './flattenPdfAnnotations'
+import type { PDFDocument } from 'pdf-lib'
+import { flattenPdfAnnotations, type PdfLib } from './flattenPdfAnnotations'
+
+// Both libraries are loaded when a file is actually compressed, not when the
+// server starts. sharp is ~800 ms and 19 MB of native code, and server/utils
+// is bundled into the one Nitro chunk every request evaluates -- so a static
+// import here made every cold start, login page included, pay for it.
+const loadSharp = async () => (await import('sharp')).default
+const loadPdfLib = (): Promise<PdfLib> => import('pdf-lib')
 
 // Quality 90 is a deliberate middle ground, not a guess: verified against a
 // synthetic photographic test image (photo-realistic noise, not flat color
@@ -33,6 +39,7 @@ interface CompressResult {
 // PDF the tag means nothing (the page draws the raw pixels), and applying it
 // there would be the rotation.
 async function compressImageBuffer(buffer: Buffer, mimeType: string): Promise<CompressResult> {
+  const sharp = await loadSharp()
   const image = sharp(buffer).rotate()
   const out =
     mimeType === 'image/jpeg'
@@ -48,8 +55,8 @@ async function compressImageBuffer(buffer: Buffer, mimeType: string): Promise<Co
 // one this can recompress faithfully: sharp decodes to RGB or grey, so a CMYK
 // or indexed image re-encoded by it would no longer match what the PDF says
 // it is, and would render wrongly. null means "leave this image alone".
-function declaredComponents(doc: PDFDocument, dict: any): 1 | 3 | null {
-  let cs = dict.get(PDFName.of('ColorSpace'))
+function declaredComponents(lib: PdfLib, doc: PDFDocument, dict: any): 1 | 3 | null {
+  let cs = dict.get(lib.PDFName.of('ColorSpace'))
   if (!cs) return null
   cs = doc.context.lookup(cs) ?? cs
   const name = cs.toString()
@@ -60,7 +67,7 @@ function declaredComponents(doc: PDFDocument, dict: any): 1 | 3 | null {
     const arr = cs.asArray()
     if (arr[0]?.toString() === '/ICCBased') {
       const stream = doc.context.lookup(arr[1]) as any
-      const n = Number(stream?.dict?.get(PDFName.of('N'))?.toString())
+      const n = Number(stream?.dict?.get(lib.PDFName.of('N'))?.toString())
       if (n === 1 || n === 3) return n
     }
   }
@@ -74,21 +81,22 @@ function declaredComponents(doc: PDFDocument, dict: any): 1 | 3 | null {
 // than guessed at; a skipped image just means this particular PDF doesn't
 // shrink as much, never a corrupted one.
 async function recompressPdfImages(doc: PDFDocument): Promise<boolean> {
+  const [lib, sharp] = await Promise.all([loadPdfLib(), loadSharp()])
   let touchedAny = false
 
   for (const page of doc.getPages()) {
-    const xobjects = page.node.Resources()?.lookup(PDFName.of('XObject'))
+    const xobjects = page.node.Resources()?.lookup(lib.PDFName.of('XObject'))
     if (!xobjects || typeof (xobjects as any).entries !== 'function') continue
 
     for (const [, ref] of (xobjects as any).entries()) {
       const xobj = doc.context.lookup(ref) as any
-      if (!xobj?.dict || xobj.dict.get(PDFName.of('Subtype'))?.toString() !== '/Image') continue
-      if (xobj.dict.get(PDFName.of('Filter'))?.toString() !== '/DCTDecode') continue
+      if (!xobj?.dict || xobj.dict.get(lib.PDFName.of('Subtype'))?.toString() !== '/Image') continue
+      if (xobj.dict.get(lib.PDFName.of('Filter'))?.toString() !== '/DCTDecode') continue
 
       // A /Decode array remaps the samples; a re-encoded stream would be
       // remapped again.
-      if (xobj.dict.get(PDFName.of('Decode'))) continue
-      const components = declaredComponents(doc, xobj.dict)
+      if (xobj.dict.get(lib.PDFName.of('Decode'))) continue
+      const components = declaredComponents(lib, doc, xobj.dict)
       if (!components) continue
 
       const original = xobj.contents ?? xobj.getContents?.()
@@ -100,7 +108,7 @@ async function recompressPdfImages(doc: PDFDocument): Promise<boolean> {
         // The stream has to keep the component count the PDF declares for it.
         if ((await sharp(recompressed).metadata()).channels !== components) continue
         if (recompressed.length < original.length) {
-          xobj.dict.set(PDFName.of('Length'), doc.context.obj(recompressed.length))
+          xobj.dict.set(lib.PDFName.of('Length'), doc.context.obj(recompressed.length))
           xobj.contents = recompressed
           touchedAny = true
         }
@@ -121,8 +129,9 @@ async function recompressPdfImages(doc: PDFDocument): Promise<boolean> {
 // shows. Its images are recompressed only past MIN_SIZE_BYTES, and that alone
 // is kept only when it made the file smaller.
 async function processPdfBuffer(buffer: Buffer): Promise<CompressResult> {
-  const doc = await PDFDocument.load(buffer, { updateMetadata: false })
-  const flattened = flattenPdfAnnotations(doc) > 0
+  const lib = await loadPdfLib()
+  const doc = await lib.PDFDocument.load(buffer, { updateMetadata: false })
+  const flattened = flattenPdfAnnotations(lib, doc) > 0
   const recompressed = buffer.length >= MIN_SIZE_BYTES && (await recompressPdfImages(doc))
   if (!flattened && !recompressed) return { buffer, changed: false }
 

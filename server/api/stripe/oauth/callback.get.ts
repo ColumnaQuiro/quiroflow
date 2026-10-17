@@ -39,7 +39,7 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    const platform = stripeForPlatform()
+    const platform = await stripeForPlatform()
     const response = await platform.oauth.token({ grant_type: 'authorization_code', code: query.code })
 
     // Read back: the page said "connected" even when this was refused.

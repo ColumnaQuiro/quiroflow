@@ -120,6 +120,9 @@ function eur(cents: number) {
       :book-to="settings.bookingEnabled ? '/book' : null"
     />
 
+    <!-- What the clinic sent them to read or watch -->
+    <PatientLearnCard class="mt-3" :patient-id="props.patientId" :link-to="(id) => `/learn/${id}`" />
+
     <!-- Earlier, if a slot frees up: the clinic's waitlist -->
     <PatientWaitlistCard v-if="settings.bookingEnabled && !apptLoading" class="mt-3" :clinic-id="waitlistClinicId" :has-next-visit="!!next" />
 

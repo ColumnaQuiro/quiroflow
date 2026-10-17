@@ -41,6 +41,7 @@ export const SETTINGS_PAGES = [
   '/settings/saved-replies',
   '/settings/services',
   '/settings/products',
+  '/settings/privacy',
   '/settings/team',
   '/settings/webhooks',
   '/settings/whatsapp',

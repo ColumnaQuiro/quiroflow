@@ -173,6 +173,7 @@ declare
   v_files text[];
   v_photo text;
   v_appts uuid[];
+  v_posture text[];
   v_actor_name text;
 begin
   select * into v_patient from patients where id = p_patient_id for update;
@@ -208,6 +209,14 @@ begin
   delete from patient_exercises where patient_id = p_patient_id;
   if to_regclass('public.learn_sends') is not null then
     execute 'delete from public.learn_sends where patient_id = $1' using p_patient_id;
+  end if;
+  -- Posture photos are in storage too: their paths go back with the files.
+  if to_regclass('public.posture_assessments') is not null then
+    execute $q$select coalesce(array_agg(v.value ->> 'photo') filter (where v.value ->> 'photo' is not null), '{}')
+      from public.posture_assessments pa, jsonb_each(pa.views) v where pa.patient_id = $1$q$
+      into v_posture using p_patient_id;
+    v_files := coalesce(v_files, '{}') || v_posture;
+    execute 'delete from public.posture_assessments where patient_id = $1' using p_patient_id;
   end if;
   delete from staff_tasks where patient_id = p_patient_id;
 

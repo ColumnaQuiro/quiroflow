@@ -3,6 +3,7 @@ import type { Database } from '~/types/database.types'
 import { stripeClientFor } from '~/server/utils/stripe'
 import { patientCardLink } from '~/server/utils/patientCardLink'
 import { GIFT_REFUSAL, giftLabel, giftVoucherFor, redeemGiftVoucher } from '~/server/utils/giftVouchers'
+import { throttlePublic } from '~/server/utils/publicRateLimit'
 
 // The public booking page's booking, made here rather than by the page calling
 // create_public_booking itself, so the clinic's "new online booking" alert goes
@@ -23,6 +24,9 @@ import { GIFT_REFUSAL, giftLabel, giftVoucherFor, redeemGiftVoucher } from '~/se
 type BookingArgs = Database['public']['Functions']['create_public_booking']['Args']
 
 export default defineEventHandler(async (event) => {
+  // Twenty bookings in ten minutes from one address is a script, not a family.
+  await throttlePublic(event, { scope: 'book', limit: 20, windowSeconds: 600 })
+
   // gift_code is ours, not the function's: a gift voucher to redeem onto the
   // patient once the booking has made or found them (below).
   const { gift_code: giftCode, ...body } = (await readBody<BookingArgs & { gift_code?: string }>(event)) ?? ({} as BookingArgs)

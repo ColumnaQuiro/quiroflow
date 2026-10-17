@@ -6445,6 +6445,8 @@ export type Database = {
           id: string
           lead_id: string | null
           patient_id: string | null
+          receptionist_handover: boolean
+          reminded_at: string | null
           role_id: string | null
           rule_id: string | null
           run_id: string | null
@@ -6461,6 +6463,8 @@ export type Database = {
           id?: string
           lead_id?: string | null
           patient_id?: string | null
+          receptionist_handover?: boolean
+          reminded_at?: string | null
           role_id?: string | null
           rule_id?: string | null
           run_id?: string | null
@@ -6477,6 +6481,8 @@ export type Database = {
           id?: string
           lead_id?: string | null
           patient_id?: string | null
+          receptionist_handover?: boolean
+          reminded_at?: string | null
           role_id?: string | null
           rule_id?: string | null
           run_id?: string | null

@@ -68,7 +68,8 @@ export async function announceHandover(service: any, accountId: string, target: 
  * The handover in Mi día as well: a task for whoever answers patients
  * (inbox_task_role_id), until somebody ticks it off. A push is gone once it is
  * swiped away, and a patient told "mi compañera te escribirá" about cancelling
- * a visit still had it booked the next morning. Best-effort -- the note and
+ * a visit still had it booked the next morning. Overdue and unanswered, it
+ * earns one more push (handover-reminder-cron). Best-effort -- the note and
  * the push have already gone out.
  */
 async function handoverTask(service: any, accountId: string, target: ReceptionistTarget, personName: string, reason: string) {
@@ -82,6 +83,9 @@ async function handoverTask(service: any, accountId: string, target: Receptionis
       lead_id: target.kind === 'lead' ? target.leadId : null,
       title: `Responder a ${personName}: ${reason}`.slice(0, 300),
       due_at: new Date(Date.now() + 2 * 3600_000).toISOString(),
+      // What handover-reminder-cron looks for: still open and overdue, with
+      // nobody having written since, it pushes the team once more.
+      receptionist_handover: true,
     })
     if (error) console.error('[receptionist] could not add the handover task:', error.message)
   } catch (err) {

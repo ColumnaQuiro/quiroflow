@@ -13,9 +13,9 @@ describe('Anthropic client', () => {
     else process.env.ANTHROPIC_BASE_URL = before
   })
 
-  it('talks to Anthropic even when the environment points elsewhere', () => {
+  it('talks to Anthropic even when the environment points elsewhere', async () => {
     process.env.ANTHROPIC_BASE_URL = 'https://quiroflow.netlify.app/.netlify/ai'
-    const client = createAnthropicClient('sk-ant-api03-test')
+    const client = await createAnthropicClient('sk-ant-api03-test')
     expect(client.baseURL).to.equal('https://api.anthropic.com')
     expect(client.apiKey).to.equal('sk-ant-api03-test')
   })

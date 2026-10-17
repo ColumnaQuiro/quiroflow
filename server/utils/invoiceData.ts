@@ -1,4 +1,4 @@
-import PDFDocument from 'pdfkit'
+import type PDFDocument from 'pdfkit'
 import { VERIFACTU_QR_LABEL, VERIFACTU_QR_LEGEND } from '../../utils/verifactuQr'
 import { exemptionClause, facturaTaxFor } from '../../utils/facturaTax'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -272,7 +272,8 @@ export function receiptOptions(account: ReceiptAccount | null, totalCents: numbe
   }
 }
 
-export function generateInvoicePdf(data: InvoiceDocumentData): Promise<Buffer> {
+export async function generateInvoicePdf(data: InvoiceDocumentData): Promise<Buffer> {
+  const { default: PDFDocument } = await import('pdfkit')
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 50 })
     const chunks: Buffer[] = []

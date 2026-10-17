@@ -232,7 +232,7 @@ export async function draftLeadReply(
   // asked, because the model call is what the ceiling is there to stop.
   if (await overMonthlyLimit(supabase, accountId, config.monthlyReplyLimit)) return { status: 'limit_reached' }
 
-  const { text: draft, refused, handedOver } = await runReceptionistModel(createAnthropicClient(apiKey), {
+  const { text: draft, refused, handedOver } = await runReceptionistModel(await createAnthropicClient(apiKey), {
     model: MODEL,
     maxTokens: MAX_TOKENS,
     system: buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, audience, calendar, leadOrigin, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, draft: { personName: lead.full_name ?? null }, knownDetails: { name: leadNameIsTheirs(lead.channel) && Boolean(lead.full_name?.trim()), email: Boolean(lead.email?.trim()) }, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist) }),

@@ -15,7 +15,7 @@ export default defineEventHandler(async (event) => {
     const clientId = useRuntimeConfig().public.stripeConnectClientId
     if (clientId) {
       try {
-        await stripeForPlatform().oauth.deauthorize({ client_id: clientId, stripe_user_id: connected })
+        await (await stripeForPlatform()).oauth.deauthorize({ client_id: clientId, stripe_user_id: connected })
       } catch (err: any) {
         // Already revoked from the clinic's own Stripe dashboard: nothing left
         // to undo there, so the record is cleared all the same.

@@ -72,7 +72,7 @@ export async function syncVerifactuFees(serviceRole: SupabaseClient<Database>) {
   if (error) return { error: `verifactu fee: could not read what is due: ${error.message}` }
   if (!due?.length) return { changed: [] as unknown[] }
 
-  const stripe = stripeForPlatformBilling()
+  const stripe = await stripeForPlatformBilling()
   const results: Record<string, unknown>[] = []
   for (const row of due) {
     const attemptedAt = new Date().toISOString()

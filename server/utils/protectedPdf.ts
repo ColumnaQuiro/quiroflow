@@ -1,7 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { PDFDocument } from 'pdf-lib'
 import { encryptPDF } from '@pdfsmaller/pdf-encrypt'
-import sharp from 'sharp'
 import { flattenPdfAnnotations } from './flattenPdfAnnotations'
 
 // A patient's file as a PDF only their password opens (utils/protectedDocument.ts
@@ -22,6 +20,8 @@ const MARGIN = 24
 async function imageAsPdf(buffer: Buffer, mimeType: string): Promise<Uint8Array> {
   // EXIF orientation applied to the pixels: a phone stores a portrait photo
   // as a landscape frame plus a tag, and a PDF page draws the raw frame.
+  // sharp and pdf-lib load here, on use -- see compressPatientFile.ts for why.
+  const [{ default: sharp }, { PDFDocument }] = await Promise.all([import('sharp'), import('pdf-lib')])
   const upright = sharp(buffer).rotate()
   const png = mimeType === 'image/png'
   const bytes = png ? await upright.png().toBuffer() : await upright.jpeg({ quality: 92 }).toBuffer()
@@ -46,8 +46,9 @@ async function imageAsPdf(buffer: Buffer, mimeType: string): Promise<Uint8Array>
 // pages are asked for, which used to escape as a bare 500.
 async function pdfForSharing(buffer: Buffer): Promise<Uint8Array> {
   try {
-    const doc = await PDFDocument.load(buffer, { updateMetadata: false })
-    flattenPdfAnnotations(doc)
+    const lib = await import('pdf-lib')
+    const doc = await lib.PDFDocument.load(buffer, { updateMetadata: false })
+    flattenPdfAnnotations(lib, doc)
     return await doc.save({ useObjectStreams: false })
   } catch (err) {
     if (err instanceof Error && /encrypt/i.test(err.message)) {

@@ -104,7 +104,7 @@ export default defineEventHandler(async (event) => {
     .eq('account_id', teamMember.account_id)
     .maybeSingle()
 
-  const stripe = stripeForPlatformBilling()
+  const stripe = await stripeForPlatformBilling()
 
   // VAT. QuiroFlow sells software to Spanish clinics, so every subscription
   // carries 21% IVA -- a fixed tax rate rather than Stripe Tax, which prices

@@ -274,6 +274,7 @@ const goalChips = computed(() =>
 
         <PatientsStickyNotePanel :patient-id="patientId" />
         <ExercisesStaff v-if="exercisesAccountId" :account-id="exercisesAccountId" :patient-id="patientId" :team-member-id="exercisesTeamMemberId" />
+        <LearnStaffSend v-if="exercisesAccountId" :account-id="exercisesAccountId" :patient-id="patientId" :complaint="patient?.chief_complaint" :diagnosis="patient?.diagnosis" />
       </div>
     </div>
 

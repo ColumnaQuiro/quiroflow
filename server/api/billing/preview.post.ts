@@ -67,7 +67,7 @@ export default defineEventHandler(async (event): Promise<PreviewResult> => {
     return { previewable: false }
   }
 
-  const stripe = stripeForPlatformBilling()
+  const stripe = await stripeForPlatformBilling()
 
   const config = useRuntimeConfig()
   const taxRateId = config.stripePlatformBillingTaxRateId || null

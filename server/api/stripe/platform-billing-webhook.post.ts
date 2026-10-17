@@ -39,7 +39,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Missing signature or body' })
   }
 
-  const stripe = stripeForPlatformBilling()
+  const stripe = await stripeForPlatformBilling()
   let stripeEvent: Stripe.Event
   try {
     stripeEvent = stripe.webhooks.constructEvent(rawBody, signature, config.stripePlatformBillingWebhookSecret)

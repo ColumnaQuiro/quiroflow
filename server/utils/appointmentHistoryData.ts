@@ -1,4 +1,4 @@
-import PDFDocument from 'pdfkit'
+import type PDFDocument from 'pdfkit'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
 
@@ -50,7 +50,8 @@ export async function loadAppointmentHistoryData(supabase: SupabaseClient<Databa
   }
 }
 
-export function generateAppointmentHistoryPdf(data: AppointmentHistoryData): Promise<Buffer> {
+export async function generateAppointmentHistoryPdf(data: AppointmentHistoryData): Promise<Buffer> {
+  const { default: PDFDocument } = await import('pdfkit')
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 50 })
     const chunks: Buffer[] = []

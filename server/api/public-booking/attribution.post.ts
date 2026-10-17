@@ -1,6 +1,7 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { applyBookingReferral } from '~/server/utils/bookingReferral'
+import { throttlePublic } from '~/server/utils/publicRateLimit'
 
 // Records where a just-completed public booking came from.
 //
@@ -45,6 +46,7 @@ interface Body {
 }
 
 export default defineEventHandler(async (event) => {
+  await throttlePublic(event, { scope: 'attribution', limit: 30, windowSeconds: 600 })
   const body = await readBody<Body>(event)
   if (!body?.accountSlug || !body?.appointmentId) {
     throw createError({ statusCode: 400, statusMessage: 'accountSlug and appointmentId are required' })

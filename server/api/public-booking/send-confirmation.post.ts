@@ -1,5 +1,6 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
+import { throttlePublic } from '~/server/utils/publicRateLimit'
 
 // Anonymous-safe, same reasoning as create-payment-intent.post.ts: the public
 // booking widget has no session. Guarded by re-deriving the appointment from
@@ -9,6 +10,7 @@ import type { Database } from '~/types/database.types'
 // "new online booking" alert (Settings > Online Booking), under the same
 // guard -- though book.post.ts has normally sent that one already.
 export default defineEventHandler(async (event) => {
+  await throttlePublic(event, { scope: 'send-confirmation', limit: 20, windowSeconds: 600 })
   const body = await readBody<{ accountSlug: string; appointmentId: string }>(event)
   if (!body?.accountSlug || !body?.appointmentId) {
     throw createError({ statusCode: 400, statusMessage: 'accountSlug and appointmentId are required' })

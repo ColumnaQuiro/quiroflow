@@ -154,6 +154,8 @@ const dirty = computed(() => Object.keys(changes.value).length > 0)
 // Closures are whole days in the zone the clinic is saved in, not one still
 // being chosen above.
 const savedTimezone = computed(() => (original.value ? (JSON.parse(original.value) as Form).timezone : 'Europe/Madrid'))
+// Bumped when official holidays are closed or reopened, so the closures list re-reads.
+const closuresVersion = ref(0)
 // The editor always works on a full week; form.business_hours only becomes
 // one when it emits a change.
 const editorHours = computed(() => normalizeHours(form.value?.business_hours))
@@ -438,7 +440,8 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
                 <h2 id="h-cierres" class="text-[16px] font-bold text-ink-900">{{ t('Holidays and closures', 'Cierres y festivos') }}</h2>
                 <p class="text-[13px] text-ink-muted">{{ t('Whole days the location is shut, for everyone. Shown in the calendar and taken out of online booking. Saved as soon as it is added.', 'Días enteros en que la sede cierra, para todo el equipo. Se ven en el calendario y salen de la reserva online. Se guarda al añadirlo.') }}</p>
               </div>
-              <SettingsClinicClosures :clinic-id="clinicId" :timezone="savedTimezone" />
+              <SettingsClinicHolidays :clinic-id="clinicId" :timezone="savedTimezone" @changed="closuresVersion++" />
+              <SettingsClinicClosures :key="closuresVersion" :clinic-id="clinicId" :timezone="savedTimezone" />
             </section>
 
             <!-- Zona horaria y calendario -->

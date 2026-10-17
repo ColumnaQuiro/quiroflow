@@ -1,11 +1,14 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { GIFT_REFUSAL, giftLabel, giftVoucherFor } from '~/server/utils/giftVouchers'
+import { throttlePublic } from '~/server/utils/publicRateLimit'
 
 // "Tengo un bono regalo" on the booking page: whether a code can be used
 // here, and what it is, before the booking is made. Redeeming happens in
 // book.post.ts, once there is a patient to put it on.
 export default defineEventHandler(async (event) => {
+  // A code is short enough to guess by trying; this is what makes trying slow.
+  await throttlePublic(event, { scope: 'gift-check', limit: 10, windowSeconds: 600 })
   const body = await readBody<{ slug?: string; code?: string }>(event)
   if (!body?.slug || !body.code?.trim()) throw createError({ statusCode: 400, statusMessage: 'slug and code are required' })
   const supabase = serverSupabaseServiceRole<Database>(event)

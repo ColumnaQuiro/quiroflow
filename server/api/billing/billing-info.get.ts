@@ -30,7 +30,7 @@ export default defineEventHandler(async (event) => {
     return { hasCustomer: false as const }
   }
 
-  const stripe = stripeForPlatformBilling()
+  const stripe = await stripeForPlatformBilling()
   const customer = await stripe.customers.retrieve(subscription.stripe_customer_id, {
     expand: ['invoice_settings.default_payment_method'],
   })

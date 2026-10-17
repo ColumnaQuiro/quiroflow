@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk'
+import type Anthropic from '@anthropic-ai/sdk'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
 import { requireTeamMember } from '~/server/utils/requirePermission'
 import { loadHelpArticles, renderCorpus } from '~/server/utils/helpCorpus'
@@ -131,7 +131,7 @@ export default defineEventHandler(async (event) => {
 
   const articles = await loadHelpArticles(lang)
 
-  const client = createAnthropicClient(apiKey)
+  const client = await createAnthropicClient(apiKey)
   let raw: string
   try {
     const message = await client.messages.create({

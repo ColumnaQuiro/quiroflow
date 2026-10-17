@@ -1,4 +1,11 @@
-import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRef, PDFStream, concatTransformationMatrix, drawObject, popGraphicsState, pushGraphicsState } from 'pdf-lib'
+import type { PDFArray, PDFDict, PDFDocument, PDFRef } from 'pdf-lib'
+
+// pdf-lib arrives as an argument rather than an import. A static import here
+// puts the whole library into the Nitro chunk every request evaluates, and a
+// cold start then loads it before serving a page that will never touch a PDF.
+// The two callers `await import('pdf-lib')` when they have a file in hand and
+// pass it down.
+export type PdfLib = typeof import('pdf-lib')
 
 // Draws a PDF's annotations into the page itself.
 //
@@ -33,12 +40,12 @@ const NO_VIEW = 1 << 5
 
 type Box = [number, number, number, number]
 
-function numbers(arr: PDFArray | undefined): number[] | null {
+function numbers(lib: PdfLib, arr: PDFArray | undefined): number[] | null {
   if (!arr) return null
   const out: number[] = []
   for (let i = 0; i < arr.size(); i++) {
     const n = arr.lookup(i)
-    if (!(n instanceof PDFNumber)) return null
+    if (!(n instanceof lib.PDFNumber)) return null
     out.push(n.asNumber())
   }
   return out
@@ -64,26 +71,26 @@ function transformBox(box: Box, m: number[]): Box {
 }
 
 /** The appearance a viewer would paint for this annotation, as an indirect stream. */
-function normalAppearance(doc: PDFDocument, annot: PDFDict): PDFRef | null {
-  const ap = annot.lookupMaybe(PDFName.of('AP'), PDFDict)
+function normalAppearance(lib: PdfLib, doc: PDFDocument, annot: PDFDict): PDFRef | null {
+  const ap = annot.lookupMaybe(lib.PDFName.of('AP'), lib.PDFDict)
   if (!ap) return null
-  let n = ap.get(PDFName.of('N'))
+  let n = ap.get(lib.PDFName.of('N'))
   const resolved = doc.context.lookup(n)
   // A dictionary of states (a checkbox's on/off): /AS says which is showing.
-  if (resolved instanceof PDFDict && !(resolved instanceof PDFStream)) {
-    const state = annot.lookupMaybe(PDFName.of('AS'), PDFName)
+  if (resolved instanceof lib.PDFDict && !(resolved instanceof lib.PDFStream)) {
+    const state = annot.lookupMaybe(lib.PDFName.of('AS'), lib.PDFName)
     if (!state) return null
     n = resolved.get(state)
   }
-  if (!(doc.context.lookup(n) instanceof PDFStream)) return null
-  return n instanceof PDFRef ? n : null
+  if (!(doc.context.lookup(n) instanceof lib.PDFStream)) return null
+  return n instanceof lib.PDFRef ? n : null
 }
 
 /**
  * Paints every visible markup annotation into its page and removes it.
  * Returns how many were flattened; 0 means the document was not touched.
  */
-export function flattenPdfAnnotations(doc: PDFDocument): number {
+export function flattenPdfAnnotations(lib: PdfLib, doc: PDFDocument): number {
   let flattened = 0
 
   for (const page of doc.getPages()) {
@@ -97,16 +104,16 @@ export function flattenPdfAnnotations(doc: PDFDocument): number {
     for (let i = 0; i < annots.size(); i++) {
       const entry = annots.get(i) as PDFRef | PDFDict
       const annot = doc.context.lookup(entry)
-      if (!(annot instanceof PDFDict)) continue
+      if (!(annot instanceof lib.PDFDict)) continue
 
-      const subtype = annot.lookupMaybe(PDFName.of('Subtype'), PDFName)?.toString() ?? ''
-      const flags = annot.lookupMaybe(PDFName.of('F'), PDFNumber)?.asNumber() ?? 0
-      const appearance = normalAppearance(doc, annot)
-      const rect = numbers(annot.lookupMaybe(PDFName.of('Rect'), PDFArray))
-      const form = appearance ? doc.context.lookup(appearance, PDFStream) : null
-      const bbox = form ? numbers(form.dict.lookupMaybe(PDFName.of('BBox'), PDFArray)) : null
+      const subtype = annot.lookupMaybe(lib.PDFName.of('Subtype'), lib.PDFName)?.toString() ?? ''
+      const flags = annot.lookupMaybe(lib.PDFName.of('F'), lib.PDFNumber)?.asNumber() ?? 0
+      const appearance = normalAppearance(lib, doc, annot)
+      const rect = numbers(lib, annot.lookupMaybe(lib.PDFName.of('Rect'), lib.PDFArray))
+      const form = appearance ? doc.context.lookup(appearance, lib.PDFStream) : null
+      const bbox = form ? numbers(lib, form.dict.lookupMaybe(lib.PDFName.of('BBox'), lib.PDFArray)) : null
 
-      if (KEEP.has(subtype) || flags & HIDDEN || flags & NO_VIEW || annot.has(PDFName.of('OC')) || !appearance || !form || !rect || rect.length !== 4 || !bbox || bbox.length !== 4) {
+      if (KEEP.has(subtype) || flags & HIDDEN || flags & NO_VIEW || annot.has(lib.PDFName.of('OC')) || !appearance || !form || !rect || rect.length !== 4 || !bbox || bbox.length !== 4) {
         keep.push(entry)
         continue
       }
@@ -114,7 +121,7 @@ export function flattenPdfAnnotations(doc: PDFDocument): number {
       // PDF 32000-1, 12.5.5: the appearance's BBox, carried through its own
       // Matrix, is fitted onto the annotation's Rect. Do applies the form's
       // Matrix itself, so only the fitting goes in front of it.
-      const matrix = numbers(form.dict.lookupMaybe(PDFName.of('Matrix'), PDFArray)) ?? [1, 0, 0, 1, 0, 0]
+      const matrix = numbers(lib, form.dict.lookupMaybe(lib.PDFName.of('Matrix'), lib.PDFArray)) ?? [1, 0, 0, 1, 0, 0]
       const box = transformBox(normalised(bbox), matrix)
       const target = normalised(rect)
       const width = box[2] - box[0]
@@ -128,11 +135,11 @@ export function flattenPdfAnnotations(doc: PDFDocument): number {
 
       // An appearance is a Form XObject by definition; some writers leave the
       // type off, which a viewer forgives in an annotation and not in Do.
-      form.dict.set(PDFName.of('Type'), PDFName.of('XObject'))
-      form.dict.set(PDFName.of('Subtype'), PDFName.of('Form'))
+      form.dict.set(lib.PDFName.of('Type'), lib.PDFName.of('XObject'))
+      form.dict.set(lib.PDFName.of('Subtype'), lib.PDFName.of('Form'))
 
       const name = page.node.newXObject('FlatAnnot', appearance)
-      ops.push(pushGraphicsState(), concatTransformationMatrix(sx, 0, 0, sy, target[0] - sx * box[0], target[1] - sy * box[1]), drawObject(name), popGraphicsState())
+      ops.push(lib.pushGraphicsState(), lib.concatTransformationMatrix(sx, 0, 0, sy, target[0] - sx * box[0], target[1] - sy * box[1]), lib.drawObject(name), lib.popGraphicsState())
       dropped.add(entry)
       flattened++
     }
@@ -143,16 +150,16 @@ export function flattenPdfAnnotations(doc: PDFDocument): number {
     // an orphan a viewer may still draw as an empty box.
     const remaining = keep.filter((entry) => {
       const annot = doc.context.lookup(entry) as PDFDict
-      const parent = annot.get(PDFName.of('Parent'))
+      const parent = annot.get(lib.PDFName.of('Parent'))
       return !(parent && dropped.has(parent as PDFRef))
     })
-    if (remaining.length > 0) page.node.set(PDFName.of('Annots'), doc.context.obj(remaining))
-    else page.node.delete(PDFName.of('Annots'))
+    if (remaining.length > 0) page.node.set(lib.PDFName.of('Annots'), doc.context.obj(remaining))
+    else page.node.delete(lib.PDFName.of('Annots'))
 
     // The page's own content is wrapped in q/Q first, so a transform it
     // leaves behind cannot move what is drawn after it.
-    const start = doc.context.register(doc.context.contentStream([pushGraphicsState()]))
-    const end = doc.context.register(doc.context.contentStream([popGraphicsState()]))
+    const start = doc.context.register(doc.context.contentStream([lib.pushGraphicsState()]))
+    const end = doc.context.register(doc.context.contentStream([lib.popGraphicsState()]))
     page.node.wrapContentStreams(start, end)
     page.node.addContentStream(doc.context.register(doc.context.contentStream(ops)))
   }

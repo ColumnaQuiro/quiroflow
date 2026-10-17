@@ -1,6 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
-import QRCode from 'qrcode'
 import { exemptionClause } from '~/utils/facturaTax'
 import { verifactuQrUrl } from '~/utils/verifactuQr'
 
@@ -149,6 +148,8 @@ async function verifactuQrFor(supabase: SupabaseClient<Database>, facturaId: str
     importeTotalCents: record.importe_total_cents,
     environment: 'production',
   })
+  // qrcode is loaded here rather than at server start: only a factura PDF needs it.
+  const { default: QRCode } = await import('qrcode')
   const png = await QRCode.toBuffer(url, { errorCorrectionLevel: 'M', margin: 0, width: 600, type: 'png' })
   return { url, png }
 }

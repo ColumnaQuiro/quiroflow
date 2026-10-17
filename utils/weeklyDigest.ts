@@ -73,6 +73,8 @@ export interface DigestEmail {
   goals?: { monthLabel: string; elapsed: number; items: GoalProgress[] }
   /** Products at or under their minimum (utils/products.ts), when there are any. */
   lowStock?: { name: string; units: number }[]
+  /** Clinical records past the clinic's retention period, to review in Settings › Privacidad. */
+  pastRetention?: number
 }
 
 /** The push: one line, the headline figures. */
@@ -134,6 +136,10 @@ export function digestEmailHtml(d: DigestEmail): string {
       ${d.lowStock?.length ? `<h2 style="margin:20px 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:#6B7183">Stock bajo</h2>
       <table role="presentation" style="width:100%;border-collapse:collapse">
         ${d.lowStock.map((p) => row(p.name, p.units === 0 ? 'Agotado' : `Quedan ${p.units}`, '', '/settings/products')).join('')}
+      </table>` : ''}
+      ${d.pastRetention ? `<h2 style="margin:20px 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:#6B7183">Privacidad</h2>
+      <table role="presentation" style="width:100%;border-collapse:collapse">
+        ${row(d.pastRetention === 1 ? '1 historia ha pasado su plazo de conservación' : `${d.pastRetention} historias han pasado su plazo de conservación`, 'Revisar', '', '/settings/privacy')}
       </table>` : ''}
       <p style="margin:20px 0 0"><a href="${d.origin}/reports" style="display:inline-block;background:#4F46E5;color:#fff;text-decoration:none;font-weight:600;font-size:14px;padding:10px 16px;border-radius:9px">Ver los informes</a></p>
     </div>

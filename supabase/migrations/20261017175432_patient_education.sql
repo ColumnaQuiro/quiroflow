@@ -95,7 +95,8 @@ select public.require_two_factor_on('public.learn_articles');
 select public.require_two_factor_on('public.learn_sends');
 
 -- merge_patients moves the sends too (CLAUDE.md: a new patient_id column is
--- two changes). Unchanged from 20261009165247 but for the learn_sends line.
+-- two changes). Unchanged from 20261009165247 but for the learn_sends line
+-- and the guarded posture_assessments one.
 create or replace function merge_patients(p_survivor_id uuid, p_duplicate_id uuid)
 returns jsonb
 language plpgsql
@@ -246,6 +247,15 @@ begin
   update learn_sends set patient_id = p_survivor_id where patient_id = p_duplicate_id;
   get diagnostics v_count = row_count;
   v_moved := v_moved || jsonb_build_object('learn_sends', v_count);
+
+  -- posture_assessments arrives in its own migration, which redefines this
+  -- function too; whichever lands second keeps both by naming the other's
+  -- table only once it exists.
+  if to_regclass('public.posture_assessments') is not null then
+    execute 'update public.posture_assessments set patient_id = $1 where patient_id = $2' using p_survivor_id, p_duplicate_id;
+    get diagnostics v_count = row_count;
+    v_moved := v_moved || jsonb_build_object('posture_assessments', v_count);
+  end if;
 
   -- Other patients pointing AT the duplicate -- a child whose tutor is the
   -- duplicate record, someone the duplicate referred. These FKs are

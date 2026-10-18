@@ -1,5 +1,6 @@
 import { walletEnabled } from '~/server/utils/walletPass'
+import { googleWalletEnabled } from '~/server/utils/googleWallet'
 
-// Whether "Añadir a Apple Wallet" can be offered: only once the pass
-// certificate is configured on this deploy.
-export default defineEventHandler(() => ({ apple: walletEnabled() }))
+// Which "Añadir a … Wallet" can be offered: each only once its signing
+// material is configured on this deploy.
+export default defineEventHandler(() => ({ apple: walletEnabled(), google: googleWalletEnabled() }))

@@ -33,8 +33,12 @@ export function walletLinkValid(purchaseId: string, expires: number, token: stri
   return !!s && walletLinkValidWith(s, purchaseId, expires, token)
 }
 
-/** Everything the pass shows, read with the service role. Null when the bono does not exist. */
-export async function loadBonoPass(service: Service, purchaseId: string): Promise<BonoPassData | null> {
+/**
+ * Everything the pass shows, read with the service role. Null when the bono
+ * does not exist. Apple's pass carries the clinic's logo inside it; Google
+ * fetches it from logoUrl, so it has no use for the bytes (logoBytes: false).
+ */
+export async function loadBonoPass(service: Service, purchaseId: string, opts: { logoBytes?: boolean } = {}): Promise<(BonoPassData & { logoUrl: string | null }) | null> {
   const { data: pp } = await service
     .from('package_purchases')
     .select('id, account_id, patient_id, package_name, sessions_total, sessions_used, is_closed, patients(first_name, last_name, clinic_id, anonymized_at), accounts(name, online_booking_primary_color)')
@@ -60,10 +64,13 @@ export async function loadBonoPass(service: Service, purchaseId: string): Promis
     .limit(1)
     .maybeSingle()
   let logo: Uint8Array | null = null
-  if (clinic?.logo_storage_path) {
+  if (clinic?.logo_storage_path && opts.logoBytes !== false) {
     const { data: blob } = await service.storage.from('clinic-logos').download(clinic.logo_storage_path)
     if (blob && /png/i.test(blob.type || clinic.logo_storage_path)) logo = new Uint8Array(await blob.arrayBuffer())
   }
+  // clinic-logos is a public bucket (0096_clinic_logo.sql). Google Wallet
+  // takes PNG and JPEG, not SVG.
+  const logoUrl = clinic?.logo_storage_path && /\.(png|jpe?g)$/i.test(clinic.logo_storage_path) ? service.storage.from('clinic-logos').getPublicUrl(clinic.logo_storage_path).data.publicUrl : null
   return {
     purchaseId: pp.id,
     patientId: pp.patient_id,
@@ -79,6 +86,7 @@ export async function loadBonoPass(service: Service, purchaseId: string): Promis
     timezone: clinic?.timezone || DEFAULT_CLINIC_TIMEZONE,
     brandColor: pp.accounts?.online_booking_primary_color ?? null,
     logo,
+    logoUrl,
     nextVisit: next ? { startsAt: next.starts_at, what: next.appointment_types?.name ?? null, who: next.team_members?.full_name ?? null } : null,
     authToken,
   }

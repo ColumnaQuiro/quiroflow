@@ -11,7 +11,7 @@ const props = defineProps<{
   sessionsUsed: number
   /** Set when the bono belongs to someone else who shares it. */
   sharedBy?: string
-  /** The patient's own bono, to offer it for Apple Wallet. */
+  /** The patient's own bono, to offer it for Apple or Google Wallet. */
   walletId?: string
 }>()
 

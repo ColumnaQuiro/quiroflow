@@ -5,7 +5,9 @@
 //
 // No pass certificate is configured here, so building the .pkpass itself is
 // covered by tests/unit/wallet-pass.test.ts (signature verified by OpenSSL),
-// and the add-to-Wallet link answers that Wallet is not set up.
+// and the add-to-Wallet link answers that Wallet is not set up. Google
+// Wallet's likewise: no issuer here, so its pass is covered by
+// tests/unit/google-wallet-pass.test.ts and its endpoint says it is off.
 const BASE = '/api/wallet/v1'
 const TYPE = 'pass.com.quiroflow.bono'
 type Pass = { package_purchase_id: string; auth_token: string; updated_at: string }
@@ -59,13 +61,14 @@ describe('Apple Wallet pass', () => {
     })
   })
 
-  it('refuses the pass with the wrong token, and the add link while Wallet is not set up', () => {
+  it('refuses the pass with the wrong token, and the add links while neither Wallet is set up', () => {
     bonoWithPass().then(({ account, purchase }) => {
       cy.request({ url: `${BASE}/passes/${TYPE}/${purchase.id}`, headers: auth('nope'), failOnStatusCode: false }).its('status').should('eq', 401)
       cy.request({ url: `${BASE}/passes/pass.other.type/${purchase.id}`, headers: auth('nope'), failOnStatusCode: false }).its('status').should('eq', 401)
-      cy.request('/api/wallet/status').its('body').should('deep.eq', { apple: false })
+      cy.request('/api/wallet/status').its('body').should('deep.eq', { apple: false, google: false })
       cy.task<string>('db:accessTokenFor', { email: account.email, password: account.password }).then((token) => {
         cy.request({ method: 'POST', url: `/api/wallet/bono/${purchase.id}/link`, headers: { Authorization: `Bearer ${token}` }, failOnStatusCode: false }).its('status').should('eq', 503)
+        cy.request({ method: 'POST', url: `/api/wallet/bono/${purchase.id}/link`, headers: { Authorization: `Bearer ${token}` }, body: { wallet: 'google' }, failOnStatusCode: false }).its('status').should('eq', 503)
       })
       cy.request({ url: `/api/wallet/bono/${purchase.id}/pass?e=${Date.now() + 60_000}&t=forged`, failOnStatusCode: false }).its('status').should('eq', 403)
     })

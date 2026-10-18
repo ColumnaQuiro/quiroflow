@@ -172,6 +172,13 @@ const isMarketingTemplate = computed(() => current.value?.category === 'MARKETIN
         <option v-for="tpl in b.templates.value" :key="key(tpl.name, tpl.language)" :value="key(tpl.name, tpl.language)">{{ tpl.name }} · {{ tpl.language }} · {{ tpl.category === 'MARKETING' ? t('Marketing', 'Marketing') : tpl.category === 'UTILITY' ? t('Utility', 'Servicio') : tpl.category }}</option>
       </select>
     </label>
+    <label v-if="!b.isLead.value" class="flex items-start gap-2 text-[13px] leading-snug text-ink-700">
+      <input type="checkbox" class="mt-0.5" :checked="config.purpose === 'recall'" data-test="purpose-recall" @change="set({ purpose: ($event.target as HTMLInputElement).checked ? 'recall' : undefined })" />
+      <span class="flex flex-col gap-0.5">
+        {{ t('Counts as a recall', 'Cuenta como revisión') }}
+        <span :class="HINT">{{ t('Shown as the patient\'s last contact on the Recalls page and grouped with recalls in Reports. A "Más adelante" reply then parks them for two months.', 'Aparece como último contacto en Revisiones y se agrupa con ellas en Informes. Si responde «Más adelante», queda aparcado dos meses.') }}</span>
+      </span>
+    </label>
     <label v-if="current && !b.isLead.value" class="flex items-start gap-2 text-[13px] leading-snug text-ink-700">
       <input type="checkbox" class="mt-0.5" :checked="!!config.match_patient_language" data-test="match-language" @change="set({ match_patient_language: ($event.target as HTMLInputElement).checked })" />
       <span class="flex flex-col gap-0.5">

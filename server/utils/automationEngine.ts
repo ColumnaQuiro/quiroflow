@@ -24,7 +24,7 @@ import { mapWithConcurrency } from '~/server/utils/concurrency'
 import { sendPushToUsers } from '~/server/utils/pushNotifications'
 import { STAGE_TITLES, isLeadStage, type LeadStage } from '~/server/utils/leads'
 import { evaluateBranch, factKey, fieldsUsed, type BranchConfig, type ConditionFacts } from '~/utils/automationConditions'
-import { isValidQuietHours, nextAllowedSendTime, segmentIsDue, type QuietHours, type SegmentSchedule } from '~/utils/automationTiming'
+import { isValidQuietHours, nextAllowedSendTime, segmentCarryOverDue, segmentDailyLimit, segmentIsDue, type QuietHours, type SegmentSchedule } from '~/utils/automationTiming'
 import { automationFieldValue, type MergeContext } from '~/utils/automationFields'
 import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
 import { fetchAllRows } from '~/composables/useFetchAllRows'
@@ -1287,12 +1287,55 @@ export async function automationEvent(
   }
 }
 
+/**
+ * Ends every live run of a patient -- or, with `recallOnly`, only the runs of
+ * rules that send a recall (a WhatsApp step flagged purpose 'recall'). The
+ * WhatsApp webhook calls this when a patient declines ("No, gracias", BAJA,
+ * STOP: everything ends, they are "do not contact" now) or asks for later
+ * ("Más adelante": the recall that asked ends, a reminder for a booked visit
+ * does not). Returns how many ended.
+ */
+export async function stopPatientRuns(
+  supabase: any,
+  accountId: string,
+  patientId: string,
+  reason: 'declined' | 'snoozed',
+  detail: string,
+  opts: { recallOnly?: boolean } = {},
+): Promise<number> {
+  const { data: live } = await supabase
+    .from('automation_sequence_runs')
+    .select('id, account_id, rule_id')
+    .eq('account_id', accountId)
+    .eq('patient_id', patientId)
+    .in('status', ['running', 'failed'])
+  let runs: { id: string; account_id: string; rule_id: string }[] = live ?? []
+  if (opts.recallOnly && runs.length) {
+    const { data: steps } = await supabase
+      .from('automation_actions')
+      .select('rule_id')
+      .in('rule_id', Array.from(new Set(runs.map((r) => r.rule_id))))
+      .eq('action_type', 'whatsapp_template')
+      .eq('config->>purpose', 'recall')
+    const recallRules = new Set((steps ?? []).map((s: { rule_id: string }) => s.rule_id))
+    runs = runs.filter((r) => recallRules.has(r.rule_id))
+  }
+  for (const run of runs) await stopRun(supabase, run, reason, detail)
+  return runs.length
+}
+
 // ------------------------------------------------------------------ segments
 
 interface SegmentConfig {
   filters?: AutomationFilters
   schedule?: SegmentSchedule
   reentry_days?: number
+  // At most this many patients enrolled per clinic day, the most recently
+  // lapsed first; the rest wait for the next day. A recall to a two-year-old
+  // list all in one morning is how a WhatsApp number's quality rating drops
+  // (about one old number in nine no longer answers) and how the Inbox gets
+  // more replies than the desk can answer.
+  daily_limit?: number
 }
 
 /**
@@ -1326,9 +1369,28 @@ export async function enrolDueSegments(supabase: any, origin: string, now = new 
         .maybeSingle()
       const tz = clinic?.timezone || DEFAULT_CLINIC_TIMEZONE
       const lastRun = rule.segment_last_run_at ? new Date(rule.segment_last_run_at) : null
-      if (!segmentIsDue(segment.schedule, lastRun, new Date(rule.created_at), now, tz)) continue
+      const cap = segmentDailyLimit(segment)
+      let due = segmentIsDue(segment.schedule, lastRun, new Date(rule.created_at), now, tz)
+      // A capped segment keeps going on the days after its occurrence, as
+      // long as the previous day filled its cap: every run it created has
+      // started_at after the claim below stamped segment_last_run_at, so
+      // counting those says whether it stopped short. Fewer than the cap
+      // means the matching set was exhausted, and there is nothing more to
+      // do until the next occurrence. A minute of slack, because started_at
+      // is the database's clock and the stamp is this server's; the previous
+      // day's runs are a day older, so it can take in nothing else.
+      if (!due && cap && lastRun && segmentCarryOverDue(segment.schedule, lastRun, now, tz)) {
+        const { count } = await supabase
+          .from('automation_sequence_runs')
+          .select('id', { count: 'exact', head: true })
+          .eq('rule_id', rule.id)
+          .gte('started_at', new Date(lastRun.getTime() - 60_000).toISOString())
+        due = (count ?? 0) >= cap
+      }
+      if (!due) continue
 
-      // The claim: two overlapping ticks cannot both enrol the same occurrence.
+      // The claim: two overlapping ticks cannot both enrol the same occurrence
+      // -- or the same carry-over day, which goes through the same column.
       let claim = supabase.from('automation_rules').update({ segment_last_run_at: now.toISOString() }).eq('id', rule.id)
       claim = rule.segment_last_run_at ? claim.eq('segment_last_run_at', rule.segment_last_run_at) : claim.is('segment_last_run_at', null)
       const { data: claimed } = await claim.select('id').maybeSingle()
@@ -1366,8 +1428,7 @@ export async function enrolDueSegments(supabase: any, origin: string, now = new 
         candidates = candidates.filter((p: { id: string }) => !recentIds.has(p.id))
       }
 
-      const flags = await mapWithConcurrency(candidates, 5, async (p: { id: string }) => {
-        if (!(await ruleFiltersMatch(supabase, p.id, segment.filters))) return false
+      const enrol = async (p: { id: string }) => {
         const runId = await startPatientRun(supabase, {
           accountId: rule.account_id,
           ruleId: rule.id,
@@ -1377,8 +1438,36 @@ export async function enrolDueSegments(supabase: any, origin: string, now = new 
           advance: false,
         })
         return Boolean(runId)
-      })
-      enrolled += flags.filter(Boolean).length
+      }
+
+      if (!cap) {
+        const flags = await mapWithConcurrency(candidates, 5, async (p: { id: string }) => (await ruleFiltersMatch(supabase, p.id, segment.filters)) ? enrol(p) : false)
+        enrolled += flags.filter(Boolean).length
+        continue
+      }
+
+      // Capped: the most recently lapsed first -- the warmest numbers and
+      // the best odds -- so the people a slow drip reaches last are the ones
+      // least likely to answer anyway. Filters are checked a handful at a
+      // time and the runs started one by one, so the day never goes over.
+      const completed = await fetchAllRows<{ patient_id: string; starts_at: string }>((from, to) =>
+        supabase.from('appointments').select('patient_id, starts_at').eq('account_id', rule.account_id).eq('status', 'completed').order('id').range(from, to),
+      )
+      const lastVisit = new Map<string, number>()
+      for (const a of completed) {
+        const at = new Date(a.starts_at).getTime()
+        if (at > (lastVisit.get(a.patient_id) ?? 0)) lastVisit.set(a.patient_id, at)
+      }
+      candidates.sort((a: { id: string }, b: { id: string }) => (lastVisit.get(b.id) ?? 0) - (lastVisit.get(a.id) ?? 0))
+      let today = 0
+      for (let i = 0; i < candidates.length && today < cap; i += 5) {
+        const chunk = candidates.slice(i, i + 5)
+        const matched = await mapWithConcurrency(chunk, 5, (p: { id: string }) => ruleFiltersMatch(supabase, p.id, segment.filters))
+        for (let j = 0; j < chunk.length && today < cap; j++) {
+          if (matched[j] && (await enrol(chunk[j]!))) today++
+        }
+      }
+      enrolled += today
     } catch (err) {
       console.error('[automationEngine] segment enrolment failed for rule', rule.id, (err as Error)?.message ?? err)
     }

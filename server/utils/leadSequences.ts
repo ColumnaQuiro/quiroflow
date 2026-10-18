@@ -58,6 +58,12 @@ export type StopReason =
   // The patient already answered the reminder -- confirmed, or asked to
   // change the visit -- so the rest of it has nothing left to ask.
   | 'appointment_answered'
+  // The patient replied "No, gracias", BAJA or STOP on WhatsApp: they are
+  // now "do not contact", and every run they were in ends here.
+  | 'declined'
+  // The patient replied "Más adelante": parked in Recalls for two months,
+  // and the recall that asked ends rather than chasing.
+  | 'snoozed'
 
 /**
  * 'defer' is the third answer, and the reason this is not a boolean.
@@ -235,6 +241,8 @@ export const STOP_REASON_TEXT: Record<StopReason, string> = {
   appointment_deleted: 'The appointment it was about was deleted',
   appointment_cancelled: 'The appointment it was reminding them of was cancelled',
   appointment_answered: 'The patient already confirmed the appointment or asked to change it',
+  declined: 'The patient asked not to be contacted (WhatsApp reply)',
+  snoozed: 'The patient asked to be written to later (WhatsApp reply)',
 }
 
 /** What a step is called in the history, copied at the time it ran. */

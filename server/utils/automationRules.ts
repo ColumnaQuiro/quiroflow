@@ -86,6 +86,8 @@ export function sanitizeRule(body: any): DraftRule {
         ...(typeof schedule.starts_at === 'string' && !Number.isNaN(new Date(schedule.starts_at).getTime()) ? { starts_at: schedule.starts_at } : {}),
       },
       reentry_days: Number(raw.reentry_days) > 0 ? Math.round(Number(raw.reentry_days)) : null,
+      // How many enter per clinic day (enrolDueSegments); null is no cap.
+      daily_limit: Number(raw.daily_limit) >= 1 ? Math.round(Number(raw.daily_limit)) : null,
     }
   }
 

@@ -174,6 +174,19 @@ watch(
         </label>
       </div>
       <p v-else :class="HINT">{{ t('Everyone who matches enters once, at the next check after it is switched on (within 15 minutes).', 'Todos los que coinciden entran una vez, en la siguiente revisión tras activarla (antes de 15 minutos).') }}</p>
+      <label :class="LABEL">
+        {{ t('At most, per day', 'Como mucho, al día') }}
+        <input
+          type="number"
+          min="1"
+          :class="FIELD_NUMBER"
+          :value="segment.daily_limit ?? ''"
+          :placeholder="t('no limit', 'sin límite')"
+          data-test="segment-daily-limit"
+          @input="setSegment({ daily_limit: Number(($event.target as HTMLInputElement).value) >= 1 ? Math.round(Number(($event.target as HTMLInputElement).value)) : null })"
+        />
+        <span :class="HINT">{{ t('Patients who enter each day, the most recently seen first; the rest wait for the next day. Keeps a long list from going out in one morning (failed sends count against the WhatsApp number) and the Inbox answerable.', 'Pacientes que entran cada día, primero los vistos más recientemente; el resto espera al día siguiente. Evita que una lista larga salga en una mañana (los envíos fallidos cuentan contra el número de WhatsApp) y que el Inbox se desborde.') }}</span>
+      </label>
 
       <div class="flex flex-col gap-2">
         <span :class="SECTION">{{ t('Patients who', 'Pacientes que') }}</span>

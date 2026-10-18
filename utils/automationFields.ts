@@ -33,6 +33,12 @@ export interface MergeContext {
   clinicLogoUrl?: string
   /** The account's online booking page, for an email step's booking button. */
   bookingUrl?: string
+  /** The patient's default practitioner's first name; {{practitioner_first_name}} falls back to clinicName. */
+  practitionerFirstName?: string
+  /** When the patient's last completed visit started, for {{last_visit_month}}. */
+  lastVisitAt?: string
+  /** 'es' or 'en': the language the message goes out in, for month names. */
+  language?: string
   /**
    * What a lead answered on the form they came in through (a Meta lead ad's
    * questions, stored on lead_events as a 'qualification' event). Each one is
@@ -112,6 +118,17 @@ export function automationFieldValue(recipient: MergeRecipient, source: string, 
   if (source === 'booking_link') return context?.bookingUrl ?? ''
   if (source === 'clinic_name') return context?.clinicName ?? ''
   if (source === 'clinic_phone') return context?.clinicPhone ?? ''
+  // "Soy Léa" -- and "Soy Clínica Centro" for a patient with no practitioner
+  // on their record, because Meta refuses a message with an empty parameter
+  // and a recall that never goes out helps nobody.
+  if (source === 'practitioner_first_name') return (context?.practitionerFirstName ?? '').trim() || context?.clinicName || ''
+  // "desde junio": the month of the last completed visit, in the language
+  // the message goes out in. Empty for someone who has never completed one.
+  if (source === 'last_visit_month') {
+    if (!context?.lastVisitAt) return ''
+    const locale = (context.language ?? 'es').toLowerCase().startsWith('en') ? 'en-GB' : 'es-ES'
+    return new Date(context.lastVisitAt).toLocaleString(locale, { month: 'long', timeZone })
+  }
   // One line: a template variable cannot hold a line break.
   if (source === 'clinic_address') return (context?.clinicAddress ?? '').replace(/\s*\n\s*/g, ', ')
   if (source === 'next_appointment') {

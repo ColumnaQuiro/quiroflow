@@ -317,6 +317,34 @@ async function patientTags(opts: { patientId: string }) {
   return row.tags ?? []
 }
 
+/** What a WhatsApp reply can change on a patient: do-not-contact, tags, the recall snooze. */
+async function patientRow(opts: { patientId: string }) {
+  return check(await admin.from('patients').select('id, do_not_contact, tags, recall_snoozed_until').eq('id', opts.patientId).single())
+}
+
+/** A patient's run of a rule, parked at a root step (by position) waiting for an event -- as the engine leaves one at a wait_until. */
+async function insertPatientRun(opts: { accountId: string; ruleId: string; patientId: string; currentActionPosition: number; waitingFor?: string }) {
+  const action = check(
+    await admin.from('automation_actions').select('id').eq('rule_id', opts.ruleId).is('parent_id', null).eq('position', opts.currentActionPosition).single(),
+  ) as { id: string }
+  return check(
+    await admin
+      .from('automation_sequence_runs')
+      .insert({
+        account_id: opts.accountId,
+        rule_id: opts.ruleId,
+        patient_id: opts.patientId,
+        current_action_id: action.id,
+        next_position: opts.currentActionPosition + 1,
+        waiting_for: opts.waitingFor ?? null,
+        wait_deadline: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+        resume_at: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+      } as never)
+      .select('id')
+      .single(),
+  ) as { id: string }
+}
+
 async function leadRow(opts: { id: string }) {
   return check(await admin.from('leads').select('id, stage, owner_team_member_id').eq('id', opts.id).single())
 }
@@ -645,6 +673,8 @@ export const automationTasks = {
   'auto:docsFor': docsFor,
   'auto:answerDoc': answerDoc,
   'auto:patientTags': patientTags,
+  'auto:patientRow': patientRow,
+  'auto:insertPatientRun': insertPatientRun,
   'auto:leadRow': leadRow,
   'auto:mergeAsStaff': mergeAsStaff,
   'auto:insertRuleAsStaff': insertRuleAsStaff,

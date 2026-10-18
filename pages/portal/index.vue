@@ -90,6 +90,7 @@ function eur(cents: number) {
       />
 
       <PatientLearnCard class="mt-4" :patient-id="patient.id" :link-to="(id) => `/portal/learn/${id}`" />
+      <PatientPostureCard class="mt-4" />
 
       <PatientWaitlistCard v-if="settings.bookingEnabled && !apptLoading" class="mt-4" :clinic-id="waitlistClinicId" :has-next-visit="!!next" />
 

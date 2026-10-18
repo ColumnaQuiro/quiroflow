@@ -188,5 +188,7 @@ async function report() {
         </table>
       </section>
     </template>
+
+    <PostureSection v-if="!loading" :patient-id="patientId" class="mt-2" />
   </div>
 </template>

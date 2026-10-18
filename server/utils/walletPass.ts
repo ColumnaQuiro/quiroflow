@@ -1,6 +1,9 @@
 import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
 import { walletLinkTokenWith, walletLinkValidWith, walletSigningFromPem, type BonoPassData, type WalletSigning } from '~/server/utils/walletPkpass'
 
+/** The brand indigo (--color-brand, 79 70 229) every wallet pass is drawn in. */
+const QUIROFLOW_PASS_COLOR = '#4F46E5'
+
 // A bono in Apple Wallet: the configuration (the pass type certificate and
 // key, NUXT_WALLET_PASS_CERT / NUXT_WALLET_PASS_KEY as base64 PEM) and the
 // data the pass shows. The pass itself is server/utils/walletPkpass.ts.
@@ -41,7 +44,7 @@ export function walletLinkValid(purchaseId: string, expires: number, token: stri
 export async function loadBonoPass(service: Service, purchaseId: string, opts: { logoBytes?: boolean } = {}): Promise<(BonoPassData & { logoUrl: string | null }) | null> {
   const { data: pp } = await service
     .from('package_purchases')
-    .select('id, account_id, patient_id, package_name, sessions_total, sessions_used, is_closed, patients(first_name, last_name, clinic_id, anonymized_at), accounts(name, online_booking_primary_color)')
+    .select('id, account_id, patient_id, package_name, sessions_total, sessions_used, is_closed, patients(first_name, last_name, clinic_id, anonymized_at), accounts(name)')
     .eq('id', purchaseId)
     .maybeSingle()
   if (!pp || pp.patients?.anonymized_at) return null
@@ -84,7 +87,11 @@ export async function loadBonoPass(service: Service, purchaseId: string, opts: {
     clinicPhone: clinic?.phone ?? null,
     clinicAddress: clinic?.address ?? null,
     timezone: clinic?.timezone || DEFAULT_CLINIC_TIMEZONE,
-    brandColor: pp.accounts?.online_booking_primary_color ?? null,
+    // QuiroFlow's indigo on every pass, Apple and Google, not the clinic's
+    // online-booking colour. That colour is chosen for a booking page; on the
+    // pass it sat under the QuiroFlow mark (the logo when a clinic has none)
+    // and read as somebody else's card -- one clinic's green pass on 18 Oct.
+    brandColor: QUIROFLOW_PASS_COLOR,
     logo,
     logoUrl,
     nextVisit: next ? { startsAt: next.starts_at, what: next.appointment_types?.name ?? null, who: next.team_members?.full_name ?? null } : null,

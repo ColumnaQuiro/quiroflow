@@ -7,7 +7,7 @@ import type { DateRange } from '../../composables/useDateRangePresets'
 const props = defineProps<{ dateRange: DateRange; practitionerId?: string; clinicId?: string }>()
 
 interface PaymentRow { amount_cents: number; method: string; paid_at: string; invoice_id: string | null; patient_id: string | null; invoices?: { status: string } | null }
-interface InvoiceRow { id: string; total_cents: number; status: string; appointment_id: string | null; patient_id: string | null }
+interface InvoiceRow { id: string; total_cents: number; status: string; appointment_id: string | null; patient_id: string | null; created_at: string }
 interface PatientRow { id: string; default_practitioner_id: string | null; clinic_id: string | null }
 interface AppointmentRow { id: string; practitioner_id: string | null; clinic_id: string | null }
 
@@ -55,7 +55,7 @@ async function load() {
   type Embedded<T> = T & { patients?: PatientRow | null; appointments?: AppointmentRow | null; payments?: { invoice_id: string | null; amount_cents: number }[] }
   const paymentColumns = `amount_cents, method, paid_at, invoice_id, patient_id, invoices!payments_invoice_id_fkey(status)${needsAppointments ? ', patients!payments_patient_id_fkey(id, default_practitioner_id, clinic_id)' : ''}`
   const invoiceColumns = (withPayments: boolean) =>
-    `id, total_cents, status, appointment_id, patient_id${needsAppointments ? ', appointments!invoices_appointment_id_fkey(id, practitioner_id, clinic_id), patients!invoices_patient_id_fkey(id, default_practitioner_id, clinic_id)' : ''}${withPayments ? ', payments!payments_invoice_id_fkey(invoice_id, amount_cents)' : ''}`
+    `id, total_cents, status, appointment_id, patient_id, created_at${needsAppointments ? ', appointments!invoices_appointment_id_fkey(id, practitioner_id, clinic_id), patients!invoices_patient_id_fkey(id, default_practitioner_id, clinic_id)' : ''}${withPayments ? ', payments!payments_invoice_id_fkey(invoice_id, amount_cents)' : ''}`
   const paymentsIn = (a: Date, b: Date) =>
     fetchAllRows<Embedded<PaymentRow>>(
       (f, t) =>
@@ -73,13 +73,19 @@ async function load() {
           .range(f, t) as unknown as PromiseLike<{ data: Embedded<InvoiceRow>[] | null; error: unknown }>,
     )
 
-  const [p, inv, prevPaymentRows, prevInvoiceRows] = await Promise.all([
-    paymentsIn(from, to),
-    invoicesIn(from, to, true),
-    paymentsIn(prevFrom, prevTo),
-    needsAppointments ? invoicesIn(prevFrom, prevTo, false) : Promise.resolve([] as Embedded<InvoiceRow>[]),
+  // One request per table for both ranges, split here: the previous range
+  // ends where this one starts, so it is one span, and the dashboard's ten
+  // widgets already fire enough at once for the database to queue them.
+  const [span, invSpan] = await Promise.all([
+    paymentsIn(prevFrom, to),
+    invoicesIn(prevFrom, to, true),
   ])
   if (isStale()) return
+  const inCurrent = (at: string) => new Date(at) >= from
+  const p = span.filter((row) => inCurrent(row.paid_at))
+  const prevPaymentRows = span.filter((row) => !inCurrent(row.paid_at))
+  const inv = invSpan.filter((row) => inCurrent(row.created_at))
+  const prevInvoiceRows = needsAppointments ? invSpan.filter((row) => !inCurrent(row.created_at)) : ([] as Embedded<InvoiceRow>[])
 
   const appointmentById = new Map<string, AppointmentRow>()
   const patientById = new Map<string, PatientRow>()

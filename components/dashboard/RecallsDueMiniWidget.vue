@@ -18,9 +18,9 @@ async function load() {
   let query = supabase.from('recall_candidates').select('days_since_last_appointment')
   if (props.practitionerId) query = query.eq('default_practitioner_id', props.practitionerId)
   // Counted alongside the first page so the rest come in one wave.
-  let total = supabase.from('recall_candidates').select('patient_id', { count: 'exact', head: true })
-  if (props.practitionerId) total = total.eq('default_practitioner_id', props.practitionerId)
-  const rows = await fetchAllRows<RecallRow>((f, t) => query.range(f, t), { total })
+  // No separate count: it only let pages past the first go out together,
+  // and a clinic's recall list fits in one.
+  const rows = await fetchAllRows<RecallRow>((f, t) => query.range(f, t))
   if (isStale()) return
   count.value = rows.length
   const known = rows.map((r) => r.days_since_last_appointment).filter((d): d is number => d !== null)

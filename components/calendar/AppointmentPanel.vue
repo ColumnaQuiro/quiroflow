@@ -97,7 +97,7 @@ const initials = computed(() => {
 })
 const headerSub = computed(() => {
   const f = facts.value
-  if (!f) return ' '
+  if (!f) return '\u00A0'
   const parts = [
     t(`${f.visits} ${f.visits === 1 ? 'visit' : 'visits'}`, `${f.visits} ${f.visits === 1 ? 'visita' : 'visitas'}`),
     f.nextVisitAt ? t(`next ${formatShortDate(f.nextVisitAt)}`, `próxima ${formatShortDate(f.nextVisitAt)}`) : t('no next visit', 'sin próxima cita'),
@@ -688,7 +688,7 @@ const canAct = computed(() => props.appointment.status === 'booked' && !readOnly
             <li v-for="s in trackSteps" :key="s.key" class="flex min-w-0 flex-col gap-1" :data-state="s.state" :aria-current="s.state === 'current' ? 'step' : undefined">
               <span class="h-1.5 rounded-[3px]" :class="s.state === 'done' || s.state === 'current' ? 'bg-success-accent' : s.state === 'waiting' ? 'bg-warning-accent' : 'bg-line'" />
               <span class="text-[11.5px] font-semibold leading-tight [overflow-wrap:anywhere] sm:text-[12.5px]" :class="s.state === 'next' ? 'text-ink-faint' : s.state === 'current' ? 'font-bold text-success-text' : s.state === 'waiting' ? 'font-bold text-warning-text' : 'text-ink-700'">{{ s.label }}</span>
-              <span class="font-mono text-[11px] text-ink-muted">{{ s.when || ' ' }}</span>
+              <span class="font-mono text-[11px] text-ink-muted">{{ s.when || '\u00A0' }}</span>
             </li>
           </ol>
           <p v-else class="text-[14px] font-semibold text-ink-700" data-cy="stage-off-track">{{ stageLine(appointment, stage).title }}</p>

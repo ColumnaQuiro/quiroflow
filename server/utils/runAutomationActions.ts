@@ -1101,7 +1101,7 @@ async function runEmailAction(
     // Resend answers a refusal with {name, message} in the body; the HTTP
     // status alone ("422") says nothing a person can act on.
     const detail = e?.data?.message || e?.data?.error?.message || e?.message || 'unknown error'
-    throw new Error(`Resend rejected the email: ${detail}`)
+    throw new Error(`Resend rejected the email: ${detail}`, { cause: e })
   }
   return 'sent'
 }
@@ -1142,7 +1142,7 @@ async function runWebhookAction(config: Record<string, any>, body: TriggerBody, 
     await $fetch(url, { method: 'POST', headers, body: payload, timeout: 10_000 })
   } catch (e: any) {
     const status = e?.response?.status ?? e?.statusCode
-    throw new Error(`The webhook did not accept the call${status ? ` (HTTP ${status})` : ''}: ${e?.message ?? 'unknown error'}`)
+    throw new Error(`The webhook did not accept the call${status ? ` (HTTP ${status})` : ''}: ${e?.message ?? 'unknown error'}`, { cause: e })
   }
   return 'sent'
 }

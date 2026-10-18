@@ -178,7 +178,7 @@ function copy(text: string) {
  */
 function embedSnippet(slug: string) {
   const origin = window.location.origin
-  return `<div data-quiroflow-booking data-slug="${slug}"></div>\n<script src="${origin}/embed.js" async><\/script>`
+  return `<div data-quiroflow-booking data-slug="${slug}"></div>\n<script src="${origin}/embed.js" async><\/script>` // eslint-disable-line no-useless-escape -- a literal </script> here would end this SFC's <script> block
 }
 
 // --- Clinics & Hours: per-clinic enable toggle ---

@@ -1,9 +1,8 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
-import type { Database } from '~/types/database.types'
+import type { Database, TablesUpdate  } from '~/types/database.types'
 import { requireGrowth } from '~/server/utils/requireGrowth'
 import { automationEvent } from '~/server/utils/automationEngine'
 import { STAGE_TITLES, isLeadStage, type LeadStage } from '~/server/utils/leads'
-import type { TablesUpdate } from '~/types/database.types'
 
 interface Body {
   stage?: unknown

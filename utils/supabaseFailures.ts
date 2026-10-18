@@ -183,7 +183,9 @@ export function watchSupabaseFailures(target: { fetch: typeof fetch }, supabaseU
         try {
           const failure = classifySupabaseNetworkFailure(url, requestMethod(input, init), error)
           if (failure) onFailure(failure)
-        } catch {}
+        } catch {
+          // The failure is thrown to the caller below; reporting it is best effort.
+        }
       }
       throw error
     }

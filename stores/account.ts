@@ -66,6 +66,11 @@ export const useAccountStore = defineStore('account', {
     // The clinic requires every team member to sign in with an
     // authenticator-app code (Settings > Team Members).
     requireTwoFactor: false,
+    // What get_my_bootstrap said about the second factor: 'ok', or
+    // 'verify'/'enroll' while it is still owed, in which case nothing else
+    // in here is filled and `loaded` stays false so the next navigation asks
+    // again. null until the first load answers.
+    twoFactorGate: null as 'ok' | 'verify' | 'enroll' | null,
     clinics: [] as Clinic[],
     currentClinicId: null as string | null,
     permissions: {} as Record<string, PermissionValue>,
@@ -159,12 +164,24 @@ export const useAccountStore = defineStore('account', {
       // and returns all five together.
       const { data: boot } = await supabase.rpc('get_my_bootstrap')
       const bootstrap = (boot ?? {}) as unknown as {
+        two_factor?: 'ok' | 'verify' | 'enroll'
         team_member: TeamMember | null
         account: { name: string; slug: string; whatsapp_confirmation_template_name: string | null; whatsapp_recall_template_name: string | null; scheduling_policy_fee_cents: number | null; default_phone_country: string | null; require_two_factor?: boolean } | null
         clinics: Clinic[]
         permissions: Record<string, PermissionValue>
         subscription: { status: string; trial_ends_at: string | null; growth_addon?: boolean; receptionist_addon?: boolean; plan_id?: string | null; comped?: boolean; has_stripe_subscription?: boolean } | null
       }
+      // Before the team member: under a pending second factor the database
+      // hides it, and "no team member" would otherwise read as "send them to
+      // onboarding" (middleware/account.global.ts).
+      this.twoFactorGate = bootstrap.two_factor ?? 'ok'
+      if (this.twoFactorGate !== 'ok') {
+        this.teamMember = null
+        this.loaded = false
+        this.loading = false
+        return
+      }
+
       const teamMember = bootstrap.team_member
 
       if (!teamMember) {
@@ -229,6 +246,7 @@ export const useAccountStore = defineStore('account', {
       this.whatsappRecallTemplateName = ''
       this.schedulingPolicyFeeCents = null
       this.requireTwoFactor = false
+      this.twoFactorGate = null
       this.clinics = []
       this.currentClinicId = null
       this.permissions = {}

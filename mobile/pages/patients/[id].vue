@@ -582,6 +582,11 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
       <!-- Recent visits and their notes: clinical access only -->
       <StaffPatientVisits v-if="!contextLoading && can('visit_notes_access')" :patient-id="patientId" :time-zone="timeZone" :show-money="showMoney" />
 
+      <!-- Posture assessments: progress side by side, and a new one taken
+      with this device's camera (/patients/posture/<id>). The web's own section,
+      with the app's permissions. -->
+      <PostureSection v-if="!contextLoading && can('visit_notes_access')" :patient-id="patientId" :can="(p: string) => can(p as never)" />
+
       <!-- Files, as RLS returns them for this role -->
       <StaffPatientFiles v-if="context" :patient-id="patientId" :account-id="context.accountId" :team-member-id="context.teamMemberId" />
 

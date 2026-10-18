@@ -1,6 +1,8 @@
 import type { AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
 import { carePlanOverdueDays, type OverduePlan, type OverdueVisit } from '~/utils/carePlanOverdue'
-import { needsVisitHistory, noWhatsAppSentMatches, visitHistoryMatches } from '~/utils/automationAudience'
+import { needsVisitHistory, noWhatsAppSentMatches, recallParked, respectsRecallQueue, visitHistoryMatches, type RecallQueueState } from '~/utils/automationAudience'
+import { localParts } from '~/utils/automationTiming'
+import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
 
 // Who a segment matches today -- the live "143 patients match today" under the
 // segment trigger, and the count in the activation dialog.
@@ -26,13 +28,55 @@ async function allRows<T>(build: (from: number, to: number) => PromiseLike<{ dat
   return out
 }
 
-interface PatientRow {
+interface PatientRow extends RecallQueueState {
   id: string
   clinic_id: string | null
   tags: string[] | null
   is_minor: boolean
   do_not_contact: boolean
   marketing_channels: string[] | null
+}
+
+/** The patient columns withoutParkedRecalls reads. */
+export const RECALL_QUEUE_COLUMNS = 'recall_status, recall_snoozed_until, recall_dismissed_at'
+
+/**
+ * `candidates` without whoever the Recalls queue has parked (recallParked):
+ * snoozed with Posponer or a "Más adelante" reply, or dismissed with
+ * Descartar and not seen since. A weekly recall rule that ignored them wrote
+ * to the patient staff had just set aside -- the one who moved away, the one
+ * who asked for after the summer. enrolDueSegments and segmentAudience both
+ * call this, so the count and the enrolment leave out the same people.
+ *
+ * `today` is the clinic's date. Visits are read only for the dismissed, who
+ * are few, and only those up to now: the view the queue reads takes its last
+ * visit across the future too, but anyone booked ahead is not in its queue
+ * at all, so "came back" means a visit that has happened.
+ */
+export async function withoutParkedRecalls<T extends RecallQueueState & { id: string }>(service: any, accountId: string, candidates: T[], today: string): Promise<T[]> {
+  const dismissed = candidates.filter((p) => p.recall_status === 'dismissed' && p.recall_dismissed_at).map((p) => p.id)
+  const lastAttended = new Map<string, number>()
+  const nowIso = new Date().toISOString()
+  for (let i = 0; i < dismissed.length; i += 200) {
+    const chunk = dismissed.slice(i, i + 200)
+    const visits = await allRows<{ patient_id: string; starts_at: string }>((from, to) =>
+      service
+        .from('appointments')
+        .select('patient_id, starts_at')
+        .eq('account_id', accountId)
+        .in('patient_id', chunk)
+        .not('status', 'in', '(cancelled,no_show)')
+        .is('deleted_at', null)
+        .lte('starts_at', nowIso)
+        .order('id')
+        .range(from, to),
+    )
+    for (const v of visits) {
+      const at = new Date(v.starts_at).getTime()
+      if (at > (lastAttended.get(v.patient_id) ?? 0)) lastAttended.set(v.patient_id, at)
+    }
+  }
+  return candidates.filter((p) => !recallParked(p, lastAttended.get(p.id) ?? null, today))
 }
 
 export interface SegmentAudience {
@@ -49,7 +93,7 @@ export async function segmentAudience(service: any, accountId: string, filters: 
     // reminders. enrolDueSegments leaves them out the same way.
     service
       .from('patients')
-      .select('id, clinic_id, tags, is_minor, do_not_contact, marketing_channels')
+      .select(`id, clinic_id, tags, is_minor, do_not_contact, marketing_channels, ${RECALL_QUEUE_COLUMNS}`)
       .eq('account_id', accountId)
       .neq('status', 'inactive')
       .order('id')
@@ -63,6 +107,11 @@ export async function segmentAudience(service: any, accountId: string, filters: 
   // A segment has no appointment in scope, so ruleFiltersMatch answers "no"
   // to an appointment-type or practitioner filter for everyone.
   if (typeIds || f.practitioner_ids?.length) candidates = []
+
+  if (candidates.length && respectsRecallQueue(f, isMarketing)) {
+    const { data: clinic } = await service.from('clinics').select('timezone').eq('account_id', accountId).is('archived_at', null).order('created_at').limit(1).maybeSingle()
+    candidates = await withoutParkedRecalls(service, accountId, candidates, localParts(new Date(), clinic?.timezone || DEFAULT_CLINIC_TIMEZONE).date)
+  }
 
   if (candidates.length && needsVisitHistory(f)) {
     const completed = await allRows<{ patient_id: string; starts_at: string }>((from, to) =>

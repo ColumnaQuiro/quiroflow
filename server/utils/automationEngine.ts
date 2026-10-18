@@ -21,10 +21,12 @@ import {
 import { hasGrowth } from '~/server/utils/requireGrowth'
 import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
 import { mapWithConcurrency } from '~/server/utils/concurrency'
+import { RECALL_QUEUE_COLUMNS, withoutParkedRecalls } from '~/server/utils/segmentAudience'
 import { sendPushToUsers } from '~/server/utils/pushNotifications'
 import { STAGE_TITLES, isLeadStage, type LeadStage } from '~/server/utils/leads'
 import { evaluateBranch, factKey, fieldsUsed, type BranchConfig, type ConditionFacts } from '~/utils/automationConditions'
-import { isValidQuietHours, nextAllowedSendTime, segmentCarryOverDue, segmentDailyLimit, segmentIsDue, type QuietHours, type SegmentSchedule } from '~/utils/automationTiming'
+import { respectsRecallQueue, type RecallQueueState } from '~/utils/automationAudience'
+import { isValidQuietHours, localParts, nextAllowedSendTime, segmentCarryOverDue, segmentDailyLimit, segmentIsDue, type QuietHours, type SegmentSchedule } from '~/utils/automationTiming'
 import { automationFieldValue, type MergeContext } from '~/utils/automationFields'
 import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
 import { fetchAllRows } from '~/composables/useFetchAllRows'
@@ -1401,10 +1403,11 @@ export async function enrolDueSegments(supabase: any, origin: string, now = new 
       // first and skip the rest, every time. Ordered by id so pages neither
       // overlap nor skip. A failed read throws, and the rule waits for the
       // next occurrence rather than enrolling half its audience.
-      const patients = await fetchAllRows<{ id: string; is_minor: boolean; do_not_contact: boolean; marketing_channels: string[] | null }>((from, to) =>
+      type Candidate = RecallQueueState & { id: string; is_minor: boolean; do_not_contact: boolean; marketing_channels: string[] | null }
+      const patients = await fetchAllRows<Candidate>((from, to) =>
         supabase
           .from('patients')
-          .select('id, is_minor, do_not_contact, marketing_channels')
+          .select(`id, is_minor, do_not_contact, marketing_channels, ${RECALL_QUEUE_COLUMNS}`)
           .eq('account_id', rule.account_id)
           // Not archived patients -- as segmentAudience counts them.
           .neq('status', 'inactive')
@@ -1412,9 +1415,13 @@ export async function enrolDueSegments(supabase: any, origin: string, now = new 
           .range(from, to),
       )
       let candidates = patients.filter(
-        (p: { is_minor: boolean; do_not_contact: boolean; marketing_channels: string[] | null }) =>
-          !p.is_minor && !p.do_not_contact && (!rule.is_marketing || (p.marketing_channels ?? []).length > 0),
+        (p: Candidate) => !p.is_minor && !p.do_not_contact && (!rule.is_marketing || (p.marketing_channels ?? []).length > 0),
       )
+      // A recall rule leaves out whoever the Recalls queue has parked --
+      // Posponer, Descartar, a "Más adelante" reply -- as the live count does.
+      if (candidates.length && respectsRecallQueue(segment.filters, Boolean(rule.is_marketing))) {
+        candidates = await withoutParkedRecalls(supabase, rule.account_id, candidates, localParts(now, tz).date)
+      }
 
       const reentryDays = Number(segment.reentry_days)
       if (Number.isFinite(reentryDays) && reentryDays > 0) {

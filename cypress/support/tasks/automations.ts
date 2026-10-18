@@ -46,6 +46,9 @@ async function patient(opts: {
   status?: 'active' | 'inactive'
   /** Which version of a form or template they are sent. */
   preferredLanguage?: string
+  /** The Recalls queue's Posponer (a date) and Descartar. */
+  recallSnoozedUntil?: string
+  recallDismissedAt?: string
 }) {
   const row = check(
     await admin
@@ -63,6 +66,8 @@ async function patient(opts: {
         date_of_birth: opts.dateOfBirth ?? null,
         status: opts.status ?? 'active',
         ...(opts.preferredLanguage ? { preferred_language: opts.preferredLanguage } : {}),
+        ...(opts.recallSnoozedUntil ? { recall_snoozed_until: opts.recallSnoozedUntil } : {}),
+        ...(opts.recallDismissedAt ? { recall_status: 'dismissed', recall_dismissed_at: opts.recallDismissedAt } : {}),
       })
       .select('id')
       .single(),

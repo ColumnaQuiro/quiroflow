@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DAY_MS, needsVisitHistory, newestAt, noWhatsAppSentMatches, visitHistoryMatches } from '../../utils/automationAudience'
+import { DAY_MS, needsVisitHistory, newestAt, noWhatsAppSentMatches, recallParked, respectsRecallQueue, visitHistoryMatches } from '../../utils/automationAudience'
 
 // The visit-history and "nothing sent lately" filters a recall segment is
 // built from, as both evaluators (per patient at enrolment, in bulk for the
@@ -70,5 +70,47 @@ describe('no WhatsApp sent in N days', () => {
     expect(newestAt([{ at: '2026-01-01T00:00:00Z' }, { at: null }, { at: '2026-03-01T00:00:00Z' }])).toBe(Date.parse('2026-03-01T00:00:00Z'))
     expect(newestAt([{ at: undefined }])).toBeNull()
     expect(newestAt([])).toBeNull()
+  })
+})
+
+describe('the Recalls queue, as a recall segment reads it', () => {
+  const today = '2026-10-18'
+  const active = { recall_status: 'active', recall_snoozed_until: null, recall_dismissed_at: null }
+
+  it('applies to non-marketing rules keyed on "last visit more than N days ago"', () => {
+    expect(respectsRecallQueue({ last_visit_before_days: 90, last_visit_within_days: 180 }, false)).toBe(true)
+    expect(respectsRecallQueue({ last_visit_before_days: 90 }, true)).toBe(false)
+    expect(respectsRecallQueue({ last_visit_within_days: 30 }, false)).toBe(false)
+    expect(respectsRecallQueue({}, false)).toBe(false)
+    expect(respectsRecallQueue(null, false)).toBe(false)
+  })
+
+  it('leaves nobody out who is simply in the queue', () => {
+    expect(recallParked(active, daysAgo(120), today)).toBe(false)
+    expect(recallParked(active, null, today)).toBe(false)
+  })
+
+  it('leaves out the snoozed until the day the snooze ends', () => {
+    expect(recallParked({ ...active, recall_snoozed_until: '2026-12-17' }, daysAgo(120), today)).toBe(true)
+    expect(recallParked({ ...active, recall_snoozed_until: '2026-10-19' }, daysAgo(120), today)).toBe(true)
+    // The view's "snoozed_until <= current_date": back in on that day itself.
+    expect(recallParked({ ...active, recall_snoozed_until: today }, daysAgo(120), today)).toBe(false)
+    expect(recallParked({ ...active, recall_snoozed_until: '2026-09-01' }, daysAgo(120), today)).toBe(false)
+  })
+
+  it('leaves out the dismissed who have not been seen since', () => {
+    const dismissed = { ...active, recall_status: 'dismissed', recall_dismissed_at: new Date(daysAgo(30)).toISOString() }
+    expect(recallParked(dismissed, daysAgo(120), today)).toBe(true)
+    expect(recallParked(dismissed, null, today)).toBe(true)
+    // A dismissal with no date never lifts, as in recall_candidates.
+    expect(recallParked({ ...dismissed, recall_dismissed_at: null }, daysAgo(1), today)).toBe(true)
+  })
+
+  it('takes the dismissed back once they come for a visit after it', () => {
+    const dismissed = { ...active, recall_status: 'dismissed', recall_dismissed_at: new Date(daysAgo(200)).toISOString() }
+    expect(recallParked(dismissed, daysAgo(120), today)).toBe(false)
+    expect(recallParked(dismissed, daysAgo(200), today)).toBe(true)
+    // Came back, but then asked for later: the snooze still holds.
+    expect(recallParked({ ...dismissed, recall_snoozed_until: '2026-11-01' }, daysAgo(120), today)).toBe(true)
   })
 })

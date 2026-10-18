@@ -73,7 +73,6 @@ export default defineNuxtRouteMiddleware(async (to) => {
   // fails on a use*() call after an await in here.
   const store = useAccountStore()
   const supabase = useSupabaseClient()
-  const twoFactorGate = useTwoFactor()
 
   // useSupabaseUser() is not the session. @nuxtjs/supabase fills it from
   // getClaims() calls it never cancels, so one that resolves after signOut()
@@ -95,7 +94,17 @@ export default defineNuxtRouteMiddleware(async (to) => {
   // is in, the database returns nothing for this person -- and "no
   // team_members row" below means "send them to onboarding to create a new
   // clinic", which is the one place a staff member must never be sent.
-  const twoFactor = await twoFactorGate.gate()
+  //
+  // The gate comes with the bootstrap (get_my_bootstrap returns
+  // {two_factor} and nothing else while a factor is owed), so this is one
+  // request where it used to be two in a row. While the factor is owed the
+  // store leaves `loaded` false, so every navigation asks again until the
+  // code is in; once the person is through, a loaded store answers every
+  // later navigation with no request at all.
+  if (!store.loaded) {
+    await store.load()
+  }
+  const twoFactor = store.twoFactorGate ?? 'ok'
   if (twoFactor !== 'ok') {
     if (to.path === '/two-factor') return
     // Where they were going comes along, so a password-reset link still
@@ -104,10 +113,6 @@ export default defineNuxtRouteMiddleware(async (to) => {
     return navigateTo({ path: '/two-factor', query: next ? { next } : {} })
   }
   if (to.path === '/two-factor') return
-
-  if (!store.loaded) {
-    await store.load()
-  }
 
   let hasAccount = !!store.teamMember
 

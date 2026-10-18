@@ -103,6 +103,13 @@ async function updateVisibility(file: PatientFile) {
   await supabase.from('patient_files').update({ visibility: file.visibility }).eq('id', file.id)
 }
 
+// An image marked as an X-ray shows under Progreso › Postura, where two can
+// be put side by side (20261017183504_posture_assessments.sql).
+async function updateXray(file: PatientFile, isXray: boolean) {
+  const { error } = await supabase.from('patient_files').update({ is_xray: isXray }).eq('id', file.id)
+  if (!error) file.is_xray = isXray
+}
+
 function formatSize(bytes: number | null) {
   if (!bytes) return ''
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
@@ -350,6 +357,9 @@ async function confirmRemove() {
         <div class="p-2.5">
           <p class="truncate font-mono text-[12px] font-medium text-ink-700" :title="file.file_name">{{ file.file_name }}</p>
           <p class="mt-0.5 truncate text-[11px] text-ink-faint" :title="fileMeta(file)">{{ fileMeta(file) }}</p>
+          <label v-if="isImage(file) && file.storage_path" class="mt-1 flex items-center gap-1.5 text-[11px] text-ink-muted" data-cy="file-xray">
+            <input type="checkbox" :checked="file.is_xray" @change="updateXray(file, ($event.target as HTMLInputElement).checked)" />{{ t('X-ray', 'Radiografía') }}
+          </label>
           <!-- Wraps rather than squeezing: two to a row on a phone left the
                select a bare chevron and pushed the delete button out of the
                card. -->

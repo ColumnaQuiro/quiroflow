@@ -49,6 +49,9 @@ const rules: Rule[] = [
   // clinic as data controller. The database refuses anyone else too
   // (audit_require_owner, 20261008070424_audit_trail.sql).
   { test: (p) => p === '/settings/activity', check: (s) => s.isOwner },
+  // Owners only: deciding how long clinical records are kept, and
+  // anonymising them, is the data controller's call (20261017182107_record_retention.sql).
+  { test: (p) => p === '/settings/privacy', check: (s) => s.isOwner },
   {
     // payment-methods, invoice-settings and fiscal-data now redirect into
     // Payments and Invoicing; they keep the gate so a bookmark never lands

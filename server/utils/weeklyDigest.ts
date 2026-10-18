@@ -146,6 +146,12 @@ export async function sendOwnerWeeklyDigests(service: Service, origin: string, n
           .then(({ data }) => ((data as { name: string; stock_units: number; min_stock: number | null }[] | null) ?? [])
             .filter((p) => ['low', 'out'].includes(stockStatus(p.stock_units, p.min_stock)))
             .map((p) => ({ name: p.name, units: p.stock_units }))),
+        // Records past the retention period and not being kept on
+        // (20261017182107_record_retention.sql); a line only when there are any.
+        pastRetention: await service
+          .rpc('retention_review', { p_account_id: accountId })
+          .then(({ data }) => ((data as { kept_until: string | null }[] | null) ?? []).filter((r) => !r.kept_until || r.kept_until < today).length)
+          .then((n) => n, () => 0),
       }
 
       const html = digestEmailHtml(digest)

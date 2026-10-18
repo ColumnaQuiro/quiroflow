@@ -15,9 +15,9 @@ describe('Inbox: a sent reply', () => {
         cy.contains('¿Puedo cambiar la cita del jueves?').should('be.visible')
 
         // Only from here on: the list's own load must not be slowed.
-        cy.intercept({ method: 'GET', url: /\/rest\/v1\/inbox_conversations\?/ }, (req) => {
-          // The counts ask for conversation_key only; the list asks for every column.
-          if (!/select=(\*|%2A)/.test(req.url)) return
+        cy.intercept({ method: 'POST', url: /\/rest\/v1\/rpc\/inbox_page/ }, (req) => {
+          // A counts-only refresh asks for no rows; the list asks for a page.
+          if (req.body?.p_limit === 0) return
           req.continue((res) => {
             res.setDelay(6000)
           })

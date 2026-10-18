@@ -333,8 +333,6 @@
   },
   "daily transactions": {
     "lines": [
-      "‹",
-      "›",
       "Today",
       "<select: All practitioners>",
       "<select: All clinics>",
@@ -358,8 +356,6 @@
   },
   "daily transactions / Olga": {
     "lines": [
-      "‹",
-      "›",
       "Today",
       "<select: Olga Owner>",
       "<select: All clinics>",
@@ -379,8 +375,6 @@
   },
   "daily transactions / yesterday": {
     "lines": [
-      "‹",
-      "›",
       "Today",
       "<select: All practitioners>",
       "<select: All clinics>",
@@ -399,8 +393,6 @@
   },
   "daily transactions / yesterday / Norte": {
     "lines": [
-      "‹",
-      "›",
       "Today",
       "<select: All practitioners>",
       "<select: Norte>",
@@ -807,9 +799,7 @@
   "upcoming visits": {
     "lines": [
       "Use it to gauge ad spend, spot maintenance-retention gaps, and predict how the month will close.",
-      "‹",
       "June 2026",
-      "›",
       "Total this month",
       "110",
       "vs. previous month",
@@ -830,9 +820,7 @@
   "upcoming visits / last month": {
     "lines": [
       "Use it to gauge ad spend, spot maintenance-retention gaps, and predict how the month will close.",
-      "‹",
       "May 2026",
-      "›",
       "Today",
       "Total this month",
       "107",

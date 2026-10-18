@@ -71,7 +71,7 @@ describe('Report and dashboard figures, as the owner', () => {
     practitioner('Olga Owner')
     figures('daily transactions / Olga')
     practitioner('All practitioners')
-    cy.contains('button', '‹').click()
+    cy.get('button[aria-label="Previous day"]').click()
     figures('daily transactions / yesterday')
     clinic('Norte')
     figures('daily transactions / yesterday / Norte')
@@ -111,7 +111,7 @@ describe('Report and dashboard figures, as the owner', () => {
   it('upcoming visits and appointment distribution', () => {
     open('/reports/upcoming-visits')
     figures('upcoming visits')
-    cy.contains('button', '‹').click()
+    cy.get('button[aria-label="Previous month"]').click()
     figures('upcoming visits / last month')
 
     open('/reports/appointment-distribution')

@@ -148,9 +148,9 @@ const pdfRoot = ref<HTMLElement | null>(null)
       </p>
 
       <div class="mt-4 flex items-center gap-3">
-        <button type="button" class="flex h-8 items-center rounded-ctl border border-line-control px-2.5 text-[13px] text-ink-600 hover:border-line-controlHover" @click="monthOffset--">&lsaquo;</button>
+        <button type="button" class="flex h-8 items-center rounded-ctl border border-line-control px-2.5 text-[13px] text-ink-600 hover:border-line-controlHover" :aria-label="t('Previous month', 'Mes anterior')" @click="monthOffset--"><UiChevron dir="left" /></button>
         <span class="text-[13px] font-medium text-ink-700">{{ monthLabel }}</span>
-        <button type="button" class="flex h-8 items-center rounded-ctl border border-line-control px-2.5 text-[13px] text-ink-600 hover:border-line-controlHover" @click="monthOffset++">&rsaquo;</button>
+        <button type="button" class="flex h-8 items-center rounded-ctl border border-line-control px-2.5 text-[13px] text-ink-600 hover:border-line-controlHover" :aria-label="t('Next month', 'Mes siguiente')" @click="monthOffset++"><UiChevron dir="right" /></button>
         <button v-if="monthOffset !== 0" type="button" class="text-[13px] text-brand-text hover:text-brand-hover" @click="monthOffset = 0">{{ t('Today', 'Hoy') }}</button>
       </div>
 

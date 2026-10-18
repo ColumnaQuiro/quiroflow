@@ -12,12 +12,17 @@ import { buildBonoPkpass, WALLET_PASS_TYPE_ID } from '~/server/utils/walletPkpas
 //   GET    v1/passes/<type>/<serial>                           the latest pass, after a push
 //   POST   v1/log                                              the device reporting a problem
 //
-// One route rather than five: each typed API route widens the union $fetch
-// is checked against, and five more tipped an unrelated $fetch call over
-// TypeScript's instantiation limit (TS2589). Calls about one pass carry
+// A server middleware, not an API route: as a route (one catch-all, or the
+// five nested ones Apple's paths imply) it joins Nitro's typed route union
+// as a template-literal type, and checking any $fetch call against that was
+// more than TypeScript will instantiate (TS2589) -- in files that have
+// nothing to do with Wallet. Calls about one pass carry
 // "Authorization: ApplePass <its token>" (requireWalletPass).
+const PREFIX = '/api/wallet/v1/'
+
 export default defineEventHandler(async (event) => {
-  const parts = (getRouterParam(event, 'path') ?? '').split('/').filter(Boolean)
+  if (!event.path.startsWith(PREFIX)) return
+  const parts = event.path.slice(PREFIX.length).split('?')[0]!.split('/').filter(Boolean).map(decodeURIComponent)
   const method = event.method
 
   if (parts[0] === 'log' && method === 'POST') {

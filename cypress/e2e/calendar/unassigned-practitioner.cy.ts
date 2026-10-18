@@ -34,7 +34,9 @@ describe('Appointments with no practitioner', () => {
       }).then(() => {
         cy.login(account.email, account.password)
 
-        cy.intercept('GET', '**/rest/v1/team_member_clinics*', (req) => {
+        // The reference data (types, practitioners, clinic memberships, rooms)
+        // comes in one request, calendar_reference; holding it holds all of it.
+        cy.intercept('POST', '**/rest/v1/rpc/calendar_reference', (req) => {
           req.on('response', (res) => {
             res.setDelay(6000)
           })

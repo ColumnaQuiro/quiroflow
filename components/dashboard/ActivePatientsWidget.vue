@@ -32,9 +32,9 @@ async function load() {
     .gte('starts_at', cutoff.toISOString())
   if (props.practitionerId) activeQuery = activeQuery.eq('practitioner_id', props.practitionerId)
 
-  let activeCount = supabase.from('appointments').select('id', { count: 'exact', head: true }).eq('status', 'completed').gte('starts_at', cutoff.toISOString())
-  if (props.practitionerId) activeCount = activeCount.eq('practitioner_id', props.practitionerId)
-  const [{ count }, rows] = await Promise.all([totalQuery, fetchAllRows((f, t) => activeQuery.range(f, t), { total: activeCount })])
+  // No head-only count beside the rows: it only let pages past the first go
+  // out together, and a window of completed visits rarely needs a second.
+  const [{ count }, rows] = await Promise.all([totalQuery, fetchAllRows((f, t) => activeQuery.range(f, t))])
   if (isStale()) return
 
   total.value = count ?? 0

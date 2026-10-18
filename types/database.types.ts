@@ -4878,6 +4878,7 @@ export type Database = {
           file_name: string
           file_type: string | null
           id: string
+          is_xray: boolean
           patient_id: string
           size_bytes: number | null
           storage_path: string | null
@@ -4892,6 +4893,7 @@ export type Database = {
           file_name: string
           file_type?: string | null
           id?: string
+          is_xray?: boolean
           patient_id: string
           size_bytes?: number | null
           storage_path?: string | null
@@ -4906,6 +4908,7 @@ export type Database = {
           file_name?: string
           file_type?: string | null
           id?: string
+          is_xray?: boolean
           patient_id?: string
           size_bytes?: number | null
           storage_path?: string | null
@@ -6270,6 +6273,80 @@ export type Database = {
           {
             foreignKeyName: "saved_replies_updated_by_fkey"
             columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      posture_assessments: {
+        Row: {
+          account_id: string
+          appointment_id: string | null
+          created_at: string
+          height_cm: number
+          id: string
+          metrics: Json
+          notes: string | null
+          patient_id: string
+          shared_with_patient: boolean
+          taken_at: string
+          taken_by: string | null
+          views: Json
+        }
+        Insert: {
+          account_id: string
+          appointment_id?: string | null
+          created_at?: string
+          height_cm: number
+          id?: string
+          metrics?: Json
+          notes?: string | null
+          patient_id: string
+          shared_with_patient?: boolean
+          taken_at?: string
+          taken_by?: string | null
+          views?: Json
+        }
+        Update: {
+          account_id?: string
+          appointment_id?: string | null
+          created_at?: string
+          height_cm?: number
+          id?: string
+          metrics?: Json
+          notes?: string | null
+          patient_id?: string
+          shared_with_patient?: boolean
+          taken_at?: string
+          taken_by?: string | null
+          views?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "posture_assessments_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "posture_assessments_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "posture_assessments_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "posture_assessments_taken_by_fkey"
+            columns: ["taken_by"]
             isOneToOne: false
             referencedRelation: "team_members"
             referencedColumns: ["id"]

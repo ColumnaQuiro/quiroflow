@@ -29,6 +29,8 @@ export interface DraftRule {
     filters?: Record<string, any>
     schedule?: { kind: 'once' | 'daily' | 'weekly'; weekday?: number; time?: string; starts_at?: string }
     reentry_days?: number | null
+    /** At most this many patients enter per clinic day; the rest wait for the next day. */
+    daily_limit?: number | null
   } | null
 }
 
@@ -204,6 +206,18 @@ export function findProblems(rule: DraftRule, steps: DraftStep[], templates: Tem
     const f = rule.segment?.filters ?? {}
     if (Object.keys(f).filter((k) => f[k] !== undefined && f[k] !== null && !(Array.isArray(f[k]) && f[k].length === 0)).length === 0) {
       add(null, 'A group needs at least one filter, or it is every patient.', 'Un grupo necesita al menos un filtro, o serían todos los pacientes.')
+    }
+    const limit = rule.segment?.daily_limit
+    if (limit !== undefined && limit !== null && !(Number(limit) >= 1)) {
+      add(null, 'The daily limit must be at least 1, or left empty.', 'El límite diario debe ser 1 o más, o quedarse vacío.')
+    }
+    // A band with its edges crossed, or a visit range turned inside out,
+    // matches nobody -- and switching it on would look like it worked.
+    if (Number(f.last_visit_within_days) > 0 && Number(f.last_visit_before_days) >= Number(f.last_visit_within_days)) {
+      add(null, '"Last visit" is further back than "Last visit no earlier than": nobody matches.', '«Última visita» queda más atrás que «como mucho hace»: no coincide nadie.')
+    }
+    if (f.min_visits !== undefined && f.max_visits !== undefined && Number(f.min_visits) > Number(f.max_visits)) {
+      add(null, 'The minimum number of visits is above the maximum.', 'El mínimo de visitas es mayor que el máximo.')
     }
   }
   if (typeof rule.filters?.tag_contains === 'string' && 'tag_contains' in rule.filters && !rule.filters.tag_contains.trim()) {

@@ -1,5 +1,6 @@
 import type { AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
 import { carePlanOverdueDays, type OverduePlan, type OverdueVisit } from '~/utils/carePlanOverdue'
+import { needsVisitHistory, noWhatsAppSentMatches, visitHistoryMatches } from '~/utils/automationAudience'
 
 // Who a segment matches today -- the live "143 patients match today" under the
 // segment trigger, and the count in the activation dialog.
@@ -63,8 +64,7 @@ export async function segmentAudience(service: any, accountId: string, filters: 
   // to an appointment-type or practitioner filter for everyone.
   if (typeIds || f.practitioner_ids?.length) candidates = []
 
-  const needsCompleted = (f.total_visits !== undefined && f.total_visits !== null) || (typeof f.last_visit_before_days === 'number' && f.last_visit_before_days > 0)
-  if (candidates.length && needsCompleted) {
+  if (candidates.length && needsVisitHistory(f)) {
     const completed = await allRows<{ patient_id: string; starts_at: string }>((from, to) =>
       service.from('appointments').select('patient_id, starts_at').eq('account_id', accountId).eq('status', 'completed').order('id').range(from, to),
     )
@@ -75,11 +75,24 @@ export async function segmentAudience(service: any, accountId: string, filters: 
       const at = new Date(a.starts_at).getTime()
       if (at > (last.get(a.patient_id) ?? 0)) last.set(a.patient_id, at)
     }
-    if (f.total_visits !== undefined && f.total_visits !== null) candidates = candidates.filter((p) => (count.get(p.id) ?? 0) === f.total_visits)
-    if (typeof f.last_visit_before_days === 'number' && f.last_visit_before_days > 0) {
-      const cutoff = Date.now() - f.last_visit_before_days * DAY
-      candidates = candidates.filter((p) => last.has(p.id) && last.get(p.id)! < cutoff)
+    const now = Date.now()
+    candidates = candidates.filter((p) => visitHistoryMatches(f, count.get(p.id) ?? 0, last.get(p.id) ?? null, now))
+  }
+
+  if (candidates.length && typeof f.no_whatsapp_sent_days === 'number' && f.no_whatsapp_sent_days > 0) {
+    // Only rows inside the window matter: anyone with none is clear.
+    const since = new Date(Date.now() - f.no_whatsapp_sent_days * DAY).toISOString()
+    const sent = await allRows<{ patient_id: string | null; created_at: string }>((from, to) =>
+      service.from('whatsapp_messages').select('patient_id, created_at').eq('account_id', accountId).eq('direction', 'outbound').neq('status', 'would_send').gte('created_at', since).order('id').range(from, to),
+    )
+    const lastSent = new Map<string, number>()
+    for (const m of sent) {
+      if (!m.patient_id) continue
+      const at = new Date(m.created_at).getTime()
+      if (at > (lastSent.get(m.patient_id) ?? 0)) lastSent.set(m.patient_id, at)
     }
+    const now = Date.now()
+    candidates = candidates.filter((p) => noWhatsAppSentMatches(f.no_whatsapp_sent_days, lastSent.get(p.id) ?? null, now))
   }
 
   if (candidates.length && f.no_prior_appointments) {

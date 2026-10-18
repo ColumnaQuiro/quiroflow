@@ -225,6 +225,18 @@ export function filtersText(t: Translate, filters: Record<string, any> | null | 
       case 'last_visit':
         parts.push(t(`Last visit over ${durationText(t, Number(f.last_visit_before_days) * 1440)} ago`, `Última visita hace más de ${durationText(t, Number(f.last_visit_before_days) * 1440)}`))
         break
+      case 'last_visit_within':
+        parts.push(t(`Last visit within ${durationText(t, Number(f.last_visit_within_days) * 1440)}`, `Última visita hace menos de ${durationText(t, Number(f.last_visit_within_days) * 1440)}`))
+        break
+      case 'min_visits':
+        parts.push(t(`${f.min_visits}+ visits`, `${f.min_visits}+ visitas`))
+        break
+      case 'max_visits':
+        parts.push(t(`Up to ${f.max_visits} visit${Number(f.max_visits) === 1 ? '' : 's'}`, `Hasta ${f.max_visits} visita${Number(f.max_visits) === 1 ? '' : 's'}`))
+        break
+      case 'no_whatsapp_sent':
+        parts.push(t(`No WhatsApp in ${f.no_whatsapp_sent_days} days`, `Sin WhatsApp en ${f.no_whatsapp_sent_days} días`))
+        break
       case 'care_plan_overdue':
         parts.push(t(`Behind on their care plan by ${f.care_plan_overdue_days}+ days`, `Retrasado en su plan ${f.care_plan_overdue_days}+ días`))
         break

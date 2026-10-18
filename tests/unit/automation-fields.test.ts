@@ -22,6 +22,23 @@ describe('Automation merge fields', () => {
     expect(automationFieldValue(laura, 'clinic_address', ctx)).toBe('Calle de Colón 14, 46004 Valencia')
   })
 
+  it('signs a recall with the practitioner, or with the clinic when there is none', () => {
+    expect(automationFieldValue(laura, 'practitioner_first_name', { practitionerFirstName: 'Léa', clinicName: 'Clínica Centro' })).toBe('Léa')
+    // Never empty: Meta refuses a message over an empty parameter.
+    expect(automationFieldValue(laura, 'practitioner_first_name', { practitionerFirstName: '  ', clinicName: 'Clínica Centro' })).toBe('Clínica Centro')
+    expect(automationFieldValue(laura, 'practitioner_first_name', { clinicName: 'Clínica Centro' })).toBe('Clínica Centro')
+    expect(automationFieldValue(laura, 'practitioner_first_name', {})).toBe('')
+  })
+
+  it('names the month of the last visit in the language the message goes out in', () => {
+    const lastVisitAt = '2026-06-30T22:30:00Z' // 1 July in Madrid, still June in Bogotá
+    expect(automationFieldValue(laura, 'last_visit_month', { lastVisitAt, clinicTimezone: 'Europe/Madrid' })).toBe('julio')
+    expect(automationFieldValue(laura, 'last_visit_month', { lastVisitAt, clinicTimezone: 'Europe/Madrid', language: 'en' })).toBe('July')
+    expect(automationFieldValue(laura, 'last_visit_month', { lastVisitAt, clinicTimezone: 'Europe/Madrid', language: 'en_US' })).toBe('July')
+    expect(automationFieldValue(laura, 'last_visit_month', { lastVisitAt, clinicTimezone: 'America/Bogota' })).toBe('junio')
+    expect(automationFieldValue(laura, 'last_visit_month', {})).toBe('')
+  })
+
   it('leaves a field empty rather than inventing one', () => {
     expect(automationFieldValue(laura, 'clinic_phone', {})).toBe('')
     expect(automationFieldValue(laura, 'next_appointment', {})).toBe('')

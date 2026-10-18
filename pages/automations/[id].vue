@@ -353,6 +353,7 @@ const sheetOpen = computed(() => !wide.value && b.selection.value !== null && ta
       :filters="b.draft.value.rule.segment?.filters ?? {}"
       :is-marketing="b.draft.value.rule.is_marketing"
       :schedule="b.draft.value.rule.segment?.schedule"
+      :daily-limit="b.draft.value.rule.segment?.daily_limit ?? null"
       :rule-id="b.ruleId.value"
       :entry-mode="b.draft.value.rule.entry_mode"
       :busy="b.saving.value"

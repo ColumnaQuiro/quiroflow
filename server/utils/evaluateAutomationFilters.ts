@@ -1,4 +1,5 @@
 import { carePlanOverdueDays } from '~/utils/carePlanOverdue'
+import { needsVisitHistory, newestAt, noWhatsAppSentMatches, visitHistoryMatches } from '~/utils/automationAudience'
 // automation_rules.filters narrows a trigger down to a specific audience --
 // e.g. "only when the appointment type is Primera visita, and only the
 // first time it's ever completed for this patient" -- mirroring the
@@ -54,6 +55,21 @@ export interface AutomationFilters {
   // At least one completed visit, and the most recent one longer ago than
   // this many days. Somebody who has never completed a visit is not "lapsed".
   last_visit_before_days?: number
+  // The other edge of a band: at least one completed visit, the most recent
+  // at most this many days ago. With last_visit_before_days this says "90 to
+  // 180 days", which a recall needs to tell the 3-month band from the 2-year
+  // one. Both edges are read by utils/automationAudience.ts, which
+  // segmentAudience shares, so the live count and the enrolment agree.
+  last_visit_within_days?: number
+  // Completed visits, as a range rather than total_visits's exact count:
+  // "one visit only" (second-visit recall) against "two or more" (maintenance).
+  min_visits?: number
+  max_visits?: number
+  // No outbound WhatsApp to this patient in this many days, from anyone -- a
+  // person in the Inbox or Recalls, or another automation. Keeps two recall
+  // rules, or a rule and the front desk, from writing to the same person in
+  // the same fortnight.
+  no_whatsapp_sent_days?: number
   // Behind on their care plan by at least this many days: an unfinished
   // latest plan, nothing booked, the next visit overdue by its cadence -- the
   // Care Plan Alerts page's rule (utils/carePlanOverdue.ts restates it,
@@ -98,11 +114,28 @@ export async function ruleFiltersMatch(
     if (practitionerIds && !practitionerIds.includes(appt.practitioner_id)) return false
   }
 
-  if (filters.total_visits !== undefined && filters.total_visits !== null) {
-    let query = supabase.from('appointments').select('id', { count: 'exact', head: true }).eq('patient_id', patientId).eq('status', 'completed')
-    if (typeIds) query = query.in('appointment_type_id', typeIds)
-    const { count } = await query
-    if ((count ?? 0) !== filters.total_visits) return false
+  // The visit-history filters, from one read of the patient's completed
+  // visits: the count (of the chosen types, when a trigger names any -- a
+  // segment never does) and the most recent of them all.
+  if (needsVisitHistory(filters)) {
+    const { data: completed } = await supabase.from('appointments').select('starts_at, appointment_type_id').eq('patient_id', patientId).eq('status', 'completed')
+    const visits: { starts_at: string; appointment_type_id: string | null }[] = completed ?? []
+    const count = typeIds ? visits.filter((v) => v.appointment_type_id && typeIds.includes(v.appointment_type_id)).length : visits.length
+    const lastVisitAt = newestAt(visits.map((v) => ({ at: v.starts_at })))
+    if (!visitHistoryMatches(filters, count, lastVisitAt, Date.now())) return false
+  }
+
+  if (typeof filters.no_whatsapp_sent_days === 'number' && filters.no_whatsapp_sent_days > 0) {
+    const { data: sent } = await supabase
+      .from('whatsapp_messages')
+      .select('created_at')
+      .eq('patient_id', patientId)
+      .eq('direction', 'outbound')
+      .neq('status', 'would_send')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (!noWhatsAppSentMatches(filters.no_whatsapp_sent_days, newestAt([{ at: sent?.created_at }]), Date.now())) return false
   }
 
   if (filters.no_prior_appointments) {
@@ -137,20 +170,6 @@ export async function ruleFiltersMatch(
     const balanceCents = live?.balance_cents ?? 0
     if (filters.balance === 'debit' && !(balanceCents < 0)) return false
     if (filters.balance === 'credit' && !(balanceCents > 0)) return false
-  }
-
-  if (typeof filters.last_visit_before_days === 'number' && filters.last_visit_before_days > 0) {
-    const { data: last } = await supabase
-      .from('appointments')
-      .select('starts_at')
-      .eq('patient_id', patientId)
-      .eq('status', 'completed')
-      .order('starts_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    if (!last?.starts_at) return false
-    const cutoff = Date.now() - filters.last_visit_before_days * 24 * 3600 * 1000
-    if (new Date(last.starts_at).getTime() >= cutoff) return false
   }
 
   if (typeof filters.care_plan_overdue_days === 'number') {

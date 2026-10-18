@@ -353,11 +353,40 @@ async function runForRecipient(
       ? await satisfactionLink(supabase, accountId, appointmentId, origin, ruleId)
       : undefined
 
+  // {{practitioner_first_name}} and {{last_visit_month}}, the two a recall
+  // reads: who the patient sees, and when they last came. Looked up only
+  // when a step here uses them -- one more read each, for a patient.
+  let practitionerFirstName: string | undefined
+  if (recipient.kind === 'patient' && actionsUse(actions, 'practitioner_first_name')) {
+    const { data: p } = await supabase.from('patients').select('default_practitioner_id').eq('id', recipient.id).maybeSingle()
+    if (p?.default_practitioner_id) {
+      const { data: member } = await supabase.from('team_members').select('full_name').eq('id', p.default_practitioner_id).maybeSingle()
+      practitionerFirstName = String(member?.full_name ?? '').trim().split(/\s+/)[0] || undefined
+    }
+  }
+  let lastVisitAt: string | undefined
+  if (recipient.kind === 'patient' && actionsUse(actions, 'last_visit_month')) {
+    const { data: last } = await supabase
+      .from('appointments')
+      .select('starts_at')
+      .eq('patient_id', recipient.id)
+      .eq('status', 'completed')
+      .order('starts_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    lastVisitAt = last?.starts_at ?? undefined
+  }
+
   const context: MergeContext = {
     ...extraContext,
     nextAppointmentAt,
     googleReviewUrl,
     satisfactionUrl,
+    practitionerFirstName,
+    lastVisitAt,
+    // The language an email goes out in. A WhatsApp step overrides it with
+    // the template language it settles on.
+    language: recipient.patient?.preferred_language ?? 'es',
     clinicName: clinic?.name ?? undefined,
     clinicPhone: clinic?.phone ?? undefined,
     clinicAddress: clinic?.address ?? undefined,
@@ -736,9 +765,14 @@ async function runWhatsAppAction(
   const configuredVariables: { source: string; text?: string; fallback?: string }[] = Array.isArray(config.variables) && config.variables.length > 0
     ? config.variables
     : [{ source: 'first_name' }]
-  const variables: string[] = configuredVariables.map((v) =>
-    v.source === 'text' ? (v.text ?? '') : withAnswerFallback(v.source, recipientFieldValue(recipient, v.source, context), v.fallback),
-  )
+  // Resolved against the language the template goes out in -- which the live
+  // lookup below may change to the patient's own -- so {{last_visit_month}}
+  // says "June" in the English variant and "junio" in the Spanish one.
+  const variablesFor = (language: string): string[] =>
+    configuredVariables.map((v) =>
+      v.source === 'text' ? (v.text ?? '') : withAnswerFallback(v.source, recipientFieldValue(recipient, v.source, { ...context, language }), v.fallback),
+    )
+  let variables = variablesFor(templateLanguage)
 
   // One doc-template slot per configured link. A template with URL buttons
   // that carry a {{n}} placeholder maps each slot to a button by position
@@ -800,7 +834,10 @@ async function runWhatsAppAction(
     // approved -- exact, then by base language ('en' for 'en_US') -- and
     // otherwise the language the step was set to, exactly as before.
     const own = templateVariantForLanguage(candidates, config.match_patient_language ? recipient.patient?.preferred_language : null)
-    if (own) templateLanguage = own
+    if (own && own !== templateLanguage) {
+      templateLanguage = own
+      variables = variablesFor(templateLanguage)
+    }
     const match = candidates.find((t: { language: string }) => t.language === templateLanguage) ?? candidates[0]
 
     const buttons = match?.components?.find((c: any) => c.type === 'BUTTONS')?.buttons ?? []
@@ -853,14 +890,22 @@ async function runWhatsAppAction(
   // automation send as 'other' -- a rule that fires the account's own
   // reminder template is a reminder, and the inbox and reporting reads on
   // this column should be able to say so.
+  //
+  // A step can say what it is as well: the recall starter flows flag theirs
+  // `purpose: 'recall'` (the "Counts as a recall" box in the step's panel),
+  // so Reports > Communications groups them with the ones sent by hand and
+  // the Recalls page shows the send as the patient's last contact, whichever
+  // template the clinic chose for the step.
   const purpose =
-    templateName === account?.whatsapp_confirmation_template_name
-      ? 'confirmation'
-      : templateName === account?.whatsapp_reminder_template_name
-        ? 'reminder'
-        : templateName === account?.whatsapp_recall_template_name
-          ? 'recall'
-          : 'other'
+    config.purpose === 'recall'
+      ? 'recall'
+      : templateName === account?.whatsapp_confirmation_template_name
+        ? 'confirmation'
+        : templateName === account?.whatsapp_reminder_template_name
+          ? 'reminder'
+          : templateName === account?.whatsapp_recall_template_name
+            ? 'recall'
+            : 'other'
 
   let wamid: string | null = null
   let errorMessage: string | null = null

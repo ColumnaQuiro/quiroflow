@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { evaluateBranch, factKey } from '../../utils/automationConditions'
 import { findProblems, formsSentBefore, stepsBefore, type DraftRule, type DraftStep } from '../../utils/automationTree'
-import { conditionText } from '../../utils/automationDescribe'
+import { conditionText, emptyLookup  } from '../../utils/automationDescribe'
 import { templateVariantForLanguage } from '../../utils/templateLanguage'
-import { emptyLookup } from '../../utils/automationDescribe'
 
 // A branch on an answer the patient gave on a form the automation sent: the
 // revision form's "would you recommend us?", 8 or more -> ask for a review.

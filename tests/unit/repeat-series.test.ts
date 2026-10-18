@@ -4,10 +4,10 @@
 // daylight-saving cases mean the same thing on a laptop in Spain and on a CI
 // runner in UTC. Vitest runs each file in its own process, so this reaches
 // no other test.
-process.env.TZ = 'Europe/Madrid'
-
 import { describe, it, expect } from 'vitest'
 import { seriesStarts, seriesStartsInZone, seriesProblems } from '../../utils/repeatSeries'
+
+process.env.TZ = 'Europe/Madrid'
 
 const hhmm = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`

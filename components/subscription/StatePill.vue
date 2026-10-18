@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { type SubscriptionState } from '~/utils/billing'
+import type { SubscriptionState } from '~/utils/billing'
 
 // Six states, six semantic pairs, one map. Nothing else in the page decides
 // what a status looks like, so a new Stripe status cannot quietly render as

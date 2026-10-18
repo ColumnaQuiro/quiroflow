@@ -22,7 +22,7 @@ describe('a visit as an iCalendar file', () => {
   })
 
   it('escapes the separators a clinic address is full of', () => {
-    expect(ics).toContain('LOCATION:Calle Mayor\\, 12\; 2º B\\nValencia\r\n')
+    expect(ics).toContain('LOCATION:Calle Mayor\\, 12\\; 2º B\\nValencia\r\n')
   })
 
   it('folds long lines at 75 bytes without splitting an accented character', () => {

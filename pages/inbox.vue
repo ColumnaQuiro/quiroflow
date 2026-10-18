@@ -1026,7 +1026,7 @@ function selectConversation(c: Conversation) {
 // its own and opened the same way a click on its row would.
 const route = useRoute()
 onMounted(async () => {
-  let key = route.query.open
+  const key = route.query.open
   if (typeof key !== 'string') return
   if (key.startsWith('lead:')) {
     // Without Growth there is no lead row to open: the lead's messages are a

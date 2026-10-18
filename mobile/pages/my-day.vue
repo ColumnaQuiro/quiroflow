@@ -453,6 +453,14 @@ const BORDER: Record<RowState, string> = {
 }
 
 const { privacy, togglePrivacy, shown } = usePrivacyMode()
+
+// The home-screen widget's "Hoy": what is left, who is next, who has
+// arrived -- from this list, in initials when privacy mode is on.
+const homeWidget = useHomeWidget()
+watch([appointments, privacy], () => {
+  if (!context.value) return
+  homeWidget.publish(staffWidgetSnapshot({ who: context.value.fullName, appointments: appointments.value, timeZone: timeZone.value, privacy: privacy.value }))
+})
 // The web's dashboard_scope: owners, and roles set to 'all' or 'own'.
 const seesNumbers = computed(() => !!context.value && (context.value.isOwner || ['all', 'own'].includes(String(context.value.permissions.dashboard_scope))))
 function patientName(a: { patients: { first_name: string; last_name: string | null } | null }) {

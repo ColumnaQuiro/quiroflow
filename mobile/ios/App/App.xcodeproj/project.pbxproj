@@ -7,7 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0768A60FDCA542B47C69ECBD /* QuiroFlowWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 032ED1F6202398EB8BFD99F0 /* QuiroFlowWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		0B64A5C68821544CF27D8FAE /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = E145B9F9E6BC5A9B79BAB99F /* MainViewController.swift */; };
+		0FC928C56B68196624F572F2 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B8EBF5525B65428402DE0F09 /* SwiftUI.framework */; };
+		241A1003E557873137B8E6BC /* QuiroFlowWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CB239956EC9E6FB3D38660D /* QuiroFlowWidgets.swift */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
+		336BF06510081AFC910760E2 /* SharedSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65AFE458422773E802342B5 /* SharedSnapshot.swift */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
 		504EC30D1FED79650016851F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30B1FED79650016851F /* Main.storyboard */; };
@@ -15,12 +20,45 @@
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		504EC3141FED79650016852A /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3151FED79650016852B /* SceneDelegate.swift */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
+		5CED60938852F79AD686EBB6 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 70A3605C175F2B2A13354A40 /* Foundation.framework */; };
+		6E6FF3072122A33AACC693C1 /* SharedSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65AFE458422773E802342B5 /* SharedSnapshot.swift */; };
+		80D95199CF98D84C8DBF8B13 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4E010E1B59B8CC0AD41DF3DA /* WidgetKit.framework */; };
+		99AE9064E1E7BE0A96D81CE6 /* HomeWidgetPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 482977D6E9A98F079A5AB690 /* HomeWidgetPlugin.swift */; };
 		A084ECDBA7D38E1E42DFC39D /* Pods_App.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */; };
 		F53BCE1DDA54FD3C7E811C86 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 9A46EA6E34CDED90F290F4DF /* GoogleService-Info.plist */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		CA199A3D4E181D2AB431065D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 64399CC31518C0A25AF944B8;
+			remoteInfo = QuiroFlowWidgets;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		375205146A6CAA68986EA66D /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				0768A60FDCA542B47C69ECBD /* QuiroFlowWidgets.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		032ED1F6202398EB8BFD99F0 /* QuiroFlowWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = QuiroFlowWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		1179115ED2EA71F7D02154F2 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
+		3CB239956EC9E6FB3D38660D /* QuiroFlowWidgets.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = QuiroFlowWidgets.swift; sourceTree = "<group>"; };
+		482977D6E9A98F079A5AB690 /* HomeWidgetPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = HomeWidgetPlugin.swift; sourceTree = "<group>"; };
+		4E010E1B59B8CC0AD41DF3DA /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
 		504EC3041FED79650016851F /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		504EC3071FED79650016851F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -30,9 +68,14 @@
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		504EC3151FED79650016852B /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
+		70A3605C175F2B2A13354A40 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
+		82AC9D66F5CCB851FD8DE63A /* QuiroFlowWidgets.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = QuiroFlowWidgets.entitlements; sourceTree = "<group>"; };
 		9A46EA6E34CDED90F290F4DF /* GoogleService-Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_App.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		AF51FD2D460BCFE21FA515B2 /* Pods-App.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-App.release.xcconfig"; path = "Pods/Target Support Files/Pods-App/Pods-App.release.xcconfig"; sourceTree = "<group>"; };
+		B65AFE458422773E802342B5 /* SharedSnapshot.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SharedSnapshot.swift; sourceTree = "<group>"; };
+		B8EBF5525B65428402DE0F09 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		E145B9F9E6BC5A9B79BAB99F /* MainViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MainViewController.swift; sourceTree = "<group>"; };
 		FC68EB0AF532CFC21C3344DD /* Pods-App.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-App.debug.xcconfig"; path = "Pods/Target Support Files/Pods-App/Pods-App.debug.xcconfig"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -45,6 +88,16 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		533BF4B6C11DDA1217984F72 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5CED60938852F79AD686EBB6 /* Foundation.framework in Frameworks */,
+				80D95199CF98D84C8DBF8B13 /* WidgetKit.framework in Frameworks */,
+				0FC928C56B68196624F572F2 /* SwiftUI.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -52,8 +105,20 @@
 			isa = PBXGroup;
 			children = (
 				AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */,
+				606EF5554D9834D91F5A9653 /* iOS */,
 			);
 			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		2BBF54047EA1AE49BC6F11B4 /* QuiroFlowWidgets */ = {
+			isa = PBXGroup;
+			children = (
+				3CB239956EC9E6FB3D38660D /* QuiroFlowWidgets.swift */,
+				1179115ED2EA71F7D02154F2 /* Info.plist */,
+				82AC9D66F5CCB851FD8DE63A /* QuiroFlowWidgets.entitlements */,
+			);
+			name = QuiroFlowWidgets;
+			path = QuiroFlowWidgets;
 			sourceTree = "<group>";
 		};
 		504EC2FB1FED79650016851F = {
@@ -63,6 +128,7 @@
 				504EC3051FED79650016851F /* Products */,
 				7F8756D8B27F46E3366F6CEA /* Pods */,
 				27E2DDA53C4D2A4D1A88CE4A /* Frameworks */,
+				2BBF54047EA1AE49BC6F11B4 /* QuiroFlowWidgets */,
 			);
 			sourceTree = "<group>";
 		};
@@ -70,6 +136,7 @@
 			isa = PBXGroup;
 			children = (
 				504EC3041FED79650016851F /* App.app */,
+				032ED1F6202398EB8BFD99F0 /* QuiroFlowWidgets.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -87,8 +154,21 @@
 				2FAD9762203C412B000D30F8 /* config.xml */,
 				50B271D01FEDC1A000F3C39B /* public */,
 				9A46EA6E34CDED90F290F4DF /* GoogleService-Info.plist */,
+				B65AFE458422773E802342B5 /* SharedSnapshot.swift */,
+				482977D6E9A98F079A5AB690 /* HomeWidgetPlugin.swift */,
+				E145B9F9E6BC5A9B79BAB99F /* MainViewController.swift */,
 			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		606EF5554D9834D91F5A9653 /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				70A3605C175F2B2A13354A40 /* Foundation.framework */,
+				4E010E1B59B8CC0AD41DF3DA /* WidgetKit.framework */,
+				B8EBF5525B65428402DE0F09 /* SwiftUI.framework */,
+			);
+			name = iOS;
 			sourceTree = "<group>";
 		};
 		7F8756D8B27F46E3366F6CEA /* Pods */ = {
@@ -112,15 +192,34 @@
 				504EC3011FED79650016851F /* Frameworks */,
 				504EC3021FED79650016851F /* Resources */,
 				9592DBEFFC6D2A0C8D5DEB22 /* [CP] Embed Pods Frameworks */,
+				375205146A6CAA68986EA66D /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				1A5BB6DC791037100DF801FD /* PBXTargetDependency */,
 			);
 			name = App;
 			productName = App;
 			productReference = 504EC3041FED79650016851F /* App.app */;
 			productType = "com.apple.product-type.application";
+		};
+		64399CC31518C0A25AF944B8 /* QuiroFlowWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 646CB04F42EAF14A5699C192 /* Build configuration list for PBXNativeTarget "QuiroFlowWidgets" */;
+			buildPhases = (
+				44D6BBEF0A8A4BEEAE199175 /* Sources */,
+				533BF4B6C11DDA1217984F72 /* Frameworks */,
+				F529FE6480C02002955ACF57 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = QuiroFlowWidgets;
+			productName = QuiroFlowWidgets;
+			productReference = 032ED1F6202398EB8BFD99F0 /* QuiroFlowWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -152,6 +251,7 @@
 			projectRoot = "";
 			targets = (
 				504EC3031FED79650016851F /* App */,
+				64399CC31518C0A25AF944B8 /* QuiroFlowWidgets */,
 			);
 		};
 /* End PBXProject section */
@@ -168,6 +268,13 @@
 				504EC30D1FED79650016851F /* Main.storyboard in Resources */,
 				2FAD9763203C412B000D30F8 /* config.xml in Resources */,
 				F53BCE1DDA54FD3C7E811C86 /* GoogleService-Info.plist in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F529FE6480C02002955ACF57 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -210,16 +317,37 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		44D6BBEF0A8A4BEEAE199175 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				241A1003E557873137B8E6BC /* QuiroFlowWidgets.swift in Sources */,
+				6E6FF3072122A33AACC693C1 /* SharedSnapshot.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		504EC3001FED79650016851F /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				504EC3141FED79650016852A /* SceneDelegate.swift in Sources */,
+				336BF06510081AFC910760E2 /* SharedSnapshot.swift in Sources */,
+				99AE9064E1E7BE0A96D81CE6 /* HomeWidgetPlugin.swift in Sources */,
+				0B64A5C68821544CF27D8FAE /* MainViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		1A5BB6DC791037100DF801FD /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = QuiroFlowWidgets;
+			target = 64399CC31518C0A25AF944B8 /* QuiroFlowWidgets */;
+			targetProxy = CA199A3D4E181D2AB431065D /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
 		504EC30B1FED79650016851F /* Main.storyboard */ = {
@@ -241,6 +369,51 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
+		16856004791787AD6BB97F73 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = QuiroFlowWidgets/QuiroFlowWidgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 16;
+				DEVELOPMENT_TEAM = N5TP24Q7MW;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = QuiroFlowWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				MARKETING_VERSION = 1.18;
+				PRODUCT_BUNDLE_IDENTIFIER = com.quiroflow.app.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		3758D121BD3A25FFBB64F980 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = QuiroFlowWidgets/QuiroFlowWidgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 16;
+				DEVELOPMENT_TEAM = N5TP24Q7MW;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = QuiroFlowWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				MARKETING_VERSION = 1.18;
+				PRODUCT_BUNDLE_IDENTIFIER = com.quiroflow.app.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 		504EC3141FED79650016851F /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -409,6 +582,15 @@
 			buildConfigurations = (
 				504EC3171FED79650016851F /* Debug */,
 				504EC3181FED79650016851F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		646CB04F42EAF14A5699C192 /* Build configuration list for PBXNativeTarget "QuiroFlowWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3758D121BD3A25FFBB64F980 /* Release */,
+				16856004791787AD6BB97F73 /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

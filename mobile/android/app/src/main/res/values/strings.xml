@@ -4,4 +4,5 @@
     <string name="title_activity_main">QuiroFlow</string>
     <string name="package_name">com.quiroflow.app</string>
     <string name="custom_url_scheme">com.quiroflow.app</string>
+    <string name="quiroflow_widget_description">Tu próxima visita y tu bono, o tu día en la clínica.</string>
 </resources>

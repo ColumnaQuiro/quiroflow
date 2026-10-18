@@ -10,6 +10,15 @@
 	     webcredentials entry in public/.well-known/apple-app-site-association
 	     on that domain) is what makes AutoFill treat them as one, so the
 	     saved login shows above the keyboard on the app's sign-in screen. -->
+	<!-- The app's own keychain group first, so secure storage keeps writing
+	     where it always has; then the group shared with the home-screen
+	     widget extension (SharedSnapshot.swift). A team keychain group needs
+	     nothing registered in the developer portal, unlike an App Group. -->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)com.quiroflow.app</string>
+		<string>$(AppIdentifierPrefix)com.quiroflow.shared</string>
+	</array>
 	<key>com.apple.developer.associated-domains</key>
 	<array>
 		<string>webcredentials:app.quiroflow.com</string>

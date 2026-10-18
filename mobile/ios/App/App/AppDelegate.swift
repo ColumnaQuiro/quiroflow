@@ -1,6 +1,7 @@
 import UIKit
 import Capacitor
 import FirebaseCore
+import WidgetKit
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -9,6 +10,22 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         FirebaseApp.configure()
+        #if DEBUG
+        // Debug builds only: `-WidgetDemo staff|patient` fills the home-screen
+        // widget with an invented snapshot, to look at it in the simulator
+        // without signing in. Compiled out of every App Store build.
+        if let i = CommandLine.arguments.firstIndex(of: "-WidgetDemo") {
+            let kind = i + 1 < CommandLine.arguments.count ? CommandLine.arguments[i + 1] : "staff"
+            let now = Date()
+            let iso = ISO8601DateFormatter()
+            let at = { (m: Double) in iso.string(from: now.addingTimeInterval(m * 60)) }
+            let json = kind == "patient"
+                ? #"{"kind":"patient","updatedAt":"\#(iso.string(from: now))","clinic":"Clínica Demo","next":{"at":"\#(at(2880))","label":"jue, 23 oct · 10:30","what":"Ajuste","who":"Dra. Marta Ruiz"},"bono":{"name":"Bono 10","left":6,"total":10}}"#
+                : #"{"kind":"staff","updatedAt":"\#(iso.string(from: now))","who":"Dra. Marta Ruiz","remaining":4,"done":5,"arrived":1,"next":[{"at":"\#(at(-5))","time":"12:00","name":"Andrés Vidal","what":"Ajuste","arrived":true},{"at":"\#(at(25))","time":"12:30","name":"Carmen Ortiz","what":"Ajuste","arrived":false},{"at":"\#(at(55))","time":"13:00","name":"Lucía Navarro","what":"Revisión","arrived":false},{"at":"\#(at(85))","time":"13:30","name":"Javi Moreno","what":"Primera visita","arrived":false}]}"#
+            SharedSnapshot.write(Data(json.utf8))
+            WidgetCenter.shared.reloadAllTimelines()
+        }
+        #endif
         return true
     }
 

@@ -615,6 +615,11 @@ const email = ref('')
 // a French clinic sees +33 selected, and only changes it if their number is
 // from somewhere else. Set once the booking payload lands.
 const dialCode = ref('ES')
+// What the closed country picker shows: flag and prefix only. The open
+// native list still names every country, but "🇪🇸 +34 Spain" in the closed
+// field took the whole row on a phone and squeezed the number input to a
+// sliver nobody could type into.
+const selectedCountry = computed(() => COUNTRIES_BY_NAME.find((c) => c.code === dialCode.value))
 const phoneNumber = ref('')
 const note = ref('')
 const submitting = ref(false)
@@ -1101,10 +1106,10 @@ onMounted(async () => {
                   <label class="block text-sm font-medium text-ink-700">Correo electrónico *<input v-model="email" type="email" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm" data-cy="waitlist-email" /></label>
                   <label class="block text-sm font-medium text-ink-700">Número de móvil *
                     <span class="mt-1 flex gap-2">
-                      <select v-model="dialCode" class="rounded-ctl border border-line-control px-2 py-2 text-sm">
+                      <select v-model="dialCode" class="shrink-0 rounded-ctl border border-line-control px-2 py-2 text-sm">
                         <option v-for="c in COUNTRIES_BY_NAME" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }}</option>
                       </select>
-                      <input v-model="phoneNumber" type="tel" class="w-full rounded-ctl border border-line-control px-3 py-2 text-sm" data-cy="waitlist-phone" />
+                      <input v-model="phoneNumber" type="tel" class="min-w-0 flex-1 rounded-ctl border border-line-control px-3 py-2 text-sm" data-cy="waitlist-phone" />
                     </span>
                   </label>
                 </div>
@@ -1227,15 +1232,21 @@ onMounted(async () => {
                 <div>
                   <label class="block text-sm font-medium text-ink-700">Número de móvil *</label>
                   <div class="mt-1 flex gap-2">
-                    <select v-model="dialCode" class="rounded-ctl border border-line-control px-2 py-2 text-sm">
-                      <option v-for="c in COUNTRIES_BY_NAME" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }} {{ c.name }}</option>
-                    </select>
+                    <div class="relative flex shrink-0 items-center gap-1 rounded-ctl border border-line-control px-3 py-2 text-sm focus-within:border-brand focus-within:ring-1 focus-within:ring-brand">
+                      <span aria-hidden="true">{{ selectedCountry?.flag }} {{ selectedCountry?.dial }}</span>
+                      <svg class="h-3 w-3 text-ink-faint" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
+                      <select v-model="dialCode" aria-label="Prefijo del país" class="absolute inset-0 h-full w-full cursor-pointer opacity-0">
+                        <option v-for="c in COUNTRIES_BY_NAME" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }} {{ c.name }}</option>
+                      </select>
+                    </div>
                     <input
                       v-model="phoneNumber"
                       type="tel"
+                      inputmode="tel"
+                      autocomplete="tel-national"
                       required
                       placeholder="Su número de móvil"
-                      class="w-full rounded-ctl border px-3 py-2 text-sm focus:outline-none focus:ring-1"
+                      class="min-w-0 flex-1 rounded-ctl border px-3 py-2 text-sm focus:outline-none focus:ring-1"
                       :class="phoneError ? 'border-danger-border focus:border-danger-border focus:ring-danger-border' : 'border-line-control focus:border-brand focus:ring-brand'"
                       @blur="phoneChecked = true"
                     />

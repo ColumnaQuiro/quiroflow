@@ -42,6 +42,7 @@ const { documents } = usePatientDocuments(() => props.patientId)
 const { items: exercises } = usePatientExercises(() => props.patientId)
 
 const next = computed(() => upcoming.value[0] ?? null)
+
 // What is unpaid, not the balance, as the staff record shows it
 // (components/patient/BalanceCard.vue, utils/owing.ts): a family bono's
 // beneficiary was shown a debt for visits already paid for from the bono.
@@ -59,6 +60,13 @@ function longWhen(iso: string, clinicId?: string | null) {
 // portal (components/patient).
 const { clinics } = usePatientClinics()
 const waitlistClinicId = computed(() => next.value?.clinic_id ?? (clinics.value.length === 1 ? clinics.value[0]!.id : null))
+
+// The home-screen widget shows the next visit and the bono, as of now.
+const homeWidget = useHomeWidget()
+watch([next, activePackages, apptLoading, moneyLoading], () => {
+  if (apptLoading.value || moneyLoading.value) return
+  homeWidget.publish(patientWidgetSnapshot({ next: next.value, packages: activePackages.value, clinic: clinics.value.find((c) => c.id === next.value?.clinic_id)?.name ?? clinics.value[0]?.name ?? null, timeZone: zoneOf(next.value?.clinic_id ?? null) }))
+})
 
 function eur(cents: number) {
   return formatEur(cents)

@@ -388,9 +388,9 @@ onMounted(() => {
 
     <div class="flex-1 overflow-y-auto bg-surface-page">
       <div class="flex flex-wrap items-center gap-3 border-b border-line bg-surface px-4 py-2.5 sm:px-6">
-        <button type="button" class="flex h-7 w-7 items-center justify-center rounded-ctlSm border border-line-control text-[13px] text-ink-500 hover:border-line-controlHover" @click="anchorDate = addDays(anchorDate, viewMode === 'day' ? -1 : -7)">‹</button>
+        <button type="button" class="flex h-7 w-7 items-center justify-center rounded-ctlSm border border-line-control text-[13px] text-ink-500 hover:border-line-controlHover" :aria-label="t('Previous', 'Anterior')" @click="anchorDate = addDays(anchorDate, viewMode === 'day' ? -1 : -7)"><UiChevron dir="left" /></button>
         <button type="button" class="flex h-7 items-center rounded-ctlSm border border-line-control px-2.5 text-[12.5px] font-medium text-ink-500 hover:border-line-controlHover" @click="anchorDate = new Date()">{{ t('Today', 'Hoy') }}</button>
-        <button type="button" class="flex h-7 w-7 items-center justify-center rounded-ctlSm border border-line-control text-[13px] text-ink-500 hover:border-line-controlHover" @click="anchorDate = addDays(anchorDate, viewMode === 'day' ? 1 : 7)">›</button>
+        <button type="button" class="flex h-7 w-7 items-center justify-center rounded-ctlSm border border-line-control text-[13px] text-ink-500 hover:border-line-controlHover" :aria-label="t('Next', 'Siguiente')" @click="anchorDate = addDays(anchorDate, viewMode === 'day' ? 1 : 7)"><UiChevron dir="right" /></button>
         <span class="text-[13px] font-medium text-ink-700">{{ dayLabel }}</span>
 
         <div class="ml-auto flex h-8 overflow-hidden rounded-ctl border border-line-control text-[12.5px]">

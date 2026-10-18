@@ -1012,7 +1012,7 @@ onMounted(async () => {
                       {{ t('any_practitioner_description', 'Esta opción le permite reservar una cita con cualquier profesional disponible en la especialidad y horario seleccionados.') }}
                     </p>
                   </div>
-                  <span class="ml-4 flex h-8 w-8 shrink-0 items-center justify-center rounded-ctl bg-surface-subtle text-ink-faint">&rsaquo;</span>
+                  <span class="ml-4 flex h-8 w-8 shrink-0 items-center justify-center rounded-ctl bg-surface-subtle text-ink-faint"><UiChevron dir="right" /></span>
                 </button>
                 <button
                   v-for="m in availablePractitioners"
@@ -1032,7 +1032,7 @@ onMounted(async () => {
                       <p class="mt-0.5 text-sm text-ink-muted">{{ practitionerAvailabilityLabel(m) }}</p>
                     </div>
                   </div>
-                  <span class="ml-4 flex h-8 w-8 shrink-0 items-center justify-center rounded-ctl bg-surface-subtle text-ink-faint">&rsaquo;</span>
+                  <span class="ml-4 flex h-8 w-8 shrink-0 items-center justify-center rounded-ctl bg-surface-subtle text-ink-faint"><UiChevron dir="right" /></span>
                 </button>
               </template>
 
@@ -1121,9 +1121,9 @@ onMounted(async () => {
           <div v-else class="mt-6 grid gap-6 sm:grid-cols-3">
             <div class="rounded-card border border-line bg-surface p-4 shadow-card">
               <div class="flex items-center justify-between">
-                <button type="button" class="rounded p-1 text-ink-faint hover:bg-surface-subtle" :disabled="!hydrated" @click="prevMonth">&lsaquo;</button>
+                <button type="button" class="rounded p-1 text-ink-faint hover:bg-surface-subtle" :disabled="!hydrated" aria-label="Mes anterior" @click="prevMonth"><UiChevron dir="left" /></button>
                 <span class="text-sm font-semibold text-ink-900">{{ monthLabel }}</span>
-                <button type="button" class="rounded p-1 text-ink-faint hover:bg-surface-subtle" :disabled="!hydrated" @click="nextMonth">&rsaquo;</button>
+                <button type="button" class="rounded p-1 text-ink-faint hover:bg-surface-subtle" :disabled="!hydrated" aria-label="Mes siguiente" @click="nextMonth"><UiChevron dir="right" /></button>
               </div>
               <div class="mt-3 grid grid-cols-7 gap-1 text-center text-xs font-medium text-ink-faint">
                 <span v-for="l in WEEKDAY_LABELS" :key="l">{{ l }}</span>

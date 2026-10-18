@@ -84,8 +84,6 @@
   },
   "Beatriz / /reports/daily-transactions": {
     "lines": [
-      "‹",
-      "›",
       "Today",
       "Only your own figures",
       "<select: All clinics>",
@@ -182,9 +180,7 @@
   "Beatriz / /reports/upcoming-visits": {
     "lines": [
       "Use it to gauge ad spend, spot maintenance-retention gaps, and predict how the month will close.",
-      "‹",
       "June 2026",
-      "›",
       "Total this month",
       "31",
       "vs. previous month",

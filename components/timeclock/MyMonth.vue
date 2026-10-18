@@ -154,9 +154,9 @@ const field = 'h-11 rounded-ctl border border-line-control bg-surface px-3 text-
 <template>
   <div class="flex flex-col gap-3" data-cy="my-month">
     <div class="flex items-center justify-between gap-2">
-      <UiBtn variant="ghost" size="sm" :aria-label="t('Previous month', 'Mes anterior')" data-cy="my-month-prev" @click="shiftMonth(-1)">‹</UiBtn>
+      <UiBtn variant="ghost" size="sm" :aria-label="t('Previous month', 'Mes anterior')" data-cy="my-month-prev" @click="shiftMonth(-1)"><UiChevron dir="left" /></UiBtn>
       <p class="text-[14.5px] font-semibold capitalize text-ink-900">{{ monthLabel }}</p>
-      <UiBtn variant="ghost" size="sm" :aria-label="t('Next month', 'Mes siguiente')" :disabled="month >= today.slice(0, 7)" @click="shiftMonth(1)">›</UiBtn>
+      <UiBtn variant="ghost" size="sm" :aria-label="t('Next month', 'Mes siguiente')" :disabled="month >= today.slice(0, 7)" @click="shiftMonth(1)"><UiChevron dir="right" /></UiBtn>
     </div>
 
     <div class="flex justify-between rounded-card border border-line bg-surface p-4">

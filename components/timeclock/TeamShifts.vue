@@ -175,9 +175,9 @@ const td = 'border-t border-line-row px-2.5 py-2 align-top text-[12.5px] text-in
 <template>
   <div class="flex flex-col gap-4" data-cy="team-shifts">
     <div class="flex items-center gap-2">
-      <UiBtn size="sm" :aria-label="t('Previous week', 'Semana anterior')" data-cy="shifts-prev" @click="shiftWeek(-1)">‹</UiBtn>
+      <UiBtn size="sm" :aria-label="t('Previous week', 'Semana anterior')" data-cy="shifts-prev" @click="shiftWeek(-1)"><UiChevron dir="left" /></UiBtn>
       <span class="text-[13.5px] font-semibold text-ink-900" data-cy="shifts-week">{{ t('Week', 'Semana') }} {{ weekLabel }}</span>
-      <UiBtn size="sm" :aria-label="t('Next week', 'Semana siguiente')" data-cy="shifts-next" @click="shiftWeek(1)">›</UiBtn>
+      <UiBtn size="sm" :aria-label="t('Next week', 'Semana siguiente')" data-cy="shifts-next" @click="shiftWeek(1)"><UiChevron dir="right" /></UiBtn>
       <span class="flex-1" />
       <NuxtLink to="/settings/team" class="text-[12.5px] font-semibold text-brand-text">{{ t('Weekly hours: Settings › Team →', 'Horario semanal: Ajustes › Equipo →') }}</NuxtLink>
     </div>

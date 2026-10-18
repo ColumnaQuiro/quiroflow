@@ -2578,9 +2578,9 @@ function showNowLineOn(day: Date) {
         </div>
         <div class="m-3 rounded-card border border-line bg-surface p-3">
           <div class="flex items-center justify-between">
-            <button type="button" :aria-label="t('Previous month', 'Mes anterior')" class="rounded-ctlSm p-1 text-ink-faint hover:bg-surface-subtle hover:text-ink-600" @click="miniBase = addMonths(miniBase, -1)">‹</button>
+            <button type="button" :aria-label="t('Previous month', 'Mes anterior')" class="rounded-ctlSm p-1 text-ink-faint hover:bg-surface-subtle hover:text-ink-600" @click="miniBase = addMonths(miniBase, -1)"><UiChevron dir="left" /></button>
             <span class="text-[12.5px] font-[640] text-ink-900">{{ miniMonthLabel }}</span>
-            <button type="button" :aria-label="t('Next month', 'Mes siguiente')" class="rounded-ctlSm p-1 text-ink-faint hover:bg-surface-subtle hover:text-ink-600" @click="miniBase = addMonths(miniBase, 1)">›</button>
+            <button type="button" :aria-label="t('Next month', 'Mes siguiente')" class="rounded-ctlSm p-1 text-ink-faint hover:bg-surface-subtle hover:text-ink-600" @click="miniBase = addMonths(miniBase, 1)"><UiChevron dir="right" /></button>
           </div>
           <div class="mt-2 grid grid-cols-7 gap-y-1 text-center">
             <span v-for="d in miniWeekdayAbbrevs" :key="d" class="text-[10px] font-medium uppercase text-ink-faint">{{ d }}</span>

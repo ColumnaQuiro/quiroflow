@@ -52,6 +52,7 @@ for (const runId of runIds) {
   const shards = jobs.filter((j) => j.name.startsWith('cypress'))
   console.error(`run ${runId}: ${shards.length} cypress jobs`)
   for (const job of shards) {
+    // eslint-disable-next-line no-control-regex -- strips the ANSI colour codes the job log carries
     const log = gh('api', `repos/{owner}/{repo}/actions/jobs/${job.id}/logs`).replace(/\x1b\[[0-9;]*m/g, '')
     const events = []
     for (const line of log.split('\n')) {

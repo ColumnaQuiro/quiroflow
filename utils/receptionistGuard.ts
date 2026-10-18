@@ -46,7 +46,7 @@ export function promptSafeName(name: string | null | undefined, max = 60): strin
     // pretends to be a new section of the prompt.
     .replace(/[\p{Cc}\p{Cf}\u2028\u2029]+/gu, ' ')
     // Keep what names are made of; drop markup (#, `, <>, quotes, brackets).
-    .replace(/[^\p{L}\p{M}\p{N} .'\-]+/gu, ' ')
+    .replace(/[^\p{L}\p{M}\p{N} .'-]+/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, max)

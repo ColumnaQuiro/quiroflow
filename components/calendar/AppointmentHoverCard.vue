@@ -97,7 +97,7 @@ const lineClass = computed(() => {
       <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[13px] font-bold" :class="inBuilding ? 'bg-brand-tint text-brand-text' : 'bg-chip-bg text-ink-500'">{{ initials }}</span>
       <div class="flex min-w-0 flex-col gap-px">
         <span class="truncate text-[15px] font-bold text-ink-900">{{ view.name }}</span>
-        <span class="truncate text-[12px] text-ink-muted" data-cy="appt-hover-visits">{{ visitsLine || ' ' }}</span>
+        <span class="truncate text-[12px] text-ink-muted" data-cy="appt-hover-visits">{{ visitsLine || '\u00A0' }}</span>
       </div>
     </div>
 

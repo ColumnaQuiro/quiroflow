@@ -1,5 +1,5 @@
 import { createSign } from 'node:crypto'
-import { serverSupabaseServiceRole } from '#supabase/server'
+import type { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { inboxRecipients } from '~/utils/inboxRecipients'
 import type { BusinessHours } from '~/utils/businessHours'

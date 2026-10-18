@@ -25,6 +25,7 @@ async function inChunks(ids: string[], fetch: (chunk: string[]) => PromiseLike<{
   return out
 }
 const json = (v: unknown) => JSON.stringify(v, null, 2)
+// eslint-disable-next-line no-control-regex -- control characters are exactly what a filename must not carry
 const safeName = (s: string) => s.normalize('NFC').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').slice(0, 120)
 
 export async function buildPatientExport(supabase: Db, patientId: string, meta: { clinicName: string; requestedBy: string }): Promise<{ zip: Uint8Array; fileName: string; counts: Record<string, number> } | null> {

@@ -1,4 +1,3 @@
-import type PDFDocument from 'pdfkit'
 import { VERIFACTU_QR_LABEL, VERIFACTU_QR_LEGEND } from '../../utils/verifactuQr'
 import { exemptionClause, facturaTaxFor } from '../../utils/facturaTax'
 import type { SupabaseClient } from '@supabase/supabase-js'

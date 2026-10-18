@@ -1,11 +1,15 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
-import type { H3Event } from 'h3'
 import type { Database } from '~/types/database.types'
 import { inboundNonTextBody, skipReaction, type InboundNonTextMessage } from '~/utils/whatsappInbound'
 import { downloadMetaMedia, extensionForMimeType, type MediaKind } from '~/server/utils/whatsappSend'
 import { notifyInboxTeamMembers } from '~/server/utils/pushNotifications'
 import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
 import { automationEvent, dispatchPatientRule } from '~/server/utils/automationEngine'
+import type { InstagramMessagingEvent } from '~/server/utils/instagramWebhook'
+import { leadForWhatsAppSender } from '~/server/utils/whatsappLeads'
+import { receptionistDraftsFor } from '~/server/utils/receptionist'
+import { findLeadIdByPhone, findPatientIdsByPhone, pickInboundPatientId } from '~/server/utils/whatsappOwner'
+import { offerCancelledSlotIfAutomatic } from '~/server/utils/waitlistOffer'
 
 // Meta's ongoing webhook: delivers both outbound message status updates
 // (sent/delivered/read/failed) and inbound replies from patients, in the
@@ -41,11 +45,6 @@ interface MetaMessage {
   location?: InboundNonTextMessage['location']
   contacts?: InboundNonTextMessage['contacts']
 }
-import type { InstagramMessagingEvent } from '~/server/utils/instagramWebhook'
-import { leadForWhatsAppSender } from '~/server/utils/whatsappLeads'
-import { receptionistDraftsFor } from '~/server/utils/receptionist'
-import { findLeadIdByPhone, findPatientIdsByPhone, pickInboundPatientId } from '~/server/utils/whatsappOwner'
-import { offerCancelledSlotIfAutomatic } from '~/server/utils/waitlistOffer'
 
 interface MetaChangeValue {
   metadata?: { phone_number_id: string }

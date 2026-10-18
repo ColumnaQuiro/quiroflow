@@ -2,14 +2,13 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { hasGrowth } from '~/server/utils/requireGrowth'
 import { canReadWhatsApp, statsByRule } from '~/server/utils/automationStats'
-import { rulesWhoseDelayNowWaits } from '~/server/utils/automationDelayChange'
+import { rulesWhoseDelayNowWaits, DELAYS_HONOURED_SINCE  } from '~/server/utils/automationDelayChange'
 import { MESSAGE_STEPS } from '~/utils/automationCatalog'
 import { isValidQuietHours } from '~/utils/automationTiming'
 
 // The Automations list: every rule on the account, what its steps are, and
 // what it has done in the last 30 days.
 
-import { DELAYS_HONOURED_SINCE } from '~/server/utils/automationDelayChange'
 
 export default defineEventHandler(async (event) => {
   const { supabase, teamMember } = await requirePermission(event, 'communication_config')

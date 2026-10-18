@@ -7,6 +7,7 @@ import { sendExerciseReminders } from '~/server/utils/exerciseReminders'
 import { sendOwnerWeeklyDigests } from '~/server/utils/weeklyDigest'
 import { deliverDueGiftVouchers } from '~/server/utils/giftVouchers'
 import { sendOpenDayReminders } from '~/server/utils/timeClock'
+import { pushChangedWalletPasses } from '~/server/utils/walletPush'
 import { closeNewPublicHolidays } from '~/server/utils/publicHolidays'
 
 // Fires 'appointment.same_day' for every booked appointment happening today,
@@ -55,6 +56,9 @@ export default defineEventHandler(async (event) => {
   await deliverDueGiftVouchers(supabase, getRequestURL(event).origin, now)
   // And the 20:00 "your working day is still open" push (server/utils/timeClock.ts).
   await sendOpenDayReminders(supabase, now)
+  // And Apple Wallet: bonos whose sessions or next visit changed are pushed
+  // to the phones holding them, which then fetch the new pass (server/utils/walletPush.ts).
+  await pushChangedWalletPasses(supabase, now)
   // And the official holidays of a year a deploy has just brought, for clinics
   // that close on them automatically (server/utils/publicHolidays.ts). A no-op
   // every other run: their marker is already at the end of what is known.

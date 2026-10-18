@@ -7543,6 +7543,77 @@ export type Database = {
           },
         ]
       }
+      wallet_passes: {
+        Row: {
+          account_id: string
+          auth_token: string
+          created_at: string
+          package_purchase_id: string
+          pushed_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          auth_token?: string
+          created_at?: string
+          package_purchase_id: string
+          pushed_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          auth_token?: string
+          created_at?: string
+          package_purchase_id?: string
+          pushed_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wallet_passes_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "wallet_passes_package_purchase_id_fkey"
+            columns: ["package_purchase_id"]
+            isOneToOne: true
+            referencedRelation: "package_purchases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      wallet_registrations: {
+        Row: {
+          created_at: string
+          device_library_id: string
+          package_purchase_id: string
+          push_token: string
+        }
+        Insert: {
+          created_at?: string
+          device_library_id: string
+          package_purchase_id: string
+          push_token: string
+        }
+        Update: {
+          created_at?: string
+          device_library_id?: string
+          package_purchase_id?: string
+          push_token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wallet_registrations_package_purchase_id_fkey"
+            columns: ["package_purchase_id"]
+            isOneToOne: false
+            referencedRelation: "wallet_passes"
+            referencedColumns: ["package_purchase_id"]
+          },
+        ]
+      }
       webhook_deliveries: {
         Row: {
           account_id: string

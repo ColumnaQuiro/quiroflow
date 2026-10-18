@@ -11,6 +11,8 @@ const props = defineProps<{
   sessionsUsed: number
   /** Set when the bono belongs to someone else who shares it. */
   sharedBy?: string
+  /** The patient's own bono, to offer it for Apple Wallet. */
+  walletId?: string
 }>()
 
 const t = useT()
@@ -34,5 +36,6 @@ const barTone = computed(() => (left.value === 0 ? 'bg-ink-faint' : left.value <
       <div class="h-full rounded-pill transition-all" :class="barTone" :style="{ width: `${pct}%` }" />
     </div>
     <p v-if="sharedBy" class="mt-1.5 text-[12px] text-ink-faint">{{ t(`Shared by ${sharedBy}`, `Compartido por ${sharedBy}`) }}</p>
+    <PatientWalletButton v-if="walletId" :purchase-id="walletId" />
   </div>
 </template>

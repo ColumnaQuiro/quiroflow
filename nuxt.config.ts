@@ -293,6 +293,12 @@ export default defineNuxtConfig({
     // which carries no session, so this stands in for auth on that one
     // request. Optional -- if unset, the endpoint just always rejects.
     cronSecret: '',
+    // Apple Wallet pass signing (server/utils/walletPass.ts): the pass type
+    // certificate and its private key for pass.com.quiroflow.bono, each as
+    // base64 of the PEM (NUXT_WALLET_PASS_CERT, NUXT_WALLET_PASS_KEY). Empty
+    // means Wallet is off: the button does not show and the endpoints say so.
+    walletPassCert: '',
+    walletPassKey: '',
     // App Secret of the QuiroFlow PLATFORM Meta app (1377782808751290), the
     // one registered as a WhatsApp Tech Provider. Clinics onboarded through
     // Embedded Signup have their webhooks signed with THIS secret rather than

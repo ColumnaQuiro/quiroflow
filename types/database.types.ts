@@ -3986,6 +3986,144 @@ export type Database = {
           },
         ]
       }
+      learn_articles: {
+        Row: {
+          account_id: string
+          archived_at: string | null
+          body: string
+          created_at: string
+          created_by: string | null
+          exercise_program_id: string | null
+          id: string
+          minutes: number | null
+          starter_key: string | null
+          summary: string | null
+          tags: string[]
+          title: string
+          updated_at: string
+          video_url: string | null
+        }
+        Insert: {
+          account_id: string
+          archived_at?: string | null
+          body?: string
+          created_at?: string
+          created_by?: string | null
+          exercise_program_id?: string | null
+          id?: string
+          minutes?: number | null
+          starter_key?: string | null
+          summary?: string | null
+          tags?: string[]
+          title: string
+          updated_at?: string
+          video_url?: string | null
+        }
+        Update: {
+          account_id?: string
+          archived_at?: string | null
+          body?: string
+          created_at?: string
+          created_by?: string | null
+          exercise_program_id?: string | null
+          id?: string
+          minutes?: number | null
+          starter_key?: string | null
+          summary?: string | null
+          tags?: string[]
+          title?: string
+          updated_at?: string
+          video_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "learn_articles_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "learn_articles_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "learn_articles_exercise_program_id_fkey"
+            columns: ["exercise_program_id"]
+            isOneToOne: false
+            referencedRelation: "exercise_programs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      learn_sends: {
+        Row: {
+          account_id: string
+          article_id: string
+          channel: string | null
+          id: string
+          opened_at: string | null
+          patient_id: string
+          sent_at: string
+          sent_by: string | null
+          token: string
+        }
+        Insert: {
+          account_id: string
+          article_id: string
+          channel?: string | null
+          id?: string
+          opened_at?: string | null
+          patient_id: string
+          sent_at?: string
+          sent_by?: string | null
+          token?: string
+        }
+        Update: {
+          account_id?: string
+          article_id?: string
+          channel?: string | null
+          id?: string
+          opened_at?: string | null
+          patient_id?: string
+          sent_at?: string
+          sent_by?: string | null
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "learn_sends_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "learn_sends_article_id_fkey"
+            columns: ["article_id"]
+            isOneToOne: false
+            referencedRelation: "learn_articles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "learn_sends_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "learn_sends_sent_by_fkey"
+            columns: ["sent_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       membership_payments: {
         Row: {
           account_id: string

@@ -48,6 +48,21 @@ function dismissDenied() {
 }
 
 const contactHref = 'mailto:hola@quiroflow.com'
+
+// A Supabase read that failed (plugins/supabase-failures.client.ts) would
+// otherwise show as an empty list and nothing else. One toast per page, not
+// one per query: a page whose data is gone fails several reads at once, and
+// one notice says all of it. Only the staff app says so -- the booking page,
+// the portal and the shared documents use other layouts.
+const { failure: supabaseFailure } = useSupabaseFailureNotice()
+const { showToast } = useToast()
+let dataNoticeShown = false
+onUnmounted(router.afterEach(() => (dataNoticeShown = false)))
+watch(supabaseFailure, (f) => {
+  if (!f?.read || dataNoticeShown) return
+  dataNoticeShown = true
+  showToast(t('Some data could not be loaded. Reload the page to try again.', 'Algunos datos no se han podido cargar. Recarga la página para volver a intentarlo.'), 'error', 8000)
+})
 </script>
 
 <template>

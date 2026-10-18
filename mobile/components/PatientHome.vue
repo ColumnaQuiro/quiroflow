@@ -120,6 +120,8 @@ function eur(cents: number) {
       :book-to="settings.bookingEnabled ? '/book' : null"
     />
 
+    <!-- What the clinic sent them to read or watch -->
+    <PatientLearnCard class="mt-3" :patient-id="props.patientId" :link-to="(id) => `/learn/${id}`" />
     <!-- Their posture, when the practitioner shared an assessment -->
     <PatientPostureCard class="mt-3" />
 

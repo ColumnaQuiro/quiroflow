@@ -33,7 +33,8 @@ async function load() {
     .limit(6)
   if (props.practitionerId) query = query.eq('practitioner_id', props.practitionerId)
   if (props.clinicId) query = query.eq('clinic_id', props.clinicId)
-  const { data } = await query
+  const { data, error } = await query
+  if (error) throw error
   if (isStale()) return
   rows.value = (data as unknown as ApptRow[]) ?? []
   loading.value = false

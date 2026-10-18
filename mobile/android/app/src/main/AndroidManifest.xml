@@ -23,6 +23,16 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- The QR on a bono's wallet pass is a link to the patient's
+                 record; scanned with the camera, it opens here rather than
+                 in the browser (verified by .well-known/assetlinks.json). -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="app.quiroflow.com" android:pathPrefix="/patients/" />
+            </intent-filter>
+
         </activity>
 
         <provider
@@ -51,4 +61,8 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Scanning a bono's pass, posture photos. Not required: a device with
+         no camera still installs the app. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
 </manifest>

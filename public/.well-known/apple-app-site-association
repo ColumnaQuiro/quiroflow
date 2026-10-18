@@ -1,5 +1,22 @@
 {
   "webcredentials": {
-    "apps": ["N5TP24Q7MW.com.quiroflow.app"]
+    "apps": [
+      "N5TP24Q7MW.com.quiroflow.app"
+    ]
+  },
+  "applinks": {
+    "details": [
+      {
+        "appIDs": [
+          "N5TP24Q7MW.com.quiroflow.app"
+        ],
+        "components": [
+          {
+            "/": "/patients/*",
+            "comment": "A patient record, as the QR on a bono wallet pass links to."
+          }
+        ]
+      }
+    ]
   }
 }

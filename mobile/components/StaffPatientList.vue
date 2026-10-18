@@ -13,6 +13,8 @@ interface Patient {
 
 const supabase = useSupabaseClient()
 const t = useT()
+// Scanning a bono pass at the desk (usePassScan).
+const passScan = usePassScan()
 // Kept across remounts: on a wide iPad this list sits inside the record page,
 // which Nuxt rebuilds for every patient tapped -- the search used to clear
 // itself on each tap.
@@ -64,8 +66,22 @@ watch(search, () => {
 <template>
   <div class="flex h-full min-h-0 flex-col bg-surface">
     <div class="shrink-0 border-b border-line bg-surface px-4 py-3">
-      <div class="mb-2 flex items-center justify-between gap-2">
+      <div class="mb-2 flex items-center gap-2">
         <h1 class="text-[17px] font-semibold text-ink-900">{{ t('Patients', 'Pacientes') }}</h1>
+        <span class="flex-1" />
+        <!-- A bono pass's QR: straight to today's visit, or the record
+        (usePassScan). Only in the app, where there is a camera to ask for. -->
+        <button
+          v-if="passScan.available"
+          type="button"
+          class="flex h-8 items-center gap-1.5 rounded-ctl border border-line-control px-3 text-[13px] font-semibold text-ink-700 disabled:opacity-60"
+          :disabled="passScan.scanning.value"
+          data-cy="patients-scan"
+          @click="passScan.scan()"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V5a1 1 0 011-1h3M16 4h3a1 1 0 011 1v3M20 16v3a1 1 0 01-1 1h-3M8 20H5a1 1 0 01-1-1v-3M7 12h10" /></svg>
+          {{ t('Scan', 'Escanear') }}
+        </button>
         <button type="button" class="flex h-8 items-center gap-1 rounded-ctl bg-brand px-3 text-[13px] font-semibold text-white" data-cy="patients-new" @click="adding = true">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
           {{ t('New', 'Nuevo') }}
@@ -77,6 +93,7 @@ watch(search, () => {
         :placeholder="t('Search patients…', 'Buscar pacientes…')"
         class="w-full rounded-ctl border border-line-control bg-surface-page px-3 py-2 text-[14px] text-ink-700 focus:border-brand focus:outline-none"
       />
+      <p v-if="passScan.error.value" role="alert" class="mt-2 text-[12.5px] text-danger-text" data-cy="patients-scan-error">{{ passScan.error.value }}</p>
     </div>
 
     <AppSkeletonList v-if="loading && patients.length === 0" avatar :rows="8" class="flex-1" />

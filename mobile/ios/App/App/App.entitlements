@@ -22,6 +22,7 @@
 	<key>com.apple.developer.associated-domains</key>
 	<array>
 		<string>webcredentials:app.quiroflow.com</string>
+		<string>applinks:app.quiroflow.com</string>
 	</array>
 </dict>
 </plist>

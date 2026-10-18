@@ -380,26 +380,28 @@ const miniWeekdayAbbrevs = computed(() => [
   t('Su', 'Do'),
 ])
 
+// One request for the types, practitioners, overrides, clinic memberships
+// and this clinic's rooms (calendar_reference): they were five, fired
+// together, and requests fired together queue behind each other on the
+// database. loadRooms() stays for a clinic change, which needs only the rooms.
 async function loadReferenceData() {
-  const [{ data: types }, { data: members }, { data: ovr }, { data: memberClinics }] = await Promise.all([
-    supabase.from('appointment_types').select('id, name, duration_minutes, color, default_price_cents, sort_order, archived_at, class_capacity'),
-    supabase.from('team_members').select('id, full_name, color, business_hours').is('deleted_at', null).eq('is_practitioner', true).order('full_name'),
-    supabase.from('appointment_type_overrides').select('appointment_type_id, team_member_id, duration_minutes, price_cents'),
-    supabase.from('team_member_clinics').select('team_member_id, clinic_id'),
-  ])
-  appointmentTypes.value = orderTypes(types ?? [])
-  // business_hours comes back as Supabase's recursive Json type, which never
-  // narrows to BusinessHours on its own -- cast at the read site, same as
-  // settings/team/[id].vue and settings/online-booking.vue already do.
-  teamMembers.value = (members ?? []) as unknown as TeamMember[]
-  overrides.value = ovr ?? []
-  teamMemberClinics.value = memberClinics ?? []
+  const token = ++roomsToken
+  const { data, error } = await supabase.rpc('calendar_reference' as never, { p_clinic_id: store.currentClinicId } as never)
+  if (error) throw error
+  const ref = (data ?? {}) as unknown as {
+    appointment_types: AppointmentType[]
+    team_members: TeamMember[]
+    overrides: AppointmentTypeOverride[]
+    team_member_clinics: TeamMemberClinic[]
+    rooms: Room[]
+  }
+  appointmentTypes.value = orderTypes(ref.appointment_types ?? [])
+  teamMembers.value = ref.team_members ?? []
+  overrides.value = ref.overrides ?? []
+  teamMemberClinics.value = ref.team_member_clinics ?? []
+  if (token === roomsToken) rooms.value = ref.rooms ?? []
 }
 
-// Only practitioners (is_practitioner, independent of the account_roles
-// permission a person holds -- an Owner can also be a treating
-// practitioner) assigned to the clinic currently in view, so a multi-clinic
-// account doesn't clutter the tab bar with staff who don't work here.
 const clinicTeamMembers = computed(() =>
   teamMembers.value.filter((m) => teamMemberClinics.value.some((tc) => tc.team_member_id === m.id && tc.clinic_id === store.currentClinicId)),
 )
@@ -894,7 +896,7 @@ onMounted(async () => {
   const clinicAtStart = store.currentClinicId
   const stored = localStorage.getItem(CALENDAR_PRACTITIONER_KEY)
   if (stored) practitionerFilter.value = stored
-  const reference = Promise.all([loadReferenceData(), loadRooms()])
+  const reference = loadReferenceData()
   const early = stored ? rangeKey() : null
   if (early) loadRange()
   await reference.catch((e) => console.error('calendar: reference data failed', e))

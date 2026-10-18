@@ -25,7 +25,7 @@
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>QuiroFlow needs access to your photo library to attach images and videos to WhatsApp messages in the Inbox.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>QuiroFlow needs access to your camera to take a photo or video to send in the Inbox.</string>
+	<string>QuiroFlow uses the camera to take photos and videos for the Inbox and posture assessments, and to scan a patient's bono card.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>QuiroFlow needs access to your microphone to record voice notes and video to send in the Inbox.</string>
 	<key>NSFaceIDUsageDescription</key>

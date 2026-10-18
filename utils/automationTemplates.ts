@@ -6,6 +6,13 @@
 // has to choose (Meta approves each clinic's own), and several say who to
 // notify -- so they arrive with those gaps named in the "missing something"
 // check rather than half-working.
+//
+// The recall flows are deliberately NOT marketing. A marketing segment only
+// reaches patients with the channel in marketing_channels, and a clinic
+// whose records came from elsewhere has that for almost nobody -- the old
+// "Pacientes que no vuelven" would have WhatsApped nine people out of nine
+// hundred. A recall is part of the patient's care; refusing works through
+// the reply itself (utils/recallReply.ts), which the activation dialog says.
 
 import { CAMPAIGN_TEMPLATES, fillClinicPlaceholders } from './campaignTemplates'
 import { DEFAULT_QUIET_HOURS, type Pair } from './automationCatalog'
@@ -34,10 +41,34 @@ export interface AutomationTemplate {
 }
 
 const DAY = 1440
-const wa = (variables: string[] = ['first_name']): TemplateStep => ({
+const wa = (variables: string[] = ['first_name'], extra: Record<string, any> = {}): TemplateStep => ({
   type: 'whatsapp_template',
-  config: { template_name: '', template_language: 'es', variables: variables.map((source) => ({ source })), doc_template_ids: [] },
+  config: { template_name: '', template_language: 'es', variables: variables.map((source) => ({ source })), doc_template_ids: [], ...extra },
 })
+// A recall's WhatsApp: "soy Léa", from the patient's own practitioner, and
+// flagged purpose 'recall' so it is the patient's last contact on the Recalls
+// page and grouped with recalls in Reports. No booking link: at most clinics
+// only a first visit is bookable online, and a returning patient answers the
+// template's quick replies instead (the Receptionist add-on offers free times).
+const recallWa = () => wa(['first_name', 'practitioner_first_name'], { purpose: 'recall' })
+// Non-marketing recall segments share these: nobody messaged by anyone in
+// the last month, quiet hours, one run per patient at a time, and a daily
+// cap so a long list goes out over days (about one old number in nine no
+// longer answers, and failures count against the WhatsApp number).
+const recallSegment = (filters: Record<string, unknown>, reentryDays: number, dailyLimit: number): Omit<DraftRule, 'name'> =>
+  baseRule('segment', {
+    entry_mode: 'one_at_a_time',
+    quiet_hours: DEFAULT_QUIET_HOURS,
+    exit_on: ['appointment.booked'],
+    segment: {
+      filters: { ...filters, has_future_appointment: false, no_whatsapp_sent_days: 30 },
+      schedule: { kind: 'weekly', weekday: 1, time: '10:00' },
+      reentry_days: reentryDays,
+      daily_limit: dailyLimit,
+    },
+  })
+const recallEmail = (subject: string, intro: string) =>
+  email(subject, `<p>Hola {{first_name}},</p><p>${intro}</p><p>Si te apetece volver, responde a este correo o reserva aquí: <a href="{{booking_link}}">{{booking_link}}</a></p><p>{{practitioner_first_name}} · {{clinic_name}}</p>`)
 const email = (subject: string, body: string): TemplateStep => ({ type: 'email', config: { subject, body } })
 const baseRule = (trigger: string, extra: Partial<DraftRule> = {}): Omit<DraftRule, 'name'> => ({
   trigger_event: trigger,
@@ -69,7 +100,7 @@ export const FLOW_TEMPLATES: AutomationTemplate[] = [
         config: { title: '¿Tiene una cita futura?', match: 'all', conditions: [{ field: 'has_future_appointment', op: 'is_true' }] },
         yes: [],
         no: [
-          wa(),
+          recallWa(),
           {
             type: 'wait_until',
             config: { event: 'appointment.booked', timeout_minutes: 7 * DAY },
@@ -80,30 +111,92 @@ export const FLOW_TEMPLATES: AutomationTemplate[] = [
       },
     ],
   },
+  // The three recall segments (docs/recall-automation-plan.md, section 4).
+  // Continuity of care rather than marketing: they reach every patient in
+  // the band, not the handful with WhatsApp marketing consent recorded, and a
+  // "No, gracias" reply marks the patient do-not-contact (the webhook does
+  // that; the activation dialog says so). The wait is on a reply, and a
+  // booking exits the rule, so nobody gets the follow-up after answering.
   {
-    key: 'lapsed-patients',
+    key: 'recall-second-visit',
     section: 'flows',
-    name: ['Patients who do not come back', 'Pacientes que no vuelven'],
-    description: ['Every week, to whoever has not been in for 6 months and has nothing booked.', 'Cada semana, a quien no viene hace 6 meses y no tiene cita.'],
-    summary: ['Weekly group · 4 steps', 'Segmento semanal · 4 pasos'],
-    marketing: true,
-    rule: baseRule('segment', {
-      is_marketing: true,
-      entry_mode: 'one_at_a_time',
-      quiet_hours: DEFAULT_QUIET_HOURS,
-      segment: { filters: { last_visit_before_days: 180, has_future_appointment: false }, schedule: { kind: 'weekly', weekday: 1, time: '10:00' }, reentry_days: 90 },
-    }),
+    name: ['Second visit pending', 'Segunda visita pendiente'],
+    description: [
+      'Every week, to whoever came once, 3 weeks to 4 months ago, and never came back: a WhatsApp from their practitioner; if no reply in 5 days, an email; if nothing in 7 more, a task for the practitioner to call. 15 a day.',
+      'Cada semana, a quien vino una vez, hace entre 3 semanas y 4 meses, y no volvió: WhatsApp de su profesional; si en 5 días no responde, email; si en 7 más nada, tarea para que le llame. 15 al día.',
+    ],
+    summary: ['Weekly group · 5 steps · with waits', 'Segmento semanal · 5 pasos · con esperas'],
+    rule: recallSegment({ min_visits: 1, max_visits: 1, last_visit_before_days: 21, last_visit_within_days: 120 }, 180, 15),
     steps: [
-      { type: 'tag', config: { mode: 'add', tag: 'reactivación' } },
+      recallWa(),
       {
-        type: 'branch',
-        config: { title: '¿Aceptó WhatsApp comercial?', match: 'all', conditions: [{ field: 'marketing_channels', op: 'is', value: 'whatsapp' }] },
-        yes: [wa()],
-        no: [
-          email(
-            '{{first_name}}, ¿cómo va esa espalda?',
-            '<p>Hola {{first_name}},</p><p>Hace tiempo que no te vemos por {{clinic_name}} y queríamos saber cómo estás.</p><p>Si te apetece volver, responde a este correo y te buscamos hueco.</p><p>{{clinic_name}}</p>',
-          ),
+        type: 'wait_until',
+        config: { event: 'whatsapp.replied', timeout_minutes: 5 * DAY },
+        met: [],
+        timeout: [
+          recallEmail('{{first_name}}, ¿cómo sigues?', 'Después de tu primera visita me quedé con ganas de saber cómo sigues. Tu valoración y el informe siguen aquí: en la segunda visita te los explico y vemos juntos si tiene sentido seguir, sin compromiso.'),
+          {
+            type: 'wait_until',
+            config: { event: 'whatsapp.replied', timeout_minutes: 7 * DAY },
+            met: [],
+            timeout: [{ type: 'notify', config: { to: { patients_practitioner: true }, title: 'Llamar a {{first_name}}: segunda visita pendiente' } }],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'recall-maintenance-3m',
+    section: 'flows',
+    name: ['Maintenance: 3 months away', 'Mantenimiento: 3 meses sin venir'],
+    description: [
+      'Every week, to whoever has been twice or more and was last seen 3 to 6 months ago, with nothing booked: a WhatsApp from their practitioner; if no reply in 5 days, a second one; if nothing in 7 more, a tag. 40 a day.',
+      'Cada semana, a quien ha venido dos o más veces, hace entre 3 y 6 meses, y no tiene cita: WhatsApp de su profesional; si en 5 días no responde, un segundo; si en 7 más nada, etiqueta. 40 al día.',
+    ],
+    summary: ['Weekly group · 5 steps · with waits', 'Segmento semanal · 5 pasos · con esperas'],
+    rule: recallSegment({ min_visits: 2, last_visit_before_days: 90, last_visit_within_days: 180 }, 120, 40),
+    steps: [
+      recallWa(),
+      {
+        type: 'wait_until',
+        config: { event: 'whatsapp.replied', timeout_minutes: 5 * DAY },
+        met: [],
+        timeout: [
+          recallWa(),
+          {
+            type: 'wait_until',
+            config: { event: 'whatsapp.replied', timeout_minutes: 7 * DAY },
+            met: [],
+            timeout: [{ type: 'tag', config: { mode: 'add', tag: 'recall · sin respuesta' } }],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'recall-reactivation-6m',
+    section: 'flows',
+    name: ['Reactivation: 6 to 12 months', 'Reactivación: 6 a 12 meses'],
+    description: [
+      'Every week, to whoever has been twice or more and was last seen 6 to 12 months ago, with nothing booked: a WhatsApp from their practitioner; if no reply in 7 days, an email; if nothing in 14 more, a tag. 40 a day.',
+      'Cada semana, a quien ha venido dos o más veces, hace entre 6 y 12 meses, y no tiene cita: WhatsApp de su profesional; si en 7 días no responde, email; si en 14 más nada, etiqueta. 40 al día.',
+    ],
+    summary: ['Weekly group · 5 steps · with waits', 'Segmento semanal · 5 pasos · con esperas'],
+    rule: recallSegment({ min_visits: 2, last_visit_before_days: 180, last_visit_within_days: 365 }, 180, 40),
+    steps: [
+      recallWa(),
+      {
+        type: 'wait_until',
+        config: { event: 'whatsapp.replied', timeout_minutes: 7 * DAY },
+        met: [],
+        timeout: [
+          recallEmail('{{first_name}}, hace tiempo que no te vemos', 'Hace más de seis meses que no te vemos por {{clinic_name}} y quería saber cómo estás. Si notas que la espalda vuelve a pedir atención, tenemos la visita de reactivación con chequeo postural incluido: vemos cómo estás ahora y retomamos desde ahí.'),
+          {
+            type: 'wait_until',
+            config: { event: 'whatsapp.replied', timeout_minutes: 14 * DAY },
+            met: [],
+            timeout: [{ type: 'tag', config: { mode: 'add', tag: 'recall · sin respuesta' } }],
+          },
         ],
       },
     ],

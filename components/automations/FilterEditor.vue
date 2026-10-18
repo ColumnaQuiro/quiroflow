@@ -114,6 +114,26 @@ function setLastVisit(value: number, unit = lastVisitUnit.value) {
           </select>
           <span :class="HINT">{{ t('ago', 'atrás') }}</span>
         </div>
+        <div v-else-if="key === 'last_visit_within'" class="flex flex-wrap items-center gap-2 text-[13px] text-ink-700">
+          <span>{{ t('at most', 'como mucho') }}</span>
+          <input type="number" min="1" :class="FIELD_NUMBER" :value="Number(modelValue.last_visit_within_days) || 1" :aria-label="label(key)" @input="set({ last_visit_within_days: Math.max(1, Math.round(Number(($event.target as HTMLInputElement).value) || 1)) })" />
+          <span :class="HINT">{{ t('days ago (with "Last visit", a band)', 'días atrás (con «Última visita», una franja)') }}</span>
+        </div>
+        <div v-else-if="key === 'min_visits'" class="flex flex-wrap items-center gap-2 text-[13px] text-ink-700">
+          <span>{{ t('at least', 'al menos') }}</span>
+          <input type="number" min="0" :class="FIELD_NUMBER" :value="modelValue.min_visits" :aria-label="label(key)" @input="set({ min_visits: Math.max(0, Math.round(Number(($event.target as HTMLInputElement).value) || 0)) })" />
+          <span :class="HINT">{{ t('completed visits', 'visitas completadas') }}</span>
+        </div>
+        <div v-else-if="key === 'max_visits'" class="flex flex-wrap items-center gap-2 text-[13px] text-ink-700">
+          <span>{{ t('at most', 'como mucho') }}</span>
+          <input type="number" min="0" :class="FIELD_NUMBER" :value="modelValue.max_visits" :aria-label="label(key)" @input="set({ max_visits: Math.max(0, Math.round(Number(($event.target as HTMLInputElement).value) || 0)) })" />
+          <span :class="HINT">{{ t('completed visits', 'visitas completadas') }}</span>
+        </div>
+        <div v-else-if="key === 'no_whatsapp_sent'" class="flex flex-wrap items-center gap-2 text-[13px] text-ink-700">
+          <span>{{ t('nothing sent in the last', 'sin ningún envío en los últimos') }}</span>
+          <input type="number" min="1" :class="FIELD_NUMBER" :value="Number(modelValue.no_whatsapp_sent_days) || 1" :aria-label="label(key)" @input="set({ no_whatsapp_sent_days: Math.max(1, Math.round(Number(($event.target as HTMLInputElement).value) || 1)) })" />
+          <span :class="HINT">{{ t('days, by anyone or any automation', 'días, por nadie ni por otra automatización') }}</span>
+        </div>
         <div v-else-if="key === 'care_plan_overdue'" class="flex flex-wrap items-center gap-2 text-[13px] text-ink-700" data-cy="filter-care-plan-overdue">
           <span>{{ t('a visit overdue by', 'una visita atrasada') }}</span>
           <input type="number" min="1" :class="FIELD_NUMBER" :value="Number(modelValue.care_plan_overdue_days) || 1" :aria-label="label(key)" @input="set({ care_plan_overdue_days: Math.max(1, Math.round(Number(($event.target as HTMLInputElement).value) || 1)) })" />

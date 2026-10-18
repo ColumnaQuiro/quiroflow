@@ -505,6 +505,10 @@ export type FilterKey =
   | 'balance'
   | 'membership'
   | 'last_visit'
+  | 'last_visit_within'
+  | 'min_visits'
+  | 'max_visits'
+  | 'no_whatsapp_sent'
   | 'care_plan_overdue'
   | 'clinics'
 
@@ -528,6 +532,13 @@ export const FILTERS: FilterDef[] = [
   { key: 'no_prior_appointments', label: ['First-time patient', 'Paciente nuevo'], appointment: true },
   { key: 'has_future_appointment', label: ['Future appointment', 'Cita futura'], segment: true },
   { key: 'last_visit', label: ['Last visit', 'Última visita'], segment: true },
+  // The other edge of a band, and a visit-count range: what a recall needs to
+  // tell "one visit, three weeks to four months ago" from "two or more, six
+  // months to a year" (utils/automationAudience.ts).
+  { key: 'last_visit_within', label: ['Last visit no earlier than', 'Última visita como mucho hace'], segment: true },
+  { key: 'min_visits', label: ['At least N visits', 'Mínimo de visitas'], segment: true },
+  { key: 'max_visits', label: ['At most N visits', 'Máximo de visitas'], segment: true },
+  { key: 'no_whatsapp_sent', label: ['No WhatsApp sent recently', 'Sin WhatsApp reciente'], segment: true },
   { key: 'care_plan_overdue', label: ['Behind on their care plan', 'Retrasado en su plan'], segment: true },
   { key: 'tag_contains', label: ['Tag', 'Etiqueta'], segment: true },
   { key: 'balance', label: ['Balance', 'Saldo'], segment: true },
@@ -546,6 +557,10 @@ export function filtersInUse(filters: Record<string, unknown> | null | undefined
   if (f.no_prior_appointments === true) used.push('no_prior_appointments')
   if (has('has_future_appointment')) used.push('has_future_appointment')
   if (has('last_visit_before_days')) used.push('last_visit')
+  if (has('last_visit_within_days')) used.push('last_visit_within')
+  if (has('min_visits')) used.push('min_visits')
+  if (has('max_visits')) used.push('max_visits')
+  if (has('no_whatsapp_sent_days')) used.push('no_whatsapp_sent')
   if (has('care_plan_overdue_days')) used.push('care_plan_overdue')
   // Present, even while still empty: a row just added has to stay on screen.
   if (typeof f.tag_contains === 'string') used.push('tag_contains')
@@ -563,6 +578,10 @@ export const FILTER_KEYS: Record<FilterKey, string[]> = {
   no_prior_appointments: ['no_prior_appointments'],
   has_future_appointment: ['has_future_appointment'],
   last_visit: ['last_visit_before_days'],
+  last_visit_within: ['last_visit_within_days'],
+  min_visits: ['min_visits'],
+  max_visits: ['max_visits'],
+  no_whatsapp_sent: ['no_whatsapp_sent_days'],
   care_plan_overdue: ['care_plan_overdue_days'],
   tag_contains: ['tag_contains'],
   balance: ['balance'],
@@ -585,6 +604,14 @@ export function defaultFilterValue(key: FilterKey): Record<string, unknown> {
       return { has_future_appointment: false }
     case 'last_visit':
       return { last_visit_before_days: 180 }
+    case 'last_visit_within':
+      return { last_visit_within_days: 365 }
+    case 'min_visits':
+      return { min_visits: 2 }
+    case 'max_visits':
+      return { max_visits: 1 }
+    case 'no_whatsapp_sent':
+      return { no_whatsapp_sent_days: 30 }
     case 'care_plan_overdue':
       return { care_plan_overdue_days: 7 }
     case 'tag_contains':
@@ -618,6 +645,11 @@ export const VARIABLE_SOURCES: { value: string; label: Pair }[] = [
   { value: 'clinic_name', label: ['Clinic name', 'Nombre de la clínica'] },
   { value: 'clinic_phone', label: ['Clinic phone', 'Teléfono de la clínica'] },
   { value: 'clinic_address', label: ['Clinic address', 'Dirección de la clínica'] },
+  // A recall reads better from "Léa" than from "the clinic". The clinic's
+  // name when the patient has no practitioner, so Meta never gets an empty
+  // parameter (it refuses the whole message over one).
+  { value: 'practitioner_first_name', label: ["Their practitioner's first name", 'Nombre de su profesional'] },
+  { value: 'last_visit_month', label: ['Month of their last visit', 'Mes de su última visita'] },
   { value: 'text', label: ['Fixed text', 'Texto fijo'] },
 ]
 
@@ -651,6 +683,8 @@ export const STOP_REASONS: Record<string, Pair> = {
   appointment_deleted: ['The appointment was deleted', 'Se eliminó la cita'],
   appointment_cancelled: ['The appointment was cancelled', 'Se canceló la cita'],
   appointment_answered: ['They already confirmed or asked to change the appointment', 'Ya confirmó o pidió cambiar la cita'],
+  declined: ['Asked not to be contacted (WhatsApp reply)', 'Pidió que no le contactemos (respuesta por WhatsApp)'],
+  snoozed: ['Asked to be written to later (WhatsApp reply)', 'Pidió que le escribamos más adelante (respuesta por WhatsApp)'],
 }
 
 /** A run history row's outcome, in words. */

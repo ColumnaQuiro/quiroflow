@@ -9,6 +9,8 @@ const props = defineProps<{
   filters: Record<string, any>
   isMarketing: boolean
   schedule: { kind: 'once' | 'daily' | 'weekly'; weekday?: number; time?: string } | null | undefined
+  /** segment.daily_limit: how many enter per clinic day, the rest the days after. */
+  dailyLimit?: number | null
   ruleId: string | null
   entryMode: string
   busy?: boolean
@@ -28,6 +30,12 @@ onMounted(async () => {
   }
 })
 const count = computed(() => (preview.value ? preview.value.count - preview.value.alreadyIn : null))
+// "40 per day, about 3 days": how long the cap spreads today's matches over.
+const paced = computed(() => {
+  const limit = Number(props.dailyLimit)
+  if (!(limit >= 1) || count.value === null) return null
+  return { limit, days: Math.max(1, Math.ceil(count.value / limit)) }
+})
 const when = computed(() => {
   const s = props.schedule
   if (!s || s.kind === 'once') return t('now (within 15 minutes)', 'ahora (antes de 15 minutos)')
@@ -45,8 +53,14 @@ const when = computed(() => {
           <strong>{{ count === null ? '…' : t(`${count} patients`, `${count} pacientes`) }}</strong>
           {{ t(`match today and will enter ${when}.`, `coinciden hoy y entrarán ${when}.`) }}
         </p>
+        <p v-if="paced" class="text-[14px] leading-relaxed text-ink-500" data-test="segment-activate-pace">
+          {{ t(`${paced.limit} per day, the most recently seen first: about ${paced.days} day${paced.days === 1 ? '' : 's'}.`, `${paced.limit} al día, primero los vistos más recientemente: unos ${paced.days} día${paced.days === 1 ? '' : 's'}.`) }}
+        </p>
         <p v-if="isMarketing && preview" class="rounded-ctl border border-line bg-surface-subtle px-3 py-2.5 text-[13px] text-ink-700">
           {{ t('It is marketing: of them,', 'Es comercial: de ellos,') }} <strong>{{ preview.whatsapp }}</strong> {{ t('accepted WhatsApp and', 'aceptaron WhatsApp y') }} <strong>{{ preview.email }}</strong> {{ t('email.', 'email.') }}
+        </p>
+        <p v-else class="rounded-ctl border border-line bg-surface-subtle px-3 py-2.5 text-[13px] text-ink-700" data-test="segment-activate-optout">
+          {{ t('Not marketing: it goes out as part of their care, so no consent is checked. Anyone can refuse by replying: "No, gracias", BAJA or STOP marks them "do not contact" and ends their sequence; "Más adelante" parks them for two months.', 'No es comercial: va como parte de su tratamiento, así que no se comprueba consentimiento. Cualquiera puede negarse respondiendo: «No, gracias», BAJA o STOP lo marca como «no contactar» y termina su secuencia; «Más adelante» lo aparca dos meses.') }}
         </p>
       </div>
       <div class="flex flex-wrap justify-end gap-2 px-6 pb-6 pt-4">

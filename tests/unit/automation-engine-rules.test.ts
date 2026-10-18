@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { conditionHolds, evaluateBranch } from '../../utils/automationConditions'
-import { lastScheduledOccurrence, nextAllowedSendTime, segmentIsDue } from '../../utils/automationTiming'
+import { lastScheduledOccurrence, nextAllowedSendTime, segmentCarryOverDue, segmentDailyLimit, segmentIsDue } from '../../utils/automationTiming'
 
 // The pure halves of the automation engine: when a message may go out (quiet
 // hours), when a scheduled segment runs, and which way a branch goes.
@@ -82,6 +82,45 @@ describe('segment schedules', () => {
 
   it('is never due without a schedule', () => {
     expect(segmentIsDue(undefined, null, created, new Date(), MADRID)).toBe(false)
+  })
+})
+
+describe('a capped segment carrying over to the next day', () => {
+  const weekly = { kind: 'weekly' as const, weekday: 1, time: '10:00' }
+  const ranMonday = new Date('2026-10-05T08:05:00Z') // Monday 10:05 Madrid
+
+  it('is due again the next clinic day once the schedule time has passed, not 24 hours later', () => {
+    expect(segmentCarryOverDue(weekly, ranMonday, new Date('2026-10-05T15:00:00Z'), MADRID)).toBe(false) // same day
+    expect(segmentCarryOverDue(weekly, ranMonday, new Date('2026-10-06T07:30:00Z'), MADRID)).toBe(false) // Tuesday 09:30
+    expect(segmentCarryOverDue(weekly, ranMonday, new Date('2026-10-06T08:00:00Z'), MADRID)).toBe(true) // Tuesday 10:00
+    expect(segmentCarryOverDue(weekly, ranMonday, new Date('2026-10-08T08:00:00Z'), MADRID)).toBe(true) // and Thursday
+  })
+
+  it('reads the day in the clinic zone: 23:30 in Madrid is still the same day', () => {
+    const ranLate = new Date('2026-10-05T21:30:00Z') // Monday 23:30 Madrid, already Tuesday in UTC
+    expect(segmentCarryOverDue(weekly, ranLate, new Date('2026-10-05T22:30:00Z'), MADRID)).toBe(false) // Tuesday 00:30 Madrid, before 10:00
+    expect(segmentCarryOverDue(weekly, ranLate, new Date('2026-10-06T08:00:00Z'), MADRID)).toBe(true)
+  })
+
+  it('carries a one-off over at any time of the next day', () => {
+    const once = { kind: 'once' as const }
+    expect(segmentCarryOverDue(once, ranMonday, new Date('2026-10-06T05:00:00Z'), MADRID)).toBe(true)
+    expect(segmentCarryOverDue(once, ranMonday, new Date('2026-10-05T20:00:00Z'), MADRID)).toBe(false)
+  })
+
+  it('never carries over a segment that has not run, or has no schedule', () => {
+    expect(segmentCarryOverDue(weekly, null, new Date('2026-10-06T08:00:00Z'), MADRID)).toBe(false)
+    expect(segmentCarryOverDue(undefined, ranMonday, new Date('2026-10-06T08:00:00Z'), MADRID)).toBe(false)
+  })
+
+  it('reads the cap as a whole number, or none', () => {
+    expect(segmentDailyLimit({ daily_limit: 40 })).toBe(40)
+    expect(segmentDailyLimit({ daily_limit: '15' })).toBe(15)
+    expect(segmentDailyLimit({ daily_limit: 2.7 })).toBe(2)
+    expect(segmentDailyLimit({ daily_limit: 0 })).toBeNull()
+    expect(segmentDailyLimit({ daily_limit: null })).toBeNull()
+    expect(segmentDailyLimit({})).toBeNull()
+    expect(segmentDailyLimit(null)).toBeNull()
   })
 })
 

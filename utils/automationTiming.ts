@@ -145,6 +145,31 @@ export function lastScheduledOccurrence(schedule: SegmentSchedule | null | undef
  * from before it was created -- a daily 9:00 rule saved at 15:00 first runs
  * tomorrow, not the moment it is saved.
  */
+/**
+ * Whether a capped segment (segment.daily_limit) gets another go today: it
+ * ran on an earlier clinic day, and today's clock has passed the schedule's
+ * time (any time, for a one-off). The engine asks this only when that earlier
+ * run filled its cap -- a day that enrolled fewer than the cap found nobody
+ * else, so there is nothing to carry over until the next occurrence.
+ *
+ * The clinic's calendar day, not 24 hours: a run at 10:05 on Monday is due
+ * again at 10:00 on Tuesday, not at 10:05.
+ */
+export function segmentCarryOverDue(schedule: SegmentSchedule | null | undefined, lastRunAt: Date | null, now: Date, timeZone: string): boolean {
+  if (!schedule || !lastRunAt) return false
+  const last = localParts(lastRunAt, timeZone)
+  const here = localParts(now, timeZone)
+  if (here.date <= last.date) return false
+  if (schedule.kind === 'once') return true
+  return here.minutes >= (minutesOf(schedule.time) ?? 9 * 60)
+}
+
+/** A segment's daily cap as a whole number, or null when it has none. */
+export function segmentDailyLimit(segment: { daily_limit?: unknown } | null | undefined): number | null {
+  const n = Math.floor(Number(segment?.daily_limit))
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
 export function segmentIsDue(schedule: SegmentSchedule | null | undefined, lastRunAt: Date | null, createdAt: Date, now: Date, timeZone: string): boolean {
   if (!schedule) return false
   if (schedule.kind === 'once') {

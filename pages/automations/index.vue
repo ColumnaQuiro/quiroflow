@@ -379,6 +379,7 @@ function hideBanner() {
       :filters="segmentFor.segment?.filters ?? {}"
       :is-marketing="segmentFor.is_marketing"
       :schedule="segmentFor.segment?.schedule"
+      :daily-limit="segmentFor.segment?.daily_limit ?? null"
       :rule-id="segmentFor.id"
       entry-mode="once_ever"
       :busy="!!toggling"

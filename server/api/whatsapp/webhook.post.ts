@@ -10,6 +10,8 @@ import { leadForWhatsAppSender } from '~/server/utils/whatsappLeads'
 import { receptionistDraftsFor } from '~/server/utils/receptionist'
 import { findLeadIdByPhone, findPatientIdsByPhone, pickInboundPatientId } from '~/server/utils/whatsappOwner'
 import { offerCancelledSlotIfAutomatic } from '~/server/utils/waitlistOffer'
+import { applyRecallReply } from '~/server/utils/recallReplies'
+import { recallReplyIntent } from '~/utils/recallReply'
 
 // Meta's ongoing webhook: delivers both outbound message status updates
 // (sent/delivered/read/failed) and inbound replies from patients, in the
@@ -519,6 +521,17 @@ export default defineEventHandler(async (event) => {
           // lead:<id>, so a notification opens that row and finds its owner.
           key: patientId ?? (leadId ? `lead:${leadId}` : msg.from),
         })
+
+        // "No, gracias" / BAJA / STOP, or "Más adelante": the recall
+        // templates' own buttons, and the words people type to mean them.
+        // Applied before the automations see the reply, so a decline ends
+        // the sequence outright rather than letting its "replied" branch
+        // carry on. Patients only: a lead has no do-not-contact flag, and
+        // its drips already stop on the reply itself.
+        const recallIntent = recallReplyIntent(replyText(msg))
+        if (recallIntent && patientId) {
+          await applyRecallReply(supabase, account.id, patientId, recallIntent, replyText(msg))
+        }
 
         // A reply is what a wait_until "whatsapp.replied" waits for, and what
         // a rule set to exit on a reply exits on. After the message is stored,

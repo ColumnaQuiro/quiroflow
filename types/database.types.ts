@@ -7625,6 +7625,7 @@ export type Database = {
           account_id: string
           auth_token: string
           created_at: string
+          google_synced_at: string | null
           package_purchase_id: string
           pushed_at: string | null
           updated_at: string
@@ -7633,6 +7634,7 @@ export type Database = {
           account_id: string
           auth_token?: string
           created_at?: string
+          google_synced_at?: string | null
           package_purchase_id: string
           pushed_at?: string | null
           updated_at?: string
@@ -7641,6 +7643,7 @@ export type Database = {
           account_id?: string
           auth_token?: string
           created_at?: string
+          google_synced_at?: string | null
           package_purchase_id?: string
           pushed_at?: string | null
           updated_at?: string

@@ -311,6 +311,12 @@ export default defineNuxtConfig({
     // means Wallet is off: the button does not show and the endpoints say so.
     walletPassCert: '',
     walletPassKey: '',
+    // Google Wallet (server/utils/googleWallet.ts): the issuer id from the Pay
+    // & Wallet Console (NUXT_GOOGLE_WALLET_ISSUER_ID) and the JSON key of the
+    // service account that issues for it, base64 (NUXT_GOOGLE_WALLET_KEY).
+    // Either empty means Google Wallet is off, as above.
+    googleWalletIssuerId: '',
+    googleWalletKey: '',
     // App Secret of the QuiroFlow PLATFORM Meta app (1377782808751290), the
     // one registered as a WhatsApp Tech Provider. Clinics onboarded through
     // Embedded Signup have their webhooks signed with THIS secret rather than

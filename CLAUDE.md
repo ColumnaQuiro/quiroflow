@@ -156,8 +156,13 @@ destructive, with a foreign-key error naming a table the front desk has never
 heard of. Both are moved now, and a guard before the delete raises rather than
 letting payments go.
 
-So: **adding a `patient_id` column is two changes, not one.** The migration
-that adds it, and the line in `merge_patients` that moves it. The cheapest way
+So: **adding a `patient_id` column is two changes, not one** -- three, if
+the table holds anything clinical or personal. The migration that adds it,
+the line in `merge_patients` that moves it, and the delete in
+`anonymize_patient` (`20261017182107_record_retention.sql`) that removes it
+when an owner anonymises a record past its retention period. A table missed
+there survives anonymisation with the person's data in it, and nothing on
+screen says so. The cheapest way
 to check the list is still current:
 
 ```sql

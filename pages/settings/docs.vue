@@ -54,6 +54,9 @@ function questionCount(tpl: Template) {
 onMounted(load)
 
 const category = ref<string>('')
+// How long a signed copy stays valid, in months; '' = no expiry. Settings ›
+// Privacidad lists the ones about to expire (20261017182107_record_retention).
+const validMonths = ref<string | number>('')
 
 // ---- versions in other languages
 // A translation is its own template pointing at the original. Patients are
@@ -113,6 +116,7 @@ function openTemplate(t: Template) {
   title.value = t.title
   fields.value = Array.isArray(t.fields) ? [...t.fields] : []
   category.value = t.category ?? ''
+  validMonths.value = t.valid_months ?? ''
   savedState.value = editorState()
 }
 
@@ -120,7 +124,7 @@ function openTemplate(t: Template) {
 // used to drop unsaved edits without a word.
 const savedState = ref('')
 function editorState() {
-  return JSON.stringify({ title: title.value.trim(), fields: fields.value, category: category.value })
+  return JSON.stringify({ title: title.value.trim(), fields: fields.value, category: category.value, validMonths: String(validMonths.value) })
 }
 const dirty = computed(() => !!activeTemplate.value && editorState() !== savedState.value)
 
@@ -199,6 +203,7 @@ async function save() {
       title: title.value.trim() || t('Untitled template', 'Plantilla sin título'),
       fields: fields.value as any,
       category: category.value || null,
+      valid_months: validMonths.value === '' ? null : Math.min(120, Math.max(1, Math.round(Number(validMonths.value)))),
       updated_by: store.teamMember?.id ?? null,
     })
     .eq('id', activeTemplate.value.id)
@@ -311,6 +316,11 @@ async function confirmDelete() {
                   <option value="consent">{{ t('Consent', 'Consentimiento') }}</option>
                 </select>
                 <span class="text-[12.5px] text-ink-muted">{{ t("Lets Reports track who's missing this form.", 'Permite que Informes registre a quién le falta este formulario.') }}</span>
+              </div>
+              <div class="flex flex-wrap items-center gap-3">
+                <label for="doc-valid-months" class="text-[13px] font-semibold text-ink-700">{{ t('Valid for (months)', 'Válido durante (meses)') }}</label>
+                <input id="doc-valid-months" v-model="validMonths" type="number" min="1" max="120" :placeholder="t('No expiry', 'Sin caducidad')" class="h-9 touch:h-11 w-[130px] rounded-ctl border border-line-control bg-surface px-2.5 text-[14px] text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" data-cy="doc-valid-months" />
+                <span class="text-[12.5px] text-ink-muted">{{ t('Signed copies about to expire are listed in Settings › Privacy.', 'Las copias firmadas a punto de caducar salen en Ajustes › Privacidad.') }}</span>
               </div>
               <div class="flex flex-col gap-1.5 rounded-ctl border border-line bg-surface-subtle px-3.5 py-3" data-cy="doc-versions">
                 <template v-if="activeTemplate.translation_of">

@@ -730,6 +730,7 @@ export type Database = {
           appointment_reminder_hours_before: number
           cancellation_fee_cents: number | null
           created_at: string
+          clinical_retention_years: number
           email_confirmation_body: string | null
           email_confirmation_subject: string | null
           email_reminder_body: string | null
@@ -823,6 +824,7 @@ export type Database = {
           appointment_reminder_hours_before?: number
           cancellation_fee_cents?: number | null
           created_at?: string
+          clinical_retention_years?: number
           email_confirmation_body?: string | null
           email_confirmation_subject?: string | null
           email_reminder_body?: string | null
@@ -915,6 +917,7 @@ export type Database = {
           appointment_reminder_hours_before?: number
           cancellation_fee_cents?: number | null
           created_at?: string
+          clinical_retention_years?: number
           email_confirmation_body?: string | null
           email_confirmation_subject?: string | null
           email_reminder_body?: string | null
@@ -2799,6 +2802,7 @@ export type Database = {
           translation_of: string | null
           updated_at: string
           updated_by: string | null
+          valid_months: number | null
         }
         Insert: {
           account_id: string
@@ -2813,6 +2817,7 @@ export type Database = {
           translation_of?: string | null
           updated_at?: string
           updated_by?: string | null
+          valid_months?: number | null
         }
         Update: {
           account_id?: string
@@ -2827,6 +2832,7 @@ export type Database = {
           translation_of?: string | null
           updated_at?: string
           updated_by?: string | null
+          valid_months?: number | null
         }
         Relationships: [
           {
@@ -5166,6 +5172,7 @@ export type Database = {
           referral_rewarded_at: string | null
           account_id: string
           address: string | null
+          anonymized_at: string | null
           balance_cents: number
           chief_complaint: string | null
           city: string | null
@@ -5203,6 +5210,8 @@ export type Database = {
           red_flags: string | null
           referral_source: string | null
           referred_by_patient_id: string | null
+          retention_kept_reason: string | null
+          retention_kept_until: string | null
           reminder_channel: string
           search_name: string | null
           status: string
@@ -5218,6 +5227,7 @@ export type Database = {
           referral_rewarded_at?: string | null
           account_id: string
           address?: string | null
+          anonymized_at?: string | null
           balance_cents?: number
           chief_complaint?: string | null
           city?: string | null
@@ -5255,6 +5265,8 @@ export type Database = {
           red_flags?: string | null
           referral_source?: string | null
           referred_by_patient_id?: string | null
+          retention_kept_reason?: string | null
+          retention_kept_until?: string | null
           reminder_channel?: string
           search_name?: string | null
           status?: string
@@ -5270,6 +5282,7 @@ export type Database = {
           referral_rewarded_at?: string | null
           account_id?: string
           address?: string | null
+          anonymized_at?: string | null
           balance_cents?: number
           chief_complaint?: string | null
           city?: string | null
@@ -5307,6 +5320,8 @@ export type Database = {
           red_flags?: string | null
           referral_source?: string | null
           referred_by_patient_id?: string | null
+          retention_kept_reason?: string | null
+          retention_kept_until?: string | null
           reminder_channel?: string
           search_name?: string | null
           status?: string
@@ -8187,7 +8202,29 @@ export type Database = {
       }
     }
     Functions: {
+      anonymize_patient: {
+        Args: { p_patient_id: string }
+        Returns: Json
+      }
       inbox_task_role_id: { Args: { p_account_id: string }; Returns: string }
+      keep_patient_record: {
+        Args: { p_patient_id: string; p_reason: string; p_until: string }
+        Returns: undefined
+      }
+      retention_review: {
+        Args: { p_account_id: string }
+        Returns: {
+          facturas: number
+          files: number
+          first_name: string
+          kept_reason: string
+          kept_until: string
+          last_activity: string
+          last_name: string
+          notes: number
+          patient_id: string
+        }[]
+      }
       save_exercise_program: {
         Args: {
           p_account_id: string

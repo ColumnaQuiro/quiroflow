@@ -78,6 +78,14 @@ export default defineNuxtConfig({
   },
   nitro: {
     preset: 'netlify',
+    // The CI e2e build runs `.output/server/index.mjs` from the checkout,
+    // whose node_modules the shard has restored, so Nitro need not trace and
+    // copy 37 MB of dependencies into .output -- the longest part of that
+    // build (62s -> 44s locally) and most of the artifact every shard
+    // downloads (52 MB -> 15 MB). Node resolves the externals upward from
+    // .output/server/ as it would from any file in the repo. Production
+    // (the netlify preset) keeps tracing: the function ships alone.
+    ...(process.env.E2E_BUILD ? { externals: { trace: false } } : {}),
   },
   hooks: {
     // The developer portal lives at pages/developers/* but is published at
@@ -132,7 +140,11 @@ export default defineNuxtConfig({
     // Nitro elsewhere). A changed font therefore needs a new filename.
     '/fonts/**': { headers: { 'cache-control': 'public, max-age=31536000, immutable' } },
   },
-  modules: ['@nuxtjs/tailwindcss', '@nuxtjs/supabase', '@pinia/nuxt', '@sentry/nuxt/module'],
+  // The CI e2e build (E2E_BUILD) leaves the Sentry module out: it has no DSN
+  // there, nothing in the suite looks for it, and its Vite plugin runs over
+  // every module of both builds. The runtime imports of @sentry/nuxt in the
+  // plugins still resolve; without init they are no-ops.
+  modules: ['@nuxtjs/tailwindcss', '@nuxtjs/supabase', '@pinia/nuxt', ...(process.env.E2E_BUILD ? [] : ['@sentry/nuxt/module'])],
   // Error monitoring (sentry.client.config.ts, sentry.server.config.ts). It
   // sends nothing until NUXT_PUBLIC_SENTRY_DSN is set. These options are the
   // BUILD side only: the release is the commit the deploy builds, and source
@@ -389,6 +401,9 @@ export default defineNuxtConfig({
   // Vite's dev server rejects unrecognized Host headers by default; allow
   // booking subdomains through so *.localtest.me works without extra setup.
   vite: {
+    // The CI e2e build skips gzipping every client chunk to print its size:
+    // a few seconds nobody reads on the path every shard waits on.
+    build: process.env.E2E_BUILD ? { reportCompressedSize: false } : {},
     // Sentry runs errors-only here (tracesSampleRate 0, no replay -- see
     // sentry.client.config.ts), so its tracing and debug-logging code is dead
     // weight in the bundle every page loads. These are the flags Sentry's own

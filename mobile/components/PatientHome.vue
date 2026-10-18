@@ -120,6 +120,9 @@ function eur(cents: number) {
       :book-to="settings.bookingEnabled ? '/book' : null"
     />
 
+    <!-- Their posture, when the practitioner shared an assessment -->
+    <PatientPostureCard class="mt-3" />
+
     <!-- Earlier, if a slot frees up: the clinic's waitlist -->
     <PatientWaitlistCard v-if="settings.bookingEnabled && !apptLoading" class="mt-3" :clinic-id="waitlistClinicId" :has-next-visit="!!next" />
 

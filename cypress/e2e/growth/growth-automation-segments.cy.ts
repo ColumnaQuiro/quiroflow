@@ -98,18 +98,33 @@ describe('Segment trigger', () => {
     withVisits('Antigua', [400])
     // Never came at all: not lapsed.
     cy.task('auto:patient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Nunca', tags: [tag] })
+    // In the band like Dosvisitas, but set aside on the Recalls page: Posponer
+    // (snoozed for a month) and Descartar (dismissed last week, not seen
+    // since). A tag alone is not a recall and counts them; "last visit more
+    // than N days ago" is, and leaves them out of the count and the cron.
+    const parked = (firstName: string, extra: Record<string, unknown>) =>
+      cy.task<{ id: string }>('auto:patient', { accountId: account.accountId, clinicId: account.clinicId, firstName, tags: [tag], ...extra }).then((p) => {
+        for (const d of [200, 100]) {
+          cy.task('db:createAppointment', { accountId: account.accountId, clinicId: account.clinicId, patientId: p.id, startsAt: daysAgo(d), status: 'completed' })
+        }
+      })
+    parked('Pospuesta', { recallSnoozedUntil: daysAgo(-30).slice(0, 10) })
+    parked('Descartada', { recallDismissedAt: daysAgo(7) })
 
     cy.visit('/automations/new')
     cy.get('[data-test="trigger-select"]').select('segment')
     cy.get('[data-test="segment-once"]').click()
     cy.get('[data-test="segment-filter-add"]').select('tag_contains')
     cy.get('[data-test="segment-filter-tag_contains"] input').type(tag)
-    cy.get('[data-test="segment-count"]').should('contain', '5')
+    cy.get('[data-test="segment-count"]').should('contain', '7')
     // More than 21 days ago...
     cy.get('[data-test="segment-filter-add"]').select('last_visit')
     cy.get('[data-test="segment-filter-last_visit"] select').select('days')
     cy.get('[data-test="segment-filter-last_visit"] input').type('{selectall}21')
     cy.get('[data-test="segment-count"]').should('contain', '3')
+    cy.get('[data-test="segment-count"]').contains('See the list').click()
+    cy.get('[data-test="segment-count"]').should('contain', 'Dosvisitas').and('not.contain', 'Pospuesta').and('not.contain', 'Descartada')
+    cy.get('[data-test="segment-count"]').contains('Hide the list').click()
     // ...and at most 120 days ago.
     cy.get('[data-test="segment-filter-add"]').select('last_visit_within')
     cy.get('[data-test="segment-filter-last_visit_within"] input').type('{selectall}120')

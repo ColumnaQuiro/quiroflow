@@ -79,3 +79,38 @@ export function newestAt(rows: { at: string | null | undefined }[]): number | nu
   }
   return newest
 }
+
+/**
+ * Whether a segment rule is a recall, and so leaves out whoever the Recalls
+ * queue has parked: a non-marketing rule keyed on "last visit more than N
+ * days ago". Decided from the filters alone because that is all both
+ * evaluators have -- the live count is asked about a rule still being edited,
+ * before its steps are saved -- and every recall starter is exactly this
+ * shape. A marketing rule is not: whoever receives one asked to, by channel,
+ * and Descartar on the Recalls page says nothing about that.
+ */
+export function respectsRecallQueue(f: VisitHistoryFilters | null | undefined, isMarketing: boolean): boolean {
+  return !isMarketing && positive(f?.last_visit_before_days)
+}
+
+export interface RecallQueueState {
+  recall_status: string | null
+  /** A date (YYYY-MM-DD): Posponer, or a "Más adelante" reply. */
+  recall_snoozed_until: string | null
+  recall_dismissed_at: string | null
+}
+
+/**
+ * Whether the Recalls queue has this patient parked, by the rule of the
+ * recall_candidates view: snoozed while recall_snoozed_until is after
+ * `today` (the clinic's own date, YYYY-MM-DD), and dismissed (Descartar)
+ * until a visit they attended after recall_dismissed_at. `lastAttendedAt` is
+ * their latest visit up to now that was neither cancelled nor a no-show (ms,
+ * or null). A dismissal with no date never lifts, as in the view.
+ */
+export function recallParked(p: RecallQueueState, lastAttendedAt: number | null, today: string): boolean {
+  if (p.recall_snoozed_until && p.recall_snoozed_until > today) return true
+  if (p.recall_status !== 'dismissed') return false
+  if (!p.recall_dismissed_at || lastAttendedAt === null) return true
+  return lastAttendedAt <= new Date(p.recall_dismissed_at).getTime()
+}

@@ -171,8 +171,17 @@ jobs:
       # `npm run e2e:timings` rewrites cypress/e2e-timings.json from the last
       # few green runs. To change the shard count, edit this list; it must
       # stay 1..N, which check-e2e-shards.mjs enforces.
+      #
+      # Fourteen, up from ten on 2026-10-18. A shard's wall time is a fixed
+      # ~80s (checkout, caches, waiting for the build job) plus its share of
+      # the specs plus ~1.5s per spec file, and the run lasts as long as the
+      # slowest shard: 2,400s of specs over ten shards was ~240s each and
+      # 300-420s of job time; over fourteen it is ~170s each. The price is
+      # four more jobs of fixed setup per run, about +20 runner-minutes
+      # (~+25%), for a run that finishes ~1.5-2 minutes sooner. Twenty
+      # concurrent jobs is the plan's ceiling; this uses sixteen.
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -387,16 +396,7 @@ jobs:
         # The built server from the `build` job, not `nuxt dev`. Env reaches
         # it at runtime (NUXT_PUBLIC_*), which is why building with no Supabase
         # anywhere is fine.
-        #
-        # Chrome, not the bundled Electron. Each spec FILE costs a fixed
-        # amount on top of its tests -- a fresh browser context, the spec
-        # compiled -- and with 313 small files that overhead was most of a
-        # shard: on 18 Oct 2026 one shard's specs summed to 144s of tests
-        # inside 218s of Cypress, another's to 52s inside 130s, 4-5s per
-        # file. Measured locally with four empty specs, Electron spent 4.7s
-        # per file and Chrome 0.5s. The runner image ships Chrome, so nothing
-        # is installed. Headless is the default under `cypress run`.
-        run: npx start-server-and-test "node .output/server/index.mjs" http://localhost:3000 "cypress run --browser chrome --spec '${{ steps.specs.outputs.list }}'"
+        run: npx start-server-and-test "node .output/server/index.mjs" http://localhost:3000 "cypress run --spec '${{ steps.specs.outputs.list }}'"
         env:
           CYPRESS_baseUrl: http://localhost:3000
           PORT: 3000

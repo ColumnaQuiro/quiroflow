@@ -1,19 +1,14 @@
 export type NavBadge = 'myday' | 'recalls' | 'automations' | 'inbox'
 
-// The sidebar lives in the layout, so it mounts once and never again: a count
-// loaded on mount stays whatever it was when the app opened. It reloads on
-// returning to the tab, on a clinic switch and -- at most once a minute -- on
-// navigation, and a page that changes what a badge counts calls refresh() so
-// the number moves while you are still looking at it -- snoozing someone on
-// /recalls, for one.
-//
-// refresh() can name the badges it changed. The recalls count is an exact
-// count over recall_candidates, the most expensive request the sidebar makes,
-// and the Inbox marking a thread read has no business re-asking it.
+// The sidebar's counters are asked for in one request (get_nav_badges) and
+// kept here, so anything else that shows one of them -- the help widget's
+// unread dot -- reads it instead of asking the database again on every page.
 export function useNavBadges() {
   const request = useState<{ seq: number; only: NavBadge[] | null }>('nav-badges-request', () => ({ seq: 0, only: null }))
+  const supportUnread = useState<boolean>('nav-badges-support-unread', () => false)
   return {
     request,
+    supportUnread,
     refresh: (only?: NavBadge[]) => {
       request.value = { seq: request.value.seq + 1, only: only ?? null }
     },

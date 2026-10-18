@@ -42,7 +42,9 @@ const conversationId = ref<string | null>(null)
 const humanMessage = ref('')
 const sending = ref(false)
 const thread = ref<{ id: string; direction: string; body: string; created_at: string }[]>([])
-const unreadReply = ref(false)
+// Set by the sidebar's one badges request (get_nav_badges) on every
+// navigation, and cleared here once the thread is read.
+const { supportUnread: unreadReply } = useNavBadges()
 
 const scroller = ref<HTMLElement | null>(null)
 async function scrollToEnd() {
@@ -120,10 +122,15 @@ async function loadThread() {
     .order('created_at')
   thread.value = messages ?? []
 }
-onMounted(() => {
-  loadThread()
-  loadAssistantHistory()
-})
+// Nothing is loaded until the widget is opened. It used to ask for the
+// support thread and the assistant history on every page the staff opened,
+// two requests for a panel most of them never open in a day.
+let loadedOnce = false
+async function loadOnOpen() {
+  if (loadedOnce) return
+  loadedOnce = true
+  await Promise.all([loadThread(), loadAssistantHistory()])
+}
 
 async function openHuman() {
   mode.value = 'human'
@@ -167,6 +174,7 @@ function escalateFrom(index: number) {
 async function toggle() {
   open.value = !open.value
   if (open.value) {
+    await loadOnOpen()
     await loadThread()
     await scrollToEnd()
   }

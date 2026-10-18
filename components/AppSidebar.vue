@@ -60,15 +60,13 @@ const myDayCount = ref(0)
 const automationsActive = ref(false)
 const inboxUnreadCount = ref(0)
 
-// The same default the Recalls page opens with -- 3+ weeks since the last
-// visit, in the clinic picked above -- so the badge is the length of the list
-// it links to. It counted the whole account at any age, which on a
-// two-clinic account is a number no screen ever shows.
-const RECALLS_MIN_DAYS = 21
+// The recalls badge counts 3+ weeks since the last visit, in the clinic
+// picked above -- the same default the Recalls page opens with, so the badge
+// is the length of the list it links to. The threshold lives with the count,
+// in get_nav_badges.
 
-// One token per badge rather than one for the lot: a refresh of the inbox
-// alone must not discard a recalls count still on its way from a full load.
-const badgeTokens: Record<NavBadge, number> = { myday: 0, recalls: 0, automations: 0, inbox: 0 }
+// One token for the one request; a newer load discards an older answer.
+const badgeTokens = { myday: 0 }
 let lastFullLoad = 0
 // The recalls count on its own, longer clock. Who is due a recall changes
 // over days, and the count runs patient_visit_facts over every appointment
@@ -78,94 +76,40 @@ let lastFullLoad = 0
 const RECALLS_TTL_MS = 10 * 60_000
 let lastRecallsLoad = 0
 async function loadBadges(only: NavBadge[] | null = null) {
-  const wants = (b: NavBadge) => (!only ? b !== 'recalls' || Date.now() - lastRecallsLoad >= RECALLS_TTL_MS : only.includes(b))
+  // One request for all of them (get_nav_badges), whichever badge asked:
+  // five requests fired together used to queue behind each other on the
+  // database, and the heaviest of them, the Inbox count, answered in twice
+  // the time it takes alone. `only` still matters for the recalls count,
+  // which keeps its own clock: it is recomputed only when named, or when its
+  // ten minutes are up.
+  const wantRecalls = (!only ? Date.now() - lastRecallsLoad >= RECALLS_TTL_MS : only.includes('recalls')) && can('recalls_access')
   if (!only) lastFullLoad = Date.now()
-  // Each badge assigns its own count as its own query returns. They used to
-  // share a Promise.all, so all four waited on the slowest and then appeared
-  // in one jump -- the recalls and inbox numbers landing together is exactly
-  // that, not a coincidence of timing.
-  if (wants('recalls') && can('recalls_access')) {
-    lastRecallsLoad = Date.now()
-    const token = ++badgeTokens.recalls
-    let recalls = supabase
-      .from('recall_candidates')
-      .select('patient_id', { count: 'exact', head: true })
-      .gte('days_since_last_appointment', RECALLS_MIN_DAYS)
-    if (store.currentClinicId && store.clinics.length > 1) recalls = recalls.or(`clinic_id.eq.${store.currentClinicId},clinic_id.is.null`)
-    recalls.then(({ count }) => {
-      if (token === badgeTokens.recalls) recallsCount.value = count ?? 0
-    })
-  }
-
-  if (wants('automations') && can('communication_config')) {
-    const token = ++badgeTokens.automations
-    supabase
-      .from('automation_rules')
-      .select('id')
-      .eq('enabled', true)
-      .limit(1)
-      .then(({ data }) => {
-        if (token === badgeTokens.automations) automationsActive.value = (data ?? []).length > 0
-      })
-  }
-
-  // Only for someone who can open the Inbox. This ran for every team member
-  // regardless, so a practitioner whose role has inbox_access off -- who
-  // cannot see the nav item and now cannot reach the page -- was still
-  // pulling 500 patient messages into their browser on every page load to
-  // compute a badge they never see.
-  // Only for someone who can open the Inbox. Conversations unread by ME
-  // (inbox_reads is per person) and not archived by me -- exactly the Inbox's
-  // own "Unread" count. It used to pull the last 500 messages and guess.
-  //
-  // Asked as one number (inbox_unread_count, same definition as the view's
-  // unread_for_me and my_archived) rather than by counting rows of
-  // inbox_conversations: that view builds every conversation there has ever
-  // been -- names, previews, labels, assignment -- before a filter can apply,
-  // and it was the slowest request on every page, up to 2.3 s. Same row-level
-  // security either way; the function runs as the caller.
-  if (wants('inbox') && can('inbox_access')) {
-    const token = ++badgeTokens.inbox
-    supabase.rpc('inbox_unread_count').then(({ data }) => {
-      if (token === badgeTokens.inbox) inboxUnreadCount.value = data ?? 0
-    })
-  }
-
-  if (!wants('myday')) return
-  const token = ++badgeTokens.myday
-  // Only "My Day" needs the team member id, so it's the only one that waits
-  // for the account store. A fresh client boot can reach this mount before
-  // load() resolves store.teamMember -- an empty fallback here used to build
-  // `practitioner_id=eq.` (no id at all), which Postgres rejects as a 400.
   if (!store.teamMember) {
     await new Promise<void>((resolve) => {
       watch(() => store.teamMember, (v) => { if (v) resolve() }, { once: true })
     })
   }
-  // In the selected clinic, as /practitioner shows it.
-  let myDay = supabase
-    .from('appointments')
-    .select('id', { count: 'exact', head: true })
-    .eq('practitioner_id', store.teamMember!.id)
-    .neq('status', 'cancelled')
-    .is('deleted_at', null)
-    .gte('starts_at', new Date(new Date().setHours(0, 0, 0, 0)).toISOString())
-    .lt('starts_at', new Date(new Date().setHours(24, 0, 0, 0)).toISOString())
-  if (store.currentClinicId) myDay = myDay.eq('clinic_id', store.currentClinicId)
-  const { count } = await myDay
-  if (token === badgeTokens.myday) myDayCount.value = count ?? 0
+  const token = ++badgeTokens.myday
+  if (wantRecalls) lastRecallsLoad = Date.now()
+  const { data } = await supabase.rpc('get_nav_badges' as never, {
+    p_team_member_id: store.teamMember!.id,
+    p_clinic_id: store.currentClinicId,
+    p_recalls_clinic_id: store.currentClinicId && store.clinics.length > 1 ? store.currentClinicId : null,
+    p_day_start: new Date(new Date().setHours(0, 0, 0, 0)).toISOString(),
+    p_day_end: new Date(new Date().setHours(24, 0, 0, 0)).toISOString(),
+    p_with_recalls: wantRecalls,
+  } as never)
+  if (token !== badgeTokens.myday) return
+  const badges = (data ?? {}) as { my_day?: number; automations_active?: boolean; inbox_unread?: number; support_unread?: boolean; recalls?: number | null }
+  myDayCount.value = badges.my_day ?? 0
+  if (can('communication_config')) automationsActive.value = badges.automations_active ?? false
+  if (can('inbox_access')) inboxUnreadCount.value = badges.inbox_unread ?? 0
+  supportUnread.value = badges.support_unread ?? false
+  if (wantRecalls && typeof badges.recalls === 'number') recallsCount.value = badges.recalls
 }
 
-// The sidebar mounts once, in the layout, so loading only on mount left every
-// badge as it was when the app opened. See useNavBadges.
-//
-// Navigation reloads at most once a minute. It reloaded on every route change,
-// and the recalls badge is an exact count over recall_candidates -- the query
-// /recalls itself refuses to run because it pushed accounts past the statement
-// timeout -- so clicking through five pages asked it five times. Anything that
-// changes a count here says so through refresh(), which is not throttled.
 const NAV_BADGES_TTL_MS = 60_000
-const { request: badgesRequest } = useNavBadges()
+const { request: badgesRequest, supportUnread } = useNavBadges()
 function onVisible() {
   if (document.visibilityState === 'visible') loadBadges()
 }

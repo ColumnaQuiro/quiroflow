@@ -45,7 +45,7 @@ export default defineEventHandler(async (event) => {
 
   const safeName = (file.filename ?? 'header')
     .toLowerCase()
-    .replace(/[^a-z0-9.\-]+/g, '-')
+    .replace(/[^a-z0-9.-]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(-80)
 

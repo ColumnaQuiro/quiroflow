@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import * as pdfLib from 'pdf-lib'
-import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRawStream } from 'pdf-lib'
+import type { PDFDict, PDFRawStream } from 'pdf-lib';
+import { PDFArray, PDFDocument, PDFName } from 'pdf-lib'
 import { flattenPdfAnnotations } from '../../server/utils/flattenPdfAnnotations'
 import { compressPatientFile } from '../../server/utils/compressPatientFile'
 

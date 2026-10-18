@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { formatEur } from '~/utils/billing'
-// eslint-disable-next-line no-unused-vars -- accepted for a consistent generic widget prop shape, not used here (source report has no filters)
+ 
 defineProps<{ dateRange?: unknown; practitionerId?: string; clinicId?: string }>()
 
 interface MembershipRow { id: string; status: string }

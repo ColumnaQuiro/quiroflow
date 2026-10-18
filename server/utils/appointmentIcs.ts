@@ -21,7 +21,7 @@ function utcStamp(iso: string | Date): string {
 // Commas, semicolons and backslashes are separators in a TEXT value, and a
 // newline has to be the two characters \n.
 function escapeText(value: string): string {
-  return value.replace(/\\/g, '\\\\').replace(/;/g, '\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n')
+  return value.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n')
 }
 
 // Lines longer than 75 octets are folded: CRLF plus one space, counted in

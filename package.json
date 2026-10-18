@@ -16,7 +16,7 @@
     "check:theme-tokens": "./scripts/with-node.sh node scripts/check-theme-tokens.mjs",
     "check:rls-initplan": "./scripts/with-node.sh node scripts/check-rls-initplan.mjs",
     "check:rls-two-factor": "./scripts/with-node.sh node scripts/check-rls-two-factor.mjs",
-    "preflight": "npm run check:migrations && npm run check:migration-compatibility && npm run check:e2e-shards && npm run check:theme-tokens && npm run check:rls-initplan && npm run check:rls-two-factor && npm run test:unit && ./scripts/with-node.sh nuxi typecheck",
+    "preflight": "npm run check:migrations && npm run check:migration-compatibility && npm run check:e2e-shards && npm run check:theme-tokens && npm run check:rls-initplan && npm run check:rls-two-factor && npm run lint && npm run test:unit && ./scripts/with-node.sh nuxi typecheck",
     "postinstall": "./scripts/with-node.sh nuxt prepare",
     "test:e2e": "start-server-and-test dev http://localhost:3000 'cypress run'",
     "test:e2e:local": "./scripts/e2e-local.sh",
@@ -26,7 +26,8 @@
     "supabase:test:reset": "supabase db reset",
     "prepare": "husky",
     "apply:migrations": "./scripts/with-node.sh node scripts/apply-migrations.mjs",
-    "test:unit": "./scripts/with-node.sh vitest run"
+    "test:unit": "./scripts/with-node.sh vitest run",
+    "lint": "./scripts/with-node.sh eslint ."
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.124.0",
@@ -63,11 +64,13 @@
   },
   "devDependencies": {
     "@faker-js/faker": "^10.6.0",
+    "@nuxt/eslint-config": "^1.17.0",
     "@types/node-forge": "1.3.14",
     "@types/papaparse": "^5.5.2",
     "@types/qrcode": "^1.5.6",
     "cypress": "^15.21.0",
     "dotenv": "^17.4.2",
+    "eslint": "^10.13.0",
     "husky": "^9.1.7",
     "start-server-and-test": "^3.0.13",
     "typescript": "5.7",

@@ -39,23 +39,14 @@ async function loadHistory() {
   // visit that fails the filter makes its payment drop out there exactly as
   // an absent one does, so no figure moves.
   let completedQuery = supabase.from('appointments').select('id, patient_id, starts_at, practitioner_id, clinic_id').eq('status', 'completed')
-  let completedCount = supabase.from('appointments').select('id', { count: 'exact', head: true }).eq('status', 'completed')
-  if (props.practitionerId) {
-    completedQuery = completedQuery.eq('practitioner_id', props.practitionerId)
-    completedCount = completedCount.eq('practitioner_id', props.practitionerId)
-  }
-  if (props.clinicId) {
-    completedQuery = completedQuery.eq('clinic_id', props.clinicId)
-    completedCount = completedCount.eq('clinic_id', props.clinicId)
-  }
+  if (props.practitionerId) completedQuery = completedQuery.eq('practitioner_id', props.practitionerId)
+  if (props.clinicId) completedQuery = completedQuery.eq('clinic_id', props.clinicId)
+  // Without the head-only counts fetchAllRows used to send alongside: they
+  // only let pages past the first go out together, and cost a request each
+  // on a dashboard that already fires twenty at once.
   const [completed, inv] = await Promise.all([
-    fetchAllRows<ApptRow>((f, t) => completedQuery.range(f, t), { total: completedCount }),
-    needsInvoices
-      ? fetchAllRows<InvoiceRow>(
-          (f, t) => supabase.from('invoices').select('id, appointment_id').range(f, t),
-          { total: supabase.from('invoices').select('id', { count: 'exact', head: true }) },
-        )
-      : Promise.resolve([] as InvoiceRow[]),
+    fetchAllRows<ApptRow>((f, t) => completedQuery.range(f, t)),
+    needsInvoices ? fetchAllRows<InvoiceRow>((f, t) => supabase.from('invoices').select('id, appointment_id').range(f, t)) : Promise.resolve([] as InvoiceRow[]),
   ])
   if (isStale()) return
   allCompleted.value = completed

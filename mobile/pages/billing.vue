@@ -81,6 +81,7 @@ function eur(cents: number) {
             :sessions-total="pkg.sessions_total"
             :sessions-used="pkg.sessions_used"
             :shared-by="pkg.shared ? pkg.ownerName : undefined"
+            :wallet-id="pkg.shared ? undefined : pkg.id"
           />
           <p v-if="activeMembership" class="border-t border-line-divider pt-3 text-[12.5px] text-ink-muted">
             {{ t(`${activeMembership.membership_name} membership active`, `Membresía ${activeMembership.membership_name} activa`) }}

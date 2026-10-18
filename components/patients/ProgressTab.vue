@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { listingSummary, sideLettersFor, type Listings } from '~/utils/spinalListings'
-import { downloadReportPdf, pdfFileName } from '~/utils/reportPdf'
 
 // Progreso: the patient's pain 0-10 visit by visit (visit_pain_scores, the
 // practitioner's score over the patient's own when there are both), as a
@@ -91,6 +90,9 @@ async function report() {
     const clinic = store.clinics.find((c) => c.id === props.patient.clinic_id) ?? store.clinics.find((c) => c.logo_storage_path)
     const logoUrl = clinic?.logo_storage_path ? supabase.storage.from('clinic-logos').getPublicUrl(clinic.logo_storage_path).data.publicUrl : null
     const title = t(`Progress report · ${patientName.value}`, `Informe de revisión · ${patientName.value}`)
+    // utils/reportPdf pulls in pdf-lib and html-to-image, ~245 KB gzipped, so it
+    // is fetched when the button is pressed, not with the page.
+    const { downloadReportPdf, pdfFileName } = await import('~/utils/reportPdf')
     const result = await downloadReportPdf(root.value, {
       title,
       lines: [

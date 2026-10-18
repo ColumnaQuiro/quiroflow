@@ -387,7 +387,16 @@ jobs:
         # The built server from the `build` job, not `nuxt dev`. Env reaches
         # it at runtime (NUXT_PUBLIC_*), which is why building with no Supabase
         # anywhere is fine.
-        run: npx start-server-and-test "node .output/server/index.mjs" http://localhost:3000 "cypress run --spec '${{ steps.specs.outputs.list }}'"
+        #
+        # Chrome, not the bundled Electron. Each spec FILE costs a fixed
+        # amount on top of its tests -- a fresh browser context, the spec
+        # compiled -- and with 313 small files that overhead was most of a
+        # shard: on 18 Oct 2026 one shard's specs summed to 144s of tests
+        # inside 218s of Cypress, another's to 52s inside 130s, 4-5s per
+        # file. Measured locally with four empty specs, Electron spent 4.7s
+        # per file and Chrome 0.5s. The runner image ships Chrome, so nothing
+        # is installed. Headless is the default under `cypress run`.
+        run: npx start-server-and-test "node .output/server/index.mjs" http://localhost:3000 "cypress run --browser chrome --spec '${{ steps.specs.outputs.list }}'"
         env:
           CYPRESS_baseUrl: http://localhost:3000
           PORT: 3000

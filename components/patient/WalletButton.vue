@@ -12,10 +12,14 @@
 // answers with Google's own save page (the same link route), which
 // Android hands to the Wallet app; on a computer it saves to the Google
 // account, and the phone picks it up from there.
-// Google's own button, as its brand guidelines require: their artwork,
-// unaltered, in the app's language (developers.google.com/wallet/generic/
-// resources/brand-guidelines). Imported relatively so the mobile app's build
-// bundles it too; it has no access to the web's public/.
+// Each Wallet's own badge, as both sets of brand guidelines require: their
+// artwork, unaltered, in the app's language -- Apple's from
+// developer.apple.com/wallet/add-to-apple-wallet-guidelines (under its Wallet
+// Marketing Agreement), Google's from developers.google.com/wallet/generic/
+// resources/brand-guidelines. Imported relatively so the mobile app's build
+// bundles them too; it has no access to the web's public/.
+import appleWalletEs from '../../assets/wallet/add-to-apple-wallet-es.svg?url'
+import appleWalletEn from '../../assets/wallet/add-to-apple-wallet-en.svg?url'
 import googleWalletEs from '../../assets/wallet/add-to-google-wallet-es.svg?url'
 import googleWalletEn from '../../assets/wallet/add-to-google-wallet-en.svg?url'
 
@@ -54,13 +58,10 @@ async function add() {
 
 <template>
   <div v-if="kind" class="mt-2.5">
-    <button v-if="kind === 'apple'" type="button" class="inline-flex h-10 items-center gap-2 rounded-ctl bg-black px-3.5 text-[13.5px] font-semibold text-white disabled:opacity-60" :disabled="busy" data-cy="wallet-add-apple" @click="add">
-      <svg width="20" height="16" viewBox="0 0 20 16" aria-hidden="true"><rect x="1" y="1" width="18" height="14" rx="3" fill="none" stroke="currentColor" stroke-width="1.6" /><path d="M1 6h18" stroke="currentColor" stroke-width="1.6" /></svg>
-      {{ busy ? t('Preparing…', 'Preparando…') : t('Add to Apple Wallet', 'Añadir a Apple Wallet') }}
-    </button>
-    <!-- At least 48 px high, with 8 px clear around it (the card gives the rest), per the guidelines. -->
-    <button v-else type="button" class="block rounded-pill disabled:opacity-60" :disabled="busy" :aria-busy="busy" data-cy="wallet-add-google" @click="add">
-      <img :src="t(googleWalletEn, googleWalletEs)" :alt="t('Add to Google Wallet', 'Añadir a Google Wallet')" class="block h-12 w-auto" />
+    <!-- Shown at 48 px high, Google's minimum, with the card's padding as the clear space both ask for. -->
+    <button type="button" class="block rounded-ctl disabled:opacity-60" :disabled="busy" :aria-busy="busy" :data-cy="`wallet-add-${kind}`" @click="add">
+      <img v-if="kind === 'apple'" :src="t(appleWalletEn, appleWalletEs)" :alt="t('Add to Apple Wallet', 'Añadir a Apple Wallet')" class="block h-12 w-auto" />
+      <img v-else :src="t(googleWalletEn, googleWalletEs)" :alt="t('Add to Google Wallet', 'Añadir a Google Wallet')" class="block h-12 w-auto" />
     </button>
     <p v-if="error" role="alert" class="mt-1 text-[12.5px] text-danger-text">{{ error }}</p>
   </div>

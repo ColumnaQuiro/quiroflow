@@ -127,7 +127,7 @@ function checkType(field: string, value: string, type: FilterType) {
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- PostgREST's
+ 
 // builder type is generic over the table and changes shape with every
 // chained call; typing it precisely here would mean threading Database
 // generics through every caller for no safety we don't already get from the

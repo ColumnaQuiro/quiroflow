@@ -268,23 +268,55 @@ function withoutLeadThreads<Q extends { or: (filters: string) => Q }>(q: Q): Q {
   return hasGrowth.value ? q.or('lead_id.is.null,patient_id.not.is.null') : q
 }
 
-// Every list query shares these, and inbox_counts applies the same ones, so a
-// count always describes the list beside it.
-function inboxQuery(columns: string) {
-  const q = supabase.from('inbox_conversations').select(columns).eq('my_archived', view.value === 'archived')
-  if (view.value === 'snoozed') return q.not('my_snoozed_until', 'is', null)
-  return view.value === 'active' ? q.is('my_snoozed_until', null) : q
-}
 
 // The counts are not reloaded here for a tab, filter, search or "load more":
 // they describe the whole view whatever narrows the list, and were four exact
 // counts over inbox_conversations queued behind every chip click. A silent
 // load is a refresh after something changed, which can move them, so it asks
 // for them alongside the list rather than after it.
+// The list, the tab counts and the reply-window rows come from one request
+// (inbox_page): the view is scanned once and the three answers are taken
+// from that scan. They used to be three requests fired together, and on
+// production's two-core database requests fired together queue behind each
+// other -- the view answered in 44 ms alone and 92 ms with four in flight.
+interface InboxPageResult {
+  rows: InboxRow[]
+  counts: { all: number; mine: number; unassigned: number; unread: number } | null
+  expiring: InboxRow[] | null
+}
+async function fetchInboxPage(opts: { limit: number; offset: number; withCounts: boolean; withExpiring: boolean; searchKeys?: string[]; term?: string }): Promise<InboxPageResult | null> {
+  const at = Date.now()
+  const { data, error } = await supabase.rpc('inbox_page' as never, {
+    p_view: view.value,
+    p_team_member_id: myId.value ?? '00000000-0000-0000-0000-000000000000',
+    p_tab: tab.value,
+    p_unread_only: unreadOnly.value,
+    p_expiring: expiringOnly.value,
+    p_reply: replyFilter.value === 'all' ? null : replyFilter.value,
+    p_label_id: labelFilter.value,
+    p_search_name: opts.term ? normalizeSearchTerm(opts.term) : null,
+    p_search_phone: opts.term ?? null,
+    p_search_keys: opts.searchKeys?.length ? opts.searchKeys : null,
+    p_window_from: new Date(at - REPLY_WINDOW_MS).toISOString(),
+    p_window_to: new Date(at - REPLY_WINDOW_MS + REPLY_WINDOW_WARN_MS).toISOString(),
+    p_limit: opts.limit,
+    p_offset: opts.offset,
+    p_with_counts: opts.withCounts,
+    p_with_expiring: opts.withExpiring && view.value === 'active',
+  } as never)
+  if (error) return null
+  return data as unknown as InboxPageResult
+}
+
+function applyInboxCounts(result: InboxPageResult) {
+  if (result.counts) counts.value = { all: result.counts.all ?? 0, mine: result.counts.mine ?? 0, unassigned: result.counts.unassigned ?? 0, unread: result.counts.unread ?? 0 }
+  if (result.expiring) expiringRows.value = result.expiring
+  else if (view.value !== 'active') expiringRows.value = []
+}
+
 let listToken = 0
 async function loadList(opts: { silent?: boolean; append?: boolean } = {}) {
   const token = ++listToken
-  if (opts.silent) loadCounts()
   if (!opts.silent && !opts.append) loading.value = true
   if (opts.append) loadingMore.value = true
   const from = opts.append ? rows.value.length : 0
@@ -292,37 +324,20 @@ async function loadList(opts: { silent?: boolean; append?: boolean } = {}) {
   // messages arriving never collapse a list someone has scrolled through.
   const size = opts.silent ? Math.max(PAGE, rows.value.length) : PAGE
 
-  let q = inboxQuery('*')
-  if (tab.value === 'mine') q = q.eq('assigned_to', myId.value ?? '')
-  else if (tab.value === 'unassigned') q = q.is('assigned_to', null)
-  if (unreadOnly.value) q = q.eq('unread_for_me', true)
-  if (expiringOnly.value) q = withinWarningPeriod(q)
-  if (replyFilter.value === 'awaiting_us') q = q.eq('last_direction', 'inbound')
-  else if (replyFilter.value === 'awaiting_patient') q = q.eq('last_direction', 'outbound')
-  if (labelFilter.value) q = q.contains('my_label_ids', [labelFilter.value])
   const term = cleanTerm(search.value)
-  if (term) {
-    const keys = await keysMatchingText(term)
-    const parts = [`search_name.ilike.*${normalizeSearchTerm(term)}*`, `phone_number.ilike.*${term}*`]
-    if (keys.length) parts.push(`conversation_key.in.(${keys.map((k) => `"${k}"`).join(',')})`)
-    q = q.or(parts.join(','))
-  }
-  // my_sort_at, not last_at: a follow-up comes back to the top at the time
-  // it was due. The snoozed list goes by when each comes back.
-  // Expiring: the least time left first.
-  const ordered = view.value === 'snoozed'
-    ? q.order('my_snoozed_until', { ascending: true })
-    : expiringOnly.value
-      ? q.order('last_at', { ascending: true })
-      : q.order('my_sort_at', { ascending: false })
-  const { data, error } = await ordered.range(from, from + size)
+  const searchKeys = term ? await keysMatchingText(term) : []
+  // Counts and the reply-window rows describe the whole view, so a page
+  // appended to the list does not ask for them again; everything else does,
+  // since whatever changed the list may have moved them too.
+  const result = await fetchInboxPage({ limit: size + 1, offset: from, withCounts: !opts.append, withExpiring: !opts.append, searchKeys, term: term || undefined })
   if (token !== listToken) return
-  if (error) {
+  if (!result) {
     loading.value = false
     loadingMore.value = false
     return
   }
-  const page = (data ?? []) as unknown as InboxRow[]
+  applyInboxCounts(result)
+  const page = result.rows ?? []
   hasMore.value = page.length > size
   const trimmed = page.slice(0, size)
   rows.value = opts.append ? [...rows.value, ...trimmed] : trimmed
@@ -330,42 +345,17 @@ async function loadList(opts: { silent?: boolean; append?: boolean } = {}) {
   loadingMore.value = false
 }
 
-// All four in one pass (inbox_counts, 20261012060040): they were four exact
-// counts, and each rebuilt every conversation from every message -- a count
-// over inbox_conversations costs what listing it does. Same view and filters
-// as inboxQuery, so a count still describes the list beside it.
-// They wrote last on a channel with a window, and it shuts within the warning
-// period: what the "Caduca en" pill can be on, before closings are dropped.
-function withinWarningPeriod<Q extends { eq: (c: string, v: string) => Q; in: (c: string, v: string[]) => Q; gt: (c: string, v: string) => Q; lte: (c: string, v: string) => Q }>(q: Q): Q {
-  const at = Date.now()
-  return q
-    .eq('last_direction', 'inbound')
-    .in('last_channel', ['whatsapp', 'instagram'])
-    .gt('last_at', new Date(at - REPLY_WINDOW_MS).toISOString())
-    .lte('last_at', new Date(at - REPLY_WINDOW_MS + REPLY_WINDOW_WARN_MS).toISOString())
-}
-
-// The conversations in the warning period, for the chip's count. A handful at
-// most, and the pill rule runs on them against `now`, so the count keeps up as
-// windows shut between refreshes.
 const expiringRows = ref<InboxRow[]>([])
-async function loadExpiring() {
-  if (view.value !== 'active') {
-    expiringRows.value = []
-    return
-  }
-  const { data, error } = await withinWarningPeriod(inboxQuery('*')).limit(200)
-  if (!error) expiringRows.value = (data ?? []) as unknown as InboxRow[]
-}
 
+// The counts and the reply-window rows on their own, after something that
+// moved them without changing the list (a read, an assignment): one request,
+// no page of rows.
 let countsToken = 0
 async function loadCounts() {
-  loadExpiring()
   const token = ++countsToken
-  const { data, error } = await supabase.rpc('inbox_counts', { p_view: view.value, p_team_member_id: myId.value ?? '00000000-0000-0000-0000-000000000000' })
-  if (token !== countsToken || error) return
-  const row = data?.[0]
-  counts.value = { all: row?.all_count ?? 0, mine: row?.mine ?? 0, unassigned: row?.unassigned ?? 0, unread: row?.unread ?? 0 }
+  const result = await fetchInboxPage({ limit: 0, offset: 0, withCounts: true, withExpiring: true })
+  if (token !== countsToken || !result) return
+  applyInboxCounts(result)
 }
 
 let searchTimer: ReturnType<typeof setTimeout> | undefined

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { DateRange } from '~/composables/useDateRangePresets'
-import { downloadReportPdf, pdfFileName } from '~/utils/reportPdf'
 
 // "Download PDF" on every report and report page. What goes into the file is
 // whatever inside `target` carries data-pdf-block (see utils/reportPdf.ts);
@@ -67,6 +66,9 @@ async function download() {
   emit('busy', true)
   try {
     const stamp = props.day ?? (props.range ? props.range.to.slice(0, 7) : new Date().toISOString().slice(0, 10))
+    // utils/reportPdf pulls in pdf-lib and html-to-image, ~245 KB gzipped, so it
+    // is fetched when the button is pressed, not with the page.
+    const { downloadReportPdf, pdfFileName } = await import('~/utils/reportPdf')
     const result = await downloadReportPdf(props.target, {
       title: props.title,
       lines: await lines(),

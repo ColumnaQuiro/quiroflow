@@ -229,4 +229,21 @@ export async function sendInboxMessage(event: H3Event, { supabase, teamMember }:
   if (upload) {
     await supabase.storage.from('whatsapp-media').upload(upload.path, upload.buffer, { contentType: upload.contentType, upsert: true })
   }
+  if (leadId && params.sentByAi !== true) await clearLeadHandover(supabase, account.id, leadId)
+}
+
+/**
+ * A person has answered a lead the receptionist handed over: the handover is
+ * resolved, so the lead stops reading "Needs human". Only from that state --
+ * a takeover stays paused, and a lead the AI is handling stays its (the
+ * composer is locked there until somebody takes over). Nobody's now rather
+ * than the AI's: handing it back is an explicit step (ai-state 'handling').
+ *
+ * The same rule a patient's conversation already follows, where "needs a
+ * person" is read from the thread and ends with the first reply from the
+ * clinic (utils/inboxAiState.ts).
+ */
+export async function clearLeadHandover(supabase: any, accountId: string, leadId: string) {
+  const { error } = await supabase.from('leads').update({ ai_state: 'none' }).eq('id', leadId).eq('account_id', accountId).eq('ai_state', 'needs_human')
+  if (error) console.error(`[inbox] could not clear the handover on lead ${leadId}:`, error.message)
 }

@@ -9,6 +9,7 @@ const email = ref('')
 const password = ref('')
 const error = ref('')
 const loading = ref(false)
+const isStaffOnly = useStaffOnlyCheck()
 
 const route = useRoute()
 async function onSubmit() {
@@ -39,11 +40,24 @@ async function onSubmit() {
     email: email.value,
     password: password.value,
   })
-  loading.value = false
   if (signInError) {
+    loading.value = false
     error.value = authErrorMessage(signInError)
     return
   }
+  // This door is for patients. A staff account signed in here is refused and
+  // pointed at the team sign-in, rather than left in the portal with a
+  // session it has no patient record behind (see useStaffOnlyCheck).
+  if (await isStaffOnly()) {
+    await supabase.auth.signOut({ scope: 'local' })
+    loading.value = false
+    error.value = t(
+      'This is a clinic team account. Choose "Clinic team" above to sign in.',
+      'Esta es una cuenta del equipo de la clínica. Elige arriba «Equipo de la clínica» para entrar.',
+    )
+    return
+  }
+  loading.value = false
   // Only somewhere inside the portal: a ?next= from anywhere else is ignored.
   const next = typeof route.query.next === 'string' && route.query.next.startsWith('/portal/') && !route.query.next.startsWith('//') ? route.query.next : '/portal'
   await navigateTo(next)

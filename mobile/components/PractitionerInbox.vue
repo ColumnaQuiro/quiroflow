@@ -1320,9 +1320,18 @@ function recordingLabel(secs: number) {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
+// The receptionist's suggested reply is offered when the patient wrote last
+// and a free-form reply is still allowed.
+const showReplyDraft = computed(() => {
+  const sel = selected.value
+  return !!sel?.patientId && !sel.leadId && within24h.value && leadThreadsAreSeparate.value && thread.value.at(-1)?.direction === 'inbound'
+})
+
 // Fullscreen viewer for tapping any image in the thread (mine or theirs) --
 // mediaUrls' signed URL already works as a direct download link.
 const lightboxUrl = ref<string | null>(null)
+// Teleported, it no longer goes away with the thread it was opened from.
+watch(selectedKey, () => (lightboxUrl.value = null))
 
 function shortTime(iso: string) {
   return new Date(iso).toLocaleTimeString(locale.value, { hour: '2-digit', minute: '2-digit' })
@@ -1838,26 +1847,29 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
       </div>
 
       <div class="shrink-0 border-t border-line bg-surface p-3">
-        <!-- A note for the team is always possible, whatever WhatsApp's
-             window says: it is never sent. -->
-        <div v-if="thread.length > 0 && !noteMode" class="mb-2 flex">
-          <button type="button" class="flex h-9 items-center gap-1.5 rounded-pill border border-warning-border bg-warning-bg px-3 text-[13px] font-semibold text-warning-text" data-cy="thread-note-open" @click="noteMode = true">
+        <!-- One row for the two things beside the composer, as on web
+             (pages/inbox.vue): a note for the team, always possible whatever
+             WhatsApp's window says (it is never sent), and the
+             receptionist's suggested reply when the patient wrote last. They
+             were two stacked blocks, so the pills sat on separate lines. A
+             drafted reply takes the row's full width (ReplyDraft). -->
+        <div v-if="!noteMode && (thread.length > 0 || showReplyDraft)" class="mb-2 flex flex-wrap items-center gap-2">
+          <button v-if="thread.length > 0" type="button" class="flex h-10 items-center gap-1.5 rounded-pill border border-warning-border bg-warning-bg px-3 text-[12.5px] font-semibold text-warning-text" data-cy="thread-note-open" @click="noteMode = true">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z" /></svg>
             {{ t('Internal note', 'Nota interna') }}
           </button>
+          <InboxReplyDraft
+            v-if="showReplyDraft && selected.patientId"
+            size="lg"
+            :patient-id="selected.patientId"
+            :draft-for="(id: string) => authedFetch<{ available: boolean; draft: string; refused?: boolean }>(`/api/inbox/patients/${id}/draft-reply`, { method: 'POST' })"
+            :sending="sending"
+            @send="sendDraft"
+            @edit="(text: string) => (composerText = text)"
+          />
         </div>
         <InboxNoteComposer v-if="noteMode" size="lg" :team="teamNames" :my-id="teamMemberId" :saving="noteSaving" :error="noteError" @save="saveNote" @cancel="noteMode = false" />
         <p v-if="sendError && !noteMode" class="mb-2 text-[12.5px] text-danger-text">{{ sendError }}</p>
-        <!-- The receptionist's suggested reply, when the patient wrote last. -->
-        <InboxReplyDraft
-          v-if="!noteMode && within24h && leadThreadsAreSeparate && selected.patientId && !selected.leadId && thread.at(-1)?.direction === 'inbound'"
-          size="lg"
-          :patient-id="selected.patientId"
-          :draft-for="(id: string) => authedFetch<{ available: boolean; draft: string; refused?: boolean }>(`/api/inbox/patients/${id}/draft-reply`, { method: 'POST' })"
-          :sending="sending"
-          @send="sendDraft"
-          @edit="(text: string) => (composerText = text)"
-        />
         <template v-if="noteMode || !threadReady" />
         <div v-else-if="thread.length === 0 || !within24h" class="rounded-ctl border border-warning-border bg-warning-bg px-3 py-2 text-[12.5px] text-warning-text" data-cy="inbox-window-closed">
           <p>
@@ -2019,7 +2031,12 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
       @sent="onTemplateSent"
     />
 
-    <div v-if="lightboxUrl" class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-6" @click="lightboxUrl = null">
+    <!-- Teleported to <body>, like the patient-files viewer
+         (StaffPatientFiles.vue): rendered in place, it lived inside the
+         inbox's own layout, where the screen's header and tab bar could sit
+         over its close button and leave the photo with no way out. -->
+    <Teleport to="body">
+    <div v-if="lightboxUrl" class="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 p-6" data-cy="inbox-lightbox" @click="lightboxUrl = null">
       <img :src="lightboxUrl" class="max-h-full max-w-full rounded-ctl object-contain" @click.stop />
       <div class="absolute right-4 flex gap-2" style="top: calc(env(safe-area-inset-top) + 12px)">
         <a :href="lightboxUrl" download target="_blank" class="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white" :title="t('Download', 'Descargar')" :aria-label="t('Download', 'Descargar')" @click.stop>
@@ -2027,13 +2044,14 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             <path d="M8 1.5v9M4.5 7 8 10.5 11.5 7M2 12.5v1a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-1" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
         </a>
-        <button type="button" class="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white" :title="t('Close', 'Cerrar')" :aria-label="t('Close', 'Cerrar')" @click="lightboxUrl = null">
+        <button type="button" class="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white" :title="t('Close', 'Cerrar')" :aria-label="t('Close', 'Cerrar')" data-cy="inbox-lightbox-close" @click.stop="lightboxUrl = null">
           <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
             <path d="M3 3l10 10M13 3 3 13" stroke-linecap="round" />
           </svg>
         </button>
       </div>
     </div>
+    </Teleport>
     <div v-if="snoozeNotice" class="pointer-events-none absolute inset-x-0 bottom-20 z-50 flex justify-center px-4" role="status" data-cy="inbox-snooze-notice">
       <p class="rounded-full bg-ink-900 px-4 py-2 text-[13px] font-medium text-surface shadow-popover">{{ snoozeNotice }}</p>
     </div>

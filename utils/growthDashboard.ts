@@ -53,12 +53,19 @@ export interface GrowthAlert {
   detail: string
 }
 
+/**
+ * What the AI receptionist did this month, as /api/growth/dashboard reads it
+ * back from the records it leaves (server/utils/receptionistActivity.ts).
+ */
 export interface GrowthAiSummary {
+  /** Conversations it wrote at least one reply in. */
   conversations: number
+  /** Replies it sent itself, and drafts it left for a person. */
+  sent: number
+  drafted: number
+  /** Visits it booked or moved on its own. */
   booked: number
-  bookRate: string
-  avgReply: string
-  escalated: number
+  handedOver: number
 }
 
 export interface GrowthDashboardData {
@@ -117,8 +124,8 @@ export interface GrowthDashboardPayload {
   /** Oldest first; weekStart is a calendar date, "2026-07-14". */
   trend: { weekStart: string; leads: number; booked: number }[]
   alerts: GrowthAlertPayload[]
-  /** No conversations table yet. Null rather than absent: "none", not "failed". */
-  ai: null
+  /** Null when the account has no receptionist: "none", not "failed". */
+  ai: GrowthAiSummary | null
 }
 
 export const GROWTH_DIRECT_CHANNEL = 'Direct'

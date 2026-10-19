@@ -8599,6 +8599,11 @@ export type Database = {
       }
       decide_staff_absence: { Args: { p_absence_id: string; p_approve: boolean }; Returns: Database["public"]["Tables"]["staff_absences"]["Row"] }
       cancel_staff_absence: { Args: { p_absence_id: string }; Returns: Database["public"]["Tables"]["staff_absences"]["Row"] }
+      record_staff_absence: {
+        Args: { p_team_member_id: string; p_kind: string; p_starts_on: string; p_returns_on?: string | null; p_note?: string | null }
+        Returns: Database["public"]["Tables"]["staff_absences"]["Row"]
+      }
+      set_staff_absence_return: { Args: { p_absence_id: string; p_returns_on: string }; Returns: Database["public"]["Tables"]["staff_absences"]["Row"] }
       check_in_my_appointment: { Args: { p_appointment_id: string }; Returns: string | null }
       set_my_pain_score: { Args: { p_appointment_id: string; p_score: number }; Returns: boolean }
       my_pain_context: { Args: { p_appointment_id: string }; Returns: Json }

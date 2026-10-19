@@ -1,4 +1,5 @@
 import { sendInstagramText, instagramWindowOpen } from '~/server/utils/instagramSend'
+import { clearLeadHandover } from '~/server/utils/inboxSend'
 
 // Replying to an Instagram DM from the Inbox.
 //
@@ -104,6 +105,8 @@ export default defineEventHandler(async (event) => {
     external_contact_id: recipientId,
     body_preview: text.slice(0, 2000),
   })
+  // A person answered: a handover on this lead is resolved (inboxSend.ts).
+  if (leadId) await clearLeadHandover(supabase, teamMember.account_id, leadId)
 
   return { ok: true, messageId }
 })

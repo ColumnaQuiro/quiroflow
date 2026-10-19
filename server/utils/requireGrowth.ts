@@ -88,6 +88,25 @@ export function hasReceptionist(
   return subscription.status !== 'locked' && subscription.status !== 'canceled'
 }
 
+/**
+ * How the account comes to have the receptionist, for the settings page's
+ * header: the same reading as the Subscription page's card, so the two
+ * screens cannot disagree about why a clinic is or is not charged for it.
+ */
+export type ReceptionistIncludedBy = 'comped' | 'trial' | 'growth' | 'addon' | null
+
+export function receptionistIncludedBy(
+  subscription: { plan_id?: string | null; growth_addon?: boolean | null; receptionist_addon?: boolean | null; status?: string | null; comped?: boolean | null } | null,
+): ReceptionistIncludedBy {
+  if (!subscription) return null
+  if (subscription.comped) return 'comped'
+  if (subscription.status === 'trialing') return 'trial'
+  if (subscription.status === 'locked' || subscription.status === 'canceled') return null
+  if (subscription.growth_addon || planIncludesGrowth(subscription.plan_id)) return 'growth'
+  if (subscription.receptionist_addon) return 'addon'
+  return null
+}
+
 /** requireGrowth's two questions, in the same order, for the receptionist's own routes. */
 export async function requireReceptionist(event: H3Event): Promise<GrowthAccess> {
   const access = await requirePermission(event, 'communication_config')

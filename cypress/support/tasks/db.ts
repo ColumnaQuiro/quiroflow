@@ -2002,6 +2002,29 @@ async function patientHandedOverAt(opts: { patientId: string }) {
   return data?.handed_over_at ?? null
 }
 
+// The task the receptionist leaves in Mi día when it hands a conversation
+// to a person (receptionistSend.ts, handoverTask), assigned to the account's
+// first team member so the row satisfies staff_tasks_assigned.
+async function createHandoverTask(opts: { accountId: string; title: string; leadId?: string; patientId?: string; done?: boolean }) {
+  const { data: member } = await admin.from('team_members').select('id').eq('account_id', opts.accountId).is('deleted_at', null).order('created_at').limit(1).maybeSingle()
+  return unwrap(
+    await (admin as any)
+      .from('staff_tasks')
+      .insert({
+        account_id: opts.accountId,
+        team_member_id: member?.id ?? null,
+        lead_id: opts.leadId ?? null,
+        patient_id: opts.patientId ?? null,
+        title: opts.title,
+        due_at: new Date(Date.now() + 2 * 3600_000).toISOString(),
+        done_at: opts.done ? new Date().toISOString() : null,
+        receptionist_handover: true,
+      })
+      .select('id')
+      .single(),
+  )
+}
+
 async function storedReplyDraft(opts: { patientId: string }) {
   const { data } = await admin.from('inbox_reply_drafts').select('body, dismissed_at').eq('conversation_key', opts.patientId).maybeSingle()
   return data ?? null
@@ -4110,6 +4133,8 @@ export const dbTasks = {
   'db:setGrowthAddon': setGrowthAddon,
   'db:setReceptionistAddon': setReceptionistAddon,
   'db:seedReceptionistReplies': seedReceptionistReplies,
+  'db:createReceptionistNote': createReceptionistNote,
+  'db:createHandoverTask': createHandoverTask,
   'db:setSubscriptionPlan': setSubscriptionPlan,
   'db:setLeadAiState': setLeadAiState,
   'db:setWhatsappPhoneNumberId': setWhatsappPhoneNumberId,
@@ -4272,7 +4297,6 @@ export const dbTasks = {
   'db:createStoredReplyDraft': createStoredReplyDraft,
   'db:setPatientHandedOver': setPatientHandedOver,
   'db:patientHandedOverAt': patientHandedOverAt,
-  'db:createReceptionistNote': createReceptionistNote,
   'db:storedReplyDraft': storedReplyDraft,
   'db:seedWhatsappReplyScenario': seedWhatsappReplyScenario,
   'db:createAppointment': createAppointment,

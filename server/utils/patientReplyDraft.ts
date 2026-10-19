@@ -6,7 +6,7 @@ import { bookingTool, cancelTool, waitlistTool, type BookingContext } from '~/se
 import { recentImages, withImages, type StoredImage } from '~/server/utils/receptionistImages'
 import { historyLine } from '~/utils/receptionistHistory'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personRepliedSince } from '~/utils/receptionistAutoReply'
-import { loadBookedVisits, loadOfferedTypes, loadPatientPractitioners, loadReceptionistCalendar, toConfig, toneWording, uniqueTypes, clinicTodayStart } from '~/server/utils/receptionist'
+import { loadBookedVisits, loadOfferedTypes, loadPatientCalendar, loadPatientPractitioners, toConfig, toneWording, uniqueTypes, clinicTodayStart } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptionistModel'
 import { typesForAudience } from '~/utils/receptionistTypes'
 import { internalNotes } from '~/utils/receptionistGuard'
@@ -167,8 +167,10 @@ export async function draftPatientReply(
   // Somebody who has been before is seen by their own practitioner; a
   // patient record with no visit yet (a first visit booked, say) is still
   // somebody new, and a first visit is with whoever is free.
-  const practitionerIds = facts.lastVisitAt ? await loadPatientPractitioners(supabase, accountId, patientId, booked.practitionerIds) : null
-  const calendar = await loadReceptionistCalendar(service, accountId, config, bookable, undefined, undefined, practitionerIds)
+  // When their own has no free time at all (on leave, say), the times are
+  // the rest of the team's, and practitionerIds is what they are really with.
+  const own = facts.lastVisitAt ? await loadPatientPractitioners(supabase, accountId, patientId, booked.practitionerIds) : null
+  const { calendar, practitionerIds } = await loadPatientCalendar(service, accountId, config, bookable, own)
   const findFreeTimes = calendar.availability ? freeTimesLookup(service, accountId, config, bookable, calendar.timeZone, practitionerIds) : null
 
   // Sent rather than stored: asked for, on the channel they last wrote on

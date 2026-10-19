@@ -781,6 +781,55 @@ describe('Handovers and the receptionist in the Inbox', () => {
     })
   })
 
+  // A lead as a WhatsApp one really arrives: the number as digits (the way
+  // the webhook and Meta's lead ads store it), and their last message filed
+  // under that number, which is what the send route's 24-hour check reads.
+  // seedConversation leaves the message without a number, so a real send to
+  // its lead is refused as outside the window.
+  function whatsappLead(name: string, aiState: string) {
+    const digits = `346${String(Math.floor(Math.random() * 1e8)).padStart(8, '0')}`
+    return cy
+      .task<{ id: string }>('db:createLead', { accountId: account.accountId, fullName: name, stage: 'contacted', phone: digits })
+      .then((lead) => {
+        cy.task('db:createWhatsappMessage', { accountId: account.accountId, leadId: lead.id, phoneNumber: digits, direction: 'inbound', bodyPreview: 'Hola' })
+        cy.request({ method: 'POST', url: `/api/growth/leads/${lead.id}/ai-state`, body: { state: aiState } })
+        return cy.wrap(lead.id, { log: false })
+      })
+  }
+
+  function connectWhatsapp() {
+    cy.task('db:startMetaGraphStub', {})
+    cy.task('db:setWhatsappPhoneNumberId', { accountId: account.accountId, phoneNumberId: `pnid-${Date.now()}-${Math.floor(Math.random() * 1e9)}` })
+    cy.task('db:setAccountWhatsappToken', { accountId: account.accountId, token: 'wa-test-token' })
+  }
+
+  it('clears "Needs human" when a person replies to the lead, without handing it back to the AI', () => {
+    // The reply is the resolution: patients already worked this way, and a
+    // second click after answering is bookkeeping nobody does. Sent through
+    // the real route against the local Graph stub, so the route's own update
+    // is what is tested.
+    connectWhatsapp()
+    whatsappLead('Answered By Staff', 'needs_human').then((leadId) => {
+      cy.request({ method: 'POST', url: '/api/whatsapp/inbox-send', body: { leadId, text: 'Te llamo ahora mismo' } }).its('status').should('eq', 200)
+      cy.task('db:leadAiState', { id: leadId }).should((row) => {
+        // Nobody's: not flagged, and not the AI's until someone hands it back.
+        expect((row as { ai_state: string }).ai_state).to.eq('none')
+      })
+    })
+    cy.task('db:stopMetaGraphStub')
+  })
+
+  it('leaves a lead somebody took over as it was when a person writes', () => {
+    connectWhatsapp()
+    whatsappLead('Taken Over Then Answered', 'paused').then((leadId) => {
+      cy.request({ method: 'POST', url: '/api/whatsapp/inbox-send', body: { leadId, text: 'Hola' } }).its('status').should('eq', 200)
+      cy.task('db:leadAiState', { id: leadId }).should((row) => {
+        expect((row as { ai_state: string }).ai_state).to.eq('paused')
+      })
+    })
+    cy.task('db:stopMetaGraphStub')
+  })
+
   it("shows a patient's handover in the same banner, and clears it the same way", () => {
     cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Paciente', lastName: 'Traspasada' }).then((patient) => {
       cy.task('db:createPatientAppMessage', { accountId: account.accountId, patientId: patient.id, direction: 'inbound', body: 'Quiero cancelar mi cita' })

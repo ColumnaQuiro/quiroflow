@@ -86,6 +86,32 @@ export default defineNuxtConfig({
     // .output/server/ as it would from any file in the repo. Production
     // (the netlify preset) keeps tracing: the function ships alone.
     ...(process.env.E2E_BUILD ? { externals: { trace: false } } : {}),
+    hooks: {
+      // Nitro writes every server/api route into a typed table
+      // (.nuxt/types/nitro-routes.d.ts) so that `$fetch('/api/x')` can infer
+      // the handler's return type. The inference does that by scoring the URL
+      // against every route pattern with template-literal types, and the
+      // first `$fetch` call TypeScript checks in a run pays for that matcher
+      // with the URL erased to its constraint -- the union of ALL routes --
+      // so it scores every route against every route: O(routes²). At 200
+      // routes that one expression cost 5.1 million type instantiations,
+      // measured, and TypeScript aborts an expression at 5 million with
+      // TS2589 "Type instantiation is excessively deep", reported on whichever
+      // call site happened to be checked first (components/booking/Payment.vue
+      // on 18 and 19 Oct 2026; #791 and the receptionist revamp). So the
+      // 201st route of any shape failed `nuxi typecheck` in a file that had
+      // nothing to do with it, and so would every route after it.
+      //
+      // An empty table makes the matcher trivial, and the app loses nothing it
+      // used: every `$fetch` to our API already states its response type
+      // (`$fetch<T>(...)`), as does the one useFetch, and the mobile app and
+      // the server never relied on the inference. `$fetch('/api/x')` without
+      // a type now returns `unknown`, as it does in any Nuxt project with no
+      // routes; say what the route returns in the generic.
+      'types:extend'(types) {
+        types.routes = {}
+      },
+    },
   },
   hooks: {
     // The developer portal lives at pages/developers/* but is published at

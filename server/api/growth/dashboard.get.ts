@@ -1,4 +1,6 @@
-import { requireGrowth } from '~/server/utils/requireGrowth'
+import { serverSupabaseServiceRole } from '#supabase/server'
+import { hasReceptionist, requireGrowth } from '~/server/utils/requireGrowth'
+import { loadReceptionistActivity } from '~/server/utils/receptionistActivity'
 import { leadDefaultValueCents } from '~/server/utils/leads'
 import { DEFAULT_CLINIC_TIMEZONE, clinicDateOf, startOfLocalDate } from '~/utils/clinicClock'
 import { LEAD_FUNNEL_STAGES, leadReach } from '~/utils/leadReach'
@@ -39,7 +41,7 @@ function channelOf(source: string | null) {
 }
 
 export default defineEventHandler(async (event): Promise<GrowthDashboardPayload> => {
-  const { supabase, teamMember } = await requireGrowth(event)
+  const { supabase, teamMember, subscription } = await requireGrowth(event)
   const accountId = teamMember.account_id
 
   // "This month" is the clinic's month, not UTC's: a lead arriving at 01:00
@@ -230,8 +232,21 @@ export default defineEventHandler(async (event): Promise<GrowthDashboardPayload>
     totals,
     trend,
     alerts,
-    // Explicitly null rather than absent, so the page knows the difference
-    // between "no AI yet" and "failed to load".
-    ai: null,
+    // What the receptionist did this month, from the records it leaves;
+    // explicitly null without one, so the page knows the difference between
+    // "no receptionist" and "failed to load".
+    ai: await aiSummary(event, accountId, subscription),
   }
 })
+
+async function aiSummary(event: Parameters<typeof serverSupabaseServiceRole>[0], accountId: string, subscription: Parameters<typeof hasReceptionist>[0]) {
+  if (!hasReceptionist(subscription)) return null
+  try {
+    const a = await loadReceptionistActivity(serverSupabaseServiceRole(event), accountId)
+    return { conversations: a.month.conversations, sent: a.month.sent, drafted: a.month.drafted, booked: a.booked + a.moved, handedOver: a.handedOver }
+  } catch (err) {
+    // The dashboard is worth more than this card: without it, the rest.
+    console.error('[growth/dashboard] could not read the receptionist activity:', (err as Error)?.message ?? err)
+    return null
+  }
+}

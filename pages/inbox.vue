@@ -463,6 +463,8 @@ onMounted(() => {
   const q = useRoute().query.ai
   if (q === 'handling') aiFilter.value = 'ai_handling'
   else if (q === 'needs_human') aiFilter.value = 'needs_human'
+  // From the receptionist's Overview: "N drafts waiting for approval".
+  else if (q === 'draft_ready') aiFilter.value = 'draft_ready'
 })
 
 // Everything except the leads/patients split, so the chip counts can be

@@ -1,8 +1,8 @@
-// The AI receptionist's configuration, read from the database.
-//
-// The stats the design puts across the top (conversations, booked, escalated,
-// average response time) are not here: nothing has run yet, so there is
-// nothing to count. They arrive with the receptionist itself.
+import type { ReceptionistActivity } from '~/utils/receptionistActivity'
+
+// The AI receptionist's configuration, read from the database, and what it
+// has done this month (utils/receptionistActivity.ts), which the same
+// request carries.
 
 export interface KnowledgeCard {
   id: string
@@ -61,11 +61,16 @@ interface TypeChoices {
   offeredTypes: ReceptionistType[]
 }
 
+/** Why the account has the receptionist -- the Subscription page's reading. */
+export type ReceptionistIncludedBy = 'comped' | 'trial' | 'growth' | 'addon' | null
+
 interface ConfigResponse extends TypeChoices {
   config: ReceptionistConfig
   channels: ReceptionistChannel[]
   testModelAvailable: boolean
   repliesThisMonth: number
+  includedBy?: ReceptionistIncludedBy
+  activity?: ReceptionistActivity
 }
 
 export function useGrowthReceptionist() {
@@ -73,6 +78,8 @@ export function useGrowthReceptionist() {
   const channels = ref<ReceptionistChannel[]>([])
   const testModelAvailable = ref(false)
   const repliesThisMonth = ref(0)
+  const includedBy = ref<ReceptionistIncludedBy>(null)
+  const activity = ref<ReceptionistActivity | null>(null)
   const appointmentTypes = ref<ReceptionistType[]>([])
   const offeredTypes = ref<ReceptionistType[]>([])
   const loading = ref(true)
@@ -90,6 +97,8 @@ export function useGrowthReceptionist() {
       channels.value = data.channels
       testModelAvailable.value = data.testModelAvailable
       repliesThisMonth.value = data.repliesThisMonth ?? 0
+      includedBy.value = data.includedBy ?? null
+      activity.value = data.activity ?? null
     } catch {
       error.value = t('Could not load the receptionist settings.', 'No se ha podido cargar la configuración de la recepcionista.')
     } finally {
@@ -117,5 +126,5 @@ export function useGrowthReceptionist() {
 
   const liveChannelCount = computed(() => channels.value.filter((c) => c.status === 'connected').length)
 
-  return { config, channels, appointmentTypes, offeredTypes, testModelAvailable, repliesThisMonth, loading, saving, error, save, liveChannelCount }
+  return { config, channels, appointmentTypes, offeredTypes, testModelAvailable, repliesThisMonth, includedBy, activity, loading, saving, error, save, reload: load, liveChannelCount }
 }

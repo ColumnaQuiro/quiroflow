@@ -1,15 +1,57 @@
 <script setup lang="ts">
+import type { ReceptionistIncludedBy } from '~/composables/useGrowthReceptionist'
+
+// Growth > AI receptionist: what it does, what it knows, how it behaves,
+// and a place to try it.
+//
+// It used to be nine cards down one long page, with the on/off switch
+// first, the billing card second and the booking rules read-only. Now four
+// sections: an Overview that says in one sentence what it is doing right
+// now and what it has done, two sections of settings grouped by what they
+// are (facts it repeats; rules it follows), and the test panel, which sits
+// beside the settings on a wide screen -- change a rule, try it without
+// scrolling back -- and is a section of its own on a phone.
+//
+// The data model and endpoint are the ones the old page used; only the way
+// in changed.
+
 const t = useT()
 const { can } = usePermission()
 const { hasReceptionist, resolved } = useGrowthTier()
-const { config, channels, appointmentTypes, offeredTypes, testModelAvailable, repliesThisMonth, loading, saving, error, save, liveChannelCount } = useGrowthReceptionist()
+const { config, channels, appointmentTypes, offeredTypes, testModelAvailable, repliesThisMonth, includedBy, activity, loading, saving, error, save, reload, liveChannelCount } = useGrowthReceptionist()
 const route = useRoute()
+const router = useRouter()
+
+type Tab = 'overview' | 'knowledge' | 'behaviour' | 'try'
+const TABS: Tab[] = ['overview', 'knowledge', 'behaviour', 'try']
+const tabs = computed<{ key: Tab; label: string; narrowOnly?: boolean }[]>(() => [
+  { key: 'overview', label: t('Overview', 'Resumen') },
+  { key: 'knowledge', label: t('What it knows', 'Lo que sabe') },
+  { key: 'behaviour', label: t('How it behaves', 'Cómo actúa') },
+  // On a wide screen the test panel is always beside the settings, so the
+  // tab for it only exists where there is no room for that.
+  { key: 'try', label: t('Try it', 'Pruébala'), narrowOnly: true },
+])
+
+// The section is in the URL, so a link from elsewhere (the appointment type
+// page's "Where it is used" points at #bookable-types) lands on the right
+// one, and a reload keeps it.
+const tab = ref<Tab>(initialTab())
+function initialTab(): Tab {
+  if (route.hash === '#bookable-types') return 'behaviour'
+  const q = route.query.tab
+  return typeof q === 'string' && (TABS as string[]).includes(q) ? (q as Tab) : 'overview'
+}
+function show(next: Tab) {
+  tab.value = next
+  router.replace({ query: { ...route.query, tab: next === 'overview' ? undefined : next }, hash: next === 'behaviour' ? route.hash : '' })
+}
 
 // Linked from each appointment type's own page ("Where it is used"). The
 // section only exists once the config has loaded, so the browser's own jump
 // to the hash has nothing to land on; this does it when there is.
 watch(
-  () => Boolean(config.value) && route.hash === '#bookable-types',
+  () => Boolean(config.value) && tab.value === 'behaviour' && route.hash === '#bookable-types',
   async (ready) => {
     if (!ready) return
     await nextTick()
@@ -20,86 +62,28 @@ watch(
 
 const allowed = computed(() => can('communication_config'))
 
-// The three lists the prompt is actually built from. They were rendered and
-// not editable, which left the knowledge base permanently empty -- and the
-// card itself says an empty one makes the receptionist deflect rather than
-// answer. The endpoint already accepted all three; only the way in was
-// missing.
-const newQuestion = ref('')
-const newRuleText = ref('')
-const newRuleAction = ref('')
-const newCardTitle = ref('')
-const newCardLines = ref('')
+// The checklist's "tried it": sent a test message this session.
+const tried = ref(false)
 
-function addKnowledgeCard() {
-  const title = newCardTitle.value.trim()
-  if (!title) return
-  const lines = newCardLines.value.split('\n').map((l) => l.trim()).filter(Boolean)
-  save({
-    knowledge: [
-      ...(config.value?.knowledge ?? []),
-      // A stable id so Vue's keys and any later edit refer to the same card
-      // rather than to whatever is currently in that position.
-      { id: crypto.randomUUID(), title: title.slice(0, 120), lines },
-    ],
-  })
-  newCardTitle.value = ''
-  newCardLines.value = ''
-}
+// One sentence for the mode, derived from the three columns the tick reads
+// -- never stored as prose, so it cannot go stale.
+const modeSentence = computed(() => {
+  const c = config.value
+  if (!c) return ''
+  if (!c.enabled) return t('Off', 'Desactivada')
+  if (c.afterHours && c.answerDuringHours) return t('Answering on its own, day and night', 'Contesta sola, de día y de noche')
+  if (c.afterHours) return t('Answering on its own outside clinic hours, drafting during', 'Contesta sola fuera del horario, redacta en horario')
+  if (c.answerDuringHours) return t('Answering on its own during clinic hours, drafting outside', 'Contesta sola en horario, redacta fuera')
+  return t('Drafting replies for you to approve', 'Redacta respuestas para que las apruebes')
+})
 
-function removeKnowledgeCard(id: string) {
-  save({ knowledge: (config.value?.knowledge ?? []).filter((c) => c.id !== id) })
+const INCLUDED: Record<NonNullable<ReceptionistIncludedBy>, { en: string; es: string }> = {
+  comped: { en: 'No charge', es: 'Sin cargo' },
+  trial: { en: 'In your trial', es: 'En tu prueba' },
+  growth: { en: 'Included in Growth', es: 'Incluida en Growth' },
+  addon: { en: 'Add-on', es: 'Complemento' },
 }
-
-function addQuestion() {
-  const question = newQuestion.value.trim()
-  if (!question) return
-  save({ qualificationQuestions: [...(config.value?.qualificationQuestions ?? []), question.slice(0, 300)] })
-  newQuestion.value = ''
-}
-
-function removeQuestion(index: number) {
-  save({ qualificationQuestions: (config.value?.qualificationQuestions ?? []).filter((_, i) => i !== index) })
-}
-
-// Whole messages it leaves alone (utils/receptionistAutoReply.ts,
-// isNoReplyMessage): "Confirmar" on the reminder, "Gracias", "👍".
-const newNoReply = ref('')
-function addNoReply() {
-  const phrase = newNoReply.value.trim().slice(0, 60)
-  if (!phrase) return
-  save({ noReplyPhrases: [...(config.value?.noReplyPhrases ?? []), phrase] })
-  newNoReply.value = ''
-}
-function removeNoReply(index: number) {
-  save({ noReplyPhrases: (config.value?.noReplyPhrases ?? []).filter((_, i) => i !== index) })
-}
-
-function addEscalationRule() {
-  const rule = newRuleText.value.trim()
-  const action = newRuleAction.value.trim()
-  if (!rule || !action) return
-  save({ escalationRules: [...(config.value?.escalationRules ?? []), { rule: rule.slice(0, 300), action: action.slice(0, 300) }] })
-  newRuleText.value = ''
-  newRuleAction.value = ''
-}
-
-function removeEscalationRule(index: number) {
-  save({ escalationRules: (config.value?.escalationRules ?? []).filter((_, i) => i !== index) })
-}
-
-const TONES = [
-  { value: 'warm_brief', label: t('Warm and brief', 'Cercano y breve') },
-  { value: 'clinical', label: t('Clinical', 'Clínico') },
-  { value: 'chatty', label: t('Chatty', 'Conversacional') },
-  { value: 'formal', label: t('Formal (usted)', 'Formal (usted)') },
-]
-
-const CHANNEL_CLASS: Record<string, string> = {
-  connected: 'border-success-border bg-success-bg text-success-text',
-  not_set_up: 'border-warning-border bg-warning-bg text-warning-text',
-  not_built: 'border-chip-border bg-chip-bg text-ink-faint',
-}
+const includedLabel = computed(() => (includedBy.value ? t(INCLUDED[includedBy.value].en, INCLUDED[includedBy.value].es) : null))
 </script>
 
 <template>
@@ -107,6 +91,9 @@ const CHANNEL_CLASS: Record<string, string> = {
     :title="t('AI receptionist', 'Recepcionista IA')"
     :meta="t('Answers enquiries, qualifies them, and offers appointment times', 'Responde consultas, las cualifica y ofrece horarios de cita')"
   >
+    <NuxtLink v-if="includedLabel" to="/subscription" class="flex h-8 items-center rounded-ctl border border-line-control bg-surface px-2.5 text-[12px] font-medium text-ink-muted hover:border-line-controlHover" data-test="receptionist-included-by">
+      {{ includedLabel }}
+    </NuxtLink>
     <span
       v-if="config"
       class="flex h-8 items-center gap-1.5 rounded-ctl border px-2.5 text-[12px] font-medium"
@@ -114,7 +101,7 @@ const CHANNEL_CLASS: Record<string, string> = {
       data-test="receptionist-status"
     >
       <span class="h-1.5 w-1.5 rounded-full" :class="config.enabled ? 'bg-success-accent' : 'bg-toggle-off'" />
-      {{ config.enabled ? `${t('On', 'Activa')} · ${liveChannelCount} ${t('channel', 'canal')}${liveChannelCount === 1 ? '' : 's'}` : t('Off', 'Desactivada') }}
+      {{ config.enabled ? `${t('On', 'Activa')} · ${liveChannelCount} ${liveChannelCount === 1 ? t('channel', 'canal') : t('channels', 'canales')}` : t('Off', 'Desactivada') }}
     </span>
   </PageHeader>
 
@@ -144,361 +131,69 @@ const CHANNEL_CLASS: Record<string, string> = {
       </div>
 
       <div v-else class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
-        <div class="flex flex-col gap-4">
-          <!-- The switch that decides whether the receptionist touches real
-          conversations at all, first and on its own. It used to record the
-          intent and gate nothing, which was honest while there was nothing to
-          gate; it now decides whether /api/growth/leads/:id/draft-reply will
-          write anything, and the Inbox hides the button when it is off. Still
-          off until someone turns it on. -->
-          <section class="flex flex-col gap-3 rounded-card border border-line bg-surface p-4 shadow-card">
-            <div class="flex flex-wrap items-start justify-between gap-3">
-              <div class="flex flex-col gap-1">
-                <h2 class="text-[12.5px] font-semibold tracking-tightTitle text-ink-900">{{ t('Answering', 'Respuestas') }}</h2>
-                <p class="max-w-[46ch] text-[11.5px] leading-[1.5] text-ink-muted">
-                  {{ t(
-                    'On, the receptionist reads real enquiries and patient messages in the Inbox. It drafts a reply for you to approve, or — when you allow it below — answers on its own.',
-                    'Activada, la recepcionista lee las consultas y los mensajes de pacientes en la Bandeja. Redacta una respuesta para que la apruebes o, si lo permites abajo, contesta ella sola.',
-                  ) }}
-                </p>
-              </div>
-              <UiBtn
-                :variant="config.enabled ? 'secondary' : 'primary'"
-                size="sm"
-                :disabled="saving"
-                data-test="toggle-enabled"
-                @click="save({ enabled: !config.enabled })"
-              >
-                {{ config.enabled ? t('Turn off', 'Desactivar') : t('Turn on', 'Activar') }}
-              </UiBtn>
-            </div>
-
-            <!-- When it answers on its own instead of drafting
-            (utils/receptionistAutoReply.ts). Both off until a clinic turns
-            them on: nobody finds it already sending. -->
-            <div class="flex flex-col gap-2 border-t border-line-divider pt-3" data-test="auto-reply">
-              <span class="text-[9.5px] font-semibold uppercase tracking-[.06em] text-ink-faint">{{ t('Answers on its own', 'Contesta sola') }}</span>
-              <label class="flex items-start gap-2 text-[11.5px] text-ink-700">
-                <input
-                  type="checkbox"
-                  class="mt-0.5 h-3.5 w-3.5 accent-brand"
-                  :checked="config.afterHours"
-                  :disabled="saving"
-                  data-test="toggle-after-hours"
-                  @change="save({ afterHours: ($event.target as HTMLInputElement).checked })"
-                >
-                <span>{{ t('Outside clinic hours (nights, weekends)', 'Fuera del horario de la clínica (noches, fines de semana)') }}</span>
-              </label>
-              <label class="flex items-start gap-2 text-[11.5px] text-ink-700">
-                <input
-                  type="checkbox"
-                  class="mt-0.5 h-3.5 w-3.5 accent-brand"
-                  :checked="config.answerDuringHours"
-                  :disabled="saving"
-                  data-test="toggle-during-hours"
-                  @change="save({ answerDuringHours: ($event.target as HTMLInputElement).checked })"
-                >
-                <span>{{ t('During clinic hours too', 'También en horario de clínica') }}</span>
-              </label>
-              <p class="max-w-[52ch] text-[11px] leading-[1.5] text-ink-muted">
-                {{ t(
-                  'When it does not answer on its own, it leaves a draft. It stays quiet in a conversation someone from the clinic replied to in the last hour, sends at most 8 messages a day in one conversation, and hands anything an escalation rule covers to a person with a note in the conversation.',
-                  'Cuando no contesta sola, deja un borrador. Se calla en una conversación en la que alguien de la clínica ha escrito en la última hora, envía como mucho 8 mensajes al día por conversación y pasa a una persona lo que cubre una regla de escalado, con una nota en la conversación.',
-                ) }}
-              </p>
-            </div>
-
-            <div class="flex flex-col gap-1.5 border-t border-line-divider pt-3">
-              <span class="text-[9.5px] font-semibold uppercase tracking-[.06em] text-ink-faint">{{ t('Channels', 'Canales') }}</span>
-              <div v-for="channel in channels" :key="channel.name" :data-test="`channel-${channel.key}`" class="flex items-center justify-between gap-3">
-                <span class="text-[11.5px] text-ink-700">{{ channel.name }}</span>
-                <span class="shrink-0 rounded-pill border px-2 py-0.5 text-[10.5px] font-medium" :class="CHANNEL_CLASS[channel.status]">
-                  {{ channel.statusLabel }}
-                </span>
-              </div>
-            </div>
-          </section>
-
-          <GrowthReceptionistUsage
-            :replies="repliesThisMonth"
-            :limit="config.monthlyReplyLimit"
-            :saving="saving"
-            :save="(limit: number | null) => save({ monthlyReplyLimit: limit })"
-          />
-
-          <GrowthSettingCard :title="t('Persona', 'Personalidad')">
-            <div class="grid gap-3 sm:grid-cols-2">
-              <label class="flex flex-col gap-1">
-                <span class="text-[10.5px] uppercase tracking-[.06em] text-ink-faint">{{ t('Name it answers with', 'Nombre con el que responde') }}</span>
-                <input
-                  :value="config.personaName"
-                  type="text"
-                  class="h-8 rounded-ctl border border-line-control bg-surface px-2.5 text-[12.5px] text-ink-700 focus:border-brand focus:outline-none"
-                  data-test="persona-name"
-                  @change="save({ personaName: ($event.target as HTMLInputElement).value })"
-                >
-              </label>
-              <div class="flex flex-col gap-1">
-                <span class="text-[10.5px] uppercase tracking-[.06em] text-ink-faint">{{ t('Languages', 'Idiomas') }}</span>
-                <div class="flex flex-wrap gap-1.5 pt-1">
-                  <span v-for="lang in config.languages" :key="lang" class="rounded-pill border border-brand-tintBorder bg-brand-tint px-2 py-0.5 text-[11px] uppercase text-brand-text">{{ lang }}</span>
-                </div>
-              </div>
-            </div>
-
-            <div class="flex flex-col gap-1.5">
-              <span class="text-[10.5px] uppercase tracking-[.06em] text-ink-faint">{{ t('Tone', 'Tono') }}</span>
-              <div class="flex flex-wrap gap-1.5">
-                <button
-                  v-for="tone in TONES"
-                  :key="tone.value"
-                  type="button"
-                  class="rounded-pill border px-2.5 py-0.5 text-[11.5px]"
-                  :class="config.tone === tone.value ? 'border-brand-tintBorder bg-brand-tint font-medium text-brand-text' : 'border-chip-border bg-chip-bg text-ink-muted hover:text-ink-700'"
-                  :disabled="saving"
-                  :data-test="`tone-${tone.value}`"
-                  @click="save({ tone: tone.value })"
-                >{{ tone.label }}</button>
-              </div>
-            </div>
-
-            <label class="flex flex-col gap-1">
-              <span class="text-[10.5px] uppercase tracking-[.06em] text-ink-faint">{{ t('Never says', 'Nunca dice') }}</span>
-              <textarea
-                :value="config.neverSays"
-                rows="3"
-                class="resize-none rounded-ctl border border-line-control bg-surface px-2.5 py-2 text-[11.5px] leading-[1.5] text-ink-700 focus:border-brand focus:outline-none"
-                data-test="never-says"
-                @change="save({ neverSays: ($event.target as HTMLTextAreaElement).value })"
-              />
-            </label>
-          </GrowthSettingCard>
-
-          <div class="grid gap-4 xl:grid-cols-2">
-            <GrowthSettingCard :title="t('Clinic knowledge base', 'Base de conocimiento')">
-              <p v-if="!config.knowledge.length" class="text-[11.5px] leading-[1.5] text-ink-muted" data-test="knowledge-empty">
-                {{ t(
-                  'Nothing yet. Without it the receptionist says it will check with a colleague rather than guessing at prices or hours.',
-                  'Nada todavía. Sin esto, la recepcionista dirá que lo consultará con un compañero en lugar de inventar precios u horarios.',
-                ) }}
-              </p>
-              <div v-for="card in config.knowledge" :key="card.id" class="flex flex-col gap-1 rounded-ctl border border-line bg-surface-subtle p-3" data-test="knowledge-card">
-                <div class="flex items-baseline justify-between gap-2">
-                  <span class="text-[11.5px] font-semibold text-ink-900">{{ card.title }}</span>
-                  <button
-                    type="button"
-                    class="shrink-0 text-[10.5px] font-medium text-danger-text hover:underline"
-                    :disabled="saving"
-                    :data-test="`remove-card-${card.id}`"
-                    @click="removeKnowledgeCard(card.id)"
-                  >{{ t('Remove', 'Quitar') }}</button>
-                </div>
-                <span v-for="line in card.lines" :key="line" class="text-[11px] text-ink-muted">{{ line }}</span>
-              </div>
-
-              <div class="flex flex-col gap-1.5 border-t border-line-divider pt-2.5">
-                <input
-                  v-model="newCardTitle"
-                  type="text"
-                  :placeholder="t('What it is about — e.g. Prices, Opening hours, Parking', 'De qué trata — p. ej. Precios, Horarios, Parking')"
-                  class="h-8 rounded-ctl border border-line-control bg-surface px-2.5 text-[12px] text-ink-700 focus:border-brand focus:outline-none"
-                  data-test="card-title"
-                />
-                <textarea
-                  v-model="newCardLines"
-                  rows="3"
-                  :placeholder="t('One fact per line. First visit 50€\nFollow-up 40€', 'Un dato por línea. Primera visita 50€\nRevisión 40€')"
-                  class="resize-none rounded-ctl border border-line-control bg-surface px-2.5 py-2 text-[12px] leading-[1.5] text-ink-700 focus:border-brand focus:outline-none"
-                  data-test="card-lines"
-                />
-                <UiBtn variant="secondary" size="sm" class="self-start" :disabled="saving || !newCardTitle.trim()" data-test="add-card" @click="addKnowledgeCard">
-                  {{ t('Add card', 'Añadir tarjeta') }}
-                </UiBtn>
-                <!-- The model is told these are the clinic's own facts, so a
-                wrong one is repeated confidently to a patient rather than
-                hedged. Worth saying where it is typed. -->
-                <p class="text-[10.5px] leading-[1.5] text-ink-muted">
-                  {{ t(
-                    'The receptionist treats these as fact and repeats them to patients. Anything not here, it says it will check.',
-                    'La recepcionista trata esto como un hecho y se lo repite a los pacientes. Lo que no esté aquí, dirá que lo consultará.',
-                  ) }}
-                </p>
-              </div>
-            </GrowthSettingCard>
-
-            <!-- Messages that want no answer: no reply, no draft. The model
-            can also decide so on its own; this list is the sure, free part. -->
-            <GrowthSettingCard :title="t('Messages it does not answer', 'Mensajes que no contesta')">
-              <div class="flex flex-wrap gap-1.5" data-test="no-reply-phrases">
-                <span
-                  v-for="(phrase, i) in config.noReplyPhrases"
-                  :key="`${phrase}-${i}`"
-                  class="flex items-center gap-1 rounded-pill border border-chip-border bg-chip-bg px-2 py-0.5 text-[11.5px] text-ink-700"
-                  data-test="no-reply-phrase"
-                >
-                  {{ phrase }}
-                  <button type="button" class="text-[11px] text-ink-muted hover:text-danger-text" :disabled="saving" :aria-label="t(`Remove ${phrase}`, `Quitar ${phrase}`)" @click="removeNoReply(i)">×</button>
-                </span>
-              </div>
-              <div class="flex flex-col gap-1.5 border-t border-line-divider pt-2.5">
-                <div class="flex gap-1.5">
-                  <input
-                    v-model="newNoReply"
-                    type="text"
-                    :placeholder="t('e.g. Thanks', 'p. ej. Gracias')"
-                    class="h-8 min-w-0 flex-1 rounded-ctl border border-line-control bg-surface px-2.5 text-[12px] text-ink-700 focus:border-brand focus:outline-none"
-                    data-test="no-reply-text"
-                    @keyup.enter="addNoReply"
-                  />
-                  <UiBtn variant="secondary" size="sm" :disabled="saving || !newNoReply.trim()" data-test="add-no-reply" @click="addNoReply">
-                    {{ t('Add', 'Añadir') }}
-                  </UiBtn>
-                </div>
-                <p class="text-[10.5px] leading-[1.5] text-ink-muted">
-                  {{ t(
-                    'When a message is only one of these (case, accents and punctuation aside), it neither answers nor drafts — "Confirmar" on the reminder is already recorded. It also stays quiet on its own when a message clearly needs no answer.',
-                    'Cuando un mensaje es solo una de estas (sin importar mayúsculas, tildes o signos), ni contesta ni deja borrador: el "Confirmar" del recordatorio ya queda registrado. También se calla sola cuando un mensaje claramente no necesita respuesta.',
-                  ) }}
-                </p>
-              </div>
-            </GrowthSettingCard>
-
-            <GrowthSettingCard :title="t('Qualification questions', 'Preguntas de cualificación')">
-              <p v-if="!config.qualificationQuestions.length" class="text-[11.5px] leading-[1.5] text-ink-muted" data-test="questions-empty">
-                {{ t(
-                  'None yet. The receptionist will answer and offer times without finding out what is wrong first.',
-                  'Ninguna todavía. La recepcionista responderá y ofrecerá horarios sin averiguar antes qué le pasa.',
-                ) }}
-              </p>
-              <ol v-else class="flex flex-col gap-1.5">
-                <li
-                  v-for="(question, i) in config.qualificationQuestions"
-                  :key="`${question}-${i}`"
-                  class="flex items-start justify-between gap-2 text-[11.5px] text-ink-700"
-                  data-test="qualification-question"
-                >
-                  <span class="flex min-w-0 items-start gap-2">
-                    <span class="mt-px flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-chip-bg text-[9.5px] font-semibold text-ink-muted">{{ i + 1 }}</span>
-                    <span>{{ question }}</span>
-                  </span>
-                  <button type="button" class="shrink-0 text-[10.5px] font-medium text-danger-text hover:underline" :disabled="saving" @click="removeQuestion(i)">
-                    {{ t('Remove', 'Quitar') }}
-                  </button>
-                </li>
-              </ol>
-
-              <div class="flex flex-col gap-1.5 border-t border-line-divider pt-2.5">
-                <input
-                  v-model="newQuestion"
-                  type="text"
-                  :placeholder="t('e.g. How long have you had it?', 'p. ej. ¿Desde cuándo lo tienes?')"
-                  class="h-8 rounded-ctl border border-line-control bg-surface px-2.5 text-[12px] text-ink-700 focus:border-brand focus:outline-none"
-                  data-test="question-text"
-                  @keyup.enter="addQuestion"
-                />
-                <UiBtn variant="secondary" size="sm" class="self-start" :disabled="saving || !newQuestion.trim()" data-test="add-question" @click="addQuestion">
-                  {{ t('Add question', 'Añadir pregunta') }}
-                </UiBtn>
-                <!-- Order is the order they get asked, because that is how the
-                prompt lists them. -->
-                <p class="text-[10.5px] leading-[1.5] text-ink-muted">
-                  {{ t('Asked in this order, one at a time.', 'Se preguntan en este orden, de una en una.') }}
-                </p>
-              </div>
-            </GrowthSettingCard>
-
-            <GrowthSettingCard :title="t('Booking rules', 'Reglas de reserva')">
-              <!-- Stated as what the AI may do, because the sentence the model
-              is given is built from exactly these numbers. -->
-              <dl class="flex flex-col gap-1">
-                <div class="flex items-baseline justify-between gap-2">
-                  <dt class="text-[11px] text-ink-faint">{{ t('Booking window', 'Ventana de reserva') }}</dt>
-                  <dd class="text-[11.5px] text-ink-700">{{ config.bookingWindowDays }} {{ t('days', 'días') }}</dd>
-                </div>
-                <div class="flex items-baseline justify-between gap-2 border-t border-line-divider pt-1.5">
-                  <dt class="text-[11px] text-ink-faint">{{ t('Minimum notice', 'Antelación mínima') }}</dt>
-                  <dd class="text-[11.5px] text-ink-700">{{ config.minimumNoticeMinutes }} {{ t('minutes', 'minutos') }}</dd>
-                </div>
-                <div class="flex items-baseline justify-between gap-2 border-t border-line-divider pt-1.5">
-                  <dt class="text-[11px] text-ink-faint">{{ t('Slots offered per reply', 'Horarios por respuesta') }}</dt>
-                  <dd class="text-[11.5px] text-ink-700">{{ config.slotsPerReply }}</dd>
-                </div>
-                <div class="flex items-baseline justify-between gap-2 border-t border-line-divider pt-1.5">
-                  <dt class="text-[11px] text-ink-faint">{{ t('May book', 'Puede reservar') }}</dt>
-                  <dd class="text-right text-[11.5px] text-ink-700">
-                    <!-- The server's count of what the drafts are given, not the
-                    length of the stored list: that one counts archived types
-                    and reads 0 for "any type". -->
-                    <a href="#bookable-types" class="text-brand-text hover:underline" data-test="may-book-summary">
-                      {{ !config.bookableAppointmentTypeIds.length
-                        ? t(`Any active type (${offeredTypes.length})`, `Cualquier tipo activo (${offeredTypes.length})`)
-                        : offeredTypes.length === 1
-                          ? t('1 appointment type', '1 tipo de cita')
-                          : t(`${offeredTypes.length} appointment types`, `${offeredTypes.length} tipos de cita`) }}
-                    </a>
-                  </dd>
-                </div>
-              </dl>
-              <p class="text-[10.5px] leading-[1.5] text-ink-muted">
-                {{ t(
-                  'When it leaves a draft, it offers times and a person books. When it answers on its own, it books or moves the visit itself once the patient accepts a time — signed "AI receptionist" in the visit\'s history, with a note in the conversation. It also cancels a visit when the patient asks it to, never with a fee.',
-                  'Cuando deja un borrador, ofrece horas y reserva una persona. Cuando contesta sola, reserva o mueve la cita ella misma cuando el paciente acepta una hora — firmado "Recepcionista IA" en el historial de la cita, con una nota en la conversación. También cancela una cita cuando el paciente se lo pide, nunca con penalización.',
-                ) }}
-              </p>
-            </GrowthSettingCard>
+        <div class="flex min-w-0 flex-col gap-4">
+          <div role="tablist" class="flex gap-1 overflow-x-auto border-b border-line" data-test="receptionist-tabs">
+            <button
+              v-for="tb in tabs"
+              :key="tb.key"
+              type="button"
+              role="tab"
+              :aria-selected="tab === tb.key"
+              :data-test="`receptionist-tab-${tb.key}`"
+              class="-mb-px flex h-10 shrink-0 items-center border-b-2 px-3 text-[12.5px] font-semibold"
+              :class="[
+                tab === tb.key ? 'border-brand text-ink-900' : 'border-transparent text-ink-muted hover:text-ink-700',
+                tb.narrowOnly ? 'lg:hidden' : '',
+              ]"
+              @click="show(tb.key)"
+            >{{ tb.label }}</button>
           </div>
 
-          <GrowthBookableTypesEditor
-            :types="appointmentTypes"
-            :selected-ids="config.bookableAppointmentTypeIds"
-            :offered="offeredTypes"
-            :saving="saving"
-            :save="(ids: string[]) => save({ bookableAppointmentTypeIds: ids })"
-          />
-
-          <GrowthSettingCard :title="t('Escalation rules', 'Reglas de escalado')">
-            <p v-if="!config.escalationRules.length" class="text-[11.5px] text-ink-muted" data-test="escalation-empty">
-              {{ t('None set. The receptionist will answer everything it can.', 'Ninguna definida. La recepcionista responderá todo lo que pueda.') }}
+          <!-- Overview: what it is doing now, what is left to set up, what
+          it has done, and what the month costs. -->
+          <template v-if="tab === 'overview'">
+            <p class="flex flex-wrap items-baseline gap-x-2 text-[13px] text-ink-700" data-test="receptionist-mode-sentence">
+              <span class="text-[10.5px] font-semibold uppercase tracking-[.06em] text-ink-faint">{{ t('Right now', 'Ahora mismo') }}</span>
+              <span class="font-semibold text-ink-900">{{ modeSentence }}</span>
             </p>
-            <ul v-else class="flex flex-col gap-1.5">
-              <li
-                v-for="(rule, i) in config.escalationRules"
-                :key="`${rule.rule}-${i}`"
-                class="flex items-baseline justify-between gap-2 rounded-ctl border border-line bg-surface-subtle px-2.5 py-1.5 text-[11.5px] text-ink-700"
-                data-test="escalation-rule"
-              >
-                <span class="min-w-0">{{ rule.rule }} → {{ rule.action }}</span>
-                <button type="button" class="shrink-0 text-[10.5px] font-medium text-danger-text hover:underline" :disabled="saving" @click="removeEscalationRule(i)">
-                  {{ t('Remove', 'Quitar') }}
-                </button>
-              </li>
-            </ul>
+            <GrowthReceptionistChecklist :config="config" :offered-types="offeredTypes" :live-channel-count="liveChannelCount" :tried="tried" @go="show" />
+            <GrowthReceptionistModeCard :config="config" :channels="channels" :saving="saving" :save="save" />
+            <GrowthReceptionistActivity :activity="activity" @reload="reload" />
+            <GrowthReceptionistUsage
+              :replies="repliesThisMonth"
+              :limit="config.monthlyReplyLimit"
+              :saving="saving"
+              :save="(limit: number | null) => save({ monthlyReplyLimit: limit })"
+            />
+          </template>
 
-            <div class="flex flex-col gap-1.5 border-t border-line-divider pt-2.5">
-              <div class="grid gap-1.5 sm:grid-cols-2">
-                <input
-                  v-model="newRuleText"
-                  type="text"
-                  :placeholder="t('When… e.g. they mention chest pain', 'Cuando… p. ej. mencionan dolor torácico')"
-                  class="h-8 rounded-ctl border border-line-control bg-surface px-2.5 text-[12px] text-ink-700 focus:border-brand focus:outline-none"
-                  data-test="rule-when"
-                />
-                <input
-                  v-model="newRuleAction"
-                  type="text"
-                  :placeholder="t('Then… e.g. hand to a chiropractor now', 'Entonces… p. ej. pasar a un quiropráctico ya')"
-                  class="h-8 rounded-ctl border border-line-control bg-surface px-2.5 text-[12px] text-ink-700 focus:border-brand focus:outline-none"
-                  data-test="rule-then"
-                />
-              </div>
-              <UiBtn variant="secondary" size="sm" class="self-start" :disabled="saving || !newRuleText.trim() || !newRuleAction.trim()" data-test="add-rule" @click="addEscalationRule">
-                {{ t('Add rule', 'Añadir regla') }}
-              </UiBtn>
-            </div>
-          </GrowthSettingCard>
+          <!-- What it knows: who it is and the facts it repeats. -->
+          <template v-else-if="tab === 'knowledge'">
+            <GrowthReceptionistPersonaCard :config="config" :saving="saving" :save="save" />
+            <GrowthReceptionistKnowledgeCard :config="config" :saving="saving" :save="save" />
+            <GrowthReceptionistNoReplyCard :config="config" :saving="saving" :save="save" />
+          </template>
+
+          <!-- How it behaves: what it asks, when it stops, what it books. -->
+          <template v-else-if="tab === 'behaviour'">
+            <GrowthReceptionistQuestionsCard :config="config" :saving="saving" :save="save" />
+            <GrowthReceptionistEscalationCard :config="config" :saving="saving" :save="save" />
+            <GrowthReceptionistBookingRulesCard :config="config" :offered-types="offeredTypes" :saving="saving" :save="save" />
+            <GrowthBookableTypesEditor
+              :types="appointmentTypes"
+              :selected-ids="config.bookableAppointmentTypeIds"
+              :offered="offeredTypes"
+              :saving="saving"
+              :save="(ids: string[]) => save({ bookableAppointmentTypeIds: ids })"
+            />
+          </template>
+
+          <!-- The test panel as a section, where the screen is too narrow
+          to show it beside the settings. -->
+          <GrowthReceptionistTestChat v-else-if="tab === 'try'" class="lg:hidden" :available="testModelAvailable" :persona-name="config.personaName" fill @tried="tried = true" />
         </div>
 
-        <GrowthReceptionistTestChat :available="testModelAvailable" :persona-name="config.personaName" />
+        <GrowthReceptionistTestChat class="hidden lg:flex" :available="testModelAvailable" :persona-name="config.personaName" @tried="tried = true" />
       </div>
     </div>
   </div>

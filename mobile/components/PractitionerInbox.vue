@@ -2,7 +2,7 @@
 import { snoozeStateOf, type SnoozeRow } from '../../utils/inboxSnooze'
 import { replyWindowPill } from '../../utils/inboxReplyWindow'
 import { reactionEmoji } from '../../utils/whatsappInbound'
-import { fetchPatientAiStates, leadAiState, type InboxAiState } from '../../utils/inboxAiState'
+import { fetchPatientAiDetails, latestHandoverReason, leadAiState, type InboxAiState } from '../../utils/inboxAiState'
 
 const props = defineProps<{ accountId: string; teamMemberId: string; openConversationKey?: string | null }>()
 
@@ -52,6 +52,12 @@ const supabase = useSupabaseClient()
 const t = useT()
 const locale = computed(() => t('en-GB', 'es-ES'))
 const authedFetch = useAuthedFetch()
+// The role's permissions and the account's entitlements. Read first: the
+// receptionist's state below is loaded as soon as the list is.
+const { can, restricted, context: staffContext } = usePractitionerContext()
+// Whether this account has the AI receptionist (Growth, or bought on its
+// own), as the web Inbox asks useGrowthTier: its banner, drafts and chips.
+const hasReceptionist = computed(() => !!staffContext.value?.hasReceptionist)
 const { keyboardHeight } = useKeyboardInset()
 const messagesEl = ref<HTMLElement>()
 function scrollThreadToBottom() {
@@ -190,10 +196,14 @@ async function load(opts: { silent?: boolean } = {}) {
   if (run !== loadRun) return
   applySummaries(summaryData)
   if (!opts.silent) loading.value = false
+  // The receptionist's handovers and drafts for patients come with every
+  // refresh, as the leads' do with the list: a handover that arrives while
+  // the Inbox is open shows on its row without leaving the tab.
+  loadPatientAi()
   if (selectedKey.value) await loadThreadFor(selectedKey.value)
 }
 
-interface LeadSummary { key: string; leadId: string; name: string; channel: string; unread: boolean; lastMessageAt: string; lastDirection?: string; lastMediaType?: string | null; preview: string; previewWasNotSent?: boolean; phone: string | null; patientId: string | null; aiState?: string | null }
+interface LeadSummary { key: string; leadId: string; name: string; channel: string; unread: boolean; lastMessageAt: string; lastDirection?: string; lastMediaType?: string | null; preview: string; previewWasNotSent?: boolean; phone: string | null; patientId: string | null; aiState?: string | null; takenOverBy?: string | null; hasDraft?: boolean }
 function summaryConversation(o: { key: string; patientId: string | null; phone: string | null; externalId: string | null; leadId: string | null; name: string; channel: string; direction: string; status: string; body: string | null; template: string | null; media: string | null; at: string }): Conversation {
   return {
     key: o.key,
@@ -251,21 +261,40 @@ async function fetchSummaries() {
 // Whether the AI receptionist has each conversation, as the web Inbox shows
 // it: a lead's own ai_state, and for a patient what happened in the thread
 // (utils/inboxAiState.ts).
-const leadAiStates = ref<Record<string, InboxAiState>>({})
+type LeadAiFullState = 'none' | 'handling' | 'paused' | 'needs_human' | 'blocked'
+interface LeadAi { aiState: LeadAiFullState; takenOverBy: string | null; hasDraft: boolean }
+// Each lead's state as the list reports it, kept whole: the banner on an open
+// thread tells "paused" from "handling", and names who took over.
+const leadAi = ref<Record<string, LeadAi>>({})
+const leadAiStates = computed<Record<string, InboxAiState>>(() =>
+  Object.fromEntries(Object.entries(leadAi.value).flatMap(([id, l]) => (leadAiState(l.aiState) ? [[id, leadAiState(l.aiState)!]] : []))),
+)
 const patientAiStates = ref<Record<string, InboxAiState>>({})
+// Patients with a receptionist draft waiting (inbox_reply_drafts), so the
+// "Draft ready" chip and badge count them as they count leads.
+const patientDrafts = ref<Set<string>>(new Set())
 let patientAiToken = 0
+async function loadPatientAi() {
+  const ids = [...new Set(summaries.value.map((c) => c.patientId).filter((id): id is string => Boolean(id)))]
+  const token = ++patientAiToken
+  const details = hasReceptionist.value && ids.length ? await fetchPatientAiDetails(supabase, ids) : { states: {}, drafts: new Set<string>() }
+  if (token !== patientAiToken) return
+  patientAiStates.value = details.states
+  patientDrafts.value = details.drafts
+}
 watch(
-  // Growth decides it, and that is read after the first list may have arrived.
-  () => [leadThreadsAreSeparate.value, [...new Set(summaries.value.map((c) => c.patientId).filter((id): id is string => Boolean(id)))].join(',')] as const,
-  async ([growth, ids]) => {
-    const token = ++patientAiToken
-    const states = growth && ids ? await fetchPatientAiStates(supabase, ids.split(',')) : {}
-    if (token === patientAiToken) patientAiStates.value = states
-  },
+  // The entitlement is read after the first list may have arrived.
+  () => [hasReceptionist.value, [...new Set(summaries.value.map((c) => c.patientId).filter(Boolean))].join(',')] as const,
+  () => loadPatientAi(),
 )
 function aiStateOf(c: Conversation): InboxAiState | null {
   if (c.leadId) return leadAiStates.value[c.leadId] ?? null
   return c.patientId ? patientAiStates.value[c.patientId] ?? null : null
+}
+/** A receptionist draft is waiting on a person in this conversation. */
+function hasDraftOf(c: Conversation): boolean {
+  if (c.leadId) return !!leadAi.value[c.leadId]?.hasDraft
+  return !!c.patientId && patientDrafts.value.has(c.patientId)
 }
 
 function applySummaries({ size, rows: page, leads }: Awaited<ReturnType<typeof fetchSummaries>>) {
@@ -277,7 +306,7 @@ function applySummaries({ size, rows: page, leads }: Awaited<ReturnType<typeof f
   hasMoreSummaries.value = page.length > size
   summaryCount.value = Math.min(page.length, size)
   const list: Conversation[] = page.slice(0, size).map(fromSummaryRow)
-  if (leads) leadAiStates.value = Object.fromEntries(leads.conversations.flatMap((l) => (leadAiState(l.aiState) ? [[l.leadId, leadAiState(l.aiState)!]] : [])))
+  if (leads) leadAi.value = Object.fromEntries(leads.conversations.map((l) => [l.leadId, { aiState: (l.aiState ?? 'none') as LeadAiFullState, takenOverBy: l.takenOverBy ?? null, hasDraft: !!l.hasDraft }]))
   for (const l of leads?.conversations ?? []) {
     if (l.leadId && !leadNames.value[l.leadId]) leadNames.value = { ...leadNames.value, [l.leadId]: l.name }
     list.push(summaryConversation({ key: l.key, patientId: null, phone: l.phone, externalId: null, leadId: l.leadId, name: l.name, channel: l.channel, direction: l.lastDirection ?? (l.unread ? 'inbound' : 'outbound'), status: l.previewWasNotSent ? 'would_send' : 'sent', body: l.preview, template: null, media: l.lastMediaType ?? null, at: l.lastMessageAt }))
@@ -336,6 +365,8 @@ async function loadThreadFor(key: string) {
   }
   const since = loadedThreads.value.has(key) ? newestInThread(key) : null
   const leadId = leadIdOfKey(key)
+  // A lead's thread brings its draft and state with each refresh.
+  if (leadId) loadLeadDraft(leadId)
   let q = supabase.from('whatsapp_messages').select(MESSAGE_COLUMNS).order('created_at', { ascending: false }).limit(200)
   if (since) q = q.gt('created_at', since)
   if (leadId) q = q.eq('lead_id', leadId).is('patient_id', null)
@@ -524,7 +555,15 @@ const sourceFilter = ref<'all' | 'patients' | 'leads'>('all')
 const activeList = computed(() => conversations.value.filter((c) => !archivedKeys.value.has(c.key) && !c.snoozedUntil))
 const unreadCount = computed(() => activeList.value.filter((c) => c.unread).length)
 const expiringCount = computed(() => activeList.value.filter((c) => windowPill(c)).length)
-const filtersActive = computed(() => view.value !== 'active' || unreadOnly.value || expiringOnly.value || assignFilter.value !== 'all' || replyFilter.value !== 'all' || !!labelFilter.value || sourceFilter.value !== 'all')
+// The receptionist's two queues, as chips on the web Inbox: threads where a
+// reply is written and waiting on a decision (the work drafting was meant to
+// remove is opening threads one at a time to find them), and threads it
+// handed to a person. Each is shown only while there is one.
+const draftReadyOnly = ref(false)
+const needsHumanOnly = ref(false)
+const draftReadyCount = computed(() => activeList.value.filter(hasDraftOf).length)
+const needsHumanCount = computed(() => activeList.value.filter((c) => aiStateOf(c) === 'needs_human').length)
+const filtersActive = computed(() => view.value !== 'active' || unreadOnly.value || expiringOnly.value || assignFilter.value !== 'all' || replyFilter.value !== 'all' || !!labelFilter.value || sourceFilter.value !== 'all' || draftReadyOnly.value || needsHumanOnly.value)
 function clearFilters() {
   view.value = 'active'
   unreadOnly.value = false
@@ -533,6 +572,8 @@ function clearFilters() {
   replyFilter.value = 'all'
   labelFilter.value = null
   sourceFilter.value = 'all'
+  draftReadyOnly.value = false
+  needsHumanOnly.value = false
 }
 const chipBase = 'flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 text-[13px] font-medium'
 const chipClass = (on: boolean) => `${chipBase} ${on ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control bg-surface text-ink-700'}`
@@ -565,6 +606,8 @@ const filteredConversations = computed(() => {
   if (labelFilter.value) list = list.filter((c) => myLabelsByKey.value[c.key]?.includes(labelFilter.value!))
   if (sourceFilter.value === 'leads') list = list.filter((c) => !!c.leadId)
   else if (sourceFilter.value === 'patients') list = list.filter((c) => !c.leadId)
+  if (draftReadyOnly.value) list = list.filter(hasDraftOf)
+  if (needsHumanOnly.value) list = list.filter((c) => aiStateOf(c) === 'needs_human')
   return list
 })
 
@@ -676,6 +719,117 @@ async function saveNote(body: string, mentions: string[]) {
 }
 const notesBefore = (i: number) => notesBetween(threadNotes.value, i === 0 ? null : thread.value[i - 1]!.created_at, thread.value[i]!.created_at)
 const notesAfterLast = computed(() => notesBetween(threadNotes.value, thread.value.length ? thread.value[thread.value.length - 1]!.created_at : null, null))
+
+// -- The AI receptionist on the open thread ----------------------------------
+// Who is answering, in the banner under the header (InboxAiBanner, shared
+// with the web): a lead's own ai_state, and for a patient what happened in
+// the thread (patientAiStates). The buttons do what the web Inbox's do
+// (pages/inbox.vue, components/growth/InboxLeadThread.vue), through the same
+// routes, so a thread taken over on a phone reads as taken over at the desk.
+const selectedLeadId = computed(() => selected.value?.leadId ?? null)
+const selectedLeadAi = computed(() => (selectedLeadId.value ? leadAi.value[selectedLeadId.value] ?? null : null))
+// The receptionist is answering this lead itself: the composer stays locked
+// until a person takes over -- two of them typing into the same conversation
+// is the failure the banner exists to prevent.
+const leadComposerLocked = computed(() => selectedLeadAi.value?.aiState === 'handling')
+const leadChannelBlocked = computed(() => selectedLeadAi.value?.aiState === 'blocked')
+// Why the receptionist handed this over, from the note it left in the thread.
+const handoverReason = computed(() => latestHandoverReason(threadNotes.value))
+// The receptionist is off or at its monthly limit: said in the thread,
+// because the only other sign is drafts quietly not arriving.
+const { quiet: receptionistQuiet } = useReceptionistQuiet(hasReceptionist, () => props.accountId)
+
+// The open lead's own row: the draft the receptionist left (ai_draft_body,
+// which the list only flags) and its state, read with the member's own
+// client as the web reads the thread (utils/leadThread.ts). The list route's
+// Growth check is what let the lead be opened at all.
+const leadDraft = ref<{ leadId: string; body: string; at: string | null } | null>(null)
+watch(selectedKey, () => {
+  leadDraft.value = null
+  // Another conversation: the last one's failed send is not this one's.
+  sendError.value = ''
+})
+async function loadLeadDraft(leadId: string) {
+  const { data } = await supabase
+    .from('leads')
+    .select('ai_state, ai_draft_body, ai_draft_created_at, team_members:ai_taken_over_by(full_name)')
+    .eq('id', leadId)
+    .maybeSingle()
+  if (!data) return
+  const row = data as { ai_state: string | null; ai_draft_body: string | null; ai_draft_created_at: string | null; team_members: { full_name: string } | null }
+  leadAi.value = { ...leadAi.value, [leadId]: { aiState: (row.ai_state ?? 'none') as LeadAiFullState, takenOverBy: row.team_members?.full_name ?? null, hasDraft: !!row.ai_draft_body } }
+  if (selectedLeadId.value !== leadId) return
+  leadDraft.value = row.ai_draft_body ? { leadId, body: row.ai_draft_body, at: row.ai_draft_created_at } : null
+}
+
+// Hands a lead between the AI and a person. Shown at once; the route's
+// answer (which records WHO took over) confirms it.
+async function setLeadAiState(leadId: string, state: LeadAiFullState) {
+  const before = leadAi.value[leadId]
+  leadAi.value = { ...leadAi.value, [leadId]: { aiState: state, takenOverBy: before?.takenOverBy ?? null, hasDraft: before?.hasDraft ?? false } }
+  try {
+    const result = await authedFetch<{ aiState: LeadAiFullState; takenOverBy: string | null }>(`/api/growth/leads/${leadId}/ai-state`, { method: 'POST', body: { state } })
+    leadAi.value = { ...leadAi.value, [leadId]: { ...leadAi.value[leadId]!, aiState: result.aiState, takenOverBy: result.takenOverBy } }
+  } catch {
+    if (before) leadAi.value = { ...leadAi.value, [leadId]: before }
+    showNotice(t('Could not change who is answering.', 'No se ha podido cambiar quién responde.'))
+  }
+}
+const onLeadTakeOver = () => selectedLeadId.value && setLeadAiState(selectedLeadId.value, 'paused')
+const onLeadHandBack = () => selectedLeadId.value && setLeadAiState(selectedLeadId.value, 'handling')
+// A handover a person has dealt with: nobody's now, neither the AI's nor
+// flagged. Without it a lead handed over stayed "Needs human" for ever.
+const onLeadMarkHandled = () => selectedLeadId.value && setLeadAiState(selectedLeadId.value, 'none')
+// A patient's handover lives on inbox_reply_drafts.handed_over_at
+// (patientReplyDraft.ts): cleared, the receptionist may answer them again
+// and the row stops saying "Needs human".
+async function onPatientMarkHandled() {
+  const patientId = selected.value?.patientId
+  if (!patientId) return
+  const { error } = await supabase.from('inbox_reply_drafts').update({ handed_over_at: null }).eq('conversation_key', patientId)
+  if (error) {
+    showNotice(t('Could not mark it as handled.', 'No se ha podido marcar como atendida.'))
+    return
+  }
+  await loadPatientAi()
+}
+
+// A lead's draft, in the same card a patient's waits in (InboxAiDraftCard).
+// Approving sends it the way a typed reply goes and then clears it -- after
+// the send, never inside the send route, so a draft cannot survive its own
+// send and go twice (useGrowthLeadThread.approveDraft).
+async function discardLeadDraft() {
+  const leadId = selectedLeadId.value
+  if (!leadId) return
+  try {
+    await authedFetch(`/api/growth/leads/${leadId}/draft-reply`, { method: 'DELETE' })
+    if (leadDraft.value?.leadId === leadId) leadDraft.value = null
+    if (leadAi.value[leadId]) leadAi.value = { ...leadAi.value, [leadId]: { ...leadAi.value[leadId]!, hasDraft: false } }
+  } catch {
+    showNotice(t('Could not discard that draft.', 'No se ha podido descartar el borrador.'))
+  }
+}
+async function approveLeadDraft(text: string) {
+  if (!selectedLeadId.value) return
+  if (await sendTextMessage(text)) await discardLeadDraft()
+}
+
+// A reply the receptionist wrote for a patient without being asked
+// (receptionist-draft-cron, inbox_reply_drafts), keyed by the conversation --
+// the patient's id -- shown by InboxReplyDraft as soon as the thread opens,
+// and marked dealt with once sent or thrown away. The web's storedReplyDraft.
+function storedReplyDraft(patientId: string) {
+  return {
+    load: async () => {
+      const { data } = await supabase.from('inbox_reply_drafts').select('body').eq('conversation_key', patientId).is('dismissed_at', null).maybeSingle()
+      return data?.body ?? null
+    },
+    dismiss: async () => {
+      await supabase.from('inbox_reply_drafts').update({ dismissed_at: new Date().toISOString() }).eq('conversation_key', patientId).is('dismissed_at', null)
+      await loadPatientAi()
+    },
+  }
+}
 
 // Opens straight to the conversation a push notification tap wants -- fires
 // on mount (app was closed/backgrounded, tap launched/foregrounded it) and
@@ -810,31 +964,37 @@ async function bulkArchiveSelected(archive: boolean) {
   refreshBadge()
 }
 
+// A line at the bottom for a moment: what a snooze did, or what quietly
+// failed (the app has no toast of its own).
+const notice = ref('')
+let noticeTimer: ReturnType<typeof setTimeout> | undefined
+function showNotice(text: string) {
+  notice.value = text
+  clearTimeout(noticeTimer)
+  noticeTimer = setTimeout(() => (notice.value = ''), 3500)
+}
+
 // Single-conversation archive toggle, used from the row swipe action.
 // Snooze (just for me): out of my list until then, back as a follow-up --
 // the same row the web Inbox writes. Snoozing closes the thread, which has
 // just left the list it was opened from.
-const snoozeNotice = ref('')
-let snoozeNoticeTimer: ReturnType<typeof setTimeout> | undefined
 async function snoozeKey(key: string, at: string | null) {
   const created = new Date().toISOString()
   const { error } = at
     ? await supabase.from('inbox_snoozes').upsert({ account_id: props.accountId, team_member_id: props.teamMemberId, conversation_key: key, snoozed_until: at, created_at: created } as never)
     : await supabase.from('inbox_snoozes').delete().eq('team_member_id', props.teamMemberId).eq('conversation_key', key)
   if (error) {
-    snoozeNotice.value = t("Couldn't snooze it. Try again.", 'No se ha podido posponer. Inténtalo de nuevo.')
+    showNotice(t("Couldn't snooze it. Try again.", 'No se ha podido posponer. Inténtalo de nuevo.'))
   } else {
     const next = { ...snoozes.value }
     if (at) next[key] = { snoozed_until: at, created_at: created }
     else delete next[key]
     snoozes.value = next
     if (at && selectedKey.value === key) selectedKey.value = null
-    snoozeNotice.value = at
+    showNotice(at
       ? t(`Snoozed until ${new Date(at).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.`, `Pospuesta hasta el ${new Date(at).toLocaleString('es-ES', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.`)
-      : t('Back in your Inbox.', 'De vuelta en tu bandeja.')
+      : t('Back in your Inbox.', 'De vuelta en tu bandeja.'))
   }
-  clearTimeout(snoozeNoticeTimer)
-  snoozeNoticeTimer = setTimeout(() => (snoozeNotice.value = ''), 3500)
   refreshBadge()
 }
 const snoozeWhen = (iso: string) => new Date(iso).toLocaleString(t('en-GB', 'es-ES'), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
@@ -1017,7 +1177,6 @@ const within24h = computed(() => {
 // for a patient or inbox_access for a bare number -- so the option is offered
 // only when both would succeed. A minor or a do-not-contact patient is never
 // offered it (the send route refuses them too).
-const { can, restricted, context: staffContext } = usePractitionerContext()
 // From a patient's thread: their record, and booking them (the record's own
 // sheet, via ?book=1), as the record's Book button allows it.
 // The deployed site, where the clinic's booking page lives (the app itself is
@@ -1073,8 +1232,7 @@ const cameraInput = ref<HTMLInputElement>()
 // One-tap Send on the receptionist's suggested reply (InboxReplyDraft): the
 // way a typed reply goes.
 function sendDraft(text: string) {
-  composerText.value = text
-  sendText()
+  sendTextMessage(text)
 }
 
 function insertReply(text: string) {
@@ -1117,11 +1275,16 @@ async function performTextSend(tempId: string, text: string, channel: string, ta
       if (!target.externalContactId) throw new Error('This Instagram conversation has no sender id')
       await authedFetch('/api/instagram/send', { method: 'POST', body: { recipientId: target.externalContactId, text } })
     } else {
+      // A lead's own thread is addressed by lead, as the web does
+      // (useGrowthLeadThread.reply): the route finds the number and files
+      // the message in the thread. By phone alone it depended on a message
+      // in the thread carrying one.
       await authedFetch('/api/whatsapp/inbox-send', {
         method: 'POST',
         body: {
           patientId: target.patientId ?? undefined,
-          phoneNumber: target.patientId ? undefined : target.phoneNumber,
+          leadId: target.patientId ? undefined : target.leadId ?? undefined,
+          phoneNumber: target.patientId || target.leadId ? undefined : target.phoneNumber,
           text,
         },
       })
@@ -1139,21 +1302,30 @@ async function performTextSend(tempId: string, text: string, channel: string, ta
     await load({ silent: true })
     settlePending(tempId, threadExtra.value)
     delete retryPayloads.value[tempId]
+    return true
   } catch (err: any) {
     sendError.value = err?.data?.statusMessage ?? t('Failed to send', 'Error al enviar')
     pendingMessages.value = pendingMessages.value.map((m) => (m.id === tempId ? { ...m, pending: false, status: 'failed' } : m))
+    return false
   } finally {
     sending.value = false
   }
 }
 
 async function sendText() {
-  if (!composerText.value.trim() || !selected.value) return
-  sendError.value = ''
   const text = composerText.value.trim()
+  if (!text) return
+  composerText.value = ''
+  await sendTextMessage(text)
+}
+
+/** Sends a text to the open conversation, as a pending bubble first; whether it went. */
+async function sendTextMessage(raw: string): Promise<boolean> {
+  const text = raw.trim()
+  if (!text || !selected.value) return false
+  sendError.value = ''
   const channel = replyChannel.value
   const target = selected.value
-  composerText.value = ''
 
   const tempId = `pending-${Date.now()}`
   retryPayloads.value[tempId] = { kind: 'text', text, channel }
@@ -1179,7 +1351,7 @@ async function sendText() {
       notBefore: newestInThread(target.key),
     },
   ]
-  await performTextSend(tempId, text, channel, target)
+  return performTextSend(tempId, text, channel, target)
 }
 
 const MAX_MEDIA_BYTES = 16 * 1024 * 1024
@@ -1203,7 +1375,8 @@ async function performMediaSend(
       method: 'POST',
       body: {
         patientId: target.patientId ?? undefined,
-        phoneNumber: target.patientId ? undefined : target.phoneNumber,
+        leadId: target.patientId ? undefined : target.leadId ?? undefined,
+        phoneNumber: target.patientId || target.leadId ? undefined : target.phoneNumber,
         mediaBase64,
         mediaMimeType,
         mediaFilename,
@@ -1327,7 +1500,7 @@ function recordingLabel(secs: number) {
 // and a free-form reply is still allowed.
 const showReplyDraft = computed(() => {
   const sel = selected.value
-  return !!sel?.patientId && !sel.leadId && within24h.value && leadThreadsAreSeparate.value && thread.value.at(-1)?.direction === 'inbound'
+  return !!sel?.patientId && !sel.leadId && within24h.value && hasReceptionist.value && thread.value.at(-1)?.direction === 'inbound'
 })
 
 // Fullscreen viewer for tapping any image in the thread (mine or theirs) --
@@ -1530,6 +1703,15 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
           <button type="button" :class="chipClass(sourceFilter === 'leads')" :aria-pressed="sourceFilter === 'leads'" data-cy="inbox-chip-leads" @click="sourceFilter = sourceFilter === 'leads' ? 'all' : 'leads'">{{ t('Leads', 'Leads') }}</button>
         </template>
         <button type="button" :class="chipClass(replyFilter === 'awaiting_us')" :aria-pressed="replyFilter === 'awaiting_us'" data-cy="inbox-chip-awaiting" @click="replyFilter = replyFilter === 'awaiting_us' ? 'all' : 'awaiting_us'">{{ t('Awaiting us', 'Esperan respuesta') }}</button>
+        <!-- The receptionist's queues, only while there is something in them. -->
+        <button v-if="draftReadyCount || draftReadyOnly" type="button" :class="chipClass(draftReadyOnly)" :aria-pressed="draftReadyOnly" data-cy="inbox-chip-draft-ready" @click="draftReadyOnly = !draftReadyOnly">
+          {{ t('Draft ready', 'Borrador listo') }}
+          <span v-if="draftReadyCount" class="rounded-full bg-brand px-1.5 text-[11px] font-bold leading-[18px] text-white">{{ draftReadyCount }}</span>
+        </button>
+        <button v-if="needsHumanCount || needsHumanOnly" type="button" :class="chipClass(needsHumanOnly)" :aria-pressed="needsHumanOnly" data-cy="inbox-chip-needs-human" @click="needsHumanOnly = !needsHumanOnly">
+          {{ t('Needs human', 'Requiere persona') }}
+          <span v-if="needsHumanCount" class="rounded-full bg-warning-text px-1.5 text-[11px] font-bold leading-[18px] text-white">{{ needsHumanCount }}</span>
+        </button>
         <button
           v-for="l in labels"
           :key="l.id"
@@ -1656,7 +1838,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             <p class="truncate text-[13px]" :class="c.unread ? 'font-medium text-ink-800' : 'text-ink-muted2'">
               {{ c.lastMessage.direction === 'outbound' ? t('You: ', 'Tú: ') : '' }}{{ previewText(c.lastMessage) }}
             </p>
-            <div v-if="myLabelsByKey[c.key]?.length || c.followUp || c.snoozedUntil || c.leadId || assignments[c.key] || windowPill(c) || aiStateOf(c)" class="mt-1 flex flex-wrap items-center gap-1">
+            <div v-if="myLabelsByKey[c.key]?.length || c.followUp || c.snoozedUntil || c.leadId || assignments[c.key] || windowPill(c) || aiStateOf(c) || hasDraftOf(c)" class="mt-1 flex flex-wrap items-center gap-1">
               <span
                 v-if="windowPill(c)"
                 class="rounded-pill border px-1.5 py-px text-[10px] font-bold"
@@ -1664,6 +1846,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
                 data-cy="inbox-row-window"
               >{{ t('Expires in', 'Caduca en') }} {{ windowPill(c)!.left }}</span>
               <span v-if="c.leadId" class="rounded-pill border border-info-border bg-info-bg px-1.5 py-px text-[10px] font-bold text-info-text">{{ t('Lead', 'Lead') }}</span>
+              <span v-if="hasDraftOf(c)" class="rounded-pill border border-brand-tintBorder bg-brand-tint px-1.5 py-px text-[10px] font-bold text-brand-text" data-cy="inbox-row-draft-ready">{{ t('Draft ready', 'Borrador listo') }}</span>
               <span v-if="aiStateOf(c) === 'handling'" class="rounded-pill bg-brand px-1.5 py-px text-[10px] font-bold text-white" data-cy="inbox-row-ai-handling">{{ t('AI handling', 'IA gestionando') }}</span>
               <span v-else-if="aiStateOf(c) === 'needs_human'" class="rounded-pill border border-warning-border bg-warning-bg px-1.5 py-px text-[10px] font-bold text-warning-text" data-cy="inbox-row-needs-human">{{ t('Needs human', 'Requiere persona') }}</span>
               <span v-if="c.followUp" class="rounded-pill border border-warning-border bg-warning-bg px-1.5 py-px text-[10px] font-bold text-warning-text" data-cy="inbox-row-follow-up">{{ t('Follow up', 'Seguimiento') }}</span>
@@ -1772,6 +1955,32 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
       </div>
       </div>
 
+      <!-- Who is answering, as the web Inbox says it under the header: the
+           receptionist has it, a person took it over, or it handed this over
+           and is waiting for one of you. No settings links: the app has no
+           settings pages for the receptionist or the channel. -->
+      <InboxAiBanner
+        v-if="selected.leadId"
+        :state="selectedLeadAi?.aiState ?? 'none'"
+        kind="lead"
+        :taken-over-by="selectedLeadAi?.takenOverBy"
+        :reason="handoverReason"
+        :quiet="receptionistQuiet"
+        :links="false"
+        @take-over="onLeadTakeOver"
+        @hand-back="onLeadHandBack"
+        @mark-handled="onLeadMarkHandled"
+      />
+      <InboxAiBanner
+        v-else-if="selected.patientId && hasReceptionist && thread.length > 0"
+        :state="patientAiStates[selected.patientId] ?? 'none'"
+        kind="patient"
+        :reason="handoverReason"
+        :quiet="receptionistQuiet"
+        :links="false"
+        @mark-handled="onPatientMarkHandled"
+      />
+
       <div ref="messagesEl" class="flex-1 space-y-2.5 overflow-y-auto px-3 py-3">
         <div v-if="!threadReady" class="flex flex-col gap-2.5" data-cy="thread-loading">
           <div class="h-10 w-2/5 animate-pulse self-start rounded-card bg-surface-subtle" />
@@ -1877,13 +2086,28 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             :patient-id="selected.patientId"
             :draft-for="(id: string) => authedFetch<{ available: boolean; draft: string; refused?: boolean }>(`/api/inbox/patients/${id}/draft-reply`, { method: 'POST' })"
             :sending="sending"
+            :stored="storedReplyDraft(selected.patientId)"
             @send="sendDraft"
             @edit="(text: string) => (composerText = text)"
           />
         </div>
+        <!-- The receptionist's draft for a lead, waiting on a person: the
+             same card a patient's waits in. Nothing reaches anyone unread. -->
+        <div v-if="leadDraft && selected.leadId && !noteMode" class="mb-2" data-cy="lead-draft">
+          <InboxAiDraftCard :draft="leadDraft.body" :at="leadDraft.at" :sending="sending" size="lg" @approve="approveLeadDraft" @discard="discardLeadDraft" />
+        </div>
         <InboxNoteComposer v-if="noteMode" size="lg" :team="teamNames" :my-id="teamMemberId" :saving="noteSaving" :error="noteError" @save="saveNote" @cancel="noteMode = false" />
         <p v-if="sendError && !noteMode" class="mb-2 text-[12.5px] text-danger-text">{{ sendError }}</p>
         <template v-if="noteMode || !threadReady" />
+        <!-- The composer opens only once a person has taken a lead's thread
+             off the AI, as on the web (InboxLeadThread). -->
+        <div v-else-if="selected.leadId && leadComposerLocked" class="flex flex-wrap items-center justify-between gap-3 rounded-ctl border border-line-control bg-surface-subtle px-3 py-2.5" data-cy="inbox-composer-locked">
+          <span class="text-[12.5px] text-ink-muted">{{ t('Composer locked while the AI is replying. Take over to write yourself.', 'Redacción bloqueada mientras responde la IA. Toma el control para escribir tú.') }}</span>
+          <UiBtn variant="secondary" size="sm" class="h-10" data-cy="inbox-take-over" @click="onLeadTakeOver">{{ t('Take over', 'Tomar el control') }}</UiBtn>
+        </div>
+        <div v-else-if="selected.leadId && leadChannelBlocked" class="rounded-ctl border border-danger-border bg-danger-bg px-3 py-2 text-[12.5px] text-danger-text" data-cy="inbox-channel-blocked">
+          {{ t('Nothing can be sent until the number is reconnected.', 'No se puede enviar nada hasta reconectar el número.') }}
+        </div>
         <div v-else-if="thread.length === 0 || !within24h" class="rounded-ctl border border-warning-border bg-warning-bg px-3 py-2 text-[12.5px] text-warning-text" data-cy="inbox-window-closed">
           <p>
             {{
@@ -2065,8 +2289,8 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
       </div>
     </div>
     </Teleport>
-    <div v-if="snoozeNotice" class="pointer-events-none absolute inset-x-0 bottom-20 z-50 flex justify-center px-4" role="status" data-cy="inbox-snooze-notice">
-      <p class="rounded-full bg-ink-900 px-4 py-2 text-[13px] font-medium text-surface shadow-popover">{{ snoozeNotice }}</p>
+    <div v-if="notice" class="pointer-events-none absolute inset-x-0 bottom-20 z-50 flex justify-center px-4" role="status" data-cy="inbox-snooze-notice">
+      <p class="rounded-full bg-ink-900 px-4 py-2 text-[13px] font-medium text-surface shadow-popover">{{ notice }}</p>
     </div>
   </div>
 </template>

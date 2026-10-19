@@ -241,9 +241,9 @@ describe('Growth in the shared Inbox', () => {
       cy.intercept('DELETE', '**/draft-reply').as('clearDraft')
       cy.contains('[data-test="lead-row"]', 'Edit Before Send').click()
 
-      cy.get('[data-test="edit-lead-draft-start"]').click()
-      cy.get('[data-test="edit-lead-draft"]').clear().type('Te escribimos mañana por la mañana.')
-      cy.get('[data-test="approve-lead-draft"]').click()
+      cy.get('[data-test="ai-draft-edit"]').click()
+      cy.get('[data-test="ai-draft-textarea"]').clear().type('Te escribimos mañana por la mañana.')
+      cy.get('[data-test="ai-draft-approve"]').click()
 
       cy.wait('@send').its('request.body').should('deep.equal', {
         leadId,
@@ -271,7 +271,7 @@ describe('Growth in the shared Inbox', () => {
       cy.intercept('POST', '/api/whatsapp/inbox-send').as('send')
       cy.contains('[data-test="lead-row"]', 'Discard Me').click()
 
-      cy.get('[data-test="discard-lead-draft"]').click()
+      cy.get('[data-test="ai-draft-discard"]').click()
       cy.get('[data-test="lead-draft"]').should('not.exist')
 
       cy.task('db:leadDraft', { id: leadId }).should((row) => {
@@ -729,5 +729,113 @@ describe('Growth in the shared Inbox', () => {
 
     cy.contains('[data-cy=inbox-row]', 'Ana Answered').find('[data-cy=inbox-row-ai-handling]').should('be.visible')
     cy.contains('[data-cy=inbox-row]', 'Bea Staffed').find('[data-cy=inbox-row-ai-handling]').should('not.exist')
+  })
+})
+
+// What a person sees when the receptionist stops, and how they clear it. A
+// lead handed over used to stay "Needs human" for ever, with no reason on
+// screen and nothing to press; a patient's conversation had no banner at all.
+describe('Handovers and the receptionist in the Inbox', () => {
+  let account: SeededAccount
+
+  beforeEach(() => {
+    cy.seedStaffAccount().then((seeded) => {
+      account = seeded as SeededAccount
+      cy.login(account.email, account.password)
+      cy.task('db:setReceptionistEnabled', { accountId: account.accountId, enabled: true })
+    })
+  })
+
+  it('says why a lead was handed over, and lets a person hand it back', () => {
+    cy.visit('/inbox?growth=1')
+    seedConversation(account, 'Handed Over Lead', 'needs_human').then((leadId) => {
+      cy.task('db:createReceptionistNote', { accountId: account.accountId, conversationKey: `lead:${leadId}`, body: 'He pasado esta conversación a una persona. Motivo: Quiere hablar con el quiropráctico.' })
+      cy.reload()
+      cy.contains('[data-test="lead-row"]', 'Handed Over Lead').should('contain', 'Needs human').click()
+
+      cy.get('[data-test="ai-banner"][data-state="needs_human"]').should('be.visible')
+      cy.get('[data-test="ai-banner-reason"]').should('contain', 'Quiere hablar con el quiropráctico').and('not.contain', 'He pasado')
+      // The composer is open: there is nobody to take over from.
+      cy.get('[data-test="lead-composer"]').should('be.visible')
+
+      // Handed back: the AI's again.
+      cy.get('[data-test="ai-banner"] [data-test="hand-back"]').click()
+      cy.get('[data-test="ai-banner"][data-state="handling"]').should('be.visible')
+      cy.task('db:leadAiState', { id: leadId }).should((row) => {
+        expect((row as { ai_state: string }).ai_state).to.eq('handling')
+      })
+    })
+  })
+
+  it('clears "Needs human" once a person marks a lead handled', () => {
+    cy.visit('/inbox?growth=1')
+    seedConversation(account, 'Dealt With Lead', 'needs_human').then((leadId) => {
+      cy.reload()
+      cy.contains('[data-test="lead-row"]', 'Dealt With Lead').click()
+      cy.get('[data-test="ai-banner"] [data-test="mark-handled"]').click()
+      cy.get('[data-test="ai-banner"]').should('not.exist')
+      cy.contains('[data-test="lead-row"]', 'Dealt With Lead').should('not.contain', 'Needs human')
+      cy.task('db:leadAiState', { id: leadId }).should((row) => {
+        expect((row as { ai_state: string }).ai_state).to.eq('none')
+      })
+    })
+  })
+
+  it("shows a patient's handover in the same banner, and clears it the same way", () => {
+    cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Paciente', lastName: 'Traspasada' }).then((patient) => {
+      cy.task('db:createPatientAppMessage', { accountId: account.accountId, patientId: patient.id, direction: 'inbound', body: 'Quiero cancelar mi cita' })
+      cy.task('db:setPatientHandedOver', { accountId: account.accountId, patientId: patient.id })
+      cy.task('db:createReceptionistNote', { accountId: account.accountId, conversationKey: patient.id, body: 'He pasado esta conversación a una persona. Motivo: Quiere cancelar una cita.' })
+      cy.visit('/inbox?growth=1')
+      cy.contains('[data-cy=inbox-row]', 'Paciente Traspasada').find('[data-cy=inbox-row-needs-human]').should('be.visible')
+      // And the chip that means somebody has work waiting.
+      cy.get('[data-test="filter-needs-human-chip"]').should('contain', '1')
+
+      cy.contains('[data-cy=inbox-row]', 'Paciente Traspasada').click()
+      cy.get('[data-test="ai-banner"][data-state="needs_human"]').should('be.visible')
+      cy.get('[data-test="ai-banner-reason"]').should('contain', 'Quiere cancelar una cita')
+      // A patient's thread has no AI to hand back to by name: a person's
+      // reply is what pauses it, so only "handled" is offered.
+      cy.get('[data-test="ai-banner"] [data-test="hand-back"]').should('not.exist')
+      cy.get('[data-test="ai-banner"] [data-test="mark-handled"]').click()
+      cy.get('[data-test="ai-banner"][data-state="needs_human"]').should('not.exist')
+      cy.task('db:patientHandedOverAt', { patientId: patient.id }).should('be.null')
+      cy.get('[data-test="filter-needs-human-chip"]').should('not.exist')
+    })
+  })
+
+  it("counts a patient's waiting draft as a draft ready, and shows it in the same card as a lead's", () => {
+    cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Paciente', lastName: 'Con Borrador' }).then((patient) => {
+      cy.task('db:createPatientAppMessage', { accountId: account.accountId, patientId: patient.id, direction: 'inbound', body: '¿Tenéis hueco el jueves?' })
+      cy.task('db:createStoredReplyDraft', { accountId: account.accountId, patientId: patient.id, body: 'Sí, el jueves a las 17:00 tenemos hueco.' })
+      cy.visit('/inbox?growth=1')
+      cy.contains('[data-cy=inbox-row]', 'Paciente Con Borrador').find('[data-test="draft-ready-badge"]').should('be.visible')
+      cy.get('[data-test="filter-draft-ready"]').should('contain', '1').click()
+      cy.contains('[data-cy=inbox-row]', 'Paciente Con Borrador').should('be.visible').click()
+
+      cy.get('[data-test="ai-draft"]').within(() => {
+        cy.contains('Drafted by the receptionist · needs your approval').should('be.visible')
+        cy.contains('Sí, el jueves a las 17:00 tenemos hueco.').should('be.visible')
+        cy.contains('Nothing sends without your approval').should('be.visible')
+      })
+    })
+  })
+
+  it('says in the thread when the receptionist is off, and when it has hit its monthly limit', () => {
+    cy.visit('/inbox?growth=1')
+    seedConversation(account, 'Quiet Lead', 'none').then(() => {
+      cy.task('db:setReceptionistEnabled', { accountId: account.accountId, enabled: false })
+      cy.reload()
+      cy.contains('[data-test="lead-row"]', 'Quiet Lead').click()
+      cy.get('[data-test="ai-quiet"][data-why="off"]').should('contain', 'switched off')
+
+      cy.task('db:setReceptionistEnabled', { accountId: account.accountId, enabled: true })
+      cy.task('db:seedReceptionistReplies', { accountId: account.accountId, count: 120 })
+      cy.request({ method: 'PUT', url: '/api/growth/receptionist/config', body: { monthlyReplyLimit: 100 } }).its('status').should('eq', 200)
+      cy.reload()
+      cy.contains('[data-test="lead-row"]', 'Quiet Lead').click()
+      cy.get('[data-test="ai-quiet"][data-why="limit"]').should('contain', 'monthly reply limit')
+      cy.get('[data-test="ai-quiet"] a').should('have.attr', 'href', '/growth/receptionist')
+    })
   })
 })

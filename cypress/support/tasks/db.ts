@@ -1969,6 +1969,39 @@ async function createStoredReplyDraft(opts: { accountId: string; patientId: stri
   return null
 }
 
+// A note the receptionist left in a conversation (receptionistSend.ts,
+// noteInConversation): no author, worded as it words them. What the
+// receptionist's Overview reads back.
+async function createReceptionistNote(opts: { accountId: string; conversationKey: string; body: string; createdAt?: string }) {
+  return unwrap(
+    await admin
+      .from('inbox_notes')
+      .insert({ account_id: opts.accountId, conversation_key: opts.conversationKey, author_id: null, body: opts.body, mentions: [], ...(opts.createdAt ? { created_at: opts.createdAt } : {}) })
+      .select('id')
+      .single(),
+  )
+}
+
+// The receptionist handed a patient's conversation to a person
+// (patientReplyDraft.ts): the row that keeps it quiet there until someone
+// from the clinic writes or clears it.
+async function setPatientHandedOver(opts: { accountId: string; patientId: string; at?: string | null }) {
+  const at = opts.at === null ? null : (opts.at ?? new Date().toISOString())
+  unwrap(
+    await admin
+      .from('inbox_reply_drafts')
+      .upsert({ account_id: opts.accountId, conversation_key: opts.patientId, body: '-', drafted_through_at: new Date().toISOString(), dismissed_at: new Date().toISOString(), handed_over_at: at })
+      .select('conversation_key')
+      .single(),
+  )
+  return null
+}
+
+async function patientHandedOverAt(opts: { patientId: string }) {
+  const { data } = await admin.from('inbox_reply_drafts').select('handed_over_at').eq('conversation_key', opts.patientId).maybeSingle()
+  return data?.handed_over_at ?? null
+}
+
 async function storedReplyDraft(opts: { patientId: string }) {
   const { data } = await admin.from('inbox_reply_drafts').select('body, dismissed_at').eq('conversation_key', opts.patientId).maybeSingle()
   return data ?? null
@@ -4237,6 +4270,9 @@ export const dbTasks = {
   'db:holdReceptionistLease': holdReceptionistLease,
   'db:receptionistLease': receptionistLease,
   'db:createStoredReplyDraft': createStoredReplyDraft,
+  'db:setPatientHandedOver': setPatientHandedOver,
+  'db:patientHandedOverAt': patientHandedOverAt,
+  'db:createReceptionistNote': createReceptionistNote,
   'db:storedReplyDraft': storedReplyDraft,
   'db:seedWhatsappReplyScenario': seedWhatsappReplyScenario,
   'db:createAppointment': createAppointment,

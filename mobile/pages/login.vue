@@ -7,6 +7,7 @@ const email = ref('')
 const password = ref('')
 const error = ref('')
 const loading = ref(false)
+const isStaffOnly = useStaffOnlyCheck()
 
 // One sign-in serves both sides in the app; which one this device is on is
 // whatever /join left behind. A stored clinic code means a patient (the
@@ -75,6 +76,24 @@ async function onSubmit() {
   if (signInError) {
     error.value = authErrorMessage(signInError)
     return
+  }
+  // The patient side is for patients. A staff account signed in here used to
+  // land on its staff tabs regardless (pages/index.vue routes by identity,
+  // not by door), so the door the person chose meant nothing. Refuse it and
+  // point at the team side; useStaffOnlyCheck explains the checks.
+  if (side.value === 'patient') {
+    loading.value = true
+    const staffOnly = await isStaffOnly()
+    if (staffOnly) {
+      await supabase.auth.signOut({ scope: 'local' })
+      loading.value = false
+      error.value = t(
+        "This is a clinic team account. Choose \"Clinic team\" above to sign in.",
+        'Esta es una cuenta del equipo de la clínica. Elige arriba «Equipo de la clínica» para entrar.',
+      )
+      return
+    }
+    loading.value = false
   }
   // Blur explicitly and give the keyboard-dismiss animation a beat to finish
   // before the route change -- navigating while it's still mid-resize can

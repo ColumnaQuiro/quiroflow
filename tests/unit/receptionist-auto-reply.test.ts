@@ -118,8 +118,9 @@ describe('A reply that is sent as it is', () => {
     expect(prompt).toContain('unless book_appointment has just confirmed it in this reply')
     expect(prompt).toContain('move it with book_appointment (move_visit_on')
     expect(prompt).not.toContain('a colleague books it')
-    // Never cancels.
-    expect(prompt).toContain('If they ask to cancel, say your colleague will take care of it.')
+    // Cancels only after asking about moving it, and says so only once it confirms.
+    expect(prompt).toContain('cancel it with cancel_appointment')
+    expect(prompt).toContain('nor that one is cancelled unless cancel_appointment has')
   })
 
   // Offered "martes 20 a las 10:00 o miércoles 21 a las 16:00", "Miércoles 21"

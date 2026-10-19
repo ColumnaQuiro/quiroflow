@@ -138,8 +138,8 @@ export function buildPatientReplyPrompt(
       ? receptionistBookingSection({ availability, slotsPerReply: config.slotsPerReply, bookingWindowDays: config.bookingWindowDays, searchTool: opts.searchTool && Boolean(availability), withWhom: opts.calendar.withWhom })
       : '',
     opts.canBook
-      ? `Never say a visit is booked or moved unless book_appointment has just confirmed it in this reply, and never that one is cancelled, or that a payment was received or a refund made. If they ask to cancel, say your colleague will take care of it.`
-      : `You must NEVER state that a visit is booked, moved, cancelled or confirmed, or that a payment was received or a refund made. A member of staff does those. If they ask to book or move a visit, offer times and say you are passing it on, and that they will get a confirmation; if they ask to cancel, say your colleague will take care of it.`,
+      ? `Never say a visit is booked or moved unless book_appointment has just confirmed it in this reply, nor that one is cancelled unless cancel_appointment has, and never that a payment was received or a refund made.`
+      : `You must NEVER state that a visit is booked, moved, cancelled or confirmed, or that a payment was received or a refund made. A member of staff does those. If they ask to book or move a visit, offer times and say you are passing it on, and that they will get a confirmation; if they want to cancel, follow "Moving a visit they already have".`,
     `Only mention an amount owed if they ask about money or payment, and then only exactly as given above.`,
     opts.canWaitlist ? WAITLIST_SECTION : '',
     // Last, so nothing above can be read as overriding it.

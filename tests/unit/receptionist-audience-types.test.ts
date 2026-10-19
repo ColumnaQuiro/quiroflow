@@ -63,13 +63,21 @@ describe('Receptionist types by audience', () => {
     expect(offeredTypesSection([first])).not.toContain('Oferta')
   })
 
-  // Moving a visit keeps its type; cancelling stays with a person.
-  it('moves a booked visit to a new time of the same type, and leaves cancelling to a colleague', () => {
+  // Moving a visit keeps its type. Someone who cannot come is asked about
+  // moving it first; only then is it cancelled -- by a colleague, or by the
+  // receptionist itself when it may book.
+  it('moves a booked visit to a new time of the same type, and asks about moving it before cancelling', () => {
     const visits = [{ startsAt: '2026-10-20T08:00:00Z', typeName: 'Ajuste' }]
     const section = rescheduleSection(visits, 'Europe/Madrid', { listVisits: true })
     expect(section).toContain('Tuesday 20 October at 10:00 (Ajuste)')
     expect(section).toContain('that same type of appointment')
-    expect(section).toContain('If they want to cancel it, or say they cannot come, say your colleague will take care of it: never ask whether to cancel it')
+    expect(section).toContain('first ask whether they would like to move it to another day')
+    expect(section).toContain('say your colleague will cancel it')
+    expect(section).not.toContain('cancel_appointment')
+    const booking = rescheduleSection(visits, 'Europe/Madrid', { listVisits: true, canBook: true })
+    expect(booking).toContain('first ask whether they would like to move it to another day')
+    expect(booking).toContain('cancel it with cancel_appointment')
+    expect(booking).toContain('never left booked')
     expect(rescheduleSection(visits, 'Europe/Madrid', { listVisits: false })).not.toContain('(Ajuste)')
     expect(rescheduleSection([], 'Europe/Madrid', { listVisits: true })).toBe('')
   })

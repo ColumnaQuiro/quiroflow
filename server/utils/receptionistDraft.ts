@@ -2,7 +2,7 @@ import type { H3Event } from 'h3'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
 import { overMonthlyLimit, recordReceptionistReply } from '~/server/utils/receptionistUsage'
 import { announceHandover, noteInConversation, sendAsReceptionist } from '~/server/utils/receptionistSend'
-import { bookingTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
+import { bookingTool, cancelTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
 import { recentImages, withImages } from '~/server/utils/receptionistImages'
 import { historyLine } from '~/utils/receptionistHistory'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage } from '~/utils/receptionistAutoReply'
@@ -225,6 +225,7 @@ export async function draftLeadReply(
       : null
   const book = actions ? bookingTool(actions) : null
   const waitlist = actions ? waitlistTool(actions) : null
+  const cancel = actions ? cancelTool(actions) : null
   // What they sent since the clinic last wrote, pictures included.
   const images = await recentImages(calendarClient, ordered.slice(lastOutbound + 1))
 
@@ -241,6 +242,7 @@ export async function draftLeadReply(
     handOver: sends,
     book,
     waitlist,
+    cancel,
     maxTimesPerReply: config.slotsPerReply,
     internalNotes: internalNotes(config),
     logLabel: `lead ${leadId}`,

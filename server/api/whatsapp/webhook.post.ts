@@ -3,13 +3,12 @@ import type { Database } from '~/types/database.types'
 import { inboundNonTextBody, skipReaction, type InboundNonTextMessage } from '~/utils/whatsappInbound'
 import { downloadMetaMedia, extensionForMimeType, type MediaKind } from '~/server/utils/whatsappSend'
 import { notifyInboxTeamMembers } from '~/server/utils/pushNotifications'
-import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
-import { automationEvent, dispatchPatientRule } from '~/server/utils/automationEngine'
+import { automationEvent } from '~/server/utils/automationEngine'
 import type { InstagramMessagingEvent } from '~/server/utils/instagramWebhook'
 import { leadForWhatsAppSender } from '~/server/utils/whatsappLeads'
 import { receptionistDraftsFor } from '~/server/utils/receptionist'
 import { findLeadIdByPhone, findPatientIdsByPhone, pickInboundPatientId } from '~/server/utils/whatsappOwner'
-import { offerCancelledSlotIfAutomatic } from '~/server/utils/waitlistOffer'
+import { afterUnattendedCancellation } from '~/server/utils/unattendedCancellation'
 import { applyRecallReply } from '~/server/utils/recallReplies'
 import { recallReplyIntent } from '~/utils/recallReply'
 
@@ -563,35 +562,10 @@ export default defineEventHandler(async (event) => {
               // dialog elsewhere, not something to apply automatically off
               // an inbound message).
               await supabase.from('appointments').update({ status: 'cancelled' }).eq('id', appt.id)
-              await pushAppointmentEvent(supabase, appt.id, 'cancelled')
-              // No staff session on a Meta webhook call, so this can't go
-              // through fire.post.ts (requireTeamMember-gated) -- same
-              // direct-call pattern as birthday-cron.post.ts.
-              const { data: patient } = await supabase
-                .from('patients')
-                .select('id, first_name, last_name, email, is_minor, do_not_contact, marketing_channels')
-                .eq('id', appt.patient_id)
-                .maybeSingle()
-              if (patient) {
-                const { data: rules } = await supabase
-                  .from('automation_rules')
-                  .select('id, filters')
-                  .eq('account_id', account.id)
-                  .eq('trigger_event', 'appointment.cancelled')
-                  .eq('enabled', true)
-                const origin = getRequestURL(event).origin
-                for (const rule of rules ?? []) {
-                  if (!(await ruleFiltersMatch(supabase, patient.id, rule.filters as AutomationFilters, appt.id))) continue
-                  await dispatchPatientRule(supabase, supabase, account.id, rule.id, patient, origin, appt.id, {
-                    triggerEvent: 'appointment.cancelled',
-                    patientId: patient.id,
-                    appointmentId: appt.id,
-                  })
-                }
-              }
-              // The freed slot, to the waitlist, when the clinic offers them
+              // The practitioner told, appointment.cancelled automations, and
+              // the freed slot to the waitlist when the clinic offers them
               // automatically (accounts.waitlist_auto_offer).
-              await offerCancelledSlotIfAutomatic(supabase, getRequestURL(event).origin, appt.id)
+              await afterUnattendedCancellation(supabase, getRequestURL(event).origin, account.id, appt.id, appt.patient_id)
             } else {
               await supabase.from('appointments').update({ confirmation_status: intent }).eq('id', appt.id)
             }

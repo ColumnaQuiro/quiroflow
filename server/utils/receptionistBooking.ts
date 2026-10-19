@@ -8,6 +8,7 @@ import { resolveWindow, saveAppointmentIfFree } from '~/server/utils/publicApiAp
 import { automationEvent } from '~/server/utils/automationEngine'
 import { pushAppointmentEvent } from '~/server/utils/staffPush'
 import { claimAutomaticConfirmation, sendAppointmentConfirmation } from '~/server/utils/appointmentNotifications'
+import { afterUnattendedCancellation } from '~/server/utils/unattendedCancellation'
 import { receptionistServiceClient } from '~/server/utils/receptionistAudit'
 import { clinicDateOf, startOfLocalDate, wallClockToUtc } from '~/utils/clinicClock'
 import { newPatientDetails } from '~/utils/receptionistTypes'
@@ -39,6 +40,12 @@ import { newPatientDetails } from '~/utils/receptionistTypes'
 //
 // One booking or move per reply. A second call in the same reply is refused:
 // a model that books twice for one "yes" is a model to stop.
+//
+// It also cancels (cancel_appointment), on the same terms, a visit the
+// patient has said they will not come to and does not want moved -- the
+// prompt has it ask about moving it first (rescheduleSection). Only one of
+// their own booked visits, never one already under way, and with the same
+// note in the conversation a booking leaves.
 
 type Supa = SupabaseClient<Database>
 
@@ -78,6 +85,21 @@ export const ADD_TO_WAITLIST: Anthropic.Tool = {
   },
 }
 
+export const CANCEL_APPOINTMENT: Anthropic.Tool = {
+  name: 'cancel_appointment',
+  description:
+    'Cancels a visit they already have. Call it only once you have asked whether they would like to move it to another day and they have said they do not -- they want it cancelled -- or they had already said so. Only after it confirms may you tell them it is cancelled.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      visit_on: { type: 'string', description: 'The visit to cancel: its current day and time, as "YYYY-MM-DD HH:MM".' },
+      reason: { type: 'string', description: 'For your colleagues, in a few words in the clinic\'s language: why, as they said it ("no puede venir y no quiere cambiarla").' },
+    },
+    required: ['visit_on', 'reason'],
+    additionalProperties: false,
+  },
+}
+
 export interface BookingContext {
   event: H3Event
   /** Reads (the calendar, the lead, the patient). Writes use receptionistServiceClient. */
@@ -92,7 +114,7 @@ export interface BookingContext {
   /** A returning patient's own practitioner(s); null for anyone. */
   practitionerIds: string[] | null
   person: { kind: 'lead'; leadId: string; patientId: string | null } | { kind: 'patient'; patientId: string }
-  /** Told what was booked or moved, in words, to note it in the conversation. */
+  /** Told what was booked, moved or cancelled, in words, to note it in the conversation. */
   onBooked: (summary: string) => Promise<void>
 }
 
@@ -305,6 +327,64 @@ export function waitlistTool(ctx: BookingContext): (input: unknown) => Promise<T
       console.error('[receptionist] after waitlist:', (err as Error)?.message ?? err)
     }
     return { content: `On the waiting list for ${type.name} (${preference}). Tell them the clinic will let them know if a time that suits them frees up; do not promise one.`, isError: false }
+  }
+}
+
+/**
+ * cancel_appointment for one person in one reply: one of their booked visits,
+ * by its current time, set to cancelled -- as the calendar's Cancel and a
+ * WhatsApp "Cancelar" do, kept in their history, never deleted. No fee: that
+ * is a person's call, and the note says nothing was charged. A cancelled
+ * visit leaves ctx.booked, so book_appointment cannot then "move" it.
+ */
+export function cancelTool(ctx: BookingContext): (input: unknown) => Promise<ToolResult> {
+  return async (input) => {
+    const value = (input ?? {}) as { visit_on?: unknown; reason?: unknown }
+    const wanted = typeof value.visit_on === 'string' ? value.visit_on.trim().replace('T', ' ') : ''
+    const reason = typeof value.reason === 'string' ? value.reason.replace(/\s+/g, ' ').trim().slice(0, 300) : ''
+    const visit = ctx.booked.appointments.find((a) => localStamp(a.startsAt, ctx.timeZone) === wanted) ?? null
+    if (!visit) {
+      const theirs = ctx.booked.appointments.map((a) => localStamp(a.startsAt, ctx.timeZone)).join(', ')
+      return { content: `They have no booked visit at ${wanted || '(no time given)'}. Their visits: ${theirs || 'none'}.`, isError: true }
+    }
+    if (new Date(visit.startsAt).getTime() <= Date.now()) {
+      return { content: 'That visit has already started. Call hand_over_to_colleague; do not say it is cancelled.', isError: true }
+    }
+
+    const writer = receptionistServiceClient(ctx.event) as unknown as Supa
+    // Only a visit still booked: one a colleague has just cancelled or
+    // completed is not cancelled twice, nor told to everyone again.
+    const { data: changed, error } = await writer
+      .from('appointments')
+      .update({ status: 'cancelled' } as never)
+      .eq('id', visit.id)
+      .eq('account_id', ctx.accountId)
+      .eq('status', 'booked')
+      .select('id')
+    if (error || !(changed ?? []).length) {
+      if (error) console.error('[receptionist] cancel refused:', error.message)
+      return { content: 'The visit could not be cancelled. Call hand_over_to_colleague saying which visit they want cancelled; do not say it is cancelled.', isError: true }
+    }
+    ctx.booked = { ...ctx.booked, appointments: ctx.booked.appointments.filter((a) => a.id !== visit.id) }
+    console.info(`[receptionist] cancelled appointment ${visit.id} (account ${ctx.accountId})`)
+
+    const typeName = ctx.booked.types.find((t) => t.id === visit.typeId)?.name ?? 'cita'
+    const { data: practitioner } = visit.practitionerId
+      ? await ctx.service.from('team_members').select('full_name').eq('id', visit.practitionerId).maybeSingle()
+      : { data: null }
+    const practitionerName = (practitioner as { full_name: string | null } | null)?.full_name ?? null
+    const when = new Date(visit.startsAt).toLocaleString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: ctx.timeZone })
+    try {
+      await ctx.onBooked(`He anulado su ${typeName} del ${when}${practitionerName ? ` con ${practitionerName}` : ''}. Motivo: ${reason || 'no puede venir y no quiere cambiarla'}. No se ha cobrado nada.`)
+    } catch (err) {
+      console.error('[receptionist] after cancelling:', (err as Error)?.message ?? err)
+    }
+    const { data: row } = await ctx.service.from('appointments').select('patient_id').eq('id', visit.id).maybeSingle()
+    const patientId = (row as { patient_id: string } | null)?.patient_id
+    if (patientId) await afterUnattendedCancellation(ctx.service, getRequestURL(ctx.event).origin, ctx.accountId, visit.id, patientId)
+
+    const whenEn = new Date(visit.startsAt).toLocaleString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: ctx.timeZone })
+    return { content: `Cancelled: ${typeName}, ${whenEn}. Tell them it is cancelled, with the day and time in words; their other visits stay as they are.`, isError: false }
   }
 }
 

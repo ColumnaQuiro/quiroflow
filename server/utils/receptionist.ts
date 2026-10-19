@@ -591,7 +591,7 @@ export function buildSystemPrompt(
     // The single most important line in this prompt. When it can book, what
     // it may say is held to what book_appointment actually did.
     opts.canBook
-      ? `Never say an appointment is booked, moved or confirmed unless book_appointment has just confirmed it in this reply. Never cancel anything.`
+      ? `Never say an appointment is booked, moved or confirmed unless book_appointment has just confirmed it in this reply, nor that one is cancelled unless cancel_appointment has.`
       : `You must NEVER state that an appointment is booked, confirmed or reserved. A member of staff or the booking system confirms them${availability ? ', and a listed time can be taken before then' : ''}. ${availability ? 'If the patient accepts a time, say you are passing it on and that they will get a confirmation.' : 'Once the patient has said when suits them, say you are passing it on and that they will get a confirmation.'}`,
     opts.canWaitlist ? WAITLIST_SECTION : '',
     // Flattened by promptSafeName: the name is whatever the person typed into

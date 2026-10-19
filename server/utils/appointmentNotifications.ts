@@ -1,5 +1,6 @@
 import { toE164 } from '~/utils/phone'
 import { onlineBookingAlert } from '~/utils/onlineBookingAlert'
+import { templateDateParts } from '~/utils/templateDate'
 import { sendResendEmail } from './resend'
 import { sendWhatsAppTemplate, sendWhatsAppText } from './whatsappSend'
 import { sendPushToPatients } from './pushNotifications'
@@ -170,10 +171,9 @@ export async function resolveTemplateVariant(
 // an empty string, so a slot beyond what we have -- or one whose real value
 // is empty, e.g. an appointment with no practitioner assigned -- falls back
 // to the patient's first name rather than '' to keep the send from failing.
-function resolveWhatsAppVariables(bodyText: string, ctx: AppointmentContext): string[] {
-  const start = new Date(ctx.startsAt)
-  const dateOnly = start.toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', timeZone: ctx.clinicTimezone })
-  const timeOnly = start.toLocaleString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: ctx.clinicTimezone })
+// Date and time are written in the variant's own language (templateDate.ts).
+function resolveWhatsAppVariables(bodyText: string, ctx: AppointmentContext, language: string): string[] {
+  const { date: dateOnly, time: timeOnly } = templateDateParts(ctx.startsAt, language, ctx.clinicTimezone)
   const guesses = [ctx.patientFirstName, dateOnly, timeOnly, ctx.appointmentTypeName, ctx.practitionerName]
   const slots = new Set<string>()
   for (const m of bodyText.matchAll(/\{\{(\d+)\}\}/g)) slots.add(m[1])
@@ -184,10 +184,8 @@ function resolveWhatsAppVariables(bodyText: string, ctx: AppointmentContext): st
 // but for the staff-facing "new online booking" notification -- patient
 // name/phone first since that's what staff actually need to act on it,
 // then when/with whom.
-function resolveStaffNotifyVariables(bodyText: string, ctx: AppointmentContext, patientName: string): string[] {
-  const start = new Date(ctx.startsAt)
-  const dateOnly = start.toLocaleString('es-ES', { day: 'numeric', month: 'long', year: 'numeric', timeZone: ctx.clinicTimezone })
-  const timeOnly = start.toLocaleString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: ctx.clinicTimezone })
+function resolveStaffNotifyVariables(bodyText: string, ctx: AppointmentContext, patientName: string, language: string): string[] {
+  const { date: dateOnly, time: timeOnly } = templateDateParts(ctx.startsAt, language, ctx.clinicTimezone)
   const guesses = [patientName, ctx.patientPhone ?? '', dateOnly, timeOnly, ctx.practitionerName, ctx.appointmentTypeName]
   const slots = new Set<string>()
   for (const m of bodyText.matchAll(/\{\{(\d+)\}\}/g)) slots.add(m[1])
@@ -230,7 +228,7 @@ async function sendWhatsApp(
     // Best-effort: fall back to the account's stored default language/variable
     // count (1 slot, first_name) rather than failing the send outright.
   }
-  const variables = resolveWhatsAppVariables(bodyText, ctx)
+  const variables = resolveWhatsAppVariables(bodyText, ctx, resolvedLanguage)
 
   let wamid: string | null = null
   let status = 'sent'
@@ -514,16 +512,19 @@ export async function notifyStaffOfOnlineBooking(supabase: any, accountId: strin
         // A template send works regardless of the 24h free-form window --
         // the free-text send below only reaches the clinic if that number
         // has messaged the WhatsApp business number recently.
-        const templateLanguage = account.online_booking_notify_whatsapp_template_language ?? 'es'
+        let templateLanguage = account.online_booking_notify_whatsapp_template_language ?? 'es'
         let bodyText = ''
         try {
           const variant = await resolveTemplateVariant(account.whatsapp_business_account_id ?? '', account.whatsapp_access_token, account.online_booking_notify_whatsapp_template_name, templateLanguage, null)
-          if (variant) bodyText = variant.bodyText
+          if (variant) {
+            bodyText = variant.bodyText
+            templateLanguage = variant.language
+          }
         } catch {
           // Best-effort: bodyText stays '', so no {{n}} placeholders are
           // detected below and the template sends with no body variables.
         }
-        await sendWhatsAppTemplate(whatsappAccount, account.online_booking_notify_whatsapp, account.online_booking_notify_whatsapp_template_name, templateLanguage, resolveStaffNotifyVariables(bodyText, ctx, patientName))
+        await sendWhatsAppTemplate(whatsappAccount, account.online_booking_notify_whatsapp, account.online_booking_notify_whatsapp_template_name, templateLanguage, resolveStaffNotifyVariables(bodyText, ctx, patientName, templateLanguage))
       } else {
         await sendWhatsAppText(whatsappAccount, account.online_booking_notify_whatsapp, summary)
       }

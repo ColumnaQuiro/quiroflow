@@ -5,9 +5,8 @@ import type { Database } from '~/types/database.types'
 import { loadReceptionistCalendar, type BookedAppointment, type OfferedType, type ReceptionistConfig } from '~/server/utils/receptionist'
 import { claimConvertedLead, createPatientFromLead, findLikelyExistingPatients } from '~/server/utils/leadConversion'
 import { resolveWindow, saveAppointmentIfFree } from '~/server/utils/publicApiAppointments'
-import { automationEvent, dispatchPatientRule } from '~/server/utils/automationEngine'
-import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
-import { offerCancelledSlotIfAutomatic } from '~/server/utils/waitlistOffer'
+import { automationEvent } from '~/server/utils/automationEngine'
+import { afterUnattendedCancellation } from '~/server/utils/unattendedCancellation'
 import { pushAppointmentEvent } from '~/server/utils/staffPush'
 import { claimAutomaticConfirmation, sendAppointmentConfirmation } from '~/server/utils/appointmentNotifications'
 import { receptionistServiceClient } from '~/server/utils/receptionistAudit'
@@ -340,10 +339,11 @@ export function waitlistTool(ctx: BookingContext): (input: unknown) => Promise<T
  * cancelled. Only a visit still booked, and only when the row really changes
  * -- a colleague cancelling it a moment earlier must not run the clinic's
  * cancellation automations a second time (CancelStep.vue has the same
- * guard). What follows is what follows the reminder's "Cancelar" button: the
- * practitioner told, runs in flight told, appointment.cancelled rules run,
- * the freed time offered to the waiting list when the clinic does that
- * automatically. Never a fee.
+ * guard). A visit that has already started is not its to cancel either: the
+ * prompt lists today's visits from midnight, so a patient writing at 18:00
+ * about their 17:30 can name one, and what to do about a missed visit is a
+ * person's call. What follows is what follows the reminder's "Cancelar"
+ * button (afterUnattendedCancellation). Never a fee.
  */
 export function cancelTool(ctx: BookingContext): (input: unknown) => Promise<ToolResult> {
   let used = false
@@ -356,6 +356,9 @@ export function cancelTool(ctx: BookingContext): (input: unknown) => Promise<Too
     if (!visit || !patientId) {
       const theirs = ctx.booked.appointments.map((a) => localStamp(a.startsAt, ctx.timeZone)).join(', ')
       return { content: `They have no booked visit at ${wanted || '(no visit_on given)'}. Their visits: ${theirs || 'none'}. Do not say anything is cancelled.`, isError: true }
+    }
+    if (new Date(visit.startsAt).getTime() <= Date.now()) {
+      return { content: 'That visit has already started, so it is not yours to cancel. Call hand_over_to_colleague saying which visit they mean; do not say it is cancelled.', isError: true }
     }
 
     const writer = receptionistServiceClient(ctx.event) as unknown as Supa
@@ -381,10 +384,10 @@ export function cancelTool(ctx: BookingContext): (input: unknown) => Promise<Too
     // Best-effort, as after a booking: the visit is cancelled either way.
     try {
       await ctx.onBooked(`He cancelado su ${typeName ?? 'cita'} del ${format('es-ES')}.`)
-      await afterCancellation(ctx, patientId, visit.id)
     } catch (err) {
       console.error('[receptionist] after cancelling:', (err as Error)?.message ?? err)
     }
+    await afterUnattendedCancellation(ctx.service, getRequestURL(ctx.event).origin, ctx.accountId, visit.id, patientId)
 
     const remaining = ctx.booked.appointments
       .filter((a) => a.id !== visit.id)
@@ -397,39 +400,6 @@ export function cancelTool(ctx: BookingContext): (input: unknown) => Promise<Too
       isError: false,
     }
   }
-}
-
-/**
- * What the reminder's "Cancelar" button does after setting the status
- * (server/api/whatsapp/webhook.post.ts), and the in-app cancel through
- * /api/automations/fire: kept in step with both.
- */
-async function afterCancellation(ctx: BookingContext, patientId: string, appointmentId: string) {
-  const origin = getRequestURL(ctx.event).origin
-  await pushAppointmentEvent(ctx.service as any, appointmentId, 'cancelled')
-  await automationEvent(ctx.service as any, ctx.accountId, { patientId }, 'appointment.cancelled', origin)
-  const { data: patient } = await ctx.service
-    .from('patients')
-    .select('id, first_name, last_name, email, is_minor, do_not_contact, marketing_channels')
-    .eq('id', patientId)
-    .maybeSingle()
-  if (patient) {
-    const { data: rules } = await ctx.service
-      .from('automation_rules')
-      .select('id, filters')
-      .eq('account_id', ctx.accountId)
-      .eq('trigger_event', 'appointment.cancelled')
-      .eq('enabled', true)
-    for (const rule of rules ?? []) {
-      if (!(await ruleFiltersMatch(ctx.service, patient.id, rule.filters as AutomationFilters, appointmentId))) continue
-      await dispatchPatientRule(ctx.service, ctx.service, ctx.accountId, rule.id, patient, origin, appointmentId, {
-        triggerEvent: 'appointment.cancelled',
-        patientId: patient.id,
-        appointmentId,
-      })
-    }
-  }
-  await offerCancelledSlotIfAutomatic(ctx.service, origin, appointmentId)
 }
 
 /** "YYYY-MM-DD HH:MM" on the clinic's clock. */

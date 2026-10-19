@@ -68,6 +68,16 @@ export interface ReceptionistAvailability {
 }
 
 /**
+ * Whether there is any time at all to offer. A list that could not be
+ * computed (null) has none, and so does one whose every type is full: what a
+ * practitioner on leave looks like, their calendar blocked for the days
+ * (loadPatientCalendar then offers the team's instead).
+ */
+export function hasFreeTimes(availability: ReceptionistAvailability | null): boolean {
+  return Boolean(availability?.groups.some((group) => group.days.length > 0))
+}
+
+/**
  * How many times one list may hold. Each reply pays for every token of the
  * prompt (about three a time), and a 90-day window can produce over a
  * thousand starts; the earliest days are the ones a patient is choosing
@@ -234,6 +244,8 @@ export function receptionistBookingSection(opts: {
   searchTool?: boolean
   /** Set when the times are only this patient's own practitioner(s). */
   withWhom?: string[] | null
+  /** Set when their own practitioner(s) had nothing and these are the team's (loadPatientCalendar). */
+  insteadOf?: string[] | null
 }): string {
   if (!opts.availability) {
     return `# Booking\nYou cannot see the clinic's calendar, so never propose a specific day or time and never say a time is free. Ask which days and whether mornings or afternoons suit them (within the next ${opts.bookingWindowDays} days), then say your colleague will confirm an exact time shortly.`
@@ -248,7 +260,9 @@ export function receptionistBookingSection(opts: {
     // theirs alone, and "con Natacha" is part of the answer.
     opts.withWhom?.length
       ? `These times are only with ${opts.withWhom.join(' or ')}, who sees this patient${opts.searchTool ? ', and so is everything find_free_times returns' : ''}. Say who the time is with. If they ask to see someone else, say your colleague will arrange it.`
-      : '',
+      : opts.insteadOf?.length
+        ? `This patient is usually seen by ${opts.insteadOf.join(' or ')}, who has no free time in the next ${opts.bookingWindowDays} days, so these times are with other practitioners at the clinic. When you offer one, say plainly that ${opts.insteadOf.join(' or ')} has no free time these weeks and that this time is with a colleague -- never why, which you do not know. If they would rather wait for ${opts.insteadOf.join(' or ')}, say your colleague will arrange it.`
+        : '',
     ...lists,
     [
       `Offer times ONLY from this list${opts.searchTool ? ' or from what find_free_times returns' : ''}, at exactly the listed times, and at most ${n} time${n === 1 ? '' : 's'} per reply. Never offer a day, time or type that is not listed, never shift a listed time, and never say a time is free unless it is listed.`,

@@ -7,6 +7,7 @@ import { NO_REPLY } from '~/utils/receptionistAutoReply'
 import { CONFIDENTIALITY_SECTION, promptSafeName } from '~/utils/receptionistGuard'
 import type { ReceptionistPrompt } from '~/utils/receptionistPrompt'
 import {
+  hasFreeTimes,
   receptionistBookingSection,
   receptionistClockSection,
   receptionistSlotGroups,
@@ -290,6 +291,13 @@ export interface ReceptionistCalendar {
    * practitioner(s); null when they are anyone's, as for someone new.
    */
   withWhom: string[] | null
+  /**
+   * Set when this patient's own practitioner(s) had no free time at all in
+   * the window -- away, deactivated, or no longer bookable -- and the times
+   * are the rest of the team's instead (loadPatientCalendar): who they would
+   * normally see, so the patient is told the time is with somebody else.
+   */
+  insteadOf?: string[] | null
 }
 
 /**
@@ -429,6 +437,42 @@ export async function loadReceptionistCalendar(
     console.error('[receptionist] could not compute free times:', (err as Error)?.message ?? err)
     return fallback(timeZone)
   }
+}
+
+/**
+ * The calendar a returning patient is offered: their own practitioner's
+ * times (loadPatientPractitioners), or -- when their own has no free time
+ * at all in the window -- the rest of the team's, with `insteadOf` naming
+ * who they would normally see.
+ *
+ * "No free time at all" is what a practitioner on leave looks like: an
+ * absence blocks their calendar for the days (record_staff_absence,
+ * decide_staff_absence), and a deactivated or no-longer-bookable one is not
+ * read at all. Narrowing to them used to leave the receptionist with nothing
+ * to offer, so a patient of someone on maternity leave was asked which days
+ * suited them and then handed to a person -- every time, for as long as the
+ * leave lasted. A practitioner who is merely busy for a fortnight is treated
+ * the same way, which is what a patient who wants to come this week wants.
+ *
+ * Returns the practitioners the times are really with, which is what the
+ * booking and find_free_times must then use too: null once widened.
+ */
+export async function loadPatientCalendar(
+  supabase: SupabaseClient<Database>,
+  accountId: string,
+  config: ReceptionistConfig,
+  offeredTypes: OfferedType[],
+  practitionerIds: string[] | null,
+): Promise<{ calendar: ReceptionistCalendar; practitionerIds: string[] | null }> {
+  const own = await loadReceptionistCalendar(supabase, accountId, config, offeredTypes, undefined, undefined, practitionerIds)
+  if (!practitionerIds || hasFreeTimes(own.availability)) return { calendar: own, practitionerIds }
+  const team = await loadReceptionistCalendar(supabase, accountId, config, offeredTypes)
+  // Nobody has anything either (or the calendar could not be read): the
+  // narrowed answer stands, and a colleague picks the time as before.
+  if (!hasFreeTimes(team.availability)) return { calendar: own, practitionerIds }
+  const { data: usual } = await supabase.from('team_members').select('full_name').eq('account_id', accountId).in('id', practitionerIds)
+  const names = (usual ?? []).map((m) => m.full_name).filter((name): name is string => Boolean(name))
+  return { calendar: { ...team, insteadOf: names.length ? names : null }, practitionerIds: null }
 }
 
 function must<T>(result: { data: T[] | null; error: { message: string } | null }): T[] {
@@ -586,7 +630,7 @@ export function buildSystemPrompt(
     // asks when suits and a colleague picks the time (#691): a model told to
     // "offer times" with nothing to offer from invents them.
     hasTimes
-      ? receptionistBookingSection({ availability, slotsPerReply: config.slotsPerReply, bookingWindowDays: config.bookingWindowDays, searchTool: opts.searchTool && Boolean(availability), withWhom: opts.calendar.withWhom })
+      ? receptionistBookingSection({ availability, slotsPerReply: config.slotsPerReply, bookingWindowDays: config.bookingWindowDays, searchTool: opts.searchTool && Boolean(availability), withWhom: opts.calendar.withWhom, insteadOf: opts.calendar.insteadOf })
       : '',
     // The single most important line in this prompt. When it can book, what
     // it may say is held to what book_appointment and cancel_appointment

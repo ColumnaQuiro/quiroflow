@@ -6,7 +6,7 @@ import { bookingTool, cancelTool, waitlistTool, type BookingContext } from '~/se
 import { recentImages, withImages } from '~/server/utils/receptionistImages'
 import { historyLine } from '~/utils/receptionistHistory'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage } from '~/utils/receptionistAutoReply'
-import { buildSystemPrompt, loadBookedVisits, loadOfferedTypes, loadPatientPractitioners, loadReceptionistCalendar, toConfig, uniqueTypes, type LeadOrigin } from '~/server/utils/receptionist'
+import { buildSystemPrompt, loadBookedVisits, loadOfferedTypes, loadPatientCalendar, loadPatientPractitioners, toConfig, uniqueTypes, type LeadOrigin } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptionistModel'
 import { cameFromAd } from '~/utils/receptionistLeadOrigin'
 import { leadNameIsTheirs, typesForAudience, type ReceptionistAudience } from '~/utils/receptionistTypes'
@@ -190,8 +190,10 @@ export async function draftLeadReply(
   // free rather than ones the model made up.
   // A first visit is with whoever is free; somebody who has been before is
   // seen by their own practitioner.
-  const practitionerIds = audience === 'existing' ? await loadPatientPractitioners(supabase, accountId, lead.patient_id, booked.practitionerIds) : null
-  const calendar = await loadReceptionistCalendar(calendarClient, accountId, config, bookable, undefined, undefined, practitionerIds)
+  // When their own has no free time at all (on leave, say), the times are
+  // the rest of the team's, and practitionerIds is what they are really with.
+  const own = audience === 'existing' ? await loadPatientPractitioners(supabase, accountId, lead.patient_id, booked.practitionerIds) : null
+  const { calendar, practitionerIds } = await loadPatientCalendar(calendarClient, accountId, config, bookable, own)
   const findFreeTimes = calendar.availability ? freeTimesLookup(calendarClient, accountId, config, bookable, calendar.timeZone, practitionerIds) : null
 
   // Sent rather than drafted: asked for, a WhatsApp conversation (the one

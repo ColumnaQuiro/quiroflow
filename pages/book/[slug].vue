@@ -990,13 +990,13 @@ onMounted(async () => {
               <div v-if="info.clinics.length > 1 || (info.appointment_types.length > 1 && !typeLockedByQuery)" class="rounded-card border border-line bg-surface p-4 shadow-card">
                 <div v-if="info.clinics.length > 1">
                   <label class="block text-sm font-medium text-ink-700">Clínica</label>
-                  <select v-model="clinicId" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm" @change="onClinicChange">
+                  <select v-model="clinicId" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm" @change="onClinicChange">
                     <option v-for="c in info.clinics" :key="c.id" :value="c.id">{{ c.name }}</option>
                   </select>
                 </div>
                 <div v-if="info.appointment_types.length > 1 && !typeLockedByQuery" :class="info.clinics.length > 1 ? 'mt-4' : ''">
                   <label class="block text-sm font-medium text-ink-700">Servicio</label>
-                  <select v-model="appointmentTypeId" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm">
+                  <select v-model="appointmentTypeId" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm">
                     <option v-for="t in info.appointment_types" :key="t.id" :value="t.id">
                       {{ t.name }} — {{ t.duration_minutes }} min
                     </option>
@@ -1101,15 +1101,15 @@ onMounted(async () => {
                 <p class="text-base font-semibold text-ink-900">La clase está completa</p>
                 <p class="mt-1 text-sm text-ink-muted">Apúntese y, si se libera una plaza, le enviaremos un enlace para quedársela.</p>
                 <div class="mt-3 grid gap-3 sm:grid-cols-2">
-                  <label class="block text-sm font-medium text-ink-700">Nombre *<input v-model="firstName" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm" data-cy="waitlist-first-name" /></label>
-                  <label class="block text-sm font-medium text-ink-700">Apellidos<input v-model="lastName" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm" data-cy="waitlist-last-name" /></label>
-                  <label class="block text-sm font-medium text-ink-700">Correo electrónico *<input v-model="email" type="email" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm" data-cy="waitlist-email" /></label>
+                  <label class="block text-sm font-medium text-ink-700">Nombre *<input v-model="firstName" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm" data-cy="waitlist-first-name" /></label>
+                  <label class="block text-sm font-medium text-ink-700">Apellidos<input v-model="lastName" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm" data-cy="waitlist-last-name" /></label>
+                  <label class="block text-sm font-medium text-ink-700">Correo electrónico *<input v-model="email" type="email" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm" data-cy="waitlist-email" /></label>
                   <label class="block text-sm font-medium text-ink-700">Número de móvil *
                     <span class="mt-1 flex gap-2">
-                      <select v-model="dialCode" class="shrink-0 rounded-ctl border border-line-control px-2 py-2 text-sm">
+                      <select v-model="dialCode" class="shrink-0 rounded-ctl border border-line-control px-2 py-2 text-base sm:text-sm">
                         <option v-for="c in COUNTRIES_BY_NAME" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }}</option>
                       </select>
-                      <input v-model="phoneNumber" type="tel" class="min-w-0 flex-1 rounded-ctl border border-line-control px-3 py-2 text-sm" data-cy="waitlist-phone" />
+                      <input v-model="phoneNumber" type="tel" class="min-w-0 flex-1 rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm" data-cy="waitlist-phone" />
                     </span>
                   </label>
                 </div>
@@ -1219,23 +1219,23 @@ onMounted(async () => {
               <div class="grid gap-4 sm:grid-cols-2">
                 <div>
                   <label class="block text-sm font-medium text-ink-700">Nombre *</label>
-                  <input v-model="firstName" type="text" required placeholder="Su nombre" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
+                  <input v-model="firstName" type="text" required placeholder="Su nombre" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
                 </div>
                 <div>
                   <label class="block text-sm font-medium text-ink-700">Apellidos</label>
-                  <input v-model="lastName" type="text" placeholder="Sus apellidos" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
+                  <input v-model="lastName" type="text" placeholder="Sus apellidos" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
                 </div>
                 <div>
                   <label class="block text-sm font-medium text-ink-700">Correo electrónico *</label>
-                  <input v-model="email" type="email" required placeholder="Su dirección de correo" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
+                  <input v-model="email" type="email" required placeholder="Su dirección de correo" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
                 </div>
                 <div>
                   <label class="block text-sm font-medium text-ink-700">Número de móvil *</label>
                   <div class="mt-1 flex gap-2">
-                    <div class="relative flex shrink-0 items-center gap-1 rounded-ctl border border-line-control px-3 py-2 text-sm focus-within:border-brand focus-within:ring-1 focus-within:ring-brand">
+                    <div class="relative flex shrink-0 items-center gap-1 rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm focus-within:border-brand focus-within:ring-1 focus-within:ring-brand">
                       <span aria-hidden="true">{{ selectedCountry?.flag }} {{ selectedCountry?.dial }}</span>
                       <svg class="h-3 w-3 text-ink-faint" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
-                      <select v-model="dialCode" aria-label="Prefijo del país" class="absolute inset-0 h-full w-full cursor-pointer opacity-0">
+                      <select v-model="dialCode" aria-label="Prefijo del país" class="absolute inset-0 h-full w-full cursor-pointer text-base opacity-0">
                         <option v-for="c in COUNTRIES_BY_NAME" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }} {{ c.name }}</option>
                       </select>
                     </div>
@@ -1246,7 +1246,7 @@ onMounted(async () => {
                       autocomplete="tel-national"
                       required
                       placeholder="Su número de móvil"
-                      class="min-w-0 flex-1 rounded-ctl border px-3 py-2 text-sm focus:outline-none focus:ring-1"
+                      class="min-w-0 flex-1 rounded-ctl border px-3 py-2 text-base sm:text-sm focus:outline-none focus:ring-1"
                       :class="phoneError ? 'border-danger-border focus:border-danger-border focus:ring-danger-border' : 'border-line-control focus:border-brand focus:ring-brand'"
                       @blur="phoneChecked = true"
                     />
@@ -1256,14 +1256,14 @@ onMounted(async () => {
               </div>
               <div class="mt-4">
                 <label class="block text-sm font-medium text-ink-700">Notas</label>
-                <textarea v-model="note" rows="3" placeholder="¿Algo que quiera que sepamos?" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"></textarea>
+                <textarea v-model="note" rows="3" placeholder="¿Algo que quiera que sepamos?" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"></textarea>
               </div>
               <div v-if="giftOffered" class="mt-4" data-cy="booking-gift">
                 <button v-if="!giftOpen" type="button" class="text-sm font-medium text-brand-text hover:underline" data-cy="booking-gift-open" @click="giftOpen = true">Tengo un bono regalo</button>
                 <template v-else>
                   <label for="gift-code" class="block text-sm font-medium text-ink-700">Código del bono regalo</label>
                   <div class="mt-1 flex max-w-[320px] gap-2">
-                    <input id="gift-code" v-model="giftCode" type="text" placeholder="REGALO-…" class="w-full rounded-ctl border border-line-control px-3 py-2 text-sm uppercase focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" data-cy="booking-gift-code" @input="giftChecked = null" />
+                    <input id="gift-code" v-model="giftCode" type="text" placeholder="REGALO-…" class="w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm uppercase focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" data-cy="booking-gift-code" @input="giftChecked = null" />
                     <UiBtn type="button" variant="secondary" :disabled="checkingGift || !giftCode.trim()" data-cy="booking-gift-check" @click="checkGift">{{ checkingGift ? 'Comprobando…' : 'Aplicar' }}</UiBtn>
                   </div>
                   <p v-if="giftChecked?.ok" class="mt-1.5 text-sm text-success-text" data-cy="booking-gift-ok">✓ {{ giftChecked.description }}</p>
@@ -1272,7 +1272,7 @@ onMounted(async () => {
               </div>
               <div v-if="info.account.discount_codes_enabled" class="mt-4">
                 <label class="block text-sm font-medium text-ink-700">Código de descuento</label>
-                <input v-model="discountCode" type="text" placeholder="Opcional" class="mt-1 w-full max-w-[200px] rounded-ctl border border-line-control px-3 py-2 text-sm uppercase focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
+                <input v-model="discountCode" type="text" placeholder="Opcional" class="mt-1 w-full max-w-[200px] rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm uppercase focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
               </div>
               <!-- The clinic's cancellation and no-show fees, before they book. -->
               <p v-if="policy && (policy.cancellation_fee_cents || policy.missed_appointment_fee_cents || policy.card_on_file)" class="mt-4 rounded-ctl bg-surface-subtle px-3 py-2.5 text-[13px] leading-snug text-ink-700" data-cy="booking-policy">

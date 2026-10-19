@@ -36,7 +36,8 @@ const buyerEmail = ref('')
 const paying = ref(false)
 const error = ref('')
 const paidId = typeof route.query.pagado === 'string' ? route.query.pagado : null
-const paid = ref<{ paid: boolean; toName: string; deliverTo: string; to: string; sendOn: string | null } | null>(null)
+type PaidStatus = { paid: boolean; toName: string; deliverTo: string; to: string; sendOn: string | null }
+const paid = ref<PaidStatus | null>(null)
 
 const euros = (c: number) => `${(c / 100).toLocaleString('es-ES', { minimumFractionDigits: c % 100 ? 2 : 0, maximumFractionDigits: 2 })} €`
 const items = computed(() => [
@@ -69,7 +70,7 @@ onMounted(async () => {
 async function pollPaid() {
   for (let i = 0; i < 15; i++) {
     try {
-      paid.value = await $fetch('/api/public-booking/gift-voucher-status', { query: { id: paidId } })
+      paid.value = await $fetch<PaidStatus>('/api/public-booking/gift-voucher-status', { query: { id: paidId } })
       if (paid.value?.paid) return
     } catch {
       return

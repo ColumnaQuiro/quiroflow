@@ -62,7 +62,9 @@ describe('Growth AI receptionist: appointment types it may offer', () => {
 
       // "Only these" with none ticked would save as empty, which reads as
       // everything -- so it cannot be saved.
-      cy.get('[data-test="bookable-needs-one"]').should('be.visible')
+      // The editor is the last card of its section, so what the list pushes
+      // below the fold is scrolled to, as a person would.
+      cy.get('[data-test="bookable-needs-one"]').scrollIntoView().should('be.visible')
       cy.get('[data-test="bookable-save"]').should('be.disabled')
 
       cy.get(`[data-test="bookable-type-${ajuste.id}"]`).click()

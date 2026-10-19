@@ -1,9 +1,11 @@
-import { requireReceptionist } from '~/server/utils/requireGrowth'
+import { serverSupabaseServiceRole } from '#supabase/server'
+import { receptionistIncludedBy, requireReceptionist } from '~/server/utils/requireGrowth'
+import { loadReceptionistActivity } from '~/server/utils/receptionistActivity'
 import { loadReceptionistConfig, loadTypeChoices } from '~/server/utils/receptionist'
 import { repliesThisMonth } from '~/server/utils/receptionistUsage'
 
 export default defineEventHandler(async (event) => {
-  const { supabase, teamMember } = await requireReceptionist(event)
+  const { supabase, teamMember, subscription } = await requireReceptionist(event)
   const config = await loadReceptionistConfig(supabase, teamMember.account_id)
 
   // Channel status is read from where it actually lives rather than stored
@@ -48,7 +50,14 @@ export default defineEventHandler(async (event) => {
       { key: 'web-chat', name: 'Web chat', status: 'not_built', statusLabel: 'Not available yet' },
     ],
     testModelAvailable: Boolean(useRuntimeConfig().anthropicApiKey),
+    // Why the clinic has it (Growth, the add-on, a trial), for the header.
+    includedBy: receptionistIncludedBy(subscription),
     // This month's replies, for the usage card and its warnings.
     repliesThisMonth: await repliesThisMonth(supabase, teamMember.account_id),
+    // What it has done, for the Overview (server/utils/receptionistActivity.ts).
+    // In this response rather than a route of its own: one more file under
+    // server/api tips Nitro's typed route map into TS2589 ("excessively
+    // deep") in an unrelated $fetch call, as it did for #791.
+    activity: await loadReceptionistActivity(serverSupabaseServiceRole(event), teamMember.account_id),
   }
 })

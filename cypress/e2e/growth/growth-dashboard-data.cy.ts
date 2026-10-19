@@ -198,15 +198,21 @@ describe('Growth dashboard', () => {
     cy.contains('td', 'Google Ads').scrollIntoView().should('be.visible')
   })
 
-  it('hides the AI receptionist card, which has nothing behind it yet', () => {
-    cy.task('db:createLead', { accountId: account.accountId, fullName: 'Someone', stage: 'new' })
+  it('shows what the AI receptionist did this month, from the records it leaves', () => {
+    // The card used to be fed nothing and never rendered. It now reads the
+    // notes the receptionist leaves in conversations and the replies it
+    // counts for the allowance (server/utils/receptionistActivity.ts).
+    cy.task<{ id: string }>('db:createLead', { accountId: account.accountId, fullName: 'Someone', stage: 'new' }).then((lead) => {
+      cy.visit('/growth?growth=1')
+      // Nothing yet is said as such, not as a zeroed claim.
+      cy.get('[data-test="dashboard-ai-summary"]').should('contain', 'has not written in any conversation yet')
 
-    cy.visit('/growth?growth=1')
-
-    // A zeroed version of the tier's headline claim would be a statement
-    // about a thing that does not exist, not an empty state.
-    cy.contains('AI receptionist').should('not.exist')
-    cy.contains('Needs attention').scrollIntoView().should('be.visible')
+      cy.task('db:createReceptionistNote', { accountId: account.accountId, conversationKey: `lead:${lead.id}`, body: 'He reservado Primera visita el lunes 20 de octubre, 10:00.' })
+      cy.task('db:seedReceptionistReplies', { accountId: account.accountId, count: 2 })
+      cy.reload()
+      cy.get('[data-test="dashboard-ai-summary"]').should('contain', '2 conversations').and('contain', 'booked or moved 1')
+      cy.contains('Needs attention').scrollIntoView().should('be.visible')
+    })
   })
 
   it('flags leads that have been waiting more than a week', () => {

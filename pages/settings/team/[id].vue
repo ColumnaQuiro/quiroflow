@@ -3,6 +3,7 @@ import { hasBusinessHoursConfigured, type BusinessHours } from '~/utils/business
 import { hoursProblems, normalizeHours } from '~/utils/clinicHours'
 import { CALENDAR_PALETTE } from '~/utils/calendarPalette'
 import { formatEur, formatShortDate } from '~/utils/billing'
+import { absenceKindLabel } from '~/utils/staffShifts'
 
 // One person on the team, everything about them on one page. What used to be
 // inline toggles in a table (practitioner, online booking, hours) plus what
@@ -115,10 +116,13 @@ function roleLabel(name: string) {
 const initials = computed(() => (form.value?.full_name ?? '').split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join('') || '·')
 const activeClinics = computed(() => store.clinics)
 const hasOwnHours = computed(() => !!form.value && hasBusinessHoursConfigured(form.value.business_hours))
+// What the Ausencia section reports as running today, for the header chip.
+const away = ref<{ kind: string; endsOn: string } | null>(null)
 const SECTIONS = computed(() => [
   { id: 'perfil', label: t('Profile', 'Perfil') },
   { id: 'acceso', label: t('Access', 'Acceso') },
   { id: 'pacientes', label: t('Sees patients', 'Atiende pacientes') },
+  ...(deletedAt.value ? [] : [{ id: 'ausencia', label: t('Away', 'Ausencia') }]),
   { id: 'seguridad', label: t('Security', 'Seguridad') },
   ...(isMe.value || deletedAt.value ? [] : [{ id: 'desactivar', label: t('Deactivate', 'Desactivar') }]),
 ])
@@ -376,6 +380,7 @@ const card = 'flex scroll-mt-4 flex-col gap-4 rounded-card border border-line bg
         <span v-if="isMe" class="rounded-pill bg-chip-bg px-2.5 py-0.5 text-[12.5px] font-bold text-chip-text">{{ t('You', 'Tú') }}</span>
         <span v-if="isOwner" class="rounded-pill bg-brand-tint px-2.5 py-0.5 text-[12.5px] font-bold text-brand-text" data-cy="member-owner-chip">{{ t('Owner', 'Propietario') }}</span>
         <span v-if="deletedAt" class="rounded-pill bg-chip-bg px-2.5 py-0.5 text-[12.5px] font-bold text-chip-text" data-cy="member-deactivated-chip">{{ t('Deactivated', 'Desactivado') }}</span>
+        <span v-if="away && !deletedAt" class="rounded-pill bg-warning-bg px-2.5 py-0.5 text-[12.5px] font-bold text-warning-text" data-cy="member-away-chip">{{ absenceKindLabel(away.kind, t) }}</span>
       </div>
     </header>
 
@@ -557,6 +562,12 @@ const card = 'flex scroll-mt-4 flex-col gap-4 rounded-card border border-line bg
                   <button type="button" data-cy="member-shift-set" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="ownHoursOpen = true">{{ t('Set their shift', 'Poner su turno') }}</button>
                 </div>
               </div>
+            </section>
+
+            <!-- Ausencia -->
+            <section v-if="!deletedAt" id="ausencia" aria-labelledby="h-ausencia" :class="card">
+              <h2 id="h-ausencia" class="text-[16px] font-bold text-ink-900">{{ t('Away', 'Ausencia') }}</h2>
+              <SettingsMemberAbsence :member-id="memberId" :name="form.full_name" :is-practitioner="form.is_practitioner" @changed="away = $event" />
             </section>
 
             <!-- Seguridad -->

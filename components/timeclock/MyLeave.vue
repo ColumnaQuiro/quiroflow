@@ -2,7 +2,7 @@
 import type { BusinessHours } from '../../utils/businessHours'
 import { clinicDateOf } from '../../utils/clinicClock'
 import { workdayWeekStart } from '../../utils/workday'
-import { ABSENCE_KINDS, DEFAULT_LEAVE_DAYS, absenceKindLabel, formatShift, leaveWorkingDays, shiftForDay, type ShiftRanges } from '../../utils/staffShifts'
+import { ABSENCE_KINDS, DEFAULT_LEAVE_DAYS, absenceKindLabel, formatShift, isOpenEndedAbsence, leaveWorkingDays, shiftForDay, type ShiftRanges } from '../../utils/staffShifts'
 
 // "Mi jornada", the shifts and leave part (web /jornada and the app): this
 // week's shifts, holiday days left this year, my requests, and asking for
@@ -66,6 +66,7 @@ const shiftOn = (date: string) => (member.value ? shiftForDay(date, member.value
 const dayLabel = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString(lang.value === 'es' ? 'es-ES' : 'en-GB', { weekday: 'short', day: 'numeric', timeZone: 'UTC' })
 const dates = (a: Absence) => {
   const f = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString(lang.value === 'es' ? 'es-ES' : 'en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })
+  if (isOpenEndedAbsence(a.ends_on)) return t(`From ${f(a.starts_on)}, no return date yet`, `Desde el ${f(a.starts_on)}, sin fecha de vuelta`)
   return a.starts_on === a.ends_on ? `${f(a.starts_on)}${a.half_day ? t(' (half day)', ' (medio día)') : ''}` : `${f(a.starts_on)} – ${f(a.ends_on)}`
 }
 const statusPill = (s: string) => (s === 'approved' ? { label: t('Approved', 'Aprobada'), cls: 'bg-success-bg text-success-text' } : s === 'rejected' ? { label: t('Rejected', 'Rechazada'), cls: 'bg-danger-bg text-danger-text' } : { label: t('Pending', 'Pendiente'), cls: 'bg-warning-bg text-warning-text' })

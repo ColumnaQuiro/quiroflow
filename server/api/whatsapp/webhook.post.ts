@@ -11,6 +11,7 @@ import { findLeadIdByPhone, findPatientIdsByPhone, pickInboundPatientId } from '
 import { afterUnattendedCancellation } from '~/server/utils/unattendedCancellation'
 import { applyRecallReply } from '~/server/utils/recallReplies'
 import { recallReplyIntent } from '~/utils/recallReply'
+import { appointmentReplyIntent } from '~/utils/appointmentReply'
 
 // Meta's ongoing webhook: delivers both outbound message status updates
 // (sent/delivered/read/failed) and inbound replies from patients, in the
@@ -59,38 +60,8 @@ interface MetaChangeValue {
 
 const MEDIA_KINDS: MediaKind[] = ['image', 'video', 'audio', 'document', 'sticker']
 
-const CONFIRM_WORDS = ['confirmo', 'confirmar', 'confirmado', 'sí', 'si', 'yes', 'confirm', 'vale', 'ok', 'okay']
-const RESCHEDULE_WORDS = ['cambiar', 'cambio', 'reprogramar', 'reschedule', 'aplazar', 'posponer', 'mover']
-const CANCEL_WORDS = ['cancelar', 'cancelo', 'cancelado', 'anular', 'cancel']
-
 function replyText(msg: MetaMessage): string {
   return msg.button?.text ?? msg.interactive?.button_reply?.title ?? msg.interactive?.list_reply?.title ?? msg.text?.body ?? ''
-}
-
-// Things a patient asks to change that are NOT their appointment. "Me
-// gustaría cambiar el Mail que tenéis registrado con mi ficha" is the
-// message that started this: it matched on "cambiar" alone and recorded a
-// patient who had tapped Confirmar fourteen minutes earlier as wanting to
-// move his visit.
-//
-// Excluding by the OBJECT of the verb rather than by where the verb sits in
-// the sentence, because position turns out not to separate the two cases at
-// all -- "La tengo que cambiar", "Me la puedes cambiar por la tarde", "Queria
-// reprogramarla a la semana que viene" are all real requests that name the
-// appointment only as "la", leaning on the reminder they are replying to.
-// Anchoring the match to the start of the message would have thrown those
-// away to catch this one.
-const CHANGE_OF_SOMETHING_ELSE =
-  /(cambiar|cambio|cambiarme|modificar)\s+(el\s+|la\s+|mi\s+|mis\s+)?(mail|email|correo|tel[eé]fono|movil|m[oó]vil|n[uú]mero|direcci[oó]n|nombre|apellido|dni|datos|ficha|contrase[nñ]a)/
-
-function classifyReply(text: string): 'confirmed' | 'reschedule_requested' | 'cancelled' | null {
-  const t = text.trim().toLowerCase()
-  if (!t) return null
-  const opensWith = (words: string[]) => words.some((w) => t === w || t.startsWith(w + ' ') || t.startsWith(w + '!'))
-  if (opensWith(CANCEL_WORDS)) return 'cancelled'
-  if (opensWith(CONFIRM_WORDS)) return 'confirmed'
-  if (RESCHEDULE_WORDS.some((w) => t.includes(w)) && !CHANGE_OF_SOMETHING_ELSE.test(t)) return 'reschedule_requested'
-  return null
 }
 
 // Did the patient ANSWER the question, or just write a sentence we read an
@@ -539,7 +510,7 @@ export default defineEventHandler(async (event) => {
           await automationEvent(supabase, account.id, patientId ? { patientId } : { leadId }, 'whatsapp.replied', getRequestURL(event).origin)
         }
 
-        const intent = classifyReply(replyText(msg))
+        const intent = appointmentReplyIntent(replyText(msg))
         if (intent && patientIds.length > 0) {
           const appt = await resolveRepliedAppointment(supabase, patientIds)
           // An answer already on record is only overturned by another

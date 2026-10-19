@@ -67,6 +67,20 @@ describe('Sign-in: staff and patients through the same door', () => {
     })
   })
 
+  it('turns a staff account away from the patient sign-in', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.visit('/portal/login')
+      cy.get('#email').type(account.email)
+      cy.get('#password').type(account.password)
+      cy.contains('button', 'Sign in').click()
+      cy.get('[role=alert]', { timeout: 15000 }).should('contain', 'clinic team account')
+      cy.location('pathname').should('eq', '/portal/login')
+      // Signed out again, not left holding a staff session on the portal.
+      cy.visit('/portal')
+      cy.location('pathname', { timeout: 15000 }).should('eq', '/portal/login')
+    })
+  })
+
   it('says so when the email already has an account', () => {
     cy.seedStaffAccount().then((account) => {
       // What Supabase answers for an existing email with confirmation on: no

@@ -3,6 +3,7 @@ import {
   FREE_TIMES_MAX_DAYS,
   MAX_TIMES_PER_LIST,
   parseFreeTimesInput,
+  hasFreeTimes,
   receptionistBookingSection,
   receptionistClockSection,
   receptionistSlotGroups,
@@ -158,6 +159,32 @@ describe('Receptionist booking prompt', () => {
     const text = receptionistBookingSection({ availability: multi, slotsPerReply: 2, bookingWindowDays: 14 })
     expect(text).toContain('## Primera visita (60 min) at Centro')
     expect(text).toContain('ask which one if it is not clear')
+  })
+
+  it("names the patient's own practitioner, and only them, when the times are theirs", () => {
+    const text = receptionistBookingSection({ availability, slotsPerReply: 2, bookingWindowDays: 14, withWhom: ['Natacha'] })
+    expect(text).toContain('These times are only with Natacha, who sees this patient')
+    expect(text).not.toContain('with other practitioners')
+  })
+
+  // A patient whose own practitioner is away (an absence blocks their
+  // calendar) is offered the team's times instead: the prompt says whose they
+  // would normally be, so the patient is told the time is with a colleague --
+  // and never why, which the receptionist does not know.
+  it("says the times are a colleague's when the patient's own practitioner has none", () => {
+    const text = receptionistBookingSection({ availability, slotsPerReply: 2, bookingWindowDays: 14, insteadOf: ['Léa'] })
+    expect(text).toContain('This patient is usually seen by Léa, who has no free time in the next 14 days')
+    expect(text).toContain('this time is with a colleague')
+    expect(text).toContain('never why')
+    expect(text).toContain('If they would rather wait for Léa, say your colleague will arrange it')
+    expect(text).not.toContain('These times are only with')
+  })
+
+  it('knows a list with no day in it has nothing to offer', () => {
+    expect(hasFreeTimes(availability)).toBe(true)
+    expect(hasFreeTimes(null)).toBe(false)
+    expect(hasFreeTimes({ groups: availability.groups.map((g) => ({ ...g, days: [] })) })).toBe(false)
+    expect(hasFreeTimes({ groups: [] })).toBe(false)
   })
 
   it('falls back to asking when suits when there are no times to offer from', () => {

@@ -39,6 +39,13 @@ const FIND_FREE_TIMES: Anthropic.Tool = {
   },
 }
 
+/** One tool call the model made while writing a reply. */
+export interface ReceptionistToolUse {
+  name: string
+  input: Record<string, unknown>
+  ok: boolean
+}
+
 export type FreeTimesLookup = (input: unknown) => Promise<{ content: string; isError: boolean }>
 
 /**
@@ -130,8 +137,11 @@ export async function runReceptionistModel(
     /** Names the conversation in the log when a draft is withheld; never its content. */
     logLabel: string
   },
-): Promise<{ text: string; refused: boolean; handedOver: string | null }> {
+): Promise<{ text: string; refused: boolean; handedOver: string | null; toolUses: ReceptionistToolUse[] }> {
   const messages: Anthropic.MessageParam[] = [...opts.messages]
+  // Every tool it called, in order, for the test panel's trace. The inputs
+  // are the model's own (a date range, a time), never the clinic's data.
+  const toolUses: ReceptionistToolUse[] = []
   // The clinic's part is cached for an hour (utils/receptionistPrompt.ts
   // says why it is split). It is the same for every conversation at the
   // clinic, and a clinic's replies are minutes apart in the day but rarely
@@ -174,7 +184,7 @@ export async function runReceptionistModel(
 
     // Refusals arrive as HTTP 200, so the content has to be checked rather
     // than assumed.
-    if (message.stop_reason === 'refusal') return { text: '', refused: true, handedOver }
+    if (message.stop_reason === 'refusal') return { text: '', refused: true, handedOver, toolUses }
 
     const uses = message.content.filter((block): block is Anthropic.ToolUseBlock => block.type === 'tool_use')
     if (message.stop_reason !== 'tool_use' || uses.length === 0 || tools.length === 0) {
@@ -194,9 +204,9 @@ export async function runReceptionistModel(
       const leak = text ? briefingLeak(text, opts.internalNotes) : null
       if (leak) {
         console.warn(`[receptionist] withheld a draft for ${opts.logLabel}: it ${leak}`)
-        return { text: '', refused: true, handedOver }
+        return { text: '', refused: true, handedOver, toolUses }
       }
-      return { text, refused: false, handedOver }
+      return { text, refused: false, handedOver, toolUses }
     }
 
     // The whole turn goes back, thinking blocks included and unchanged, and
@@ -239,6 +249,7 @@ export async function runReceptionistModel(
         } else {
           result = { content: `There is no tool called ${use.name}.`, isError: true }
         }
+        toolUses.push({ name: use.name, input: (use.input ?? {}) as Record<string, unknown>, ok: !result.isError })
         return { type: 'tool_result', tool_use_id: use.id, content: result.content, is_error: result.isError }
         })(),
       )

@@ -1,11 +1,15 @@
 import { requireReceptionist } from '~/server/utils/requireGrowth'
 import { loadReceptionistConfig, loadTypeChoices, readAccountTypes } from '~/server/utils/receptionist'
 import { checkBookableIds } from '~/utils/receptionistTypes'
+// The languages the prompt can be told the clinic supports: a closed list,
+// so the sentence it builds names real languages.
+import { RECEPTIONIST_LANGUAGES } from '~/utils/receptionistLanguages'
 import type { TablesUpdate } from '~/types/database.types'
 
 interface Body {
   enabled?: unknown
   personaName?: unknown
+  languages?: unknown
   tone?: unknown
   neverSays?: unknown
   qualificationQuestions?: unknown
@@ -48,6 +52,12 @@ export default defineEventHandler(async (event) => {
     const name = typeof body.personaName === 'string' ? body.personaName.trim() : ''
     if (!name) throw createError({ statusCode: 400, statusMessage: 'The receptionist needs a name' })
     patch.persona_name = name.slice(0, 60)
+  }
+  if (body.languages !== undefined) {
+    if (!Array.isArray(body.languages)) throw createError({ statusCode: 400, statusMessage: 'languages must be a list' })
+    const languages = [...new Set(body.languages.filter((l): l is string => typeof l === 'string' && l in RECEPTIONIST_LANGUAGES))]
+    if (!languages.length) throw createError({ statusCode: 400, statusMessage: 'The receptionist needs at least one language' })
+    patch.languages = languages
   }
   if (body.tone !== undefined) {
     if (typeof body.tone !== 'string' || !TONES.includes(body.tone)) throw createError({ statusCode: 400, statusMessage: 'Unknown tone' })

@@ -118,8 +118,18 @@ describe('A reply that is sent as it is', () => {
     expect(prompt).toContain('unless book_appointment has just confirmed it in this reply')
     expect(prompt).toContain('move it with book_appointment (move_visit_on')
     expect(prompt).not.toContain('a colleague books it')
-    // Never cancels.
-    expect(prompt).toContain('If they ask to cancel, say your colleague will take care of it.')
+    // Cancels only through cancel_appointment, and says so only once it has.
+    expect(prompt).toContain('call cancel_appointment with its current day and time (visit_on)')
+    expect(prompt).toContain('never that one is cancelled unless cancel_appointment has')
+    expect(prompt).not.toContain('If they ask to cancel, say your colleague will take care of it.')
+  })
+
+  // A draft cannot cancel: a person reads it first, and cancels or not.
+  it('leaves cancelling to a colleague when it only drafts', () => {
+    const visits = [{ startsAt: '2026-10-20T08:00:00Z', typeName: 'Ajuste' }]
+    const prompt = receptionistPromptText(buildPatientReplyPrompt(config, { ...base, bookedVisits: visits }))
+    expect(prompt).not.toContain('cancel_appointment')
+    expect(prompt).toContain('if they ask to cancel, say your colleague will take care of it')
   })
 
   // Offered "martes 20 a las 10:00 o miércoles 21 a las 16:00", "Miércoles 21"

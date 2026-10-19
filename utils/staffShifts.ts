@@ -13,14 +13,23 @@ export const SHIFT_GAP_MINUTES = 15
 /** Holiday days a year when the owner set none. */
 export const DEFAULT_LEAVE_DAYS = 22
 
-export const ABSENCE_KINDS = ['vacation', 'personal', 'sick', 'training'] as const
+export const ABSENCE_KINDS = ['vacation', 'personal', 'sick', 'parental', 'training'] as const
 export type AbsenceKind = (typeof ABSENCE_KINDS)[number]
 export function absenceKindLabel(kind: string, t: (en: string, es: string) => string): string {
   if (kind === 'vacation') return t('Holiday', 'Vacaciones')
   if (kind === 'personal') return t('Personal day', 'Asuntos propios')
   if (kind === 'sick') return t('Sick leave', 'Baja médica')
+  if (kind === 'parental') return t('Parental leave', 'Maternidad / paternidad')
   return t('Training', 'Formación')
 }
+
+/**
+ * The last day of an absence with no return date yet ("hasta nuevo aviso"),
+ * as record_staff_absence stores it (20261019085552_pause_a_team_member.sql):
+ * a date rather than null, so every list that filters on ends_on keeps it.
+ */
+export const OPEN_ENDED_ABSENCE = '2999-12-31'
+export const isOpenEndedAbsence = (endsOn: string) => endsOn >= OPEN_ENDED_ABSENCE
 
 const dayKeyOf = (date: string) => DAY_KEYS[new Date(`${date}T12:00:00Z`).getUTCDay()]!
 const minutes = (hhmm: string) => {

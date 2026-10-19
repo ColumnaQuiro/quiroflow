@@ -582,6 +582,10 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
       <!-- Recent visits and their notes: clinical access only -->
       <StaffPatientVisits v-if="!contextLoading && can('visit_notes_access')" :patient-id="patientId" :time-zone="timeZone" :show-money="showMoney" />
 
+      <!-- Progress: pain visit by visit and what was adjusted, as the web's
+      Progreso tab shows it. Clinical access only, like the notes. -->
+      <StaffPatientProgress v-if="!contextLoading && can('visit_notes_access')" :patient-id="patientId" :time-zone="timeZone" />
+
       <!-- Posture assessments: progress side by side, and a new one taken
       with this device's camera (/patients/posture/<id>). The web's own section,
       with the app's permissions. -->

@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { listingSummary, sideLettersFor, type Listings } from '~/utils/spinalListings'
-
 // Progreso: the patient's pain 0-10 visit by visit (visit_pain_scores, the
 // practitioner's score over the patient's own when there are both), as a
 // curve and a table beside what was adjusted (visit_listings), with where
-// they started, where they are and the care plan they are on. "Informe de
+// they started, where they are and the care plan they are on -- loaded by
+// usePatientProgress, which the staff app's record reads too. "Informe de
 // revisión" turns the same page into the PDF handed over at the re-exam
 // (utils/reportPdf: the figures and the table as text, the curve as an image).
 // Under the visit notes permissions, like everything else clinical.
@@ -15,72 +14,12 @@ const supabase = useSupabaseClient()
 const store = useAccountStore()
 const toast = useToast()
 
-interface Row { id: string; startsAt: string; type: string | null; practitioner: string | null; score: number | null; byPatient: boolean; listing: string }
-const rows = ref<Row[]>([])
-const plan = ref<{ name: string; total: number; done: number } | null>(null)
-const loading = ref(true)
+const { plan, loading, scored, first, latest, change } = usePatientProgress(() => props.patientId)
 const busy = ref(false)
 const root = ref<HTMLElement | null>(null)
 // What the last file held, for the e2e spec (as components/reports/PdfButton).
 const lastResult = ref('')
-
-async function load() {
-  loading.value = true
-  const { data: appts } = await supabase
-    .from('appointments')
-    .select('id, starts_at, appointment_types(name), team_members(full_name)')
-    .eq('patient_id', props.patientId)
-    .is('deleted_at', null)
-    .neq('status', 'cancelled')
-    .order('starts_at')
-  const list = (appts as unknown as { id: string; starts_at: string; appointment_types: { name: string } | null; team_members: { full_name: string } | null }[] | null) ?? []
-  const pain = new Map<string, { practitioner_score: number | null; patient_score: number | null }>()
-  const listed = new Map<string, Listings>()
-  const ids = list.map((a) => a.id)
-  for (let i = 0; i < ids.length; i += 200) {
-    const chunk = ids.slice(i, i + 200)
-    const [{ data: p }, { data: l }] = await Promise.all([
-      supabase.from('visit_pain_scores').select('appointment_id, practitioner_score, patient_score').in('appointment_id', chunk),
-      supabase.from('visit_listings').select('appointment_id, listings').in('appointment_id', chunk),
-    ])
-    for (const r of (p as { appointment_id: string; practitioner_score: number | null; patient_score: number | null }[] | null) ?? []) pain.set(r.appointment_id, r)
-    for (const r of (l as { appointment_id: string; listings: Listings }[] | null) ?? []) listed.set(r.appointment_id, r.listings)
-  }
-  const letters = sideLettersFor(t)
-  rows.value = list.map((a) => {
-    const s = pain.get(a.id)
-    const score = s?.practitioner_score ?? s?.patient_score ?? null
-    return { id: a.id, startsAt: a.starts_at, type: a.appointment_types?.name ?? null, practitioner: a.team_members?.full_name ?? null, score, byPatient: s?.practitioner_score == null && s?.patient_score != null, listing: listingSummary(listed.get(a.id), (x) => x, letters) }
-  })
-
-  const { data: cp } = await supabase.from('care_plans').select('name, total_visits, started_at').eq('patient_id', props.patientId).order('started_at', { ascending: false }).limit(1).maybeSingle()
-  const c = cp as { name: string; total_visits: number; started_at: string } | null
-  const now = new Date().toISOString()
-  plan.value = c ? { name: c.name, total: c.total_visits, done: list.filter((a) => a.starts_at >= c.started_at && a.starts_at <= now).length } : null
-  loading.value = false
-}
-watch(() => props.patientId, load, { immediate: true })
-
-const scored = computed(() => rows.value.filter((r) => r.score !== null))
-const first = computed(() => scored.value[0]?.score ?? null)
-const latest = computed(() => scored.value[scored.value.length - 1]?.score ?? null)
-const change = computed(() => (first.value !== null && latest.value !== null && scored.value.length > 1 ? latest.value - first.value : null))
 const day = (iso: string) => new Date(iso).toLocaleDateString(t('en-GB', 'es-ES'), { day: 'numeric', month: 'short', year: 'numeric' })
-
-// The curve: one point per scored visit, 0 at the bottom and 10 at the top.
-const W = 720
-const H = 220
-const PAD = { l: 34, r: 16, t: 14, b: 30 }
-const points = computed(() => {
-  const n = scored.value.length
-  const x = (i: number) => PAD.l + (n <= 1 ? (W - PAD.l - PAD.r) / 2 : (i * (W - PAD.l - PAD.r)) / (n - 1))
-  const y = (v: number) => PAD.t + ((10 - v) * (H - PAD.t - PAD.b)) / 10
-  return scored.value.map((r, i) => ({ x: x(i), y: y(r.score!), r }))
-})
-const line = computed(() => points.value.map((p) => `${p.x},${p.y}`).join(' '))
-const gridY = [0, 2, 4, 6, 8, 10].map((v) => ({ v, y: PAD.t + ((10 - v) * (H - PAD.t - PAD.b)) / 10 }))
-// Labels under the first, last and every few points between, so they never collide.
-const labelEvery = computed(() => Math.max(1, Math.ceil(points.value.length / 8)))
 
 const patientName = computed(() => `${props.patient.first_name ?? ''} ${props.patient.last_name ?? ''}`.trim())
 async function report() {
@@ -154,17 +93,7 @@ async function report() {
 
       <section class="rounded-card border border-line bg-surface p-4 shadow-card" data-pdf-block="image" data-pdf-span="12">
         <h3 class="text-[14px] font-semibold text-ink-900">{{ t('Pain by visit', 'Dolor por visita') }}</h3>
-        <svg :viewBox="`0 0 ${W} ${H}`" class="mt-2 block h-auto w-full" role="img" :aria-label="t(`Pain from ${first} to ${latest} over ${scored.length} visits`, `Dolor de ${first} a ${latest} en ${scored.length} visitas`)" data-cy="progress-chart">
-          <g v-for="g in gridY" :key="g.v">
-            <line :x1="PAD.l" :x2="W - PAD.r" :y1="g.y" :y2="g.y" class="stroke-line" stroke-width="1" />
-            <text :x="PAD.l - 8" :y="g.y + 4" text-anchor="end" class="fill-ink-faint font-mono" font-size="11">{{ g.v }}</text>
-          </g>
-          <polyline v-if="points.length > 1" :points="line" fill="none" class="stroke-brand" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" />
-          <g v-for="(p, i) in points" :key="p.r.id">
-            <circle :cx="p.x" :cy="p.y" r="4.5" class="fill-surface stroke-brand" stroke-width="2" />
-            <text v-if="i === 0 || i === points.length - 1 || i % labelEvery === 0" :x="p.x" :y="H - 8" text-anchor="middle" class="fill-ink-muted" font-size="11">{{ new Date(p.r.startsAt).toLocaleDateString(t('en-GB', 'es-ES'), { day: 'numeric', month: 'short' }) }}</text>
-          </g>
-        </svg>
+        <PatientsPainChart class="mt-2" :visits="scored" />
       </section>
 
       <section class="overflow-x-auto rounded-card border border-line bg-surface shadow-card" data-pdf-block="table" :data-pdf-title="t('Visits', 'Visitas')">

@@ -18,17 +18,21 @@ describe('Inbox: reply drafts for patients', () => {
         cy.get('[data-cy=reply-draft-ask]').click()
         cy.wait('@draft')
         cy.get('[data-cy=reply-draft-text]').should('have.text', suggestion)
-        // Edit: into the box, to change before sending.
-        cy.get('[data-cy=reply-draft-edit]').click()
-        cy.get('textarea[placeholder="Type a message…"]').should('have.value', suggestion).clear()
+        // Edit in the card, as a lead's draft is edited: the composer stays
+        // for a new message. Discarding the edit leaves nothing behind.
+        cy.get('[data-test="ai-draft-edit"]').click()
+        cy.get('[data-test="ai-draft-textarea"]').should('have.value', suggestion)
+        cy.get('[data-test="ai-draft-discard"]').click()
+        cy.get('[data-cy=reply-draft-text]').should('not.exist')
 
-        // Again, and this time sent as it is.
+        // Again, and this time approved as it is.
         cy.get('[data-cy=reply-draft-ask]').click()
         cy.wait('@draft')
-        cy.get('[data-cy=reply-draft-send]').click()
+        cy.get('[data-test="ai-draft-approve"]').click()
         cy.get('[data-cy="thread-message"]').filter(`:contains("${suggestion}")`).should('have.length', 1)
         // We wrote last now: nothing to answer, so nothing offered.
         cy.get('[data-cy=reply-draft]').should('not.exist')
+        cy.get('[data-cy=reply-draft-ask]').should('not.exist')
       })
     })
   })
@@ -42,6 +46,7 @@ describe('Inbox: reply drafts for patients', () => {
         cy.visit('/inbox')
         cy.contains('Leo Contestado').click()
         cy.contains('A ti').should('be.visible')
+        cy.get('[data-cy=reply-draft-ask]').should('not.exist')
         cy.get('[data-cy=reply-draft]').should('not.exist')
       })
     })
@@ -62,7 +67,7 @@ describe('Inbox: reply drafts for patients', () => {
         cy.contains('Iris Esperando').click()
         cy.get('[data-cy=reply-draft-text]').should('have.text', waiting)
 
-        cy.get('[data-cy=reply-draft-discard]').click()
+        cy.get('[data-test="ai-draft-discard"]').click()
         cy.get('[data-cy=reply-draft-text]').should('not.exist')
         // Marked in the background: polled, rather than read once and raced.
         const dismissed = (tries = 20): Cypress.Chainable<{ dismissed_at: string | null } | null> =>

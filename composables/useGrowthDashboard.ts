@@ -59,7 +59,7 @@ export const SAMPLE_GROWTH_DASHBOARD: GrowthDashboardPayload = (() => {
       { key: 'stale', count: 6, neverContacted: 2 },
       { key: 'unattributed', count: 3 },
     ],
-    ai: null,
+    ai: { conversations: 148, sent: 203, drafted: 61, booked: 58, handedOver: 9 },
   }
 })()
 

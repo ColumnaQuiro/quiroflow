@@ -3,8 +3,9 @@
 // web Inbox and the staff app's: the receptionist writes a reply from the
 // conversation and what the clinic knows about them (next visit, plan, what
 // they owe -- server/utils/patientReplyDraft.ts), and it waits here to be
-// read. Send it as it is with one tap, take it into the box to change it, or
-// throw it away. Nothing goes until a person presses Send.
+// read, in the same card a lead's draft waits in (InboxAiDraftCard). Approve
+// it as it is, edit it in place, or throw it away. Nothing goes until a
+// person presses the button.
 const props = defineProps<{
   patientId: string
   /** Asks the API for a draft (the web's own fetch, or the app's). */
@@ -14,8 +15,8 @@ const props = defineProps<{
   /**
    * A draft the receptionist already wrote without being asked (the tick,
    * inbox_reply_drafts), shown as soon as the thread opens, and marked dealt
-   * with once it is sent, taken into the box or thrown away. Optional: the
-   * staff app does not pass it yet, and keeps the button alone.
+   * with once it is sent or thrown away. Optional: the staff app does not
+   * pass it yet, and keeps the button alone.
    */
   stored?: { load: () => Promise<string | null>; dismiss: () => Promise<void> }
 }>()
@@ -24,12 +25,14 @@ const emit = defineEmits<{ send: [text: string]; edit: [text: string] }>()
 const t = useT()
 const drafting = ref(false)
 const draft = ref('')
+const draftAt = ref<string | null>(null)
 const note = ref('')
 
 // Another conversation: whatever was drafted belongs to the last one, and
 // the new one may have a draft waiting.
 watch(() => props.patientId, () => {
   draft.value = ''
+  draftAt.value = null
   note.value = ''
   loadStored()
 }, { immediate: true })
@@ -55,7 +58,10 @@ async function ask() {
     const r = await props.draftFor(props.patientId)
     if (!r.available) note.value = t('Reply drafts are not set up on this deployment.', 'Los borradores de respuesta no están configurados en este despliegue.')
     else if (r.refused || !r.draft) note.value = t("The receptionist didn't want to answer this one -- reply yourself.", 'La recepcionista no ha querido responder a este -- respóndele tú.')
-    else draft.value = r.draft
+    else {
+      draft.value = r.draft
+      draftAt.value = new Date().toISOString()
+    }
   } catch (e) {
     const msg = (e as { data?: { statusMessage?: string }; statusMessage?: string })?.data?.statusMessage ?? (e as { statusMessage?: string })?.statusMessage ?? ''
     note.value = /nothing new/i.test(msg)
@@ -67,21 +73,15 @@ async function ask() {
     drafting.value = false
   }
 }
-function send() {
-  const text = draft.value.trim()
-  if (!text) return
+function approve(text: string) {
   draft.value = ''
+  draftAt.value = null
   dismissStored()
   emit('send', text)
 }
-function edit() {
-  const text = draft.value
-  draft.value = ''
-  dismissStored()
-  emit('edit', text)
-}
 function discard() {
   draft.value = ''
+  draftAt.value = null
   dismissStored()
 }
 const btnH = computed(() => (props.size === 'lg' ? 'h-10' : 'h-8 touch:h-10'))
@@ -90,16 +90,8 @@ const btnH = computed(() => (props.size === 'lg' ? 'h-10' : 'h-8 touch:h-10'))
 <template>
   <!-- Sits in a row beside "Internal note" (pages/inbox.vue): the button
   shares it, a drafted reply takes the whole row. -->
-  <div :class="draft ? 'basis-full' : ''" data-cy="reply-draft">
-    <div v-if="draft" class="rounded-ctl border border-brand-tintBorder bg-brand-tint px-3 py-2.5">
-      <p class="text-[11.5px] font-semibold uppercase tracking-[.04em] text-brand-text">{{ t('Suggested reply', 'Respuesta sugerida') }}</p>
-      <p class="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap text-[13.5px] leading-snug text-ink-900" data-cy="reply-draft-text">{{ draft }}</p>
-      <div class="mt-2 flex flex-wrap items-center gap-2">
-        <button type="button" class="flex items-center rounded-ctl bg-brand px-3 text-[13px] font-semibold text-white disabled:opacity-50" :class="btnH" :disabled="sending" data-cy="reply-draft-send" @click="send">{{ t('Send', 'Enviar') }}</button>
-        <button type="button" class="flex items-center rounded-ctl border border-line-control bg-surface px-3 text-[13px] font-medium text-ink-700 hover:bg-surface-subtle" :class="btnH" data-cy="reply-draft-edit" @click="edit">{{ t('Edit', 'Editar') }}</button>
-        <button type="button" class="flex items-center px-2 text-[13px] text-ink-muted hover:text-ink-700" :class="btnH" data-cy="reply-draft-discard" @click="discard">{{ t('Discard', 'Descartar') }}</button>
-      </div>
-    </div>
+  <div :class="draft ? 'basis-full' : ''" data-cy="reply-draft-slot">
+    <InboxAiDraftCard v-if="draft" :draft="draft" :at="draftAt" :sending="sending" :size="size" @approve="approve" @discard="discard" />
     <div v-else class="flex flex-wrap items-center gap-2">
       <button
         type="button"

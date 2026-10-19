@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { fetchPatientAiStates, type InboxAiState } from '~/utils/inboxAiState'
+import { fetchPatientAiDetails, latestHandoverReason, type InboxAiState } from '~/utils/inboxAiState'
 import { normalizeSearchTerm } from '~/utils/searchText'
 import { notesBetween } from '~/utils/inboxNotes'
 import { matchPendingToServer, mergePendingIntoThread, newestInConversation } from '~/utils/inboxPendingMessages'
@@ -411,7 +411,7 @@ onMounted(async () => {
 // The receptionist answers patients with or without Growth (it is also sold
 // on its own); the lead threads, which are Growth's, still ask hasGrowth.
 const { hasGrowth, hasReceptionist } = useGrowthTier()
-const { conversations: leadConversations, reload: reloadLeadConversations, takeOver, handBack } = useGrowthConversations(hasGrowth)
+const { conversations: leadConversations, reload: reloadLeadConversations, takeOver, handBack, markHandled: markLeadHandled } = useGrowthConversations(hasGrowth)
 const {
   thread: leadThread,
   failed: leadThreadFailed,
@@ -467,6 +467,8 @@ onMounted(() => {
   const q = useRoute().query.ai
   if (q === 'handling') aiFilter.value = 'ai_handling'
   else if (q === 'needs_human') aiFilter.value = 'needs_human'
+  // From the receptionist's Overview: "N drafts waiting for approval".
+  else if (q === 'draft_ready') aiFilter.value = 'draft_ready'
 })
 
 // Everything except the leads/patients split, so the chip counts can be
@@ -513,12 +515,18 @@ const tabCounts = computed(() => {
 // the clinic (handling), or it handed the conversation over and no person has
 // written since (needs a person). Only for the rows loaded.
 const patientAiStates = ref<Record<string, InboxAiState>>({})
+// Patients with a receptionist draft waiting (inbox_reply_drafts), so the
+// "Draft ready" chip and badge count them as they count leads.
+const patientDrafts = ref<Set<string>>(new Set())
 let patientAiToken = 0
 async function loadPatientAiStates(ids: string[]) {
   const token = ++patientAiToken
-  const states = hasReceptionist.value ? await fetchPatientAiStates(supabase, ids) : {}
-  if (token === patientAiToken) patientAiStates.value = states
+  const details = hasReceptionist.value ? await fetchPatientAiDetails(supabase, ids) : { states: {}, drafts: new Set<string>() }
+  if (token !== patientAiToken) return
+  patientAiStates.value = details.states
+  patientDrafts.value = details.drafts
 }
+const reloadPatientAiStates = () => loadPatientAiStates(rows.value.map((r) => r.patient_id).filter((id): id is string => Boolean(id)))
 watch(() => rows.value.map((r) => r.patient_id).filter(Boolean).join(','), (ids) => loadPatientAiStates(ids ? ids.split(',') : []), { immediate: true })
 watch(hasReceptionist, () => loadPatientAiStates(rows.value.map((r) => r.patient_id).filter((id): id is string => Boolean(id))))
 
@@ -528,7 +536,7 @@ const needsHumanCount = computed(() => leadConversations.value.filter((c) => c.a
 // queue the receptionist actually creates -- without it the drafts it writes
 // unprompted are only found by opening threads one at a time, which is the
 // work drafting was meant to remove.
-const draftReadyCount = computed(() => leadConversations.value.filter((c) => c.hasDraft).length)
+const draftReadyCount = computed(() => leadConversations.value.filter((c) => c.hasDraft).length + patientDrafts.value.size)
 
 // Unread rather than total. The split itself is visible in the list; what
 // the front desk is actually asking is "is anyone waiting on me", and
@@ -613,6 +621,30 @@ async function onLeadHandBack() {
   await handBack(selectedLead.value.leadId)
   await loadLeadThread(selectedLead.value.leadId, { silent: true })
 }
+async function onLeadMarkHandled() {
+  if (!selectedLead.value) return
+  await markLeadHandled(selectedLead.value.leadId)
+  await loadLeadThread(selectedLead.value.leadId, { silent: true })
+}
+// A patient's handover lives on inbox_reply_drafts.handed_over_at
+// (patientReplyDraft.ts): cleared, the receptionist may answer them again
+// and the row stops saying "Needs human".
+async function onPatientMarkHandled() {
+  const patientId = selected.value?.patientId
+  if (!patientId) return
+  const { error } = await supabase.from('inbox_reply_drafts').update({ handed_over_at: null }).eq('conversation_key', patientId)
+  if (error) {
+    useToast().showToast(t('Could not mark it as handled.', 'No se ha podido marcar como atendida.'), 'error')
+    return
+  }
+  await reloadPatientAiStates()
+}
+// The receptionist is off or at its monthly limit: said in the open thread
+// (InboxAiBanner), because the only other sign is drafts not arriving.
+const { quiet: receptionistQuiet } = useReceptionistQuiet(hasReceptionist, () => store.accountId)
+// Why the receptionist handed the open patient's conversation over, from the
+// note it left; the lead thread reads its own.
+const patientHandoverReason = computed(() => latestHandoverReason(threadNotes.value))
 async function onLeadMedia(media: Parameters<typeof sendLeadMedia>[1]) {
   if (!selectedLead.value) return
   if (await sendLeadMedia(selectedLead.value.leadId, media)) await reloadLeadConversations({ silent: true })
@@ -668,6 +700,7 @@ const filteredConversations = computed(() => {
   let list = expiringOnly.value ? conversations.value.filter((c) => patientWindowPill(c)) : conversations.value
   if (aiFilter.value === 'ai_handling') list = list.filter((c) => c.patientId && patientAiStates.value[c.patientId] === 'handling')
   else if (aiFilter.value === 'needs_human') list = list.filter((c) => c.patientId && patientAiStates.value[c.patientId] === 'needs_human')
+  else if (aiFilter.value === 'draft_ready') list = list.filter((c) => c.patientId && patientDrafts.value.has(c.patientId))
   return list
 })
 // The chip's count: patients' and leads' alike, in this view.
@@ -1858,6 +1891,18 @@ function avatarInitials(name: string) {
               >
                 {{ t('Draft ready', 'Borrador listo') }} · {{ draftReadyCount }}
               </button>
+              <!-- Same rule: the one that means a conversation is waiting on
+              a person, shown only while there is one. -->
+              <button
+                v-if="hasGrowth && needsHumanCount > 0"
+                type="button"
+                :class="[chip, aiFilter === 'needs_human' ? chipOn : chipOff]"
+                :aria-pressed="aiFilter === 'needs_human'"
+                data-test="filter-needs-human-chip"
+                @click="aiFilter = aiFilter === 'needs_human' ? 'all' : 'needs_human'"
+              >
+                {{ t('Needs human', 'Requiere persona') }} · {{ needsHumanCount }}
+              </button>
               <div ref="moreFiltersEl" class="relative">
                 <button
                   type="button"
@@ -2093,7 +2138,7 @@ function avatarInitials(name: string) {
                   </p>
                   <span v-if="row.c.unread" class="h-2.5 w-2.5 shrink-0 rounded-full bg-brand" :aria-label="t('Unread', 'No leída')" data-cy="inbox-row-unread" />
                 </div>
-                <div v-if="row.c.labelIds?.length || row.c.assignedTo || row.c.followUp || row.c.snoozedUntil || patientWindowPill(row.c) || (row.c.patientId && patientAiStates[row.c.patientId])" class="mt-1 flex flex-wrap items-center gap-1">
+                <div v-if="row.c.labelIds?.length || row.c.assignedTo || row.c.followUp || row.c.snoozedUntil || patientWindowPill(row.c) || (row.c.patientId && (patientAiStates[row.c.patientId] || patientDrafts.has(row.c.patientId)))" class="mt-1 flex flex-wrap items-center gap-1">
                   <!-- First: the row truncates from the right, and this is the
                   one with a deadline on it. -->
                   <span
@@ -2105,6 +2150,7 @@ function avatarInitials(name: string) {
                   >{{ t('Expires in', 'Caduca en') }} {{ patientWindowPill(row.c)!.left }}</span>
                   <span v-if="row.c.followUp" class="rounded-pill border border-warning-border bg-warning-bg px-2 py-px text-[11.5px] font-bold text-warning-text" data-cy="inbox-row-follow-up">{{ t('Follow up', 'Seguimiento') }}</span>
                   <span v-else-if="row.c.snoozedUntil" class="rounded-pill border border-chip-border bg-chip-bg px-2 py-px text-[11.5px] text-ink-muted" data-cy="inbox-row-snoozed">{{ t('Back', 'Vuelve') }} {{ snoozeWhen(row.c.snoozedUntil) }}</span>
+                  <span v-if="row.c.patientId && patientDrafts.has(row.c.patientId)" class="rounded-pill border border-brand-tintBorder bg-brand-tint px-2 py-px text-[11.5px] font-bold text-brand-text" data-test="draft-ready-badge">{{ t('Draft ready', 'Borrador listo') }}</span>
                   <span v-if="row.c.patientId && patientAiStates[row.c.patientId] === 'handling'" class="rounded-pill bg-brand px-2 py-px text-[11.5px] font-bold text-surface" data-cy="inbox-row-ai-handling">{{ t('AI handling', 'IA gestionando') }}</span>
                   <span v-else-if="row.c.patientId && patientAiStates[row.c.patientId] === 'needs_human'" class="rounded-pill border border-warning-border bg-warning-bg px-2 py-px text-[11.5px] font-medium text-warning-text" data-cy="inbox-row-needs-human">{{ t('Needs human', 'Requiere persona') }}</span>
                   <span
@@ -2157,8 +2203,10 @@ function avatarInitials(name: string) {
           :sending="leadSending"
           :drafting="leadDrafting"
           @back="selectedKey = null; closeLeadThread()"
+          :quiet="receptionistQuiet"
           @take-over="onLeadTakeOver"
           @hand-back="onLeadHandBack"
+          @mark-handled="onLeadMarkHandled"
           @send="onLeadReply"
           @send-media="onLeadMedia"
           @send-template="leadTemplateOpen = true"
@@ -2366,6 +2414,17 @@ function avatarInitials(name: string) {
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h11M4 12h8M4 18h11" /><circle cx="19" cy="7" r="3" fill="currentColor" /></svg>
           </button>
         </div>
+
+        <!-- Who is answering, as a lead's thread says it: the receptionist
+        wrote last, or handed this over and is waiting for one of you. -->
+        <InboxAiBanner
+          v-if="selected.patientId && hasReceptionist && !isNewConversation"
+          :state="patientAiStates[selected.patientId] ?? 'none'"
+          kind="patient"
+          :reason="patientHandoverReason"
+          :quiet="receptionistQuiet"
+          @mark-handled="onPatientMarkHandled"
+        />
 
         <div class="relative min-h-0 flex-1">
           <div ref="threadScrollEl" class="h-full space-y-3 overflow-y-auto px-4 py-4" @scroll="onThreadScroll">

@@ -259,14 +259,15 @@ const discountAppliedCents = ref(0)
 const giftOpen = ref(typeof route.query.regalo === 'string')
 const giftOffered = ref(typeof route.query.regalo === 'string')
 const giftCode = ref(typeof route.query.regalo === 'string' ? route.query.regalo : '')
-const giftChecked = ref<{ ok: boolean; label?: string; description?: string; message?: string } | null>(null)
+type GiftCheck = { ok: boolean; label?: string; description?: string; message?: string }
+const giftChecked = ref<GiftCheck | null>(null)
 const checkingGift = ref(false)
 const giftResult = ref<{ redeemed: boolean; label?: string; message?: string } | null>(null)
 async function checkGift() {
   if (!giftCode.value.trim()) return
   checkingGift.value = true
   try {
-    giftChecked.value = await $fetch('/api/public-booking/gift-check', { method: 'POST', body: { slug, code: giftCode.value } })
+    giftChecked.value = await $fetch<GiftCheck>('/api/public-booking/gift-check', { method: 'POST', body: { slug, code: giftCode.value } })
   } catch {
     giftChecked.value = { ok: false, message: 'No se ha podido comprobar el código.' }
   } finally {

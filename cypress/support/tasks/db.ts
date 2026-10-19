@@ -1969,6 +1969,62 @@ async function createStoredReplyDraft(opts: { accountId: string; patientId: stri
   return null
 }
 
+// A note the receptionist left in a conversation (receptionistSend.ts,
+// noteInConversation): no author, worded as it words them. What the
+// receptionist's Overview reads back.
+async function createReceptionistNote(opts: { accountId: string; conversationKey: string; body: string; createdAt?: string }) {
+  return unwrap(
+    await admin
+      .from('inbox_notes')
+      .insert({ account_id: opts.accountId, conversation_key: opts.conversationKey, author_id: null, body: opts.body, mentions: [], ...(opts.createdAt ? { created_at: opts.createdAt } : {}) })
+      .select('id')
+      .single(),
+  )
+}
+
+// The receptionist handed a patient's conversation to a person
+// (patientReplyDraft.ts): the row that keeps it quiet there until someone
+// from the clinic writes or clears it.
+async function setPatientHandedOver(opts: { accountId: string; patientId: string; at?: string | null }) {
+  const at = opts.at === null ? null : (opts.at ?? new Date().toISOString())
+  unwrap(
+    await admin
+      .from('inbox_reply_drafts')
+      .upsert({ account_id: opts.accountId, conversation_key: opts.patientId, body: '-', drafted_through_at: new Date().toISOString(), dismissed_at: new Date().toISOString(), handed_over_at: at })
+      .select('conversation_key')
+      .single(),
+  )
+  return null
+}
+
+async function patientHandedOverAt(opts: { patientId: string }) {
+  const { data } = await admin.from('inbox_reply_drafts').select('handed_over_at').eq('conversation_key', opts.patientId).maybeSingle()
+  return data?.handed_over_at ?? null
+}
+
+// The task the receptionist leaves in Mi día when it hands a conversation
+// to a person (receptionistSend.ts, handoverTask), assigned to the account's
+// first team member so the row satisfies staff_tasks_assigned.
+async function createHandoverTask(opts: { accountId: string; title: string; leadId?: string; patientId?: string; done?: boolean }) {
+  const { data: member } = await admin.from('team_members').select('id').eq('account_id', opts.accountId).is('deleted_at', null).order('created_at').limit(1).maybeSingle()
+  return unwrap(
+    await (admin as any)
+      .from('staff_tasks')
+      .insert({
+        account_id: opts.accountId,
+        team_member_id: member?.id ?? null,
+        lead_id: opts.leadId ?? null,
+        patient_id: opts.patientId ?? null,
+        title: opts.title,
+        due_at: new Date(Date.now() + 2 * 3600_000).toISOString(),
+        done_at: opts.done ? new Date().toISOString() : null,
+        receptionist_handover: true,
+      })
+      .select('id')
+      .single(),
+  )
+}
+
 async function storedReplyDraft(opts: { patientId: string }) {
   const { data } = await admin.from('inbox_reply_drafts').select('body, dismissed_at').eq('conversation_key', opts.patientId).maybeSingle()
   return data ?? null
@@ -4077,6 +4133,8 @@ export const dbTasks = {
   'db:setGrowthAddon': setGrowthAddon,
   'db:setReceptionistAddon': setReceptionistAddon,
   'db:seedReceptionistReplies': seedReceptionistReplies,
+  'db:createReceptionistNote': createReceptionistNote,
+  'db:createHandoverTask': createHandoverTask,
   'db:setSubscriptionPlan': setSubscriptionPlan,
   'db:setLeadAiState': setLeadAiState,
   'db:setWhatsappPhoneNumberId': setWhatsappPhoneNumberId,
@@ -4237,6 +4295,8 @@ export const dbTasks = {
   'db:holdReceptionistLease': holdReceptionistLease,
   'db:receptionistLease': receptionistLease,
   'db:createStoredReplyDraft': createStoredReplyDraft,
+  'db:setPatientHandedOver': setPatientHandedOver,
+  'db:patientHandedOverAt': patientHandedOverAt,
   'db:storedReplyDraft': storedReplyDraft,
   'db:seedWhatsappReplyScenario': seedWhatsappReplyScenario,
   'db:createAppointment': createAppointment,

@@ -46,7 +46,8 @@ describe('Growth AI receptionist: appointment types it may offer', () => {
     createType(account, 'Ajuste', { sortOrder: 1 }).then((ajuste) => {
       createType(account, 'Revisión antigua', { archivedAt: new Date().toISOString() })
 
-      cy.visit('/growth/receptionist?growth=1')
+      // On the "How it behaves" section, where the booking rules are.
+      cy.visit('/growth/receptionist?growth=1&tab=behaviour')
       cy.get('[data-test="bookable-types"]').scrollIntoView().should('be.visible')
 
       // Untouched: any active type, which includes both, never the archived one.
@@ -61,7 +62,9 @@ describe('Growth AI receptionist: appointment types it may offer', () => {
 
       // "Only these" with none ticked would save as empty, which reads as
       // everything -- so it cannot be saved.
-      cy.get('[data-test="bookable-needs-one"]').should('be.visible')
+      // The editor is the last card of its section, so what the list pushes
+      // below the fold is scrolled to, as a person would.
+      cy.get('[data-test="bookable-needs-one"]').scrollIntoView().should('be.visible')
       cy.get('[data-test="bookable-save"]').should('be.disabled')
 
       cy.get(`[data-test="bookable-type-${ajuste.id}"]`).click()
@@ -90,7 +93,7 @@ describe('Growth AI receptionist: appointment types it may offer', () => {
   it('refuses to save an archived type or another clinic type', () => {
     createType(account, 'Ajuste').then((ajuste) => {
       createType(account, 'Revisión antigua', { archivedAt: new Date().toISOString() }).then((archived) => {
-        cy.visit('/growth/receptionist?growth=1')
+        cy.visit('/growth/receptionist?growth=1&tab=behaviour')
         cy.get('[data-test="bookable-types"]').should('exist')
 
         apiRequest({ method: 'PUT', url: '/api/growth/receptionist/config', body: { bookableAppointmentTypeIds: [ajuste.id, archived.id] } }).then((res) => {
@@ -119,7 +122,7 @@ describe('Growth AI receptionist: appointment types it may offer', () => {
 
         offeredNames().should('deep.equal', [])
 
-        cy.visit('/growth/receptionist?growth=1')
+        cy.visit('/growth/receptionist?growth=1&tab=behaviour')
         cy.get('[data-test="offered-types"]').should('contain', 'Offers no appointment type now')
         cy.get('[data-test="bookable-archived-note"]').should('contain', '1 type on this list is archived')
         // Not "any type": a list that names only archived types offers none,

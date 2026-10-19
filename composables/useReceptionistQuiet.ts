@@ -1,4 +1,6 @@
-import { receptionistLimitReached } from '~/utils/receptionistAllowance'
+// Relative, not `~`: the staff app auto-imports this directory too, and
+// there `~` is mobile/.
+import { receptionistLimitReached } from '../utils/receptionistAllowance'
 
 // Whether the AI receptionist is writing in this clinic at all right now,
 // for the Inbox: switched off, or stopped by the clinic's monthly reply

@@ -1,0 +1,12 @@
+-- The calendar panel's history reads audit_logs.actor to say "AI receptionist"
+-- against what the receptionist booked or moved (components/calendar/
+-- AppointmentPanel.vue). The trail migration (20261008070424) limited
+-- authenticated to a column list that left `actor` out, so the whole select
+-- was refused with 42501 "permission denied for table audit_logs" and the
+-- panel showed no history at all.
+--
+-- `actor` is only the kind of caller (staff, patient, receptionist, server...).
+-- The sensitive columns -- changes, snapshot, actor_detail, actor_name -- stay
+-- ungranted, and the row policy still limits staff to appointment, patient
+-- and payment rows.
+grant select (actor) on public.audit_logs to authenticated;

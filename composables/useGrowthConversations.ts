@@ -105,6 +105,10 @@ export function useGrowthConversations(enabled: Ref<boolean> | ComputedRef<boole
 
   const takeOver = (leadId: string) => setAiState(leadId, 'paused')
   const handBack = (leadId: string) => setAiState(leadId, 'handling')
+  // A handover a person has dealt with: nobody's now, neither the AI's nor
+  // flagged. Until this existed a lead handed over stayed "Needs human" for
+  // ever, whoever had answered it since.
+  const markHandled = (leadId: string) => setAiState(leadId, 'none')
 
-  return { conversations, loading, reload: load, takeOver, handBack }
+  return { conversations, loading, reload: load, takeOver, handBack, markHandled }
 }

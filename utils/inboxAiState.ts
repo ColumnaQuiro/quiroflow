@@ -46,19 +46,51 @@ export function aiStatesFromMessages(handovers: AiHandover[], outbound: AiOutbou
 /** How far back a conversation counts as the receptionist's. */
 const SINCE_DAYS = 7
 
+export interface PatientAiDetails {
+  states: Record<string, InboxAiState>
+  /** Patients with a receptionist draft waiting on a person (inbox_reply_drafts). */
+  drafts: Set<string>
+}
+
 /**
- * The states for these patients' conversations, read with the caller's own
- * client (RLS scopes it to their account). Empty when the receptionist is off.
+ * The states for these patients' conversations, and which of them have a
+ * draft waiting, read with the caller's own client (RLS scopes it to their
+ * account). Empty when the receptionist is off.
+ *
+ * The drafts come from the same table as the handovers, so they cost no
+ * extra request: a row with a body (the tick writes '-' when it read a
+ * message and had nothing to say) that nobody has dealt with yet.
  */
-export async function fetchPatientAiStates(supabase: any, patientIds: string[]): Promise<Record<string, InboxAiState>> {
-  if (patientIds.length === 0) return {}
+export async function fetchPatientAiDetails(supabase: any, patientIds: string[]): Promise<PatientAiDetails> {
+  if (patientIds.length === 0) return { states: {}, drafts: new Set() }
   const since = new Date(Date.now() - SINCE_DAYS * 86_400_000).toISOString()
-  const [{ data: config }, { data: handovers }, { data: wa }, { data: app }] = await Promise.all([
+  const [{ data: config }, { data: rows }, { data: wa }, { data: app }] = await Promise.all([
     supabase.from('receptionist_config').select('enabled').maybeSingle(),
-    supabase.from('inbox_reply_drafts').select('conversation_key, handed_over_at').in('conversation_key', patientIds).not('handed_over_at', 'is', null),
+    supabase.from('inbox_reply_drafts').select('conversation_key, handed_over_at, body, dismissed_at').in('conversation_key', patientIds),
     supabase.from('whatsapp_messages').select('patient_id, created_at, sent_by_ai').in('patient_id', patientIds).eq('direction', 'outbound').is('template_name', null).is('rule_id', null).is('automation_action_id', null).gt('created_at', since).order('created_at', { ascending: false }).limit(1000),
     supabase.from('patient_app_messages').select('patient_id, created_at, sent_by_ai').in('patient_id', patientIds).eq('direction', 'outbound').gt('created_at', since).order('created_at', { ascending: false }).limit(1000),
   ])
-  if (!(config as { enabled?: boolean } | null)?.enabled) return {}
-  return aiStatesFromMessages((handovers ?? []) as AiHandover[], [...(wa ?? []), ...(app ?? [])] as AiOutbound[])
+  if (!(config as { enabled?: boolean } | null)?.enabled) return { states: {}, drafts: new Set() }
+  const all = (rows ?? []) as { conversation_key: string; handed_over_at: string | null; body: string; dismissed_at: string | null }[]
+  const handovers = all.filter((r): r is typeof r & { handed_over_at: string } => Boolean(r.handed_over_at))
+  const drafts = new Set(all.filter((r) => !r.dismissed_at && r.body && r.body !== '-').map((r) => r.conversation_key))
+  return { states: aiStatesFromMessages(handovers, [...(wa ?? []), ...(app ?? [])] as AiOutbound[]), drafts }
+}
+
+/** The states alone -- what the app's Inbox reads. */
+export async function fetchPatientAiStates(supabase: any, patientIds: string[]): Promise<Record<string, InboxAiState>> {
+  return (await fetchPatientAiDetails(supabase, patientIds)).states
+}
+
+/**
+ * Why a conversation was handed to a person: the latest note the receptionist
+ * left saying so (receptionistSend.ts, announceHandover), without its fixed
+ * opening. Null when no such note is in the thread.
+ */
+export function latestHandoverReason(notes: { author_id: string | null; body: string; created_at: string }[]): string | null {
+  const handovers = notes.filter((n) => !n.author_id && /^he pasado esta conversación/i.test(n.body.trim()))
+  const latest = handovers.sort((a, b) => b.created_at.localeCompare(a.created_at))[0]
+  if (!latest) return null
+  const match = /motivo:\s*(.+)$/is.exec(latest.body)
+  return (match?.[1] ?? latest.body).trim()
 }

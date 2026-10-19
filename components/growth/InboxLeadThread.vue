@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { LeadThread } from '~/composables/useGrowthLeadThread'
+import { latestHandoverReason } from '~/utils/inboxAiState'
 import { notesBetween, type InboxNote } from '~/utils/inboxNotes'
+import type { ReceptionistQuiet } from '~/composables/useReceptionistQuiet'
 
 const props = defineProps<{
   thread: LeadThread
@@ -13,6 +15,8 @@ const props = defineProps<{
   myId: string | null
   noteSaving: boolean
   noteError?: string
+  /** The receptionist is off or at its monthly limit: said in the thread (InboxAiBanner). */
+  quiet?: ReceptionistQuiet
 }>()
 const noteMode = defineModel<boolean>('noteMode', { default: false })
 const emit = defineEmits<{
@@ -21,6 +25,7 @@ const emit = defineEmits<{
   back: []
   takeOver: []
   handBack: []
+  markHandled: []
   send: [text: string]
   sendMedia: [media: { base64: string; mimeType: string; filename: string; kind: 'image' | 'video' | 'audio' | 'document' }]
   sendTemplate: []
@@ -32,23 +37,8 @@ const emit = defineEmits<{
 const t = useT()
 const draft = ref('')
 
-// Editing the AI's draft before approving it. Kept separate from `draft`,
-// the composer's own text: they are two different messages, and sharing one
-// box is how an edit silently becomes the thing you typed earlier.
-const editingDraft = ref(false)
-const editedDraft = ref('')
-
-function startEditingDraft() {
-  editedDraft.value = props.thread.draft ?? ''
-  editingDraft.value = true
-}
-
-function approve() {
-  const text = editingDraft.value ? editedDraft.value : (props.thread.draft ?? '')
-  if (!text.trim() || props.sending) return
-  emit('approveDraft', text)
-  editingDraft.value = false
-}
+// Why the receptionist handed this over, from the note it left in the thread.
+const handoverReason = computed(() => latestHandoverReason(props.notes))
 
 // Drafting only makes sense while a free-form reply is possible at all --
 // outside WhatsApp's 24h window the approve button could only ever fail.
@@ -174,11 +164,15 @@ watch(
       <slot name="actions" />
     </div>
 
-    <GrowthInboxAiBanner
-      :ai-state="thread.aiState"
+    <InboxAiBanner
+      :state="thread.aiState"
+      kind="lead"
       :taken-over-by="thread.takenOverBy"
+      :reason="handoverReason"
+      :quiet="quiet ?? null"
       @take-over="emit('takeOver')"
       @hand-back="emit('handBack')"
+      @mark-handled="emit('markHandled')"
     />
 
     <div ref="scroller" class="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4" data-test="lead-messages">
@@ -246,51 +240,11 @@ watch(
       <InboxNoteComposer :team="team" :my-id="myId" :saving="noteSaving" :error="noteError" @save="(body, mentions) => emit('saveNote', body, mentions)" @cancel="noteMode = false" />
     </div>
 
-    <!-- The receptionist's draft, waiting on a person. Same shape as the one
-    on a review (PendingReplyCard) because it is the same promise: the model
-    writes, a human decides, and nothing reaches anyone unread. -->
-    <div v-if="thread.draft && !noteMode" class="flex shrink-0 flex-col gap-2.5 border-t border-brand-tintBorder bg-brand-tint p-4" data-test="lead-draft">
-      <div class="flex flex-wrap items-center gap-2">
-        <span class="flex h-[18px] w-[18px] items-center justify-center rounded-[6px] bg-brand text-[9px] font-bold text-white">AI</span>
-        <span class="text-[12px] font-semibold text-brand-text">
-          {{ t('Drafted by the receptionist · needs your approval', 'Redactado por la recepcionista · requiere tu aprobación') }}
-        </span>
-        <span v-if="thread.draftAt" class="text-[10.5px] text-ink-muted">{{ time(thread.draftAt) }}</span>
-      </div>
-
-      <textarea
-        v-if="editingDraft"
-        v-model="editedDraft"
-        rows="4"
-        class="w-full resize-none rounded-ctl border border-brand-tintBorder bg-surface px-3 py-2.5 text-[12px] leading-[1.5] text-ink-700 focus:border-brand focus:outline-none"
-        data-test="edit-lead-draft"
-      />
-      <p v-else class="whitespace-pre-wrap rounded-ctl border border-brand-tintBorder bg-surface px-3 py-2.5 text-[12px] leading-[1.5] text-ink-700">
-        {{ thread.draft }}
-      </p>
-
-      <div class="flex flex-wrap items-center gap-2">
-        <UiBtn variant="primary" size="sm" :disabled="sending" data-test="approve-lead-draft" @click="approve">
-          {{ sending ? t('Sending…', 'Enviando…') : t('Approve and send', 'Aprobar y enviar') }}
-        </UiBtn>
-        <button
-          v-if="!editingDraft"
-          type="button"
-          class="flex h-8 items-center rounded-ctl border border-line-control bg-surface px-3 text-[12px] font-medium text-ink-700 hover:bg-surface-subtle"
-          data-test="edit-lead-draft-start"
-          @click="startEditingDraft"
-        >{{ t('Edit', 'Editar') }}</button>
-        <button
-          type="button"
-          class="flex h-8 items-center rounded-ctl border border-line-control bg-surface px-3 text-[12px] font-medium text-ink-700 hover:bg-surface-subtle"
-          :disabled="sending"
-          data-test="discard-lead-draft"
-          @click="emit('discardDraft')"
-        >{{ t('Discard', 'Descartar') }}</button>
-        <span class="ml-auto text-[10.5px] text-ink-muted">
-          {{ t('Nothing sends without your approval', 'No se envía nada sin tu aprobación') }}
-        </span>
-      </div>
+    <!-- The receptionist's draft, waiting on a person: the same card a
+    patient's draft waits in (InboxAiDraftCard). The model writes, a human
+    decides, and nothing reaches anyone unread. -->
+    <div v-if="thread.draft && !noteMode" class="shrink-0 border-t border-brand-tintBorder bg-brand-tint p-3" data-test="lead-draft">
+      <InboxAiDraftCard :draft="thread.draft" :at="thread.draftAt" :sending="sending" @approve="(text) => emit('approveDraft', text)" @discard="emit('discardDraft')" />
     </div>
 
     <template v-if="noteMode" />

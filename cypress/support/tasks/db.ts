@@ -1982,6 +1982,26 @@ async function createReceptionistNote(opts: { accountId: string; conversationKey
   )
 }
 
+// The receptionist handed a patient's conversation to a person
+// (patientReplyDraft.ts): the row that keeps it quiet there until someone
+// from the clinic writes or clears it.
+async function setPatientHandedOver(opts: { accountId: string; patientId: string; at?: string | null }) {
+  const at = opts.at === null ? null : (opts.at ?? new Date().toISOString())
+  unwrap(
+    await admin
+      .from('inbox_reply_drafts')
+      .upsert({ account_id: opts.accountId, conversation_key: opts.patientId, body: '-', drafted_through_at: new Date().toISOString(), dismissed_at: new Date().toISOString(), handed_over_at: at })
+      .select('conversation_key')
+      .single(),
+  )
+  return null
+}
+
+async function patientHandedOverAt(opts: { patientId: string }) {
+  const { data } = await admin.from('inbox_reply_drafts').select('handed_over_at').eq('conversation_key', opts.patientId).maybeSingle()
+  return data?.handed_over_at ?? null
+}
+
 // The task the receptionist leaves in Mi día when it hands a conversation
 // to a person (receptionistSend.ts, handoverTask), assigned to the account's
 // first team member so the row satisfies staff_tasks_assigned.
@@ -4275,6 +4295,8 @@ export const dbTasks = {
   'db:holdReceptionistLease': holdReceptionistLease,
   'db:receptionistLease': receptionistLease,
   'db:createStoredReplyDraft': createStoredReplyDraft,
+  'db:setPatientHandedOver': setPatientHandedOver,
+  'db:patientHandedOverAt': patientHandedOverAt,
   'db:storedReplyDraft': storedReplyDraft,
   'db:seedWhatsappReplyScenario': seedWhatsappReplyScenario,
   'db:createAppointment': createAppointment,

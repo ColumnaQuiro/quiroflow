@@ -39,7 +39,7 @@ export async function readLeadThread(supabase: SupabaseClient<Database>, leadId:
     // someone was about to answer.
     supabase
       .from('whatsapp_messages')
-      .select('id, direction, body_preview, channel, status, created_at, template_name, media_type, media_storage_path, media_filename, sent_by_ai')
+      .select('id, direction, body_preview, channel, status, created_at, template_name, media_type, media_storage_path, media_filename, sent_by_ai, contact_reaction')
       .eq('lead_id', leadId)
       .order('created_at', { ascending: false })
       .limit(200),
@@ -114,6 +114,7 @@ export async function readLeadThread(supabase: SupabaseClient<Database>, leadId:
       mediaType: message.media_type,
       mediaUrl: message.media_storage_path ? (mediaUrls[message.media_storage_path] ?? null) : null,
       mediaFilename: message.media_filename,
+      reaction: message.contact_reaction ?? null,
     })),
   }
 }

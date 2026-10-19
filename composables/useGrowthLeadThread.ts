@@ -18,6 +18,8 @@ export interface LeadThreadMessage {
   /** Signed for 30 minutes; null when the file is missing from storage. */
   mediaUrl: string | null
   mediaFilename: string | null
+  /** The lead's WhatsApp reaction to this message, drawn on it (ReactionBadge). */
+  reaction?: string | null
 }
 
 export interface LeadThread {
@@ -182,6 +184,17 @@ export function useGrowthLeadThread() {
     thread.value = { ...current, messages }
   }
 
+  /** The lead reacting to (or taking back a reaction on) a message of the open thread, patched in place. */
+  function patchReaction(leadId: string, messageId: string, reaction: string | null) {
+    const current = thread.value
+    if (!current || current.id !== leadId) return
+    const i = current.messages.findIndex((m) => m.id === messageId)
+    if (i === -1 || (current.messages[i]!.reaction ?? null) === reaction) return
+    const messages = current.messages.slice()
+    messages[i] = { ...messages[i]!, reaction }
+    thread.value = { ...current, messages }
+  }
+
   function appendPending(leadId: string, id: string, text: string, media?: { kind: string; filename: string }) {
     const current = thread.value
     if (!current || current.id !== leadId) return
@@ -304,5 +317,5 @@ export function useGrowthLeadThread() {
     failed.value = false
   }
 
-  return { thread, loading, failed, sending, drafting, load, prefetch, patchStatus, reply, sendMedia, draftReply, discardDraft, approveDraft, close }
+  return { thread, loading, failed, sending, drafting, load, prefetch, patchStatus, patchReaction, reply, sendMedia, draftReply, discardDraft, approveDraft, close }
 }

@@ -1,6 +1,6 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
-import { inboundNonTextBody, skipReaction, type InboundNonTextMessage } from '~/utils/whatsappInbound'
+import { inboundNonTextBody, reactionOn, skipReaction, type InboundNonTextMessage } from '~/utils/whatsappInbound'
 import { downloadMetaMedia, extensionForMimeType, type MediaKind } from '~/server/utils/whatsappSend'
 import { notifyInboxTeamMembers } from '~/server/utils/pushNotifications'
 import { automationEvent } from '~/server/utils/automationEngine'
@@ -364,7 +364,22 @@ export default defineEventHandler(async (event) => {
         // shortcut -- two copies arriving at once both get past it, which is
         // what the insert's own duplicate check below is for.
         if (await alreadyStored(supabase, msg.id)) continue
-        // A reaction being taken back: not a message.
+        // A reaction is shown on the message it reacts to, as on the patient's
+        // phone: a new emoji replaces theirs, an empty one (taken back) clears
+        // it. Not a message, so nothing below runs -- no push, no "Replied",
+        // nothing for the receptionist to answer. One about a message we do
+        // not have still becomes the "Ha reaccionado con" line below.
+        const reaction = reactionOn(msg)
+        if (reaction) {
+          const { data: reacted } = await supabase
+            .from('whatsapp_messages')
+            .update({ contact_reaction: reaction.emoji })
+            .eq('account_id', account.id)
+            .eq('wamid', reaction.messageId)
+            .select('id')
+          if (reacted?.length) continue
+        }
+        // A reaction being taken back from a message we do not have: nothing.
         if (skipReaction(msg)) continue
 
         const patientIds = await findPatientIdsByPhone(supabase, account.id, msg.from)

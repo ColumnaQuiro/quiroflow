@@ -60,6 +60,21 @@ export function inboundNonTextBody(msg: InboundNonTextMessage): string | null {
   }
 }
 
+/**
+ * What a reaction is about: the wamid of the message it reacts to, and the
+ * emoji -- null when the reaction is being taken back. Null for anything
+ * that is not a reaction, or one that names no message.
+ */
+export function reactionOn(msg: InboundNonTextMessage): { messageId: string; emoji: string | null } | null {
+  if (msg.type !== 'reaction' || !msg.reaction?.message_id) return null
+  return { messageId: msg.reaction.message_id, emoji: msg.reaction.emoji || null }
+}
+
+/** The emoji of a stored reaction line ("Ha reaccionado con 👍"), for drawing it small. */
+export function reactionEmoji(text: string | null | undefined): string | null {
+  return isReactionBody(text) ? text!.slice(REACTION_PREFIX.length).trim() || null : null
+}
+
 /** A reaction being removed: nothing to show, and nothing to answer. */
 export function skipReaction(msg: InboundNonTextMessage): boolean {
   return msg.type === 'reaction' && !msg.reaction?.emoji

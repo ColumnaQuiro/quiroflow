@@ -7972,6 +7972,7 @@ export type Database = {
           appointment_id: string | null
           body_preview: string | null
           channel: string
+          contact_reaction: string | null
           created_at: string
           direction: string
           external_contact_id: string | null
@@ -7999,6 +8000,7 @@ export type Database = {
           appointment_id?: string | null
           body_preview?: string | null
           channel?: string
+          contact_reaction?: string | null
           created_at?: string
           direction?: string
           external_contact_id?: string | null
@@ -8026,6 +8028,7 @@ export type Database = {
           appointment_id?: string | null
           body_preview?: string | null
           channel?: string
+          contact_reaction?: string | null
           created_at?: string
           direction?: string
           external_contact_id?: string | null

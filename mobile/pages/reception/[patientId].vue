@@ -114,15 +114,15 @@ const initials = computed(() => (lock.value?.clinicName ?? '').split(/\s+/).filt
           <DocBlocks :fields="fields" mode="fill" @update:fields="fields = $event" />
         </div>
         <p v-if="error" role="alert" class="mt-4 text-[13.5px] text-danger-text" data-cy="reception-error">{{ error }}</p>
-        <button type="button" class="mt-6 flex h-12 items-center justify-center rounded-card bg-brand px-6 text-[16px] font-semibold text-white disabled:opacity-50 md:self-end" :disabled="saving" data-cy="reception-submit" @click="submit">
+        <AppButton variant="primary" size="lg" class="mt-6 md:self-end" :disabled="saving" data-cy="reception-submit" @click="submit">
           {{ saving ? t('Saving…', 'Guardando…') : index + 1 < total ? t('Sign and continue', 'Firmar y continuar') : t('Sign and finish', 'Firmar y terminar') }}
-        </button>
+        </AppButton>
       </template>
 
       <div v-else-if="phase === 'failed'" class="m-auto flex max-w-[420px] flex-col items-center text-center" data-cy="reception-failed">
         <h1 class="text-[22px] font-semibold text-ink-900">{{ t('The form did not load', 'No se ha podido cargar el formulario') }}</h1>
         <p class="mt-2 text-[15px] leading-relaxed text-ink-muted">{{ t('Check the connection and try again.', 'Revisa la conexión e inténtalo de nuevo.') }}</p>
-        <button type="button" class="mt-6 h-12 rounded-card bg-brand px-6 text-[16px] font-semibold text-white" data-cy="reception-retry" @click="loadCurrent">{{ t('Try again', 'Reintentar') }}</button>
+        <AppButton variant="primary" size="lg" class="mt-6" data-cy="reception-retry" @click="loadCurrent">{{ t('Try again', 'Reintentar') }}</AppButton>
       </div>
 
       <div v-else class="m-auto flex max-w-[420px] flex-col items-center text-center" data-cy="reception-done">
@@ -131,7 +131,7 @@ const initials = computed(() => (lock.value?.clinicName ?? '').split(/\s+/).filt
         </span>
         <h1 class="mt-4 text-[24px] font-semibold text-ink-900">{{ t(`Thank you, ${lock.firstName}`, `Gracias, ${lock.firstName}`) }}</h1>
         <p class="mt-2 text-[15px] leading-relaxed text-ink-muted">{{ t('All done. Please hand the device back to reception.', 'Ya está todo. Devuélvelo a recepción, por favor.') }}</p>
-        <button type="button" class="mt-8 h-11 rounded-card border border-line-control px-5 text-[14px] font-medium text-ink-700" @click="exitOpen = true">{{ t('Reception: take it back', 'Recepción: recoger el dispositivo') }}</button>
+        <AppButton class="mt-8" @click="exitOpen = true">{{ t('Reception: take it back', 'Recepción: recoger el dispositivo') }}</AppButton>
       </div>
     </main>
 

@@ -147,7 +147,7 @@ const dayLabel = computed(() => shortDayLabel(new Date(`${props.date}T12:00:00Z`
         </button>
       </div>
 
-      <button type="button" class="py-1 text-[13.5px] text-ink-muted" @click="emit('close')">{{ t('Cancel', 'Cancelar') }}</button>
+      <AppButton variant="quiet" @click="emit('close')">{{ t('Cancel', 'Cancelar') }}</AppButton>
     </div>
   </div>
 </template>

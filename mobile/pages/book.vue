@@ -452,7 +452,7 @@ async function submitBooking() {
       </div>
       <p v-else-if="!teamMemberId" class="text-[12.5px] text-ink-muted">{{ t('No practitioner can be booked for this at this clinic.', 'En esta clínica no hay ningún profesional con quien reservar esto.') }}</p>
 
-      <UiBtn variant="primary" class="w-full" :disabled="!canContinueFromSelect" @click="phase = 'datetime'">{{ t('Continue', 'Continuar') }}</UiBtn>
+      <AppButton variant="primary" class="w-full" :disabled="!canContinueFromSelect" @click="phase = 'datetime'">{{ t('Continue', 'Continuar') }}</AppButton>
     </div>
 
     <div v-else-if="phase === 'datetime'" class="space-y-4">
@@ -521,7 +521,7 @@ async function submitBooking() {
       </div>
       <p v-else class="text-[12.5px] text-ink-muted">{{ t('This will move your existing appointment to the time above.', 'Tu cita actual se moverá a la hora de arriba.') }}</p>
       <p v-if="submitError" class="text-[12.5px] text-danger-text">{{ submitError }}</p>
-      <UiBtn variant="primary" class="w-full" :disabled="submitting" @click="submitBooking">{{ submitting ? (rescheduleId ? t('Moving…', 'Cambiando…') : t('Booking…', 'Reservando…')) : rescheduleId ? t('Confirm the change', 'Confirmar el cambio') : t('Confirm booking', 'Confirmar reserva') }}</UiBtn>
+      <AppButton variant="primary" class="w-full" :disabled="submitting" @click="submitBooking">{{ submitting ? (rescheduleId ? t('Moving…', 'Cambiando…') : t('Booking…', 'Reservando…')) : rescheduleId ? t('Confirm the change', 'Confirmar el cambio') : t('Confirm booking', 'Confirmar reserva') }}</AppButton>
       <button type="button" class="w-full text-center text-[12.5px] text-ink-muted" @click="phase = 'datetime'"><AppChevron dir="left" /> {{ t('Choose a different time', 'Elegir otra hora') }}</button>
     </div>
 

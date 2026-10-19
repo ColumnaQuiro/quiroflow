@@ -2138,9 +2138,9 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
               {{ t("Your role can't send templates.", 'Tu rol no puede enviar plantillas.') }}
             </template>
           </p>
-          <UiBtn v-if="canSendTemplate" variant="primary" size="sm" class="mt-2 h-10 w-full" data-cy="inbox-send-template" @click="templateSheetOpen = true">
+          <AppButton v-if="canSendTemplate" variant="primary" class="mt-2 w-full" data-cy="inbox-send-template" @click="templateSheetOpen = true">
             {{ t('Send a template', 'Enviar una plantilla') }}
-          </UiBtn>
+          </AppButton>
         </div>
         <div v-else-if="audioRecording" class="flex items-center gap-3 rounded-ctl border border-line-control bg-surface-subtle px-3 py-2.5">
           <span class="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-danger-text" />

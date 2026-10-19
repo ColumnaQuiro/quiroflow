@@ -373,22 +373,22 @@ const canBook = computed(() => !!context.value && !restricted('calendar_read_onl
               <span class="shrink-0 rounded-full px-2 py-0.5 text-[11.5px] font-semibold" :class="longLapse(r) ? 'border border-warning-border bg-warning-bg text-warning-text' : 'bg-chip-bg text-chip-text'">{{ overdue(r) }}</span>
             </div>
             <div class="mt-2.5 flex gap-2">
-              <button v-if="canWhatsApp(r)" type="button" class="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-ctl bg-brand text-[13.5px] font-semibold text-white" data-cy="recall-whatsapp" @click="sendingTo = r">
+              <AppButton variant="primary" v-if="canWhatsApp(r)" class="flex-1" data-cy="recall-whatsapp" @click="sendingTo = r">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 01-12.3 7.5L3 21l2-5.5A8.5 8.5 0 1121 11.5z" /></svg>
                 WhatsApp
-              </button>
-              <button v-if="reach[r.patient_id]?.phone" type="button" class="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-ctl border border-line-control bg-surface text-[13.5px] font-medium text-ink-700" data-cy="recall-call" @click="call(r)">
+              </AppButton>
+              <AppButton v-if="reach[r.patient_id]?.phone" class="flex-1" data-cy="recall-call" @click="call(r)">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2z" /></svg>
                 {{ t('Call', 'Llamar') }}
-              </button>
-              <button type="button" class="flex h-10 w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control bg-surface text-ink-700" :aria-label="t(`More for ${nameOf(r)}`, `Más opciones para ${nameOf(r)}`)" data-cy="recall-more" @click="menuFor = r">
+              </AppButton>
+              <button type="button" class="flex h-11 w-11 shrink-0 items-center justify-center rounded-card border border-line-control bg-surface text-ink-700" :aria-label="t(`More for ${nameOf(r)}`, `Más opciones para ${nameOf(r)}`)" data-cy="recall-more" @click="menuFor = r">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>
               </button>
             </div>
           </article>
-          <button v-if="hasMore" type="button" class="mt-1 h-11 rounded-card border border-line-control bg-surface text-[14px] font-medium text-ink-700 disabled:opacity-50" :disabled="loadingMore" data-cy="recalls-more" @click="load(true)">
+          <AppButton v-if="hasMore" class="mt-1" :disabled="loadingMore" data-cy="recalls-more" @click="load(true)">
             {{ loadingMore ? t('Loading…', 'Cargando…') : t('Show more', 'Ver más') }}
-          </button>
+          </AppButton>
         </div>
       </div>
     </template>
@@ -409,14 +409,14 @@ const canBook = computed(() => !!context.value && !restricted('calendar_read_onl
           </button>
         </div>
         <template v-if="menuFor">
-          <NuxtLink v-if="canBook" :to="`/patients/${menuFor.patient_id}?book=1`" class="mt-2 flex h-11 items-center justify-center rounded-card bg-brand text-[14.5px] font-semibold text-white" data-cy="recall-book">{{ t('Book a visit', 'Reservar cita') }}</NuxtLink>
+          <AppButton variant="primary" v-if="canBook" :to="`/patients/${menuFor.patient_id}?book=1`" class="mt-2" data-cy="recall-book">{{ t('Book a visit', 'Reservar cita') }}</AppButton>
           <p class="px-1 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Snooze', 'Posponer') }}</p>
           <div class="grid grid-cols-4 gap-1.5">
-            <button v-for="s in SNOOZES" :key="s.days" type="button" class="h-10 rounded-ctl border border-line-control text-[13px] font-medium text-ink-700 disabled:opacity-50" :disabled="busy" :data-cy="`recall-snooze-${s.days}`" @click="snooze(menuFor, s.days)">{{ s.label }}</button>
+            <button v-for="s in SNOOZES" :key="s.days" type="button" class="h-11 rounded-card border border-line-control text-[13px] font-medium text-ink-700 disabled:opacity-50" :disabled="busy" :data-cy="`recall-snooze-${s.days}`" @click="snooze(menuFor, s.days)">{{ s.label }}</button>
           </div>
-          <button type="button" class="mt-3 flex min-h-11 items-center justify-center rounded-ctl text-[14px] font-medium text-danger-text" data-cy="recall-dismiss" @click="dismiss(menuFor)">{{ t('Dismiss from recalls', 'Descartar de recordatorios') }}</button>
+          <AppButton variant="danger" class="mt-3" data-cy="recall-dismiss" @click="dismiss(menuFor)">{{ t('Dismiss from recalls', 'Descartar de recordatorios') }}</AppButton>
         </template>
-        <button type="button" class="flex min-h-11 items-center justify-center text-[13.5px] text-ink-muted" @click="menuFor = null; calledFor = null">{{ calledFor ? t('Not now', 'Ahora no') : t('Close', 'Cerrar') }}</button>
+        <AppButton variant="quiet" @click="menuFor = null; calledFor = null">{{ calledFor ? t('Not now', 'Ahora no') : t('Close', 'Cerrar') }}</AppButton>
       </div>
     </div>
 

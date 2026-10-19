@@ -136,10 +136,10 @@ const smallBtn = 'min-h-10 shrink-0 rounded-ctl border border-line-control px-3.
         </p>
         <p v-if="passwordError" role="alert" class="text-[12.5px] text-danger-text">{{ passwordError }}</p>
         <div class="flex gap-2">
-          <UiBtn type="submit" variant="primary" class="flex-1" :disabled="savingPassword" data-cy="security-password-submit">
+          <AppButton type="submit" variant="primary" class="flex-1" :disabled="savingPassword" data-cy="security-password-submit">
             {{ savingPassword ? t('Saving…', 'Guardando…') : t('Change password', 'Cambiar contraseña') }}
-          </UiBtn>
-          <UiBtn type="button" variant="secondary" @click="closePassword">{{ t('Cancel', 'Cancelar') }}</UiBtn>
+          </AppButton>
+          <AppButton @click="closePassword">{{ t('Cancel', 'Cancelar') }}</AppButton>
         </div>
       </form>
     </div>

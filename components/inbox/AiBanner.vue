@@ -14,7 +14,7 @@
 // too), so no `~` imports.
 export type InboxAiBannerState = 'handling' | 'paused' | 'needs_human' | 'blocked' | 'none'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   state: InboxAiBannerState | null
   kind: 'lead' | 'patient'
   /** Who took the thread off the AI, once someone has (leads). */
@@ -27,7 +27,13 @@ const props = defineProps<{
    * is drafts quietly not arriving.
    */
   quiet?: 'off' | 'limit' | null
-}>()
+  /**
+   * Whether to offer the way to the settings that fix a blocked channel or a
+   * quiet receptionist. Off in the staff app, which has neither page: a link
+   * there opened nothing.
+   */
+  links?: boolean
+}>(), { links: true })
 defineEmits<{ takeOver: []; handBack: []; markHandled: [] }>()
 
 const t = useT()
@@ -121,7 +127,7 @@ const quietText = computed(() => {
       <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-danger-text" />
       <span class="text-[12px] text-danger-text">{{ t('Nothing can be sent until the channel is reconnected.', 'No se puede enviar nada hasta reconectar el canal.') }}</span>
     </div>
-    <NuxtLink to="/settings/whatsapp" class="shrink-0 text-[11.5px] font-semibold text-danger-text hover:underline">
+    <NuxtLink v-if="links" to="/settings/whatsapp" class="shrink-0 text-[11.5px] font-semibold text-danger-text hover:underline">
       {{ t('Reconnect number', 'Reconectar número') }} →
     </NuxtLink>
   </div>
@@ -135,6 +141,6 @@ const quietText = computed(() => {
     :data-why="quiet"
   >
     <span class="text-[11.5px] text-ink-muted">{{ quietText }}</span>
-    <NuxtLink to="/growth/receptionist" class="shrink-0 text-[11.5px] font-semibold text-brand-text hover:underline">{{ t('Receptionist settings', 'Ajustes de la recepcionista') }} →</NuxtLink>
+    <NuxtLink v-if="links" to="/growth/receptionist" class="shrink-0 text-[11.5px] font-semibold text-brand-text hover:underline">{{ t('Receptionist settings', 'Ajustes de la recepcionista') }} →</NuxtLink>
   </div>
 </template>

@@ -20,6 +20,26 @@ export interface PractitionerContext {
   photoStoragePath: string | null
   /** The role's permissions, as get_my_bootstrap returns them to the web. */
   permissions: Record<string, unknown>
+  /**
+   * Whether the account has the AI receptionist: the Inbox's banner, drafts
+   * and chips ask this, as the web's useGrowthTier does.
+   */
+  hasReceptionist: boolean
+}
+
+type BootstrapSubscription = { plan_id?: string | null; growth_addon?: boolean | null; receptionist_addon?: boolean | null; status?: string | null; comped?: boolean | null }
+
+// The server's rule (server/utils/requireGrowth.ts, hasReceptionist), which
+// the web's account store repeats and this repeats again, since neither is
+// importable here: Growth includes the receptionist -- comped, trialing, or
+// the add-on or a plan that includes it while not locked or cancelled -- and
+// it is also sold on its own under the same two stopping statuses.
+function receptionistFrom(subscription: BootstrapSubscription | null | undefined): boolean {
+  if (!subscription) return false
+  const stopped = subscription.status === 'locked' || subscription.status === 'canceled'
+  if (subscription.comped || subscription.status === 'trialing') return true
+  if ((subscription.growth_addon || planIncludesGrowth(subscription.plan_id)) && !stopped) return true
+  return !!subscription.receptionist_addon && !stopped
 }
 
 const context = ref<PractitionerContext | null>(null)
@@ -107,6 +127,7 @@ export function usePractitionerContext() {
       timeZone: chosen?.timezone || DEFAULT_CLINIC_TIMEZONE,
       photoStoragePath: teamMember.photo_storage_path,
       permissions: ((boot as { permissions?: Record<string, unknown> } | null)?.permissions ?? {}) as Record<string, unknown>,
+      hasReceptionist: receptionistFrom((boot as { subscription?: BootstrapSubscription | null } | null)?.subscription),
     }
     loading.value = false
   }

@@ -7,6 +7,7 @@ import { CHANNEL_LABEL } from '~/composables/useGrowthConversations'
 import { snoozeStateOf, type SnoozeRow } from '~/utils/inboxSnooze'
 import { threadTailSince, mergeThreadTail } from '~/utils/inboxThreadTail'
 import { replyWindowPill, REPLY_WINDOW_MS, REPLY_WINDOW_WARN_MS } from '~/utils/inboxReplyWindow'
+import { reactionEmoji } from '~/utils/whatsappInbound'
 
 // The Inbox: one row per conversation from the inbox_conversations view
 // (20260924190000), 50 at a time, filtered and searched by the database --
@@ -37,6 +38,8 @@ interface Message {
   /** Who the conversation is with when there is no phone -- an Instagram IGSID. */
   external_contact_id: string | null
   created_at: string
+  /** The patient's WhatsApp reaction to this message, drawn on it (ReactionBadge). */
+  contact_reaction?: string | null
   pending?: boolean
 }
 interface Conversation {
@@ -417,6 +420,7 @@ const {
   drafting: leadDrafting,
   load: loadLeadThread,
   patchStatus: patchLeadMessageStatus,
+  patchReaction: patchLeadMessageReaction,
   reply: replyToLead,
   sendMedia: sendLeadMedia,
   draftReply: draftLeadReply,
@@ -749,7 +753,7 @@ const threadMessages = ref<Message[]>([])
 const threadKey = ref<string | null>(null)
 const threadLoading = ref(false)
 const threadError = ref(false)
-const THREAD_COLUMNS = 'id, patient_id, phone_number, external_contact_id, direction, status, body_preview, template_name, media_type, media_storage_path, media_mime_type, media_filename, channel, created_at, sent_by_ai'
+const THREAD_COLUMNS = 'id, patient_id, phone_number, external_contact_id, direction, status, body_preview, template_name, media_type, media_storage_path, media_mime_type, media_filename, channel, created_at, sent_by_ai, contact_reaction'
 
 // Each conversation's last-loaded messages, newest-used last, so going back
 // to one is instant. Always refreshed on open; only ever a head start.
@@ -1602,6 +1606,9 @@ function onMessageUpdate(payload: { new: Record<string, unknown> }) {
   if (typeof leadId === 'string' && next.id && next.status && leadThread.value?.id === leadId) {
     patchLeadMessageStatus(leadId, next.id, next.status)
   }
+  if (typeof leadId === 'string' && next.id && 'contact_reaction' in next && leadThread.value?.id === leadId) {
+    patchLeadMessageReaction(leadId, next.id, next.contact_reaction ?? null)
+  }
   // The list shows the last message's ticks too -- including the failed
   // warning, which is the one that matters -- so when this update is for a
   // conversation's newest message, its row takes the new status in place.
@@ -1623,9 +1630,13 @@ function onMessageUpdate(payload: { new: Record<string, unknown> }) {
     refreshSoon()
     return
   }
-  if (!next.status || next.status === current.status) return
+  // A receipt moves the ticks; a reaction (or one taken back) changes the
+  // chip on the bubble. Both in place.
+  const status = next.status ?? current.status
+  const reaction = 'contact_reaction' in next ? (next.contact_reaction ?? null) : (current.contact_reaction ?? null)
+  if (status === current.status && reaction === (current.contact_reaction ?? null)) return
   const msgs = threadMessages.value.slice()
-  msgs[i] = { ...current, status: next.status }
+  msgs[i] = { ...current, status, contact_reaction: reaction }
   threadMessages.value = msgs
 }
 let channel: ReturnType<typeof supabase.channel> | null = null
@@ -2377,10 +2388,16 @@ function avatarInitials(name: string) {
               <span class="rounded-pill bg-chip-bg px-2.5 py-0.5 text-[11px] font-medium text-chip-text">{{ relativeDay(m.created_at) }}</span>
             </div>
             <InboxNoteBubble v-for="n in notesBefore(i)" :key="n.id" :note="n" :team="team" :mine="n.author_id === myId" @delete="removeNote(n.id)" />
-            <div class="flex" :class="m.direction === 'outbound' ? 'justify-end' : 'justify-start'">
+            <!-- A reaction stored as its own line (before reactions went on
+            the message, or to one QuiroFlow does not have): small and
+            centred, not a bubble. -->
+            <p v-if="reactionEmoji(m.body_preview) && !m.media_type" class="flex justify-center text-[12px] text-ink-muted" data-cy="thread-reaction-line">
+              {{ t(`Reacted with ${reactionEmoji(m.body_preview)} · ${shortTime(m.created_at)}`, `Ha reaccionado con ${reactionEmoji(m.body_preview)} · ${shortTime(m.created_at)}`) }}
+            </p>
+            <div v-else class="flex" :class="[m.direction === 'outbound' ? 'justify-end' : 'justify-start', m.contact_reaction && 'pb-3.5']">
               <div
                 data-cy="thread-message"
-                class="max-w-[70%] rounded-card px-[8px] py-[6px] shadow-card"
+                class="relative max-w-[70%] rounded-card px-[8px] py-[6px] shadow-card"
                 :class="[
                   m.direction === 'outbound' ? 'bg-brand text-white' : 'border border-line bg-surface text-ink-900',
                   m.status === 'failed' && 'cursor-pointer',
@@ -2439,6 +2456,7 @@ function avatarInitials(name: string) {
                   <span v-else>{{ shortTime(m.created_at) }}</span>
                   <InboxMessageStatus v-if="m.direction === 'outbound'" :status="m.status" />
                 </p>
+                <InboxReactionBadge v-if="m.contact_reaction" :emoji="m.contact_reaction" :side="m.direction === 'outbound' ? 'right' : 'left'" />
               </div>
             </div>
           </template>

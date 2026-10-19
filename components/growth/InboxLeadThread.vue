@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { LeadThread } from '~/composables/useGrowthLeadThread'
 import { notesBetween, type InboxNote } from '~/utils/inboxNotes'
+import { reactionEmoji } from '~/utils/whatsappInbound'
 
 const props = defineProps<{
   thread: LeadThread
@@ -188,12 +189,18 @@ watch(
 
       <template v-for="(message, i) in thread.messages" :key="message.id">
       <InboxNoteBubble v-for="n in notesBefore(i)" :key="n.id" :note="n" :team="team" :mine="n.author_id === myId" @delete="emit('deleteNote', n.id)" />
+      <!-- A reaction stored as its own line (before reactions went on the
+      message, or to one QuiroFlow does not have): small, not a bubble. -->
+      <p v-if="reactionEmoji(message.text) && !message.mediaType" class="flex justify-center text-[12px] text-ink-muted" data-cy="lead-reaction-line">
+        {{ t(`Reacted with ${reactionEmoji(message.text)} · ${time(message.at)}`, `Ha reaccionado con ${reactionEmoji(message.text)} · ${time(message.at)}`) }}
+      </p>
       <div
+        v-else
         class="flex flex-col gap-1"
         :class="message.from === 'lead' ? 'items-start' : 'items-end'"
       >
         <p
-          class="max-w-[78%] whitespace-pre-wrap rounded-card px-3 py-2 text-[12.5px] leading-[1.45]"
+          class="relative max-w-[78%] whitespace-pre-wrap rounded-card px-3 py-2 text-[12.5px] leading-[1.45]"
           :class="isDryRun(message.status)
             ? 'rounded-br-[4px] border border-dashed border-line-control bg-surface-subtle text-ink-muted'
             : message.from === 'lead'
@@ -210,7 +217,9 @@ watch(
           sent instead of drawing an empty bubble. -->
           <span v-if="!message.text && message.templateName" class="italic text-ink-muted" data-test="lead-template-message">{{ t('Template', 'Plantilla') }} «{{ message.templateName }}»</span>
           <template v-else>{{ message.text }}</template>
+          <InboxReactionBadge v-if="message.reaction" :emoji="message.reaction" :side="message.from === 'lead' ? 'left' : 'right'" />
         </p>
+        <span v-if="message.reaction" class="h-2.5" aria-hidden="true" />
         <!-- Status comes off the row Meta acknowledged, so "delivered" here
         means delivered. A reply the AI receptionist sent on its own says so
         -- for the team; the lead got the message alone. -->

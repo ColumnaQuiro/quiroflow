@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { snoozeStateOf, type SnoozeRow } from '../../utils/inboxSnooze'
 import { replyWindowPill } from '../../utils/inboxReplyWindow'
+import { reactionEmoji } from '../../utils/whatsappInbound'
 import { fetchPatientAiStates, leadAiState, type InboxAiState } from '../../utils/inboxAiState'
 
 const props = defineProps<{ accountId: string; teamMemberId: string; openConversationKey?: string | null }>()
@@ -25,6 +26,8 @@ interface Message {
   created_at: string
   /** Sent by the AI receptionist on its own -- labelled for the team, never the patient. */
   sent_by_ai?: boolean
+  /** The patient's WhatsApp reaction to this message, drawn on it (ReactionBadge). */
+  contact_reaction?: string | null
   pending?: boolean
 }
 interface Conversation {
@@ -110,7 +113,7 @@ const threadExtra = ref<Message[]>([])
 // placeholder rather than an empty conversation, which would say "they have
 // not written to you yet" about somebody who has.
 const loadedThreads = ref<Set<string>>(new Set())
-const MESSAGE_COLUMNS = 'id, patient_id, phone_number, external_contact_id, lead_id, direction, status, body_preview, template_name, media_type, media_storage_path, media_mime_type, media_filename, channel, created_at, sent_by_ai'
+const MESSAGE_COLUMNS = 'id, patient_id, phone_number, external_contact_id, lead_id, direction, status, body_preview, template_name, media_type, media_storage_path, media_mime_type, media_filename, channel, created_at, sent_by_ai, contact_reaction'
 const SUMMARY_LIMIT = 400
 const patientNames = ref<Record<string, string>>({})
 const loading = ref(true)
@@ -1404,9 +1407,13 @@ function onMessageUpdate(payload: { new: Record<string, unknown> }) {
     if (i === -1) return null
     const current = list[i]!
     if (keyOf({ patient_id: next.patient_id ?? null, phone_number: next.phone_number ?? null, external_contact_id: next.external_contact_id ?? null, lead_id: next.lead_id ?? null }) !== keyOf(current)) return 'moved'
-    if (!next.status || next.status === current.status) return list
+    // A receipt moves the ticks; a reaction (or one taken back) changes the
+    // chip on the bubble. Both in place.
+    const status = next.status ?? current.status
+    const reaction = 'contact_reaction' in next ? (next.contact_reaction ?? null) : (current.contact_reaction ?? null)
+    if (status === current.status && reaction === (current.contact_reaction ?? null)) return list
     const copy = list.slice()
-    copy[i] = { ...current, status: next.status }
+    copy[i] = { ...current, status, contact_reaction: reaction }
     return copy
   }
   const inThread = patch(threadExtra.value)
@@ -1779,9 +1786,14 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             <span class="rounded-pill bg-chip-bg px-2.5 py-0.5 text-[11px] font-medium text-chip-text">{{ relativeDay(m.created_at) }}</span>
           </div>
         <InboxNoteBubble v-for="n in notesBefore(i)" :key="n.id" :note="n" :team="teamNames" :mine="n.author_id === teamMemberId" @delete="removeNote(n.id)" />
-        <div class="flex" :class="m.direction === 'outbound' ? 'justify-end' : 'justify-start'">
+        <!-- A reaction stored as its own line (before reactions went on the
+        message, or to one QuiroFlow does not have): small, not a bubble. -->
+        <p v-if="reactionEmoji(m.body_preview) && !m.media_type" class="flex justify-center text-[12px] text-ink-muted" data-testid="reaction-line">
+          {{ t(`Reacted with ${reactionEmoji(m.body_preview)} · ${shortTime(m.created_at)}`, `Ha reaccionado con ${reactionEmoji(m.body_preview)} · ${shortTime(m.created_at)}`) }}
+        </p>
+        <div v-else class="flex" :class="[m.direction === 'outbound' ? 'justify-end' : 'justify-start', m.contact_reaction && 'pb-3.5']">
           <div
-            class="max-w-[80%] rounded-card px-[8px] py-[6px] shadow-card"
+            class="relative max-w-[80%] rounded-card px-[8px] py-[6px] shadow-card"
             :class="[
               m.direction === 'outbound' ? 'bg-brand text-white' : 'border border-line bg-surface text-ink-900',
               m.status === 'failed' && 'cursor-pointer',
@@ -1840,6 +1852,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
               <span v-else>{{ shortTime(m.created_at) }}</span>
               <InboxMessageStatus v-if="m.direction === 'outbound'" :status="m.status" />
             </p>
+            <InboxReactionBadge v-if="m.contact_reaction" :emoji="m.contact_reaction" :side="m.direction === 'outbound' ? 'right' : 'left'" />
           </div>
         </div>
         </template>

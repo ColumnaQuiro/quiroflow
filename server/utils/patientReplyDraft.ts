@@ -2,7 +2,7 @@ import type { H3Event } from 'h3'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
 import { overMonthlyLimit, recordReceptionistReply } from '~/server/utils/receptionistUsage'
 import { announceHandover, noteInConversation, sendAsReceptionist } from '~/server/utils/receptionistSend'
-import { bookingTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
+import { bookingTool, cancelTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
 import { recentImages, withImages, type StoredImage } from '~/server/utils/receptionistImages'
 import { historyLine } from '~/utils/receptionistHistory'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personRepliedSince } from '~/utils/receptionistAutoReply'
@@ -202,6 +202,7 @@ export async function draftPatientReply(
       : null
   const book = actions ? bookingTool(actions) : null
   const waitlist = actions ? waitlistTool(actions) : null
+  const cancel = actions ? cancelTool(actions) : null
   // What they sent since the clinic last wrote, pictures included.
   const images = await recentImages(service, turns.slice(lastOutbound + 1))
 
@@ -218,6 +219,7 @@ export async function draftPatientReply(
     handOver: sends,
     book,
     waitlist,
+    cancel,
     maxTimesPerReply: config.slotsPerReply,
     internalNotes: internalNotes(config),
     logLabel: `patient ${patientId}`,

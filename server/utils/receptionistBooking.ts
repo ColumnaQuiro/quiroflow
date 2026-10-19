@@ -5,7 +5,9 @@ import type { Database } from '~/types/database.types'
 import { loadReceptionistCalendar, type BookedAppointment, type OfferedType, type ReceptionistConfig } from '~/server/utils/receptionist'
 import { claimConvertedLead, createPatientFromLead, findLikelyExistingPatients } from '~/server/utils/leadConversion'
 import { resolveWindow, saveAppointmentIfFree } from '~/server/utils/publicApiAppointments'
-import { automationEvent } from '~/server/utils/automationEngine'
+import { automationEvent, dispatchPatientRule } from '~/server/utils/automationEngine'
+import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
+import { offerCancelledSlotIfAutomatic } from '~/server/utils/waitlistOffer'
 import { pushAppointmentEvent } from '~/server/utils/staffPush'
 import { claimAutomaticConfirmation, sendAppointmentConfirmation } from '~/server/utils/appointmentNotifications'
 import { receptionistServiceClient } from '~/server/utils/receptionistAudit'
@@ -39,6 +41,16 @@ import { newPatientDetails } from '~/utils/receptionistTypes'
 //
 // One booking or move per reply. A second call in the same reply is refused:
 // a model that books twice for one "yes" is a model to stop.
+//
+// Cancelling a visit (cancel_appointment) is its own on the same terms. It
+// used to be a person's, by escalation rule: the patient was told "mi
+// compañera se encarga" and the visit stayed booked until somebody at the
+// desk got to it -- or, when the receptionist merely took note of "voy el
+// jueves y la otra ya la coordinamos", stayed booked for good: a slot lost
+// and a reminder they had not asked for. It cancels the way the reminder's
+// own "Cancelar" button does (server/api/whatsapp/webhook.post.ts): the row
+// kept as cancelled, no fee -- a fee is a person's call, made from
+// components/calendar/CancelStep.vue.
 
 type Supa = SupabaseClient<Database>
 
@@ -74,6 +86,20 @@ export const ADD_TO_WAITLIST: Anthropic.Tool = {
       email: { type: 'string', description: 'For someone not yet a patient: the email address they wrote. Leave out if they have not given one.' },
     },
     required: ['preference'],
+    additionalProperties: false,
+  },
+}
+
+export const CANCEL_APPOINTMENT: Anthropic.Tool = {
+  name: 'cancel_appointment',
+  description:
+    'Cancels a visit they already have, from the list under "Moving a visit they already have". Call it only when there is no doubt which visit, and that they want it cancelled rather than moved: they asked to cancel it, or said they will not come to it and do not want another time now. If they have several visits and did not say which, ask first. Only after it confirms may you tell them it is cancelled. Stopping or pausing their treatment, or cancelling a package, is not this: hand those over to a colleague.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      visit_on: { type: 'string', description: 'That visit\'s current day and time, as "YYYY-MM-DD HH:MM".' },
+    },
+    required: ['visit_on'],
     additionalProperties: false,
   },
 }
@@ -306,6 +332,104 @@ export function waitlistTool(ctx: BookingContext): (input: unknown) => Promise<T
     }
     return { content: `On the waiting list for ${type.name} (${preference}). Tell them the clinic will let them know if a time that suits them frees up; do not promise one.`, isError: false }
   }
+}
+
+/**
+ * cancel_appointment for one person in one reply: one of the visits the
+ * prompt listed, named by when it is now (as a move names one), set to
+ * cancelled. Only a visit still booked, and only when the row really changes
+ * -- a colleague cancelling it a moment earlier must not run the clinic's
+ * cancellation automations a second time (CancelStep.vue has the same
+ * guard). What follows is what follows the reminder's "Cancelar" button: the
+ * practitioner told, runs in flight told, appointment.cancelled rules run,
+ * the freed time offered to the waiting list when the clinic does that
+ * automatically. Never a fee.
+ */
+export function cancelTool(ctx: BookingContext): (input: unknown) => Promise<ToolResult> {
+  let used = false
+  return async (input) => {
+    if (used) return { content: 'You have already cancelled a visit in this reply. Tell them what was cancelled.', isError: true }
+    const value = (input ?? {}) as { visit_on?: unknown }
+    const wanted = typeof value.visit_on === 'string' ? value.visit_on.trim().replace('T', ' ') : ''
+    const visit = ctx.booked.appointments.find((a) => localStamp(a.startsAt, ctx.timeZone) === wanted) ?? null
+    const patientId = ctx.person.patientId
+    if (!visit || !patientId) {
+      const theirs = ctx.booked.appointments.map((a) => localStamp(a.startsAt, ctx.timeZone)).join(', ')
+      return { content: `They have no booked visit at ${wanted || '(no visit_on given)'}. Their visits: ${theirs || 'none'}. Do not say anything is cancelled.`, isError: true }
+    }
+
+    const writer = receptionistServiceClient(ctx.event) as unknown as Supa
+    used = true
+    const { data: changed, error } = await writer
+      .from('appointments')
+      .update({ status: 'cancelled' } as never)
+      .eq('id', visit.id)
+      .eq('account_id', ctx.accountId)
+      .eq('status', 'booked')
+      .is('deleted_at', null)
+      .select('id')
+    if (error || !changed?.length) {
+      used = false
+      console.error('[receptionist] cancellation refused:', error?.message ?? 'no row changed')
+      return { content: 'That visit could not be cancelled: it may already have been cancelled or changed by a colleague. Do not say it is cancelled: call hand_over_to_colleague saying which visit they want cancelled.', isError: true }
+    }
+
+    const typeName = ctx.booked.types.find((t) => t.id === visit.typeId)?.name ?? null
+    const format = (locale: string) => new Date(visit.startsAt).toLocaleString(locale, { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: ctx.timeZone })
+    console.info(`[receptionist] cancelled appointment ${visit.id} (account ${ctx.accountId})`)
+
+    // Best-effort, as after a booking: the visit is cancelled either way.
+    try {
+      await ctx.onBooked(`He cancelado su ${typeName ?? 'cita'} del ${format('es-ES')}.`)
+      await afterCancellation(ctx, patientId, visit.id)
+    } catch (err) {
+      console.error('[receptionist] after cancelling:', (err as Error)?.message ?? err)
+    }
+
+    const remaining = ctx.booked.appointments
+      .filter((a) => a.id !== visit.id)
+      .map((a) => new Date(a.startsAt).toLocaleString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: ctx.timeZone }))
+    return {
+      content: [
+        `Cancelled: ${typeName ?? 'their visit'}, ${format('en-GB')}. The time is free again. Tell them it is cancelled, with the day and time in words, and that they can write whenever they want another time.`,
+        remaining.length ? `They still have ${remaining.length === 1 ? 'a visit' : 'visits'} on ${remaining.join(' and ')}, which ${remaining.length === 1 ? 'stands' : 'stand'}.` : '',
+      ].filter(Boolean).join(' '),
+      isError: false,
+    }
+  }
+}
+
+/**
+ * What the reminder's "Cancelar" button does after setting the status
+ * (server/api/whatsapp/webhook.post.ts), and the in-app cancel through
+ * /api/automations/fire: kept in step with both.
+ */
+async function afterCancellation(ctx: BookingContext, patientId: string, appointmentId: string) {
+  const origin = getRequestURL(ctx.event).origin
+  await pushAppointmentEvent(ctx.service as any, appointmentId, 'cancelled')
+  await automationEvent(ctx.service as any, ctx.accountId, { patientId }, 'appointment.cancelled', origin)
+  const { data: patient } = await ctx.service
+    .from('patients')
+    .select('id, first_name, last_name, email, is_minor, do_not_contact, marketing_channels')
+    .eq('id', patientId)
+    .maybeSingle()
+  if (patient) {
+    const { data: rules } = await ctx.service
+      .from('automation_rules')
+      .select('id, filters')
+      .eq('account_id', ctx.accountId)
+      .eq('trigger_event', 'appointment.cancelled')
+      .eq('enabled', true)
+    for (const rule of rules ?? []) {
+      if (!(await ruleFiltersMatch(ctx.service, patient.id, rule.filters as AutomationFilters, appointmentId))) continue
+      await dispatchPatientRule(ctx.service, ctx.service, ctx.accountId, rule.id, patient, origin, appointmentId, {
+        triggerEvent: 'appointment.cancelled',
+        patientId: patient.id,
+        appointmentId,
+      })
+    }
+  }
+  await offerCancelledSlotIfAutomatic(ctx.service, origin, appointmentId)
 }
 
 /** "YYYY-MM-DD HH:MM" on the clinic's clock. */

@@ -170,9 +170,14 @@ export interface BookedVisit {
  * the SAME type -- a patient moving their adjustment is not offered a first
  * visit, and a lead moving their first-visit offer keeps the offer -- from
  * the Booking list or find_free_times, which include those types even when
- * the receptionist does not offer them for new bookings. Cancelling is still
- * a person's: it can involve a fee, a refund or a package, and a "yes,
- * cancelled" the clinic then has to take back is worse than a short wait.
+ * the receptionist does not offer them for new bookings.
+ *
+ * Cancelling one visit is its own too, when it answers on its own
+ * (cancel_appointment). It was a person's, and the visit stayed booked
+ * meanwhile -- or for good, when "voy el jueves y la otra ya la coordinamos"
+ * was taken as settled: a slot lost and a reminder nobody wanted. Fees,
+ * refunds, packages and stopping treatment stay with a person; a draft still
+ * says a colleague will take care of it.
  *
  * `listVisits` is off where the prompt already lists them (patient facts).
  */
@@ -187,7 +192,7 @@ export function rescheduleSection(visits: BookedVisit[], timeZone: string, opts:
   return [
     `# Moving a visit they already have`,
     opts.listVisits ? `They have booked:\n${list}` : '',
-    `If they want to change the day or time of one of these, offer new times for that same type of appointment -- from the Booking list, or find_free_times -- and never a different type. Look at their other booked visits first: a time the day before, the same day or the day after another of them is offered only by saying so ("ya tienes cita el miércoles 21 a las 17:30"). This holds even when that type is not under "What you can offer", which is about new appointments. ${opts.canBook ? `${CONFIRM_BEFORE_BOOKING} Then move it with book_appointment (move_visit_on = its current day and time), and only once that confirms tell them it is moved.` : 'When they pick one, say you are passing the change on and that they will get a confirmation: it is not moved until then, and their current time stands meanwhile.'} If they want to cancel it, or say they cannot come, ${opts.canBook ? 'call hand_over_to_colleague straight away and tell them your colleague will take care of it' : 'say your colleague will take care of it'}: never ask whether to cancel it, and never say you will remove it.`,
+    `If they want to change the day or time of one of these, offer new times for that same type of appointment -- from the Booking list, or find_free_times -- and never a different type. Look at their other booked visits first: a time the day before, the same day or the day after another of them is offered only by saying so ("ya tienes cita el miércoles 21 a las 17:30"). This holds even when that type is not under "What you can offer", which is about new appointments. ${opts.canBook ? `${CONFIRM_BEFORE_BOOKING} Then move it with book_appointment (move_visit_on = its current day and time), and only once that confirms tell them it is moved.` : 'When they pick one, say you are passing the change on and that they will get a confirmation: it is not moved until then, and their current time stands meanwhile.'} ${opts.canBook ? 'If they want to cancel one of these, or say they will not come to it and do not want another time now, call cancel_appointment with its current day and time (visit_on) -- once there is no doubt which visit, which with several means asking which one -- and only once it confirms tell them it is cancelled. Never ask whether to cancel it, and never leave a visit booked that they have said they will not come to: "voy el jueves y la otra ya la coordinamos" means cancel the other one now. If they cannot come but want another time, move it instead. Stopping or pausing their treatment, or cancelling a package, is for a colleague.' : 'If they want to cancel it, or say they cannot come, say your colleague will take care of it: never ask whether to cancel it, and never say you will remove it.'}`,
   ]
     .filter(Boolean)
     .join('\n')

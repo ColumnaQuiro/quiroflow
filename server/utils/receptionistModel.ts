@@ -6,7 +6,7 @@ import { availabilityLists, FREE_TIMES_MAX_DAYS, FREE_TIMES_MAX_TIMES, parseFree
 import { clinicDateOf, startOfLocalDate } from '~/utils/clinicClock'
 import { briefingLeak } from '~/utils/receptionistGuard'
 import type { ReceptionistPrompt } from '~/utils/receptionistPrompt'
-import { ADD_TO_WAITLIST, BOOK_APPOINTMENT } from '~/server/utils/receptionistBooking'
+import { ADD_TO_WAITLIST, BOOK_APPOINTMENT, CANCEL_APPOINTMENT } from '~/server/utils/receptionistBooking'
 import { cleanReply, offeredTimeCount, tooManyTimesNote } from '~/utils/receptionistHistory'
 
 // How the receptionist talks to the model, for all three of its callers --
@@ -117,6 +117,8 @@ export async function runReceptionistModel(
     book?: ((input: unknown) => Promise<{ content: string; isError: boolean }>) | null
     /** Offer add_to_waitlist (receptionistBooking.ts): same terms as `book`. */
     waitlist?: ((input: unknown) => Promise<{ content: string; isError: boolean }>) | null
+    /** Offer cancel_appointment (receptionistBooking.ts): same terms as `book`. */
+    cancel?: ((input: unknown) => Promise<{ content: string; isError: boolean }>) | null
     /**
      * The clinic's limit on times offered in one reply. A reply over it is
      * written again once (offeredTimeCount): told "at most 2", it offered one
@@ -151,10 +153,11 @@ export async function runReceptionistModel(
     ...(opts.handOver ? [HAND_OVER] : []),
     ...(opts.book ? [BOOK_APPOINTMENT] : []),
     ...(opts.waitlist ? [ADD_TO_WAITLIST] : []),
+    ...(opts.cancel ? [CANCEL_APPOINTMENT] : []),
   ]
   let handedOver: string | null = null
-  // A booking's confirmation names its time (and a move, the old one too):
-  // not an offer, so not counted.
+  // A booking's confirmation names its time (and a move, the old one too; a
+  // cancellation, the one that was): not an offer, so not counted.
   let booked = false
   let rewritten = false
   for (let round = 0; ; round++) {
@@ -211,6 +214,12 @@ export async function runReceptionistModel(
           result = await opts.book(use.input).catch((err) => {
             console.error('[receptionist] book_appointment failed:', (err as Error)?.message ?? err)
             return { content: 'The booking could not be made. Do not say it is booked: call hand_over_to_colleague with the day, time and type they accepted.', isError: true }
+          })
+          if (!result.isError) booked = true
+        } else if (use.name === 'cancel_appointment' && opts.cancel) {
+          result = await opts.cancel(use.input).catch((err) => {
+            console.error('[receptionist] cancel_appointment failed:', (err as Error)?.message ?? err)
+            return { content: 'The visit could not be cancelled. Do not say it is cancelled: call hand_over_to_colleague saying which visit they want cancelled.', isError: true }
           })
           if (!result.isError) booked = true
         } else if (use.name === 'add_to_waitlist' && opts.waitlist) {

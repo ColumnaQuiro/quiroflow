@@ -83,9 +83,10 @@ describe('Growth AI receptionist', () => {
     cy.get('[data-test="knowledge-empty"]').should('contain', 'says it will check with a colleague')
     cy.contains('Nothing yet').scrollIntoView().should('be.visible')
 
-    // And when it books: only answering on its own, signed, never cancelling.
+    // And when it books: only answering on its own, signed, and it cancels
+    // on the same terms, never with a fee.
     cy.contains('When it leaves a draft, it offers times and a person books.').scrollIntoView().should('be.visible')
-    cy.contains('It never cancels.').should('exist')
+    cy.contains('It also cancels a visit when the patient asks it to, never with a fee.').should('exist')
   })
 
   it('shows which channels exist rather than hiding the ones that do not', () => {

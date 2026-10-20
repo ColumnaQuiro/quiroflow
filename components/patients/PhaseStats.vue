@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { markerVisitNumbers, visitMarkerLabel, type CarePlanVisitMarker } from '~/utils/carePlanVisitMarkers'
+
 const props = withDefaults(defineProps<{ patientId: string; editable?: boolean }>(), { editable: true })
 
 interface CarePlan {
@@ -12,6 +14,7 @@ interface CarePlan {
   patient_membership_id?: string | null
   total_visits: number
   started_at: string
+  visit_markers?: CarePlanVisitMarker[] | null
 }
 
 const supabase = useSupabaseClient()
@@ -32,6 +35,13 @@ const progressPct = computed(() => {
   return Math.min(100, Math.round((completedInPlan.value / plan.value.total_visits) * 100))
 })
 const frequencyLabel = computed(() => (plan.value ? carePlanCadenceLabel(plan.value, t) : ''))
+// "Revisión · visitas 12, 24, 36…" for each re-exam the plan marks.
+const markerLines = computed(() =>
+  (plan.value?.visit_markers ?? []).map((m) => {
+    const nums = markerVisitNumbers(m).join(', ') + (m.every ? '…' : '')
+    return `${visitMarkerLabel(m, t)} · ${m.every ? t(`visits ${nums}`, `visitas ${nums}`) : t(`visit ${nums}`, `visita ${nums}`)}`
+  }),
+)
 
 async function load() {
   loading.value = true
@@ -39,7 +49,7 @@ async function load() {
     supabase.from('appointments').select('status, starts_at').eq('patient_id', props.patientId).is('deleted_at', null),
     supabase
       .from('care_plans')
-      .select('id, name, frequency_value, frequency_unit, visits_per_period, total_visits, started_at, payment_kind, package_purchase_id, patient_membership_id')
+      .select('id, name, frequency_value, frequency_unit, visits_per_period, total_visits, started_at, payment_kind, package_purchase_id, patient_membership_id, visit_markers')
       .eq('patient_id', props.patientId)
       .order('created_at', { ascending: false })
       .limit(1),
@@ -104,6 +114,9 @@ function bookPlan() {
 
         <p class="mt-2 text-[12px] text-ink-muted2">
           <span class="font-medium text-ink-600">{{ completedInPlan }} {{ t('completed', 'completadas') }}</span> / {{ remaining }} {{ t('remaining', 'restantes') }}
+        </p>
+        <p v-for="(line, i) in markerLines" :key="i" class="mt-1 flex items-center gap-1.5 text-[12px] text-ink-muted2" data-cy="care-plan-marker">
+          <CalendarVisitMarkerIcon class="text-brand-text" />{{ line }}
         </p>
         <PatientsPlanPayment :plan="plan" :visits-left="remaining" />
       </template>

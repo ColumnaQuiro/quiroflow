@@ -34,8 +34,11 @@ messaging.onBackgroundMessage((payload) => {
 // which read as the notification just not working.
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
-  const key = event.notification.data?.key
-  const url = key ? `/inbox?open=${encodeURIComponent(key)}` : '/inbox'
+  // A push that names its own page (team messages: data.url) goes there;
+  // only a same-origin path is honoured, never a full URL from a payload.
+  const data = event.notification.data || {}
+  const key = data.key
+  const url = typeof data.url === 'string' && data.url.startsWith('/') && !data.url.startsWith('//') ? data.url : key ? `/inbox?open=${encodeURIComponent(key)}` : '/inbox'
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientsArr) => {
       const existing = clientsArr.find((c) => c.url.includes(self.registration.scope))

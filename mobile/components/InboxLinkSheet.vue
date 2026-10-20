@@ -138,11 +138,11 @@ const field = 'h-11 rounded-ctl border border-line-control bg-surface px-3 text-
           <input v-model="firstName" type="text" :placeholder="t('First name', 'Nombre')" :class="field" data-cy="inbox-link-first" />
           <input v-model="lastName" type="text" :placeholder="t('Surname', 'Apellidos')" :class="field" />
         </div>
-        <button type="submit" class="flex h-11 items-center justify-center rounded-card bg-brand text-[15px] font-semibold text-white disabled:opacity-50" :disabled="busy || !firstName.trim()" data-cy="inbox-link-create">{{ busy ? t('Saving…', 'Guardando…') : t('Create and link', 'Crear y vincular') }}</button>
+        <AppButton variant="primary" type="submit" :disabled="busy || !firstName.trim()" data-cy="inbox-link-create">{{ busy ? t('Saving…', 'Guardando…') : t('Create and link', 'Crear y vincular') }}</AppButton>
       </form>
 
       <p v-if="error" role="alert" class="text-[13px] text-danger-text">{{ error }}</p>
-      <button type="button" class="flex min-h-11 items-center justify-center text-[13.5px] text-ink-muted" @click="emit('close')">{{ t('Cancel', 'Cancelar') }}</button>
+      <AppButton variant="quiet" @click="emit('close')">{{ t('Cancel', 'Cancelar') }}</AppButton>
     </div>
   </div>
 </template>

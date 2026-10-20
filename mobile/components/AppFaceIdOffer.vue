@@ -46,12 +46,12 @@ async function activate() {
       <p class="mt-1.5 text-[13.5px] leading-snug text-ink-muted">
         {{ t(`You stay signed in. When you open QuiroFlow after more than two hours, we'll ask for ${lock.label.value} instead of your password.`, `Seguirás con la sesión iniciada. Cuando abras QuiroFlow después de más de dos horas, te pediremos ${lock.label.value} en lugar de la contraseña.`) }}
       </p>
-      <button type="button" class="mt-5 min-h-11 w-full rounded-ctl bg-brand px-4 text-[15px] font-semibold text-white" :disabled="busy" data-cy="faceid-offer-yes" @click="activate">
+      <AppButton variant="primary" class="mt-5 w-full" :disabled="busy" data-cy="faceid-offer-yes" @click="activate">
         {{ t(`Turn on ${lock.label.value}`, `Activar ${lock.label.value}`) }}
-      </button>
-      <button type="button" class="mt-2 min-h-11 w-full px-4 text-[14px] font-medium text-ink-muted" :disabled="busy" data-cy="faceid-offer-no" @click="close">
+      </AppButton>
+      <AppButton variant="quiet" class="mt-2 w-full" :disabled="busy" data-cy="faceid-offer-no" @click="close">
         {{ t('Not now', 'Ahora no') }}
-      </button>
+      </AppButton>
       <p class="mt-1 text-[11.5px] text-ink-faint">{{ t('You can change it any time in your profile.', 'Puedes cambiarlo cuando quieras en tu perfil.') }}</p>
     </div>
   </div>

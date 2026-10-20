@@ -117,10 +117,10 @@ async function save() {
       </label>
 
       <p v-if="error" role="alert" class="text-[13px] text-danger-text">{{ error }}</p>
-      <button type="submit" class="flex h-11 items-center justify-center rounded-card bg-brand text-[15px] font-semibold text-white disabled:opacity-50" :disabled="saving" data-cy="block-save">
+      <AppButton variant="primary" type="submit" :disabled="saving" data-cy="block-save">
         {{ saving ? t('Saving…', 'Guardando…') : t('Block', 'Bloquear') }}
-      </button>
-      <button type="button" class="py-1 text-[13.5px] text-ink-muted" @click="emit('close')">{{ t('Cancel', 'Cancelar') }}</button>
+      </AppButton>
+      <AppButton variant="quiet" @click="emit('close')">{{ t('Cancel', 'Cancelar') }}</AppButton>
     </form>
   </div>
 </template>

@@ -228,10 +228,10 @@ async function confirmCancel() {
       </template>
 
       <p v-if="error" role="alert" class="text-[13px] text-danger-text">{{ error }}</p>
-      <button type="button" class="flex h-11 items-center justify-center rounded-card bg-ink-900 text-[15px] font-semibold text-surface disabled:opacity-50" :disabled="busy || loading" data-cy="confirm-cancel" @click="confirmCancel">
+      <AppButton variant="strong" :disabled="busy || loading" data-cy="confirm-cancel" @click="confirmCancel">
         {{ busy ? t('Cancelling…', 'Cancelando…') : cta }}
-      </button>
-      <button type="button" class="py-1 text-[13.5px] text-ink-muted" @click="emit('close')">{{ t('Don’t cancel', 'No cancelar') }}</button>
+      </AppButton>
+      <AppButton variant="quiet" @click="emit('close')">{{ t('Don’t cancel', 'No cancelar') }}</AppButton>
     </div>
   </div>
 </template>

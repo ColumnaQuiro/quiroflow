@@ -182,10 +182,10 @@ async function start() {
       </template>
 
       <p v-if="error" role="alert" class="text-[13px] text-danger-text">{{ error }}</p>
-      <button type="button" class="flex h-11 items-center justify-center rounded-card bg-brand text-[15px] font-semibold text-white disabled:opacity-50" :disabled="loading || starting || count === 0" data-cy="reception-start" @click="start">
+      <AppButton variant="primary" :disabled="loading || starting || count === 0" data-cy="reception-start" @click="start">
         {{ starting ? t('Starting…', 'Preparando…') : t(`Hand it over · ${count} ${count === 1 ? 'form' : 'forms'}`, `Entregar al paciente · ${count} ${count === 1 ? 'formulario' : 'formularios'}`) }}
-      </button>
-      <button type="button" class="py-1 text-[13.5px] text-ink-muted" @click="emit('close')">{{ t('Cancel', 'Cancelar') }}</button>
+      </AppButton>
+      <AppButton variant="quiet" @click="emit('close')">{{ t('Cancel', 'Cancelar') }}</AppButton>
     </div>
   </div>
 </template>

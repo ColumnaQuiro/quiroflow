@@ -379,17 +379,17 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
 
       <!-- Call / WhatsApp / Book -->
       <div v-if="patient && actionCount > 0" class="grid gap-[7px]" :style="{ gridTemplateColumns: `repeat(${actionCount}, minmax(0, 1fr))` }">
-        <a v-if="primaryNumber" :href="telHref(primaryNumber)" class="flex h-10 items-center justify-center gap-1.5 rounded-card border border-line-control bg-surface text-[14px] font-medium text-ink-700" data-cy="patient-call">
+        <AppButton v-if="primaryNumber" :href="telHref(primaryNumber)" data-cy="patient-call">
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M3.2 2h2.4l1.2 3-1.6 1a8 8 0 004.8 4.8l1-1.6 3 1.2v2.4A1.2 1.2 0 0112.8 14 10.8 10.8 0 012 3.2 1.2 1.2 0 013.2 2z" stroke-linejoin="round" /></svg>
           {{ t('Call', 'Llamar') }}
-        </a>
-        <button v-if="canWhatsApp" type="button" class="flex h-10 items-center justify-center gap-1.5 rounded-card border border-line-control bg-surface text-[14px] font-medium text-ink-700" data-cy="patient-whatsapp" @click="openWhatsApp">
+        </AppButton>
+        <AppButton v-if="canWhatsApp" data-cy="patient-whatsapp" @click="openWhatsApp">
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M2.5 13.5l.8-2.6A5.8 5.8 0 118 13.8a5.8 5.8 0 01-2.9-.8z" stroke-linejoin="round" /></svg>
           WhatsApp
-        </button>
-        <button v-if="canBook" type="button" class="flex h-10 items-center justify-center rounded-card bg-brand text-[14px] font-semibold text-white" data-cy="patient-book" @click="bookOpen = true">
+        </AppButton>
+        <AppButton variant="primary" v-if="canBook" data-cy="patient-book" @click="bookOpen = true">
           {{ t('Book', 'Reservar') }}
-        </button>
+        </AppButton>
       </div>
 
       <p v-if="bookedNotice" class="rounded-card border border-success-border bg-success-bg px-3 py-2 text-[13px] font-medium text-success-text" role="status" data-cy="patient-booked-notice">{{ bookedNotice }}</p>
@@ -540,8 +540,8 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
       </div>
       <!-- Taking money at the desk, as the web's Billing tab allows the role -->
       <div v-if="showMoney && (canTakePayments || canSellBonos)" class="grid gap-2" :class="canTakePayments && canSellBonos ? 'grid-cols-2' : 'grid-cols-1'" data-cy="patient-money-actions">
-        <button v-if="canTakePayments" type="button" class="flex h-11 items-center justify-center rounded-card bg-brand text-[14px] font-semibold text-white" data-cy="patient-take-payment" @click="moneyMode = 'pay'">{{ t('Take payment', 'Cobrar') }}</button>
-        <button v-if="canSellBonos" type="button" class="flex h-11 items-center justify-center rounded-card border border-line-control bg-surface text-[14px] font-semibold text-ink-900" data-cy="patient-sell-bono" @click="moneyMode = 'sell'">{{ t('Sell a bono', 'Vender bono') }}</button>
+        <AppButton variant="primary" v-if="canTakePayments" data-cy="patient-take-payment" @click="moneyMode = 'pay'">{{ t('Take payment', 'Cobrar') }}</AppButton>
+        <AppButton v-if="canSellBonos" data-cy="patient-sell-bono" @click="moneyMode = 'sell'">{{ t('Sell a bono', 'Vender bono') }}</AppButton>
       </div>
       <p v-if="moneyNotice" class="rounded-card border border-success-border bg-success-bg px-3 py-2 text-[13px] font-medium text-success-text" role="status" data-cy="patient-money-notice">{{ moneyNotice }}</p>
 

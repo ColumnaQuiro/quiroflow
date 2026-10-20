@@ -209,9 +209,9 @@ const inputCls = 'block w-full rounded-ctl border border-line-control bg-surface
 
       <div v-if="selected" class="shrink-0 border-t border-line px-4 pt-3" style="padding-bottom: max(env(safe-area-inset-bottom), 0.75rem)">
         <p v-if="error" class="mb-2 text-[12.5px] text-danger-text" data-cy="wa-template-send-error">{{ error }}</p>
-        <UiBtn variant="primary" class="h-11 w-full" :disabled="!canSend" data-cy="wa-template-send" @click="send">
+        <AppButton variant="primary" class="w-full" :disabled="!canSend" data-cy="wa-template-send" @click="send">
           {{ sending ? t('Sending…', 'Enviando…') : t('Send', 'Enviar') }}
-        </UiBtn>
+        </AppButton>
       </div>
       <div v-else class="shrink-0" style="height: max(env(safe-area-inset-bottom), 0.75rem)" />
     </div>

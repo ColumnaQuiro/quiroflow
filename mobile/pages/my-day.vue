@@ -695,9 +695,9 @@ function initialsOf(a: Appointment) {
             </div>
           </div>
           <p v-if="lastNote" class="mt-2.5 text-[13px] leading-[1.45] text-ink-700">{{ t('Last note', 'Última nota') }} ({{ lastNote.day }}): {{ lastNote.text }}</p>
-          <NuxtLink :to="`/calendar/${inClinicNow.id}`" class="mt-3 flex h-10 items-center justify-center rounded-card bg-brand text-[14px] font-semibold text-white">
+          <AppButton variant="primary" :to="`/calendar/${inClinicNow.id}`" class="mt-3">
             {{ t('Open visit', 'Abrir visita') }}
-          </NuxtLink>
+          </AppButton>
         </div>
 
         <!-- Also today -->

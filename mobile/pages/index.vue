@@ -87,7 +87,7 @@ async function signOut() {
     <p class="max-w-xs text-sm text-ink-muted">
       {{ t("This account isn't linked to a patient or team record yet.", 'Esta cuenta todavía no está vinculada a una ficha de paciente o de equipo.') }}
     </p>
-    <UiBtn variant="secondary" @click="signOut">{{ t('Sign out', 'Cerrar sesión') }}</UiBtn>
+    <AppButton @click="signOut">{{ t('Sign out', 'Cerrar sesión') }}</AppButton>
   </div>
 
   <PatientHome v-else-if="patient" :patient-id="patient.id" :patient-first-name="patient.first_name" />

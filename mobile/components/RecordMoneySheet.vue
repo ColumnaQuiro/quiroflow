@@ -200,9 +200,8 @@ async function save() {
       </template>
 
       <p v-if="error" role="alert" class="text-[13px] text-danger-text">{{ error }}</p>
-      <button
-        type="button"
-        class="flex h-11 items-center justify-center rounded-card bg-brand text-[15px] font-semibold text-white disabled:opacity-50"
+      <AppButton
+        variant="primary"
         :disabled="saving || (tab === 'pay' ? !selectedInvoice || cents <= 0 : !selectedBono)"
         data-cy="money-save"
         @click="save"
@@ -210,8 +209,8 @@ async function save() {
         <template v-if="saving">{{ t('Saving…', 'Guardando…') }}</template>
         <template v-else-if="tab === 'pay'">{{ t(`Record ${formatEur(cents)}`, `Registrar ${formatEur(cents)}`) }}</template>
         <template v-else>{{ cents > 0 ? t(`Sell and record ${formatEur(cents)}`, `Vender y registrar ${formatEur(cents)}`) : t('Sell without payment now', 'Vender sin cobrar ahora') }}</template>
-      </button>
-      <button type="button" class="flex min-h-11 items-center justify-center text-[13.5px] text-ink-muted" @click="emit('close')">{{ t('Cancel', 'Cancelar') }}</button>
+      </AppButton>
+      <AppButton variant="quiet" @click="emit('close')">{{ t('Cancel', 'Cancelar') }}</AppButton>
     </div>
   </div>
 </template>

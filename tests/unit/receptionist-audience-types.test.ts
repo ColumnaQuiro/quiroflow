@@ -69,7 +69,7 @@ describe('Receptionist types by audience', () => {
     const section = rescheduleSection(visits, 'Europe/Madrid', { listVisits: true })
     expect(section).toContain('Tuesday 20 October at 10:00 (Ajuste)')
     expect(section).toContain('that same type of appointment')
-    expect(section).toContain('If they want to cancel it, or say they cannot come, say your colleague will take care of it: never ask whether to cancel it')
+    expect(section).toContain('first ask whether they would like to move it to another day instead. Only if they say no, say your colleague will cancel it')
     expect(section).not.toContain('cancel_appointment')
     expect(rescheduleSection(visits, 'Europe/Madrid', { listVisits: false })).not.toContain('(Ajuste)')
     expect(rescheduleSection([], 'Europe/Madrid', { listVisits: true })).toBe('')
@@ -80,6 +80,7 @@ describe('Receptionist types by audience', () => {
   it('cancels a visit itself when it answers on its own, and moves it when they want another time', () => {
     const visits = [{ startsAt: '2026-10-20T08:00:00Z', typeName: 'Ajuste' }]
     const section = rescheduleSection(visits, 'Europe/Madrid', { listVisits: true, canBook: true })
+    expect(section).toContain('first ask whether they would like to move it to another day instead')
     expect(section).toContain('call cancel_appointment with its current day and time (visit_on)')
     expect(section).toContain('never leave a visit booked that they have said they will not come to')
     expect(section).toContain('If they cannot come but want another time, move it instead')

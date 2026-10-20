@@ -808,27 +808,26 @@ async function book() {
             </li>
           </ul>
           <div class="flex flex-wrap gap-2">
-            <button v-if="pendingSeries.problems.length < pendingSeries.starts.length" type="button" class="h-10 rounded-ctl bg-brand px-3 text-[13px] font-semibold text-white" data-cy="book-series-skip" @click="resolveSeries('skip')">
+            <AppButton variant="primary" v-if="pendingSeries.problems.length < pendingSeries.starts.length" data-cy="book-series-skip" @click="resolveSeries('skip')">
               {{ t(`Book the other ${pendingSeries.starts.length - pendingSeries.problems.length}`, `Reservar las otras ${pendingSeries.starts.length - pendingSeries.problems.length}`) }}
-            </button>
-            <button type="button" class="h-10 rounded-ctl border border-line-control bg-surface px-3 text-[13px] font-semibold text-ink-700" data-cy="book-series-anyway" @click="resolveSeries('all')">
+            </AppButton>
+            <AppButton data-cy="book-series-anyway" @click="resolveSeries('all')">
               {{ t('Book all anyway', 'Reservar todas igualmente') }}
-            </button>
-            <button type="button" class="h-10 rounded-ctl px-3 text-[13px] font-semibold text-brand-text" @click="pendingSeries = null">{{ t('Back', 'Volver') }}</button>
+            </AppButton>
+            <AppButton variant="quiet" @click="pendingSeries = null">{{ t('Back', 'Volver') }}</AppButton>
           </div>
         </div>
 
         <p v-if="bookError" class="text-[13px] text-danger-text" data-cy="book-visit-error">{{ bookError }}</p>
 
-        <button
-          type="button"
-          class="flex h-11 items-center justify-center rounded-card bg-brand text-[15px] font-semibold text-white disabled:opacity-50"
+        <AppButton
+          variant="primary"
           :disabled="!selectedStart || booking"
           data-cy="book-visit-confirm"
           @click="book"
         >
           {{ ctaLabel }}
-        </button>
+        </AppButton>
       </template>
 
       <div class="flex items-center justify-center gap-5 pb-1">
@@ -836,7 +835,7 @@ async function book() {
           {{ t('Other date…', 'Otra fecha…') }}
           <input type="date" :min="todayKey" class="absolute inset-0 h-full w-full cursor-pointer opacity-0" data-cy="book-other-date" @change="onOtherDate" />
         </label>
-        <button type="button" class="py-2 text-[13.5px] text-ink-muted" @click="emit('close')">{{ t('Not now', 'Ahora no') }}</button>
+        <AppButton variant="quiet" @click="emit('close')">{{ t('Not now', 'Ahora no') }}</AppButton>
       </div>
     </div>
   </div>

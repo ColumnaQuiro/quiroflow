@@ -21,6 +21,11 @@ export interface PatientReplyFacts {
   /** The type of that visit, which is what "otra cita" usually means. */
   lastVisitType?: string | null
   plan: { name: string; totalVisits: number; done: number; cadence: string } | null
+  /**
+   * An open package (bono) with sessions still to use. Counted in sessions,
+   * not money, so a stored draft may mention it.
+   */
+  bono?: { name: string; sessionsLeft: number } | null
   /** Null when the asker cannot see money, or it could not be read. */
   outstandingCents: number | null
 }
@@ -48,10 +53,45 @@ export function patientFactsSection(f: PatientReplyFacts, timeZone: string | nul
     const left = Math.max(0, f.plan.totalVisits - f.plan.done)
     lines.push(`- Care plan "${f.plan.name}": ${f.plan.done} of ${f.plan.totalVisits} visits done, ${left} left${f.plan.cadence ? `, ${f.plan.cadence}` : ''}.`)
   }
+  if (f.bono && f.bono.sessionsLeft > 0) {
+    lines.push(`- Package "${promptSafeName(f.bono.name) ?? 'bono'}": ${f.bono.sessionsLeft} session${f.bono.sessionsLeft === 1 ? '' : 's'} left to use.`)
+  }
   if (f.outstandingCents !== null) {
     lines.push(f.outstandingCents > 0 ? `- Unpaid: ${formatEur(f.outstandingCents)}.` : '- Unpaid: nothing.')
   }
   return `# What you already know about this patient\nFrom the clinic's records, as of now. Use it to answer; never contradict it, and never mention anything about them that is not here or in the conversation.\n\n${lines.join('\n')}`
+}
+
+/** The open package with the most sessions left, or null when none has any. */
+export function openBono(rows: { package_name: string | null; sessions_total: number | null; sessions_used: number | null }[] | null): { name: string; sessionsLeft: number } | null {
+  let best: { name: string; sessionsLeft: number } | null = null
+  for (const row of rows ?? []) {
+    const sessionsLeft = (row.sessions_total ?? 0) - (row.sessions_used ?? 0)
+    if (sessionsLeft > 0 && (!best || sessionsLeft > best.sessionsLeft)) best = { name: row.package_name ?? 'Bono', sessionsLeft }
+  }
+  return best
+}
+
+/**
+ * What someone who has been before is NOT offered. The clinic's knowledge
+ * cards are written for people asking about a first visit, so without this a
+ * patient last seen in 2024 asking a price was quoted "primera visita a 70 €",
+ * and one with six sessions left on a bono, answering a recall message about
+ * a reactivation visit, was offered the reactivation. Empty for a patient
+ * record with no visit yet (a first visit booked from an ad, say): the first
+ * visit and its price are still theirs.
+ */
+export function returningPatientSection(f: PatientReplyFacts): string {
+  const left = f.bono?.sessionsLeft ?? 0
+  if (!f.lastVisitAt && left <= 0) return ''
+  const lines = [
+    `# They have been to the clinic before
+This person is a returning patient, not someone new. Never offer them a first visit, never quote the first-visit price or the first-visit offer, and never treat a price question as one about a first visit: answer it with the session and package prices from the clinic knowledge.`,
+  ]
+  if (left > 0) {
+    lines.push(`They still have ${left} session${left === 1 ? '' : 's'} left on their package. A visit they book now uses one of them: offer their usual session (the type of their last visit, normally an adjustment), not a reactivation or report visit -- even if an earlier message in the conversation suggested one -- and do not quote a price for it. Offer times for it yourself rather than handing over; only hand over if they want to stop, pause or change the package.`)
+  }
+  return lines.join('\n\n')
 }
 
 /** What of the receptionist's settings the prompt reads; the tone already as its instruction. */
@@ -132,6 +172,7 @@ export function buildPatientReplyPrompt(
     opts.offeredTypes.length
       ? `If they want another visit and do not say which, offer the same type as their last visit when it is on that list. If it is not, or you cannot tell which they need, say your colleague will arrange the right one.`
       : '',
+    returningPatientSection(opts.facts),
     // Listed under "What you already know", so not again here.
     rescheduleSection(booked, opts.calendar.timeZone || DEFAULT_CLINIC_TIMEZONE, { listVisits: false, canBook: opts.canBook }),
     hasTimes

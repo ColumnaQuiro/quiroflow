@@ -8,6 +8,8 @@ import type { AppointmentStage } from './appointmentStage'
 //
 //   1 name              always (week: initial + surname)
 //   2 stage             always -- the border; the label only where it fits
+//   2½ re-exam visit    always -- an icon beside the name; the care plan's
+//                       review is what the visit IS, so it outranks the money
 //   3 owes              always (day: the amount; week: a € dot)
 //   4 time·type·pract   day, two-line blocks; week: the time, if it fits
 //   5 bono left         day, two-line blocks
@@ -31,6 +33,8 @@ export interface LadderInput {
   note: boolean
   moved: number
   noNext: boolean
+  /** A care plan's re-exam visit. */
+  marker?: boolean
   /** The stage label as it will print, for sizing the pill. */
   pillText: string
   /** The patient's name as it will print. The name outranks the label, so
@@ -52,6 +56,7 @@ export interface Ladder {
   bono: boolean
   moved: boolean
   noNext: boolean
+  marker: boolean
   /** Tall enough that the detail row may wrap instead of dropping anything. */
   wrap: boolean
 }
@@ -73,6 +78,7 @@ const NAME_MIN_PX = 56
 const NAME_CHAR_PX = 7.4
 const META_MIN_PX = 64
 const NOTE_PX = 17
+const MARKER_PX = 14
 const MOVED_PX = 26
 const NO_NEXT_PX = 82
 const GAP_PX = 6
@@ -97,6 +103,7 @@ export function blockLadder(input: LadderInput): Ladder {
       bono: false,
       moved: false,
       noNext: false,
+      marker: !!input.marker,
       wrap: false,
     }
   }
@@ -116,10 +123,12 @@ export function blockLadder(input: LadderInput): Ladder {
   // Line one: name, [note], pill, and -- on a one-line block -- the money.
   let line1 = inner - Math.max(namePx, NAME_MIN_PX) - (pillPx ? pillPx + GAP_PX : 0)
   if (compact && input.owes) line1 -= owesPx + GAP_PX
+  const marker = !!input.marker
+  if (marker) line1 -= MARKER_PX + GAP_PX
   const note = input.note && line1 >= NOTE_PX + GAP_PX
 
   if (compact) {
-    return { compact, shortName: false, pill, owes: input.owes ? 'inline' : 'none', meta: 'none', note, bono: false, moved: false, noNext: false, wrap: false }
+    return { compact, shortName: false, pill, owes: input.owes ? 'inline' : 'none', meta: 'none', note, bono: false, moved: false, noNext: false, marker, wrap: false }
   }
 
   const wrap = input.height >= WRAP_FROM_PX
@@ -148,7 +157,7 @@ export function blockLadder(input: LadderInput): Ladder {
   const moved = take(input.moved > 0, MOVED_PX)
   const noNext = take(input.noNext, NO_NEXT_PX)
 
-  return { compact, shortName: false, pill, owes: input.owes ? 'meta' : 'none', meta, note, bono, moved, noNext, wrap }
+  return { compact, shortName: false, pill, owes: input.owes ? 'meta' : 'none', meta, note, bono, moved, noNext, marker, wrap }
 }
 
 /** "Laura Gómez" -> "L. Gómez", for week view's narrow columns. */

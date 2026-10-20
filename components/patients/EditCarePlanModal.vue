@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import type { Json } from '~/types/database.types'
+import { cleanVisitMarkers, markerVisitNumbers, MAX_VISIT_MARKERS, type CarePlanVisitMarker } from '~/utils/carePlanVisitMarkers'
+
 interface CarePlan {
   id: string
   name: string
@@ -10,6 +13,7 @@ interface CarePlan {
   payment_kind?: string | null
   package_purchase_id?: string | null
   patient_membership_id?: string | null
+  visit_markers?: CarePlanVisitMarker[] | null
 }
 
 const props = defineProps<{ patientId: string; plan?: CarePlan | null }>()
@@ -30,6 +34,31 @@ const startedAt = ref(props.plan?.started_at ?? new Date().toISOString().slice(0
 const saving = ref(false)
 const error = ref('')
 
+// Re-exam visits (care_plan_visit_markers migration): "visit 12, and every 12
+// after", optionally with the appointment type it should be booked as. A
+// row without a type only highlights the visit; with one, booking it as
+// anything else is flagged. An edit is a new phase, so they are copied over.
+interface MarkerRow {
+  at: number
+  repeat: boolean
+  every: number
+  appointment_type_id: string
+  label: string
+}
+const markers = ref<MarkerRow[]>(
+  (props.plan?.visit_markers ?? []).map((m) => ({ at: m.at, repeat: !!m.every, every: m.every ?? m.at, appointment_type_id: m.appointment_type_id ?? '', label: m.label ?? '' })),
+)
+function addMarker() {
+  const last = markers.value[markers.value.length - 1]
+  // The second row is usually the visit before the first ("scans on 11, review on 12").
+  markers.value.push(last ? { ...last, at: Math.max(1, last.at - 1), label: '' } : { at: 12, repeat: true, every: 12, appointment_type_id: '', label: '' })
+}
+function markerPreview(m: MarkerRow) {
+  const nums = markerVisitNumbers({ at: m.at || 1, every: m.repeat ? m.every || 1 : null })
+  return m.repeat ? t(`Visits ${nums.join(', ')}…`, `Visitas ${nums.join(', ')}…`) : t(`Visit ${nums[0]} only`, `Solo la visita ${nums[0]}`)
+}
+const appointmentTypes = ref<{ id: string; name: string }[]>([])
+
 // How it is paid: at the normal prices visit by visit, from one of the
 // patient's bonos, or under one of their memberships -- what the clinic
 // already sells, linked (care_plan_payment migration). Nothing is charged
@@ -41,11 +70,13 @@ const membershipId = ref(props.plan?.patient_membership_id ?? '')
 const bonos = ref<{ id: string; label: string }[]>([])
 const memberships = ref<{ id: string; label: string }[]>([])
 onMounted(async () => {
-  const [{ data: own }, { data: shared }, { data: mems }] = await Promise.all([
+  const [{ data: own }, { data: shared }, { data: mems }, { data: types }] = await Promise.all([
     supabase.from('package_purchases').select('id, package_name, sessions_total, sessions_used, is_closed').eq('patient_id', props.patientId).eq('is_closed', false),
     supabase.from('package_purchase_shares').select('package_purchases(id, package_name, sessions_total, sessions_used, is_closed)').eq('patient_id', props.patientId),
     supabase.from('patient_memberships').select('id, membership_name, price_cents, status').eq('patient_id', props.patientId).eq('status', 'active'),
+    supabase.from('appointment_types').select('id, name').is('archived_at', null).order('sort_order').order('name'),
   ])
+  appointmentTypes.value = (types as { id: string; name: string }[] | null) ?? []
   type P = { id: string; package_name: string; sessions_total: number; sessions_used: number; is_closed: boolean }
   const open = [...((own ?? []) as P[]), ...(((shared ?? []) as { package_purchases: P | null }[]).map((r) => r.package_purchases).filter((p): p is P => !!p && !p.is_closed))]
     .filter((p) => p.sessions_total - p.sessions_used > 0)
@@ -79,6 +110,9 @@ async function save() {
     payment_kind: paymentKind.value,
     package_purchase_id: paymentKind.value === 'bono' ? bonoId.value : null,
     patient_membership_id: paymentKind.value === 'membership' ? membershipId.value : null,
+    visit_markers: cleanVisitMarkers(
+      markers.value.map((m) => ({ at: m.at, every: m.repeat ? m.every : null, appointment_type_id: m.appointment_type_id || null, label: m.label })),
+    ) as unknown as Json,
     created_by: store.teamMember?.id ?? null,
   })
   saving.value = false
@@ -126,6 +160,35 @@ async function save() {
           <label class="block text-sm font-medium text-gray-700">{{ t('Start date', 'Fecha de inicio') }}</label>
           <input v-model="startedAt" type="date" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
         </div>
+
+        <fieldset data-cy="plan-markers">
+          <legend class="block text-sm font-medium text-gray-700">{{ t('Re-exams', 'Revisiones') }}</legend>
+          <p class="text-[12px] text-gray-500">{{ t('Visits counted from the start of the plan, booked ones included.', 'Visitas contadas desde el inicio del plan, incluidas las reservadas.') }}</p>
+          <div v-for="(m, i) in markers" :key="i" class="mt-2 space-y-1.5 rounded-md border border-gray-200 p-2" data-cy="plan-marker">
+            <div class="flex flex-wrap items-center gap-1.5 text-sm text-gray-700">
+              <span>{{ t('Visit', 'Visita') }}</span>
+              <input v-model.number="m.at" type="number" min="1" max="999" :aria-label="t('Visit number', 'Número de visita')" class="w-16 rounded-md border border-gray-300 px-2 py-1 text-sm" data-cy="plan-marker-at" />
+              <label class="inline-flex items-center gap-1">
+                <input v-model="m.repeat" type="checkbox" data-cy="plan-marker-repeat" />
+                {{ t('then every', 'y luego cada') }}
+              </label>
+              <input v-if="m.repeat" v-model.number="m.every" type="number" min="1" max="999" :aria-label="t('Every how many visits', 'Cada cuántas visitas')" class="w-16 rounded-md border border-gray-300 px-2 py-1 text-sm" data-cy="plan-marker-every" />
+              <span v-if="m.repeat">{{ t('visits', 'visitas') }}</span>
+              <button type="button" :aria-label="t('Remove', 'Quitar')" class="ml-auto text-gray-400 hover:text-gray-600" data-cy="plan-marker-remove" @click="markers.splice(i, 1)">✕</button>
+            </div>
+            <div class="flex gap-1.5">
+              <select v-model="m.appointment_type_id" :aria-label="t('Booked as', 'Se reserva como')" class="min-w-0 flex-1 rounded-md border border-gray-300 px-2 py-1 text-sm" data-cy="plan-marker-type">
+                <option value="">{{ t('Any type (highlight only)', 'Cualquier tipo (solo destacar)') }}</option>
+                <option v-for="ty in appointmentTypes" :key="ty.id" :value="ty.id">{{ t(`Booked as ${ty.name}`, `Como ${ty.name}`) }}</option>
+              </select>
+              <input v-model="m.label" type="text" maxlength="40" :placeholder="t('Re-exam', 'Revisión')" :aria-label="t('Label', 'Etiqueta')" class="w-28 rounded-md border border-gray-300 px-2 py-1 text-sm" data-cy="plan-marker-label" />
+            </div>
+            <p class="text-[12px] text-gray-500" data-cy="plan-marker-preview">{{ markerPreview(m) }}</p>
+          </div>
+          <button v-if="markers.length < MAX_VISIT_MARKERS" type="button" class="mt-2 text-[12.5px] font-medium text-indigo-600 hover:underline" data-cy="plan-marker-add" @click="addMarker">
+            {{ t('+ Add re-exam visit', '+ Añadir visita de revisión') }}
+          </button>
+        </fieldset>
 
         <fieldset data-cy="plan-payment">
           <legend class="block text-sm font-medium text-gray-700">{{ t('How it is paid', 'Cómo se paga') }}</legend>

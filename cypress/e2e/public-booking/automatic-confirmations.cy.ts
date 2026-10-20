@@ -193,6 +193,46 @@ describe('Automatic confirmations and reminders', () => {
     })
   })
 
+  it("reminds each patient at their own number of hours, falling back to the clinic's, once", () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:setAutomaticMessages', { accountId: account.accountId, confirmation: false, reminder: true, reminderHoursBefore: 24 })
+      templates()
+      // Booked a week ago, so none of these is "booked inside its reminder time".
+      const weekAgo = minutesAgo(7 * 24 * 60)
+      const twoHourPatient = (startsAt: string) =>
+        patient(account).then((p) =>
+          cy.task('db:updateRows', { table: 'patients', values: { appointment_reminder_hours_before: 2 }, match: { id: p.id } }).then(() =>
+            booking(account, p.id, { source: 'staff', startsAt, createdAt: weekAgo }).then((appt) => ({ ...p, appointmentId: appt.id })),
+          ),
+        )
+      // Asked for two hours: reminded at 1 h 50, not at the clinic's 24.
+      twoHourPatient(hours(1 + 50 / 60)).then((soon) => {
+        twoHourPatient(hours(23.9)).then((tomorrow) => {
+          // The clinic's 24 hours, for a patient who chose nothing.
+          patient(account).then((usual) =>
+            booking(account, usual.id, { source: 'staff', startsAt: hours(23.9), createdAt: weekAgo }).then((usualAppt) => {
+              runCron()
+              runCron()
+              state(soon.appointmentId).its('reminder_sent_at').should('not.eq', null)
+              sendsTo(soon.phone).should('have.length', 1)
+              state(tomorrow.appointmentId).its('reminder_sent_at').should('eq', null)
+              sendsTo(tomorrow.phone).should('have.length', 0)
+              state(usualAppt.id).its('reminder_sent_at').should('not.eq', null)
+              sendsTo(usual.phone).should('have.length', 1)
+
+              // Moved after its reminder went out: reminded again, for the
+              // new time. The others are not touched by the extra tick.
+              cy.task('db:updateRows', { table: 'appointments', values: { starts_at: hours(1.9) }, match: { id: soon.appointmentId } })
+              runCron()
+              sendsTo(soon.phone).should('have.length', 2)
+              sendsTo(usual.phone).should('have.length', 1)
+            }),
+          )
+        })
+      })
+    })
+  })
+
   it('neither confirms nor reminds an appointment the clinic deleted', () => {
     cy.seedStaffAccount().then((account) => {
       cy.task('db:setAutomaticMessages', { accountId: account.accountId, confirmation: true, reminder: true, reminderHoursBefore: 24 })

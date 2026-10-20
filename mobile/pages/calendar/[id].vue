@@ -125,6 +125,8 @@ const actionError = ref('')
 // The web's check-in (AppointmentPanel's advance): the time, then the
 // 'appointment.checked_in' automations -- only when this tap is what checked
 // them in, so a double tap does not fire it twice.
+// The home-screen widget counts today's visits done and who is in the waiting room.
+const homeWidget = useStaffHomeWidget()
 async function checkIn() {
   if (busy.value) return
   busy.value = true
@@ -139,6 +141,7 @@ async function checkIn() {
   else if ((data ?? []).length > 0 && appointment.value) fire('appointment.checked_in', { patientId: appointment.value.patient_id, appointmentId })
   await loadAppointment()
   busy.value = false
+  homeWidget.refresh({ force: true })
 }
 
 // -- Care plan -----------------------------------------------------------------
@@ -530,6 +533,7 @@ const bookedNotice = ref('')
 async function afterFinish() {
   const a = appointment.value
   if (!a) return
+  homeWidget.refresh({ force: true })
   const [{ data: session }, { data: upcoming }] = await Promise.all([
     supabase.from('package_sessions').select('id').eq('appointment_id', a.id).limit(1),
     supabase

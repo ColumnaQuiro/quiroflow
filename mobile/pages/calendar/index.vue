@@ -170,6 +170,14 @@ const scope = ref<'mine' | 'all'>('mine')
 const canScopeMine = computed(() => amPractitioner.value && !ownDiaryOnly.value)
 watch(amPractitioner, (yes) => { if (!yes && !ownDiaryOnly.value) scope.value = 'all' })
 const effectiveScope = computed(() => (ownDiaryOnly.value || (scope.value === 'mine' && amPractitioner.value) ? 'mine' : 'all'))
+// The home-screen widget's "Pacientes hoy" and the front desk's widget open
+// today's whole clinic (?scope=clinic). The page is kept alive, so a later tap
+// arrives as a new `w` rather than as a fresh page.
+watch(() => [route.query.scope, route.query.w], () => {
+  if (route.query.scope !== 'clinic') return
+  scope.value = 'all'
+  day.value = today()
+}, { immediate: true })
 
 let loadRun = 0
 // The team, their clinic links and the clinic's hours are read once per

@@ -286,6 +286,11 @@ export default defineNuxtConfig({
     // unreadable, so each clinic would have to enter theirs again.
     verifactuSecretKey: '',
     resendApiKey: '',
+    // Where "someone just signed up" goes. Empty means no notification is
+    // sent and onboarding is unaffected -- same contract as the Netlify
+    // token above: a missing integration must never break an account being
+    // created. Set NUXT_SIGNUP_NOTIFY_EMAIL to switch it on.
+    signupNotifyEmail: '',
     // Resend's webhook signing secret (Webhooks -> your endpoint in their
     // dashboard). Without it the delivery-event endpoint refuses everything,
     // which is the right way round: an unverified metrics feed is worse than

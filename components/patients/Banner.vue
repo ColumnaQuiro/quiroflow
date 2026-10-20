@@ -301,6 +301,18 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
         <span aria-hidden="true" class="hidden h-3 w-px bg-line lg:block" />
         <span class="text-[12.5px] text-ink-500">{{ practitionerName }}</span>
       </template>
+      <!-- A minor's messages go to their tutor, so the tutor is who gets the
+           app; their own state would only ever read "No app". -->
+      <template v-if="!patient.is_minor">
+        <span aria-hidden="true" class="hidden h-3 w-px bg-line lg:block" />
+        <PatientsAppStatus
+          :patient-id="patient.id"
+          :user-id="patient.user_id"
+          :first-name="patient.first_name"
+          :preferred-language="patient.preferred_language"
+          :can-contact="canContact && !patient.do_not_contact"
+        />
+      </template>
     </div>
 
     <!-- Phone: the three things a thumb reaches for, at 46px. -->

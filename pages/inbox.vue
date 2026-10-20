@@ -1719,7 +1719,9 @@ function avatarInitials(name: string) {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader :title="t('Inbox', 'Bandeja de entrada')" />
+    <PageHeader :title="t('Inbox', 'Bandeja de entrada')">
+      <InboxTeamSwitch current="patients" />
+    </PageHeader>
     <div v-if="webPush.supported.value && webPush.permission.value === 'default' && !pushBannerDismissed" class="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-line bg-brand-tint px-4 py-2">
       <p class="text-[12.5px] text-brand-text">{{ t('Get notified here when a patient messages you, even with the tab in the background.', 'Recibe avisos aquí cuando un paciente te escriba, incluso con la pestaña en segundo plano.') }}</p>
       <div class="flex shrink-0 items-center gap-3">

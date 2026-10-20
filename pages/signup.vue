@@ -20,6 +20,22 @@ const emailField = ref<{ focus: () => void } | null>(null)
 onMounted(() => {
   const ref = route.query.ref
   if (typeof ref === 'string' && ref) localStorage.setItem('signup_referred_by', ref)
+
+  // Same trick, same reason, for where the visitor came from: the account
+  // does not exist until onboarding.vue, and by then the query string that
+  // brought them here is long gone. The marketing site forwards gclid and
+  // the utm_* set onto this URL; the referrer is the fallback when an ad
+  // network sent nothing. Written only when there is something to write, so
+  // a direct visit never overwrites an earlier ad click in the same browser.
+  const attribution: Record<string, string> = {}
+  for (const key of ['gclid', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_term']) {
+    const value = route.query[key]
+    if (typeof value === 'string' && value) attribution[key] = value.slice(0, 200)
+  }
+  if (!Object.keys(attribution).length && document.referrer && !document.referrer.includes(location.host)) {
+    attribution.referrer = document.referrer.slice(0, 200)
+  }
+  if (Object.keys(attribution).length) localStorage.setItem('signup_attribution', JSON.stringify(attribution))
 })
 
 // Supabase reports a taken address through a handful of wordings depending on

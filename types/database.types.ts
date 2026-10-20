@@ -791,6 +791,7 @@ export type Database = {
           factura_tax_exemption_code: string | null
           factura_prefix: string
           rectificativa_prefix: string
+          signup_attribution: Json | null
           slug: string
           verifactu_mode: string
           verifactu_sender: string
@@ -885,6 +886,7 @@ export type Database = {
           factura_tax_exemption_code?: string | null
           factura_prefix?: string
           rectificativa_prefix?: string
+          signup_attribution?: Json | null
           slug: string
           verifactu_mode?: string
           verifactu_sender?: string
@@ -978,6 +980,7 @@ export type Database = {
           factura_tax_exemption_code?: string | null
           factura_prefix?: string
           rectificativa_prefix?: string
+          signup_attribution?: Json | null
           slug?: string
           verifactu_mode?: string
           verifactu_sender?: string

@@ -44,9 +44,10 @@ const tutorChanged = ref(false)
 const referredByChanged = ref(false)
 
 // "Referred by" a specific patient -- same self-search pattern as tutor,
-// shown only when referral_source is exactly the "Patient" option (seeded
-// per-account by migration 0095; a display-string match, not a schema
-// flag, so renaming that referral source would silently break this).
+// shown when the referral source means a referral: "Patient" (seeded per
+// account by migration 0095), "Referral", or a Spanish name for either
+// (utils/referralSource.ts). Still a match on the source's name, not a
+// schema flag, so a source renamed to something else entirely shows none.
 type ReferrerOption = TutorOption
 const referredBySearch = ref('')
 const referredByResults = ref<ReferrerOption[]>([])
@@ -319,13 +320,14 @@ async function save() {
   const nationalIdToSave =
     nationalIdCheck.value.kind === 'valid' ? nationalIdCheck.value.normalized : nationalId.value.trim() || null
 
-  // Unchecking "under age", or moving the referral source off "Patient", is
+  // Unchecking "under age", or moving the referral source off a referral one
+  // ("Patient", "Referral"...: utils/referralSource.ts), is
   // a change the person made, and clears the link as it always has. Inside
   // those, the link is written only if they picked or removed someone.
   const links: { tutor_patient_id?: string | null; referred_by_patient_id?: string | null } = {}
   if (!isMinor.value) links.tutor_patient_id = null
   else if (tutorChanged.value) links.tutor_patient_id = selectedTutor.value?.id ?? null
-  if (referralSource.value !== 'Patient') links.referred_by_patient_id = null
+  if (!isPatientReferralSource(referralSource.value)) links.referred_by_patient_id = null
   else if (referredByChanged.value) links.referred_by_patient_id = selectedReferredBy.value?.id ?? null
   const newReferredById = links.referred_by_patient_id === undefined ? props.patient.referred_by_patient_id : links.referred_by_patient_id
 
@@ -456,7 +458,7 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
           <dt class="text-[11.5px] text-ink-muted2">{{ t('Referral source', 'Origen de la referencia') }}</dt>
           <dd class="mt-0.5 text-[13.5px] text-ink-700">
             {{ patient.referral_source ?? t('N/A', 'N/D') }}
-            <template v-if="patient.referral_source === 'Patient'">
+            <template v-if="isPatientReferralSource(patient.referral_source)">
               &middot;
               <NuxtLink v-if="patient.referred_by_patient_id" :to="`/patients/${patient.referred_by_patient_id}`" class="text-brand-text hover:underline">
                 {{ selectedReferredBy ? tutorName(selectedReferredBy) : t('View patient', 'Ver paciente') }}
@@ -566,20 +568,20 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
           </div>
           <div>
             <label :class="labelClass">{{ t('Referral source', 'Origen de la referencia') }}</label>
-            <select v-model="referralSource" :class="inputClass">
+            <select v-model="referralSource" :class="inputClass" data-cy="referral-source-select">
               <option value="">{{ t('Not set', 'Sin especificar') }}</option>
               <option v-for="s in referralSources" :key="s.id" :value="s.name">{{ s.name }}</option>
               <!-- Preserves legacy freeform data that doesn't match a configured source. -->
               <option v-if="referralSource && !referralSources.some((s) => s.name === referralSource)" :value="referralSource">{{ referralSource }}</option>
             </select>
-            <div v-if="referralSource === 'Patient'" class="mt-2">
+            <div v-if="isPatientReferralSource(referralSource)" class="mt-2" data-cy="referred-by-picker">
               <label :class="labelClass">{{ t('Referred by (existing patient)', 'Referido por (paciente existente)') }}</label>
               <div v-if="selectedReferredBy || referredByUnresolved" class="mt-1 flex items-center gap-2">
                 <span class="text-[13px] text-ink-700">{{ selectedReferredBy ? tutorName(selectedReferredBy) : t('Linked patient', 'Paciente vinculado') }}</span>
                 <button type="button" class="text-[12px] text-danger-text hover:underline" data-cy="referred-by-remove" @click="removeReferredBy">{{ t('Remove', 'Quitar') }}</button>
               </div>
               <div v-else class="relative mt-1">
-                <input v-model="referredBySearch" type="text" :placeholder="t('Search patient by name…', 'Buscar paciente por nombre…')" :class="inputClass" />
+                <input data-cy="referred-by-search" v-model="referredBySearch" type="text" :placeholder="t('Search patient by name…', 'Buscar paciente por nombre…')" :class="inputClass" />
                 <ul v-if="referredByResults.length > 0" class="absolute z-10 mt-1 w-full rounded-ctl border border-line bg-surface py-1 shadow-popover">
                   <li v-for="p in referredByResults" :key="p.id">
                     <button type="button" class="block w-full px-3 py-1.5 text-left text-[13px] text-ink-700 hover:bg-surface-subtle" @click="pickReferredBy(p)">

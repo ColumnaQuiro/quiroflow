@@ -4,6 +4,7 @@ import { templateDateParts } from '~/utils/templateDate'
 import { sendResendEmail } from './resend'
 import { sendWhatsAppTemplate, sendWhatsAppText } from './whatsappSend'
 import { sendPushToPatients } from './pushNotifications'
+import { contactableTutor, tutorEmailNote } from './minorTutor'
 
 // The server runs in UTC, so formatting a UTC Date with toLocaleString and no
 // timeZone renders the UTC wall-clock time, not the clinic's -- a booking at
@@ -22,6 +23,19 @@ const CLINIC_TIMEZONE = 'Europe/Madrid'
 // Kept in server/utils/*.ts so it auto-imports into server routes per Nitro
 // convention, same as requirePermission.ts and runAutomationActions.ts.
 
+/**
+ * Whose phone and email the patient-facing messages use. The patient's own,
+ * or for a minor their tutor's (minorTutor.ts) -- the message still names the
+ * minor, since it is their appointment, but reaches the adult responsible.
+ */
+interface MessageRecipient {
+  /** The patient record whose numbers are used and whose thread the message is filed in. */
+  patientId: string
+  email: string | null
+  preferredLanguage: string | null
+  isTutor: boolean
+}
+
 interface AppointmentContext {
   id: string
   accountId: string
@@ -31,11 +45,9 @@ interface AppointmentContext {
   appointmentTypeName: string
   patientFirstName: string
   patientLastName: string | null
-  patientEmail: string | null
-  patientPreferredLanguage: string | null
-  patientIsMinor: boolean
-  patientDoNotContact: boolean
   patientPhone: string | null
+  /** Who the messages about this appointment go to; null when nobody may be told. */
+  recipient: MessageRecipient | null
   clinicName: string
   clinicAddress: string | null
   clinicPhone: string | null
@@ -60,6 +72,17 @@ async function loadAppointmentContext(supabase: any, appointmentId: string): Pro
     .maybeSingle()
   if (!data || !data.patients) return null
 
+  // Nobody, for a do-not-contact patient or a minor with no tutor to tell.
+  let recipient: MessageRecipient | null = null
+  if (!data.patients.do_not_contact) {
+    if (!data.patients.is_minor) {
+      recipient = { patientId: data.patient_id, email: data.patients.email ?? null, preferredLanguage: data.patients.preferred_language ?? null, isTutor: false }
+    } else {
+      const tutor = await contactableTutor(supabase, data.patient_id)
+      if (tutor) recipient = { patientId: tutor.id, email: tutor.email, preferredLanguage: tutor.preferredLanguage ?? data.patients.preferred_language ?? null, isTutor: true }
+    }
+  }
+
   const { data: numbers } = await supabase.from('patient_contact_numbers').select('number, country_code, is_whatsapp').eq('patient_id', data.patient_id)
   const preferredNumber = numbers?.find((n: any) => n.is_whatsapp) ?? numbers?.[0]
   const patientPhone = preferredNumber ? (toE164(preferredNumber.number, preferredNumber.country_code) ?? preferredNumber.number) : null
@@ -73,11 +96,8 @@ async function loadAppointmentContext(supabase: any, appointmentId: string): Pro
     appointmentTypeName: data.appointment_types?.name ?? '',
     patientFirstName: data.patients.first_name ?? '',
     patientLastName: data.patients.last_name ?? null,
-    patientEmail: data.patients.email ?? null,
-    patientPreferredLanguage: data.patients.preferred_language ?? null,
-    patientIsMinor: !!data.patients.is_minor,
-    patientDoNotContact: !!data.patients.do_not_contact,
     patientPhone,
+    recipient,
     clinicName: data.clinics?.name ?? '',
     clinicAddress: data.clinics?.address ?? null,
     clinicPhone: data.clinics?.phone ?? null,
@@ -172,6 +192,10 @@ export async function resolveTemplateVariant(
 // is empty, e.g. an appointment with no practitioner assigned -- falls back
 // to the patient's first name rather than '' to keep the send from failing.
 // Date and time are written in the variant's own language (templateDate.ts).
+// {{1}} is the patient's name even when the message goes to a minor's tutor:
+// it is what tells the parent whose appointment this is ("Hola Lucía, te
+// recordamos tu cita..." on the parent's phone), and the approved templates
+// have no slot for a second name.
 function resolveWhatsAppVariables(bodyText: string, ctx: AppointmentContext, language: string): string[] {
   const { date: dateOnly, time: timeOnly } = templateDateParts(ctx.startsAt, language, ctx.clinicTimezone)
   const guesses = [ctx.patientFirstName, dateOnly, timeOnly, ctx.appointmentTypeName, ctx.practitionerName]
@@ -195,6 +219,7 @@ function resolveStaffNotifyVariables(bodyText: string, ctx: AppointmentContext, 
 async function sendWhatsApp(
   supabase: any,
   ctx: AppointmentContext,
+  recipient: MessageRecipient,
   purpose: 'confirmation' | 'reminder',
   templateName: string,
   templateLanguage: string,
@@ -210,7 +235,7 @@ async function sendWhatsApp(
   const { data: numbers } = await supabase
     .from('patient_contact_numbers')
     .select('number, country_code, is_whatsapp')
-    .eq('patient_id', ctx.patientId)
+    .eq('patient_id', recipient.patientId)
   const target = numbers?.find((n: any) => n.is_whatsapp) ?? numbers?.[0]
   if (!target) return false
   const to = toE164(target.number, target.country_code)
@@ -219,7 +244,7 @@ async function sendWhatsApp(
   let resolvedLanguage = templateLanguage
   let bodyText = ''
   try {
-    const variant = await resolveTemplateVariant(account.whatsapp_business_account_id ?? '', account.whatsapp_access_token, templateName, templateLanguage, ctx.patientPreferredLanguage)
+    const variant = await resolveTemplateVariant(account.whatsapp_business_account_id ?? '', account.whatsapp_access_token, templateName, templateLanguage, recipient.preferredLanguage)
     if (variant) {
       resolvedLanguage = variant.language
       bodyText = variant.bodyText
@@ -256,12 +281,17 @@ async function sendWhatsApp(
       patient_id: ctx.patientId,
       appointment_id: ctx.id,
       action: 'sent_whatsapp',
-      note: `Template: ${templateName} (automatic ${purpose})`,
+      note: `Template: ${templateName} (automatic ${purpose}${recipient.isTutor ? ', sent to the tutor' : ''})`,
       created_by: null,
     }),
+    // Filed under whoever it went to: a minor's goes in the tutor's thread,
+    // which is where their reply arrives (the webhook files a family phone
+    // under the adult) and where staff can answer it -- a minor's thread
+    // refuses to send. appointment_id still names the minor's visit, so a
+    // Confirmar/Cancelar reply anchors to it (resolveRepliedAppointment).
     supabase.from('whatsapp_messages').insert({
       account_id: ctx.accountId,
-      patient_id: ctx.patientId,
+      patient_id: recipient.patientId,
       appointment_id: ctx.id,
       phone_number: to,
       wamid,
@@ -307,16 +337,17 @@ function clinicFooter(ctx: AppointmentContext): string {
   return `<div style="padding:16px 32px 24px;border-top:1px solid #E4E4EA;font-size:13px;line-height:1.6;color:#6B6B78;">${lines.join('<br>')}</div>`
 }
 
-async function sendEmail(ctx: AppointmentContext, subject: string, body: string): Promise<boolean> {
-  if (!ctx.patientEmail) return false
+async function sendEmail(ctx: AppointmentContext, recipient: MessageRecipient, subject: string, body: string): Promise<boolean> {
+  if (!recipient.email) return false
+  const note = recipient.isTutor ? tutorEmailNote(ctx.patientFirstName, recipient.preferredLanguage) : ''
   const html = `
     <div style="background:#F4F4F6;padding:40px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
       <div style="max-width:560px;margin:0 auto;background:#FFFFFF;border-radius:14px;border:1px solid #E4E4EA;overflow:hidden;">
-        <div style="padding:24px 32px 32px;font-size:14px;line-height:1.6;color:#4A4A57;">${mergeText(body, ctx, true)}</div>${clinicFooter(ctx)}
+        <div style="padding:24px 32px 32px;font-size:14px;line-height:1.6;color:#4A4A57;">${note}${mergeText(body, ctx, true)}</div>${clinicFooter(ctx)}
       </div>
     </div>
   `
-  await sendResendEmail({ to: ctx.patientEmail, subject: mergeText(subject, ctx), html })
+  await sendResendEmail({ to: recipient.email, subject: mergeText(subject, ctx), html })
   return true
 }
 
@@ -332,7 +363,10 @@ interface CommunicationSettings {
 async function sendForPurpose(supabase: any, appointmentId: string, purpose: 'confirmation' | 'reminder', settings: CommunicationSettings): Promise<boolean> {
   if (!settings.enabled) return false
   const ctx = await loadAppointmentContext(supabase, appointmentId)
-  if (!ctx || ctx.patientIsMinor || ctx.patientDoNotContact) return false
+  // Nobody to tell: a do-not-contact patient, or a minor without a tutor who
+  // can be contacted. A minor with one is told through them.
+  const recipient = ctx?.recipient
+  if (!ctx || !recipient) return false
 
   let sent = false
   if (settings.channels.includes('whatsapp') && settings.whatsappTemplateName) {
@@ -341,14 +375,14 @@ async function sendForPurpose(supabase: any, appointmentId: string, purpose: 'co
       // not connected, or Meta refusing the send used to be recorded as
       // "sent" -- shown on the appointment, and starting the cooldown that
       // then held back the confirmation of the patient's next booking.
-      if (await sendWhatsApp(supabase, ctx, purpose, settings.whatsappTemplateName, settings.whatsappTemplateLanguage)) sent = true
+      if (await sendWhatsApp(supabase, ctx, recipient, purpose, settings.whatsappTemplateName, settings.whatsappTemplateLanguage)) sent = true
     } catch {
       // Best-effort: a failed channel shouldn't block the other one.
     }
   }
   if (settings.channels.includes('email') && settings.emailSubject && settings.emailBody) {
     try {
-      if (await sendEmail(ctx, settings.emailSubject, settings.emailBody)) sent = true
+      if (await sendEmail(ctx, recipient, settings.emailSubject, settings.emailBody)) sent = true
     } catch {
       // Best-effort, same as above.
     }
@@ -361,7 +395,11 @@ async function sendForPurpose(supabase: any, appointmentId: string, purpose: 'co
   // template to honour: unlike WhatsApp (Meta-approved templates) and email
   // (a subject/body the clinic writes), push has no per-clinic copy yet, so
   // it reuses the same merge fields the email body would have had.
-  if (settings.channels.includes('push')) {
+  //
+  // Not for a minor. Their tutor's app shows the tutor's own visits, so a
+  // "tap to confirm" push about the child's would open onto a list without
+  // it; the tutor hears by WhatsApp and email instead.
+  if (settings.channels.includes('push') && !recipient.isTutor) {
     try {
       // The clinic's clock, as the email and WhatsApp paths use: on the
       // server this ran in UTC, so a 17:30 Madrid visit said 15:30.
@@ -608,14 +646,18 @@ export async function sendSeriesConfirmation(
   if (!account?.appointment_confirmation_enabled) return out
   const channels: string[] = account.appointment_confirmation_channels ?? []
   const ctx = await loadAppointmentContext(supabase, rows[0].id)
-  if (!ctx || ctx.patientIsMinor || ctx.patientDoNotContact) return out
+  const recipient = ctx?.recipient
+  if (!ctx || !recipient) return out
 
   const when = (iso: string, long: boolean) =>
     new Date(iso).toLocaleString('es-ES', { weekday: long ? 'long' : 'short', day: 'numeric', month: long ? 'long' : 'short', hour: '2-digit', minute: '2-digit', timeZone: ctx.clinicTimezone })
   const lines = rows.map((r) => when(r.starts_at, true))
-  const intro = `Hola ${ctx.patientFirstName}, estas son tus ${rows.length} próximas citas en ${ctx.clinicName}:`
+  // To a tutor it says whose they are.
+  const intro = recipient.isTutor
+    ? `Hola, estas son las ${rows.length} próximas citas de ${ctx.patientFirstName} en ${ctx.clinicName}:`
+    : `Hola ${ctx.patientFirstName}, estas son tus ${rows.length} próximas citas en ${ctx.clinicName}:`
 
-  if (channels.includes('email') && ctx.patientEmail) {
+  if (channels.includes('email') && recipient.email) {
     try {
       const html = `
     <div style="background:#F4F4F6;padding:40px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
@@ -626,13 +668,14 @@ export async function sendSeriesConfirmation(
         </div>${clinicFooter(ctx)}
       </div>
     </div>`
-      await sendResendEmail({ to: ctx.patientEmail, subject: `Tus próximas citas en ${ctx.clinicName}`, html })
+      const subject = recipient.isTutor ? `Próximas citas de ${ctx.patientFirstName} en ${ctx.clinicName}` : `Tus próximas citas en ${ctx.clinicName}`
+      await sendResendEmail({ to: recipient.email, subject, html })
       out.list.push('email')
     } catch {
       // Best-effort.
     }
   }
-  if (channels.includes('push')) {
+  if (channels.includes('push') && !recipient.isTutor) {
     try {
       const short = rows.slice(0, 4).map((r) => when(r.starts_at, false))
       const result = await sendPushToPatients(supabase, accountId, [ctx.patientId], {
@@ -647,7 +690,7 @@ export async function sendSeriesConfirmation(
   }
   if (channels.includes('whatsapp') && sendWhatsAppList) {
     try {
-      await sendWhatsAppList(ctx.patientId, `${intro}\n${lines.map((l) => `• ${l}`).join('\n')}`)
+      await sendWhatsAppList(recipient.patientId, `${intro}\n${lines.map((l) => `• ${l}`).join('\n')}`)
       out.list.push('whatsapp')
     } catch {
       // Outside the 24h window, or no WhatsApp: the first visit's template

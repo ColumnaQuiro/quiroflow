@@ -19,6 +19,17 @@ import type { VisitBono } from '~/utils/visitPayment'
 // What fits is decided by utils/appointmentBlock (blockLadder) from the size
 // this block actually renders at, which it measures itself.
 
+/** A care plan's re-exam visit (care_plan_marked_visits). */
+export interface VisitMarkerView {
+  /** Its number in the plan. */
+  visit: number
+  label: string
+  /** Booked as another type than the plan asks for. */
+  mismatch: boolean
+  expectedTypeId: string | null
+  expectedTypeName: string | null
+}
+
 export interface BlockView {
   id: string
   name: string
@@ -39,6 +50,7 @@ export interface BlockView {
   hasNote: boolean
   movedCount: number
   noNext: boolean
+  marker?: VisitMarkerView | null
 }
 
 const props = withDefaults(
@@ -86,6 +98,7 @@ const ladder = computed(() =>
     note: props.view.hasNote,
     moved: props.view.movedCount,
     noNext: props.view.noNext,
+    marker: !!props.view.marker,
     pillText: pillText.value,
     nameText: props.density === 'week' ? props.view.shortName : props.view.name,
     owesText: owesText.value,
@@ -141,11 +154,19 @@ const metaText = computed(() => {
   return [props.view.timeLabel, props.view.typeName, props.view.practitionerName].filter(Boolean).join(' · ')
 })
 
+const markerText = computed(() => {
+  const m = props.view.marker
+  if (!m) return ''
+  const what = t(`Visit ${m.visit} · ${m.label}`, `Visita ${m.visit} · ${m.label}`)
+  return m.mismatch && m.expectedTypeName ? `${what} — ${t(`should be ${m.expectedTypeName}`, `debería ser ${m.expectedTypeName}`)}` : what
+})
+
 const ariaLabel = computed(() =>
   [
     props.view.name,
     props.view.timeLabel,
     props.view.typeName,
+    markerText.value || null,
     pillText.value,
     props.view.owesCents > 0 ? owesText.value : null,
   ]
@@ -180,6 +201,16 @@ const ariaLabel = computed(() =>
         ]"
         data-cy="appt-block-name"
       >{{ ladder.shortName ? view.shortName : view.name }}</span>
+      <span
+        v-if="ladder.marker"
+        class="inline-flex shrink-0"
+        :class="view.marker?.mismatch ? 'rounded-[4px] bg-warning-bg px-px text-warning-text' : 'text-brand-text'"
+        :title="markerText"
+        data-cy="appt-block-marker"
+        :data-mismatch="view.marker?.mismatch ? 'true' : undefined"
+      >
+        <CalendarVisitMarkerIcon />
+      </span>
       <span v-if="ladder.note" class="inline-flex shrink-0 text-warning-accent" :title="t('Clinical note', 'Nota clínica')" data-cy="appt-block-note">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" :aria-label="t('Clinical note', 'Nota clínica')"><path d="M5 4h10l4 4v12H5z" /><path d="M9 12h6M9 16h4" /></svg>
       </span>

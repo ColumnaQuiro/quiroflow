@@ -586,6 +586,13 @@ function onBillingCompleted() {
   emit('changed')
 }
 const canAct = computed(() => props.appointment.status === 'booked' && !readOnly.value)
+
+// The care plan's re-exam, booked as some other type: one click puts it right.
+// Only the type -- the time and length the patient was given stay as they are.
+async function useExpectedType() {
+  const typeId = props.view.marker?.expectedTypeId
+  if (typeId && (await update({ appointment_type_id: typeId }))) emit('changed')
+}
 </script>
 
 <template>
@@ -657,6 +664,28 @@ const canAct = computed(() => props.appointment.status === 'booked' && !readOnly
           <UiBtn variant="primary" type="submit" :disabled="busy" data-cy="appt-edit-save">{{ t('Save', 'Guardar') }}</UiBtn>
         </div>
       </form>
+
+      <div
+        v-if="view.marker && !editing"
+        class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-ctl border px-3 py-2 text-[12.5px]"
+        :class="view.marker.mismatch ? 'border-warning-border bg-warning-bg text-warning-text' : 'border-brand-tintBorder bg-brand-tint text-brand-text'"
+        data-cy="appt-marker"
+        :data-mismatch="view.marker.mismatch ? 'true' : undefined"
+      >
+        <CalendarVisitMarkerIcon :size="14" />
+        <span class="font-semibold">{{ t(`Visit ${view.marker.visit} of the plan · ${view.marker.label}`, `Visita ${view.marker.visit} del plan · ${view.marker.label}`) }}</span>
+        <span v-if="view.marker.mismatch" class="w-full" data-cy="appt-marker-mismatch">
+          {{
+            t(
+              `The plan books it as ${view.marker.expectedTypeName}; this is booked as ${appointment.appointment_types?.name ?? 'no type'}.`,
+              `El plan la reserva como ${view.marker.expectedTypeName}; esta está como ${appointment.appointment_types?.name ?? 'sin tipo'}.`,
+            )
+          }}
+        </span>
+        <button v-if="view.marker.mismatch && canAct" type="button" :disabled="busy" class="font-semibold underline hover:no-underline" data-cy="appt-marker-fix" @click="useExpectedType">
+          {{ t(`Change to ${view.marker.expectedTypeName}`, `Cambiar a ${view.marker.expectedTypeName}`) }}
+        </button>
+      </div>
 
       <div role="tablist" class="mt-3 flex gap-1">
         <button

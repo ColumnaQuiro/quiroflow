@@ -1427,6 +1427,7 @@ export type Database = {
           patient_id: string
           practitioner_id: string | null
           practitioner_name: string | null
+          reminder_claimed_at: string | null
           reminder_sent_at: string | null
           rescheduled: boolean
           room_id: string | null
@@ -1456,6 +1457,7 @@ export type Database = {
           patient_id: string
           practitioner_id?: string | null
           practitioner_name?: string | null
+          reminder_claimed_at?: string | null
           reminder_sent_at?: string | null
           rescheduled?: boolean
           room_id?: string | null
@@ -1485,6 +1487,7 @@ export type Database = {
           patient_id?: string
           practitioner_id?: string | null
           practitioner_name?: string | null
+          reminder_claimed_at?: string | null
           reminder_sent_at?: string | null
           rescheduled?: boolean
           room_id?: string | null
@@ -2268,6 +2271,7 @@ export type Database = {
           patient_id: string
           started_at: string
           total_visits: number
+          visit_markers: Json
           visits_per_period: number
         }
         Insert: {
@@ -2284,6 +2288,7 @@ export type Database = {
           patient_id: string
           started_at?: string
           total_visits: number
+          visit_markers?: Json
           visits_per_period?: number
         }
         Update: {
@@ -2300,6 +2305,7 @@ export type Database = {
           patient_id?: string
           started_at?: string
           total_visits?: number
+          visit_markers?: Json
           visits_per_period?: number
         }
         Relationships: [
@@ -5173,6 +5179,7 @@ export type Database = {
           account_id: string
           address: string | null
           anonymized_at: string | null
+          appointment_reminder_hours_before: number | null
           balance_cents: number
           chief_complaint: string | null
           city: string | null
@@ -5229,6 +5236,7 @@ export type Database = {
           account_id: string
           address?: string | null
           anonymized_at?: string | null
+          appointment_reminder_hours_before?: number | null
           balance_cents?: number
           chief_complaint?: string | null
           city?: string | null
@@ -5285,6 +5293,7 @@ export type Database = {
           account_id?: string
           address?: string | null
           anonymized_at?: string | null
+          appointment_reminder_hours_before?: number | null
           balance_cents?: number
           chief_complaint?: string | null
           city?: string | null
@@ -8815,6 +8824,26 @@ export type Database = {
       patient_visit_facts: {
         Args: never
         Returns: { patient_id: string; last_appointment_at: string | null; last_no_show_at: string | null; has_future_appointment: boolean }[]
+      }
+      care_plan_marked_visits: {
+        Args: { p_from?: string; p_to?: string; p_patient_id?: string }
+        Returns: {
+          appointment_id: string
+          patient_id: string
+          care_plan_id: string
+          starts_at: string
+          status: string
+          visit_number: number
+          label: string | null
+          expected_appointment_type_id: string | null
+          expected_type_name: string | null
+          appointment_type_id: string | null
+          mismatch: boolean
+        }[]
+      }
+      care_plan_visit_markers_at: {
+        Args: { p_patient_id: string; p_starts_at: string[]; p_exclude_appointment_id?: string }
+        Returns: { starts_at: string; visit_number: number; label: string | null; expected_appointment_type_id: string | null; expected_type_name: string | null }[]
       }
       care_plan_visit_facts: {
         Args: never

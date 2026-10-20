@@ -5195,6 +5195,7 @@ export type Database = {
           gender: string | null
           goals: string | null
           has_phone: boolean
+          phone_search: string | null
           id: string
           invoice_email_enabled: boolean
           is_minor: boolean
@@ -5250,6 +5251,7 @@ export type Database = {
           gender?: string | null
           goals?: string | null
           has_phone?: boolean
+          phone_search?: string | null
           id?: string
           invoice_email_enabled?: boolean
           is_minor?: boolean
@@ -5305,6 +5307,7 @@ export type Database = {
           gender?: string | null
           goals?: string | null
           has_phone?: boolean
+          phone_search?: string | null
           id?: string
           invoice_email_enabled?: boolean
           is_minor?: boolean

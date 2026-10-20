@@ -97,4 +97,26 @@ describe('A patient list longer than one request can name', () => {
       cy.contains('tr', 'Crowd 249').should('be.visible')
     })
   })
+
+  // The phone search reads patients.phone_search, which a trigger keeps in step
+  // with the numbers. A patient created first and given a second number after
+  // is the path a seeded-in-one-go list never takes.
+  it('finds a patient by a number added after the patient was created', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Tarde', lastName: 'Telefono', phone: '611000001' }).then(
+        (patient: any) => {
+          cy.task('db:addPatientContactNumber', { accountId: account.accountId, patientId: patient.id, number: '622987654' })
+
+          cy.login(account.email, account.password)
+          cy.visit('/patients')
+
+          cy.get('input[type="search"]').type('622987654')
+          cy.contains('tr', 'Tarde Telefono', { timeout: 15000 }).should('be.visible')
+
+          cy.get('input[type="search"]').clear().type('611000001')
+          cy.contains('tr', 'Tarde Telefono').should('be.visible')
+        },
+      )
+    })
+  })
 })

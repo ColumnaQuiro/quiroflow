@@ -698,7 +698,7 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
           </label>
         </div>
 
-        <p v-if="error" class="text-[13px] text-danger-text">{{ error }}</p>
+        <p v-if="error" class="text-[13px] text-danger-text" data-cy="patient-details-error">{{ error }}</p>
         <div class="flex gap-2">
           <UiBtn variant="primary" :disabled="saving" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}</UiBtn>
           <UiBtn type="button" variant="ghost" @click="editing = false">{{ t('Cancel', 'Cancelar') }}</UiBtn>

@@ -8,6 +8,7 @@ import { splitDialPrefix } from '~/utils/phone'
 import { formatEur, formatShortDate, formatTime, formatWeekdayDate } from '~/utils/billing'
 import { findFreeSlots, firstClash, type Busy } from '~/utils/freeSlots'
 import { seriesProblems, seriesStarts, type RepeatRule, type SeriesProblem } from '~/utils/repeatSeries'
+import { visitMarkerLabel } from '~/utils/carePlanVisitMarkers'
 
 // A new appointment, from a slot or from "+ Nueva cita". Laid out in the
 // order the desk answers the questions on the phone -- the canvas's Create
@@ -420,6 +421,53 @@ async function loadCarePlan(patientId: string) {
 }
 const carePlanFrequencyLabel = computed(() => (carePlan.value ? carePlanCadenceLabel(carePlan.value, t) : ''))
 
+// -- Re-exam visits -----------------------------------------------------
+// Which of the dates being booked land on one of the plan's re-exam visits
+// (utils/carePlanVisitMarkers.ts), numbered by the database against every
+// visit the patient already has. A single booking keeps the type the desk
+// picked and says so when it is not the plan's; a series ("repeat as the
+// plan") books each re-exam date as the plan's type itself.
+interface BookingMarker { starts_at: string; visit_number: number; label: string | null; expected_appointment_type_id: string | null; expected_type_name: string | null }
+const bookingMarkers = ref<BookingMarker[]>([])
+async function markersFor(patientId: string, starts: Date[]): Promise<BookingMarker[]> {
+  const { data, error: e } = await supabase.rpc('care_plan_visit_markers_at', { p_patient_id: patientId, p_starts_at: starts.map((d) => d.toISOString()) })
+  if (e) {
+    console.error('booking: re-exam visits failed', e)
+    return []
+  }
+  return (data as BookingMarker[] | null) ?? []
+}
+let markerRun = 0
+watch(
+  () => {
+    const pid = patientMode.value === 'existing' ? selectedPatient.value?.id : null
+    return pid && validTime.value ? `${pid}|${seriesStarts(startsAt.value, repeatRule()).map((d) => d.getTime()).join(',')}` : ''
+  },
+  async (key) => {
+    const run = ++markerRun
+    if (!key) {
+      bookingMarkers.value = []
+      return
+    }
+    const [pid, times] = key.split('|')
+    const rows = await markersFor(pid, times.split(',').map((ms) => new Date(Number(ms))))
+    if (run === markerRun) bookingMarkers.value = rows
+  },
+  { immediate: true },
+)
+const isSeries = computed(() => repeat.value !== 'none')
+const singleMarker = computed(() => (!isSeries.value ? bookingMarkers.value[0] ?? null : null))
+const singleMarkerMismatch = computed(() => !!singleMarker.value?.expected_appointment_type_id && singleMarker.value.expected_appointment_type_id !== appointmentTypeId.value)
+const markerTypeBookable = computed(() => props.appointmentTypes.some((x) => x.id === singleMarker.value?.expected_appointment_type_id))
+const seriesMarkerLine = computed(() =>
+  bookingMarkers.value
+    .map((m) => {
+      const what = visitMarkerLabel({ label: m.label, expected_type_name: m.expected_type_name }, t)
+      return `${m.visit_number} (${formatShortDate(m.starts_at)}) · ${what}`
+    })
+    .join(', '),
+)
+
 // -- Collect Payment --------------------------------------------------
 const collectPayment = ref(false)
 const paymentAmount = ref('')
@@ -620,6 +668,14 @@ async function book(starts: Date[]) {
   let firstAppointmentId: string | null = null
   const createdIds: string[] = []
   let failed = false
+  // A series is numbered again here, for the dates actually being booked: a
+  // skipped clash moves every visit after it along by one.
+  const markerType = new Map<number, string>()
+  if (starts.length > 1) {
+    for (const m of await markersFor(patientId, starts)) {
+      if (m.expected_appointment_type_id && props.appointmentTypes.some((x) => x.id === m.expected_appointment_type_id)) markerType.set(new Date(m.starts_at).getTime(), m.expected_appointment_type_id)
+    }
+  }
   for (const [i, occStart] of starts.entries()) {
     const occEnd = new Date(occStart.getTime() + duration.value * 60000)
     const { data: created, error: apptError } = await supabase
@@ -630,7 +686,7 @@ async function book(starts: Date[]) {
         patient_id: patientId,
         room_id: roomId.value || null,
         practitioner_id: practitionerId.value || null,
-        appointment_type_id: appointmentTypeId.value || null,
+        appointment_type_id: markerType.get(occStart.getTime()) ?? (appointmentTypeId.value || null),
         starts_at: occStart.toISOString(),
         ends_at: occEnd.toISOString(),
         status: 'booked',
@@ -835,6 +891,27 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
             </button>
           </div>
         </section>
+
+        <div
+          v-if="singleMarker"
+          class="-mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-ctl border px-3 py-2 text-[12.5px]"
+          :class="singleMarkerMismatch ? 'border-warning-border bg-warning-bg text-warning-text' : 'border-brand-tintBorder bg-brand-tint text-brand-text'"
+          data-cy="create-marker"
+          :data-mismatch="singleMarkerMismatch ? 'true' : undefined"
+        >
+          <CalendarVisitMarkerIcon :size="14" />
+          <span class="font-semibold">{{ t(`Visit ${singleMarker.visit_number} of the plan · ${visitMarkerLabel(singleMarker, t)}`, `Visita ${singleMarker.visit_number} del plan · ${visitMarkerLabel(singleMarker, t)}`) }}</span>
+          <template v-if="singleMarkerMismatch">
+            <span class="w-full">{{ t(`The plan books it as ${singleMarker.expected_type_name}.`, `El plan la reserva como ${singleMarker.expected_type_name}.`) }}</span>
+            <button v-if="markerTypeBookable" type="button" class="font-semibold underline hover:no-underline" data-cy="create-marker-fix" @click="appointmentTypeId = singleMarker.expected_appointment_type_id!">
+              {{ t(`Use ${singleMarker.expected_type_name}`, `Usar ${singleMarker.expected_type_name}`) }}
+            </button>
+          </template>
+        </div>
+        <p v-else-if="isSeries && bookingMarkers.length" class="-mt-3 flex items-start gap-2 rounded-ctl border border-brand-tintBorder bg-brand-tint px-3 py-2 text-[12.5px] text-brand-text" data-cy="create-series-markers">
+          <CalendarVisitMarkerIcon :size="14" class="mt-0.5" />
+          <span>{{ t(`Re-exam visits in this series: ${seriesMarkerLine}. Booked as the plan's type where it has one.`, `Visitas de revisión en esta serie: ${seriesMarkerLine}. Se reservan con el tipo del plan si lo tiene.`) }}</span>
+        </p>
 
         <!-- 3. With whom: working hours and bookings decide what is offered -->
         <section>

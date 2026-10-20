@@ -1,9 +1,15 @@
 <script setup lang="ts">
+import { visitMarkerLabel } from '~/utils/carePlanVisitMarkers'
+
 // Plan-aware counterpart to pages/recalls.vue -- same "who's overdue, let me
 // message them" shape, but scoped to patients actively on a care plan
 // (care_plan_continuity_alerts) rather than a flat days-since-last-visit
 // threshold. Deliberately reuses SendWhatsAppModal.vue rather than
 // duplicating recalls.vue's messaging UI.
+//
+// Then the plans' re-exam visits booked ahead as some other appointment type
+// than the plan asks for (care_plan_marked_visits): the review that a
+// reschedule pushed onto an ordinary slot, with the fix one click away.
 //
 // Below it, the patients who have stopped doing their home exercises
 // (exercise_adherence_alerts): the same kind of "someone is falling off
@@ -36,11 +42,26 @@ interface ExerciseAlertRow {
   days_without: number
 }
 
+interface MarkerMismatchRow {
+  appointment_id: string
+  patient_id: string
+  starts_at: string
+  visit_number: number
+  label: string
+  expected_appointment_type_id: string
+  expected_type_name: string
+  booked_type_name: string | null
+  patient_name: string
+}
+
 const supabase = useSupabaseClient()
 const t = useT()
 
 const rows = ref<AlertRow[]>([])
 const exerciseRows = ref<ExerciseAlertRow[]>([])
+const markerRows = ref<MarkerMismatchRow[]>([])
+const markerError = ref('')
+const fixing = ref<string | null>(null)
 const loading = ref(true)
 const messagingPatientId = ref<string | null>(null)
 
@@ -57,7 +78,56 @@ async function load(opts: { silent?: boolean } = {}) {
   ])
   rows.value = (data as AlertRow[]) ?? []
   exerciseRows.value = (exercises as ExerciseAlertRow[] | null) ?? []
+  await loadMarkerMismatches()
   loading.value = false
+}
+
+// From the start of today: a re-exam already seen as the wrong type is
+// history, and nothing here can change it.
+async function loadMarkerMismatches() {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const { data } = await supabase.rpc('care_plan_marked_visits', { p_from: today.toISOString() })
+  const wrong = (data ?? []).filter((m) => m.mismatch && m.status === 'booked' && m.expected_appointment_type_id)
+  if (wrong.length === 0) {
+    markerRows.value = []
+    return
+  }
+  const typeIds = [...new Set(wrong.map((m) => m.appointment_type_id).filter((id): id is string => !!id))]
+  const [{ data: patients }, { data: types }] = await Promise.all([
+    supabase.from('patients').select('id, first_name, last_name').in('id', [...new Set(wrong.map((m) => m.patient_id))]),
+    typeIds.length ? supabase.from('appointment_types').select('id, name').in('id', typeIds) : Promise.resolve({ data: [] as { id: string; name: string }[] }),
+  ])
+  const nameOf = new Map((patients ?? []).map((p) => [p.id, patientName(p)]))
+  const typeOf = new Map((types ?? []).map((ty) => [ty.id, ty.name]))
+  markerRows.value = wrong
+    .map((m) => ({
+      appointment_id: m.appointment_id,
+      patient_id: m.patient_id,
+      starts_at: m.starts_at,
+      visit_number: m.visit_number,
+      label: visitMarkerLabel(m, t),
+      expected_appointment_type_id: m.expected_appointment_type_id!,
+      expected_type_name: m.expected_type_name ?? '',
+      booked_type_name: m.appointment_type_id ? (typeOf.get(m.appointment_type_id) ?? null) : null,
+      patient_name: nameOf.get(m.patient_id) ?? '',
+    }))
+    .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
+}
+
+async function fixMarker(row: MarkerMismatchRow) {
+  markerError.value = ''
+  fixing.value = row.appointment_id
+  const { error } = await supabase.from('appointments').update({ appointment_type_id: row.expected_appointment_type_id }).eq('id', row.appointment_id)
+  fixing.value = null
+  if (error) {
+    markerError.value = t("Couldn't change the type. Open the visit in the calendar.", 'No se ha podido cambiar el tipo. Abre la cita en el calendario.')
+    return
+  }
+  await loadMarkerMismatches()
+}
+function formatDateTime(iso: string) {
+  return new Date(iso).toLocaleString('es-ES', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 onMounted(() => load())
 
@@ -136,6 +206,55 @@ const messagingRow = computed(() => [...rows.value, ...exerciseRows.value].find(
               <td class="px-3 py-2 text-right">
                 <button type="button" class="text-[12px] font-medium text-brand-text hover:underline" @click="openMessage(row)">
                   {{ t('Message', 'Mensaje') }}
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2 class="mb-1 mt-8 text-[15px] font-semibold text-ink-900">{{ t('Re-exams booked as the wrong type', 'Revisiones reservadas con otro tipo') }}</h2>
+      <p class="mb-4 text-[13px] text-ink-muted2">
+        {{
+          t(
+            "Upcoming visits that the patient's care plan marks as a re-exam with its own appointment type, booked as another type -- usually after a reschedule moved the visits around.",
+            'Próximas visitas que el plan del paciente marca como revisión con su propio tipo de cita, reservadas con otro tipo: normalmente porque al reprogramar se han movido las visitas.',
+          )
+        }}
+      </p>
+      <p v-if="markerError" class="mb-3 rounded-ctl bg-danger-bg px-3 py-2 text-[13px] text-danger-text">{{ markerError }}</p>
+      <div class="overflow-x-auto rounded-card border border-line bg-surface shadow-card" data-cy="marker-mismatches">
+        <table class="w-full text-[13px]" :class="markerRows.length ? 'min-w-[640px]' : ''">
+          <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2">
+            <tr>
+              <th class="px-3 py-2">{{ t('Patient', 'Paciente') }}</th>
+              <th class="px-3 py-2">{{ t('When', 'Cuándo') }}</th>
+              <th class="px-3 py-2">{{ t('Visit', 'Visita') }}</th>
+              <th class="px-3 py-2">{{ t('Booked as', 'Reservada como') }}</th>
+              <th class="px-3 py-2">{{ t('Plan says', 'El plan dice') }}</th>
+              <th class="px-3 py-2" />
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-line-divider">
+            <tr v-if="loading">
+              <td colspan="6" class="px-3 py-2.5"><UiSkeleton class="h-3.5 w-40 rounded-ctlSm" /></td>
+            </tr>
+            <tr v-else-if="markerRows.length === 0">
+              <td colspan="6" class="px-3 py-6 text-center text-ink-faint">{{ t('Every upcoming re-exam is booked as its plan says.', 'Todas las próximas revisiones están reservadas como dice su plan.') }}</td>
+            </tr>
+            <tr v-for="row in loading ? [] : markerRows" :key="row.appointment_id" data-cy="marker-mismatch-row">
+              <td class="px-3 py-2">
+                <NuxtLink :to="`/patients/${row.patient_id}`" class="font-medium text-ink-900 hover:text-brand-text">{{ row.patient_name }}</NuxtLink>
+              </td>
+              <td class="px-3 py-2 text-ink-muted2">{{ formatDateTime(row.starts_at) }}</td>
+              <td class="px-3 py-2 text-ink-muted2">
+                <span class="inline-flex items-center gap-1"><CalendarVisitMarkerIcon class="text-brand-text" />{{ row.visit_number }} · {{ row.label }}</span>
+              </td>
+              <td class="px-3 py-2"><UiPill tone="warning">{{ row.booked_type_name ?? t('No type', 'Sin tipo') }}</UiPill></td>
+              <td class="px-3 py-2 text-ink-muted2">{{ row.expected_type_name }}</td>
+              <td class="px-3 py-2 text-right">
+                <button type="button" :disabled="fixing === row.appointment_id" class="text-[12px] font-medium text-brand-text hover:underline disabled:opacity-50" data-cy="marker-mismatch-fix" @click="fixMarker(row)">
+                  {{ t(`Change to ${row.expected_type_name}`, `Cambiar a ${row.expected_type_name}`) }}
                 </button>
               </td>
             </tr>

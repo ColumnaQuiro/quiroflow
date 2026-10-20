@@ -4,7 +4,7 @@ import { requireReceptionist } from '~/server/utils/requireGrowth'
 import { buildSystemPrompt, loadOfferedTypes, loadReceptionistCalendar, loadReceptionistConfig, type LeadOrigin } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel, type ReceptionistToolUse } from '~/server/utils/receptionistModel'
 import { modelFailureMessage } from '~/utils/modelFailure'
-import { typesForAudience, type ReceptionistAudience } from '~/utils/receptionistTypes'
+import { typesForAudience, typesForMinor, type ReceptionistAudience } from '~/utils/receptionistTypes'
 import { isNoReply } from '~/utils/receptionistAutoReply'
 import { internalNotes } from '~/utils/receptionistGuard'
 
@@ -104,8 +104,11 @@ export default defineEventHandler(async (event) => {
   // The same narrowing the drafts get: an owner pretending to come from the
   // ad is offered the ad's first visit, anyone else the plain one, and a
   // returning patient never a first visit.
-  const { types, adOnly } = typesForAudience(await loadOfferedTypes(supabase, teamMember.account_id, config), scenario.audience)
-  const bookable = [...types, ...adOnly]
+  const offered = await loadOfferedTypes(supabase, teamMember.account_id, config)
+  const { types, adOnly } = typesForAudience(offered, scenario.audience)
+  // And a child's, so "cita para mi hija" can be tried too (minorsSection).
+  const minors = { forNewChild: typesForMinor(offered, false), forReturningChild: typesForMinor(offered, true), children: [] }
+  const bookable = [...types, ...adOnly, ...minors.forNewChild.filter((type) => !types.includes(type) && !adOnly.includes(type))]
   // And the same free times, read with the service role for the reason given
   // in loadReceptionistCalendar.
   const service = serverSupabaseServiceRole(event)
@@ -116,7 +119,7 @@ export default defineEventHandler(async (event) => {
     const { text: reply, refused, handedOver, toolUses } = await runReceptionistModel(await createAnthropicClient(apiKey), {
       model: MODEL,
       maxTokens: MAX_TOKENS,
-      system: buildSystemPrompt(config, { testMode: true, offeredTypes: types, adOnlyTypes: adOnly, audience: scenario.audience, calendar, leadOrigin: scenario.origin, searchTool: Boolean(findFreeTimes), sendsItself: true }),
+      system: buildSystemPrompt(config, { testMode: true, offeredTypes: types, adOnlyTypes: adOnly, audience: scenario.audience, calendar, leadOrigin: scenario.origin, searchTool: Boolean(findFreeTimes), sendsItself: true, minors }),
       messages: turns.map((turn) => ({ role: turn.role, content: turn.content })),
       findFreeTimes,
       // Offered as when it answers on its own; here it only reports.

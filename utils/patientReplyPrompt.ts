@@ -2,7 +2,7 @@ import { formatEur } from './billing'
 import { DEFAULT_CLINIC_TIMEZONE } from './clinicClock'
 import { CONFIDENTIALITY_SECTION, promptSafeName } from './receptionistGuard'
 import { NO_REPLY } from './receptionistAutoReply'
-import { CONFIRM_BEFORE_BOOKING, offeredTypesSection, rescheduleSection, type BookedVisit, type PromptType } from './receptionistTypes'
+import { CONFIRM_BEFORE_BOOKING, minorsSection, offeredTypesSection, rescheduleSection, type BookedVisit, type PromptChild, type PromptType } from './receptionistTypes'
 import { receptionistBookingSection, receptionistClockSection, type ReceptionistAvailability } from './receptionistSlots'
 import { historyMarkersSection, INFORMAL_ADDRESS_LINE, NO_INVENTION_LINE, WAITLIST_SECTION } from './receptionistHistory'
 import type { ReceptionistPrompt } from './receptionistPrompt'
@@ -120,6 +120,8 @@ export function buildPatientReplyPrompt(
     bookedVisits?: BookedVisit[]
     /** Sent without a person reading it first; see buildSystemPrompt's sendsItself. */
     sendsItself?: boolean
+    /** Booking for a child of the person writing (minorsSection); absent, nothing is said about it. */
+    minors?: { forNewChild: PromptType[]; forReturningChild: PromptType[]; children: PromptChild[] }
     /** book_appointment is on this request -- only ever with sendsItself. */
     canBook?: boolean
     /** add_to_waitlist is on this request -- only ever with sendsItself. */
@@ -166,6 +168,7 @@ export function buildPatientReplyPrompt(
     receptionistClockSection(opts.calendar.now, opts.calendar.timeZone),
     patientFactsSection(opts.facts, opts.calendar.timeZone),
     offeredTypesSection(opts.offeredTypes),
+    opts.minors ? minorsSection({ ...opts.minors, canBook: !!opts.canBook, sendsItself: !!opts.sendsItself }) : '',
     // A returning patient asking for "otra cita" means another of what they
     // have been having -- their adjustment, their maintenance visit -- and
     // the clinic's own knowledge says when that changes.

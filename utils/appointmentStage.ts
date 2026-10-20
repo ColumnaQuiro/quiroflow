@@ -87,6 +87,29 @@ export function needsNextBookingFlag(stage: AppointmentStage, startsAt: string |
   return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()
 }
 
+/**
+ * How many unfinished forms to flag on a visit (0 for none). Clinics find a
+ * patient who has not done their forms, and is not answering the phone,
+ * usually does not come -- so this is a warning for the front desk, and it is
+ * only worth anything before the patient is with the practitioner: from
+ * today on, booked or waiting in reception (where they can still fill them
+ * in on a tablet). Past days, finished visits, no-shows and cancellations
+ * say nothing, or every old visit of a patient with a stale form would.
+ * `pendingForms` is patients.pending_forms (the SQL computed field).
+ */
+export function pendingFormsFlag(stage: AppointmentStage, startsAt: string | Date, pendingForms: number | null | undefined, now: Date = new Date()): number {
+  if (!pendingForms || pendingForms < 0) return 0
+  if (!(isUnconfirmedStage(stage) || stage === 'confirmed' || stage === 'arrived')) return 0
+  const d = typeof startsAt === 'string' ? new Date(startsAt) : startsAt
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  return d >= today ? pendingForms : 0
+}
+
+/** "2 forms not completed", for every place pendingFormsFlag is drawn. */
+export function pendingFormsLabel(n: number, t: (en: string, es: string) => string): string {
+  return n === 1 ? t('Form not completed', 'Formulario sin completar') : t(`${n} forms not completed`, `${n} formularios sin completar`)
+}
+
 /** The flow, in order, as the panel's stage track draws it. */
 export const STAGE_TRACK = ['confirmed', 'arrived', 'withp', 'checkout', 'completed'] as const
 export type TrackStep = (typeof STAGE_TRACK)[number]

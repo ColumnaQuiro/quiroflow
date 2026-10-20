@@ -1,4 +1,4 @@
-import { openAlerts, threadOf, unreadByThread, type TeamMessageRow, type ThreadKey } from '~/utils/teamMessages'
+import { openAlerts, threadOf, unreadByThread, type TeamMessageRow, type ThreadKey } from '../utils/teamMessages'
 
 // Team messages and alerts (20261020074859_team_messages.sql), shared by the
 // Team page, the sidebar's unread count and the alert banner in the layout.

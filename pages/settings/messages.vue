@@ -218,7 +218,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
                 <div v-if="m.key === 'reminder'" class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
                   <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
                     <label for="reminder-hours" class="text-[14.5px] font-bold text-ink-900">{{ t('When', 'Cuándo') }}</label>
-                    <span class="text-[13px] text-ink-500">{{ t('How long before the appointment it goes out.', 'Con cuánta antelación se envía.') }}</span>
+                    <span class="text-[13px] text-ink-500">{{ t("How long before the appointment it goes out. A patient's record can set their own.", 'Con cuánta antelación se envía. En la ficha de un paciente se puede fijar la suya.') }}</span>
                   </div>
                   <label class="flex items-center gap-2 text-[14px] text-ink-500">
                     <input id="reminder-hours" v-model.number="reminderHoursBefore" type="number" min="1" max="168" data-cy="reminder-hours" :class="[inputClass, 'w-20 text-right']" />

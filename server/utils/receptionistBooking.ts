@@ -2,7 +2,8 @@ import type Anthropic from '@anthropic-ai/sdk'
 import type { H3Event } from 'h3'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
-import { loadReceptionistCalendar, type BookedAppointment, type OfferedType, type ReceptionistConfig } from '~/server/utils/receptionist'
+import { randomUUID } from 'node:crypto'
+import { loadReceptionistCalendar, type BookedAppointment, type OfferedType, type ReceptionistConfig, type TutorChild } from '~/server/utils/receptionist'
 import { claimConvertedLead, createPatientFromLead, findLikelyExistingPatients } from '~/server/utils/leadConversion'
 import { resolveWindow, saveAppointmentIfFree } from '~/server/utils/publicApiAppointments'
 import { automationEvent } from '~/server/utils/automationEngine'
@@ -11,7 +12,7 @@ import { pushAppointmentEvent } from '~/server/utils/staffPush'
 import { claimAutomaticConfirmation, sendAppointmentConfirmation } from '~/server/utils/appointmentNotifications'
 import { receptionistServiceClient } from '~/server/utils/receptionistAudit'
 import { clinicDateOf, startOfLocalDate, wallClockToUtc } from '~/utils/clinicClock'
-import { newPatientDetails } from '~/utils/receptionistTypes'
+import { MINOR_AGE, matchChild, newPatientDetails } from '~/utils/receptionistTypes'
 
 // The AI receptionist booking a visit, or moving one, on its own -- only when
 // it is answering on its own (utils/receptionistAutoReply.ts): a draft a
@@ -66,6 +67,8 @@ export const BOOK_APPOINTMENT: Anthropic.Tool = {
       move_visit_on: { type: 'string', description: 'To move a visit they already have instead of booking a new one: that visit\'s current day and time, as "YYYY-MM-DD HH:MM".' },
       full_name: { type: 'string', description: 'For someone not yet a patient: their first name and surname(s) exactly as they wrote them in the conversation. Leave out if they have not given it.' },
       email: { type: 'string', description: 'For someone not yet a patient: the email address they wrote in the conversation. Leave out if they have not given one.' },
+      child_name: { type: 'string', description: 'When the visit is for their child, not for them: the child\'s first name and surname(s) exactly as given. The visit is then booked in the child\'s name, with the person writing as tutor.' },
+      child_age: { type: 'number', description: 'With child_name: the child\'s age in years, as they said it.' },
     },
     required: ['date', 'time'],
     additionalProperties: false,
@@ -119,6 +122,12 @@ export interface BookingContext {
   person: { kind: 'lead'; leadId: string; patientId: string | null } | { kind: 'patient'; patientId: string }
   /** Told what was booked or moved, in words, to note it in the conversation. */
   onBooked: (summary: string) => Promise<void>
+  /**
+   * Booking for a child of the person writing (typesForMinor): what a new
+   * and a returning child may have, and their children already on file.
+   * Absent: book_appointment refuses child_name.
+   */
+  minors?: { forNewChild: OfferedType[]; forReturningChild: OfferedType[]; children: TutorChild[] }
 }
 
 type ToolResult = { content: string; isError: boolean }
@@ -131,7 +140,7 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
   let used = false
   return async (input) => {
     if (used) return { content: 'You have already booked or moved a visit in this reply. Do not book again: tell them what was booked.', isError: true }
-    const value = (input ?? {}) as { appointment_type?: unknown; date?: unknown; time?: unknown; move_visit_on?: unknown; full_name?: unknown; email?: unknown }
+    const value = (input ?? {}) as { appointment_type?: unknown; date?: unknown; time?: unknown; move_visit_on?: unknown; full_name?: unknown; email?: unknown; child_name?: unknown; child_age?: unknown }
     const date = typeof value.date === 'string' ? value.date.trim() : ''
     const time = typeof value.time === 'string' ? value.time.trim() : ''
     if (!DAY.test(date) || !HH_MM.test(time)) return { content: 'date must be YYYY-MM-DD and time HH:MM, exactly as listed.', isError: true }
@@ -139,11 +148,35 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
     const start = new Date(wallClockToUtc(date, time, ctx.timeZone))
     if (Number.isNaN(start.getTime()) || start.getTime() <= Date.now()) return { content: 'That time has already passed. Offer another.', isError: true }
 
+    // For their child rather than for them: a minor, booked in the child's
+    // own name with the person writing as tutor (typesForMinor). The child
+    // is found among those already on file with them, or made one.
+    const childName = typeof value.child_name === 'string' ? value.child_name.replace(/\s+/g, ' ').trim().slice(0, 120) : ''
+    let child: { existing: TutorChild | null; name: string } | null = null
+    if (childName) {
+      if (!ctx.minors) return { content: 'You cannot book for their child here. Call hand_over_to_colleague saying who it is for and the day and time they accepted.', isError: true }
+      if (typeof value.move_visit_on === 'string' && value.move_visit_on.trim()) return { content: "Moving a child's visit is your colleague's. Call hand_over_to_colleague saying which visit and the new time they want.", isError: true }
+      const age = typeof value.child_age === 'number' ? value.child_age : Number(value.child_age)
+      if (!Number.isFinite(age) || age < 0) return { content: "Ask the child's age first, then book with child_age.", isError: true }
+      if (age >= MINOR_AGE) return { content: `At ${age} they are an adult and book their own appointment. Ask them to write to the clinic themselves; do not book it.`, isError: true }
+      const existing = matchChild(ctx.minors.children, childName)
+      if (existing === 'ambiguous') return { content: 'More than one of their children on file has that name. Ask the child\'s surname and book with the full name; if they already gave it, call hand_over_to_colleague.', isError: true }
+      child = { existing, name: childName }
+    }
+
     // What is being booked: a move keeps the visit's type and is found by
-    // when it is now; a new booking is one of the types this person may have.
+    // when it is now; a new booking is one of the types this person may have
+    // -- or, for their child, one the child may have.
     let moving: BookedAppointment | null = null
     let type: OfferedType | undefined
-    if (typeof value.move_visit_on === 'string' && value.move_visit_on.trim()) {
+    if (child) {
+      const allowed = child.existing?.hasBeenBefore ? ctx.minors!.forReturningChild : ctx.minors!.forNewChild
+      const name = typeof value.appointment_type === 'string' ? value.appointment_type.trim().toLowerCase() : ''
+      type = allowed.find((t) => t.name.toLowerCase() === name) ?? (!name && allowed.length === 1 ? allowed[0] : undefined)
+      if (!type) {
+        return { content: `For ${child.existing?.hasBeenBefore ? 'a child who has been before' : 'a child who has not been yet'}, say which type, exactly as named: ${allowed.map((t) => t.name).join(', ') || 'none can be booked by you; call hand_over_to_colleague'}.`, isError: true }
+      }
+    } else if (typeof value.move_visit_on === 'string' && value.move_visit_on.trim()) {
       const wanted = value.move_visit_on.trim().replace('T', ' ')
       moving = ctx.booked.appointments.find((a) => localStamp(a.startsAt, ctx.timeZone) === wanted) ?? null
       if (!moving) {
@@ -184,8 +217,15 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
     const writer = receptionistServiceClient(ctx.event) as unknown as Supa
 
     // The patient: a lead becomes one first, as the Convert button does it.
-    const patient = await ensurePatient(ctx, writer, chosen.practitionerId, newPatientDetails(value.full_name, value.email))
-    if ('error' in patient) return { content: patient.error, isError: true }
+    // For a child, that person is the tutor and the child is the patient.
+    const tutor = await ensurePatient(ctx, writer, chosen.practitionerId, newPatientDetails(value.full_name, value.email))
+    if ('error' in tutor) return { content: tutor.error, isError: true }
+    let patient = tutor
+    if (child) {
+      const childId = child.existing?.id ?? await createChild(writer, ctx, tutor.patientId, child.name, chosen)
+      if (!childId) return { content: "The child's record could not be made. Call hand_over_to_colleague saying who it is for and the day and time they accepted; do not say it is booked.", isError: true }
+      patient = { patientId: childId }
+    }
 
     const { data: practitioner } = await ctx.service.from('team_members').select('full_name').eq('id', chosen.practitionerId).maybeSingle()
     const practitionerName = (practitioner as { full_name: string | null } | null)?.full_name ?? null
@@ -221,9 +261,10 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
 
     const when = new Date(window.startsAt).toLocaleString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: ctx.timeZone })
     const was = moving ? new Date(moving.startsAt).toLocaleString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: ctx.timeZone }) : null
+    const forChild = child ? ` para ${child.existing ? [child.existing.firstName, child.existing.lastName].filter(Boolean).join(' ') : child.name}${child.existing ? '' : ' (ficha nueva, menor, con quien escribe como tutor)'}` : ''
     const summary = moving
       ? `He movido su ${type.name} del ${was} al ${when}${practitionerName ? ` con ${practitionerName}` : ''}.`
-      : `He reservado ${type.name} el ${when}${practitionerName ? ` con ${practitionerName}` : ''}.`
+      : `He reservado ${type.name}${forChild} el ${when}${practitionerName ? ` con ${practitionerName}` : ''}.`
     console.info(`[receptionist] ${moving ? 'moved' : 'booked'} appointment ${appointmentId} (account ${ctx.accountId})`)
 
     // What follows any booking nobody at the clinic made: the note in the
@@ -245,14 +286,15 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
     // Their other visits close to the new time. One moved "to next week"
     // landed the day after a visit they already had there, and nobody told
     // them they now had two in a row.
+    // (Their own visits, not a child's: the child's are not in this list.)
     const near = ctx.booked.appointments
-      .filter((a) => a.id !== moving?.id && Math.abs(new Date(a.startsAt).getTime() - start.getTime()) < 2 * DAY_MS)
+      .filter((a) => !child && a.id !== moving?.id && Math.abs(new Date(a.startsAt).getTime() - start.getTime()) < 2 * DAY_MS)
       .map((a) => new Date(a.startsAt).toLocaleString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: ctx.timeZone }))
     // Someone coming for the first time is told where to go.
     const address = moving ? null : await firstVisitAddress(ctx.service, patient.patientId, chosen.clinicId)
     return {
       content: [
-        `${moving ? 'Moved' : 'Booked'}: ${type.name}, ${whenEn}${practitionerName ? `, with ${practitionerName}` : ''}. ${moving ? 'Their old time is free again.' : "They will also get the clinic's usual confirmation."} Tell them, with the day and time in words.`,
+        `${moving ? 'Moved' : 'Booked'}: ${type.name}${child ? ` for ${child.name}, in the child's name with them as tutor` : ''}, ${whenEn}${practitionerName ? `, with ${practitionerName}` : ''}. ${moving ? 'Their old time is free again.' : `They will also get the clinic's usual confirmation${child ? ', as the tutor' : ''}.`} Tell them, with the day and time in words.`,
         near.length ? `They also have ${near.length === 1 ? 'a visit' : 'visits'} on ${near.join(' and ')}: mention ${near.length === 1 ? 'it' : 'them'}, and ask whether they want to keep ${near.length === 1 ? 'it' : 'them'}.` : '',
         address ? `It is their first visit: give them the clinic's address, ${address}.` : '',
       ].filter(Boolean).join(' '),
@@ -262,6 +304,36 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000
+
+/**
+ * A child's own record: a minor, with the person writing as tutor, at the
+ * clinic and with the practitioner of the visit being booked. No contact
+ * number of their own -- the tutor's is what the clinic writes to
+ * (appointmentNotifications.ts), and the same number on two records would
+ * file the tutor's replies under the child.
+ */
+async function createChild(writer: Supa, ctx: BookingContext, tutorId: string, name: string, at: { practitionerId: string; clinicId: string }): Promise<string | null> {
+  const [firstName, ...rest] = name.split(' ')
+  const id = randomUUID()
+  // Not read back in the same statement: RLS checks the returned row against
+  // the SELECT policy, which cannot see a patient that does not exist yet
+  // (leadConversion.ts says the same).
+  const { error } = await writer.from('patients').insert({
+    id,
+    account_id: ctx.accountId,
+    clinic_id: at.clinicId,
+    first_name: firstName || name,
+    last_name: rest.join(' ') || null,
+    is_minor: true,
+    tutor_patient_id: tutorId,
+    default_practitioner_id: at.practitionerId,
+  } as never)
+  if (error) {
+    console.error('[receptionist] could not make the child record:', error.message)
+    return null
+  }
+  return id
+}
 
 /** The clinic's address, when this patient has never been; null otherwise or when it has none. */
 async function firstVisitAddress(service: Supa, patientId: string, clinicId: string): Promise<string | null> {

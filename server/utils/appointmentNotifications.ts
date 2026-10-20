@@ -36,6 +36,17 @@ interface AppointmentContext {
   patientIsMinor: boolean
   patientDoNotContact: boolean
   patientPhone: string | null
+  /**
+   * Who is written to: the patient, or for a minor their tutor
+   * (patients.tutor_patient_id). A child's confirmation and reminder go to
+   * the tutor's number and email, under the child's name, and the WhatsApp
+   * row is filed under the tutor -- that is whose phone the reply comes from,
+   * and resolveRepliedAppointment (whatsapp/webhook.post.ts) finds the
+   * child's visit through the row's appointment_id. Email, phone, language
+   * and do-not-contact above are the tutor's when this is the tutor.
+   */
+  contactPatientId: string
+  viaTutor: boolean
   clinicName: string
   clinicAddress: string | null
   clinicPhone: string | null
@@ -47,7 +58,7 @@ async function loadAppointmentContext(supabase: any, appointmentId: string): Pro
   const { data } = await supabase
     .from('appointments')
     .select(
-      'id, account_id, patient_id, starts_at, team_members(full_name), appointment_types(name), patients(first_name, last_name, email, preferred_language, is_minor, do_not_contact), clinics(name, address, phone, email, timezone)',
+      'id, account_id, patient_id, starts_at, team_members(full_name), appointment_types(name), patients(first_name, last_name, email, preferred_language, is_minor, do_not_contact, tutor_patient_id), clinics(name, address, phone, email, timezone)',
     )
     .eq('id', appointmentId)
     // A deleted appointment is never messaged about. "Eliminar cita" only sets
@@ -60,7 +71,20 @@ async function loadAppointmentContext(supabase: any, appointmentId: string): Pro
     .maybeSingle()
   if (!data || !data.patients) return null
 
-  const { data: numbers } = await supabase.from('patient_contact_numbers').select('number, country_code, is_whatsapp').eq('patient_id', data.patient_id)
+  // A minor is written to through their tutor, or not at all.
+  let tutor: { id: string; email: string | null; preferred_language: string | null; do_not_contact: boolean } | null = null
+  if (data.patients.is_minor && data.patients.tutor_patient_id) {
+    const { data: row } = await supabase
+      .from('patients')
+      .select('id, email, preferred_language, do_not_contact')
+      .eq('id', data.patients.tutor_patient_id)
+      .is('anonymized_at', null)
+      .maybeSingle()
+    tutor = row ?? null
+  }
+  const contactPatientId = tutor?.id ?? data.patient_id
+
+  const { data: numbers } = await supabase.from('patient_contact_numbers').select('number, country_code, is_whatsapp').eq('patient_id', contactPatientId)
   const preferredNumber = numbers?.find((n: any) => n.is_whatsapp) ?? numbers?.[0]
   const patientPhone = preferredNumber ? (toE164(preferredNumber.number, preferredNumber.country_code) ?? preferredNumber.number) : null
 
@@ -73,11 +97,13 @@ async function loadAppointmentContext(supabase: any, appointmentId: string): Pro
     appointmentTypeName: data.appointment_types?.name ?? '',
     patientFirstName: data.patients.first_name ?? '',
     patientLastName: data.patients.last_name ?? null,
-    patientEmail: data.patients.email ?? null,
-    patientPreferredLanguage: data.patients.preferred_language ?? null,
+    patientEmail: tutor ? tutor.email ?? null : data.patients.email ?? null,
+    patientPreferredLanguage: tutor ? tutor.preferred_language ?? null : data.patients.preferred_language ?? null,
     patientIsMinor: !!data.patients.is_minor,
-    patientDoNotContact: !!data.patients.do_not_contact,
+    patientDoNotContact: !!data.patients.do_not_contact || !!tutor?.do_not_contact,
     patientPhone,
+    contactPatientId,
+    viaTutor: !!tutor,
     clinicName: data.clinics?.name ?? '',
     clinicAddress: data.clinics?.address ?? null,
     clinicPhone: data.clinics?.phone ?? null,
@@ -210,7 +236,7 @@ async function sendWhatsApp(
   const { data: numbers } = await supabase
     .from('patient_contact_numbers')
     .select('number, country_code, is_whatsapp')
-    .eq('patient_id', ctx.patientId)
+    .eq('patient_id', ctx.contactPatientId)
   const target = numbers?.find((n: any) => n.is_whatsapp) ?? numbers?.[0]
   if (!target) return false
   const to = toE164(target.number, target.country_code)
@@ -256,12 +282,12 @@ async function sendWhatsApp(
       patient_id: ctx.patientId,
       appointment_id: ctx.id,
       action: 'sent_whatsapp',
-      note: `Template: ${templateName} (automatic ${purpose})`,
+      note: `Template: ${templateName} (automatic ${purpose}${ctx.viaTutor ? ', to the tutor' : ''})`,
       created_by: null,
     }),
     supabase.from('whatsapp_messages').insert({
       account_id: ctx.accountId,
-      patient_id: ctx.patientId,
+      patient_id: ctx.contactPatientId,
       appointment_id: ctx.id,
       phone_number: to,
       wamid,
@@ -332,7 +358,7 @@ interface CommunicationSettings {
 async function sendForPurpose(supabase: any, appointmentId: string, purpose: 'confirmation' | 'reminder', settings: CommunicationSettings): Promise<boolean> {
   if (!settings.enabled) return false
   const ctx = await loadAppointmentContext(supabase, appointmentId)
-  if (!ctx || ctx.patientIsMinor || ctx.patientDoNotContact) return false
+  if (!ctx || (ctx.patientIsMinor && !ctx.viaTutor) || ctx.patientDoNotContact) return false
 
   let sent = false
   if (settings.channels.includes('whatsapp') && settings.whatsappTemplateName) {
@@ -366,11 +392,11 @@ async function sendForPurpose(supabase: any, appointmentId: string, purpose: 'co
       // The clinic's clock, as the email and WhatsApp paths use: on the
       // server this ran in UTC, so a 17:30 Madrid visit said 15:30.
       const when = new Date(ctx.startsAt).toLocaleString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: ctx.clinicTimezone })
-      const result = await sendPushToPatients(supabase, ctx.accountId, [ctx.patientId], {
+      const result = await sendPushToPatients(supabase, ctx.accountId, [ctx.contactPatientId], {
         title: purpose === 'reminder' ? 'Recordatorio de cita' : 'Cita confirmada',
         // A reminder asks, as the WhatsApp one does: tapping it opens the
         // visits screen, where "Confirmar asistencia" records the answer.
-        body: `${ctx.appointmentTypeName} · ${when}${ctx.practitionerName ? ` · ${ctx.practitionerName}` : ''}${purpose === 'reminder' ? '. Toca para confirmar tu asistencia.' : ''}`,
+        body: `${ctx.appointmentTypeName}${ctx.viaTutor ? ` de ${ctx.patientFirstName}` : ''} · ${when}${ctx.practitionerName ? ` · ${ctx.practitionerName}` : ''}${purpose === 'reminder' ? '. Toca para confirmar tu asistencia.' : ''}`,
         data: { type: `appointment_${purpose}`, key: ctx.id },
       })
       // Only counts as sent if it actually reached a device. Otherwise a
@@ -608,12 +634,14 @@ export async function sendSeriesConfirmation(
   if (!account?.appointment_confirmation_enabled) return out
   const channels: string[] = account.appointment_confirmation_channels ?? []
   const ctx = await loadAppointmentContext(supabase, rows[0].id)
-  if (!ctx || ctx.patientIsMinor || ctx.patientDoNotContact) return out
+  if (!ctx || (ctx.patientIsMinor && !ctx.viaTutor) || ctx.patientDoNotContact) return out
 
   const when = (iso: string, long: boolean) =>
     new Date(iso).toLocaleString('es-ES', { weekday: long ? 'long' : 'short', day: 'numeric', month: long ? 'long' : 'short', hour: '2-digit', minute: '2-digit', timeZone: ctx.clinicTimezone })
   const lines = rows.map((r) => when(r.starts_at, true))
-  const intro = `Hola ${ctx.patientFirstName}, estas son tus ${rows.length} próximas citas en ${ctx.clinicName}:`
+  const intro = ctx.viaTutor
+    ? `Hola, estas son las ${rows.length} próximas citas de ${ctx.patientFirstName} en ${ctx.clinicName}:`
+    : `Hola ${ctx.patientFirstName}, estas son tus ${rows.length} próximas citas en ${ctx.clinicName}:`
 
   if (channels.includes('email') && ctx.patientEmail) {
     try {
@@ -626,7 +654,7 @@ export async function sendSeriesConfirmation(
         </div>${clinicFooter(ctx)}
       </div>
     </div>`
-      await sendResendEmail({ to: ctx.patientEmail, subject: `Tus próximas citas en ${ctx.clinicName}`, html })
+      await sendResendEmail({ to: ctx.patientEmail, subject: ctx.viaTutor ? `Próximas citas de ${ctx.patientFirstName} en ${ctx.clinicName}` : `Tus próximas citas en ${ctx.clinicName}`, html })
       out.list.push('email')
     } catch {
       // Best-effort.
@@ -635,8 +663,8 @@ export async function sendSeriesConfirmation(
   if (channels.includes('push')) {
     try {
       const short = rows.slice(0, 4).map((r) => when(r.starts_at, false))
-      const result = await sendPushToPatients(supabase, accountId, [ctx.patientId], {
-        title: `Tus ${rows.length} próximas citas`,
+      const result = await sendPushToPatients(supabase, accountId, [ctx.contactPatientId], {
+        title: ctx.viaTutor ? `${rows.length} próximas citas de ${ctx.patientFirstName}` : `Tus ${rows.length} próximas citas`,
         body: `${short.join(' · ')}${rows.length > 4 ? '…' : ''}`,
         data: { type: 'appointment_confirmation', key: rows[0].id },
       })
@@ -647,7 +675,7 @@ export async function sendSeriesConfirmation(
   }
   if (channels.includes('whatsapp') && sendWhatsAppList) {
     try {
-      await sendWhatsAppList(ctx.patientId, `${intro}\n${lines.map((l) => `• ${l}`).join('\n')}`)
+      await sendWhatsAppList(ctx.contactPatientId, `${intro}\n${lines.map((l) => `• ${l}`).join('\n')}`)
       out.list.push('whatsapp')
     } catch {
       // Outside the 24h window, or no WhatsApp: the first visit's template

@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
-import { CONFIRM_BEFORE_BOOKING, audienceSection, newPatientDetailsSection, offeredAppointmentTypes, offeredTypesSection, rescheduleSection, type BookedVisit, type PromptType, type ReceptionistAudience } from '~/utils/receptionistTypes'
+import { CONFIRM_BEFORE_BOOKING, audienceSection, minorsSection, newPatientDetailsSection, offeredAppointmentTypes, offeredTypesSection, rescheduleSection, type BookedVisit, type PromptChild, type PromptType, type ReceptionistAudience } from '~/utils/receptionistTypes'
 import { historyMarkersSection, INFORMAL_ADDRESS_LINE, NO_INVENTION_LINE, WAITLIST_SECTION } from '~/utils/receptionistHistory'
 import { leadOriginSection, type LeadOrigin } from '~/utils/receptionistLeadOrigin'
 import { NO_REPLY } from '~/utils/receptionistAutoReply'
@@ -145,7 +145,7 @@ export async function loadOfferedTypes(supabase: SupabaseClient<Database>, accou
 export function readAccountTypes(supabase: SupabaseClient<Database>, accountId: string) {
   return supabase
     .from('appointment_types')
-    .select('id, name, duration_minutes, archived_at, sort_order, stage, online_bookable_by')
+    .select('id, name, duration_minutes, archived_at, sort_order, stage, online_bookable_by, for_minors')
     .eq('account_id', accountId)
 }
 
@@ -185,6 +185,36 @@ export async function clinicTodayStart(supabase: SupabaseClient<Database>, accou
   const { data } = await supabase.from('clinics').select('timezone').eq('account_id', accountId).is('archived_at', null).order('created_at').limit(1)
   const timeZone = ((data ?? []) as { timezone: string | null }[])[0]?.timezone || DEFAULT_CLINIC_TIMEZONE
   return startOfLocalDate(clinicDateOf(new Date(), timeZone), timeZone).toISOString()
+}
+
+/** A minor with this patient as tutor, as the receptionist books for them. */
+export interface TutorChild {
+  id: string
+  firstName: string
+  lastName: string | null
+  hasBeenBefore: boolean
+}
+
+/**
+ * The minors on file with `tutorPatientId` as their tutor, and whether each
+ * has had a visit -- which decides a child's first visit from the rest
+ * (typesForMinor). None for a lead not yet a patient: nobody can be their
+ * child before they are somebody's tutor.
+ */
+export async function loadTutorChildren(supabase: SupabaseClient<Database>, accountId: string, tutorPatientId: string | null): Promise<TutorChild[]> {
+  if (!tutorPatientId) return []
+  const { data } = await supabase
+    .from('patients')
+    .select('id, first_name, last_name')
+    .eq('account_id', accountId)
+    .eq('tutor_patient_id', tutorPatientId)
+    .eq('is_minor', true)
+    .is('anonymized_at', null)
+  const rows = (data ?? []) as { id: string; first_name: string; last_name: string | null }[]
+  if (!rows.length) return []
+  const { data: done } = await supabase.from('appointments').select('patient_id').in('patient_id', rows.map((r) => r.id)).eq('status', 'completed').is('deleted_at', null)
+  const seen = new Set(((done ?? []) as { patient_id: string }[]).map((a) => a.patient_id))
+  return rows.map((r) => ({ id: r.id, firstName: r.first_name, lastName: r.last_name, hasBeenBefore: seen.has(r.id) }))
 }
 
 export async function loadBookedVisits(
@@ -275,8 +305,8 @@ export function uniqueTypes(...lists: OfferedType[][]): OfferedType[] {
   return [...seen.values()]
 }
 
-function toOfferedType(type: { id: string; name: string; duration_minutes: number; stage?: string | null; online_bookable_by?: string | null }): OfferedType {
-  return { id: type.id, name: type.name, durationMinutes: type.duration_minutes, stage: type.stage ?? null, bookableBy: type.online_bookable_by ?? null }
+function toOfferedType(type: { id: string; name: string; duration_minutes: number; stage?: string | null; online_bookable_by?: string | null; for_minors?: boolean | null }): OfferedType {
+  return { id: type.id, name: type.name, durationMinutes: type.duration_minutes, stage: type.stage ?? null, bookableBy: type.online_bookable_by ?? null, forMinors: !!type.for_minors }
 }
 
 /** What the prompt knows about the clinic's calendar at the moment of drafting. */
@@ -539,6 +569,8 @@ export function buildSystemPrompt(
      * model is then given hand_over_to_colleague.
      */
     sendsItself?: boolean
+    /** Booking for a child of the person writing (minorsSection); absent, nothing is said about it. */
+    minors?: { forNewChild: PromptType[]; forReturningChild: PromptType[]; children: PromptChild[] }
   },
 ): ReceptionistPrompt {
   const personName = promptSafeName(opts.draft?.personName)
@@ -624,6 +656,7 @@ export function buildSystemPrompt(
     // the model's reading of the knowledge cards: an owner who withholds a
     // type, or archives it, has it gone from the next reply.
     offeredTypesSection(opts.offeredTypes, adOnly),
+    opts.minors ? minorsSection({ ...opts.minors, canBook: !!opts.canBook, sendsItself: !!opts.sendsItself }) : '',
     rescheduleSection(opts.bookedVisits ?? [], opts.calendar.timeZone, { listVisits: true, canBook: opts.canBook }),
     // The real free times, computed by loadReceptionistCalendar, as a list to
     // offer from. Without one -- the calendar could not be read -- the model

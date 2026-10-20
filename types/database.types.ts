@@ -1350,6 +1350,7 @@ export type Database = {
           created_at: string
           default_price_cents: number
           duration_minutes: number
+          for_minors: boolean
           id: string
           name: string
           online_bookable_by: string
@@ -1369,6 +1370,7 @@ export type Database = {
           created_at?: string
           default_price_cents?: number
           duration_minutes?: number
+          for_minors?: boolean
           id?: string
           name: string
           online_bookable_by?: string
@@ -1388,6 +1390,7 @@ export type Database = {
           created_at?: string
           default_price_cents?: number
           duration_minutes?: number
+          for_minors?: boolean
           id?: string
           name?: string
           online_bookable_by?: string

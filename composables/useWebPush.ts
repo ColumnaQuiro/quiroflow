@@ -43,7 +43,10 @@ export function useWebPush() {
         n.onclick = () => {
           window.focus()
           const key = payload.data?.key
-          navigateTo(key ? `/inbox?open=${encodeURIComponent(key)}` : '/inbox')
+          const url = payload.data?.url
+          // Team messages name their page; same-origin paths only.
+          if (url && url.startsWith('/') && !url.startsWith('//')) navigateTo(url)
+          else navigateTo(key ? `/inbox?open=${encodeURIComponent(key)}` : '/inbox')
         }
       })
     } catch {

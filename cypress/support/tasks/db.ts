@@ -1698,6 +1698,16 @@ async function callRpcAsPatient(opts: { email: string; password: string; fn: str
   return { data: data ?? null, error: error?.message ?? null }
 }
 
+/** The team_messages bodies a signed-in staff member can read, through RLS. */
+async function teamMessagesVisibleTo(opts: { email: string; password: string }) {
+  const client = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+  const { error: signInErr } = await client.auth.signInWithPassword({ email: opts.email, password: opts.password })
+  if (signInErr) throw signInErr
+  const { data, error } = await client.from('team_messages').select('body')
+  if (error) throw error
+  return (data ?? []).map((r) => r.body)
+}
+
 /** Lets the clinic's patients cancel from the app and the portal (0162). */
 async function setPatientCancel(opts: { accountId: string; enabled: boolean }) {
   assertOk(await admin.from('accounts').update({ patient_app_cancel_enabled: opts.enabled }).eq('id', opts.accountId))
@@ -4300,6 +4310,7 @@ export const dbTasks = {
   'db:setPatientCancel': setPatientCancel,
   'db:accessTokenFor': accessTokenFor,
   'db:callRpcAsPatient': callRpcAsPatient,
+  'db:teamMessagesVisibleTo': teamMessagesVisibleTo,
   'db:setPatientAppReschedule': setPatientAppReschedule,
   'db:setTeamMemberBookingFlags': setTeamMemberBookingFlags,
   'db:assignExercise': assignExercise,

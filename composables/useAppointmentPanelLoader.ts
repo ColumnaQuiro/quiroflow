@@ -2,7 +2,7 @@ import type { PanelAppointment } from '~/components/calendar/AppointmentPanel.vu
 import type { BlockView } from '~/components/calendar/AppointmentBlock.vue'
 import type { AppointmentTypeOverride } from '~/utils/appointmentOverrides'
 import { effectivePriceCents } from '~/utils/appointmentOverrides'
-import { appointmentStage, needsNextBookingFlag } from '~/utils/appointmentStage'
+import { appointmentStage, needsNextBookingFlag, pendingFormsFlag } from '~/utils/appointmentStage'
 import { shortPatientName } from '~/utils/appointmentBlock'
 import { bonoForVisit, type VisitPayment } from '~/utils/visitPayment'
 import { formatTime } from '~/utils/billing'
@@ -28,7 +28,7 @@ export interface AppointmentPanelInputs {
 }
 
 const SELECT =
-  'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, rescheduled, confirmation_status, confirmation_sent_at, reminder_sent_at, same_day_info_sent_at, created_at, deleted_at, note, source, patients(first_name, last_name, sticky_note), appointment_types(name, color, default_price_cents), team_members(full_name, color)'
+  'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, rescheduled, confirmation_status, confirmation_sent_at, reminder_sent_at, same_day_info_sent_at, created_at, deleted_at, note, source, patients(first_name, last_name, sticky_note, pending_forms), appointment_types(name, color, default_price_cents), team_members(full_name, color)'
 
 export function useAppointmentPanelLoader() {
   const supabase = useSupabaseClient()
@@ -75,6 +75,7 @@ export function useAppointmentPanelLoader() {
       owesCents: Math.max(0, balance?.outstanding_cents ?? 0),
       bono: bonoForVisit(payment, active),
       hasNote: !!a.patients?.sticky_note?.trim(),
+      pendingForms: pendingFormsFlag(stage, a.starts_at, a.patients?.pending_forms),
       movedCount: moved ?? 0,
       noNext: needsNextBookingFlag(stage, a.starts_at, (later ?? []).length > 0),
     }

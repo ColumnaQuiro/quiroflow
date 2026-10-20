@@ -11,13 +11,13 @@ const store = useAccountStore()
 const { preference: langPreference } = useLang()
 const route = useRoute()
 
-// The inbox's composer sits at the bottom of the screen with its own Send
+// The inbox's (and Team's) composer sits at the bottom of the screen with its own Send
 // button flush right -- on a narrow viewport that's the same corner this
 // widget's floating launcher occupies (fixed bottom-5 right-5), so it sits
 // on top of the Send button rather than beside it. Sidebar's "Help Centre"
 // link still reaches docs from there; the assistant stays one click away
 // on every other page.
-const hideOnRoute = computed(() => route.path === '/inbox')
+const hideOnRoute = computed(() => route.path === '/inbox' || route.path === '/team-chat')
 
 interface Turn {
   role: 'user' | 'assistant'

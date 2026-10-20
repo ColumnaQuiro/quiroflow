@@ -13,9 +13,11 @@ import type { AppointmentStage } from './appointmentStage'
 //   3 owes              always (day: the amount; week: a € dot)
 //   4 time·type·pract   day, two-line blocks; week: the time, if it fits
 //   5 bono left         day, two-line blocks
-//   6 clinical note     day; an icon beside the name
-//   7 moved count       day, two-line blocks
-//   8 "Sin próxima"     day, two-line blocks, and only when it applies
+//   6 forms pending     an icon beside the name; week: only where the
+//                       short name and the stage icon leave room for it
+//   7 clinical note     day; an icon beside the name
+//   8 moved count       day, two-line blocks
+//   9 "Sin próxima"     day, two-line blocks, and only when it applies
 //
 // Pure, so the ladder can be pinned in a spec without rendering anything --
 // the block measures itself and asks this what to draw.
@@ -33,6 +35,8 @@ export interface LadderInput {
   note: boolean
   moved: number
   noNext: boolean
+  /** The patient has forms sent and not completed (pendingFormsFlag). */
+  forms?: boolean
   /** A care plan's re-exam visit. */
   marker?: boolean
   /** The stage label as it will print, for sizing the pill. */
@@ -53,6 +57,7 @@ export interface Ladder {
   owes: 'none' | 'inline' | 'meta' | 'dot'
   meta: 'none' | 'time' | 'full'
   note: boolean
+  forms: boolean
   bono: boolean
   moved: boolean
   noNext: boolean
@@ -78,6 +83,10 @@ const NAME_MIN_PX = 56
 const NAME_CHAR_PX = 7.4
 const META_MIN_PX = 64
 const NOTE_PX = 17
+const FORMS_PX = 17
+// Week blocks: 11px semibold, 5px padding a side plus the border.
+const WEEK_NAME_CHAR_PX = 6.6
+const WEEK_INNER_PAD_PX = 12
 const MARKER_PX = 14
 const MOVED_PX = 26
 const NO_NEXT_PX = 82
@@ -93,12 +102,23 @@ export function blockLadder(input: LadderInput): Ladder {
   const pillHidden = input.stage === 'completed' || (week && input.stage === 'confirmed')
 
   if (week) {
+    // The short name is rank 1, so the forms icon only goes where it would
+    // not cut it: in practice a confirmed visit (no stage icon) in a column
+    // of 82px or more, or any visit in a wider one. The re-exam marker
+    // (rank 2½) is always drawn, so it takes its room first.
+    const room =
+      input.width -
+      WEEK_INNER_PAD_PX -
+      Math.ceil((input.nameText?.length ?? 8) * WEEK_NAME_CHAR_PX) -
+      (pillHidden ? 0 : 18 + GAP_PX) -
+      (input.marker ? MARKER_PX + GAP_PX : 0)
     return {
       compact,
       shortName: true,
       pill: pillHidden ? 'none' : 'icon',
       owes: input.owes ? 'dot' : 'none',
       meta: compact ? 'none' : 'time',
+      forms: !!input.forms && room >= FORMS_PX,
       note: false,
       bono: false,
       moved: false,
@@ -120,15 +140,18 @@ export function blockLadder(input: LadderInput): Ladder {
   const pill: Ladder['pill'] = pillHidden ? 'none' : input.width >= PILL_LABEL_FROM_PX && labelFits ? 'label' : 'icon'
   const pillPx = pill === 'none' ? 0 : pill === 'icon' ? 18 : textPx(input.pillText, 26)
 
-  // Line one: name, [note], pill, and -- on a one-line block -- the money.
+  // Line one: name, [marker], [forms], [note], pill, and -- on a one-line
+  // block -- the money.
   let line1 = inner - Math.max(namePx, NAME_MIN_PX) - (pillPx ? pillPx + GAP_PX : 0)
   if (compact && input.owes) line1 -= owesPx + GAP_PX
   const marker = !!input.marker
   if (marker) line1 -= MARKER_PX + GAP_PX
+  const forms = !!input.forms && line1 >= FORMS_PX + GAP_PX
+  if (forms) line1 -= FORMS_PX + GAP_PX
   const note = input.note && line1 >= NOTE_PX + GAP_PX
 
   if (compact) {
-    return { compact, shortName: false, pill, owes: input.owes ? 'inline' : 'none', meta: 'none', note, bono: false, moved: false, noNext: false, marker, wrap: false }
+    return { compact, shortName: false, pill, owes: input.owes ? 'inline' : 'none', meta: 'none', forms, note, bono: false, moved: false, noNext: false, marker, wrap: false }
   }
 
   const wrap = input.height >= WRAP_FROM_PX
@@ -157,7 +180,7 @@ export function blockLadder(input: LadderInput): Ladder {
   const moved = take(input.moved > 0, MOVED_PX)
   const noNext = take(input.noNext, NO_NEXT_PX)
 
-  return { compact, shortName: false, pill, owes: input.owes ? 'meta' : 'none', meta, note, bono, moved, noNext, marker, wrap }
+  return { compact, shortName: false, pill, owes: input.owes ? 'meta' : 'none', meta, forms, note, bono, moved, noNext, marker, wrap }
 }
 
 /** "Laura Gómez" -> "L. Gómez", for week view's narrow columns. */

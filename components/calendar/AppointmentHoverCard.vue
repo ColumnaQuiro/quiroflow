@@ -2,6 +2,7 @@
 import { formatEur, formatShortDate, formatTime } from '~/utils/billing'
 import type { BlockView } from '~/components/calendar/AppointmentBlock.vue'
 import type { StageFacts } from '~/composables/useAppointmentStage'
+import { pendingFormsLabel } from '~/utils/appointmentStage'
 
 // What a glance at a visit needs, and nothing to do: the card is read-only.
 // It used to carry a note field, a sticky-note textarea, and Check in /
@@ -112,6 +113,14 @@ const lineClass = computed(() => {
         <span class="flex flex-col gap-px">
           <strong :class="lineClass">{{ line.title }}</strong>
           <span v-if="line.sub" class="text-ink-muted">{{ line.sub }}</span>
+        </span>
+      </div>
+
+      <div v-if="view.pendingForms > 0" class="flex items-start gap-2 border-t border-line-divider px-3.5 py-2.5 text-[12.5px]" data-cy="appt-hover-forms">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="mt-[3px] shrink-0 text-warning-text" aria-hidden="true"><path d="M9 4h6v3H9z" /><path d="M9 5.5H6v15h12v-15h-3" /><path d="M12 11v3.5M12 17.5h.01" /></svg>
+        <span class="flex flex-col gap-px">
+          <strong class="text-warning-text">{{ pendingFormsLabel(view.pendingForms, t) }}</strong>
+          <span class="text-ink-muted">{{ t('Sent and still awaiting the patient', 'Enviado y aún pendiente del paciente') }}</span>
         </span>
       </div>
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { formatEur } from '~/utils/billing'
 import { blockLadder, type BlockDensity } from '~/utils/appointmentBlock'
-import type { AppointmentStage } from '~/utils/appointmentStage'
+import { pendingFormsLabel, type AppointmentStage } from '~/utils/appointmentStage'
 import { STAGE_TONE, STAGE_TONE_CLASS } from '~/composables/useAppointmentStage'
 import type { VisitBono } from '~/utils/visitPayment'
 
@@ -48,6 +48,8 @@ export interface BlockView {
   bono: VisitBono | null
   /** The patient has a sticky clinical note. */
   hasNote: boolean
+  /** Forms sent to the patient and not completed, where worth saying (pendingFormsFlag); 0 for none. */
+  pendingForms: number
   movedCount: number
   noNext: boolean
   marker?: VisitMarkerView | null
@@ -85,6 +87,7 @@ onBeforeUnmount(() => observer?.disconnect())
 
 const pillText = computed(() => stageLabel(props.view.stage, props.view.arrivedAt))
 const owesText = computed(() => t(`Owes ${formatEur(props.view.owesCents)}`, `Debe ${formatEur(props.view.owesCents)}`))
+const formsText = computed(() => pendingFormsLabel(props.view.pendingForms, t))
 const bonoText = computed(() => (props.view.bono ? `Bono ${props.view.bono.remaining}/${props.view.bono.total}` : ''))
 
 const ladder = computed(() =>
@@ -96,6 +99,7 @@ const ladder = computed(() =>
     owes: props.view.owesCents > 0,
     bono: !!props.view.bono,
     note: props.view.hasNote,
+    forms: props.view.pendingForms > 0,
     moved: props.view.movedCount,
     noNext: props.view.noNext,
     marker: !!props.view.marker,
@@ -169,6 +173,7 @@ const ariaLabel = computed(() =>
     markerText.value || null,
     pillText.value,
     props.view.owesCents > 0 ? owesText.value : null,
+    props.view.pendingForms > 0 ? formsText.value : null,
   ]
     .filter(Boolean)
     .join(', '),
@@ -210,6 +215,10 @@ const ariaLabel = computed(() =>
         :data-mismatch="view.marker?.mismatch ? 'true' : undefined"
       >
         <CalendarVisitMarkerIcon />
+      </span>
+      <!-- A clipboard, not the note's page: the two sit side by side. -->
+      <span v-if="ladder.forms" class="inline-flex shrink-0 text-warning-text" :title="formsText" data-cy="appt-block-forms">
+        <svg :width="week ? 11 : 12" :height="week ? 11 : 12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" :aria-label="formsText"><path d="M9 4h6v3H9z" /><path d="M9 5.5H6v15h12v-15h-3" /><path d="M12 11v3.5M12 17.5h.01" /></svg>
       </span>
       <span v-if="ladder.note" class="inline-flex shrink-0 text-warning-accent" :title="t('Clinical note', 'Nota clínica')" data-cy="appt-block-note">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" :aria-label="t('Clinical note', 'Nota clínica')"><path d="M5 4h10l4 4v12H5z" /><path d="M9 12h6M9 16h4" /></svg>

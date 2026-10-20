@@ -98,7 +98,7 @@ async function deleteAccount() {
     <FaceIdSetting class="mt-3" />
 
     <div class="mt-5 space-y-2">
-      <UiBtn variant="secondary" class="w-full" @click="signOut">{{ t('Sign out', 'Cerrar sesión') }}</UiBtn>
+      <AppButton class="w-full" @click="signOut">{{ t('Sign out', 'Cerrar sesión') }}</AppButton>
       <button
         type="button"
         class="w-full py-2.5 text-center text-[13px] text-danger-text disabled:opacity-50"

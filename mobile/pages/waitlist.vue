@@ -273,10 +273,10 @@ const field = 'h-11 rounded-ctl border border-line-control bg-surface px-3 text-
         <p class="text-[12px] leading-snug text-ink-muted">{{ t('When a matching visit is cancelled, they are offered the slot automatically (oldest entry first), with a link to claim it.', 'Cuando se cancela una cita que encaja, se le ofrece el hueco automáticamente (por orden de antigüedad), con un enlace para reservarlo.') }}</p>
 
         <p v-if="addError" role="alert" class="text-[13px] text-danger-text">{{ addError }}</p>
-        <button type="submit" class="flex h-11 items-center justify-center rounded-card bg-brand text-[15px] font-semibold text-white disabled:opacity-50" :disabled="saving || !picked" data-cy="waitlist-save">
+        <AppButton variant="primary" type="submit" :disabled="saving || !picked" data-cy="waitlist-save">
           {{ saving ? t('Adding…', 'Añadiendo…') : t('Add', 'Añadir') }}
-        </button>
-        <button type="button" class="flex min-h-11 items-center justify-center text-[13.5px] text-ink-muted" @click="addOpen = false">{{ t('Cancel', 'Cancelar') }}</button>
+        </AppButton>
+        <AppButton variant="quiet" @click="addOpen = false">{{ t('Cancel', 'Cancelar') }}</AppButton>
       </form>
     </div>
   </div>

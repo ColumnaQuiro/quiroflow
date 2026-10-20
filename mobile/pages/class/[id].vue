@@ -111,9 +111,9 @@ async function allOthersCame() {
             </div>
           </div>
 
-          <UiBtn v-if="!readOnly && !session.cancelled_at && started && pending.length" variant="primary" size="lg" :disabled="busy" data-cy="class-screen-all-came" @click="allOthersCame">
+          <AppButton v-if="!readOnly && !session.cancelled_at && started && pending.length" variant="primary" :disabled="busy" data-cy="class-screen-all-came" @click="allOthersCame">
             {{ places.length === pending.length ? t('Everyone came', 'Vinieron todos') : t('Everyone else came', 'Vinieron todos los demás') }}
-          </UiBtn>
+          </AppButton>
           <p class="text-[12.5px] text-ink-muted">{{ t('Tap a name to charge the visit or draw it from a bono. Adding people, the waitlist and changing the class are on the web calendar.', 'Toca un nombre para cobrar la visita o descontarla de un bono. Añadir personas, la lista de espera y cambiar la clase, en la agenda web.') }}</p>
         </template>
       </div>

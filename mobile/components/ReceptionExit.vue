@@ -85,9 +85,9 @@ const biometryLabel = computed(() => (kind.value === 'faceId' ? 'Face ID' : kind
       <p class="text-[17px] font-semibold text-ink-900">{{ t('For the clinic team', 'Para el equipo de la clínica') }}</p>
       <p class="-mt-1.5 text-[13px] text-ink-muted">{{ t('Leaving reception mode returns to the clinic’s app.', 'Al salir del modo recepción vuelve la app de la clínica.') }}</p>
 
-      <button v-if="kind" type="button" class="flex h-11 items-center justify-center gap-2 rounded-card bg-brand text-[15px] font-semibold text-white" data-cy="reception-exit-biometry" @click="tryBiometry">
+      <AppButton variant="primary" v-if="kind" data-cy="reception-exit-biometry" @click="tryBiometry">
         {{ t(`Use ${biometryLabel}`, `Usar ${biometryLabel}`) }}
-      </button>
+      </AppButton>
 
       <form v-if="!usePassword" class="flex flex-col gap-2" @submit.prevent="tryCode">
         <label class="text-[12.5px] font-medium text-ink-muted" for="reception-exit-code">{{ t('Reception code', 'Código de recepción') }}</label>
@@ -101,21 +101,21 @@ const biometryLabel = computed(() => (kind.value === 'faceId' ? 'Face ID' : kind
           class="h-12 rounded-ctl border border-line-control bg-surface px-3 text-center text-[22px] tracking-[.4em] focus:border-brand focus:outline-none"
           data-cy="reception-exit-code"
         />
-        <button type="submit" class="flex h-11 items-center justify-center rounded-card border border-line-control text-[14.5px] font-semibold text-ink-900 disabled:opacity-50" :disabled="code.length < 4 || checking" data-cy="reception-exit-code-submit">
+        <AppButton type="submit" :disabled="code.length < 4 || checking" data-cy="reception-exit-code-submit">
           {{ t('Unlock', 'Desbloquear') }}
-        </button>
+        </AppButton>
         <button v-if="staffEmail" type="button" class="text-[12.5px] text-brand-text" @click="usePassword = true; error = ''">{{ t('Forgot the code?', '¿Has olvidado el código?') }}</button>
       </form>
 
       <form v-else class="flex flex-col gap-2" @submit.prevent="tryPassword">
         <label class="text-[12.5px] font-medium text-ink-muted" for="reception-exit-password">{{ t(`Password for ${staffEmail}`, `Contraseña de ${staffEmail}`) }}</label>
         <input id="reception-exit-password" v-model="password" type="password" autocomplete="current-password" class="h-11 rounded-ctl border border-line-control bg-surface px-3 text-[15px] focus:border-brand focus:outline-none" data-cy="reception-exit-password" />
-        <button type="submit" class="flex h-11 items-center justify-center rounded-card border border-line-control text-[14.5px] font-semibold text-ink-900 disabled:opacity-50" :disabled="!password || checking">{{ t('Unlock', 'Desbloquear') }}</button>
+        <AppButton type="submit" :disabled="!password || checking">{{ t('Unlock', 'Desbloquear') }}</AppButton>
         <button type="button" class="text-[12.5px] text-brand-text" @click="usePassword = false; error = ''">{{ t('Use the code', 'Usar el código') }}</button>
       </form>
 
       <p v-if="error" role="alert" class="text-center text-[13px] text-danger-text" data-cy="reception-exit-error">{{ error }}</p>
-      <button type="button" class="py-1 text-[13.5px] text-ink-muted" @click="emit('close')">{{ t('Back to the forms', 'Volver a los formularios') }}</button>
+      <AppButton variant="quiet" @click="emit('close')">{{ t('Back to the forms', 'Volver a los formularios') }}</AppButton>
     </div>
   </div>
 </template>

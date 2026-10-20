@@ -16,18 +16,12 @@ const t = useT()
     >
       <p class="text-[17px] font-semibold leading-snug text-ink-900">{{ current.title }}</p>
       <p v-if="current.body" class="-mt-1 whitespace-pre-line text-[14px] leading-relaxed text-ink-muted">{{ current.body }}</p>
-      <button
-        type="button"
-        class="mt-1 flex h-11 items-center justify-center rounded-card text-[15px] font-semibold text-white"
-        :class="current.danger ? 'bg-danger-text' : 'bg-brand'"
-        data-cy="app-confirm-ok"
-        @click="answer(true)"
-      >
+      <AppButton :variant="current.danger ? 'destructive' : 'primary'" class="mt-1" data-cy="app-confirm-ok" @click="answer(true)">
         {{ current.confirmLabel }}
-      </button>
-      <button v-if="current.cancelLabel" type="button" class="flex min-h-11 items-center justify-center text-[14px] text-ink-muted" data-cy="app-confirm-cancel" @click="answer(false)">
+      </AppButton>
+      <AppButton v-if="current.cancelLabel" variant="quiet" data-cy="app-confirm-cancel" @click="answer(false)">
         {{ current.cancelLabel || t('Cancel', 'Cancelar') }}
-      </button>
+      </AppButton>
     </div>
   </div>
 </template>

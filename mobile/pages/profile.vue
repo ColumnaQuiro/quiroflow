@@ -113,13 +113,13 @@ async function deleteAccount() {
       <LanguageSetting />
       <ThemeSetting />
 
-      <button
-        type="button"
-        class="w-full rounded-ctl border border-line-control px-4 py-2.5 text-center text-[14px] font-medium text-danger-text active:bg-surface-subtle"
+      <AppButton
+        variant="danger"
+        class="w-full"
         @click="signOut"
       >
         {{ t('Sign out', 'Cerrar sesión') }}
-      </button>
+      </AppButton>
 
       <div class="mt-2 space-y-2 rounded-ctl border border-danger-border bg-danger-bg p-3">
         <p class="text-[12.5px] text-ink-muted">
@@ -130,14 +130,14 @@ async function deleteAccount() {
             )
           }}
         </p>
-        <button
-          type="button"
-          class="w-full rounded-ctl border border-danger-border px-4 py-2.5 text-center text-[14px] font-medium text-danger-text active:bg-danger-bg2"
+        <AppButton
+          variant="danger"
+          class="w-full"
           :disabled="deletingAccount"
           @click="deleteAccount"
         >
           {{ deletingAccount ? t('Deleting…', 'Eliminando…') : t('Delete account', 'Eliminar cuenta') }}
-        </button>
+        </AppButton>
       </div>
     </div>
   </div>

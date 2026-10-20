@@ -15,6 +15,7 @@
 //   - booking the next visit as the patient record offers it.
 import { formatEur } from '../../../utils/billing'
 import { listingActionLine, listingSummary, sideLettersFor, syncListingLine, type Listings } from '../../../utils/spinalListings'
+import { appointmentStage } from '../../../utils/appointmentStage'
 
 definePageMeta({ layout: 'practitioner' })
 
@@ -35,6 +36,7 @@ interface Appointment {
   status: string
   checked_in_at: string | null
   confirmation_status: string | null
+  source: string | null
   appointment_type_id: string | null
   practitioner_id: string | null
   clinic_id: string | null
@@ -63,7 +65,7 @@ async function loadAppointment() {
   const { data } = await supabase
     .from('appointments')
     .select(
-      'id, patient_id, starts_at, ends_at, status, checked_in_at, confirmation_status, appointment_type_id, practitioner_id, clinic_id, room_id, team_members(full_name), patients(first_name, last_name, red_flags, yellow_flags, sticky_note, chief_complaint, diagnosis), appointment_types(name, default_price_cents), clinics(timezone)',
+      'id, patient_id, starts_at, ends_at, status, checked_in_at, confirmation_status, source, appointment_type_id, practitioner_id, clinic_id, room_id, team_members(full_name), patients(first_name, last_name, red_flags, yellow_flags, sticky_note, chief_complaint, diagnosis), appointment_types(name, default_price_cents), clinics(timezone)',
     )
     .eq('id', appointmentId)
     .maybeSingle()
@@ -569,6 +571,24 @@ async function onMoved(e: { startsAt: string }) {
   bookedNotice.value = before && Date.parse(before) === Date.parse(e.startsAt) ? t('Visit changed.', 'Cita cambiada.') : `${t('Moved to', 'Movida al')} ${when(e.startsAt)}`
 }
 
+// Whether the patient has said they are coming, while that is still open:
+// the reminder went out with no reply, they booked online, or they asked to
+// change it. The same stages the web calendar draws dashed
+// (isUnconfirmedStage). A visit no confirmation was ever asked for is firm and
+// shows nothing -- this used to offer "Confirmed by phone" on every visit
+// that was not explicitly confirmed, those included, which read as a status
+// rather than as something to do.
+const unconfirmed = computed<{ title: string; sub: string } | null>(() => {
+  const a = appointment.value
+  if (!a) return null
+  const stage = appointmentStage({ ...a, flow_with_practitioner_at: null, flow_checkout_at: null })
+  const markHint = t('If they confirmed by phone or at the desk, mark it here.', 'Si lo ha confirmado por teléfono o en recepción, márcala aquí.')
+  if (stage === 'pending') return { title: t('Not confirmed yet', 'Sin confirmar'), sub: `${t('The reminder went out and they have not replied.', 'Se envió el recordatorio y no ha respondido.')} ${markHint}` }
+  if (stage === 'online') return { title: t('Not confirmed yet', 'Sin confirmar'), sub: `${t('They booked it online.', 'La reservó en línea.')} ${markHint}` }
+  if (stage === 'resched') return { title: t('Asked to change it', 'Ha pedido cambiarla'), sub: t('They replied to the reminder asking for another time. Change it below, or mark it confirmed if they are keeping it.', 'Respondió al recordatorio pidiendo otra hora. Cámbiala abajo, o márcala como confirmada si la mantiene.') }
+  return null
+})
+
 // Confirmed by phone or at the desk rather than by replying to WhatsApp, as
 // the web's appointment panel does.
 async function markConfirmed() {
@@ -858,14 +878,9 @@ watch(
 
         <!-- Charging: as before, composables/useVisitCharging -->
         <div v-if="!billingOpen && can('billing_access') && !readOnlyCalendar && appointment.status !== 'cancelled'">
-          <button
-            type="button"
-            class="w-full rounded-card border border-line-control bg-surface px-4 py-2.5 text-center text-[14px] font-medium text-ink-700 active:bg-surface-subtle"
-            data-cy="visit-bill"
-            @click="openBilling"
-          >
+          <AppButton class="w-full" data-cy="visit-bill" @click="openBilling">
             {{ t('Bill this visit', 'Cobrar esta visita') }}
-          </button>
+          </AppButton>
         </div>
 
         <div v-else-if="billingOpen" class="rounded-card border border-line bg-surface shadow-card p-3.5" data-cy="visit-billing">
@@ -885,21 +900,21 @@ watch(
             <p class="text-[13.5px] text-ink-700">
               {{ t('Not charged yet', 'Sin cobrar') }} · {{ typeName }}<span v-if="(visitPriceCents ?? 0) > 0"> — {{ euros(visitPriceCents ?? 0) }}</span>
             </p>
-            <button
+            <AppButton
               v-for="p in activePackages"
               :key="p.id"
-              type="button"
-              class="w-full rounded-ctl bg-brand px-4 py-2.5 text-center text-[14px] font-medium text-white active:opacity-90 disabled:opacity-50"
+              variant="primary"
+              class="w-full"
               :disabled="saving"
               @click="usePackageSession(p)"
             >
               {{ t(`Use ${p.package_name} — ${bonoRateLabel(p)} (${p.sessions_total - p.sessions_used} left)`, `Usar ${p.package_name}: ${bonoRateLabel(p)} (quedan ${p.sessions_total - p.sessions_used})`) }}
-            </button>
-            <UiBtn :variant="activePackages.length > 0 ? 'secondary' : 'primary'" class="w-full" :disabled="saving" @click="chargeVisit">
+            </AppButton>
+            <AppButton :variant="activePackages.length > 0 ? 'secondary' : 'primary'" class="w-full" :disabled="saving" @click="chargeVisit">
               <template v-if="saving">{{ t('Saving…', 'Guardando…') }}</template>
               <template v-else-if="(visitPriceCents ?? 0) > 0">{{ activePackages.length > 0 ? t(`Charge ${euros(visitPriceCents ?? 0)} instead`, `Cobrar ${euros(visitPriceCents ?? 0)} en su lugar`) : t(`Charge ${euros(visitPriceCents ?? 0)}`, `Cobrar ${euros(visitPriceCents ?? 0)}`) }}</template>
               <template v-else>{{ activePackages.length > 0 ? t('Charge this visit instead', 'Cobrar la visita en su lugar') : t('Charge this visit', 'Cobrar la visita') }}</template>
-            </UiBtn>
+            </AppButton>
           </div>
           <template v-else>
             <p v-if="packageCoverage" class="mb-2 text-[12.5px] text-ink-muted2">
@@ -918,7 +933,7 @@ watch(
                   <option v-if="creditLedgerCents > 0" value="credit">{{ t(`Credit on account (${euros(creditLedgerCents)} available)`, `Saldo a favor (${euros(creditLedgerCents)} disponible)`) }}</option>
                 </select>
               </div>
-              <UiBtn variant="primary" class="w-full" :disabled="saving || paymentTotalCents <= 0" @click="recordPayment">{{ saving ? t('Saving…', 'Guardando…') : t(`Record ${euros(paymentTotalCents)}`, `Registrar ${euros(paymentTotalCents)}`) }}</UiBtn>
+              <AppButton variant="primary" class="w-full" :disabled="saving || paymentTotalCents <= 0" @click="recordPayment">{{ saving ? t('Saving…', 'Guardando…') : t(`Record ${euros(paymentTotalCents)}`, `Registrar ${euros(paymentTotalCents)}`) }}</AppButton>
             </div>
 
             <div v-if="can('billing_access') && invoice.status !== 'paid' && activePackages.length > 0" class="mt-2 flex flex-wrap items-center gap-2 border-t border-line-divider pt-2">
@@ -944,36 +959,41 @@ watch(
 
         <p v-if="actionError" class="text-[13px] text-danger-text">{{ actionError }}</p>
 
-        <!-- Move or cancel, as the agenda does: before the visit has started -->
+        <!-- Whether they are coming, and move or cancel, as the agenda does:
+             before the visit has started -->
         <template v-if="canAct && !appointment.checked_in_at">
-          <p v-if="appointment.confirmation_status === 'confirmed'" class="flex items-center gap-1.5 px-1 text-[13px] font-medium text-success-text" data-cy="visit-confirmed">
+          <section v-if="unconfirmed" class="rounded-card border border-warning-border bg-warning-bg px-3.5 py-3" data-cy="visit-unconfirmed">
+            <p class="text-[14px] font-semibold text-warning-text">{{ unconfirmed.title }}</p>
+            <p class="mt-0.5 text-[12.5px] leading-snug text-ink-700">{{ unconfirmed.sub }}</p>
+            <AppButton class="mt-2.5 w-full" :disabled="busy" data-cy="visit-confirm" @click="markConfirmed">{{ t('Mark as confirmed', 'Marcar como confirmada') }}</AppButton>
+          </section>
+          <p v-else-if="appointment.confirmation_status === 'confirmed'" class="flex items-center gap-1.5 px-1 text-[13px] font-medium text-success-text" data-cy="visit-confirmed">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
             {{ t('Confirmed', 'Confirmada') }}
           </p>
-          <button v-else type="button" class="flex h-11 items-center justify-center rounded-card border border-line-control bg-surface text-[14px] font-medium text-ink-700 disabled:opacity-50" :disabled="busy" data-cy="visit-confirm" @click="markConfirmed">{{ t('Confirmed by phone', 'Confirmada por teléfono') }}</button>
+          <div class="grid grid-cols-2 gap-2" data-cy="visit-change">
+            <AppButton data-cy="visit-move" @click="moveOpen = true">{{ t('Change', 'Cambiar') }}</AppButton>
+            <AppButton variant="danger" data-cy="visit-cancel" @click="cancelOpen = true">{{ t('Cancel visit', 'Cancelar cita') }}</AppButton>
+          </div>
         </template>
-        <div v-if="canAct && !appointment.checked_in_at" class="grid grid-cols-2 gap-2" data-cy="visit-change">
-          <button type="button" class="flex h-11 items-center justify-center rounded-card border border-line-control bg-surface text-[14px] font-medium text-ink-700" data-cy="visit-move" @click="moveOpen = true">{{ t('Change', 'Cambiar') }}</button>
-          <button type="button" class="flex h-11 items-center justify-center rounded-card border border-line-control bg-surface text-[14px] font-medium text-danger-text" data-cy="visit-cancel" @click="cancelOpen = true">{{ t('Cancel visit', 'Cancelar cita') }}</button>
-        </div>
         <!-- Finished by mistake -->
-        <button v-if="canUndoVisit" type="button" class="flex h-10 items-center justify-center rounded-card text-[13.5px] font-medium text-ink-muted disabled:opacity-50" :disabled="busy" data-cy="visit-undo" @click="undoVisit">{{ t('Undo visit', 'Deshacer visita') }}</button>
+        <AppButton v-if="canUndoVisit" variant="quiet" :disabled="busy" data-cy="visit-undo" @click="undoVisit">{{ t('Undo visit', 'Deshacer visita') }}</AppButton>
         </div>
       </div>
 
       <!-- No-show / Finish visit, or book the next one once it is done -->
       <div v-if="keyboardHeight === 0 && (canAct || (appointment.status === 'completed' && canBook))" class="flex shrink-0 gap-2 border-t border-line bg-surface-page px-3.5 py-2.5" data-cy="visit-footer">
         <template v-if="canAct">
-          <button type="button" class="flex h-11 flex-1 items-center justify-center rounded-card border border-line-control bg-surface text-[14px] font-medium text-ink-700 disabled:opacity-50" :disabled="busy" data-cy="visit-no-show" @click="markNoShow">
+          <AppButton class="flex-1" :disabled="busy" data-cy="visit-no-show" @click="markNoShow">
             {{ t('No-show', 'No vino') }}
-          </button>
-          <button type="button" class="flex h-11 flex-[2] items-center justify-center rounded-card bg-brand text-[15px] font-semibold text-white disabled:opacity-50" :disabled="busy" data-cy="visit-finish" @click="finishVisit">
+          </AppButton>
+          <AppButton variant="primary" class="flex-[2]" :disabled="busy" data-cy="visit-finish" @click="finishVisit">
             {{ busy ? t('Finishing…', 'Terminando…') : t('Finish visit', 'Terminar visita') }}
-          </button>
+          </AppButton>
         </template>
-        <button v-else type="button" class="flex h-11 flex-1 items-center justify-center rounded-card border border-brand-tintBorder bg-brand-tint text-[15px] font-semibold text-brand-text" data-cy="visit-book-next" @click="openBookNext">
+        <AppButton v-else variant="tint" class="flex-1" data-cy="visit-book-next" @click="openBookNext">
           {{ t('Book the next visit', 'Reservar la próxima cita') }}
-        </button>
+        </AppButton>
       </div>
     </template>
 
@@ -1040,7 +1060,7 @@ watch(
           </template>
           <p v-else class="text-[13.5px] text-ink-muted2">{{ t('No next visit booked. Reception can book it.', 'No tiene próxima cita. Recepción puede reservarla.') }}</p>
         </div>
-        <button type="button" class="flex h-11 items-center justify-center rounded-card bg-brand text-[15px] font-semibold text-white" @click="alreadyBookedOpen = false">{{ t('Done', 'Listo') }}</button>
+        <AppButton variant="primary" @click="alreadyBookedOpen = false">{{ t('Done', 'Listo') }}</AppButton>
       </div>
     </div>
 

@@ -268,7 +268,7 @@ const row = 'flex items-center justify-between gap-3 text-[14px]'
                 <input v-model="note" type="text" :placeholder="t('Note, e.g. bank drop', 'Nota, p. ej. ingreso en banco')" class="h-11 min-w-0 flex-1 rounded-ctl border border-line-control bg-surface px-3 text-[15px] text-ink-900 focus:border-brand focus:outline-none" data-cy="cash-note" />
               </div>
               <p v-if="error" role="alert" class="text-[13px] text-danger-text">{{ error }}</p>
-              <button type="submit" class="flex h-10 items-center justify-center rounded-ctl bg-brand text-[14px] font-semibold text-white disabled:opacity-50" :disabled="saving" data-cy="cash-add">{{ saving ? t('Saving…', 'Guardando…') : t('Add', 'Añadir') }}</button>
+              <AppButton variant="primary" type="submit" :disabled="saving" data-cy="cash-add">{{ saving ? t('Saving…', 'Guardando…') : t('Add', 'Añadir') }}</AppButton>
             </form>
 
             <ul v-if="movements.length" class="mt-3 space-y-1 border-t border-line-row pt-2" data-cy="cash-movements">
@@ -284,7 +284,7 @@ const row = 'flex items-center justify-between gap-3 text-[14px]'
               {{ t('End of shift note', 'Nota de fin de turno') }}
               <input v-model="closeNote" type="text" :placeholder="t('Optional', 'Opcional')" class="h-11 rounded-ctl border border-line-control bg-surface px-3 text-[15px] text-ink-900 focus:border-brand focus:outline-none" data-cy="cash-close-note" />
             </label>
-            <button type="button" class="mt-2 flex h-11 w-full items-center justify-center rounded-card bg-ink-900 text-[14.5px] font-semibold text-surface disabled:opacity-50" :disabled="closing" data-cy="cash-close" @click="closeShift">{{ closing ? t('Closing…', 'Cerrando…') : t('Close shift', 'Cerrar turno') }}</button>
+            <AppButton variant="strong" class="mt-2 w-full" :disabled="closing" data-cy="cash-close" @click="closeShift">{{ closing ? t('Closing…', 'Cerrando…') : t('Close shift', 'Cerrar turno') }}</AppButton>
           </section>
         </template>
       </div>

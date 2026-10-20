@@ -99,7 +99,7 @@ watch(search, () => {
     <AppSkeletonList v-if="loading && patients.length === 0" avatar :rows="8" class="flex-1" />
     <div v-else-if="loadError && patients.length === 0" class="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center" data-cy="patients-load-error">
       <p class="text-sm text-danger-text">{{ t('Could not load the patients.', 'No se han podido cargar los pacientes.') }}</p>
-      <button type="button" class="h-10 rounded-ctl border border-line-control px-4 text-[13.5px] font-medium text-ink-700" @click="load()">{{ t('Try again', 'Reintentar') }}</button>
+      <AppButton @click="load()">{{ t('Try again', 'Reintentar') }}</AppButton>
     </div>
     <p v-else-if="patients.length === 0" class="flex flex-1 items-center justify-center px-6 text-center text-sm text-ink-muted">{{ t('No patients found.', 'No se encontraron pacientes.') }}</p>
 

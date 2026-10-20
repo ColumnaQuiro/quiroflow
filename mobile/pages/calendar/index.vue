@@ -780,10 +780,10 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
             <p v-if="practitionerName(selected.practitioner_id)" class="text-[12.5px] text-ink-muted">{{ practitionerName(selected.practitioner_id) }}</p>
             <p v-if="selected.checked_in_at && selected.status === 'booked'" class="mt-2 inline-flex rounded-full bg-success-bg px-2 py-0.5 text-[11.5px] font-semibold text-success-text">{{ t('Checked in', 'Ha llegado') }}</p>
           </div>
-          <NuxtLink :to="`/calendar/${selected.id}`" class="flex h-11 items-center justify-center rounded-card bg-brand text-[14.5px] font-semibold text-white" data-cy="agenda-panel-open">{{ t('Open visit', 'Abrir la cita') }}</NuxtLink>
+          <AppButton variant="primary" :to="`/calendar/${selected.id}`" data-cy="agenda-panel-open">{{ t('Open visit', 'Abrir la cita') }}</AppButton>
           <div v-if="canChange(selected)" class="grid grid-cols-2 gap-2">
-            <button type="button" class="h-10 rounded-ctl border border-line-control bg-surface text-[13.5px] font-medium text-ink-700" data-cy="agenda-panel-move" @click="moveFor = { a: selected, preferredStart: null, practitionerId: selected.practitioner_id }">{{ t('Move', 'Mover') }}</button>
-            <button type="button" class="h-10 rounded-ctl border border-line-control bg-surface text-[13.5px] font-medium text-danger-text" data-cy="agenda-panel-cancel" @click="cancelFor = selected">{{ t('Cancel', 'Cancelar') }}</button>
+            <AppButton data-cy="agenda-panel-move" @click="moveFor = { a: selected, preferredStart: null, practitionerId: selected.practitioner_id }">{{ t('Move', 'Mover') }}</AppButton>
+            <AppButton variant="danger" data-cy="agenda-panel-cancel" @click="cancelFor = selected">{{ t('Cancel', 'Cancelar') }}</AppButton>
           </div>
           <p v-if="!readOnly" class="mt-1 text-[12px] leading-snug text-ink-faint">{{ t('Drag a visit to move it; hold a free slot to book.', 'Arrastra una cita para moverla; mantén pulsado un hueco para crear una.') }}</p>
         </template>

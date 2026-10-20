@@ -150,9 +150,9 @@ function onSent() {
               <span class="shrink-0 rounded-full border border-danger-border bg-danger-bg px-2 py-0.5 text-[11.5px] font-semibold text-danger-text">{{ r.days_overdue === 1 ? t('1 day', '1 día') : t(`${r.days_overdue} days`, `${r.days_overdue} días`) }}</span>
             </div>
             <div class="mt-2.5 flex gap-2">
-              <button v-if="canWhatsApp(r)" type="button" class="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-ctl bg-brand text-[13.5px] font-semibold text-white" data-cy="plan-alert-whatsapp" @click="sendingTo = r">WhatsApp</button>
-              <a v-if="phones[r.patient_id]" :href="phones[r.patient_id]" class="flex h-10 flex-1 items-center justify-center rounded-ctl border border-line-control bg-surface text-[13.5px] font-medium text-ink-700" data-cy="plan-alert-call">{{ t('Call', 'Llamar') }}</a>
-              <NuxtLink v-if="canBook" :to="`/patients/${r.patient_id}?book=1`" class="flex h-10 flex-1 items-center justify-center rounded-ctl border border-line-control bg-surface text-[13.5px] font-medium text-ink-700" data-cy="plan-alert-book">{{ t('Book', 'Reservar') }}</NuxtLink>
+              <AppButton variant="primary" v-if="canWhatsApp(r)" class="flex-1" data-cy="plan-alert-whatsapp" @click="sendingTo = r">WhatsApp</AppButton>
+              <AppButton v-if="phones[r.patient_id]" :href="phones[r.patient_id]" class="flex-1" data-cy="plan-alert-call">{{ t('Call', 'Llamar') }}</AppButton>
+              <AppButton v-if="canBook" :to="`/patients/${r.patient_id}?book=1`" class="flex-1" data-cy="plan-alert-book">{{ t('Book', 'Reservar') }}</AppButton>
             </div>
           </article>
 
@@ -173,8 +173,8 @@ function onSent() {
                 <span class="shrink-0 rounded-full border border-warning-border bg-warning-bg px-2 py-0.5 text-[11.5px] font-semibold text-warning-text">{{ t(`${r.days_without} days`, `${r.days_without} días`) }}</span>
               </div>
               <div v-if="canWhatsApp(r) || phones[r.patient_id]" class="mt-2.5 flex gap-2">
-                <button v-if="canWhatsApp(r)" type="button" class="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-ctl bg-brand text-[13.5px] font-semibold text-white" data-cy="exercise-alert-whatsapp" @click="sendingTo = r">WhatsApp</button>
-                <a v-if="phones[r.patient_id]" :href="phones[r.patient_id]" class="flex h-10 flex-1 items-center justify-center rounded-ctl border border-line-control bg-surface text-[13.5px] font-medium text-ink-700">{{ t('Call', 'Llamar') }}</a>
+                <AppButton variant="primary" v-if="canWhatsApp(r)" class="flex-1" data-cy="exercise-alert-whatsapp" @click="sendingTo = r">WhatsApp</AppButton>
+                <AppButton v-if="phones[r.patient_id]" :href="phones[r.patient_id]" class="flex-1">{{ t('Call', 'Llamar') }}</AppButton>
               </div>
             </article>
           </template>

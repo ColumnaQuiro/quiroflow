@@ -38,6 +38,19 @@ function onKeydown(e: KeyboardEvent) {
   }
 }
 onMounted(() => document.addEventListener('keydown', onKeydown))
+
+// Team messages and alerts: one subscription for the whole staff app, so an
+// alert reaches whatever screen a colleague is on (composables/useTeamChat).
+const teamChat = useTeamChat()
+onMounted(() => {
+  watch(
+    () => store.accountId,
+    (id) => {
+      if (id) teamChat.start()
+    },
+    { immediate: true },
+  )
+})
 onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 
 function dismissDenied() {
@@ -136,10 +149,12 @@ watch(supabaseFailure, (f) => {
             </button>
           </div>
           <div class="flex shrink-0 items-center gap-2">
+            <TeamAlertButton />
             <AppThemeToggle />
             <AppAccountMenu />
           </div>
         </div>
+        <TeamAlertBanner />
         <div v-if="showDenied" class="flex items-center justify-between bg-amber-50 px-6 py-2 text-sm text-amber-800">
           <span>You don't have access to that section.</span>
           <button type="button" class="font-medium underline" @click="dismissDenied">Dismiss</button>

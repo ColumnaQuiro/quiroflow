@@ -34,7 +34,7 @@ describe('The patient’s national ID', () => {
         typeId('12345678A')
         cy.get('[data-cy="patient-national-id-warning"]').should('contain', 'check letter')
         cy.contains('button', 'Save').click({ scrollBehavior: 'center' })
-        cy.contains('the check letter does not match').should('be.visible')
+        cy.get('[data-cy=patient-details-error]').should('be.visible').and('contain', 'the check letter does not match')
         nationalIdOf(patient.id).should('eq', null)
 
         // Typed with dots, a dash and in lower case: saved as 12345678Z.

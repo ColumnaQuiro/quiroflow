@@ -415,6 +415,24 @@ export async function claimAutomaticConfirmation(supabase: any, appointmentId: s
 }
 
 /**
+ * Claims an appointment's reminder for the time it is at: true for exactly
+ * one caller. Conditional on `startsAt` as the caller read it, because a
+ * reschedule clears the claim (see the migration that added
+ * reminder_claimed_at) -- a claim against the old time would otherwise land
+ * on the new one, with a verdict worked out for the old.
+ */
+export async function claimAppointmentReminder(supabase: any, appointmentId: string, startsAt: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('appointments')
+    .update({ reminder_claimed_at: new Date().toISOString() })
+    .eq('id', appointmentId)
+    .eq('starts_at', startsAt)
+    .is('reminder_claimed_at', null)
+    .select('id')
+  return (data?.length ?? 0) > 0
+}
+
+/**
  * Claims the clinic's "new online booking" alert: true for exactly one caller.
  * The booking endpoint, the confirmation endpoint and the cron's catch-up all
  * offer it, so whichever reaches a booking first alerts and the rest send

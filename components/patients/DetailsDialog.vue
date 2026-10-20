@@ -15,6 +15,7 @@ import { formatEur } from '~/utils/billing'
 import type { Tables } from '~/types/database.types'
 import { normalizeSearchTerm } from '~/utils/searchText'
 import { checkSpanishTaxId } from '~/utils/spanishTaxId'
+import { DEFAULT_REMINDER_HOURS, PATIENT_REMINDER_HOUR_OPTIONS } from '~/utils/appointmentReminderDue'
 
 const props = defineProps<{ patient: Tables<'patients'> }>()
 const emit = defineEmits<{ updated: []; close: [] }>()
@@ -58,12 +59,15 @@ async function loadReferredPatients() {
 }
 
 onMounted(async () => {
-  const [{ data: members }, { data: sources }] = await Promise.all([
+  const [{ data: members }, { data: sources }, { data: reminderSettings }] = await Promise.all([
     supabase.from('team_members').select('id, full_name').order('full_name'),
     supabase.from('referral_sources').select('*').order('name'),
+    supabase.from('accounts').select('appointment_reminder_enabled, appointment_reminder_hours_before').eq('id', store.accountId!).maybeSingle(),
   ])
   teamMembers.value = members ?? []
   referralSources.value = sources ?? []
+  clinicReminderHours.value = reminderSettings?.appointment_reminder_hours_before ?? DEFAULT_REMINDER_HOURS
+  clinicRemindersOn.value = reminderSettings?.appointment_reminder_enabled ?? true
   if (props.patient.tutor_patient_id) {
     const { data } = await supabase.from('patients').select('id, first_name, last_name').eq('id', props.patient.tutor_patient_id).maybeSingle()
     // Only if they have not already changed it: a Remove (or another pick)
@@ -155,6 +159,31 @@ function channelLabel(value: string) {
   return CHANNEL_OPTIONS.find((c) => c.value === value)?.label ?? value
 }
 
+// When this patient's appointment reminder goes out. Null follows the
+// clinic's Settings > Messages; a number overrides it for this patient only
+// (utils/appointmentReminderDue.ts). Some patients want the day before, some
+// two hours before, and the front desk was phoning the second kind by hand.
+const clinicReminderHours = ref(DEFAULT_REMINDER_HOURS)
+const clinicRemindersOn = ref(true)
+function hoursLabel(hours: number) {
+  if (hours % 24 === 0) {
+    const days = hours / 24
+    return days === 1 ? t('1 day before', '1 día antes') : t(`${days} days before`, `${days} días antes`)
+  }
+  return t(`${hours} hours before`, `${hours} horas antes`)
+}
+function reminderTimingLabel(hours: number | null) {
+  return hours === null ? t(`Clinic default (${hoursLabel(clinicReminderHours.value)})`, `Por defecto de la clínica (${hoursLabel(clinicReminderHours.value)})`) : hoursLabel(hours)
+}
+// The stored value is offered even when it is not one of the presets: a
+// number set through the API must not be rewritten by opening the form.
+const reminderHourChoices = computed(() => {
+  const stored = props.patient.appointment_reminder_hours_before
+  const all = new Set<number>(PATIENT_REMINDER_HOUR_OPTIONS)
+  if (stored !== null) all.add(stored)
+  return [...all].sort((a, b) => a - b)
+})
+
 
 // -- Details edit form -------------------------------------------------
 const editing = ref(true)
@@ -180,6 +209,7 @@ const defaultPractitionerId = ref(props.patient.default_practitioner_id ?? '')
 const invoiceEmailEnabled = ref(props.patient.invoice_email_enabled)
 const reminderChannel = ref(props.patient.reminder_channel)
 const confirmationChannel = ref(props.patient.confirmation_channel)
+const reminderHours = ref<number | null>(props.patient.appointment_reminder_hours_before)
 const marketingChannels = ref<string[]>([...props.patient.marketing_channels])
 const status = ref(props.patient.status)
 const isMinor = ref(props.patient.is_minor)
@@ -205,6 +235,7 @@ async function startEditing() {
   invoiceEmailEnabled.value = props.patient.invoice_email_enabled
   reminderChannel.value = props.patient.reminder_channel
   confirmationChannel.value = props.patient.confirmation_channel
+  reminderHours.value = props.patient.appointment_reminder_hours_before
   marketingChannels.value = [...props.patient.marketing_channels]
   status.value = props.patient.status
   isMinor.value = props.patient.is_minor
@@ -320,6 +351,7 @@ async function save() {
       invoice_email_enabled: invoiceEmailEnabled.value,
       reminder_channel: reminderChannel.value,
       confirmation_channel: confirmationChannel.value,
+      appointment_reminder_hours_before: reminderHours.value,
       marketing_channels: marketingChannels.value,
       status: status.value,
       is_minor: isMinor.value,
@@ -649,13 +681,24 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
             </div>
           </div>
 
+          <div class="mt-3">
+            <label :class="labelClass" for="patient-reminder-hours">{{ t('Appointment reminder', 'Recordatorio de cita') }}</label>
+            <select id="patient-reminder-hours" v-model="reminderHours" :class="inputClass" data-cy="patient-reminder-hours">
+              <option :value="null">{{ reminderTimingLabel(null) }}</option>
+              <option v-for="h in reminderHourChoices" :key="h" :value="h">{{ hoursLabel(h) }}</option>
+            </select>
+            <p v-if="!clinicRemindersOn" class="mt-1 text-[11px] text-ink-muted2">
+              {{ t('Appointment reminders are off for the clinic (Settings > Messages), so none is sent until they are switched on.', 'Los recordatorios de cita están desactivados en la clínica (Ajustes > Mensajes): no se envía ninguno hasta activarlos.') }}
+            </p>
+          </div>
+
           <label class="mt-3 flex items-center gap-1.5 text-[13px] text-ink-600">
             <input v-model="invoiceEmailEnabled" type="checkbox" class="rounded border-line-control text-brand focus:ring-brand" />
             {{ t('Email receipt when an appointment is processed', 'Enviar recibo por correo al procesar una cita') }}
           </label>
         </div>
 
-        <p v-if="error" class="text-[13px] text-danger-text">{{ error }}</p>
+        <p v-if="error" class="text-[13px] text-danger-text" data-cy="patient-details-error">{{ error }}</p>
         <div class="flex gap-2">
           <UiBtn variant="primary" :disabled="saving" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}</UiBtn>
           <UiBtn type="button" variant="ghost" @click="editing = false">{{ t('Cancel', 'Cancelar') }}</UiBtn>
@@ -674,6 +717,10 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
           <div class="flex items-center justify-between gap-3">
             <span class="text-[12.5px] text-ink-muted">{{ t('Confirmations', 'Confirmaciones') }}</span>
             <UiPill tone="neutral">{{ channelLabel(patient.confirmation_channel) }}</UiPill>
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-[12.5px] text-ink-muted">{{ t('Reminder timing', 'Antelación del recordatorio') }}</span>
+            <UiPill :tone="patient.appointment_reminder_hours_before === null ? 'neutral' : 'brand'">{{ reminderTimingLabel(patient.appointment_reminder_hours_before) }}</UiPill>
           </div>
           <div class="flex items-center justify-between gap-3">
             <span class="text-[12.5px] text-ink-muted">{{ t('Receipt email', 'Recibo por correo') }}</span>

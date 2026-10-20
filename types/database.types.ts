@@ -1427,6 +1427,7 @@ export type Database = {
           patient_id: string
           practitioner_id: string | null
           practitioner_name: string | null
+          reminder_claimed_at: string | null
           reminder_sent_at: string | null
           rescheduled: boolean
           room_id: string | null
@@ -1456,6 +1457,7 @@ export type Database = {
           patient_id: string
           practitioner_id?: string | null
           practitioner_name?: string | null
+          reminder_claimed_at?: string | null
           reminder_sent_at?: string | null
           rescheduled?: boolean
           room_id?: string | null
@@ -1485,6 +1487,7 @@ export type Database = {
           patient_id?: string
           practitioner_id?: string | null
           practitioner_name?: string | null
+          reminder_claimed_at?: string | null
           reminder_sent_at?: string | null
           rescheduled?: boolean
           room_id?: string | null
@@ -5173,6 +5176,7 @@ export type Database = {
           account_id: string
           address: string | null
           anonymized_at: string | null
+          appointment_reminder_hours_before: number | null
           balance_cents: number
           chief_complaint: string | null
           city: string | null
@@ -5228,6 +5232,7 @@ export type Database = {
           account_id: string
           address?: string | null
           anonymized_at?: string | null
+          appointment_reminder_hours_before?: number | null
           balance_cents?: number
           chief_complaint?: string | null
           city?: string | null
@@ -5283,6 +5288,7 @@ export type Database = {
           account_id?: string
           address?: string | null
           anonymized_at?: string | null
+          appointment_reminder_hours_before?: number | null
           balance_cents?: number
           chief_complaint?: string | null
           city?: string | null

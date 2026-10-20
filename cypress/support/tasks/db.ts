@@ -1698,6 +1698,16 @@ async function callRpcAsPatient(opts: { email: string; password: string; fn: str
   return { data: data ?? null, error: error?.message ?? null }
 }
 
+/** The team_messages bodies a signed-in staff member can read, through RLS. */
+async function teamMessagesVisibleTo(opts: { email: string; password: string }) {
+  const client = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+  const { error: signInErr } = await client.auth.signInWithPassword({ email: opts.email, password: opts.password })
+  if (signInErr) throw signInErr
+  const { data, error } = await client.from('team_messages').select('body')
+  if (error) throw error
+  return (data ?? []).map((r) => r.body)
+}
+
 /** Lets the clinic's patients cancel from the app and the portal (0162). */
 async function setPatientCancel(opts: { accountId: string; enabled: boolean }) {
   assertOk(await admin.from('accounts').update({ patient_app_cancel_enabled: opts.enabled }).eq('id', opts.accountId))
@@ -4108,6 +4118,27 @@ async function recordVerifactuSubmission({ accountId, clinicId, status, errorMes
   return null
 }
 
+/**
+ * What the home-screen widget gets (get_home_widget), asked as a signed-in
+ * member -- the RPC decides the view from who is calling, so the test has to
+ * call it as each of them rather than through the service role.
+ */
+async function homeWidgetAs(opts: { email: string; password: string; accountId: string; timeZone?: string }) {
+  const client = createClient(SUPABASE_URL, ANON_KEY, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+  const { error: signInErr } = await client.auth.signInWithPassword({ email: opts.email, password: opts.password })
+  if (signInErr) throw signInErr
+  const { data, error } = await client.rpc('get_home_widget', { p_account_id: opts.accountId, p_time_zone: opts.timeZone ?? 'Europe/Madrid' })
+  return { data: data ?? null, error: error?.message ?? null }
+}
+
+/** Backdates a bono sale, to put it in an earlier month. */
+async function setPackagePurchasedAt(opts: { id: string; purchasedAt: string }) {
+  assertOk(await admin.from('package_purchases').update({ purchased_at: opts.purchasedAt }).eq('id', opts.id))
+  return null
+}
+
 export const dbTasks = {
   'db:seedReportDataset': seedReportDataset,
   'db:inboxUnreadCounts': inboxUnreadCounts,
@@ -4279,6 +4310,7 @@ export const dbTasks = {
   'db:setPatientCancel': setPatientCancel,
   'db:accessTokenFor': accessTokenFor,
   'db:callRpcAsPatient': callRpcAsPatient,
+  'db:teamMessagesVisibleTo': teamMessagesVisibleTo,
   'db:setPatientAppReschedule': setPatientAppReschedule,
   'db:setTeamMemberBookingFlags': setTeamMemberBookingFlags,
   'db:assignExercise': assignExercise,
@@ -4374,4 +4406,6 @@ export const dbTasks = {
   'db:membershipTemplatesFor': membershipTemplatesFor,
   'db:createReferralSource': createReferralSource,
   'db:bookingAttribution': bookingAttribution,
+  'db:homeWidgetAs': homeWidgetAs,
+  'db:setPackagePurchasedAt': setPackagePurchasedAt,
 }

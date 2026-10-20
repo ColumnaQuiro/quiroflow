@@ -33,6 +33,7 @@ interface Form {
   price: string
   color: string
   stage: string
+  forMinors: boolean
   online: boolean
   bookableBy: string
   bypass: boolean
@@ -78,6 +79,7 @@ function toForm(row: any, overrides: { team_member_id: string; duration_minutes:
     price: centsToInput(row.default_price_cents ?? 0),
     color: row.color ?? CALENDAR_PALETTE[0]!.hex,
     stage: row.stage ?? '',
+    forMinors: !!row.for_minors,
     online: !!row.online_booking_enabled,
     bookableBy: row.online_bookable_by ?? 'all',
     bypass: !!row.online_bypass_practitioner,
@@ -164,6 +166,7 @@ const changes = computed(() => {
   if (f.price !== before.price) out.default_price_cents = priceCents.value
   if (f.color !== before.color) out.color = f.color
   if (f.stage !== before.stage) out.stage = f.stage || null
+  if (f.forMinors !== before.forMinors) out.for_minors = f.forMinors
   if (f.online !== before.online) out.online_booking_enabled = f.online
   if (f.bookableBy !== before.bookableBy) out.online_bookable_by = f.bookableBy
   if (f.bypass !== before.bypass) out.online_bypass_practitioner = f.bypass
@@ -511,6 +514,12 @@ const errorText = 'text-[12.5px] font-semibold text-danger-text'
                 </select>
                 <span :class="hint">{{ t('For the Statistics report: first visit, first visit with offer, report, revision, maintenance, adjustment or other. Without a stage, these appointments are not counted there.', 'Para el informe de Estadísticas: primera visita, primera visita con oferta, informe, revisión, mantenimiento, ajuste u otra. Sin etapa, estas citas no cuentan ahí.') }}</span>
               </label>
+              <SettingsSwitchRow
+                v-model="form.forMinors"
+                data-cy="type-for-minors"
+                :title="t('Only for patients under 18', 'Solo para menores de 18')"
+                :description="t('The AI receptionist offers it when someone books for their child, and never to an adult. The booking page does not ask for age, so leave online booking off for it.', 'La recepcionista IA la ofrece cuando alguien pide cita para su hijo o hija, y nunca a un adulto. La página de reservas no pregunta la edad, así que no la actives para reserva online.')"
+              />
               <label class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
                 {{ t('Group class', 'Clase en grupo') }}
                 <span class="flex items-center gap-2">

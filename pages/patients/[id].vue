@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Tables } from '~/types/database.types'
+import { APP_DOWNLOAD_TEMPLATE } from '~/utils/appLinks'
 
 // The patient record.
 //
@@ -165,6 +166,9 @@ const activeTab = computed({
 })
 
 const whatsAppOpen = ref(false)
+// "Enviar la app por WhatsApp" (the banner's menu): the same dialog, fixed on
+// the app-download template, in the patient's language.
+const appInviteOpen = ref(false)
 
 // Merging is the answer to the duplicate records the PracticeHub migration
 // left behind, and to the ones a front desk creates by booking the same person
@@ -327,6 +331,7 @@ function onTabKeydown(event: KeyboardEvent) {
         :tutor="tutor"
         @photo-updated="loadPatient"
         @message="whatsAppOpen = true"
+        @send-app="appInviteOpen = true"
         @book="navigateTo({ path: '/calendar', query: { patient: patientId } })"
         @charge="handleCharge"
         @archive="toggleArchived"
@@ -427,6 +432,19 @@ function onTabKeydown(event: KeyboardEvent) {
       :patient-preferred-language="patient.preferred_language"
       @close="whatsAppOpen = false"
       @sent="whatsAppOpen = false"
+    />
+
+    <LazySendWhatsAppModal
+      v-if="appInviteOpen"
+      :patient-id="patient.id"
+      :patient-first-name="patient.first_name"
+      :patient-preferred-language="patient.preferred_language"
+      :default-template-name="APP_DOWNLOAD_TEMPLATE"
+      :allow-template-override="false"
+      :title="t('Send the app on WhatsApp', 'Enviar la app por WhatsApp')"
+      :missing-template-message="t(`This needs an approved WhatsApp template called ${APP_DOWNLOAD_TEMPLATE}, with the patient's first name as {{1}} and the store links as buttons. Create it in WhatsApp Manager.`, `Hace falta una plantilla de WhatsApp aprobada llamada ${APP_DOWNLOAD_TEMPLATE}, con el nombre del paciente como {{1}} y los enlaces de las tiendas como botones. Créala en el Administrador de WhatsApp.`)"
+      @close="appInviteOpen = false"
+      @sent="appInviteOpen = false; showToast(t('App link sent on WhatsApp.', 'Enlace de la app enviado por WhatsApp.'))"
     />
 
     <LazyPatientsMergePatientModal v-if="mergeOpen" :patient="patient" @close="mergeOpen = false" @merged="onMerged" />

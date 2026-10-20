@@ -55,7 +55,12 @@ export interface PromptType {
   stage?: string | null
   /** appointment_types.online_bookable_by: 'all', 'new_patients' or 'existing_patients'. */
   bookableBy?: string | null
+  /** appointment_types.for_minors: only for a child, booked through their tutor. */
+  forMinors?: boolean
 }
+
+/** Under this age a patient is a minor, booked through their tutor. */
+export const MINOR_AGE = 18
 
 /**
  * Who the receptionist is talking to, as far as booking goes. A first visit
@@ -82,7 +87,10 @@ const isFirstVisit = (type: PromptType) => type.stage === 'first_visit' || type.
  * A clinic that has set no stages gets what it had before: every offered
  * type, for everyone.
  */
-export function typesForAudience<T extends PromptType>(offered: T[], audience: ReceptionistAudience): { types: T[]; adOnly: T[] } {
+export function typesForAudience<T extends PromptType>(all: T[], audience: ReceptionistAudience): { types: T[]; adOnly: T[] } {
+  // A type for children is never offered to the adult writing: it is offered
+  // for their child, by typesForMinor.
+  const offered = all.filter((type) => !type.forMinors)
   if (audience === 'existing') {
     return { types: offered.filter((type) => !isFirstVisit(type) && type.bookableBy !== 'new_patients'), adOnly: [] }
   }
@@ -96,6 +104,67 @@ export function typesForAudience<T extends PromptType>(offered: T[], audience: R
   if (firsts.length) return { types: firsts, adOnly: offers }
   const others = forNew.filter((type) => type.stage !== 'first_visit_offer')
   return others.length ? { types: others, adOnly: offers } : { types: offers, adOnly: [] }
+}
+
+/**
+ * What may be booked for a child -- someone under MINOR_AGE whose tutor (the
+ * person writing) asks for them. Columnaquiro sells a child's first visit as
+ * its own type, "Primera visita niño", and an adult must never be offered it,
+ * nor a child the adult first visit when there is one for children:
+ * - a child who has not been: the first visit for children (for_minors, at a
+ *   first-visit stage); a clinic without one, its plain first visit;
+ * - a child who has: anything but a first visit, as for any returning patient.
+ */
+export function typesForMinor<T extends PromptType>(offered: T[], hasBeenBefore: boolean): T[] {
+  if (hasBeenBefore) return offered.filter((type) => !isFirstVisit(type) && type.bookableBy !== 'new_patients')
+  const forNew = offered.filter((type) => type.bookableBy !== 'existing_patients')
+  const forChildren = forNew.filter((type) => type.forMinors && isFirstVisit(type))
+  if (forChildren.length) return forChildren
+  return forNew.filter((type) => !type.forMinors && type.stage === 'first_visit')
+}
+
+/** A child of the person writing, already on file with them as tutor. */
+export interface PromptChild {
+  firstName: string
+  lastName: string | null
+  hasBeenBefore: boolean
+}
+
+/**
+ * The prompt section on booking for a child. Before it, the receptionist
+ * assumed the person writing was the patient: a patient asking "cita para mi
+ * hija" was treated as wanting one for herself, and since she had been
+ * before, no first visit existed for her daughter -- it asked what kind of
+ * visit it would be and handed her to the desk.
+ */
+export function minorsSection(opts: { forNewChild: PromptType[]; forReturningChild: PromptType[]; children: PromptChild[]; canBook: boolean; sendsItself: boolean }): string {
+  const list = (types: PromptType[]) => (types.length ? types.map((type) => `"${type.name}"`).join(', ') : 'none -- your colleague arranges it')
+  const children = opts.children.map((c) => `- ${[c.firstName, c.lastName].filter(Boolean).join(' ')}${c.hasBeenBefore ? ' (has been to the clinic)' : ' (has not been yet)'}`)
+  return [
+    `# Appointments for their children\nThe person writing may want an appointment for their son or daughter rather than for themselves. The child is then the patient, and the person writing is the child's tutor (legal guardian), who gets the confirmation and the reminders. Everything above about prices, types and first visits is about the person writing; for their child, use this section.`,
+    `- If it is not clear who the appointment is for, ask. If it is for a child and you do not have them yet, ask the child's first name and surname and their age.`,
+    `- Under ${MINOR_AGE}, for a child who has not been to the clinic yet, offer only: ${list(opts.forNewChild)}. For a child who has been: ${list(opts.forReturningChild)}. Their free times are under these names in the Booking list, or with find_free_times.`,
+    `- ${MINOR_AGE} or over: an adult books their own appointment. Ask them to write to the clinic themselves${opts.sendsItself ? ', or call hand_over_to_colleague if the person writing needs it arranged for them' : ''}.`,
+    opts.canBook ? `- To book it, call book_appointment with child_name and child_age as well: the visit is then in the child's name, with the person writing as their tutor. Moving or cancelling a child's visit is your colleague's: hand those over.` : '',
+    children.length ? `Their children already on file with them as tutor:\n${children.join('\n')}` : '',
+  ].filter(Boolean).join('\n')
+}
+
+const fold = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
+
+/**
+ * The child on file this name means: the first name has to match, and a
+ * surname given has to match too when the record has one. null: none of
+ * theirs, so a new record is made. 'ambiguous': more than one -- two
+ * siblings with one first name and no surname given -- which is neither
+ * booked over the wrong one nor made a third record for.
+ */
+export function matchChild<T extends { firstName: string; lastName: string | null }>(children: T[], name: string): T | 'ambiguous' | null {
+  const [first, ...rest] = fold(name).split(/\s+/)
+  const surname = rest.join(' ')
+  const hits = children.filter((c) => fold(c.firstName).split(/\s+/)[0] === first && (!surname || !c.lastName || fold(c.lastName).startsWith(surname.split(' ')[0]!)))
+  if (hits.length > 1) return 'ambiguous'
+  return hits[0] ?? null
 }
 
 /** What the prompt says about who this is, for booking. */

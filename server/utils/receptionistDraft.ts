@@ -6,10 +6,10 @@ import { bookingTool, cancelTool, waitlistTool, type BookingContext } from '~/se
 import { recentImages, withImages } from '~/server/utils/receptionistImages'
 import { historyLine } from '~/utils/receptionistHistory'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage } from '~/utils/receptionistAutoReply'
-import { buildSystemPrompt, loadBookedVisits, loadOfferedTypes, loadPatientCalendar, loadPatientPractitioners, toConfig, uniqueTypes, type LeadOrigin } from '~/server/utils/receptionist'
+import { buildSystemPrompt, loadBookedVisits, loadOfferedTypes, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, uniqueTypes, type LeadOrigin } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptionistModel'
 import { cameFromAd } from '~/utils/receptionistLeadOrigin'
-import { leadNameIsTheirs, typesForAudience, type ReceptionistAudience } from '~/utils/receptionistTypes'
+import { leadNameIsTheirs, typesForAudience, typesForMinor, type ReceptionistAudience } from '~/utils/receptionistTypes'
 import { internalNotes } from '~/utils/receptionistGuard'
 
 // Writing a receptionist reply for one lead.
@@ -181,11 +181,16 @@ export async function draftLeadReply(
 
   // Read now, not when the receptionist was configured: a type archived or
   // withheld since then is gone from this reply.
-  const { types, adOnly } = typesForAudience(await loadOfferedTypes(supabase, accountId, config), audience)
+  const offered = await loadOfferedTypes(supabase, accountId, config)
+  const { types, adOnly } = typesForAudience(offered, audience)
+  // Or for their child (minorsSection): what a child may have, and the
+  // children already on file with them as tutor, once they are a patient.
+  const minors = { forNewChild: typesForMinor(offered, false), forReturningChild: typesForMinor(offered, true), children: await loadTutorChildren(supabase, accountId, lead.patient_id ?? null) }
   // A lead who has booked their first visit and wants to move it is offered
   // times for that same visit, offer price and all.
   const booked = await loadBookedVisits(supabase, accountId, lead.patient_id)
-  const bookable = uniqueTypes(types, adOnly, booked.types)
+  // The child's first visit too, so its free times are in the list.
+  const bookable = uniqueTypes(types, adOnly, booked.types, minors.forNewChild)
   // And the calendar as it is now, so the times offered are ones that are
   // free rather than ones the model made up.
   // A first visit is with whoever is free; somebody who has been before is
@@ -222,6 +227,7 @@ export async function draftLeadReply(
           booked: { appointments: booked.appointments, types: booked.types },
           practitionerIds,
           person: { kind: 'lead', leadId, patientId: lead.patient_id ?? null },
+          minors,
           onBooked: (summary) => noteInConversation(calendarClient, accountId, { kind: 'lead', leadId }, summary),
         }
       : null
@@ -238,7 +244,7 @@ export async function draftLeadReply(
   const { text: draft, refused, handedOver } = await runReceptionistModel(await createAnthropicClient(apiKey), {
     model: MODEL,
     maxTokens: MAX_TOKENS,
-    system: buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, audience, calendar, leadOrigin, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, draft: { personName: lead.full_name ?? null }, knownDetails: { name: leadNameIsTheirs(lead.channel) && Boolean(lead.full_name?.trim()), email: Boolean(lead.email?.trim()) }, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist) }),
+    system: buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, audience, calendar, leadOrigin, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, draft: { personName: lead.full_name ?? null }, knownDetails: { name: leadNameIsTheirs(lead.channel) && Boolean(lead.full_name?.trim()), email: Boolean(lead.email?.trim()) }, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors }),
     messages: withImages(history, images),
     findFreeTimes,
     handOver: sends,

@@ -79,15 +79,30 @@ Cypress.Commands.add('portalLogin', (email: string, password: string, clinicCode
  * a silent no-op -- the element exists but nothing is listening yet. Rather
  * than a blind wait, this retries the click until `untilSelector` appears,
  * which self-heals regardless of how long hydration actually takes.
+ *
+ * A click that DID land is given up to a second to show its result before it
+ * counts as a no-op. Checking the instant after the click, as this used to,
+ * misread anything that mounts a beat later -- a Lazy* panel whose chunk is
+ * still downloading -- as a dead click, and clicked again. By then the panel
+ * was open over the button, and the second click failed as "covered by
+ * another element". That made "+ New Appointment" in
+ * deleted-visits-are-not-booked flaky on CI: retried on #826, #828-#830, and
+ * failed all three attempts once.
  */
+function appearsWithin(selector: string, polls: number): Cypress.Chainable<boolean> {
+  return cy.get('body', { log: false }).then(($body) => {
+    if ($body.find(selector).length > 0) return cy.wrap(true, { log: false })
+    if (polls <= 0) return cy.wrap(false, { log: false })
+    return cy.wait(100, { log: false }).then(() => appearsWithin(selector, polls - 1))
+  }) as unknown as Cypress.Chainable<boolean>
+}
+
 Cypress.Commands.add('clickUntil', (clickSelector: string, untilSelector: string, attempt = 0) => {
   cy.get(clickSelector).click()
-  cy.get('body').then(($body) => {
-    if ($body.find(untilSelector).length === 0) {
-      if (attempt >= 10) throw new Error(`clickUntil: "${untilSelector}" never appeared after clicking "${clickSelector}"`)
-      cy.wait(200)
-      cy.clickUntil(clickSelector, untilSelector, attempt + 1)
-    }
+  appearsWithin(untilSelector, 10).then((appeared) => {
+    if (appeared) return
+    if (attempt >= 10) throw new Error(`clickUntil: "${untilSelector}" never appeared after clicking "${clickSelector}"`)
+    cy.clickUntil(clickSelector, untilSelector, attempt + 1)
   })
 })
 

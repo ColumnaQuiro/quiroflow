@@ -1163,6 +1163,7 @@ export type Database = {
           first_seen_at: string
           last_seen_at: string
           platform: string
+          user_id: string | null
         }
         Insert: {
           account_id: string
@@ -1170,6 +1171,7 @@ export type Database = {
           first_seen_at?: string
           last_seen_at?: string
           platform: string
+          user_id?: string | null
         }
         Update: {
           account_id?: string
@@ -1177,6 +1179,7 @@ export type Database = {
           first_seen_at?: string
           last_seen_at?: string
           platform?: string
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -1350,6 +1353,7 @@ export type Database = {
           created_at: string
           default_price_cents: number
           duration_minutes: number
+          for_minors: boolean
           id: string
           name: string
           online_bookable_by: string
@@ -1369,6 +1373,7 @@ export type Database = {
           created_at?: string
           default_price_cents?: number
           duration_minutes?: number
+          for_minors?: boolean
           id?: string
           name: string
           online_bookable_by?: string
@@ -1388,6 +1393,7 @@ export type Database = {
           created_at?: string
           default_price_cents?: number
           duration_minutes?: number
+          for_minors?: boolean
           id?: string
           name?: string
           online_bookable_by?: string
@@ -1430,6 +1436,7 @@ export type Database = {
           patient_id: string
           practitioner_id: string | null
           practitioner_name: string | null
+          reminder_claimed_at: string | null
           reminder_sent_at: string | null
           rescheduled: boolean
           room_id: string | null
@@ -1459,6 +1466,7 @@ export type Database = {
           patient_id: string
           practitioner_id?: string | null
           practitioner_name?: string | null
+          reminder_claimed_at?: string | null
           reminder_sent_at?: string | null
           rescheduled?: boolean
           room_id?: string | null
@@ -1488,6 +1496,7 @@ export type Database = {
           patient_id?: string
           practitioner_id?: string | null
           practitioner_name?: string | null
+          reminder_claimed_at?: string | null
           reminder_sent_at?: string | null
           rescheduled?: boolean
           room_id?: string | null
@@ -5179,6 +5188,7 @@ export type Database = {
           account_id: string
           address: string | null
           anonymized_at: string | null
+          appointment_reminder_hours_before: number | null
           balance_cents: number
           chief_complaint: string | null
           city: string | null
@@ -5235,6 +5245,7 @@ export type Database = {
           account_id: string
           address?: string | null
           anonymized_at?: string | null
+          appointment_reminder_hours_before?: number | null
           balance_cents?: number
           chief_complaint?: string | null
           city?: string | null
@@ -5291,6 +5302,7 @@ export type Database = {
           account_id?: string
           address?: string | null
           anonymized_at?: string | null
+          appointment_reminder_hours_before?: number | null
           balance_cents?: number
           chief_complaint?: string | null
           city?: string | null
@@ -7058,6 +7070,69 @@ export type Database = {
           },
         ]
       }
+      team_message_reads: {
+        Row: {
+          account_id: string
+          last_read_at: string
+          team_member_id: string
+          thread_key: string
+        }
+        Insert: {
+          account_id: string
+          last_read_at?: string
+          team_member_id: string
+          thread_key: string
+        }
+        Update: {
+          account_id?: string
+          last_read_at?: string
+          team_member_id?: string
+          thread_key?: string
+        }
+        Relationships: []
+      }
+      team_messages: {
+        Row: {
+          account_id: string
+          acknowledged_at: string | null
+          acknowledged_by: string | null
+          body: string
+          clinic_id: string | null
+          created_at: string
+          id: string
+          kind: string
+          recipient_id: string | null
+          room_id: string | null
+          sender_id: string
+        }
+        Insert: {
+          account_id: string
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
+          body: string
+          clinic_id?: string | null
+          created_at?: string
+          id?: string
+          kind?: string
+          recipient_id?: string | null
+          room_id?: string | null
+          sender_id: string
+        }
+        Update: {
+          account_id?: string
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
+          body?: string
+          clinic_id?: string | null
+          created_at?: string
+          id?: string
+          kind?: string
+          recipient_id?: string | null
+          room_id?: string | null
+          sender_id?: string
+        }
+        Relationships: []
+      }
       team_members: {
         Row: {
           account_id: string
@@ -8288,6 +8363,10 @@ export type Database = {
       }
     }
     Functions: {
+      acknowledge_team_alert: {
+        Args: { p_message_id: string }
+        Returns: undefined
+      }
       anonymize_patient: {
         Args: { p_patient_id: string }
         Returns: Json

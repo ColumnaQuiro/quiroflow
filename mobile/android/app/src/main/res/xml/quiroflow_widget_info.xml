@@ -1,9 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Redrawn when the app writes a new snapshot (HomeWidgetPlugin), and every
-     half hour so "hace X min" and the team's list move on. -->
+     half hour so "hace X min" and the team's list move on. Resizable down to
+     2x2, where an owner gets the small summary (QuiroFlowWidgetProvider). -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:minWidth="180dp"
     android:minHeight="110dp"
+    android:minResizeWidth="110dp"
+    android:minResizeHeight="110dp"
     android:targetCellWidth="3"
     android:targetCellHeight="2"
     android:resizeMode="horizontal|vertical"

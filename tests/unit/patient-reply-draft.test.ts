@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildPatientReplyPrompt, patientFactsSection, type PatientPromptConfig, type PatientReplyFacts } from '../../utils/patientReplyPrompt'
+import { buildPatientReplyPrompt, openBono, patientFactsSection, returningPatientSection, type PatientPromptConfig, type PatientReplyFacts } from '../../utils/patientReplyPrompt'
 import { receptionistPromptText } from '../../utils/receptionistPrompt'
 
 // A reply to a patient in the Inbox, drafted by the receptionist
@@ -47,5 +47,39 @@ describe('buildPatientReplyPrompt', () => {
     expect(prompt).toContain('NEVER state that a visit is booked, moved, cancelled or confirmed')
     expect(prompt).toContain('Never give clinical or medical advice')
     expect(prompt).toContain('# This reply is a draft')
+  })
+})
+
+// From the receptionist's daily review, 19 Oct 2026: a patient last seen in
+// 2024 was quoted the first-visit price, and one with six bono sessions left
+// was offered a reactivation visit.
+describe('returning patients', () => {
+  it('keeps the first visit and its price from someone who has been before', () => {
+    const s = returningPatientSection({ ...facts, bono: null })
+    expect(s).toContain('Never offer them a first visit, never quote the first-visit price')
+    expect(s).not.toContain('left on their package')
+  })
+
+  it('offers a bono holder their usual session, not a reactivation', () => {
+    const s = returningPatientSection({ ...facts, bono: { name: 'Bono 10', sessionsLeft: 6 } })
+    expect(s).toContain('6 sessions left on their package')
+    expect(s).toContain('not a reactivation or report visit')
+    expect(patientFactsSection({ ...facts, bono: { name: 'Bono 10', sessionsLeft: 6 } }, 'Europe/Madrid')).toContain('- Package "Bono 10": 6 sessions left to use.')
+  })
+
+  it('says nothing for a record with no visit yet, whose first visit is still theirs', () => {
+    expect(returningPatientSection({ ...facts, lastVisitAt: null, bono: null })).toBe('')
+  })
+
+  it('reaches the prompt', () => {
+    const config: PatientPromptConfig = { personaName: 'Alba', toneLine: 'Courteous and brief.', languages: ['es'], knowledge: [], escalationRules: [], neverSays: '', slotsPerReply: 2, bookingWindowDays: 14 }
+    const prompt = receptionistPromptText(buildPatientReplyPrompt(config, { facts, offeredTypes: [], calendar: { now: new Date('2026-10-11T10:00:00Z'), timeZone: 'Europe/Madrid', availability: null } }))
+    expect(prompt).toContain('# They have been to the clinic before')
+  })
+
+  it('picks the open package with sessions left', () => {
+    expect(openBono([{ package_name: 'Bono 5', sessions_total: 5, sessions_used: 5 }, { package_name: 'Bono 10', sessions_total: 10, sessions_used: 4 }])).toEqual({ name: 'Bono 10', sessionsLeft: 6 })
+    expect(openBono([{ package_name: 'Bono 5', sessions_total: 5, sessions_used: 5 }])).toBeNull()
+    expect(openBono(null)).toBeNull()
   })
 })

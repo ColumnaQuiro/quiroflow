@@ -1160,6 +1160,7 @@ export type Database = {
           first_seen_at: string
           last_seen_at: string
           platform: string
+          user_id: string | null
         }
         Insert: {
           account_id: string
@@ -1167,6 +1168,7 @@ export type Database = {
           first_seen_at?: string
           last_seen_at?: string
           platform: string
+          user_id?: string | null
         }
         Update: {
           account_id?: string
@@ -1174,6 +1176,7 @@ export type Database = {
           first_seen_at?: string
           last_seen_at?: string
           platform?: string
+          user_id?: string | null
         }
         Relationships: [
           {

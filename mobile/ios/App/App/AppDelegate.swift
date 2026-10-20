@@ -11,17 +11,31 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         FirebaseApp.configure()
         #if DEBUG
-        // Debug builds only: `-WidgetDemo staff|patient` fills the home-screen
-        // widget with an invented snapshot, to look at it in the simulator
-        // without signing in. Compiled out of every App Store build.
+        // Debug builds only: `-WidgetDemo clinic|staff|desk|patient` fills the
+        // home-screen widget with an invented snapshot (Clínica Demo), to look
+        // at it in the simulator without signing in. Labels are left out, so
+        // the widget's Spanish fallbacks show. Compiled out of every App Store build.
         if let i = CommandLine.arguments.firstIndex(of: "-WidgetDemo") {
             let kind = i + 1 < CommandLine.arguments.count ? CommandLine.arguments[i + 1] : "staff"
             let now = Date()
             let iso = ISO8601DateFormatter()
+            iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let day = DateFormatter()
+            day.timeZone = TimeZone(identifier: "Europe/Madrid")
+            day.dateFormat = "yyyy-MM-dd"
             let at = { (m: Double) in iso.string(from: now.addingTimeInterval(m * 60)) }
-            let json = kind == "patient"
-                ? #"{"kind":"patient","updatedAt":"\#(iso.string(from: now))","clinic":"Clínica Demo","next":{"at":"\#(at(2880))","label":"jue, 23 oct · 10:30","what":"Ajuste","who":"Dra. Marta Ruiz"},"bono":{"name":"Bono 10","left":6,"total":10}}"#
-                : #"{"kind":"staff","updatedAt":"\#(iso.string(from: now))","who":"Dra. Marta Ruiz","remaining":4,"done":5,"arrived":1,"next":[{"at":"\#(at(-5))","time":"12:00","name":"Andrés Vidal","what":"Ajuste","arrived":true},{"at":"\#(at(25))","time":"12:30","name":"Carmen Ortiz","what":"Ajuste","arrived":false},{"at":"\#(at(55))","time":"13:00","name":"Lucía Navarro","what":"Revisión","arrived":false},{"at":"\#(at(85))","time":"13:30","name":"Javi Moreno","what":"Primera visita","arrived":false}]}"#
+            let common = #""updatedAt":"\#(iso.string(from: now))","updatedTime":"10:00","date":"\#(day.string(from: now))","dateLabel":"20 oct","timeZone":"Europe/Madrid","lang":"es""#
+            let visits = { (desk: Bool) in #"[{"at":"\#(at(-5))","time":"12:00","name":"Andrés Vidal","what":"Ajuste","arrived":true,"with":\#(desk ? "\"Sergio V.\"" : "null"),"link":"quiroflow://widget/my-day"},{"at":"\#(at(25))","time":"12:30","name":"Carmen Ortiz","what":"Ajuste","arrived":false,"with":\#(desk ? "\"Lucía F.\"" : "null"),"link":"quiroflow://widget/my-day"},{"at":"\#(at(55))","time":"13:00","name":"Lucía Navarro","what":"Revisión","arrived":false,"with":null,"link":"quiroflow://widget/my-day"}]"# }
+            let staff = { (desk: Bool) in #""scope":"\#(desk ? "clinic" : "own")","who":"Dra. Marta Ruiz","title":"\#(desk ? "Hoy en la clínica" : "Hoy · Dra. Marta Ruiz")","remaining":4,"done":5,"arrived":1,"link":"quiroflow://widget/my-day","next":\#(visits(desk))"# }
+            let json: String
+            switch kind {
+            case "patient":
+                json = #"{"kind":"patient","updatedAt":"\#(iso.string(from: now))","clinic":"Clínica Demo","next":{"at":"\#(at(2880))","label":"jue, 23 oct · 10:30","what":"Ajuste","who":"Dra. Marta Ruiz"},"bono":{"name":"Bono 10","left":6,"total":10}}"#
+            case "clinic":
+                json = #"{"kind":"clinic",\#(common),"clinic":"Clínica Demo","title":"Clínica Demo · octubre","link":"quiroflow://widget/numbers?period=month","money":{"label":"Cobrado","smallLabel":"Cobrado · octubre","value":"18.640 €","range":"1–20 oct","link":"quiroflow://widget/numbers?period=month"},"patients":{"label":"Pacientes hoy","done":14,"total":22,"note":"8 por atender · 1 no vino","link":"quiroflow://widget/calendar?scope=clinic"},"bonos":{"label":"Bonos","smallLabel":"Bonos · oct","count":9,"value":"2430 € en ventas","link":"quiroflow://widget/numbers?period=month"},"list":{\#(staff(false))}}"#
+            default:
+                json = #"{"kind":"staff",\#(common),\#(staff(kind == "desk"))}"#
+            }
             SharedSnapshot.write(Data(json.utf8))
             WidgetCenter.shared.reloadAllTimelines()
         }

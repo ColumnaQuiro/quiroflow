@@ -15,6 +15,8 @@ export function useRecordMoney(opts: { patientId: () => string; accountId: () =>
   const supabase = useSupabaseClient()
   const { issueFactura } = useFacturas()
   const t = useT()
+  // An owner's widget shows the month's takings and bonos sold.
+  const homeWidget = useStaffHomeWidget()
 
   const refused = (error: { message?: string } | null) => t('The payment could not be recorded', 'No se pudo registrar el pago') + (error?.message ? `: ${error.message}` : '.')
 
@@ -35,6 +37,7 @@ export function useRecordMoney(opts: { patientId: () => string; accountId: () =>
       const patient = p as { invoice_email_enabled: boolean; email: string | null } | null
       if (patient?.invoice_email_enabled && patient.email) useStaffFetch(`/api/invoices/${invoiceId}/send`, { method: 'POST' }).catch(() => {})
     }
+    homeWidget.refresh({ force: true })
     return null
   }
 
@@ -67,6 +70,7 @@ export function useRecordMoney(opts: { patientId: () => string; accountId: () =>
       .select('id')
       .single()
     if (purchaseError || !purchase) return { error: purchaseError?.message ?? t('Could not sell the bono.', 'No se ha podido vender el bono.'), sold: false }
+    homeWidget.refresh({ force: true })
     if (amountCents <= 0) return { error: null, sold: true }
     const purchaseId = (purchase as { id: string }).id
     const { data: payment, error: paymentError } = await supabase

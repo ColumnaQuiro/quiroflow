@@ -7,14 +7,16 @@ import { postureHeadline, POSTURE_VIEWS, VIEW_LABELS, type PostureView, type Sto
 // has moved over time, and whether the patient may see each one in their
 // app. A new one is taken on /patients/posture/<id>. The numbers are part of
 // the "Informe de revisión" PDF (data-pdf-*), the photos are not.
-// `can`: the staff app passes its own (usePractitionerContext); it does not
-// load the web's account store, where usePermission reads from.
+// `can`: the staff app passes its own (usePractitionerContext). It has no
+// web account store: usePermission() calls useAccountStore(), which the app
+// does not even import, so calling it there threw in setup and the whole
+// section silently never rendered on any patient. Only the web calls it.
 const props = defineProps<{ patientId: string; can?: (permission: string) => boolean }>()
 
 const t = useT()
 const supabase = useSupabaseClient()
-const webPermission = usePermission()
-const can = (permission: string) => (props.can ? props.can(permission) : webPermission.can(permission as never))
+const webPermission = props.can ? null : usePermission()
+const can = (permission: string) => (props.can ? props.can(permission) : webPermission!.can(permission as never))
 const { showToast } = useToast()
 
 interface Assessment {

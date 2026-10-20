@@ -211,6 +211,25 @@ describe('Block ladder', () => {
     expect(tight.note).to.equal(false)
   })
 
+  it('draws the re-exam marker before the forms icon, and the forms before the note', () => {
+    // Both on one block: the marker (rank 2½) always, the forms where line one still has room.
+    const both = blockLadder({ ...base, marker: true, forms: true, nameText: 'Laura Gómez' })
+    expect(both.marker && both.forms).to.equal(true)
+    const line = { ...base, owes: false, marker: true, forms: true, nameText: 'Laura Gómez', pillText: 'Llegó' }
+    // Room for one icon beside name and label: the marker outranks the forms.
+    const tight = blockLadder({ ...line, width: 200 })
+    expect(tight.marker, 'the marker is never dropped').to.equal(true)
+    expect(tight.forms).to.equal(false)
+    const roomy = blockLadder({ ...line, width: 240 })
+    expect(roomy.marker && roomy.forms && roomy.note, 'wider: all three').to.equal(true)
+    // Week: the marker takes the room a confirmed visit left the forms icon.
+    const week = { ...base, density: 'week' as const, width: 82, height: 59, stage: 'confirmed' as const, forms: true, nameText: 'L. Gómez' }
+    expect(blockLadder(week).forms).to.equal(true)
+    const weekBoth = blockLadder({ ...week, marker: true })
+    expect(weekBoth.marker).to.equal(true)
+    expect(weekBoth.forms, 'the name keeps its room').to.equal(false)
+  })
+
   it('shows pending forms in week view only where the short name keeps its room', () => {
     const week = { ...base, density: 'week' as const, height: 59, forms: true, nameText: 'L. Gómez' }
     expect(blockLadder({ ...week, width: 82, stage: 'confirmed' }).forms, 'no stage icon: room').to.equal(true)

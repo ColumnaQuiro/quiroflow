@@ -6,11 +6,12 @@ import type { AppointmentTypeOverride } from '~/utils/appointmentOverrides'
 import { appointmentStage, matchesFilter, needsNextBookingFlag, pendingFormsFlag, STAGE_FILTERS, stageCounts, type AppointmentStage, type StageFilter } from '~/utils/appointmentStage'
 import { shortPatientName } from '~/utils/appointmentBlock'
 import { bonoForVisit, type VisitPayment } from '~/utils/visitPayment'
+import { visitMarkerLabel } from '~/utils/carePlanVisitMarkers'
 import { effectivePriceCents } from '~/utils/appointmentOverrides'
 import { orderTypes } from '~/utils/appointmentTypes'
 import type { MoveClash } from '~/utils/moveClash'
 import { FILTER_DOT_CLASS, STAGE_TONE, STAGE_TONE_CLASS } from '~/composables/useAppointmentStage'
-import type { BlockView } from '~/components/calendar/AppointmentBlock.vue'
+import type { BlockView, VisitMarkerView } from '~/components/calendar/AppointmentBlock.vue'
 import type { FlowRow } from '~/components/calendar/FlowTracker.vue'
 import { isRouteAllowed } from '~/utils/routePermissions'
 
@@ -530,6 +531,28 @@ async function loadAppointments(silent = false) {
   // three sequential rounds fetchVisitPayments needs.
   loadBlockDetails(token, appointmentIds, patientIds, rangeStart, rangeEnd).catch((e) => console.error('calendar: block details failed', e))
   loadMovedAwayMarkers(token, rangeStart, rangeEnd).catch((e) => console.error('calendar: moved-away markers failed', e))
+  loadVisitMarkers(token, rangeStart, rangeEnd).catch((e) => console.error('calendar: re-exam markers failed', e))
+}
+
+// Which visits in range are a care plan's re-exam (utils/carePlanVisitMarkers.ts),
+// and whether each is booked as the type the plan asks for. Numbered in the
+// database across every visit the patient has, not just this range's.
+const visitMarkerById = ref<Record<string, VisitMarkerView>>({})
+async function loadVisitMarkers(token: number, rangeStart: Date, rangeEnd: Date) {
+  const { data, error } = await supabase.rpc('care_plan_marked_visits', { p_from: rangeStart.toISOString(), p_to: rangeEnd.toISOString() })
+  if (error) throw error
+  if (token !== loadToken) return
+  const map: Record<string, VisitMarkerView> = {}
+  for (const m of data ?? []) {
+    map[m.appointment_id] = {
+      visit: m.visit_number,
+      label: visitMarkerLabel(m, t),
+      mismatch: m.mismatch,
+      expectedTypeId: m.expected_appointment_type_id,
+      expectedTypeName: m.expected_type_name,
+    }
+  }
+  visitMarkerById.value = map
 }
 
 // Where a visit used to be. Moving an appointment moves the row itself --
@@ -1180,6 +1203,7 @@ function buildBlockView(appt: AppointmentRow): BlockView {
     pendingForms: pendingFormsFlag(stage, appt.starts_at, appt.patients?.pending_forms, now.value),
     movedCount: movedCountById.value[appt.id] ?? 0,
     noNext: needsNextBookingFlag(stage, appt.starts_at, hasFutureAppointment(appt), now.value),
+    marker: visitMarkerById.value[appt.id] ?? null,
   }
 }
 

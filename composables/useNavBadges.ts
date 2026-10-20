@@ -1,4 +1,4 @@
-export type NavBadge = 'myday' | 'recalls' | 'automations' | 'inbox'
+export type NavBadge = 'myday' | 'recalls' | 'automations' | 'inbox' | 'team'
 
 // The sidebar's counters are asked for in one request (get_nav_badges) and
 // kept here, so anything else that shows one of them -- the help widget's

@@ -59,6 +59,9 @@ const recallsCount = ref(0)
 const myDayCount = ref(0)
 const automationsActive = ref(false)
 const inboxUnreadCount = ref(0)
+// Team messages keep their own count, live from useTeamChat's subscription
+// (started by the layout), not from get_nav_badges.
+const { unreadTotal: teamUnread } = useTeamChat()
 
 // The recalls badge counts 3+ weeks since the last visit, in the clinic
 // picked above -- the same default the Recalls page opens with, so the badge
@@ -152,6 +155,9 @@ const navGroups = computed<{ id: string; label: string; tier?: string; items: Na
       { label: t('Calendar', 'Calendario'), to: '/calendar', perm: () => scope('calendar_scope') !== 'none', icon: 'M2.5 3.5h11v10h-11zM2.5 6.6h11M5.6 2v2M10.4 2v2' },
       // Registro de jornada: everyone clocks, so everyone has it.
       { label: t('Working time', 'Registro de jornada'), to: '/jornada', perm: () => true, icon: 'M8 1.8a6.2 6.2 0 100 12.4A6.2 6.2 0 008 1.8zM8 4.6V8l2.4 1.5' },
+      // Messages between colleagues. Everyone, like Working time: the people
+      // who most need it have no Inbox (pages/team-chat.vue).
+      { label: t('Team', 'Equipo'), to: '/team-chat', perm: () => true, icon: 'M5.5 6.5a2 2 0 100-4 2 2 0 000 4zM11 7a1.7 1.7 0 100-3.4A1.7 1.7 0 0011 7zM1.8 13c0-2 1.6-3.3 3.7-3.3S9.2 11 9.2 13M9.6 9.9c.4-.2.9-.3 1.4-.3 1.8 0 3.2 1.1 3.2 2.9', badge: 'team' },
     ],
   },
   {
@@ -228,6 +234,7 @@ function badgeText(item: NavItem): string | null {
   if (item.badge === 'myday' && myDayCount.value > 0) return t(`${myDayCount.value} today`, `${myDayCount.value} hoy`)
   if (item.badge === 'recalls' && recallsCount.value > 0) return t(`${recallsCount.value} to contact`, `${recallsCount.value} por contactar`)
   if (item.badge === 'inbox' && inboxUnreadCount.value > 0) return t(`${inboxUnreadCount.value} unread`, `${inboxUnreadCount.value} sin leer`)
+  if (item.badge === 'team' && teamUnread.value > 0) return t(`${teamUnread.value} unread`, `${teamUnread.value} sin leer`)
   if (item.badge === 'automations' && automationsActive.value) return t('running', 'activas')
   return null
 }
@@ -385,6 +392,7 @@ watch(() => route.fullPath, () => emit('close'))
               <span v-if="item.badge === 'recalls' && recallsCount > 0" class="rounded-pill bg-chip-bg px-1.5 py-px text-[10.5px] font-semibold text-ink-700" data-cy="nav-badge-recalls">{{ recallsCount }}</span>
               <span v-if="item.badge === 'automations' && automationsActive" class="h-[5px] w-[5px] rounded-full bg-success-accent" data-cy="nav-badge-automations" />
               <span v-if="item.badge === 'inbox' && inboxUnreadCount > 0" class="rounded-pill bg-brand px-1.5 py-px text-[10.5px] font-semibold text-surface" data-cy="nav-badge-inbox">{{ inboxUnreadCount }}</span>
+              <span v-if="item.badge === 'team' && teamUnread > 0" class="rounded-pill bg-brand px-1.5 py-px text-[10.5px] font-semibold text-surface" data-cy="nav-badge-team">{{ teamUnread }}</span>
             </template>
             <span v-else-if="badgeText(item)" class="absolute right-1 top-1 h-[6px] w-[6px] rounded-full bg-brand" aria-hidden="true" />
           </NuxtLink>

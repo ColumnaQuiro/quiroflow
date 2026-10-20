@@ -68,6 +68,27 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ close: []; changed: []; reschedule: [] }>()
 
+// Justificante de asistencia (server/api/appointments/[id]/attendance-certificate).
+// Opened rather than downloaded where the browser allows it, because the
+// next thing anyone does with it is print it for the patient.
+const certificateBusy = ref(false)
+async function downloadCertificate() {
+  certificateBusy.value = true
+  try {
+    const blob = await useStaffFetch<Blob>(`/api/appointments/${props.appointment.id}/attendance-certificate`, { responseType: 'blob' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `justificante-${props.appointment.starts_at.slice(0, 10)}.pdf`
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 10_000)
+  } catch (e: any) {
+    useToast().showToast(e?.data?.statusMessage ?? t('Could not prepare the certificate.', 'No se pudo preparar el justificante.'), 'error')
+  } finally {
+    certificateBusy.value = false
+  }
+}
+
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const { fire } = useAutomations()
@@ -800,6 +821,17 @@ async function useExpectedType() {
             </span>
           </div>
           <p v-else class="text-[13px] text-ink-muted">{{ t('None yet.', 'Ninguno todavía.') }}</p>
+        </section>
+
+        <!-- The paper a patient asks for at the desk to show work or school
+             they were here. Only once they have arrived: the server refuses
+             a visit that did not take place. -->
+        <section v-if="hasArrived(stage)">
+          <h3 class="mb-2.5 text-[11px] font-bold uppercase tracking-[.06em] text-ink-muted">{{ t('Documents', 'Documentos') }}</h3>
+          <button type="button" data-cy="attendance-certificate" :disabled="certificateBusy" class="flex h-9 touch:h-11 items-center gap-2 rounded-ctl border border-line-control px-3.5 text-[13px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:opacity-60" @click="downloadCertificate">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6M9 14l2 2 4-4" /></svg>
+            {{ certificateBusy ? t('Preparing…', 'Preparando…') : t('Certificate of attendance', 'Justificante de asistencia') }}
+          </button>
         </section>
 
         <button v-if="canDelete" type="button" data-cy="delete-appointment" class="h-9 touch:h-11 self-start text-[12.5px] font-medium text-ink-muted underline-offset-2 hover:underline" @click="deleteOpen = true">{{ t('Delete appointment', 'Eliminar cita') }}</button>

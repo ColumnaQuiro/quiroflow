@@ -3,7 +3,7 @@ import { formatEur, formatShortDate, formatTime, formatWeekdayDate } from '~/uti
 import type { BusinessHours } from '~/utils/businessHours'
 import { dayKeyFor, hasBusinessHoursConfigured, practitionerWindowsForDay, windowsForDay, withinWindows } from '~/utils/businessHours'
 import { effectiveDuration, type AppointmentTypeOverride } from '~/utils/appointmentOverrides'
-import { hasArrived, isUnconfirmedStage, nextStep, STAGE_TRACK, trackIndex } from '~/utils/appointmentStage'
+import { hasArrived, isUnconfirmedStage, nextStep, pendingFormsLabel, STAGE_TRACK, trackIndex } from '~/utils/appointmentStage'
 import { matchingMove, parseActivitySummary, type ActivityChange } from '~/utils/appointmentActivity'
 import type { VisitPayment } from '~/utils/visitPayment'
 import type { MoveClash } from '~/utils/moveClash'
@@ -38,7 +38,7 @@ export interface PanelAppointment extends StageFacts {
   note: string | null
   same_day_info_sent_at: string | null
   created_at: string
-  patients: { first_name: string; last_name: string | null; sticky_note: string | null } | null
+  patients: { first_name: string; last_name: string | null; sticky_note: string | null; pending_forms?: number } | null
   appointment_types: { name: string; color: string } | null
   team_members: { full_name: string } | null
 }
@@ -753,6 +753,18 @@ async function useExpectedType() {
             <button v-if="stage === 'checkout'" type="button" data-cy="mark-done" :disabled="busy" class="h-9 touch:h-11 rounded-ctl border border-line-control px-3.5 text-[13px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="markDone">{{ t('Done, nothing to charge', 'Hecha, sin cobro') }}</button>
             <button v-if="undoable" type="button" data-cy="undo-stage" :disabled="busy" class="h-9 touch:h-11 rounded-ctl px-3 text-[13px] font-semibold text-ink-muted hover:bg-surface-subtle" @click="undo">{{ undoable.label }}</button>
             <button v-if="canUndoVisit" type="button" data-cy="undo-visit" :disabled="busy" class="h-9 touch:h-11 rounded-ctl border border-line-control px-3.5 text-[13px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="undoVisitOpen = true">{{ t('Undo visit', 'Deshacer visita') }}</button>
+          </div>
+
+          <!-- Forms sent and not filled in: a patient like that often does not
+               come, so it sits with the visit's standing, not in a tab. -->
+          <div v-if="view.pendingForms > 0" class="mt-3 flex items-center gap-3 rounded-ctl border border-warning-border bg-warning-bg px-3.5 py-2.5" data-cy="appt-panel-forms">
+            <div class="flex min-w-0 flex-1 flex-col text-[12.5px]">
+              <strong class="text-[13.5px] text-warning-text">{{ pendingFormsLabel(view.pendingForms, t) }}</strong>
+              <span class="text-ink-500">{{ stage === 'arrived' ? t('They can fill it in at reception before going in.', 'Puede rellenarlo en recepción antes de pasar.') : t('Sent and still awaiting the patient. Worth a call to check they are coming.', 'Enviado y aún pendiente del paciente. Conviene llamar para confirmar que viene.') }}</span>
+            </div>
+            <NuxtLink :to="`/patients/${appointment.patient_id}?tab=attachments`" data-cy="appt-panel-forms-open" class="flex h-9 touch:h-11 shrink-0 items-center rounded-ctl border border-line-control bg-surface px-3 text-[13px] font-semibold text-ink-700 hover:bg-surface-subtle">
+              {{ t('See forms', 'Ver formularios') }}
+            </NuxtLink>
           </div>
         </section>
 

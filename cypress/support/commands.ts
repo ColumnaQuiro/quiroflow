@@ -80,14 +80,31 @@ Cypress.Commands.add('portalLogin', (email: string, password: string, clinicCode
  * than a blind wait, this retries the click until `untilSelector` appears,
  * which self-heals regardless of how long hydration actually takes.
  */
+//
+// After each click it gives the target up to UNTIL_GRACE_MS to appear before
+// clicking again, and it looks again right before every click. It used to
+// look once, the instant the click returned: a sheet that took a moment to
+// render (the calendar's New Appointment sheet, once it began loading care-
+// plan markers) was not there yet, so it clicked again -- onto the sheet
+// that had opened in the meantime -- and Cypress failed the click as
+// "covered by another element". Only on CI's slower runners, so it read as a
+// failure in whichever PR happened to be running.
+const UNTIL_GRACE_MS = 1500
 Cypress.Commands.add('clickUntil', (clickSelector: string, untilSelector: string, attempt = 0) => {
-  cy.get(clickSelector).click()
   cy.get('body').then(($body) => {
-    if ($body.find(untilSelector).length === 0) {
-      if (attempt >= 10) throw new Error(`clickUntil: "${untilSelector}" never appeared after clicking "${clickSelector}"`)
-      cy.wait(200)
-      cy.clickUntil(clickSelector, untilSelector, attempt + 1)
-    }
+    if ($body.find(untilSelector).length > 0) return
+    if (attempt >= 10) throw new Error(`clickUntil: "${untilSelector}" never appeared after clicking "${clickSelector}"`)
+    cy.get(clickSelector)
+      .click()
+      .then(() => {
+        // Passes as soon as the target is there, or once the grace is up:
+        // a retrying assertion, so it is Cypress's own polling.
+        const started = Date.now()
+        cy.get('body', { log: false, timeout: UNTIL_GRACE_MS + 2000 }).should(($b) => {
+          if ($b.find(untilSelector).length === 0 && Date.now() - started < UNTIL_GRACE_MS) throw new Error(`waiting for ${untilSelector}`)
+        })
+      })
+    cy.clickUntil(clickSelector, untilSelector, attempt + 1)
   })
 })
 

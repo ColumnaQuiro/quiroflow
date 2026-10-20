@@ -234,9 +234,11 @@ watch(() => store.currentClinicId, () => goToPage(1))
 function csvEscape(v: string) {
   return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
 }
-// Balance and phone are not columns on patients, but they filter as if they
-// were: live_balance_cents and phone_numbers_text are computed fields
-// (20260923150000). Both used to be id lists fetched first and sent back as
+// Balance is not a column on patients, but it filters as if it were:
+// live_balance_cents is a computed field (20260923150000), and the phone search
+// reads patients.phone_search, kept in step by a trigger on the numbers
+// (20261020063000) because a computed field in the search's or=(...) cannot use
+// an index and made the whole query scan. Both used to be id lists fetched first and sent back as
 // `id=in.(...)`, which stops fitting in a URL at ~215 ids -- and the
 // gateway's 414 reaches supabase-js as `data: null`, so the list just came
 // up empty. Production had 221 patients in credit when that was found.
@@ -254,7 +256,7 @@ function searchTokens() {
   return search.value.trim().split(/\s+/).map(sanitizeSearchToken).filter(Boolean)
 }
 function searchClause(token: string) {
-  return `search_name.ilike.%${normalizeSearchTerm(token)}%,email.ilike.%${token}%,national_id.ilike.%${token}%,phone_numbers_text.ilike.%${token}%`
+  return `search_name.ilike.%${normalizeSearchTerm(token)}%,email.ilike.%${token}%,national_id.ilike.%${token}%,phone_search.ilike.%${token}%`
 }
 
 async function fetchBalances(ids: string[]): Promise<Record<string, number>> {

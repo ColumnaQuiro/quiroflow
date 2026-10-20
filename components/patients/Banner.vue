@@ -34,7 +34,7 @@ const props = defineProps<{
   tutor: { id: string; first_name: string; last_name: string | null } | null
 }>()
 
-defineEmits<{ message: []; book: []; charge: []; archive: []; merge: []; remove: []; exportData: []; photoUpdated: [] }>()
+defineEmits<{ message: []; sendApp: []; book: []; charge: []; archive: []; merge: []; remove: []; exportData: []; photoUpdated: [] }>()
 
 const t = useT()
 
@@ -205,6 +205,17 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
             @click="closeMenu(false); $emit('charge')"
           >
             {{ t('Take payment', 'Cobrar') }}
+          </button>
+          <!-- The app's store links and the clinic code, as the WhatsApp
+               template descarga_app (utils/appLinks.ts) in their language. -->
+          <button
+            v-if="canContact && phone"
+            type="button"
+            class="block w-full px-3 py-3 text-left text-[13px] text-ink-700 outline-none hover:bg-surface-subtle focus-visible:bg-surface-subtle lg:py-2"
+            data-cy="patient-send-app"
+            @click="closeMenu(false); $emit('sendApp')"
+          >
+            {{ t('Send the app on WhatsApp', 'Enviar la app por WhatsApp') }}
           </button>
           <button
             v-if="canEdit"

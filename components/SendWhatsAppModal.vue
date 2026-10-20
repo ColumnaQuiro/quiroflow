@@ -23,6 +23,10 @@ const props = withDefaults(
     defaultTemplateName?: string
     autofill?: Record<string, string>
     allowTemplateOverride?: boolean
+    /** Replaces the dialog's title, for a send with one purpose ("Send the app"). */
+    title?: string
+    /** Said instead of "set a default in Settings" when a fixed template does not exist. */
+    missingTemplateMessage?: string
   }>(),
   { allowTemplateOverride: true },
 )
@@ -147,12 +151,12 @@ async function send() {
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/40 p-4" @click.self="emit('close')">
     <div class="max-h-full w-full overflow-y-auto max-w-md rounded-card border border-line bg-surface p-5 shadow-popover">
-      <h3 class="text-[14px] font-semibold text-ink-900">{{ t('Send WhatsApp message', 'Enviar mensaje de WhatsApp') }}</h3>
+      <h3 class="text-[14px] font-semibold text-ink-900">{{ title ?? t('Send WhatsApp message', 'Enviar mensaje de WhatsApp') }}</h3>
 
       <div v-if="loadingTemplates" class="mt-3 text-[13px] text-ink-faint">{{ t('Loading templates…', 'Cargando plantillas…') }}</div>
       <p v-else-if="templatesError" class="mt-3 text-[13px] text-danger-text">{{ templatesError }}</p>
-      <p v-else-if="!allowTemplateOverride && !selectedTemplate" class="mt-3 text-[13px] text-danger-text">
-        {{ t('No default template is configured. Set one in Settings > WhatsApp.', 'No hay ninguna plantilla predeterminada configurada. Configura una en Ajustes > WhatsApp.') }}
+      <p v-else-if="!allowTemplateOverride && !selectedTemplate" class="mt-3 text-[13px] text-danger-text" data-cy="whatsapp-template-missing">
+        {{ missingTemplateMessage ?? t('No default template is configured. Set one in Settings > WhatsApp.', 'No hay ninguna plantilla predeterminada configurada. Configura una en Ajustes > WhatsApp.') }}
       </p>
       <template v-else>
         <div v-if="allowTemplateOverride" class="mt-3">

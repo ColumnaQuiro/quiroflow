@@ -45,3 +45,12 @@ export function playStoreUrl(): string {
 export function hasBothStores(): boolean {
   return appStoreUrl() !== null
 }
+
+/**
+ * The WhatsApp template a patient's profile sends from "Enviar la app por
+ * WhatsApp": the store links, and how to join with the clinic code. Created by
+ * each clinic in its own WhatsApp Manager (Columnaquiro's has es, en and fr),
+ * because a template belongs to the WhatsApp account, and its text carries
+ * that clinic's code. {{1}} is the patient's first name.
+ */
+export const APP_DOWNLOAD_TEMPLATE = 'descarga_app'

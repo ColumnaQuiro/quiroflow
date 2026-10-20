@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { appointmentStage, isUnconfirmedStage, matchesFilter, needsNextBookingFlag, nextStep, stageCounts, trackIndex, type StageInput } from '../../utils/appointmentStage'
+import { appointmentStage, isUnconfirmedStage, matchesFilter, needsNextBookingFlag, nextStep, pendingFormsFlag, stageCounts, trackIndex, type StageInput } from '../../utils/appointmentStage'
 import { blockLadder, shortPatientName, type LadderInput } from '../../utils/appointmentBlock'
 import { mergeWindows, unionWorkingWindows } from '../../utils/businessHours'
 import { bonoForVisit } from '../../utils/visitPayment'
@@ -115,6 +115,25 @@ describe('Counts row', () => {
   })
 })
 
+describe('Pending forms on a visit', () => {
+  const now = new Date('2026-10-20T10:00:00')
+  it('flags a visit from today on that the patient has not reached the room for', () => {
+    expect(pendingFormsFlag('pending', '2026-10-22T09:00:00', 2, now)).to.equal(2)
+    expect(pendingFormsFlag('confirmed', '2026-10-20T08:00:00', 1, now), 'earlier today').to.equal(1)
+    expect(pendingFormsFlag('arrived', '2026-10-20T10:00:00', 1, now), 'in reception: a tablet can still fix it').to.equal(1)
+    expect(pendingFormsFlag('online', '2026-10-21T09:00:00', 1, now)).to.equal(1)
+  })
+  it('says nothing once it is too late, or when nothing is pending', () => {
+    expect(pendingFormsFlag('confirmed', '2026-10-19T09:00:00', 1, now), 'a past day').to.equal(0)
+    expect(pendingFormsFlag('withp', '2026-10-20T10:00:00', 1, now)).to.equal(0)
+    expect(pendingFormsFlag('completed', '2026-10-20T09:00:00', 1, now)).to.equal(0)
+    expect(pendingFormsFlag('cancelled', '2026-10-22T09:00:00', 1, now)).to.equal(0)
+    expect(pendingFormsFlag('noshow', '2026-10-20T09:00:00', 1, now)).to.equal(0)
+    expect(pendingFormsFlag('confirmed', '2026-10-22T09:00:00', 0, now)).to.equal(0)
+    expect(pendingFormsFlag('confirmed', '2026-10-22T09:00:00', null, now), 'not loaded').to.equal(0)
+  })
+})
+
 describe('Block ladder', () => {
   const base: LadderInput = {
     density: 'day',
@@ -152,8 +171,8 @@ describe('Block ladder', () => {
     const l = blockLadder({ ...base, width: 180, noNext: true })
     expect(l.owes).to.equal('meta')
     expect(l.pill, 'narrow: icon only').to.equal('icon')
-    expect(l.noNext, 'rank 8 goes first').to.equal(false)
-    expect(l.moved, 'rank 7 next').to.equal(false)
+    expect(l.noNext, 'rank 9 goes first').to.equal(false)
+    expect(l.moved, 'rank 8 next').to.equal(false)
   })
 
   it('wraps rather than drops on a tall block', () => {
@@ -181,6 +200,22 @@ describe('Block ladder', () => {
     expect(blockLadder({ ...pending, nameText: 'Sergio Navarro' }).pill).to.equal('icon')
     expect(blockLadder({ ...pending, nameText: 'Ana Gil' }).pill, 'a short name leaves room').to.equal('label')
     expect(blockLadder({ ...spanish, width: 340, nameText: 'Sergio Navarro' }).pill, 'a wide column has room for both').to.equal('label')
+  })
+
+  it('puts pending forms beside the name, ahead of the clinical note', () => {
+    expect(blockLadder({ ...base, forms: true, nameText: 'Laura Gómez' }).forms).to.equal(true)
+    expect(blockLadder(base).forms, 'nothing pending, no icon').to.equal(false)
+    // Room for one icon beside name and label: the forms take it.
+    const tight = blockLadder({ ...base, width: 200, owes: false, forms: true, nameText: 'Laura Gómez', pillText: 'Llegó' })
+    expect(tight.forms).to.equal(true)
+    expect(tight.note).to.equal(false)
+  })
+
+  it('shows pending forms in week view only where the short name keeps its room', () => {
+    const week = { ...base, density: 'week' as const, height: 59, forms: true, nameText: 'L. Gómez' }
+    expect(blockLadder({ ...week, width: 82, stage: 'confirmed' }).forms, 'no stage icon: room').to.equal(true)
+    expect(blockLadder({ ...week, width: 82, stage: 'pending' }).forms, 'stage icon: the name wins').to.equal(false)
+    expect(blockLadder({ ...week, width: 140, stage: 'pending' }).forms, 'a wider column fits both').to.equal(true)
   })
 
   it('shows no pill on a finished visit', () => {

@@ -3,7 +3,7 @@ import { formatEur, formatLongWeekdayDate, formatShortDate, formatTime, formatWe
 import type { BusinessHours } from '~/utils/businessHours'
 import { dayKeyFor, hasBusinessHoursConfigured, outsideWorkingHours, practitionerWindowsForDay, unionWorkingWindows, windowsForDay, withinWindows } from '~/utils/businessHours'
 import type { AppointmentTypeOverride } from '~/utils/appointmentOverrides'
-import { appointmentStage, matchesFilter, needsNextBookingFlag, STAGE_FILTERS, stageCounts, type AppointmentStage, type StageFilter } from '~/utils/appointmentStage'
+import { appointmentStage, matchesFilter, needsNextBookingFlag, pendingFormsFlag, STAGE_FILTERS, stageCounts, type AppointmentStage, type StageFilter } from '~/utils/appointmentStage'
 import { shortPatientName } from '~/utils/appointmentBlock'
 import { bonoForVisit, type VisitPayment } from '~/utils/visitPayment'
 import { effectivePriceCents } from '~/utils/appointmentOverrides'
@@ -108,7 +108,8 @@ interface AppointmentRow {
   reminder_sent_at: string | null
   same_day_info_sent_at: string | null
   created_at: string
-  patients: { first_name: string; last_name: string | null; sticky_note: string | null } | null
+  /** pending_forms: the computed field (20261020065435_patient_pending_forms.sql). */
+  patients: { first_name: string; last_name: string | null; sticky_note: string | null; pending_forms?: number } | null
   appointment_types: { name: string; color: string; default_price_cents: number } | null
   team_members: { full_name: string; color: string } | null
   /**
@@ -457,8 +458,12 @@ async function loadRooms() {
 
 // `silent` reloads without the skeleton: after a step in the open panel the
 // grid should update in place, not blink.
+//
+// patients.pending_forms is a computed field (a SQL function on the patient
+// row), so "has forms to complete" rides in this same read -- no request of
+// its own per range, none per block.
 const APPOINTMENT_SELECT =
-  'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, rescheduled, confirmation_status, confirmation_sent_at, reminder_sent_at, same_day_info_sent_at, created_at, deleted_at, note, source, patients(first_name, last_name, sticky_note), appointment_types(name, color, default_price_cents), team_members(full_name, color), class_session_id'
+  'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, rescheduled, confirmation_status, confirmation_sent_at, reminder_sent_at, same_day_info_sent_at, created_at, deleted_at, note, source, patients(first_name, last_name, sticky_note, pending_forms), appointment_types(name, color, default_price_cents), team_members(full_name, color), class_session_id'
 
 async function loadAppointments(silent = false) {
   if (!store.currentClinicId) {
@@ -1172,6 +1177,7 @@ function buildBlockView(appt: AppointmentRow): BlockView {
     owesCents: owesCents(appt.patient_id),
     bono: bonoForVisit(payment, activePackageByPatient.value[appt.patient_id]),
     hasNote: !!appt.patients?.sticky_note?.trim(),
+    pendingForms: pendingFormsFlag(stage, appt.starts_at, appt.patients?.pending_forms, now.value),
     movedCount: movedCountById.value[appt.id] ?? 0,
     noNext: needsNextBookingFlag(stage, appt.starts_at, hasFutureAppointment(appt), now.value),
   }

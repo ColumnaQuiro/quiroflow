@@ -126,6 +126,13 @@ describe('Posture assessment', () => {
         cy.get('[data-cy=patient-posture]', { timeout: 20000 }).should('be.visible')
         cy.get('[data-cy=patient-posture-weight]').should('contain', 'kg')
         cy.get('[data-cy=patient-posture] [data-cy=posture-overlay] image').should('have.attr', 'href').and('contain', 'token=')
+        // And the report, from their side: only because it was shared.
+        const patientTab = { location: { href: '' }, close: () => {} }
+        cy.window().then((win) => cy.stub(win, 'open').returns(patientTab))
+        cy.intercept('POST', '/api/portal/posture/*/report').as('patientReport')
+        cy.get('[data-cy=patient-posture-report]').click()
+        cy.wait('@patientReport', { timeout: 40000 }).its('response.statusCode').should('eq', 200)
+        cy.wrap(patientTab).its('location.href').should('contain', 'informe.pdf')
       })
     })
   })

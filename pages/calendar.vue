@@ -167,10 +167,10 @@ function phoneMenu(action: () => void) {
 // whatever the user last picked, persisted in localStorage below so a
 // refresh doesn't silently snap back to a hardcoded default.
 const CALENDAR_VIEW_MODE_KEY = 'quiroflow-calendar-view-mode'
-const viewMode = ref<'day' | 'workweek' | 'week'>('workweek')
+const viewMode = ref<'day' | 'workweek' | 'week' | 'month'>('workweek')
 onMounted(() => {
   const stored = localStorage.getItem(CALENDAR_VIEW_MODE_KEY)
-  if (stored === 'day' || stored === 'workweek' || stored === 'week') viewMode.value = stored
+  if (stored === 'day' || stored === 'workweek' || stored === 'week' || stored === 'month') viewMode.value = stored
   // A phone that has never chosen gets the day, which is the agenda there --
   // a week of room columns does not fit 375px.
   else if (window.matchMedia('(max-width: 767px)').matches) viewMode.value = 'day'
@@ -345,11 +345,28 @@ const visibleWeekDays = computed(() => (viewMode.value === 'workweek' ? weekDays
 
 const rangeLabel = computed(() => {
   if (viewMode.value === 'day') return formatLongWeekdayDate(anchorDate.value)
+  if (viewMode.value === 'month') {
+    const label = anchorDate.value.toLocaleDateString(t('en-GB', 'es-ES'), { month: 'long', year: 'numeric' })
+    return label.charAt(0).toUpperCase() + label.slice(1)
+  }
   const days = visibleWeekDays.value
   return `${formatShortDate(weekStart.value)} – ${formatShortDate(days[days.length - 1])}`
 })
 function stepDate(dir: -1 | 1) {
-  anchorDate.value = addDays(anchorDate.value, viewMode.value === 'day' ? dir : dir * 7)
+  // From the 1st, so 31 January steps to February rather than into March.
+  if (viewMode.value === 'month') anchorDate.value = addMonths(startOfMonth(anchorDate.value), dir)
+  else anchorDate.value = addDays(anchorDate.value, viewMode.value === 'day' ? dir : dir * 7)
+}
+
+// Month view (components/calendar/MonthOccupancy.vue): whose time it counts
+// is the tab that is open -- one practitioner, or everyone at the clinic.
+const monthPractitioners = computed(() => {
+  const pid = singlePractitionerId.value
+  return pid ? clinicTeamMembers.value.filter((m) => m.id === pid) : clinicTeamMembers.value
+})
+function openDayFromMonth(day: Date) {
+  anchorDate.value = day
+  viewMode.value = 'day'
 }
 function goToday() {
   anchorDate.value = new Date()
@@ -904,6 +921,18 @@ async function loadAvailabilityBlocks() {
 // The range in view: appointments and blocks side by side, not one after the
 // other -- neither needs anything from the other.
 function loadRange() {
+  // The month view fetches its own month; the grid's range is not on screen.
+  // Today's panels beside it still describe today, so they load as they
+  // would after the grid.
+  if (viewMode.value === 'month') {
+    if (todayStale && store.currentClinicId) {
+      todayStale = false
+      loadToday()
+        .catch((e) => console.error('calendar: today failed', e))
+        .finally(() => (todayLoaded.value = true))
+    }
+    return Promise.resolve()
+  }
   return Promise.all([loadAppointments(), loadAvailabilityBlocks().catch((e) => console.error('calendar: availability failed', e))])
 }
 
@@ -2421,7 +2450,7 @@ function showNowLineOn(day: Date) {
         <div class="absolute right-3 top-[calc(100%-4px)] z-40 w-60 overflow-hidden rounded-card border border-line bg-surface py-1 shadow-popover" role="menu" data-cy="calendar-phone-menu">
           <p class="px-3.5 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-[.05em] text-ink-faint">{{ t('View', 'Vista') }}</p>
           <button
-            v-for="v in ([['day', t('Day', 'Día')], ['workweek', t('Work week', 'Semana laboral')], ['week', t('Week', 'Semana')]] as const)"
+            v-for="v in ([['day', t('Day', 'Día')], ['workweek', t('Work week', 'Semana laboral')], ['week', t('Week', 'Semana')], ['month', t('Month', 'Mes')]] as const)"
             :key="v[0]"
             type="button"
             role="menuitemradio"
@@ -2468,6 +2497,7 @@ function showNowLineOn(day: Date) {
           <option value="day">{{ t('Day', 'Día') }}</option>
           <option value="workweek">{{ t('Work week', 'Semana laboral') }}</option>
           <option value="week">{{ t('Week', 'Semana') }}</option>
+          <option value="month">{{ t('Month', 'Mes') }}</option>
         </select>
         <UiBtn v-if="can('payments_allocate')" variant="secondary" size="sm" @click="cashShiftOpen = true">{{ t('Cash Shift', 'Turno de Caja') }}</UiBtn>
         <template v-if="!readOnly">
@@ -2562,11 +2592,11 @@ function showNowLineOn(day: Date) {
          does not match, so the day keeps its shape while one kind stands out.
          This is what "Today at a glance" used to be, moved to where the eye
          already is and made to do something. -->
-    <div v-if="store.currentClinicId && loading && !showAgenda" class="flex shrink-0 items-center gap-2 overflow-hidden border-b border-line bg-surface px-4 py-1.5 lg:px-6" aria-busy="true">
+    <div v-if="store.currentClinicId && loading && !showAgenda && viewMode !== 'month'" class="flex shrink-0 items-center gap-2 overflow-hidden border-b border-line bg-surface px-4 py-1.5 lg:px-6" aria-busy="true">
       <UiSkeleton class="mr-1 h-4 w-24 shrink-0 rounded-ctlSm" />
       <UiSkeleton v-for="w in [118, 96, 132]" :key="w" class="h-9 shrink-0 rounded-full [@media(pointer:coarse)]:h-11" :style="{ width: `${w}px` }" />
     </div>
-    <div v-else-if="store.currentClinicId && !showAgenda" data-cy="day-counts" class="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-line bg-surface px-4 py-1.5 lg:px-6">
+    <div v-else-if="store.currentClinicId && !showAgenda && viewMode !== 'month'" data-cy="day-counts" class="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-line bg-surface px-4 py-1.5 lg:px-6">
       <span class="shrink-0 pr-1 text-[13px] text-ink-muted" data-cy="day-counts-total"><strong class="font-semibold text-ink-900">{{ rangeCounts.total }}</strong> {{ countsNoun }}</span>
       <button
         v-for="c in countChips"
@@ -2711,6 +2741,15 @@ function showNowLineOn(day: Date) {
         <div v-if="!store.currentClinicId" class="p-6 text-[13px] text-ink-faint">
           {{ t('No clinic selected.', 'Ninguna clínica seleccionada.') }}
         </div>
+
+        <CalendarMonthOccupancy
+          v-else-if="viewMode === 'month'"
+          :month="anchorDate"
+          :clinic-id="store.currentClinicId"
+          :clinic-hours="store.currentClinic?.business_hours as BusinessHours | null | undefined"
+          :practitioners="monthPractitioners"
+          @open-day="openDayFromMonth"
+        />
 
         <div v-else-if="showAgenda && loading" class="space-y-2 overflow-hidden p-3" aria-busy="true">
           <UiSkeleton class="mb-3 h-10 rounded-ctl" />

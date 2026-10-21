@@ -59,8 +59,9 @@ describe('Converting a lead to a patient', () => {
           }
           expect(patient.first_name).to.eq('Ainara')
           expect(patient.last_name).to.eq('Quilez Mora')
-          // The acquisition story survives on the record itself.
-          expect(patient.referral_source).to.eq('Meta Ads · Back pain')
+          // The acquisition story survives on the record itself -- as the
+          // channel; the campaign stays on the lead (utils/referralSource.ts).
+          expect(patient.referral_source).to.eq('Meta Ads')
 
           // The number has to land in patient_contact_numbers -- that table's
           // trigger is what flips has_phone, which recalls and WhatsApp

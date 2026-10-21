@@ -28,3 +28,15 @@ function normalise(name: string): string {
 export function isPatientReferralSource(name: string | null | undefined): boolean {
   return !!name && REFERRAL_SOURCE_NAMES.has(normalise(name))
 }
+
+/**
+ * The channel a lead's source names: "Meta Ads · Spring promo" -> "Meta Ads".
+ * What goes on a patient's referral source when they came in through a lead
+ * -- the campaign stays on the lead, so the origin report gets one row per
+ * channel rather than one per campaign. Same rule as lead_source_channel() in
+ * 20261021093015_lead_source_on_patient.sql.
+ */
+export function leadSourceChannel(source: string | null | undefined): string | null {
+  const channel = (source ?? '').split('·')[0]?.trim()
+  return channel || null
+}

@@ -130,9 +130,23 @@ function normalized(text: string): string {
  * Whether everything they have said since the clinic last wrote is one of the
  * clinic's no-reply phrases ("Confirmar", "Gracias", "👍") -- the whole
  * message, so "Gracias, ¿y el jueves?" is still a question.
+ *
+ * Never when the clinic's last message was a person or the receptionist
+ * asking them something. "Vale" is on the list as a sign-off, but after
+ * "¿Te confirmo el martes 3 a las 10:00?" it is the yes the booking waits
+ * for: a lead from an ad picked a time, was asked to confirm, said "Vale"
+ * and was left without the visit (20 Oct 2026). The model still sees the
+ * whole conversation and can answer NO_REPLY itself when it really is a
+ * sign-off. Only a typed question counts: an automatic message is left out,
+ * because a reminder's "Confirmar" button is exactly what the list is for.
  */
-export function isNoReplyMessage(messagesSinceLastReply: string[], phrases: string[]): boolean {
+export function isNoReplyMessage(
+  messagesSinceLastReply: string[],
+  phrases: string[],
+  ourLastMessage?: { body: string; automated: boolean } | null,
+): boolean {
   if (messagesSinceLastReply.length === 0) return false
+  if (ourLastMessage && !ourLastMessage.automated && ourLastMessage.body.includes('?')) return false
   const known = new Set(phrases.map(normalized).filter(Boolean))
   // A reaction (a 👍 on the last reply) is never a question, whatever the
   // clinic's list says.

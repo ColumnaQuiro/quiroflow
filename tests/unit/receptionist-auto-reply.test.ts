@@ -188,6 +188,18 @@ describe('Messages it leaves alone', () => {
     expect(isNoReplyMessage(['Gracias'], [])).toBe(false)
   })
 
+  // A lead picked a time, was asked "¿Te confirmo el martes 3 a las 10:00?",
+  // said "Vale" and was left without the visit (20 Oct 2026).
+  it('answers a listed phrase when our last message asked them something', () => {
+    const list = [...phrases, 'Vale']
+    const asked = { body: '¿Te confirmo entonces el martes 3 de noviembre a las 10:00?', automated: false }
+    expect(isNoReplyMessage(['Vale'], list, asked)).toBe(false)
+    expect(isNoReplyMessage(['Vale'], list, { body: 'Te queda reservado el martes 3.', automated: false })).toBe(true)
+    // A reminder's "Confirmar" button is what the list is for, question or not.
+    expect(isNoReplyMessage(['Confirmar'], list, { body: 'Te recordamos tu cita. ¿Vienes?', automated: true })).toBe(true)
+    expect(isNoReplyMessage(['Vale'], list, null)).toBe(true)
+  })
+
   it("reads the model's own decision to stay quiet", () => {
     expect(isNoReply('NO_REPLY')).toBe(true)
     expect(isNoReply('  NO_REPLY.')).toBe(true)

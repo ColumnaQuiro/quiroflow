@@ -154,3 +154,29 @@ export function automationFieldValue(recipient: MergeRecipient, source: string, 
   }
   return ''
 }
+
+/**
+ * Who signs a recall ({{practitioner_first_name}}): the patient's own
+ * practitioner, unless they are away. Léa's patients were still sent "Hola,
+ * soy Léa" through her maternity leave (recorded since 2 Oct), and answered
+ * "Ok, Lea" to someone who was not there to read it (20 Oct 2026).
+ *
+ * Away, it is whoever of the rest saw them most recently, else the first
+ * practitioner who is in -- someone the patient can actually be booked
+ * with. Null when nobody is (the field falls back to the clinic's name).
+ */
+export function recallSignerId(opts: {
+  usual: string | null
+  /** Practitioners of their past visits, most recent first. */
+  recentWith: string[]
+  /** Practitioners with an approved absence covering today. */
+  away: Set<string>
+  /** Every active practitioner, in a stable order. */
+  practitioners: string[]
+}): string | null {
+  if (opts.usual && !opts.away.has(opts.usual)) return opts.usual
+  const active = new Set(opts.practitioners)
+  return opts.recentWith.find((id) => active.has(id) && !opts.away.has(id))
+    ?? opts.practitioners.find((id) => !opts.away.has(id))
+    ?? null
+}

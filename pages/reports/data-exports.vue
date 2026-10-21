@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import Papa from 'papaparse'
+import { patientAge } from '~/utils/patientAge'
 import { computePresetRange, STANDARD_PRESETS, type DateRange } from '~/composables/useDateRangePresets'
 import type { Database } from '~/types/database.types'
 
@@ -123,15 +124,7 @@ async function ensureBalancesLoaded() {
 function label(p: PatientRow) {
   return `${p.first_name} ${p.last_name ?? ''}`.trim()
 }
-function ageOf(p: PatientRow): number | null {
-  if (!p.date_of_birth) return null
-  const dob = new Date(p.date_of_birth)
-  const now = new Date()
-  let age = now.getFullYear() - dob.getFullYear()
-  const beforeBirthday = now.getMonth() < dob.getMonth() || (now.getMonth() === dob.getMonth() && now.getDate() < dob.getDate())
-  if (beforeBirthday) age--
-  return age
-}
+const ageOf = (p: PatientRow) => patientAge(p.date_of_birth)
 const memberById = computed(() => new Map(teamMembers.value.map((m) => [m.id, m.full_name])))
 
 // -- Generate New Export -----------------------------------------------

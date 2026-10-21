@@ -34,11 +34,19 @@ const note = ref('')
 const error = ref('')
 const saving = ref(false)
 
+const startsAtOf = () => (wholeDay.value ? new Date(`${startDate.value}T00:00`) : new Date(`${startDate.value}T${startTime.value}`))
+const endsAtOf = () => (wholeDay.value ? addDays(new Date(`${endDate.value}T00:00`), 1) : new Date(`${endDate.value}T${endTime.value}`))
+// For the visits it would sit on (BlockClashes): null while half-typed.
+const isoOrNull = (d: Date) => (Number.isNaN(d.getTime()) ? null : d.toISOString())
+const clashStartsAt = computed(() => isoOrNull(startsAtOf()))
+const clashEndsAt = computed(() => isoOrNull(endsAtOf()))
+const clashCount = ref(0)
+
 async function save() {
   error.value = ''
 
-  const startsAt = wholeDay.value ? new Date(`${startDate.value}T00:00`) : new Date(`${startDate.value}T${startTime.value}`)
-  const endsAt = wholeDay.value ? addDays(new Date(`${endDate.value}T00:00`), 1) : new Date(`${endDate.value}T${endTime.value}`)
+  const startsAt = startsAtOf()
+  const endsAt = endsAtOf()
 
   if (endsAt <= startsAt) {
     error.value = t('End must be after start.', 'La hora de fin debe ser posterior a la de inicio.')
@@ -103,11 +111,13 @@ async function save() {
       <input v-model="note" type="text" :placeholder="t('e.g. maintenance, holiday', 'p. ej. mantenimiento, festivo')" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
     </div>
 
+    <CalendarBlockClashes v-model:count="clashCount" :starts-at="clashStartsAt" :ends-at="clashEndsAt" :practitioner-id="null" :room-id="roomId || null" />
+
     <p v-if="error" class="text-[13px] text-danger-text">{{ error }}</p>
 
     <div class="flex justify-end gap-2 pt-2">
       <UiBtn variant="secondary" :disabled="saving" @click="emit('close')">{{ t('Cancel', 'Cancelar') }}</UiBtn>
-      <UiBtn variant="primary" :disabled="saving" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}</UiBtn>
+      <UiBtn variant="primary" :disabled="saving" @click="save">{{ saving ? t('Saving…', 'Guardando…') : clashCount ? t('Block anyway', 'Bloquear igualmente') : t('Save', 'Guardar') }}</UiBtn>
     </div>
   </form>
 </template>

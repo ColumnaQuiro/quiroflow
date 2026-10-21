@@ -51,6 +51,7 @@ const allGroups = computed(() => [
   {
     label: t('Data', 'Datos'),
     items: [
+      { to: '/reports/facturas', label: t('Issued facturas', 'Facturas emitidas'), description: t('Every factura issued in a period: number, recipient, base, IVA and total, as a CSV too.', 'Todas las facturas emitidas en un periodo: número, destinatario, base, IVA y total, también en CSV.'), icon: ICONS.billing },
       { to: '/reports/gestoria', label: t('Accountant', 'Gestoría'), description: t('Facturas and IVA for the quarter, in one download.', 'Facturas e IVA del trimestre, en una descarga.'), icon: ICONS.arrowDownTray },
       { to: '/reports/data-exports', label: t('Data Exports', 'Exportaciones de datos'), description: t('Patients missing an email, phone, or a consent/data protection form.', 'Pacientes sin correo, teléfono o formulario de consentimiento/protección de datos.'), icon: ICONS.arrowDownTray },
     ],

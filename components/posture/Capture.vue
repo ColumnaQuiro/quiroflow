@@ -18,13 +18,16 @@ const emit = defineEmits<{ saved: [] }>()
 
 const t = useT()
 const supabase = useSupabaseClient()
-const { detect } = usePoseModel()
+const { detect, warm } = usePoseModel()
 const patientId = props.patientId
 
 const height = ref<number | ''>('')
 const ready = ref(false)
 // The last assessment's height, so a re-assessment does not ask again.
 onMounted(async () => {
+  // The pose model downloads while the patient gets into place, not after
+  // the first photo.
+  warm()
   const { data: last } = await supabase.from('posture_assessments').select('height_cm').eq('patient_id', patientId).order('taken_at', { ascending: false }).limit(1).maybeSingle()
   if (last?.height_cm) height.value = Number(last.height_cm)
   ready.value = true

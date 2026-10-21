@@ -59,6 +59,11 @@ function toggle(id: string) {
 const pair = computed(() => list.value.filter((a) => picked.value.includes(a.id)))
 const views = computed(() => POSTURE_VIEWS.filter((v) => pair.value.length && pair.value.every((a) => a.views[v])))
 const view = ref<PostureView>('right')
+// Every photo of the two being compared, fetched ahead, so switching view
+// shows the next photo at once instead of waiting on the network.
+watch(pair, (as) => {
+  for (const a of as) for (const v of Object.values(a.views)) if (urls.value[v!.photo]) new Image().src = urls.value[v!.photo]!
+})
 watch(views, (vs) => {
   if (vs.length && !vs.includes(view.value)) view.value = vs.includes('right') ? 'right' : vs[0]!
 })
@@ -110,6 +115,25 @@ function toggleXray(id: string) {
 }
 const xrayPair = computed(() => xrays.value.filter((x) => xrayPick.value.includes(x.id)))
 
+// The posture report for the patient (server/api/posture/[id]/report): built
+// on the server, opened from a link, which is what works in the app's WebView
+// as well as on the web -- see utils/openWhenReady.ts.
+const reporting = ref<string | null>(null)
+function openReport(a: Assessment) {
+  reporting.value = a.id
+  openWhenReady(async () => {
+    try {
+      const { url } = await useStaffFetch<{ url: string }>(`/api/posture/${a.id}/report`, { method: 'POST' })
+      return url
+    } catch (e) {
+      showToast((e as { data?: { statusMessage?: string } })?.data?.statusMessage ?? t('Could not prepare the report.', 'No se ha podido preparar el informe.'), 'error')
+      return null
+    } finally {
+      reporting.value = null
+    }
+  })
+}
+
 const removing = ref<Assessment | null>(null)
 async function remove() {
   const a = removing.value
@@ -117,7 +141,9 @@ async function remove() {
   if (!a) return
   const { error } = await supabase.from('posture_assessments').delete().eq('id', a.id)
   if (error) return showToast(error.message, 'error')
-  await supabase.storage.from('patient-files').remove(Object.values(a.views).map((v) => v!.photo))
+  // The photos, and the report built from them if one ever was.
+  const photos = Object.values(a.views).map((v) => v!.photo)
+  await supabase.storage.from('patient-files').remove([...photos, photos[0]!.replace(/[^/]+$/, 'informe.pdf')])
   await load()
 }
 
@@ -158,6 +184,7 @@ const num = (n: number | null | undefined) => (n === null || n === undefined ? '
               <p class="text-[13.5px] font-semibold text-ink-900">{{ day(a.taken_at) }}</p>
               <p class="text-[12px] text-ink-muted">{{ [a.team_members?.full_name, t(`${Object.keys(a.views).length} photos`, `${Object.keys(a.views).length} fotos`)].filter(Boolean).join(' · ') }}</p>
               <label class="mt-1 flex items-center gap-1.5 text-[12px] text-ink-700"><input type="checkbox" :checked="a.shared_with_patient" data-cy="posture-share" @change="setShared(a, ($event.target as HTMLInputElement).checked)" />{{ t('Patient can see it', 'Lo ve el paciente') }}</label>
+              <button type="button" class="mt-1.5 inline-flex h-8 items-center rounded-ctl border border-line-control px-2.5 text-[12px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:opacity-60" :disabled="reporting === a.id" data-cy="posture-report" @click="openReport(a)">{{ reporting === a.id ? t('Preparing…', 'Preparando…') : t('Report (PDF)', 'Informe (PDF)') }}</button>
             </div>
             <button v-if="can('visit_notes_delete')" type="button" class="text-[12px] text-ink-muted hover:text-danger-text" :aria-label="t('Delete', 'Eliminar')" @click="removing = a">✕</button>
           </li>

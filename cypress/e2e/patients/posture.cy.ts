@@ -103,6 +103,19 @@ describe('Posture assessment', () => {
           expect(a!.shared_with_patient).to.eq(false)
         })
 
+        // The report: drawn by the server from the stored photos and handed
+        // back as a link, which the page opens in the tab it opened on the tap.
+        const tab = { location: { href: '' }, close: () => {} }
+        cy.window().then((win) => cy.stub(win, 'open').returns(tab))
+        cy.intercept('POST', '/api/posture/*/report').as('report')
+        cy.get('[data-cy=posture-report]').click()
+        cy.wait('@report', { timeout: 40000 }).its('response.statusCode').should('eq', 200)
+        cy.wrap(tab).its('location.href').should('contain', 'informe.pdf')
+        cy.then(() => cy.request({ url: tab.location.href, encoding: 'binary' })).then((res) => {
+          expect(res.headers['content-type']).to.contain('application/pdf')
+          expect(String(res.body).slice(0, 5)).to.eq('%PDF-')
+        })
+
         // Shared with the patient, who sees it on the portal's home.
         cy.get('[data-cy=posture-share]').check()
         cy.task<{ shared_with_patient: boolean }[]>('db:selectRows', { table: 'posture_assessments', columns: 'shared_with_patient', match: { patient_id: patient.id } }).its('0.shared_with_patient').should('eq', true)

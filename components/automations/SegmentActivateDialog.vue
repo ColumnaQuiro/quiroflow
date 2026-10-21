@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { weekdayName } from '~/utils/automationCatalog'
+import { scheduledSendLabel } from '~/utils/automationDescribe'
 
 // Switching a segment on: how many patients match today and when they enter,
 // and -- for a marketing one -- how many accepted each channel. The safe
@@ -8,7 +9,7 @@ import { weekdayName } from '~/utils/automationCatalog'
 const props = defineProps<{
   filters: Record<string, any>
   isMarketing: boolean
-  schedule: { kind: 'once' | 'daily' | 'weekly'; weekday?: number; time?: string } | null | undefined
+  schedule: { kind: 'once' | 'daily' | 'weekly'; weekday?: number; time?: string; starts_at?: string } | null | undefined
   /** segment.daily_limit: how many enter per clinic day, the rest the days after. */
   dailyLimit?: number | null
   ruleId: string | null
@@ -38,6 +39,7 @@ const paced = computed(() => {
 })
 const when = computed(() => {
   const s = props.schedule
+  if (s?.kind === 'once' && s.starts_at && new Date(s.starts_at).getTime() > Date.now()) return t(`on ${scheduledSendLabel(s.starts_at, t)}`, `el ${scheduledSendLabel(s.starts_at, t)}`)
   if (!s || s.kind === 'once') return t('now (within 15 minutes)', 'ahora (antes de 15 minutos)')
   if (s.kind === 'daily') return t(`at ${s.time ?? '09:00'}, and every day after that, the new ones`, `a las ${s.time ?? '09:00'}, y después cada día, los nuevos`)
   return t(`on ${weekdayName(t, s.weekday ?? 1)} at ${s.time ?? '09:00'}, and every week after that, the new ones`, `el ${weekdayName(t, s.weekday ?? 1)} a las ${s.time ?? '09:00'}, y después cada semana, los nuevos`)

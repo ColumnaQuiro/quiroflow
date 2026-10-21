@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { answerKey, automationFieldValue, DEFAULT_ANSWER_FALLBACK, leadAnswersFromEvents, withAnswerFallback } from '../../utils/automationFields'
+import { answerKey, automationFieldValue, DEFAULT_ANSWER_FALLBACK, leadAnswersFromEvents, recallSignerId, withAnswerFallback } from '../../utils/automationFields'
 
 const laura = { firstName: 'Laura', lastName: 'Gómez', email: 'laura@example.test' }
 const at = '2026-10-02T08:30:00Z'
@@ -96,5 +96,22 @@ describe('A form answer the lead left blank', () => {
   it('leaves every other kind of variable alone', () => {
     expect(withAnswerFallback('first_name', '', 'x')).toBe('')
     expect(withAnswerFallback('text', '', 'x')).toBe('')
+  })
+})
+
+describe('Who signs a recall', () => {
+  const team = ['natacha', 'lea', 'jordana']
+  it('is their own practitioner while they are in', () => {
+    expect(recallSignerId({ usual: 'lea', recentWith: [], away: new Set(), practitioners: team })).toBe('lea')
+  })
+  it('is whoever of the rest saw them last while their own is away', () => {
+    expect(recallSignerId({ usual: 'lea', recentWith: ['lea', 'jordana', 'natacha'], away: new Set(['lea']), practitioners: team })).toBe('jordana')
+  })
+  it('is the first practitioner who is in when nobody else ever saw them', () => {
+    expect(recallSignerId({ usual: 'lea', recentWith: ['lea'], away: new Set(['lea']), practitioners: team })).toBe('natacha')
+    expect(recallSignerId({ usual: 'lea', recentWith: ['someone-gone'], away: new Set(['lea']), practitioners: team })).toBe('natacha')
+  })
+  it('is nobody when everyone is away', () => {
+    expect(recallSignerId({ usual: 'lea', recentWith: [], away: new Set(team), practitioners: team })).toBeNull()
   })
 })

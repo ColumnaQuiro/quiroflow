@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
 import { CONFIRM_BEFORE_BOOKING, audienceSection, minorsSection, newPatientDetailsSection, offeredAppointmentTypes, offeredTypesSection, rescheduleSection, type BookedVisit, type PromptChild, type PromptType, type ReceptionistAudience } from '~/utils/receptionistTypes'
-import { historyMarkersSection, INFORMAL_ADDRESS_LINE, NO_INVENTION_LINE, WAITLIST_SECTION } from '~/utils/receptionistHistory'
+import { CARD_ANSWERS_LINE, historyMarkersSection, INFORMAL_ADDRESS_LINE, NO_INVENTION_LINE, NOT_CHIROPRACTIC_SYMPTOM_LINE, PART_OF_DAY_ANSWER_LINE, replyLanguageLine, SENT_FILES_LINE, WAITLIST_SECTION } from '~/utils/receptionistHistory'
 import { leadOriginSection, type LeadOrigin } from '~/utils/receptionistLeadOrigin'
 import { NO_REPLY } from '~/utils/receptionistAutoReply'
 import { CONFIDENTIALITY_SECTION, promptSafeName } from '~/utils/receptionistGuard'
@@ -596,14 +596,14 @@ export function buildSystemPrompt(
     `Tone: ${TONE_WORDING[config.tone] ?? TONE_WORDING.warm_brief}`,
     // Whatever the tone, an opener like "¡Perfecto!" is what makes a reply
     // read as a bot, and it is the first thing an owner trying Alba notices.
-    `Sound like an experienced clinic receptionist: neutral, professional, to the point. Do not open with an exclamation or filler ("¡Perfecto!", "¡Genial!", "¡Estupendo!", "¡Claro!", "¡Claro que sí!", "¡Por supuesto!", "Great!", "Perfect!"), do not use emojis, and do not praise the patient's question. Start with the substance.`,
+    `Sound like an experienced clinic receptionist: neutral, professional, to the point. Do not open with an exclamation or filler ("¡Perfecto!", "¡Genial!", "¡Estupendo!", "¡Claro!", "¡Claro que sí!", "¡Por supuesto!", "Great!", "Perfect!"), do not use emojis -- not even to answer one of theirs -- and do not greet with an exclamation ("¡Hola, María!", "¡Buenas tardes!"), and do not praise the patient's question. Start with the substance.`,
     // "Un compañero" is how a call centre talks about whoever is next in the
     // queue; a receptionist hands you to someone she works with.
     `When something goes to a member of staff, speak of them as your own colleague: in Spanish "mi compañera" or "mi compañero" (for example "Se lo paso a mi compañera, la quiropráctica"), in English "my colleague". Never "un compañero", "un miembro del equipo" or "a colleague".`,
     // Dates come to the model as "Monday 2026-10-20", which it otherwise
     // copies out as "20/10" -- correct, and the least human way to say it.
     `Write dates in words, in the patient's language, with the weekday: "el lunes 20 de octubre", "Monday 20 October". Never "20/10" or "2026-10-20".`,
-    `Reply in the language the patient writes in. The clinic supports: ${config.languages.join(', ')}.`,
+    replyLanguageLine(config.languages),
     knowledge ? `# What you know about this clinic\n\n${knowledge}` : '# What you know about this clinic\n\nNothing has been configured yet. Say you will check with your colleague rather than guessing.',
     // The whole conversation is in the messages, and a receptionist who asks
     // for something the patient said three messages ago reads as a form.
@@ -614,6 +614,10 @@ export function buildSystemPrompt(
     historyMarkersSection(Boolean(opts.sendsItself)),
     INFORMAL_ADDRESS_LINE,
     NO_INVENTION_LINE,
+    PART_OF_DAY_ANSWER_LINE,
+    SENT_FILES_LINE,
+    CARD_ANSWERS_LINE,
+    NOT_CHIROPRACTIC_SYMPTOM_LINE,
     // "¿Tengo artrosis, me podéis ayudar?" answered only with "lo valoramos
     // en la primera visita" gives the patient no reason to come to it. A line
     // on how chiropractic is used for that, honest about what it is not,

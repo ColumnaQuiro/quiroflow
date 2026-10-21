@@ -36,7 +36,7 @@ const props = defineProps<{
   tutor: { id: string; first_name: string; last_name: string | null } | null
 }>()
 
-defineEmits<{ message: []; sendApp: []; book: []; charge: []; archive: []; merge: []; remove: []; exportData: []; photoUpdated: [] }>()
+defineEmits<{ message: []; sendApp: []; cancelFuture: []; book: []; charge: []; archive: []; merge: []; remove: []; exportData: []; photoUpdated: [] }>()
 
 const t = useT()
 
@@ -222,6 +222,16 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
             @click="closeMenu(false); $emit('sendApp')"
           >
             {{ t('Send the app on WhatsApp', 'Enviar la app por WhatsApp') }}
+          </button>
+          <!-- Someone stopping treatment: every visit ahead, in one go. -->
+          <button
+            v-if="canEdit"
+            type="button"
+            class="block w-full px-3 py-3 text-left text-[13px] text-ink-700 outline-none hover:bg-surface-subtle focus-visible:bg-surface-subtle lg:py-2"
+            data-cy="patient-cancel-future"
+            @click="closeMenu(false); $emit('cancelFuture')"
+          >
+            {{ t('Cancel future appointments', 'Anular citas futuras') }}
           </button>
           <button
             v-if="canEdit"

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { formatLongDate } from '~/utils/billing'
+import { patientAge } from '~/utils/patientAge'
 import { formatPhoneDisplay } from '~/utils/phone'
 import { clinicDateOf, DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
 import { pregnancyProgress, pregnancyWeeksLabel } from '~/utils/pregnancy'
@@ -48,19 +49,11 @@ const initials = computed(() =>
   [props.patient.first_name?.[0], props.patient.last_name?.[0]].filter(Boolean).join('').toUpperCase() || '?',
 )
 
-const age = computed(() => {
-  if (!props.patient.date_of_birth) return null
-  const dob = new Date(props.patient.date_of_birth)
-  const now = new Date()
-  let years = now.getFullYear() - dob.getFullYear()
-  const m = now.getMonth() - dob.getMonth()
-  if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) years--
-  return years
-})
+const age = computed(() => patientAge(props.patient.date_of_birth))
 
 const identityLine = computed(() => {
   const parts: string[] = []
-  if (age.value !== null) parts.push(String(age.value))
+  if (age.value !== null) parts.push(t(`${age.value} years old`, `${age.value} años`))
   if (props.patient.date_of_birth) parts.push(formatLongDate(props.patient.date_of_birth))
   parts.push(`${t('Patient since', 'Paciente desde')} ${formatLongDate(props.patient.created_at)}`)
   return parts.join(' · ')

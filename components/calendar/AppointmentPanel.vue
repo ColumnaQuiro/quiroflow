@@ -38,7 +38,7 @@ export interface PanelAppointment extends StageFacts {
   note: string | null
   same_day_info_sent_at: string | null
   created_at: string
-  patients: { first_name: string; last_name: string | null; sticky_note: string | null; pending_forms?: number } | null
+  patients: { first_name: string; last_name: string | null; sticky_note: string | null; pending_forms?: number; red_flags?: string | null; tags?: string[] } | null
   appointment_types: { name: string; color: string } | null
   team_members: { full_name: string } | null
 }
@@ -753,6 +753,20 @@ async function useExpectedType() {
             <button v-if="stage === 'checkout'" type="button" data-cy="mark-done" :disabled="busy" class="h-9 touch:h-11 rounded-ctl border border-line-control px-3.5 text-[13px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="markDone">{{ t('Done, nothing to charge', 'Hecha, sin cobro') }}</button>
             <button v-if="undoable" type="button" data-cy="undo-stage" :disabled="busy" class="h-9 touch:h-11 rounded-ctl px-3 text-[13px] font-semibold text-ink-muted hover:bg-surface-subtle" @click="undo">{{ undoable.label }}</button>
             <button v-if="canUndoVisit" type="button" data-cy="undo-visit" :disabled="busy" class="h-9 touch:h-11 rounded-ctl border border-line-control px-3.5 text-[13px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="undoVisitOpen = true">{{ t('Undo visit', 'Deshacer visita') }}</button>
+          </div>
+
+          <!-- Red flags first: the one thing about the patient that changes
+               what may be done to them today. Text for clinical roles only. -->
+          <div v-if="view.redFlags" class="mt-3 flex items-start gap-3 rounded-ctl border border-danger-border bg-danger-bg px-3.5 py-2.5" data-cy="appt-panel-red-flags">
+            <CalendarRedFlagIcon :size="14" class="mt-[2px] shrink-0 text-danger-text" :label="t('Red flags', 'Señales rojas')" />
+            <div class="flex min-w-0 flex-1 flex-col text-[12.5px]">
+              <strong class="text-[13.5px] text-danger-text">{{ t('Red flags', 'Señales rojas') }}</strong>
+              <span v-if="can('visit_notes_access')" class="whitespace-pre-line text-ink-700">{{ view.redFlags }}</span>
+              <span v-else class="text-ink-500">{{ t('On the clinical record. Let the practitioner know.', 'En la ficha clínica. Avisa al profesional.') }}</span>
+            </div>
+          </div>
+          <div v-if="view.tags?.length" class="mt-3 flex flex-wrap gap-1.5" data-cy="appt-panel-tags">
+            <span v-for="tag in view.tags" :key="tag" class="rounded-pill border border-line bg-chip-bg px-2.5 py-0.5 text-[12px] font-medium text-ink-700">{{ tag }}</span>
           </div>
 
           <!-- Forms sent and not filled in: a patient like that often does not

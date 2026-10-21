@@ -571,7 +571,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
             <section id="texts" aria-labelledby="h-texts" class="scroll-mt-4 overflow-hidden rounded-card border border-line bg-surface">
               <div class="px-[18px] pb-3 pt-4">
                 <h2 id="h-texts" class="text-[16px] font-bold text-ink-900">{{ t('Texts', 'Textos') }}</h2>
-                <p class="mt-1 text-[13px] text-ink-muted">{{ t('Replace any of the booking page’s own words. Leave a line empty to keep the original.', 'Sustituye cualquier texto de la página de reservas. Deja una línea vacía para mantener el original.') }}</p>
+                <p class="mt-1 text-[13px] text-ink-muted">{{ t('Replace any of the booking page’s own words. Leave a line empty to keep the original. They replace the Spanish page: a patient booking in English or French sees its own translation.', 'Sustituye cualquier texto de la página de reservas. Deja una línea vacía para mantener el original. Sustituyen la página en español: quien reserva en inglés o francés ve su traducción.') }}</p>
               </div>
               <div v-for="s in OVERRIDABLE_STRINGS" :key="s.key" class="grid grid-cols-1 items-center gap-2 border-t border-line-row px-[18px] py-2.5 sm:grid-cols-2 sm:gap-4" :data-text-key="s.key">
                 <label :for="`text-${s.key}`" class="line-clamp-2 text-[13.5px] text-ink-500">{{ s.default }}</label>

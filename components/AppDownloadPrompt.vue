@@ -6,8 +6,8 @@
 // differs. Both catch a patient who has just done something -- signed in,
 // booked a visit -- and is the most likely they will ever be to install it.
 const props = defineProps<{
-  /** Spanish-only surfaces (the public booking page) pass this explicitly. */
-  lang?: 'en' | 'es'
+  /** The public booking page passes its patient's language explicitly. */
+  lang?: 'en' | 'es' | 'fr'
   /** Overrides the heading, so a clinic's own booking text override can win. */
   heading?: string
   /** Overrides the supporting line, same reason. */
@@ -15,15 +15,19 @@ const props = defineProps<{
 }>()
 
 const { preference } = useLang()
-const t = (en: string, es: string) => ((props.lang ?? preference.value) === 'es' ? es : en)
+const t = (en: string, es: string, fr = en) => {
+  const lang = props.lang ?? preference.value
+  return lang === 'es' ? es : lang === 'fr' ? fr : en
+}
 
-const headingText = computed(() => props.heading || t('Get the QuiroFlow app', 'Descarga la app de QuiroFlow'))
+const headingText = computed(() => props.heading || t('Get the QuiroFlow app', 'Descarga la app de QuiroFlow', 'Téléchargez l’app QuiroFlow'))
 const bodyText = computed(
   () =>
     props.body ||
     t(
       'Your appointments, documents and messages on your phone — and a reminder before every visit.',
       'Tus citas, documentos y mensajes en el móvil, y un recordatorio antes de cada visita.',
+      'Vos rendez-vous, documents et messages sur votre téléphone, et un rappel avant chaque visite.',
     ),
 )
 </script>

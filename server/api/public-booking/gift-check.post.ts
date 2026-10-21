@@ -15,7 +15,9 @@ export default defineEventHandler(async (event) => {
   const { data: account } = await supabase.from('accounts').select('id').eq('slug', body.slug).maybeSingle()
   if (!account) throw createError({ statusCode: 404, statusMessage: 'Clinic not found' })
   const check = await giftVoucherFor(supabase, account.id, body.code)
-  if (!check.ok) return { ok: false, message: GIFT_REFUSAL[check.reason] }
+  // The reason too, so the booking page can say it in the patient's language;
+  // the message stays the Spanish it always was.
+  if (!check.ok) return { ok: false, reason: check.reason, message: GIFT_REFUSAL[check.reason] }
   const v = check.voucher
   return {
     ok: true,

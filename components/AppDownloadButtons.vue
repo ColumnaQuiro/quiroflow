@@ -18,12 +18,11 @@ import { appStoreUrl, playStoreUrl } from '~/utils/appLinks'
 const props = withDefaults(
   defineProps<{
     /**
-     * Overrides the viewer's own language. The public booking page is
-     * Spanish-only regardless of who is looking at it (it is the patient
-     * reading, not the staff member whose preference useT() follows), so it
-     * passes 'es' explicitly.
+     * Overrides the viewer's own language. The public booking page passes the
+     * patient's (it is the patient reading, not the staff member whose
+     * preference useT() follows), which can also be French.
      */
-    lang?: 'en' | 'es'
+    lang?: 'en' | 'es' | 'fr'
     size?: 'md' | 'lg'
   }>(),
   { size: 'md' },
@@ -31,8 +30,10 @@ const props = withDefaults(
 
 const { preference } = useLang()
 const lang = computed(() => props.lang ?? preference.value)
-function t(en: string, es: string) {
-  return lang.value === 'es' ? es : en
+// French only where a patient reads this (the booking page); the staff app
+// never asks for it, and leaves it out.
+function t(en: string, es: string, fr = en) {
+  return lang.value === 'es' ? es : lang.value === 'fr' ? fr : en
 }
 
 // Null while the App Store's numeric ID is still unset -- see utils/appLinks.
@@ -56,7 +57,7 @@ const boxClass = computed(() =>
       rel="noopener"
       class="inline-flex shrink-0 items-center rounded-ctl bg-ink-900 text-surface transition-opacity hover:opacity-85 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
       :class="boxClass"
-      :aria-label="t('Download QuiroFlow on the App Store', 'Descargar QuiroFlow en el App Store')"
+      :aria-label="t('Download QuiroFlow on the App Store', 'Descargar QuiroFlow en el App Store', 'Télécharger QuiroFlow sur l’App Store')"
     >
       <svg viewBox="0 0 24 24" fill="currentColor" class="h-[22px] w-[22px] shrink-0" aria-hidden="true">
         <path
@@ -64,7 +65,7 @@ const boxClass = computed(() =>
         />
       </svg>
       <span class="flex flex-col items-start leading-none">
-        <span class="store-sub opacity-70">{{ t('Download on the', 'Descárgalo en el') }}</span>
+        <span class="store-sub opacity-70">{{ t('Download on the', 'Descárgalo en el', 'Disponible sur') }}</span>
         <span class="store-name mt-[3px] font-[620] tracking-tightTitle">App Store</span>
       </span>
     </a>
@@ -75,13 +76,13 @@ const boxClass = computed(() =>
       rel="noopener"
       class="inline-flex shrink-0 items-center rounded-ctl bg-ink-900 text-surface transition-opacity hover:opacity-85 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
       :class="boxClass"
-      :aria-label="t('Get QuiroFlow on Google Play', 'Consigue QuiroFlow en Google Play')"
+      :aria-label="t('Get QuiroFlow on Google Play', 'Consigue QuiroFlow en Google Play', 'Télécharger QuiroFlow sur Google Play')"
     >
       <svg viewBox="0 0 24 24" fill="currentColor" class="h-[21px] w-[21px] shrink-0" aria-hidden="true">
         <path d="M4.2 2.3a.9.9 0 0 1 1.35-.78l14.9 9.7a.9.9 0 0 1 0 1.56l-14.9 9.7a.9.9 0 0 1-1.35-.78V2.3Z" />
       </svg>
       <span class="flex flex-col items-start leading-none">
-        <span class="store-sub opacity-70">{{ t('Get it on', 'Disponible en') }}</span>
+        <span class="store-sub opacity-70">{{ t('Get it on', 'Disponible en', 'Disponible sur') }}</span>
         <span class="store-name mt-[3px] font-[620] tracking-tightTitle">Google Play</span>
       </span>
     </a>

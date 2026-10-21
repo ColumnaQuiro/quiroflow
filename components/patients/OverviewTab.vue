@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { dateBlock, formatEur, formatLongDate, formatTime } from '~/utils/billing'
+import { patientAge } from '~/utils/patientAge'
 import { resolveVisitPayment, type VisitPayment } from '~/utils/visitPayment'
 import type { Tables } from '~/types/database.types'
 
@@ -285,8 +286,10 @@ function teamMemberName(id: string | null) {
 const teamMembers = ref<{ id: string; full_name: string }[]>([])
 const teamLoaded = ref(false)
 
+const withAge = (date: string, age: number | null) => (age === null ? date : `${date} · ${t(`${age} years old`, `${age} años`)}`)
+
 const glanceFields = computed(() => [
-  { key: 'dob', label: t('Date of birth', 'Fecha de nacimiento'), value: props.patient.date_of_birth ? formatLongDate(props.patient.date_of_birth) : null },
+  { key: 'dob', label: t('Date of birth', 'Fecha de nacimiento'), value: props.patient.date_of_birth ? withAge(formatLongDate(props.patient.date_of_birth), patientAge(props.patient.date_of_birth)) : null },
   { key: 'nif', label: t('National ID', 'DNI/NIE'), value: props.patient.national_id, mono: true },
   { key: 'email', label: t('Email', 'Correo electrónico'), value: props.patient.email },
   {

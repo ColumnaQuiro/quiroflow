@@ -11,7 +11,8 @@
 //
 // Nothing about the form itself changed: same fields, same validation, same
 // save, same referral-campaign side effect. It is lifted, not rewritten.
-import { formatEur } from '~/utils/billing'
+import { formatEur, formatLongDate } from '~/utils/billing'
+import { ADULT_AGE, patientAge } from '~/utils/patientAge'
 import type { Tables } from '~/types/database.types'
 import { normalizeSearchTerm } from '~/utils/searchText'
 import { checkSpanishTaxId } from '~/utils/spanishTaxId'
@@ -194,6 +195,10 @@ const error = ref('')
 const firstName = ref(props.patient.first_name)
 const lastName = ref(props.patient.last_name ?? '')
 const dateOfBirth = ref(props.patient.date_of_birth ?? '')
+// Worked out as the date is typed, so nobody does the sum in their head, and
+// so the "under age" box can be suggested when the two disagree.
+const typedAge = computed(() => patientAge(dateOfBirth.value))
+const ageText = (age: number) => t(`${age} years old`, `${age} años`)
 const email = ref(props.patient.email ?? '')
 const address = ref(props.patient.address ?? '')
 const postalCode = ref(props.patient.postal_code ?? '')
@@ -427,7 +432,12 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
       <dl v-if="!editing" class="mt-4 grid grid-cols-3 gap-x-6 gap-y-4">
         <div>
           <dt class="text-[11.5px] text-ink-muted2">{{ t('Date of birth', 'Fecha de nacimiento') }}</dt>
-          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.date_of_birth ?? t('N/A', 'N/D') }}</dd>
+          <dd class="mt-0.5 text-[13.5px] text-ink-700" data-cy="patient-dob">
+            <template v-if="patient.date_of_birth">
+              {{ formatLongDate(patient.date_of_birth) }}<template v-if="patientAge(patient.date_of_birth) !== null"> · {{ ageText(patientAge(patient.date_of_birth)!) }}</template>
+            </template>
+            <template v-else>{{ t('N/A', 'N/D') }}</template>
+          </dd>
         </div>
         <div>
           <dt class="text-[11.5px] text-ink-muted2">{{ t('Email', 'Correo electrónico') }}</dt>
@@ -530,6 +540,7 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
           <div>
             <label :class="labelClass">{{ t('Date of birth', 'Fecha de nacimiento') }}</label>
             <input v-model="dateOfBirth" type="date" :class="inputClass" />
+            <p v-if="typedAge !== null" class="mt-1 text-[12px] text-ink-muted2" data-cy="patient-age">{{ ageText(typedAge) }}</p>
           </div>
           <div>
             <label :class="labelClass">{{ t('Email', 'Correo electrónico') }}</label>
@@ -631,6 +642,14 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
             <input v-model="isMinor" type="checkbox" class="rounded border-line-control text-brand focus:ring-brand" />
             {{ t('This patient is under age', 'Este paciente es menor de edad') }}
           </label>
+          <p v-if="typedAge !== null && typedAge < ADULT_AGE && !isMinor" class="mt-1.5 pl-5 text-[12px] text-warning-text" data-cy="patient-age-minor-hint">
+            {{ t(`${typedAge} years old by the date of birth.`, `Tiene ${typedAge} años según la fecha de nacimiento.`) }}
+            <button type="button" class="font-semibold underline" @click="isMinor = true">{{ t('Mark as under age', 'Marcar como menor') }}</button>
+          </p>
+          <p v-else-if="typedAge !== null && typedAge >= ADULT_AGE && isMinor" class="mt-1.5 pl-5 text-[12px] text-warning-text" data-cy="patient-age-adult-hint">
+            {{ t(`${typedAge} years old by the date of birth: no longer under age.`, `Tiene ${typedAge} años según la fecha de nacimiento: ya no es menor.`) }}
+            <button type="button" class="font-semibold underline" @click="isMinor = false">{{ t('Unmark', 'Desmarcar') }}</button>
+          </p>
           <div v-if="isMinor" class="mt-2.5 pl-5">
             <label :class="labelClass">{{ t('Tutor (parent / guardian, must be an existing patient)', 'Tutor (padre/madre o tutor legal, debe ser un paciente existente)') }}</label>
             <div v-if="selectedTutor || tutorUnresolved" class="mt-1 flex items-center gap-2">

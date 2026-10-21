@@ -127,7 +127,8 @@ export async function draftPatientReply(
   // wrote: the clinic's own list of messages that want no answer, checked
   // before any model is asked. The reminder flow records a confirmation.
   const lastOutbound = turns.map((m) => m.direction).lastIndexOf('outbound')
-  if (isNoReplyMessage(turns.slice(lastOutbound + 1).map((m) => m.body), config.noReplyPhrases)) return leaveAlone()
+  const ours = lastOutbound >= 0 ? turns[lastOutbound]! : null
+  if (isNoReplyMessage(turns.slice(lastOutbound + 1).map((m) => m.body), config.noReplyPhrases, ours ? { body: ours.body, automated: Boolean(ours.automated) } : null)) return leaveAlone()
 
   const nowIso = new Date().toISOString()
   // From midnight, so a visit earlier today is still one they can ask about.

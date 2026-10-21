@@ -1,5 +1,5 @@
 import { createHmac, randomUUID } from 'node:crypto'
-import { automationFieldValue as recipientFieldValue, withAnswerFallback, leadAnswersFromEvents, type MergeContext } from '~/utils/automationFields'
+import { automationFieldValue as recipientFieldValue, withAnswerFallback, recallSignerId, leadAnswersFromEvents, type MergeContext } from '~/utils/automationFields'
 import { toE164 } from '~/utils/phone'
 import { renderTemplateFields } from '~/utils/docFields'
 import { templateVariantForLanguage } from '~/utils/templateLanguage'
@@ -397,8 +397,33 @@ async function runForRecipient(
   let practitionerFirstName: string | undefined
   if (recipient.kind === 'patient' && actionsUse(actions, 'practitioner_first_name')) {
     const { data: p } = await supabase.from('patients').select('default_practitioner_id').eq('id', recipient.id).maybeSingle()
-    if (p?.default_practitioner_id) {
-      const { data: member } = await supabase.from('team_members').select('full_name').eq('id', p.default_practitioner_id).maybeSingle()
+    const usual = p?.default_practitioner_id ?? null
+    // Their own practitioner unless they are away (recallSignerId); the rest
+    // is read only then.
+    const today = new Date().toISOString().slice(0, 10)
+    const { data: absences } = await supabase
+      .from('staff_absences')
+      .select('team_member_id')
+      .eq('account_id', accountId)
+      .eq('status', 'approved')
+      .lte('starts_on', today)
+      .gte('ends_on', today)
+    const away = new Set<string>(((absences ?? []) as { team_member_id: string }[]).map((a) => a.team_member_id))
+    let signer = usual
+    if (!usual || away.has(usual)) {
+      const [{ data: visits }, { data: team }] = await Promise.all([
+        supabase.from('appointments').select('practitioner_id').eq('patient_id', recipient.id).eq('status', 'completed').not('practitioner_id', 'is', null).order('starts_at', { ascending: false }).limit(20),
+        supabase.from('team_members').select('id').eq('account_id', accountId).eq('is_practitioner', true).is('deleted_at', null).order('created_at'),
+      ])
+      signer = recallSignerId({
+        usual,
+        recentWith: ((visits ?? []) as { practitioner_id: string | null }[]).map((v) => v.practitioner_id).filter((id): id is string => Boolean(id)),
+        away,
+        practitioners: ((team ?? []) as { id: string }[]).map((m) => m.id),
+      })
+    }
+    if (signer) {
+      const { data: member } = await supabase.from('team_members').select('full_name').eq('id', signer).maybeSingle()
       practitionerFirstName = String(member?.full_name ?? '').trim().split(/\s+/)[0] || undefined
     }
   }

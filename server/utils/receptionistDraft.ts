@@ -154,7 +154,9 @@ export async function draftLeadReply(
   // of messages that want no answer, checked before any model is asked.
   const lastOutbound = ordered.map((m: { direction: string }) => m.direction).lastIndexOf('outbound')
   const sinceOurs = ordered.slice(lastOutbound + 1).map(lineOf)
-  if (isNoReplyMessage(sinceOurs, config.noReplyPhrases)) return leaveAlone()
+  const ours = lastOutbound >= 0 ? ordered[lastOutbound] : null
+  const ourLast = ours ? { body: ours.body_preview ?? '', automated: Boolean(ours.template_name || ours.rule_id || ours.automation_action_id) } : null
+  if (isNoReplyMessage(sinceOurs, config.noReplyPhrases, ourLast)) return leaveAlone()
 
   const apiKey = useRuntimeConfig().anthropicApiKey
   if (!apiKey) return { status: 'unavailable' }

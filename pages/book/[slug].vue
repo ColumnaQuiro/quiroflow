@@ -5,6 +5,7 @@ import { effectiveDuration, effectivePriceCents, type AppointmentTypeOverride } 
 import { practitionerWindowsForDay } from '~/utils/businessHours'
 import { bookingSlotsForDay, bookingWindowsFor, calendarDateKey, clinicHourOf, clinicTimeLabel } from '~/utils/bookingSlots'
 import { clinicDateOf, DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
+import { BOOKING_LANGUAGES, bookingLanguageFromAcceptLanguage, bookingLanguageFromList, bookingLanguageOfTag, type BookingLanguage } from '~/utils/bookingLanguage'
 
 definePageMeta({ layout: false })
 
@@ -66,6 +67,37 @@ const route = useRoute()
 const slug = route.params.slug as string
 const supabase = useSupabaseClient()
 
+// --- the page's language ---
+//
+// Spanish, English or French: ?lang= first (the link a clinic sends its
+// English- or French-speaking patients), then the browser's language, then
+// Spanish. The language a patient books in is kept as their
+// preferred_language (book.post.ts), which is what the WhatsApp templates
+// after the booking are chosen by.
+//
+// The server renders in it from Accept-Language, and the CDN copy of the page
+// (the '/book/**' rule in nuxt.config.ts) is kept per language as well as per
+// URL, by Netlify-Vary. Netlify's choice of copy and ours are the same rule
+// (utils/bookingLanguage.ts), and the browser re-reads navigator.languages on
+// mount anyway, so a copy that was ever served to the wrong visitor corrects
+// itself rather than staying wrong.
+const queryLang = typeof route.query.lang === 'string' ? bookingLanguageOfTag(route.query.lang) : null
+const { lang, locale, say } = useBookingLang()
+if (import.meta.server) {
+  lang.value = queryLang ?? bookingLanguageFromAcceptLanguage(useRequestHeader('accept-language'))
+  useResponseHeader('Netlify-Vary').value = 'query,language=es|en|fr'
+}
+useHead({ htmlAttrs: { lang } })
+const LANGUAGE_NAMES: Record<BookingLanguage, string> = { es: 'Español', en: 'English', fr: 'Français' }
+function chooseLanguage(next: BookingLanguage) {
+  lang.value = next
+  // Kept in the address, so a reload, or the link copied from the bar, stays
+  // in the language chosen.
+  const url = new URL(window.location.href)
+  url.searchParams.set('lang', next)
+  window.history.replaceState(window.history.state, '', url)
+}
+
 const phase = ref<'loading' | 'not_found' | 'select' | 'datetime' | 'details' | 'payment' | 'card' | 'success'>('loading')
 // False in the server's HTML and in the first client render, true once the
 // page is interactive. The steps are server-rendered with their buttons in
@@ -124,16 +156,23 @@ function practitionerPhotoUrl(member: BookingTeamMember) {
   if (!member.photo_storage_path) return null
   return supabase.storage.from('team-member-photos').getPublicUrl(member.photo_storage_path).data.publicUrl
 }
-const WEEKDAY_FULL = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
+// Sunday first, as Date.getDay() counts.
+const WEEKDAY_FULL: Record<BookingLanguage, string[]> = {
+  es: ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'],
+  en: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+  fr: ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'],
+}
 function practitionerAvailabilityLabel(member: BookingTeamMember) {
   const days: string[] = []
   for (let i = 0; i < 7; i++) {
     const clinicWindows = clinic.value?.business_hours?.[WEEKDAY_KEYS[i]] ?? []
-    if (practitionerWindowsForDay(clinicWindows, member.business_hours, WEEKDAY_KEYS[i]).length > 0) days.push(WEEKDAY_FULL[i])
+    if (practitionerWindowsForDay(clinicWindows, member.business_hours, WEEKDAY_KEYS[i]).length > 0) days.push(WEEKDAY_FULL[lang.value][i])
   }
-  if (days.length === 0) return 'Sin disponibilidad'
-  if (days.length === 1) return `Disponible ${days[0]}`
-  return `Disponible ${days.slice(0, -1).join(', ')} y ${days[days.length - 1]}`
+  if (days.length === 0) return say({ es: 'Sin disponibilidad', en: 'No availability', fr: 'Aucune disponibilité' })
+  // "Lunes, Martes y Jueves" / "Monday, Tuesday and Thursday": the language's
+  // own list, conjunction included.
+  const list = new Intl.ListFormat(locale.value, { style: 'long', type: 'conjunction' }).format(days)
+  return say({ es: `Disponible ${list}`, en: `Available ${list}`, fr: `Disponible ${list}` })
 }
 function chooseTeamMember(id: string) {
   teamMemberId.value = id
@@ -142,9 +181,9 @@ function chooseTeamMember(id: string) {
 
 const stepNumber = computed(() => (phase.value === 'select' ? 1 : phase.value === 'datetime' ? 2 : phase.value === 'details' ? 3 : 0))
 const stepTitle = computed(() => {
-  if (phase.value === 'select') return t('select_heading', 'Elija un profesional')
-  if (phase.value === 'datetime') return t('choose_datetime', 'Elija su fecha y hora')
-  if (phase.value === 'details') return t('enter_details', 'Introduzca sus datos')
+  if (phase.value === 'select') return t('select_heading', { es: 'Elija un profesional', en: 'Choose a practitioner', fr: 'Choisissez un praticien' })
+  if (phase.value === 'datetime') return t('choose_datetime', { es: 'Elija su fecha y hora', en: 'Choose your date and time', fr: 'Choisissez la date et l’heure' })
+  if (phase.value === 'details') return t('enter_details', { es: 'Introduzca sus datos', en: 'Enter your details', fr: 'Saisissez vos coordonnées' })
   return ''
 })
 
@@ -160,7 +199,7 @@ const effectivePrice = computed(() =>
 )
 
 function formatPrice(cents: number) {
-  return (cents / 100).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })
+  return (cents / 100).toLocaleString(locale.value, { style: 'currency', currency: 'EUR' })
 }
 
 // Overrides the theme's brand color CSS vars for just this page's root
@@ -191,8 +230,67 @@ const brandStyle = computed(() => {
   return style
 })
 
-function t(key: string, fallback: string) {
-  return info.value?.account.online_booking_text_overrides?.[key] || fallback
+// The clinic's own wording for a few of the page's strings (Settings >
+// Online Booking), which is written in Spanish against Spanish defaults --
+// so it replaces the Spanish only. A patient reading in English or French
+// gets the page's translation rather than one Spanish sentence among them.
+function t(key: string, text: Record<BookingLanguage, string>) {
+  const override = lang.value === 'es' ? info.value?.account.online_booking_text_overrides?.[key] : null
+  return override || say(text)
+}
+
+// create_public_booking's refusals are English sentences, which the page used
+// to show as they were -- to Spanish patients too. Each is said here in the
+// page's language; one not listed is still shown as the function wrote it.
+const BOOKING_REFUSALS: Record<string, Record<BookingLanguage, string>> = {
+  'An email address is required to book': { es: 'Indique su correo electrónico.', en: 'Please enter your email address.', fr: 'Veuillez indiquer votre adresse e-mail.' },
+  'Email required': { es: 'Indique su correo electrónico.', en: 'Please enter your email address.', fr: 'Veuillez indiquer votre adresse e-mail.' },
+  'A phone number is required to book': { es: 'Indique su número de móvil.', en: 'Please enter your mobile number.', fr: 'Veuillez indiquer votre numéro de portable.' },
+  'That phone number does not look right': { es: 'Ese número no parece correcto. Revíselo, por favor.', en: 'That number does not look right. Please check it.', fr: 'Ce numéro ne semble pas correct. Veuillez le vérifier.' },
+  'First name required': { es: 'Indique su nombre.', en: 'Please enter your first name.', fr: 'Veuillez indiquer votre prénom.' },
+  'That time is no longer available': { es: 'Esa hora ya no está disponible. Elija otra, por favor.', en: 'That time is no longer available. Please choose another.', fr: 'Ce créneau n’est plus disponible. Veuillez en choisir un autre.' },
+  'Cannot book a time in the past': { es: 'Esa hora ya ha pasado. Elija otra, por favor.', en: 'That time has already passed. Please choose another.', fr: 'Ce créneau est déjà passé. Veuillez en choisir un autre.' },
+  'That date is too far in advance to book online': { es: 'Esa fecha está demasiado lejos para reservar online.', en: 'That date is too far ahead to book online.', fr: 'Cette date est trop éloignée pour réserver en ligne.' },
+  'That class is not on at that time': { es: 'Esa clase no se imparte a esa hora.', en: 'That class is not on at that time.', fr: 'Ce cours n’a pas lieu à cette heure-là.' },
+  'This appointment type is only available to new patients': { es: 'Este servicio solo pueden reservarlo pacientes nuevos.', en: 'This service can only be booked by new patients.', fr: 'Ce service est réservé aux nouveaux patients.' },
+  'This appointment type is only available to existing patients': { es: 'Este servicio solo pueden reservarlo pacientes de la clínica. Llame a la clínica si ya es paciente.', en: 'This service can only be booked by existing patients. Please call the clinic if you already are one.', fr: 'Ce service est réservé aux patients du cabinet. Appelez le cabinet si vous l’êtes déjà.' },
+  'Invalid or expired discount code': { es: 'El código de descuento no es válido o ha caducado.', en: 'That discount code is not valid or has expired.', fr: 'Ce code de réduction n’est pas valide ou a expiré.' },
+  'This discount code has reached its usage limit': { es: 'Ese código de descuento ya no puede usarse más.', en: 'That discount code has reached its usage limit.', fr: 'Ce code de réduction a atteint sa limite d’utilisation.' },
+  'Practitioner not available': { es: 'Ese profesional ya no está disponible. Elija otra hora, por favor.', en: 'That practitioner is no longer available. Please choose another time.', fr: 'Ce praticien n’est plus disponible. Veuillez choisir un autre créneau.' },
+  'Appointment type not available': { es: 'Ese servicio ya no se puede reservar online.', en: 'That service can no longer be booked online.', fr: 'Ce service ne peut plus être réservé en ligne.' },
+  'Clinic not available for online booking': { es: 'Esta clínica no acepta reservas online ahora mismo.', en: 'This clinic is not taking online bookings right now.', fr: 'Ce cabinet n’accepte pas de réservations en ligne pour le moment.' },
+}
+function bookingRefusal(message: string | undefined) {
+  if (!message) return say({ es: 'No se ha podido completar la reserva. Inténtelo de nuevo, por favor.', en: 'The booking could not be completed. Please try again.', fr: 'La réservation n’a pas pu aboutir. Veuillez réessayer.' })
+  const known = BOOKING_REFUSALS[message] ?? Object.entries(BOOKING_REFUSALS).find(([english]) => message.startsWith(english))?.[1]
+  return known ? say(known) : message
+}
+
+// Gift vouchers: gift-check.post.ts and book.post.ts name why a code cannot be
+// used (GIFT_REFUSAL's reasons), and the page says it.
+const GIFT_REFUSALS: Record<string, Record<BookingLanguage, string>> = {
+  unknown: { es: 'Ese código no existe.', en: 'That code does not exist.', fr: 'Ce code n’existe pas.' },
+  unpaid: { es: 'Ese bono regalo aún no está pagado.', en: 'That gift voucher has not been paid for yet.', fr: 'Ce bon cadeau n’a pas encore été payé.' },
+  redeemed: { es: 'Ese bono regalo ya se ha canjeado.', en: 'That gift voucher has already been redeemed.', fr: 'Ce bon cadeau a déjà été utilisé.' },
+  expired: { es: 'Ese bono regalo ha caducado.', en: 'That gift voucher has expired.', fr: 'Ce bon cadeau a expiré.' },
+}
+function giftRefusal(gift: { reason?: string; message?: string }) {
+  const known = gift.reason ? GIFT_REFUSALS[gift.reason] : undefined
+  if (known) return say(known)
+  return lang.value === 'es' && gift.message
+    ? gift.message
+    : say({ es: 'No se ha podido canjear el bono regalo. Dalo en recepción.', en: 'The gift voucher could not be redeemed. Please hand it in at reception.', fr: 'Le bon cadeau n’a pas pu être utilisé. Présentez-le à l’accueil.' })
+}
+function giftDescription(gift: GiftCheck) {
+  if (gift.kind === 'package') {
+    return say({ es: `${gift.label}, para usar en tus próximas visitas`, en: `${gift.label}, to use on your next visits`, fr: `${gift.label}, à utiliser lors de vos prochaines visites` })
+  }
+  const cents = gift.valueCents ?? 0
+  return say({
+    es: `${(cents / 100).toLocaleString('es-ES')} € de saldo para usar en la clínica`,
+    en: `${formatPrice(cents)} of credit to use at the clinic`,
+    fr: `${formatPrice(cents)} de crédit à utiliser au cabinet`,
+  })
 }
 
 // Public bucket (0096_clinic_logo.sql) -- getPublicUrl is a pure local URL
@@ -259,17 +357,17 @@ const discountAppliedCents = ref(0)
 const giftOpen = ref(typeof route.query.regalo === 'string')
 const giftOffered = ref(typeof route.query.regalo === 'string')
 const giftCode = ref(typeof route.query.regalo === 'string' ? route.query.regalo : '')
-type GiftCheck = { ok: boolean; label?: string; description?: string; message?: string }
+type GiftCheck = { ok: boolean; label?: string; kind?: string; valueCents?: number; description?: string; message?: string; reason?: string }
 const giftChecked = ref<GiftCheck | null>(null)
 const checkingGift = ref(false)
-const giftResult = ref<{ redeemed: boolean; label?: string; message?: string } | null>(null)
+const giftResult = ref<{ redeemed: boolean; label?: string; message?: string; reason?: string } | null>(null)
 async function checkGift() {
   if (!giftCode.value.trim()) return
   checkingGift.value = true
   try {
     giftChecked.value = await $fetch<GiftCheck>('/api/public-booking/gift-check', { method: 'POST', body: { slug, code: giftCode.value } })
   } catch {
-    giftChecked.value = { ok: false, message: 'No se ha podido comprobar el código.' }
+    giftChecked.value = { ok: false, message: say({ es: 'No se ha podido comprobar el código.', en: 'The code could not be checked.', fr: 'Le code n’a pas pu être vérifié.' }) }
   } finally {
     checkingGift.value = false
   }
@@ -343,20 +441,20 @@ const waitlistFor = ref<ClassSessionOption | null>(null)
 const waitlistPosition = ref<number | null>(null)
 const waitlistError = ref('')
 const joiningWaitlist = ref(false)
-const WAITLIST_REFUSALS: Record<string, string> = {
-  'That phone number does not look right': 'Ese número no parece correcto. Revíselo, por favor.',
-  'An email address is required': 'Indique su correo electrónico.',
-  'A phone number is required': 'Indique su número de móvil.',
-  'First name required': 'Indique su nombre.',
-  'You already have a place in this class': 'Ya tiene plaza en esta clase.',
-  'That class still has places: book one': 'Se ha liberado una plaza: puede reservarla.',
+const WAITLIST_REFUSALS: Record<string, Record<BookingLanguage, string>> = {
+  'That phone number does not look right': { es: 'Ese número no parece correcto. Revíselo, por favor.', en: 'That number does not look right. Please check it.', fr: 'Ce numéro ne semble pas correct. Veuillez le vérifier.' },
+  'An email address is required': { es: 'Indique su correo electrónico.', en: 'Please enter your email address.', fr: 'Veuillez indiquer votre adresse e-mail.' },
+  'A phone number is required': { es: 'Indique su número de móvil.', en: 'Please enter your mobile number.', fr: 'Veuillez indiquer votre numéro de portable.' },
+  'First name required': { es: 'Indique su nombre.', en: 'Please enter your first name.', fr: 'Veuillez indiquer votre prénom.' },
+  'You already have a place in this class': { es: 'Ya tiene plaza en esta clase.', en: 'You already have a place in this class.', fr: 'Vous avez déjà une place dans ce cours.' },
+  'That class still has places: book one': { es: 'Se ha liberado una plaza: puede reservarla.', en: 'A place has come free: you can book it.', fr: 'Une place s’est libérée : vous pouvez la réserver.' },
 }
 async function joinWaitlist() {
   if (!waitlistFor.value) return
   waitlistError.value = ''
   phoneChecked.value = true
   if (!firstName.value.trim() || !email.value.trim() || !looksLikePhoneNumber(phoneNumber.value, dialCode.value)) {
-    waitlistError.value = 'Indique su nombre, correo y un móvil válido.'
+    waitlistError.value = say({ es: 'Indique su nombre, correo y un móvil válido.', en: 'Please enter your name, email and a valid mobile number.', fr: 'Veuillez indiquer votre nom, votre e-mail et un numéro de portable valide.' })
     return
   }
   joiningWaitlist.value = true
@@ -371,15 +469,16 @@ async function joinWaitlist() {
   })
   joiningWaitlist.value = false
   if (error) {
-    waitlistError.value = WAITLIST_REFUSALS[error.message] ?? 'No se ha podido apuntar. Inténtelo de nuevo o llame a la clínica.'
+    const known = WAITLIST_REFUSALS[error.message]
+    waitlistError.value = known ? say(known) : say({ es: 'No se ha podido apuntar. Inténtelo de nuevo o llame a la clínica.', en: 'You could not be added. Please try again or call the clinic.', fr: 'L’inscription n’a pas pu être faite. Veuillez réessayer ou appeler le cabinet.' })
     return
   }
   waitlistPosition.value = (data as { position: number } | null)?.position ?? null
 }
 function classSessionLabel(session: ClassSessionOption) {
   const d = new Date(session.starts_at)
-  const day = d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'short', timeZone: clinicTimeZone.value })
-  const time = d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: clinicTimeZone.value })
+  const day = d.toLocaleDateString(locale.value, { weekday: 'long', day: 'numeric', month: 'short', timeZone: clinicTimeZone.value })
+  const time = d.toLocaleTimeString(locale.value, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: clinicTimeZone.value })
   return `${day.charAt(0).toUpperCase()}${day.slice(1)} · ${time}`
 }
 
@@ -394,7 +493,12 @@ watch(canContinueFromSelect, (can) => {
 
 // --- date/time ---
 const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
-const WEEKDAY_LABELS = ['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sa', 'Do']
+// Monday first, as the grid is laid out.
+const WEEKDAY_LABELS: Record<BookingLanguage, string[]> = {
+  es: ['Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sa', 'Do'],
+  en: ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'],
+  fr: ['Lu', 'Ma', 'Me', 'Je', 'Ve', 'Sa', 'Di'],
+}
 
 const viewMonth = ref(startOfMonth(new Date()))
 const selectedDate = ref<Date | null>(null)
@@ -431,7 +535,7 @@ function isSameDay(a: Date, b: Date) {
 const clinicToday = computed(() => clinicDateOf(new Date(), clinicTimeZone.value))
 
 const monthLabel = computed(() =>
-  viewMonth.value.toLocaleDateString('es-ES', { month: 'short', year: 'numeric' }).replace(/^./, (c) => c.toUpperCase())
+  viewMonth.value.toLocaleDateString(locale.value, { month: 'short', year: 'numeric' }).replace(/^./, (c) => c.toUpperCase())
 )
 
 // Per-type override falls back to the account default, same convention as
@@ -623,6 +727,13 @@ const dialCode = ref('ES')
 const selectedCountry = computed(() => COUNTRIES_BY_NAME.find((c) => c.code === dialCode.value))
 const phoneNumber = ref('')
 const note = ref('')
+// The contact fields' labels, shared by the booking form and the class waitlist.
+const FIELD = {
+  firstName: { es: 'Nombre', en: 'First name', fr: 'Prénom' },
+  lastName: { es: 'Apellidos', en: 'Last name', fr: 'Nom' },
+  email: { es: 'Correo electrónico', en: 'Email', fr: 'E-mail' },
+  phone: { es: 'Número de móvil', en: 'Mobile number', fr: 'Numéro de portable' },
+} satisfies Record<string, Record<BookingLanguage, string>>
 const submitting = ref(false)
 const submitError = ref('')
 const confirmation = ref<{ starts_at: string } | null>(null)
@@ -640,8 +751,8 @@ const phoneChecked = ref(false)
 const phoneError = computed(() => {
   if (!phoneChecked.value || looksLikePhoneNumber(phoneNumber.value, dialCode.value)) return ''
   return dialCode.value === 'ES'
-    ? 'Un número español tiene 9 dígitos. Revíselo, por favor.'
-    : 'Ese número no parece completo. Revíselo, por favor.'
+    ? say({ es: 'Un número español tiene 9 dígitos. Revíselo, por favor.', en: 'A Spanish number has 9 digits. Please check it.', fr: 'Un numéro espagnol comporte 9 chiffres. Veuillez le vérifier.' })
+    : say({ es: 'Ese número no parece completo. Revíselo, por favor.', en: 'That number does not look complete. Please check it.', fr: 'Ce numéro ne semble pas complet. Veuillez le vérifier.' })
 })
 
 async function submitBooking() {
@@ -677,16 +788,18 @@ async function submitBooking() {
         p_note: note.value,
         p_discount_code: discountCode.value.trim() || undefined,
         gift_code: giftChecked.value?.ok ? giftCode.value.trim() : undefined,
+        // Kept on a new patient as their preferred_language (book.post.ts).
+        language: lang.value,
       },
     })
   } catch (err: any) {
     submitting.value = false
-    // create_public_booking's own refusal, passed through word for word.
-    submitError.value = err?.data?.data?.message ?? 'No se ha podido completar la reserva. Inténtelo de nuevo, por favor.'
+    // create_public_booking's own refusal, in the page's language.
+    submitError.value = bookingRefusal(err?.data?.data?.message)
     return
   }
   submitting.value = false
-  const result = data as unknown as { appointment_id: string; starts_at: string; invoice_id: string | null; payment_required_cents: number; discount_applied_cents: number; card_url?: string | null; gift?: { redeemed: boolean; label?: string; message?: string } | null }
+  const result = data as unknown as { appointment_id: string; starts_at: string; invoice_id: string | null; payment_required_cents: number; discount_applied_cents: number; card_url?: string | null; gift?: { redeemed: boolean; label?: string; message?: string; reason?: string } | null }
   cardUrl.value = result.card_url ?? null
   giftResult.value = result.gift ?? null
   confirmation.value = result
@@ -945,6 +1058,10 @@ onMounted(async () => {
 
   captureAttribution()
 
+  // The server's language was read from Accept-Language, or the page came
+  // from a cached copy: the browser's own list is the last word.
+  lang.value = queryLang ?? bookingLanguageFromList(navigator.languages?.length ? navigator.languages : [navigator.language])
+
   // The server's fetch failed, so the HTML says the page is unavailable --
   // which a fetch of the browser's own can still put right.
   if (booking.value?.status !== 'ok' && booking.value?.status !== 'not_found') {
@@ -965,21 +1082,41 @@ onMounted(async () => {
 <template>
   <div class="min-h-screen bg-surface-page px-4 py-10" :style="brandStyle">
     <div class="mx-auto max-w-5xl">
-      <div v-if="phase === 'loading'" class="py-24 text-center text-sm text-ink-faint">Cargando…</div>
+      <div v-if="phase === 'loading'" class="py-24 text-center text-sm text-ink-faint">{{ say({ es: 'Cargando…', en: 'Loading…', fr: 'Chargement…' }) }}</div>
 
       <div v-else-if="phase === 'not_found'" class="rounded-card border border-line bg-surface p-10 text-center">
-        <p class="text-ink-muted">La reserva online no está disponible para esta clínica.</p>
+        <p class="text-ink-muted">{{ say({ es: 'La reserva online no está disponible para esta clínica.', en: 'Online booking is not available for this clinic.', fr: 'La réservation en ligne n’est pas disponible pour ce cabinet.' }) }}</p>
       </div>
 
       <template v-else-if="info">
+        <!-- The patient's language. Any choice is kept in the address
+             (chooseLanguage), and the booking records it on the patient. -->
+        <div class="mb-4 flex justify-end">
+          <div role="group" :aria-label="say({ es: 'Idioma', en: 'Language', fr: 'Langue' })" class="inline-flex rounded-ctl border border-line bg-surface p-0.5 text-xs" data-cy="booking-language">
+            <button
+              v-for="l in BOOKING_LANGUAGES"
+              :key="l"
+              type="button"
+              :lang="l"
+              class="rounded-[6px] px-2.5 py-1 font-medium touch:min-h-[44px]"
+              :class="l === lang ? 'bg-brand text-white' : 'text-ink-muted hover:text-ink-900'"
+              :aria-pressed="l === lang"
+              :disabled="!hydrated"
+              :data-cy="`booking-language-${l}`"
+              @click="chooseLanguage(l)"
+            >
+              {{ LANGUAGE_NAMES[l] }}
+            </button>
+          </div>
+        </div>
         <img v-if="clinicLogoUrl" :src="clinicLogoUrl" alt="" class="mx-auto h-12 w-auto object-contain" />
-        <h1 class="text-center text-2xl font-semibold text-ink-900" :class="clinicLogoUrl ? 'mt-3' : ''">{{ t('heading', 'Reservar una cita') }}</h1>
+        <h1 class="text-center text-2xl font-semibold text-ink-900" :class="clinicLogoUrl ? 'mt-3' : ''">{{ t('heading', { es: 'Reservar una cita', en: 'Book an appointment', fr: 'Prendre rendez-vous' }) }}</h1>
         <p class="mt-1 text-center text-sm text-ink-muted">{{ info.account.name }}</p>
 
         <!-- Step 1: service / practitioner selection -->
         <div v-if="phase === 'select'">
           <div class="mt-6 flex flex-col items-center gap-2">
-            <p class="text-xs font-semibold uppercase tracking-wide text-warning-text">Paso {{ stepNumber }} de 3</p>
+            <p class="text-xs font-semibold uppercase tracking-wide text-warning-text">{{ say({ es: `Paso ${stepNumber} de 3`, en: `Step ${stepNumber} of 3`, fr: `Étape ${stepNumber} sur 3` }) }}</p>
             <div class="flex gap-1.5">
               <span v-for="n in 3" :key="n" class="h-1.5 w-1.5 rounded-full" :class="n === stepNumber ? 'bg-brand' : 'bg-line'"></span>
             </div>
@@ -990,13 +1127,13 @@ onMounted(async () => {
             <div class="space-y-3 sm:col-span-2">
               <div v-if="info.clinics.length > 1 || (info.appointment_types.length > 1 && !typeLockedByQuery)" class="rounded-card border border-line bg-surface p-4 shadow-card">
                 <div v-if="info.clinics.length > 1">
-                  <label class="block text-sm font-medium text-ink-700">Clínica</label>
+                  <label class="block text-sm font-medium text-ink-700">{{ say({ es: 'Clínica', en: 'Clinic', fr: 'Cabinet' }) }}</label>
                   <select v-model="clinicId" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm" @change="onClinicChange">
                     <option v-for="c in info.clinics" :key="c.id" :value="c.id">{{ c.name }}</option>
                   </select>
                 </div>
                 <div v-if="info.appointment_types.length > 1 && !typeLockedByQuery" :class="info.clinics.length > 1 ? 'mt-4' : ''">
-                  <label class="block text-sm font-medium text-ink-700">Servicio</label>
+                  <label class="block text-sm font-medium text-ink-700">{{ say({ es: 'Servicio', en: 'Service', fr: 'Prestation' }) }}</label>
                   <select v-model="appointmentTypeId" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm">
                     <option v-for="t in info.appointment_types" :key="t.id" :value="t.id">
                       {{ t.name }} — {{ t.duration_minutes }} min
@@ -1013,9 +1150,15 @@ onMounted(async () => {
                   @click="chooseTeamMember(ANY_PRACTITIONER)"
                 >
                   <div>
-                    <p class="font-semibold text-ink-900">{{ t('any_practitioner_label', 'Cualquier profesional') }}</p>
+                    <p class="font-semibold text-ink-900">{{ t('any_practitioner_label', { es: 'Cualquier profesional', en: 'Any practitioner', fr: 'N’importe quel praticien' }) }}</p>
                     <p class="mt-1 text-sm text-ink-muted">
-                      {{ t('any_practitioner_description', 'Esta opción le permite reservar una cita con cualquier profesional disponible en la especialidad y horario seleccionados.') }}
+                      {{
+                        t('any_practitioner_description', {
+                          es: 'Esta opción le permite reservar una cita con cualquier profesional disponible en la especialidad y horario seleccionados.',
+                          en: 'Book with whichever practitioner is available for the service and time you choose.',
+                          fr: 'Réservez avec le praticien disponible pour la prestation et l’horaire choisis.',
+                        })
+                      }}
                     </p>
                   </div>
                   <span class="ml-4 flex h-8 w-8 shrink-0 items-center justify-center rounded-ctl bg-surface-subtle text-ink-faint"><UiChevron dir="right" /></span>
@@ -1044,10 +1187,10 @@ onMounted(async () => {
 
               <div v-else class="rounded-card border border-line bg-surface p-6 shadow-card">
                 <p v-if="availablePractitioners.length === 0" class="text-sm text-danger-text">
-                  No hay profesionales disponibles para reserva online en esta clínica.
+                  {{ say({ es: 'No hay profesionales disponibles para reserva online en esta clínica.', en: 'No practitioners are available for online booking at this clinic.', fr: 'Aucun praticien n’est disponible pour la réservation en ligne dans ce cabinet.' }) }}
                 </p>
                 <UiBtn type="button" variant="primary" class="w-full" :class="availablePractitioners.length === 0 ? 'mt-4' : ''" :disabled="!canContinueFromSelect" @click="proceedToDatetime">
-                  Continuar
+                  {{ say({ es: 'Continuar', en: 'Continue', fr: 'Continuer' }) }}
                 </UiBtn>
               </div>
             </div>
@@ -1061,7 +1204,7 @@ onMounted(async () => {
           <div class="mt-6 flex items-center justify-between">
             <div>
               <div class="flex items-center gap-2">
-                <p class="text-xs font-semibold uppercase tracking-wide text-warning-text">Paso {{ stepNumber }} de 3</p>
+                <p class="text-xs font-semibold uppercase tracking-wide text-warning-text">{{ say({ es: `Paso ${stepNumber} de 3`, en: `Step ${stepNumber} of 3`, fr: `Étape ${stepNumber} sur 3` }) }}</p>
                 <div class="flex gap-1.5">
                   <span v-for="n in 3" :key="n" class="h-1.5 w-1.5 rounded-full" :class="n === stepNumber ? 'bg-brand' : 'bg-line'"></span>
                 </div>
@@ -1069,13 +1212,13 @@ onMounted(async () => {
               <h2 class="mt-1 text-xl font-semibold text-ink-900">{{ stepTitle }}</h2>
             </div>
             <UiBtn type="button" variant="secondary" @click="backToSelect">
-              &larr; Atrás
+              &larr; {{ say({ es: 'Atrás', en: 'Back', fr: 'Retour' }) }}
             </UiBtn>
           </div>
 
           <div v-if="isClass" class="mt-6 flex flex-col gap-2.5" data-cy="class-sessions">
             <p v-if="!classInfo?.sessions.length" class="rounded-card border border-line bg-surface p-4 text-sm text-ink-muted">
-              No hay clases programadas por ahora. Llame a la clínica para apuntarse.
+              {{ say({ es: 'No hay clases programadas por ahora. Llame a la clínica para apuntarse.', en: 'No classes are scheduled for now. Call the clinic to sign up.', fr: 'Aucun cours n’est programmé pour le moment. Appelez le cabinet pour vous inscrire.' }) }}
             </p>
             <button
               v-for="session in classInfo?.sessions ?? []"
@@ -1095,17 +1238,23 @@ onMounted(async () => {
               <span
                 class="inline-flex h-6 shrink-0 items-center rounded-pill px-2.5 text-xs font-semibold"
                 :class="session.places_left > 0 ? 'bg-brand-tint text-brand-text' : 'bg-warning-bg text-warning-text'"
-              >{{ session.places_left > 0 ? (session.places_left === 1 ? 'Queda 1 plaza' : `Quedan ${session.places_left}`) : 'Completa · lista de espera' }}</span>
+              >{{
+                session.places_left > 0
+                  ? session.places_left === 1
+                    ? say({ es: 'Queda 1 plaza', en: '1 place left', fr: '1 place restante' })
+                    : say({ es: `Quedan ${session.places_left}`, en: `${session.places_left} left`, fr: `${session.places_left} restantes` })
+                  : say({ es: 'Completa · lista de espera', en: 'Full · waitlist', fr: 'Complet · liste d’attente' })
+              }}</span>
             </button>
             <div v-if="waitlistFor" class="rounded-card border border-line bg-surface p-4 shadow-card" data-cy="class-waitlist-join">
               <template v-if="waitlistPosition === null">
-                <p class="text-base font-semibold text-ink-900">La clase está completa</p>
-                <p class="mt-1 text-sm text-ink-muted">Apúntese y, si se libera una plaza, le enviaremos un enlace para quedársela.</p>
+                <p class="text-base font-semibold text-ink-900">{{ say({ es: 'La clase está completa', en: 'The class is full', fr: 'Le cours est complet' }) }}</p>
+                <p class="mt-1 text-sm text-ink-muted">{{ say({ es: 'Apúntese y, si se libera una plaza, le enviaremos un enlace para quedársela.', en: 'Join the waitlist and, if a place comes free, we will send you a link to take it.', fr: 'Inscrivez-vous et, si une place se libère, nous vous enverrons un lien pour la réserver.' }) }}</p>
                 <div class="mt-3 grid gap-3 sm:grid-cols-2">
-                  <label class="block text-sm font-medium text-ink-700">Nombre *<input v-model="firstName" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm" data-cy="waitlist-first-name" /></label>
-                  <label class="block text-sm font-medium text-ink-700">Apellidos<input v-model="lastName" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm" data-cy="waitlist-last-name" /></label>
-                  <label class="block text-sm font-medium text-ink-700">Correo electrónico *<input v-model="email" type="email" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm" data-cy="waitlist-email" /></label>
-                  <label class="block text-sm font-medium text-ink-700">Número de móvil *
+                  <label class="block text-sm font-medium text-ink-700">{{ say(FIELD.firstName) }} *<input v-model="firstName" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm" data-cy="waitlist-first-name" /></label>
+                  <label class="block text-sm font-medium text-ink-700">{{ say(FIELD.lastName) }}<input v-model="lastName" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm" data-cy="waitlist-last-name" /></label>
+                  <label class="block text-sm font-medium text-ink-700">{{ say(FIELD.email) }} *<input v-model="email" type="email" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm" data-cy="waitlist-email" /></label>
+                  <label class="block text-sm font-medium text-ink-700">{{ say(FIELD.phone) }} *
                     <span class="mt-1 flex gap-2">
                       <select v-model="dialCode" class="shrink-0 rounded-ctl border border-line-control px-2 py-2 text-base sm:text-sm">
                         <option v-for="c in COUNTRIES_BY_NAME" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }}</option>
@@ -1115,24 +1264,24 @@ onMounted(async () => {
                   </label>
                 </div>
                 <p v-if="waitlistError" role="alert" class="mt-2 text-sm text-danger-text">{{ waitlistError }}</p>
-                <UiBtn variant="primary" class="mt-3 w-full" :disabled="joiningWaitlist" data-cy="waitlist-join" @click="joinWaitlist">Apuntarme a la lista de espera</UiBtn>
+                <UiBtn variant="primary" class="mt-3 w-full" :disabled="joiningWaitlist" data-cy="waitlist-join" @click="joinWaitlist">{{ say({ es: 'Apuntarme a la lista de espera', en: 'Join the waitlist', fr: 'M’inscrire sur la liste d’attente' }) }}</UiBtn>
               </template>
               <template v-else>
-                <p class="text-sm text-ink-muted">Está en la lista de espera en el puesto</p>
+                <p class="text-sm text-ink-muted">{{ say({ es: 'Está en la lista de espera en el puesto', en: 'Your place on the waitlist', fr: 'Votre position sur la liste d’attente' }) }}</p>
                 <p class="text-3xl font-bold text-ink-900" data-cy="waitlist-position">{{ waitlistPosition }}</p>
-                <p class="mt-1 text-sm text-ink-muted">Si se libera una plaza le avisaremos con un enlace para quedársela.</p>
+                <p class="mt-1 text-sm text-ink-muted">{{ say({ es: 'Si se libera una plaza le avisaremos con un enlace para quedársela.', en: 'If a place comes free we will send you a link to take it.', fr: 'Si une place se libère, nous vous enverrons un lien pour la réserver.' }) }}</p>
               </template>
             </div>
           </div>
           <div v-else class="mt-6 grid gap-6 sm:grid-cols-3">
             <div class="rounded-card border border-line bg-surface p-4 shadow-card">
               <div class="flex items-center justify-between">
-                <button type="button" class="rounded p-1 text-ink-faint hover:bg-surface-subtle" :disabled="!hydrated" aria-label="Mes anterior" @click="prevMonth"><UiChevron dir="left" /></button>
+                <button type="button" class="rounded p-1 text-ink-faint hover:bg-surface-subtle" :disabled="!hydrated" :aria-label="say({ es: 'Mes anterior', en: 'Previous month', fr: 'Mois précédent' })" @click="prevMonth"><UiChevron dir="left" /></button>
                 <span class="text-sm font-semibold text-ink-900">{{ monthLabel }}</span>
-                <button type="button" class="rounded p-1 text-ink-faint hover:bg-surface-subtle" :disabled="!hydrated" aria-label="Mes siguiente" @click="nextMonth"><UiChevron dir="right" /></button>
+                <button type="button" class="rounded p-1 text-ink-faint hover:bg-surface-subtle" :disabled="!hydrated" :aria-label="say({ es: 'Mes siguiente', en: 'Next month', fr: 'Mois suivant' })" @click="nextMonth"><UiChevron dir="right" /></button>
               </div>
               <div class="mt-3 grid grid-cols-7 gap-1 text-center text-xs font-medium text-ink-faint">
-                <span v-for="l in WEEKDAY_LABELS" :key="l">{{ l }}</span>
+                <span v-for="(l, i) in WEEKDAY_LABELS[lang]" :key="i">{{ l }}</span>
               </div>
               <div class="mt-1 grid grid-cols-7 gap-1">
                 <button
@@ -1154,16 +1303,16 @@ onMounted(async () => {
             </div>
 
             <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-              <p v-if="!selectedDate" class="text-sm text-ink-faint">Elija un día del calendario.</p>
+              <p v-if="!selectedDate" class="text-sm text-ink-faint">{{ say({ es: 'Elija un día del calendario.', en: 'Choose a day on the calendar.', fr: 'Choisissez un jour dans le calendrier.' }) }}</p>
               <template v-else>
                 <p class="text-sm font-semibold text-ink-900">
-                  {{ selectedDate.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) }}
+                  {{ selectedDate.toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) }}
                 </p>
-                <div v-if="monthAvailabilityLoading" class="mt-3 text-sm text-ink-faint">Cargando horarios…</div>
+                <div v-if="monthAvailabilityLoading" class="mt-3 text-sm text-ink-faint">{{ say({ es: 'Cargando horarios…', en: 'Loading times…', fr: 'Chargement des horaires…' }) }}</div>
                 <template v-else>
-                  <div v-if="daySlots.length === 0" class="mt-3 text-sm text-ink-faint">No hay horas disponibles ese día.</div>
+                  <div v-if="daySlots.length === 0" class="mt-3 text-sm text-ink-faint">{{ say({ es: 'No hay horas disponibles ese día.', en: 'No times available that day.', fr: 'Aucun horaire disponible ce jour-là.' }) }}</div>
                   <div v-if="morningSlots.length" class="mt-3">
-                    <p class="text-xs font-medium uppercase text-ink-faint">Mañana</p>
+                    <p class="text-xs font-medium uppercase text-ink-faint">{{ say({ es: 'Mañana', en: 'Morning', fr: 'Matin' }) }}</p>
                     <div class="mt-1.5 flex flex-wrap gap-2">
                       <button
                         v-for="s in morningSlots"
@@ -1177,7 +1326,7 @@ onMounted(async () => {
                     </div>
                   </div>
                   <div v-if="afternoonSlots.length" class="mt-3">
-                    <p class="text-xs font-medium uppercase text-ink-faint">Tarde</p>
+                    <p class="text-xs font-medium uppercase text-ink-faint">{{ say({ es: 'Tarde', en: 'Afternoon', fr: 'Après-midi' }) }}</p>
                     <div class="mt-1.5 flex flex-wrap gap-2">
                       <button
                         v-for="s in afternoonSlots"
@@ -1203,7 +1352,7 @@ onMounted(async () => {
           <div class="mt-6 flex items-center justify-between">
             <div>
               <div class="flex items-center gap-2">
-                <p class="text-xs font-semibold uppercase tracking-wide text-warning-text">Paso {{ stepNumber }} de 3</p>
+                <p class="text-xs font-semibold uppercase tracking-wide text-warning-text">{{ say({ es: `Paso ${stepNumber} de 3`, en: `Step ${stepNumber} of 3`, fr: `Étape ${stepNumber} sur 3` }) }}</p>
                 <div class="flex gap-1.5">
                   <span v-for="n in 3" :key="n" class="h-1.5 w-1.5 rounded-full" :class="n === stepNumber ? 'bg-brand' : 'bg-line'"></span>
                 </div>
@@ -1211,7 +1360,7 @@ onMounted(async () => {
               <h2 class="mt-1 text-xl font-semibold text-ink-900">{{ stepTitle }}</h2>
             </div>
             <UiBtn type="button" variant="secondary" @click="backToDatetime">
-              &larr; Atrás
+              &larr; {{ say({ es: 'Atrás', en: 'Back', fr: 'Retour' }) }}
             </UiBtn>
           </div>
 
@@ -1219,24 +1368,24 @@ onMounted(async () => {
             <form class="rounded-card border border-line bg-surface p-6 shadow-card sm:col-span-2" @submit.prevent="submitBooking">
               <div class="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <label class="block text-sm font-medium text-ink-700">Nombre *</label>
-                  <input v-model="firstName" type="text" required placeholder="Su nombre" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
+                  <label class="block text-sm font-medium text-ink-700">{{ say(FIELD.firstName) }} *</label>
+                  <input v-model="firstName" type="text" required :placeholder="say({ es: 'Su nombre', en: 'Your first name', fr: 'Votre prénom' })" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
                 </div>
                 <div>
-                  <label class="block text-sm font-medium text-ink-700">Apellidos</label>
-                  <input v-model="lastName" type="text" placeholder="Sus apellidos" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
+                  <label class="block text-sm font-medium text-ink-700">{{ say(FIELD.lastName) }}</label>
+                  <input v-model="lastName" type="text" :placeholder="say({ es: 'Sus apellidos', en: 'Your last name', fr: 'Votre nom' })" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
                 </div>
                 <div>
-                  <label class="block text-sm font-medium text-ink-700">Correo electrónico *</label>
-                  <input v-model="email" type="email" required placeholder="Su dirección de correo" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
+                  <label class="block text-sm font-medium text-ink-700">{{ say(FIELD.email) }} *</label>
+                  <input v-model="email" type="email" required :placeholder="say({ es: 'Su dirección de correo', en: 'Your email address', fr: 'Votre adresse e-mail' })" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
                 </div>
                 <div>
-                  <label class="block text-sm font-medium text-ink-700">Número de móvil *</label>
+                  <label class="block text-sm font-medium text-ink-700">{{ say(FIELD.phone) }} *</label>
                   <div class="mt-1 flex gap-2">
                     <div class="relative flex shrink-0 items-center gap-1 rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm focus-within:border-brand focus-within:ring-1 focus-within:ring-brand">
                       <span aria-hidden="true">{{ selectedCountry?.flag }} {{ selectedCountry?.dial }}</span>
                       <svg class="h-3 w-3 text-ink-faint" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
-                      <select v-model="dialCode" aria-label="Prefijo del país" class="absolute inset-0 h-full w-full cursor-pointer text-base opacity-0">
+                      <select v-model="dialCode" :aria-label="say({ es: 'Prefijo del país', en: 'Country code', fr: 'Indicatif du pays' })" class="absolute inset-0 h-full w-full cursor-pointer text-base opacity-0">
                         <option v-for="c in COUNTRIES_BY_NAME" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }} {{ c.name }}</option>
                       </select>
                     </div>
@@ -1246,7 +1395,7 @@ onMounted(async () => {
                       inputmode="tel"
                       autocomplete="tel-national"
                       required
-                      placeholder="Su número de móvil"
+                      :placeholder="say({ es: 'Su número de móvil', en: 'Your mobile number', fr: 'Votre numéro de portable' })"
                       class="min-w-0 flex-1 rounded-ctl border px-3 py-2 text-base sm:text-sm focus:outline-none focus:ring-1"
                       :class="phoneError ? 'border-danger-border focus:border-danger-border focus:ring-danger-border' : 'border-line-control focus:border-brand focus:ring-brand'"
                       @blur="phoneChecked = true"
@@ -1256,34 +1405,34 @@ onMounted(async () => {
                 </div>
               </div>
               <div class="mt-4">
-                <label class="block text-sm font-medium text-ink-700">Notas</label>
-                <textarea v-model="note" rows="3" placeholder="¿Algo que quiera que sepamos?" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"></textarea>
+                <label class="block text-sm font-medium text-ink-700">{{ say({ es: 'Notas', en: 'Notes', fr: 'Remarques' }) }}</label>
+                <textarea v-model="note" rows="3" :placeholder="say({ es: '¿Algo que quiera que sepamos?', en: 'Anything you would like us to know?', fr: 'Quelque chose que vous souhaitez nous dire ?' })" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"></textarea>
               </div>
               <div v-if="giftOffered" class="mt-4" data-cy="booking-gift">
-                <button v-if="!giftOpen" type="button" class="text-sm font-medium text-brand-text hover:underline" data-cy="booking-gift-open" @click="giftOpen = true">Tengo un bono regalo</button>
+                <button v-if="!giftOpen" type="button" class="text-sm font-medium text-brand-text hover:underline" data-cy="booking-gift-open" @click="giftOpen = true">{{ say({ es: 'Tengo un bono regalo', en: 'I have a gift voucher', fr: 'J’ai un bon cadeau' }) }}</button>
                 <template v-else>
-                  <label for="gift-code" class="block text-sm font-medium text-ink-700">Código del bono regalo</label>
+                  <label for="gift-code" class="block text-sm font-medium text-ink-700">{{ say({ es: 'Código del bono regalo', en: 'Gift voucher code', fr: 'Code du bon cadeau' }) }}</label>
                   <div class="mt-1 flex max-w-[320px] gap-2">
                     <input id="gift-code" v-model="giftCode" type="text" placeholder="REGALO-…" class="w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm uppercase focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" data-cy="booking-gift-code" @input="giftChecked = null" />
-                    <UiBtn type="button" variant="secondary" :disabled="checkingGift || !giftCode.trim()" data-cy="booking-gift-check" @click="checkGift">{{ checkingGift ? 'Comprobando…' : 'Aplicar' }}</UiBtn>
+                    <UiBtn type="button" variant="secondary" :disabled="checkingGift || !giftCode.trim()" data-cy="booking-gift-check" @click="checkGift">{{ checkingGift ? say({ es: 'Comprobando…', en: 'Checking…', fr: 'Vérification…' }) : say({ es: 'Aplicar', en: 'Apply', fr: 'Appliquer' }) }}</UiBtn>
                   </div>
-                  <p v-if="giftChecked?.ok" class="mt-1.5 text-sm text-success-text" data-cy="booking-gift-ok">✓ {{ giftChecked.description }}</p>
-                  <p v-else-if="giftChecked" class="mt-1.5 text-sm text-danger-text" data-cy="booking-gift-error">{{ giftChecked.message }}</p>
+                  <p v-if="giftChecked?.ok" class="mt-1.5 text-sm text-success-text" data-cy="booking-gift-ok">✓ {{ giftDescription(giftChecked) }}</p>
+                  <p v-else-if="giftChecked" class="mt-1.5 text-sm text-danger-text" data-cy="booking-gift-error">{{ giftRefusal(giftChecked) }}</p>
                 </template>
               </div>
               <div v-if="info.account.discount_codes_enabled" class="mt-4">
-                <label class="block text-sm font-medium text-ink-700">Código de descuento</label>
-                <input v-model="discountCode" type="text" placeholder="Opcional" class="mt-1 w-full max-w-[200px] rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm uppercase focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
+                <label class="block text-sm font-medium text-ink-700">{{ say({ es: 'Código de descuento', en: 'Discount code', fr: 'Code de réduction' }) }}</label>
+                <input v-model="discountCode" type="text" :placeholder="say({ es: 'Opcional', en: 'Optional', fr: 'Facultatif' })" class="mt-1 w-full max-w-[200px] rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm uppercase focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
               </div>
               <!-- The clinic's cancellation and no-show fees, before they book. -->
               <p v-if="policy && (policy.cancellation_fee_cents || policy.missed_appointment_fee_cents || policy.card_on_file)" class="mt-4 rounded-ctl bg-surface-subtle px-3 py-2.5 text-[13px] leading-snug text-ink-700" data-cy="booking-policy">
-                <template v-if="policy.cancellation_fee_cents">Cancelar con menos de {{ policy.notice_hours }} h de antelación: {{ formatPrice(policy.cancellation_fee_cents) }}. </template>
-                <template v-if="policy.missed_appointment_fee_cents">No presentarse a la cita: {{ formatPrice(policy.missed_appointment_fee_cents) }}. </template>
-                <template v-if="policy.card_on_file">Tras reservar te pediremos una tarjeta para garantizar la cita; ahora no se cobra nada.</template>
+                <template v-if="policy.cancellation_fee_cents">{{ say({ es: `Cancelar con menos de ${policy.notice_hours} h de antelación: ${formatPrice(policy.cancellation_fee_cents)}.`, en: `Cancelling less than ${policy.notice_hours} h ahead: ${formatPrice(policy.cancellation_fee_cents)}.`, fr: `Annulation moins de ${policy.notice_hours} h à l’avance : ${formatPrice(policy.cancellation_fee_cents)}.` }) }} </template>
+                <template v-if="policy.missed_appointment_fee_cents">{{ say({ es: `No presentarse a la cita: ${formatPrice(policy.missed_appointment_fee_cents)}.`, en: `Missing the appointment: ${formatPrice(policy.missed_appointment_fee_cents)}.`, fr: `Rendez-vous non honoré : ${formatPrice(policy.missed_appointment_fee_cents)}.` }) }} </template>
+                <template v-if="policy.card_on_file">{{ say({ es: 'Tras reservar te pediremos una tarjeta para garantizar la cita; ahora no se cobra nada.', en: 'After booking we will ask for a card to hold the appointment; nothing is charged now.', fr: 'Après la réservation, nous vous demanderons une carte pour garantir le rendez-vous ; rien n’est débité maintenant.' }) }}</template>
               </p>
               <p v-if="submitError" class="mt-3 text-sm text-danger-text">{{ submitError }}</p>
               <UiBtn type="submit" variant="primary" class="mt-5" :disabled="submitting">
-                {{ submitting ? 'Reservando…' : t('confirm_button', 'Reservar cita') }}
+                {{ submitting ? say({ es: 'Reservando…', en: 'Booking…', fr: 'Réservation…' }) : t('confirm_button', { es: 'Reservar cita', en: 'Book appointment', fr: 'Réserver' }) }}
               </UiBtn>
             </form>
 
@@ -1293,26 +1442,29 @@ onMounted(async () => {
 
         <!-- Step 3: payment (only when the appointment type requires it) -->
         <div v-else-if="phase === 'payment'" class="mx-auto mt-8 max-w-md">
-          <h2 class="text-center text-xl font-semibold text-ink-900">Pago</h2>
-          <p class="mt-1 text-center text-sm text-ink-muted">Su cita ya está reservada. Complete el pago para confirmarla.</p>
+          <h2 class="text-center text-xl font-semibold text-ink-900">{{ say({ es: 'Pago', en: 'Payment', fr: 'Paiement' }) }}</h2>
+          <p class="mt-1 text-center text-sm text-ink-muted">{{ say({ es: 'Su cita ya está reservada. Complete el pago para confirmarla.', en: 'Your appointment is booked. Complete the payment to confirm it.', fr: 'Votre rendez-vous est réservé. Effectuez le paiement pour le confirmer.' }) }}</p>
           <BookingPayment class="mt-6" :account-slug="slug" :invoice-id="invoiceId" :amount-cents="paymentRequiredCents" :format-price="formatPrice" @paid="onPaymentSucceeded" />
         </div>
 
         <!-- Step 3b: a card to hold the booking, when the clinic asks for one -->
         <div v-else-if="phase === 'card'" class="mx-auto mt-10 max-w-md rounded-card border border-line bg-surface p-8 text-center shadow-card" data-cy="booking-card-step">
           <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-success-bg text-2xl text-success-text">✓</div>
-          <h2 class="mt-4 text-lg font-semibold text-ink-900">Tu cita está reservada</h2>
-          <p class="mt-2 text-sm text-ink-muted">Para garantizarla, añade una tarjeta. No se cobra nada ahora<template v-if="policy && (policy.cancellation_fee_cents || policy.missed_appointment_fee_cents)">; solo se usaría si cancelas con menos de {{ policy.notice_hours }} h o no vienes</template>.</p>
-          <UiBtn variant="primary" class="mt-5 w-full" data-cy="booking-add-card" @click="openCardPage">Añadir tarjeta</UiBtn>
-          <button type="button" class="mt-3 text-[13px] text-ink-muted hover:text-ink-700" data-cy="booking-skip-card" @click="goToSuccess">Ahora no</button>
+          <h2 class="mt-4 text-lg font-semibold text-ink-900">{{ say({ es: 'Tu cita está reservada', en: 'Your appointment is booked', fr: 'Votre rendez-vous est réservé' }) }}</h2>
+          <p v-if="policy && (policy.cancellation_fee_cents || policy.missed_appointment_fee_cents)" class="mt-2 text-sm text-ink-muted">
+            {{ say({ es: `Para garantizarla, añade una tarjeta. No se cobra nada ahora; solo se usaría si cancelas con menos de ${policy.notice_hours} h o no vienes.`, en: `To hold it, add a card. Nothing is charged now; it would only be used if you cancel less than ${policy.notice_hours} h ahead or do not come.`, fr: `Pour le garantir, ajoutez une carte. Rien n’est débité maintenant ; elle ne servirait que si vous annulez moins de ${policy.notice_hours} h à l’avance ou ne venez pas.` }) }}
+          </p>
+          <p v-else class="mt-2 text-sm text-ink-muted">{{ say({ es: 'Para garantizarla, añade una tarjeta. No se cobra nada ahora.', en: 'To hold it, add a card. Nothing is charged now.', fr: 'Pour le garantir, ajoutez une carte. Rien n’est débité maintenant.' }) }}</p>
+          <UiBtn variant="primary" class="mt-5 w-full" data-cy="booking-add-card" @click="openCardPage">{{ say({ es: 'Añadir tarjeta', en: 'Add a card', fr: 'Ajouter une carte' }) }}</UiBtn>
+          <button type="button" class="mt-3 text-[13px] text-ink-muted hover:text-ink-700" data-cy="booking-skip-card" @click="goToSuccess">{{ say({ es: 'Ahora no', en: 'Not now', fr: 'Pas maintenant' }) }}</button>
         </div>
 
         <!-- Success -->
         <div v-else-if="phase === 'success'" class="mx-auto mt-10 max-w-md rounded-card border border-line bg-surface p-8 text-center shadow-card">
           <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-success-bg text-2xl text-success-text">✓</div>
-          <h2 class="mt-4 text-lg font-semibold text-ink-900">{{ t('success_heading', '¡Cita reservada!') }}</h2>
+          <h2 class="mt-4 text-lg font-semibold text-ink-900">{{ t('success_heading', { es: '¡Cita reservada!', en: 'Appointment booked!', fr: 'Rendez-vous réservé !' }) }}</h2>
           <p class="mt-2 text-sm text-ink-muted">
-            {{ confirmation ? new Date(confirmation.starts_at).toLocaleString('es-ES', { dateStyle: 'full', timeStyle: 'short', timeZone: clinicTimeZone }) : '' }}
+            {{ confirmation ? new Date(confirmation.starts_at).toLocaleString(locale, { dateStyle: 'full', timeStyle: 'short', hourCycle: 'h23', timeZone: clinicTimeZone }) : '' }}
           </p>
           <p class="mt-1 text-sm text-ink-muted">{{ teamMember?.full_name }} · {{ clinic?.name }}</p>
           <!-- How to reach this location if plans change -- its own phone
@@ -1325,14 +1477,14 @@ onMounted(async () => {
               <a v-if="clinic?.email" :href="`mailto:${clinic?.email ?? ''}`" class="font-medium text-brand-text hover:underline">{{ clinic?.email }}</a>
             </span>
           </div>
-          <p v-if="discountAppliedCents > 0" class="mt-1 text-sm text-success-text">Descuento aplicado: {{ formatPrice(discountAppliedCents) }}</p>
-          <p v-if="giftResult?.redeemed" class="mt-1 text-sm text-success-text" data-cy="booking-gift-redeemed">Bono regalo canjeado: {{ giftResult.label }}, ya en tu cuenta de la clínica.</p>
-          <p v-else-if="giftResult" class="mt-1 text-sm text-danger-text" data-cy="booking-gift-not-redeemed">{{ giftResult.message }}</p>
+          <p v-if="discountAppliedCents > 0" class="mt-1 text-sm text-success-text">{{ say({ es: 'Descuento aplicado', en: 'Discount applied', fr: 'Réduction appliquée' }) }}: {{ formatPrice(discountAppliedCents) }}</p>
+          <p v-if="giftResult?.redeemed" class="mt-1 text-sm text-success-text" data-cy="booking-gift-redeemed">{{ say({ es: `Bono regalo canjeado: ${giftResult.label}, ya en tu cuenta de la clínica.`, en: `Gift voucher redeemed: ${giftResult.label}, now on your account at the clinic.`, fr: `Bon cadeau utilisé : ${giftResult.label}, désormais sur votre compte au cabinet.` }) }}</p>
+          <p v-else-if="giftResult" class="mt-1 text-sm text-danger-text" data-cy="booking-gift-not-redeemed">{{ giftRefusal(giftResult) }}</p>
           <p
             v-if="info.account.appointment_confirmation_enabled && info.account.appointment_confirmation_channels.includes('email')"
             class="mt-4 text-xs text-ink-faint"
           >
-            Le hemos enviado los detalles a {{ email }}.
+            {{ say({ es: `Le hemos enviado los detalles a ${email}.`, en: `We have sent the details to ${email}.`, fr: `Nous avons envoyé les détails à ${email}.` }) }}
           </p>
         </div>
 
@@ -1341,17 +1493,18 @@ onMounted(async () => {
              sits here rather than in a later email nobody opens. Its own
              v-if, not part of the phase chain above, so the confirmation card
              keeps its centred layout and this keeps a left-aligned one.
-             Spanish regardless of viewer: this page is patient-facing only. -->
+             In the patient's language, not the viewer's staff preference. -->
         <AppDownloadPrompt
           v-if="phase === 'success'"
-          lang="es"
+          :lang="lang"
           class="mx-auto mt-4 max-w-md"
-          :heading="t('app_promo_heading', 'Descarga la app de QuiroFlow')"
+          :heading="t('app_promo_heading', { es: 'Descarga la app de QuiroFlow', en: 'Get the QuiroFlow app', fr: 'Téléchargez l’app QuiroFlow' })"
           :body="
-            t(
-              'app_promo_body',
-              'Consulta tus citas, documentos y mensajes desde el móvil, y recibe un recordatorio antes de cada visita.',
-            )
+            t('app_promo_body', {
+              es: 'Consulta tus citas, documentos y mensajes desde el móvil, y recibe un recordatorio antes de cada visita.',
+              en: 'See your appointments, documents and messages on your phone, and get a reminder before every visit.',
+              fr: 'Consultez vos rendez-vous, documents et messages sur votre téléphone, et recevez un rappel avant chaque visite.',
+            })
           "
         />
       </template>

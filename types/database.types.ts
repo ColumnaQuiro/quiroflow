@@ -5091,6 +5091,65 @@ export type Database = {
           },
         ]
       }
+      patient_relations: {
+        Row: {
+          account_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          patient_id: string
+          related_patient_id: string
+          relation: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          patient_id: string
+          related_patient_id: string
+          relation: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          patient_id?: string
+          related_patient_id?: string
+          relation?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_relations_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_relations_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_relations_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_relations_related_patient_id_fkey"
+            columns: ["related_patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       patient_stripe_customers: {
         Row: {
           account_id: string

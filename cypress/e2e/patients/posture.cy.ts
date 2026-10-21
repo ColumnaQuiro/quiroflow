@@ -37,6 +37,26 @@ function photo() {
 }
 
 describe('Posture assessment', () => {
+  // On a phone the camera and the photo library are two buttons: one input
+  // with `capture` opened the camera only, and the button said "or choose".
+  it('offers the camera and the gallery on a touch screen, and only the file picker on a desktop', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Galería', lastName: 'Cámara' }).then((patient) => {
+        cy.login(account.email, account.password)
+        visitCapture(patient.id)
+        cy.get('[data-cy=posture-camera]').should('not.exist')
+        cy.get('[data-cy=posture-take]').should('be.visible').and('contain', 'Choose photo')
+
+        cy.useTouchScreen()
+        visitCapture(patient.id)
+        cy.get('[data-cy=posture-camera]').should('be.visible')
+        cy.get('[data-cy=posture-take]').should('be.visible').and('contain', 'Choose from gallery')
+        cy.get('[data-cy=posture-camera-file]').should('have.attr', 'capture', 'environment')
+        cy.get('[data-cy=posture-file]').should('not.have.attr', 'capture')
+      })
+    })
+  })
+
   it('takes front and side, measures them live, saves, and shows them on the record and to the patient', () => {
     const email = `postura-${Date.now()}@example.test`
     const password = 'valencia2026'

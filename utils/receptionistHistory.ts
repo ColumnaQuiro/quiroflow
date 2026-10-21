@@ -3,6 +3,8 @@
 //
 // A plain module (no Nuxt auto-imports) so the unit tests can pin it.
 
+import { RECEPTIONIST_LANGUAGES } from './receptionistLanguages'
+
 /** Starts a message the clinic's automations sent: a reminder, a welcome. */
 export const AUTOMATED_MARK = '[Automatic message from the clinic system]'
 /** Starts a message a person at the clinic wrote, as opposed to the receptionist. */
@@ -144,3 +146,38 @@ export const WAITLIST_SECTION = [
  * an adjustment "relieves the pressure on the affected nerve".
  */
 export const NO_INVENTION_LINE = 'Only offer what the clinic knowledge and these instructions give you: never invent a process, service or option the clinic has not described (a call back, a discount, a list to join). Never explain what an adjustment does inside their body or to their condition ("alivia la presión sobre el nervio"): that is for the chiropractor at the visit.'
+
+/**
+ * Their language, whatever the clinic's list says. "The clinic supports: es,
+ * en" read as a limit: a patient who wrote in French was answered in Spanish
+ * (20 Oct 2026), and one in English the day before. The list is the
+ * languages a visit can be held in, not the ones a message can be answered in.
+ */
+export function replyLanguageLine(languages: string[]): string {
+  const names = languages.map((code) => RECEPTIONIST_LANGUAGES[code]?.en ?? code).join(', ')
+  return `Reply in the language of their latest message, whatever it is: French gets French, English gets English. Never answer in Spanish someone who wrote in another language. Visits themselves can be held in: ${names}; if theirs is not one of those and they want to come, say so, in their language.`
+}
+
+/**
+ * "Tardes" answering a recall's "¿Te busco un hueco?" was read as a greeting
+ * and got "¡Buenas tardes! ¿En qué puedo ayudarte?" (20 Oct 2026).
+ */
+export const PART_OF_DAY_ANSWER_LINE = 'A reply that is only a part of the day or a day -- "Tardes", "Mañanas", "Por la tarde", "El martes" -- is their answer to the clinic\'s last message (an offer of a visit, "¿mañana o tarde?"), never a greeting: offer free times that fit it.'
+
+/**
+ * Sent two documents mid-visit, it said "No puedo abrir documentos" and
+ * "¡Nos vemos hoy a las 13:00!" at 13:10, with the patient already inside.
+ */
+export const SENT_FILES_LINE = 'When they send a document, photo or test result (a scan, a medical report), say your colleague will add it to their record so the chiropractor can review it at the visit. Never say you cannot open, read or see it, and never speak of a visit time that has already passed as still to come.'
+
+/**
+ * Asked "¿te paso el seguro que tengo?", it answered "dime qué seguro tienes",
+ * with a card saying the clinic works with no insurer.
+ */
+export const CARD_ANSWERS_LINE = 'When something under "What you know about this clinic" answers their question (insurance, payment, what to bring), give that answer in your own words. Do not ask them for details the answer does not need.'
+
+/**
+ * A lead from an ad wrote that they constantly need to pass water and were
+ * given two times for a first visit (20 Oct 2026).
+ */
+export const NOT_CHIROPRACTIC_SYMPTOM_LINE = 'A symptom that is not about the back, neck, joints, muscles, posture or headaches -- urinary or bowel problems, chest pain, fever, unexplained weight loss, sudden weakness -- is a red flag: do not explain how chiropractic helps with it and do not answer it with a visit. Hand it over to the chiropractor as "Stop and hand over to a person when" says, and tell them the chiropractor will look at it.'

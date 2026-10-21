@@ -40,6 +40,7 @@ const props = defineProps<{
 const t = useT()
 const typeNotes = useAppointmentTypeNotes()
 onMounted(() => typeNotes.load())
+const { can } = usePermission()
 const { stageLine } = useStageLabels()
 const { facts } = useAppointmentFacts(() => props.appointment)
 const { availableCents } = usePatientFinancialSummary(() => props.appointment.patient_id)
@@ -134,6 +135,22 @@ const lineClass = computed(() => {
           <strong class="text-warning-text">{{ t('For the team', 'Para el equipo') }}</strong>
           <span class="whitespace-pre-line text-ink-700">{{ typeNotes.noteFor(appointment.appointment_type_id) }}</span>
         </span>
+      </div>
+
+      <!-- Red flags and tags. The flags' text is clinical, so only a role
+           with visit notes reads it; everyone sees that there are some. -->
+      <div v-if="view.redFlags || view.tags?.length" class="flex flex-col gap-1.5 border-t border-line-divider px-3.5 py-2.5 text-[12.5px]" data-cy="appt-hover-patient-alerts">
+        <div v-if="view.redFlags" class="flex items-start gap-2" data-cy="appt-hover-red-flags">
+          <CalendarRedFlagIcon class="mt-[3px] shrink-0 text-danger-text" :label="t('Red flags', 'Señales rojas')" />
+          <span class="flex min-w-0 flex-col gap-px">
+            <strong class="text-danger-text">{{ t('Red flags', 'Señales rojas') }}</strong>
+            <span v-if="can('visit_notes_access')" class="whitespace-pre-line text-ink-700">{{ view.redFlags }}</span>
+            <span v-else class="text-ink-muted">{{ t('On the clinical record', 'En la ficha clínica') }}</span>
+          </span>
+        </div>
+        <div v-if="view.tags?.length" class="flex flex-wrap gap-1" data-cy="appt-hover-tags">
+          <span v-for="tag in view.tags" :key="tag" class="rounded-pill border border-line bg-chip-bg px-2 py-px text-[11.5px] font-medium text-ink-700">{{ tag }}</span>
+        </div>
       </div>
 
       <div v-if="lastMove" class="flex items-start gap-2 border-t border-line-divider px-3.5 py-2.5 text-[12.5px]" data-cy="appt-hover-moved">

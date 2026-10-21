@@ -106,6 +106,31 @@ Cypress.Commands.add('clickUntil', (clickSelector: string, untilSelector: string
   })
 })
 
+// The public booking page speaks the visitor's browser language -- Spanish,
+// English or French, Spanish when it is none of them -- and CI's Chrome is
+// English. Every booking spec was written against the Spanish page the
+// clinics' patients see, so a visit to /book/ is made by a Spanish browser
+// unless the spec says otherwise with an Accept-Language header of its own
+// (cypress/e2e/public-booking/booking-languages.cy.ts). A browser states its
+// language twice, in the header the server renders by and in
+// navigator.languages, which the page reads once it is running; both are set.
+Cypress.Commands.overwrite('visit', (originalFn: any, url: any, options?: any) => {
+  const path = typeof url === 'string' ? url : String(url?.url ?? '')
+  const headers = { ...(options?.headers ?? {}) }
+  const ownLanguage = Object.keys(headers).some((h) => h.toLowerCase() === 'accept-language')
+  if (!/^(https?:\/\/[^/]+)?\/book\//.test(path) || ownLanguage) return originalFn(url, options)
+  const tags = ['es-ES', 'es']
+  return originalFn(url, {
+    ...options,
+    headers: { ...headers, 'Accept-Language': tags.join(',') },
+    onBeforeLoad(win: Window) {
+      // Configurable, so a spec's own onBeforeLoad can still say otherwise.
+      Object.defineProperty(win.navigator, 'languages', { value: tags, configurable: true })
+      options?.onBeforeLoad?.(win)
+    },
+  })
+})
+
 Cypress.Commands.add('logout', () => {
   cy.clickUntil('[data-testid="account-menu-trigger"]', 'button:contains("Sign out")')
   cy.contains('button', /sign out/i).click()

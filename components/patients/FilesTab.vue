@@ -2,6 +2,7 @@
 import { formatShortDate } from '~/utils/billing'
 import type { Tables } from '~/types/database.types'
 import { sanitizeStorageFilename } from '~/utils/storageFilename'
+import { editableFileName, renamedFileName } from '~/utils/renameFile'
 import { MIN_DOCUMENT_PASSWORD_LENGTH, captionRevealsPassword, defaultProtectedCaption, documentPassword, isSpanishId } from '~/utils/protectedDocument'
 
 const props = defineProps<{ patientId: string }>()
@@ -98,6 +99,28 @@ onMounted(load)
 // remounted, the file grid should follow rather than silently keep
 // displaying the previous patient's files next to the new patient's name.
 watch(() => props.patientId, load)
+
+// Renaming in place: the name only (utils/renameFile.ts), storage keeps its
+// path. Enter or leaving the field saves, Escape puts it back.
+const renamingId = ref<string | null>(null)
+const renameInput = ref('')
+function startRename(file: PatientFile) {
+  renamingId.value = file.id
+  renameInput.value = editableFileName(file.file_name)
+  nextTick(() => (document.querySelector('[data-cy=file-rename-input]') as HTMLInputElement | null)?.select())
+}
+async function saveRename(file: PatientFile) {
+  if (renamingId.value !== file.id) return
+  const next = renamedFileName(renameInput.value, file.file_name)
+  renamingId.value = null
+  if (!next) return
+  const { error } = await supabase.from('patient_files').update({ file_name: next }).eq('id', file.id)
+  if (error) {
+    showToast(t('The file could not be renamed.', 'No se ha podido renombrar el archivo.'), 'error')
+    return
+  }
+  file.file_name = next
+}
 
 async function updateVisibility(file: PatientFile) {
   await supabase.from('patient_files').update({ visibility: file.visibility }).eq('id', file.id)
@@ -355,7 +378,19 @@ async function confirmRemove() {
           </span>
         </div>
         <div class="p-2.5">
-          <p class="truncate font-mono text-[12px] font-medium text-ink-700" :title="file.file_name">{{ file.file_name }}</p>
+          <input
+            v-if="renamingId === file.id"
+            v-model="renameInput"
+            type="text"
+            maxlength="200"
+            class="w-full rounded border border-brand px-1 py-0.5 font-mono text-[12px] text-ink-700 focus:outline-none"
+            :aria-label="t('File name', 'Nombre del archivo')"
+            data-cy="file-rename-input"
+            @keydown.enter.prevent="saveRename(file)"
+            @keydown.esc.prevent="renamingId = null"
+            @blur="saveRename(file)"
+          />
+          <p v-else class="truncate font-mono text-[12px] font-medium text-ink-700" :title="file.file_name" data-cy="file-name">{{ file.file_name }}</p>
           <p class="mt-0.5 truncate text-[11px] text-ink-faint" :title="fileMeta(file)">{{ fileMeta(file) }}</p>
           <label v-if="isImage(file) && file.storage_path" class="mt-1 flex items-center gap-1.5 text-[11px] text-ink-muted" data-cy="file-xray">
             <input type="checkbox" :checked="file.is_xray" @change="updateXray(file, ($event.target as HTMLInputElement).checked)" />{{ t('X-ray', 'Radiografía') }}
@@ -376,6 +411,7 @@ async function confirmRemove() {
             <div class="flex shrink-0 items-center gap-2">
               <button v-if="file.storage_path" type="button" class="text-[11px] font-medium text-brand-text outline-none hover:text-brand-hover focus-visible:shadow-focus touch:min-h-10 touch:px-1" @click="view(file)">{{ t('Preview', 'Vista previa') }}</button>
               <button v-if="file.storage_path" type="button" class="text-[11px] font-medium text-brand-text outline-none hover:text-brand-hover focus-visible:shadow-focus touch:min-h-10 touch:px-1" @click="download(file)">{{ t('Download', 'Descargar') }}</button>
+              <UiIconBtn icon="pencil" data-cy="file-rename" :label="t('Rename', 'Renombrar')" @click="startRename(file)" />
               <UiIconBtn v-if="canSendProtected(file)" icon="lock" data-cy="file-send-protected" :label="t('Send protected by WhatsApp', 'Enviar protegido por WhatsApp')" @click="openProtect(file)" />
               <UiIconBtn v-if="can('patient_files_delete')" icon="trash" tone="danger" data-cy="file-delete" :label="t('Delete', 'Eliminar')" @click="deleting = file" />
             </div>

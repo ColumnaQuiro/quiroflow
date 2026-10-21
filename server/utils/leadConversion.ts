@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
 import { fetchAllRows } from '~/composables/useFetchAllRows'
 import { leadPhoneAsContactNumber, phoneMatches, whatsappDigits } from '~/utils/phone'
+import { leadSourceChannel } from '~/utils/referralSource'
 
 // Turning a lead into a patient, in the pieces both callers need: the
 // "Convert" button (/api/growth/leads/:id/convert) and the AI receptionist
@@ -53,8 +54,9 @@ export async function createPatientFromLead(
       last_name: rest.join(' ') || null,
       email: lead.email,
       // Where they came from, kept on the patient so the acquisition story
-      // survives on the record itself and not only on the lead.
-      referral_source: lead.source,
+      // survives on the record itself and not only on the lead. The channel
+      // only; the campaign stays on the lead (utils/referralSource.ts).
+      referral_source: leadSourceChannel(lead.source),
       default_practitioner_id: opts.defaultPractitionerId,
     } as never)
 

@@ -8,6 +8,7 @@ const props = defineProps<{
   formatPrice: (cents: number) => string
 }>()
 const emit = defineEmits<{ paid: [] }>()
+const { lang, say } = useBookingLang()
 
 const loading = ref(true)
 const submitting = ref(false)
@@ -27,11 +28,12 @@ onMounted(async () => {
     }>('/api/public-booking/create-payment-intent', { method: 'POST', body: { accountSlug: props.accountSlug, invoiceId: props.invoiceId } })
     stripe = await loadStripe(publishableKey, connectAccountId ? { stripeAccount: connectAccountId } : undefined)
     if (!stripe || !mountEl.value) throw new Error('Stripe failed to load')
-    elements = stripe.elements({ clientSecret })
+    // Stripe's own fields and messages in the page's language too.
+    elements = stripe.elements({ clientSecret, locale: lang.value })
     paymentElement = elements.create('payment')
     paymentElement.mount(mountEl.value)
   } catch (err: any) {
-    error.value = err?.data?.statusMessage ?? err?.message ?? 'No se pudo iniciar el pago'
+    error.value = err?.data?.statusMessage ?? err?.message ?? say({ es: 'No se pudo iniciar el pago', en: 'The payment could not be started', fr: 'Le paiement n’a pas pu démarrer' })
   } finally {
     loading.value = false
   }
@@ -44,7 +46,7 @@ async function submit() {
   const { error: confirmError } = await stripe.confirmPayment({ elements, redirect: 'if_required' })
   submitting.value = false
   if (confirmError) {
-    error.value = confirmError.message ?? 'El pago no se pudo completar'
+    error.value = confirmError.message ?? say({ es: 'El pago no se pudo completar', en: 'The payment could not be completed', fr: 'Le paiement n’a pas pu aboutir' })
     return
   }
   emit('paid')
@@ -54,16 +56,16 @@ async function submit() {
 <template>
   <div class="rounded-card border border-line bg-surface p-6 shadow-card">
     <div class="flex items-center justify-between">
-      <span class="text-sm text-ink-700">Importe a pagar ahora</span>
+      <span class="text-sm text-ink-700">{{ say({ es: 'Importe a pagar ahora', en: 'Amount to pay now', fr: 'Montant à payer maintenant' }) }}</span>
       <span class="text-lg font-semibold text-ink-900">{{ formatPrice(amountCents) }}</span>
     </div>
 
-    <div v-if="loading" class="mt-6 text-sm text-ink-faint">Cargando…</div>
+    <div v-if="loading" class="mt-6 text-sm text-ink-faint">{{ say({ es: 'Cargando…', en: 'Loading…', fr: 'Chargement…' }) }}</div>
     <form v-show="!loading" class="mt-4" @submit.prevent="submit">
       <div ref="mountEl"></div>
       <p v-if="error" class="mt-3 text-sm text-danger-text">{{ error }}</p>
       <UiBtn type="submit" variant="primary" class="mt-5 w-full" :disabled="submitting">
-        {{ submitting ? 'Procesando…' : 'Pagar y confirmar' }}
+        {{ submitting ? say({ es: 'Procesando…', en: 'Processing…', fr: 'Traitement…' }) : say({ es: 'Pagar y confirmar', en: 'Pay and confirm', fr: 'Payer et confirmer' }) }}
       </UiBtn>
     </form>
   </div>

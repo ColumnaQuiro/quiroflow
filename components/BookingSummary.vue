@@ -17,12 +17,13 @@ const dueNowCents = computed(() => {
   return props.depositCents ?? props.priceCents
 })
 const timeZone = computed(() => props.clinic?.timezone || 'Europe/Madrid')
+const { locale, say } = useBookingLang()
 const dueAtVisitCents = computed(() => (props.onlinePaymentRequired ? props.priceCents - dueNowCents.value : props.priceCents))
 </script>
 
 <template>
   <div class="h-fit rounded-card border border-line bg-surface p-5 shadow-card">
-    <h3 class="text-sm font-semibold text-ink-900">Resumen de la reserva</h3>
+    <h3 class="text-sm font-semibold text-ink-900">{{ say({ es: 'Resumen de la reserva', en: 'Booking summary', fr: 'Récapitulatif de la réservation' }) }}</h3>
     <div class="mt-3 space-y-3 text-sm">
       <div v-if="clinic">
         <p class="font-medium text-ink-900">{{ clinic.name }}</p>
@@ -34,11 +35,11 @@ const dueAtVisitCents = computed(() => (props.onlinePaymentRequired ? props.pric
       </div>
       <div v-if="appointmentType && onlinePaymentRequired !== undefined" class="space-y-1 border-t border-line-divider pt-3 text-xs">
         <div class="flex items-center justify-between">
-          <span class="text-ink-muted">Pagar ahora</span>
+          <span class="text-ink-muted">{{ say({ es: 'Pagar ahora', en: 'Pay now', fr: 'À payer maintenant' }) }}</span>
           <span class="font-medium text-ink-900">{{ formatPrice(dueNowCents) }}</span>
         </div>
         <div class="flex items-center justify-between">
-          <span class="text-ink-muted">Pagar en la consulta</span>
+          <span class="text-ink-muted">{{ say({ es: 'Pagar en la consulta', en: 'Pay at the clinic', fr: 'À payer au cabinet' }) }}</span>
           <span class="font-medium text-ink-900">{{ formatPrice(dueAtVisitCents) }}</span>
         </div>
       </div>
@@ -46,8 +47,8 @@ const dueAtVisitCents = computed(() => (props.onlinePaymentRequired ? props.pric
         {{ teamMember.full_name }}
       </div>
       <div v-if="slot" class="border-t border-line-divider pt-3 text-ink-700">
-        {{ slot.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short', timeZone }) }}
-        · {{ slot.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone }) }}
+        {{ slot.toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short', timeZone }) }}
+        · {{ slot.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone }) }}
       </div>
     </div>
   </div>

@@ -41,7 +41,7 @@ interface AppointmentRow {
   confirmation_status: string | null
   source: string
   /** pending_forms: the computed field (20261020065435_patient_pending_forms.sql). */
-  patients: { first_name: string; last_name: string | null; pending_forms?: number } | null
+  patients: { first_name: string; last_name: string | null; pending_forms?: number; red_flags?: string | null } | null
   appointment_types: { name: string; color: string } | null
   /** The visit's listing, as a line: "C5 D · L5 I/D". */
   listing?: string
@@ -51,7 +51,7 @@ const supabase = useSupabaseClient()
 const logAccess = useAccessLog()
 const store = useAccountStore()
 const { timeZone: accountTimeZone } = useAccountTimeZone()
-const { scope } = usePermission()
+const { scope, can } = usePermission()
 const t = useT()
 
 const canSeeAll = computed(() => scope('calendar_scope') === 'all')
@@ -151,7 +151,7 @@ async function loadDay(silent = false) {
   const { data } = await supabase
     .from('appointments')
     .select(
-      'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, confirmation_status, source, patients(first_name, last_name, pending_forms), appointment_types(name, color), visit_notes(appointment_id), visit_listings(listings)',
+      'id, patient_id, room_id, practitioner_id, appointment_type_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, confirmation_status, source, patients(first_name, last_name, pending_forms, red_flags), appointment_types(name, color), visit_notes(appointment_id), visit_listings(listings)',
     )
     .eq('clinic_id', store.currentClinicId)
     .eq('practitioner_id', practitionerId.value)
@@ -488,6 +488,16 @@ onMounted(() => {
                     <span v-if="a.listing" class="block truncate text-[11.5px] font-medium text-ink-600" data-cy="worklist-listing">{{ a.listing }}</span>
                   </span>
                   <span v-if="renewalPatients.has(a.patient_id)" class="inline-flex h-5 shrink-0 items-center rounded-pill bg-warning-bg px-2 text-[11px] font-semibold text-warning-text" data-cy="worklist-renewal">{{ t('Review', 'Revisión') }}</span>
+                  <!-- Red flags on the record; the text on hover for clinical
+                       roles only, as on the calendar. -->
+                  <span
+                    v-if="a.patients?.red_flags?.trim()"
+                    class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-pill bg-danger-bg text-danger-text"
+                    :title="can('visit_notes_access') ? `${t('Red flags', 'Señales rojas')}: ${a.patients.red_flags.trim()}` : t('Red flags on the record', 'Señales rojas en la ficha')"
+                    data-cy="worklist-red-flags"
+                  >
+                    <CalendarRedFlagIcon :label="t('Red flags', 'Señales rojas')" />
+                  </span>
                   <!-- An icon, not a worded pill: beside the risk and status
                        pills a third label cut the patient's name to "Ana ...". -->
                   <span

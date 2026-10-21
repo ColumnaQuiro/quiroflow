@@ -50,6 +50,10 @@ export interface BlockView {
   hasNote: boolean
   /** Forms sent to the patient and not completed, where worth saying (pendingFormsFlag); 0 for none. */
   pendingForms: number
+  /** patients.red_flags, trimmed; null for none. The text only shows to clinical roles. */
+  redFlags?: string | null
+  /** patients.tags, as the record keeps them. */
+  tags?: string[]
   movedCount: number
   noNext: boolean
   marker?: VisitMarkerView | null
@@ -174,6 +178,7 @@ const ariaLabel = computed(() =>
     pillText.value,
     props.view.owesCents > 0 ? owesText.value : null,
     props.view.pendingForms > 0 ? formsText.value : null,
+    props.view.redFlags ? t('Red flags on the record', 'Señales rojas en la ficha') : null,
   ]
     .filter(Boolean)
     .join(', '),
@@ -215,6 +220,11 @@ const ariaLabel = computed(() =>
         :data-mismatch="view.marker?.mismatch ? 'true' : undefined"
       >
         <CalendarVisitMarkerIcon />
+      </span>
+      <!-- Before anything else after the name, and never dropped for room:
+           it is the one thing on the block about the patient's safety. -->
+      <span v-if="view.redFlags" class="inline-flex shrink-0 text-danger-text" :title="t('Red flags on the record', 'Señales rojas en la ficha')" data-cy="appt-block-red-flags">
+        <CalendarRedFlagIcon :size="week ? 11 : 12" :label="t('Red flags on the record', 'Señales rojas en la ficha')" />
       </span>
       <!-- A clipboard, not the note's page: the two sit side by side. -->
       <span v-if="ladder.forms" class="inline-flex shrink-0 text-warning-text" :title="formsText" data-cy="appt-block-forms">

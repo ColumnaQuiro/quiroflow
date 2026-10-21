@@ -5241,6 +5241,9 @@ export type Database = {
           photo_storage_path: string | null
           postal_code: string | null
           preferred_language: string
+          pregnancy_due_date: string | null
+          pregnancy_multiples: number | null
+          pregnancy_notes: string | null
           recall_priority: boolean
           recall_snoozed_until: string | null
           recall_dismissed_at: string | null
@@ -5298,6 +5301,9 @@ export type Database = {
           photo_storage_path?: string | null
           postal_code?: string | null
           preferred_language?: string
+          pregnancy_due_date?: string | null
+          pregnancy_multiples?: number | null
+          pregnancy_notes?: string | null
           recall_priority?: boolean
           recall_snoozed_until?: string | null
           recall_dismissed_at?: string | null
@@ -5355,6 +5361,9 @@ export type Database = {
           photo_storage_path?: string | null
           postal_code?: string | null
           preferred_language?: string
+          pregnancy_due_date?: string | null
+          pregnancy_multiples?: number | null
+          pregnancy_notes?: string | null
           recall_priority?: boolean
           recall_snoozed_until?: string | null
           recall_dismissed_at?: string | null

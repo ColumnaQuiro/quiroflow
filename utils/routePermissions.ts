@@ -17,7 +17,7 @@ function restrictedTo(store: Store, key: string) {
   return !store.isOwner && store.permissions[key] === true
 }
 
-export const CLINIC_WIDE_REPORTS = ['/reports/communications', '/reports/scheduled-reminders', '/reports/debtors', '/reports/memberships', '/reports/data-exports', '/reports/recalls']
+export const CLINIC_WIDE_REPORTS = ['/reports/communications', '/reports/scheduled-reminders', '/reports/debtors', '/reports/memberships', '/reports/data-exports', '/reports/recalls', '/reports/facturas']
 
 interface Rule {
   test: (path: string) => boolean

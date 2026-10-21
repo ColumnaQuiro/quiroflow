@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // The patient's files on the staff app's patient record: to look at the
-// X-ray in the room, take a posture photo with the phone's camera, or add
+// X-ray in the room, rename one, take a posture photo with the phone's camera, or add
 // what is already on the phone -- a photo from the gallery, a PDF report.
 //
 // Read and written exactly as the web's Files tab (components/patients/
@@ -9,6 +9,7 @@
 // bucket, uploads to <account>/<patient>/<time>-<name>, and the same
 // fire-and-forget compression pass afterwards.
 import { sanitizeStorageFilename } from '../../utils/storageFilename'
+import { editableFileName, renamedFileName } from '../../utils/renameFile'
 
 const props = defineProps<{ patientId: string; accountId: string; teamMemberId: string }>()
 
@@ -99,6 +100,36 @@ function open(f: FileRow) {
 // on the phone could not be added at all. The other has no `capture` and no
 // `accept`: iOS offers the photo library, the camera and Files, Android its
 // file picker, and several can be picked at once.
+// Renaming: the pencil on each tile, a sheet with the name. Only the name
+// changes (utils/renameFile.ts), as on the web's Files tab.
+const renaming = ref<FileRow | null>(null)
+const renameInput = ref('')
+const renameError = ref('')
+const renameSaving = ref(false)
+function startRename(f: FileRow) {
+  renaming.value = f
+  renameInput.value = editableFileName(f.file_name)
+  renameError.value = ''
+}
+async function saveRename() {
+  const f = renaming.value
+  if (!f || renameSaving.value) return
+  const next = renamedFileName(renameInput.value, f.file_name)
+  if (!next) {
+    renaming.value = null
+    return
+  }
+  renameSaving.value = true
+  const { error: e } = await supabase.from('patient_files').update({ file_name: next } as never).eq('id', f.id)
+  renameSaving.value = false
+  if (e) {
+    renameError.value = t('The file could not be renamed.', 'No se ha podido renombrar el archivo.')
+    return
+  }
+  f.file_name = next
+  renaming.value = null
+}
+
 const cameraInput = ref<HTMLInputElement>()
 const fileInput = ref<HTMLInputElement>()
 async function onFilesChosen(e: Event) {
@@ -171,25 +202,38 @@ async function uploadOne(file: File, patientId: string): Promise<boolean> {
     <template v-else>
       <p v-if="files.length === 0" class="mt-1.5 text-[13px] text-ink-faint">{{ t('No files yet.', 'Aún no hay archivos.') }}</p>
       <div v-else class="mt-2 grid grid-cols-3 gap-1.5">
-        <button
-          v-for="f in shown"
-          :key="f.id"
-          type="button"
-          class="relative aspect-square overflow-hidden rounded-[9px] text-left"
-          :class="isImage(f) && urls[f.id] ? 'bg-black' : 'bg-surface-subtle'"
-          :aria-label="f.file_name"
-          data-cy="patient-file-tile"
-          @click="open(f)"
-        >
-          <template v-if="isImage(f) && urls[f.id]">
-            <img :src="urls[f.id]" :alt="f.file_name" class="h-full w-full object-cover" loading="lazy" />
-            <span class="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/60 to-transparent px-1.5 pb-1 pt-3 text-[10px] font-semibold text-white">{{ shortName(f) }}</span>
-          </template>
-          <span v-else class="flex h-full w-full flex-col items-center justify-center gap-0.5 px-1.5">
-            <span class="text-[11.5px] font-bold text-ink-muted">{{ kindLabel(f) }}</span>
-            <span class="w-full truncate text-center text-[10px] text-ink-faint">{{ shortName(f) }}</span>
-          </span>
-        </button>
+        <div v-for="f in shown" :key="f.id" class="relative">
+          <button
+            type="button"
+            class="relative aspect-square w-full overflow-hidden rounded-[9px] text-left"
+            :class="isImage(f) && urls[f.id] ? 'bg-black' : 'bg-surface-subtle'"
+            :aria-label="f.file_name"
+            data-cy="patient-file-tile"
+            @click="open(f)"
+          >
+            <template v-if="isImage(f) && urls[f.id]">
+              <img :src="urls[f.id]" :alt="f.file_name" class="h-full w-full object-cover" loading="lazy" />
+              <span class="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/60 to-transparent px-1.5 pb-1 pt-3 text-[10px] font-semibold text-white">{{ shortName(f) }}</span>
+            </template>
+            <span v-else class="flex h-full w-full flex-col items-center justify-center gap-0.5 px-1.5">
+              <span class="text-[11.5px] font-bold text-ink-muted">{{ kindLabel(f) }}</span>
+              <span class="w-full truncate text-center text-[10px] text-ink-faint">{{ shortName(f) }}</span>
+            </span>
+          </button>
+          <!-- Its own button beside the tile, not inside it: a tap on the tile
+               opens the file. 44pt to hit, a small pencil to see. -->
+          <button
+            type="button"
+            class="absolute right-0 top-0 flex h-11 w-11 items-start justify-end p-1.5"
+            :aria-label="t(`Rename ${f.file_name}`, `Renombrar ${f.file_name}`)"
+            data-cy="patient-file-rename"
+            @click="startRename(f)"
+          >
+            <span class="flex h-6 w-6 items-center justify-center rounded-full bg-black/45 text-white">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.5 2.5l3 3L6 13H3v-3z" /></svg>
+            </span>
+          </button>
+        </div>
       </div>
 
       <p v-if="uploadError" class="mt-2 text-[12.5px] text-danger-text">{{ uploadError }}</p>
@@ -215,6 +259,34 @@ async function uploadOne(file: File, patientId: string): Promise<boolean> {
     </template>
 
     <Teleport to="body">
+      <div v-if="renaming" class="fixed inset-0 z-[60] flex flex-col justify-end bg-black/40 md:items-center md:justify-center" @click.self="renaming = null">
+        <form
+          class="flex w-full flex-col gap-3 rounded-t-[22px] bg-surface px-4 pt-2.5 shadow-popover md:max-w-[480px] md:rounded-[18px] md:pt-5"
+          style="padding-bottom: max(env(safe-area-inset-bottom), 1.25rem)"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="t('Rename file', 'Renombrar archivo')"
+          data-cy="patient-file-rename-sheet"
+          @submit.prevent="saveRename"
+        >
+          <div class="mx-auto mb-0.5 h-1 w-[38px] shrink-0 rounded-full bg-line-control md:hidden" />
+          <p class="text-[17px] font-semibold text-ink-900">{{ t('Rename file', 'Renombrar archivo') }}</p>
+          <input
+            v-model="renameInput"
+            type="text"
+            maxlength="200"
+            enterkeyhint="done"
+            class="h-11 w-full rounded-ctl border border-line-control bg-surface px-3 text-[16px] text-ink-900 focus:border-brand focus:outline-none"
+            :aria-label="t('File name', 'Nombre del archivo')"
+            data-cy="patient-file-rename-input"
+          />
+          <p v-if="renameError" class="text-[12.5px] text-danger-text">{{ renameError }}</p>
+          <div class="grid grid-cols-2 gap-2">
+            <AppButton type="button" variant="secondary" @click="renaming = null">{{ t('Cancel', 'Cancelar') }}</AppButton>
+            <AppButton type="submit" variant="primary" :disabled="renameSaving" data-cy="patient-file-rename-save">{{ renameSaving ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}</AppButton>
+          </div>
+        </form>
+      </div>
       <div v-if="lightbox" class="fixed inset-0 z-[60] flex flex-col bg-black/95" data-cy="patient-file-lightbox" @click="lightbox = null">
         <div class="flex items-center gap-3 px-3 py-2" style="padding-top: calc(env(safe-area-inset-top) + 8px)">
           <p class="min-w-0 flex-1 truncate text-[13.5px] font-medium text-white">{{ lightbox.file_name }}</p>

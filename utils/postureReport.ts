@@ -1,4 +1,5 @@
 import { postureHeadline, type FrontMetrics, type PostureView, type SideMetrics, type ViewMetrics } from './posture'
+import { TREND_METRICS, trendSummary, trendValue, type TrendKey } from './postureTrend'
 
 // What the posture report says, as text: the findings under each photo, the
 // totals, the effective head weight, and a closing paragraph. The PDF itself
@@ -199,31 +200,53 @@ export function postureConclusion(metrics: Partial<Record<PostureView, ViewMetri
   return `${es ? 'Lo que más destaca en estas fotos: ' : 'What stands out most in these photos: '}${joined}. ${next}`
 }
 
-export interface PostureEvolutionLine { label: string; then: string; now: string; better: boolean | null }
+export interface PostureHistoryEntry { takenAt: string; metrics: Partial<Record<PostureView, ViewMetrics>> }
+export interface PostureEvolutionRow { key: TrendKey; label: string; values: (string | null)[]; better: boolean | null }
 
-/** Then and now for the headline numbers, against an earlier assessment. */
-export function postureEvolution(
-  earlier: Partial<Record<PostureView, ViewMetrics>>,
-  now: Partial<Record<PostureView, ViewMetrics>>,
-  lang: ReportLang,
-): PostureEvolutionLine[] {
-  const a = postureHeadline(earlier)
-  const b = postureHeadline(now)
+/**
+ * The evolution table: each headline number at the first assessment, the one
+ * before this (when there are three or more) and this one, as distance from
+ * aligned (utils/postureTrend.ts). `better` compares this one with the first.
+ */
+export function postureEvolutionTable(history: PostureHistoryEntry[], lang: ReportLang): { columns: string[]; rows: PostureEvolutionRow[] } {
+  const sorted = [...history].sort((a, b) => a.takenAt.localeCompare(b.takenAt))
+  const picks = sorted.length >= 3 ? [sorted[0]!, sorted[sorted.length - 2]!, sorted[sorted.length - 1]!] : sorted
+  const rows = TREND_METRICS.flatMap((m): PostureEvolutionRow[] => {
+    const values = picks.map((a) => trendValue(a.metrics, m.key))
+    const first = values[0]
+    const last = values[values.length - 1]
+    if (first === null || first === undefined || last === null || last === undefined) return []
+    const summary = trendSummary([{ takenAt: '', value: first }, { takenAt: '', value: last }], m.ideal)
+    const unit = m.unit === '°' ? '°' : ` ${m.unit}`
+    return [{ key: m.key, label: m.label[lang], values: values.map((v) => (v === null ? null : `${num(v, lang)}${unit}`)), better: summary?.better ?? null }]
+  })
+  return { columns: picks.map((a) => a.takenAt), rows }
+}
+
+/** One or two sentences on what changed between the first assessment and this one. */
+export function postureProgressSentence(history: PostureHistoryEntry[], lang: ReportLang): string {
+  const sorted = [...history].sort((a, b) => a.takenAt.localeCompare(b.takenAt))
   const es = lang === 'es'
-  const rows: [string, number | null, number | null, string][] = [
-    [es ? 'Peso efectivo de la cabeza' : 'Effective head weight', a.headWeight, b.headWeight, 'kg'],
-    [es ? 'Cabeza por delante del hombro' : 'Head ahead of the shoulder', a.headForward, b.headForward, 'cm'],
-    [es ? 'Inclinación de hombros' : 'Shoulder tilt', a.shoulderTilt, b.shoulderTilt, '°'],
-    [es ? 'Inclinación de pelvis' : 'Pelvic tilt', a.hipTilt, b.hipTilt, '°'],
-  ]
-  const fmt = (n: number, unit: string) => `${num(unit === '°' ? Math.abs(n) : n, lang)}${unit === '°' ? '°' : ` ${unit}`}`
-  return rows
-    .filter(([, x, y]) => x !== null && y !== null)
-    .map(([label, x, y, unit]) => {
-      const before = Math.abs(x!)
-      const after = Math.abs(y!)
-      return { label, then: fmt(x!, unit), now: fmt(y!, unit), better: Math.abs(after - before) < 0.1 ? null : after < before }
-    })
+  const first = sorted[0]!.metrics
+  const last = sorted[sorted.length - 1]!.metrics
+  const delta = (key: TrendKey) => {
+    const a = trendValue(first, key)
+    const b = trendValue(last, key)
+    return a === null || b === null ? null : Math.round((b - a) * 10) / 10
+  }
+  const parts: string[] = []
+  const w = delta('headWeight')
+  if (w !== null && Math.abs(w) >= 0.5) parts.push(es ? `el cuello sostiene ${num(Math.abs(w), lang)} kg ${w < 0 ? 'menos' : 'más'}` : `the neck holds ${num(Math.abs(w), lang)} kg ${w < 0 ? 'less' : 'more'}`)
+  const f = delta('headForward')
+  if (f !== null && Math.abs(f) >= 0.5) parts.push(es ? `la cabeza está ${num(Math.abs(f), lang)} cm ${f < 0 ? 'más' : 'menos'} alineada sobre el hombro` : `the head sits ${num(Math.abs(f), lang)} cm ${f < 0 ? 'closer to' : 'further from'} the line of the shoulder`)
+  const levelled = (['shoulderTilt', 'hipTilt'] as TrendKey[]).filter((k) => (delta(k) ?? 0) <= -0.5)
+  if (levelled.length === 2) parts.push(es ? 'hombros y pelvis están más nivelados' : 'shoulders and pelvis are more level')
+  else if (levelled[0] === 'shoulderTilt') parts.push(es ? 'los hombros están más nivelados' : 'the shoulders are more level')
+  else if (levelled[0] === 'hipTilt') parts.push(es ? 'la pelvis está más nivelada' : 'the pelvis is more level')
+  const next = es ? 'Seguiremos midiendo en las próximas revisiones.' : 'We will keep measuring at your next reviews.'
+  if (!parts.length) return `${es ? 'Las medidas se mantienen parecidas a las de la primera valoración.' : 'The measurements are much as they were at the first assessment.'} ${next}`
+  const joined = parts.length === 1 ? parts[0]! : `${parts.slice(0, -1).join(', ')}${es ? ' y ' : ' and '}${parts[parts.length - 1]}`
+  return `${es ? 'Desde la primera valoración, ' : 'Since the first assessment, '}${joined}. ${next}`
 }
 
 /** The fixed paragraphs. */
@@ -235,9 +258,12 @@ export function postureReportCopy(lang: ReportLang) {
           'Este informe recoge tu postura tal y como se ve en las fotos tomadas en consulta. A la izquierda de cada foto, como referencia, una postura alineada. Sobre cada foto se marcan unos puntos de referencia (oreja, hombro, cadera, rodilla y tobillo) y una línea vertical que sale del tobillo: cuanto más se acercan los puntos a esa línea, y cuanto más nivelados están a ambos lados, más equilibrada es la postura. Las medidas son estimaciones a partir de la imagen.',
         conclusion: 'Resumen',
         reference: 'Referencia',
-        evolution: (date: string) => `Evolución desde el ${date}`,
-        then: 'Antes',
-        now: 'Ahora',
+        evolutionTitle: (name: string) => `Tu evolución · ${name}`,
+        evolutionRange: (n: number, from: string, to: string) => `${n} valoraciones, ${from} – ${to}`,
+        evolutionIntro: 'Cada punto es una valoración, con las fotos tomadas en el mismo sitio y de la misma forma. La línea verde discontinua marca la postura alineada: cuanto más se acerca la curva a ella, mejor.',
+        measure: 'Medida',
+        now: 'ahora',
+        inShort: 'En resumen',
         legend: 'Línea azul: la vertical desde el tobillo. En naranja, los puntos medidos y las líneas entre ellos.',
         disclaimer: 'Estimaciones a partir de fotografías, para documentar y explicar. No constituyen un diagnóstico.',
         page: (n: number, of: number) => `Página ${n} de ${of}`,
@@ -248,9 +274,12 @@ export function postureReportCopy(lang: ReportLang) {
           'This report shows your posture as it appears in the photos taken at the clinic. Beside each photo, for reference, an aligned posture. Each photo is marked with reference points (ear, shoulder, hip, knee and ankle) and a vertical line rising from the ankle: the closer the points sit to that line, and the more level they are from side to side, the more balanced the posture. The measurements are estimates from the image.',
         conclusion: 'Summary',
         reference: 'Reference',
-        evolution: (date: string) => `Changes since ${date}`,
-        then: 'Then',
-        now: 'Now',
+        evolutionTitle: (name: string) => `Your progress · ${name}`,
+        evolutionRange: (n: number, from: string, to: string) => `${n} assessments, ${from} – ${to}`,
+        evolutionIntro: 'Each point is one assessment, with the photos taken in the same place and the same way. The dashed green line is aligned posture: the closer the curve gets to it, the better.',
+        measure: 'Measurement',
+        now: 'now',
+        inShort: 'In short',
         legend: 'Blue line: the vertical from the ankle. In orange, the measured points and the lines between them.',
         disclaimer: 'Estimates from photographs, to document and explain. Not a diagnosis.',
         page: (n: number, of: number) => `Page ${n} of ${of}`,

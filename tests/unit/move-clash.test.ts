@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { moveClashes, type ClashCandidateAppointment, type ClashCandidateBlock } from '../../utils/moveClash'
+import { appointmentsUnderBlock, moveClashes, type ClashCandidateAppointment, type ClashCandidateBlock } from '../../utils/moveClash'
 
 // What a moved visit lands on (utils/moveClash.ts): the practitioner's other
 // visits, the room's, and the blocks that apply to either.
@@ -67,5 +67,41 @@ describe('Move clashes', () => {
   it('lists everything, earliest first', () => {
     const got = moveClashes({ ...target, endsAt: at('12:00') }, [appt('late', '11:30', '12:00'), appt('early', '10:00', '10:30')], [block('11:00', '11:15')])
     expect(got.map((c) => c.startsAt)).toEqual([at('10:00'), at('11:00'), at('11:30')])
+  })
+})
+
+describe('appointmentsUnderBlock', () => {
+  const visit = (id: string, extra: Partial<{ practitioner_id: string; room_id: string; clinic_id: string; status: string; deleted_at: string; starts_at: string; ends_at: string }> = {}) => ({
+    id,
+    starts_at: '2026-11-02T09:00:00Z',
+    ends_at: '2026-11-02T09:30:00Z',
+    practitioner_id: 'ana',
+    room_id: 'r1',
+    clinic_id: 'c1',
+    status: 'booked',
+    deleted_at: null as string | null,
+    patients: null,
+    ...extra,
+  })
+  const morning = { startsAt: '2026-11-02T08:00:00Z', endsAt: '2026-11-02T12:00:00Z', clinicId: 'c1' }
+  const visits = [
+    visit('ana-here'),
+    visit('ana-other-clinic', { clinic_id: 'c2', room_id: 'r9' }),
+    visit('luis-r2', { practitioner_id: 'luis', room_id: 'r2' }),
+    visit('luis-other-clinic', { practitioner_id: 'luis', clinic_id: 'c2' }),
+    visit('afternoon', { starts_at: '2026-11-02T15:00:00Z', ends_at: '2026-11-02T15:30:00Z' }),
+    visit('cancelled', { status: 'cancelled' }),
+    visit('deleted', { deleted_at: '2026-11-01T00:00:00Z' }),
+  ]
+  const ids = (block: Parameters<typeof appointmentsUnderBlock>[0]) => appointmentsUnderBlock(block, visits).map((a) => a.id)
+
+  it('catches a practitioner’s visits at every clinic', () => {
+    expect(ids({ ...morning, practitionerId: 'ana', roomId: null })).toEqual(['ana-here', 'ana-other-clinic'])
+  })
+  it('catches only that room’s visits, at its own clinic', () => {
+    expect(ids({ ...morning, practitionerId: null, roomId: 'r2' })).toEqual(['luis-r2'])
+  })
+  it('catches every visit at the clinic when it names nobody', () => {
+    expect(ids({ ...morning, practitionerId: null, roomId: null })).toEqual(['ana-here', 'luis-r2'])
   })
 })

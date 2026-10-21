@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { formatEur } from '~/utils/billing'
+import { patientAge } from '~/utils/patientAge'
 import type { Tables } from '~/types/database.types'
 import { fetchAllRows, fetchByIds } from '~/composables/useFetchAllRows'
 import { normalizeSearchTerm, sanitizeSearchToken } from '~/utils/searchText'
@@ -334,17 +335,11 @@ function initials(p: Patient) {
   return (a + b).toUpperCase() || '?'
 }
 
-/** "34 · Clínica Centro · Dr. Ruiz" -- whichever of the three are known. */
+/** "34 años · Clínica Centro · Dr. Ruiz" -- whichever of the three are known. */
 function secondaryLine(patient: Patient) {
   const parts: string[] = []
-  if (patient.date_of_birth) {
-    const dob = new Date(patient.date_of_birth)
-    const now = new Date()
-    let years = now.getFullYear() - dob.getFullYear()
-    const m = now.getMonth() - dob.getMonth()
-    if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) years--
-    parts.push(String(years))
-  }
+  const age = patientAge(patient.date_of_birth)
+  if (age !== null) parts.push(t(`${age} years old`, `${age} años`))
   const clinic = store.clinics.find((c) => c.id === patient.clinic_id)?.name
   if (clinic) parts.push(clinic)
   const practitioner = teamMembers.value.find((m) => m.id === patient.default_practitioner_id)?.full_name

@@ -137,6 +137,38 @@ describe('Posture assessment', () => {
     })
   })
 
+  // Evolución: any headline number across every assessment, measured again
+  // from the points (so these rows, saved with no metrics, still plot).
+  it('charts each number across the assessments and says whether it got better', () => {
+    const side = (earX: number) => ({ photo: 'none/right.jpg', width: 1000, height: 1800, facing: 'right', points: { ear: [earX, 100], shoulder: [500, 300], hip: [500, 900], knee: [500, 1300], ankle: [500, 1691] } })
+    const front = (dropR: number) => ({
+      photo: 'none/front.jpg', width: 1000, height: 1800, facing: null,
+      points: { earR: [470, 100], earL: [530, 100], shoulderR: [400, 300 + dropR], shoulderL: [600, 300], hipR: [450, 900], hipL: [550, 900], kneeR: [460, 1300], kneeL: [540, 1300], ankleR: [450, 1691], ankleL: [550, 1691] },
+    })
+    cy.seedStaffAccount().then((account) => {
+      cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Curva', lastName: 'Postura' }).then((patient) => {
+        cy.task('db:insertRows', {
+          table: 'posture_assessments',
+          rows: [
+            { account_id: account.accountId, patient_id: patient.id, taken_at: '2026-06-02T09:00:00Z', height_cm: 170, views: { right: side(560), front: front(10) }, metrics: {} },
+            { account_id: account.accountId, patient_id: patient.id, taken_at: '2026-09-08T09:00:00Z', height_cm: 170, views: { right: side(520), front: front(2) }, metrics: {} },
+          ],
+        })
+        cy.login(account.email, account.password)
+        cy.visit(`/patients/${patient.id}?tab=progress`)
+        cy.get('[data-cy=posture-section][data-ready=true]', { timeout: 20000 })
+        cy.get('[data-cy=posture-trend]').should('have.attr', 'data-metric', 'headWeight')
+        cy.get('[data-cy=posture-trend] circle').should('have.length', 2)
+        cy.get('[data-cy=posture-trend-summary]').should('have.attr', 'data-better', 'true')
+        // Knees were never stored on these rows; they are measured from the points.
+        cy.get('[data-cy=posture-trend-knees]').should('exist')
+        cy.get('[data-cy=posture-trend-shoulderTilt]').click()
+        cy.get('[data-cy=posture-trend]').should('have.attr', 'data-metric', 'shoulderTilt')
+        cy.get('[data-cy=posture-trend-summary]').should('have.attr', 'data-better', 'true')
+      })
+    })
+  })
+
   it('lets the points be placed by hand when nobody is found', () => {
     cy.seedStaffAccount().then((account) => {
       cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Mano', lastName: 'Puntos' }).then((patient) => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { postureConclusion, postureEvolution, postureReportSections } from '../../utils/postureReport'
+import { postureConclusion, postureEvolutionTable, postureProgressSentence, postureReportSections } from '../../utils/postureReport'
 import type { FrontMetrics, SideMetrics } from '../../utils/posture'
 
 const front = (m: Partial<FrontMetrics> = {}): FrontMetrics => ({ headTilt: 0, shoulderTilt: 0, hipTilt: 0, headShift: 0, shoulderShift: 0, hipShift: 0, ...m })
@@ -56,13 +56,29 @@ describe('postureConclusion', () => {
   })
 })
 
-describe('postureEvolution', () => {
-  it('compares the headline numbers and marks which way they went', () => {
-    const rows = postureEvolution({ front: front({ shoulderTilt: 3 }), right: side({ headWeight: 18.1 }) }, { front: front({ shoulderTilt: -1 }), right: side({ headWeight: 12.2 }) }, 'en')
-    expect(rows.find((r) => r.label === 'Effective head weight')).toEqual({ label: 'Effective head weight', then: '18.1 kg', now: '12.2 kg', better: true })
-    expect(rows.find((r) => r.label === 'Shoulder tilt')).toMatchObject({ then: '3°', now: '1°', better: true })
+describe('postureEvolutionTable', () => {
+  const at = (takenAt: string, headWeight: number, shoulderTilt: number) => ({ takenAt, metrics: { front: front({ shoulderTilt }), right: side({ headWeight }) } })
+  it('shows the first, the one before and this one, as distance from aligned', () => {
+    const { columns, rows } = postureEvolutionTable([at('2026-08-01', 15, 2), at('2026-06-01', 18.1, 3), at('2026-10-01', 12.2, -1), at('2026-07-01', 16, 2.5)], 'en')
+    expect(columns).toEqual(['2026-06-01', '2026-08-01', '2026-10-01'])
+    expect(rows.find((r) => r.key === 'headWeight')).toEqual({ key: 'headWeight', label: 'Effective head weight', values: ['18.1 kg', '15 kg', '12.2 kg'], better: true })
+    // A tilt that changed side is plotted by its size: 3° then 1° is better.
+    expect(rows.find((r) => r.key === 'shoulderTilt')).toMatchObject({ values: ['3°', '2°', '1°'], better: true })
   })
-  it('leaves out what one of the two did not measure', () => {
-    expect(postureEvolution({ right: side() }, { front: front() }, 'es')).toEqual([])
+  it('leaves out what the first or this one did not measure', () => {
+    expect(postureEvolutionTable([{ takenAt: '2026-06-01', metrics: { right: side() } }, { takenAt: '2026-07-01', metrics: { front: front() } }], 'es').rows).toEqual([])
+  })
+})
+
+describe('postureProgressSentence', () => {
+  it('names the head weight, the head and whatever levelled', () => {
+    const text = postureProgressSentence([
+      { takenAt: '2026-06-01', metrics: { front: front({ shoulderTilt: 3.4, hipTilt: 2.2 }), right: side({ headWeight: 21.1, earForward: 6.8 }) } },
+      { takenAt: '2026-10-01', metrics: { front: front({ shoulderTilt: 1.8, hipTilt: 0.9 }), right: side({ headWeight: 12.2, earForward: 3.2 }) } },
+    ], 'es')
+    expect(text).toBe('Desde la primera valoración, el cuello sostiene 8,9 kg menos, la cabeza está 3,6 cm más alineada sobre el hombro y hombros y pelvis están más nivelados. Seguiremos midiendo en las próximas revisiones.')
+  })
+  it('says so when little changed', () => {
+    expect(postureProgressSentence([{ takenAt: 'a', metrics: { right: side() } }, { takenAt: 'b', metrics: { right: side() } }], 'en')).toMatch(/^The measurements are much as they were/)
   })
 })

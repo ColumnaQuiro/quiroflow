@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // The patient's files on the staff app's patient record: to look at the
-// X-ray in the room, or take a posture photo with the phone's camera.
+// X-ray in the room, take a posture photo with the phone's camera, or add
+// what is already on the phone -- a photo from the gallery, a PDF report.
 //
 // Read and written exactly as the web's Files tab (components/patients/
 // FilesTab.vue): patient_files rows under the same RLS -- docs_files_scope
@@ -93,51 +94,64 @@ function open(f: FileRow) {
   })
 }
 
+// Two ways in. The camera input carries `capture`, which opens the camera
+// straight away and nothing else -- it was the only one, so a report already
+// on the phone could not be added at all. The other has no `capture` and no
+// `accept`: iOS offers the photo library, the camera and Files, Android its
+// file picker, and several can be picked at once.
 const cameraInput = ref<HTMLInputElement>()
-async function onPhotoTaken(e: Event) {
+const fileInput = ref<HTMLInputElement>()
+async function onFilesChosen(e: Event) {
   const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
+  const files = [...(input.files ?? [])]
+  if (!files.length) return
   uploadError.value = ''
   uploading.value = true
   // Snapshotted before the awaits, as the web does.
   const patientId = props.patientId
   try {
-    // A camera capture arrives as "image.jpg" every time; the time keeps it
-    // distinguishable in the list, as it does on the web.
-    const name = file.name && file.name !== 'image.jpg' ? file.name : `${t('Photo', 'Foto')} ${new Date().toISOString().slice(0, 16).replace('T', ' ')}.jpg`
-    const path = `${props.accountId}/${patientId}/${Date.now()}-${sanitizeStorageFilename(name)}`
-    const { error: storageError } = await supabase.storage.from('patient-files').upload(path, file)
-    if (storageError) {
-      uploadError.value = storageError.message
-      return
-    }
-    const { data: inserted, error: insertError } = await supabase
-      .from('patient_files')
-      .insert({
-        account_id: props.accountId,
-        patient_id: patientId,
-        storage_path: path,
-        file_name: name,
-        file_type: file.type || null,
-        size_bytes: file.size,
-        uploaded_by: props.teamMemberId,
-      } as never)
-      .select('id')
-      .single()
-    if (insertError) {
-      // The row was refused, so the object would open to nothing: take it
-      // back out rather than leave an orphan in the bucket.
-      await supabase.storage.from('patient-files').remove([path])
-      uploadError.value = insertError.message
-      return
-    }
-    if (inserted) authedFetch('/api/patients/files/compress', { method: 'POST', body: { fileId: (inserted as { id: string }).id } }).catch(() => {})
+    // One at a time, stopping at the first that fails, so the error names it.
+    for (const file of files) if (!(await uploadOne(file, patientId))) break
     await load()
   } finally {
     uploading.value = false
     input.value = ''
   }
+}
+
+/** Uploads one file and records it; false (with uploadError set) when it could not. */
+async function uploadOne(file: File, patientId: string): Promise<boolean> {
+  // A camera capture arrives as "image.jpg" every time; the time keeps it
+  // distinguishable in the list, as it does on the web.
+  const name = file.name && file.name !== 'image.jpg' ? file.name : `${t('Photo', 'Foto')} ${new Date().toISOString().slice(0, 16).replace('T', ' ')}.jpg`
+  const path = `${props.accountId}/${patientId}/${Date.now()}-${sanitizeStorageFilename(name)}`
+  const { error: storageError } = await supabase.storage.from('patient-files').upload(path, file)
+  if (storageError) {
+    uploadError.value = `${name}: ${storageError.message}`
+    return false
+  }
+  const { data: inserted, error: insertError } = await supabase
+    .from('patient_files')
+    .insert({
+      account_id: props.accountId,
+      patient_id: patientId,
+      storage_path: path,
+      file_name: name,
+      file_type: file.type || null,
+      size_bytes: file.size,
+      uploaded_by: props.teamMemberId,
+    } as never)
+    .select('id')
+    .single()
+  if (insertError) {
+    // The row was refused, so the object would open to nothing: take it
+    // back out rather than leave an orphan in the bucket.
+    await supabase.storage.from('patient-files').remove([path])
+    uploadError.value = `${name}: ${insertError.message}`
+    return false
+  }
+  if (inserted) authedFetch('/api/patients/files/compress', { method: 'POST', body: { fileId: (inserted as { id: string }).id } }).catch(() => {})
+  return true
 }
 </script>
 
@@ -179,14 +193,25 @@ async function onPhotoTaken(e: Event) {
       </div>
 
       <p v-if="uploadError" class="mt-2 text-[12.5px] text-danger-text">{{ uploadError }}</p>
-      <label class="mt-2.5 flex min-h-11 shrink-0 items-center justify-center gap-1.5 rounded-card border border-line-control bg-surface text-[15px] font-medium text-ink-700" :class="uploading ? 'opacity-60' : ''">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
-          <path d="M2 5.5A1.5 1.5 0 013.5 4h1.6l1-1.5h3.8l1 1.5h1.6A1.5 1.5 0 0114 5.5v6A1.5 1.5 0 0112.5 13h-9A1.5 1.5 0 012 11.5z" stroke-linejoin="round" />
-          <circle cx="8" cy="8.3" r="2.3" />
-        </svg>
-        {{ uploading ? t('Uploading…', 'Subiendo…') : t('Add from camera', 'Añadir con la cámara') }}
-        <input ref="cameraInput" type="file" accept="image/*" capture="environment" class="hidden" :disabled="uploading" data-cy="patient-file-camera" @change="onPhotoTaken" />
-      </label>
+      <p v-if="uploading" class="mt-2.5 text-center text-[13.5px] text-ink-muted">{{ t('Uploading…', 'Subiendo…') }}</p>
+      <div class="mt-2.5 grid grid-cols-2 gap-2" :class="uploading ? 'pointer-events-none opacity-60' : ''">
+        <label class="flex min-h-11 items-center justify-center gap-1.5 rounded-card border border-line-control bg-surface text-[15px] font-medium text-ink-700">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+            <path d="M2 5.5A1.5 1.5 0 013.5 4h1.6l1-1.5h3.8l1 1.5h1.6A1.5 1.5 0 0114 5.5v6A1.5 1.5 0 0112.5 13h-9A1.5 1.5 0 012 11.5z" stroke-linejoin="round" />
+            <circle cx="8" cy="8.3" r="2.3" />
+          </svg>
+          {{ t('Camera', 'Cámara') }}
+          <input ref="cameraInput" type="file" accept="image/*" capture="environment" class="hidden" :disabled="uploading" data-cy="patient-file-camera" @change="onFilesChosen" />
+        </label>
+        <label class="flex min-h-11 items-center justify-center gap-1.5 rounded-card border border-line-control bg-surface text-[15px] font-medium text-ink-700">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M8 10.5V2.5M5 5.5l3-3 3 3" />
+            <path d="M2.5 10v2.5a1 1 0 001 1h9a1 1 0 001-1V10" />
+          </svg>
+          {{ t('Upload file', 'Subir archivo') }}
+          <input ref="fileInput" type="file" multiple class="hidden" :disabled="uploading" data-cy="patient-file-upload" @change="onFilesChosen" />
+        </label>
+      </div>
     </template>
 
     <Teleport to="body">

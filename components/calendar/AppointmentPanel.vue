@@ -67,6 +67,8 @@ const props = defineProps<{
   noMove?: boolean
 }>()
 const emit = defineEmits<{ close: []; changed: []; reschedule: [] }>()
+const typeNotes = useAppointmentTypeNotes()
+onMounted(() => typeNotes.load())
 
 // Justificante de asistencia (server/api/appointments/[id]/attendance-certificate).
 // Opened rather than downloaded where the browser allows it, because the
@@ -763,6 +765,14 @@ async function useExpectedType() {
               <strong class="text-[13.5px] text-danger-text">{{ t('Red flags', 'Señales rojas') }}</strong>
               <span v-if="can('visit_notes_access')" class="whitespace-pre-line text-ink-700">{{ view.redFlags }}</span>
               <span v-else class="text-ink-500">{{ t('On the clinical record. Let the practitioner know.', 'En la ficha clínica. Avisa al profesional.') }}</span>
+            </div>
+          </div>
+          <!-- The appointment type's note for the team: what the desk or the
+               practitioner has to remember about this kind of visit. -->
+          <div v-if="typeNotes.noteFor(appointment.appointment_type_id)" class="mt-3 flex items-start gap-3 rounded-ctl border border-warning-border bg-warning-bg px-3.5 py-2.5" data-cy="appt-panel-type-note">
+            <div class="flex min-w-0 flex-1 flex-col text-[12.5px]">
+              <strong class="text-[13.5px] text-warning-text">{{ t('For the team', 'Para el equipo') }}</strong>
+              <span class="whitespace-pre-line text-ink-700">{{ typeNotes.noteFor(appointment.appointment_type_id) }}</span>
             </div>
           </div>
           <div v-if="view.tags?.length" class="mt-3 flex flex-wrap gap-1.5" data-cy="appt-panel-tags">

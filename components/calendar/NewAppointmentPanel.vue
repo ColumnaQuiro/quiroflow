@@ -118,6 +118,8 @@ onMounted(async () => {
 })
 
 const selectedAppointmentType = computed(() => props.appointmentTypes.find((x) => x.id === appointmentTypeId.value))
+const typeNotes = useAppointmentTypeNotes()
+onMounted(() => typeNotes.load())
 const durationFor = (typeId: string, practId: string) => {
   const type = props.appointmentTypes.find((x) => x.id === typeId)
   return type ? effectiveDuration(type.duration_minutes, typeId, practId, overrides.value) : 30
@@ -890,6 +892,12 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
               </span>
             </button>
           </div>
+          <!-- The type's note for the team (Settings > Appointment types):
+               what the desk has to remember about this kind of visit. -->
+          <p v-if="typeNotes.noteFor(appointmentTypeId)" class="mt-2 flex items-start gap-2 rounded-ctl border border-warning-border bg-warning-bg px-3 py-2 text-[12.5px] text-warning-text" data-cy="create-type-note">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="mt-px shrink-0" aria-hidden="true"><path d="M5 4h10l4 4v12H5z" /><path d="M9 12h6M9 16h4" /></svg>
+            <span class="whitespace-pre-line"><strong class="font-semibold">{{ t('For the team', 'Para el equipo') }}:</strong> {{ typeNotes.noteFor(appointmentTypeId) }}</span>
+          </p>
         </section>
 
         <div

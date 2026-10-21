@@ -1708,6 +1708,15 @@ async function teamMessagesVisibleTo(opts: { email: string; password: string }) 
   return (data ?? []).map((r) => r.body)
 }
 
+/** Rows of a table a signed-in user can read, through RLS -- to prove what a patient or a role cannot see. */
+async function selectAsUser(opts: { email: string; password: string; table: string; select?: string }) {
+  const client = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+  const { error: signInErr } = await client.auth.signInWithPassword({ email: opts.email, password: opts.password })
+  if (signInErr) throw signInErr
+  const { data, error } = await client.from(opts.table).select(opts.select ?? '*')
+  return { rows: data ?? [], error: error?.message ?? null }
+}
+
 /** Lets the clinic's patients cancel from the app and the portal (0162). */
 async function setPatientCancel(opts: { accountId: string; enabled: boolean }) {
   assertOk(await admin.from('accounts').update({ patient_app_cancel_enabled: opts.enabled }).eq('id', opts.accountId))
@@ -4310,6 +4319,7 @@ export const dbTasks = {
   'db:setPatientCancel': setPatientCancel,
   'db:accessTokenFor': accessTokenFor,
   'db:callRpcAsPatient': callRpcAsPatient,
+  'db:selectAsUser': selectAsUser,
   'db:teamMessagesVisibleTo': teamMessagesVisibleTo,
   'db:setPatientAppReschedule': setPatientAppReschedule,
   'db:setTeamMemberBookingFlags': setTeamMemberBookingFlags,

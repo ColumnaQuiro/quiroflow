@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { formatLongDate } from '~/utils/billing'
+import { patientAge } from '~/utils/patientAge'
 import { formatPhoneDisplay } from '~/utils/phone'
 import { clinicDateOf, DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
 import { pregnancyProgress, pregnancyWeeksLabel } from '~/utils/pregnancy'
@@ -36,7 +37,7 @@ const props = defineProps<{
   tutor: { id: string; first_name: string; last_name: string | null } | null
 }>()
 
-defineEmits<{ message: []; sendApp: []; book: []; charge: []; archive: []; merge: []; remove: []; exportData: []; photoUpdated: [] }>()
+defineEmits<{ message: []; sendApp: []; cancelFuture: []; book: []; charge: []; archive: []; merge: []; remove: []; exportData: []; photoUpdated: [] }>()
 
 const t = useT()
 
@@ -48,19 +49,11 @@ const initials = computed(() =>
   [props.patient.first_name?.[0], props.patient.last_name?.[0]].filter(Boolean).join('').toUpperCase() || '?',
 )
 
-const age = computed(() => {
-  if (!props.patient.date_of_birth) return null
-  const dob = new Date(props.patient.date_of_birth)
-  const now = new Date()
-  let years = now.getFullYear() - dob.getFullYear()
-  const m = now.getMonth() - dob.getMonth()
-  if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) years--
-  return years
-})
+const age = computed(() => patientAge(props.patient.date_of_birth))
 
 const identityLine = computed(() => {
   const parts: string[] = []
-  if (age.value !== null) parts.push(String(age.value))
+  if (age.value !== null) parts.push(t(`${age.value} years old`, `${age.value} años`))
   if (props.patient.date_of_birth) parts.push(formatLongDate(props.patient.date_of_birth))
   parts.push(`${t('Patient since', 'Paciente desde')} ${formatLongDate(props.patient.created_at)}`)
   return parts.join(' · ')
@@ -222,6 +215,16 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
             @click="closeMenu(false); $emit('sendApp')"
           >
             {{ t('Send the app on WhatsApp', 'Enviar la app por WhatsApp') }}
+          </button>
+          <!-- Someone stopping treatment: every visit ahead, in one go. -->
+          <button
+            v-if="canEdit"
+            type="button"
+            class="block w-full px-3 py-3 text-left text-[13px] text-ink-700 outline-none hover:bg-surface-subtle focus-visible:bg-surface-subtle lg:py-2"
+            data-cy="patient-cancel-future"
+            @click="closeMenu(false); $emit('cancelFuture')"
+          >
+            {{ t('Cancel future appointments', 'Anular citas futuras') }}
           </button>
           <button
             v-if="canEdit"

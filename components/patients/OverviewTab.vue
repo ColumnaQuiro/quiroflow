@@ -223,6 +223,9 @@ const attention = computed<AttentionRow[]>(() => {
 interface PlanRow { id: string; name: string; total_visits: number; frequency_value: number; frequency_unit: string; visits_per_period: number | null; started_at: string | null; payment_kind: string | null; package_purchase_id: string | null; patient_membership_id: string | null }
 const plan = ref<PlanRow | null>(null)
 const planCompleted = ref(0)
+// Booked and not yet come, since the plan started: what is left to book is
+// the rest (PhaseStats counts it the same way).
+const planScheduled = ref(0)
 const planLoading = ref(true)
 
 // Visits completed SINCE THE PLAN STARTED, and not deleted -- as
@@ -239,21 +242,29 @@ async function loadPlan({ silent = false } = {}) {
     .limit(1)
   const latest = (plans?.[0] as PlanRow) ?? null
   let completed = 0
+  let scheduled = 0
   if (latest) {
-    let q = supabase
-      .from('appointments')
-      .select('id', { count: 'exact', head: true })
-      .eq('patient_id', props.patient.id)
-      .eq('status', 'completed')
-      .is('deleted_at', null)
-    if (latest.started_at) q = q.gte('starts_at', latest.started_at)
-    const { count } = await q
-    completed = count ?? 0
+    const counted = (status: string) => {
+      let q = supabase
+        .from('appointments')
+        .select('id', { count: 'exact', head: true })
+        .eq('patient_id', props.patient.id)
+        .eq('status', status)
+        .is('deleted_at', null)
+      if (latest.started_at) q = q.gte('starts_at', latest.started_at)
+      return q
+    }
+    const [done, ahead] = await Promise.all([counted('completed'), counted('booked')])
+    completed = done.count ?? 0
+    scheduled = ahead.count ?? 0
   }
   plan.value = latest
   planCompleted.value = completed
+  planScheduled.value = scheduled
   planLoading.value = false
 }
+
+const planToBook = computed(() => (plan.value ? Math.max(0, plan.value.total_visits - planCompleted.value - planScheduled.value) : 0))
 
 const planPercent = computed(() => {
   if (!plan.value || plan.value.total_visits <= 0) return 0
@@ -458,6 +469,17 @@ function onDetailsUpdated() {
             <div class="h-full rounded-full bg-brand" :style="{ width: `${planPercent}%` }" />
           </div>
           <PatientsPlanPayment :plan="plan" :visits-left="Math.max(0, plan.total_visits - planCompleted)" />
+          <!-- The plan's visits not booked yet, in one go: the calendar opens
+               with "repeat as the care plan" chosen, at the plan's cadence.
+               It was only on the Clinical tab. -->
+          <NuxtLink
+            v-if="planToBook > 0"
+            :to="{ path: '/calendar', query: { patient: patient.id, repeat: 'plan' } }"
+            class="mt-2.5 inline-flex h-8 items-center rounded-ctl border border-line-control px-3 text-[12.5px] font-semibold text-brand-text outline-none hover:bg-surface-subtle focus-visible:shadow-focus touch:h-10"
+            data-cy="overview-plan-book"
+          >
+            {{ planToBook === 1 ? t('Book the 1 visit left', 'Reservar la visita que falta') : t(`Book the ${planToBook} visits left`, `Reservar las ${planToBook} visitas que faltan`) }}
+          </NuxtLink>
           <!-- Period by period: only for someone who sees every visit, or a
                colleague's attended visit would read as one missed. -->
           <PatientsPlanPeriods v-if="plan.started_at && seesAllVisits" :patient-id="patient.id" :plan="{ ...plan, started_at: plan.started_at }" />

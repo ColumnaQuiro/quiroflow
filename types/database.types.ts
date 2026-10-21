@@ -2447,6 +2447,7 @@ export type Database = {
           note: string | null
           opened_at: string
           opened_by: string
+          opening_float_cents: number
         }
         Insert: {
           account_id: string
@@ -2456,6 +2457,7 @@ export type Database = {
           note?: string | null
           opened_at?: string
           opened_by: string
+          opening_float_cents?: number
         }
         Update: {
           account_id?: string
@@ -2465,6 +2467,7 @@ export type Database = {
           note?: string | null
           opened_at?: string
           opened_by?: string
+          opening_float_cents?: number
         }
         Relationships: [
           {

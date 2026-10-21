@@ -18,7 +18,7 @@ definePageMeta({ layout: 'practitioner' })
 const user = useSupabaseUser()
 watch(user, (u) => { if (!u) navigateTo('/login') }, { immediate: true })
 
-interface Shift { id: string; opened_at: string; note: string | null }
+interface Shift { id: string; opened_at: string; note: string | null; opening_float_cents: number }
 interface Movement { id: string; type: 'cash_in' | 'cash_out'; amount_cents: number; note: string | null; created_at: string }
 
 const supabase = useSupabaseClient()
@@ -54,7 +54,7 @@ const isToday = (iso: string) => clinicDateOf(new Date(iso), tz.value) === today
 async function loadOpenShift() {
   const { data, error } = await supabase
     .from('cash_shifts')
-    .select('id, opened_at, note')
+    .select('id, opened_at, note, opening_float_cents')
     .eq('account_id', context.value!.accountId)
     .is('closed_at', null)
     .order('opened_at', { ascending: false })
@@ -152,7 +152,32 @@ watch([() => context.value?.accountId, allowed], load, { immediate: true })
 
 const movementsIn = computed(() => movements.value.filter((m) => m.type === 'cash_in').reduce((s, m) => s + m.amount_cents, 0))
 const movementsOut = computed(() => movements.value.filter((m) => m.type === 'cash_out').reduce((s, m) => s + m.amount_cents, 0))
-const expectedInDrawer = computed(() => cashPaymentsCents.value + movementsIn.value - movementsOut.value)
+// The change the drawer started with: carried from the last shift by the
+// database (cash_shift_carry_float), corrected here when it differs.
+const floatCents = computed(() => shift.value?.opening_float_cents ?? 0)
+const expectedInDrawer = computed(() => floatCents.value + cashPaymentsCents.value + movementsIn.value - movementsOut.value)
+
+const editingFloat = ref(false)
+const floatInput = ref('')
+const savingFloat = ref(false)
+function editFloat() {
+  floatInput.value = (floatCents.value / 100).toFixed(2)
+  editingFloat.value = true
+}
+async function saveFloat() {
+  if (!shift.value || savingFloat.value) return
+  const cents = Math.round((parseFloat(floatInput.value.replace(',', '.')) || 0) * 100)
+  if (cents < 0) return
+  savingFloat.value = true
+  const { error: e } = await supabase.from('cash_shifts').update({ opening_float_cents: cents } as never).eq('id', shift.value.id)
+  savingFloat.value = false
+  if (e) {
+    error.value = e.message
+    return
+  }
+  shift.value = { ...shift.value, opening_float_cents: cents }
+  editingFloat.value = false
+}
 const totalCollected = computed(() => paidByMethod.value.reduce((s, m) => s + m.cents, 0))
 const hhmm = (iso: string) => clinicTimeLabel(new Date(iso), tz.value)
 
@@ -252,7 +277,16 @@ const row = 'flex items-center justify-between gap-3 text-[14px]'
 
           <section class="rounded-card border border-line bg-surface px-3.5 py-3 shadow-card" data-cy="cash-drawer">
             <p class="text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Cash drawer', 'Caja registradora') }}</p>
-            <div :class="row" class="mt-1.5 text-ink-muted"><span>{{ t('Cash payments', 'Pagos en efectivo') }}</span><span class="tabular-nums">{{ formatEur(cashPaymentsCents) }}</span></div>
+            <form v-if="editingFloat" :class="row" class="mt-1.5 text-ink-muted" @submit.prevent="saveFloat">
+              <span class="flex-1">{{ t('Change at the start', 'Cambio inicial') }}</span>
+              <input v-model="floatInput" type="text" inputmode="decimal" class="h-9 w-24 rounded-ctl border border-line-control bg-surface px-2 text-right text-[15px] text-ink-900 focus:border-brand focus:outline-none" data-cy="cash-float-input" />
+              <button type="submit" :disabled="savingFloat" class="h-9 rounded-ctl bg-brand px-3 text-[13px] font-semibold text-white disabled:opacity-50" data-cy="cash-float-save">{{ t('Save', 'Guardar') }}</button>
+            </form>
+            <div v-else :class="row" class="mt-1.5 text-ink-muted">
+              <button type="button" class="text-left" data-cy="cash-float-edit" @click="editFloat">{{ t('Change at the start', 'Cambio inicial') }} <span class="text-[12px] font-semibold text-brand">{{ t('Edit', 'Editar') }}</span></button>
+              <span class="tabular-nums" data-cy="cash-float">{{ formatEur(floatCents) }}</span>
+            </div>
+            <div :class="row" class="text-ink-muted"><span>{{ t('Cash payments', 'Pagos en efectivo') }}</span><span class="tabular-nums">{{ formatEur(cashPaymentsCents) }}</span></div>
             <div :class="row" class="text-ink-muted"><span>{{ t('Cash in', 'Entradas') }}</span><span class="tabular-nums">{{ formatEur(movementsIn) }}</span></div>
             <div :class="row" class="text-ink-muted"><span>{{ t('Cash out', 'Salidas') }}</span><span class="tabular-nums">-{{ formatEur(movementsOut) }}</span></div>
             <div :class="row" class="mt-1.5 border-t border-line-row pt-1.5 text-[15px] font-semibold text-ink-900"><span>{{ t('Expected in drawer', 'Esperado en caja') }}</span><span class="tabular-nums" data-cy="cash-expected">{{ formatEur(expectedInDrawer) }}</span></div>

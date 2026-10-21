@@ -19,6 +19,13 @@ describe('postureReportSections', () => {
     expect(s!.headWeight).toBeNull()
   })
 
+  it('says which way each knee points, and leaves it out of assessments that never had it', () => {
+    const [s] = postureReportSections({ front: front({ kneeAngleR: 4.2, kneeAngleL: -1.1 }) }, 'es')
+    expect(s!.findings[3]).toEqual({ label: 'Rodillas', text: 'derecha 4,2° hacia dentro · izquierda recta' })
+    expect(postureReportSections({ front: front({ kneeAngleR: 1, kneeAngleL: -0.5 }) }, 'es')[0]!.findings[3]!.text).toBe('rectas')
+    expect(postureReportSections({ front: front() }, 'es')[0]!.findings).toHaveLength(3)
+  })
+
   it('gives a side view the effective head weight', () => {
     const [s] = postureReportSections({ right: side({ earForward: 4.1, shoulderForward: 1, hipForward: -0.2, kneeForward: -1.5, headAngle: 30, headWeight: 18.1 }) }, 'es')
     expect(s!.findings.map((f) => f.text)).toEqual([

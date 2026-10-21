@@ -199,8 +199,9 @@ const fmt = (n: number | null | undefined, unit: string) => (n === null || n ===
               <div class="flex justify-between border-b border-line-row py-2 text-[13.5px]"><span>{{ t('Pelvis', 'Pelvis') }}</span><span class="font-mono">{{ fmt(frontLive.hipTilt, '°') }}</span></div>
               <div class="flex justify-between border-b border-line-row py-2 text-[13.5px]"><span>{{ t('Head off centre', 'Cabeza desplazada') }}</span><span class="font-mono">{{ fmt(frontLive.headShift, 'cm') }}</span></div>
               <div class="flex justify-between border-b border-line-row py-2 text-[13.5px]"><span>{{ t('Shoulders off centre', 'Hombros desplazados') }}</span><span class="font-mono">{{ fmt(frontLive.shoulderShift, 'cm') }}</span></div>
-              <div class="flex justify-between py-2 text-[13.5px]"><span>{{ t('Pelvis off centre', 'Pelvis desplazada') }}</span><span class="font-mono">{{ fmt(frontLive.hipShift, 'cm') }}</span></div>
-              <p class="text-[12px] text-ink-muted">{{ t("Tilt: + means the patient's right side is lower. Off centre: + is towards their right.", 'Inclinación: + es el lado derecho del paciente más bajo. Desplazado: + hacia su derecha.') }}</p>
+              <div class="flex justify-between border-b border-line-row py-2 text-[13.5px]"><span>{{ t('Pelvis off centre', 'Pelvis desplazada') }}</span><span class="font-mono">{{ fmt(frontLive.hipShift, 'cm') }}</span></div>
+              <div class="flex justify-between py-2 text-[13.5px]"><span>{{ t('Knees (R / L)', 'Rodillas (D / I)') }}</span><span class="font-mono" data-cy="posture-live-knees">{{ fmt(frontLive.kneeAngleR, '°') }} / {{ fmt(frontLive.kneeAngleL, '°') }}</span></div>
+              <p class="text-[12px] text-ink-muted">{{ t("Tilt: + means the patient's right side is lower. Off centre: + is towards their right. Knees: + is inward.", 'Inclinación: + es el lado derecho del paciente más bajo. Desplazado: + hacia su derecha. Rodillas: + hacia dentro.') }}</p>
             </template>
             <p v-else class="text-[13px] text-ink-muted">{{ t('Enter the height to see measurements.', 'Pon la altura para ver las medidas.') }}</p>
             <div class="mt-auto flex gap-2 pt-3">

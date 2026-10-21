@@ -30,6 +30,23 @@ watch(views, (vs) => {
 const now = computed(() => (latest.value ? postureHeadline(latest.value.metrics) : null))
 const then = computed(() => (list.value.length > 1 && first.value ? postureHeadline(first.value.metrics) : null))
 const day = (iso: string) => new Date(iso).toLocaleDateString(t('en-GB', 'es-ES'), { day: 'numeric', month: 'short' })
+// The full report for the latest one, the same PDF the clinic hands out
+// (api/portal/posture/[id]/report), opened from a link so it works in the app.
+const reporting = ref(false)
+function openReport() {
+  if (!latest.value) return
+  reporting.value = true
+  const id = latest.value.id
+  openWhenReady(async () => {
+    try {
+      return (await authedFetch<{ url: string }>(`/api/portal/posture/${id}/report`, { method: 'POST' })).url
+    } catch {
+      return null
+    } finally {
+      reporting.value = false
+    }
+  })
+}
 const kg = (n: number | null | undefined) => (n === null || n === undefined ? '—' : `${n.toLocaleString('es-ES')} kg`)
 </script>
 
@@ -53,6 +70,7 @@ const kg = (n: number | null | undefined) => (n === null || n === undefined ? '�
         <figcaption class="text-center text-[12px] text-ink-muted">{{ day(a.takenAt) }}</figcaption>
       </figure>
     </div>
+    <button type="button" class="inline-flex h-10 items-center justify-center rounded-ctl border border-line-control bg-surface px-3.5 text-[13.5px] font-semibold text-ink-700 disabled:opacity-60" :disabled="reporting" data-cy="patient-posture-report" @click="openReport">{{ reporting ? t('Preparing…', 'Preparando…') : t(`Download the report (${day(latest.takenAt)})`, `Descargar el informe (${day(latest.takenAt)})`) }}</button>
     <p class="text-[12px] text-ink-muted">{{ t('The blue line is the vertical: the closer to it, the less load. An estimate to explain, not a diagnosis.', 'La línea azul es la vertical: cuanto más cerca, menos carga. Una estimación para explicar, no un diagnóstico.') }}</p>
   </section>
 </template>

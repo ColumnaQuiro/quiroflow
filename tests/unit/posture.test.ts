@@ -49,6 +49,17 @@ describe('a front photo', () => {
     expect(m.headShift).toBe(2)
     expect(m.hipShift).toBe(0)
   })
+  it('gives each knee its bend off the hip-ankle line, + when it points towards the other knee', () => {
+    // Right knee 40 px in towards the left one; left knee 40 px out.
+    const knees = { ...p, hipR: [450, 900], kneeR: [490, 1300], ankleR: [450, 1700], hipL: [550, 900], kneeL: [590, 1300], ankleL: [550, 1700] } as Points
+    const m = measureView('front', knees, H) as any
+    // Thigh and shin each 5.7° off the vertical, the other way.
+    expect(m.kneeAngleR).toBeCloseTo(11.4, 1)
+    expect(m.kneeAngleL).toBeCloseTo(-11.4, 1)
+    // Straight legs read as straight.
+    const straight = measureView('front', { ...p, kneeR: [455, 1300], kneeL: [545, 1300], ankleR: [460, 1700], ankleL: [540, 1700], hipR: [450, 900], hipL: [550, 900] } as Points, H) as any
+    expect(Math.abs(straight.kneeAngleR)).toBeLessThan(0.5)
+  })
   it('from behind, the patient’s right is on the viewer’s right', () => {
     const back = Object.fromEntries(Object.entries(p).map(([k, [x, y]]) => [k, [1000 - x, y]])) as Points
     expect(measureView('back', back, H)).toEqual(measureView('front', p, H))

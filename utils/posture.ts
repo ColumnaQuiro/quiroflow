@@ -97,6 +97,15 @@ export interface FrontMetrics {
   headShift: number
   shoulderShift: number
   hipShift: number
+  /**
+   * Degrees each knee sits off the straight line from hip to ankle: positive
+   * when it points in, towards the other knee, negative when it points out.
+   * Not the clinical Q-angle (that needs the kneecap and tibial tuberosity,
+   * which a photo's points do not give). Absent on assessments saved before
+   * 21 Oct 2026; measureView works it out from their points.
+   */
+  kneeAngleR?: number
+  kneeAngleL?: number
 }
 export interface SideMetrics {
   /** cm ahead of the vertical from the ankle; negative is behind it. */
@@ -115,6 +124,18 @@ export type ViewMetrics = FrontMetrics | SideMetrics
 const round1 = (n: number) => Math.round(n * 10) / 10 || 0
 const deg = (rad: number) => (rad * 180) / Math.PI
 const mid = (a: Pt, b: Pt): Pt => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]
+
+/** See FrontMetrics.kneeAngleR: the bend at the knee, + when it points towards the other knee. */
+function kneeAngle(hip: Pt, knee: Pt, ankle: Pt, otherKnee: Pt): number {
+  const thigh = Math.atan2(knee[0] - hip[0], knee[1] - hip[1])
+  const shin = Math.atan2(ankle[0] - knee[0], ankle[1] - knee[1])
+  const bend = Math.abs(deg(thigh - shin))
+  // Where the straight hip-ankle line passes at the knee's height.
+  const t = (knee[1] - hip[1]) / ((ankle[1] - hip[1]) || 1)
+  const lineX = hip[0] + t * (ankle[0] - hip[0])
+  const inward = Math.sign(knee[0] - lineX) === Math.sign(otherKnee[0] - lineX)
+  return round1(inward ? bend : -bend)
+}
 
 /** Pixels per cm in this photo, from the patient's height. */
 export function pxPerCm(view: PostureView, p: Points, heightCm: number): number {
@@ -140,6 +161,8 @@ export function measureView(view: PostureView, p: Points, heightCm: number, faci
       headShift: shift(p.earR!, p.earL!),
       shoulderShift: shift(p.shoulderR!, p.shoulderL!),
       hipShift: shift(p.hipR!, p.hipL!),
+      kneeAngleR: kneeAngle(p.hipR!, p.kneeR!, p.ankleR!, p.kneeL!),
+      kneeAngleL: kneeAngle(p.hipL!, p.kneeL!, p.ankleL!, p.kneeR!),
     }
   }
   const ahead = (facing ?? (view === 'right' ? 'right' : 'left')) === 'right' ? 1 : -1

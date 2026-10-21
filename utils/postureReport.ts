@@ -25,6 +25,8 @@ export interface ReportSection {
 // from nothing, and a report that lists it invites a question it cannot answer.
 export const LEVEL_DEG = 0.5
 export const CENTRED_CM = 0.5
+// Knee points are the least sure of all: a couple of degrees is the photo.
+export const STRAIGHT_KNEE_DEG = 2
 const UPRIGHT_HEAD_KG = 5.4
 
 const num = (n: number, lang: ReportLang) => (Math.round(n * 10) / 10 || 0).toLocaleString(lang === 'es' ? 'es-ES' : 'en-GB', { maximumFractionDigits: 1 })
@@ -41,6 +43,12 @@ const T = {
     pelvis: 'Pelvis',
     hip: 'Cadera',
     knee: 'Rodilla',
+    knees: 'Rodillas',
+    kneeLine: (r: string, l: string) => `derecha ${r} · izquierda ${l}`,
+    kneeStraight: 'recta',
+    kneesStraight: 'rectas',
+    kneeIn: (d: string) => `${d}° hacia dentro`,
+    kneeOut: (d: string) => `${d}° hacia fuera`,
     // "La cabeza, la pelvis" and "los hombros": the words agree with which.
     centred: (pl: boolean) => (pl ? 'centrados' : 'centrada'),
     level: (pl: boolean) => (pl ? 'nivelados' : 'nivelada'),
@@ -69,6 +77,12 @@ const T = {
     pelvis: 'Pelvis',
     hip: 'Hip',
     knee: 'Knee',
+    knees: 'Knees',
+    kneeLine: (r: string, l: string) => `right ${r} · left ${l}`,
+    kneeStraight: 'straight',
+    kneesStraight: 'both straight',
+    kneeIn: (d: string) => `${d}° inward`,
+    kneeOut: (d: string) => `${d}° outward`,
     centred: (_pl: boolean) => 'centred',
     level: (_pl: boolean) => 'level',
     toRight: (cm: string, _pl: boolean) => `shifted ${cm} cm to the right`,
@@ -95,6 +109,7 @@ function frontSection(view: PostureView, m: FrontMetrics, lang: ReportLang): Rep
   const t = T[lang]
   const shift = (cm: number, pl: boolean) => (Math.abs(cm) < CENTRED_CM ? t.centred(pl) : cm > 0 ? t.toRight(num(cm, lang), pl) : t.toLeft(num(-cm, lang), pl))
   const tilt = (d: number, pl: boolean) => (Math.abs(d) < LEVEL_DEG ? t.level(pl) : d > 0 ? t.lowerRight(num(d, lang), pl) : t.lowerLeft(num(-d, lang), pl))
+  const knee = (d: number) => (Math.abs(d) < STRAIGHT_KNEE_DEG ? t.kneeStraight : d > 0 ? t.kneeIn(num(d, lang)) : t.kneeOut(num(-d, lang)))
   // "Shoulders: centred, level" reads better than two lines saying nothing.
   const line = (cm: number, d: number, pl = false) => [shift(cm, pl), tilt(d, pl)].join(' · ')
   const shifts = Math.abs(m.headShift) + Math.abs(m.shoulderShift) + Math.abs(m.hipShift)
@@ -106,6 +121,7 @@ function frontSection(view: PostureView, m: FrontMetrics, lang: ReportLang): Rep
       { label: t.head, text: line(m.headShift, m.headTilt) },
       { label: t.shoulders, text: line(m.shoulderShift, m.shoulderTilt, true) },
       { label: t.pelvis, text: line(m.hipShift, m.hipTilt) },
+      ...(m.kneeAngleR !== undefined && m.kneeAngleL !== undefined ? [{ label: t.knees, text: Math.abs(m.kneeAngleR) < STRAIGHT_KNEE_DEG && Math.abs(m.kneeAngleL) < STRAIGHT_KNEE_DEG ? t.kneesStraight : t.kneeLine(knee(m.kneeAngleR), knee(m.kneeAngleL)) }] : []),
     ],
     totals: [
       { label: t.totalShifts, value: `${num(shifts, lang)} cm` },
@@ -216,8 +232,9 @@ export function postureReportCopy(lang: ReportLang) {
     ? {
         title: (name: string) => `Informe postural de ${name}`,
         intro:
-          'Este informe recoge tu postura tal y como se ve en las fotos tomadas en consulta. Sobre cada foto se marcan unos puntos de referencia (oreja, hombro, cadera, rodilla y tobillo) y una línea vertical que sale del tobillo: cuanto más se acercan los puntos a esa línea, y cuanto más nivelados están a ambos lados, más equilibrada es la postura. Las medidas son estimaciones a partir de la imagen.',
+          'Este informe recoge tu postura tal y como se ve en las fotos tomadas en consulta. A la izquierda de cada foto, como referencia, una postura alineada. Sobre cada foto se marcan unos puntos de referencia (oreja, hombro, cadera, rodilla y tobillo) y una línea vertical que sale del tobillo: cuanto más se acercan los puntos a esa línea, y cuanto más nivelados están a ambos lados, más equilibrada es la postura. Las medidas son estimaciones a partir de la imagen.',
         conclusion: 'Resumen',
+        reference: 'Referencia',
         evolution: (date: string) => `Evolución desde el ${date}`,
         then: 'Antes',
         now: 'Ahora',
@@ -228,8 +245,9 @@ export function postureReportCopy(lang: ReportLang) {
     : {
         title: (name: string) => `Posture report for ${name}`,
         intro:
-          'This report shows your posture as it appears in the photos taken at the clinic. Each photo is marked with reference points (ear, shoulder, hip, knee and ankle) and a vertical line rising from the ankle: the closer the points sit to that line, and the more level they are from side to side, the more balanced the posture. The measurements are estimates from the image.',
+          'This report shows your posture as it appears in the photos taken at the clinic. Beside each photo, for reference, an aligned posture. Each photo is marked with reference points (ear, shoulder, hip, knee and ankle) and a vertical line rising from the ankle: the closer the points sit to that line, and the more level they are from side to side, the more balanced the posture. The measurements are estimates from the image.',
         conclusion: 'Summary',
+        reference: 'Reference',
         evolution: (date: string) => `Changes since ${date}`,
         then: 'Then',
         now: 'Now',

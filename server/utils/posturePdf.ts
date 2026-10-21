@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
 import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
-import { POSTURE_VIEWS, VIEW_POINTS, type Points, type PostureView, type Pt, type StoredViews, type ViewMetrics } from '~/utils/posture'
+import { measureAll, POSTURE_VIEWS, VIEW_POINTS, type Points, type PostureView, type Pt, type StoredViews, type ViewMetrics } from '~/utils/posture'
 import { postureConclusion, postureEvolution, postureReportCopy, postureReportSections, viewTitle, type ReportLang } from '~/utils/postureReport'
 
 // The posture report for one assessment, as a PDF for the patient: the
@@ -65,10 +65,54 @@ export function postureOverlaySvg(view: PostureView, p: Points, width: number, h
 </svg>`
 }
 
+type Doc = InstanceType<typeof import('pdfkit')>
+
+/**
+ * A plain figure standing as straight as a photo could show, beside each
+ * photo, so the patient has something to compare theirs with: every point on
+ * the vertical from the side, and level from side to side from the front.
+ */
+function drawReferenceFigure(doc: Doc, view: PostureView, x: number, y: number, w: number, h: number) {
+  const cx = x + w / 2
+  const at = (f: number) => y + f * h
+  const side = view === 'right' || view === 'left'
+  const body = '#D9DBE3'
+  // The silhouette.
+  doc.circle(cx, at(0.075), w * 0.14).fill(body)
+  if (side) {
+    doc.roundedRect(cx - w * 0.05, at(0.11), w * 0.1, h * 0.08, 2).fill(body)
+    doc.roundedRect(cx - w * 0.17, at(0.17), w * 0.34, h * 0.37, 6).fill(body)
+    doc.roundedRect(cx - w * 0.11, at(0.5), w * 0.22, h * 0.47, 4).fill(body)
+    doc.lineWidth(w * 0.1).lineCap('round').strokeColor('#C9CCD6').moveTo(cx, at(0.21)).lineTo(cx + (view === 'right' ? 1 : -1) * w * 0.04, at(0.49)).stroke().lineCap('butt')
+  } else {
+    doc.polygon([cx - w * 0.3, at(0.18)], [cx + w * 0.3, at(0.18)], [cx + w * 0.19, at(0.52)], [cx - w * 0.19, at(0.52)]).fill(body)
+    doc.roundedRect(cx - w * 0.19, at(0.5), w * 0.16, h * 0.47, 3).fill(body)
+    doc.roundedRect(cx + w * 0.03, at(0.5), w * 0.16, h * 0.47, 3).fill(body)
+    doc.lineWidth(w * 0.07).strokeColor(body).moveTo(cx - w * 0.33, at(0.2)).lineTo(cx - w * 0.38, at(0.5)).stroke()
+    doc.moveTo(cx + w * 0.33, at(0.2)).lineTo(cx + w * 0.38, at(0.5)).stroke()
+  }
+  // The vertical, and the points on it.
+  doc.lineWidth(1).strokeColor('#7CC4FF').dash(3, { space: 2.5 }).moveTo(cx, y - 4).lineTo(cx, y + h + 2).stroke().undash()
+  const levels = [0.08, 0.2, 0.5, 0.73, 0.95]
+  const half = [0.07, 0.3, 0.17, 0.11, 0.11]
+  doc.lineWidth(1.2).strokeColor('#FFB020')
+  if (side) {
+    doc.moveTo(cx, at(levels[0]!)).lineTo(cx, at(levels[4]!)).stroke()
+    for (const f of levels) doc.circle(cx, at(f), 2.6).fillAndStroke('#FFB020', '#fff')
+  } else {
+    levels.forEach((f, i) => {
+      const dx = w * half[i]!
+      doc.strokeColor('#FFB020').moveTo(cx - dx, at(f)).lineTo(cx + dx, at(f)).stroke()
+      doc.circle(cx - dx, at(f), 2.6).fillAndStroke('#FFB020', '#fff')
+      doc.circle(cx + dx, at(f), 2.6).fillAndStroke('#FFB020', '#fff')
+    })
+  }
+}
+
 export async function loadPostureReportData(supabase: SupabaseClient<Database>, accountId: string, assessmentId: string): Promise<PostureReportData | null> {
   const { data: a } = await supabase
     .from('posture_assessments')
-    .select('id, patient_id, taken_at, views, metrics')
+    .select('id, patient_id, taken_at, height_cm, views, metrics')
     .eq('id', assessmentId)
     .eq('account_id', accountId)
     .maybeSingle()
@@ -120,7 +164,10 @@ export async function loadPostureReportData(supabase: SupabaseClient<Database>, 
     takenAt: a.taken_at,
     timeZone: clinic?.timezone || DEFAULT_CLINIC_TIMEZONE,
     lang: patient.preferred_language === 'en' ? 'en' : 'es',
-    metrics: (a.metrics ?? {}) as Partial<Record<PostureView, ViewMetrics>>,
+    // Measured again from the stored points, so an assessment saved before a
+    // measurement existed (the knees, 21 Oct 2026) has it in its report too.
+    // The same functions as at save time: the numbers otherwise agree.
+    metrics: Number(a.height_cm) > 0 ? measureAll(views, Number(a.height_cm)) : ((a.metrics ?? {}) as Partial<Record<PostureView, ViewMetrics>>),
     photos,
     earlier: earlier ? { takenAt: earlier.taken_at, metrics: (earlier.metrics ?? {}) as Partial<Record<PostureView, ViewMetrics>> } : null,
     clinic: clinic ? { name: clinic.name, address: clinic.address, phone: clinic.phone, email: clinic.email } : null,
@@ -190,15 +237,18 @@ export async function generatePostureReportPdf(data: PostureReportData): Promise
     // One section per view: the photo on the left, what it shows on the right.
     const PHOTO_H = 210
     const PHOTO_W = 135
+    const REF_W = 58
     for (const s of postureReportSections(data.metrics, data.lang)) {
       ensure(PHOTO_H + 30)
       doc.font('Helvetica-Bold').fontSize(12).fillColor(BRAND).text(s.title, M, y)
       y += 20
       const top = y
       const photo = images.get(s.view)
-      if (photo) doc.image(photo.img, M, top, { fit: [PHOTO_W, PHOTO_H], align: 'center' })
-      const x = M + PHOTO_W + 18
-      const tw = W - PHOTO_W - 18
+      drawReferenceFigure(doc, s.view, M, top + 6, REF_W, PHOTO_H - 30)
+      doc.font('Helvetica').fontSize(7.5).fillColor(MUTED).text(copy.reference, M - 6, top + PHOTO_H - 14, { width: REF_W + 12, align: 'center' })
+      if (photo) doc.image(photo.img, M + REF_W + 10, top, { fit: [PHOTO_W, PHOTO_H], align: 'center' })
+      const x = M + REF_W + 10 + PHOTO_W + 18
+      const tw = W - (x - M)
       let ty = top
       for (const f of s.findings) {
         doc.font('Helvetica-Bold').fontSize(9.5).fillColor(INK).text(`${f.label}: `, x, ty, { width: tw, continued: true })

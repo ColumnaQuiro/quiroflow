@@ -44,7 +44,7 @@ export interface RecallPatient {
 
 export type RecallStatus = 'booked' | 'replied' | 'opted_out' | 'waiting' | 'no_reply'
 
-export interface RecallRow {
+export interface RecallReportRow {
   ruleId: string
   patientId: string
   name: string
@@ -86,7 +86,7 @@ const live = (b: RecallBooking) => b.status !== 'cancelled'
 export function recallReport(
   input: { rules: RecallRule[]; sends: RecallSend[]; replies: RecallReply[]; bookings: RecallBooking[]; patients: RecallPatient[] },
   now = new Date(),
-): { rows: RecallRow[]; byRule: RecallRuleStats[]; totals: Omit<RecallRuleStats, 'ruleId' | 'name'> } {
+): { rows: RecallReportRow[]; byRule: RecallRuleStats[]; totals: Omit<RecallRuleStats, 'ruleId' | 'name'> } {
   const patients = new Map(input.patients.map((p) => [p.id, p]))
   const rules = new Map(input.rules.map((r) => [r.id, r]))
   const sortedBy = <T>(list: T[], at: (x: T) => string) => [...list].sort((a, b) => at(a).localeCompare(at(b)))
@@ -100,7 +100,7 @@ export function recallReport(
   const repliesOf = groupBy(sortedBy(input.replies, (r) => r.at), (r) => r.patient_id)
   const bookingsOf = groupBy(sortedBy(input.bookings, (b) => b.created_at), (b) => b.patient_id)
 
-  const rows: RecallRow[] = []
+  const rows: RecallReportRow[] = []
   for (const s of first.values()) {
     const from = Date.parse(s.at)
     const until = from + RECALL_WINDOW_DAYS * DAY
@@ -132,7 +132,7 @@ export function recallReport(
   }
   rows.sort((a, b) => b.contactedAt.localeCompare(a.contactedAt))
 
-  const stats = (list: RecallRow[]) => {
+  const stats = (list: RecallReportRow[]) => {
     const booked = list.filter((r) => r.booking)
     return {
       contacted: list.length,
@@ -151,7 +151,7 @@ export function recallReport(
 
   // Totals count each patient once, at their first recall in the period: one
   // person reached by two rules is one person brought back, not two.
-  const once = new Map<string, RecallRow>()
+  const once = new Map<string, RecallReportRow>()
   for (const r of [...rows].reverse()) if (!once.has(r.patientId)) once.set(r.patientId, r)
   return { rows, byRule, totals: stats([...once.values()]) }
 }

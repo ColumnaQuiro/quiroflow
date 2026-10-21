@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { formatLongDate } from '~/utils/billing'
 import { formatPhoneDisplay } from '~/utils/phone'
+import { clinicDateOf, DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
+import { pregnancyProgress, pregnancyWeeksLabel } from '~/utils/pregnancy'
 import type { Tables } from '~/types/database.types'
 
 // The patient's identity and the way to reach them, above every tab.
@@ -37,6 +39,9 @@ const props = defineProps<{
 defineEmits<{ message: []; sendApp: []; book: []; charge: []; archive: []; merge: []; remove: []; exportData: []; photoUpdated: [] }>()
 
 const t = useT()
+
+// "Embarazada · 24+3 sem" beside the name, on every tab (PregnancyCard has the rest).
+const pregnancy = computed(() => (props.patient.pregnancy_due_date ? pregnancyProgress(props.patient.pregnancy_due_date, clinicDateOf(new Date(), DEFAULT_CLINIC_TIMEZONE)) : null))
 
 const fullName = computed(() => [props.patient.first_name, props.patient.last_name].filter(Boolean).join(' '))
 const initials = computed(() =>
@@ -152,6 +157,7 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
           <span v-else-if="patient.is_minor" class="text-[12px] text-danger-text">
             {{ t('No tutor linked', 'Sin tutor vinculado') }}
           </span>
+          <UiPill v-if="pregnancy" tone="neutral" data-cy="banner-pregnancy">{{ t('Pregnant', 'Embarazada') }} · {{ pregnancyWeeksLabel(pregnancy, t) }}</UiPill>
           <UiPill v-if="patient.do_not_contact" tone="danger">{{ t('Do not contact', 'No contactar') }}</UiPill>
           <UiPill v-if="patient.status !== 'active'" tone="neutral">{{ t('Archived', 'Archivado') }}</UiPill>
           <UiPill v-if="!canEdit" tone="neutral">{{ t('View only', 'Solo lectura') }}</UiPill>

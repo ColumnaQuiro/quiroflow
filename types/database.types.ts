@@ -1344,6 +1344,27 @@ export type Database = {
         }
         Relationships: []
       }
+      appointment_type_staff_notes: {
+        Row: {
+          account_id: string
+          id: string
+          note: string
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          id: string
+          note: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          id?: string
+          note?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       appointment_types: {
         Row: {
           class_capacity: number | null

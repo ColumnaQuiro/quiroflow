@@ -42,6 +42,8 @@ interface Form {
   places: string | number
   payment: boolean
   deposit: string
+  /** The team-only note (appointment_type_staff_notes); '' for none. */
+  staffNote: string
   overrides: Record<string, OverrideForm>
 }
 interface Practitioner { id: string; full_name: string }
@@ -71,7 +73,7 @@ const receptionistOffers = computed(() => receptionistOffersType({ id: typeId, a
 // every clinic's archive warning.
 const archiveStopsReceptionist = computed(() => receptionistOffers.value && (receptionistEnabled.value || receptionistIds.value.includes(typeId)))
 
-function toForm(row: any, overrides: { team_member_id: string; duration_minutes: number | null; price_cents: number | null }[], people: Practitioner[]): Form {
+function toForm(row: any, overrides: { team_member_id: string; duration_minutes: number | null; price_cents: number | null }[], people: Practitioner[], staffNote = ''): Form {
   const byMember = Object.fromEntries(overrides.map((o) => [o.team_member_id, o]))
   return {
     name: row.name ?? '',
@@ -87,6 +89,7 @@ function toForm(row: any, overrides: { team_member_id: string; duration_minutes:
     places: row.class_capacity != null ? String(row.class_capacity) : '',
     payment: !!row.online_payment_required,
     deposit: centsToInput(row.online_deposit_cents),
+    staffNote,
     overrides: Object.fromEntries(
       people.map((p) => {
         const o = byMember[p.id]
@@ -98,7 +101,7 @@ function toForm(row: any, overrides: { team_member_id: string; duration_minutes:
 
 async function load() {
   if (!store.accountId) await store.load()
-  const [typeRes, peopleRes, ovrRes, othersRes, accountRes] = await Promise.all([
+  const [typeRes, peopleRes, ovrRes, othersRes, accountRes, noteRes] = await Promise.all([
     supabase.from('appointment_types').select('*').eq('id', typeId).maybeSingle(),
     // Active practitioners only: an override for someone who has left or does
     // not treat would be a price nobody can be booked at.
@@ -106,6 +109,7 @@ async function load() {
     supabase.from('appointment_type_overrides').select('team_member_id, duration_minutes, price_cents').eq('appointment_type_id', typeId),
     supabase.from('appointment_types').select('id, name').is('archived_at', null).neq('id', typeId),
     supabase.from('accounts').select('online_booking_max_days_ahead, stripe_publishable_key').eq('id', store.accountId!).maybeSingle(),
+    supabase.from('appointment_type_staff_notes').select('note').eq('id', typeId).maybeSingle(),
   ])
   const firstError = typeRes.error ?? peopleRes.error ?? ovrRes.error ?? othersRes.error
   if (firstError || !typeRes.data) {
@@ -122,7 +126,7 @@ async function load() {
   // disabled rather than silently breaking checkout.
   stripeConfigured.value = !!accountRes.data?.stripe_publishable_key
   archivedAt.value = typeRes.data.archived_at
-  form.value = toForm(typeRes.data, ovrRes.data ?? [], practitioners.value)
+  form.value = toForm(typeRes.data, ovrRes.data ?? [], practitioners.value, noteRes.data?.note ?? '')
   original.value = JSON.stringify(form.value)
   loaded.value = true
   loadUsage()
@@ -192,7 +196,8 @@ const overrideChanges = computed(() => {
   const before = saved.value?.overrides ?? {}
   return Object.entries(form.value?.overrides ?? {}).filter(([id, o]) => !same(o, before[id] ?? { duration: '', price: '' }))
 })
-const dirty = computed(() => Object.keys(changes.value).length > 0 || overrideChanges.value.length > 0)
+const noteChanged = computed(() => !!form.value && !!saved.value && form.value.staffNote.trim() !== saved.value.staffNote.trim())
+const dirty = computed(() => Object.keys(changes.value).length > 0 || overrideChanges.value.length > 0 || noteChanged.value)
 
 // --- Validation -------------------------------------------------------------------
 const problems = computed(() =>
@@ -266,7 +271,7 @@ async function save() {
   // Overrides: only the rows that changed. Absence means "use the type's own
   // duration and price", so emptying both fields deletes the row rather than
   // storing two nulls.
-  const writes = overrideChanges.value
+  const writes: PromiseLike<{ error: { message: string } | null }>[] = overrideChanges.value
     .map(async ([memberId, o]) => {
       const duration = parseMinutes(o.duration)
       const price = parseEurosToCents(o.price)
@@ -280,8 +285,19 @@ async function save() {
           { onConflict: 'appointment_type_id,team_member_id' },
         )
     })
+  // The team's note: its own table, so a patient never reads it. Emptied
+  // means no row, as with the overrides.
+  const note = f.staffNote.trim()
+  if (note !== before.staffNote.trim()) {
+    writes.push(
+      note
+        ? supabase.from('appointment_type_staff_notes').upsert({ id: typeId, account_id: store.accountId!, note, updated_at: new Date().toISOString() }, { onConflict: 'id' })
+        : supabase.from('appointment_type_staff_notes').delete().eq('id', typeId),
+    )
+  }
   const results = await Promise.all(writes)
   saving.value = false
+  if (note !== before.staffNote.trim()) useAppointmentTypeNotes().load(true)
   const overrideError = results.find((r) => r.error)?.error
   if (overrideError) {
     showToast(t(`The type was saved, but not every practitioner's price: ${overrideError.message}`, `El tipo se ha guardado, pero no todos los precios por profesional: ${overrideError.message}`), 'error', 8000)
@@ -528,6 +544,11 @@ const errorText = 'text-[12.5px] font-semibold text-danger-text'
                 </span>
                 <span v-if="placesProblem" :class="errorText" data-cy="type-error-places">{{ t('Between 2 and 200 places, or empty for an individual visit.', 'Entre 2 y 200 plazas, o vacío para una visita individual.') }}</span>
                 <span v-else :class="hint">{{ t('With places, this type is a class: you put sessions on the calendar ("New class") and each patient takes a place, booked, reminded and billed like a visit. Online booking offers the sessions with the places left.', 'Con plazas, este tipo es una clase: pones sesiones en la agenda («Nueva clase») y cada paciente ocupa una plaza, que se reserva, recuerda y cobra como una visita. La reserva online ofrece las sesiones con las plazas que quedan.') }}</span>
+              </label>
+              <label class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
+                {{ t('Note for the team', 'Nota para el equipo') }}
+                <textarea v-model="form.staffNote" data-cy="type-staff-note" rows="2" maxlength="500" :placeholder="t('E.g. check finances, hand over the VIP vouchers', 'P. ej. revisar pagos, entregar los vales VIP')" class="min-h-[64px] resize-y rounded-ctl border border-line-control bg-surface px-3 py-2 text-[15px] font-normal text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
+                <span :class="hint">{{ t('Shown to the team when this type is booked and on every visit of it. Patients never see it, unlike the name.', 'Se muestra al equipo al reservar este tipo y en cada visita. Los pacientes no la ven nunca, al contrario que el nombre.') }}</span>
               </label>
             </section>
 

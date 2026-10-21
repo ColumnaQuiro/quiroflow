@@ -67,6 +67,8 @@ const props = defineProps<{
   noMove?: boolean
 }>()
 const emit = defineEmits<{ close: []; changed: []; reschedule: [] }>()
+const typeNotes = useAppointmentTypeNotes()
+onMounted(() => typeNotes.load())
 
 // Justificante de asistencia (server/api/appointments/[id]/attendance-certificate).
 // Opened rather than downloaded where the browser allows it, because the
@@ -753,6 +755,15 @@ async function useExpectedType() {
             <button v-if="stage === 'checkout'" type="button" data-cy="mark-done" :disabled="busy" class="h-9 touch:h-11 rounded-ctl border border-line-control px-3.5 text-[13px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="markDone">{{ t('Done, nothing to charge', 'Hecha, sin cobro') }}</button>
             <button v-if="undoable" type="button" data-cy="undo-stage" :disabled="busy" class="h-9 touch:h-11 rounded-ctl px-3 text-[13px] font-semibold text-ink-muted hover:bg-surface-subtle" @click="undo">{{ undoable.label }}</button>
             <button v-if="canUndoVisit" type="button" data-cy="undo-visit" :disabled="busy" class="h-9 touch:h-11 rounded-ctl border border-line-control px-3.5 text-[13px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="undoVisitOpen = true">{{ t('Undo visit', 'Deshacer visita') }}</button>
+          </div>
+
+          <!-- The appointment type's note for the team: what the desk or the
+               practitioner has to remember about this kind of visit. -->
+          <div v-if="typeNotes.noteFor(appointment.appointment_type_id)" class="mt-3 flex items-start gap-3 rounded-ctl border border-warning-border bg-warning-bg px-3.5 py-2.5" data-cy="appt-panel-type-note">
+            <div class="flex min-w-0 flex-1 flex-col text-[12.5px]">
+              <strong class="text-[13.5px] text-warning-text">{{ t('For the team', 'Para el equipo') }}</strong>
+              <span class="whitespace-pre-line text-ink-700">{{ typeNotes.noteFor(appointment.appointment_type_id) }}</span>
+            </div>
           </div>
 
           <!-- Forms sent and not filled in: a patient like that often does not

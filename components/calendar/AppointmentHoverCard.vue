@@ -23,6 +23,7 @@ interface HoverAppointment extends StageFacts {
   ends_at: string
   patients: { first_name: string; last_name: string | null; sticky_note: string | null } | null
   appointment_types: { name: string } | null
+  appointment_type_id?: string | null
   team_members: { full_name: string } | null
 }
 
@@ -37,6 +38,8 @@ const props = defineProps<{
 }>()
 
 const t = useT()
+const typeNotes = useAppointmentTypeNotes()
+onMounted(() => typeNotes.load())
 const { stageLine } = useStageLabels()
 const { facts } = useAppointmentFacts(() => props.appointment)
 const { availableCents } = usePatientFinancialSummary(() => props.appointment.patient_id)
@@ -121,6 +124,15 @@ const lineClass = computed(() => {
         <span class="flex flex-col gap-px">
           <strong class="text-warning-text">{{ pendingFormsLabel(view.pendingForms, t) }}</strong>
           <span class="text-ink-muted">{{ t('Sent and still awaiting the patient', 'Enviado y aún pendiente del paciente') }}</span>
+        </span>
+      </div>
+
+      <!-- The appointment type's note for the team (Settings > Appointment types). -->
+      <div v-if="typeNotes.noteFor(appointment.appointment_type_id)" class="flex items-start gap-2 border-t border-line-divider px-3.5 py-2.5 text-[12.5px]" data-cy="appt-hover-type-note">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="mt-[3px] shrink-0 text-warning-text" aria-hidden="true"><path d="M5 4h10l4 4v12H5z" /><path d="M9 12h6M9 16h4" /></svg>
+        <span class="flex flex-col gap-px">
+          <strong class="text-warning-text">{{ t('For the team', 'Para el equipo') }}</strong>
+          <span class="whitespace-pre-line text-ink-700">{{ typeNotes.noteFor(appointment.appointment_type_id) }}</span>
         </span>
       </div>
 

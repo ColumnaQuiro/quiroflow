@@ -159,6 +159,7 @@ async function confirmCancel() {
 <template>
   <div class="fixed inset-0 z-50 flex flex-col justify-end bg-black/40 md:items-center md:justify-center" data-cy="cancel-visit-sheet" @click.self="emit('close')">
     <div
+      v-sheet-drag="() => emit('close')"
       class="flex max-h-[92%] w-full flex-col gap-3 overflow-y-auto rounded-t-[22px] bg-surface px-4 pt-2.5 shadow-popover md:max-w-[480px] md:rounded-[18px] md:pt-5"
       style="padding-bottom: max(env(safe-area-inset-bottom), 1.25rem)"
       role="dialog"

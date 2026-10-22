@@ -35,7 +35,7 @@ const confirming = ref(false)
           </template>
         </template>
       </p>
-      <p class="mt-0.5 whitespace-pre-wrap break-words" data-cy="thread-note-body"><template v-for="(p, i) in parts" :key="i"><span v-if="p.mention" class="font-semibold text-brand-text">{{ p.text }}</span><template v-else>{{ p.text }}</template></template></p>
+      <p class="mt-0.5 whitespace-pre-wrap [overflow-wrap:anywhere]" data-cy="thread-note-body"><template v-for="(p, i) in parts" :key="i"><span v-if="p.mention" class="font-semibold text-brand-text">{{ p.text }}</span><template v-else>{{ p.text }}</template></template></p>
       <p class="mt-1 text-[11px] text-ink-muted">{{ t('Only the team sees this.', 'Solo lo ve el equipo.') }}</p>
     </div>
   </div>

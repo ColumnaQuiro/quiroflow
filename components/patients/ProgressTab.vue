@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { listingSummary, sideLettersFor, type Listings } from '~/utils/spinalListings'
+import { listingSummary, sideLettersFor, type Listings } from '../../utils/spinalListings'
 
 // Progreso: the patient's pain 0-10 visit by visit (visit_pain_scores, the
 // practitioner's score over the patient's own when there are both), as a
@@ -8,11 +8,17 @@ import { listingSummary, sideLettersFor, type Listings } from '~/utils/spinalLis
 // revisión" turns the same page into the PDF handed over at the re-exam
 // (utils/reportPdf: the figures and the table as text, the curve as an image).
 // Under the visit notes permissions, like everything else clinical.
-const props = defineProps<{ patientId: string; patient: { first_name: string | null; last_name: string | null; clinic_id: string | null } }>()
+//
+// Also the staff app's Progreso tab (mobile/pages/patients/[id].vue), which
+// passes `can`: the app has no web account store -- useAccountStore() is not
+// even imported there -- so it is read only on the web, and the PDF report,
+// which needs it, is the web's alone. Imports are relative for the same reason
+// (in mobile/, `~` is mobile/).
+const props = defineProps<{ patientId: string; patient: { first_name: string | null; last_name: string | null; clinic_id: string | null }; can?: (permission: string) => boolean }>()
 
 const t = useT()
 const supabase = useSupabaseClient()
-const store = useAccountStore()
+const store = props.can ? null : useAccountStore()
 const toast = useToast()
 
 interface Row { id: string; startsAt: string; type: string | null; practitioner: string | null; score: number | null; byPatient: boolean; listing: string }
@@ -68,8 +74,11 @@ const change = computed(() => (first.value !== null && latest.value !== null && 
 const day = (iso: string) => new Date(iso).toLocaleDateString(t('en-GB', 'es-ES'), { day: 'numeric', month: 'short', year: 'numeric' })
 
 // The curve: one point per scored visit, 0 at the bottom and 10 at the top.
-const W = 720
-const H = 220
+// Drawn half as wide on a phone (the staff app), so its 11px labels are
+// still 11px there rather than shrunk to a third of that.
+const compact = !!props.can
+const W = compact ? 360 : 720
+const H = compact ? 200 : 220
 const PAD = { l: 34, r: 16, t: 14, b: 30 }
 const points = computed(() => {
   const n = scored.value.length
@@ -80,11 +89,11 @@ const points = computed(() => {
 const line = computed(() => points.value.map((p) => `${p.x},${p.y}`).join(' '))
 const gridY = [0, 2, 4, 6, 8, 10].map((v) => ({ v, y: PAD.t + ((10 - v) * (H - PAD.t - PAD.b)) / 10 }))
 // Labels under the first, last and every few points between, so they never collide.
-const labelEvery = computed(() => Math.max(1, Math.ceil(points.value.length / 8)))
+const labelEvery = computed(() => Math.max(1, Math.ceil(points.value.length / (compact ? 4 : 8))))
 
 const patientName = computed(() => `${props.patient.first_name ?? ''} ${props.patient.last_name ?? ''}`.trim())
 async function report() {
-  if (!root.value || busy.value) return
+  if (!root.value || busy.value || !store) return
   busy.value = true
   try {
     const clinic = store.clinics.find((c) => c.id === props.patient.clinic_id) ?? store.clinics.find((c) => c.logo_storage_path)
@@ -92,7 +101,7 @@ async function report() {
     const title = t(`Progress report · ${patientName.value}`, `Informe de revisión · ${patientName.value}`)
     // utils/reportPdf pulls in pdf-lib and html-to-image, ~245 KB gzipped, so it
     // is fetched when the button is pressed, not with the page.
-    const { downloadReportPdf, pdfFileName } = await import('~/utils/reportPdf')
+    const { downloadReportPdf, pdfFileName } = await import('../../utils/reportPdf')
     const result = await downloadReportPdf(root.value, {
       title,
       lines: [
@@ -119,7 +128,7 @@ async function report() {
         <span class="font-semibold text-ink-900">{{ plan.name }}</span> · {{ t(`${plan.done} of ${plan.total} visits`, `${plan.done} de ${plan.total} visitas`) }}
       </p>
       <span class="flex-1" />
-      <UiBtn :disabled="busy || loading || !scored.length" data-cy="progress-report" :data-pdf-result="lastResult" @click="report">
+      <UiBtn v-if="store" :disabled="busy || loading || !scored.length" data-cy="progress-report" :data-pdf-result="lastResult" @click="report">
         <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><path d="M14 2v6h6M8 13h8M8 17h5" /></svg>
         {{ busy ? t('Preparing…', 'Preparando…') : t('Progress report', 'Informe de revisión') }}
       </UiBtn>
@@ -132,18 +141,18 @@ async function report() {
     </div>
 
     <template v-else>
-      <div class="grid grid-cols-1 gap-3 sm:grid-cols-3" data-pdf-block="kpis">
-        <div class="rounded-card border border-line bg-surface p-4 shadow-card" data-pdf-kpi>
+      <div class="grid gap-3" :class="compact ? 'grid-cols-3 gap-2' : 'grid-cols-1 sm:grid-cols-3'" data-pdf-block="kpis">
+        <div class="rounded-card border border-line bg-surface shadow-card" :class="compact ? 'p-2.5' : 'p-4'" data-pdf-kpi>
           <p class="text-[11px] font-[640] uppercase tracking-[.04em] text-ink-muted" data-pdf-label>{{ t('Pain now', 'Dolor ahora') }}</p>
           <p class="mt-1.5 font-mono text-[24px] font-semibold text-ink-900" data-pdf-value data-cy="progress-latest">{{ latest }}<span class="text-[13px] font-normal text-ink-muted">/10</span></p>
           <p class="text-[12px] text-ink-muted" data-pdf-note>{{ day(scored[scored.length - 1]!.startsAt) }}</p>
         </div>
-        <div class="rounded-card border border-line bg-surface p-4 shadow-card" data-pdf-kpi>
+        <div class="rounded-card border border-line bg-surface shadow-card" :class="compact ? 'p-2.5' : 'p-4'" data-pdf-kpi>
           <p class="text-[11px] font-[640] uppercase tracking-[.04em] text-ink-muted" data-pdf-label>{{ t('When they started', 'Al empezar') }}</p>
           <p class="mt-1.5 font-mono text-[24px] font-semibold text-ink-900" data-pdf-value>{{ first }}<span class="text-[13px] font-normal text-ink-muted">/10</span></p>
           <p class="text-[12px] text-ink-muted" data-pdf-note>{{ day(scored[0]!.startsAt) }}</p>
         </div>
-        <div class="rounded-card border border-line bg-surface p-4 shadow-card" data-pdf-kpi>
+        <div class="rounded-card border border-line bg-surface shadow-card" :class="compact ? 'p-2.5' : 'p-4'" data-pdf-kpi>
           <p class="text-[11px] font-[640] uppercase tracking-[.04em] text-ink-muted" data-pdf-label>{{ t('Change', 'Cambio') }}</p>
           <p class="mt-1.5 font-mono text-[24px] font-semibold" :class="change === null ? 'text-ink-900' : change < 0 ? 'text-success-text' : change > 0 ? 'text-danger-text' : 'text-ink-900'" data-pdf-value data-cy="progress-change">
             {{ change === null ? '—' : change > 0 ? `+${change}` : change }}
@@ -191,6 +200,6 @@ async function report() {
       </section>
     </template>
 
-    <PostureSection v-if="!loading" :patient-id="patientId" class="mt-2" />
+    <PostureSection v-if="!loading" :patient-id="patientId" :can="can" class="mt-2" />
   </div>
 </template>

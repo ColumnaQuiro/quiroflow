@@ -37,6 +37,26 @@ function photo() {
 }
 
 describe('Posture assessment', () => {
+  // On a phone the camera and the photo library are two buttons: one input
+  // with `capture` opened the camera only, and the button said "or choose".
+  it('offers the camera and the gallery on a touch screen, and only the file picker on a desktop', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Galería', lastName: 'Cámara' }).then((patient) => {
+        cy.login(account.email, account.password)
+        visitCapture(patient.id)
+        cy.get('[data-cy=posture-camera]').should('not.exist')
+        cy.get('[data-cy=posture-take]').should('be.visible').and('contain', 'Choose photo')
+
+        cy.useTouchScreen()
+        visitCapture(patient.id)
+        cy.get('[data-cy=posture-camera]').should('be.visible')
+        cy.get('[data-cy=posture-take]').should('be.visible').and('contain', 'Choose from gallery')
+        cy.get('[data-cy=posture-camera-file]').should('have.attr', 'capture', 'environment')
+        cy.get('[data-cy=posture-file]').should('not.have.attr', 'capture')
+      })
+    })
+  })
+
   it('takes front and side, measures them live, saves, and shows them on the record and to the patient', () => {
     const email = `postura-${Date.now()}@example.test`
     const password = 'valencia2026'
@@ -83,6 +103,19 @@ describe('Posture assessment', () => {
           expect(a!.shared_with_patient).to.eq(false)
         })
 
+        // The report: drawn by the server from the stored photos and handed
+        // back as a link, which the page opens in the tab it opened on the tap.
+        const tab = { location: { href: '' }, close: () => {} }
+        cy.window().then((win) => cy.stub(win, 'open').returns(tab))
+        cy.intercept('POST', '/api/posture/*/report').as('report')
+        cy.get('[data-cy=posture-report]').click()
+        cy.wait('@report', { timeout: 40000 }).its('response.statusCode').should('eq', 200)
+        cy.wrap(tab).its('location.href').should('contain', 'informe.pdf')
+        cy.then(() => cy.request({ url: tab.location.href, encoding: 'binary' })).then((res) => {
+          expect(res.headers['content-type']).to.contain('application/pdf')
+          expect(String(res.body).slice(0, 5)).to.eq('%PDF-')
+        })
+
         // Shared with the patient, who sees it on the portal's home.
         cy.get('[data-cy=posture-share]').check()
         cy.task<{ shared_with_patient: boolean }[]>('db:selectRows', { table: 'posture_assessments', columns: 'shared_with_patient', match: { patient_id: patient.id } }).its('0.shared_with_patient').should('eq', true)
@@ -93,6 +126,45 @@ describe('Posture assessment', () => {
         cy.get('[data-cy=patient-posture]', { timeout: 20000 }).should('be.visible')
         cy.get('[data-cy=patient-posture-weight]').should('contain', 'kg')
         cy.get('[data-cy=patient-posture] [data-cy=posture-overlay] image').should('have.attr', 'href').and('contain', 'token=')
+        // And the report, from their side: only because it was shared.
+        const patientTab = { location: { href: '' }, close: () => {} }
+        cy.window().then((win) => cy.stub(win, 'open').returns(patientTab))
+        cy.intercept('POST', '/api/portal/posture/*/report').as('patientReport')
+        cy.get('[data-cy=patient-posture-report]').click()
+        cy.wait('@patientReport', { timeout: 40000 }).its('response.statusCode').should('eq', 200)
+        cy.wrap(patientTab).its('location.href').should('contain', 'informe.pdf')
+      })
+    })
+  })
+
+  // Evolución: any headline number across every assessment, measured again
+  // from the points (so these rows, saved with no metrics, still plot).
+  it('charts each number across the assessments and says whether it got better', () => {
+    const side = (earX: number) => ({ photo: 'none/right.jpg', width: 1000, height: 1800, facing: 'right', points: { ear: [earX, 100], shoulder: [500, 300], hip: [500, 900], knee: [500, 1300], ankle: [500, 1691] } })
+    const front = (dropR: number) => ({
+      photo: 'none/front.jpg', width: 1000, height: 1800, facing: null,
+      points: { earR: [470, 100], earL: [530, 100], shoulderR: [400, 300 + dropR], shoulderL: [600, 300], hipR: [450, 900], hipL: [550, 900], kneeR: [460, 1300], kneeL: [540, 1300], ankleR: [450, 1691], ankleL: [550, 1691] },
+    })
+    cy.seedStaffAccount().then((account) => {
+      cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Curva', lastName: 'Postura' }).then((patient) => {
+        cy.task('db:insertRows', {
+          table: 'posture_assessments',
+          rows: [
+            { account_id: account.accountId, patient_id: patient.id, taken_at: '2026-06-02T09:00:00Z', height_cm: 170, views: { right: side(560), front: front(10) }, metrics: {} },
+            { account_id: account.accountId, patient_id: patient.id, taken_at: '2026-09-08T09:00:00Z', height_cm: 170, views: { right: side(520), front: front(2) }, metrics: {} },
+          ],
+        })
+        cy.login(account.email, account.password)
+        cy.visit(`/patients/${patient.id}?tab=progress`)
+        cy.get('[data-cy=posture-section][data-ready=true]', { timeout: 20000 })
+        cy.get('[data-cy=posture-trend]').should('have.attr', 'data-metric', 'headWeight')
+        cy.get('[data-cy=posture-trend] circle').should('have.length', 2)
+        cy.get('[data-cy=posture-trend-summary]').should('have.attr', 'data-better', 'true')
+        // Knees were never stored on these rows; they are measured from the points.
+        cy.get('[data-cy=posture-trend-knees]').should('exist')
+        cy.get('[data-cy=posture-trend-shoulderTilt]').click()
+        cy.get('[data-cy=posture-trend]').should('have.attr', 'data-metric', 'shoulderTilt')
+        cy.get('[data-cy=posture-trend-summary]').should('have.attr', 'data-better', 'true')
       })
     })
   })

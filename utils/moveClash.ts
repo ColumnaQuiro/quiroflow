@@ -77,3 +77,28 @@ export function moveClashes(target: MoveTarget, appointments: ClashCandidateAppo
   }
   return out.sort((x, y) => ms(x.startsAt) - ms(y.startsAt))
 }
+
+/**
+ * The other way round: the visits a new or edited block would land on
+ * ("Bloquear horario"), so the desk is told before it saves rather than
+ * finding them later inside the grey. The same reach as above: a block that
+ * names a practitioner catches their visits at every clinic; one that names
+ * nobody catches its clinic -- only that room's visits when it has a room,
+ * all of them when it does not. Cancelled, no-show and deleted visits are not
+ * in the way. Earliest first.
+ */
+export function appointmentsUnderBlock<A extends ClashCandidateAppointment & { clinic_id?: string | null }>(
+  block: { practitionerId: string | null; roomId: string | null; clinicId: string | null; startsAt: Date | string; endsAt: Date | string },
+  appointments: A[],
+): A[] {
+  const s = ms(block.startsAt)
+  const e = ms(block.endsAt)
+  return appointments
+    .filter((a) => {
+      if (a.status === 'cancelled' || a.status === 'no_show' || a.deleted_at || !overlaps(s, e, a)) return false
+      if (block.practitionerId) return a.practitioner_id === block.practitionerId
+      if (block.clinicId && a.clinic_id && a.clinic_id !== block.clinicId) return false
+      return !block.roomId || a.room_id === block.roomId
+    })
+    .sort((x, y) => ms(x.starts_at) - ms(y.starts_at))
+}

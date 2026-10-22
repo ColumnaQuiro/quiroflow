@@ -41,7 +41,10 @@ onMounted(async () => {
     supabase.from('appointments').select('id', head).eq('patient_id', props.patientId),
     supabase.from('invoices').select('id', head).eq('patient_id', props.patientId),
     supabase.from('patient_files').select('id', head).eq('patient_id', props.patientId),
-    supabase.from('facturas').select('id', head).eq('patient_id', props.patientId),
+    // Their own, and any addressed to them as a minor's tutor
+    // (recipient_patient_id, which is not a foreign key and so would not stop
+    // the delete itself).
+    supabase.from('facturas').select('id', head).or(`patient_id.eq.${props.patientId},recipient_patient_id.eq.${props.patientId}`),
   ])
   counts.value = {
     appointments: appointments.count ?? 0,

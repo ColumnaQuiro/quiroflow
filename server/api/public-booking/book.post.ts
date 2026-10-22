@@ -4,6 +4,7 @@ import { stripeClientFor } from '~/server/utils/stripe'
 import { patientCardLink } from '~/server/utils/patientCardLink'
 import { GIFT_REFUSAL, giftLabel, giftVoucherFor, redeemGiftVoucher } from '~/server/utils/giftVouchers'
 import { throttlePublic } from '~/server/utils/publicRateLimit'
+import { isBookingLanguage } from '~/utils/bookingLanguage'
 
 // The public booking page's booking, made here rather than by the page calling
 // create_public_booking itself, so the clinic's "new online booking" alert goes
@@ -27,9 +28,10 @@ export default defineEventHandler(async (event) => {
   // Twenty bookings in ten minutes from one address is a script, not a family.
   await throttlePublic(event, { scope: 'book', limit: 20, windowSeconds: 600 })
 
-  // gift_code is ours, not the function's: a gift voucher to redeem onto the
-  // patient once the booking has made or found them (below).
-  const { gift_code: giftCode, ...body } = (await readBody<BookingArgs & { gift_code?: string }>(event)) ?? ({} as BookingArgs)
+  // gift_code and language are ours, not the function's: a gift voucher to
+  // redeem onto the patient once the booking has made or found them, and the
+  // language the page was in (both below).
+  const { gift_code: giftCode, language, ...body } = (await readBody<BookingArgs & { gift_code?: string; language?: string }>(event)) ?? ({} as BookingArgs)
   if (!body?.p_account_slug) {
     throw createError({ statusCode: 400, statusMessage: 'p_account_slug is required' })
   }
@@ -45,6 +47,15 @@ export default defineEventHandler(async (event) => {
   }
 
   const result = data as unknown as { appointment_id: string }
+
+  // Before answering, because the patient's WhatsApp confirmation is sent by
+  // the page's next request (send-confirmation.post.ts) and is chosen by this.
+  try {
+    await recordBookingLanguage(serverSupabaseServiceRole<Database>(event), result.appointment_id, language)
+  } catch (err) {
+    console.error('[public-booking] booking language not recorded', result.appointment_id, err)
+  }
+
   try {
     const service = serverSupabaseServiceRole<Database>(event)
     const { data: appt } = await service.from('appointments').select('account_id').eq('id', result.appointment_id).maybeSingle()
@@ -72,7 +83,7 @@ export default defineEventHandler(async (event) => {
   // (gift-check.post.ts) and redeemed here onto whoever the booking is for.
   // The booking stands either way; a voucher that cannot be redeemed is said,
   // and stays as it was for the desk.
-  let gift: { redeemed: boolean; label?: string; message?: string } | null = null
+  let gift: { redeemed: boolean; label?: string; message?: string; reason?: string } | null = null
   if (giftCode?.trim()) {
     try {
       gift = await redeemGiftAtBooking(event, result.appointment_id, giftCode)
@@ -85,12 +96,42 @@ export default defineEventHandler(async (event) => {
   return { ...(data as Record<string, unknown>), card_url: cardUrl, gift }
 })
 
+// The language the patient booked in (pages/book/[slug].vue), kept as their
+// preferred_language -- which the WhatsApp templates that follow are chosen
+// by (resolveTemplateVariant) -- on a patient this booking created, and never
+// on one it found. preferred_language is NOT NULL DEFAULT 'es', so an existing
+// record's 'es' cannot be told apart from 'es' chosen by the desk, and the
+// desk's choice is the one that stands.
+//
+// "Created by this booking" is read from the rows rather than asked of
+// create_public_booking, which would have to change for it: the function
+// inserts the patient and the appointment in one transaction, and now() is
+// the transaction's start, so the two created_at are the same instant only
+// when the patient is new. A record that existed before has an earlier one.
+// Were either default ever to change to clock_timestamp(), they would stop
+// matching and this would leave every patient as it is -- the safe way to
+// fail.
+async function recordBookingLanguage(service: ReturnType<typeof serverSupabaseServiceRole<Database>>, appointmentId: string, language: string | undefined) {
+  if (!isBookingLanguage(language)) return
+  const { data: appt } = await service
+    .from('appointments')
+    .select('created_at, patient_id, patients(created_at, preferred_language)')
+    .eq('id', appointmentId)
+    .maybeSingle()
+  const patient = (appt as unknown as { patients: { created_at: string; preferred_language: string | null } | null } | null)?.patients
+  if (!appt?.patient_id || !patient) return
+  const createdByThisBooking = patient.created_at === appt.created_at
+  if (!createdByThisBooking && patient.preferred_language) return
+  if (patient.preferred_language === language) return
+  await service.from('patients').update({ preferred_language: language }).eq('id', appt.patient_id)
+}
+
 async function redeemGiftAtBooking(event: Parameters<typeof serverSupabaseServiceRole>[0], appointmentId: string, code: string) {
   const service = serverSupabaseServiceRole<Database>(event)
   const { data: appt } = await service.from('appointments').select('account_id, patient_id').eq('id', appointmentId).maybeSingle()
   if (!appt?.patient_id) return { redeemed: false, message: 'No se ha podido canjear el bono regalo. Dalo en recepción.' }
   const check = await giftVoucherFor(service, appt.account_id, code)
-  if (!check.ok) return { redeemed: false, message: GIFT_REFUSAL[check.reason] }
+  if (!check.ok) return { redeemed: false, reason: check.reason, message: GIFT_REFUSAL[check.reason] }
   await redeemGiftVoucher(service, check.voucher, appt.patient_id, null)
   return { redeemed: true, label: giftLabel(check.voucher) }
 }

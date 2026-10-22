@@ -1,5 +1,5 @@
 import { createHmac, randomUUID } from 'node:crypto'
-import { automationFieldValue as recipientFieldValue, withAnswerFallback, leadAnswersFromEvents, type MergeContext } from '~/utils/automationFields'
+import { automationFieldValue as recipientFieldValue, withAnswerFallback, recallSignerId, leadAnswersFromEvents, type MergeContext } from '~/utils/automationFields'
 import { toE164 } from '~/utils/phone'
 import { renderTemplateFields } from '~/utils/docFields'
 import { templateVariantForLanguage } from '~/utils/templateLanguage'
@@ -7,6 +7,7 @@ import { phoneForUrlButton } from '~/utils/whatsappUrlButton'
 import { automationEmailHtml, unsubscribeHeaders, type UnsubscribeLinks } from '~/utils/automationEmail'
 import { serviceSupabase } from '~/server/utils/serviceSupabase'
 import { unsubscribeLinks } from '~/server/utils/unsubscribe'
+import { contactableTutor, tutorEmailNote } from '~/server/utils/minorTutor'
 
 // The server runs in UTC, so formatting a UTC Date with toLocaleString and no
 // timeZone renders the UTC wall-clock time, not the clinic's -- a booking at
@@ -77,19 +78,54 @@ interface Recipient {
   /** Channels this recipient may receive *marketing* on. */
   marketingChannels: string[]
   patient?: PatientForAction
+  /**
+   * The patient record the message is delivered to and filed under: the
+   * patient's own, or a minor's tutor's. Its phone numbers are the ones
+   * tried, and its thread is where the message (and any reply) lives.
+   */
+  contactPatientId?: string
+  /** The language the person reading it prefers -- the tutor's, for a minor. */
+  preferredLanguage: string | null
+  /** Set when a minor's message is going to their tutor instead. */
+  viaTutor: boolean
 }
 
-function patientRecipient(patient: PatientForAction): Recipient {
-  return {
+/**
+ * A patient as somebody to message.
+ *
+ * A do-not-contact patient gets nothing. A minor is never messaged
+ * themselves: a rule that is not marketing reaches their tutor instead
+ * (minorTutor.ts) -- the tutor's phone, email and language, under the tutor's
+ * own do-not-contact flag -- while every merge field (first_name, the
+ * appointment, a form link) still describes the minor, whose care it is about.
+ * A minor without a tutor who can be contacted gets nothing, as before, and
+ * marketing never reaches a minor or goes to their tutor on their account.
+ */
+async function patientRecipient(supabase: any, patient: PatientForAction, isMarketing: boolean): Promise<Recipient> {
+  const own: Recipient = {
     kind: 'patient',
     id: patient.id,
     firstName: patient.first_name ?? '',
     lastName: patient.last_name ?? null,
     email: patient.email ?? null,
-    // Minors and do-not-contact patients get no communications.
     canContact: !patient.is_minor && !patient.do_not_contact,
     marketingChannels: patient.marketing_channels ?? [],
     patient,
+    contactPatientId: patient.id,
+    preferredLanguage: patient.preferred_language ?? null,
+    viaTutor: false,
+  }
+  if (!patient.is_minor) return own
+  const tutor = patient.do_not_contact || isMarketing ? null : await contactableTutor(supabase, patient.id)
+  if (!tutor) return { ...own, canContact: false, marketingChannels: [] }
+  return {
+    ...own,
+    email: tutor.email,
+    canContact: true,
+    marketingChannels: [],
+    contactPatientId: tutor.id,
+    preferredLanguage: tutor.preferredLanguage ?? patient.preferred_language ?? null,
+    viaTutor: true,
   }
 }
 
@@ -109,6 +145,8 @@ function leadRecipient(lead: LeadForAction): Recipient {
     phone: lead.phone ?? undefined,
     canContact: Boolean(lead.phone || lead.email),
     marketingChannels: consented ? ['whatsapp', 'email'] : [],
+    preferredLanguage: null,
+    viaTutor: false,
   }
 }
 
@@ -193,7 +231,7 @@ export async function runActionsList(
   // against the campaign would flatter every metric on the page.
   ruleId?: string,
 ) {
-  const { problems } = await runForRecipient(supabase, accountId, actions, patientRecipient(patient), origin, isMarketing, appointmentId, triggerBody, whatsappOverrideNumber, extraContext, dryRun, ruleId)
+  const { problems } = await runForRecipient(supabase, accountId, actions, await patientRecipient(supabase, patient, isMarketing), origin, isMarketing, appointmentId, triggerBody, whatsappOverrideNumber, extraContext, dryRun, ruleId)
   return problems
 }
 
@@ -271,7 +309,7 @@ export async function runPatientRuleActions(
     supabase,
     accountId,
     only,
-    patientRecipient(patient),
+    await patientRecipient(supabase, patient, rule?.is_marketing ?? false),
     origin,
     rule?.is_marketing ?? false,
     appointmentId,
@@ -359,8 +397,33 @@ async function runForRecipient(
   let practitionerFirstName: string | undefined
   if (recipient.kind === 'patient' && actionsUse(actions, 'practitioner_first_name')) {
     const { data: p } = await supabase.from('patients').select('default_practitioner_id').eq('id', recipient.id).maybeSingle()
-    if (p?.default_practitioner_id) {
-      const { data: member } = await supabase.from('team_members').select('full_name').eq('id', p.default_practitioner_id).maybeSingle()
+    const usual = p?.default_practitioner_id ?? null
+    // Their own practitioner unless they are away (recallSignerId); the rest
+    // is read only then.
+    const today = new Date().toISOString().slice(0, 10)
+    const { data: absences } = await supabase
+      .from('staff_absences')
+      .select('team_member_id')
+      .eq('account_id', accountId)
+      .eq('status', 'approved')
+      .lte('starts_on', today)
+      .gte('ends_on', today)
+    const away = new Set<string>(((absences ?? []) as { team_member_id: string }[]).map((a) => a.team_member_id))
+    let signer = usual
+    if (!usual || away.has(usual)) {
+      const [{ data: visits }, { data: team }] = await Promise.all([
+        supabase.from('appointments').select('practitioner_id').eq('patient_id', recipient.id).eq('status', 'completed').not('practitioner_id', 'is', null).order('starts_at', { ascending: false }).limit(20),
+        supabase.from('team_members').select('id').eq('account_id', accountId).eq('is_practitioner', true).is('deleted_at', null).order('created_at'),
+      ])
+      signer = recallSignerId({
+        usual,
+        recentWith: ((visits ?? []) as { practitioner_id: string | null }[]).map((v) => v.practitioner_id).filter((id): id is string => Boolean(id)),
+        away,
+        practitioners: ((team ?? []) as { id: string }[]).map((m) => m.id),
+      })
+    }
+    if (signer) {
+      const { data: member } = await supabase.from('team_members').select('full_name').eq('id', signer).maybeSingle()
       practitionerFirstName = String(member?.full_name ?? '').trim().split(/\s+/)[0] || undefined
     }
   }
@@ -386,7 +449,7 @@ async function runForRecipient(
     lastVisitAt,
     // The language an email goes out in. A WhatsApp step overrides it with
     // the template language it settles on.
-    language: recipient.patient?.preferred_language ?? 'es',
+    language: recipient.preferredLanguage ?? 'es',
     clinicName: clinic?.name ?? undefined,
     clinicPhone: clinic?.phone ?? undefined,
     clinicAddress: clinic?.address ?? undefined,
@@ -409,7 +472,7 @@ async function runForRecipient(
   const outcomes: ActionOutcome[] = []
   const skipped = (channel: string) =>
     !canContact
-      ? `${channel}: this recipient is marked do-not-contact (or is a minor).`
+      ? `${channel}: this recipient is marked do-not-contact, or is a minor with no tutor who can be contacted.`
       : `${channel}: this is a marketing rule and the recipient has not opted in to ${channel}.`
 
   for (const action of actions) {
@@ -746,11 +809,12 @@ async function runWhatsAppAction(
   // A lead carries its own number, already normalised at ingest. Only a
   // patient has contact-number rows to look through.
   if (!to) to = recipient.phone
-  if (!to && recipient.patient) {
+  // A patient's own numbers -- or, for a minor, their tutor's.
+  if (!to && recipient.contactPatientId) {
     const { data: numbers } = await supabase
       .from('patient_contact_numbers')
       .select('number, country_code, is_whatsapp')
-      .eq('patient_id', recipient.patient.id)
+      .eq('patient_id', recipient.contactPatientId)
     const target = numbers?.find((n: any) => n.is_whatsapp) ?? numbers?.[0]
     if (!target) throw new ActionSkipped('No phone number to send WhatsApp to.')
     to = toE164(target.number, target.country_code) ?? undefined
@@ -833,7 +897,7 @@ async function runWhatsAppAction(
     // A step that sends in the patient's language picks theirs when it is
     // approved -- exact, then by base language ('en' for 'en_US') -- and
     // otherwise the language the step was set to, exactly as before.
-    const own = templateVariantForLanguage(candidates, config.match_patient_language ? recipient.patient?.preferred_language : null)
+    const own = templateVariantForLanguage(candidates, config.match_patient_language ? recipient.preferredLanguage : null)
     if (own && own !== templateLanguage) {
       templateLanguage = own
       variables = variablesFor(templateLanguage)
@@ -917,7 +981,7 @@ async function runWhatsAppAction(
   if (dryRun) {
     await supabase.from('whatsapp_messages').insert({
       account_id: accountId,
-      patient_id: recipient.patient?.id ?? null,
+      patient_id: recipient.contactPatientId ?? null,
       lead_id: recipient.kind === 'lead' ? recipient.id : null,
       appointment_id: appointmentId ?? null,
       wamid: null,
@@ -965,10 +1029,12 @@ async function runWhatsAppAction(
 
   // Logged against whichever it was sent to. lead_id is what puts a drip
   // message into the lead's own Inbox thread rather than nowhere -- the
-  // column exists for exactly this, from the merged-inbox work.
+  // column exists for exactly this, from the merged-inbox work. A minor's goes
+  // in their tutor's thread, where the tutor's reply arrives; appointment_id
+  // still names the minor's visit, which is what a Confirmar reply resolves.
   await supabase.from('whatsapp_messages').insert({
     account_id: accountId,
-    patient_id: recipient.patient?.id ?? null,
+    patient_id: recipient.contactPatientId ?? null,
     lead_id: recipient.kind === 'lead' ? recipient.id : null,
     appointment_id: appointmentId ?? null,
     wamid,
@@ -1076,7 +1142,10 @@ async function runEmailAction(
   // channel is set up is the order a clinic actually does things in.
   if (!dryRun && !runtimeConfig.resendApiKey) throw new Error('Email sending is not configured (no Resend API key on this deployment).')
 
-  const html = automationEmailHtml(styleLinks(mergeHtml(rawBody)), {
+  // A tutor is told whose message this is: the body was written for the
+  // patient and need not name them.
+  const tutorNote = recipient.viaTutor ? tutorEmailNote(recipient.firstName, recipient.preferredLanguage) : ''
+  const html = automationEmailHtml(tutorNote + styleLinks(mergeHtml(rawBody)), {
     unsubscribe,
     clinicName: context?.clinicName,
     logoUrl: config.include_logo ? context?.clinicLogoUrl : null,
@@ -1102,7 +1171,7 @@ async function runEmailAction(
         dry_run: true,
         rule_id: record.ruleId ?? null,
         automation_action_id: attributionColumns(record).automation_action_id,
-        patient_id: recipient.kind === 'patient' ? recipient.id : null,
+        patient_id: recipient.contactPatientId ?? null,
         lead_id: recipient.kind === 'lead' ? recipient.id : null,
         recipient_email: recipient.email,
         subject: mergedSubject,
@@ -1135,7 +1204,7 @@ async function runEmailAction(
         provider_message_id: sent.id,
         rule_id: record.ruleId ?? null,
         automation_action_id: attributionColumns(record).automation_action_id,
-        patient_id: recipient.kind === 'patient' ? recipient.id : null,
+        patient_id: recipient.contactPatientId ?? null,
         lead_id: recipient.kind === 'lead' ? recipient.id : null,
         recipient_email: recipient.email,
         subject: mergedSubject,

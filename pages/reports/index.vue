@@ -32,6 +32,7 @@ const allGroups = computed(() => [
     label: t('Growth & Performance', 'Crecimiento y rendimiento'),
     items: [
       { to: '/reports/retention', label: t('Retention', 'Retención'), description: t('Who comes back by month of first visit, rebooking by practitioner, and care plans left unfinished.', 'Quién vuelve según el mes de su primera visita, reservas por profesional y planes sin terminar.'), icon: ICONS.trendingUp },
+      { to: '/reports/recalls', label: t('Recalls', 'Recuperaciones'), description: t('What the recall automations brought back: who each one reached, who replied, booked and came.', 'Lo que han recuperado las automatizaciones: a quién llegó cada una, quién respondió, reservó y vino.'), icon: ICONS.trendingUp },
       { to: '/reports/referrals', label: t('Referrals', 'Recomendaciones'), description: t('Who brought whom through their referral link, who came, and whose reward is still to give.', 'Quién trajo a quién con su enlace, quién vino y a quién falta darle su detalle.'), icon: ICONS.trendingUp },
       { to: '/reports/statistics', label: t('Statistics', 'Estadísticas'), description: t('First visits, reports, revisions, PVA, conversion, and retention.', 'Primeras visitas, informes, revisiones, PVA, conversión y retención.'), icon: ICONS.chartBar },
       { to: '/reports/income-performance', label: t('Income Performance', 'Rendimiento de ingresos'), description: t('Compare practitioners and months side by side, with growth curves.', 'Compara profesionales y meses uno junto a otro, con curvas de crecimiento.'), icon: ICONS.trendingUp },
@@ -50,6 +51,7 @@ const allGroups = computed(() => [
   {
     label: t('Data', 'Datos'),
     items: [
+      { to: '/reports/facturas', label: t('Issued facturas', 'Facturas emitidas'), description: t('Every factura issued in a period: number, recipient, base, IVA and total, as a CSV too.', 'Todas las facturas emitidas en un periodo: número, destinatario, base, IVA y total, también en CSV.'), icon: ICONS.billing },
       { to: '/reports/gestoria', label: t('Accountant', 'Gestoría'), description: t('Facturas and IVA for the quarter, in one download.', 'Facturas e IVA del trimestre, en una descarga.'), icon: ICONS.arrowDownTray },
       { to: '/reports/data-exports', label: t('Data Exports', 'Exportaciones de datos'), description: t('Patients missing an email, phone, or a consent/data protection form.', 'Pacientes sin correo, teléfono o formulario de consentimiento/protección de datos.'), icon: ICONS.arrowDownTray },
     ],

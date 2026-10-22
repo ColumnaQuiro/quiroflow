@@ -9,8 +9,8 @@ import { measureAll, measureView, defaultPoints, pointsFromLandmarks, POSTURE_VI
 // patient-files, then one row. Estimates for documenting, not a diagnosis.
 //
 // Shared by the web (/patients/posture/<id>) and the staff app, which takes
-// the photos with the phone's or iPad's camera through the same file input
-// (capture="environment"). So it is told who is taking it rather than reading
+// the photos with the phone's or iPad's camera, or picks them from the photo
+// library. So it is told who is taking it rather than reading
 // the web's account store, which the app does not load, and its imports are
 // relative: in the app, ~ is mobile/.
 const props = defineProps<{ patientId: string; accountId: string; teamMemberId: string | null }>()
@@ -18,13 +18,16 @@ const emit = defineEmits<{ saved: [] }>()
 
 const t = useT()
 const supabase = useSupabaseClient()
-const { detect } = usePoseModel()
+const { detect, warm } = usePoseModel()
 const patientId = props.patientId
 
 const height = ref<number | ''>('')
 const ready = ref(false)
 // The last assessment's height, so a re-assessment does not ask again.
 onMounted(async () => {
+  // The pose model downloads while the patient gets into place, not after
+  // the first photo.
+  warm()
   const { data: last } = await supabase.from('posture_assessments').select('height_cm').eq('patient_id', patientId).order('taken_at', { ascending: false }).limit(1).maybeSingle()
   if (last?.height_cm) height.value = Number(last.height_cm)
   ready.value = true
@@ -35,7 +38,13 @@ const shots = reactive<Partial<Record<PostureView, Shot>>>({})
 const step = ref<PostureView | 'result'>('front')
 const busy = ref(false)
 const error = ref('')
+// Two inputs, because one cannot offer both on a phone: `capture` sends iOS
+// and Android straight to the camera with no way to the photo library, and
+// without it Android's WebView offers files only. The camera button shows on
+// touch devices; a desktop's file picker is the gallery.
 const input = ref<HTMLInputElement | null>(null)
+const cameraInput = ref<HTMLInputElement | null>(null)
+const touch = useMediaQuery('(pointer: coarse)')
 
 // The photo, shrunk to 1600 px on its long side (enough to place a point to
 // a few millimetres, small enough to upload from a phone), as a JPEG.
@@ -145,7 +154,8 @@ const fmt = (n: number | null | undefined, unit: string) => (n === null || n ===
       </div>
       <p v-if="!heightOk" class="text-[12.5px] text-warning-text">{{ t("The patient's height turns pixels into centimetres.", 'La altura del paciente es lo que pasa los píxeles a centímetros.') }}</p>
       <p v-if="error" role="alert" class="text-[13px] text-danger-text">{{ error }}</p>
-      <input ref="input" type="file" accept="image/*" capture="environment" class="hidden" data-cy="posture-file" @change="onPhoto" />
+      <input ref="input" type="file" accept="image/*" class="hidden" data-cy="posture-file" @change="onPhoto" />
+      <input ref="cameraInput" type="file" accept="image/*" capture="environment" class="hidden" data-cy="posture-camera-file" @change="onPhoto" />
 
       <template v-if="step !== 'result'">
         <div v-if="!current" class="flex flex-col items-center gap-4 rounded-card border border-dashed border-line-control bg-surface p-8 text-center">
@@ -155,7 +165,11 @@ const fmt = (n: number | null | undefined, unit: string) => (n === null || n ===
             <li>{{ t('Whole body in the picture, head to feet, against a plain wall.', 'Todo el cuerpo en la foto, de la cabeza a los pies, contra una pared lisa.') }}</li>
             <li>{{ t('Camera upright at hip height, 2–3 m away, the same place every time.', 'Cámara vertical a la altura de la cadera, a 2–3 m, siempre en el mismo sitio.') }}</li>
           </ul>
-          <UiBtn variant="primary" :disabled="busy" data-cy="posture-take" @click="input?.click()">{{ busy ? t('Finding the points…', 'Buscando los puntos…') : t('Take or choose photo', 'Hacer o elegir foto') }}</UiBtn>
+          <p v-if="busy" class="text-[13.5px] font-semibold text-ink-700" data-cy="posture-busy">{{ t('Finding the points…', 'Buscando los puntos…') }}</p>
+          <div v-else class="flex flex-wrap justify-center gap-2">
+            <UiBtn v-if="touch" variant="primary" data-cy="posture-camera" @click="cameraInput?.click()">{{ t('Take photo', 'Hacer foto') }}</UiBtn>
+            <UiBtn :variant="touch ? undefined : 'primary'" data-cy="posture-take" @click="input?.click()">{{ touch ? t('Choose from gallery', 'Elegir de la galería') : t('Choose photo', 'Elegir foto') }}</UiBtn>
+          </div>
           <button v-if="(step === 'back' || step === 'left') && canFinish" type="button" class="text-[13px] font-semibold text-ink-muted" data-cy="posture-skip" @click="step = 'result'">{{ t('Skip to the result', 'Saltar al resultado') }}</button>
         </div>
         <div v-else class="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_330px]">
@@ -185,12 +199,14 @@ const fmt = (n: number | null | undefined, unit: string) => (n === null || n ===
               <div class="flex justify-between border-b border-line-row py-2 text-[13.5px]"><span>{{ t('Pelvis', 'Pelvis') }}</span><span class="font-mono">{{ fmt(frontLive.hipTilt, '°') }}</span></div>
               <div class="flex justify-between border-b border-line-row py-2 text-[13.5px]"><span>{{ t('Head off centre', 'Cabeza desplazada') }}</span><span class="font-mono">{{ fmt(frontLive.headShift, 'cm') }}</span></div>
               <div class="flex justify-between border-b border-line-row py-2 text-[13.5px]"><span>{{ t('Shoulders off centre', 'Hombros desplazados') }}</span><span class="font-mono">{{ fmt(frontLive.shoulderShift, 'cm') }}</span></div>
-              <div class="flex justify-between py-2 text-[13.5px]"><span>{{ t('Pelvis off centre', 'Pelvis desplazada') }}</span><span class="font-mono">{{ fmt(frontLive.hipShift, 'cm') }}</span></div>
-              <p class="text-[12px] text-ink-muted">{{ t("Tilt: + means the patient's right side is lower. Off centre: + is towards their right.", 'Inclinación: + es el lado derecho del paciente más bajo. Desplazado: + hacia su derecha.') }}</p>
+              <div class="flex justify-between border-b border-line-row py-2 text-[13.5px]"><span>{{ t('Pelvis off centre', 'Pelvis desplazada') }}</span><span class="font-mono">{{ fmt(frontLive.hipShift, 'cm') }}</span></div>
+              <div class="flex justify-between py-2 text-[13.5px]"><span>{{ t('Knees (R / L)', 'Rodillas (D / I)') }}</span><span class="font-mono" data-cy="posture-live-knees">{{ fmt(frontLive.kneeAngleR, '°') }} / {{ fmt(frontLive.kneeAngleL, '°') }}</span></div>
+              <p class="text-[12px] text-ink-muted">{{ t("Tilt: + means the patient's right side is lower. Off centre: + is towards their right. Knees: + is inward.", 'Inclinación: + es el lado derecho del paciente más bajo. Desplazado: + hacia su derecha. Rodillas: + hacia dentro.') }}</p>
             </template>
             <p v-else class="text-[13px] text-ink-muted">{{ t('Enter the height to see measurements.', 'Pon la altura para ver las medidas.') }}</p>
             <div class="mt-auto flex gap-2 pt-3">
-              <UiBtn class="flex-1" :disabled="busy" data-cy="posture-retake" @click="input?.click()">{{ t('Retake', 'Repetir foto') }}</UiBtn>
+              <UiBtn class="flex-1" :disabled="busy" data-cy="posture-retake" @click="(touch ? cameraInput : input)?.click()">{{ t('Retake', 'Repetir foto') }}</UiBtn>
+              <UiBtn v-if="touch" class="flex-1" :disabled="busy" data-cy="posture-regallery" @click="input?.click()">{{ t('Gallery', 'Galería') }}</UiBtn>
               <UiBtn class="flex-1" variant="primary" :disabled="next === 'result' && !canFinish" data-cy="posture-next" @click="step = next">{{ next === 'result' ? t('See result', 'Ver resultado') : t(`Next: ${VIEW_LABELS[next].toLowerCase()}`, `Siguiente: ${VIEW_LABELS[next].toLowerCase()}`) }}</UiBtn>
             </div>
             <button v-if="(step === 'back' || step === 'left') && canFinish" type="button" class="text-[12.5px] font-semibold text-ink-muted" data-cy="posture-skip" @click="step = 'result'">{{ t('Skip to the result', 'Saltar al resultado') }}</button>

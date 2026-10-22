@@ -791,6 +791,7 @@ export type Database = {
           factura_tax_exemption_code: string | null
           factura_prefix: string
           rectificativa_prefix: string
+          signup_attribution: Json | null
           slug: string
           verifactu_mode: string
           verifactu_sender: string
@@ -885,6 +886,7 @@ export type Database = {
           factura_tax_exemption_code?: string | null
           factura_prefix?: string
           rectificativa_prefix?: string
+          signup_attribution?: Json | null
           slug: string
           verifactu_mode?: string
           verifactu_sender?: string
@@ -978,6 +980,7 @@ export type Database = {
           factura_tax_exemption_code?: string | null
           factura_prefix?: string
           rectificativa_prefix?: string
+          signup_attribution?: Json | null
           slug?: string
           verifactu_mode?: string
           verifactu_sender?: string
@@ -1341,6 +1344,27 @@ export type Database = {
         }
         Relationships: []
       }
+      appointment_type_staff_notes: {
+        Row: {
+          account_id: string
+          id: string
+          note: string
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          id: string
+          note: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          id?: string
+          note?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       appointment_types: {
         Row: {
           class_capacity: number | null
@@ -1350,6 +1374,7 @@ export type Database = {
           created_at: string
           default_price_cents: number
           duration_minutes: number
+          for_minors: boolean
           id: string
           name: string
           online_bookable_by: string
@@ -1369,6 +1394,7 @@ export type Database = {
           created_at?: string
           default_price_cents?: number
           duration_minutes?: number
+          for_minors?: boolean
           id?: string
           name: string
           online_bookable_by?: string
@@ -1388,6 +1414,7 @@ export type Database = {
           created_at?: string
           default_price_cents?: number
           duration_minutes?: number
+          for_minors?: boolean
           id?: string
           name?: string
           online_bookable_by?: string
@@ -2420,6 +2447,7 @@ export type Database = {
           note: string | null
           opened_at: string
           opened_by: string
+          opening_float_cents: number
         }
         Insert: {
           account_id: string
@@ -2429,6 +2457,7 @@ export type Database = {
           note?: string | null
           opened_at?: string
           opened_by: string
+          opening_float_cents?: number
         }
         Update: {
           account_id?: string
@@ -2438,6 +2467,7 @@ export type Database = {
           note?: string | null
           opened_at?: string
           opened_by?: string
+          opening_float_cents?: number
         }
         Relationships: [
           {
@@ -3329,6 +3359,7 @@ export type Database = {
           issuer_logo_storage_path: string | null
           issuer_name: string | null
           issuer_tax_id: string | null
+          recipient_patient_id: string | null
         }
         Insert: {
           account_id: string
@@ -3357,6 +3388,7 @@ export type Database = {
           issuer_logo_storage_path?: string | null
           issuer_name?: string | null
           issuer_tax_id?: string | null
+          recipient_patient_id?: string | null
         }
         Update: {
           account_id?: string
@@ -3385,6 +3417,7 @@ export type Database = {
           issuer_logo_storage_path?: string | null
           issuer_name?: string | null
           issuer_tax_id?: string | null
+          recipient_patient_id?: string | null
         }
         Relationships: [
           {
@@ -5061,6 +5094,65 @@ export type Database = {
           },
         ]
       }
+      patient_relations: {
+        Row: {
+          account_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          patient_id: string
+          related_patient_id: string
+          relation: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          patient_id: string
+          related_patient_id: string
+          relation: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          patient_id?: string
+          related_patient_id?: string
+          relation?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_relations_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_relations_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_relations_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_relations_related_patient_id_fkey"
+            columns: ["related_patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       patient_stripe_customers: {
         Row: {
           account_id: string
@@ -5214,6 +5306,9 @@ export type Database = {
           photo_storage_path: string | null
           postal_code: string | null
           preferred_language: string
+          pregnancy_due_date: string | null
+          pregnancy_multiples: number | null
+          pregnancy_notes: string | null
           recall_priority: boolean
           recall_snoozed_until: string | null
           recall_dismissed_at: string | null
@@ -5232,6 +5327,7 @@ export type Database = {
           user_id: string | null
           yellow_flags: string | null
           invoice_reminders_paused: boolean
+          bill_to_tutor: boolean
         }
         Insert: {
           referral_code?: string | null
@@ -5271,6 +5367,9 @@ export type Database = {
           photo_storage_path?: string | null
           postal_code?: string | null
           preferred_language?: string
+          pregnancy_due_date?: string | null
+          pregnancy_multiples?: number | null
+          pregnancy_notes?: string | null
           recall_priority?: boolean
           recall_snoozed_until?: string | null
           recall_dismissed_at?: string | null
@@ -5289,6 +5388,7 @@ export type Database = {
           user_id?: string | null
           yellow_flags?: string | null
           invoice_reminders_paused?: boolean
+          bill_to_tutor?: boolean
         }
         Update: {
           referral_code?: string | null
@@ -5328,6 +5428,9 @@ export type Database = {
           photo_storage_path?: string | null
           postal_code?: string | null
           preferred_language?: string
+          pregnancy_due_date?: string | null
+          pregnancy_multiples?: number | null
+          pregnancy_notes?: string | null
           recall_priority?: boolean
           recall_snoozed_until?: string | null
           recall_dismissed_at?: string | null
@@ -5346,6 +5449,7 @@ export type Database = {
           user_id?: string | null
           yellow_flags?: string | null
           invoice_reminders_paused?: boolean
+          bill_to_tutor?: boolean
         }
         Relationships: [
           {

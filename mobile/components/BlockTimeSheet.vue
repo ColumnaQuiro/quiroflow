@@ -8,6 +8,12 @@
 //
 // Someone who sees only their own diary can only block their own time; a
 // whole-clinic closure is for whoever sees the whole clinic.
+//
+// Visits already booked inside the time are listed before saving, as on the
+// web (components/calendar/BlockClashes.vue), and the button becomes "Block
+// anyway": a block moves and cancels nothing, they stay booked.
+import { appointmentsUnderBlock } from '../../utils/moveClash'
+
 const props = defineProps<{
   date: string
   /** HH:MM to start from (a slot held on the timeline). */
@@ -43,11 +49,66 @@ const options = computed(() => {
   return props.practitioners
 })
 
+const startMs = () => (wholeDay.value ? startOfLocalDate(day.value, tz.value).getTime() : wallClockToUtc(day.value, from.value, tz.value))
+const endMs = () => (wholeDay.value ? startOfLocalDate(nextDate(day.value), tz.value).getTime() : wallClockToUtc(day.value, to.value, tz.value))
+
+interface UnderBlock {
+  id: string
+  starts_at: string
+  ends_at: string
+  practitioner_id: string | null
+  room_id: string | null
+  clinic_id: string | null
+  status: string | null
+  deleted_at: string | null
+  patients: { first_name: string; last_name: string | null } | null
+}
+const clashes = ref<UnderBlock[]>([])
+let run = 0
+async function checkClashes() {
+  const mine = ++run
+  const c = context.value
+  let s: number, e: number
+  try {
+    s = startMs()
+    e = endMs()
+  } catch {
+    s = e = NaN
+  }
+  if (!c || !day.value || !Number.isFinite(s) || !Number.isFinite(e) || e <= s) {
+    clashes.value = []
+    return
+  }
+  const startsAt = new Date(s).toISOString()
+  const endsAt = new Date(e).toISOString()
+  let q = supabase
+    .from('appointments')
+    .select('id, starts_at, ends_at, practitioner_id, room_id, clinic_id, status, deleted_at, patients(first_name, last_name)')
+    .eq('account_id', c.accountId)
+    .is('deleted_at', null)
+    .not('status', 'in', '(cancelled,no_show)')
+    .lt('starts_at', endsAt)
+    .gt('ends_at', startsAt)
+    .order('starts_at')
+    .limit(100)
+  q = who.value ? q.eq('practitioner_id', who.value) : q.eq('clinic_id', c.clinicId)
+  const { data } = await q
+  if (mine !== run) return
+  clashes.value = appointmentsUnderBlock({ practitionerId: who.value || null, roomId: null, clinicId: c.clinicId, startsAt, endsAt }, (data as unknown as UnderBlock[] | null) ?? [])
+}
+let timer: ReturnType<typeof setTimeout> | undefined
+watch([day, wholeDay, from, to, who, () => context.value?.accountId], () => {
+  clearTimeout(timer)
+  timer = setTimeout(checkClashes, 250)
+}, { immediate: true })
+onBeforeUnmount(() => clearTimeout(timer))
+const clashName = (v: UnderBlock) => `${v.patients?.first_name ?? ''} ${v.patients?.last_name ?? ''}`.trim() || t('Patient', 'Paciente')
+
 async function save() {
   if (!context.value || saving.value) return
   error.value = ''
-  const start = wholeDay.value ? startOfLocalDate(day.value, tz.value).getTime() : wallClockToUtc(day.value, from.value, tz.value)
-  const end = wholeDay.value ? startOfLocalDate(nextDate(day.value), tz.value).getTime() : wallClockToUtc(day.value, to.value, tz.value)
+  const start = startMs()
+  const end = endMs()
   if (end <= start) {
     error.value = t('End must be after start.', 'La hora de fin debe ser posterior a la de inicio.')
     return
@@ -116,9 +177,20 @@ async function save() {
         <input v-model="note" type="text" :placeholder="t('Training, lunch, holiday…', 'Formación, comida, vacaciones…')" class="h-11 rounded-ctl border border-line-control bg-surface px-3 text-[15px] text-ink-900" data-cy="block-note" />
       </label>
 
+      <div v-if="clashes.length" role="status" class="rounded-card border border-warning-border bg-warning-bg px-3.5 py-3 text-[13px]" data-cy="block-clashes">
+        <p class="font-semibold text-warning-text">
+          {{ clashes.length === 1 ? t('There is already a visit booked in this time', 'Ya hay una cita reservada en este horario') : t(`There are already ${clashes.length} visits booked in this time`, `Ya hay ${clashes.length} citas reservadas en este horario`) }}
+        </p>
+        <ul class="mt-1.5 flex flex-col gap-0.5 text-ink-700">
+          <li v-for="v in clashes.slice(0, 6)" :key="v.id" class="truncate" data-cy="block-clash">{{ clinicTimeLabel(new Date(v.starts_at), tz) }} · {{ clashName(v) }}</li>
+          <li v-if="clashes.length > 6" class="text-ink-muted">{{ t(`and ${clashes.length - 6} more`, `y ${clashes.length - 6} más`) }}</li>
+        </ul>
+        <p class="mt-1.5 text-[12.5px] text-ink-muted">{{ t('Blocking does not move or cancel them: they stay booked.', 'Bloquear no las mueve ni las cancela: siguen reservadas.') }}</p>
+      </div>
+
       <p v-if="error" role="alert" class="text-[13px] text-danger-text">{{ error }}</p>
       <AppButton variant="primary" type="submit" :disabled="saving" data-cy="block-save">
-        {{ saving ? t('Saving…', 'Guardando…') : t('Block', 'Bloquear') }}
+        {{ saving ? t('Saving…', 'Guardando…') : clashes.length ? t('Block anyway', 'Bloquear igualmente') : t('Block', 'Bloquear') }}
       </AppButton>
       <AppButton variant="quiet" @click="emit('close')">{{ t('Cancel', 'Cancelar') }}</AppButton>
     </form>

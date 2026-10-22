@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { postureHeadline, POSTURE_VIEWS, VIEW_LABELS, type PostureView, type StoredViews, type ViewMetrics } from '../../utils/posture'
+import { remeasure, TREND_METRICS, trendLayout, trendSeries, trendSummary, type TrendKey } from '../../utils/postureTrend'
 
 // "Postura" on the record's Progreso tab: the patient's posture assessments
 // (posture_assessments), two of them side by side in any view with the same
@@ -7,14 +8,16 @@ import { postureHeadline, POSTURE_VIEWS, VIEW_LABELS, type PostureView, type Sto
 // has moved over time, and whether the patient may see each one in their
 // app. A new one is taken on /patients/posture/<id>. The numbers are part of
 // the "Informe de revisión" PDF (data-pdf-*), the photos are not.
-// `can`: the staff app passes its own (usePractitionerContext); it does not
-// load the web's account store, where usePermission reads from.
+// `can`: the staff app passes its own (usePractitionerContext). It has no
+// web account store: usePermission() calls useAccountStore(), which the app
+// does not even import, so calling it there threw in setup and the whole
+// section silently never rendered on any patient. Only the web calls it.
 const props = defineProps<{ patientId: string; can?: (permission: string) => boolean }>()
 
 const t = useT()
 const supabase = useSupabaseClient()
-const webPermission = usePermission()
-const can = (permission: string) => (props.can ? props.can(permission) : webPermission.can(permission as never))
+const webPermission = props.can ? null : usePermission()
+const can = (permission: string) => (props.can ? props.can(permission) : webPermission!.can(permission as never))
 const { showToast } = useToast()
 
 interface Assessment {
@@ -57,6 +60,11 @@ function toggle(id: string) {
 const pair = computed(() => list.value.filter((a) => picked.value.includes(a.id)))
 const views = computed(() => POSTURE_VIEWS.filter((v) => pair.value.length && pair.value.every((a) => a.views[v])))
 const view = ref<PostureView>('right')
+// Every photo of the two being compared, fetched ahead, so switching view
+// shows the next photo at once instead of waiting on the network.
+watch(pair, (as) => {
+  for (const a of as) for (const v of Object.values(a.views)) if (urls.value[v!.photo]) new Image().src = urls.value[v!.photo]!
+})
 watch(views, (vs) => {
   if (vs.length && !vs.includes(view.value)) view.value = vs.includes('right') ? 'right' : vs[0]!
 })
@@ -74,17 +82,38 @@ const kpis = computed(() => {
   ].filter((k) => k.now !== null)
 })
 
-// Head ahead of the shoulder, assessment by assessment.
-const trend = computed(() => list.value.map((a) => ({ a, v: postureHeadline(a.metrics).headForward })).filter((p) => p.v !== null) as { a: Assessment; v: number }[])
-const W = 720
-const TH = 150
-const trendPts = computed(() => {
-  const vs = trend.value.map((p) => p.v)
-  const max = Math.max(1, ...vs)
-  const min = Math.min(0, ...vs)
-  const n = trend.value.length
-  return trend.value.map((p, i) => ({ x: 40 + (n <= 1 ? (W - 60) / 2 : (i * (W - 60)) / (n - 1)), y: 14 + ((max - p.v) * (TH - 44)) / (max - min || 1), p }))
+// Evolución: any one of the headline numbers across every assessment, as
+// its distance from aligned (utils/postureTrend.ts), so lower is better and
+// the green line is aligned for all of them. Measured again from each one's
+// points, so an older assessment has the knees too.
+const lang = computed(() => t('en', 'es') as 'en' | 'es')
+const measured = computed(() => list.value.map((a) => ({ takenAt: a.taken_at, metrics: remeasure({ takenAt: a.taken_at, heightCm: Number(a.height_cm), views: a.views, metrics: a.metrics }) })))
+// Only the numbers measured at least twice: one point is not a trend.
+const trendMetrics = computed(() => TREND_METRICS.filter((m) => trendSeries(measured.value, m.key).length > 1))
+const trendKey = ref<TrendKey>('headWeight')
+watch(trendMetrics, (ms) => {
+  if (ms.length && !ms.some((m) => m.key === trendKey.value)) trendKey.value = ms[0]!.key
+}, { immediate: true })
+const trendMetric = computed(() => trendMetrics.value.find((m) => m.key === trendKey.value) ?? null)
+const W = 760
+const TH = 270
+const chart = computed(() => {
+  const m = trendMetric.value
+  if (!m) return null
+  const series = trendSeries(measured.value, m.key)
+  const layout = trendLayout(series, m.ideal, { width: W, height: TH, left: 44, right: 24, top: 30, bottom: 40 })
+  const pts = layout.points
+  return {
+    ...layout,
+    line: pts.map((p) => `${p.x},${p.y}`).join(' '),
+    area: `M${pts[0]!.x},${layout.baseY} L${pts.map((p) => `${p.x},${p.y}`).join(' L')} L${pts[pts.length - 1]!.x},${layout.baseY} Z`,
+    summary: trendSummary(series, m.ideal),
+    first: series[0]!,
+    last: series[series.length - 1]!,
+  }
 })
+const unitOf = (unit: string) => (unit === '°' ? '°' : ` ${unit}`)
+const shortDay = (iso: string) => new Date(iso).toLocaleDateString(t('en-GB', 'es-ES'), { day: 'numeric', month: 'short' })
 
 async function setShared(a: Assessment, shared: boolean) {
   const { error } = await supabase.from('posture_assessments').update({ shared_with_patient: shared }).eq('id', a.id)
@@ -108,6 +137,25 @@ function toggleXray(id: string) {
 }
 const xrayPair = computed(() => xrays.value.filter((x) => xrayPick.value.includes(x.id)))
 
+// The posture report for the patient (server/api/posture/[id]/report): built
+// on the server, opened from a link, which is what works in the app's WebView
+// as well as on the web -- see utils/openWhenReady.ts.
+const reporting = ref<string | null>(null)
+function openReport(a: Assessment) {
+  reporting.value = a.id
+  openWhenReady(async () => {
+    try {
+      const { url } = await useStaffFetch<{ url: string }>(`/api/posture/${a.id}/report`, { method: 'POST' })
+      return url
+    } catch (e) {
+      showToast((e as { data?: { statusMessage?: string } })?.data?.statusMessage ?? t('Could not prepare the report.', 'No se ha podido preparar el informe.'), 'error')
+      return null
+    } finally {
+      reporting.value = null
+    }
+  })
+}
+
 const removing = ref<Assessment | null>(null)
 async function remove() {
   const a = removing.value
@@ -115,7 +163,9 @@ async function remove() {
   if (!a) return
   const { error } = await supabase.from('posture_assessments').delete().eq('id', a.id)
   if (error) return showToast(error.message, 'error')
-  await supabase.storage.from('patient-files').remove(Object.values(a.views).map((v) => v!.photo))
+  // The photos, and the report built from them if one ever was.
+  const photos = Object.values(a.views).map((v) => v!.photo)
+  await supabase.storage.from('patient-files').remove([...photos, photos[0]!.replace(/[^/]+$/, 'informe.pdf')])
   await load()
 }
 
@@ -156,6 +206,7 @@ const num = (n: number | null | undefined) => (n === null || n === undefined ? '
               <p class="text-[13.5px] font-semibold text-ink-900">{{ day(a.taken_at) }}</p>
               <p class="text-[12px] text-ink-muted">{{ [a.team_members?.full_name, t(`${Object.keys(a.views).length} photos`, `${Object.keys(a.views).length} fotos`)].filter(Boolean).join(' · ') }}</p>
               <label class="mt-1 flex items-center gap-1.5 text-[12px] text-ink-700"><input type="checkbox" :checked="a.shared_with_patient" data-cy="posture-share" @change="setShared(a, ($event.target as HTMLInputElement).checked)" />{{ t('Patient can see it', 'Lo ve el paciente') }}</label>
+              <button type="button" class="mt-1.5 inline-flex h-8 items-center rounded-ctl border border-line-control px-2.5 text-[12px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:opacity-60" :disabled="reporting === a.id" data-cy="posture-report" @click="openReport(a)">{{ reporting === a.id ? t('Preparing…', 'Preparando…') : t('Report (PDF)', 'Informe (PDF)') }}</button>
             </div>
             <button v-if="can('visit_notes_delete')" type="button" class="text-[12px] text-ink-muted hover:text-danger-text" :aria-label="t('Delete', 'Eliminar')" @click="removing = a">✕</button>
           </li>
@@ -178,16 +229,68 @@ const num = (n: number | null | undefined) => (n === null || n === undefined ? '
         </div>
       </div>
 
-      <section v-if="trend.length > 1" class="rounded-card border border-line bg-surface p-3.5" data-pdf-block="image" data-pdf-span="12">
-        <h4 class="text-[13.5px] font-semibold text-ink-900">{{ t('Head ahead of the shoulder, by assessment (cm)', 'Cabeza por delante del hombro, por valoración (cm)') }}</h4>
-        <svg :viewBox="`0 0 ${W} ${TH}`" class="mt-2 block h-auto w-full" role="img" :aria-label="t(`From ${trend[0]!.v} to ${trend[trend.length - 1]!.v} cm`, `De ${trend[0]!.v} a ${trend[trend.length - 1]!.v} cm`)" data-cy="posture-trend">
-          <polyline :points="trendPts.map((p) => `${p.x},${p.y}`).join(' ')" fill="none" class="stroke-brand" stroke-width="2.5" stroke-linejoin="round" />
-          <g v-for="p in trendPts" :key="p.p.a.id">
-            <circle :cx="p.x" :cy="p.y" r="4.5" class="fill-surface stroke-brand" stroke-width="2" />
-            <text :x="p.x" :y="p.y - 9" text-anchor="middle" class="fill-ink-700 font-mono" font-size="11">{{ num(p.p.v) }}</text>
-            <text :x="p.x" :y="TH - 6" text-anchor="middle" class="fill-ink-muted" font-size="11">{{ new Date(p.p.a.taken_at).toLocaleDateString(t('en-GB', 'es-ES'), { day: 'numeric', month: 'short' }) }}</text>
-          </g>
-        </svg>
+      <section v-if="chart && trendMetric" class="flex flex-col gap-3 rounded-card border border-line bg-surface p-3.5" data-pdf-block="image" data-pdf-span="12" data-cy="posture-evolution">
+        <div class="flex flex-wrap items-center gap-2.5">
+          <h4 class="flex-1 text-[14px] font-semibold text-ink-900">{{ t('Progress', 'Evolución') }}</h4>
+          <div class="flex flex-wrap gap-1.5" role="group" :aria-label="t('Measurement', 'Medida')" data-pdf-skip>
+            <button
+              v-for="m in trendMetrics"
+              :key="m.key"
+              type="button"
+              class="h-9 rounded-pill border px-3 text-[13px] font-semibold"
+              :class="trendKey === m.key ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control bg-surface text-ink-700'"
+              :aria-pressed="trendKey === m.key"
+              :data-cy="`posture-trend-${m.key}`"
+              @click="trendKey = m.key"
+            >{{ m.short[lang] }}</button>
+          </div>
+        </div>
+        <div class="flex flex-wrap items-stretch gap-4">
+          <div class="min-w-0 flex-[999_1_520px]">
+            <p class="mb-1 text-[12.5px] text-ink-muted">{{ t(`${trendMetric.label.en} (${trendMetric.unit}), at each assessment`, `${trendMetric.label.es} (${trendMetric.unit}), en cada valoración`) }}</p>
+            <svg
+              :viewBox="`0 0 ${W} ${TH}`"
+              class="block h-auto w-full"
+              role="img"
+              :aria-label="t(`${trendMetric.label.en}: from ${num(chart.first.value)} to ${num(chart.last.value)} ${trendMetric.unit}`, `${trendMetric.label.es}: de ${num(chart.first.value)} a ${num(chart.last.value)} ${trendMetric.unit}`)"
+              data-cy="posture-trend"
+              :data-metric="trendMetric.key"
+            >
+              <g v-for="g in chart.ticks" :key="g.value">
+                <line x1="44" :x2="W - 24" :y1="g.y" :y2="g.y" class="stroke-line" stroke-width="1" />
+                <text x="36" :y="g.y + 4" text-anchor="end" class="fill-ink-faint font-mono" font-size="11">{{ num(g.value) }}</text>
+              </g>
+              <path :d="chart.area" class="fill-brand" fill-opacity="0.07" />
+              <line x1="44" :x2="W - 24" :y1="chart.idealY" :y2="chart.idealY" class="stroke-success-text" stroke-width="1.5" stroke-dasharray="6 5" />
+              <text :x="W - 24" :y="chart.idealY - 7" text-anchor="end" class="fill-success-text" font-size="11.5" font-weight="600">{{ trendMetric.idealLabel[lang] }}</text>
+              <polyline :points="chart.line" fill="none" class="stroke-brand" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" />
+              <g v-for="(p, i) in chart.points" :key="p.takenAt">
+                <circle :cx="p.x" :cy="p.y" r="5.5" class="fill-surface stroke-brand" stroke-width="2.5" />
+                <text :x="p.x" :y="p.y - 12" text-anchor="middle" class="font-mono" :class="i === chart.points.length - 1 ? 'fill-ink-900' : 'fill-ink-700'" font-size="12" font-weight="600">{{ num(p.value) }}</text>
+                <text :x="p.x" :y="TH - 10" text-anchor="middle" class="fill-ink-muted" font-size="11.5">{{ shortDay(p.takenAt) }}</text>
+              </g>
+            </svg>
+          </div>
+          <aside class="flex flex-[1_1_220px] flex-col gap-2.5">
+            <div
+              v-if="chart.summary"
+              class="rounded-ctl border p-3.5"
+              :class="chart.summary.better === true ? 'border-success-border bg-success-bg' : chart.summary.better === false ? 'border-warning-border bg-warning-bg' : 'border-line bg-surface-subtle'"
+              data-cy="posture-trend-summary"
+              :data-better="chart.summary.better === null ? 'same' : String(chart.summary.better)"
+            >
+              <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-700">{{ t(`Since ${shortDay(chart.first.takenAt)}`, `Desde el ${shortDay(chart.first.takenAt)}`) }}</p>
+              <p class="mt-1 font-mono text-[24px] font-semibold text-ink-900">{{ chart.summary.delta > 0 ? '+' : chart.summary.delta < 0 ? '−' : '' }}{{ num(Math.abs(chart.summary.delta)) }}{{ unitOf(trendMetric.unit) }}</p>
+              <p class="text-[13px] text-ink-700">
+                <template v-if="chart.summary.better === true">{{ chart.summary.share !== null ? t(`Closer to aligned: ${chart.summary.share}% of the way.`, `Más cerca de lo alineado: ${chart.summary.share} % del camino.`) : t('Closer to aligned.', 'Más cerca de lo alineado.') }}</template>
+                <template v-else-if="chart.summary.better === false">{{ t('Further from aligned than at the start.', 'Más lejos de lo alineado que al empezar.') }}</template>
+                <template v-else>{{ t('About the same as at the start.', 'Más o menos igual que al empezar.') }}</template>
+              </p>
+            </div>
+            <p class="rounded-ctl border border-line p-3 text-[12.5px] leading-relaxed text-ink-700">{{ trendMetric.help[lang] }}</p>
+            <p class="text-[12px] text-ink-muted">{{ t('The dashed green line is aligned. The closer to it, the better.', 'La línea verde discontinua es lo alineado. Más cerca de ella, mejor.') }}</p>
+          </aside>
+        </div>
       </section>
     </template>
 

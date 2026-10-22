@@ -2,9 +2,9 @@ import { formatEur } from './billing'
 import { DEFAULT_CLINIC_TIMEZONE } from './clinicClock'
 import { CONFIDENTIALITY_SECTION, promptSafeName } from './receptionistGuard'
 import { NO_REPLY } from './receptionistAutoReply'
-import { CONFIRM_BEFORE_BOOKING, offeredTypesSection, rescheduleSection, type BookedVisit, type PromptType } from './receptionistTypes'
+import { CONFIRM_BEFORE_BOOKING, minorsSection, offeredTypesSection, rescheduleSection, type BookedVisit, type PromptChild, type PromptType } from './receptionistTypes'
 import { receptionistBookingSection, receptionistClockSection, type ReceptionistAvailability } from './receptionistSlots'
-import { historyMarkersSection, INFORMAL_ADDRESS_LINE, NO_INVENTION_LINE, WAITLIST_SECTION } from './receptionistHistory'
+import { CARD_ANSWERS_LINE, historyMarkersSection, INFORMAL_ADDRESS_LINE, NO_INVENTION_LINE, NOT_CHIROPRACTIC_SYMPTOM_LINE, PART_OF_DAY_ANSWER_LINE, replyLanguageLine, SENT_FILES_LINE, WAITLIST_SECTION } from './receptionistHistory'
 import type { ReceptionistPrompt } from './receptionistPrompt'
 
 // What the receptionist knows about a patient when drafting a reply to them
@@ -120,6 +120,8 @@ export function buildPatientReplyPrompt(
     bookedVisits?: BookedVisit[]
     /** Sent without a person reading it first; see buildSystemPrompt's sendsItself. */
     sendsItself?: boolean
+    /** Booking for a child of the person writing (minorsSection); absent, nothing is said about it. */
+    minors?: { forNewChild: PromptType[]; forReturningChild: PromptType[]; children: PromptChild[] }
     /** book_appointment is on this request -- only ever with sendsItself. */
     canBook?: boolean
     /** add_to_waitlist is on this request -- only ever with sendsItself. */
@@ -138,10 +140,10 @@ export function buildPatientReplyPrompt(
   const clinic = [
     `You are ${config.personaName}, the receptionist for a chiropractic clinic. You are replying to one of the clinic's own patients, who has written to the clinic.`,
     `Tone: ${config.toneLine}`,
-    `Sound like an experienced clinic receptionist who knows this patient: neutral, professional, to the point. Do not open with an exclamation or filler ("¡Perfecto!", "¡Genial!", "¡Claro!", "¡Por supuesto!", "Great!"), do not use emojis. Start with the substance.`,
+    `Sound like an experienced clinic receptionist who knows this patient: neutral, professional, to the point. Do not open with an exclamation or filler ("¡Perfecto!", "¡Genial!", "¡Claro!", "¡Por supuesto!", "Great!"), do not use emojis -- not even to answer one of theirs -- and do not greet with an exclamation ("¡Hola, María!", "¡Buenas tardes!"). Start with the substance.`,
     `When something goes to a member of staff, speak of them as your own colleague: in Spanish "mi compañera" or "mi compañero" (for example "Se lo paso a mi compañera, la quiropráctica"), in English "my colleague". Never "un compañero", "un miembro del equipo" or "a colleague".`,
     `Write dates in words, in the patient's language, with the weekday: "el lunes 20 de octubre", "Monday 20 October". Never "20/10" or "2026-10-20".`,
-    `Reply in the language the patient writes in. The clinic supports: ${config.languages.join(', ')}.`,
+    replyLanguageLine(config.languages),
     knowledge ? `# What you know about this clinic\n\n${knowledge}` : '',
     // Not every message wants an answer: a "Confirmar" tapped on the reminder,
     // a thanks. A re-confirmation nobody asked for is noise in their WhatsApp.
@@ -150,6 +152,10 @@ export function buildPatientReplyPrompt(
     historyMarkersSection(Boolean(opts.sendsItself)),
     INFORMAL_ADDRESS_LINE,
     NO_INVENTION_LINE,
+    PART_OF_DAY_ANSWER_LINE,
+    SENT_FILES_LINE,
+    CARD_ANSWERS_LINE,
+    NOT_CHIROPRACTIC_SYMPTOM_LINE,
     // A patient's details are on their record; asking for them again reads as
     // the clinic not knowing who they are.
     `Never ask a patient for their name, email or phone number: the clinic has them.`,
@@ -166,6 +172,7 @@ export function buildPatientReplyPrompt(
     receptionistClockSection(opts.calendar.now, opts.calendar.timeZone),
     patientFactsSection(opts.facts, opts.calendar.timeZone),
     offeredTypesSection(opts.offeredTypes),
+    opts.minors ? minorsSection({ ...opts.minors, canBook: !!opts.canBook, sendsItself: !!opts.sendsItself }) : '',
     // A returning patient asking for "otra cita" means another of what they
     // have been having -- their adjustment, their maintenance visit -- and
     // the clinic's own knowledge says when that changes.

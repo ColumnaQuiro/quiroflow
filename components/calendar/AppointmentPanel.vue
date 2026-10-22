@@ -3,7 +3,7 @@ import { formatEur, formatShortDate, formatTime, formatWeekdayDate } from '~/uti
 import type { BusinessHours } from '~/utils/businessHours'
 import { dayKeyFor, hasBusinessHoursConfigured, practitionerWindowsForDay, windowsForDay, withinWindows } from '~/utils/businessHours'
 import { effectiveDuration, type AppointmentTypeOverride } from '~/utils/appointmentOverrides'
-import { hasArrived, isUnconfirmedStage, nextStep, STAGE_TRACK, trackIndex } from '~/utils/appointmentStage'
+import { hasArrived, isUnconfirmedStage, nextStep, pendingFormsLabel, STAGE_TRACK, trackIndex } from '~/utils/appointmentStage'
 import { matchingMove, parseActivitySummary, type ActivityChange } from '~/utils/appointmentActivity'
 import type { VisitPayment } from '~/utils/visitPayment'
 import type { MoveClash } from '~/utils/moveClash'
@@ -38,7 +38,7 @@ export interface PanelAppointment extends StageFacts {
   note: string | null
   same_day_info_sent_at: string | null
   created_at: string
-  patients: { first_name: string; last_name: string | null; sticky_note: string | null } | null
+  patients: { first_name: string; last_name: string | null; sticky_note: string | null; pending_forms?: number; red_flags?: string | null; tags?: string[] } | null
   appointment_types: { name: string; color: string } | null
   team_members: { full_name: string } | null
 }
@@ -67,6 +67,29 @@ const props = defineProps<{
   noMove?: boolean
 }>()
 const emit = defineEmits<{ close: []; changed: []; reschedule: [] }>()
+const typeNotes = useAppointmentTypeNotes()
+onMounted(() => typeNotes.load())
+
+// Justificante de asistencia (server/api/appointments/[id]/attendance-certificate).
+// Opened rather than downloaded where the browser allows it, because the
+// next thing anyone does with it is print it for the patient.
+const certificateBusy = ref(false)
+async function downloadCertificate() {
+  certificateBusy.value = true
+  try {
+    const blob = await useStaffFetch<Blob>(`/api/appointments/${props.appointment.id}/attendance-certificate`, { responseType: 'blob' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `justificante-${props.appointment.starts_at.slice(0, 10)}.pdf`
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 10_000)
+  } catch (e: any) {
+    useToast().showToast(e?.data?.statusMessage ?? t('Could not prepare the certificate.', 'No se pudo preparar el justificante.'), 'error')
+  } finally {
+    certificateBusy.value = false
+  }
+}
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
@@ -733,6 +756,40 @@ async function useExpectedType() {
             <button v-if="undoable" type="button" data-cy="undo-stage" :disabled="busy" class="h-9 touch:h-11 rounded-ctl px-3 text-[13px] font-semibold text-ink-muted hover:bg-surface-subtle" @click="undo">{{ undoable.label }}</button>
             <button v-if="canUndoVisit" type="button" data-cy="undo-visit" :disabled="busy" class="h-9 touch:h-11 rounded-ctl border border-line-control px-3.5 text-[13px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="undoVisitOpen = true">{{ t('Undo visit', 'Deshacer visita') }}</button>
           </div>
+
+          <!-- Red flags first: the one thing about the patient that changes
+               what may be done to them today. Text for clinical roles only. -->
+          <div v-if="view.redFlags" class="mt-3 flex items-start gap-3 rounded-ctl border border-danger-border bg-danger-bg px-3.5 py-2.5" data-cy="appt-panel-red-flags">
+            <CalendarRedFlagIcon :size="14" class="mt-[2px] shrink-0 text-danger-text" :label="t('Red flags', 'Señales rojas')" />
+            <div class="flex min-w-0 flex-1 flex-col text-[12.5px]">
+              <strong class="text-[13.5px] text-danger-text">{{ t('Red flags', 'Señales rojas') }}</strong>
+              <span v-if="can('visit_notes_access')" class="whitespace-pre-line text-ink-700">{{ view.redFlags }}</span>
+              <span v-else class="text-ink-500">{{ t('On the clinical record. Let the practitioner know.', 'En la ficha clínica. Avisa al profesional.') }}</span>
+            </div>
+          </div>
+          <!-- The appointment type's note for the team: what the desk or the
+               practitioner has to remember about this kind of visit. -->
+          <div v-if="typeNotes.noteFor(appointment.appointment_type_id)" class="mt-3 flex items-start gap-3 rounded-ctl border border-warning-border bg-warning-bg px-3.5 py-2.5" data-cy="appt-panel-type-note">
+            <div class="flex min-w-0 flex-1 flex-col text-[12.5px]">
+              <strong class="text-[13.5px] text-warning-text">{{ t('For the team', 'Para el equipo') }}</strong>
+              <span class="whitespace-pre-line text-ink-700">{{ typeNotes.noteFor(appointment.appointment_type_id) }}</span>
+            </div>
+          </div>
+          <div v-if="view.tags?.length" class="mt-3 flex flex-wrap gap-1.5" data-cy="appt-panel-tags">
+            <span v-for="tag in view.tags" :key="tag" class="rounded-pill border border-line bg-chip-bg px-2.5 py-0.5 text-[12px] font-medium text-ink-700">{{ tag }}</span>
+          </div>
+
+          <!-- Forms sent and not filled in: a patient like that often does not
+               come, so it sits with the visit's standing, not in a tab. -->
+          <div v-if="view.pendingForms > 0" class="mt-3 flex items-center gap-3 rounded-ctl border border-warning-border bg-warning-bg px-3.5 py-2.5" data-cy="appt-panel-forms">
+            <div class="flex min-w-0 flex-1 flex-col text-[12.5px]">
+              <strong class="text-[13.5px] text-warning-text">{{ pendingFormsLabel(view.pendingForms, t) }}</strong>
+              <span class="text-ink-500">{{ stage === 'arrived' ? t('They can fill it in at reception before going in.', 'Puede rellenarlo en recepción antes de pasar.') : t('Sent and still awaiting the patient. Worth a call to check they are coming.', 'Enviado y aún pendiente del paciente. Conviene llamar para confirmar que viene.') }}</span>
+            </div>
+            <NuxtLink :to="`/patients/${appointment.patient_id}?tab=attachments`" data-cy="appt-panel-forms-open" class="flex h-9 touch:h-11 shrink-0 items-center rounded-ctl border border-line-control bg-surface px-3 text-[13px] font-semibold text-ink-700 hover:bg-surface-subtle">
+              {{ t('See forms', 'Ver formularios') }}
+            </NuxtLink>
+          </div>
         </section>
 
         <!-- Money: this visit, and the patient's balance beside it. -->
@@ -788,6 +845,17 @@ async function useExpectedType() {
             </span>
           </div>
           <p v-else class="text-[13px] text-ink-muted">{{ t('None yet.', 'Ninguno todavía.') }}</p>
+        </section>
+
+        <!-- The paper a patient asks for at the desk to show work or school
+             they were here. Only once they have arrived: the server refuses
+             a visit that did not take place. -->
+        <section v-if="hasArrived(stage)">
+          <h3 class="mb-2.5 text-[11px] font-bold uppercase tracking-[.06em] text-ink-muted">{{ t('Documents', 'Documentos') }}</h3>
+          <button type="button" data-cy="attendance-certificate" :disabled="certificateBusy" class="flex h-9 touch:h-11 items-center gap-2 rounded-ctl border border-line-control px-3.5 text-[13px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:opacity-60" @click="downloadCertificate">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6M9 14l2 2 4-4" /></svg>
+            {{ certificateBusy ? t('Preparing…', 'Preparando…') : t('Certificate of attendance', 'Justificante de asistencia') }}
+          </button>
         </section>
 
         <button v-if="canDelete" type="button" data-cy="delete-appointment" class="h-9 touch:h-11 self-start text-[12.5px] font-medium text-ink-muted underline-offset-2 hover:underline" @click="deleteOpen = true">{{ t('Delete appointment', 'Eliminar cita') }}</button>

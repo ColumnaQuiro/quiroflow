@@ -18,14 +18,14 @@
             android:layout_weight="1"
             android:maxLines="1"
             android:ellipsize="end"
-            android:textColor="#6B7180"
+            android:textColor="@color/widget_muted"
             android:textSize="11sp"
             android:textStyle="bold" />
         <TextView
             android:id="@+id/widget_updated"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textColor="#8A8FA0"
+            android:textColor="@color/widget_faint"
             android:textSize="10sp" />
     </LinearLayout>
 
@@ -36,7 +36,7 @@
         android:layout_marginTop="6dp"
         android:maxLines="2"
         android:ellipsize="end"
-        android:textColor="#15171E"
+        android:textColor="@color/widget_fg"
         android:textSize="19sp"
         android:textStyle="bold" />
 
@@ -47,7 +47,7 @@
         android:layout_marginTop="2dp"
         android:maxLines="2"
         android:ellipsize="end"
-        android:textColor="#4A4F60"
+        android:textColor="@color/widget_muted"
         android:textSize="13sp" />
 
     <TextView
@@ -56,6 +56,6 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
         android:maxLines="4"
-        android:textColor="#3B32C9"
+        android:textColor="@color/widget_brand"
         android:textSize="13sp" />
 </LinearLayout>

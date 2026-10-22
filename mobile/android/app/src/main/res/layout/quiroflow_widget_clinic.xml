@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- An owner's widget at 4x2 and up: each figure in its own column, each its
+     own tap target (QuiroFlowWidgetProvider). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/quiroflow_widget_bg"
+    android:orientation="vertical"
+    android:padding="14dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+        <TextView
+            android:id="@+id/widget_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:textAllCaps="true"
+            android:textColor="@color/widget_muted"
+            android:textSize="10sp"
+            android:textStyle="bold" />
+        <TextView
+            android:id="@+id/widget_updated"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:maxLines="1"
+            android:textColor="@color/widget_faint"
+            android:textSize="10sp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="8dp"
+        android:orientation="horizontal">
+        <LinearLayout
+            android:id="@+id/col_money"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1.25"
+            android:orientation="vertical"
+            android:paddingStart="0dp"
+            android:paddingEnd="10dp">
+            <TextView
+                android:id="@+id/clinic_money_label"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:textColor="@color/widget_muted"
+                android:textSize="11sp" />
+            <TextView
+                android:id="@+id/clinic_money"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:textColor="@color/widget_fg"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:fontFeatureSettings="tnum" />
+
+            <TextView
+                android:id="@+id/clinic_money_note"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:textColor="@color/widget_muted"
+                android:textSize="10.5sp" />
+        </LinearLayout>
+        <FrameLayout
+            android:layout_width="1dp"
+            android:layout_height="match_parent"
+            android:background="@color/widget_line" />
+        <LinearLayout
+            android:id="@+id/col_patients"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp">
+            <TextView
+                android:id="@+id/clinic_patients_label"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:textColor="@color/widget_muted"
+                android:textSize="11sp" />
+            <TextView
+                android:id="@+id/clinic_patients"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:textColor="@color/widget_fg"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:fontFeatureSettings="tnum" />
+            <ProgressBar
+                android:id="@+id/clinic_patients_bar"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent"
+                android:layout_height="5dp"
+                android:layout_marginTop="3dp"
+                android:layout_marginBottom="3dp"
+                android:max="100"
+                android:progressDrawable="@drawable/quiroflow_widget_progress" />
+            <TextView
+                android:id="@+id/clinic_patients_note"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:textColor="@color/widget_muted"
+                android:textSize="10.5sp" />
+        </LinearLayout>
+        <FrameLayout
+            android:layout_width="1dp"
+            android:layout_height="match_parent"
+            android:background="@color/widget_line" />
+        <LinearLayout
+            android:id="@+id/col_bonos"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="0.9"
+            android:orientation="vertical"
+            android:paddingStart="10dp"
+            android:paddingEnd="0dp">
+            <TextView
+                android:id="@+id/clinic_bonos_label"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:textColor="@color/widget_muted"
+                android:textSize="11sp" />
+            <TextView
+                android:id="@+id/clinic_bonos"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:textColor="@color/widget_fg"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:fontFeatureSettings="tnum" />
+
+            <TextView
+                android:id="@+id/clinic_bonos_note"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:textColor="@color/widget_muted"
+                android:textSize="10.5sp" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

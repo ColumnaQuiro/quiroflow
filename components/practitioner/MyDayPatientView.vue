@@ -190,13 +190,17 @@ async function signAndComplete() {
             />
           </div>
         </section>
-        <AppointmentsPreviousVisit
-          :appointment-id="appointment.id"
-          :editable="canEditNotes"
-          class="self-start"
-          @bring="(section, text) => examRef?.bringSection(section, text)"
-          @use-listings="(l) => listingsRef?.setAll(l)"
-        />
+        <div class="flex min-w-0 flex-col gap-4 self-start">
+          <AppointmentsPreviousVisit
+            :appointment-id="appointment.id"
+            :editable="canEditNotes"
+            @bring="(section, text) => examRef?.bringSection(section, text)"
+            @use-listings="(l) => listingsRef?.setAll(l)"
+          />
+          <!-- The intake and other completed forms, to read beside the note
+               and bring into Subjective instead of retyping. -->
+          <AppointmentsFormAnswers :patient-id="appointment.patient_id" :editable="canEditNotes" @bring="(section, text) => examRef?.bringSection(section, text)" />
+        </div>
       </div>
     </div>
 

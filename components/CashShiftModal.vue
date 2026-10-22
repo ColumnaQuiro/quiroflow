@@ -153,7 +153,32 @@ onMounted(load)
 
 const movementsInCents = computed(() => movements.value.filter((m) => m.type === 'cash_in').reduce((s, m) => s + m.amount_cents, 0))
 const movementsOutCents = computed(() => movements.value.filter((m) => m.type === 'cash_out').reduce((s, m) => s + m.amount_cents, 0))
-const expectedInDrawerCents = computed(() => cashPaymentsCents.value + movementsInCents.value - movementsOutCents.value)
+// The change the drawer started with. A new shift carries the last one's
+// (cash_shift_carry_float); the desk corrects it here when it differs.
+const floatCents = computed(() => shift.value?.opening_float_cents ?? 0)
+const expectedInDrawerCents = computed(() => floatCents.value + cashPaymentsCents.value + movementsInCents.value - movementsOutCents.value)
+
+const editingFloat = ref(false)
+const floatInput = ref('')
+const savingFloat = ref(false)
+function editFloat() {
+  floatInput.value = (floatCents.value / 100).toFixed(2)
+  editingFloat.value = true
+}
+async function saveFloat() {
+  if (!shift.value) return
+  const cents = Math.round((parseFloat(floatInput.value.replace(',', '.')) || 0) * 100)
+  if (cents < 0) return
+  savingFloat.value = true
+  const { data, error: e } = await supabase.from('cash_shifts').update({ opening_float_cents: cents }).eq('id', shift.value.id).select('*').maybeSingle()
+  savingFloat.value = false
+  if (e || !data) {
+    error.value = e?.message ?? t('The change could not be saved.', 'No se ha podido guardar el cambio.')
+    return
+  }
+  shift.value = data
+  editingFloat.value = false
+}
 const totalPaidCents = computed(() => paidByMethod.value.reduce((s, m) => s + m.cents, 0))
 
 function fmt(cents: number) {
@@ -273,10 +298,22 @@ async function addMovement() {
 
         <div class="mt-4 rounded-md bg-gray-50 p-3 text-sm">
           <p class="text-xs font-medium uppercase tracking-wide text-gray-400">{{ t('Cash drawer', 'Caja registradora') }}</p>
-          <div class="mt-1.5 flex justify-between text-gray-500"><span>{{ t('Cash payments', 'Pagos en efectivo') }}</span><span>{{ fmt(cashPaymentsCents) }}</span></div>
+          <form v-if="editingFloat" class="mt-1.5 flex items-center justify-between gap-2 text-gray-500" @submit.prevent="saveFloat">
+            <label for="shift-float" class="flex-1">{{ t('Change at the start', 'Cambio inicial') }}</label>
+            <input id="shift-float" v-model="floatInput" type="text" inputmode="decimal" class="w-24 rounded-md border border-gray-300 px-2 py-1 text-right text-sm" data-cy="shift-float-input" />
+            <button type="submit" :disabled="savingFloat" class="rounded-md bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-50" data-cy="shift-float-save">{{ t('Save', 'Guardar') }}</button>
+          </form>
+          <div v-else class="mt-1.5 flex justify-between text-gray-500">
+            <span>
+              {{ t('Change at the start', 'Cambio inicial') }}
+              <button type="button" class="ml-1 text-xs text-indigo-600 underline hover:text-indigo-800" data-cy="shift-float-edit" @click="editFloat">{{ t('Edit', 'Editar') }}</button>
+            </span>
+            <span data-cy="shift-float">{{ fmt(floatCents) }}</span>
+          </div>
+          <div class="flex justify-between text-gray-500"><span>{{ t('Cash payments', 'Pagos en efectivo') }}</span><span>{{ fmt(cashPaymentsCents) }}</span></div>
           <div class="flex justify-between text-gray-500"><span>{{ t('Cash in', 'Entrada de efectivo') }}</span><span>{{ fmt(movementsInCents) }}</span></div>
           <div class="flex justify-between text-gray-500"><span>{{ t('Cash out', 'Salida de efectivo') }}</span><span>-{{ fmt(movementsOutCents) }}</span></div>
-          <div class="mt-1.5 flex justify-between border-t border-gray-200 pt-1.5 font-semibold text-gray-900"><span>{{ t('Expected in drawer', 'Esperado en caja') }}</span><span>{{ fmt(expectedInDrawerCents) }}</span></div>
+          <div class="mt-1.5 flex justify-between border-t border-gray-200 pt-1.5 font-semibold text-gray-900"><span>{{ t('Expected in drawer', 'Esperado en caja') }}</span><span data-cy="shift-expected">{{ fmt(expectedInDrawerCents) }}</span></div>
         </div>
 
         <form class="mt-4 flex flex-wrap items-end gap-2" @submit.prevent="addMovement">

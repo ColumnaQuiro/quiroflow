@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The home-screen widget's colours (QuiroFlowWidgetProvider); values-night
+     has the dark ones. The widget used to be white in dark mode. -->
+<resources>
+    <color name="widget_bg">#FFFFFF</color>
+    <color name="widget_fg">#15171E</color>
+    <color name="widget_muted">#6B7180</color>
+    <color name="widget_faint">#8A8FA0</color>
+    <color name="widget_line">#ECEEF2</color>
+    <color name="widget_brand">#3B32C9</color>
+    <color name="widget_done">#1D8A5B</color>
+    <color name="widget_warn">#B45309</color>
+</resources>

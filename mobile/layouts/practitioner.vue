@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { App } from '@capacitor/app'
+import { Capacitor, type PluginListenerHandle } from '@capacitor/core'
+
 // Registered once here (not per-tab) so switching between My Day/Calendar/
 // Patients/Inbox doesn't re-register a push token on every navigation.
 const { register: registerForPush } = usePushNotifications()
@@ -6,6 +9,18 @@ onMounted(registerForPush)
 // The Inbox tab's unread count, kept current from here for the whole app.
 const { start: startInboxBadge } = useInboxUnread()
 onMounted(startInboxBadge)
+// The home-screen widget, whichever screen the app opens on, and again each
+// time it comes back to the foreground (useStaffHomeWidget throttles).
+// Privacy mode, switched on any screen, rewrites it at once.
+const homeWidget = useStaffHomeWidget()
+const { privacy } = usePrivacyMode()
+watch(privacy, () => homeWidget.refresh({ force: true }))
+let appState: PluginListenerHandle | null = null
+onMounted(async () => {
+  if (!Capacitor.isNativePlatform()) return
+  appState = await App.addListener('appStateChange', ({ isActive }) => { if (isActive) homeWidget.refresh() })
+})
+onBeforeUnmount(() => appState?.remove())
 
 // Hidden (not just covered) while the keyboard is up: with it gone, the
 // page's slot fills the tab bar's space too, so a page like Inbox that pads
@@ -18,6 +33,7 @@ const { keyboardHeight } = useKeyboardInset()
 // Chosen in CSS, so the phone is untouched and nothing swaps on load.
 const { items, isActive } = useStaffNav()
 const { context, loadFailed, retry, clinics } = usePractitionerContext()
+watch(context, (ctx) => { if (ctx) homeWidget.refresh() }, { immediate: true })
 // With more than one location, the side menu names the one the app is in.
 const clinicName = computed(() => (clinics.value.length > 1 ? clinics.value.find((c) => c.id === context.value?.clinicId)?.name : null))
 const t = useT()

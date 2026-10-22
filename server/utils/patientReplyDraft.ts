@@ -6,9 +6,9 @@ import { bookingTool, cancelTool, waitlistTool, type BookingContext } from '~/se
 import { recentImages, withImages, type StoredImage } from '~/server/utils/receptionistImages'
 import { historyLine } from '~/utils/receptionistHistory'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personRepliedSince } from '~/utils/receptionistAutoReply'
-import { loadBookedVisits, loadOfferedTypes, loadPatientCalendar, loadPatientPractitioners, toConfig, toneWording, uniqueTypes, clinicTodayStart } from '~/server/utils/receptionist'
+import { loadBookedVisits, loadOfferedTypes, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, toneWording, uniqueTypes, clinicTodayStart } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptionistModel'
-import { typesForAudience } from '~/utils/receptionistTypes'
+import { typesForAudience, typesForMinor } from '~/utils/receptionistTypes'
 import { internalNotes } from '~/utils/receptionistGuard'
 import { carePlanCadenceLabel } from '~/utils/carePlanCadence'
 import { buildPatientReplyPrompt, openBono, type PatientReplyFacts } from '~/utils/patientReplyPrompt'
@@ -127,7 +127,8 @@ export async function draftPatientReply(
   // wrote: the clinic's own list of messages that want no answer, checked
   // before any model is asked. The reminder flow records a confirmation.
   const lastOutbound = turns.map((m) => m.direction).lastIndexOf('outbound')
-  if (isNoReplyMessage(turns.slice(lastOutbound + 1).map((m) => m.body), config.noReplyPhrases)) return leaveAlone()
+  const ours = lastOutbound >= 0 ? turns[lastOutbound]! : null
+  if (isNoReplyMessage(turns.slice(lastOutbound + 1).map((m) => m.body), config.noReplyPhrases, ours ? { body: ours.body, automated: Boolean(ours.automated) } : null)) return leaveAlone()
 
   const nowIso = new Date().toISOString()
   // From midnight, so a visit earlier today is still one they can ask about.
@@ -162,11 +163,16 @@ export async function draftPatientReply(
   }
 
   // A patient who writes is somebody the clinic knows: never a first visit.
-  const { types } = typesForAudience(await loadOfferedTypes(supabase, accountId, config), 'existing')
+  const offered = await loadOfferedTypes(supabase, accountId, config)
+  const { types } = typesForAudience(offered, 'existing')
+  // ...but their child may well be new: a patient writing "cita para mi
+  // hija" was told there was no first visit (minorsSection).
+  const minors = { forNewChild: typesForMinor(offered, false), forReturningChild: typesForMinor(offered, true), children: await loadTutorChildren(service, accountId, patientId) }
   // Moving a visit keeps its type, offered or not -- the prompt lists the
   // visits themselves under patient facts.
   const booked = await loadBookedVisits(supabase, accountId, patientId)
-  const bookable = uniqueTypes(types, booked.types)
+  // The child's first visit too, so its free times are in the list.
+  const bookable = uniqueTypes(types, booked.types, minors.forNewChild)
   // Somebody who has been before is seen by their own practitioner; a
   // patient record with no visit yet (a first visit booked, say) is still
   // somebody new, and a first visit is with whoever is free.
@@ -202,6 +208,7 @@ export async function draftPatientReply(
           booked: { appointments: booked.appointments, types: booked.types },
           practitionerIds,
           person: { kind: 'patient', patientId },
+          minors,
           onBooked: (summary) => noteInConversation(service, accountId, { kind: 'patient', patientId, channel }, summary),
         }
       : null
@@ -218,7 +225,7 @@ export async function draftPatientReply(
   const { text: draft, refused, handedOver } = await runReceptionistModel(await createAnthropicClient(apiKey), {
     model: MODEL,
     maxTokens: MAX_TOKENS,
-    system: buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist) }),
+    system: buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors }),
     messages: withImages(history, images),
     findFreeTimes,
     handOver: sends,

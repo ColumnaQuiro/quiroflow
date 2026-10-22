@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Tables } from '~/types/database.types'
 import { splitDialPrefix } from '~/utils/phone'
+import { patientAge } from '~/utils/patientAge'
 
 const emit = defineEmits<{ close: []; created: [id: string] }>()
 
@@ -14,6 +15,7 @@ const { showToast } = useToast()
 const firstName = ref('')
 const lastName = ref('')
 const dateOfBirth = ref('')
+const typedAge = computed(() => patientAge(dateOfBirth.value))
 const email = ref('')
 const phoneCountry = ref(store.defaultPhoneCountry)
 const phoneNumber = ref('')
@@ -177,6 +179,7 @@ async function onSubmit() {
             :required="isRequired('date_of_birth')"
             class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
           />
+          <p v-if="typedAge !== null" class="mt-1 text-[12px] text-ink-muted2" data-cy="new-patient-age">{{ t(`${typedAge} years old`, `${typedAge} años`) }}</p>
         </div>
 
         <!-- One column on a phone: half of 390px left the number field

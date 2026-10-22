@@ -3,51 +3,105 @@ import WidgetKit
 
 // QuiroFlow's home-screen widget. It never talks to the server: it shows the
 // snapshot the app last wrote (utils/homeWidget.ts, SharedSnapshot), with
-// how long ago -- for a patient, the next visit and the bono; for the team,
-// today. A staff timeline carries an entry per visit still to come, so the
-// list moves on by itself as the day does.
+// how long ago. What that snapshot holds depends on who is signed in, as
+// get_home_widget decided it:
+//   patient -- the next visit and the bono;
+//   clinic  -- an owner: money taken this month, visits done of booked today,
+//              bonos sold this month (and their own day on the large size);
+//   staff   -- a practitioner's own day, or the front desk's clinic day.
+// Words come in the snapshot, in the person's language; the Spanish here is
+// only a fallback. A staff timeline carries an entry per visit still to come,
+// so the list moves on by itself as the day does.
+
+struct Visit: Decodable {
+    let at: String
+    let time: String
+    let name: String
+    let what: String?
+    let arrived: Bool
+    let with: String?
+    let link: String?
+}
+
+/** A day of visits: the staff snapshot itself, or an owner's "list". */
+struct DayPart: Decodable {
+    let scope: String?
+    let who: String?
+    let title: String?
+    let remaining: Int?
+    let done: Int?
+    let arrived: Int?
+    let link: String?
+    let next: [Visit]?
+}
+
+struct Money: Decodable { let label: String; let smallLabel: String; let value: String; let range: String; let link: String? }
+struct Patients: Decodable { let label: String; let done: Int; let total: Int; let note: String; let link: String? }
+struct Bonos: Decodable { let label: String; let smallLabel: String; let count: Int; let value: String; let link: String? }
 
 struct Snapshot: Decodable {
     struct Next: Decodable { let at: String; let label: String; let what: String?; let who: String? }
     struct Bono: Decodable { let name: String; let left: Int; let total: Int }
-    struct Visit: Decodable { let at: String; let time: String; let name: String; let what: String?; let arrived: Bool }
     let kind: String
     let updatedAt: String
+    let updatedTime: String?
+    let date: String?
+    let dateLabel: String?
+    let timeZone: String?
+    let labels: [String: String]?
     // patient
     let clinic: String?
     let next: Next?
     let bono: Bono?
     // staff
-    let who: String?
-    let remaining: Int?
-    let done: Int?
-    let arrived: Int?
-    let visits: [Visit]?
+    let day: DayPart?
+    // clinic
+    let title: String?
+    let link: String?
+    let money: Money?
+    let patients: Patients?
+    let bonos: Bonos?
+    let list: DayPart?
 
-    enum CodingKeys: String, CodingKey { case kind, updatedAt, clinic, next, bono, who, remaining, done, arrived }
+    enum CodingKeys: String, CodingKey { case kind, updatedAt, updatedTime, date, dateLabel, timeZone, labels, clinic, next, bono, title, link, money, patients, bonos, list }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         kind = try c.decode(String.self, forKey: .kind)
         updatedAt = try c.decode(String.self, forKey: .updatedAt)
+        updatedTime = try c.decodeIfPresent(String.self, forKey: .updatedTime)
+        date = try c.decodeIfPresent(String.self, forKey: .date)
+        dateLabel = try c.decodeIfPresent(String.self, forKey: .dateLabel)
+        timeZone = try c.decodeIfPresent(String.self, forKey: .timeZone)
+        labels = try c.decodeIfPresent([String: String].self, forKey: .labels)
         clinic = try c.decodeIfPresent(String.self, forKey: .clinic)
-        who = try c.decodeIfPresent(String.self, forKey: .who)
-        remaining = try c.decodeIfPresent(Int.self, forKey: .remaining)
-        done = try c.decodeIfPresent(Int.self, forKey: .done)
-        arrived = try c.decodeIfPresent(Int.self, forKey: .arrived)
         bono = try c.decodeIfPresent(Bono.self, forKey: .bono)
-        // "next" is one visit for a patient and a list for the team.
+        title = try c.decodeIfPresent(String.self, forKey: .title)
+        link = try c.decodeIfPresent(String.self, forKey: .link)
+        money = try c.decodeIfPresent(Money.self, forKey: .money)
+        patients = try c.decodeIfPresent(Patients.self, forKey: .patients)
+        bonos = try c.decodeIfPresent(Bonos.self, forKey: .bonos)
+        list = try c.decodeIfPresent(DayPart.self, forKey: .list)
+        // "next" is one visit for a patient and a list for the team, whose
+        // other fields sit beside it at the top level.
         if kind == "staff" {
-            visits = try c.decodeIfPresent([Visit].self, forKey: .next)
+            day = try DayPart(from: decoder)
             next = nil
         } else {
             next = try c.decodeIfPresent(Next.self, forKey: .next)
-            visits = nil
+            day = nil
         }
     }
 
     static func load() -> Snapshot? {
         guard let data = SharedSnapshot.read() else { return nil }
         return try? JSONDecoder().decode(Snapshot.self, from: data)
+    }
+
+    /** One of the snapshot's words, with its %d / %@ filled. */
+    func t(_ key: String, _ fallback: String, _ arg: String? = nil) -> String {
+        let s = labels?[key] ?? fallback
+        guard let arg else { return s }
+        return s.replacingOccurrences(of: "%d", with: arg).replacingOccurrences(of: "%@", with: arg)
     }
 }
 
@@ -57,6 +111,48 @@ private let iso: ISO8601DateFormatter = {
     return f
 }()
 private func date(_ s: String) -> Date? { iso.date(from: s) ?? ISO8601DateFormatter().date(from: s) }
+private func url(_ s: String?) -> URL? { s.flatMap { URL(string: $0) } }
+
+/// How old a snapshot is at this entry, measured in the clinic's own days:
+/// a figure for "today" is only today's on the day it was taken.
+struct Freshness {
+    let minutes: Int
+    let sameDay: Bool
+    let sameMonth: Bool
+    let yesterday: Bool
+
+    init(_ s: Snapshot, at now: Date) {
+        let updated = date(s.updatedAt) ?? now
+        minutes = max(0, Int(now.timeIntervalSince(updated) / 60))
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = s.timeZone.flatMap { TimeZone(identifier: $0) } ?? .current
+        let f = DateFormatter()
+        f.calendar = cal
+        f.timeZone = cal.timeZone
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        let today = f.string(from: now)
+        let snapDay = s.date ?? f.string(from: updated)
+        sameDay = snapDay == today
+        sameMonth = snapDay.prefix(7) == today.prefix(7)
+        yesterday = snapDay == f.string(from: cal.date(byAdding: .day, value: -1, to: now) ?? now)
+    }
+
+    /** More than a week old: not worth showing at all. */
+    var expired: Bool { minutes > 7 * 24 * 60 }
+    /** Still today, but over two hours old: the age is shown in amber. */
+    var stale: Bool { sameDay && minutes > 120 }
+
+    func ageLabel(_ s: Snapshot) -> String {
+        if !sameDay {
+            if yesterday, let time = s.updatedTime { return s.t("updatedYesterday", "Actualizado ayer, %@", time) }
+            return s.t("daysAgo", "hace %d días", String(max(1, minutes / 1440)))
+        }
+        if minutes < 1 { return s.t("now", "ahora") }
+        if minutes < 60 { return s.t("minAgo", "hace %d min", String(minutes)) }
+        return s.t("hoursAgo", "hace %d h", String(minutes / 60))
+    }
+}
 
 struct Entry: TimelineEntry {
     let date: Date
@@ -69,30 +165,36 @@ struct Provider: TimelineProvider {
     func getTimeline(in context: Context, completion: @escaping (Timeline<Entry>) -> Void) {
         let snap = Snapshot.load()
         var dates: [Date] = [.now]
-        // The team's list drops each visit a quarter of an hour after it starts.
-        for v in snap?.visits ?? [] {
+        // A list drops each visit a quarter of an hour after it starts.
+        for v in (snap?.day ?? snap?.list)?.next ?? [] {
             if let d = date(v.at)?.addingTimeInterval(15 * 60), d > .now { dates.append(d) }
         }
+        // The clinic's midnight, when "today" stops describing the snapshot.
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = snap?.timeZone.flatMap { TimeZone(identifier: $0) } ?? .current
+        if let midnight = cal.nextDate(after: .now, matching: DateComponents(hour: 0, minute: 0), matchingPolicy: .nextTime) { dates.append(midnight) }
         let entries = dates.sorted().prefix(12).map { Entry(date: $0, snapshot: snap) }
         completion(Timeline(entries: Array(entries), policy: .after(Date.now.addingTimeInterval(30 * 60))))
     }
 }
 
 private let brand = Color(red: 79 / 255, green: 70 / 255, blue: 229 / 255)
+private let done = Color(red: 29 / 255, green: 138 / 255, blue: 91 / 255)
 
-// "hace 5 min", "hace 2 h": how old the snapshot is at this entry. Plain
-// text rather than a live relative date, which counts seconds and does not fit.
-struct UpdatedLine: View {
-    let snapshot: Snapshot
-    let at: Date
+struct AgeText: View {
+    let s: Snapshot
+    let fresh: Freshness
     var body: some View {
-        if let d = date(snapshot.updatedAt) {
-            let minutes = max(0, Int(at.timeIntervalSince(d) / 60))
-            let label = minutes < 1 ? "ahora" : minutes < 60 ? "hace \(minutes) min" : minutes < 48 * 60 ? "hace \(minutes / 60) h" : "hace \(minutes / 1440) días"
-            Text(label).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
-        }
+        Text(fresh.ageLabel(s)).font(.system(size: 10, weight: fresh.stale ? .semibold : .regular)).foregroundStyle(fresh.stale ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary)).lineLimit(1)
     }
 }
+
+struct Eyebrow: View {
+    let text: String
+    var body: some View { Text(text.uppercased()).font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary).lineLimit(1) }
+}
+
+// MARK: - Patient
 
 struct PatientView: View {
     let s: Snapshot
@@ -110,7 +212,7 @@ struct PatientView: View {
                 }
                 Spacer(minLength: 0)
                 Text(s.clinic ?? "QuiroFlow").font(.system(size: 11, weight: .medium)).foregroundStyle(brand).lineLimit(1)
-                UpdatedLine(snapshot: s, at: at)
+                AgeText(s: s, fresh: Freshness(s, at: at))
             }
             if family != .systemSmall, let b = s.bono {
                 Divider()
@@ -124,46 +226,104 @@ struct PatientView: View {
     }
 }
 
-struct StaffView: View {
+// MARK: - A day of visits (practitioner, front desk, and an owner's large size)
+
+struct VisitRow: View {
     let s: Snapshot
-    let at: Date
-    @Environment(\.widgetFamily) var family
+    let v: Visit
+    let clinicList: Bool
     var body: some View {
-        let coming = (s.visits ?? []).filter { (date($0.at)?.addingTimeInterval(15 * 60) ?? .distantFuture) > at }
+        HStack(spacing: 8) {
+            Circle().fill(v.arrived ? done : Color.gray.opacity(0.4)).frame(width: 7, height: 7)
+            Text(v.time).font(.system(size: 12, design: .monospaced))
+            Text(v.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
+            Spacer(minLength: 4)
+            Text(trailing).font(.system(size: 11, weight: v.arrived ? .semibold : .regular)).foregroundStyle(v.arrived ? AnyShapeStyle(done) : AnyShapeStyle(.secondary)).lineLimit(1)
+        }
+    }
+    private var trailing: String {
+        let room = s.t("inRoom", "En sala")
+        if clinicList {
+            let who = v.with ?? ""
+            return v.arrived ? (who.isEmpty ? room : "\(room) · \(who)") : who
+        }
+        return v.arrived ? room : (v.what ?? "")
+    }
+}
+
+struct DayView: View {
+    let s: Snapshot
+    let d: DayPart
+    let at: Date
+    /** Rows to list; on an owner's large widget, below the figures. */
+    let rows: Int
+    let showHeader: Bool
+    @Environment(\.widgetFamily) var family
+
+    private var desk: Bool { d.scope == "clinic" }
+    private var fresh: Freshness { Freshness(s, at: at) }
+    private var coming: [Visit] { fresh.sameDay ? (d.next ?? []).filter { (date($0.at)?.addingTimeInterval(15 * 60) ?? .distantFuture) > at } : [] }
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(family == .systemSmall ? "SIGUIENTE" : "HOY · \(s.who ?? "")").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary).lineLimit(1)
-                Spacer()
-                UpdatedLine(snapshot: s, at: at)
-            }
             if family == .systemSmall {
-                if let v = coming.first {
-                    Text(v.time).font(.system(size: 24, weight: .semibold, design: .monospaced))
-                    Text(v.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
-                } else {
-                    Text("Nada más hoy").font(.system(size: 15, weight: .semibold))
-                }
-                Spacer(minLength: 0)
-                Text("\(coming.count) por delante").font(.system(size: 11)).foregroundStyle(.secondary)
+                small
             } else {
-                HStack(spacing: 16) {
-                    stat("\(coming.count)", "quedan")
-                    stat("\(s.done ?? 0)", "hechas")
-                    stat("\(s.arrived ?? 0)", "en sala")
-                }
-                ForEach(Array(coming.prefix(family == .systemLarge ? 6 : 2).enumerated()), id: \.offset) { _, v in
-                    HStack(spacing: 8) {
-                        Circle().fill(v.arrived ? Color.green : Color.gray.opacity(0.4)).frame(width: 7, height: 7)
-                        Text(v.time).font(.system(size: 12, design: .monospaced))
-                        Text(v.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                if showHeader {
+                    HStack {
+                        Eyebrow(text: d.title ?? "")
                         Spacer()
-                        Text(v.arrived ? "En sala" : (v.what ?? "")).font(.system(size: 11)).foregroundStyle(v.arrived ? .green : .secondary).lineLimit(1)
+                        AgeText(s: s, fresh: fresh)
                     }
+                    if fresh.sameDay {
+                        HStack(spacing: 16) {
+                            if desk {
+                                stat("\(max(0, (d.remaining ?? 0) - (d.arrived ?? 0)))", s.t("toArrive", "por llegar"))
+                                stat("\(d.arrived ?? 0)", s.t("waiting", "en sala"))
+                                stat("\(d.done ?? 0)", s.t("done", "hechas"))
+                            } else {
+                                stat("\(coming.count)", s.t("left", "quedan"))
+                                stat("\(d.done ?? 0)", s.t("done", "hechas"))
+                                stat("\(d.arrived ?? 0)", s.t("waiting", "en sala"))
+                            }
+                        }
+                    }
+                } else {
+                    Eyebrow(text: d.title ?? "")
+                }
+                if !fresh.sameDay {
+                    Text(s.t("noToday", "sin datos de hoy")).font(.system(size: 13)).foregroundStyle(.secondary)
+                } else if coming.isEmpty {
+                    Text(s.t("nothingMore", "Nada más hoy")).font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
+                }
+                ForEach(Array(coming.prefix(rows).enumerated()), id: \.offset) { _, v in
+                    if let u = url(v.link) { Link(destination: u) { VisitRow(s: s, v: v, clinicList: desk) } } else { VisitRow(s: s, v: v, clinicList: desk) }
                 }
                 Spacer(minLength: 0)
             }
         }
     }
+
+    @ViewBuilder private var small: some View {
+        HStack {
+            Eyebrow(text: desk ? s.t("nextArrival", "Siguiente llegada") : s.t("next", "Siguiente"))
+            Spacer()
+            AgeText(s: s, fresh: fresh)
+        }
+        if let v = coming.first {
+            Text(v.time).font(.system(size: 24, weight: .semibold, design: .monospaced))
+            Text(v.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+            if desk, let who = v.with { Text(who).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1) }
+        } else {
+            Text(fresh.sameDay ? s.t("nothingMore", "Nada más hoy") : s.t("noToday", "sin datos de hoy")).font(.system(size: 15, weight: .semibold))
+        }
+        Spacer(minLength: 0)
+        if fresh.sameDay {
+            Text(desk ? s.t("toArriveCount", "%d por llegar", String(max(0, coming.count - (d.arrived ?? 0)))) : s.t("ahead", "%d por delante", String(coming.count)))
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+        }
+    }
+
     private func stat(_ n: String, _ label: String) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(n).font(.system(size: 22, weight: .semibold, design: .monospaced))
@@ -172,16 +332,142 @@ struct StaffView: View {
     }
 }
 
+// MARK: - An owner's clinic figures
+
+struct ClinicView: View {
+    let s: Snapshot
+    let at: Date
+    @Environment(\.widgetFamily) var family
+
+    private var fresh: Freshness { Freshness(s, at: at) }
+
+    var body: some View {
+        if family == .systemSmall { small } else if family == .systemLarge { large } else { figures }
+    }
+
+    // Money first; today's visits and the month's bonos underneath.
+    private var small: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Eyebrow(text: s.clinic ?? "QuiroFlow")
+                Spacer()
+                AgeText(s: s, fresh: fresh)
+            }
+            Spacer(minLength: 0)
+            Text(s.money?.smallLabel ?? "").font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+            moneyText(size: 26)
+            Spacer(minLength: 0)
+            Divider()
+            row(s.patients?.label ?? "", fresh.sameDay ? "\(s.patients?.done ?? 0)/\(s.patients?.total ?? 0)" : "—")
+            row(s.bonos?.smallLabel ?? "", fresh.sameMonth ? "\(s.bonos?.count ?? 0)" : "—")
+        }
+        .widgetURL(url(s.link))
+    }
+
+    private var header: some View {
+        HStack {
+            Eyebrow(text: s.title ?? s.clinic ?? "QuiroFlow")
+            Spacer()
+            AgeText(s: s, fresh: fresh)
+        }
+    }
+
+    // Each figure in its own column, each its own tap target.
+    private var figures: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            header
+            HStack(alignment: .top, spacing: 10) {
+                column(link: s.money?.link) {
+                    label(s.money?.label)
+                    Spacer(minLength: 0)
+                    moneyText(size: 21)
+                    note(moneyRange)
+                }
+                Divider()
+                column(link: s.patients?.link) {
+                    label(s.patients?.label)
+                    Spacer(minLength: 0)
+                    if fresh.sameDay, let p = s.patients {
+                        (Text("\(p.done)").font(.system(size: 21, weight: .semibold)) + Text("/\(p.total)").font(.system(size: 14)).foregroundColor(.secondary))
+                            .monospacedDigit().lineLimit(1)
+                        ProgressView(value: Double(p.done), total: Double(max(p.total, 1))).tint(done)
+                        note(p.note)
+                    } else {
+                        Text("—").font(.system(size: 21, weight: .semibold)).foregroundStyle(.secondary)
+                        note(s.t("noToday", "sin datos de hoy"))
+                    }
+                }
+                Divider()
+                column(link: s.bonos?.link) {
+                    label(s.bonos?.label)
+                    Spacer(minLength: 0)
+                    Text(fresh.sameMonth ? "\(s.bonos?.count ?? 0)" : "—").font(.system(size: 21, weight: .semibold)).monospacedDigit()
+                    note(fresh.sameMonth ? (s.bonos?.value ?? "") : "").privacySensitive()
+                }
+            }
+        }
+    }
+
+    // The figures, then the owner's own day (or the clinic's, for an owner who does not treat).
+    private var large: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            figures.frame(height: 128)
+            Divider()
+            if let d = s.list { DayView(s: s, d: d, at: at, rows: 5, showHeader: false) }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var moneyRange: String {
+        if fresh.sameDay { return s.money?.range ?? "" }
+        if !fresh.sameMonth { return "" }
+        return fresh.yesterday ? s.t("untilYesterday", "hasta ayer") : s.t("untilDate", "hasta el %@", s.dateLabel ?? "")
+    }
+
+    private func moneyText(size: CGFloat) -> some View {
+        Text(fresh.sameMonth ? (s.money?.value ?? "—") : "—")
+            .font(.system(size: size, weight: .semibold)).monospacedDigit()
+            .minimumScaleFactor(0.6).lineLimit(1)
+            .privacySensitive()
+    }
+
+    private func column<Content: View>(link: String?, @ViewBuilder _ content: () -> Content) -> some View {
+        let body = VStack(alignment: .leading, spacing: 3) { content() }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        return Group {
+            if let u = url(link) { Link(destination: u) { body } } else { body }
+        }
+    }
+
+    private func label(_ text: String?) -> some View { Text(text ?? "").font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1) }
+    private func note(_ text: String) -> some View { Text(text).font(.system(size: 10.5)).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8) }
+    private func row(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(label).font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(1)
+            Spacer(minLength: 4)
+            Text(value).font(.system(size: 14, weight: .semibold)).monospacedDigit()
+        }
+    }
+}
+
 struct QuiroFlowWidgetView: View {
     let entry: Entry
     var body: some View {
         Group {
-            if let s = entry.snapshot {
-                if s.kind == "staff" { StaffView(s: s, at: entry.date) } else { PatientView(s: s, at: entry.date) }
+            if let s = entry.snapshot, !Freshness(s, at: entry.date).expired {
+                switch s.kind {
+                case "clinic": ClinicView(s: s, at: entry.date)
+                case "staff":
+                    if let d = s.day {
+                        DayView(s: s, d: d, at: entry.date, rows: 6, showHeader: true)
+                            .widgetURL(url(d.link))
+                    }
+                default: PatientView(s: s, at: entry.date)
+                }
             } else {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("QuiroFlow").font(.system(size: 15, weight: .bold)).foregroundStyle(brand)
-                    Text("Abre la app para ver aquí tu próxima visita o tu día.").font(.system(size: 12)).foregroundStyle(.secondary)
+                    Text(entry.snapshot?.t("openToUpdate", "Abre QuiroFlow para actualizar") ?? "Abre la app para ver aquí tu próxima visita o tu día.")
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
             }
         }
@@ -195,7 +481,7 @@ struct QuiroFlowWidget: Widget {
             QuiroFlowWidgetView(entry: entry)
         }
         .configurationDisplayName("QuiroFlow")
-        .description("Tu próxima visita y tu bono, o tu día en la clínica.")
+        .description("Tu próxima visita, tu día o las cifras de tu clínica.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }
 }

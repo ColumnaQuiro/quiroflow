@@ -140,6 +140,8 @@ interface FacturaRow {
   amount_cents: number
   issued_at: string
   recipient_nif: string | null
+  /** A minor's tutor, when the factura is in their name (20261021173018). */
+  recipient_patient_id: string | null
   // Null once the payment this documented has been deleted. The factura still
   // stands -- a number issued in a correlative series cannot just disappear --
   // but it no longer matches any money, which someone has to resolve.
@@ -155,13 +157,20 @@ async function loadFacturas() {
     supabase.from('patients').select('national_id, default_practitioner_id').eq('id', props.patientId).maybeSingle(),
     supabase
       .from('facturas')
-      .select('id, number, kind, description, amount_cents, issued_at, recipient_nif, payment_id, rectifies_factura_id')
+      .select('id, number, kind, description, amount_cents, issued_at, recipient_nif, recipient_patient_id, payment_id, rectifies_factura_id')
       .eq('patient_id', props.patientId)
       .order('issued_at', { ascending: false }),
   ])
   patientNationalId.value = patientRow?.national_id ?? null
   patientDefaultPractitionerId.value = patientRow?.default_practitioner_id ?? null
   facturas.value = data ?? []
+  // Whoever the facturas in a tutor's name are addressed to: their name for
+  // the list, their NIF for the warning below.
+  const addressees = [...new Set(facturas.value.map((f) => f.recipient_patient_id).filter((id): id is string => !!id))]
+  const { data: people } = addressees.length
+    ? await supabase.from('patients').select('id, first_name, last_name, national_id').in('id', addressees)
+    : { data: [] }
+  addresseeById.value = new Map((people ?? []).map((p) => [p.id, { name: `${p.first_name} ${p.last_name ?? ''}`.trim(), nif: p.national_id }]))
 }
 
 // What a factura still documents once its rectificativas are taken off. A
@@ -239,9 +248,11 @@ const patientDefaultPractitionerId = ref<string | null>(null)
 // A valid one: an ID on file that the AEAT would not take as a NIF -- a wrong
 // check letter, a passport -- is sent as no recipient at all (registroAlta),
 // so for this purpose it is still missing.
-const facturasMissingNif = computed(() =>
-  validSpanishTaxId(patientNationalId.value) ? [] : facturas.value.filter((f) => f.kind === 'full' && !validSpanishTaxId(f.recipient_nif)),
-)
+const addresseeById = ref(new Map<string, { name: string; nif: string | null }>())
+// The NIF a factura is sent with: the tutor's when it is in their name.
+const facturaNif = (f: FacturaRow) => f.recipient_nif ?? (f.recipient_patient_id ? (addresseeById.value.get(f.recipient_patient_id)?.nif ?? null) : patientNationalId.value)
+const facturasMissingNif = computed(() => facturas.value.filter((f) => f.kind === 'full' && !validSpanishTaxId(facturaNif(f))))
+const missingNifIsTutors = computed(() => facturasMissingNif.value.length > 0 && facturasMissingNif.value.every((f) => !!f.recipient_patient_id))
 const { packageTemplates, membershipTemplates, ensureLoaded: ensureBillingTemplatesLoaded } = useBillingTemplates()
 const addCreditAmount = ref('')
 const addCreditReason = ref('')
@@ -2929,10 +2940,15 @@ function money(cents: number) {
 
         <p v-if="facturasMissingNif.length > 0" class="mt-2 rounded-ctl border border-amber-border bg-amber-bg px-2.5 py-1.5 text-[12px] text-amber-text">
           {{
-            t(
-              `${facturasMissingNif.length} of these need the patient's NIF (a valid Spanish DNI/NIE/NIF). Add or correct it in the patient's details and they will pick it up.`,
-              `${facturasMissingNif.length} de estas necesitan el NIF del paciente (un DNI/NIE/NIF español válido). Añádelo o corrígelo en los datos del paciente y se actualizarán solas.`,
-            )
+            missingNifIsTutors
+              ? t(
+                  `${facturasMissingNif.length} of these are in the tutor's name and need their NIF (a valid Spanish DNI/NIE/NIF). Add or correct it on the tutor's record and they will pick it up.`,
+                  `${facturasMissingNif.length} de estas van a nombre del tutor y necesitan su NIF (un DNI/NIE/NIF español válido). Añádelo o corrígelo en la ficha del tutor y se actualizarán solas.`,
+                )
+              : t(
+                  `${facturasMissingNif.length} of these need the patient's NIF (a valid Spanish DNI/NIE/NIF). Add or correct it in the patient's details and they will pick it up.`,
+                  `${facturasMissingNif.length} de estas necesitan el NIF del paciente (un DNI/NIE/NIF español válido). Añádelo o corrígelo en los datos del paciente y se actualizarán solas.`,
+                )
           }}
         </p>
 
@@ -2971,6 +2987,7 @@ function money(cents: number) {
                 </span>
               </p>
               <p class="truncate text-[12.5px] text-ink-muted2">{{ f.description }}</p>
+              <p v-if="f.recipient_patient_id && addresseeById.get(f.recipient_patient_id)" class="truncate text-[11.5px] text-ink-muted" data-cy="factura-addressee">{{ t('In the name of', 'A nombre de') }} {{ addresseeById.get(f.recipient_patient_id)!.name }}</p>
               <p class="text-[11.5px] text-ink-faint">{{ new Date(f.issued_at).toLocaleDateString() }}</p>
             </div>
             <div class="flex items-center gap-2">

@@ -12,6 +12,25 @@
 // Nothing here is testing layout, so centring is the honest fix -- force:true
 // would skip the visibility check altogether and hide a real regression.
 describe('A phone number typed by staff', { scrollBehavior: 'center' }, () => {
+  // Re-reads the stored numbers until `check` passes, for up to ~5 s. A save
+  // goes out on blur and lands a moment later; cy.task(...).should() runs the
+  // task ONCE and only re-checks that one answer, so it failed whenever the
+  // write was a beat slower than the read (seen in about one run in two
+  // under load). Only for checks waiting on a write -- "nothing was stored"
+  // stays a single read, since waiting would only give a wrong write time to
+  // look right.
+  function contactsBecome(patientId: string, check: (r: any) => void, tries = 20) {
+    cy.task('db:patientWithContacts', { id: patientId }, { log: false }).then((r: any) => {
+      try {
+        check(r)
+      } catch (err) {
+        if (tries <= 0) throw err
+        cy.wait(250, { log: false })
+        contactsBecome(patientId, check, tries - 1)
+      }
+    })
+  }
+
   function openAllDetails(account: any, patient: any) {
     cy.login(account.email, account.password)
     cy.visit(`/patients/${patient.id}`)
@@ -42,7 +61,7 @@ describe('A phone number typed by staff', { scrollBehavior: 'center' }, () => {
         cy.get('[data-cy=new-contact-number]').type('00123456')
         cy.contains('A Spanish number has 9 digits.').should('not.exist')
         cy.get('[data-cy=add-contact-number]').click()
-        cy.task('db:patientWithContacts', { id: patient.id }).should((r: any) => {
+        contactsBecome(patient.id, (r) => {
           expect(r.numbers.map((n: any) => n.number)).to.deep.equal(['600123456'])
         })
       })
@@ -74,7 +93,7 @@ describe('A phone number typed by staff', { scrollBehavior: 'center' }, () => {
         // Correcting it saves, and the message goes with it.
         cy.get('[data-cy=contact-number]').clear().type('600999888').blur()
         cy.contains('Not saved').should('not.exist')
-        cy.task('db:patientWithContacts', { id: patient.id }).should((r: any) => {
+        contactsBecome(patient.id, (r) => {
           expect(r.numbers.map((n: any) => n.number)).to.deep.equal(['600999888'])
         })
       })
@@ -101,7 +120,7 @@ describe('A phone number typed by staff', { scrollBehavior: 'center' }, () => {
 
         cy.get('[data-cy=contact-whatsapp]').check()
         cy.contains('Not saved').should('not.exist')
-        cy.task('db:patientWithContacts', { id: patient.id }).should((r: any) => {
+        contactsBecome(patient.id, (r) => {
           expect(r.numbers[0].is_whatsapp, 'the toggle still works on a legacy number').to.equal(true)
           expect(r.numbers[0].number, 'and the number is left as it was').to.equal('6')
         })

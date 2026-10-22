@@ -79,15 +79,55 @@ Cypress.Commands.add('portalLogin', (email: string, password: string, clinicCode
  * a silent no-op -- the element exists but nothing is listening yet. Rather
  * than a blind wait, this retries the click until `untilSelector` appears,
  * which self-heals regardless of how long hydration actually takes.
+ *
+ * A click that DID land is given up to a second to show its result before it
+ * counts as a no-op. Checking the instant after the click, as this used to,
+ * misread anything that mounts a beat later -- a Lazy* panel whose chunk is
+ * still downloading -- as a dead click, and clicked again. By then the panel
+ * was open over the button, and the second click failed as "covered by
+ * another element". That made "+ New Appointment" in
+ * deleted-visits-are-not-booked flaky on CI: retried on #826, #828-#830, and
+ * failed all three attempts once.
  */
+function appearsWithin(selector: string, polls: number): Cypress.Chainable<boolean> {
+  return cy.get('body', { log: false }).then(($body) => {
+    if ($body.find(selector).length > 0) return cy.wrap(true, { log: false })
+    if (polls <= 0) return cy.wrap(false, { log: false })
+    return cy.wait(100, { log: false }).then(() => appearsWithin(selector, polls - 1))
+  }) as unknown as Cypress.Chainable<boolean>
+}
+
 Cypress.Commands.add('clickUntil', (clickSelector: string, untilSelector: string, attempt = 0) => {
   cy.get(clickSelector).click()
-  cy.get('body').then(($body) => {
-    if ($body.find(untilSelector).length === 0) {
-      if (attempt >= 10) throw new Error(`clickUntil: "${untilSelector}" never appeared after clicking "${clickSelector}"`)
-      cy.wait(200)
-      cy.clickUntil(clickSelector, untilSelector, attempt + 1)
-    }
+  appearsWithin(untilSelector, 10).then((appeared) => {
+    if (appeared) return
+    if (attempt >= 10) throw new Error(`clickUntil: "${untilSelector}" never appeared after clicking "${clickSelector}"`)
+    cy.clickUntil(clickSelector, untilSelector, attempt + 1)
+  })
+})
+
+// The public booking page speaks the visitor's browser language -- Spanish,
+// English or French, Spanish when it is none of them -- and CI's Chrome is
+// English. Every booking spec was written against the Spanish page the
+// clinics' patients see, so a visit to /book/ is made by a Spanish browser
+// unless the spec says otherwise with an Accept-Language header of its own
+// (cypress/e2e/public-booking/booking-languages.cy.ts). A browser states its
+// language twice, in the header the server renders by and in
+// navigator.languages, which the page reads once it is running; both are set.
+Cypress.Commands.overwrite('visit', (originalFn: any, url: any, options?: any) => {
+  const path = typeof url === 'string' ? url : String(url?.url ?? '')
+  const headers = { ...(options?.headers ?? {}) }
+  const ownLanguage = Object.keys(headers).some((h) => h.toLowerCase() === 'accept-language')
+  if (!/^(https?:\/\/[^/]+)?\/book\//.test(path) || ownLanguage) return originalFn(url, options)
+  const tags = ['es-ES', 'es']
+  return originalFn(url, {
+    ...options,
+    headers: { ...headers, 'Accept-Language': tags.join(',') },
+    onBeforeLoad(win: Window) {
+      // Configurable, so a spec's own onBeforeLoad can still say otherwise.
+      Object.defineProperty(win.navigator, 'languages', { value: tags, configurable: true })
+      options?.onBeforeLoad?.(win)
+    },
   })
 })
 

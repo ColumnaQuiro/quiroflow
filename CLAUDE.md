@@ -234,6 +234,36 @@ admin) is recovered with the service role: delete the owner's row from
 `auth.mfa_factors`, or `update accounts set require_two_factor = false`.
 The guard trigger lets both through when there is no `auth.uid()`.
 
+## A new table has to grant itself to the Data API
+
+Until 30 Oct 2026 Supabase gave every new table in `public` to `anon`,
+`authenticated` and `service_role` through the project's default privileges.
+From that date it does not: tables that already existed keep their grants,
+and **a table or view created afterwards has none**. supabase-js, PostgREST,
+every server route and every cron -- `service_role` included -- then get
+`permission denied` on it.
+
+**CI cannot see this.** `supabase/seed.sql` runs after the migrations and
+grants every table in `public` to all three roles, so a table missing its
+grants works locally, passes every spec, and fails only in production. So
+each migration that creates a table or view ends with one more line:
+
+```sql
+select public.grant_data_api('public.my_new_table');
+```
+
+That restores what the defaults gave `authenticated` and `service_role`,
+plus usage on any sequence the table owns. `anon` is opt-in --
+`grant_data_api('public.my_table', with_anon => true)` -- for the rare table a
+signed-out page must reach. Explicit `grant` statements are fine instead (a
+view only ever read can stay select-only), as long as both `authenticated`
+and `service_role` get one.
+
+`npm run check:table-grants` (part of `preflight`) fails a new migration
+that creates a table or view in `public` without either. A table that must
+not be reachable through the API at all says why where it is created:
+`-- table-grants-ok: my_table: <reason>`.
+
 ## The audit trail covers a table only once it has a trigger
 
 Settings → Activity log (owners only) reads three append-only tables from

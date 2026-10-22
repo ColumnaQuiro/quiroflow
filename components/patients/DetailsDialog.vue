@@ -11,7 +11,8 @@
 //
 // Nothing about the form itself changed: same fields, same validation, same
 // save, same referral-campaign side effect. It is lifted, not rewritten.
-import { formatEur } from '~/utils/billing'
+import { formatEur, formatLongDate } from '~/utils/billing'
+import { ADULT_AGE, patientAge } from '~/utils/patientAge'
 import type { Tables } from '~/types/database.types'
 import { normalizeSearchTerm } from '~/utils/searchText'
 import { checkSpanishTaxId } from '~/utils/spanishTaxId'
@@ -44,9 +45,10 @@ const tutorChanged = ref(false)
 const referredByChanged = ref(false)
 
 // "Referred by" a specific patient -- same self-search pattern as tutor,
-// shown only when referral_source is exactly the "Patient" option (seeded
-// per-account by migration 0095; a display-string match, not a schema
-// flag, so renaming that referral source would silently break this).
+// shown when the referral source means a referral: "Patient" (seeded per
+// account by migration 0095), "Referral", or a Spanish name for either
+// (utils/referralSource.ts). Still a match on the source's name, not a
+// schema flag, so a source renamed to something else entirely shows none.
 type ReferrerOption = TutorOption
 const referredBySearch = ref('')
 const referredByResults = ref<ReferrerOption[]>([])
@@ -193,6 +195,10 @@ const error = ref('')
 const firstName = ref(props.patient.first_name)
 const lastName = ref(props.patient.last_name ?? '')
 const dateOfBirth = ref(props.patient.date_of_birth ?? '')
+// Worked out as the date is typed, so nobody does the sum in their head, and
+// so the "under age" box can be suggested when the two disagree.
+const typedAge = computed(() => patientAge(dateOfBirth.value))
+const ageText = (age: number) => t(`${age} years old`, `${age} años`)
 const email = ref(props.patient.email ?? '')
 const address = ref(props.patient.address ?? '')
 const postalCode = ref(props.patient.postal_code ?? '')
@@ -213,6 +219,8 @@ const reminderHours = ref<number | null>(props.patient.appointment_reminder_hour
 const marketingChannels = ref<string[]>([...props.patient.marketing_channels])
 const status = ref(props.patient.status)
 const isMinor = ref(props.patient.is_minor)
+// Facturas in the tutor's name (fill_factura_recipient, 20261021173018).
+const billToTutor = ref(props.patient.bill_to_tutor)
 const doNotContact = ref(props.patient.do_not_contact)
 
 async function startEditing() {
@@ -239,6 +247,7 @@ async function startEditing() {
   marketingChannels.value = [...props.patient.marketing_channels]
   status.value = props.patient.status
   isMinor.value = props.patient.is_minor
+  billToTutor.value = props.patient.bill_to_tutor
   doNotContact.value = props.patient.do_not_contact
   selectedTutor.value = null
   tutorChanged.value = false
@@ -319,13 +328,14 @@ async function save() {
   const nationalIdToSave =
     nationalIdCheck.value.kind === 'valid' ? nationalIdCheck.value.normalized : nationalId.value.trim() || null
 
-  // Unchecking "under age", or moving the referral source off "Patient", is
+  // Unchecking "under age", or moving the referral source off a referral one
+  // ("Patient", "Referral"...: utils/referralSource.ts), is
   // a change the person made, and clears the link as it always has. Inside
   // those, the link is written only if they picked or removed someone.
   const links: { tutor_patient_id?: string | null; referred_by_patient_id?: string | null } = {}
   if (!isMinor.value) links.tutor_patient_id = null
   else if (tutorChanged.value) links.tutor_patient_id = selectedTutor.value?.id ?? null
-  if (referralSource.value !== 'Patient') links.referred_by_patient_id = null
+  if (!isPatientReferralSource(referralSource.value)) links.referred_by_patient_id = null
   else if (referredByChanged.value) links.referred_by_patient_id = selectedReferredBy.value?.id ?? null
   const newReferredById = links.referred_by_patient_id === undefined ? props.patient.referred_by_patient_id : links.referred_by_patient_id
 
@@ -355,6 +365,7 @@ async function save() {
       marketing_channels: marketingChannels.value,
       status: status.value,
       is_minor: isMinor.value,
+      bill_to_tutor: isMinor.value && billToTutor.value,
       do_not_contact: doNotContact.value,
       ...links,
     })
@@ -425,7 +436,12 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
       <dl v-if="!editing" class="mt-4 grid grid-cols-3 gap-x-6 gap-y-4">
         <div>
           <dt class="text-[11.5px] text-ink-muted2">{{ t('Date of birth', 'Fecha de nacimiento') }}</dt>
-          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.date_of_birth ?? t('N/A', 'N/D') }}</dd>
+          <dd class="mt-0.5 text-[13.5px] text-ink-700" data-cy="patient-dob">
+            <template v-if="patient.date_of_birth">
+              {{ formatLongDate(patient.date_of_birth) }}<template v-if="patientAge(patient.date_of_birth) !== null"> · {{ ageText(patientAge(patient.date_of_birth)!) }}</template>
+            </template>
+            <template v-else>{{ t('N/A', 'N/D') }}</template>
+          </dd>
         </div>
         <div>
           <dt class="text-[11.5px] text-ink-muted2">{{ t('Email', 'Correo electrónico') }}</dt>
@@ -456,7 +472,7 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
           <dt class="text-[11.5px] text-ink-muted2">{{ t('Referral source', 'Origen de la referencia') }}</dt>
           <dd class="mt-0.5 text-[13.5px] text-ink-700">
             {{ patient.referral_source ?? t('N/A', 'N/D') }}
-            <template v-if="patient.referral_source === 'Patient'">
+            <template v-if="isPatientReferralSource(patient.referral_source)">
               &middot;
               <NuxtLink v-if="patient.referred_by_patient_id" :to="`/patients/${patient.referred_by_patient_id}`" class="text-brand-text hover:underline">
                 {{ selectedReferredBy ? tutorName(selectedReferredBy) : t('View patient', 'Ver paciente') }}
@@ -497,6 +513,7 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
               {{ selectedTutor ? tutorName(selectedTutor) : t('View tutor', 'Ver tutor') }}
             </NuxtLink>
             <span v-else class="text-danger-text">{{ t('No tutor linked', 'Ningún tutor vinculado') }}</span>
+            <span v-if="patient.tutor_patient_id && patient.bill_to_tutor" class="block text-[12px] text-ink-muted" data-cy="patient-bills-tutor">{{ t('Facturas in their name', 'Facturas a su nombre') }}</span>
           </dd>
         </div>
         <div v-if="referredPatients.length > 0">
@@ -528,6 +545,7 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
           <div>
             <label :class="labelClass">{{ t('Date of birth', 'Fecha de nacimiento') }}</label>
             <input v-model="dateOfBirth" type="date" :class="inputClass" />
+            <p v-if="typedAge !== null" class="mt-1 text-[12px] text-ink-muted2" data-cy="patient-age">{{ ageText(typedAge) }}</p>
           </div>
           <div>
             <label :class="labelClass">{{ t('Email', 'Correo electrónico') }}</label>
@@ -566,20 +584,20 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
           </div>
           <div>
             <label :class="labelClass">{{ t('Referral source', 'Origen de la referencia') }}</label>
-            <select v-model="referralSource" :class="inputClass">
+            <select v-model="referralSource" :class="inputClass" data-cy="referral-source-select">
               <option value="">{{ t('Not set', 'Sin especificar') }}</option>
               <option v-for="s in referralSources" :key="s.id" :value="s.name">{{ s.name }}</option>
               <!-- Preserves legacy freeform data that doesn't match a configured source. -->
               <option v-if="referralSource && !referralSources.some((s) => s.name === referralSource)" :value="referralSource">{{ referralSource }}</option>
             </select>
-            <div v-if="referralSource === 'Patient'" class="mt-2">
+            <div v-if="isPatientReferralSource(referralSource)" class="mt-2" data-cy="referred-by-picker">
               <label :class="labelClass">{{ t('Referred by (existing patient)', 'Referido por (paciente existente)') }}</label>
               <div v-if="selectedReferredBy || referredByUnresolved" class="mt-1 flex items-center gap-2">
                 <span class="text-[13px] text-ink-700">{{ selectedReferredBy ? tutorName(selectedReferredBy) : t('Linked patient', 'Paciente vinculado') }}</span>
                 <button type="button" class="text-[12px] text-danger-text hover:underline" data-cy="referred-by-remove" @click="removeReferredBy">{{ t('Remove', 'Quitar') }}</button>
               </div>
               <div v-else class="relative mt-1">
-                <input v-model="referredBySearch" type="text" :placeholder="t('Search patient by name…', 'Buscar paciente por nombre…')" :class="inputClass" />
+                <input data-cy="referred-by-search" v-model="referredBySearch" type="text" :placeholder="t('Search patient by name…', 'Buscar paciente por nombre…')" :class="inputClass" />
                 <ul v-if="referredByResults.length > 0" class="absolute z-10 mt-1 w-full rounded-ctl border border-line bg-surface py-1 shadow-popover">
                   <li v-for="p in referredByResults" :key="p.id">
                     <button type="button" class="block w-full px-3 py-1.5 text-left text-[13px] text-ink-700 hover:bg-surface-subtle" @click="pickReferredBy(p)">
@@ -629,6 +647,14 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
             <input v-model="isMinor" type="checkbox" class="rounded border-line-control text-brand focus:ring-brand" />
             {{ t('This patient is under age', 'Este paciente es menor de edad') }}
           </label>
+          <p v-if="typedAge !== null && typedAge < ADULT_AGE && !isMinor" class="mt-1.5 pl-5 text-[12px] text-warning-text" data-cy="patient-age-minor-hint">
+            {{ t(`${typedAge} years old by the date of birth.`, `Tiene ${typedAge} años según la fecha de nacimiento.`) }}
+            <button type="button" class="font-semibold underline" @click="isMinor = true">{{ t('Mark as under age', 'Marcar como menor') }}</button>
+          </p>
+          <p v-else-if="typedAge !== null && typedAge >= ADULT_AGE && isMinor" class="mt-1.5 pl-5 text-[12px] text-warning-text" data-cy="patient-age-adult-hint">
+            {{ t(`${typedAge} years old by the date of birth: no longer under age.`, `Tiene ${typedAge} años según la fecha de nacimiento: ya no es menor.`) }}
+            <button type="button" class="font-semibold underline" @click="isMinor = false">{{ t('Unmark', 'Desmarcar') }}</button>
+          </p>
           <div v-if="isMinor" class="mt-2.5 pl-5">
             <label :class="labelClass">{{ t('Tutor (parent / guardian, must be an existing patient)', 'Tutor (padre/madre o tutor legal, debe ser un paciente existente)') }}</label>
             <div v-if="selectedTutor || tutorUnresolved" class="mt-1 flex items-center gap-2">
@@ -645,6 +671,13 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
                 </li>
               </ul>
             </div>
+            <label class="mt-2.5 flex items-start gap-1.5 text-[13px] text-ink-600">
+              <input v-model="billToTutor" type="checkbox" class="mt-0.5 rounded border-line-control text-brand focus:ring-brand" data-cy="patient-bill-to-tutor" />
+              <span>
+                {{ t('Facturas in the tutor’s name', 'Facturas a nombre del tutor') }}
+                <span class="block text-[11px] text-ink-muted2">{{ t('From now on: their name, address and NIF. Facturas already issued keep the patient’s.', 'A partir de ahora: su nombre, dirección y NIF. Las facturas ya emitidas siguen a nombre del paciente.') }}</span>
+              </span>
+            </label>
             <p class="mt-1 text-[11px] text-ink-muted2">{{ t('While marked under age, no WhatsApp or email communications will be sent to this patient.', 'Mientras esté marcado como menor de edad, no se enviarán comunicaciones por WhatsApp o correo electrónico a este paciente.') }}</p>
           </div>
           <label class="mt-3 flex items-center gap-1.5 text-[13px] text-ink-600">

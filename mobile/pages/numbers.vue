@@ -32,7 +32,12 @@ const mode = computed<'all' | 'own' | 'none'>(() => {
 const practitionerId = computed(() => (mode.value === 'own' ? context.value?.teamMemberId : undefined))
 
 type Period = 'today' | 'week' | 'month'
-const period = ref<Period>('month')
+const PERIODS: Period[] = ['today', 'week', 'month']
+const route = useRoute()
+const periodFrom = (q: unknown): Period => (PERIODS.includes(q as Period) ? (q as Period) : 'month')
+const period = ref<Period>(periodFrom(route.query.period))
+// The home-screen widget's figures open this on a period (?period=month).
+watch(() => [route.query.period, route.query.w], () => { if (route.query.period) period.value = periodFrom(route.query.period) })
 const range = computed<DateRange>(() =>
   period.value === 'today' ? computePresetRange({ days: 0 }) : period.value === 'week' ? getWeekRange() : computePresetRange({ months: 1 }),
 )

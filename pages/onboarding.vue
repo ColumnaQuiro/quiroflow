@@ -87,6 +87,19 @@ async function createPractice() {
   } catch {
     // ignore
   }
+  // Also best-effort, and for the same reason: nobody watches a table for
+  // new rows, so this is what turns an account appearing into something a
+  // human finds out about. It carries the attribution signup.vue parked,
+  // because this is the last moment anything still knows it.
+  try {
+    let attribution: unknown = null
+    const stored = localStorage.getItem('signup_attribution')
+    if (stored) attribution = JSON.parse(stored)
+    await useStaffFetch('/api/internal/notify-new-account', { method: 'POST', body: { attribution } })
+    localStorage.removeItem('signup_attribution')
+  } catch {
+    // ignore
+  }
   return null
 }
 

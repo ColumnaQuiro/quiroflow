@@ -2,6 +2,7 @@
 import { DEFAULT_CLINIC_TIMEZONE, clinicDateOf } from '../../utils/clinicClock'
 import { formatPhoneDisplay } from '../../utils/phone'
 import { NO_SHOW_RISK_RANK, confirmWindowEnd, noShowRiskReason, type NoShowRisk } from '../../utils/noShowRisk'
+import { pendingFormsLabel } from '../../utils/appointmentStage'
 
 // "Por confirmar": the visits between now and the end of tomorrow that nobody
 // has confirmed -- no "yes" to the WhatsApp reminder, no tap in the app, no
@@ -34,7 +35,8 @@ interface Row {
   patient_id: string
   starts_at: string
   confirmation_status: string | null
-  patients: { first_name: string; last_name: string | null } | null
+  /** pending_forms: forms sent and not completed (a computed field on patients). */
+  patients: { first_name: string; last_name: string | null; pending_forms?: number } | null
   team_members: { full_name: string } | null
 }
 interface Phone { patient_id: string; number: string; country_code: string; is_whatsapp: boolean }
@@ -59,7 +61,7 @@ async function load() {
   const now = new Date()
   let q = supabase
     .from('appointments')
-    .select('id, patient_id, starts_at, confirmation_status, patients(first_name, last_name), team_members(full_name)')
+    .select('id, patient_id, starts_at, confirmation_status, patients(first_name, last_name, pending_forms), team_members(full_name)')
     .eq('status', 'booked')
     .is('deleted_at', null)
     .is('checked_in_at', null)
@@ -111,9 +113,12 @@ function telHref(p: Phone) {
   return `tel:${formatPhoneDisplay(p.number, p.country_code).replace(/[^\d+]/g, '')}`
 }
 function reason(r: Row) {
-  if (r.confirmation_status === 'reschedule_requested') return t('Asked to move it', 'Pidió cambiarla')
+  // Open forms go beside the risk: a patient who has not done them and does
+  // not pick up is the one clinics find does not come.
+  const forms = r.patients?.pending_forms ? pendingFormsLabel(r.patients.pending_forms, t) : ''
+  if (r.confirmation_status === 'reschedule_requested') return [t('Asked to move it', 'Pidió cambiarla'), forms].filter(Boolean).join(' · ')
   const k = risk.value.get(r.patient_id)
-  return k ? noShowRiskReason(k, t) : ''
+  return [k ? noShowRiskReason(k, t) : '', forms].filter(Boolean).join(' · ')
 }
 
 async function markConfirmed(r: Row) {

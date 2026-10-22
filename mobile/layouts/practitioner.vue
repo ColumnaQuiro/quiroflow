@@ -37,6 +37,18 @@ watch(context, (ctx) => { if (ctx) homeWidget.refresh() }, { immediate: true })
 // With more than one location, the side menu names the one the app is in.
 const clinicName = computed(() => (clinics.value.length > 1 ? clinics.value.find((c) => c.id === context.value?.clinicId)?.name : null))
 const t = useT()
+
+// Team messages and help alerts, for whoever is signed in: one subscription
+// for every staff screen, so an alert reaches a colleague wherever they are.
+// Left behind on leaving the staff side (signing out, the reception kiosk), so
+// the next person on the phone does not inherit it.
+const { start: startTeamChat, stop: stopTeamChat } = useStaffTeamChat()
+watch(
+  () => (context.value ? `${context.value.accountId}:${context.value.teamMemberId}` : ''),
+  () => startTeamChat(context.value ? { accountId: context.value.accountId, teamMemberId: context.value.teamMemberId } : null),
+  { immediate: true },
+)
+onBeforeUnmount(stopTeamChat)
 const initials = computed(() => (context.value?.fullName ?? '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join(''))
 </script>
 
@@ -57,6 +69,8 @@ const initials = computed(() => (context.value?.fullName ?? '').split(/\s+/).fil
         <span class="min-w-0 flex-1">{{ t('Could not reach the clinic. Trying again…', 'No se ha podido conectar con la clínica. Reintentando…') }}</span>
         <button type="button" class="h-9 shrink-0 rounded-ctl px-2 font-semibold" @click="retry">{{ t('Retry', 'Reintentar') }}</button>
       </div>
+      <!-- A colleague needs help: above every staff screen until answered. -->
+      <StaffAlertBanner />
       <div class="min-h-0 min-w-0 flex-1">
         <slot />
       </div>

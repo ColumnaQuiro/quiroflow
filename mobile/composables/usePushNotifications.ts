@@ -37,7 +37,8 @@ let listenersAttached = false
 
 // Where a tapped notification goes. Staff pushes (server/utils/staffPush.ts)
 // carry { type: 'appointment', appointmentId }, { type: 'my_day' }, { type: 'weekly_digest' } or
-// { type: 'patient', patientId, target? } (pushPatientAction); Inbox
+// { type: 'patient', patientId, target? } (pushPatientAction), team
+// messages and help alerts { type: 'team', url }; Inbox
 // pushes { type, key } with the conversation key. A patient's own pushes
 // (sendPushToPatients) carry appointment_<purpose> with the appointment id,
 // patient_app_message with no key (the clinic replied), or
@@ -57,6 +58,14 @@ function routeTap(data: Record<string, string> | undefined) {
   // A new exercise from the clinic, or the daily "¿Has hecho tus ejercicios hoy?".
   if (type === 'exercises') return navigateTo('/exercises')
   if (type === 'learn' && data?.sendId) return navigateTo(`/learn/${data.sendId}`)
+  // A colleague's message or a help alert (server/api/team-messages/send.post.ts):
+  // its url is the web's /team-chat?thread=…, which is this app's path too.
+  // Only the thread is taken from it, so a push can never send the app
+  // anywhere but the Team screen.
+  if (type === 'team') {
+    const thread = new URLSearchParams((data?.url ?? '').split('?')[1] ?? '').get('thread')
+    return navigateTo(thread ? { path: '/team-chat', query: { thread } } : '/team-chat')
+  }
   if (!data?.key) return
   pendingConversationKey.value = data.key
   return navigateTo('/inbox')

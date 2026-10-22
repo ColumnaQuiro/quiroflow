@@ -421,6 +421,27 @@ async function recallState(opts: { patientId: string }) {
   const row = unwrap(await admin.from('patients').select('recall_status, recall_dismissed_at, recall_snoozed_until, recall_priority').eq('id', opts.patientId).single())
   return row as { recall_status: string; recall_dismissed_at: string | null; recall_snoozed_until: string | null; recall_priority: boolean }
 }
+// Who a recall is assigned to by hand (recall_assignments), or null.
+async function recallAssignment(opts: { patientId: string }) {
+  const { data } = await admin.from('recall_assignments').select('team_member_id, assigned_by, assigned_at').eq('patient_id', opts.patientId).maybeSingle()
+  return data ?? null
+}
+async function setRecallAssignment(opts: { accountId: string; patientId: string; teamMemberId: string | null; assignedAt?: string }) {
+  assertOk(
+    await admin
+      .from('recall_assignments')
+      .upsert({ account_id: opts.accountId, patient_id: opts.patientId, team_member_id: opts.teamMemberId, ...(opts.assignedAt ? { assigned_at: opts.assignedAt } : {}) }, { onConflict: 'patient_id' }),
+  )
+  return { ok: true }
+}
+async function accountRecallAssignee(opts: { accountId: string }) {
+  return unwrap(await admin.from('accounts').select('recall_assignee_default, recall_assignee_member_id').eq('id', opts.accountId).single())
+}
+// Settings > Recalls: who a recall nobody has assigned goes to.
+async function setRecallAssigneeDefault(opts: { accountId: string; mode: 'practitioner' | 'nobody' | 'member'; memberId?: string | null }) {
+  assertOk(await admin.from('accounts').update({ recall_assignee_default: opts.mode, recall_assignee_member_id: opts.memberId ?? null }).eq('id', opts.accountId))
+  return { ok: true }
+}
 
 /**
  * A clinic's worth of patients in a handful of inserts, for the specs that need
@@ -4353,6 +4374,10 @@ export const dbTasks = {
   'db:addClinic': addClinic,
   'db:linkTeamMemberToClinic': linkTeamMemberToClinic,
   'db:recallState': recallState,
+  'db:recallAssignment': recallAssignment,
+  'db:setRecallAssignment': setRecallAssignment,
+  'db:accountRecallAssignee': accountRecallAssignee,
+  'db:setRecallAssigneeDefault': setRecallAssigneeDefault,
   'db:teamMemberById': teamMemberById,
   'db:teamMemberDetail': teamMemberDetail,
   'db:createImportedAppointments': createImportedAppointments,

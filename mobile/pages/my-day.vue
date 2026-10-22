@@ -541,6 +541,7 @@ function initialsOf(a: Appointment) {
   <div class="flex h-full min-h-0 flex-col bg-surface-page">
     <AppPageHeader :title="t('My Day', 'Mi día')">
       <span class="text-[12.5px] text-ink-muted" data-test="myday-date">{{ dateLabel }}</span>
+      <StaffHelpButton v-if="context" />
       <button type="button" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl border" :class="privacy ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted'" role="switch" :aria-checked="privacy" :aria-label="t('Privacy mode: names as initials', 'Modo privacidad: nombres como iniciales')" data-cy="myday-privacy" @click="togglePrivacy">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path v-if="!privacy" d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" /><circle v-if="!privacy" cx="12" cy="12" r="3" /><path v-if="privacy" d="M3 3l18 18M10.6 5.1A10.4 10.4 0 0112 5c6.5 0 10 7 10 7a17.6 17.6 0 01-3.1 4M6.6 6.6C3.9 8.3 2 12 2 12s3.5 7 10 7a9.7 9.7 0 005.4-1.6M9.9 9.9a3 3 0 004.2 4.2" /></svg>
       </button>

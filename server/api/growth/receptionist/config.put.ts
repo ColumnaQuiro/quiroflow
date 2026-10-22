@@ -24,6 +24,7 @@ interface Body {
   answerDuringHours?: unknown
   noReplyPhrases?: unknown
   monthlyReplyLimit?: unknown
+  reactivationAppointmentTypeId?: unknown
 }
 
 const TONES = ['warm_brief', 'clinical', 'chatty', 'formal']
@@ -89,6 +90,17 @@ export default defineEventHandler(async (event) => {
     const checked = checkBookableIds(body.bookableAppointmentTypeIds, types ?? [])
     if ('error' in checked) throw createError({ statusCode: 400, statusMessage: checked.error })
     patch.bookable_appointment_type_ids = checked.ids
+  }
+  // null clears it. One of the account's own active types, or refused.
+  if (body.reactivationAppointmentTypeId !== undefined) {
+    if (body.reactivationAppointmentTypeId === null) patch.reactivation_appointment_type_id = null
+    else {
+      const id = body.reactivationAppointmentTypeId
+      const { data: types, error: typesError } = await readAccountTypes(supabase, teamMember.account_id)
+      if (typesError) throw createError({ statusCode: 500, statusMessage: typesError.message })
+      if (typeof id !== 'string' || !(types ?? []).some((type) => type.id === id && !type.archived_at)) throw createError({ statusCode: 400, statusMessage: 'Unknown appointment type for reactivation' })
+      patch.reactivation_appointment_type_id = id
+    }
   }
   if (body.afterHours !== undefined) patch.after_hours = Boolean(body.afterHours)
   if (body.missedCallTextBack !== undefined) patch.missed_call_text_back = Boolean(body.missedCallTextBack)

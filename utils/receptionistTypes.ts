@@ -144,9 +144,44 @@ export function minorsSection(opts: { forNewChild: PromptType[]; forReturningChi
     `# Appointments for their children\nThe person writing may want an appointment for their son or daughter rather than for themselves. The child is then the patient, and the person writing is the child's tutor (legal guardian), who gets the confirmation and the reminders. Everything above about prices, types and first visits is about the person writing; for their child, use this section.`,
     `- If it is not clear who the appointment is for, ask. If it is for a child and you do not have them yet, ask the child's first name and surname and their age.`,
     `- Under ${MINOR_AGE}, for a child who has not been to the clinic yet, offer only: ${list(opts.forNewChild)}. For a child who has been: ${list(opts.forReturningChild)}. Their free times are under these names in the Booking list, or with find_free_times.`,
-    `- ${MINOR_AGE} or over: an adult books their own appointment. Ask them to write to the clinic themselves${opts.sendsItself ? ', or call hand_over_to_colleague if the person writing needs it arranged for them' : ''}.`,
+    `- ${MINOR_AGE} or over: an adult, not a child -- see "Appointments for an adult in their family" if it is there; otherwise ask that person's first name and surname, offer times, and ${opts.sendsItself ? 'call hand_over_to_colleague with the name and the time they accepted' : 'say your colleague will confirm it'}. Never tell them that person has to write to the clinic themselves.`,
     opts.canBook ? `- To book it, call book_appointment with child_name and child_age as well: the visit is then in the child's name, with the person writing as their tutor. Moving or cancelling a child's visit is your colleague's: hand those over.` : '',
     children.length ? `Their children already on file with them as tutor:\n${children.join('\n')}` : '',
+  ].filter(Boolean).join('\n')
+}
+
+/** An adult in the family of the person writing, linked on their record. */
+export interface PromptRelative {
+  firstName: string
+  lastName: string | null
+  /** patient_relations.relation: what they are to the person writing. */
+  relation: string
+  hasBeenBefore: boolean
+}
+
+const RELATION_WORDS: Record<string, string> = { partner: 'partner', parent: 'parent', child: 'grown-up son or daughter', sibling: 'brother or sister', other: 'relative' }
+
+/**
+ * The prompt section on booking for an adult in the family of the person
+ * writing. A patient asked for a visit for her and her husband, and was told
+ * twice that he "tiene que escribirnos él directamente" -- although he was a
+ * patient too, and a colleague was arranging both visits in his own thread.
+ *
+ * Only people linked to them as family on the clinic's records are booked
+ * for (loadFamilyAdults); anyone else named is handed over, and nothing is
+ * said about whether that person is a patient at all.
+ */
+export function familySection(opts: { forNew: PromptType[]; forReturning: PromptType[]; members: PromptRelative[]; canBook: boolean; sendsItself: boolean }): string {
+  const list = (types: PromptType[]) => (types.length ? types.map((type) => `"${type.name}"`).join(', ') : 'none -- your colleague arranges it')
+  const members = opts.members.map((m) => `- ${[m.firstName, m.lastName].filter(Boolean).join(' ')}, their ${RELATION_WORDS[m.relation] ?? 'relative'}${m.hasBeenBefore ? ' (has been to the clinic)' : ' (has not been yet)'}`)
+  const handOver = opts.sendsItself ? 'call hand_over_to_colleague with that person\'s full name and the day and time they accepted, and tell them your colleague will confirm it' : 'say your colleague will confirm it'
+  return [
+    `# Appointments for an adult in their family\nThey may want an appointment for their partner or another adult in their family, as well as or instead of one for themselves. That person is then the patient: the visit is in their name and they get the confirmation themselves.`,
+    members.length
+      ? `Their family on the clinic's records:\n${members.join('\n')}\n\nFor one of these, offer times as for any patient: someone who has been, the same type as they usually have (${list(opts.forReturning)}); someone who has not, ${list(opts.forNew)}. When they want both visits together, offer times next to each other.${opts.canBook ? ' To book it, call book_appointment with family_member_name as well. It checks the time with that person\'s own practitioner; if it is not free, offer one of the times it gives instead. Moving or cancelling their visits is your colleague\'s: hand those over.' : ''}`
+      : '',
+    `For anyone else -- someone not listed above -- ask their first name and surname, offer times, and ${handOver}. Never tell them that person has to write to the clinic themselves.`,
+    `Never tell them anything about that person's visits, history, package or payments, and never say whether someone not listed above is a patient of the clinic.`,
   ].filter(Boolean).join('\n')
 }
 

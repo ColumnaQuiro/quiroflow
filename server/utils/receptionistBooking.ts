@@ -3,7 +3,7 @@ import type { H3Event } from 'h3'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
 import { randomUUID } from 'node:crypto'
-import { loadReceptionistCalendar, type BookedAppointment, type OfferedType, type ReceptionistConfig, type TutorChild } from '~/server/utils/receptionist'
+import { loadReceptionistCalendar, type BookedAppointment, type FamilyAdult, type OfferedType, type ReceptionistConfig, type TutorChild } from '~/server/utils/receptionist'
 import { claimConvertedLead, createPatientFromLead, findLikelyExistingPatients } from '~/server/utils/leadConversion'
 import { resolveWindow, saveAppointmentIfFree } from '~/server/utils/publicApiAppointments'
 import { automationEvent } from '~/server/utils/automationEngine'
@@ -69,6 +69,7 @@ export const BOOK_APPOINTMENT: Anthropic.Tool = {
       email: { type: 'string', description: 'For someone not yet a patient: the email address they wrote in the conversation. Leave out if they have not given one.' },
       child_name: { type: 'string', description: 'When the visit is for their child, not for them: the child\'s first name and surname(s) exactly as given. The visit is then booked in the child\'s name, with the person writing as tutor.' },
       child_age: { type: 'number', description: 'With child_name: the child\'s age in years, as they said it.' },
+      family_member_name: { type: 'string', description: 'When the visit is for an adult in their family listed under "Appointments for an adult in their family", not for them: that person\'s first name (and surname, if given). The visit is then booked in that person\'s name.' },
     },
     required: ['date', 'time'],
     additionalProperties: false,
@@ -128,6 +129,12 @@ export interface BookingContext {
    * Absent: book_appointment refuses child_name.
    */
   minors?: { forNewChild: OfferedType[]; forReturningChild: OfferedType[]; children: TutorChild[] }
+  /**
+   * Booking for an adult linked to the person writing as family
+   * (loadFamilyAdults): what a new and a returning one may have, and who
+   * they are. Absent: book_appointment refuses family_member_name.
+   */
+  family?: { forNew: OfferedType[]; forReturning: OfferedType[]; members: FamilyAdult[] }
 }
 
 type ToolResult = { content: string; isError: boolean }
@@ -140,7 +147,7 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
   let used = false
   return async (input) => {
     if (used) return { content: 'You have already booked or moved a visit in this reply. Do not book again: tell them what was booked.', isError: true }
-    const value = (input ?? {}) as { appointment_type?: unknown; date?: unknown; time?: unknown; move_visit_on?: unknown; full_name?: unknown; email?: unknown; child_name?: unknown; child_age?: unknown }
+    const value = (input ?? {}) as { appointment_type?: unknown; date?: unknown; time?: unknown; move_visit_on?: unknown; full_name?: unknown; email?: unknown; child_name?: unknown; child_age?: unknown; family_member_name?: unknown }
     const date = typeof value.date === 'string' ? value.date.trim() : ''
     const time = typeof value.time === 'string' ? value.time.trim() : ''
     if (!DAY.test(date) || !HH_MM.test(time)) return { content: 'date must be YYYY-MM-DD and time HH:MM, exactly as listed.', isError: true }
@@ -158,10 +165,24 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
       if (typeof value.move_visit_on === 'string' && value.move_visit_on.trim()) return { content: "Moving a child's visit is your colleague's. Call hand_over_to_colleague saying which visit and the new time they want.", isError: true }
       const age = typeof value.child_age === 'number' ? value.child_age : Number(value.child_age)
       if (!Number.isFinite(age) || age < 0) return { content: "Ask the child's age first, then book with child_age.", isError: true }
-      if (age >= MINOR_AGE) return { content: `At ${age} they are an adult and book their own appointment. Ask them to write to the clinic themselves; do not book it.`, isError: true }
+      if (age >= MINOR_AGE) return { content: `At ${age} they are an adult, not a child. If they are listed as family, book with family_member_name instead; otherwise call hand_over_to_colleague with their full name and the day and time accepted. Do not tell them that person has to write to the clinic.`, isError: true }
       const existing = matchChild(ctx.minors.children, childName)
       if (existing === 'ambiguous') return { content: 'More than one of their children on file has that name. Ask the child\'s surname and book with the full name; if they already gave it, call hand_over_to_colleague.', isError: true }
       child = { existing, name: childName }
+    }
+
+    // For an adult in their family (loadFamilyAdults): only someone linked to
+    // them on the clinic's records. Anyone else is a person's to arrange, and
+    // the answer does not say whether that name is a patient at all.
+    const relativeName = typeof value.family_member_name === 'string' ? value.family_member_name.replace(/\s+/g, ' ').trim().slice(0, 120) : ''
+    let relative: FamilyAdult | null = null
+    if (relativeName) {
+      if (child) return { content: 'Give child_name or family_member_name, not both.', isError: true }
+      if (typeof value.move_visit_on === 'string' && value.move_visit_on.trim()) return { content: "Moving a family member's visit is your colleague's. Call hand_over_to_colleague saying whose visit and the new time they want.", isError: true }
+      const hit = ctx.family ? matchChild(ctx.family.members, relativeName) : null
+      if (hit === 'ambiguous') return { content: 'More than one person in their family has that first name. Ask the surname and book with the full name; if they already gave it, call hand_over_to_colleague.', isError: true }
+      if (!hit) return { content: "You cannot book for that person. Call hand_over_to_colleague with their full name and the day and time accepted, and tell them your colleague will confirm it. Do not say whether that person is a patient, and do not tell them that person has to write to the clinic.", isError: true }
+      relative = hit
     }
 
     // What is being booked: a move keeps the visit's type and is found by
@@ -169,7 +190,12 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
     // -- or, for their child, one the child may have.
     let moving: BookedAppointment | null = null
     let type: OfferedType | undefined
-    if (child) {
+    if (relative) {
+      const allowed = relative.hasBeenBefore ? ctx.family!.forReturning : ctx.family!.forNew
+      const name = typeof value.appointment_type === 'string' ? value.appointment_type.trim().toLowerCase() : ''
+      type = allowed.find((t) => t.name.toLowerCase() === name) ?? (!name && allowed.length === 1 ? allowed[0] : undefined)
+      if (!type) return { content: `For ${relative.firstName}, say which type, exactly as named: ${allowed.map((t) => t.name).join(', ') || 'none can be booked by you; call hand_over_to_colleague'}.`, isError: true }
+    } else if (child) {
       const allowed = child.existing?.hasBeenBefore ? ctx.minors!.forReturningChild : ctx.minors!.forNewChild
       const name = typeof value.appointment_type === 'string' ? value.appointment_type.trim().toLowerCase() : ''
       type = allowed.find((t) => t.name.toLowerCase() === name) ?? (!name && allowed.length === 1 ? allowed[0] : undefined)
@@ -197,7 +223,9 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
     // then the patient's own, then anyone the list was built from.
     const dayStart = startOfLocalDate(date, ctx.timeZone)
     let chosen: { practitionerId: string; clinicId: string } | null = null
-    for (const practitionerId of await candidatePractitioners(ctx, moving)) {
+    // A relative's times are with their own practitioner, not the writer's.
+    const own = relative ? relative.practitionerIds : ctx.practitionerIds
+    for (const practitionerId of await candidatePractitioners(ctx, moving, own)) {
       const calendar = await loadReceptionistCalendar(ctx.service, ctx.accountId, ctx.config, [type], new Date(), { from: dayStart, days: 1, maxTimesPerList: 1000 }, [practitionerId])
       const group = calendar.availability?.groups.find((g) => g.days.some((d) => d.date === date && d.times.includes(time)))
       if (group) {
@@ -206,7 +234,7 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
       }
     }
     if (!chosen) {
-      const day = await loadReceptionistCalendar(ctx.service, ctx.accountId, ctx.config, [type], new Date(), { from: dayStart, days: 1 }, ctx.practitionerIds)
+      const day = await loadReceptionistCalendar(ctx.service, ctx.accountId, ctx.config, [type], new Date(), { from: dayStart, days: 1 }, own)
       const free = [...new Set(day.availability?.groups.flatMap((g) => g.days.filter((d) => d.date === date).flatMap((d) => d.times)) ?? [])].sort()
       return {
         content: `${time} on ${date} is not free for ${type.name}. ${free.length ? `Free that day: ${free.join(', ')}.` : 'Nothing is free that day.'} Offer one of those or another day; do not say it is booked.`,
@@ -218,7 +246,8 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
 
     // The patient: a lead becomes one first, as the Convert button does it.
     // For a child, that person is the tutor and the child is the patient.
-    const tutor = await ensurePatient(ctx, writer, chosen.practitionerId, newPatientDetails(value.full_name, value.email))
+    // A relative already has a record of their own: nothing to make.
+    const tutor = relative ? { patientId: relative.id } : await ensurePatient(ctx, writer, chosen.practitionerId, newPatientDetails(value.full_name, value.email))
     if ('error' in tutor) return { content: tutor.error, isError: true }
     let patient = tutor
     if (child) {
@@ -261,7 +290,9 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
 
     const when = new Date(window.startsAt).toLocaleString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: ctx.timeZone })
     const was = moving ? new Date(moving.startsAt).toLocaleString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: ctx.timeZone }) : null
-    const forChild = child ? ` para ${child.existing ? [child.existing.firstName, child.existing.lastName].filter(Boolean).join(' ') : child.name}${child.existing ? '' : ' (ficha nueva, menor, con quien escribe como tutor)'}` : ''
+    const forChild = child
+      ? ` para ${child.existing ? [child.existing.firstName, child.existing.lastName].filter(Boolean).join(' ') : child.name}${child.existing ? '' : ' (ficha nueva, menor, con quien escribe como tutor)'}`
+      : relative ? ` para ${[relative.firstName, relative.lastName].filter(Boolean).join(' ')} (familiar en su ficha)` : ''
     const summary = moving
       ? `He movido su ${type.name} del ${was} al ${when}${practitionerName ? ` con ${practitionerName}` : ''}.`
       : `He reservado ${type.name}${forChild} el ${when}${practitionerName ? ` con ${practitionerName}` : ''}.`
@@ -288,13 +319,13 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
     // them they now had two in a row.
     // (Their own visits, not a child's: the child's are not in this list.)
     const near = ctx.booked.appointments
-      .filter((a) => !child && a.id !== moving?.id && Math.abs(new Date(a.startsAt).getTime() - start.getTime()) < 2 * DAY_MS)
+      .filter((a) => !child && !relative && a.id !== moving?.id && Math.abs(new Date(a.startsAt).getTime() - start.getTime()) < 2 * DAY_MS)
       .map((a) => new Date(a.startsAt).toLocaleString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: ctx.timeZone }))
     // Someone coming for the first time is told where to go.
     const address = moving ? null : await firstVisitAddress(ctx.service, patient.patientId, chosen.clinicId)
     return {
       content: [
-        `${moving ? 'Moved' : 'Booked'}: ${type.name}${child ? ` for ${child.name}, in the child's name with them as tutor` : ''}, ${whenEn}${practitionerName ? `, with ${practitionerName}` : ''}. ${moving ? 'Their old time is free again.' : `They will also get the clinic's usual confirmation${child ? ', as the tutor' : ''}.`} Tell them, with the day and time in words.`,
+        `${moving ? 'Moved' : 'Booked'}: ${type.name}${child ? ` for ${child.name}, in the child's name with them as tutor` : relative ? ` for ${relative.firstName}, in their own name` : ''}, ${whenEn}${practitionerName ? `, with ${practitionerName}` : ''}. ${moving ? 'Their old time is free again.' : relative ? `${relative.firstName} will get the clinic's usual confirmation themselves.` : `They will also get the clinic's usual confirmation${child ? ', as the tutor' : ''}.`} Tell them, with the day and time in words.`,
         near.length ? `They also have ${near.length === 1 ? 'a visit' : 'visits'} on ${near.join(' and ')}: mention ${near.length === 1 ? 'it' : 'them'}, and ask whether they want to keep ${near.length === 1 ? 'it' : 'them'}.` : '',
         address ? `It is their first visit: give them the clinic's address, ${address}.` : '',
       ].filter(Boolean).join(' '),
@@ -481,9 +512,9 @@ function localStamp(iso: string, timeZone: string): string {
   return `${clinicDateOf(at, timeZone)} ${hm}`
 }
 
-async function candidatePractitioners(ctx: BookingContext, moving: BookedAppointment | null): Promise<string[]> {
-  const preferred = [moving?.practitionerId, ...(ctx.practitionerIds ?? [])].filter((id): id is string => Boolean(id))
-  if (ctx.practitionerIds) return [...new Set(preferred)]
+async function candidatePractitioners(ctx: BookingContext, moving: BookedAppointment | null, own: string[] | null = ctx.practitionerIds): Promise<string[]> {
+  const preferred = [moving?.practitionerId, ...(own ?? [])].filter((id): id is string => Boolean(id))
+  if (own) return [...new Set(preferred)]
   const { data } = await ctx.service
     .from('team_members')
     .select('id')

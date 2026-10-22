@@ -24,13 +24,13 @@ export async function loadFacturaDocumentData(
   const { data: factura } = await supabase
     .from('facturas')
     .select(
-      'number, kind, description, amount_cents, tax_base_cents, tax_rate_bp, tax_amount_cents, tax_exemption_code, issued_at, account_id, patient_id, recipient_name, recipient_nif, recipient_address, rectifies_factura_id, issuer_name, issuer_legal_name, issuer_address, issuer_tax_id, issuer_footer_text, issuer_logo_storage_path, patients(first_name, last_name, email, address, city, postal_code, country, national_id)',
+      'number, kind, description, amount_cents, tax_base_cents, tax_rate_bp, tax_amount_cents, tax_exemption_code, issued_at, account_id, patient_id, recipient_patient_id, recipient_name, recipient_nif, recipient_address, rectifies_factura_id, issuer_name, issuer_legal_name, issuer_address, issuer_tax_id, issuer_footer_text, issuer_logo_storage_path, patients(first_name, last_name, email, address, city, postal_code, country, national_id)',
     )
     .eq('id', facturaId)
     .maybeSingle()
   if (!factura) return null
 
-  const patient = factura.patients as unknown as {
+  type Recipient = {
     first_name: string
     last_name: string | null
     email: string | null
@@ -39,7 +39,20 @@ export async function loadFacturaDocumentData(
     postal_code: string | null
     country: string | null
     national_id: string | null
-  } | null
+  }
+  // Addressed to someone else -- a minor's tutor, recipient_patient_id
+  // (20261021173018) -- the document is theirs: their name, address and NIF,
+  // read live as the patient's are. Not embedded: that column is not a
+  // foreign key, on purpose (see the migration).
+  let patient = factura.patients as unknown as Recipient | null
+  if (factura.recipient_patient_id) {
+    const { data: addressee } = await supabase
+      .from('patients')
+      .select('first_name, last_name, email, address, city, postal_code, country, national_id')
+      .eq('id', factura.recipient_patient_id)
+      .maybeSingle()
+    if (addressee) patient = addressee
+  }
 
   // The issuer is printed from the snapshot taken when the factura was issued
   // (fill_factura_issuer, 20260924135318), never from the clinic as it is

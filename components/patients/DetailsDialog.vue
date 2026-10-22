@@ -219,6 +219,8 @@ const reminderHours = ref<number | null>(props.patient.appointment_reminder_hour
 const marketingChannels = ref<string[]>([...props.patient.marketing_channels])
 const status = ref(props.patient.status)
 const isMinor = ref(props.patient.is_minor)
+// Facturas in the tutor's name (fill_factura_recipient, 20261021173018).
+const billToTutor = ref(props.patient.bill_to_tutor)
 const doNotContact = ref(props.patient.do_not_contact)
 
 async function startEditing() {
@@ -245,6 +247,7 @@ async function startEditing() {
   marketingChannels.value = [...props.patient.marketing_channels]
   status.value = props.patient.status
   isMinor.value = props.patient.is_minor
+  billToTutor.value = props.patient.bill_to_tutor
   doNotContact.value = props.patient.do_not_contact
   selectedTutor.value = null
   tutorChanged.value = false
@@ -362,6 +365,7 @@ async function save() {
       marketing_channels: marketingChannels.value,
       status: status.value,
       is_minor: isMinor.value,
+      bill_to_tutor: isMinor.value && billToTutor.value,
       do_not_contact: doNotContact.value,
       ...links,
     })
@@ -509,6 +513,7 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
               {{ selectedTutor ? tutorName(selectedTutor) : t('View tutor', 'Ver tutor') }}
             </NuxtLink>
             <span v-else class="text-danger-text">{{ t('No tutor linked', 'Ningún tutor vinculado') }}</span>
+            <span v-if="patient.tutor_patient_id && patient.bill_to_tutor" class="block text-[12px] text-ink-muted" data-cy="patient-bills-tutor">{{ t('Facturas in their name', 'Facturas a su nombre') }}</span>
           </dd>
         </div>
         <div v-if="referredPatients.length > 0">
@@ -666,6 +671,13 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
                 </li>
               </ul>
             </div>
+            <label class="mt-2.5 flex items-start gap-1.5 text-[13px] text-ink-600">
+              <input v-model="billToTutor" type="checkbox" class="mt-0.5 rounded border-line-control text-brand focus:ring-brand" data-cy="patient-bill-to-tutor" />
+              <span>
+                {{ t('Facturas in the tutor’s name', 'Facturas a nombre del tutor') }}
+                <span class="block text-[11px] text-ink-muted2">{{ t('From now on: their name, address and NIF. Facturas already issued keep the patient’s.', 'A partir de ahora: su nombre, dirección y NIF. Las facturas ya emitidas siguen a nombre del paciente.') }}</span>
+              </span>
+            </label>
             <p class="mt-1 text-[11px] text-ink-muted2">{{ t('While marked under age, no WhatsApp or email communications will be sent to this patient.', 'Mientras esté marcado como menor de edad, no se enviarán comunicaciones por WhatsApp o correo electrónico a este paciente.') }}</p>
           </div>
           <label class="mt-3 flex items-center gap-1.5 text-[13px] text-ink-600">

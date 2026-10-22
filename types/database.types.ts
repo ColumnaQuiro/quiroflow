@@ -3359,6 +3359,7 @@ export type Database = {
           issuer_logo_storage_path: string | null
           issuer_name: string | null
           issuer_tax_id: string | null
+          recipient_patient_id: string | null
         }
         Insert: {
           account_id: string
@@ -3387,6 +3388,7 @@ export type Database = {
           issuer_logo_storage_path?: string | null
           issuer_name?: string | null
           issuer_tax_id?: string | null
+          recipient_patient_id?: string | null
         }
         Update: {
           account_id?: string
@@ -3415,6 +3417,7 @@ export type Database = {
           issuer_logo_storage_path?: string | null
           issuer_name?: string | null
           issuer_tax_id?: string | null
+          recipient_patient_id?: string | null
         }
         Relationships: [
           {
@@ -5324,6 +5327,7 @@ export type Database = {
           user_id: string | null
           yellow_flags: string | null
           invoice_reminders_paused: boolean
+          bill_to_tutor: boolean
         }
         Insert: {
           referral_code?: string | null
@@ -5384,6 +5388,7 @@ export type Database = {
           user_id?: string | null
           yellow_flags?: string | null
           invoice_reminders_paused?: boolean
+          bill_to_tutor?: boolean
         }
         Update: {
           referral_code?: string | null
@@ -5444,6 +5449,7 @@ export type Database = {
           user_id?: string | null
           yellow_flags?: string | null
           invoice_reminders_paused?: boolean
+          bill_to_tutor?: boolean
         }
         Relationships: [
           {

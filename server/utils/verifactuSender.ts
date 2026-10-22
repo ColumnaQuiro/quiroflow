@@ -569,7 +569,7 @@ async function buildRecordsFor(
   const facturaIds = (records ?? []).map((r) => r.factura_id)
   const { data: facturas } = await supabase
     .from('facturas')
-    .select('id, patient_id, description, tax_base_cents, tax_rate_bp, tax_amount_cents, tax_exemption_code, recipient_name, recipient_nif, rectifies_factura_id')
+    .select('id, patient_id, recipient_patient_id, description, tax_base_cents, tax_rate_bp, tax_amount_cents, tax_exemption_code, recipient_name, recipient_nif, rectifies_factura_id')
     .in('id', facturaIds)
 
   // The factura each rectificativa corrects, identified by its own RECORD
@@ -589,7 +589,10 @@ async function buildRecordsFor(
   // has not been delivered carries no frozen recipient -- the name resolves
   // from the patient at render time, and the record has to resolve it the
   // same way or it sends an empty NombreRazon and is refused.
-  const patientIds = [...new Set((facturas ?? []).map((f) => f.patient_id).filter(Boolean))]
+  // A factura addressed to a minor's tutor (recipient_patient_id) names the
+  // tutor, as its PDF does (facturaData.ts).
+  const addresseeOf = (f: { patient_id: string; recipient_patient_id?: string | null }) => f.recipient_patient_id ?? f.patient_id
+  const patientIds = [...new Set((facturas ?? []).map(addresseeOf).filter(Boolean))]
   const { data: patients } = patientIds.length
     ? await supabase.from('patients').select('id, first_name, last_name, national_id').in('id', patientIds)
     : { data: [] as { id: string; first_name: string; last_name: string | null; national_id: string | null }[] }
@@ -640,10 +643,10 @@ async function buildRecordsFor(
           recipientName: f.recipient_name,
           recipientNif: f.recipient_nif,
           patientName: (() => {
-            const p = (patients ?? []).find((x) => x.id === f.patient_id)
+            const p = (patients ?? []).find((x) => x.id === addresseeOf(f))
             return p ? [p.first_name, p.last_name].filter(Boolean).join(' ') : null
           })(),
-          patientNif: (patients ?? []).find((x) => x.id === f.patient_id)?.national_id ?? null,
+          patientNif: (patients ?? []).find((x) => x.id === addresseeOf(f))?.national_id ?? null,
         },
         rectifies: (() => {
           const o = (rectified ?? []).find((x) => x.factura_id === f.rectifies_factura_id)

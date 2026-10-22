@@ -89,4 +89,19 @@ describe("Booking a care plan's visits", () => {
       })
     })
   })
+
+  it('offers the same from the plan card on the record’s overview, counting what is booked', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Olga', lastName: 'Plan' }).then((patient) => {
+        cy.task('db:createCarePlan', { accountId: account.accountId, patientId: patient.id, totalVisits: 3, name: 'Plan lumbar' })
+        cy.task('db:createAppointment', { accountId: account.accountId, clinicId: account.clinicId, patientId: patient.id, practitionerId: account.teamMemberId, startsAt: nextWeekday(2, 10).toISOString() })
+
+        cy.login(account.email, account.password)
+        cy.visit(`/patients/${patient.id}`)
+        cy.get('[data-cy=overview-plan-book]', { timeout: 20000 }).should('have.text', 'Book the 2 visits left').click()
+        cy.location('search').should('include', `patient=${patient.id}`).and('include', 'repeat=plan')
+        cy.get('[data-cy=booking-for]').should('contain.text', 'Olga Plan')
+      })
+    })
+  })
 })

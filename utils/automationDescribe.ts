@@ -19,6 +19,7 @@ import {
   type Translate,
 } from './automationCatalog'
 import type { DraftRule, DraftStep } from './automationTree'
+import { DEFAULT_CLINIC_TIMEZONE } from './clinicClock'
 
 export interface NameLookup {
   appointmentTypes: { id: string; name: string }[]
@@ -185,12 +186,23 @@ export function outletLabel(t: Translate, parent: DraftStep | undefined, branch:
   return minutes > 0 ? `${prefix} ${durationText(t, minutes)}` : prefix
 }
 
+/**
+ * When a one-off group send is scheduled for ("24 nov, 10:00"), on the
+ * clinic's clock -- the time the builder took it in (TriggerPanel).
+ */
+export function scheduledSendLabel(startsAt: string, t: Translate, timeZone = DEFAULT_CLINIC_TIMEZONE): string {
+  const at = new Date(startsAt)
+  const date = at.toLocaleDateString(t('en-GB', 'es-ES'), { timeZone, day: 'numeric', month: 'short' })
+  const time = at.toLocaleTimeString('es-ES', { timeZone, hour: '2-digit', minute: '2-digit' })
+  return `${date}, ${time}`
+}
+
 /** The trigger node's second line: its filters, or its schedule for a segment. */
 export function triggerDetail(t: Translate, rule: DraftRule, lookup: NameLookup): string {
   if (rule.trigger_event === 'segment') {
     const s = rule.segment?.schedule
     if (!s) return ''
-    if (s.kind === 'once') return t('Once', 'Una vez')
+    if (s.kind === 'once') return s.starts_at && new Date(s.starts_at).getTime() > Date.now() ? t(`Once, ${scheduledSendLabel(s.starts_at, t)}`, `Una vez, ${scheduledSendLabel(s.starts_at, t)}`) : t('Once', 'Una vez')
     if (s.kind === 'daily') return t(`Every day at ${s.time ?? '09:00'}`, `Cada día a las ${s.time ?? '09:00'}`)
     return t(`Every ${weekdayName(t, s.weekday ?? 1)} at ${s.time ?? '09:00'}`, `Cada ${weekdayName(t, s.weekday ?? 1)} a las ${s.time ?? '09:00'}`)
   }

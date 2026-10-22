@@ -2034,7 +2034,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
         @mark-handled="onPatientMarkHandled"
       />
 
-      <div ref="messagesEl" class="flex-1 space-y-2.5 overflow-y-auto px-3 py-3">
+      <div ref="messagesEl" class="flex-1 space-y-2.5 overflow-y-auto overflow-x-hidden px-3 py-3">
         <div v-if="!threadReady" class="flex flex-col gap-2.5" data-cy="thread-loading">
           <div class="h-10 w-2/5 animate-pulse self-start rounded-card bg-surface-subtle" />
           <div class="h-14 w-3/5 animate-pulse self-start rounded-card bg-surface-subtle" />
@@ -2055,7 +2055,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
         </p>
         <div v-else class="flex" :class="[m.direction === 'outbound' ? 'justify-end' : 'justify-start', m.contact_reaction && 'pb-3.5']">
           <div
-            class="relative max-w-[80%] rounded-card px-[8px] py-[6px] shadow-card"
+            class="relative min-w-0 max-w-[80%] rounded-card px-[8px] py-[6px] shadow-card [overflow-wrap:anywhere]"
             :class="[
               m.direction === 'outbound' ? 'bg-brand text-white' : 'border border-line bg-surface text-ink-900',
               m.status === 'failed' && 'cursor-pointer',
@@ -2084,7 +2084,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
                 <path d="M4 1.5h5.5L12.5 4.5V14.5H4z" stroke-linejoin="round" />
                 <path d="M9.5 1.5V4.5H12.5" stroke-linejoin="round" />
               </svg>
-              {{ m.media_filename ?? t('Document', 'Documento') }}
+              <span class="min-w-0">{{ m.media_filename ?? t('Document', 'Documento') }}</span>
             </a>
             <img
               v-else-if="m.media_type === 'sticker' && m.media_storage_path && mediaUrls[m.media_storage_path]"
@@ -2294,8 +2294,8 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
 
     <!-- The filters behind the Filters button: who it is assigned to, who is
          writing, the narrower ones, labels, and the snoozed and archived. -->
-    <div v-if="filtersOpen" class="absolute inset-0 z-40 flex items-end bg-black/30 md:items-center md:justify-center" data-cy="inbox-filters-sheet" @click.self="filtersOpen = false">
-      <div role="dialog" aria-modal="true" :aria-label="t('Filters', 'Filtros')" class="flex max-h-[88%] w-full flex-col gap-4 overflow-y-auto rounded-t-[22px] bg-surface px-4 pt-2.5 shadow-popover md:max-w-[440px] md:rounded-[18px] md:pt-5" style="padding-bottom: max(env(safe-area-inset-bottom), 1.25rem)">
+    <div v-if="filtersOpen" class="absolute inset-0 z-40 flex flex-col justify-end bg-black/30 md:items-center md:justify-center" data-cy="inbox-filters-sheet" @click.self="filtersOpen = false">
+      <div v-sheet-drag="() => (filtersOpen = false)" role="dialog" aria-modal="true" :aria-label="t('Filters', 'Filtros')" class="flex max-h-[88%] w-full flex-col gap-4 overflow-y-auto rounded-t-[22px] bg-surface px-4 pt-2.5 shadow-popover md:max-w-[440px] md:rounded-[18px] md:pt-5" style="padding-bottom: max(env(safe-area-inset-bottom), 1.25rem)">
         <div class="mx-auto h-1 w-[38px] shrink-0 rounded-full bg-line-control md:hidden" />
         <div class="flex items-center justify-between">
           <p class="text-[17px] font-semibold text-ink-900">{{ t('Filters', 'Filtros') }}</p>
@@ -2366,8 +2366,8 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
     </div>
 
     <!-- Assign the open conversation -->
-    <div v-if="assignOpen && selected" class="absolute inset-0 z-40 flex items-end bg-black/30 md:items-center md:justify-center" data-cy="inbox-assign-sheet" @click.self="assignOpen = false">
-      <div class="flex max-h-[80%] w-full flex-col gap-1 overflow-y-auto rounded-t-[22px] bg-surface px-4 pt-3 shadow-popover md:max-w-[380px] md:rounded-[18px] md:pt-4" style="padding-bottom: max(env(safe-area-inset-bottom), 1rem)" role="dialog" aria-modal="true" :aria-label="t('Assign', 'Asignar')">
+    <div v-if="assignOpen && selected" class="absolute inset-0 z-40 flex flex-col justify-end bg-black/30 md:items-center md:justify-center" data-cy="inbox-assign-sheet" @click.self="assignOpen = false">
+      <div v-sheet-drag="() => (assignOpen = false)" class="flex max-h-[80%] w-full flex-col gap-1 overflow-y-auto rounded-t-[22px] bg-surface px-4 pt-3 shadow-popover md:max-w-[380px] md:rounded-[18px] md:pt-4" style="padding-bottom: max(env(safe-area-inset-bottom), 1rem)" role="dialog" aria-modal="true" :aria-label="t('Assign', 'Asignar')">
         <p class="px-1 pb-1 text-[16px] font-semibold text-ink-900">{{ t('Assign to', 'Asignar a') }}</p>
         <button
           v-for="m in [{ id: '', full_name: t('Nobody (unassigned)', 'Nadie (sin asignar)') }, ...teamNames]"

@@ -47,7 +47,7 @@ function answer(f: DocField): string {
 
 <template>
   <div class="fixed inset-0 z-50 flex flex-col justify-end bg-black/40 md:items-center md:justify-center" data-cy="doc-view-sheet" @click.self="emit('close')">
-    <div class="flex max-h-[92%] w-full flex-col overflow-hidden rounded-t-[22px] bg-surface shadow-popover md:max-w-[640px] md:rounded-[18px]" role="dialog" aria-modal="true" :aria-label="title || t('Form', 'Formulario')">
+    <div v-sheet-drag="() => emit('close')" class="flex max-h-[92%] w-full flex-col overflow-hidden rounded-t-[22px] bg-surface shadow-popover md:max-w-[640px] md:rounded-[18px]" role="dialog" aria-modal="true" :aria-label="title || t('Form', 'Formulario')">
       <div class="flex shrink-0 items-start justify-between gap-3 border-b border-line px-4 pb-3 pt-3.5">
         <div class="min-w-0">
           <p class="truncate text-[17px] font-semibold text-ink-900">{{ title || t('Form', 'Formulario') }}</p>

@@ -2429,7 +2429,7 @@ function avatarInitials(name: string) {
         />
 
         <div class="relative min-h-0 flex-1">
-          <div ref="threadScrollEl" class="h-full space-y-3 overflow-y-auto px-4 py-4" @scroll="onThreadScroll">
+          <div ref="threadScrollEl" class="h-full space-y-3 overflow-y-auto overflow-x-hidden px-4 py-4" @scroll="onThreadScroll">
           <!-- Nothing of this conversation's to show yet: a placeholder, never
                the previous conversation's messages. -->
           <div v-if="!threadReady && thread.length === 0 && !threadError" data-cy="thread-loading" class="flex flex-col gap-3" aria-busy="true">
@@ -2458,7 +2458,7 @@ function avatarInitials(name: string) {
             <div v-else class="flex" :class="[m.direction === 'outbound' ? 'justify-end' : 'justify-start', m.contact_reaction && 'pb-3.5']">
               <div
                 data-cy="thread-message"
-                class="relative max-w-[70%] rounded-card px-[8px] py-[6px] shadow-card"
+                class="relative min-w-0 max-w-[70%] rounded-card px-[8px] py-[6px] shadow-card [overflow-wrap:anywhere]"
                 :class="[
                   m.direction === 'outbound' ? 'bg-brand text-white' : 'border border-line bg-surface text-ink-900',
                   m.status === 'failed' && 'cursor-pointer',
@@ -2487,7 +2487,7 @@ function avatarInitials(name: string) {
                     <path d="M4 1.5h5.5L12.5 4.5V14.5H4z" stroke-linejoin="round" />
                     <path d="M9.5 1.5V4.5H12.5" stroke-linejoin="round" />
                   </svg>
-                  {{ m.media_filename ?? t('Document', 'Documento') }}
+                  <span class="min-w-0">{{ m.media_filename ?? t('Document', 'Documento') }}</span>
                 </a>
                 <img
                   v-else-if="m.media_type === 'sticker' && m.media_storage_path && mediaUrls[m.media_storage_path]"

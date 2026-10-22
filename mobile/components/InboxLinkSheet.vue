@@ -111,7 +111,7 @@ const field = 'h-11 rounded-ctl border border-line-control bg-surface px-3 text-
 
 <template>
   <div class="fixed inset-0 z-50 flex flex-col justify-end bg-black/40 md:items-center md:justify-center" data-cy="inbox-link-sheet" @click.self="emit('close')">
-    <div class="flex max-h-[92%] w-full flex-col gap-3 overflow-y-auto rounded-t-[22px] bg-surface px-4 pt-2.5 shadow-popover md:max-w-[440px] md:rounded-[18px] md:pt-5" style="padding-bottom: max(env(safe-area-inset-bottom), 1.25rem)" role="dialog" aria-modal="true" :aria-label="t('Link to a patient', 'Vincular a un paciente')">
+    <div v-sheet-drag="() => emit('close')" class="flex max-h-[92%] w-full flex-col gap-3 overflow-y-auto rounded-t-[22px] bg-surface px-4 pt-2.5 shadow-popover md:max-w-[440px] md:rounded-[18px] md:pt-5" style="padding-bottom: max(env(safe-area-inset-bottom), 1.25rem)" role="dialog" aria-modal="true" :aria-label="t('Link to a patient', 'Vincular a un paciente')">
       <div class="mx-auto mb-0.5 h-1 w-[38px] shrink-0 rounded-full bg-line-control md:hidden" />
       <div>
         <p class="text-[17px] font-semibold text-ink-900">{{ t('Link to a patient', 'Vincular a un paciente') }}</p>

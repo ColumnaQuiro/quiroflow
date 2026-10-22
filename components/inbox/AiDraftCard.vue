@@ -70,7 +70,7 @@ function time(at: string) {
       :aria-label="t('Edit the draft', 'Editar el borrador')"
       data-test="ai-draft-textarea"
     />
-    <p v-else class="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-ctl border border-brand-tintBorder bg-surface px-3 py-2.5 text-[13px] leading-[1.5] text-ink-900" data-test="ai-draft-text" data-cy="reply-draft-text">
+    <p v-else class="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-ctl [overflow-wrap:anywhere] border border-brand-tintBorder bg-surface px-3 py-2.5 text-[13px] leading-[1.5] text-ink-900" data-test="ai-draft-text" data-cy="reply-draft-text">
       {{ draft }}
     </p>
 

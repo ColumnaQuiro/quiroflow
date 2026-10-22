@@ -42,7 +42,7 @@ const AREAS = computed(() => [
   { key: 'clinical', label: t('Clinical notes & files', 'Notas clínicas y archivos'), types: ['visit_note', 'patient_file', 'patient_doc'] },
   { key: 'patients', label: t('Patients', 'Pacientes'), types: ['patient'] },
   { key: 'appointments', label: t('Appointments', 'Citas'), types: ['appointment'] },
-  { key: 'money', label: t('Money', 'Cobros'), types: ['payment', 'invoice', 'account_credit', 'package_purchase', 'patient_membership', 'cash_shift', 'cash_movement'] },
+  { key: 'money', label: t('Money', 'Cobros'), types: ['payment', 'invoice', 'account_credit', 'package_purchase', 'patient_membership', 'cash_shift', 'cash_movement', 'third_party_charge', 'third_party_payment', 'third_party_allocation'] },
   { key: 'access', label: t('Team & access', 'Equipo y accesos'), types: ['team_member', 'team_member_clinic', 'role', 'invite', 'api_token', 'webhook'] },
   { key: 'settings', label: t('Clinic settings', 'Ajustes de la clínica'), types: ['account', 'clinic', 'verifactu_certificate', 'verifactu_delegation', 'appointment_type', 'package', 'membership', 'service'] },
 ])
@@ -144,6 +144,12 @@ const ENTITY_LABELS = computed<Record<string, string>>(() => ({
   membership: t('Membership template', 'Plantilla de membresía'),
   service: t('Service / product', 'Servicio / producto'),
   appointment_type: t('Appointment type', 'Tipo de cita'),
+  third_party: t('Third party', 'Tercero'),
+  third_party_rate: t('Third-party rate', 'Tarifa de tercero'),
+  patient_third_party: t('Patient cover', 'Cobertura del paciente'),
+  third_party_charge: t('Third-party charge', 'Cargo a tercero'),
+  third_party_payment: t('Third-party payment', 'Cobro de tercero'),
+  third_party_allocation: t('Third-party payment applied', 'Cobro de tercero aplicado'),
 }))
 
 function actionLabel(action: string) {

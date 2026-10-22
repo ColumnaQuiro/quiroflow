@@ -206,6 +206,7 @@ function formatDate(iso: string) {
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Billing', 'Facturación')" :meta="outstandingMeta">
       <UiBtn variant="secondary" @click="navigateTo('/settings/services')">{{ t('Services & products', 'Servicios y productos') }}</UiBtn>
+      <UiBtn variant="secondary" data-cy="billing-third-parties" @click="navigateTo('/billing/third-parties')">{{ t('Third parties', 'Terceros') }}</UiBtn>
       <UiBtn variant="primary" @click="navigateTo('/billing/new')">+ {{ t('Quick receipt', 'Recibo rápido') }}</UiBtn>
     </PageHeader>
 

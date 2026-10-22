@@ -55,6 +55,7 @@ const {
   removeLineItem,
   usePackageSession,
   recordPayment,
+  afterThirdPartyChange,
 } = useVisitCharging({
   appointmentId: () => props.appointmentId,
   patientId: () => props.patientId,
@@ -307,6 +308,18 @@ const chargeLabel = computed(() =>
       </p>
 
     </div>
+    <!-- An insurer, a medico-legal case or a company paying for some or all of
+    the visit. Its share never reaches the patient's receipt above. -->
+    <CalendarThirdPartyVisitCharge
+      v-if="!loadingInvoice"
+      :appointment-id="appointmentId"
+      :patient-id="patientId"
+      :visit-price-cents="visitPriceCents"
+      :invoice="invoice"
+      :has-payments="payments.length > 0"
+      :can-start="!appointmentIsUpcoming && !packageCoverage"
+      @changed="afterThirdPartyChange"
+    />
     <p v-if="error" class="text-danger-text">{{ error }}</p>
   </div>
 </template>

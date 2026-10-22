@@ -615,6 +615,22 @@ export function useVisitCharging(ctx: VisitChargingContext) {
     }
   }
 
+  // After the visit was charged to a third party, or taken off one
+  // (components/calendar/ThirdPartyVisitCharge.vue). The receipt now holds the
+  // patient's share only, and when that is nothing the visit is settled and
+  // complete exactly as a payment covering it would leave it -- otherwise it
+  // sits as an unpaid receipt for EUR 0.00 and on the unbilled lists.
+  async function afterThirdPartyChange() {
+    const inv = await findInvoice()
+    if (inv && inv.status !== 'paid' && inv.total_cents === 0 && (await settleInvoiceIfCovered(supabase, inv.id))) {
+      const { completedNow } = await completeVisit(supabase, appointmentId())
+      ctx.onCompleted?.()
+      if (completedNow) fire('appointment.completed', { patientId: patientId(), appointmentId: appointmentId() })
+    }
+    await loadInvoice()
+    await refreshSummary()
+  }
+
   return {
     // The patient's money, for the summary above the receipt and the bono buttons.
     ...summary,
@@ -647,5 +663,6 @@ export function useVisitCharging(ctx: VisitChargingContext) {
     removeLineItem,
     usePackageSession,
     recordPayment,
+    afterThirdPartyChange,
   }
 }

@@ -242,9 +242,9 @@ create trigger patients_drop_attribute_values_on_anonymize
 
 -- merge_patients moves them (CLAUDE.md). Unchanged from 20261021173018 but
 -- for the patient_attribute_values block after the facturas addressed to the
--- duplicate, and patient_care_stops beside it: that table arrives in its own
--- branch (20261022171626), which restates this function too, so it is named
--- only once it exists -- whichever of the two applies second keeps both.
+-- duplicate, and two tables from branches that restate this function too:
+-- patient_care_stops (20261022171626) and patient_letters (20261022185121).
+-- Each is named only once it exists, so whichever applies second keeps both.
 create or replace function merge_patients(p_survivor_id uuid, p_duplicate_id uuid)
 returns jsonb
 language plpgsql
@@ -391,6 +391,15 @@ begin
   update patient_files set patient_id = p_survivor_id where patient_id = p_duplicate_id;
   get diagnostics v_count = row_count;
   v_moved := v_moved || jsonb_build_object('patient_files', v_count);
+
+  -- Letters (patient_letters, 20261022185121) arrive in their own branch,
+  -- which restates this function too; named only once the table exists, so
+  -- whichever of the two applies second keeps both.
+  if to_regclass('public.patient_letters') is not null then
+    execute 'update public.patient_letters set patient_id = $1 where patient_id = $2' using p_survivor_id, p_duplicate_id;
+    get diagnostics v_count = row_count;
+    v_moved := v_moved || jsonb_build_object('patient_letters', v_count);
+  end if;
 
   update posture_assessments set patient_id = p_survivor_id where patient_id = p_duplicate_id;
   get diagnostics v_count = row_count;

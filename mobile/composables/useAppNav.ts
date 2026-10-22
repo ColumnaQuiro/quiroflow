@@ -7,6 +7,11 @@ export interface AppNavItem {
   icon: string
   /** A count drawn on the item (the Inbox's unread conversations, Team's unread messages). */
   badge?: number
+  /**
+   * False: in the iPad side menu only. Five tabs fit a phone's bar at a size
+   * a thumb can hit; Profile is reached from the avatar on My Day instead.
+   */
+  inTabBar?: boolean
 }
 
 export function useStaffNav() {
@@ -27,7 +32,7 @@ export function useStaffNav() {
     { label: t('Patients', 'Pacientes'), to: '/patients', icon: 'M6.2 5.6a2.6 2.6 0 11-5.2 0 2.6 2.6 0 015.2 0zM2 13.4c0-2.3 1.9-3.6 4.2-3.6s4.2 1.3 4.2 3.6' },
     ...(!context.value || can('inbox_access') ? [{ label: t('Inbox', 'Bandeja'), to: '/inbox', icon: 'M2 3.5h12v9h-8l-3 2.5v-2.5h-1z', badge: unread.value }] : []),
     { label: t('Team', 'Equipo'), to: '/team-chat', icon: 'M5.6 7.2a2.3 2.3 0 100-4.6 2.3 2.3 0 000 4.6zM1.6 13.4c0-2.1 1.8-3.4 4-3.4s4 1.3 4 3.4M10.9 7.1a2 2 0 100-4M11.6 10.1c1.6.3 2.8 1.4 2.8 3.3', badge: teamUnread.value },
-    { label: t('Profile', 'Perfil'), to: '/profile', icon: 'M8 8a2.6 2.6 0 100-5.2A2.6 2.6 0 008 8zM3.2 13.4c0-2.3 2.1-3.6 4.8-3.6s4.8 1.3 4.8 3.6' },
+    { label: t('Profile', 'Perfil'), to: '/profile', inTabBar: false, icon: 'M8 8a2.6 2.6 0 100-5.2A2.6 2.6 0 008 8zM3.2 13.4c0-2.3 2.1-3.6 4.8-3.6s4.8 1.3 4.8 3.6' },
   ])
   const isActive = (to: string) => route.path === to || route.path.startsWith(`${to}/`)
   return { items, isActive }

@@ -503,6 +503,15 @@ const birthdayNames = computed(() => birthdays.value.map((p) => shown(`${p.first
 // from an earlier visit -- for a role that may read notes; RLS applies the
 // notes scope as everywhere else.
 const inClinicNow = computed(() => (loading.value ? null : appointments.value.find((a) => rowState(a) === 'in') ?? null))
+// The top card: who is in now, or else who is next -- what someone opening
+// the app between two patients needs first.
+const nextUp = computed(() => (loading.value || inClinicNow.value ? null : appointments.value.find((a) => rowState(a) === 'upcoming') ?? null))
+// The day's list keeps what is still to come in view; the visits already
+// done fold away behind one line.
+const showDone = ref(false)
+const doneVisits = computed(() => appointments.value.filter((a) => rowState(a) === 'done'))
+const shownVisits = computed(() => appointments.value.filter((a) => showDone.value || rowState(a) !== 'done'))
+const STATE_DOT: Record<RowState, string> = { done: 'bg-success-accent', in: 'bg-brand', noshow: 'bg-danger-text', upcoming: 'bg-line-controlHover' }
 const lastNote = ref<{ day: string; text: string } | null>(null)
 watch(
   () => inClinicNow.value?.id,
@@ -563,10 +572,11 @@ function initialsOf(a: Appointment) {
           </span>
       </div>
 
-      <!-- One column on a phone; on an iPad (lg) the visits on the left and the
-             rest of the day on the right. The two wrappers are display:contents
-             below lg, so on a phone their children fall back into this single
-             flex column, kept in the phone's order by order-*. -->
+      <!-- One column on a phone, in this order: the clock, who is in now (or
+           next), the figures, the rest of today, what is pending, shortcuts.
+           On an iPad (lg) the visits on the left and the rest on the right;
+           the two wrappers are display:contents below lg, so their children
+           fall back into this single column, kept in order by order-*. -->
         <div class="flex flex-col gap-2.5 px-3.5 py-3 lg:grid lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start lg:gap-5 lg:px-5 lg:py-4">
         <!-- Registro de jornada: the clock, first thing (components/timeclock/ClockCard.vue). -->
         <TimeclockClockCard v-if="context" class="order-first lg:col-span-2" :account-id="context.accountId" :team-member-id="context.teamMemberId" :time-zone="timeZone" month-to="/jornada" />
@@ -581,80 +591,114 @@ function initialsOf(a: Appointment) {
 
         <div class="contents lg:flex lg:flex-col lg:gap-2.5">
         <!-- Figures for the viewer's own day -->
-        <div class="order-1 grid gap-2 lg:order-none" :class="seesMoney ? 'grid-cols-3' : 'grid-cols-2'" data-test="myday-figures">
-          <div class="rounded-card border border-line bg-surface shadow-card px-2.5 py-2">
-            <p class="text-[10.5px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Visits', 'Visitas') }}</p>
+        <div class="order-2 grid gap-2 lg:order-none" :class="seesMoney ? 'grid-cols-3' : 'grid-cols-2'" data-test="myday-figures">
+          <div class="rounded-card border border-line bg-surface shadow-card px-3 py-2.5">
+            <p class="text-[12px] text-ink-muted">{{ t('Visits', 'Visitas') }}</p>
             <UiSkeleton v-if="contextLoading || loading" class="mt-1.5 h-[22px] w-14 rounded-ctlSm" />
-            <p v-else class="mt-1 text-[19px] font-semibold leading-tight text-ink-900" data-test="myday-visits">
+            <p v-else class="mt-0.5 text-[20px] font-bold leading-tight text-ink-900" data-test="myday-visits">
               {{ visitsDone }} <span class="text-[12.5px] font-normal text-ink-muted2">{{ t(`of ${visitsTotal}`, `de ${visitsTotal}`) }}</span>
             </p>
           </div>
-          <div class="rounded-card border border-line bg-surface shadow-card px-2.5 py-2">
-            <p class="text-[10.5px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('New', 'Nuevos') }}</p>
+          <div class="rounded-card border border-line bg-surface shadow-card px-3 py-2.5">
+            <p class="text-[12px] text-ink-muted">{{ t('New', 'Nuevos') }}</p>
             <UiSkeleton v-if="contextLoading || loading" class="mt-1.5 h-[22px] w-10 rounded-ctlSm" />
-            <p v-else class="mt-1 text-[19px] font-semibold leading-tight text-ink-900" data-test="myday-new">
+            <p v-else class="mt-0.5 text-[20px] font-bold leading-tight text-ink-900" data-test="myday-new">
               {{ newDone }} <span v-if="newBooked > newDone" class="text-[12.5px] font-normal text-ink-muted2">{{ t(`of ${newBooked}`, `de ${newBooked}`) }}</span>
             </p>
           </div>
-          <div v-if="seesMoney" class="min-w-0 rounded-card border border-line bg-surface shadow-card px-2.5 py-2">
-            <p class="text-[10.5px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Taken', 'Cobrado') }}</p>
+          <div v-if="seesMoney" class="min-w-0 rounded-card border border-line bg-surface shadow-card px-3 py-2.5">
+            <p class="text-[12px] text-ink-muted">{{ t('Taken', 'Cobrado') }}</p>
             <UiSkeleton v-if="contextLoading || loading" class="mt-1.5 h-[22px] w-14 rounded-ctlSm" />
-            <p v-else class="mt-1 truncate text-[19px] font-semibold leading-tight text-ink-900" data-test="myday-taken">{{ takingsCents === null ? '—' : shortEur(takingsCents) }}</p>
+            <p v-else class="mt-0.5 truncate text-[20px] font-bold leading-tight text-ink-900" data-test="myday-taken">{{ takingsCents === null ? '—' : shortEur(takingsCents) }}</p>
           </div>
         </div>
 
-        <!-- Today's visits -->
-        <p class="order-3 px-0.5 pt-1 text-[10.5px] font-semibold uppercase tracking-[.05em] text-ink-muted lg:order-none">{{ t('Today', 'Hoy') }}</p>
-        <template v-if="contextLoading || loading">
-          <div v-for="n in 4" :key="n" class="order-3 flex items-center gap-3 rounded-card lg:order-none border border-l-[3px] border-line border-l-line-control bg-surface px-3 py-2.5">
-            <UiSkeleton class="h-4 w-10 rounded-ctlSm" />
-            <div class="flex-1 space-y-1.5">
-              <UiSkeleton class="h-4 w-36 rounded-ctlSm" />
-              <UiSkeleton class="h-3 w-20 rounded-ctlSm" />
-            </div>
-          </div>
-        </template>
-        <p v-else-if="appointments.length === 0" class="order-3 rounded-card border border-line bg-surface shadow-card px-3.5 py-4 text-center text-[13px] text-ink-muted lg:order-none">
-          {{ t('No visits today.', 'Hoy no tienes visitas.') }}
-        </p>
-        <div
-          v-for="a in loading ? [] : appointments"
-          :key="a.id"
-          class="relative order-3 flex items-center gap-2.5 rounded-card border border-l-[3px] border-line bg-surface px-3 py-2.5 lg:order-none"
-          :class="BORDER[rowState(a)]"
-          data-test="myday-visit"
-        >
-          <NuxtLink :to="`/calendar/${a.id}`" class="absolute inset-0 rounded-card" :aria-label="`${clinicTime(a.starts_at)} ${patientName(a)}`" />
-          <p class="w-[42px] shrink-0 text-[14px] font-semibold text-ink-900">{{ clinicTime(a.starts_at) }}</p>
-          <div class="min-w-0 flex-1">
-            <p class="truncate text-[14px] font-semibold" :class="rowState(a) === 'done' ? 'text-ink-faint' : 'text-ink-900'">{{ shown(patientName(a)) }}</p>
-            <p class="truncate text-[12.5px] text-ink-muted2">{{ a.appointment_types?.name ?? t('Appointment', 'Cita') }}</p>
-          </div>
-          <div class="flex shrink-0 flex-col items-end gap-1">
-            <span v-if="rowState(a) === 'done'" class="text-[12.5px] font-medium text-success-text">{{ t('Done', 'Hecha') }}</span>
-            <span v-else-if="rowState(a) === 'in'" class="inline-flex h-6 items-center rounded-pill bg-brand-tint px-2.5 text-[11.5px] font-semibold text-brand-text">{{ t('In clinic', 'En clínica') }}</span>
-            <span v-else-if="rowState(a) === 'noshow'" class="text-[12.5px] font-medium text-danger-text">{{ t('No-show', 'No vino') }}</span>
-            <PractitionerNoShowRiskPill v-if="riskShown(a) && rowState(a) !== 'done' && rowState(a) !== 'noshow'" :risk="riskShown(a)" />
-            <span v-if="isNewPatientVisit(a)" class="inline-flex h-6 items-center rounded-pill bg-brand-tint px-2.5 text-[11.5px] font-semibold text-brand-text" data-test="myday-flag-new">{{ t('New patient', 'Paciente nuevo') }}</span>
-            <span v-if="owes(a) > 0" class="inline-flex h-6 items-center whitespace-nowrap rounded-pill bg-danger-bg px-2.5 text-[11.5px] font-semibold text-danger-text" data-test="myday-flag-owes">{{ t(`Owes ${formatEur(owes(a))}`, `Debe ${formatEur(owes(a))}`) }}</span>
-            <span v-if="needsNext(a)" class="inline-flex h-6 items-center whitespace-nowrap rounded-pill bg-warning-bg px-2.5 text-[11.5px] font-semibold text-warning-text" data-test="myday-flag-no-next">{{ t('No next visit', 'Sin próxima') }}</span>
-            <button
-              v-if="canCheckIn(a)"
-              type="button"
-              class="tap-target relative z-10 rounded-ctl border border-line-control bg-surface px-2.5 py-1 text-[12px] font-medium text-brand-text active:bg-surface-subtle"
-              data-test="myday-checkin"
-              @click="checkIn(a)"
-            >
-              {{ t('Check in', 'Registrar llegada') }}
+        <!-- Today's visits: what is still to come, the done ones folded away -->
+        <section class="order-3 rounded-card border border-line bg-surface shadow-card lg:order-none" data-test="myday-visits-list">
+          <div class="flex min-h-11 items-center justify-between gap-2 px-3.5">
+            <h2 class="text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Today', 'Hoy') }}</h2>
+            <button v-if="!loading && doneVisits.length > 0" type="button" class="-my-1 flex h-9 items-center text-[12.5px] font-semibold text-brand-text" :aria-expanded="showDone" data-test="myday-done-toggle" @click="showDone = !showDone">
+              {{ showDone ? t('Hide the done ones', 'Ocultar las hechas') : t(`Show the ${doneVisits.length} done`, `Ver las ${doneVisits.length} hechas`) }}
             </button>
           </div>
-        </div>
-
+          <template v-if="contextLoading || loading">
+            <div v-for="n in 4" :key="n" class="flex items-center gap-3 border-t border-line-row px-3.5 py-3">
+              <UiSkeleton class="h-4 w-10 rounded-ctlSm" />
+              <div class="flex-1 space-y-1.5">
+                <UiSkeleton class="h-4 w-36 rounded-ctlSm" />
+                <UiSkeleton class="h-3 w-20 rounded-ctlSm" />
+              </div>
+            </div>
+          </template>
+          <p v-else-if="appointments.length === 0" class="border-t border-line-row px-3.5 py-4 text-center text-[13px] text-ink-muted">
+            {{ t('No visits today.', 'Hoy no tienes visitas.') }}
+          </p>
+          <p v-else-if="shownVisits.length === 0" class="border-t border-line-row px-3.5 py-4 text-center text-[13px] text-ink-muted" data-test="myday-all-done">
+            {{ t('All of today’s visits are done.', 'Todas las visitas de hoy están hechas.') }}
+          </p>
+          <div
+            v-for="a in loading ? [] : shownVisits"
+            :key="a.id"
+            class="relative flex items-center gap-3 border-t border-line-row px-3.5 py-2.5"
+            data-test="myday-visit"
+          >
+            <NuxtLink :to="`/calendar/${a.id}`" class="absolute inset-0" :aria-label="`${clinicTime(a.starts_at)} ${patientName(a)}`" />
+            <p class="w-[42px] shrink-0 font-mono text-[13.5px] font-semibold" :class="rowState(a) === 'done' ? 'text-ink-faint' : 'text-ink-900'">{{ clinicTime(a.starts_at) }}</p>
+            <div class="min-w-0 flex-1">
+              <p class="truncate text-[14.5px] font-semibold" :class="rowState(a) === 'done' ? 'text-ink-faint' : 'text-ink-900'">{{ shown(patientName(a)) }}</p>
+              <p class="truncate text-[12.5px] text-ink-muted2">
+                {{ a.appointment_types?.name ?? t('Appointment', 'Cita') }}
+                <span v-if="isNewPatientVisit(a)" class="font-semibold text-brand-text" data-test="myday-flag-new"> · {{ t('New patient', 'Paciente nuevo') }}</span>
+                <span v-if="owes(a) > 0" class="font-semibold text-danger-text" data-test="myday-flag-owes"> · {{ t(`Owes ${formatEur(owes(a))}`, `Debe ${formatEur(owes(a))}`) }}</span>
+                <span v-if="needsNext(a)" class="font-semibold text-warning-text" data-test="myday-flag-no-next"> · {{ t('No next visit', 'Sin próxima') }}</span>
+              </p>
+            </div>
+            <div class="flex shrink-0 flex-col items-end gap-1">
+              <span class="inline-flex items-center gap-1.5 text-[12.5px] font-medium" :class="rowState(a) === 'done' ? 'text-success-text' : rowState(a) === 'in' ? 'text-brand-text' : rowState(a) === 'noshow' ? 'text-danger-text' : 'text-ink-muted'">
+                <span class="h-[7px] w-[7px] rounded-full" :class="STATE_DOT[rowState(a)]" aria-hidden="true" />
+                {{ rowState(a) === 'done' ? t('Done', 'Hecha') : rowState(a) === 'in' ? t('In clinic', 'En clínica') : rowState(a) === 'noshow' ? t('No-show', 'No vino') : t('Booked', 'Reservada') }}
+              </span>
+              <PractitionerNoShowRiskPill v-if="riskShown(a) && rowState(a) !== 'done' && rowState(a) !== 'noshow'" :risk="riskShown(a)" />
+              <button
+                v-if="canCheckIn(a)"
+                type="button"
+                class="tap-target relative z-10 rounded-ctl border border-line-control bg-surface px-2.5 py-1 text-[12px] font-medium text-brand-text active:bg-surface-subtle"
+                data-test="myday-checkin"
+                @click="checkIn(a)"
+              >
+                {{ t('Check in', 'Registrar llegada') }}
+              </button>
+            </div>
+          </div>
+        </section>
         </div>
 
         <div class="contents lg:flex lg:flex-col lg:gap-2.5">
-        <!-- Who left without a next visit -->
-        <div v-if="!loading && seenNoNext.length > 0" class="order-2 rounded-card border border-warning-border bg-warning-bg px-3.5 py-2.5 lg:order-none" data-test="myday-no-next">
+        <!-- Now: who is in the room with their last note, or who is next -->
+        <section v-if="inClinicNow" class="order-1 rounded-card border-[1.5px] border-brand bg-brand-tint px-4 py-3.5 lg:order-none" data-test="myday-in-clinic">
+          <p class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[.06em] text-brand-text"><span class="h-2 w-2 rounded-full bg-brand" aria-hidden="true" />{{ t('In clinic now', 'Ahora en consulta') }}</p>
+          <p class="mt-1 truncate text-[19px] font-bold text-ink-900">{{ shown(patientName(inClinicNow)) }}</p>
+          <p class="truncate text-[13px] text-ink-muted">{{ inClinicNow.appointment_types?.name ?? t('Appointment', 'Cita') }} · {{ clinicTime(inClinicNow.starts_at) }}</p>
+          <p v-if="lastNote" class="mt-2.5 rounded-ctl bg-surface px-3 py-2 text-[13px] leading-[1.45] text-ink-700">{{ t('Last note', 'Última nota') }} ({{ lastNote.day }}): {{ lastNote.text }}</p>
+          <div class="mt-3 grid grid-cols-2 gap-2">
+            <NuxtLink :to="`/calendar/${inClinicNow.id}`" class="flex h-11 items-center justify-center rounded-ctl bg-brand text-[14px] font-semibold text-white">{{ t('Open visit', 'Abrir visita') }}</NuxtLink>
+            <NuxtLink :to="`/patients/${inClinicNow.patient_id}`" class="flex h-11 items-center justify-center rounded-ctl border border-line-control bg-surface text-[14px] font-semibold text-ink-700">{{ t('Record', 'Ficha') }}</NuxtLink>
+          </div>
+        </section>
+        <section v-else-if="nextUp" class="order-1 rounded-card border border-brand-tintBorder bg-brand-tint px-4 py-3.5 lg:order-none" data-test="myday-next">
+          <p class="text-[11px] font-semibold uppercase tracking-[.06em] text-brand-text">{{ t('Next', 'Siguiente') }} · {{ clinicTime(nextUp.starts_at) }}</p>
+          <p class="mt-1 truncate text-[18px] font-bold text-ink-900">{{ shown(patientName(nextUp)) }}</p>
+          <p class="truncate text-[13px] text-ink-muted">{{ nextUp.appointment_types?.name ?? t('Appointment', 'Cita') }}</p>
+          <div class="mt-3 grid gap-2" :class="canCheckIn(nextUp) ? 'grid-cols-2' : 'grid-cols-1'">
+            <button v-if="canCheckIn(nextUp)" type="button" class="h-11 rounded-ctl bg-brand text-[14px] font-semibold text-white" data-test="myday-next-checkin" @click="checkIn(nextUp)">{{ t('Check in', 'Registrar llegada') }}</button>
+            <NuxtLink :to="`/patients/${nextUp.patient_id}`" class="flex h-11 items-center justify-center rounded-ctl border border-line-control bg-surface text-[14px] font-semibold text-ink-700">{{ t('Record', 'Ficha') }}</NuxtLink>
+          </div>
+        </section>
+
+        <!-- Pending: who left without a next visit, who has not confirmed,
+             and the tasks -->
+        <p class="order-4 px-0.5 pt-1 text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted lg:order-none lg:pt-0">{{ t('Pending', 'Pendientes') }}</p>
+        <div v-if="!loading && seenNoNext.length > 0" class="order-4 rounded-card border border-warning-border bg-warning-bg px-3.5 py-2.5 lg:order-none" data-test="myday-no-next">
           <p class="text-[14px] font-semibold text-ink-900">{{ t('Seen today, no next visit', 'Vistos hoy, sin próxima visita') }} · {{ seenNoNext.length }}</p>
           <p v-if="ownDiaryOnly" class="text-[11.5px] text-ink-muted2">{{ t('Your role sees only bookings with you.', 'Tu rol solo ve las citas contigo.') }}</p>
           <div v-for="a in seenNoNext" :key="a.patient_id" class="mt-2 flex items-center gap-2.5">
@@ -664,7 +708,7 @@ function initialsOf(a: Appointment) {
             </div>
             <NuxtLink
               :to="`/patients/${a.patient_id}?book=1`"
-              class="flex h-8 shrink-0 items-center rounded-card border border-line-control bg-surface px-3 text-[13px] font-medium text-ink-700 active:bg-surface-subtle"
+              class="flex h-9 shrink-0 items-center rounded-card border border-line-control bg-surface px-3 text-[13px] font-medium text-ink-700 active:bg-surface-subtle"
               data-test="myday-book"
             >
               {{ t('Book', 'Reservar') }}
@@ -677,7 +721,7 @@ function initialsOf(a: Appointment) {
         <PractitionerNeedsConfirming
           v-if="context"
           ref="needsConfirming"
-          class="order-2 lg:order-none"
+          class="order-4 lg:order-none"
           :clinic-id="null"
           :practitioner-id="context.teamMemberId"
           :time-zone="timeZone"
@@ -685,68 +729,16 @@ function initialsOf(a: Appointment) {
           @message="messagePatient"
         />
 
-        <!-- Who is in the room now, with their last note: only where there is
-             room for it (the iPad's second column). -->
-        <div v-if="inClinicNow" class="hidden rounded-card border border-line bg-surface shadow-card px-3.5 py-3 lg:block" data-test="myday-in-clinic">
-          <p class="text-[10.5px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('In clinic now', 'Ahora en consulta') }}</p>
-          <div class="mt-2 flex items-center gap-2.5">
-            <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[12px] font-bold text-brand-text">{{ initialsOf(inClinicNow) }}</span>
-            <div class="min-w-0">
-              <p class="truncate text-[14px] font-semibold text-ink-900">{{ shown(patientName(inClinicNow)) }}</p>
-              <p class="truncate text-[12.5px] text-ink-muted2">{{ inClinicNow.appointment_types?.name ?? t('Appointment', 'Cita') }} · {{ clinicTime(inClinicNow.starts_at) }}</p>
-            </div>
-          </div>
-          <p v-if="lastNote" class="mt-2.5 text-[13px] leading-[1.45] text-ink-700">{{ t('Last note', 'Última nota') }} ({{ lastNote.day }}): {{ lastNote.text }}</p>
-          <AppButton variant="primary" :to="`/calendar/${inClinicNow.id}`" class="mt-3">
-            {{ t('Open visit', 'Abrir visita') }}
-          </AppButton>
-        </div>
-
-        <!-- Also today -->
-        <p class="order-4 px-0.5 pt-1 text-[10.5px] font-semibold uppercase tracking-[.05em] text-ink-muted lg:order-none lg:pt-0">{{ t('Also today', 'También hoy') }}</p>
-        <div class="order-4 rounded-card border border-line bg-surface shadow-card px-3.5 py-1 lg:order-none" data-test="myday-also">
-          <div class="flex items-center justify-between gap-3 py-2">
-            <span class="shrink-0 text-[14px] text-ink-900">{{ t('Birthdays', 'Cumpleaños') }}</span>
-            <UiSkeleton v-if="loading" class="h-3.5 w-24 rounded-ctlSm" />
-            <span v-else class="min-w-0 truncate text-right text-[12.5px] text-ink-muted2" data-test="myday-birthdays">{{ birthdayNames || t('None today', 'Ninguno hoy') }}</span>
-          </div>
-          <NuxtLink v-if="seesRecalls" to="/recalls" class="flex items-center justify-between gap-3 border-t border-line-row py-2" data-cy="myday-recalls-open">
-            <span class="text-[14px] text-ink-900">{{ t('Recalls due', 'Recordatorios pendientes') }}</span>
-            <UiSkeleton v-if="loading" class="h-3.5 w-16 rounded-ctlSm" />
-            <span v-else class="flex items-center gap-1 text-[12.5px] text-ink-muted2" data-test="myday-recalls">{{ recallsDue === null ? '—' : t(`${recallsDue} ${recallsDue === 1 ? 'patient' : 'patients'}`, `${recallsDue} ${recallsDue === 1 ? 'paciente' : 'pacientes'}`) }}<AppChevron :size="12" /></span>
-          </NuxtLink>
-          <!-- The clinic's figures (the web dashboard), for whoever's role includes them -->
-          <NuxtLink v-if="seesNumbers" to="/numbers" class="flex items-center justify-between gap-3 border-t border-line-row py-2" data-cy="myday-numbers-open">
-            <span class="text-[14px] text-ink-900">{{ t('Numbers', 'Números') }}</span>
-            <span class="flex items-center gap-1 text-[12.5px] text-ink-muted2">{{ t('Income, visits, no-shows', 'Ingresos, visitas, ausencias') }}<AppChevron :size="12" /></span>
-          </NuxtLink>
-          <!-- Paid online today (Stripe): bookings and "Pagar" from the app or portal -->
-          <div v-if="onlineToday && onlineToday.count > 0" class="flex items-center justify-between gap-3 border-t border-line-row py-2" data-cy="myday-online-paid">
-            <span class="text-[14px] text-ink-900">{{ t('Paid online', 'Pagos online') }}</span>
-            <span class="text-[12.5px] font-semibold text-success-text">{{ t(`${onlineToday.count} today · ${formatEur(onlineToday.cents)}`, `${onlineToday.count} hoy · ${formatEur(onlineToday.cents)}`) }}</span>
-          </div>
-          <!-- The front desk's cash shift (the web's Caja), for whoever takes payments -->
-          <NuxtLink v-if="can('payments_allocate')" to="/cash" class="flex items-center justify-between gap-3 border-t border-line-row py-2" data-cy="myday-cash-open">
-            <span class="text-[14px] text-ink-900">{{ t('Cash shift', 'Caja') }}</span>
-            <span class="flex items-center gap-1 text-[12.5px] text-ink-muted2">{{ t('Today’s shift', 'Turno de hoy') }}<AppChevron :size="12" /></span>
-          </NuxtLink>
-          <NuxtLink v-if="seesRecalls" to="/plan-alerts" class="flex items-center justify-between gap-3 border-t border-line-row py-2" data-cy="myday-plans-open">
-            <span class="text-[14px] text-ink-900">{{ t('Plans behind schedule', 'Planes con retraso') }}</span>
-            <UiSkeleton v-if="loading" class="h-3.5 w-16 rounded-ctlSm" />
-            <span v-else class="flex items-center gap-1 text-[12.5px]" :class="plansBehind ? 'font-semibold text-danger-text' : 'text-ink-muted2'" data-test="myday-plans">{{ plansBehind === null ? '—' : t(`${plansBehind} ${plansBehind === 1 ? 'patient' : 'patients'}`, `${plansBehind} ${plansBehind === 1 ? 'paciente' : 'pacientes'}`) }}<AppChevron :size="12" /></span>
-          </NuxtLink>
-          <NuxtLink v-if="seesRecalls" to="/waitlist" class="flex items-center justify-between gap-3 border-t border-line-row py-2" data-cy="myday-waitlist-open">
-            <span class="text-[14px] text-ink-900">{{ t('Waitlist', 'Lista de espera') }}</span>
-            <UiSkeleton v-if="loading" class="h-3.5 w-16 rounded-ctlSm" />
-            <span v-else class="flex items-center gap-1 text-[12.5px] text-ink-muted2" data-test="myday-waitlist">{{ waitlistActive === null ? '—' : t(`${waitlistActive} waiting`, `${waitlistActive} en espera`) }}<span v-if="waitlistSelfToday > 0" class="font-semibold text-brand-text" data-test="myday-waitlist-self">· {{ t(`+${waitlistSelfToday} today from the app`, `+${waitlistSelfToday} hoy desde la app`) }}</span><AppChevron :size="12" /></span>
-          </NuxtLink>
-          <button type="button" class="flex w-full items-center justify-between gap-3 border-t border-line-row py-2 text-left focus:outline-none" :aria-expanded="showTasks" data-test="myday-tasks-toggle" @click="showTasks = !showTasks">
-            <span class="text-[14px] text-ink-900">{{ t('Tasks', 'Tareas') }}</span>
-            <UiSkeleton v-if="loading" class="h-3.5 w-14 rounded-ctlSm" />
-            <span v-else class="text-[12.5px] text-ink-muted2">
-              {{ t(`${openTasks} open`, `${openTasks} ${openTasks === 1 ? 'pendiente' : 'pendientes'}`) }}
-              <span class="inline-block transition-transform" :class="showTasks ? 'rotate-90' : ''"><AppChevron :size="12" /></span>
+        <div class="order-4 rounded-card border border-line bg-surface shadow-card px-3.5 py-1 lg:order-none" data-test="myday-tasks">
+          <button type="button" class="flex min-h-11 w-full items-center justify-between gap-3 py-1 text-left focus:outline-none" :aria-expanded="showTasks" data-test="myday-tasks-toggle" @click="showTasks = !showTasks">
+            <span class="flex items-center gap-2.5 text-[14px] text-ink-900">
+              <span class="flex h-[26px] min-w-[26px] items-center justify-center rounded-ctlSm px-1.5 text-[13px] font-bold" :class="openTasks ? 'bg-chip-bg text-ink-900' : 'bg-surface-subtle text-ink-muted2'">
+                <UiSkeleton v-if="loading" class="h-3 w-3 rounded-ctlSm" />
+                <template v-else>{{ openTasks }}</template>
+              </span>
+              {{ t('Tasks', 'Tareas') }}
             </span>
+            <span class="inline-block transition-transform" :class="showTasks ? 'rotate-90' : ''"><AppChevron :size="12" /></span>
           </button>
           <template v-if="showTasks && !loading">
             <p v-if="tasks.length === 0" class="border-t border-line-row py-2.5 text-[12.5px] text-ink-muted2">{{ t('Nothing to do.', 'Nada pendiente.') }}</p>
@@ -769,6 +761,46 @@ function initialsOf(a: Appointment) {
               </div>
             </div>
           </template>
+        </div>
+
+        <!-- Shortcuts: the rest of the clinic's day, as tiles -->
+        <p class="order-5 px-0.5 pt-1 text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted lg:order-none">{{ t('Also today', 'También hoy') }}</p>
+        <div class="order-5 grid grid-cols-2 gap-2 lg:order-none" data-test="myday-also">
+          <div class="min-w-0 rounded-card border border-line bg-surface shadow-card px-3 py-2.5">
+            <p class="text-[14px] font-semibold text-ink-900">{{ t('Birthdays', 'Cumpleaños') }}</p>
+            <UiSkeleton v-if="loading" class="mt-1 h-3.5 w-20 rounded-ctlSm" />
+            <p v-else class="mt-0.5 truncate text-[12.5px] text-ink-muted2" data-test="myday-birthdays">{{ birthdayNames || t('None today', 'Ninguno hoy') }}</p>
+          </div>
+          <NuxtLink v-if="seesRecalls" to="/recalls" class="min-w-0 rounded-card border border-line bg-surface shadow-card px-3 py-2.5" data-cy="myday-recalls-open">
+            <p class="text-[14px] font-semibold text-ink-900">{{ t('Recalls', 'Recuperaciones') }}</p>
+            <UiSkeleton v-if="loading" class="mt-1 h-3.5 w-16 rounded-ctlSm" />
+            <p v-else class="mt-0.5 truncate text-[12.5px] text-ink-muted2" data-test="myday-recalls">{{ recallsDue === null ? '—' : t(`${recallsDue} due`, `${recallsDue} pendientes`) }}</p>
+          </NuxtLink>
+          <NuxtLink v-if="seesRecalls" to="/plan-alerts" class="min-w-0 rounded-card border border-line bg-surface shadow-card px-3 py-2.5" data-cy="myday-plans-open">
+            <p class="text-[14px] font-semibold text-ink-900">{{ t('Plans', 'Planes') }}</p>
+            <UiSkeleton v-if="loading" class="mt-1 h-3.5 w-16 rounded-ctlSm" />
+            <p v-else class="mt-0.5 truncate text-[12.5px]" :class="plansBehind ? 'font-semibold text-danger-text' : 'text-ink-muted2'" data-test="myday-plans">{{ plansBehind === null ? '—' : t(`${plansBehind} behind`, `${plansBehind} con retraso`) }}</p>
+          </NuxtLink>
+          <NuxtLink v-if="seesRecalls" to="/waitlist" class="min-w-0 rounded-card border border-line bg-surface shadow-card px-3 py-2.5" data-cy="myday-waitlist-open">
+            <p class="text-[14px] font-semibold text-ink-900">{{ t('Waitlist', 'Lista de espera') }}</p>
+            <UiSkeleton v-if="loading" class="mt-1 h-3.5 w-16 rounded-ctlSm" />
+            <p v-else class="mt-0.5 truncate text-[12.5px] text-ink-muted2" data-test="myday-waitlist">{{ waitlistActive === null ? '—' : t(`${waitlistActive} waiting`, `${waitlistActive} en espera`) }}<span v-if="waitlistSelfToday > 0" class="font-semibold text-brand-text" data-test="myday-waitlist-self"> · {{ t(`+${waitlistSelfToday} today`, `+${waitlistSelfToday} hoy`) }}</span></p>
+          </NuxtLink>
+          <!-- The front desk's cash shift (the web's Caja), for whoever takes payments -->
+          <NuxtLink v-if="can('payments_allocate')" to="/cash" class="min-w-0 rounded-card border border-line bg-surface shadow-card px-3 py-2.5" data-cy="myday-cash-open">
+            <p class="text-[14px] font-semibold text-ink-900">{{ t('Cash shift', 'Caja') }}</p>
+            <p class="mt-0.5 truncate text-[12.5px] text-ink-muted2">{{ t('Today’s shift', 'Turno de hoy') }}</p>
+          </NuxtLink>
+          <!-- The clinic's figures (the web dashboard), for whoever's role includes them -->
+          <NuxtLink v-if="seesNumbers" to="/numbers" class="min-w-0 rounded-card border border-line bg-surface shadow-card px-3 py-2.5" data-cy="myday-numbers-open">
+            <p class="text-[14px] font-semibold text-ink-900">{{ t('Numbers', 'Números') }}</p>
+            <p class="mt-0.5 truncate text-[12.5px] text-ink-muted2">{{ t('Income, visits, no-shows', 'Ingresos, visitas, ausencias') }}</p>
+          </NuxtLink>
+          <!-- Paid online today (Stripe): bookings and "Pagar" from the app or portal -->
+          <div v-if="onlineToday && onlineToday.count > 0" class="min-w-0 rounded-card border border-line bg-surface shadow-card px-3 py-2.5" data-cy="myday-online-paid">
+            <p class="text-[14px] font-semibold text-ink-900">{{ t('Paid online', 'Pagos online') }}</p>
+            <p class="mt-0.5 truncate text-[12.5px] font-semibold text-success-text">{{ t(`${onlineToday.count} · ${formatEur(onlineToday.cents)}`, `${onlineToday.count} · ${formatEur(onlineToday.cents)}`) }}</p>
+          </div>
         </div>
         </div>
       </div>

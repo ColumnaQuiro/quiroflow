@@ -40,11 +40,11 @@ const memberFilter = ref('')
 
 const AREAS = computed(() => [
   { key: 'clinical', label: t('Clinical notes & files', 'Notas clínicas y archivos'), types: ['visit_note', 'patient_file', 'patient_doc'] },
-  { key: 'patients', label: t('Patients', 'Pacientes'), types: ['patient'] },
+  { key: 'patients', label: t('Patients', 'Pacientes'), types: ['patient', 'care_stop'] },
   { key: 'appointments', label: t('Appointments', 'Citas'), types: ['appointment'] },
   { key: 'money', label: t('Money', 'Cobros'), types: ['payment', 'invoice', 'account_credit', 'package_purchase', 'patient_membership', 'cash_shift', 'cash_movement'] },
   { key: 'access', label: t('Team & access', 'Equipo y accesos'), types: ['team_member', 'team_member_clinic', 'role', 'invite', 'api_token', 'webhook'] },
-  { key: 'settings', label: t('Clinic settings', 'Ajustes de la clínica'), types: ['account', 'clinic', 'verifactu_certificate', 'verifactu_delegation', 'appointment_type', 'package', 'membership', 'service'] },
+  { key: 'settings', label: t('Clinic settings', 'Ajustes de la clínica'), types: ['account', 'clinic', 'verifactu_certificate', 'verifactu_delegation', 'appointment_type', 'package', 'membership', 'service', 'care_stop_reason'] },
 ])
 const areaFilter = ref('')
 
@@ -144,6 +144,8 @@ const ENTITY_LABELS = computed<Record<string, string>>(() => ({
   membership: t('Membership template', 'Plantilla de membresía'),
   service: t('Service / product', 'Servicio / producto'),
   appointment_type: t('Appointment type', 'Tipo de cita'),
+  care_stop: t('Reason for stopping care', 'Motivo de baja'),
+  care_stop_reason: t('Reason for stopping care (list)', 'Motivo de baja (lista)'),
 }))
 
 function actionLabel(action: string) {

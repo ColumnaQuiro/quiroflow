@@ -17,6 +17,7 @@ import {
 } from '~/utils/receptionistSlots'
 import { DEFAULT_CLINIC_TIMEZONE, clinicDateOf, startOfLocalDate } from '~/utils/clinicClock'
 import type { BusinessHours } from '~/utils/businessHours'
+import { patientAge } from '~/utils/patientAge'
 import { hasReceptionist } from '~/server/utils/requireGrowth'
 
 export type { LeadOrigin }
@@ -190,34 +191,85 @@ export async function clinicTodayStart(supabase: SupabaseClient<Database>, accou
   return startOfLocalDate(clinicDateOf(new Date(), timeZone), timeZone).toISOString()
 }
 
-/** A minor with this patient as tutor, as the receptionist books for them. */
+/** A child of the person writing, as the receptionist books for them. */
 export interface TutorChild {
   id: string
   firstName: string
   lastName: string | null
   hasBeenBefore: boolean
+  /**
+   * On file as theirs: a minor with them as tutor. False for a child the
+   * clinic's records only suggest is theirs (below) -- confirmed, and linked,
+   * when the person writing names them and a visit is booked.
+   */
+  linked: boolean
+  /** By the date of birth on file; null without one. */
+  age: number | null
+  /** Whose diary their times come from (loadPatientPractitioners); null for anyone. */
+  practitionerIds: string[] | null
 }
 
 /**
- * The minors on file with `tutorPatientId` as their tutor, and whether each
- * has had a visit -- which decides a child's first visit from the rest
+ * The children of `tutorPatientId` the receptionist may book for, and whether
+ * each has had a visit -- which decides a child's first visit from the rest
  * (typesForMinor). None for a lead not yet a patient: nobody can be their
  * child before they are somebody's tutor.
+ *
+ * The minors on file with them as tutor, and also the ones the records only
+ * suggest are theirs: in their family on the clinic's records -- sharing a
+ * bono with them (patient_family_members) or linked as their child
+ * (patient_relations) -- under 18 by date of birth or with none recorded, and
+ * nobody else's ward. A father asking for "los nenes" with their practitioner was handed
+ * to a person because his children, patients for months on the family bono,
+ * had never been marked as minors with him as tutor; the receptionist knew no
+ * child of his, and booking one by name would have made a second record.
+ * Those come back unlinked: the prompt asks their names rather than offering
+ * them, and booking one confirms them as his (linkChild).
  */
 export async function loadTutorChildren(supabase: SupabaseClient<Database>, accountId: string, tutorPatientId: string | null): Promise<TutorChild[]> {
   if (!tutorPatientId) return []
+  const [{ data: wards }, { data: graph }, { data: related }] = await Promise.all([
+    supabase.from('patients').select('id').eq('account_id', accountId).eq('tutor_patient_id', tutorPatientId).eq('is_minor', true).is('anonymized_at', null),
+    supabase.rpc('patient_family_members', { p_patient_id: tutorPatientId }),
+    supabase.from('patient_relations').select('related_patient_id').eq('account_id', accountId).eq('patient_id', tutorPatientId).eq('relation', 'child'),
+  ])
+  const linkedIds = new Set(((wards ?? []) as { id: string }[]).map((r) => r.id))
+  const ids = [
+    ...new Set([
+      ...linkedIds,
+      ...(((graph ?? []) as unknown as string[]) ?? []),
+      ...((related ?? []) as { related_patient_id: string }[]).map((r) => r.related_patient_id),
+    ]),
+  ].filter((id) => id && id !== tutorPatientId)
+  if (!ids.length) return []
   const { data } = await supabase
     .from('patients')
-    .select('id, first_name, last_name')
+    .select('id, first_name, last_name, date_of_birth, is_minor, tutor_patient_id, anonymized_at')
     .eq('account_id', accountId)
-    .eq('tutor_patient_id', tutorPatientId)
-    .eq('is_minor', true)
-    .is('anonymized_at', null)
-  const rows = (data ?? []) as { id: string; first_name: string; last_name: string | null }[]
+    .in('id', ids.slice(0, 50))
+  type Row = { id: string; first_name: string; last_name: string | null; date_of_birth: string | null; is_minor: boolean | null; tutor_patient_id: string | null; anonymized_at: string | null }
+  const rows = ((data ?? []) as Row[]).filter((r) => {
+    if (r.anonymized_at) return false
+    if (linkedIds.has(r.id)) return true
+    if (r.tutor_patient_id && r.tutor_patient_id !== tutorPatientId) return false
+    const age = patientAge(r.date_of_birth)
+    return age === null ? true : age < 18
+  })
   if (!rows.length) return []
   const { data: done } = await supabase.from('appointments').select('patient_id').in('patient_id', rows.map((r) => r.id)).eq('status', 'completed').is('deleted_at', null)
   const seen = new Set(((done ?? []) as { patient_id: string }[]).map((a) => a.patient_id))
-  return rows.map((r) => ({ id: r.id, firstName: r.first_name, lastName: r.last_name, hasBeenBefore: seen.has(r.id) }))
+  return Promise.all(
+    rows.map(async (r) => ({
+      id: r.id,
+      firstName: r.first_name,
+      lastName: r.last_name,
+      hasBeenBefore: seen.has(r.id),
+      linked: linkedIds.has(r.id),
+      age: patientAge(r.date_of_birth),
+      // A child who has been is seen by their own practitioner, as anyone is.
+      practitionerIds: seen.has(r.id) ? await loadPatientPractitioners(supabase, accountId, r.id, []) : null,
+    })),
+  )
 }
 
 /** An adult linked to this patient as family (patient_relations), as the receptionist books for them. */

@@ -61,7 +61,7 @@ describe('Account settings need the permission of their page', () => {
       cy.window().then(() =>
         cy.request({ method: 'PUT', url: '/api/import/practicehub-connection', body: { baseUrl: 'https://clinica.practicehub.io', contactEmail: 'a@b.es', apiKey: 'ph-secret-123' } }),
       )
-      cy.request('/api/import/practicehub-connection').its('body').should('deep.equal', { baseUrl: 'https://clinica.practicehub.io', contactEmail: 'a@b.es', hasKey: true })
+      cy.request('/api/import/practicehub-connection').its('body').should('deep.equal', { baseUrl: 'https://clinica.practicehub.io', contactEmail: 'a@b.es', hasKey: true, hasV3Key: false })
       staff(account, { settings_access: true, data_admin: true }).then((email) => {
         cy.task<{ rows: number }>('db:readAsStaff', { email, password: PASSWORD, table: 'account_secrets', columns: 'value' }).its('rows').should('eq', 0)
         // Nor left behind in the column every member can read.

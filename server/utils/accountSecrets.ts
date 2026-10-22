@@ -14,6 +14,8 @@ export type AccountSecretName =
   | 'stripe_secret_key'
   | 'stripe_webhook_secret'
   | 'practicehub_api_key'
+  /** PracticeHub's new (2.0, "v3") API: a `phk_` Bearer key, separate from the Classic one. */
+  | 'practicehub_v3_api_key'
   | 'whatsapp_access_token'
   | 'instagram_access_token'
   | 'meta_ads_access_token'

@@ -10,6 +10,6 @@ export default defineEventHandler(async (event) => {
     .update({ practicehub_base_url: null, practicehub_contact_email: null, practicehub_api_key: null })
     .eq('id', teamMember.account_id)
   if (error) throw createError({ statusCode: 500, statusMessage: error.message })
-  await admin.from('account_secrets').delete().eq('account_id', teamMember.account_id).eq('name', 'practicehub_api_key')
+  await admin.from('account_secrets').delete().eq('account_id', teamMember.account_id).in('name', ['practicehub_api_key', 'practicehub_v3_api_key'])
   return { ok: true }
 })

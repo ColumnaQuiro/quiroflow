@@ -9,15 +9,19 @@ const { showToast } = useToast()
 const baseUrl = ref('')
 const apiKey = ref('')
 const hasStoredKey = ref(false)
+// PracticeHub 2.0's API key (phk_...), kept apart from the Classic one.
+const v3ApiKey = ref('')
+const hasStoredV3Key = ref(false)
 const contactEmail = ref('')
 const loading = ref(true)
 const saving = ref(false)
 
 async function load() {
   loading.value = true
-  const saved = await useStaffFetch<{ baseUrl: string | null; contactEmail: string | null; hasKey: boolean }>('/api/import/practicehub-connection').catch(() => null)
+  const saved = await useStaffFetch<{ baseUrl: string | null; contactEmail: string | null; hasKey: boolean; hasV3Key?: boolean }>('/api/import/practicehub-connection').catch(() => null)
   baseUrl.value = saved?.baseUrl ?? ''
   hasStoredKey.value = !!saved?.hasKey
+  hasStoredV3Key.value = !!saved?.hasV3Key
   contactEmail.value = saved?.contactEmail ?? user.value?.email ?? ''
   loading.value = false
 }
@@ -28,7 +32,7 @@ async function save() {
   try {
     await useStaffFetch('/api/import/practicehub-connection', {
       method: 'PUT',
-      body: { baseUrl: baseUrl.value.trim(), contactEmail: contactEmail.value.trim(), apiKey: apiKey.value.trim() },
+      body: { baseUrl: baseUrl.value.trim(), contactEmail: contactEmail.value.trim(), apiKey: apiKey.value.trim(), v3ApiKey: v3ApiKey.value.trim() },
     })
   } catch (e: any) {
     saving.value = false
@@ -38,13 +42,34 @@ async function save() {
   saving.value = false
   showToast(t('Saved', 'Guardado'))
   if (apiKey.value.trim()) hasStoredKey.value = true
+  if (v3ApiKey.value.trim()) hasStoredV3Key.value = true
   apiKey.value = ''
+  v3ApiKey.value = ''
+  checkResult.value = null
 
   // The composable's in-memory ref is what every importer tab's connect
   // form actually reads -- refresh it now so every step picks up the change
   // immediately, not just after a reload.
   const conn = usePracticeHubConnection()
   conn.value = baseUrl.value.trim() && hasStoredKey.value ? { baseUrl: baseUrl.value.trim().replace(/\/$/, ''), apiKey: '', appDetails: `QuiroFlow=${contactEmail.value.trim()}` } : null
+}
+
+// "Test connection" for the 2.0 key: which account it reaches and how much is
+// there, so a key for the wrong clinic shows itself before anything moves.
+const checkResult = ref<{ accountName: string | null; patients: number | null; carePlans: number | null; canWrite: boolean } | null>(null)
+const checkError = ref('')
+const checking = ref(false)
+async function checkV3() {
+  checking.value = true
+  checkError.value = ''
+  try {
+    checkResult.value = await useStaffFetch('/api/import/practicehub-v3-check')
+  } catch (e: any) {
+    checkResult.value = null
+    checkError.value = e?.data?.statusMessage ?? e?.message ?? t('Could not reach PracticeHub 2.0.', 'No se pudo conectar con PracticeHub 2.0.')
+  } finally {
+    checking.value = false
+  }
 }
 
 // Asked in an in-app dialog rather than confirm().
@@ -62,6 +87,8 @@ async function disconnect() {
   disconnecting.value = false
   baseUrl.value = ''
   hasStoredKey.value = false
+  hasStoredV3Key.value = false
+  checkResult.value = null
   usePracticeHubConnection().value = null
   showToast(t('Disconnected', 'Desconectado'))
 }
@@ -103,6 +130,27 @@ async function disconnect() {
           :placeholder="hasStoredKey ? '••••••••••••••••••••' : t('From PracticeHub → Developers → API Keys', 'Desde PracticeHub → Developers → API Keys')"
           class="mt-1 w-full rounded-md border border-line-control bg-surface px-3 py-2 text-sm text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
         />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-ink-700">{{ t('PracticeHub 2.0 API key', 'Clave API de PracticeHub 2.0') }}</label>
+        <input
+          v-model="v3ApiKey"
+          type="password"
+          autocomplete="off"
+          data-cy="ph-v3-key"
+          :placeholder="hasStoredV3Key ? '••••••••••••••••••••' : 'phk_…'"
+          class="mt-1 w-full rounded-md border border-line-control bg-surface px-3 py-2 text-sm text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+        />
+        <p class="mt-1 text-xs text-ink-muted2">{{ t('The new API, for clinics on PracticeHub 2.0 or about to switch. A separate key, starting phk_, from the same Developers → API Keys page.', 'La API nueva, para clínicas en PracticeHub 2.0 o a punto de pasarse. Una clave aparte, que empieza por phk_, de la misma página Developers → API Keys.') }}</p>
+        <div v-if="hasStoredV3Key" class="mt-2 flex flex-wrap items-center gap-2">
+          <button type="button" class="rounded-md border border-line-control px-3 py-1.5 text-sm font-medium text-ink-700 hover:bg-surface-subtle disabled:opacity-50" :disabled="checking" data-cy="ph-v3-check" @click="checkV3">
+            {{ checking ? t('Checking…', 'Comprobando…') : t('Test connection', 'Probar conexión') }}
+          </button>
+          <span v-if="checkResult" class="text-sm text-success-text" data-cy="ph-v3-check-result">
+            {{ checkResult.accountName }} · {{ t(`${checkResult.patients ?? 0} patients · ${checkResult.carePlans ?? 0} 2.0 care plans`, `${checkResult.patients ?? 0} pacientes · ${checkResult.carePlans ?? 0} planes de cuidados 2.0`) }}
+          </span>
+          <span v-else-if="checkError" class="text-sm text-danger-text" data-cy="ph-v3-check-error">{{ checkError }}</span>
+        </div>
       </div>
       <div>
         <label class="block text-sm font-medium text-ink-700">{{ t('Your email', 'Tu correo electrónico') }}</label>

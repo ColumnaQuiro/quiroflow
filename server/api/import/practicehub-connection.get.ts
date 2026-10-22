@@ -9,6 +9,9 @@ export default defineEventHandler(async (event) => {
   const { teamMember } = await requireSettingsPermission(event, 'data_admin')
   const admin = serverSupabaseServiceRole<Database>(event)
   const { data } = await admin.from('accounts').select('practicehub_base_url, practicehub_contact_email').eq('id', teamMember.account_id).maybeSingle()
-  const key = await getAccountSecret(admin, teamMember.account_id, 'practicehub_api_key')
-  return { baseUrl: data?.practicehub_base_url ?? null, contactEmail: data?.practicehub_contact_email ?? null, hasKey: Boolean(key) }
+  const [key, v3Key] = await Promise.all([
+    getAccountSecret(admin, teamMember.account_id, 'practicehub_api_key'),
+    getAccountSecret(admin, teamMember.account_id, 'practicehub_v3_api_key'),
+  ])
+  return { baseUrl: data?.practicehub_base_url ?? null, contactEmail: data?.practicehub_contact_email ?? null, hasKey: Boolean(key), hasV3Key: Boolean(v3Key) }
 })

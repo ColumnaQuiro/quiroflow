@@ -1,5 +1,4 @@
-import type { Breadcrumb, ErrorEvent } from '@sentry/core'
-// Relative, not ~/: inside the mobile build ~ is mobile/. The file imports
+// Relative, not ~/: inside the mobile build ~ is mobile/. That file imports
 // only types, so nothing in it resolves from the repo root's node_modules.
 import { scrubBreadcrumb, scrubEvent } from '../../utils/sentryPrivacy'
 
@@ -31,6 +30,25 @@ const JWT = /\beyJ[\w-]+\.[\w-]+\.[\w-]+/g
 // Anything with nine or more digits in a row is never useful to a bug report.
 const PHONE = /\+?\d(?:[\s.-]?\d){8,}/g
 
+// The shapes this touches, rather than @sentry/core's types: the app is on
+// Sentry 10 (what @sentry/capacitor requires) and the web on 11, and this
+// file is compiled by both -- the app's build and the root typecheck that
+// runs tests/unit. Either version's event fits these.
+interface AppBreadcrumb {
+  category?: string
+  message?: string
+  data?: Record<string, unknown>
+}
+interface AppEvent {
+  message?: string
+  transaction?: string
+  request?: { url?: string; headers?: Record<string, string> }
+  exception?: { values?: { value?: string }[] }
+  breadcrumbs?: AppBreadcrumb[]
+  contexts?: Record<string, unknown>
+  extra?: unknown
+}
+
 export function redactText(text: string): string {
   return text.replace(JWT, '[token]').replace(UUID, ':id').replace(EMAIL, '[email]').replace(PHONE, '[number]')
 }
@@ -43,16 +61,16 @@ function redactValues(data: Record<string, unknown>): Record<string, unknown> {
   return out
 }
 
-export function scrubAppBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb | null {
-  const scrubbed = scrubBreadcrumb(breadcrumb)
+export function scrubAppBreadcrumb<B extends AppBreadcrumb>(breadcrumb: B): B | null {
+  const scrubbed = scrubBreadcrumb(breadcrumb as never) as B | null
   if (!scrubbed) return null
   if (scrubbed.message) scrubbed.message = redactText(scrubbed.message)
   if (scrubbed.data) scrubbed.data = redactValues(scrubbed.data)
   return scrubbed
 }
 
-export function scrubAppEvent<T extends ErrorEvent>(event: T): T {
-  scrubEvent(event)
+export function scrubAppEvent<T extends AppEvent>(event: T): T {
+  scrubEvent(event as never)
   if (event.message) event.message = redactText(event.message)
   if (event.transaction) event.transaction = redactText(event.transaction)
   if (event.request?.url) event.request.url = redactText(event.request.url)
@@ -61,7 +79,7 @@ export function scrubAppEvent<T extends ErrorEvent>(event: T): T {
     if (exception.value) exception.value = redactText(exception.value)
   }
   if (event.breadcrumbs) {
-    event.breadcrumbs = event.breadcrumbs.map(scrubAppBreadcrumb).filter((b): b is Breadcrumb => b !== null)
+    event.breadcrumbs = event.breadcrumbs.map(scrubAppBreadcrumb).filter((b) => b !== null)
   }
   // The Vue integration attaches the failing component's props, and a
   // screen's props are its patient. attachProps is off in the plugin; this

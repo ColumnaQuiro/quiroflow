@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "nuxt dev",
-    "build": "nuxt generate && node scripts/strip-crossorigin.mjs",
+    "build": "nuxt generate && node scripts/strip-crossorigin.mjs && node scripts/sentry-sourcemaps.mjs",
     "postinstall": "nuxt prepare",
     "cap:sync": "npm run build && npx cap sync"
   },
@@ -21,6 +21,8 @@
     "@capacitor/status-bar": "^7.0.6",
     "@nuxtjs/supabase": "^2.0.10",
     "@nuxtjs/tailwindcss": "^6.14.0",
+    "@sentry/capacitor": "4.3.0",
+    "@sentry/vue": "10.69.0",
     "@supabase/supabase-js": "^2.112.3",
     "firebase": "^11.10.0",
     "nuxt": "^3.21.11",
@@ -29,6 +31,7 @@
   },
   "devDependencies": {
     "@capacitor/cli": "^7.6.9",
+    "@sentry/cli": "3.8.0",
     "typescript": "5.7"
   },
   "overrides": {

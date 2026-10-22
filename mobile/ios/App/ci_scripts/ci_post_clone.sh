@@ -82,5 +82,12 @@ cd "$CI_PRIMARY_REPOSITORY_PATH/mobile"
 export NUXT_PUBLIC_SUPABASE_URL="https://oyaprkfurtuujdfafptw.supabase.co"
 export NUXT_PUBLIC_SUPABASE_KEY="sb_publishable_YcvVhzmzvUvhf4vfv2edKg_PmQrl7To"
 
+# Crash and error reporting (mobile/plugins/00.sentry.client.ts), to the
+# Sentry project quiroflow-app. Public for the same reason: a DSN can only
+# send events, never read them. SENTRY_AUTH_TOKEN, which uploads the JS
+# source maps here and the dSYMs in ci_post_xcodebuild.sh, IS a secret and
+# lives in the workflow's environment variables in App Store Connect.
+export NUXT_PUBLIC_SENTRY_DSN="https://fce4b520c2072e4bd5d413dcb4bab4b9@o4512225986543616.ingest.de.sentry.io/4512300717178960"
+
 npm ci
 npm run cap:sync

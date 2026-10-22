@@ -37,8 +37,19 @@ export default defineNuxtConfig({
       // against the real deployment, since a relative fetch from a
       // capacitor://localhost origin was silently resolving nowhere.
       apiBase: 'https://app.quiroflow.com',
+      // Crash and error reporting (plugins/00.sentry.client.ts), to the
+      // Sentry project quiroflow-app. Read when the bundle is generated, so
+      // NUXT_PUBLIC_SENTRY_DSN must be in the environment of `npm run
+      // build`; blank sends nothing. The DSN only allows sending events, so
+      // it is public by design, like the Supabase publishable key.
+      sentryDsn: '',
+      sentryEnvironment: 'production',
     },
   },
+  // Source maps only for Sentry: hidden (no sourceMappingURL in the bundle),
+  // uploaded and then deleted by scripts/sentry-sourcemaps.mjs. Without the
+  // token there is nowhere to send them, so none are made.
+  sourcemap: { client: process.env.SENTRY_AUTH_TOKEN ? 'hidden' : false },
   modules: ['@nuxtjs/tailwindcss', '@nuxtjs/supabase'],
   // theme.css declares its fonts at /fonts/… (the repo's public/fonts/), and
   // inside the WebView that path is capacitor://localhost/fonts/…, served

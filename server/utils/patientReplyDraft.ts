@@ -7,8 +7,8 @@ import { recentImages, withImages, type StoredImage } from '~/server/utils/recep
 import { historyLine } from '~/utils/receptionistHistory'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personRepliedSince } from '~/utils/receptionistAutoReply'
 import { loadBookedVisits, loadFamilyAdults, loadOfferedTypes, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, toneWording, uniqueTypes, clinicTodayStart } from '~/server/utils/receptionist'
-import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptionistModel'
-import { typesForAudience, typesForMinor } from '~/utils/receptionistTypes'
+import { freeTimesLookup, runReceptionistModel, type FreeTimesForWhom } from '~/server/utils/receptionistModel'
+import { matchChild, typesForAudience, typesForMinor } from '~/utils/receptionistTypes'
 import { internalNotes } from '~/utils/receptionistGuard'
 import { carePlanCadenceLabel } from '~/utils/carePlanCadence'
 import { buildPatientReplyPrompt, openBono, type PatientReplyFacts } from '~/utils/patientReplyPrompt'
@@ -186,7 +186,18 @@ export async function draftPatientReply(
   // the rest of the team's, and practitionerIds is what they are really with.
   const own = facts.lastVisitAt ? await loadPatientPractitioners(supabase, accountId, patientId, booked.practitionerIds) : null
   const { calendar, practitionerIds } = await loadPatientCalendar(service, accountId, config, bookable, own)
-  const findFreeTimes = calendar.availability ? freeTimesLookup(service, accountId, config, bookable, calendar.timeZone, practitionerIds) : null
+  // A child's or a relative's times, by name: with their own practitioner,
+  // for the types they may have.
+  const forWhom: FreeTimesForWhom = (name) => {
+    const child = matchChild(minors.children, name)
+    const relative = child ? null : matchChild(family.members, name)
+    if (child === 'ambiguous' || relative === 'ambiguous') return { error: 'More than one person in their family has that first name. Ask the surname.' }
+    if (child) return { practitionerIds: child.practitionerIds, types: child.hasBeenBefore ? minors.forReturningChild : minors.forNewChild }
+    if (relative) return { practitionerIds: relative.practitionerIds, types: relative.hasBeenBefore ? family.forReturning : family.forNew }
+    // A child who is not on file yet: a first visit, with whoever is free.
+    return { practitionerIds: null, types: minors.forNewChild }
+  }
+  const findFreeTimes = calendar.availability ? freeTimesLookup(service, accountId, config, bookable, calendar.timeZone, practitionerIds, forWhom) : null
 
   // Sent rather than stored: asked for, on the channel they last wrote on
   // (WhatsApp or the app), and nothing in the conversation holding it back.

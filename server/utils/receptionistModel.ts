@@ -33,6 +33,10 @@ const FIND_FREE_TIMES: Anthropic.Tool = {
       from_date: { type: 'string', description: 'First date to look at, as YYYY-MM-DD.' },
       to_date: { type: 'string', description: `Last date, as YYYY-MM-DD, at most ${FREE_TIMES_MAX_DAYS - 1} days after from_date. Leave out to look at one day.` },
       appointment_type: { type: 'string', description: 'One of the appointment types you can offer, by its exact name. Leave out for all of them.' },
+      for_name: {
+        type: 'string',
+        description: "When the visit is for one of their children, or an adult in their family listed in your instructions, rather than for them: that person's name. Their times are then with that person's own practitioner. Leave out for the person writing.",
+      },
     },
     required: ['from_date'],
     additionalProperties: false,
@@ -49,6 +53,13 @@ export interface ReceptionistToolUse {
 export type FreeTimesLookup = (input: unknown) => Promise<{ content: string; isError: boolean }>
 
 /**
+ * Whose times find_free_times reads when for_name is given: a child or an
+ * adult in the writer's family, by name -- their own practitioner and the
+ * types they may have -- or what to say when the name is nobody's.
+ */
+export type FreeTimesForWhom = (name: string) => { practitionerIds: string[] | null; types: OfferedType[] } | { error: string }
+
+/**
  * find_free_times for one person: the types they may be offered, read with
  * `calendarClient`, which must be the service role for the reason
  * loadReceptionistCalendar gives.
@@ -62,28 +73,38 @@ export function freeTimesLookup(
   // The same narrowing as the prompt's list: a returning patient's own
   // practitioner(s), or null for anyone.
   practitionerIds: string[] | null = null,
+  // for_name: someone in their family instead of the person writing.
+  forWhom: FreeTimesForWhom | null = null,
 ): FreeTimesLookup {
   return async (input) => {
     const now = new Date()
     const query = parseFreeTimesInput(input, clinicDateOf(now, timeZone))
     if ('error' in query) return { content: query.error, isError: true }
 
-    const chosen = query.typeName ? types.filter((type) => type.name.toLowerCase() === query.typeName!.toLowerCase()) : types
+    const forName = typeof (input as { for_name?: unknown } | null)?.for_name === 'string' ? ((input as { for_name: string }).for_name).replace(/\s+/g, ' ').trim().slice(0, 120) : ''
+    let whose = { practitionerIds, types }
+    if (forName) {
+      const found = forWhom ? forWhom(forName) : { error: 'You cannot look up times for someone else here. Ask which days suit them and say your colleague will confirm.' }
+      if ('error' in found) return { content: found.error, isError: true }
+      whose = found
+    }
+
+    const chosen = query.typeName ? whose.types.filter((type) => type.name.toLowerCase() === query.typeName!.toLowerCase()) : whose.types
     if (chosen.length === 0) {
-      return { content: `"${query.typeName}" is not a type you can offer. Use one of: ${types.map((type) => type.name).join(', ')}.`, isError: true }
+      return { content: `"${query.typeName}" is not a type you can offer${forName ? ` ${forName}` : ''}. Use one of: ${whose.types.map((type) => type.name).join(', ')}.`, isError: true }
     }
 
     const calendar = await loadReceptionistCalendar(calendarClient, accountId, config, chosen, now, {
       from: startOfLocalDate(query.from, timeZone),
       days: query.days,
       maxTimesPerList: FREE_TIMES_MAX_TIMES,
-    }, practitionerIds)
+    }, whose.practitionerIds)
     if (!calendar.availability) {
       return { content: 'The calendar could not be read. Do not offer a time: ask which days suit them and say your colleague will confirm an exact time shortly.', isError: true }
     }
     const span = `the ${query.days} day${query.days === 1 ? '' : 's'} from ${query.from}`
     return {
-      content: [`Free start times for ${span}, in the clinic's local time. A day not listed has nothing free.`, ...availabilityLists(calendar.availability, `in ${span}`)].join('\n\n'),
+      content: [`Free start times${forName ? ` for ${forName}` : ''} for ${span}, in the clinic's local time. A day not listed has nothing free.`, ...availabilityLists(calendar.availability, `in ${span}`)].join('\n\n'),
       isError: false,
     }
   }

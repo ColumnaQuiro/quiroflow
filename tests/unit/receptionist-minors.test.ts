@@ -79,3 +79,28 @@ describe('Prompt section for children', () => {
     expect(text).toContain('- Lucía Gómez (has been to the clinic)')
   })
 })
+
+describe('Children the records suggest are theirs', () => {
+  const section = (children: Parameters<typeof minorsSection>[0]['children']) =>
+    minorsSection({ forNewChild: [childFirst], forReturningChild: [adjustment], children, canBook: true, sendsItself: true })
+
+  it('lists them apart, asks their names first, and books them as the existing record', () => {
+    const text = section([
+      { firstName: 'Lia', lastName: 'Prueba', hasBeenBefore: true, linked: false, age: 7 },
+      { firstName: 'Teo', lastName: 'Prueba', hasBeenBefore: true, linked: false, age: null },
+    ])
+    expect(text).toContain('Probably also their children')
+    expect(text).toContain('- Lia Prueba, 7 (has been to the clinic)')
+    expect(text).toContain('- Teo Prueba (has been to the clinic)')
+    expect(text).toContain('ask the children\'s names and ages; never say these names first')
+    expect(text).toContain('never make another record')
+    expect(text).not.toContain('already on file with them as tutor')
+  })
+
+  it('keeps linked children where they were, and sends a child\'s times to their own practitioner', () => {
+    const text = section([{ firstName: 'Ana', lastName: null, hasBeenBefore: true }])
+    expect(text).toContain('already on file with them as tutor:\n- Ana (has been to the clinic)')
+    expect(text).not.toContain('Probably also their children')
+    expect(text).toContain('find_free_times and for_name')
+  })
+})

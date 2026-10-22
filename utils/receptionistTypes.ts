@@ -128,6 +128,9 @@ export interface PromptChild {
   firstName: string
   lastName: string | null
   hasBeenBefore: boolean
+  /** False: the records only suggest the child is theirs (loadTutorChildren). Absent counts as linked. */
+  linked?: boolean
+  age?: number | null
 }
 
 /**
@@ -139,14 +142,19 @@ export interface PromptChild {
  */
 export function minorsSection(opts: { forNewChild: PromptType[]; forReturningChild: PromptType[]; children: PromptChild[]; canBook: boolean; sendsItself: boolean }): string {
   const list = (types: PromptType[]) => (types.length ? types.map((type) => `"${type.name}"`).join(', ') : 'none -- your colleague arranges it')
-  const children = opts.children.map((c) => `- ${[c.firstName, c.lastName].filter(Boolean).join(' ')}${c.hasBeenBefore ? ' (has been to the clinic)' : ' (has not been yet)'}`)
+  const line = (c: PromptChild) => `- ${[c.firstName, c.lastName].filter(Boolean).join(' ')}${typeof c.age === 'number' ? `, ${c.age}` : ''}${c.hasBeenBefore ? ' (has been to the clinic)' : ' (has not been yet)'}`
+  const children = opts.children.filter((c) => c.linked !== false).map(line)
+  const probable = opts.children.filter((c) => c.linked === false).map(line)
   return [
     `# Appointments for their children\nThe person writing may want an appointment for their son or daughter rather than for themselves. The child is then the patient, and the person writing is the child's tutor (legal guardian), who gets the confirmation and the reminders. Everything above about prices, types and first visits is about the person writing; for their child, use this section.`,
     `- If it is not clear who the appointment is for, ask. If it is for a child and you do not have them yet, ask the child's first name and surname and their age.`,
-    `- Under ${MINOR_AGE}, for a child who has not been to the clinic yet, offer only: ${list(opts.forNewChild)}. For a child who has been: ${list(opts.forReturningChild)}. Their free times are under these names in the Booking list, or with find_free_times.`,
+    `- Under ${MINOR_AGE}, for a child who has not been to the clinic yet, offer only: ${list(opts.forNewChild)}. For a child who has been: ${list(opts.forReturningChild)}. A child who has been is seen by their own practitioner, not necessarily the one the person writing sees: look up their free times with find_free_times and for_name set to the child's name, and offer those. When they want several children seen, offer times next to each other, and book each child in turn.`,
     `- ${MINOR_AGE} or over: an adult, not a child -- see "Appointments for an adult in their family" if it is there; otherwise ask that person's first name and surname, offer times, and ${opts.sendsItself ? 'call hand_over_to_colleague with the name and the time they accepted' : 'say your colleague will confirm it'}. Never tell them that person has to write to the clinic themselves.`,
     opts.canBook ? `- To book it, call book_appointment with child_name and child_age as well: the visit is then in the child's name, with the person writing as their tutor. Moving or cancelling a child's visit is your colleague's: hand those over.` : '',
     children.length ? `Their children already on file with them as tutor:\n${children.join('\n')}` : '',
+    probable.length
+      ? `Probably also their children -- in their family on the clinic's records, not yet confirmed as theirs:\n${probable.join('\n')}\nWhen they ask for their children without naming them, ask the children's names and ages; never say these names first. A name they give that matches one of these is that child, already a patient here: never make another record for them. Booking them with child_name confirms them as the children of the person writing.`
+      : '',
   ].filter(Boolean).join('\n')
 }
 

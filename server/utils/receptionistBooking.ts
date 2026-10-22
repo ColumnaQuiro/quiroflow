@@ -142,11 +142,14 @@ type ToolResult = { content: string; isError: boolean }
 const HH_MM = /^([01]\d|2[0-3]):[0-5]\d$/
 const DAY = /^\d{4}-\d{2}-\d{2}$/
 
-/** book_appointment for one person in one reply. */
+/**
+ * book_appointment, once per person in one reply: a parent booking two
+ * children, or a visit for themselves and one for their partner, is several
+ * people, each booked once.
+ */
 export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<ToolResult> {
-  let used = false
+  const used = new Set<string>()
   return async (input) => {
-    if (used) return { content: 'You have already booked or moved a visit in this reply. Do not book again: tell them what was booked.', isError: true }
     const value = (input ?? {}) as { appointment_type?: unknown; date?: unknown; time?: unknown; move_visit_on?: unknown; full_name?: unknown; email?: unknown; child_name?: unknown; child_age?: unknown; family_member_name?: unknown }
     const date = typeof value.date === 'string' ? value.date.trim() : ''
     const time = typeof value.time === 'string' ? value.time.trim() : ''
@@ -184,6 +187,11 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
       if (!hit) return { content: "You cannot book for that person. Call hand_over_to_colleague with their full name and the day and time accepted, and tell them your colleague will confirm it. Do not say whether that person is a patient, and do not tell them that person has to write to the clinic.", isError: true }
       relative = hit
     }
+
+    // Who this visit is for, so the same person is not booked twice in one
+    // reply -- while two children, or them and their partner, may be.
+    const whom = relative ? `relative:${relative.id}` : child ? (child.existing ? `child:${child.existing.id}` : `new-child:${child.name.toLowerCase()}`) : 'self'
+    if (used.has(whom)) return { content: 'You have already booked or moved a visit for this person in this reply. Do not book them again: tell them what was booked.', isError: true }
 
     // What is being booked: a move keeps the visit's type and is found by
     // when it is now; a new booking is one of the types this person may have
@@ -223,8 +231,10 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
     // then the patient's own, then anyone the list was built from.
     const dayStart = startOfLocalDate(date, ctx.timeZone)
     let chosen: { practitionerId: string; clinicId: string } | null = null
-    // A relative's times are with their own practitioner, not the writer's.
-    const own = relative ? relative.practitionerIds : ctx.practitionerIds
+    // A relative's or a child's times are with their own practitioner, not
+    // the writer's: children who see one practitioner while their parent
+    // sees another.
+    const own = relative ? relative.practitionerIds : (child?.existing?.practitionerIds ?? ctx.practitionerIds)
     for (const practitionerId of await candidatePractitioners(ctx, moving, own)) {
       const calendar = await loadReceptionistCalendar(ctx.service, ctx.accountId, ctx.config, [type], new Date(), { from: dayStart, days: 1, maxTimesPerList: 1000 }, [practitionerId])
       const group = calendar.availability?.groups.find((g) => g.days.some((d) => d.date === date && d.times.includes(time)))
@@ -260,7 +270,7 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
     const practitionerName = (practitioner as { full_name: string | null } | null)?.full_name ?? null
     const window = await resolveWindow(ctx.service, ctx.accountId, { startsAt: start.toISOString(), appointmentTypeId: type.id, practitionerId: chosen.practitionerId })
 
-    used = true
+    used.add(whom)
     let appointmentId: string
     try {
       appointmentId = await saveAppointmentIfFree(
@@ -283,15 +293,18 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
         { checkOverlap: true },
       )
     } catch (err) {
-      used = false
+      used.delete(whom)
       console.error('[receptionist] booking refused:', (err as Error)?.message ?? err)
       return { content: `${time} on ${date} was taken a moment ago. Offer another free time; do not say it is booked.`, isError: true }
     }
 
     const when = new Date(window.startsAt).toLocaleString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: ctx.timeZone })
     const was = moving ? new Date(moving.startsAt).toLocaleString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: ctx.timeZone }) : null
+    // A child the records only suggested was theirs is theirs now: they named
+    // them, and the visit is booked in the child's name with them as tutor.
+    const confirmed = child?.existing && !child.existing.linked ? await linkChild(writer, ctx.accountId, tutor.patientId, child.existing.id) : false
     const forChild = child
-      ? ` para ${child.existing ? [child.existing.firstName, child.existing.lastName].filter(Boolean).join(' ') : child.name}${child.existing ? '' : ' (ficha nueva, menor, con quien escribe como tutor)'}`
+      ? ` para ${child.existing ? [child.existing.firstName, child.existing.lastName].filter(Boolean).join(' ') : child.name}${child.existing ? (confirmed ? ' (marcado como menor, con quien escribe como tutor)' : '') : ' (ficha nueva, menor, con quien escribe como tutor)'}`
       : relative ? ` para ${[relative.firstName, relative.lastName].filter(Boolean).join(' ')} (familiar en su ficha)` : ''
     const summary = moving
       ? `He movido su ${type.name} del ${was} al ${when}${practitionerName ? ` con ${practitionerName}` : ''}.`
@@ -335,6 +348,37 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000
+
+/**
+ * A child the records only suggested was the writer's (loadTutorChildren),
+ * confirmed by them naming the child for a visit: a minor with the writer as
+ * tutor -- unless someone else is already their tutor, which is left alone --
+ * and linked as their child both ways under Familia (patient_relations). The
+ * date of birth is not touched; the clinic may not have one, and an age said
+ * in a chat is not one. True when the child is now theirs.
+ */
+export async function linkChild(writer: Supa, accountId: string, tutorId: string, childId: string): Promise<boolean> {
+  const { data: updated, error } = await writer
+    .from('patients')
+    .update({ is_minor: true, tutor_patient_id: tutorId } as never)
+    .eq('id', childId)
+    .eq('account_id', accountId)
+    .or(`tutor_patient_id.is.null,tutor_patient_id.eq.${tutorId}`)
+    .select('id')
+  if (error || !(updated ?? []).length) {
+    if (error) console.error('[receptionist] could not link the child to their tutor:', error.message)
+    return false
+  }
+  const { error: relError } = await writer.from('patient_relations').upsert(
+    [
+      { account_id: accountId, patient_id: tutorId, related_patient_id: childId, relation: 'child' },
+      { account_id: accountId, patient_id: childId, related_patient_id: tutorId, relation: 'parent' },
+    ] as never,
+    { onConflict: 'patient_id,related_patient_id', ignoreDuplicates: true },
+  )
+  if (relError) console.error('[receptionist] could not link the child as family:', relError.message)
+  return true
+}
 
 /**
  * A child's own record: a minor, with the person writing as tutor, at the

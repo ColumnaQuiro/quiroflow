@@ -1,7 +1,9 @@
 <script setup lang="ts">
 // The list itself lives in composables/useAppNav.ts, shared with the iPad
 // side menu; this bar is the phone's, hidden from md up by the layout.
-const { items: tabs, isActive } = useStaffNav()
+const { items, isActive } = useStaffNav()
+// Profile stays in the iPad's side menu; on a phone it is the avatar on My Day.
+const tabs = computed(() => items.value.filter((x) => x.inTabBar !== false))
 const t = useT()
 </script>
 

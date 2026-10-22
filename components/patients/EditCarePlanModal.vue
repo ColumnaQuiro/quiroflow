@@ -23,7 +23,7 @@ const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
 
-const name = ref(props.plan?.name ?? t('Care Plan', 'Plan de tratamiento'))
+const name = ref(props.plan?.name ?? t('Care Plan', 'Plan de cuidados'))
 // "N visits every M weeks": frequency_value is the interval M (what the
 // calendar series and Care Plan Alerts read), visits_per_period is N.
 const visitsPerPeriod = ref(props.plan?.visits_per_period ?? 1)
@@ -101,7 +101,7 @@ async function save() {
   const { error: insertError } = await supabase.from('care_plans').insert({
     account_id: store.accountId!,
     patient_id: props.patientId,
-    name: name.value.trim() || t('Care Plan', 'Plan de tratamiento'),
+    name: name.value.trim() || t('Care Plan', 'Plan de cuidados'),
     frequency_value: Math.max(1, Math.round(frequencyValue.value || 1)),
     frequency_unit: frequencyUnit.value,
     visits_per_period: Math.min(7, Math.max(1, Math.round(visitsPerPeriod.value || 1))),
@@ -128,7 +128,7 @@ async function save() {
   <div class="fixed inset-0 z-20 flex items-center justify-center bg-ink-900/40 p-4" @click.self="emit('close')">
     <div class="max-h-full w-full overflow-y-auto max-w-sm rounded-lg bg-white p-6 shadow-xl">
       <div class="flex items-center justify-between">
-        <h2 class="text-lg font-semibold text-gray-900">{{ plan ? t('Edit Plan', 'Editar plan') : t('New Care Plan', 'Nuevo plan de tratamiento') }}</h2>
+        <h2 class="text-lg font-semibold text-gray-900">{{ plan ? t('Edit Plan', 'Editar plan') : t('New Care Plan', 'Nuevo plan de cuidados') }}</h2>
         <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-gray-400 hover:text-gray-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="emit('close')">✕</button>
       </div>
 

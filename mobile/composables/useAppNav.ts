@@ -33,22 +33,29 @@ export function useStaffNav() {
   return { items, isActive }
 }
 
-// The web portal's destinations (layouts/portal.vue) in the same order, so a
-// patient who uses both finds the same things -- except Ejercicios, which the
-// portal lists and the app reaches from the home screen: six tabs do not fit
-// a phone's tab bar.
+// The patient's tabs. Five fit a phone's tab bar, so each answers one
+// question: what's next (Inicio), my visits, plan and what I've paid (Plan),
+// how I'm doing (Progreso), my papers, my messages. Pagos is no longer a tab
+// of its own: its bonos, balance and invoices are on Plan, and the full
+// list (/billing) opens from there and from Inicio's "pendiente" banner.
+// Ejercicios opens from Inicio. "Plan", not "Tratamiento": a chiropractor
+// in Spain may not call their care a treatment.
 export function usePatientNav() {
   const t = useT()
   const route = useRoute()
   const items = computed<AppNavItem[]>(() => [
     { label: t('Home', 'Inicio'), to: '/', icon: 'M2.5 7L8 2.5 13.5 7v6.5h-4v-4h-3v4h-4z' },
-    { label: t('Visits', 'Citas'), to: '/visits', icon: 'M2.5 3.5h11v10h-11zM2.5 6.6h11M5.6 2v2M10.4 2v2' },
-    { label: t('Billing', 'Pagos'), to: '/billing', icon: 'M2 4h12v8h-12zM2 7h12' },
+    { label: t('Plan', 'Plan'), to: '/visits', icon: 'M2.5 3.5h11v10h-11zM2.5 6.6h11M5.6 2v2M10.4 2v2' },
+    { label: t('Progress', 'Progreso'), to: '/progress', icon: 'M2 13.5h12M3.5 11l3-3.5 2.5 2 4-5' },
     { label: t('Documents', 'Documentos'), to: '/documents', icon: 'M4 2h5l3 3v9H4zM9 2v3.2h3' },
     { label: t('Messages', 'Mensajes'), to: '/messages', icon: 'M2 3.5h12v8h-7l-3 2.5v-2.5h-2z' },
   ])
   // Home is an exact match -- every other path starts with '/', so a prefix
-  // test would light it up on every tab.
-  const isActive = (to: string) => (to === '/' ? route.path === '/' : route.path === to || route.path.startsWith(`${to}/`))
+  // test would light it up on every tab. The full invoice list belongs to Plan.
+  const isActive = (to: string) => {
+    if (to === '/') return route.path === '/'
+    if (to === '/visits' && route.path.startsWith('/billing')) return true
+    return route.path === to || route.path.startsWith(`${to}/`)
+  }
   return { items, isActive }
 }

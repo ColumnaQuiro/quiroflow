@@ -448,7 +448,7 @@ function onDetailsUpdated() {
       <!-- 3. Care plan -->
       <section aria-labelledby="ov-plan" class="rounded-card border border-line bg-surface p-4 shadow-card">
         <div class="flex items-center justify-between gap-2">
-          <h2 id="ov-plan" class="text-[13.5px] font-semibold text-ink-700">{{ t('Care plan', 'Plan de tratamiento') }}</h2>
+          <h2 id="ov-plan" class="text-[13.5px] font-semibold text-ink-700">{{ t('Care plan', 'Plan de cuidados') }}</h2>
           <NuxtLink
             :to="`/patients/${patient.id}?tab=clinical`"
             class="text-[12.5px] font-medium text-brand-text outline-none hover:underline focus-visible:shadow-focus"

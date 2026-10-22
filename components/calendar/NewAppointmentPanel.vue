@@ -1013,7 +1013,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
                 <option value="weekly">{{ t('Weekly (8 occurrences)', 'Semanalmente (8 repeticiones)') }}</option>
                 <option value="monthly">{{ t('Monthly (8 occurrences)', 'Mensualmente (8 repeticiones)') }}</option>
                 <option v-if="carePlan && carePlanRemaining > 0" value="care_plan">
-                  {{ t(`Follow care plan — ${carePlanRemaining} sessions left, ${carePlanFrequencyLabel}`, `Seguir plan de tratamiento — ${carePlanRemaining} sesiones restantes, ${carePlanFrequencyLabel}`) }}
+                  {{ t(`Follow care plan — ${carePlanRemaining} sessions left, ${carePlanFrequencyLabel}`, `Seguir plan de cuidados — ${carePlanRemaining} sesiones restantes, ${carePlanFrequencyLabel}`) }}
                 </option>
               </select>
             </label>

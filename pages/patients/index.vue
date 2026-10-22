@@ -371,7 +371,7 @@ const activeFilters = computed<ActiveFilter[]>(() => {
     out.push({ key: 'balance', label, clear: () => (balanceFilter.value = 'any') })
   }
   if (carePlanFilter.value === 'on') {
-    out.push({ key: 'plan', label: t('On a care plan', 'Con plan de tratamiento'), clear: () => (carePlanFilter.value = 'any') })
+    out.push({ key: 'plan', label: t('On a care plan', 'Con plan de cuidados'), clear: () => (carePlanFilter.value = 'any') })
   }
   if (missingContact.value !== 'any') {
     const label = missingContact.value === 'email' ? t('Missing email', 'Sin correo') : t('Missing phone', 'Sin teléfono')
@@ -496,7 +496,7 @@ function tagClass(tag: string) {
 
         <PatientsFilterSelect v-model="carePlanFilter" :label="t('Care plan', 'Plan')" :options="[
           { value: 'any', label: t('Care plan: any', 'Plan: cualquiera') },
-          { value: 'on', label: t('On a care plan', 'Con plan de tratamiento') },
+          { value: 'on', label: t('On a care plan', 'Con plan de cuidados') },
         ]" />
 
         <PatientsFilterSelect v-model="balanceFilter" :label="t('Balance', 'Saldo')" :options="[
@@ -604,7 +604,7 @@ function tagClass(tag: string) {
                 <th scope="col" class="w-[175px] px-3 py-2.5 text-left">{{ t('Contact', 'Contacto') }}</th>
                 <th scope="col" class="w-[120px] px-3 py-2.5 text-left">{{ t('Last visit', 'Última visita') }}</th>
                 <th scope="col" class="w-[150px] px-3 py-2.5 text-left">{{ t('Next visit', 'Próxima visita') }}</th>
-                <th scope="col" class="w-[165px] px-3 py-2.5 text-left">{{ t('Care plan', 'Plan de tratamiento') }}</th>
+                <th scope="col" class="w-[165px] px-3 py-2.5 text-left">{{ t('Care plan', 'Plan de cuidados') }}</th>
                 <th scope="col" class="hidden w-[130px] px-3 py-2.5 text-left xl:table-cell">{{ t('Tags', 'Etiquetas') }}</th>
                 <th scope="col" class="w-[120px] px-3 py-2.5 text-right">{{ t('Balance', 'Saldo') }}</th>
                 <th scope="col" class="w-[48px] px-3 py-2.5"><span class="sr-only">{{ t('Actions', 'Acciones') }}</span></th>

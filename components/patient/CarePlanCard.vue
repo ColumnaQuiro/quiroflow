@@ -113,7 +113,7 @@ function askToBook() {
       <UiSkeleton class="h-[6px] w-full rounded-full" />
     </div>
     <template v-else-if="plan && progress">
-      <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ t('Your care plan', 'Tu plan de tratamiento') }}</p>
+      <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ t('Your care plan', 'Tu plan de cuidados') }}</p>
       <div class="mt-1.5 flex items-baseline justify-between gap-3">
         <p class="min-w-0 truncate text-[15px] font-[640] text-ink-900">{{ plan.name }}</p>
         <p class="shrink-0 text-[13px] text-ink-muted" data-cy="patient-plan-count">

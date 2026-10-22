@@ -16,7 +16,7 @@ const invoices = [
 <template>
   <OnboardingPreview
     :eyebrow="props.clinicName ?? t('Patient portal', 'Espacio del paciente')"
-    :title="t('Everything about your care, in one place', 'Todo lo de tu tratamiento, a mano')"
+    :title="t('Everything about your care, in one place', 'Todo lo de tus cuidados, a mano')"
     :body="
       t(
         'See and change your appointments, download your invoices, sign your documents and write to the clinic.',

@@ -152,14 +152,14 @@ const messagingRow = computed(() => [...rows.value, ...exerciseRows.value].find(
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader :title="t('Care Plan Alerts', 'Alertas de plan de tratamiento')" :meta="loading ? undefined : `${rows.length} ${t('behind schedule', 'con retraso')}`" />
+    <PageHeader :title="t('Care Plan Alerts', 'Alertas de plan de cuidados')" :meta="loading ? undefined : `${rows.length} ${t('behind schedule', 'con retraso')}`" />
 
     <div class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] sm:px-6">
       <p class="mb-4 text-[13px] text-ink-muted2">
         {{
           t(
             "Patients on an active care plan whose next visit is overdue by the plan's own cadence, with no future appointment booked.",
-            'Pacientes con un plan de tratamiento activo cuya próxima visita está retrasada según la cadencia del propio plan, sin ninguna cita futura reservada.',
+            'Pacientes con un plan de cuidados activo cuya próxima visita está retrasada según la cadencia del propio plan, sin ninguna cita futura reservada.',
           )
         }}
       </p>
@@ -190,7 +190,7 @@ const messagingRow = computed(() => [...rows.value, ...exerciseRows.value].find(
               </tr>
             </template>
             <tr v-else-if="rows.length === 0">
-              <td colspan="7" class="px-3 py-6 text-center text-ink-faint">{{ t('No care plans behind schedule.', 'Ningún plan de tratamiento retrasado.') }}</td>
+              <td colspan="7" class="px-3 py-6 text-center text-ink-faint">{{ t('No care plans behind schedule.', 'Ningún plan de cuidados retrasado.') }}</td>
             </tr>
             <tr v-for="row in rows" :key="row.patient_id">
               <td class="px-3 py-2">

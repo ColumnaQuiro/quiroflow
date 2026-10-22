@@ -97,7 +97,7 @@ function bookPlan() {
     </div>
     <template v-else>
       <div class="flex items-center justify-between gap-2">
-        <p class="truncate text-[13.5px] font-semibold text-ink-700">{{ plan ? plan.name : t('No care plan', 'Sin plan de tratamiento') }}</p>
+        <p class="truncate text-[13.5px] font-semibold text-ink-700">{{ plan ? plan.name : t('No care plan', 'Sin plan de cuidados') }}</p>
         <button v-if="editable" type="button" class="shrink-0 text-[12px] font-medium text-brand-text hover:text-brand-hover" data-cy="care-plan-edit" @click="editOpen = true">
           {{ plan ? t('Edit', 'Editar') : t('+ Add plan', '+ Añadir plan') }}
         </button>

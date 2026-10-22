@@ -29,7 +29,7 @@ const supabase = useSupabaseClient()
 const t = useT()
 const { context } = usePractitionerContext()
 
-const name = ref(props.plan?.name ?? t('Care Plan', 'Plan de tratamiento'))
+const name = ref(props.plan?.name ?? t('Care Plan', 'Plan de cuidados'))
 const every = ref(props.plan?.frequency_value ?? 1)
 // Visits in each period: 2 a week for an intensive phase (visits_per_period).
 const perPeriod = ref(props.plan?.visits_per_period ?? 1)
@@ -93,7 +93,7 @@ async function save() {
   const { error: e } = await supabase.from('care_plans').insert({
     account_id: context.value.accountId,
     patient_id: props.patientId,
-    name: name.value.trim() || t('Care Plan', 'Plan de tratamiento'),
+    name: name.value.trim() || t('Care Plan', 'Plan de cuidados'),
     frequency_value: clamp(every.value, 1, 52),
     frequency_unit: unit.value,
     visits_per_period: clamp(perPeriod.value, 1, 7),
@@ -122,11 +122,11 @@ const stepBtn = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl
       style="padding-bottom: max(env(safe-area-inset-bottom), 1.25rem)"
       role="dialog"
       aria-modal="true"
-      :aria-label="plan ? t('Edit plan', 'Editar plan') : t('New care plan', 'Nuevo plan de tratamiento')"
+      :aria-label="plan ? t('Edit plan', 'Editar plan') : t('New care plan', 'Nuevo plan de cuidados')"
       @submit.prevent="save"
     >
       <div class="mx-auto mb-0.5 h-1 w-[38px] shrink-0 rounded-full bg-line-control md:hidden" />
-      <p class="text-[17px] font-semibold text-ink-900">{{ plan ? t('Edit plan', 'Editar plan') : t('New care plan', 'Nuevo plan de tratamiento') }}</p>
+      <p class="text-[17px] font-semibold text-ink-900">{{ plan ? t('Edit plan', 'Editar plan') : t('New care plan', 'Nuevo plan de cuidados') }}</p>
 
       <label class="flex flex-col gap-1 text-[12.5px] font-medium text-ink-muted">
         {{ t('Name', 'Nombre') }}

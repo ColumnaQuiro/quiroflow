@@ -29,6 +29,7 @@ export const SETTINGS_PAGES = [
   '/settings/import',
   '/settings/invoicing',
   '/settings/leads',
+  '/settings/letters',
   '/settings/memberships',
   '/settings/new-patient-fields',
   '/settings/online-booking',

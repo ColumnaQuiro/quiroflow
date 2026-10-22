@@ -39,12 +39,12 @@ async function loadMembers() {
 const memberFilter = ref('')
 
 const AREAS = computed(() => [
-  { key: 'clinical', label: t('Clinical notes & files', 'Notas clínicas y archivos'), types: ['visit_note', 'patient_file', 'patient_doc'] },
+  { key: 'clinical', label: t('Clinical notes & files', 'Notas clínicas y archivos'), types: ['visit_note', 'patient_file', 'patient_doc', 'patient_letter'] },
   { key: 'patients', label: t('Patients', 'Pacientes'), types: ['patient'] },
   { key: 'appointments', label: t('Appointments', 'Citas'), types: ['appointment'] },
   { key: 'money', label: t('Money', 'Cobros'), types: ['payment', 'invoice', 'account_credit', 'package_purchase', 'patient_membership', 'cash_shift', 'cash_movement'] },
   { key: 'access', label: t('Team & access', 'Equipo y accesos'), types: ['team_member', 'team_member_clinic', 'role', 'invite', 'api_token', 'webhook'] },
-  { key: 'settings', label: t('Clinic settings', 'Ajustes de la clínica'), types: ['account', 'clinic', 'verifactu_certificate', 'verifactu_delegation', 'appointment_type', 'package', 'membership', 'service'] },
+  { key: 'settings', label: t('Clinic settings', 'Ajustes de la clínica'), types: ['account', 'clinic', 'verifactu_certificate', 'verifactu_delegation', 'appointment_type', 'package', 'membership', 'service', 'letter_template'] },
 ])
 const areaFilter = ref('')
 
@@ -128,6 +128,8 @@ const ENTITY_LABELS = computed<Record<string, string>>(() => ({
   patient_membership: t('Membership', 'Membresía'),
   patient_file: t('Patient file', 'Archivo del paciente'),
   patient_doc: t('Patient document', 'Documento del paciente'),
+  patient_letter: t('Letter', 'Carta'),
+  letter_template: t('Letter template', 'Plantilla de carta'),
   team_member: t('Team member', 'Miembro del equipo'),
   team_member_clinic: t('Clinic assignment', 'Asignación de clínica'),
   role: t('Role', 'Rol'),

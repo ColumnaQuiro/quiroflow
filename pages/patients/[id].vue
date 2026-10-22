@@ -148,6 +148,7 @@ const TAB_ALIASES: Record<string, string> = {
   billing: 'money',
   docs: 'attachments',
   files: 'attachments',
+  letters: 'attachments',
 }
 
 // /billing/<id>'s Refund button lands here: the ledger owns the refund modal,

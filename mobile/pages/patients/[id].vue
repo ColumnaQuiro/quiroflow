@@ -336,6 +336,40 @@ function goBack() {
   else navigateTo('/patients')
 }
 
+// -- Tabs -----------------------------------------------------------------------
+// The record was one long column of fourteen cards -- clinical next to money
+// next to forms -- and what someone came for was always a long scroll away.
+// Who they are, the alerts and the actions stay on top; the rest is in tabs,
+// each shown only to a role that has something in it (the rules above are
+// unchanged). ?tab= opens one directly and is kept in the address, so going
+// back to the record lands on the same tab.
+type RecordTab = 'summary' | 'clinical' | 'progress' | 'money' | 'files'
+const tabs = computed(() => {
+  const list: { key: RecordTab; label: string }[] = [
+    { key: 'summary', label: t('Summary', 'Resumen') },
+    { key: 'clinical', label: t('Clinical', 'Clínico') },
+  ]
+  if (can('visit_notes_access')) list.push({ key: 'progress', label: t('Progress', 'Progreso') })
+  if (showMoney.value) list.push({ key: 'money', label: t('Payments', 'Pagos') })
+  list.push({ key: 'files', label: t('Files', 'Archivos') })
+  return list
+})
+const tab = computed<RecordTab>(() => {
+  const wanted = route.query.tab as RecordTab | undefined
+  return wanted && tabs.value.some((x) => x.key === wanted) ? wanted : 'summary'
+})
+function setTab(key: RecordTab) {
+  router.replace({ query: { ...route.query, tab: key === 'summary' ? undefined : key } })
+}
+// Arrows move between tabs, as on the web record's tablist.
+function onTabKeydown(e: KeyboardEvent) {
+  const i = tabs.value.findIndex((x) => x.key === tab.value)
+  const next = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : -2
+  if (next === -2 || next < 0 || next >= tabs.value.length) return
+  e.preventDefault()
+  setTab(tabs.value[next]!.key)
+}
+
 onMounted(() => {
   loadPatient()
   loadNumbers()
@@ -344,6 +378,7 @@ onMounted(() => {
 })
 onBeforeUnmount(() => clearTimeout(noticeTimer))
 </script>
+
 
 <template>
   <!-- A wide iPad keeps the patients list beside the record. -->
@@ -359,45 +394,27 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
       {{ patientError || t('Patient not found.', 'Paciente no encontrado.') }}
     </p>
 
-    <div v-else class="flex-1 space-y-2.5 overflow-y-auto px-3.5 py-3 md:px-6 md:py-4" data-cy="patient-record">
-      <!-- Who -->
-      <div v-if="patientLoading" class="flex items-center gap-3">
-        <UiSkeleton class="h-[52px] w-[52px] shrink-0 rounded-full" />
-        <div class="flex-1 space-y-1.5">
-          <UiSkeleton class="h-4 w-40 rounded-ctlSm" />
-          <UiSkeleton class="h-3 w-56 rounded-ctlSm" />
+    <div v-else class="flex-1 overflow-y-auto" data-cy="patient-record">
+      <!-- Who, what to watch for, and what can be done: on every tab. -->
+      <div class="space-y-3 bg-surface px-3.5 pb-3.5 pt-3 md:px-6">
+        <div v-if="patientLoading" class="flex items-center gap-3">
+          <UiSkeleton class="h-14 w-14 shrink-0 rounded-full" />
+          <div class="flex-1 space-y-1.5">
+            <UiSkeleton class="h-4 w-40 rounded-ctlSm" />
+            <UiSkeleton class="h-3 w-56 rounded-ctlSm" />
+          </div>
         </div>
-      </div>
-      <div v-else-if="patient" class="flex items-center gap-3">
-        <img v-if="photoUrl && !photoFailed" :src="photoUrl" alt="" class="h-[52px] w-[52px] shrink-0 rounded-full object-cover" @error="photoFailed = true" />
-        <span v-else class="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-full bg-brand-tint text-[17px] font-bold text-brand-text">{{ initials }}</span>
-        <div class="min-w-0 flex-1">
-          <h1 class="truncate text-[17px] font-semibold text-ink-900" data-cy="patient-name">{{ fullName }}</h1>
-          <p class="truncate text-[12.5px] text-ink-muted2">{{ identityLine }}</p>
+        <div v-else-if="patient" class="flex items-center gap-3">
+          <img v-if="photoUrl && !photoFailed" :src="photoUrl" alt="" class="h-14 w-14 shrink-0 rounded-full object-cover" @error="photoFailed = true" />
+          <span v-else class="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[19px] font-bold text-brand-text">{{ initials }}</span>
+          <div class="min-w-0 flex-1">
+            <h1 class="truncate text-[19px] font-bold text-ink-900" data-cy="patient-name">{{ fullName }}</h1>
+            <p class="truncate text-[13px] text-ink-muted">{{ identityLine }}</p>
+          </div>
         </div>
-      </div>
 
-      <!-- Call / WhatsApp / Book -->
-      <div v-if="patient && actionCount > 0" class="grid gap-[7px]" :style="{ gridTemplateColumns: `repeat(${actionCount}, minmax(0, 1fr))` }">
-        <AppButton v-if="primaryNumber" :href="telHref(primaryNumber)" data-cy="patient-call">
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M3.2 2h2.4l1.2 3-1.6 1a8 8 0 004.8 4.8l1-1.6 3 1.2v2.4A1.2 1.2 0 0112.8 14 10.8 10.8 0 012 3.2 1.2 1.2 0 013.2 2z" stroke-linejoin="round" /></svg>
-          {{ t('Call', 'Llamar') }}
-        </AppButton>
-        <AppButton v-if="canWhatsApp" data-cy="patient-whatsapp" @click="openWhatsApp">
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M2.5 13.5l.8-2.6A5.8 5.8 0 118 13.8a5.8 5.8 0 01-2.9-.8z" stroke-linejoin="round" /></svg>
-          WhatsApp
-        </AppButton>
-        <AppButton variant="primary" v-if="canBook" data-cy="patient-book" @click="bookOpen = true">
-          {{ t('Book', 'Reservar') }}
-        </AppButton>
-      </div>
-
-      <p v-if="bookedNotice" class="rounded-card border border-success-border bg-success-bg px-3 py-2 text-[13px] font-medium text-success-text" role="status" data-cy="patient-booked-notice">{{ bookedNotice }}</p>
-
-      <!-- Alerts: red and yellow flags, and the sticky note -->
-      <section v-if="alerts.length > 0" class="rounded-card border border-danger-border bg-danger-bg2 px-3.5 py-3" data-cy="patient-alerts">
-        <h2 class="text-[11px] font-semibold uppercase tracking-[.05em] text-danger-text">{{ t('Alerts', 'Alertas') }}</h2>
-        <ul class="mt-1.5 space-y-1.5">
+        <!-- Alerts: red and yellow flags, and the sticky note -->
+        <ul v-if="alerts.length > 0" class="space-y-1.5 rounded-card border border-danger-border bg-danger-bg2 px-3 py-2.5" data-cy="patient-alerts">
           <li v-for="a in alerts" :key="a.key" class="flex gap-2 text-[13.5px] leading-snug text-ink-900">
             <svg v-if="a.tone !== 'note'" width="15" height="15" viewBox="0 0 16 16" fill="none" class="mt-[2px] shrink-0" :class="a.tone === 'danger' ? 'text-danger-text' : 'text-warning-accent'" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
               <path d="M8 2l6.2 11H1.8z" stroke-linejoin="round" /><path d="M8 6.5v3M8 11.5v.1" stroke-linecap="round" />
@@ -410,203 +427,288 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
             </span>
           </li>
         </ul>
-      </section>
 
-      <!-- Clinical summary: chief complaint, working diagnosis, goals -->
-      <section v-if="patient && (hasClinical || canEdit)" class="rounded-card border border-line bg-surface shadow-card px-3.5 py-3" data-cy="patient-clinical">
-        <div class="flex items-center justify-between gap-2">
-          <h2 class="text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Clinical summary', 'Resumen clínico') }}</h2>
-          <button v-if="canEdit" type="button" class="-my-2 flex h-9 items-center px-1 text-[12.5px] font-semibold text-brand-text" data-cy="patient-clinical-edit" @click="editOpen = true">{{ hasClinical ? t('Edit', 'Editar') : t('+ Add', '+ Añadir') }}</button>
-        </div>
-        <template v-if="hasClinical">
-          <dl class="mt-1.5 space-y-1.5">
-            <div v-if="patient.chief_complaint?.trim()">
-              <dt class="text-[11.5px] text-ink-muted2">{{ t('Chief complaint', 'Motivo de consulta') }}</dt>
-              <dd class="whitespace-pre-wrap text-[14px] leading-snug text-ink-900" data-cy="patient-chief-complaint">{{ patient.chief_complaint }}</dd>
-            </div>
-            <div v-if="patient.diagnosis?.trim()">
-              <dt class="text-[11.5px] text-ink-muted2">{{ t('Working diagnosis', 'Diagnóstico de trabajo') }}</dt>
-              <dd class="whitespace-pre-wrap text-[14px] leading-snug text-ink-900" data-cy="patient-diagnosis">{{ patient.diagnosis }}</dd>
-            </div>
-          </dl>
-          <div v-if="goalChips.length" class="mt-2 flex flex-wrap gap-1.5" data-cy="patient-goals">
-            <span v-for="g in goalChips" :key="g" class="rounded-pill bg-chip-bg px-2 py-0.5 text-[12px] text-chip-text">{{ g }}</span>
-          </div>
-        </template>
-        <p v-else class="mt-1.5 text-[13px] text-ink-faint">{{ t('No complaint or diagnosis recorded.', 'Sin motivo ni diagnóstico registrados.') }}</p>
-      </section>
-
-      <!-- Care plan, or just the next visit when there is no plan -->
-      <section class="rounded-card border border-line bg-surface shadow-card px-3.5 py-3" data-cy="patient-plan">
-        <template v-if="planLoading">
-          <UiSkeleton class="h-3 w-24 rounded-ctlSm" />
-          <UiSkeleton class="mt-2.5 h-4 w-32 rounded-ctlSm" />
-          <UiSkeleton class="mt-2 h-[7px] w-full rounded-full" />
-        </template>
-        <p v-else-if="planError" class="text-[13px] text-danger-text">{{ planError }}</p>
-        <template v-else>
-          <div class="flex items-center justify-between gap-2">
-            <h2 class="text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ plan ? t('Care plan', 'Plan de cuidados') : t('Next visit', 'Próxima visita') }}</h2>
-            <span class="flex items-center gap-2">
-              <span v-if="plan" class="text-[12.5px] text-ink-muted2">{{ cadenceLabel(plan, t) }}</span>
-              <button type="button" class="-my-2 flex h-9 items-center px-1 text-[12.5px] font-semibold text-brand-text" data-cy="patient-plan-edit" @click="planSheetOpen = true">{{ plan ? t('Edit', 'Editar') : t('+ Add plan', '+ Añadir plan') }}</button>
+        <!-- Call / WhatsApp / Book / Take payment, as round buttons -->
+        <div v-if="patient && (actionCount > 0 || (showMoney && canTakePayments))" class="flex justify-around gap-2">
+          <a v-if="primaryNumber" :href="telHref(primaryNumber)" class="flex w-16 flex-col items-center gap-1.5 text-[12.5px] font-medium text-ink-700" data-cy="patient-call">
+            <span class="flex h-12 w-12 items-center justify-center rounded-full border border-line-control bg-surface">
+              <svg width="19" height="19" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M3.2 2h2.4l1.2 3-1.6 1a8 8 0 004.8 4.8l1-1.6 3 1.2v2.4A1.2 1.2 0 0112.8 14 10.8 10.8 0 012 3.2 1.2 1.2 0 013.2 2z" stroke-linejoin="round" /></svg>
             </span>
-          </div>
-          <!-- With calendar_scope 'own' the visits a colleague saw are not
-               readable here, so the count would come out short: "visit 2 of
-               12" on a plan half done. The plan's length instead, as the
-               visit screen does. -->
-          <p v-if="plan && ownDiaryOnly" class="mt-1 text-[14px] font-semibold text-ink-900" data-cy="patient-plan-progress">
-            {{ t(`${plan.total_visits} visits`, `${plan.total_visits} visitas`) }}
-          </p>
-          <template v-else-if="plan">
-            <p class="mt-1 text-[14px] font-semibold text-ink-900" data-cy="patient-plan-progress">
-              {{ t('Visit', 'Visita') }} {{ Math.min(completedInPlan, plan.total_visits) }} {{ t('of', 'de') }} {{ plan.total_visits }}
-            </p>
-            <div class="mt-1.5 h-[7px] overflow-hidden rounded-full bg-brand-tint">
-              <div class="h-full rounded-full bg-brand" :style="{ width: `${planPercent}%` }" />
+            {{ t('Call', 'Llamar') }}
+          </a>
+          <button v-if="canWhatsApp" type="button" class="flex w-16 flex-col items-center gap-1.5 text-[12.5px] font-medium text-ink-700" data-cy="patient-whatsapp" @click="openWhatsApp">
+            <span class="flex h-12 w-12 items-center justify-center rounded-full border border-line-control bg-surface">
+              <svg width="19" height="19" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M2.5 13.5l.8-2.6A5.8 5.8 0 118 13.8a5.8 5.8 0 01-2.9-.8z" stroke-linejoin="round" /></svg>
+            </span>
+            WhatsApp
+          </button>
+          <button v-if="canBook" type="button" class="flex w-16 flex-col items-center gap-1.5 text-[12.5px] font-semibold text-brand-text" data-cy="patient-book" @click="bookOpen = true">
+            <span class="flex h-12 w-12 items-center justify-center rounded-full bg-brand text-white">
+              <svg width="19" height="19" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M2.5 3.5h11v10h-11zM2.5 6.6h11M5.6 2v2M10.4 2v2M8 8.4v3.4M6.3 10.1h3.4" /></svg>
+            </span>
+            {{ t('Book', 'Reservar') }}
+          </button>
+          <button v-if="showMoney && canTakePayments" type="button" class="flex w-16 flex-col items-center gap-1.5 text-[12.5px] font-medium text-ink-700" data-cy="patient-charge" @click="moneyMode = 'pay'">
+            <span class="flex h-12 w-12 items-center justify-center rounded-full border border-line-control bg-surface">
+              <svg width="19" height="19" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M2 4h12v8H2zM2 6.8h12M4.8 9.6h2.4" stroke-linejoin="round" /></svg>
+            </span>
+            {{ t('Charge', 'Cobrar') }}
+          </button>
+        </div>
+
+        <p v-if="bookedNotice" class="rounded-card border border-success-border bg-success-bg px-3 py-2 text-[13px] font-medium text-success-text" role="status" data-cy="patient-booked-notice">{{ bookedNotice }}</p>
+        <p v-if="moneyNotice" class="rounded-card border border-success-border bg-success-bg px-3 py-2 text-[13px] font-medium text-success-text" role="status" data-cy="patient-money-notice">{{ moneyNotice }}</p>
+      </div>
+
+      <!-- The tabs: they stay at the top while the tab's content scrolls. -->
+      <div role="tablist" :aria-label="t('Patient record sections', 'Secciones de la ficha')" class="sticky top-0 z-10 flex border-b border-line bg-surface px-1.5 md:px-4" data-cy="patient-tabs" @keydown="onTabKeydown">
+        <button
+          v-for="x in tabs"
+          :key="x.key"
+          type="button"
+          role="tab"
+          :id="`patient-tab-${x.key}`"
+          :aria-selected="tab === x.key"
+          :aria-controls="`patient-panel-${x.key}`"
+          :tabindex="tab === x.key ? 0 : -1"
+          class="h-11 min-w-0 flex-1 truncate px-1 text-[13.5px]"
+          :class="tab === x.key ? 'font-semibold text-ink-900 shadow-[inset_0_-2px_0_rgb(var(--color-brand))]' : 'font-medium text-ink-muted'"
+          :data-cy="`patient-tab-${x.key}`"
+          @click="setTab(x.key)"
+        >
+          {{ x.label }}
+        </button>
+      </div>
+
+      <div :id="`patient-panel-${tab}`" role="tabpanel" :aria-labelledby="`patient-tab-${tab}`" class="space-y-2.5 px-3.5 py-3 md:px-6 md:py-4">
+        <!-- ===== Resumen ===== -->
+        <template v-if="tab === 'summary'">
+          <!-- Care plan, or just the next visit when there is no plan -->
+          <section class="rounded-card border border-line bg-surface shadow-card px-3.5 py-3" data-cy="patient-plan">
+            <template v-if="planLoading">
+              <UiSkeleton class="h-3 w-24 rounded-ctlSm" />
+              <UiSkeleton class="mt-2.5 h-4 w-32 rounded-ctlSm" />
+              <UiSkeleton class="mt-2 h-[7px] w-full rounded-full" />
+            </template>
+            <p v-else-if="planError" class="text-[13px] text-danger-text">{{ planError }}</p>
+            <template v-else>
+              <div class="flex items-center justify-between gap-2">
+                <h2 class="text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ plan ? t('Care plan', 'Plan de cuidados') : t('Next visit', 'Próxima visita') }}</h2>
+                <span class="flex items-center gap-2">
+                  <span v-if="plan" class="text-[12.5px] text-ink-muted2">{{ cadenceLabel(plan, t) }}</span>
+                  <button type="button" class="-my-2 flex h-9 items-center px-1 text-[12.5px] font-semibold text-brand-text" data-cy="patient-plan-edit" @click="planSheetOpen = true">{{ plan ? t('Edit', 'Editar') : t('+ Add plan', '+ Añadir plan') }}</button>
+                </span>
+              </div>
+              <!-- With calendar_scope 'own' the visits a colleague saw are not
+                   readable here, so the count would come out short: "visit 2 of
+                   12" on a plan half done. The plan's length instead, as the
+                   visit screen does. -->
+              <p v-if="plan && ownDiaryOnly" class="mt-1 text-[14px] font-semibold text-ink-900" data-cy="patient-plan-progress">
+                {{ t(`${plan.total_visits} visits`, `${plan.total_visits} visitas`) }}
+              </p>
+              <template v-else-if="plan">
+                <p class="mt-1 text-[14px] font-semibold text-ink-900" data-cy="patient-plan-progress">
+                  {{ t('Visit', 'Visita') }} {{ Math.min(completedInPlan, plan.total_visits) }} {{ t('of', 'de') }} {{ plan.total_visits }}
+                </p>
+                <div class="mt-1.5 h-[7px] overflow-hidden rounded-full bg-brand-tint">
+                  <div class="h-full rounded-full bg-brand" :style="{ width: `${planPercent}%` }" />
+                </div>
+                <PatientsPlanPeriods v-if="plan.started_at" :patient-id="patient!.id" :plan="plan" :time-zone="timeZone" />
+              </template>
+              <!-- How it is paid (the web's line on the plan card). Without the
+                   whole diary the visits left are unknown, so no coverage then. -->
+              <PatientsPlanPayment v-if="plan" :plan="plan" :visits-left="ownDiaryOnly ? 0 : Math.max(0, plan.total_visits - completedInPlan)" />
+              <p class="mt-1.5 text-[12.5px]" :class="nextAppt ? 'text-ink-muted2' : 'text-warning-text'">
+                <template v-if="nextAppt">{{ t('Next', 'Próxima') }}: {{ apptWhen(nextAppt.starts_at) }}<template v-if="nextAppt.appointment_types?.name"> · {{ nextAppt.appointment_types.name }}</template></template>
+                <template v-else-if="ownDiaryOnly">{{ t('Nothing booked with you.', 'Nada reservado contigo.') }}</template>
+                <template v-else>{{ t('Nothing booked.', 'Nada reservado.') }}</template>
+              </p>
+              <!-- The rest of what is booked ahead -->
+              <template v-if="upcomingVisits.length > 1">
+                <button type="button" class="mt-1 text-[12.5px] font-semibold text-brand-text" :aria-expanded="upcomingOpen" data-cy="patient-upcoming-toggle" @click="upcomingOpen = !upcomingOpen">
+                  {{ upcomingOpen ? t('Hide', 'Ocultar') : t(`${upcomingVisits.length - 1} more booked`, `${upcomingVisits.length - 1} más reservadas`) }}
+                </button>
+                <ul v-if="upcomingOpen" class="mt-1 space-y-1" data-cy="patient-upcoming">
+                  <li v-for="a in upcomingVisits.slice(1)" :key="a.id">
+                    <NuxtLink :to="`/calendar/${a.id}`" class="flex items-center justify-between gap-2 text-[13px] text-ink-700">
+                      <span class="truncate">{{ apptWhen(a.starts_at) }}<template v-if="a.appointment_types?.name"> · {{ a.appointment_types.name }}</template></span>
+                      <AppChevron :size="11" />
+                    </NuxtLink>
+                  </li>
+                </ul>
+              </template>
+              <button v-if="plan && canBook && !ownDiaryOnly && planUnbooked > 1" type="button" class="mt-2 flex h-10 w-full items-center justify-center rounded-ctl border border-brand bg-brand-tint text-[13px] font-semibold text-brand-text" data-cy="patient-book-plan" @click="openBookPlan">
+                {{ t(`Book the plan's visits (${planUnbooked} left)`, `Reservar las visitas del plan (quedan ${planUnbooked})`) }}
+              </button>
+            </template>
+          </section>
+
+          <!-- Bonos and balance at a glance; Pagos has the rest -->
+          <template v-if="showMoney">
+            <div v-if="contextLoading" class="grid grid-cols-2 gap-2">
+              <UiSkeleton class="h-[74px] rounded-card" />
+              <UiSkeleton class="h-[74px] rounded-card" />
             </div>
-            <PatientsPlanPeriods v-if="plan.started_at" :patient-id="patient!.id" :plan="plan" :time-zone="timeZone" />
+            <div v-else class="grid grid-cols-2 gap-2">
+              <button type="button" class="rounded-card border border-line bg-surface px-3.5 py-3 text-left shadow-card" data-cy="patient-summary-bonos" @click="setTab('money')">
+                <span class="mb-1 block text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Bonos', 'Bonos') }}</span>
+                <UiSkeleton v-if="money.loading.value" class="h-4 w-24 rounded-ctlSm" />
+                <span v-else class="block text-[14px] font-semibold text-ink-900">{{ bonoSummary ? `${bonoSummary.left} ${bonoSummary.left === 1 ? t('session left', 'sesión') : t('sessions left', 'sesiones')}` : t('None active', 'Ninguno activo') }}</span>
+              </button>
+              <button type="button" class="rounded-card border border-line bg-surface px-3.5 py-3 text-left shadow-card" data-cy="patient-summary-balance" @click="setTab('money')">
+                <span class="mb-1 block text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Balance', 'Saldo') }}</span>
+                <UiSkeleton v-if="money.loading.value" class="h-4 w-24 rounded-ctlSm" />
+                <span v-else-if="money.outstandingCents.value > 0" class="block text-[14px] font-semibold text-danger-text">{{ formatEur(money.outstandingCents.value) }} {{ t('due', 'pendiente') }}</span>
+                <span v-else class="block text-[14px] font-semibold text-success-text">{{ t('Up to date', 'Al día') }}</span>
+              </button>
+            </div>
           </template>
-          <!-- How it is paid (the web's line on the plan card). Without the
-               whole diary the visits left are unknown, so no coverage then. -->
-          <PatientsPlanPayment v-if="plan" :plan="plan" :visits-left="ownDiaryOnly ? 0 : Math.max(0, plan.total_visits - completedInPlan)" />
-          <p class="mt-1.5 text-[12.5px]" :class="nextAppt ? 'text-ink-muted2' : 'text-warning-text'">
-            <template v-if="nextAppt">{{ t('Next', 'Próxima') }}: {{ apptWhen(nextAppt.starts_at) }}<template v-if="nextAppt.appointment_types?.name"> · {{ nextAppt.appointment_types.name }}</template></template>
-            <template v-else-if="ownDiaryOnly">{{ t('Nothing booked with you.', 'Nada reservado contigo.') }}</template>
-            <template v-else>{{ t('Nothing booked.', 'Nada reservado.') }}</template>
-          </p>
-          <!-- The rest of what is booked ahead -->
-          <template v-if="upcomingVisits.length > 1">
-            <button type="button" class="mt-1 text-[12.5px] font-semibold text-brand-text" :aria-expanded="upcomingOpen" data-cy="patient-upcoming-toggle" @click="upcomingOpen = !upcomingOpen">
-              {{ upcomingOpen ? t('Hide', 'Ocultar') : t(`${upcomingVisits.length - 1} more booked`, `${upcomingVisits.length - 1} más reservadas`) }}
-            </button>
-            <ul v-if="upcomingOpen" class="mt-1 space-y-1" data-cy="patient-upcoming">
-              <li v-for="a in upcomingVisits.slice(1)" :key="a.id">
-                <NuxtLink :to="`/calendar/${a.id}`" class="flex items-center justify-between gap-2 text-[13px] text-ink-700">
-                  <span class="truncate">{{ apptWhen(a.starts_at) }}<template v-if="a.appointment_types?.name"> · {{ a.appointment_types.name }}</template></span>
-                  <AppChevron :size="11" />
-                </NuxtLink>
+
+          <!-- Contact -->
+          <section class="rounded-card border border-line bg-surface shadow-card px-3.5 py-3" data-cy="patient-contact">
+            <h2 class="text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Contact', 'Contacto') }}</h2>
+            <div v-if="numbersLoading || patientLoading" class="mt-2 space-y-1.5">
+              <UiSkeleton class="h-4 w-44 rounded-ctlSm" />
+              <UiSkeleton class="h-4 w-52 rounded-ctlSm" />
+            </div>
+            <template v-else>
+              <p v-if="numbersError" class="mt-1.5 text-[13px] text-danger-text">{{ numbersError }}</p>
+              <a v-for="n in numbers" :key="n.id" :href="telHref(n)" class="mt-1 flex min-h-9 items-center gap-1.5 text-[13.5px] text-ink-900">
+                <span class="tabular-nums">{{ formatPhoneDisplay(n.number, n.country_code) }}</span>
+                <span v-if="n.is_whatsapp" class="text-[12px] text-success-text">· WhatsApp</span>
+              </a>
+              <a v-if="patient?.email" :href="`mailto:${patient.email}`" class="mt-1 flex min-h-9 items-center truncate text-[13.5px] text-ink-900">{{ patient.email }}</a>
+              <p v-if="!patient?.email && numbers.length === 0 && !numbersError" class="mt-1.5 text-[13px] text-ink-faint">{{ t('No contact details on file.', 'No hay datos de contacto.') }}</p>
+            </template>
+          </section>
+        </template>
+
+        <!-- ===== Clínico ===== -->
+        <template v-else-if="tab === 'clinical'">
+          <!-- Clinical summary: chief complaint, working diagnosis, goals -->
+          <section v-if="patient" class="rounded-card border border-line bg-surface shadow-card px-3.5 py-3" data-cy="patient-clinical">
+            <div class="flex items-center justify-between gap-2">
+              <h2 class="text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Clinical summary', 'Resumen clínico') }}</h2>
+              <button v-if="canEdit" type="button" class="-my-2 flex h-9 items-center px-1 text-[12.5px] font-semibold text-brand-text" data-cy="patient-clinical-edit" @click="editOpen = true">{{ hasClinical ? t('Edit', 'Editar') : t('+ Add', '+ Añadir') }}</button>
+            </div>
+            <template v-if="hasClinical">
+              <dl class="mt-1.5 space-y-1.5">
+                <div v-if="patient.chief_complaint?.trim()">
+                  <dt class="text-[11.5px] text-ink-muted2">{{ t('Chief complaint', 'Motivo de consulta') }}</dt>
+                  <dd class="whitespace-pre-wrap text-[14px] leading-snug text-ink-900" data-cy="patient-chief-complaint">{{ patient.chief_complaint }}</dd>
+                </div>
+                <div v-if="patient.diagnosis?.trim()">
+                  <dt class="text-[11.5px] text-ink-muted2">{{ t('Working diagnosis', 'Diagnóstico de trabajo') }}</dt>
+                  <dd class="whitespace-pre-wrap text-[14px] leading-snug text-ink-900" data-cy="patient-diagnosis">{{ patient.diagnosis }}</dd>
+                </div>
+              </dl>
+              <div v-if="goalChips.length" class="mt-2 flex flex-wrap gap-1.5" data-cy="patient-goals">
+                <span v-for="g in goalChips" :key="g" class="rounded-pill bg-chip-bg px-2 py-0.5 text-[12px] text-chip-text">{{ g }}</span>
+              </div>
+            </template>
+            <p v-else class="mt-1.5 text-[13px] text-ink-faint">{{ t('No complaint or diagnosis recorded.', 'Sin motivo ni diagnóstico registrados.') }}</p>
+          </section>
+
+          <!-- Recent visits and their notes: clinical access only -->
+          <StaffPatientVisits v-if="!contextLoading && can('visit_notes_access')" :patient-id="patientId" :time-zone="timeZone" :show-money="showMoney" />
+
+          <!-- Home exercises given to this patient, and how their week has gone -->
+          <ExercisesStaff v-if="context && patient" :account-id="context.accountId" :patient-id="patient.id" :team-member-id="context.teamMemberId" />
+          <LearnStaffSend v-if="context && patient" :account-id="context.accountId" :patient-id="patient.id" :complaint="patient.chief_complaint" :diagnosis="patient.diagnosis" />
+        </template>
+
+        <!-- ===== Progreso: the web's own tab -- pain visit by visit, and
+             every posture assessment with its chart and a new one taken with
+             this device's camera (/patients/posture/<id>). ===== -->
+        <template v-else-if="tab === 'progress'">
+          <PatientsProgressTab v-if="patient && !contextLoading" :patient-id="patientId" :patient="{ first_name: patient.first_name, last_name: patient.last_name, clinic_id: null }" :can="(p: string) => can(p as never)" />
+        </template>
+
+        <!-- ===== Pagos ===== -->
+        <template v-else-if="tab === 'money'">
+          <div v-if="contextLoading" class="grid grid-cols-2 gap-2">
+            <UiSkeleton class="h-[74px] rounded-card" />
+            <UiSkeleton class="h-[74px] rounded-card" />
+          </div>
+          <div v-else-if="showMoney" class="grid grid-cols-2 gap-2" data-cy="patient-money">
+            <section class="rounded-card border border-line bg-surface shadow-card px-3.5 py-3">
+              <h2 class="mb-1.5 text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Bonos', 'Bonos') }}</h2>
+              <template v-if="money.loading.value">
+                <UiSkeleton class="h-4 w-24 rounded-ctlSm" />
+                <UiSkeleton class="mt-1.5 h-3 w-16 rounded-ctlSm" />
+              </template>
+              <template v-else-if="bonoSummary">
+                <p class="text-[14px] font-semibold text-ink-900" data-cy="patient-bonos">{{ bonoSummary.left }} {{ bonoSummary.left === 1 ? t('session left', 'sesión') : t('sessions left', 'sesiones') }}</p>
+                <p class="truncate text-[12.5px] text-ink-muted2">{{ bonoSummary.sub }}</p>
+              </template>
+              <template v-else>
+                <p class="text-[14px] font-semibold text-ink-900" data-cy="patient-bonos">{{ t('None active', 'Ninguno activo') }}</p>
+              </template>
+            </section>
+            <section class="rounded-card border border-line bg-surface shadow-card px-3.5 py-3">
+              <h2 class="mb-1.5 text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Balance', 'Saldo') }}</h2>
+              <template v-if="money.loading.value">
+                <UiSkeleton class="h-4 w-24 rounded-ctlSm" />
+                <UiSkeleton class="mt-1.5 h-3 w-16 rounded-ctlSm" />
+              </template>
+              <template v-else-if="money.outstandingCents.value > 0">
+                <p class="text-[14px] font-semibold text-danger-text" data-cy="patient-balance">{{ formatEur(money.outstandingCents.value) }} {{ t('due', 'pendiente') }}</p>
+                <p class="truncate text-[12.5px] text-ink-muted2">{{ t('Unpaid charges', 'Cargos sin pagar') }}</p>
+              </template>
+              <template v-else>
+                <p class="text-[14px] font-semibold text-success-text" data-cy="patient-balance">{{ t('Up to date', 'Al día') }}</p>
+                <p class="truncate text-[12.5px] text-ink-muted2">
+                  {{ money.availableCents.value > 0 ? `${formatEur(money.availableCents.value)} ${t('available', 'disponible')}` : `${formatEur(0)} ${t('due', 'pendiente')}` }}
+                </p>
+              </template>
+            </section>
+          </div>
+          <!-- Taking money at the desk, as the web's Billing tab allows the role -->
+          <div v-if="showMoney && (canTakePayments || canSellBonos)" class="grid gap-2" :class="canTakePayments && canSellBonos ? 'grid-cols-2' : 'grid-cols-1'" data-cy="patient-money-actions">
+            <AppButton variant="primary" v-if="canTakePayments" data-cy="patient-take-payment" @click="moneyMode = 'pay'">{{ t('Take payment', 'Cobrar') }}</AppButton>
+            <AppButton v-if="canSellBonos" data-cy="patient-sell-bono" @click="moneyMode = 'sell'">{{ t('Sell a bono', 'Vender bono') }}</AppButton>
+          </div>
+        </template>
+
+        <!-- ===== Archivos: forms, then files ===== -->
+        <template v-else-if="tab === 'files'">
+          <section class="rounded-card border border-line bg-surface shadow-card px-3.5 py-3" data-cy="patient-forms">
+            <div class="flex items-center justify-between gap-2">
+              <h2 class="text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Forms', 'Formularios') }}</h2>
+              <!-- Hand the iPad to the patient to fill in and sign their forms -->
+              <button type="button" class="tap-target inline-flex h-7 items-center gap-1 rounded-pill bg-brand-tint px-2.5 text-[12px] font-semibold text-brand-text" data-cy="patient-reception" @click="receptionOpen = true">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20c4-1 5-7 9-11l3 3c-4 4-10 5-11 9" /><path d="M14 8l2-2 2 2-2 2" /></svg>
+                {{ t('Sign at reception', 'Firmar en recepción') }}
+              </button>
+            </div>
+            <div v-if="docsLoading" class="mt-2 space-y-2">
+              <UiSkeleton class="h-4 w-full rounded-ctlSm" />
+              <UiSkeleton class="h-4 w-full rounded-ctlSm" />
+            </div>
+            <p v-else-if="docsError" class="mt-1.5 text-[13px] text-danger-text">{{ docsError }}</p>
+            <p v-else-if="docs.length === 0" class="mt-1.5 text-[13px] text-ink-faint">{{ t('No forms yet.', 'Aún no hay formularios.') }}</p>
+            <ul v-else class="mt-1.5 space-y-1.5">
+              <li v-for="d in docs" :key="d.id" class="flex items-center justify-between gap-2">
+                <button type="button" class="min-w-0 truncate text-left text-[13.5px] text-ink-900 underline-offset-2 active:underline" data-cy="patient-form-open" @click="viewDocId = d.id">{{ d.title }}</button>
+                <span v-if="d.completed_at" class="inline-flex h-6 shrink-0 items-center rounded-pill bg-success-bg px-2.5 text-[11.5px] font-semibold text-success-text">{{ t('Signed', 'Firmado') }}</span>
+                <button
+                  v-else-if="canContact && docSendDigits && d.public_token"
+                  type="button"
+                  class="tap-target inline-flex h-7 shrink-0 items-center rounded-pill bg-warning-bg px-2.5 text-[11.5px] font-semibold text-warning-text"
+                  data-cy="patient-form-send"
+                  @click="sendDoc(d)"
+                >
+                  {{ t('Not signed · Send', 'Sin firmar · Enviar') }}
+                </button>
+                <span v-else class="inline-flex h-6 shrink-0 items-center rounded-pill bg-warning-bg px-2.5 text-[11.5px] font-semibold text-warning-text">{{ t('Not signed', 'Sin firmar') }}</span>
               </li>
             </ul>
-          </template>
-          <button v-if="plan && canBook && !ownDiaryOnly && planUnbooked > 1" type="button" class="mt-2 flex h-9 w-full items-center justify-center rounded-ctl border border-brand text-[13px] font-semibold text-brand-text" data-cy="patient-book-plan" @click="openBookPlan">
-            {{ t(`Book the plan's visits (${planUnbooked} left)`, `Reservar las visitas del plan (quedan ${planUnbooked})`) }}
-          </button>
+          </section>
+
+          <!-- Files, as RLS returns them for this role -->
+          <StaffPatientFiles v-if="context" :patient-id="patientId" :account-id="context.accountId" :team-member-id="context.teamMemberId" />
         </template>
-      </section>
-
-      <!-- Home exercises given to this patient, and how their week has gone -->
-      <ExercisesStaff v-if="context && patient" :account-id="context.accountId" :patient-id="patient.id" :team-member-id="context.teamMemberId" />
-      <LearnStaffSend v-if="context && patient" :account-id="context.accountId" :patient-id="patient.id" :complaint="patient.chief_complaint" :diagnosis="patient.diagnosis" />
-
-      <!-- Bonos and balance: only for a role that sees money -->
-      <div v-if="contextLoading" class="grid grid-cols-2 gap-2">
-        <UiSkeleton class="h-[74px] rounded-card" />
-        <UiSkeleton class="h-[74px] rounded-card" />
       </div>
-      <div v-else-if="showMoney" class="grid grid-cols-2 gap-2" data-cy="patient-money">
-        <section class="rounded-card border border-line bg-surface shadow-card px-3.5 py-3">
-          <h2 class="mb-1.5 text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Bonos', 'Bonos') }}</h2>
-          <template v-if="money.loading.value">
-            <UiSkeleton class="h-4 w-24 rounded-ctlSm" />
-            <UiSkeleton class="mt-1.5 h-3 w-16 rounded-ctlSm" />
-          </template>
-          <template v-else-if="bonoSummary">
-            <p class="text-[14px] font-semibold text-ink-900" data-cy="patient-bonos">{{ bonoSummary.left }} {{ bonoSummary.left === 1 ? t('session left', 'sesión') : t('sessions left', 'sesiones') }}</p>
-            <p class="truncate text-[12.5px] text-ink-muted2">{{ bonoSummary.sub }}</p>
-          </template>
-          <template v-else>
-            <p class="text-[14px] font-semibold text-ink-900" data-cy="patient-bonos">{{ t('None active', 'Ninguno activo') }}</p>
-          </template>
-        </section>
-        <section class="rounded-card border border-line bg-surface shadow-card px-3.5 py-3">
-          <h2 class="mb-1.5 text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Balance', 'Saldo') }}</h2>
-          <template v-if="money.loading.value">
-            <UiSkeleton class="h-4 w-24 rounded-ctlSm" />
-            <UiSkeleton class="mt-1.5 h-3 w-16 rounded-ctlSm" />
-          </template>
-          <template v-else-if="money.outstandingCents.value > 0">
-            <p class="text-[14px] font-semibold text-danger-text" data-cy="patient-balance">{{ formatEur(money.outstandingCents.value) }} {{ t('due', 'pendiente') }}</p>
-            <p class="truncate text-[12.5px] text-ink-muted2">{{ t('Unpaid charges', 'Cargos sin pagar') }}</p>
-          </template>
-          <template v-else>
-            <p class="text-[14px] font-semibold text-success-text" data-cy="patient-balance">{{ t('Up to date', 'Al día') }}</p>
-            <p class="truncate text-[12.5px] text-ink-muted2">
-              {{ money.availableCents.value > 0 ? `${formatEur(money.availableCents.value)} ${t('available', 'disponible')}` : `${formatEur(0)} ${t('due', 'pendiente')}` }}
-            </p>
-          </template>
-        </section>
-      </div>
-      <!-- Taking money at the desk, as the web's Billing tab allows the role -->
-      <div v-if="showMoney && (canTakePayments || canSellBonos)" class="grid gap-2" :class="canTakePayments && canSellBonos ? 'grid-cols-2' : 'grid-cols-1'" data-cy="patient-money-actions">
-        <AppButton variant="primary" v-if="canTakePayments" data-cy="patient-take-payment" @click="moneyMode = 'pay'">{{ t('Take payment', 'Cobrar') }}</AppButton>
-        <AppButton v-if="canSellBonos" data-cy="patient-sell-bono" @click="moneyMode = 'sell'">{{ t('Sell a bono', 'Vender bono') }}</AppButton>
-      </div>
-      <p v-if="moneyNotice" class="rounded-card border border-success-border bg-success-bg px-3 py-2 text-[13px] font-medium text-success-text" role="status" data-cy="patient-money-notice">{{ moneyNotice }}</p>
-
-      <!-- Forms -->
-      <section class="rounded-card border border-line bg-surface shadow-card px-3.5 py-3" data-cy="patient-forms">
-        <div class="flex items-center justify-between gap-2">
-          <h2 class="text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Forms', 'Formularios') }}</h2>
-          <!-- Hand the iPad to the patient to fill in and sign their forms -->
-          <button type="button" class="tap-target inline-flex h-7 items-center gap-1 rounded-pill bg-brand-tint px-2.5 text-[12px] font-semibold text-brand-text" data-cy="patient-reception" @click="receptionOpen = true">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20c4-1 5-7 9-11l3 3c-4 4-10 5-11 9" /><path d="M14 8l2-2 2 2-2 2" /></svg>
-            {{ t('Sign at reception', 'Firmar en recepción') }}
-          </button>
-        </div>
-        <div v-if="docsLoading" class="mt-2 space-y-2">
-          <UiSkeleton class="h-4 w-full rounded-ctlSm" />
-          <UiSkeleton class="h-4 w-full rounded-ctlSm" />
-        </div>
-        <p v-else-if="docsError" class="mt-1.5 text-[13px] text-danger-text">{{ docsError }}</p>
-        <p v-else-if="docs.length === 0" class="mt-1.5 text-[13px] text-ink-faint">{{ t('No forms yet.', 'Aún no hay formularios.') }}</p>
-        <ul v-else class="mt-1.5 space-y-1.5">
-          <li v-for="d in docs" :key="d.id" class="flex items-center justify-between gap-2">
-            <button type="button" class="min-w-0 truncate text-left text-[13.5px] text-ink-900 underline-offset-2 active:underline" data-cy="patient-form-open" @click="viewDocId = d.id">{{ d.title }}</button>
-            <span v-if="d.completed_at" class="inline-flex h-6 shrink-0 items-center rounded-pill bg-success-bg px-2.5 text-[11.5px] font-semibold text-success-text">{{ t('Signed', 'Firmado') }}</span>
-            <button
-              v-else-if="canContact && docSendDigits && d.public_token"
-              type="button"
-              class="tap-target inline-flex h-7 shrink-0 items-center rounded-pill bg-warning-bg px-2.5 text-[11.5px] font-semibold text-warning-text"
-              data-cy="patient-form-send"
-              @click="sendDoc(d)"
-            >
-              {{ t('Not signed · Send', 'Sin firmar · Enviar') }}
-            </button>
-            <span v-else class="inline-flex h-6 shrink-0 items-center rounded-pill bg-warning-bg px-2.5 text-[11.5px] font-semibold text-warning-text">{{ t('Not signed', 'Sin firmar') }}</span>
-          </li>
-        </ul>
-      </section>
-
-      <!-- Recent visits and their notes: clinical access only -->
-      <StaffPatientVisits v-if="!contextLoading && can('visit_notes_access')" :patient-id="patientId" :time-zone="timeZone" :show-money="showMoney" />
-
-      <!-- Posture assessments: progress side by side, and a new one taken
-      with this device's camera (/patients/posture/<id>). The web's own section,
-      with the app's permissions. -->
-      <PostureSection v-if="!contextLoading && can('visit_notes_access')" :patient-id="patientId" :can="(p: string) => can(p as never)" />
-
-      <!-- Files, as RLS returns them for this role -->
-      <StaffPatientFiles v-if="context" :patient-id="patientId" :account-id="context.accountId" :team-member-id="context.teamMemberId" />
-
-      <!-- Contact -->
-      <section class="rounded-card border border-line bg-surface shadow-card px-3.5 py-3" data-cy="patient-contact">
-        <h2 class="text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Contact', 'Contacto') }}</h2>
-        <div v-if="numbersLoading || patientLoading" class="mt-2 space-y-1.5">
-          <UiSkeleton class="h-4 w-44 rounded-ctlSm" />
-          <UiSkeleton class="h-4 w-52 rounded-ctlSm" />
-        </div>
-        <template v-else>
-          <p v-if="numbersError" class="mt-1.5 text-[13px] text-danger-text">{{ numbersError }}</p>
-          <a v-for="n in numbers" :key="n.id" :href="telHref(n)" class="mt-1 flex items-center gap-1.5 text-[13.5px] text-ink-900">
-            <span class="tabular-nums">{{ formatPhoneDisplay(n.number, n.country_code) }}</span>
-            <span v-if="n.is_whatsapp" class="text-[12px] text-success-text">· WhatsApp</span>
-          </a>
-          <a v-if="patient?.email" :href="`mailto:${patient.email}`" class="mt-1 block truncate text-[13.5px] text-ink-900">{{ patient.email }}</a>
-          <p v-if="!patient?.email && numbers.length === 0 && !numbersError" class="mt-1.5 text-[13px] text-ink-faint">{{ t('No contact details on file.', 'No hay datos de contacto.') }}</p>
-        </template>
-      </section>
     </div>
 
     <BookVisitSheet v-if="bookOpen" :patient-id="patientId" :follow-plan="bookPlan" @booked="onBooked" @close="bookOpen = false; bookPlan = false" />

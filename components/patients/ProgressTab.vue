@@ -10,25 +10,24 @@ import { listingSummary, sideLettersFor, type Listings } from '../../utils/spina
 // Under the visit notes permissions, like everything else clinical.
 //
 // Also the staff app's Progreso tab (mobile/pages/patients/[id].vue), which
-// passes `can`: the app has no web account store -- useAccountStore() is not
-// even imported there -- so it is read only on the web, and the PDF report,
-// which needs it, is the web's alone. Imports are relative for the same reason
-// (in mobile/, `~` is mobile/).
+// passes `can`. So nothing here may reach what only the web has: its account
+// store (the app does not even import it), or utils/reportPdf, whose
+// html-to-image and pdf-lib are not in the app's dependencies -- Xcode Cloud
+// installs mobile/ alone, and a dynamic import of it failed every cloud
+// build (348, 349) while building fine here, where the root node_modules is
+// one directory up. The PDF button is therefore the web's own component,
+// handed in through the `report` slot (ProgressReportButton.vue). Imports
+// are relative for the same reason (in mobile/, `~` is mobile/).
 const props = defineProps<{ patientId: string; patient: { first_name: string | null; last_name: string | null; clinic_id: string | null }; can?: (permission: string) => boolean }>()
 
 const t = useT()
 const supabase = useSupabaseClient()
-const store = props.can ? null : useAccountStore()
-const toast = useToast()
 
 interface Row { id: string; startsAt: string; type: string | null; practitioner: string | null; score: number | null; byPatient: boolean; listing: string }
 const rows = ref<Row[]>([])
 const plan = ref<{ name: string; total: number; done: number } | null>(null)
 const loading = ref(true)
-const busy = ref(false)
 const root = ref<HTMLElement | null>(null)
-// What the last file held, for the e2e spec (as components/reports/PdfButton).
-const lastResult = ref('')
 
 async function load() {
   loading.value = true
@@ -91,34 +90,6 @@ const gridY = [0, 2, 4, 6, 8, 10].map((v) => ({ v, y: PAD.t + ((10 - v) * (H - P
 // Labels under the first, last and every few points between, so they never collide.
 const labelEvery = computed(() => Math.max(1, Math.ceil(points.value.length / (compact ? 4 : 8))))
 
-const patientName = computed(() => `${props.patient.first_name ?? ''} ${props.patient.last_name ?? ''}`.trim())
-async function report() {
-  if (!root.value || busy.value || !store) return
-  busy.value = true
-  try {
-    const clinic = store.clinics.find((c) => c.id === props.patient.clinic_id) ?? store.clinics.find((c) => c.logo_storage_path)
-    const logoUrl = clinic?.logo_storage_path ? supabase.storage.from('clinic-logos').getPublicUrl(clinic.logo_storage_path).data.publicUrl : null
-    const title = t(`Progress report · ${patientName.value}`, `Informe de revisión · ${patientName.value}`)
-    // utils/reportPdf pulls in pdf-lib and html-to-image, ~245 KB gzipped, so it
-    // is fetched when the button is pressed, not with the page.
-    const { downloadReportPdf, pdfFileName } = await import('../../utils/reportPdf')
-    const result = await downloadReportPdf(root.value, {
-      title,
-      lines: [
-        [store.accountName, clinic?.name].filter(Boolean).join(' · '),
-        plan.value ? t(`${plan.value.name}: ${plan.value.done} of ${plan.value.total} visits`, `${plan.value.name}: ${plan.value.done} de ${plan.value.total} visitas`) : t('No care plan', 'Sin plan de cuidados'),
-      ],
-      generatedBy: store.teamMember?.full_name ?? '',
-      logoUrl,
-      fileName: pdfFileName(title, new Date().toISOString().slice(0, 10)),
-    })
-    lastResult.value = JSON.stringify(result)
-  } catch (e) {
-    toast.showToast(t('The PDF could not be made: ', 'No se ha podido generar el PDF: ') + (e instanceof Error ? e.message : String(e)), 'error')
-  } finally {
-    busy.value = false
-  }
-}
 </script>
 
 <template>
@@ -128,10 +99,8 @@ async function report() {
         <span class="font-semibold text-ink-900">{{ plan.name }}</span> · {{ t(`${plan.done} of ${plan.total} visits`, `${plan.done} de ${plan.total} visitas`) }}
       </p>
       <span class="flex-1" />
-      <UiBtn v-if="store" :disabled="busy || loading || !scored.length" data-cy="progress-report" :data-pdf-result="lastResult" @click="report">
-        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><path d="M14 2v6h6M8 13h8M8 17h5" /></svg>
-        {{ busy ? t('Preparing…', 'Preparando…') : t('Progress report', 'Informe de revisión') }}
-      </UiBtn>
+      <!-- The web's "Informe de revisión" (ProgressReportButton.vue) -->
+      <slot name="report" :root="root" :plan="plan" :disabled="loading || !scored.length" />
     </div>
 
     <div v-if="loading" class="space-y-3"><UiSkeleton class="h-20 w-full rounded-card" /><UiSkeleton class="h-56 w-full rounded-card" /></div>

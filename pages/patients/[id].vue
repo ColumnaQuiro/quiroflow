@@ -394,7 +394,11 @@ function onTabKeydown(event: KeyboardEvent) {
           <PatientsOverviewTab v-if="activeTab === 'overview'" :patient="patient" @updated="loadPatient" />
 
           <LazyPatientsClinicalTab v-else-if="activeTab === 'clinical'" :patient-id="patientId" />
-          <LazyPatientsProgressTab v-else-if="activeTab === 'progress' && patient" :patient-id="patientId" :patient="patient" />
+          <LazyPatientsProgressTab v-else-if="activeTab === 'progress' && patient" :patient-id="patientId" :patient="patient">
+            <template #report="{ root, plan, disabled }">
+              <PatientsProgressReportButton :root="root" :plan="plan" :patient="patient" :disabled="disabled" />
+            </template>
+          </LazyPatientsProgressTab>
 
           <LazyPatientsAppointmentsTab
             v-else-if="activeTab === 'appointments'"

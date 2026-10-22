@@ -549,9 +549,9 @@ const labelFilter = ref<string | null>(null)
 // Patients / Leads chips.
 const sourceFilter = ref<'all' | 'patients' | 'leads'>('all')
 
-// The filters as one row of chips under the search, as on the web, instead
-// of a sheet behind an icon: what is narrowing the list is always in sight.
-// "All" clears every one of them.
+// The filters: three views on top (segment, below) and the rest in a sheet,
+// with whatever is narrowing the list still in sight as removable chips
+// under the views (activeFilterChips).
 const activeList = computed(() => conversations.value.filter((c) => !archivedKeys.value.has(c.key) && !c.snoozedUntil))
 const unreadCount = computed(() => activeList.value.filter((c) => c.unread).length)
 const expiringCount = computed(() => activeList.value.filter((c) => windowPill(c)).length)
@@ -563,8 +563,46 @@ const draftReadyOnly = ref(false)
 const needsHumanOnly = ref(false)
 const draftReadyCount = computed(() => activeList.value.filter(hasDraftOf).length)
 const needsHumanCount = computed(() => activeList.value.filter((c) => aiStateOf(c) === 'needs_human').length)
-const filtersActive = computed(() => view.value !== 'active' || unreadOnly.value || expiringOnly.value || assignFilter.value !== 'all' || replyFilter.value !== 'all' || !!labelFilter.value || sourceFilter.value !== 'all' || draftReadyOnly.value || needsHumanOnly.value)
+// The receptionist's work as one view (IA): a draft waiting on someone, or a
+// thread it handed to a person.
+const aiOnly = ref(false)
+const aiCount = computed(() => activeList.value.filter((c) => hasDraftOf(c) || aiStateOf(c) === 'needs_human').length)
+const awaitingCount = computed(() => activeList.value.filter((c) => c.lastMessage.direction === 'inbound').length)
+const filtersActive = computed(() => view.value !== 'active' || unreadOnly.value || expiringOnly.value || assignFilter.value !== 'all' || replyFilter.value !== 'all' || !!labelFilter.value || sourceFilter.value !== 'all' || draftReadyOnly.value || needsHumanOnly.value || aiOnly.value)
+
+// Three views on top -- everything, what waits on us, the receptionist's --
+// and the rest of the filters in a sheet behind one button. Twelve chips in
+// a sideways-scrolling row were more than anyone could see at once, and the
+// ones that mattered were off the edge of the screen.
+type InboxSegment = 'all' | 'awaiting' | 'ai'
+const segment = computed<InboxSegment>(() => (aiOnly.value ? 'ai' : replyFilter.value === 'awaiting_us' ? 'awaiting' : 'all'))
+function setSegment(s: InboxSegment) {
+  aiOnly.value = s === 'ai'
+  replyFilter.value = s === 'awaiting' ? 'awaiting_us' : 'all'
+}
+const filtersOpen = ref(false)
+// What the sheet narrows, each removable on its own from the strip under the
+// views; the badge on the Filters button counts them.
+const activeFilterChips = computed(() => {
+  const chips: { key: string; label: string; clear: () => void }[] = []
+  if (assignFilter.value === 'mine') chips.push({ key: 'mine', label: t('Mine', 'Mías'), clear: () => (assignFilter.value = 'all') })
+  if (assignFilter.value === 'unassigned') chips.push({ key: 'unassigned', label: t('Unassigned', 'Sin asignar'), clear: () => (assignFilter.value = 'all') })
+  if (sourceFilter.value === 'patients') chips.push({ key: 'patients', label: t('Patients', 'Pacientes'), clear: () => (sourceFilter.value = 'all') })
+  if (sourceFilter.value === 'leads') chips.push({ key: 'leads', label: t('Leads', 'Leads'), clear: () => (sourceFilter.value = 'all') })
+  if (unreadOnly.value) chips.push({ key: 'unread', label: t('Unread', 'No leídas'), clear: () => (unreadOnly.value = false) })
+  if (expiringOnly.value) chips.push({ key: 'expiring', label: t('Expiring', 'Por caducar'), clear: () => (expiringOnly.value = false) })
+  if (draftReadyOnly.value) chips.push({ key: 'draft', label: t('Draft ready', 'Borrador listo'), clear: () => (draftReadyOnly.value = false) })
+  if (needsHumanOnly.value) chips.push({ key: 'human', label: t('Needs human', 'Requiere persona'), clear: () => (needsHumanOnly.value = false) })
+  if (labelFilter.value) {
+    const l = labels.value.find((x) => x.id === labelFilter.value)
+    chips.push({ key: 'label', label: l?.name ?? t('Label', 'Etiqueta'), clear: () => (labelFilter.value = null) })
+  }
+  if (view.value === 'snoozed') chips.push({ key: 'snoozed', label: t('Snoozed', 'Pospuestas'), clear: () => (view.value = 'active') })
+  if (view.value === 'archived') chips.push({ key: 'archived', label: t('Archived', 'Archivadas'), clear: () => (view.value = 'active') })
+  return chips
+})
 function clearFilters() {
+  aiOnly.value = false
   view.value = 'active'
   unreadOnly.value = false
   expiringOnly.value = false
@@ -608,8 +646,26 @@ const filteredConversations = computed(() => {
   else if (sourceFilter.value === 'patients') list = list.filter((c) => !c.leadId)
   if (draftReadyOnly.value) list = list.filter(hasDraftOf)
   if (needsHumanOnly.value) list = list.filter((c) => aiStateOf(c) === 'needs_human')
+  if (aiOnly.value) list = list.filter((c) => hasDraftOf(c) || aiStateOf(c) === 'needs_human')
   return list
 })
+
+// One line under the preview saying the one thing about a conversation that
+// matters most, instead of a row of up to six pills: whether someone has to
+// act for the receptionist first, then a follow-up, then how long WhatsApp
+// leaves to answer, then when a snoozed one comes back. The window's time is
+// added to an AI line when both apply, since it is what makes either urgent.
+function rowStatus(c: Conversation): { key: string; tone: 'brand' | 'warning' | 'danger' | 'muted'; text: string; icon: 'ai' | 'dot' | 'clock' } | null {
+  const win = windowPill(c)
+  if (aiStateOf(c) === 'needs_human') return { key: 'needs-human', tone: 'warning', icon: 'dot', text: t('The AI handed this to a person', 'La IA lo ha pasado a una persona') }
+  if (hasDraftOf(c)) return { key: 'draft-ready', tone: 'brand', icon: 'ai', text: t('AI draft ready', 'Borrador de la IA listo') }
+  if (aiStateOf(c) === 'handling') return { key: 'ai-handling', tone: 'muted', icon: 'ai', text: t('The AI is on it', 'La IA lo lleva') }
+  if (c.followUp) return { key: 'follow-up', tone: 'warning', icon: 'dot', text: t('Follow up', 'Seguimiento') }
+  if (win) return { key: 'window', tone: win.urgent ? 'danger' : 'warning', icon: 'clock', text: t(`WhatsApp closes in ${win.left}`, `WhatsApp cierra en ${win.left}`) }
+  if (c.snoozedUntil) return { key: 'snoozed', tone: 'muted', icon: 'clock', text: `${t('Back', 'Vuelve')} ${snoozeWhen(c.snoozedUntil)}` }
+  return null
+}
+const STATUS_TONE: Record<'brand' | 'warning' | 'danger' | 'muted', string> = { brand: 'text-brand-text', warning: 'text-warning-text', danger: 'text-danger-text', muted: 'text-ink-muted2' }
 
 // Bulk select: tap "Select" to enter the mode, tap rows to check them, then
 // mark them all unread or delete them together instead of one swipe at a
@@ -1686,51 +1742,49 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
         />
         <button type="button" class="shrink-0 px-1 text-[13px] font-medium text-brand-text" @click="selectionMode = true">{{ t('Select', 'Seleccionar') }}</button>
       </div>
-      <div v-if="!selectionMode" class="flex shrink-0 gap-1.5 overflow-x-auto border-b border-line bg-surface px-3 py-2 [scrollbar-width:none]" role="toolbar" :aria-label="t('Filters', 'Filtros')" data-cy="inbox-chips">
-        <button type="button" :class="chipClass(!filtersActive)" data-cy="inbox-chip-all" @click="clearFilters">{{ t('All', 'Todas') }}</button>
-        <button type="button" :class="chipClass(unreadOnly)" :aria-pressed="unreadOnly" data-cy="inbox-chip-unread" @click="unreadOnly = !unreadOnly">
-          {{ t('Unread', 'No leídas') }}
-          <span v-if="unreadCount" class="rounded-full bg-brand px-1.5 text-[11px] font-bold leading-[18px] text-white">{{ unreadCount }}</span>
-        </button>
-        <button type="button" :class="chipClass(expiringOnly)" :aria-pressed="expiringOnly" data-cy="inbox-chip-expiring" @click="expiringOnly = !expiringOnly">
-          {{ t('Expiring', 'Por caducar') }}
-          <span v-if="expiringCount" class="rounded-full bg-warning-text px-1.5 text-[11px] font-bold leading-[18px] text-white">{{ expiringCount }}</span>
-        </button>
-        <button type="button" :class="chipClass(assignFilter === 'mine')" :aria-pressed="assignFilter === 'mine'" data-cy="inbox-filter-mine" @click="assignFilter = assignFilter === 'mine' ? 'all' : 'mine'">{{ t('Mine', 'Mías') }}</button>
-        <button type="button" :class="chipClass(assignFilter === 'unassigned')" :aria-pressed="assignFilter === 'unassigned'" data-cy="inbox-filter-unassigned" @click="assignFilter = assignFilter === 'unassigned' ? 'all' : 'unassigned'">{{ t('Unassigned', 'Sin asignar') }}</button>
-        <template v-if="leadThreadsAreSeparate">
-          <button type="button" :class="chipClass(sourceFilter === 'patients')" :aria-pressed="sourceFilter === 'patients'" data-cy="inbox-chip-patients" @click="sourceFilter = sourceFilter === 'patients' ? 'all' : 'patients'">{{ t('Patients', 'Pacientes') }}</button>
-          <button type="button" :class="chipClass(sourceFilter === 'leads')" :aria-pressed="sourceFilter === 'leads'" data-cy="inbox-chip-leads" @click="sourceFilter = sourceFilter === 'leads' ? 'all' : 'leads'">{{ t('Leads', 'Leads') }}</button>
-        </template>
-        <button type="button" :class="chipClass(replyFilter === 'awaiting_us')" :aria-pressed="replyFilter === 'awaiting_us'" data-cy="inbox-chip-awaiting" @click="replyFilter = replyFilter === 'awaiting_us' ? 'all' : 'awaiting_us'">{{ t('Awaiting us', 'Esperan respuesta') }}</button>
-        <!-- The receptionist's queues, only while there is something in them. -->
-        <button v-if="draftReadyCount || draftReadyOnly" type="button" :class="chipClass(draftReadyOnly)" :aria-pressed="draftReadyOnly" data-cy="inbox-chip-draft-ready" @click="draftReadyOnly = !draftReadyOnly">
-          {{ t('Draft ready', 'Borrador listo') }}
-          <span v-if="draftReadyCount" class="rounded-full bg-brand px-1.5 text-[11px] font-bold leading-[18px] text-white">{{ draftReadyCount }}</span>
-        </button>
-        <button v-if="needsHumanCount || needsHumanOnly" type="button" :class="chipClass(needsHumanOnly)" :aria-pressed="needsHumanOnly" data-cy="inbox-chip-needs-human" @click="needsHumanOnly = !needsHumanOnly">
-          {{ t('Needs human', 'Requiere persona') }}
-          <span v-if="needsHumanCount" class="rounded-full bg-warning-text px-1.5 text-[11px] font-bold leading-[18px] text-white">{{ needsHumanCount }}</span>
-        </button>
-        <button
-          v-for="l in labels"
-          :key="l.id"
-          type="button"
-          :class="chipClass(labelFilter === l.id)"
-          :aria-pressed="labelFilter === l.id"
-          @click="labelFilter = labelFilter === l.id ? null : l.id"
-        >
-          <span class="h-2 w-2 shrink-0 rounded-full" :style="{ backgroundColor: l.color }" />{{ l.name }}
-        </button>
-        <span class="mx-0.5 w-px shrink-0 self-stretch bg-line" aria-hidden="true" />
-        <button type="button" :class="chipClass(view === 'snoozed')" :aria-pressed="view === 'snoozed'" data-cy="inbox-snoozed-toggle" @click="view = view === 'snoozed' ? 'active' : 'snoozed'">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8" /><path d="M12 9v4l2.5 2.5" /></svg>
-          {{ t('Snoozed', 'Pospuestas') }}
-        </button>
-        <button type="button" :class="chipClass(view === 'archived')" :aria-pressed="view === 'archived'" data-cy="inbox-archived-toggle" @click="view = view === 'archived' ? 'active' : 'archived'">
-          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5h12v2.5H2zM2.8 6v6.5a1 1 0 001 1h8.4a1 1 0 001-1V6M6.5 8.5h3" /></svg>
-          {{ t('Archived', 'Archivadas') }}
-        </button>
+      <div v-if="!selectionMode" class="shrink-0 border-b border-line bg-surface px-3 pb-2.5 pt-1" data-cy="inbox-chips">
+        <div class="flex items-center gap-2">
+          <div role="tablist" :aria-label="t('View', 'Vista')" class="grid flex-1 grid-cols-3 gap-[3px] rounded-ctl bg-chip-bg p-[3px]">
+            <button
+              v-for="s in ([['all', t('All', 'Todas'), 0], ['awaiting', t('To answer', 'Por responder'), awaitingCount], ['ai', t('AI', 'IA'), aiCount]] as const)"
+              :key="s[0]"
+              type="button"
+              role="tab"
+              :aria-selected="segment === s[0]"
+              class="flex h-9 min-w-0 items-center justify-center gap-1 rounded-[7px] px-1 text-[13px]"
+              :class="segment === s[0] ? 'bg-surface font-semibold text-ink-900 shadow-card' : 'font-medium text-ink-muted'"
+              :data-cy="`inbox-view-${s[0]}`"
+              @click="setSegment(s[0])"
+            >
+              <span class="truncate">{{ s[1] }}</span>
+              <span v-if="s[2]" class="shrink-0 text-[11.5px] font-bold" :class="s[0] === 'ai' ? 'text-brand-text' : 'text-ink-muted2'">{{ s[2] }}</span>
+            </button>
+          </div>
+          <button
+            type="button"
+            class="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-700"
+            :aria-label="activeFilterChips.length ? t(`Filters, ${activeFilterChips.length} on`, `Filtros, ${activeFilterChips.length} activos`) : t('Filters', 'Filtros')"
+            data-cy="inbox-filters-open"
+            @click="filtersOpen = true"
+          >
+            <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M3 5.5h14M5.5 10h9M8 14.5h4" /></svg>
+            <span v-if="activeFilterChips.length" class="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-brand px-1 text-[10.5px] font-bold text-white">{{ activeFilterChips.length }}</span>
+          </button>
+        </div>
+        <!-- Only what is narrowing the list, each with its own way out -->
+        <div v-if="activeFilterChips.length" class="mt-2 flex flex-wrap gap-1.5" data-cy="inbox-active-filters">
+          <button
+            v-for="c in activeFilterChips"
+            :key="c.key"
+            type="button"
+            class="flex h-8 items-center gap-1 rounded-full border border-brand-tintBorder bg-brand-tint pl-3 pr-2 text-[12.5px] font-semibold text-brand-text"
+            :aria-label="t(`Remove the ${c.label} filter`, `Quitar el filtro ${c.label}`)"
+            @click="c.clear()"
+          >
+            {{ c.label }}
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
+          </button>
+        </div>
       </div>
       <div v-else class="flex shrink-0 items-center justify-between gap-2 border-b border-line bg-surface px-3 py-2">
         <button type="button" class="shrink-0 px-1 text-[13px] text-ink-muted2" @click="exitSelectionMode">{{ t('Cancel', 'Cancelar') }}</button>
@@ -1831,6 +1885,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             <div class="flex items-center justify-between gap-2">
               <p class="truncate text-[14px] font-[560]" :class="c.unread ? 'text-ink-900' : 'text-ink-700'">
                 {{ c.name }}
+                <span v-if="c.leadId" class="font-normal text-ink-muted2">· {{ t('lead', 'lead') }}</span>
                 <span v-if="c.phoneNumber && c.patientId" class="font-normal text-ink-faint">{{ c.phoneNumber }}</span>
               </p>
               <span class="shrink-0 text-[12px] text-ink-faint">{{ listTime(c.lastMessage.created_at) }}</span>
@@ -1838,31 +1893,28 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             <p class="truncate text-[13px]" :class="c.unread ? 'font-medium text-ink-800' : 'text-ink-muted2'">
               {{ c.lastMessage.direction === 'outbound' ? t('You: ', 'Tú: ') : '' }}{{ previewText(c.lastMessage) }}
             </p>
-            <div v-if="myLabelsByKey[c.key]?.length || c.followUp || c.snoozedUntil || c.leadId || assignments[c.key] || windowPill(c) || aiStateOf(c) || hasDraftOf(c)" class="mt-1 flex flex-wrap items-center gap-1">
-              <span
-                v-if="windowPill(c)"
-                class="rounded-pill border px-1.5 py-px text-[10px] font-bold"
-                :class="windowPill(c)!.urgent ? 'border-danger-border bg-danger-bg text-danger-text' : 'border-warning-border bg-warning-bg text-warning-text'"
-                data-cy="inbox-row-window"
-              >{{ t('Expires in', 'Caduca en') }} {{ windowPill(c)!.left }}</span>
-              <span v-if="c.leadId" class="rounded-pill border border-info-border bg-info-bg px-1.5 py-px text-[10px] font-bold text-info-text">{{ t('Lead', 'Lead') }}</span>
-              <span v-if="hasDraftOf(c)" class="rounded-pill border border-brand-tintBorder bg-brand-tint px-1.5 py-px text-[10px] font-bold text-brand-text" data-cy="inbox-row-draft-ready">{{ t('Draft ready', 'Borrador listo') }}</span>
-              <span v-if="aiStateOf(c) === 'handling'" class="rounded-pill bg-brand px-1.5 py-px text-[10px] font-bold text-white" data-cy="inbox-row-ai-handling">{{ t('AI handling', 'IA gestionando') }}</span>
-              <span v-else-if="aiStateOf(c) === 'needs_human'" class="rounded-pill border border-warning-border bg-warning-bg px-1.5 py-px text-[10px] font-bold text-warning-text" data-cy="inbox-row-needs-human">{{ t('Needs human', 'Requiere persona') }}</span>
-              <span v-if="c.followUp" class="rounded-pill border border-warning-border bg-warning-bg px-1.5 py-px text-[10px] font-bold text-warning-text" data-cy="inbox-row-follow-up">{{ t('Follow up', 'Seguimiento') }}</span>
-              <span v-else-if="c.snoozedUntil" class="rounded-pill bg-chip-bg px-1.5 py-px text-[10px] text-ink-muted" data-cy="inbox-row-snoozed">{{ t('Back', 'Vuelve') }} {{ snoozeWhen(c.snoozedUntil) }}</span>
-              <span
-                v-for="lid in myLabelsByKey[c.key]"
-                :key="lid"
-                class="rounded-pill px-1.5 py-px text-[10px] font-medium text-white"
-                :style="{ backgroundColor: labels.find((l) => l.id === lid)?.color }"
-              >
-                {{ labels.find((l) => l.id === lid)?.name }}
+            <!-- One status line, the label dots and who has it -->
+            <div v-if="rowStatus(c) || myLabelsByKey[c.key]?.length || assignments[c.key]" class="mt-1 flex items-center gap-2">
+              <span v-if="rowStatus(c)" class="flex min-w-0 items-center gap-1.5 text-[12.5px] font-semibold" :class="STATUS_TONE[rowStatus(c)!.tone]" :data-cy="`inbox-row-${rowStatus(c)!.key}`">
+                <svg v-if="rowStatus(c)!.icon === 'ai'" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" class="shrink-0" aria-hidden="true"><path d="M8 1.5l1.6 4.2 4.4.3-3.4 2.8 1.1 4.3L8 10.8l-3.7 2.3 1.1-4.3L2 6l4.4-.3z" /></svg>
+                <svg v-else-if="rowStatus(c)!.icon === 'clock'" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" class="shrink-0" aria-hidden="true"><circle cx="8" cy="8" r="6" /><path d="M8 4.5V8l2.2 1.6" /></svg>
+                <span v-else class="h-[7px] w-[7px] shrink-0 rounded-full bg-current" aria-hidden="true" />
+                <span class="truncate">{{ rowStatus(c)!.text }}</span>
+                <span v-if="rowStatus(c)!.key !== 'window' && windowPill(c)" class="shrink-0" :class="windowPill(c)!.urgent ? 'text-danger-text' : 'text-warning-text'" data-cy="inbox-row-window">· {{ windowPill(c)!.left }}</span>
+              </span>
+              <span v-if="myLabelsByKey[c.key]?.length" class="flex shrink-0 items-center gap-1" :aria-label="myLabelsByKey[c.key]!.map((lid) => labels.find((l) => l.id === lid)?.name).filter(Boolean).join(', ')">
+                <span
+                  v-for="lid in myLabelsByKey[c.key]"
+                  :key="lid"
+                  class="h-2 w-2 rounded-full"
+                  :style="{ backgroundColor: labels.find((l) => l.id === lid)?.color }"
+                  :title="labels.find((l) => l.id === lid)?.name"
+                />
               </span>
               <!-- Who has it, as initials: the web list shows the same. -->
               <span
                 v-if="assignments[c.key]"
-                class="ml-auto flex h-[18px] min-w-[18px] items-center justify-center rounded-full border border-chip-border bg-chip-bg px-1 text-[9.5px] font-bold text-ink-700"
+                class="ml-auto flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full border border-chip-border bg-chip-bg px-1 text-[9.5px] font-bold text-ink-700"
                 :aria-label="t(`Assigned to ${assigneeName(c.key)}`, `Asignada a ${assigneeName(c.key)}`)"
                 data-cy="inbox-row-owner"
               >{{ memberInitials(assignments[c.key]) }}</span>
@@ -1939,19 +1991,20 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
            their next visit (what most replies are about; tap to open it), or
            the number when there is no patient, and who has it. Squeezed in
            beside the name it was cut to "WhatsApp…" on a phone. -->
-      <div class="flex items-center gap-1.5 overflow-x-auto px-3 pb-2 text-[12px] [scrollbar-width:none]">
-        <span v-if="selected.channel === 'whatsapp'" class="shrink-0 rounded-pill bg-[#25D366]/10 px-2 py-0.5 font-medium text-[#128C4B]">WhatsApp</span>
-        <span v-else-if="selected.channel === 'instagram'" class="shrink-0 rounded-pill bg-info-bg px-2 py-0.5 font-medium text-info-text">Instagram</span>
-        <span v-else class="shrink-0 rounded-pill bg-brand-tint px-2 py-0.5 font-medium text-brand-text">{{ t('In-app', 'App') }}</span>
+      <!-- As one line of text, not three pills: the channel, then the next
+           visit (a link) or that nothing is booked, then who has it. -->
+      <div class="flex items-center gap-1.5 overflow-x-auto whitespace-nowrap px-4 pb-2 text-[12.5px] text-ink-muted [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <span class="inline-flex shrink-0 items-center gap-1.5">
+          <span class="h-2 w-2 rounded-full" :class="selected.channel === 'whatsapp' ? 'bg-[#25D366]' : selected.channel === 'instagram' ? 'bg-[#D6249F]' : 'bg-brand'" aria-hidden="true" />
+          {{ selected.channel === 'whatsapp' ? 'WhatsApp' : selected.channel === 'instagram' ? 'Instagram' : t('In-app', 'App') }}
+        </span>
         <template v-if="selected.patientId && nextVisitLoaded">
-          <NuxtLink v-if="nextVisit" :to="`/calendar/${nextVisit.id}`" class="flex shrink-0 items-center gap-1 rounded-pill border border-line-control px-2 py-0.5 font-medium text-ink-700" data-cy="thread-next-visit">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M8 3v4M16 3v4M3 10h18" /></svg>
-            {{ t('Next', 'Próxima') }}: {{ nextVisitWhen(nextVisit.starts_at) }}
-          </NuxtLink>
-          <span v-else class="shrink-0 rounded-pill border border-warning-border bg-warning-bg px-2 py-0.5 font-medium text-warning-text" data-cy="thread-next-visit">{{ t('Nothing booked', 'Sin cita') }}</span>
+          <span aria-hidden="true">·</span>
+          <NuxtLink v-if="nextVisit" :to="`/calendar/${nextVisit.id}`" class="shrink-0 font-medium text-brand-text" data-cy="thread-next-visit">{{ t('Next', 'Próxima') }}: {{ nextVisitWhen(nextVisit.starts_at) }}</NuxtLink>
+          <span v-else class="shrink-0 font-semibold text-warning-text" data-cy="thread-next-visit">{{ t('Nothing booked', 'Sin cita') }}</span>
         </template>
-        <span v-else-if="selected.phoneNumber" class="shrink-0 text-ink-muted2">{{ selected.phoneNumber }}</span>
-        <span v-if="assigneeName(selected.key)" class="shrink-0 text-ink-muted2" data-cy="inbox-assignee">· {{ assigneeName(selected.key) }}</span>
+        <template v-else-if="selected.phoneNumber"><span aria-hidden="true">·</span><span class="shrink-0">{{ selected.phoneNumber }}</span></template>
+        <span v-if="assigneeName(selected.key)" class="shrink-0" data-cy="inbox-assignee">· {{ assigneeName(selected.key) }}</span>
       </div>
       </div>
 
@@ -2237,6 +2290,79 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
         </div>
       </div>
       </template>
+    </div>
+
+    <!-- The filters behind the Filters button: who it is assigned to, who is
+         writing, the narrower ones, labels, and the snoozed and archived. -->
+    <div v-if="filtersOpen" class="absolute inset-0 z-40 flex items-end bg-black/30 md:items-center md:justify-center" data-cy="inbox-filters-sheet" @click.self="filtersOpen = false">
+      <div role="dialog" aria-modal="true" :aria-label="t('Filters', 'Filtros')" class="flex max-h-[88%] w-full flex-col gap-4 overflow-y-auto rounded-t-[22px] bg-surface px-4 pt-2.5 shadow-popover md:max-w-[440px] md:rounded-[18px] md:pt-5" style="padding-bottom: max(env(safe-area-inset-bottom), 1.25rem)">
+        <div class="mx-auto h-1 w-[38px] shrink-0 rounded-full bg-line-control md:hidden" />
+        <div class="flex items-center justify-between">
+          <p class="text-[17px] font-semibold text-ink-900">{{ t('Filters', 'Filtros') }}</p>
+          <button type="button" class="-my-2 h-10 px-1 text-[14px] font-semibold text-brand-text disabled:opacity-40" :disabled="!activeFilterChips.length" @click="clearFilters(); filtersOpen = false">{{ t('Clear', 'Limpiar') }}</button>
+        </div>
+
+        <fieldset class="flex flex-col gap-1.5">
+          <legend class="mb-1.5 text-[11.5px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Assigned to', 'De quién') }}</legend>
+          <div class="grid grid-cols-3 gap-[3px] rounded-ctl bg-chip-bg p-[3px]">
+            <button v-for="o in ([['all', t('Anyone', 'Todas')], ['mine', t('Me', 'Mías')], ['unassigned', t('Nobody', 'Sin asignar')]] as const)" :key="o[0]" type="button" :aria-pressed="assignFilter === o[0]" class="h-9 rounded-[7px] text-[13px]" :class="assignFilter === o[0] ? 'bg-surface font-semibold text-ink-900 shadow-card' : 'font-medium text-ink-muted'" :data-cy="o[0] === 'all' ? undefined : `inbox-filter-${o[0]}`" @click="assignFilter = o[0]">{{ o[1] }}</button>
+          </div>
+        </fieldset>
+
+        <fieldset v-if="leadThreadsAreSeparate" class="flex flex-col gap-1.5">
+          <legend class="mb-1.5 text-[11.5px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Who is writing', 'Quién escribe') }}</legend>
+          <div class="grid grid-cols-3 gap-[3px] rounded-ctl bg-chip-bg p-[3px]">
+            <button v-for="o in ([['all', t('Everyone', 'Todos')], ['patients', t('Patients', 'Pacientes')], ['leads', t('Leads', 'Leads')]] as const)" :key="o[0]" type="button" :aria-pressed="sourceFilter === o[0]" class="h-9 rounded-[7px] text-[13px]" :class="sourceFilter === o[0] ? 'bg-surface font-semibold text-ink-900 shadow-card' : 'font-medium text-ink-muted'" :data-cy="o[0] === 'all' ? undefined : `inbox-chip-${o[0]}`" @click="sourceFilter = o[0]">{{ o[1] }}</button>
+          </div>
+        </fieldset>
+
+        <fieldset class="flex flex-col">
+          <legend class="mb-1 text-[11.5px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Only', 'Solo') }}</legend>
+          <label class="flex min-h-12 items-center justify-between gap-3 border-b border-line-row text-[15px] text-ink-900">
+            <span>{{ t('Unread', 'No leídas') }} <span v-if="unreadCount" class="text-[13px] text-ink-muted2">· {{ unreadCount }}</span></span>
+            <input v-model="unreadOnly" type="checkbox" class="h-5 w-5 accent-brand" data-cy="inbox-chip-unread" />
+          </label>
+          <label class="flex min-h-12 items-center justify-between gap-3 border-b border-line-row text-[15px] text-ink-900">
+            <span>{{ t('WhatsApp about to close', 'WhatsApp a punto de cerrar') }} <span v-if="expiringCount" class="text-[13px] text-ink-muted2">· {{ expiringCount }}</span></span>
+            <input v-model="expiringOnly" type="checkbox" class="h-5 w-5 accent-brand" data-cy="inbox-chip-expiring" />
+          </label>
+          <label class="flex min-h-12 items-center justify-between gap-3 border-b border-line-row text-[15px] text-ink-900">
+            <span>{{ t('AI draft ready', 'Borrador de la IA listo') }} <span v-if="draftReadyCount" class="text-[13px] text-ink-muted2">· {{ draftReadyCount }}</span></span>
+            <input v-model="draftReadyOnly" type="checkbox" class="h-5 w-5 accent-brand" data-cy="inbox-chip-draft-ready" />
+          </label>
+          <label class="flex min-h-12 items-center justify-between gap-3 text-[15px] text-ink-900">
+            <span>{{ t('Handed to a person', 'Pasadas a una persona') }} <span v-if="needsHumanCount" class="text-[13px] text-ink-muted2">· {{ needsHumanCount }}</span></span>
+            <input v-model="needsHumanOnly" type="checkbox" class="h-5 w-5 accent-brand" data-cy="inbox-chip-needs-human" />
+          </label>
+        </fieldset>
+
+        <fieldset v-if="labels.length" class="flex flex-col gap-1.5">
+          <legend class="mb-1.5 text-[11.5px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Label', 'Etiqueta') }}</legend>
+          <div class="flex flex-wrap gap-1.5">
+            <button
+              v-for="l in labels"
+              :key="l.id"
+              type="button"
+              :class="chipClass(labelFilter === l.id)"
+              :aria-pressed="labelFilter === l.id"
+              @click="labelFilter = labelFilter === l.id ? null : l.id"
+            >
+              <span class="h-2 w-2 shrink-0 rounded-full" :style="{ backgroundColor: l.color }" />{{ l.name }}
+            </button>
+          </div>
+        </fieldset>
+
+        <fieldset class="flex flex-col gap-1.5">
+          <legend class="mb-1.5 text-[11.5px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Show', 'Ver') }}</legend>
+          <div class="grid grid-cols-3 gap-[3px] rounded-ctl bg-chip-bg p-[3px]">
+            <button v-for="o in ([['active', t('Active', 'Activas')], ['snoozed', t('Snoozed', 'Pospuestas')], ['archived', t('Archived', 'Archivadas')]] as const)" :key="o[0]" type="button" :aria-pressed="view === o[0]" class="h-9 rounded-[7px] text-[13px]" :class="view === o[0] ? 'bg-surface font-semibold text-ink-900 shadow-card' : 'font-medium text-ink-muted'" :data-cy="o[0] === 'snoozed' ? 'inbox-snoozed-toggle' : o[0] === 'archived' ? 'inbox-archived-toggle' : undefined" @click="view = o[0]">{{ o[1] }}</button>
+          </div>
+        </fieldset>
+
+        <AppButton variant="primary" data-cy="inbox-filters-done" @click="filtersOpen = false">
+          {{ t(`Show ${filteredConversations.length} ${filteredConversations.length === 1 ? 'conversation' : 'conversations'}`, `Ver ${filteredConversations.length} ${filteredConversations.length === 1 ? 'conversación' : 'conversaciones'}`) }}
+        </AppButton>
+      </div>
     </div>
 
     <!-- Assign the open conversation -->

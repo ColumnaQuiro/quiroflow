@@ -2,7 +2,7 @@ import { formatEur } from './billing'
 import { DEFAULT_CLINIC_TIMEZONE } from './clinicClock'
 import { CONFIDENTIALITY_SECTION, promptSafeName } from './receptionistGuard'
 import { NO_REPLY } from './receptionistAutoReply'
-import { CONFIRM_BEFORE_BOOKING, minorsSection, offeredTypesSection, rescheduleSection, type BookedVisit, type PromptChild, type PromptType } from './receptionistTypes'
+import { CONFIRM_BEFORE_BOOKING, familySection, minorsSection, offeredTypesSection, rescheduleSection, type BookedVisit, type PromptChild, type PromptRelative, type PromptType } from './receptionistTypes'
 import { receptionistBookingSection, receptionistClockSection, type ReceptionistAvailability } from './receptionistSlots'
 import { CARD_ANSWERS_LINE, historyMarkersSection, INFORMAL_ADDRESS_LINE, NO_INVENTION_LINE, NOT_CHIROPRACTIC_SYMPTOM_LINE, PART_OF_DAY_ANSWER_LINE, replyLanguageLine, SENT_FILES_LINE, WAITLIST_SECTION } from './receptionistHistory'
 import type { ReceptionistPrompt } from './receptionistPrompt'
@@ -81,7 +81,7 @@ export function openBono(rows: { package_name: string | null; sessions_total: nu
  * record with no visit yet (a first visit booked from an ad, say): the first
  * visit and its price are still theirs.
  */
-export function returningPatientSection(f: PatientReplyFacts): string {
+export function returningPatientSection(f: PatientReplyFacts, opts: { reactivationType?: string | null; now?: Date } = {}): string {
   const left = f.bono?.sessionsLeft ?? 0
   if (!f.lastVisitAt && left <= 0) return ''
   const lines = [
@@ -90,8 +90,21 @@ This person is a returning patient, not someone new. Never offer them a first vi
   ]
   if (left > 0) {
     lines.push(`They still have ${left} session${left === 1 ? '' : 's'} left on their package. A visit they book now uses one of them: offer their usual session (the type of their last visit, normally an adjustment), not a reactivation or report visit -- even if an earlier message in the conversation suggested one -- and do not quote a price for it. Offer times for it yourself rather than handing over; only hand over if they want to stop, pause or change the package.`)
+  } else if (opts.reactivationType && f.lastVisitAt && lapsed(f.lastVisitAt, opts.now ?? new Date())) {
+    // Back after a long break with nothing left to use: the clinic's own
+    // visit for that, not the type of a visit a year ago (a report, say).
+    lines.push(`Their last visit was more than ${LAPSED_MONTHS} months ago and they have no package to use. If they want an appointment, offer "${opts.reactivationType}" -- not the type of their last visit, and not a report visit.`)
   }
   return lines.join('\n\n')
+}
+
+/** Months without a visit after which someone is back "after a long break" -- the reactivation recall's own six. */
+export const LAPSED_MONTHS = 6
+
+function lapsed(lastVisitAt: string, now: Date): boolean {
+  const since = new Date(now)
+  since.setMonth(since.getMonth() - LAPSED_MONTHS)
+  return new Date(lastVisitAt).getTime() < since.getTime()
 }
 
 /** What of the receptionist's settings the prompt reads; the tone already as its instruction. */
@@ -126,6 +139,10 @@ export function buildPatientReplyPrompt(
     canBook?: boolean
     /** add_to_waitlist is on this request -- only ever with sendsItself. */
     canWaitlist?: boolean
+    /** Booking for an adult in their family (familySection); absent, nothing is said about it. */
+    family?: { forNew: PromptType[]; forReturning: PromptType[]; members: PromptRelative[] }
+    /** The type offered to someone back after a long break (receptionist_config.reactivation_appointment_type_id), when it is on offeredTypes. */
+    reactivationType?: string | null
   },
 ): ReceptionistPrompt {
   const knowledge = config.knowledge
@@ -173,13 +190,14 @@ export function buildPatientReplyPrompt(
     patientFactsSection(opts.facts, opts.calendar.timeZone),
     offeredTypesSection(opts.offeredTypes),
     opts.minors ? minorsSection({ ...opts.minors, canBook: !!opts.canBook, sendsItself: !!opts.sendsItself }) : '',
+    opts.family ? familySection({ ...opts.family, canBook: !!opts.canBook, sendsItself: !!opts.sendsItself }) : '',
     // A returning patient asking for "otra cita" means another of what they
     // have been having -- their adjustment, their maintenance visit -- and
     // the clinic's own knowledge says when that changes.
     opts.offeredTypes.length
       ? `If they want another visit and do not say which, offer the same type as their last visit when it is on that list. If it is not, or you cannot tell which they need, say your colleague will arrange the right one.`
       : '',
-    returningPatientSection(opts.facts),
+    returningPatientSection(opts.facts, { reactivationType: opts.reactivationType, now: opts.calendar.now }),
     // Listed under "What you already know", so not again here.
     rescheduleSection(booked, opts.calendar.timeZone || DEFAULT_CLINIC_TIMEZONE, { listVisits: false, canBook: opts.canBook }),
     hasTimes

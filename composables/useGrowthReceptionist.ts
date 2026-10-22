@@ -35,6 +35,8 @@ export interface ReceptionistConfig {
   noReplyPhrases: string[]
   /** Replies a month after which it writes no more; null for no ceiling. */
   monthlyReplyLimit: number | null
+  /** Offered to a patient back after a long break with no bono; null for none. */
+  reactivationAppointmentTypeId: string | null
 }
 
 export type ChannelStatus = 'connected' | 'not_set_up' | 'not_built'

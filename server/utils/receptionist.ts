@@ -56,6 +56,8 @@ export interface ReceptionistConfig {
   noReplyPhrases: string[]
   /** Replies a month after which it writes no more; null for no ceiling. */
   monthlyReplyLimit: number | null
+  /** The type offered to someone back after a long break with no bono (returningPatientSection); null for none. */
+  reactivationAppointmentTypeId: string | null
 }
 
 /** The clinic's chosen tone, as an instruction. Shared with review replies
@@ -114,6 +116,7 @@ export function toConfig(row: Row | null): ReceptionistConfig {
     answerDuringHours: row?.answer_during_hours ?? false,
     noReplyPhrases: row?.no_reply_phrases ?? [],
     monthlyReplyLimit: row?.monthly_reply_limit ?? null,
+    reactivationAppointmentTypeId: row?.reactivation_appointment_type_id ?? null,
   }
 }
 
@@ -215,6 +218,62 @@ export async function loadTutorChildren(supabase: SupabaseClient<Database>, acco
   const { data: done } = await supabase.from('appointments').select('patient_id').in('patient_id', rows.map((r) => r.id)).eq('status', 'completed').is('deleted_at', null)
   const seen = new Set(((done ?? []) as { patient_id: string }[]).map((a) => a.patient_id))
   return rows.map((r) => ({ id: r.id, firstName: r.first_name, lastName: r.last_name, hasBeenBefore: seen.has(r.id) }))
+}
+
+/** An adult linked to this patient as family (patient_relations), as the receptionist books for them. */
+export interface FamilyAdult {
+  id: string
+  firstName: string
+  lastName: string | null
+  /** What they are to the person writing: 'partner', 'parent', 'child', 'sibling', 'other'. */
+  relation: string
+  hasBeenBefore: boolean
+  /** Whose diary their times come from (loadPatientPractitioners); null for anyone. */
+  practitionerIds: string[] | null
+}
+
+/**
+ * The adults linked to `patientId` as family on their record (ficha > Datos >
+ * Familia, 20261021171628_patient_family.sql) -- the only people the
+ * receptionist books for besides the person writing and their children.
+ *
+ * A link the desk made, not a name: a patient asking for "una cita para mi
+ * marido" was told he had to write himself, and booking by whatever name
+ * someone types would let anyone who knows a name find out whether that
+ * person is a patient. Minors are left out (loadTutorChildren has them), and
+ * so is anyone anonymised.
+ */
+export async function loadFamilyAdults(supabase: SupabaseClient<Database>, accountId: string, patientId: string | null): Promise<FamilyAdult[]> {
+  if (!patientId) return []
+  const { data, error } = await supabase
+    .from('patient_relations')
+    .select('relation, patients!patient_relations_related_patient_id_fkey(id, first_name, last_name, is_minor, anonymized_at)')
+    .eq('account_id', accountId)
+    .eq('patient_id', patientId)
+    .limit(10)
+  if (error) {
+    console.error('[receptionist] could not read family:', error.message)
+    return []
+  }
+  const rows = ((data ?? []) as unknown as { relation: string; patients: { id: string; first_name: string; last_name: string | null; is_minor: boolean | null; anonymized_at: string | null } | null }[])
+    .filter((r) => r.patients && !r.patients.is_minor && !r.patients.anonymized_at)
+  if (!rows.length) return []
+  const ids = rows.map((r) => r.patients!.id)
+  const { data: done } = await supabase.from('appointments').select('patient_id').in('patient_id', ids).eq('status', 'completed').is('deleted_at', null)
+  const seen = new Set(((done ?? []) as { patient_id: string }[]).map((a) => a.patient_id))
+  return Promise.all(rows.map(async (r) => {
+    const p = r.patients!
+    const hasBeenBefore = seen.has(p.id)
+    return {
+      id: p.id,
+      firstName: p.first_name,
+      lastName: p.last_name,
+      relation: r.relation,
+      hasBeenBefore,
+      // Somebody new is seen by whoever is free, as for anyone new.
+      practitionerIds: hasBeenBefore ? await loadPatientPractitioners(supabase, accountId, p.id, []) : null,
+    }
+  }))
 }
 
 export async function loadBookedVisits(

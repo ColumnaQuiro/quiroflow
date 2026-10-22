@@ -158,7 +158,9 @@ describe('Growth AI receptionist', () => {
     // And when it books: only answering on its own, signed, never cancelling
     // without asking.
     cy.visit('/growth/receptionist?growth=1&tab=behaviour')
-    cy.contains('When it drafts, it offers times and a person books.').should('be.visible')
+    // Below the fold of the tab's own scroll area since Booking rules gained
+    // the reactivation row: visible once scrolled to, as for a person.
+    cy.contains('When it drafts, it offers times and a person books.').scrollIntoView().should('be.visible')
     cy.contains('It never cancels without asking first.').should('exist')
   })
 

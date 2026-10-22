@@ -1,4 +1,5 @@
 apply plugin: 'com.android.application'
+apply plugin: 'io.sentry.android.gradle'
 
 def keystorePropertiesFile = rootProject.file('keystore.properties')
 def keystoreProperties = new Properties()
@@ -67,6 +68,30 @@ dependencies {
 }
 
 apply from: 'capacitor.build.gradle'
+
+// Crash reports (Sentry project quiroflow-app) name R8's obfuscated classes
+// unless Sentry has this build's mapping. The plugin gives every release
+// build a mapping id, writes it into the APK/AAB, and uploads mapping.txt
+// under it -- only when SENTRY_AUTH_TOKEN is in the environment, so a build
+// without the token still succeeds, its crashes just unreadable:
+//
+//   SENTRY_AUTH_TOKEN=$(cat ~/.quiroflow/sentry_auth_token) \
+//     JAVA_HOME=/usr/local/opt/openjdk@21 ./gradlew bundleRelease
+//
+// The SDK itself comes with @sentry/capacitor (sentry-android), so the
+// plugin must not add its own copy (autoInstallation), nor rewrite bytecode
+// for performance tracing, which the app does not use.
+sentry {
+    org = 'quiroflow'
+    projectName = 'quiroflow-app'
+    includeProguardMapping = true
+    autoUploadProguardMapping = System.getenv('SENTRY_AUTH_TOKEN') != null
+    uploadNativeSymbols = false
+    includeSourceContext = false
+    telemetry = false
+    autoInstallation { enabled = false }
+    tracingInstrumentation { enabled = false }
+}
 
 try {
     def servicesJSON = file('google-services.json')

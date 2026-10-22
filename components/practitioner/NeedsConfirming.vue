@@ -157,7 +157,10 @@ defineExpose({ reload: load })
     <ul v-else class="divide-y divide-line-row">
       <li v-for="r in visible" :key="r.id" class="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5" data-cy="needs-confirming-row">
         <span class="w-[100px] shrink-0 whitespace-nowrap text-[12px] font-medium text-ink-muted2">{{ when(r.starts_at) }}</span>
-        <span class="min-w-0 flex-1">
+        <!-- At least 150px for the name: on a phone the buttons then wrap to
+             their own line instead of squeezing it to a few letters under the
+             risk pill. -->
+        <span class="min-w-[150px] flex-1">
           <span class="flex items-center gap-1.5">
             <span class="truncate text-[13.5px] font-[560] text-ink-900" :class="{ 'blur-sm select-none': privacyMode }">{{ r.patients?.first_name }} {{ r.patients?.last_name }}</span>
             <PractitionerNoShowRiskPill :risk="risk.get(r.patient_id)" />
@@ -166,7 +169,7 @@ defineExpose({ reload: load })
             {{ reason(r) }}<template v-if="reason(r) && everyone && r.team_members?.full_name"> &middot; </template><template v-if="everyone && r.team_members?.full_name">{{ r.team_members.full_name }}</template>
           </span>
         </span>
-        <span class="flex shrink-0 items-center gap-1.5">
+        <span class="ml-auto flex shrink-0 items-center gap-1.5">
           <a v-if="phones.get(r.patient_id)" :href="telHref(phones.get(r.patient_id)!)" class="flex h-8 items-center rounded-ctl border border-line-control px-2.5 text-[12.5px] font-medium text-ink-700 hover:bg-surface-subtle touch:h-10" data-cy="needs-confirming-call">{{ t('Call', 'Llamar') }}</a>
           <button type="button" class="flex h-8 items-center rounded-ctl border border-line-control px-2.5 text-[12.5px] font-medium text-ink-700 hover:bg-surface-subtle touch:h-10" data-cy="needs-confirming-message" @click="emit('message', r.patient_id)">{{ t('Message', 'Escribir') }}</button>
           <button type="button" class="flex h-8 items-center rounded-ctl bg-brand px-2.5 text-[12.5px] font-semibold text-white disabled:opacity-50 touch:h-10" :disabled="confirmingId === r.id" data-cy="needs-confirming-confirm" @click="markConfirmed(r)">{{ t('Confirmed', 'Confirmada') }}</button>

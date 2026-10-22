@@ -148,7 +148,7 @@ const showAll = ref(false)
       </p>
 
       <section v-if="metric && latestValue" class="flex flex-col gap-2.5 rounded-card border border-line bg-surface p-4 shadow-card" data-cy="patient-posture-evolution">
-        <div class="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-0.5" role="group" :aria-label="t('Measurement', 'Medida')">
+        <div class="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" role="group" :aria-label="t('Measurement', 'Medida')">
           <button
             v-for="m in metrics"
             :key="m.key"

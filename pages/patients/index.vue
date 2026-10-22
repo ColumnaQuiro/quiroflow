@@ -1,9 +1,20 @@
 <script setup lang="ts">
 import { formatEur } from '~/utils/billing'
 import { patientAge } from '~/utils/patientAge'
-import type { Tables } from '~/types/database.types'
+import type { Json, Tables } from '~/types/database.types'
 import { fetchAllRows, fetchByIds } from '~/composables/useFetchAllRows'
-import { normalizeSearchTerm, sanitizeSearchToken } from '~/utils/searchText'
+import {
+  emptyFilterForm,
+  filtersFromQuery,
+  filtersToForm,
+  filtersToQuery,
+  formToFilters,
+  MORE_FILTER_KEYS,
+  queryHasFilters,
+  sameFilters,
+  type PatientFilters,
+} from '~/utils/patientFilters'
+import { usePatientSegments, type PatientSegment } from '~/composables/usePatientSegments'
 
 type Patient = Pick<
   Tables<'patients'>,
@@ -25,28 +36,48 @@ const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
 const logAccess = useAccessLog()
+const route = useRoute()
+const router = useRouter()
+const { showToast } = useToast()
 
 const PAGE_SIZE = 50
 
 interface TeamMemberOption { id: string; full_name: string }
 interface CarePlanInfo { name: string; totalVisits: number; completed: number }
 
-const search = ref('')
-// Balance filters on the live-computed patient_live_balances view, not on a
-// stored column -- see loadPatients()/exportCsv() below.
-const balanceFilter = ref<'any' | 'owing' | 'credit'>('any')
-// Only two options, deliberately. "Not on a care plan" would need a NOT
-// EXISTS the reverse embed cannot express, and faking it by listing every
-// patient who HAS a plan and excluding those ids sends an id list that grows
-// with the clinic -- correct at 200 patients, a 40KB query string at 3000.
-const carePlanFilter = ref<'any' | 'on'>('any')
-const missingContact = ref<'any' | 'email' | 'phone'>('any')
-const practitionerFilter = ref('')
-const statusFilter = ref<'active' | 'inactive' | 'any'>('active')
-// Two toggles rather than dropdown values: they are the states a receptionist
-// scans FOR, not dimensions they slice by.
-const doNotContactFilter = ref(false)
-const minorsFilter = ref(false)
+// Every filter lives in one form (utils/patientFilters.ts) so that the URL, a
+// saved segment and the database call all read the same object. The search
+// box is apart only because it is debounced: appliedSearch is what filters.
+//
+// "On a care plan" has only two options, deliberately: "not on one" was never
+// asked for, and the list has no column that would show it.
+// Do not contact and Minors are toggles rather than dropdown values: they are
+// the states a receptionist scans FOR, not dimensions they slice by.
+const initialFilters = filtersFromQuery(route.query)
+const form = reactive(filtersToForm(initialFilters))
+const search = ref(initialFilters.q ?? '')
+const appliedSearch = ref(initialFilters.q ?? '')
+const currentFilters = computed<PatientFilters>(() => formToFilters({ ...form, q: appliedSearch.value }))
+const showMoreFilters = ref(MORE_FILTER_KEYS.some((key) => key in initialFilters))
+
+// The segment open, if any. Its filters are in the URL too -- the URL is what
+// the list shows -- and this only says which saved one they came from, so a
+// change to them can be offered back as "Save changes".
+const activeSegmentId = ref<string | null>(typeof route.query.segment === 'string' ? route.query.segment : null)
+const {
+  segments,
+  counts: segmentCounts,
+  loaded: segmentsLoaded,
+  counting: segmentsCounting,
+  refresh: refreshSegments,
+  refreshCounts: refreshSegmentCounts,
+  canManage,
+  create: createSegment,
+  update: updateSegment,
+  remove: removeSegment,
+} = usePatientSegments()
+const activeSegment = computed(() => segments.value.find((s) => s.id === activeSegmentId.value) ?? null)
+const segmentModified = computed(() => !!activeSegment.value && !sameFilters(activeSegment.value.filters, currentFilters.value))
 // Name only. Last visit, next visit and balance are assembled per page from
 // separate queries, so sorting on them would order the fifty rows already
 // fetched and silently claim to have ordered all three thousand -- which
@@ -95,47 +126,26 @@ async function loadPatients() {
   const token = ++loadToken
   loading.value = true
 
-  // "On a care plan" is filtered via a reverse embed + !inner, the same
-  // pattern VisitNotesTab uses for appointments!inner -- it narrows to
-  // patients with at least one care_plans row without duplicating the
-  // patient row per plan (PostgREST nests the match, it doesn't join-fan-out).
-  const selectCols =
-    'id, first_name, last_name, tags, clinic_id, email, default_practitioner_id, invoice_email_enabled, status, is_minor, do_not_contact, date_of_birth' +
-    (carePlanFilter.value === 'on' ? ', care_plans!inner(id)' : '')
-
-  let query = supabase.from('patients').select(selectCols, { count: 'exact' })
-
-  if (store.currentClinicId) query = query.eq('clinic_id', store.currentClinicId)
-  if (balanceFilter.value !== 'any') query = applyBalanceFilter(query, balanceFilter.value)
-  if (missingContact.value === 'email') query = query.or('email.is.null,email.eq.')
-  if (missingContact.value === 'phone') query = query.eq('has_phone', false)
-  if (practitionerFilter.value) query = query.eq('default_practitioner_id', practitionerFilter.value)
-  if (statusFilter.value !== 'any') query = query.eq('status', statusFilter.value)
-  if (doNotContactFilter.value) query = query.eq('do_not_contact', true)
-  if (minorsFilter.value) query = query.eq('is_minor', true)
-
-  // Each word must match somewhere in first/last name/email/phone -- chaining
-  // .or() calls ANDs the groups together, so "john 612" matches a John whose
-  // phone contains "612" regardless of which word landed in which field.
-  for (const token of searchTokens()) query = query.or(searchClause(token))
-
   const from = (page.value - 1) * PAGE_SIZE
   const to = from + PAGE_SIZE - 1
   const ascending = sortDir.value === 'asc'
-  const { data, count, error } = await query.order('first_name', { ascending }).order('last_name', { ascending }).range(from, to)
+  // id last so two patients with the same name keep one order from page to
+  // page, rather than one of them appearing twice and the other never.
+  const { data, count, error } = await matchingPatients(PATIENT_COLUMNS, { count: 'exact' })
+    .order('first_name', { ascending })
+    .order('last_name', { ascending })
+    .order('id')
+    .range(from, to)
   // Thrown rather than shown as "no patients": the list keeps what it had (or
   // its skeleton), utils/supabaseFailures.ts reports the query and the layout
   // says so.
   if (error) throw error
   if (token !== loadToken) return
 
-  // selectCols is built dynamically (it grows a `care_plans!inner(...)` embed
-  // when the "On a care plan" chip is active), so supabase-js can't map it to
-  // a literal column union and falls back to an untyped result -- same as the
-  // pre-existing `care_plans` queries below, which aren't in the generated
-  // Database types either. Assert back to the shape we actually select.
-  patients.value = (data ?? []) as unknown as Patient[]
+  patients.value = (data ?? []) as Patient[]
   totalCount.value = count ?? 0
+  // The open segment's count is this total, whatever the last count said.
+  if (activeSegment.value && !segmentModified.value) segmentCounts.value = { ...segmentCounts.value, [activeSegment.value.id]: totalCount.value }
   loading.value = false
   loadedOnce.value = true
 
@@ -216,50 +226,140 @@ function goToPage(p: number) {
 let searchDebounce: ReturnType<typeof setTimeout> | undefined
 watch(search, () => {
   clearTimeout(searchDebounce)
-  searchDebounce = setTimeout(() => goToPage(1), 300)
+  searchDebounce = setTimeout(() => (appliedSearch.value = search.value), 300)
 })
+// Compared as JSON: the form is rebuilt into a new object on every keystroke
+// in a date field, and only a different filter set should reload.
 watch(
-  [balanceFilter, carePlanFilter, missingContact, practitionerFilter, statusFilter, doNotContactFilter, minorsFilter, sortDir],
-  () => goToPage(1),
+  () => JSON.stringify(currentFilters.value),
+  () => {
+    goToPage(1)
+    syncUrl()
+  },
 )
+watch(sortDir, () => goToPage(1))
+
+// The filters in the address bar, so a reload, the back button or a link sent
+// to a colleague opens the same list. replace, not push: every keystroke in
+// the search box is not a page of history.
+function syncUrl() {
+  const query: Record<string, string> = filtersToQuery(currentFilters.value)
+  if (activeSegmentId.value) query.segment = activeSegmentId.value
+  router.replace({ query })
+}
 // The clinic switcher (AppSidebar.vue) can now change store.currentClinicId
 // mid-session for a multi-location account -- same reload-on-change pattern
 // calendar.vue and practitioner.vue already use for their own clinic-scoped
 // queries. Resets to page 1 rather than just re-running loadPatients() at
 // the current page, since the old page number is unlikely to still be
 // valid against the new clinic's (probably smaller) patient count.
-watch(() => store.currentClinicId, () => goToPage(1))
+watch(
+  () => store.currentClinicId,
+  () => {
+    goToPage(1)
+    refreshSegmentCounts()
+  },
+)
+
+// The one query behind the table, the export and every segment's count:
+// patients_matching applies the filters in the database and returns patients
+// rows, which PostgREST then orders, pages and counts like the table.
+// See 20261022173310_patient_segments.sql.
+const PATIENT_COLUMNS =
+  'id, first_name, last_name, tags, clinic_id, email, default_practitioner_id, invoice_email_enabled, status, is_minor, do_not_contact, date_of_birth'
+function matchingPatients(columns: typeof PATIENT_COLUMNS, options?: { count: 'exact' }) {
+  return supabase
+    .rpc('patients_matching', { p_filters: currentFilters.value as Json, p_clinic_id: store.currentClinicId ?? undefined }, options)
+    .select(columns)
+}
+
+// -- Segments ----------------------------------------------------------------
+onMounted(async () => {
+  await refreshSegments()
+  // A link that names a segment and nothing else (?segment=<id>) opens it.
+  if (activeSegment.value && !queryHasFilters(route.query)) openSegment(activeSegment.value)
+})
+
+// Both recount every segment: a count is only as live as the last time it
+// was taken, and these are the moments someone is looking at them.
+function openSegment(segment: PatientSegment) {
+  activeSegmentId.value = segment.id
+  applyFilters(segment.filters)
+  syncUrl()
+  refreshSegmentCounts()
+}
+function showAllPatients() {
+  activeSegmentId.value = null
+  clearAllFilters()
+  syncUrl()
+  refreshSegmentCounts()
+}
+function applyFilters(filters: PatientFilters) {
+  Object.assign(form, filtersToForm(filters))
+  search.value = filters.q ?? ''
+  appliedSearch.value = filters.q ?? ''
+  if (MORE_FILTER_KEYS.some((key) => key in filters)) showMoreFilters.value = true
+}
+
+const segmentDialog = ref<null | 'create' | 'rename'>(null)
+const deletingSegment = ref(false)
+const segmentBusy = ref(false)
+
+async function onSegmentDialogSave(name: string, shared: boolean) {
+  segmentBusy.value = true
+  try {
+    if (segmentDialog.value === 'rename' && activeSegment.value) {
+      await updateSegment(activeSegment.value.id, { name, shared })
+      showToast(t('Segment saved', 'Segmento guardado'))
+    } else {
+      const created = await createSegment(name, shared, currentFilters.value)
+      activeSegmentId.value = created.id
+      syncUrl()
+      showToast(t('Segment saved', 'Segmento guardado'))
+    }
+    segmentDialog.value = null
+  } catch {
+    showToast(t('The segment could not be saved.', 'No se pudo guardar el segmento.'), 'error')
+  } finally {
+    segmentBusy.value = false
+  }
+}
+
+async function saveSegmentChanges() {
+  if (!activeSegment.value) return
+  segmentBusy.value = true
+  try {
+    await updateSegment(activeSegment.value.id, { filters: currentFilters.value })
+    showToast(t('Segment updated', 'Segmento actualizado'))
+  } catch {
+    showToast(t('The segment could not be saved.', 'No se pudo guardar el segmento.'), 'error')
+  } finally {
+    segmentBusy.value = false
+  }
+}
+
+async function confirmDeleteSegment() {
+  if (!activeSegment.value) return
+  segmentBusy.value = true
+  try {
+    await removeSegment(activeSegment.value.id)
+    // The filters stay on screen; only the saved copy is gone.
+    activeSegmentId.value = null
+    syncUrl()
+    deletingSegment.value = false
+    showToast(t('Segment deleted', 'Segmento eliminado'))
+  } catch {
+    showToast(t('The segment could not be deleted.', 'No se pudo eliminar el segmento.'), 'error')
+  } finally {
+    segmentBusy.value = false
+  }
+}
 
 // Export every patient matching the current filters (not just the loaded
 // page) -- fetchAllRows pages past Supabase's 1000-row select() cap.
 function csvEscape(v: string) {
   return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
 }
-// Balance is not a column on patients, but it filters as if it were:
-// live_balance_cents is a computed field (20260923150000), and the phone search
-// reads patients.phone_search, kept in step by a trigger on the numbers
-// (20261020063000) because a computed field in the search's or=(...) cannot use
-// an index and made the whole query scan. Both used to be id lists fetched first and sent back as
-// `id=in.(...)`, which stops fitting in a URL at ~215 ids -- and the
-// gateway's 414 reaches supabase-js as `data: null`, so the list just came
-// up empty. Production had 221 patients in credit when that was found.
-// Shared by the table and the CSV so an export cannot disagree with what is
-// on screen.
-function applyBalanceFilter<Q extends { lt: any; gt: any }>(query: Q, filter: 'owing' | 'credit'): Q {
-  // Owing asks the invoices (live_outstanding_cents); In credit asks the
-  // balance, which is what being in credit means. They are deliberately two
-  // different columns: a patient on a family bono has a negative balance and
-  // owes nothing, so filtering "Owing" on the balance listed 49 patients where
-  // 10 owe. See utils/owing.ts.
-  return filter === 'owing' ? query.gt('live_outstanding_cents', 0) : query.gt('live_balance_cents', 0)
-}
-function searchTokens() {
-  return search.value.trim().split(/\s+/).map(sanitizeSearchToken).filter(Boolean)
-}
-function searchClause(token: string) {
-  return `search_name.ilike.%${normalizeSearchTerm(token)}%,email.ilike.%${token}%,national_id.ilike.%${token}%,phone_search.ilike.%${token}%`
-}
-
 async function fetchBalances(ids: string[]): Promise<Record<string, number>> {
   const rows = await fetchByIds(ids, (chunk) => supabase.from('patient_live_balances').select('patient_id, balance_cents').in('patient_id', chunk))
   const result: Record<string, number> = {}
@@ -270,25 +370,12 @@ async function fetchBalances(ids: string[]): Promise<Record<string, number>> {
 async function exportCsv() {
   exporting.value = true
   try {
-    const selectCols =
-      'id, first_name, last_name, tags, email, status, is_minor, do_not_contact' +
-      (carePlanFilter.value === 'on' ? ', care_plans!inner(id)' : '')
-
-    const tokens = searchTokens()
-
-    const rows = await fetchAllRows<Patient & { tags: string[] }>((from, to) => {
-      let q = supabase.from('patients').select(selectCols) as any
-      if (store.currentClinicId) q = q.eq('clinic_id', store.currentClinicId)
-      if (balanceFilter.value !== 'any') q = applyBalanceFilter(q, balanceFilter.value)
-      if (missingContact.value === 'email') q = q.or('email.is.null,email.eq.')
-      if (missingContact.value === 'phone') q = q.eq('has_phone', false)
-      if (practitionerFilter.value) q = q.eq('default_practitioner_id', practitionerFilter.value)
-      if (statusFilter.value !== 'any') q = q.eq('status', statusFilter.value)
-      if (doNotContactFilter.value) q = q.eq('do_not_contact', true)
-      if (minorsFilter.value) q = q.eq('is_minor', true)
-      for (const token of tokens) q = q.or(searchClause(token))
-      return q.order('first_name').range(from, to)
-    })
+    // The same query as the table, so an export cannot disagree with what is
+    // on screen. Ordered down to the id: fetchAllRows pages it, and a tie
+    // between two pages would repeat one patient and drop another.
+    const rows = await fetchAllRows<Patient>((from, to) =>
+      matchingPatients(PATIENT_COLUMNS).order('first_name').order('last_name').order('id').range(from, to),
+    )
 
     const exportBalances = await fetchBalances(rows.map((p) => p.id))
 
@@ -362,33 +449,85 @@ const activeFilters = computed<ActiveFilter[]>(() => {
   if (search.value.trim()) {
     out.push({ key: 'search', label: `"${search.value.trim()}"`, clear: () => (search.value = '') })
   }
-  if (statusFilter.value !== 'active') {
-    const label = statusFilter.value === 'inactive' ? t('Inactive', 'Inactivo') : t('Any status', 'Cualquier estado')
-    out.push({ key: 'status', label, clear: () => (statusFilter.value = 'active') })
+  if (form.status !== 'active') {
+    const label = form.status === 'inactive' ? t('Inactive', 'Inactivo') : t('Any status', 'Cualquier estado')
+    out.push({ key: 'status', label, clear: () => (form.status = 'active') })
   }
-  if (balanceFilter.value !== 'any') {
-    const label = balanceFilter.value === 'owing' ? t('Owing', 'Con deuda') : t('In credit', 'A favor')
-    out.push({ key: 'balance', label, clear: () => (balanceFilter.value = 'any') })
+  if (form.balance) {
+    const label = form.balance === 'owing' ? t('Owing', 'Con deuda') : t('In credit', 'A favor')
+    out.push({ key: 'balance', label, clear: () => (form.balance = '') })
   }
-  if (carePlanFilter.value === 'on') {
-    out.push({ key: 'plan', label: t('On a care plan', 'Con plan de cuidados'), clear: () => (carePlanFilter.value = 'any') })
+  if (form.carePlan === 'on') {
+    out.push({ key: 'plan', label: t('On a care plan', 'Con plan de cuidados'), clear: () => (form.carePlan = '') })
   }
-  if (missingContact.value !== 'any') {
-    const label = missingContact.value === 'email' ? t('Missing email', 'Sin correo') : t('Missing phone', 'Sin teléfono')
-    out.push({ key: 'contact', label, clear: () => (missingContact.value = 'any') })
+  if (form.missingContact) {
+    const label = form.missingContact === 'email' ? t('Missing email', 'Sin correo') : t('Missing phone', 'Sin teléfono')
+    out.push({ key: 'contact', label, clear: () => (form.missingContact = '') })
   }
-  if (practitionerFilter.value) {
-    const name = teamMembers.value.find((m) => m.id === practitionerFilter.value)?.full_name ?? t('Practitioner', 'Profesional')
-    out.push({ key: 'practitioner', label: name, clear: () => (practitionerFilter.value = '') })
+  if (form.practitioner) {
+    const name = teamMembers.value.find((m) => m.id === form.practitioner)?.full_name ?? t('Practitioner', 'Profesional')
+    out.push({ key: 'practitioner', label: name, clear: () => (form.practitioner = '') })
   }
-  if (doNotContactFilter.value) {
-    out.push({ key: 'dnc', label: t('Do not contact', 'No contactar'), clear: () => (doNotContactFilter.value = false) })
+  if (form.doNotContact) {
+    out.push({ key: 'dnc', label: t('Do not contact', 'No contactar'), clear: () => (form.doNotContact = false) })
   }
-  if (minorsFilter.value) {
-    out.push({ key: 'minors', label: t('Minors', 'Menores'), clear: () => (minorsFilter.value = false) })
+  if (form.minors) {
+    out.push({ key: 'minors', label: t('Minors', 'Menores'), clear: () => (form.minors = false) })
+  }
+  for (const tag of form.tags) {
+    out.push({ key: `tag:${tag}`, label: `#${tag}`, clear: () => (form.tags = form.tags.filter((x) => x !== tag)) })
+  }
+  if (form.clinic) {
+    const label = form.clinic === 'all' ? t('All clinics', 'Todas las clínicas') : (store.clinics.find((c) => c.id === form.clinic)?.name ?? t('Clinic', 'Clínica'))
+    out.push({ key: 'clinic', label, clear: () => (form.clinic = '') })
+  }
+  const lastVisit = rangeLabel(form.lastVisitFrom, form.lastVisitTo)
+  if (lastVisit) {
+    out.push({ key: 'lastVisit', label: `${t('Last visit', 'Última visita')} ${lastVisit}`, clear: () => { form.lastVisitFrom = ''; form.lastVisitTo = '' } })
+  }
+  if (form.futureAppointment) {
+    const label = form.futureAppointment === 'yes' ? t('Has a future appointment', 'Con cita futura') : t('No future appointment', 'Sin cita futura')
+    out.push({ key: 'future', label, clear: () => (form.futureAppointment = '') })
+  }
+  if (form.bono) {
+    const max = currentFilters.value.bonoSessionsMax
+    const label = form.bono === 'none'
+      ? t('No live bono', 'Sin bono activo')
+      : max === undefined ? t('Has a live bono', 'Con bono activo') : t(`Bono with ≤ ${max} sessions left`, `Bono con ≤ ${max} sesiones`)
+    out.push({ key: 'bono', label, clear: () => { form.bono = ''; form.bonoSessionsMax = '' } })
+  }
+  const created = rangeLabel(form.createdFrom, form.createdTo)
+  if (created) {
+    out.push({ key: 'created', label: `${t('Patient since', 'Paciente desde')} ${created}`, clear: () => { form.createdFrom = ''; form.createdTo = '' } })
+  }
+  if (form.app) {
+    const label = form.app === 'yes' ? t('Uses the app', 'Usa la app') : t('Does not use the app', 'No usa la app')
+    out.push({ key: 'app', label, clear: () => (form.app = '') })
+  }
+  if (form.birthdayThisMonth) {
+    out.push({ key: 'birthday', label: t('Birthday this month', 'Cumple este mes'), clear: () => (form.birthdayThisMonth = false) })
   }
   return out
 })
+// How many of the panel's filters are on, for its button.
+const moreFiltersCount = computed(() => {
+  const f = currentFilters.value
+  return [f.tags, f.clinic, f.lastVisitFrom || f.lastVisitTo, f.futureAppointment, f.bono, f.createdFrom || f.createdTo, f.app, f.birthdayThisMonth].filter(Boolean).length
+})
+
+// "1 Oct 2026 – 31 Oct 2026", "from 1 Oct 2026", "until 31 Oct 2026". Built
+// from the parts rather than new Date('2026-10-01'), which is UTC midnight
+// and reads as the day before anywhere west of Greenwich.
+function dayLabel(iso: string) {
+  const [y, m, d] = iso.split('-').map(Number)
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+}
+function rangeLabel(from: string, to: string) {
+  if (from && to) return `${dayLabel(from)} – ${dayLabel(to)}`
+  if (from) return `${t('from', 'desde')} ${dayLabel(from)}`
+  if (to) return `${t('until', 'hasta')} ${dayLabel(to)}`
+  return ''
+}
 
 // The row has been clickable since before the name was a link, and staff
 // still aim at the middle of it. A click that landed on a control inside the
@@ -400,14 +539,9 @@ function onRowClick(event: MouseEvent, patientId: string) {
 }
 
 function clearAllFilters() {
+  Object.assign(form, emptyFilterForm())
   search.value = ''
-  statusFilter.value = 'active'
-  balanceFilter.value = 'any'
-  carePlanFilter.value = 'any'
-  missingContact.value = 'any'
-  practitionerFilter.value = ''
-  doNotContactFilter.value = false
-  minorsFilter.value = false
+  appliedSearch.value = ''
 }
 
 function balancePill(cents: number) {
@@ -470,9 +604,62 @@ function tagClass(tag: string) {
       @created="(id) => { showAddPatient = false; navigateTo(`/patients/${id}`) }"
     />
 
+    <PatientsSegmentDialog
+      v-if="segmentDialog"
+      :mode="segmentDialog"
+      :initial-name="segmentDialog === 'rename' ? activeSegment?.name : ''"
+      :initial-shared="segmentDialog === 'rename' ? activeSegment?.shared : true"
+      :busy="segmentBusy"
+      @save="onSegmentDialogSave"
+      @cancel="segmentDialog = null"
+    />
+
+    <UiConfirmDialog
+      v-if="deletingSegment && activeSegment"
+      :title="t(`Delete the segment “${activeSegment.name}”?`, `¿Eliminar el segmento «${activeSegment.name}»?`)"
+      :confirm-label="t('Delete', 'Eliminar')"
+      :cancel-label="t('Cancel', 'Cancelar')"
+      tone="danger"
+      :busy="segmentBusy"
+      @confirm="confirmDeleteSegment"
+      @cancel="deletingSegment = false"
+    >
+      <p class="text-[13px] text-ink-muted">
+        {{ activeSegment.shared
+          ? t('Only the saved filter goes, for the whole team. No patient is changed.', 'Solo se elimina el filtro guardado, para todo el equipo. Ningún paciente cambia.')
+          : t('Only the saved filter goes. No patient is changed.', 'Solo se elimina el filtro guardado. Ningún paciente cambia.') }}
+      </p>
+    </UiConfirmDialog>
+
     <div class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] sm:px-6">
+      <div class="flex flex-col gap-3 2xl:flex-row 2xl:items-start 2xl:gap-5">
+      <PatientsSegmentList
+        :segments="segments"
+        :counts="segmentCounts"
+        :active-id="activeSegment?.id ?? null"
+        :loaded="segmentsLoaded"
+        :counting="segmentsCounting"
+        @open="openSegment"
+        @all="showAllPatients"
+      />
+
+      <div class="min-w-0 flex-1">
+      <!-- The segment open, and what can be done with it. -->
+      <div v-if="activeSegment" data-cy="segment-header" class="mb-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <h2 class="text-[15px] font-[650] text-ink-900">{{ activeSegment.name }}</h2>
+        <span v-if="!activeSegment.shared" class="rounded-pill bg-chip-bg2 px-1.5 py-0.5 text-[10.5px] font-[600] text-ink-faint3">{{ t('Private', 'Privado') }}</span>
+        <span v-if="segmentModified" class="text-[12px] text-warning-text">{{ t('Filters changed', 'Filtros modificados') }}</span>
+        <div v-if="canManage(activeSegment)" class="flex items-center gap-1">
+          <UiBtn v-if="segmentModified" variant="primary" size="sm" :disabled="segmentBusy" data-cy="segment-save-changes" @click="saveSegmentChanges">
+            {{ t('Save changes', 'Guardar cambios') }}
+          </UiBtn>
+          <UiBtn variant="ghost" size="sm" data-cy="segment-rename" @click="segmentDialog = 'rename'">{{ t('Rename', 'Renombrar') }}</UiBtn>
+          <UiBtn variant="ghost" size="sm" data-cy="segment-delete" @click="deletingSegment = true">{{ t('Delete', 'Eliminar') }}</UiBtn>
+        </div>
+      </div>
+
       <!-- Toolbar. Search and the four dimensions you slice by, then the two
-      states you scan for. -->
+      states you scan for, then the panel with the rest. -->
       <div class="flex flex-wrap items-center gap-2">
         <div class="relative w-[250px]">
           <svg width="13" height="13" viewBox="0 0 14 14" aria-hidden="true" class="pointer-events-none absolute left-[10px] top-1/2 -translate-y-1/2 text-ink-faint">
@@ -488,30 +675,30 @@ function tagClass(tag: string) {
           />
         </div>
 
-        <PatientsFilterSelect v-model="statusFilter" :label="t('Status', 'Estado')" :options="[
+        <PatientsFilterSelect v-model="form.status" :label="t('Status', 'Estado')" :options="[
           { value: 'active', label: t('Active', 'Activo') },
           { value: 'inactive', label: t('Inactive', 'Inactivo') },
           { value: 'any', label: t('Any status', 'Cualquier estado') },
         ]" />
 
-        <PatientsFilterSelect v-model="carePlanFilter" :label="t('Care plan', 'Plan')" :options="[
-          { value: 'any', label: t('Care plan: any', 'Plan: cualquiera') },
+        <PatientsFilterSelect v-model="form.carePlan" :label="t('Care plan', 'Plan')" :options="[
+          { value: '', label: t('Care plan: any', 'Plan: cualquiera') },
           { value: 'on', label: t('On a care plan', 'Con plan de cuidados') },
         ]" />
 
-        <PatientsFilterSelect v-model="balanceFilter" :label="t('Balance', 'Saldo')" :options="[
-          { value: 'any', label: t('Balance: any', 'Saldo: cualquiera') },
+        <PatientsFilterSelect v-model="form.balance" :label="t('Balance', 'Saldo')" :options="[
+          { value: '', label: t('Balance: any', 'Saldo: cualquiera') },
           { value: 'owing', label: t('Owing', 'Con deuda') },
           { value: 'credit', label: t('In credit', 'A favor') },
         ]" />
 
-        <PatientsFilterSelect v-model="missingContact" :label="t('Missing contact', 'Sin contacto')" :options="[
-          { value: 'any', label: t('Missing contact', 'Sin contacto') },
+        <PatientsFilterSelect v-model="form.missingContact" :label="t('Missing contact', 'Sin contacto')" :options="[
+          { value: '', label: t('Missing contact', 'Sin contacto') },
           { value: 'email', label: t('Missing email', 'Sin correo electrónico') },
           { value: 'phone', label: t('Missing phone', 'Sin teléfono') },
         ]" />
 
-        <PatientsFilterSelect v-model="practitionerFilter" :label="t('Practitioner', 'Profesional')" :options="[
+        <PatientsFilterSelect v-model="form.practitioner" :label="t('Practitioner', 'Profesional')" :options="[
           { value: '', label: t('Practitioner', 'Profesional') },
           ...teamMembers.map((m) => ({ value: m.id, label: m.full_name })),
         ]" />
@@ -520,35 +707,51 @@ function tagClass(tag: string) {
 
         <button
           type="button"
-          :aria-pressed="doNotContactFilter"
+          :aria-pressed="form.doNotContact"
           class="flex h-8 items-center gap-1.5 rounded-pill border px-2.5 text-[12.5px] font-medium outline-none focus-visible:shadow-focus"
           :class="
-            doNotContactFilter
+            form.doNotContact
               ? 'border-danger-border bg-danger-bg text-danger-text'
               : 'border-line-control bg-surface text-ink-500 hover:border-line-controlHover'
           "
-          @click="doNotContactFilter = !doNotContactFilter"
+          @click="form.doNotContact = !form.doNotContact"
         >
-          <span aria-hidden="true" class="h-[6px] w-[6px] shrink-0 rounded-full" :class="doNotContactFilter ? 'bg-danger-text' : 'bg-ink-faint3'" />
+          <span aria-hidden="true" class="h-[6px] w-[6px] shrink-0 rounded-full" :class="form.doNotContact ? 'bg-danger-text' : 'bg-ink-faint3'" />
           {{ t('Do not contact', 'No contactar') }}
         </button>
 
         <button
           type="button"
-          :aria-pressed="minorsFilter"
+          :aria-pressed="form.minors"
           class="flex h-8 items-center gap-1.5 rounded-pill border px-2.5 text-[12.5px] font-medium outline-none focus-visible:shadow-focus"
           :class="
-            minorsFilter
+            form.minors
               ? 'border-brand-tintBorder bg-brand-tint text-brand-text'
               : 'border-line-control bg-surface text-ink-500 hover:border-line-controlHover'
           "
-          @click="minorsFilter = !minorsFilter"
+          @click="form.minors = !form.minors"
         >
-          <span aria-hidden="true" class="h-[6px] w-[6px] shrink-0 rounded-full" :class="minorsFilter ? 'bg-brand' : 'bg-ink-faint3'" />
+          <span aria-hidden="true" class="h-[6px] w-[6px] shrink-0 rounded-full" :class="form.minors ? 'bg-brand' : 'bg-ink-faint3'" />
           {{ t('Minors', 'Menores') }}
         </button>
 
+        <button
+          type="button"
+          data-cy="more-filters-toggle"
+          :aria-expanded="showMoreFilters"
+          class="flex h-8 items-center gap-1.5 rounded-pill border px-2.5 text-[12.5px] font-medium outline-none focus-visible:shadow-focus"
+          :class="moreFiltersCount > 0 ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control bg-surface text-ink-500 hover:border-line-controlHover'"
+          @click="showMoreFilters = !showMoreFilters"
+        >
+          {{ t('More filters', 'Más filtros') }}
+          <span v-if="moreFiltersCount > 0" class="font-mono text-[11px]">{{ moreFiltersCount }}</span>
+          <svg width="8" height="8" viewBox="0 0 10 10" aria-hidden="true" :class="showMoreFilters ? 'rotate-180' : ''">
+            <path d="M2 4l3 3 3-3" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" />
+          </svg>
+        </button>
       </div>
+
+      <PatientsMoreFilters v-if="showMoreFilters" :form="form" />
 
       <!-- What is actually being filtered on, and how to undo any one of it.
       A filtered list and an empty one otherwise look identical. -->
@@ -576,6 +779,20 @@ function tagClass(tag: string) {
           @click="clearAllFilters"
         >
           {{ t('Clear all', 'Quitar todo') }}
+        </button>
+        <!-- Saving is offered for a list that is filtered and not already a
+        saved segment as it stands. -->
+        <button
+          v-if="!activeSegment || segmentModified"
+          type="button"
+          data-cy="save-segment"
+          class="ml-auto inline-flex items-center gap-1 rounded-ctlSm px-1.5 py-0.5 text-[12px] font-semibold text-brand outline-none hover:underline focus-visible:shadow-focus"
+          @click="segmentDialog = 'create'"
+        >
+          <svg viewBox="0 0 12 12" aria-hidden="true" class="h-3 w-3">
+            <path d="M6 2v8M2 6h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+          </svg>
+          {{ activeSegment ? t('Save as new segment', 'Guardar como nuevo segmento') : t('Save as segment', 'Guardar como segmento') }}
         </button>
       </div>
 
@@ -775,6 +992,8 @@ function tagClass(tag: string) {
           :summary="`${t('Page', 'Página')} ${page} ${t('of', 'de')} ${totalPages} · ${totalCount} ${t('patients', 'pacientes')}`"
           @go-to-page="goToPage"
         />
+      </div>
+      </div>
       </div>
     </div>
   </div>

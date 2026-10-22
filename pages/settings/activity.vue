@@ -40,7 +40,7 @@ const memberFilter = ref('')
 
 const AREAS = computed(() => [
   { key: 'clinical', label: t('Clinical notes & files', 'Notas clínicas y archivos'), types: ['visit_note', 'patient_file', 'patient_doc'] },
-  { key: 'patients', label: t('Patients', 'Pacientes'), types: ['patient'] },
+  { key: 'patients', label: t('Patients', 'Pacientes'), types: ['patient', 'patient_segment'] },
   { key: 'appointments', label: t('Appointments', 'Citas'), types: ['appointment'] },
   { key: 'money', label: t('Money', 'Cobros'), types: ['payment', 'invoice', 'account_credit', 'package_purchase', 'patient_membership', 'cash_shift', 'cash_movement'] },
   { key: 'access', label: t('Team & access', 'Equipo y accesos'), types: ['team_member', 'team_member_clinic', 'role', 'invite', 'api_token', 'webhook'] },
@@ -144,6 +144,7 @@ const ENTITY_LABELS = computed<Record<string, string>>(() => ({
   membership: t('Membership template', 'Plantilla de membresía'),
   service: t('Service / product', 'Servicio / producto'),
   appointment_type: t('Appointment type', 'Tipo de cita'),
+  patient_segment: t('Patient segment', 'Segmento de pacientes'),
 }))
 
 function actionLabel(action: string) {

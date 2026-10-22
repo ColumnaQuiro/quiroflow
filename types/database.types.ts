@@ -5923,6 +5923,7 @@ export type Database = {
           updated_at: string
           monthly_reply_limit: number | null
           no_reply_phrases: string[]
+          reactivation_appointment_type_id: string | null
         }
         Insert: {
           account_id: string
@@ -5945,6 +5946,7 @@ export type Database = {
           updated_at?: string
           monthly_reply_limit?: number | null
           no_reply_phrases?: string[]
+          reactivation_appointment_type_id?: string | null
         }
         Update: {
           account_id?: string
@@ -5967,6 +5969,7 @@ export type Database = {
           updated_at?: string
           monthly_reply_limit?: number | null
           no_reply_phrases?: string[]
+          reactivation_appointment_type_id?: string | null
         }
         Relationships: [
           {

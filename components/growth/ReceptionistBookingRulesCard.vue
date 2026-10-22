@@ -35,6 +35,14 @@ function commit(key: (typeof FIELDS)[number]['key'], event: Event) {
   if (value !== props.config[key]) props.save({ [key]: value })
 }
 
+// What a patient back after a long break, with no bono left, is offered
+// (returningPatientSection). Unset, the type of their last visit -- which for
+// someone last seen at their report visit a year ago is another report.
+function commitReactivation(event: Event) {
+  const id = (event.target as HTMLSelectElement).value || null
+  if (id !== props.config.reactivationAppointmentTypeId) props.save({ reactivationAppointmentTypeId: id })
+}
+
 const mayBook = computed(() => {
   if (!props.config.bookableAppointmentTypeIds.length) return t(`Any active type (${props.offeredTypes.length})`, `Cualquier tipo activo (${props.offeredTypes.length})`)
   return props.offeredTypes.length === 1 ? t('1 appointment type', '1 tipo de cita') : t(`${props.offeredTypes.length} appointment types`, `${props.offeredTypes.length} tipos de cita`)
@@ -60,6 +68,19 @@ const mayBook = computed(() => {
           >
           <span class="w-28 text-[11px] text-ink-faint">{{ field.unit }}</span>
         </span>
+      </label>
+      <label class="flex items-center justify-between gap-3 border-t border-line-divider pt-2 text-[11.5px] text-ink-700">
+        <span>{{ t('Back after 6+ months, no package', 'Vuelve tras más de 6 meses, sin bono') }}</span>
+        <select
+          :value="config.reactivationAppointmentTypeId ?? ''"
+          :disabled="saving"
+          class="h-8 max-w-[12rem] shrink-0 rounded-ctl border border-line-control bg-surface px-2 text-[12px] text-ink-700 focus:border-brand focus:outline-none"
+          data-test="reactivation-type"
+          @change="commitReactivation"
+        >
+          <option value="">{{ t('Same type as their last visit', 'El tipo de su última visita') }}</option>
+          <option v-for="type in offeredTypes" :key="type.id" :value="type.id">{{ type.name }}</option>
+        </select>
       </label>
       <div class="flex items-baseline justify-between gap-2 border-t border-line-divider pt-2 text-[11.5px]">
         <span class="text-ink-700">{{ t('May offer', 'Puede ofrecer') }}</span>

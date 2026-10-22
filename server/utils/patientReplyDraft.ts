@@ -6,7 +6,7 @@ import { bookingTool, cancelTool, waitlistTool, type BookingContext } from '~/se
 import { recentImages, withImages, type StoredImage } from '~/server/utils/receptionistImages'
 import { historyLine } from '~/utils/receptionistHistory'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personRepliedSince } from '~/utils/receptionistAutoReply'
-import { loadBookedVisits, loadOfferedTypes, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, toneWording, uniqueTypes, clinicTodayStart } from '~/server/utils/receptionist'
+import { loadBookedVisits, loadFamilyAdults, loadOfferedTypes, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, toneWording, uniqueTypes, clinicTodayStart } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptionistModel'
 import { typesForAudience, typesForMinor } from '~/utils/receptionistTypes'
 import { internalNotes } from '~/utils/receptionistGuard'
@@ -168,11 +168,17 @@ export async function draftPatientReply(
   // ...but their child may well be new: a patient writing "cita para mi
   // hija" was told there was no first visit (minorsSection).
   const minors = { forNewChild: typesForMinor(offered, false), forReturningChild: typesForMinor(offered, true), children: await loadTutorChildren(service, accountId, patientId) }
+  // ...and an adult linked to them as family may be booked for too, as
+  // anyone else would be: new, a first visit; returning, the rest.
+  const family = { forNew: typesForAudience(offered, 'new').types, forReturning: types, members: await loadFamilyAdults(service, accountId, patientId) }
+  // Back after a long break with no bono: the clinic's own visit for that
+  // (returningPatientSection), when it is one it offers.
+  const reactivationType = types.find((type) => type.id === config.reactivationAppointmentTypeId)?.name ?? null
   // Moving a visit keeps its type, offered or not -- the prompt lists the
   // visits themselves under patient facts.
   const booked = await loadBookedVisits(supabase, accountId, patientId)
   // The child's first visit too, so its free times are in the list.
-  const bookable = uniqueTypes(types, booked.types, minors.forNewChild)
+  const bookable = uniqueTypes(types, booked.types, minors.forNewChild, family.members.some((m) => !m.hasBeenBefore) ? family.forNew : [])
   // Somebody who has been before is seen by their own practitioner; a
   // patient record with no visit yet (a first visit booked, say) is still
   // somebody new, and a first visit is with whoever is free.
@@ -209,6 +215,7 @@ export async function draftPatientReply(
           practitionerIds,
           person: { kind: 'patient', patientId },
           minors,
+          family,
           onBooked: (summary) => noteInConversation(service, accountId, { kind: 'patient', patientId, channel }, summary),
         }
       : null
@@ -225,7 +232,7 @@ export async function draftPatientReply(
   const { text: draft, refused, handedOver } = await runReceptionistModel(await createAnthropicClient(apiKey), {
     model: MODEL,
     maxTokens: MAX_TOKENS,
-    system: buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors }),
+    system: buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, family: { forNew: family.forNew, forReturning: family.forReturning, members: family.members }, reactivationType }),
     messages: withImages(history, images),
     findFreeTimes,
     handOver: sends,

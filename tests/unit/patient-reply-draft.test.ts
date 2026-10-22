@@ -67,6 +67,26 @@ describe('returning patients', () => {
     expect(patientFactsSection({ ...facts, bono: { name: 'Bono 10', sessionsLeft: 6 } }, 'Europe/Madrid')).toContain('- Package "Bono 10": 6 sessions left to use.')
   })
 
+  // From the daily review of 21 Oct 2026: last seen a year ago at a report
+  // visit, answering the six-month reactivation recall, and offered another
+  // report -- the type of their last visit.
+  it('offers someone back after six months with no bono the clinic\'s reactivation visit', () => {
+    const now = new Date('2026-10-21T10:00:00Z')
+    const lapsed = { ...facts, lastVisitAt: '2025-10-23T08:00:00Z', lastVisitType: 'Informe Quiropractico', bono: null }
+    const s = returningPatientSection(lapsed, { reactivationType: 'Reactivación paciente', now })
+    expect(s).toContain('offer "Reactivación paciente" -- not the type of their last visit, and not a report visit')
+  })
+
+  it('keeps the usual type when the clinic has named no reactivation visit, the visit was recent, or a bono is open', () => {
+    const now = new Date('2026-10-21T10:00:00Z')
+    const lapsed = { ...facts, lastVisitAt: '2025-10-23T08:00:00Z', bono: null }
+    expect(returningPatientSection(lapsed, { reactivationType: null, now })).not.toContain('Reactivación')
+    expect(returningPatientSection({ ...lapsed, lastVisitAt: '2026-06-01T08:00:00Z' }, { reactivationType: 'Reactivación paciente', now })).not.toContain('Reactivación')
+    const withBono = returningPatientSection({ ...lapsed, bono: { name: 'Bono 10', sessionsLeft: 3 } }, { reactivationType: 'Reactivación paciente', now })
+    expect(withBono).not.toContain('offer "Reactivación paciente"')
+    expect(withBono).toContain('not a reactivation or report visit')
+  })
+
   it('says nothing for a record with no visit yet, whose first visit is still theirs', () => {
     expect(returningPatientSection({ ...facts, lastVisitAt: null, bono: null })).toBe('')
   })

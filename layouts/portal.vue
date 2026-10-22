@@ -27,11 +27,13 @@ async function signOut() {
 
 // 16x16 stroke paths, same convention as components/AppSidebar.vue so the
 // two shells look like one product.
-const nav = computed(() => [
+const nav = computed<{ to: string; label: string; icon: string; phone?: boolean }[]>(() => [
   { to: '/portal', label: t('Home', 'Inicio'), icon: 'M2.5 7L8 2.5 13.5 7v6.5h-4v-4h-3v4h-4z' },
   { to: '/portal/appointments', label: t('Appointments', 'Citas'), icon: 'M2.5 3.5h11v10h-11zM2.5 6.6h11M5.6 2v2M10.4 2v2' },
+  { to: '/portal/progress', label: t('Progress', 'Progreso'), icon: 'M2 13.5h12M3.5 11l3-3.5 2.5 2 4-5' },
   { to: '/portal/billing', label: t('Billing', 'Facturación'), icon: 'M2 4h12v8h-12zM2 7h12' },
-  { to: '/portal/exercises', label: t('Exercises', 'Ejercicios'), icon: 'M2 8h2M12 8h2M4 5.5v5M12 5.5v5M5.5 8h5' },
+  // Off the phone's tab bar, which fits six: reached from the home page there.
+  { to: '/portal/exercises', label: t('Exercises', 'Ejercicios'), icon: 'M2 8h2M12 8h2M4 5.5v5M12 5.5v5M5.5 8h5', phone: false },
   { to: '/portal/documents', label: t('Documents', 'Documentos'), icon: 'M4 2h5l3 3v9H4zM9 2v3.2h3' },
   { to: '/portal/messages', label: t('Messages', 'Mensajes'), icon: 'M2 3.5h12v8h-7l-3 2.5v-2.5h-2z' },
 ])
@@ -121,7 +123,7 @@ const clinicInitials = computed(() =>
 
     <nav class="fixed inset-x-0 bottom-0 z-30 flex border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] lg:hidden">
       <NuxtLink
-        v-for="item in nav"
+        v-for="item in nav.filter((i) => i.phone !== false)"
         :key="item.to"
         :to="item.to"
         class="flex flex-1 flex-col items-center gap-1 py-2.5 text-[10.5px]"

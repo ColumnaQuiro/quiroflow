@@ -97,7 +97,7 @@ async function report() {
       title,
       lines: [
         [store.accountName, clinic?.name].filter(Boolean).join(' · '),
-        plan.value ? t(`${plan.value.name}: ${plan.value.done} of ${plan.value.total} visits`, `${plan.value.name}: ${plan.value.done} de ${plan.value.total} visitas`) : t('No care plan', 'Sin plan de tratamiento'),
+        plan.value ? t(`${plan.value.name}: ${plan.value.done} of ${plan.value.total} visits`, `${plan.value.name}: ${plan.value.done} de ${plan.value.total} visitas`) : t('No care plan', 'Sin plan de cuidados'),
       ],
       generatedBy: store.teamMember?.full_name ?? '',
       logoUrl,

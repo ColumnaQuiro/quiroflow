@@ -79,7 +79,7 @@ const sources = computed<Source[]>(() => [
         label: t('3 · Clinical', '3 · Clínico'),
         steps: [
           { key: 'treatment_notes', label: t('Treatment notes', 'Notas de tratamiento'), hint: t('Notes written at a visit.', 'Notas escritas en la visita.'), count: counted('contact_log', 'PH-clinicalnote-') },
-          { key: 'care_plans', label: t('Care plans', 'Planes de tratamiento'), hint: t('Course of treatment.', 'Plan de tratamiento.'), count: counted('contact_log', 'PH-careplan-') },
+          { key: 'care_plans', label: t('Care plans', 'Planes de cuidados'), hint: t('Course of treatment.', 'Plan de cuidados.'), count: counted('contact_log', 'PH-careplan-') },
           { key: 'patient_logs', label: t('Patient logs', 'Registros de pacientes'), hint: t('History entries.', 'Entradas del historial.'), count: counted('contact_log', 'PH-log-') },
           { key: 'sticky_notes', label: t('Sticky notes', 'Notas adhesivas'), hint: t('Front-desk reminders.', 'Recordatorios de recepción.') },
           { key: 'custom_form_responses', label: t('Form responses', 'Respuestas de formularios'), hint: t('Also creates a reusable document template per form.', 'También crea una plantilla de documento por formulario.'), count: counted('patient_docs', 'PH-form-') },

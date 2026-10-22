@@ -40,7 +40,7 @@ const DATA_TYPES = computed(() => [
   { value: 'patients', label: t('Patients', 'Pacientes') },
   { value: 'patient_logs', label: t('Patient Logs', 'Registros de pacientes') },
   { value: 'appointments', label: t('Appointments', 'Citas') },
-  { value: 'care_plans', label: t('Care Plans', 'Planes de tratamiento') },
+  { value: 'care_plans', label: t('Care Plans', 'Planes de cuidados') },
   { value: 'treatment_notes', label: t('Treatment Notes', 'Notas de tratamiento') },
   { value: 'custom_form_responses', label: t('Custom Form Responses', 'Respuestas de formularios personalizados') },
   { value: 'file_attachments', label: t('File Attachments - List', 'Archivos adjuntos - Lista') },

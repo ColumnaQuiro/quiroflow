@@ -446,7 +446,7 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
         <p v-else-if="planError" class="text-[13px] text-danger-text">{{ planError }}</p>
         <template v-else>
           <div class="flex items-center justify-between gap-2">
-            <h2 class="text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ plan ? t('Care plan', 'Plan de tratamiento') : t('Next visit', 'Próxima visita') }}</h2>
+            <h2 class="text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ plan ? t('Care plan', 'Plan de cuidados') : t('Next visit', 'Próxima visita') }}</h2>
             <span class="flex items-center gap-2">
               <span v-if="plan" class="text-[12.5px] text-ink-muted2">{{ cadenceLabel(plan, t) }}</span>
               <button type="button" class="-my-2 flex h-9 items-center px-1 text-[12.5px] font-semibold text-brand-text" data-cy="patient-plan-edit" @click="planSheetOpen = true">{{ plan ? t('Edit', 'Editar') : t('+ Add plan', '+ Añadir plan') }}</button>

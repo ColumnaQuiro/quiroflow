@@ -22,6 +22,8 @@ export default defineEventHandler(async (event) => {
     assessments: rows.map((r) => ({
       id: r.id,
       takenAt: r.taken_at,
+      // So the patient side can measure again from the points, as staff do.
+      heightCm: r.height_cm,
       metrics: r.metrics,
       views: Object.fromEntries(Object.entries(r.views).map(([k, v]) => [k, { ...v, photo: undefined, url: urls[v.photo] ?? null }])),
     })),

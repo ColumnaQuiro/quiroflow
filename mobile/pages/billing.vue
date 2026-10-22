@@ -6,7 +6,8 @@ let shownBefore = false
 <script setup lang="ts">
 import { formatEur } from '../../utils/billing'
 
-// Bonos, balance and invoices -- one question, one screen.
+// Bonos, balance and every invoice. No longer a tab: Plan shows the latest
+// and opens this for the rest (mobile/composables/useAppNav.ts).
 definePageMeta({ layout: 'patient' })
 
 const user = useSupabaseUser()
@@ -54,7 +55,7 @@ function eur(cents: number) {
 </script>
 
 <template>
-  <PatientScreen :title="t('Billing', 'Pagos')">
+  <PatientScreen :title="t('Payments and invoices', 'Pagos y facturas')" back="/visits">
     <div class="grid grid-cols-2 gap-3">
       <div class="rounded-card border border-line bg-surface p-3.5 shadow-card">
         <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ t('Credit', 'Saldo') }}</p>

@@ -18,7 +18,6 @@ const { upcoming, loading: apptLoading, confirmAttendance, confirmingId } = useP
   () => settings.value,
 )
 const { loading: moneyLoading, outstandingCents, creditLedgerCents, activePackages } = usePatientFinancialSummary(() => patientId.value)
-const { documents } = usePatientDocuments(() => patientId.value)
 
 const next = computed(() => upcoming.value[0] ?? null)
 // The waitlist card's clinic: the next visit's, or the only one with nothing
@@ -90,7 +89,6 @@ function eur(cents: number) {
       />
 
       <PatientLearnCard class="mt-4" :patient-id="patient.id" :link-to="(id) => `/portal/learn/${id}`" />
-      <PatientPostureCard class="mt-4" />
 
       <PatientWaitlistCard v-if="settings.bookingEnabled && !apptLoading" class="mt-4" :clinic-id="waitlistClinicId" :has-next-visit="!!next" />
 
@@ -122,14 +120,14 @@ function eur(cents: number) {
           <span class="text-[13.5px] font-medium text-ink-900">{{ t('Message the clinic', 'Escribir a la clínica') }}</span>
           <span class="text-[13px] text-ink-faint">&rarr;</span>
         </NuxtLink>
+        <!-- Exercises: off the phone's tab bar (layouts/portal.vue), so reached
+             from here. Documents have a tab of their own. -->
         <NuxtLink
-          to="/portal/documents"
+          to="/portal/exercises"
           class="flex items-center justify-between rounded-card border border-line bg-surface px-4 py-3.5 shadow-card hover:border-line-controlHover"
+          data-cy="portal-home-exercises"
         >
-          <span class="text-[13.5px] font-medium text-ink-900">
-            {{ t('Your documents', 'Tus documentos') }}
-            <span v-if="documents.length > 0" class="ml-1 text-[12.5px] font-normal text-ink-faint">{{ documents.length }}</span>
-          </span>
+          <span class="text-[13.5px] font-medium text-ink-900">{{ t('Your exercises', 'Tus ejercicios') }}</span>
           <span class="text-[13px] text-ink-faint">&rarr;</span>
         </NuxtLink>
       </div>

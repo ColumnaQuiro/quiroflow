@@ -6,19 +6,21 @@ let shownBefore = false
 <script setup lang="ts">
 import { formatEur } from '../../utils/billing'
 
-// The patient's home screen: the two things the app gets opened for --
-// when am I next in, what do I have left -- and a way through to the rest.
+// The patient's home screen: a summary -- anything owed, when am I next in,
+// what do I have left -- and a way through to the rest.
 //
 // It used to stack every section here (appointments, balance, invoices,
-// files, care plan) in one scroll, because there was nowhere else to put
-// them. They now have tabs of their own; see mobile/layouts/patient.vue.
+// files, care plan, posture) in one scroll, because there was nowhere else
+// to put them. They have tabs of their own now (mobile/composables/
+// useAppNav.ts): the plan, bonos and facturas on Plan, posture on Progreso,
+// documents on Documentos. What stays is the summary of each.
 const props = defineProps<{ patientId: string; patientFirstName: string }>()
 
 const t = useT()
 const locale = computed(() => t('en-GB', 'es-ES'))
 const { settings } = usePatientAppInfo()
 
-const { upcoming, loading: apptLoading, confirmAttendance, confirmingId } = usePatientAppointments(
+const { upcoming, loading: apptLoading, confirmAttendance, confirmingId, canChange } = usePatientAppointments(
   () => props.patientId,
   () => settings.value,
 )
@@ -37,7 +39,20 @@ function onVisible() {
 }
 onMounted(() => document.addEventListener('visibilitychange', onVisible))
 onBeforeUnmount(() => document.removeEventListener('visibilitychange', onVisible))
-const { documents } = usePatientDocuments(() => props.patientId)
+// Paying from the banner: straight to the one unpaid invoice, else the list.
+// Only where the clinic takes payments online (usePatientPay).
+const { invoices, reload: reloadInvoices } = usePatientInvoices(() => props.patientId)
+const { enabled: canPayOnline, payingId, error: payError, pay } = usePatientPay(() => {
+  reloadInvoices()
+  refreshMoney()
+})
+const unpaid = computed(() => invoices.value.filter((i) => i.status === 'unpaid'))
+function payOutstanding() {
+  if (unpaid.value.length === 1) pay(unpaid.value[0]!.id)
+  else navigateTo('/billing')
+}
+// The care plan as one tile; the plan itself is on the Plan tab.
+const { progress: planProgress, plan: carePlan } = usePatientPlanSummary(() => props.patientId)
 // Home exercises: a way through to them, once the clinic has given some.
 const { items: exercises } = usePatientExercises(() => props.patientId)
 
@@ -94,6 +109,25 @@ function eur(cents: number) {
       </NuxtLink>
     </div>
 
+    <!-- Something owed: said first, with the way to settle it -->
+    <section v-if="!moneyLoading && amountDueCents > 0" class="mb-3 flex items-center gap-3 rounded-card border border-danger-border bg-danger-bg p-3.5" data-cy="patient-home-owed">
+      <div class="min-w-0 flex-1">
+        <p class="text-[14px] font-semibold text-danger-text">{{ t(`You owe ${eur(amountDueCents)}`, `Tienes ${eur(amountDueCents)} pendientes`) }}</p>
+        <p v-if="!canPayOnline" class="mt-0.5 text-[12px] text-ink-700">{{ t('You can pay it at the clinic.', 'Lo puedes pagar en la clínica.') }}</p>
+        <p v-if="payError" role="alert" class="mt-0.5 text-[12px] text-danger-text">{{ payError }}</p>
+      </div>
+      <button
+        v-if="canPayOnline && unpaid.length > 0"
+        type="button"
+        class="h-10 shrink-0 rounded-ctl bg-danger-text px-4 text-[13.5px] font-semibold text-white disabled:opacity-60"
+        :disabled="payingId !== null"
+        data-cy="patient-home-pay"
+        @click="payOutstanding"
+      >
+        {{ payingId ? t('Opening…', 'Abriendo…') : t('Pay', 'Pagar') }}
+      </button>
+    </section>
+
     <section class="rounded-card border border-line bg-surface p-4 shadow-card">
       <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ t('Your next visit', 'Tu próxima cita') }}</p>
       <div v-if="apptLoading" class="mt-2"><UiSkeleton class="h-6 w-48 rounded-ctlSm" /></div>
@@ -107,8 +141,12 @@ function eur(cents: number) {
         <PatientCheckIn class="mt-3" :appt="next" />
         <PatientConfirmVisit class="mt-3" :appt="next" :busy="confirmingId === next.id" @confirm="confirmAttendance" />
         <PatientNextVisitActions class="mt-3" :appointment-id="next.id" :clinic-id="next.clinic_id" />
-        <NuxtLink to="/visits" class="mt-3 inline-block text-[12.5px] font-medium text-brand-text">
-          {{ t('See all visits', 'Ver todas las citas') }} <AppChevron :size="12" />
+        <!-- Changing it only where the clinic lets patients, and far enough off -->
+        <NuxtLink v-if="settings.rescheduleEnabled && canChange(next)" :to="`/book?reschedule=${next.id}`" class="mt-3 inline-block text-[12.5px] font-medium text-brand-text" data-cy="patient-home-reschedule">
+          {{ t('Change this visit', 'Cambiar esta cita') }} <AppChevron :size="12" />
+        </NuxtLink>
+        <NuxtLink to="/visits" class="ml-4 mt-3 inline-block text-[12.5px] font-medium text-brand-text">
+          {{ t('Your plan', 'Tu plan') }} <AppChevron :size="12" />
         </NuxtLink>
       </template>
       <template v-else>
@@ -119,37 +157,27 @@ function eur(cents: number) {
       </template>
     </section>
 
-    <!-- The plan: how far along, its booked dates, and changing one -->
-    <PatientCarePlanCard
-      class="mt-3"
-      :patient-id="props.patientId"
-      messages-to="/messages"
-      :reschedule-to="(id) => `/book?reschedule=${id}`"
-      :book-to="settings.bookingEnabled ? '/book' : null"
-    />
-
-    <!-- What the clinic sent them to read or watch -->
-    <PatientLearnCard class="mt-3" :patient-id="props.patientId" :link-to="(id) => `/learn/${id}`" />
-    <!-- Their posture, when the practitioner shared an assessment -->
-    <PatientPostureCard class="mt-3" />
-
     <!-- Earlier, if a slot frees up: the clinic's waitlist -->
     <PatientWaitlistCard v-if="settings.bookingEnabled && !apptLoading" class="mt-3" :clinic-id="waitlistClinicId" :has-next-visit="!!next" />
 
-    <div class="mt-3 grid grid-cols-2 gap-3">
-      <NuxtLink to="/billing" class="rounded-card border border-line bg-surface p-3.5 shadow-card">
-        <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ t('Sessions left', 'Sesiones') }}</p>
+    <!-- The summary of the Plan tab: sessions, credit, the care plan -->
+    <div class="mt-3 grid gap-3" :class="carePlan && planProgress ? 'grid-cols-3' : 'grid-cols-2'" data-cy="patient-home-summary">
+      <NuxtLink to="/visits" class="rounded-card border border-line bg-surface p-3 shadow-card">
+        <p class="text-[10.5px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ t('Sessions', 'Sesiones') }}</p>
         <p v-if="moneyLoading" class="mt-2"><UiSkeleton class="h-6 w-10 rounded-ctlSm" /></p>
-        <p v-else class="mt-1 text-[22px] font-[640] tracking-tightTitle text-ink-900">{{ sessionsLeft }}</p>
+        <p v-else class="mt-1 text-[20px] font-[640] tracking-tightTitle text-ink-900">{{ sessionsLeft }}</p>
+        <p class="text-[11.5px] text-ink-muted">{{ t('left', 'te quedan') }}</p>
       </NuxtLink>
-      <NuxtLink to="/billing" class="rounded-card border border-line bg-surface p-3.5 shadow-card">
-        <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted">
-          {{ amountDueCents > 0 ? t('You owe', 'Pendiente') : t('Your credit', 'Saldo') }}
-        </p>
+      <NuxtLink to="/visits" class="rounded-card border border-line bg-surface p-3 shadow-card">
+        <p class="text-[10.5px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ t('Credit', 'Saldo') }}</p>
         <p v-if="moneyLoading" class="mt-2"><UiSkeleton class="h-6 w-16 rounded-ctlSm" /></p>
-        <p v-else class="mt-1 text-[22px] font-[640] tracking-tightTitle" :class="amountDueCents > 0 ? 'text-danger-text' : 'text-ink-900'">
-          {{ eur(amountDueCents > 0 ? amountDueCents : creditLedgerCents) }}
-        </p>
+        <p v-else class="mt-1 text-[20px] font-[640] tracking-tightTitle text-ink-900">{{ eur(creditLedgerCents) }}</p>
+        <p class="text-[11.5px] text-ink-muted">{{ t('in your favour', 'a tu favor') }}</p>
+      </NuxtLink>
+      <NuxtLink v-if="carePlan && planProgress" to="/visits" class="rounded-card border border-line bg-surface p-3 shadow-card" data-cy="patient-home-plan">
+        <p class="text-[10.5px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ t('Plan', 'Plan') }}</p>
+        <p class="mt-1 text-[20px] font-[640] tracking-tightTitle text-ink-900">{{ planProgress.done }}<span class="text-[13px] font-medium text-ink-muted"> {{ t('of', 'de') }} {{ carePlan.total_visits }}</span></p>
+        <div class="mt-1.5 h-1 rounded-full bg-surface-subtle"><div class="h-1 rounded-full bg-brand" :style="{ width: `${planProgress.pct}%` }" /></div>
       </NuxtLink>
     </div>
 
@@ -166,17 +194,8 @@ function eur(cents: number) {
       <span class="text-ink-faint"><AppChevron /></span>
     </NuxtLink>
 
-    <NuxtLink
-      v-if="documents.length > 0"
-      to="/documents"
-      class="mt-3 flex items-center justify-between rounded-card border border-line bg-surface px-4 py-3 shadow-card"
-    >
-      <span class="text-[13.5px] font-medium text-ink-900">
-        {{ t('Your documents', 'Tus documentos') }}
-        <span class="ml-1 text-[12.5px] font-normal text-ink-faint">{{ documents.length }}</span>
-      </span>
-      <span class="text-ink-faint"><AppChevron /></span>
-    </NuxtLink>
+    <!-- What the clinic sent them to read or watch -->
+    <PatientLearnCard class="mt-3" :patient-id="props.patientId" :link-to="(id) => `/learn/${id}`" />
 
     <!-- Their referral link, when the clinic has the programme on -->
     <PatientReferralCard class="mt-3" :patient-id="props.patientId" />

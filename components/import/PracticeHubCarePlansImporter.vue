@@ -194,7 +194,7 @@ function reset() {
   importErrors.value = []
   progress.value = { done: 0, total: 0 }
 }
-const introLead = computed(() => t("Brings each patient's course of treatment across from PracticeHub's API into their contact log here.", 'Trae el plan de tratamiento de cada paciente desde la API de PracticeHub al registro de contacto de aquí.'))
+const introLead = computed(() => t("Brings each patient's course of treatment across from PracticeHub's API into their contact log here.", 'Trae el plan de cuidados de cada paciente desde la API de PracticeHub al registro de contacto de aquí.'))
 const introNotes = computed(() => [
         { title: t('Nothing is written until you press Apply.', 'No se escribe nada hasta que pulses Aplicar.'), body: t('The preview lists every plan it will add so you can check it first.', 'La vista previa muestra cada plan que añadirá para que lo compruebes antes.') },
         { title: t('Safe to run again.', 'Se puede volver a ejecutar.'), body: t('Plans already imported are skipped.', 'Los planes ya importados se omiten.') },

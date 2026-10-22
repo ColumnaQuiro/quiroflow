@@ -67,7 +67,7 @@ Consulta con un médico sin esperar si notas pérdida de fuerza en una pierna, a
     minutes: 3,
     body: `El dolor lumbar es muy frecuente y en la gran mayoría de los casos no se debe a nada grave. Aunque duela, la espalda es fuerte.
 
-Moverse es parte del tratamiento. Caminar a diario, aunque sean paseos cortos, y seguir con tus actividades adaptándolas ayuda más que quedarse en la cama.
+Moverse es parte de la recuperación. Caminar a diario, aunque sean paseos cortos, y seguir con tus actividades adaptándolas ayuda más que quedarse en la cama.
 
 Cambia de postura a menudo. Ninguna postura es perfecta si la mantienes horas: la mejor postura es la siguiente.
 
@@ -165,7 +165,7 @@ Ante sangrado, contracciones, dolor intenso que no cede, fiebre o cualquier duda
     summary: 'Las señales que no deben esperar a tu próxima visita.',
     tags: ['lumbar'],
     minutes: 2,
-    body: `La ciática es dolor que baja por la pierna por irritación de un nervio de la zona lumbar. La mayoría mejora con el tiempo y con un plan de tratamiento.
+    body: `La ciática es dolor que baja por la pierna por irritación de un nervio de la zona lumbar. La mayoría mejora con el tiempo y con un plan de cuidados.
 
 Hay señales poco frecuentes pero importantes. Acude a urgencias si notas:
 

@@ -125,7 +125,7 @@ function onSent() {
               {{ s === 'mine' ? t('My patients', 'Mis pacientes') : t('Whole clinic', 'Toda la clínica') }}
             </button>
           </div>
-          <p class="mt-1.5 text-[12.5px] leading-snug text-ink-muted">{{ t('On a care plan, overdue by its own cadence, nothing booked.', 'Con plan de tratamiento, con retraso según su frecuencia y sin cita.') }}</p>
+          <p class="mt-1.5 text-[12.5px] leading-snug text-ink-muted">{{ t('On a care plan, overdue by its own cadence, nothing booked.', 'Con plan de cuidados, con retraso según su frecuencia y sin cita.') }}</p>
         </div>
       </div>
 
@@ -134,9 +134,9 @@ function onSent() {
         <p v-else-if="loadError" class="rounded-card border border-danger-border bg-danger-bg px-3.5 py-3 text-[13.5px] text-danger-text">
           {{ loadError }} <button type="button" class="ml-1 font-semibold underline" @click="load()">{{ t('Try again', 'Reintentar') }}</button>
         </p>
-        <p v-else-if="!rows.length && !exerciseRows.length" class="mt-10 text-center text-[14px] text-ink-muted" data-cy="plan-alerts-empty">{{ t('No care plans behind schedule.', 'Ningún plan de tratamiento con retraso.') }}</p>
+        <p v-else-if="!rows.length && !exerciseRows.length" class="mt-10 text-center text-[14px] text-ink-muted" data-cy="plan-alerts-empty">{{ t('No care plans behind schedule.', 'Ningún plan de cuidados con retraso.') }}</p>
         <div v-else class="mx-auto flex max-w-[760px] flex-col gap-2">
-          <p v-if="!rows.length" class="py-2 text-center text-[13.5px] text-ink-muted">{{ t('No care plans behind schedule.', 'Ningún plan de tratamiento con retraso.') }}</p>
+          <p v-if="!rows.length" class="py-2 text-center text-[13.5px] text-ink-muted">{{ t('No care plans behind schedule.', 'Ningún plan de cuidados con retraso.') }}</p>
           <article v-for="r in rows" :key="r.patient_id" class="rounded-card border border-line bg-surface px-3.5 py-3 shadow-card" data-cy="plan-alert-row">
             <div class="flex items-start gap-3">
               <NuxtLink :to="`/patients/${r.patient_id}`" class="flex min-w-0 flex-1 items-start gap-3">

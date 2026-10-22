@@ -44,7 +44,7 @@ const RATE_TONE: Record<GrowthFunnelStep['tone'], string> = {
         {{ t('Acquisition funnel', 'Embudo de captación') }}
       </h2>
       <p class="text-right text-[11px] text-ink-faint">
-        {{ t('Stranger to care plan', 'De desconocido a plan de tratamiento') }} · {{ endToEndRate }}
+        {{ t('Stranger to care plan', 'De desconocido a plan de cuidados') }} · {{ endToEndRate }}
         {{ t('end to end', 'de principio a fin') }}
       </p>
     </div>

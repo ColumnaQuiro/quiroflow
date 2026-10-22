@@ -116,14 +116,16 @@ describe('Posture assessment', () => {
           expect(String(res.body).slice(0, 5)).to.eq('%PDF-')
         })
 
-        // Shared with the patient, who sees it on the portal's home.
+        // Shared with the patient, who sees it under Progreso.
         cy.get('[data-cy=posture-share]').check()
         cy.task<{ shared_with_patient: boolean }[]>('db:selectRows', { table: 'posture_assessments', columns: 'shared_with_patient', match: { patient_id: patient.id } }).its('0.shared_with_patient').should('eq', true)
         cy.clearAllCookies()
         cy.clearAllLocalStorage()
         cy.login(email, password)
-        cy.visit('/portal')
-        cy.get('[data-cy=patient-posture]', { timeout: 20000 }).should('be.visible')
+        cy.visit('/portal/progress')
+        cy.get('[data-cy=patient-posture][data-ready=true]', { timeout: 20000 }).should('be.visible')
+        // One assessment: the numbers, no chart yet.
+        cy.get('[data-cy=patient-posture-chart]').should('not.exist')
         cy.get('[data-cy=patient-posture-weight]').should('contain', 'kg')
         cy.get('[data-cy=patient-posture] [data-cy=posture-overlay] image').should('have.attr', 'href').and('contain', 'token=')
         // And the report, from their side: only because it was shared.
@@ -140,6 +142,8 @@ describe('Posture assessment', () => {
   // Evolución: any headline number across every assessment, measured again
   // from the points (so these rows, saved with no metrics, still plot).
   it('charts each number across the assessments and says whether it got better', () => {
+    const email = `curva-${Date.now()}@example.test`
+    const password = 'valencia2026'
     const side = (earX: number) => ({ photo: 'none/right.jpg', width: 1000, height: 1800, facing: 'right', points: { ear: [earX, 100], shoulder: [500, 300], hip: [500, 900], knee: [500, 1300], ankle: [500, 1691] } })
     const front = (dropR: number) => ({
       photo: 'none/front.jpg', width: 1000, height: 1800, facing: null,
@@ -147,11 +151,12 @@ describe('Posture assessment', () => {
     })
     cy.seedStaffAccount().then((account) => {
       cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Curva', lastName: 'Postura' }).then((patient) => {
+        cy.task('db:givePatientAppLogin', { accountId: account.accountId, patientId: patient.id, email, password })
         cy.task('db:insertRows', {
           table: 'posture_assessments',
           rows: [
-            { account_id: account.accountId, patient_id: patient.id, taken_at: '2026-06-02T09:00:00Z', height_cm: 170, views: { right: side(560), front: front(10) }, metrics: {} },
-            { account_id: account.accountId, patient_id: patient.id, taken_at: '2026-09-08T09:00:00Z', height_cm: 170, views: { right: side(520), front: front(2) }, metrics: {} },
+            { account_id: account.accountId, patient_id: patient.id, taken_at: '2026-06-02T09:00:00Z', height_cm: 170, views: { right: side(560), front: front(10) }, metrics: {}, shared_with_patient: true },
+            { account_id: account.accountId, patient_id: patient.id, taken_at: '2026-09-08T09:00:00Z', height_cm: 170, views: { right: side(520), front: front(2) }, metrics: {}, shared_with_patient: true },
           ],
         })
         cy.login(account.email, account.password)
@@ -165,6 +170,19 @@ describe('Posture assessment', () => {
         cy.get('[data-cy=posture-trend-shoulderTilt]').click()
         cy.get('[data-cy=posture-trend]').should('have.attr', 'data-metric', 'shoulderTilt')
         cy.get('[data-cy=posture-trend-summary]').should('have.attr', 'data-better', 'true')
+
+        // The patient sees the same, in their own words, once both are shared.
+        cy.clearAllCookies()
+        cy.clearAllLocalStorage()
+        cy.login(email, password)
+        cy.visit('/portal/progress')
+        cy.get('[data-cy=patient-posture][data-ready=true]', { timeout: 20000 })
+        cy.get('[data-cy=patient-posture-chart] circle').should('have.length', 2)
+        cy.get('[data-cy=patient-posture-delta]').should('have.attr', 'data-better', 'true')
+        cy.get('[data-cy=patient-posture-metric-shoulderTilt]').click()
+        cy.get('[data-cy=patient-posture-delta]').should('have.attr', 'data-better', 'true')
+        // The knees stay with the clinic.
+        cy.get('[data-cy=patient-posture-metric-knees]').should('not.exist')
       })
     })
   })

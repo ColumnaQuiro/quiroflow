@@ -1,5 +1,5 @@
 // Custom patient fields (patient_attributes / patient_attribute_values,
-// 20261022185051_custom_patient_fields.sql): fields each clinic adds to the
+// 20261023053614_custom_patient_fields.sql): fields each clinic adds to the
 // patient's record. A value is stored as text in one form per kind -- a
 // number with a dot, a date as YYYY-MM-DD, yes/no as true/false, a choice as
 // the option's text -- and the database refuses any other.

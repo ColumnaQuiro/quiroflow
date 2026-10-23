@@ -7,7 +7,7 @@ import {
 } from '../../utils/patientAttributes'
 
 // Custom patient fields store their value as text in one form per kind, which
-// the database checks (20261022185051_custom_patient_fields.sql). These are
+// the database checks (20261023053614_custom_patient_fields.sql). These are
 // the conversions either side of it.
 
 const es = (_en: string, es: string) => es

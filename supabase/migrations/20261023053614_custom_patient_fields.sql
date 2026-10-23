@@ -20,7 +20,7 @@
 -- choice as the option's text. The trigger below refuses anything else.
 --
 -- A new patient_id column is three changes (CLAUDE.md): this table, the move
--- in merge_patients -- restated below from 20261021173018 with the
+-- in merge_patients -- restated below from 20261022185125 with the
 -- patient_attribute_values lines added -- and anonymisation, done as the
 -- family links are (20261021171628): a trigger on the update that sets
 -- anonymized_at. Also two-factor, the Data API grants and the audit trail.
@@ -201,7 +201,7 @@ create trigger patient_attributes_guard
 -- The audit trail (CLAUDE.md). Appended to whatever the constraint allows
 -- when this runs rather than restated: several branches add entity types at
 -- once, and a restated list drops every type added since it was written.
--- The same block as 20261022173310_patient_segments.
+-- The same block as 20261022185125_recall_assignments.
 do $$
 declare
   v_types text[];
@@ -240,11 +240,11 @@ create trigger patients_drop_attribute_values_on_anonymize
   after update of anonymized_at on public.patients
   for each row execute function public.patients_drop_attribute_values_on_anonymize();
 
--- merge_patients moves them (CLAUDE.md). Unchanged from 20261021173018 but
--- for the patient_attribute_values block after the facturas addressed to the
--- duplicate, and two tables from branches that restate this function too:
--- patient_care_stops (20261022171626) and patient_letters (20261022185121).
--- Each is named only once it exists, so whichever applies second keeps both.
+-- merge_patients moves them (CLAUDE.md). Unchanged from 20261022185125 but
+-- for the patient_attribute_values block after the recall assignments, and
+-- patient_letters after the files: that table arrives in its own branch
+-- (#890), which restates this function too, so it is named only once it
+-- exists -- whichever of the two applies second keeps both.
 create or replace function merge_patients(p_survivor_id uuid, p_duplicate_id uuid)
 returns jsonb
 language plpgsql
@@ -454,7 +454,26 @@ begin
   get diagnostics v_count = row_count;
   v_moved := v_moved || jsonb_build_object('facturas_addressed', v_count);
 
-  -- Custom fields (patient_attribute_values, 20261022185051), one answer per
+  -- Reasons for stopping care (patient_care_stops, 20261022171626) are the
+  -- person's history: the duplicate's join the survivor's.
+  update patient_care_stops set patient_id = p_survivor_id where patient_id = p_duplicate_id;
+  get diagnostics v_count = row_count;
+  v_moved := v_moved || jsonb_build_object('patient_care_stops', v_count);
+
+  -- Who follows up the patient on Recalls (recall_assignments,
+  -- 20261022185125): one row per patient, so of the two records' choices
+  -- the more recent one is kept and becomes the survivor's.
+  delete from recall_assignments d
+   where d.patient_id = p_duplicate_id
+     and exists (select 1 from recall_assignments s where s.patient_id = p_survivor_id and s.assigned_at >= d.assigned_at);
+  delete from recall_assignments s
+   where s.patient_id = p_survivor_id
+     and exists (select 1 from recall_assignments d where d.patient_id = p_duplicate_id);
+  update recall_assignments set patient_id = p_survivor_id where patient_id = p_duplicate_id;
+  get diagnostics v_count = row_count;
+  v_moved := v_moved || jsonb_build_object('recall_assignments', v_count);
+
+  -- Custom fields (patient_attribute_values, 20261023053614), one answer per
   -- patient and field. As for the columns below, the survivor keeps the
   -- answers it already has and only its blanks are filled from the
   -- duplicate's.
@@ -464,14 +483,6 @@ begin
   update patient_attribute_values set patient_id = p_survivor_id where patient_id = p_duplicate_id;
   get diagnostics v_count = row_count;
   v_moved := v_moved || jsonb_build_object('patient_attribute_values', v_count);
-
-  -- Reasons for stopping care (patient_care_stops, 20261022171626) are the
-  -- person's history: the duplicate's join the survivor's.
-  if to_regclass('public.patient_care_stops') is not null then
-    execute 'update public.patient_care_stops set patient_id = $1 where patient_id = $2' using p_survivor_id, p_duplicate_id;
-    get diagnostics v_count = row_count;
-    v_moved := v_moved || jsonb_build_object('patient_care_stops', v_count);
-  end if;
 
   -- external_reference is unique per account (patients_external_reference_uniq)
   -- and the duplicate is only deleted at the end, so copying its reference

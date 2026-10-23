@@ -11,7 +11,7 @@ import {
 } from '~/utils/patientAttributes'
 
 // Settings > Custom fields: the clinic's own fields on the patient's record
-// (patient_attributes, 20261022185051_custom_patient_fields.sql), beyond the
+// (patient_attributes, 20261023053614_custom_patient_fields.sql), beyond the
 // fixed ones -- "Mutua / nº póliza", "Deporte que practica", "Lateralidad".
 //
 // Two sections, as PracticeHub has them. Clinical fields sit on the Clinical

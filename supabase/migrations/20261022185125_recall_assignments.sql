@@ -251,9 +251,9 @@ alter table public.staff_push_preferences
   add column if not exists recall_assignments boolean not null default true;
 
 -- ---------------------------------------------------------------------------
--- merge_patients moves them too (CLAUDE.md). Unchanged from 20261021173018
--- but for the recall_assignments statements after the facturas addressed to
--- a tutor, and the guarded patient_care_stops one after them.
+-- merge_patients moves them too (CLAUDE.md). Unchanged from 20261022171626
+-- but for the recall_assignments statements after the reasons for stopping
+-- care.
 create or replace function merge_patients(p_survivor_id uuid, p_duplicate_id uuid)
 returns jsonb
 language plpgsql
@@ -454,6 +454,12 @@ begin
   get diagnostics v_count = row_count;
   v_moved := v_moved || jsonb_build_object('facturas_addressed', v_count);
 
+  -- Reasons for stopping care (patient_care_stops, 20261022171626) are the
+  -- person's history: the duplicate's join the survivor's.
+  update patient_care_stops set patient_id = p_survivor_id where patient_id = p_duplicate_id;
+  get diagnostics v_count = row_count;
+  v_moved := v_moved || jsonb_build_object('patient_care_stops', v_count);
+
   -- Who follows up the patient on Recalls (recall_assignments,
   -- 20261022185125): one row per patient, so of the two records' choices
   -- the more recent one is kept and becomes the survivor's.
@@ -466,16 +472,6 @@ begin
   update recall_assignments set patient_id = p_survivor_id where patient_id = p_duplicate_id;
   get diagnostics v_count = row_count;
   v_moved := v_moved || jsonb_build_object('recall_assignments', v_count);
-
-  -- Reasons for stopping care (patient_care_stops) arrive in their own
-  -- migration, which redefines this function too; as with learn_sends,
-  -- whichever lands second keeps both by naming the other's table only once
-  -- it exists.
-  if to_regclass('public.patient_care_stops') is not null then
-    execute 'update public.patient_care_stops set patient_id = $1 where patient_id = $2' using p_survivor_id, p_duplicate_id;
-    get diagnostics v_count = row_count;
-    v_moved := v_moved || jsonb_build_object('patient_care_stops', v_count);
-  end if;
 
   -- external_reference is unique per account (patients_external_reference_uniq)
   -- and the duplicate is only deleted at the end, so copying its reference

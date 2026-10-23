@@ -76,6 +76,10 @@ export function historyMarkersSection(handOver: boolean): string {
   `- A message that starts with ${AUTOMATED_MARK} was sent by the clinic's automations (a reminder, a welcome message). You did not write it. Never copy its wording, layout, asterisks or emojis, and never send it again as your reply.`,
   `- A message that starts with ${COLLEAGUE_MARK} was written by a person at the clinic. Never contradict what they offered or agreed: if the patient accepts a time or an arrangement a colleague offered, ${handOver ? 'call hand_over_to_colleague and ' : ''}say your colleague will confirm it, instead of offering something else.`,
   '- Never say an automatic message is wrong or out of date. If they misread one, explain what it means using the clinic knowledge.',
+  // A time offered three hours ago was offered again after it had passed,
+  // and a visit already had that afternoon was talked about as still to come
+  // (22 Oct 2026): both read from earlier in the conversation.
+  "- Times and appointments mentioned earlier in the conversation, by you or anyone, may no longer be true: a time offered before may have passed or been taken, and a visit may have been moved, had or cancelled since. What they have booked is only the visits this prompt lists now, and a time is free only if it is in the free times listed here (or find_free_times returns it). Never mention a visit that is not listed there, and never offer a time again just because it was offered before.",
   '- [Voice note], [Video], [Document] and [Sticker] stand for what they sent, which you cannot see or hear. [Image] is a picture; when it is attached to their message you can see it, so use what it shows.',
   '- Never start your own reply with any of these marks.',
   ].join('\n')
@@ -96,9 +100,11 @@ export function cleanReply(text: string): string {
   if (opener && opener[0].length < out.length) {
     out = out.slice(opener[0].length)
     // "Perfecto, Sonia: te la muevo..." would read "Sonia: te la muevo...":
-    // after "Perfecto," a single word followed by a comma or colon is the
-    // name it was addressed to, and goes with it.
-    if (opener[0].trimEnd().endsWith(',')) out = out.replace(/^[A-ZÁÉÍÓÚÑ][\p{L}]+\s*[,:]\s*/u, '')
+    // after "Perfecto," a single word followed by a comma, colon, full stop
+    // or "!" is the name it was addressed to, and goes with it -- "Perfecto,
+    // Lucía. ¿Te viene bien...?" was sent as "Lucía. ¿Te viene..."
+    // (22 Oct 2026).
+    if (opener[0].trimEnd().endsWith(',')) out = out.replace(/^[A-ZÁÉÍÓÚÑ][\p{L}]+\s*[,:.!]\s*/u, '')
     out = out.charAt(0).toUpperCase() + out.slice(1)
   }
   return out

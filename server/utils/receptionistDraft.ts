@@ -1,7 +1,7 @@
 import type { H3Event } from 'h3'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
 import { overMonthlyLimit, recordReceptionistReply } from '~/server/utils/receptionistUsage'
-import { announceHandover, noteInConversation, sendAsReceptionist } from '~/server/utils/receptionistSend'
+import { announceHandover, heldBackBeforeSending, noteInConversation, PAST_TIME_REASON, sendAsReceptionist } from '~/server/utils/receptionistSend'
 import { bookingTool, cancelTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
 import { recentImages, withImages } from '~/server/utils/receptionistImages'
 import { historyLine } from '~/utils/receptionistHistory'
@@ -90,6 +90,9 @@ export async function draftLeadReply(
   // reached, or it is not a WhatsApp conversation, when it drafts as before.
   opts: { send?: { event: H3Event } } = {},
 ): Promise<DraftOutcome> {
+  // What everything below is read as of: anything the team does after this,
+  // in the conversation or the diary, holds a sent reply back (heldBackBeforeSending).
+  const readAt = new Date().toISOString()
   const { data: lead } = await supabase
     .from('leads')
     // Where they came from, so a reply that depends on it (an ad-only price)
@@ -285,6 +288,14 @@ export async function draftLeadReply(
     const { error: recordError } = await supabase.from('leads').update({ ai_draft_body: draft, ai_draft_created_at: new Date().toISOString(), ...(newestInboundAt ? { ai_drafted_through_at: newestInboundAt } : {}) }).eq('id', leadId).eq('account_id', accountId)
     // Not recorded, not sent: a reply it could not mark would be sent again.
     if (recordError) throw new Error(`could not record the reply before sending: ${recordError.message}`)
+    // Read again now: written from a diary or a conversation that has moved
+    // on, it stays the draft recorded above rather than going out.
+    const heldBack = await heldBackBeforeSending(calendarClient, accountId, { patientId: lead.patient_id ?? null, leadId }, readAt, draft, calendar.timeZone)
+    if (heldBack === 'past_time') {
+      await handToPerson(supabase, accountId, leadId)
+      await announceHandover(supabase, accountId, target, name, PAST_TIME_REASON)
+    }
+    if (heldBack) return { status: 'drafted', draft }
     try {
       await sendAsReceptionist(opts.send.event, supabase, accountId, target, draft)
     } catch (err) {

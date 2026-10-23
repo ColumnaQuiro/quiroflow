@@ -1,6 +1,7 @@
 import type { H3Event } from 'h3'
 import { sendInboxMessage } from '~/server/utils/inboxSend'
 import { notifyInboxTeamMembers, sendPushToPatients } from '~/server/utils/pushNotifications'
+import { changesTheDiary, offersPastTimeToday } from '~/utils/receptionistAutoReply'
 
 // The AI receptionist sending a reply on its own, and passing a conversation
 // to a person -- what receptionist-draft-cron does instead of leaving a draft
@@ -33,6 +34,65 @@ export async function sendAsReceptionist(event: H3Event, service: any, accountId
   const sender = { supabase: service, teamMember: { account_id: accountId } } as unknown as Parameters<typeof sendInboxMessage>[1]
   await sendInboxMessage(event, sender, target.kind === 'lead' ? { leadId: target.leadId, text, sentByAi: true } : { patientId: target.patientId, text, sentByAi: true })
 }
+
+/**
+ * Why a reply written from the diary as it was at `readAt` must not go out
+ * now, or null -- checked again in the last moment before sending, because a
+ * reply takes seconds to write and the front desk does not wait for it.
+ *
+ * 'person' -- somebody from the clinic wrote in the conversation meanwhile.
+ * 'diary' -- one of this patient's visits was booked, moved, cancelled or
+ *   had meanwhile by anyone but the receptionist. The team moved a visit to
+ *   12:30 and, a minute later, the reply read the 12:30 as taken and told the
+ *   patient "me he confundido, es a las 13:30" (22 Oct 2026); the same thing
+ *   happened with 18:15 the same afternoon.
+ * 'past_time' -- it offers a time today that has already gone by
+ *   (offersPastTimeToday).
+ *
+ * The first two are a person on the conversation: the reply stays a draft
+ * for them, as autoReplyHeldBack's 'person' does. A past time has nobody on
+ * it, so the caller hands it over.
+ */
+export async function heldBackBeforeSending(
+  service: any,
+  accountId: string,
+  who: { patientId: string | null; leadId: string | null },
+  readAt: string,
+  text: string,
+  timeZone: string,
+): Promise<'person' | 'diary' | 'past_time' | null> {
+  if (offersPastTimeToday(text, new Date(), timeZone)) return 'past_time'
+
+  // A person's message: not the receptionist's, not a template or automation.
+  const byPerson = (query: any) => query.eq('account_id', accountId).eq('direction', 'outbound').not('sent_by_ai', 'is', true).gt('created_at', readAt).limit(1)
+  const reads: Promise<{ data: unknown[] | null }>[] = []
+  if (who.leadId) reads.push(byPerson(service.from('whatsapp_messages').select('id')).eq('lead_id', who.leadId).is('template_name', null).is('rule_id', null).is('automation_action_id', null))
+  if (who.patientId) {
+    reads.push(byPerson(service.from('whatsapp_messages').select('id')).eq('patient_id', who.patientId).is('template_name', null).is('rule_id', null).is('automation_action_id', null))
+    reads.push(byPerson(service.from('patient_app_messages').select('id')).eq('patient_id', who.patientId))
+  }
+  const written = await Promise.all(reads)
+  if (written.some(({ data }) => (data ?? []).length > 0)) return 'person'
+
+  if (who.patientId) {
+    const { data: changes } = await service
+      .from('audit_logs')
+      .select('action, changes')
+      .eq('account_id', accountId)
+      .eq('entity_type', 'appointment')
+      .eq('patient_id', who.patientId)
+      // Not its own booking in this same reply. A row with no actor is
+      // somebody's, so it counts.
+      .or('actor.is.null,actor.neq.receptionist')
+      .gt('created_at', readAt)
+      .limit(20)
+    if (((changes ?? []) as { action: string; changes: Record<string, unknown> | null }[]).some(changesTheDiary)) return 'diary'
+  }
+  return null
+}
+
+/** The handover note when a reply was held back for offering a time already gone. */
+export const PAST_TIME_REASON = 'Mi respuesta ofrecía una hora de hoy que ya había pasado; la he dejado como borrador para que la revises.'
 
 /** The Inbox's key for the conversation: a patient's id, or lead:<id>. */
 export function conversationKeyFor(target: ReceptionistTarget): string {

@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import type { Database } from '~/types/database.types'
+import { PATIENT_ATTRIBUTE_COLUMNS, patientAttributeKindLabel, patientAttributeNewPatientKey, type PatientAttribute } from '~/utils/patientAttributes'
 
 // What the front desk is asked for when adding a patient (AddPatientModal
 // reads accounts.new_patient_field_config). Each field is one of three
 // states -- hidden, optional, required -- rather than two checkboxes whose
 // combinations included "hidden but required", which the modal could never
 // honour. The stored shape is unchanged: { visible, required } per key.
+//
+// The clinic's own fields (Settings > Custom fields) are listed after the
+// standard ones, under the key "attribute:<id>", and start hidden.
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
@@ -36,8 +40,21 @@ const saved = ref('')
 const loading = ref(true)
 const saving = ref(false)
 
+const attributes = ref<PatientAttribute[]>([])
+const attributeRows = computed(() =>
+  attributes.value.map((a) => ({
+    key: patientAttributeNewPatientKey(a.id),
+    label: a.label,
+    hint:
+      a.section === 'clinical'
+        ? t(`${patientAttributeKindLabel(a.kind, t)} · Clinical: only asked when the person adding has clinical access.`, `${patientAttributeKindLabel(a.kind, t)} · Clínico: solo se pide si quien añade tiene acceso clínico.`)
+        : patientAttributeKindLabel(a.kind, t),
+    canRequire: true,
+  })),
+)
+
 function stateOf(key: string): State {
-  const c = config.value[key] ?? { visible: true, required: false }
+  const c = config.value[key] ?? { visible: !key.startsWith('attribute:'), required: false }
   if (!c.visible) return 'hidden'
   return c.required ? 'required' : 'optional'
 }
@@ -48,7 +65,11 @@ function setState(key: string, state: State) {
 const dirty = computed(() => JSON.stringify(config.value) !== saved.value)
 
 async function load() {
-  const { data } = await supabase.from('accounts').select('new_patient_field_config').eq('id', store.accountId!).maybeSingle()
+  const [{ data }, { data: attrs }] = await Promise.all([
+    supabase.from('accounts').select('new_patient_field_config').eq('id', store.accountId!).maybeSingle(),
+    supabase.from('patient_attributes').select(PATIENT_ATTRIBUTE_COLUMNS).is('archived_at', null).order('section', { ascending: false }).order('position').order('created_at'),
+  ])
+  attributes.value = (attrs as PatientAttribute[] | null) ?? []
   config.value = (data?.new_patient_field_config as unknown as Record<string, FieldConfig>) ?? {}
   saved.value = JSON.stringify(config.value)
   loading.value = false
@@ -75,13 +96,14 @@ async function save() {
 const preview = computed(() => {
   const shown = (key: string) => stateOf(key) !== 'hidden'
   const label = (key: string) => {
-    const f = FIELDS.value.find((x) => x.key === key)!
+    const f = [...FIELDS.value, ...attributeRows.value].find((x) => x.key === key)!
     return stateOf(key) === 'required' ? `${f.label} *` : f.label
   }
   const rows = [t('First name', 'Nombre') + ' *', t('Last name', 'Apellidos') + ' *']
   for (const key of ['date_of_birth', 'email', 'phone', 'gender']) if (shown(key)) rows.push(label(key))
   rows.push(t('Referred by', 'Origen'))
   for (const key of ['occupation', 'preferred_language', 'address', 'notes']) if (shown(key)) rows.push(label(key))
+  for (const a of attributeRows.value) if (shown(a.key)) rows.push(label(a.key))
   return rows
 })
 
@@ -123,7 +145,9 @@ const STATES: { value: State; label: () => string }[] = [
                   <UiSkeleton class="ml-auto h-8 w-60 rounded-ctl" />
                 </div>
               </template>
-              <div v-for="f in FIELDS" v-else :key="f.key" data-cy="field-row" :data-field="f.key" class="flex min-h-[56px] flex-wrap items-center gap-3 border-t border-line-row px-[18px] py-2 sm:flex-nowrap">
+              <template v-for="f in loading ? [] : [...FIELDS, ...attributeRows]" :key="f.key">
+              <h3 v-if="f.key === attributeRows[0]?.key" class="border-t border-line-row px-[18px] pb-2 pt-4 text-[13.5px] font-semibold text-ink-700">{{ t('Custom fields', 'Campos personalizados') }}</h3>
+              <div data-cy="field-row" :data-field="f.key" class="flex min-h-[56px] flex-wrap items-center gap-3 border-t border-line-row px-[18px] py-2 sm:flex-nowrap">
                 <!-- min-w makes the row wrap the control onto its own line on a
                      phone rather than squeezing the hint one word per line. -->
                 <div class="flex min-w-[9rem] flex-1 flex-col gap-0.5 sm:min-w-0">
@@ -147,6 +171,7 @@ const STATES: { value: State; label: () => string }[] = [
                   </button>
                 </div>
               </div>
+              </template>
             </section>
 
             <figure class="flex w-full shrink-0 flex-col gap-2 lg:w-[320px]" aria-hidden="true">

@@ -739,6 +739,10 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
       </form>
     </div>
 
+    <!-- The clinic's own admin fields (Settings > Custom fields). Shown in
+         both modes: the dialog opens editing, and the card saves itself. -->
+    <PatientsCustomFieldsCard :patient-id="patient.id" section="admin" />
+
     <div v-if="!editing" class="grid grid-cols-2 gap-4">
       <div class="rounded-card border border-line bg-surface p-5 shadow-card">
         <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Communication preferences', 'Preferencias de comunicación') }}</p>

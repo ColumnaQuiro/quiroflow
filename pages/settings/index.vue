@@ -55,6 +55,7 @@ const allGroups = computed(() => [
       { to: '/settings/referral-sources', label: t('Referral Sources', 'Fuentes de referencia'), description: t('The options on a patient\'s referral source field.', 'Las opciones del campo de fuente de referencia del paciente.'), icon: ICONS.tag },
       { to: '/settings/exercises', label: t('Exercise Library', 'Biblioteca de ejercicios'), description: t('The home exercises practitioners assign: edit, archive, and who is doing each.', 'Los ejercicios para casa que se asignan: editarlos, archivarlos y quién hace cada uno.'), icon: ICONS.bookmark },
       { to: '/settings/new-patient-fields', label: t('New Patient Fields', 'Campos de nuevo paciente'), description: t('Which fields show and are required on the Add Patient panel.', 'Qué campos se muestran y son obligatorios en el panel de Añadir paciente.'), icon: ICONS.userCircle },
+      { to: '/settings/custom-fields', label: t('Custom Fields', 'Campos personalizados'), description: t('Your own fields on the patient record, clinical or admin.', 'Campos propios en la ficha del paciente, clínicos o administrativos.'), icon: ICONS.tag },
     ],
   },
   {

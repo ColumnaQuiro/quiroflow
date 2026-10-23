@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { DocField, DocFieldType } from '../utils/docFields'
+import { patientAttributeMergeToken } from '../utils/patientAttributes'
 
 const props = defineProps<{ fields: DocField[]; mode: 'build' | 'fill' }>()
 const emit = defineEmits<{ 'update:fields': [DocField[]] }>()
@@ -31,6 +32,16 @@ const MERGE_FIELD_LABELS = computed<Record<string, string>>(() => ({
   clinic_name: t('Clinic name', 'Nombre de la clínica'),
   today: t("Today's date", 'Fecha de hoy'),
 }))
+// The clinic's own fields (Settings > Custom fields) as {{attr_<key>}}, for
+// the template builder only: filling a document never needs the list, and
+// the public form page has no session to read it with.
+const customMergeFields = ref<{ key: string; label: string }[]>([])
+onMounted(async () => {
+  if (props.mode !== 'build') return
+  const { data } = await useSupabaseClient().from('patient_attributes').select('key, label').is('archived_at', null).order('section', { ascending: false }).order('position')
+  customMergeFields.value = (data ?? []).map((a) => ({ key: patientAttributeMergeToken(a.key), label: a.label }))
+})
+
 // Keyed by LINKABLE_PATIENT_FIELDS -- a key missing here renders as a bare
 // "Link to:" with nothing after it, which is how the two name fields first
 // appeared when they were added to that list alone.
@@ -314,6 +325,9 @@ const showAddMenu = ref(false)
           >
             <option value="">+ {{ t('Insert field', 'Insertar campo') }}</option>
             <option v-for="f in DOC_MERGE_FIELDS" :key="f.key" :value="f.key">{{ MERGE_FIELD_LABELS[f.key] }}</option>
+            <optgroup v-if="customMergeFields.length" :label="t('Custom fields', 'Campos personalizados')">
+              <option v-for="f in customMergeFields" :key="f.key" :value="f.key">{{ f.label }}</option>
+            </optgroup>
           </select>
           <label v-else class="flex items-center gap-1.5 text-xs text-ink-muted">
             <input type="checkbox" :checked="field.required" class="rounded border-line-control text-brand-text focus:ring-brand" @change="update(i, { required: ($event.target as HTMLInputElement).checked })" />

@@ -530,6 +530,8 @@ function onDetailsUpdated() {
 
       <PatientsFamilyCard :patient="patient" />
 
+      <PatientsCareStopCard :patient="patient" />
+
       <section aria-labelledby="ov-details" class="rounded-card border border-line bg-surface p-4 shadow-card">
         <h2 id="ov-details" class="text-[13.5px] font-semibold text-ink-700">{{ t('Patient details', 'Datos del paciente') }}</h2>
         <dl class="mt-3 space-y-2.5">

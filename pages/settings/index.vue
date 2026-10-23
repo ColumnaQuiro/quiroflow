@@ -79,6 +79,7 @@ const allGroups = computed(() => [
       { to: '/settings/saved-replies', label: t('Saved Replies', 'Respuestas guardadas'), description: t('Pre-written answers your team can insert into the Inbox composer.', 'Respuestas predefinidas que tu equipo puede insertar en el compositor de la Bandeja de entrada.'), icon: ICONS.bookmark },
       { to: '/settings/docs', label: t('Docs', 'Documentos'), description: t('Reusable document templates with patient field placeholders.', 'Plantillas de documentos reutilizables con campos de paciente.'), icon: ICONS.documentText },
       { to: '/settings/leads', label: t('Leads', 'Leads'), description: t('How leads move through the pipeline, what they are worth, and who is told when one arrives.', 'Cómo avanzan los leads por el embudo, cuánto valen y a quién se avisa cuando llega uno.'), icon: ICONS.bolt },
+      { to: '/settings/recalls', label: t('Recalls', 'Recordatorios'), description: t('Why patients stop coming: the reasons you record, and Reports › Retention counts.', 'Por qué dejan de venir los pacientes: los motivos que se registran y que cuenta Informes › Retención.'), icon: ICONS.bookmark },
     ],
   },
   {

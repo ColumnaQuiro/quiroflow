@@ -2,7 +2,7 @@
 import { computePresetRange, rangeBounds } from '~/composables/useDateRangePresets'
 import { fetchAllRows } from '~/composables/useFetchAllRows'
 import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
-import { cohortRetention, rebookingByPractitioner, retentionPct, winBackStats, type RetentionVisit, type WinBackContact } from '~/utils/retentionStats'
+import { careStopCounts, cohortRetention, rebookingByPractitioner, retentionPct, winBackStats, type CareStopRow, type RetentionVisit, type WinBackContact } from '~/utils/retentionStats'
 
 // Retention: do patients come back, and do they finish what they started.
 //
@@ -16,6 +16,9 @@ import { cohortRetention, rebookingByPractitioner, retentionPct, winBackStats, t
 //   4. Win-back: of the patients someone reached out to, how many booked
 //      within 30 days (winBackStats) -- and, from the unfinished plans, a
 //      WhatsApp to the ones picked, the same bulk send Recalls has.
+//   5. Why patients stopped: the reasons recorded in the period
+//      (patient_care_stops, careStopCounts), by practitioner of the last
+//      visit before they stopped.
 //
 // Every visit is read, not only the range's: "first visit" means the first
 // ever, so a patient returning after a year is not counted as new. The
@@ -50,6 +53,8 @@ const contacts = ref<WinBackContact[]>([])
 // is shown nothing rather than "nobody contacted".
 const seesContacts = ref(false)
 const store = useAccountStore()
+const stops = ref<CareStopRow[]>([])
+const { load: loadStopReasons, nameOf: stopReasonName } = useCareStopReasons()
 
 let run = 0
 async function load() {
@@ -73,7 +78,10 @@ async function load() {
       () => ({ rows: [] as WinBackContact[], ok: false }),
     ),
   ])
+  // A small table: every stop, narrowed below like the visits.
+  const stopRows = await fetchAllRows<CareStopRow>((f, tt) => supabase.from('patient_care_stops').select('reason_id, practitioner_id, clinic_id, recorded_at').order('recorded_at').range(f, tt)).catch(() => [] as CareStopRow[])
   if (mine !== run) return
+  stops.value = stopRows
   visits.value = all
   plans.value = (alerts.data as PlanAlert[] | null) ?? []
   contacts.value = contactRows.rows
@@ -84,6 +92,7 @@ async function load() {
 onMounted(() => {
   load()
   loadFilterOptions()
+  loadStopReasons()
 })
 watch(clinicFilter, load)
 
@@ -121,6 +130,9 @@ const longGone = computed(() => visiblePlans.value.filter((p) => p.days_overdue 
 // Win-back over the period. Bookings are the visits already read: any
 // appointment made after the contact counts, whoever it is with.
 const winBack = computed(() => winBackStats(contacts.value, visits.value.map((v) => ({ patient_id: v.patient_id, created_at: v.created_at })), { from: bounds.value.from, to: bounds.value.to, now }))
+
+const stopCounts = computed(() => careStopCounts(stops.value, { from: bounds.value.from, to: bounds.value.to, practitionerId: practitionerFilter.value || null, clinicId: clinicFilter.value || null }))
+const stopSummary = (rows: { reasonId: string | null; count: number }[]) => rows.map((r) => `${stopReasonName(r.reasonId)} ${r.count}`).join(' · ')
 
 // Picking unfinished plans to message. Nobody without a phone is sent a
 // WhatsApp; the bar says how many are skipped, as on Recalls.
@@ -214,6 +226,55 @@ const td = 'px-3 py-2 font-mono text-[13px] text-ink-800'
           <template v-if="winBack.contacted"> ({{ show(retentionPct(winBack.booked, winBack.contacted)) }})</template>
           <span v-if="winBack.waiting" class="text-ink-muted"> &middot; {{ t(`${winBack.waiting} contacted under 30 days ago, still to tell`, `${winBack.waiting} contactados hace menos de 30 días, aún por ver`) }}</span>
         </p>
+      </ReportsModule>
+
+      <ReportsModule
+        class="mt-4"
+        :title="t('Why patients stopped', 'Por qué dejaron de venir')"
+        :description="t('Reasons recorded in the period, from Recalls or the patient\'s record (Settings › Recalls). Counted for the practitioner and clinic of their last visit.', 'Motivos registrados en el periodo, desde Recordatorios o la ficha (Ajustes › Recordatorios). Contados para el profesional y la clínica de su última visita.')"
+        :loading="loading"
+        skeleton="list"
+        :rows="3"
+      >
+        <p v-if="!stopCounts.total" class="mt-2 text-[13px] text-ink-muted" data-cy="retention-stops-empty">{{ t('No reasons recorded in this period.', 'No hay motivos registrados en este periodo.') }}</p>
+        <div v-else class="mt-2 grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <div class="overflow-x-auto">
+            <table class="w-full min-w-[320px]" data-cy="retention-stops">
+              <thead class="border-b border-line bg-surface-subtle">
+                <tr>
+                  <th :class="th">{{ t('Reason', 'Motivo') }}</th>
+                  <th :class="th">{{ t('Patients', 'Pacientes') }}</th>
+                  <th :class="th">{{ t('Share', 'Peso') }}</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-line-divider">
+                <tr v-for="r in stopCounts.byReason" :key="r.reasonId ?? 'none'" data-cy="retention-stop-row">
+                  <td class="px-3 py-2 text-[13px] text-ink-800" data-cy="retention-stop-reason">{{ stopReasonName(r.reasonId) }}</td>
+                  <td :class="td" data-cy="retention-stop-count">{{ r.count }}</td>
+                  <td :class="td">{{ show(retentionPct(r.count, stopCounts.total)) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div v-if="!practitionerFilter && stopCounts.byPractitioner.length > 1" class="overflow-x-auto">
+            <table class="w-full min-w-[320px]" data-cy="retention-stops-by-practitioner">
+              <thead class="border-b border-line bg-surface-subtle">
+                <tr>
+                  <th :class="th">{{ t('Practitioner', 'Profesional') }}</th>
+                  <th :class="th">{{ t('Stopped', 'Bajas') }}</th>
+                  <th :class="th">{{ t('Reasons', 'Motivos') }}</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-line-divider">
+                <tr v-for="p in stopCounts.byPractitioner" :key="p.practitionerId ?? 'none'">
+                  <td class="px-3 py-2 text-[13px] text-ink-800">{{ practitionerName(p.practitionerId) }}</td>
+                  <td :class="td">{{ p.total }}</td>
+                  <td class="px-3 py-2 text-[12.5px] text-ink-muted">{{ stopSummary(p.byReason) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </ReportsModule>
 
       <ReportsModule

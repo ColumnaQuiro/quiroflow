@@ -133,3 +133,37 @@ export function winBackStats(contacts: WinBackContact[], bookings: WinBackBookin
   for (const [patient, at] of first) if (!booked.has(patient) && opts.now.getTime() - at < WINDOW) waiting++
   return { contacted: first.size, booked: booked.size, waiting }
 }
+
+/**
+ * Reasons for stopping care over a period (patient_care_stops, Reports >
+ * Retention): how many stops each reason had, most first, and the same per
+ * practitioner. A stop belongs to the practitioner and clinic of the
+ * patient's last attended visit when it was recorded, which is what the
+ * filters narrow by. A reason deleted from the list is a null reason, still
+ * counted.
+ */
+export interface CareStopRow { reason_id: string | null; practitioner_id: string | null; clinic_id: string | null; recorded_at: string }
+export interface CareStopCount { reasonId: string | null; count: number }
+export interface CareStopCounts { total: number; byReason: CareStopCount[]; byPractitioner: { practitionerId: string | null; total: number; byReason: CareStopCount[] }[] }
+
+export function careStopCounts(stops: CareStopRow[], opts: { from: Date; to: Date; practitionerId?: string | null; clinicId?: string | null }): CareStopCounts {
+  const inRange = stops.filter((s) => {
+    const at = Date.parse(s.recorded_at)
+    if (at < opts.from.getTime() || at > opts.to.getTime()) return false
+    if (opts.practitionerId && s.practitioner_id !== opts.practitionerId) return false
+    if (opts.clinicId && s.clinic_id !== opts.clinicId) return false
+    return true
+  })
+  const tally = (rows: CareStopRow[]): CareStopCount[] => {
+    const counts = new Map<string | null, number>()
+    for (const r of rows) counts.set(r.reason_id, (counts.get(r.reason_id) ?? 0) + 1)
+    return [...counts].map(([reasonId, count]) => ({ reasonId, count })).sort((a, b) => b.count - a.count)
+  }
+  const practitioners = new Map<string | null, CareStopRow[]>()
+  for (const s of inRange) practitioners.set(s.practitioner_id, [...(practitioners.get(s.practitioner_id) ?? []), s])
+  return {
+    total: inRange.length,
+    byReason: tally(inRange),
+    byPractitioner: [...practitioners].map(([practitionerId, rows]) => ({ practitionerId, total: rows.length, byReason: tally(rows) })).sort((a, b) => b.total - a.total),
+  }
+}

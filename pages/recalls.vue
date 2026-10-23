@@ -3,6 +3,7 @@ import type { Tables } from '~/types/database.types'
 import { sanitizeSearchToken } from '~/utils/searchText'
 import { fetchAllRows, fetchByIds } from '~/composables/useFetchAllRows'
 import { formatEur, formatShortDate } from '~/utils/billing'
+import type { CareStop } from '~/composables/useCareStopReasons'
 
 // Recordatorios: patients with no appointment ahead, worked through by the
 // front desk. Design: the "QuiroFlow Recordatorios" canvas.
@@ -175,6 +176,7 @@ async function load() {
     if (error) console.error('[recalls] parked load error', error)
     parked.value = (data ?? []) as Parked[]
     hasNextPage.value = false
+    if (tab.value === 'dismissed') await loadStopReasonsFor(parked.value.map((p) => p.patient_id!), token)
   }
   if (token !== loadToken) return
   loading.value = false
@@ -452,6 +454,9 @@ const dismissing = ref(false)
 function openDismiss(ids: string[], name: string) {
   openMenu.value = null
   dismissFor.value = { ids, name }
+  dismissReasonId.value = ''
+  dismissNote.value = ''
+  if (!stopReasonsLoaded.value) loadStopReasons()
 }
 async function confirmDismiss() {
   if (!dismissFor.value) return
@@ -466,9 +471,32 @@ async function confirmDismiss() {
   } finally {
     dismissing.value = false
   }
+  // The reason, when one was given, after the dismissal: a reason that fails
+  // to save does not undo it, and says so.
+  if (dismissReasonId.value) {
+    const { error } = await supabase.rpc('record_care_stop', { p_patient_ids: dismissFor.value.ids, p_reason_id: dismissReasonId.value, p_note: dismissNote.value })
+    if (error) showToast(t(`Dismissed, but the reason was not saved: ${error.message}`, `Descartado, pero el motivo no se ha guardado: ${error.message}`), 'error')
+  }
   dismissFor.value = null
   showToast(t('Dismissed from recalls.', 'Descartado de recordatorios.'))
   refreshAll()
+}
+
+// --- Reasons for stopping care (Settings > Recalls) ------------------------------
+// Optional on Descartar; shown, set and changed on the Dismissed tab. Snooze
+// is "not now", not a reason, so it asks for none.
+const { reasons: stopReasons, loaded: stopReasonsLoaded, load: loadStopReasons, nameOf: stopReasonName, fetchCurrent: fetchCurrentStops } = useCareStopReasons()
+const dismissReasonId = ref('')
+const dismissNote = ref('')
+const stopByPatient = ref<Record<string, CareStop>>({})
+const stopFor = ref<Parked | null>(null)
+async function loadStopReasonsFor(ids: string[], token: number) {
+  const [stops] = await Promise.all([fetchCurrentStops(ids), stopReasonsLoaded.value ? null : loadStopReasons()])
+  if (token === loadToken) stopByPatient.value = stops
+}
+async function onStopSaved() {
+  stopFor.value = null
+  await loadStopReasonsFor(parked.value.map((p) => p.patient_id!), loadToken)
 }
 async function restore(p: Parked) {
   const values = p.parked_as === 'dismissed' ? { recall_status: 'active', recall_dismissed_at: null } : { recall_snoozed_until: null }
@@ -793,6 +821,17 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
               <template v-else-if="p.recall_dismissed_at">{{ t(`Dismissed on ${formatShortDate(p.recall_dismissed_at)}`, `Descartado el ${formatShortDate(p.recall_dismissed_at)}`) }}</template>
               <template v-else>{{ t('Dismissed', 'Descartado') }}</template>
             </span>
+            <button
+              v-if="p.parked_as === 'dismissed'"
+              type="button"
+              data-cy="parked-stop-reason"
+              class="h-9 touch:h-11 rounded-ctl px-2 text-[13px]"
+              :class="stopByPatient[p.patient_id!] ? 'bg-chip-bg font-semibold text-chip-text' : 'font-semibold text-brand-text hover:underline'"
+              :title="stopByPatient[p.patient_id!]?.note ?? undefined"
+              @click="stopFor = p"
+            >
+              {{ stopByPatient[p.patient_id!] ? stopReasonName(stopByPatient[p.patient_id!]!.reason_id) : t('Add reason', 'Añadir motivo') }}
+            </button>
             <button type="button" data-cy="parked-restore" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3.5 text-[13px] font-semibold text-ink-700" @click="restore(p)">
               {{ p.parked_as === 'snoozed' ? t('Bring back now', 'Reactivar ya') : t('Restore', 'Restaurar') }}
             </button>
@@ -858,7 +897,18 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
       <p class="rounded-ctl border border-line bg-surface-subtle px-3.5 py-3 text-[13.5px] leading-snug text-ink-700">
         {{ t('If they come to an appointment and then lapse again, they come back on their own. You can also restore them any time from Dismissed.', 'Si vuelve a una cita y después pasa otra vez el plazo, reaparece sola. Y puedes restaurarlo cuando quieras desde Descartados.') }}
       </p>
+      <PatientsCareStopFields v-model:reason-id="dismissReasonId" v-model:note="dismissNote" :reasons="stopReasons" optional />
     </UiConfirmDialog>
+
+    <PatientsCareStopDialog
+      v-if="stopFor"
+      :patient-id="stopFor.patient_id!"
+      :patient-name="fullName(stopFor)"
+      :reasons="stopReasons"
+      :current="stopByPatient[stopFor.patient_id!] ?? null"
+      @close="stopFor = null"
+      @saved="onStopSaved"
+    />
 
     <ContactHistoryModal v-if="historyFor" :patient-id="historyFor.patient_id!" :patient-name="fullName(historyFor)" @close="historyFor = null" />
     <SendWhatsAppModal

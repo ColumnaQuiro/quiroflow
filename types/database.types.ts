@@ -4861,6 +4861,118 @@ export type Database = {
           },
         ]
       }
+      patient_attribute_values: {
+        Row: {
+          account_id: string
+          attribute_id: string
+          created_at: string
+          id: string
+          patient_id: string
+          updated_at: string
+          updated_by: string | null
+          value: string
+        }
+        Insert: {
+          account_id: string
+          attribute_id: string
+          created_at?: string
+          id?: string
+          patient_id: string
+          updated_at?: string
+          updated_by?: string | null
+          value: string
+        }
+        Update: {
+          account_id?: string
+          attribute_id?: string
+          created_at?: string
+          id?: string
+          patient_id?: string
+          updated_at?: string
+          updated_by?: string | null
+          value?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_attribute_values_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_attribute_values_attribute_id_fkey"
+            columns: ["attribute_id"]
+            isOneToOne: false
+            referencedRelation: "patient_attributes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_attribute_values_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_attribute_values_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      patient_attributes: {
+        Row: {
+          account_id: string
+          archived_at: string | null
+          created_at: string
+          id: string
+          key: string
+          kind: string
+          label: string
+          options: string[]
+          position: number
+          section: string
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          archived_at?: string | null
+          created_at?: string
+          id?: string
+          key: string
+          kind: string
+          label: string
+          options?: string[]
+          position?: number
+          section: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          archived_at?: string | null
+          created_at?: string
+          id?: string
+          key?: string
+          kind?: string
+          label?: string
+          options?: string[]
+          position?: number
+          section?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_attributes_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       patient_contact_numbers: {
         Row: {
           account_id: string
@@ -8875,6 +8987,10 @@ export type Database = {
       record_review_request_opened: {
         Args: { p_token: string }
         Returns: undefined
+      }
+      can_read_patient_attribute: {
+        Args: { p_attribute_id: string }
+        Returns: boolean
       }
       can_access_patient: {
         Args: { target_account_id: string; target_patient_id: string }

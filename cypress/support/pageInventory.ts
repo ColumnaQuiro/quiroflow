@@ -18,6 +18,7 @@ export const SETTINGS_PAGES = [
   '/settings/app',
   '/settings/appointment-types',
   '/settings/clinics',
+  '/settings/custom-fields',
   '/settings/messages',
   '/settings/developers',
   '/settings/docs',

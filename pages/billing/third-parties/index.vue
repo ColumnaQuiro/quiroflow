@@ -4,7 +4,7 @@ import { formatEur } from '~/utils/billing'
 import { AGE_BUCKETS, ageBucketLabel, agedOutstanding, thirdPartyKindLabel, type AgedTotals } from '~/utils/thirdParties'
 
 // What each third party owes the clinic, aged by the date of the visit
-// (20261022201348). This is the insurers' debt, kept apart from patients':
+// (20261023093754). This is the insurers' debt, kept apart from patients':
 // none of it is on a patient's invoices, so the Debtors report and every
 // patient balance leave it out by construction.
 

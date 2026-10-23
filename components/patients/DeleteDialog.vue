@@ -15,7 +15,7 @@
 // it. So the dialog checks first and offers Archive instead, rather than
 // letting a clinic press a button that cannot work.
 //
-// Visits charged to an insurer or company (third_party_charges, 20261022201348)
+// Visits charged to an insurer or company (third_party_charges, 20261023093754)
 // refuse the same way: their patient_id is RESTRICT, because what a third party
 // owes the clinic must not go quietly with the record.
 const props = defineProps<{ patientId: string; patientName: string; archived: boolean }>()

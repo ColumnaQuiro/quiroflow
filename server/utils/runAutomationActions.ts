@@ -2,6 +2,7 @@ import { createHmac, randomUUID } from 'node:crypto'
 import { automationFieldValue as recipientFieldValue, withAnswerFallback, recallSignerId, leadAnswersFromEvents, type MergeContext } from '~/utils/automationFields'
 import { toE164 } from '~/utils/phone'
 import { renderTemplateFields } from '~/utils/docFields'
+import { patientAttributeMergeVars } from '~/utils/patientAttributes'
 import { templateVariantForLanguage } from '~/utils/templateLanguage'
 import { phoneForUrlButton } from '~/utils/whatsappUrlButton'
 import { automationEmailHtml, unsubscribeHeaders, type UnsubscribeLinks } from '~/utils/automationEmail'
@@ -747,7 +748,9 @@ async function generateDocLink(supabase: any, accountId: string, patient: Patien
   const templateId = await docTemplateForLanguage(supabase, docTemplateId, patient.preferred_language)
   const { data: template } = await supabase.from('doc_templates').select('title, fields').eq('id', templateId).maybeSingle()
   if (!template) return null
+  const { data: custom } = await supabase.from('patient_attribute_values').select('value, patient_attributes(key, kind)').eq('patient_id', patient.id)
   const rendered = renderTemplateFields(template.fields, {
+    ...patientAttributeMergeVars(custom ?? []),
     first_name: patient.first_name ?? '',
     last_name: patient.last_name ?? '',
     email: patient.email ?? '',

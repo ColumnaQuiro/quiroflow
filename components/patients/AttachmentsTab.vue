@@ -11,6 +11,9 @@
 // scan are genuinely different actions with different controls. But they
 // are on one screen, so finding something no longer requires knowing in
 // advance where it went.
+//
+// Letters (LettersTab) sit between them: written by the clinic about the
+// patient, kept on the record like a document, printed rather than signed.
 defineProps<{ patientId: string }>()
 
 const t = useT()
@@ -26,6 +29,11 @@ const t = useT()
     <section aria-labelledby="attachments-docs-heading">
       <h2 id="attachments-docs-heading" class="sr-only">{{ t('Documents', 'Documentos') }}</h2>
       <PatientsDocsTab :patient-id="patientId" />
+    </section>
+
+    <section aria-labelledby="attachments-letters-heading">
+      <h2 id="attachments-letters-heading" class="sr-only">{{ t('Letters', 'Cartas') }}</h2>
+      <PatientsLettersTab :patient-id="patientId" />
     </section>
 
     <section aria-labelledby="attachments-files-heading">

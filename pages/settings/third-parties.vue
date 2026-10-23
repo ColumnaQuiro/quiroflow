@@ -4,7 +4,7 @@ import { formatEur } from '~/utils/billing'
 import { THIRD_PARTY_KINDS, eurosToCents, thirdPartyKindLabel, type ThirdPartyKind } from '~/utils/thirdParties'
 
 // Insurers (mutuas), medico-legal schemes and companies the clinic bills on a
-// patient's behalf (20261022201348). A third party that patients are covered
+// patient's behalf (20261023093754). A third party that patients are covered
 // by, or that has been charged, is retired rather than deleted -- the
 // database refuses the delete, and the statement of a past month still has to
 // name it.

@@ -6,9 +6,13 @@ export type NavBadge = 'myday' | 'recalls' | 'automations' | 'inbox' | 'team'
 export function useNavBadges() {
   const request = useState<{ seq: number; only: NavBadge[] | null }>('nav-badges-request', () => ({ seq: 0, only: null }))
   const supportUnread = useState<boolean>('nav-badges-support-unread', () => false)
+  // Recalls assigned to the signed-in person (get_nav_badges' recalls_mine):
+  // /recalls opens on "Mine" when there are any. null until first counted.
+  const recallsMine = useState<number | null>('nav-badges-recalls-mine', () => null)
   return {
     request,
     supportUnread,
+    recallsMine,
     refresh: (only?: NavBadge[]) => {
       request.value = { seq: request.value.seq + 1, only: only ?? null }
     },

@@ -1,5 +1,5 @@
 // Third-party payers: insurers (mutuas), medico-legal schemes and companies
-// that pay for a patient's visits (20261022201348_third_party_payers.sql).
+// that pay for a patient's visits (20261023093754_third_party_payers.sql).
 //
 // What a third party owes is never on the patient's invoices -- the patient's
 // receipt holds only their copago -- so none of this touches the patient's

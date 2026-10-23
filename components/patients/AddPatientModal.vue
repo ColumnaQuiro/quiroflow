@@ -2,6 +2,7 @@
 import type { Tables } from '~/types/database.types'
 import { splitDialPrefix } from '~/utils/phone'
 import { patientAge } from '~/utils/patientAge'
+import { PATIENT_ATTRIBUTE_COLUMNS, normalizePatientAttributeValue, patientAttributeNewPatientKey, type PatientAttribute } from '~/utils/patientAttributes'
 
 const emit = defineEmits<{ close: []; created: [id: string] }>()
 
@@ -9,7 +10,7 @@ const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
 const { phoneProblem } = usePhoneValidation()
-const { scope } = usePermission()
+const { can, scope } = usePermission()
 const { showToast } = useToast()
 
 const firstName = ref('')
@@ -43,14 +44,31 @@ function isRequired(key: string) {
   return fieldConfig.value[key]?.required ?? false
 }
 
+// The clinic's own fields that New Patient Fields puts on this form ("shown"
+// there, hidden by default). Only for someone who could fill them in on the
+// record afterwards: patients_edit, and clinical access for a clinical one,
+// which is what the database asks of the insert.
+const attributes = ref<PatientAttribute[]>([])
+const attributeValues = ref<Record<string, string | null>>({})
+const shownAttributes = computed(() =>
+  attributes.value.filter(
+    (a) =>
+      fieldConfig.value[patientAttributeNewPatientKey(a.id)]?.visible &&
+      can('patients_edit') &&
+      (a.section === 'admin' || can('visit_notes_access')),
+  ),
+)
+
 const referralSources = ref<Tables<'referral_sources'>[]>([])
 onMounted(async () => {
-  const [{ data: sources }, { data: account }] = await Promise.all([
+  const [{ data: sources }, { data: account }, { data: attrs }] = await Promise.all([
     supabase.from('referral_sources').select('*').eq('status', 'active').order('name'),
     supabase.from('accounts').select('new_patient_field_config').eq('id', store.accountId!).maybeSingle(),
+    supabase.from('patient_attributes').select(PATIENT_ATTRIBUTE_COLUMNS).is('archived_at', null).order('section', { ascending: false }).order('position').order('created_at'),
   ])
   referralSources.value = sources ?? []
   fieldConfig.value = (account?.new_patient_field_config as unknown as Record<string, FieldConfig>) ?? {}
+  attributes.value = (attrs as PatientAttribute[] | null) ?? []
 })
 
 async function onSubmit() {
@@ -131,6 +149,19 @@ async function onSubmit() {
     // failed to save is one nobody will ever message.
     if (numberError) {
       showToast(t(`Patient created, but the phone number was not saved: ${numberError.message}`, `Paciente creado, pero el teléfono no se ha guardado: ${numberError.message}`), 'error', 8000)
+    }
+  }
+
+  // As with the number: the patient exists, so a refusal here is said and
+  // not a reason to stay on the form.
+  const answers = shownAttributes.value
+    .map((a) => ({ attribute_id: a.id, value: normalizePatientAttributeValue(a.kind, attributeValues.value[a.id]) }))
+    .filter((r): r is { attribute_id: string; value: string } => r.value !== null)
+    .map((r) => ({ ...r, account_id: store.accountId!, patient_id: patientId, updated_by: store.teamMember?.id ?? null }))
+  if (answers.length > 0) {
+    const { error: answersError } = await supabase.from('patient_attribute_values').insert(answers)
+    if (answersError) {
+      showToast(t(`Patient created, but some fields were not saved: ${answersError.message}`, `Paciente creado, pero algunos campos no se han guardado: ${answersError.message}`), 'error', 8000)
     }
   }
 
@@ -326,6 +357,11 @@ async function onSubmit() {
             :required="isRequired('notes')"
             class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
           />
+        </div>
+
+        <div v-for="a in shownAttributes" :key="a.id" data-cy="new-patient-custom-field" :data-key="a.key">
+          <label class="block text-sm font-medium text-ink-700" :for="`new-attr-${a.id}`">{{ a.label }}</label>
+          <PatientsAttributeInput v-model="attributeValues[a.id]" :attribute="a" :input-id="`new-attr-${a.id}`" :required="fieldConfig[patientAttributeNewPatientKey(a.id)]?.required" />
         </div>
 
         <div>

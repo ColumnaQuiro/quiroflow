@@ -4,7 +4,7 @@ import { formatEur } from '~/utils/billing'
 import { AGE_BUCKETS, ageBucketLabel, agedOutstanding, allocateOldestFirst, allocatedCents, chargeOutstandingCents, eurosToCents, thirdPartyKindLabel } from '~/utils/thirdParties'
 
 // One third party's account: the visits charged to it, what it has paid, and
-// recording a payment from it spread over those visits (20261022201348).
+// recording a payment from it spread over those visits (20261023093754).
 //
 // A payment is written with its allocations in one call
 // (record_third_party_payment), and the database refuses an allocation that

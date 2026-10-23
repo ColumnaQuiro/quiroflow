@@ -168,6 +168,10 @@ const goalChips = computed(() =>
       </template>
     </section>
 
+    <!-- The clinic's own clinical fields (Settings > Custom fields), under
+         the band they extend. Shows nothing without clinical access. -->
+    <PatientsCustomFieldsCard :patient-id="patientId" section="clinical" />
+
     <div class="flex flex-col gap-4 xl:flex-row xl:items-start">
       <!-- Notes: the last visit open, the rest a line each. -->
       <section aria-labelledby="clin-notes" class="min-w-0 flex-1 rounded-card border border-line bg-surface shadow-card">

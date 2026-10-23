@@ -1253,6 +1253,8 @@ export type Database = {
           whatsapp_reminder_template_name: string | null
           waitlist_auto_offer: boolean
           waitlist_offer_mode: string
+          recall_assignee_default: string
+          recall_assignee_member_id: string | null
         }
         Insert: {
           online_booking_card_on_file?: boolean
@@ -1347,6 +1349,8 @@ export type Database = {
           whatsapp_reminder_template_name?: string | null
           waitlist_auto_offer?: boolean
           waitlist_offer_mode?: string
+          recall_assignee_default?: string
+          recall_assignee_member_id?: string | null
         }
         Update: {
           online_booking_card_on_file?: boolean
@@ -1442,6 +1446,8 @@ export type Database = {
           whatsapp_reminder_template_name?: string | null
           waitlist_auto_offer?: boolean
           waitlist_offer_mode?: string
+          recall_assignee_default?: string
+          recall_assignee_member_id?: string | null
         }
         Relationships: [
           {
@@ -2820,6 +2826,38 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "recall_candidates"
             referencedColumns: ["patient_id"]
+          },
+        ]
+      }
+      care_stop_reasons: {
+        Row: {
+          account_id: string
+          created_at: string
+          id: string
+          name: string
+          sort_order: number
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          id?: string
+          name: string
+          sort_order?: number
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          id?: string
+          name?: string
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "care_stop_reasons_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -4612,6 +4650,64 @@ export type Database = {
           },
         ]
       }
+      letter_templates: {
+        Row: {
+          account_id: string
+          body: string
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          show_logo: boolean
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          account_id: string
+          body?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          show_logo?: boolean
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          account_id?: string
+          body?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          show_logo?: boolean
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "letter_templates_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "letter_templates_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "letter_templates_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       membership_payments: {
         Row: {
           account_id: string
@@ -5177,6 +5273,204 @@ export type Database = {
           },
         ]
       }
+      patient_care_stops: {
+        Row: {
+          account_id: string
+          clinic_id: string | null
+          id: string
+          note: string | null
+          patient_id: string
+          practitioner_id: string | null
+          reason_id: string | null
+          recorded_at: string
+          recorded_by: string | null
+        }
+        Insert: {
+          account_id: string
+          clinic_id?: string | null
+          id?: string
+          note?: string | null
+          patient_id: string
+          practitioner_id?: string | null
+          reason_id?: string | null
+          recorded_at?: string
+          recorded_by?: string | null
+        }
+        Update: {
+          account_id?: string
+          clinic_id?: string | null
+          id?: string
+          note?: string | null
+          patient_id?: string
+          practitioner_id?: string | null
+          reason_id?: string | null
+          recorded_at?: string
+          recorded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_care_stops_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_care_stops_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_care_stops_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_care_stops_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "recall_candidates"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "patient_care_stops_practitioner_id_fkey"
+            columns: ["practitioner_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_care_stops_reason_id_fkey"
+            columns: ["reason_id"]
+            isOneToOne: false
+            referencedRelation: "care_stop_reasons"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_care_stops_recorded_by_fkey"
+            columns: ["recorded_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      patient_attribute_values: {
+        Row: {
+          account_id: string
+          attribute_id: string
+          created_at: string
+          id: string
+          patient_id: string
+          updated_at: string
+          updated_by: string | null
+          value: string
+        }
+        Insert: {
+          account_id: string
+          attribute_id: string
+          created_at?: string
+          id?: string
+          patient_id: string
+          updated_at?: string
+          updated_by?: string | null
+          value: string
+        }
+        Update: {
+          account_id?: string
+          attribute_id?: string
+          created_at?: string
+          id?: string
+          patient_id?: string
+          updated_at?: string
+          updated_by?: string | null
+          value?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_attribute_values_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_attribute_values_attribute_id_fkey"
+            columns: ["attribute_id"]
+            isOneToOne: false
+            referencedRelation: "patient_attributes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_attribute_values_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_attribute_values_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      patient_attributes: {
+        Row: {
+          account_id: string
+          archived_at: string | null
+          created_at: string
+          id: string
+          key: string
+          kind: string
+          label: string
+          options: string[]
+          position: number
+          section: string
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          archived_at?: string | null
+          created_at?: string
+          id?: string
+          key: string
+          kind: string
+          label: string
+          options?: string[]
+          position?: number
+          section: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          archived_at?: string | null
+          created_at?: string
+          id?: string
+          key?: string
+          kind?: string
+          label?: string
+          options?: string[]
+          position?: number
+          section?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_attributes_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       patient_contact_numbers: {
         Row: {
           account_id: string
@@ -5442,6 +5736,94 @@ export type Database = {
           },
         ]
       }
+      patient_letters: {
+        Row: {
+          account_id: string
+          body: string
+          clinic_id: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          patient_id: string
+          show_logo: boolean
+          template_id: string | null
+          title: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          account_id: string
+          body?: string
+          clinic_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          patient_id: string
+          show_logo?: boolean
+          template_id?: string | null
+          title: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          account_id?: string
+          body?: string
+          clinic_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          patient_id?: string
+          show_logo?: boolean
+          template_id?: string | null
+          title?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_letters_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_letters_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_letters_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_letters_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_letters_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "letter_templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_letters_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       patient_memberships: {
         Row: {
           billing_interval: string | null
@@ -5589,6 +5971,54 @@ export type Database = {
             columns: ["related_patient_id"]
             isOneToOne: false
             referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      patient_segments: {
+        Row: {
+          account_id: string
+          created_at: string
+          created_by: string | null
+          filters: Json
+          id: string
+          name: string
+          shared: boolean
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          created_by?: string | null
+          filters?: Json
+          id?: string
+          name: string
+          shared?: boolean
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          created_by?: string | null
+          filters?: Json
+          id?: string
+          name?: string
+          shared?: boolean
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_segments_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_segments_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
             referencedColumns: ["id"]
           },
         ]
@@ -6346,6 +6776,62 @@ export type Database = {
           stripe_monthly_price_id?: string | null
         }
         Relationships: []
+      }
+      recall_assignments: {
+        Row: {
+          account_id: string
+          assigned_at: string
+          assigned_by: string | null
+          id: string
+          patient_id: string
+          team_member_id: string | null
+        }
+        Insert: {
+          account_id: string
+          assigned_at?: string
+          assigned_by?: string | null
+          id?: string
+          patient_id: string
+          team_member_id?: string | null
+        }
+        Update: {
+          account_id?: string
+          assigned_at?: string
+          assigned_by?: string | null
+          id?: string
+          patient_id?: string
+          team_member_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recall_assignments_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recall_assignments_assigned_by_fkey"
+            columns: ["assigned_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recall_assignments_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: true
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recall_assignments_team_member_id_fkey"
+            columns: ["team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       receptionist_config: {
         Row: {
@@ -7184,6 +7670,7 @@ export type Database = {
           morning_summary: boolean
           online_bookings: boolean
           patient_actions: boolean
+          recall_assignments: boolean
           quiet_hours: boolean
           summary_sent_on: string | null
           weekly_digest: boolean
@@ -7199,6 +7686,7 @@ export type Database = {
           morning_summary?: boolean
           online_bookings?: boolean
           patient_actions?: boolean
+          recall_assignments?: boolean
           quiet_hours?: boolean
           summary_sent_on?: string | null
           weekly_digest?: boolean
@@ -7214,6 +7702,7 @@ export type Database = {
           morning_summary?: boolean
           online_bookings?: boolean
           patient_actions?: boolean
+          recall_assignments?: boolean
           quiet_hours?: boolean
           summary_sent_on?: string | null
           weekly_digest?: boolean
@@ -8855,6 +9344,7 @@ export type Database = {
       recall_candidates: {
         Row: {
           account_id: string | null
+          assigned_to: string | null
           balance_cents: number | null
           clinic_id: string | null
           days_since_last_appointment: number | null
@@ -9111,6 +9601,10 @@ export type Database = {
         Args: { p_token: string }
         Returns: undefined
       }
+      can_read_patient_attribute: {
+        Args: { p_attribute_id: string }
+        Returns: boolean
+      }
       can_access_patient: {
         Args: { target_account_id: string; target_patient_id: string }
         Returns: boolean
@@ -9178,6 +9672,10 @@ export type Database = {
         }
         Returns: Json
       }
+      current_care_stops: {
+        Args: { p_patient_ids: string[] }
+        Returns: Database["public"]["Tables"]["patient_care_stops"]["Row"][]
+      }
       current_team_member_id: {
         Args: { target_account_id: string }
         Returns: string
@@ -9214,6 +9712,19 @@ export type Database = {
         Returns: { all_count: number; mine: number; unassigned: number; unread: number }[]
       }
       inbox_growth_account_ids: { Args: never; Returns: string[] }
+      patients_matching: {
+        Args: { p_filters?: Json; p_clinic_id?: string }
+        Returns: Database["public"]["Tables"]["patients"]["Row"][]
+        SetofOptions: { from: "*"; to: "patients"; isOneToOne: false; isSetofReturn: true }
+      }
+      patient_segment_counts: {
+        Args: { p_clinic_id?: string }
+        Returns: { segment_id: string; patient_count: number }[]
+      }
+      patient_tags: {
+        Args: never
+        Returns: { tag: string; patient_count: number }[]
+      }
       patient_list_visit_summary: {
         Args: { p_patient_ids: string[] }
         Returns: { patient_id: string; last_visit_at: string | null; completed_count: number; next_visit_at: string | null; completed_in_plan: number }[]
@@ -9365,6 +9876,11 @@ export type Database = {
       is_own_patient_account: {
         Args: { target_account_id: string }
         Returns: boolean
+      }
+      patient_last_attended_at: { Args: { p_patient_id: string }; Returns: string }
+      record_care_stop: {
+        Args: { p_note?: string; p_patient_ids: string[]; p_reason_id: string }
+        Returns: number
       }
       merge_patients: {
         Args: { p_duplicate_id: string; p_survivor_id: string }

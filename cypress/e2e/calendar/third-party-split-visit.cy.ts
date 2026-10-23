@@ -1,6 +1,6 @@
 import { todayAt } from '../../support/calendar'
 
-// A visit split between a mutua and the patient (20261022201348).
+// A visit split between a mutua and the patient (20261023093754).
 //
 // Sanitas pays 35 EUR of a 45 EUR physiotherapy session and the patient pays a
 // 10 EUR copago. What the patient owes must be the 10 and nothing else -- on

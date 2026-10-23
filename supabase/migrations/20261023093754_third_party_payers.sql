@@ -639,7 +639,7 @@ create trigger patients_drop_third_parties_on_anonymize
 -- ---------------------------------------------------------------------
 -- merge_patients moves them (CLAUDE.md)
 -- ---------------------------------------------------------------------
--- Restated from main's latest definition (20261021173018_facturas_to_the_tutor)
+-- Restated from main's latest definition (20261023053614_custom_patient_fields)
 -- with one block added after the facturas addressed to a tutor.
 create or replace function merge_patients(p_survivor_id uuid, p_duplicate_id uuid)
 returns jsonb
@@ -788,6 +788,15 @@ begin
   get diagnostics v_count = row_count;
   v_moved := v_moved || jsonb_build_object('patient_files', v_count);
 
+  -- Letters (patient_letters, 20261022185121) arrive in their own branch,
+  -- which restates this function too; named only once the table exists, so
+  -- whichever of the two applies second keeps both.
+  if to_regclass('public.patient_letters') is not null then
+    execute 'update public.patient_letters set patient_id = $1 where patient_id = $2' using p_survivor_id, p_duplicate_id;
+    get diagnostics v_count = row_count;
+    v_moved := v_moved || jsonb_build_object('patient_letters', v_count);
+  end if;
+
   update posture_assessments set patient_id = p_survivor_id where patient_id = p_duplicate_id;
   get diagnostics v_count = row_count;
   v_moved := v_moved || jsonb_build_object('posture_assessments', v_count);
@@ -842,7 +851,7 @@ begin
   v_moved := v_moved || jsonb_build_object('facturas_addressed', v_count);
 
   -- Third-party cover and what third parties owe for the duplicate's visits
-  -- (20261022201348). The charges are RESTRICT, so leaving them here would
+  -- (20261023093754). The charges are RESTRICT, so leaving them here would
   -- fail the delete below rather than lose them; the cover would cascade.
   update patient_third_parties set patient_id = p_survivor_id where patient_id = p_duplicate_id;
   get diagnostics v_count = row_count;
@@ -850,6 +859,36 @@ begin
   update third_party_charges set patient_id = p_survivor_id where patient_id = p_duplicate_id;
   get diagnostics v_count = row_count;
   v_moved := v_moved || jsonb_build_object('third_party_charges', v_count);
+
+  -- Reasons for stopping care (patient_care_stops, 20261022171626) are the
+  -- person's history: the duplicate's join the survivor's.
+  update patient_care_stops set patient_id = p_survivor_id where patient_id = p_duplicate_id;
+  get diagnostics v_count = row_count;
+  v_moved := v_moved || jsonb_build_object('patient_care_stops', v_count);
+
+  -- Who follows up the patient on Recalls (recall_assignments,
+  -- 20261022185125): one row per patient, so of the two records' choices
+  -- the more recent one is kept and becomes the survivor's.
+  delete from recall_assignments d
+   where d.patient_id = p_duplicate_id
+     and exists (select 1 from recall_assignments s where s.patient_id = p_survivor_id and s.assigned_at >= d.assigned_at);
+  delete from recall_assignments s
+   where s.patient_id = p_survivor_id
+     and exists (select 1 from recall_assignments d where d.patient_id = p_duplicate_id);
+  update recall_assignments set patient_id = p_survivor_id where patient_id = p_duplicate_id;
+  get diagnostics v_count = row_count;
+  v_moved := v_moved || jsonb_build_object('recall_assignments', v_count);
+
+  -- Custom fields (patient_attribute_values, 20261023053614), one answer per
+  -- patient and field. As for the columns below, the survivor keeps the
+  -- answers it already has and only its blanks are filled from the
+  -- duplicate's.
+  delete from patient_attribute_values d
+   where d.patient_id = p_duplicate_id
+     and exists (select 1 from patient_attribute_values s where s.patient_id = p_survivor_id and s.attribute_id = d.attribute_id);
+  update patient_attribute_values set patient_id = p_survivor_id where patient_id = p_duplicate_id;
+  get diagnostics v_count = row_count;
+  v_moved := v_moved || jsonb_build_object('patient_attribute_values', v_count);
 
   -- external_reference is unique per account (patients_external_reference_uniq)
   -- and the duplicate is only deleted at the end, so copying its reference

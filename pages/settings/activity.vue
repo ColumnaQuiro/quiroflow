@@ -39,12 +39,12 @@ async function loadMembers() {
 const memberFilter = ref('')
 
 const AREAS = computed(() => [
-  { key: 'clinical', label: t('Clinical notes & files', 'Notas clínicas y archivos'), types: ['visit_note', 'patient_file', 'patient_doc'] },
-  { key: 'patients', label: t('Patients', 'Pacientes'), types: ['patient'] },
+  { key: 'clinical', label: t('Clinical notes & files', 'Notas clínicas y archivos'), types: ['visit_note', 'patient_file', 'patient_doc', 'patient_letter'] },
+  { key: 'patients', label: t('Patients', 'Pacientes'), types: ['patient', 'care_stop', 'recall_assignment', 'patient_segment', 'patient_attribute_value', 'patient_third_party'] },
   { key: 'appointments', label: t('Appointments', 'Citas'), types: ['appointment'] },
   { key: 'money', label: t('Money', 'Cobros'), types: ['payment', 'invoice', 'account_credit', 'package_purchase', 'patient_membership', 'cash_shift', 'cash_movement', 'third_party_charge', 'third_party_payment', 'third_party_allocation'] },
   { key: 'access', label: t('Team & access', 'Equipo y accesos'), types: ['team_member', 'team_member_clinic', 'role', 'invite', 'api_token', 'webhook'] },
-  { key: 'settings', label: t('Clinic settings', 'Ajustes de la clínica'), types: ['account', 'clinic', 'verifactu_certificate', 'verifactu_delegation', 'appointment_type', 'package', 'membership', 'service'] },
+  { key: 'settings', label: t('Clinic settings', 'Ajustes de la clínica'), types: ['account', 'clinic', 'verifactu_certificate', 'verifactu_delegation', 'appointment_type', 'package', 'membership', 'service', 'care_stop_reason', 'patient_attribute', 'letter_template', 'third_party', 'third_party_rate'] },
 ])
 const areaFilter = ref('')
 
@@ -128,6 +128,8 @@ const ENTITY_LABELS = computed<Record<string, string>>(() => ({
   patient_membership: t('Membership', 'Membresía'),
   patient_file: t('Patient file', 'Archivo del paciente'),
   patient_doc: t('Patient document', 'Documento del paciente'),
+  patient_letter: t('Letter', 'Carta'),
+  letter_template: t('Letter template', 'Plantilla de carta'),
   team_member: t('Team member', 'Miembro del equipo'),
   team_member_clinic: t('Clinic assignment', 'Asignación de clínica'),
   role: t('Role', 'Rol'),
@@ -144,6 +146,12 @@ const ENTITY_LABELS = computed<Record<string, string>>(() => ({
   membership: t('Membership template', 'Plantilla de membresía'),
   service: t('Service / product', 'Servicio / producto'),
   appointment_type: t('Appointment type', 'Tipo de cita'),
+  care_stop: t('Reason for stopping care', 'Motivo de baja'),
+  care_stop_reason: t('Reason for stopping care (list)', 'Motivo de baja (lista)'),
+  recall_assignment: t('Recall assignment', 'Asignación de recordatorio'),
+  patient_segment: t('Patient segment', 'Segmento de pacientes'),
+  patient_attribute: t('Custom field', 'Campo personalizado'),
+  patient_attribute_value: t('Custom field answer', 'Respuesta de campo personalizado'),
   third_party: t('Third party', 'Tercero'),
   third_party_rate: t('Third-party rate', 'Tarifa de tercero'),
   patient_third_party: t('Patient cover', 'Cobertura del paciente'),

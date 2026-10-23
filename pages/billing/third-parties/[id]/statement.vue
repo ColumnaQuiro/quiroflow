@@ -4,7 +4,7 @@ import { formatEur } from '~/utils/billing'
 
 // The statement (liquidación) a clinic sends a third party: every visit
 // charged to it in a period, with the patient's policy and authorisation as
-// they stood at the visit (20261022201348). Printed from the browser.
+// they stood at the visit (20261023093754). Printed from the browser.
 //
 // Not a factura, and it says so. A factura to the third party would be a
 // VeriFactu record with the third party as recipient, which this does not

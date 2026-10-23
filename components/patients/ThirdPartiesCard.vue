@@ -4,7 +4,7 @@ import { chargeOutstandingCents, coverWarnings, coverWarningText } from '~/utils
 
 // The insurers, medico-legal cases and companies a patient is covered by --
 // their policy or case number and what was authorised -- and what each one
-// still owes for this patient's visits (20261022201348).
+// still owes for this patient's visits (20261023093754).
 //
 // That figure is the third party's debt, not the patient's: it sits here,
 // beside the patient's own "Owed now", and never inside it.

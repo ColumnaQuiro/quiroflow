@@ -3,7 +3,7 @@ import { formatEur } from '~/utils/billing'
 import { coverWarnings, coverWarningText, eurosToCents } from '~/utils/thirdParties'
 
 // Charging a visit to a third party -- a mutua, a medico-legal case, a company
-// -- instead of, or as well as, the patient (20261022201348).
+// -- instead of, or as well as, the patient (20261023093754).
 //
 // The third party's share is a third_party_charges row; the patient's receipt
 // keeps only their copago, so their balance and debt are exactly what they

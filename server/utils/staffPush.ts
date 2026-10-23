@@ -17,6 +17,8 @@ import { patientActionRecipients } from './patientActionRecipients'
 //   morning_summary  8:00, the day ahead (same-day-cron.post.ts)
 //   patient_actions  a patient paid an invoice online or joined the
 //                    waitlist from the app or the portal (pushPatientAction)
+//   recall_assignments  a colleague assigned them patients to follow up on
+//                    Recalls (pushRecallAssignment)
 //
 // "Only your patients and your diary": a visit's push goes to its
 // practitioner -- to the owners when it has none -- and never to whoever did
@@ -24,7 +26,7 @@ import { patientActionRecipients } from './patientActionRecipients'
 // outside that person's working hours, read in the clinic's time zone.
 type Service = ReturnType<typeof serverSupabaseServiceRole<Database>>
 
-export type StaffPushKind = 'online_bookings' | 'changes' | 'inbox' | 'check_in' | 'morning_summary' | 'patient_actions'
+export type StaffPushKind = 'online_bookings' | 'changes' | 'inbox' | 'check_in' | 'morning_summary' | 'patient_actions' | 'recall_assignments'
 
 interface Preferences {
   online_bookings: boolean
@@ -33,10 +35,11 @@ interface Preferences {
   check_in: boolean
   morning_summary: boolean
   patient_actions: boolean
+  recall_assignments: boolean
   quiet_hours: boolean
 }
 // The table's own defaults, for someone who has never opened Avisos.
-const DEFAULTS: Preferences = { online_bookings: true, changes: true, inbox: true, check_in: false, morning_summary: true, patient_actions: true, quiet_hours: false }
+const DEFAULTS: Preferences = { online_bookings: true, changes: true, inbox: true, check_in: false, morning_summary: true, patient_actions: true, recall_assignments: true, quiet_hours: false }
 
 export interface StaffRecipient {
   id: string
@@ -59,7 +62,7 @@ export async function wantingPush(
   if (withUser.length === 0) return []
   const { data } = await service
     .from('staff_push_preferences')
-    .select('team_member_id, online_bookings, changes, inbox, check_in, morning_summary, patient_actions, quiet_hours')
+    .select('team_member_id, online_bookings, changes, inbox, check_in, morning_summary, patient_actions, recall_assignments, quiet_hours')
     .in('team_member_id', withUser.map((m) => m.id))
   const byId = new Map(((data as unknown as (Preferences & { team_member_id: string })[] | null) ?? []).map((p) => [p.team_member_id, p]))
   const tz = clinic?.timezone || DEFAULT_CLINIC_TIMEZONE
@@ -170,6 +173,36 @@ export async function pushPatientAction(
     await sendPushToUsers(service, userIds, { title: opts.title, body: opts.body, data: { type: 'patient', patientId: opts.patientId, ...(opts.data ?? {}) } })
   } catch (err) {
     console.error('[staff-push] patient action failed', opts.title, opts.patientId, err)
+  }
+}
+
+/**
+ * Tells a colleague that someone assigned them patients to follow up on
+ * Recalls (server/api/recalls/assign.post.ts). One push per assignment,
+ * however many patients it covers: one names the patient and opens them,
+ * more open the app's Recalls. Best-effort: never throws.
+ */
+export async function pushRecallAssignment(service: Service, opts: { teamMemberId: string; actorTeamMemberId: string; patientIds: string[] }) {
+  try {
+    const [{ data: members }, { data: patient }] = await Promise.all([
+      service.from('team_members').select('id, user_id, business_hours, full_name').in('id', [opts.teamMemberId, opts.actorTeamMemberId]).is('deleted_at', null),
+      service.from('patients').select('first_name, last_name, clinics(timezone, business_hours)').eq('id', opts.patientIds[0]!).maybeSingle(),
+    ])
+    const rows = (members as (StaffRecipient & { full_name: string | null })[] | null) ?? []
+    const assignee = rows.find((m) => m.id === opts.teamMemberId)
+    if (!assignee) return
+    const p = patient as unknown as { first_name: string; last_name: string | null; clinics: { timezone: string | null; business_hours: BusinessHours | null } | null } | null
+    const userIds = await wantingPush(service, [assignee], 'recall_assignments', p?.clinics ?? null)
+    if (userIds.length === 0) return
+    const actor = rows.find((m) => m.id === opts.actorTeamMemberId)?.full_name?.split(/\s+/)[0] ?? 'Un compañero'
+    const one = opts.patientIds.length === 1 && p
+    await sendPushToUsers(service, userIds, {
+      title: 'Recordatorios',
+      body: one ? `${actor} te ha asignado a ${`${p.first_name} ${p.last_name ?? ''}`.trim()} para hacer el seguimiento.` : `${actor} te ha asignado ${opts.patientIds.length} pacientes para hacer el seguimiento.`,
+      data: one ? { type: 'patient', patientId: opts.patientIds[0]! } : { type: 'recalls' },
+    })
+  } catch (err) {
+    console.error('[staff-push] recall assignment failed', opts.teamMemberId, err)
   }
 }
 

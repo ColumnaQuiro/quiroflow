@@ -8,6 +8,9 @@ import type { Tables } from '~/types/database.types'
 // Seeded with six defaults per account. Deleting one is allowed: the stops
 // recorded with it stay counted, under "No reason" -- said in the dialog
 // before it happens, with how many there are.
+//
+// Above them, who a new recall is assigned to (SettingsRecallAssignee,
+// 20261022185125).
 
 type Reason = Tables<'care_stop_reasons'>
 
@@ -127,6 +130,8 @@ const iconBtn = 'flex h-9 w-9 touch:h-11 touch:w-11 shrink-0 items-center justif
       <div class="flex gap-8 p-4 pb-24 sm:px-6 sm:pt-6 lg:pb-6">
         <SettingsNav />
         <div class="flex min-w-0 max-w-[820px] flex-1 flex-col gap-4" data-cy="care-stop-settings" :data-ready="loading ? undefined : 'true'">
+          <SettingsRecallAssignee />
+
           <p class="text-[13.5px] text-ink-muted">
             {{ t('Why patients stop coming. Pick one when you dismiss someone from Recalls, or on their record, and Reports › Retention counts them.', 'Por qué dejan de venir los pacientes. Se elige al descartar a alguien en Recordatorios, o en su ficha, y Informes › Retención los cuenta.') }}
           </p>

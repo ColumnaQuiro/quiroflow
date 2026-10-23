@@ -3,6 +3,7 @@ import type { Tables } from '~/types/database.types'
 import { sanitizeSearchToken } from '~/utils/searchText'
 import { fetchAllRows, fetchByIds } from '~/composables/useFetchAllRows'
 import { formatEur, formatShortDate } from '~/utils/billing'
+import type { CareStop } from '~/composables/useCareStopReasons'
 
 // Recordatorios: patients with no appointment ahead, worked through by the
 // front desk. Design: the "QuiroFlow Recordatorios" canvas.
@@ -18,10 +19,15 @@ import { formatEur, formatShortDate } from '~/utils/billing'
 // all in one list with no undo. Overdue counts from the last visit the
 // patient ATTENDED: a no-show no longer resets the clock, and is named
 // under the date instead.
+//
+// Each recall has an owner (recall_assignments, 20261022185125): picked per
+// row or for a selection, else the clinic's default from Settings > Recalls,
+// resolved by the view as assigned_to. The list opens on "Mine" for someone
+// who has any, so the calls are split and nobody rings the same patient twice.
 
 type Recall = Tables<'recall_candidates'>
 type Parked = Tables<'recall_parked'>
-type TeamMember = Pick<Tables<'team_members'>, 'id' | 'full_name'>
+type TeamMember = Pick<Tables<'team_members'>, 'id' | 'full_name' | 'deleted_at'>
 interface ContactLogRow {
   patient_id: string
   action: string
@@ -59,6 +65,9 @@ const contextPending = ref(false)
 // --- Filters: four in the bar, the rest behind "Más filtros" ----------------
 const search = ref('')
 const practitionerFilter = ref('')
+// 'mine' | 'unassigned' | '' (everyone) | a team member's id. Starts empty and
+// is settled once on mount (initialAssigneeFilter), before the first load.
+const assigneeFilter = ref('')
 const minWeeksOverdue = ref(3)
 const WEEK_OPTIONS = [1, 2, 3, 4, 6, 8, 12]
 const notContactedOnly = ref(false)
@@ -91,7 +100,7 @@ let loadedPaginated = true
 // nothing reads it (11.7ms against 363ms on a real account). Balances for the
 // rows on screen are fetched by id instead.
 const RECALL_COLUMNS =
-  'patient_id, account_id, first_name, last_name, email, tags, recall_priority, default_practitioner_id, last_appointment_at, days_since_last_appointment, preferred_language, clinic_id, last_no_show_at'
+  'patient_id, account_id, first_name, last_name, email, tags, recall_priority, default_practitioner_id, last_appointment_at, days_since_last_appointment, preferred_language, clinic_id, last_no_show_at, assigned_to'
 
 // The list follows the clinic chosen in the sidebar. Patients from before
 // clinics were assigned carry none, and belong to every clinic's list.
@@ -111,6 +120,9 @@ function buildQueueQuery() {
   for (const token of searchTokens()) query = query.or(`first_name.ilike.%${token}%,last_name.ilike.%${token}%`)
   query = scopeToClinic(query)
   if (practitionerFilter.value) query = query.eq('default_practitioner_id', practitionerFilter.value)
+  const assignee = assigneeFilter.value === 'mine' ? (store.teamMember?.id ?? null) : assigneeFilter.value
+  if (assigneeFilter.value === 'unassigned' || (assigneeFilter.value === 'mine' && !assignee)) query = query.is('assigned_to', null)
+  else if (assignee) query = query.eq('assigned_to', assignee)
   if (dateFrom.value) query = query.gte('last_appointment_at', `${dateFrom.value}T00:00:00`)
   else query = query.gte('days_since_last_appointment', minWeeksOverdue.value * 7)
   if (balanceFilter.value === 'credit') query = query.gt('balance_cents', 0)
@@ -175,6 +187,7 @@ async function load() {
     if (error) console.error('[recalls] parked load error', error)
     parked.value = (data ?? []) as Parked[]
     hasNextPage.value = false
+    if (tab.value === 'dismissed') await loadStopReasonsFor(parked.value.map((p) => p.patient_id!), token)
   }
   if (token !== loadToken) return
   loading.value = false
@@ -224,8 +237,24 @@ async function fetchBalances(ids: string[]): Promise<Record<string, number>> {
 }
 
 async function loadTeamMembers() {
-  const { data } = await supabase.from('team_members').select('id, full_name').order('full_name')
+  const { data } = await supabase.from('team_members').select('id, full_name, deleted_at').order('full_name')
   teamMembers.value = data ?? []
+}
+// Who a recall can be given to: a former colleague still names old contact
+// log entries, but is offered nowhere.
+const assignableMembers = computed(() => teamMembers.value.filter((m) => !m.deleted_at))
+
+// "Mine" when the person has recalls of their own, else everyone. The
+// sidebar's badge request already counted them (get_nav_badges'
+// recalls_mine, the same 3-week threshold the list opens with), so this
+// waits for that answer rather than running the view a second time. The
+// sidebar asks on its first mount for anyone who may open this page, so the
+// answer comes, as slowly as the view does; the limit is for a request that
+// fails, when the list opens on everyone.
+async function initialAssigneeFilter() {
+  if (!store.teamMember) return ''
+  const mine = await waitForRecallsMine(10_000)
+  return mine && mine > 0 ? 'mine' : ''
 }
 
 function resetView() {
@@ -241,7 +270,22 @@ function reloadList() {
   resetView()
   load()
 }
-const { refresh: refreshNavBadges } = useNavBadges()
+const { refresh: refreshNavBadges, recallsMine } = useNavBadges()
+function waitForRecallsMine(ms: number): Promise<number | null> {
+  if (recallsMine.value !== null) return Promise.resolve(recallsMine.value)
+  return new Promise((resolve) => {
+    const stop = watch(recallsMine, (v) => {
+      if (v === null) return
+      clearTimeout(timer)
+      stop()
+      resolve(v)
+    })
+    const timer = setTimeout(() => {
+      stop()
+      resolve(null)
+    }, ms)
+  })
+}
 // After snoozing, dismissing or restoring someone, which moves every count.
 function refreshAll() {
   refreshNavBadges(['recalls'])
@@ -249,8 +293,17 @@ function refreshAll() {
   loadParkedCounts()
 }
 
+// Synchronous, so the first setting (below) can be told apart from a choice.
+let settlingAssigneeFilter = false
+watch(assigneeFilter, () => {
+  if (!settlingAssigneeFilter) reloadList()
+}, { flush: 'sync' })
 onMounted(async () => {
-  await Promise.all([loadTeamMembers(), load(), loadParkedCounts()])
+  const [, filter] = await Promise.all([loadTeamMembers(), initialAssigneeFilter(), loadParkedCounts()])
+  settlingAssigneeFilter = true
+  assigneeFilter.value = filter
+  settlingAssigneeFilter = false
+  await load()
   ready.value = true
 })
 function goToPage(p: number) {
@@ -298,6 +351,9 @@ const filtered = computed(() =>
 // --- How a row reads --------------------------------------------------------
 function practitionerName(id: string | null) {
   return teamMembers.value.find((m) => m.id === id)?.full_name ?? t('Unassigned', 'Sin asignar')
+}
+function assigneeName(id: string | null) {
+  return id ? (teamMembers.value.find((m) => m.id === id)?.full_name ?? t('Unassigned', 'Sin asignar')) : t('Unassigned', 'Sin asignar')
 }
 function initials(r: { first_name: string | null; last_name: string | null }) {
   return ((r.first_name?.[0] ?? '') + (r.last_name?.[0] ?? '')).toUpperCase() || '?'
@@ -452,6 +508,9 @@ const dismissing = ref(false)
 function openDismiss(ids: string[], name: string) {
   openMenu.value = null
   dismissFor.value = { ids, name }
+  dismissReasonId.value = ''
+  dismissNote.value = ''
+  if (!stopReasonsLoaded.value) loadStopReasons()
 }
 async function confirmDismiss() {
   if (!dismissFor.value) return
@@ -466,9 +525,32 @@ async function confirmDismiss() {
   } finally {
     dismissing.value = false
   }
+  // The reason, when one was given, after the dismissal: a reason that fails
+  // to save does not undo it, and says so.
+  if (dismissReasonId.value) {
+    const { error } = await supabase.rpc('record_care_stop', { p_patient_ids: dismissFor.value.ids, p_reason_id: dismissReasonId.value, p_note: dismissNote.value })
+    if (error) showToast(t(`Dismissed, but the reason was not saved: ${error.message}`, `Descartado, pero el motivo no se ha guardado: ${error.message}`), 'error')
+  }
   dismissFor.value = null
   showToast(t('Dismissed from recalls.', 'Descartado de recordatorios.'))
   refreshAll()
+}
+
+// --- Reasons for stopping care (Settings > Recalls) ------------------------------
+// Optional on Descartar; shown, set and changed on the Dismissed tab. Snooze
+// is "not now", not a reason, so it asks for none.
+const { reasons: stopReasons, loaded: stopReasonsLoaded, load: loadStopReasons, nameOf: stopReasonName, fetchCurrent: fetchCurrentStops } = useCareStopReasons()
+const dismissReasonId = ref('')
+const dismissNote = ref('')
+const stopByPatient = ref<Record<string, CareStop>>({})
+const stopFor = ref<Parked | null>(null)
+async function loadStopReasonsFor(ids: string[], token: number) {
+  const [stops] = await Promise.all([fetchCurrentStops(ids), stopReasonsLoaded.value ? null : loadStopReasons()])
+  if (token === loadToken) stopByPatient.value = stops
+}
+async function onStopSaved() {
+  stopFor.value = null
+  await loadStopReasonsFor(parked.value.map((p) => p.patient_id!), loadToken)
 }
 async function restore(p: Parked) {
   const values = p.parked_as === 'dismissed' ? { recall_status: 'active', recall_dismissed_at: null } : { recall_snoozed_until: null }
@@ -526,6 +608,44 @@ async function bulkAssignPractitioner(teamMemberId: string) {
   assignMenuOpen.value = false
   selectedIds.value = new Set()
 }
+// --- Who follows them up ---------------------------------------------------------
+// Through the server, which tells the colleague (staffPush recall_assignments).
+// A row the filter no longer matches leaves the list there and then.
+const assigning = ref(false)
+const assignToMenuOpen = ref(false)
+function matchesAssigneeFilter(assignedTo: string | null) {
+  if (assigneeFilter.value === 'unassigned') return assignedTo === null
+  if (assigneeFilter.value === 'mine') return assignedTo !== null && assignedTo === store.teamMember?.id
+  return !assigneeFilter.value || assignedTo === assigneeFilter.value
+}
+async function assignRecalls(ids: string[], teamMemberId: string | null) {
+  if (ids.length === 0) return false
+  assigning.value = true
+  try {
+    await $fetch('/api/recalls/assign', { method: 'POST', body: { patientIds: ids, teamMemberId } })
+  } catch (e: any) {
+    showToast(e?.data?.statusMessage ?? e?.message ?? String(e), 'error')
+    return false
+  } finally {
+    assigning.value = false
+  }
+  const set = new Set(ids)
+  for (const r of recalls.value) if (set.has(r.patient_id!)) r.assigned_to = teamMemberId
+  recalls.value = recalls.value.filter((r) => !set.has(r.patient_id!) || matchesAssigneeFilter(r.assigned_to))
+  refreshNavBadges(['recalls'])
+  if (ids.length > 1) {
+    showToast(teamMemberId ? t(`${ids.length} assigned to ${assigneeName(teamMemberId)}`, `${ids.length} asignados a ${assigneeName(teamMemberId)}`) : t(`${ids.length} left unassigned`, `${ids.length} sin asignar`))
+    assignToMenuOpen.value = false
+    selectedIds.value = new Set()
+  }
+  return true
+}
+async function onRowAssign(r: Recall, e: Event) {
+  const select = e.target as HTMLSelectElement
+  // Not saved: the picker goes back to who it was.
+  if (!(await assignRecalls([r.patient_id!], select.value || null))) select.value = r.assigned_to ?? ''
+}
+
 const selectionName = computed(() => (selectedRecalls.value.length === 1 ? fullName(selectedRecalls.value[0]) : t(`${selectedRecalls.value.length} patients`, `${selectedRecalls.value.length} pacientes`)))
 
 // --- Export ----------------------------------------------------------------------
@@ -542,8 +662,8 @@ async function exportCsv() {
     return true
   })
   const balances = await fetchBalances(matched.map((r) => r.patient_id!).filter(Boolean))
-  const header = [t('Patient', 'Paciente'), t('Last visit', 'Última visita'), t('Days overdue', 'Días de retraso'), t('Practitioner', 'Profesional'), t('Balance', 'Saldo'), t('Last contact', 'Último contacto')]
-  const rows = matched.map((r) => [fullName(r), longDate(r.last_appointment_at), String(r.days_since_last_appointment ?? ''), practitionerName(r.default_practitioner_id), formatEur(balances[r.patient_id!] ?? 0), lastContact(r).text])
+  const header = [t('Patient', 'Paciente'), t('Last visit', 'Última visita'), t('Days overdue', 'Días de retraso'), t('Practitioner', 'Profesional'), t('Assigned to', 'Asignado a'), t('Balance', 'Saldo'), t('Last contact', 'Último contacto')]
+  const rows = matched.map((r) => [fullName(r), longDate(r.last_appointment_at), String(r.days_since_last_appointment ?? ''), practitionerName(r.default_practitioner_id), assigneeName(r.assigned_to), formatEur(balances[r.patient_id!] ?? 0), lastContact(r).text])
   const csv = [header, ...rows].map((cols) => cols.map(csvEscape).join(',')).join('\n')
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }))
   const a = document.createElement('a')
@@ -615,6 +735,19 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
           </select>
         </template>
         <select
+          v-if="tab === 'queue'"
+          v-model="assigneeFilter"
+          data-cy="recalls-assignee-filter"
+          :aria-label="t('Assigned to', 'Asignado a')"
+          class="h-10 rounded-full border px-3 text-[13.5px] font-semibold focus:outline-none"
+          :class="assigneeFilter ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control bg-surface text-ink-700'"
+        >
+          <option value="mine">{{ t('Assigned to me', 'Asignados a mí') }}</option>
+          <option value="unassigned">{{ t('Unassigned', 'Sin asignar') }}</option>
+          <option value="">{{ t("Everyone's", 'De todo el equipo') }}</option>
+          <option v-for="m in assignableMembers" :key="m.id" :value="m.id">{{ t(`Assigned to ${m.full_name}`, `Asignados a ${m.full_name}`) }}</option>
+        </select>
+        <select
           v-model="practitionerFilter"
           :aria-label="t('Practitioner', 'Profesional')"
           class="h-10 rounded-full border px-3 text-[13.5px] font-semibold focus:outline-none"
@@ -675,6 +808,13 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
           </button>
           <span v-if="unreachableCount" class="text-[12.5px] text-ink-500" data-cy="recalls-bulk-skipped">{{ t(`${unreachableCount} without a phone, skipped`, `${unreachableCount} sin teléfono, se salta`) }}</span>
           <div class="relative" data-row-menu>
+            <button type="button" data-cy="recalls-bulk-assign" :disabled="assigning" class="h-10 px-3 text-[13.5px] font-semibold text-brand-text disabled:opacity-50" @click="assignToMenuOpen = !assignToMenuOpen">{{ t('Assign to…', 'Asignar a…') }}</button>
+            <div v-if="assignToMenuOpen" role="menu" class="absolute left-0 top-full z-20 mt-1 w-52 rounded-ctl border border-line bg-surface py-1 shadow-popover" data-cy="recalls-bulk-assign-menu">
+              <button type="button" role="menuitem" class="block min-h-9 touch:min-h-11 w-full px-3 text-left text-[13.5px] text-ink-500 hover:bg-surface-subtle" @click="assignRecalls(selectedRecalls.map((r) => r.patient_id!), null)">{{ t('Nobody', 'Nadie') }}</button>
+              <button v-for="m in assignableMembers" :key="m.id" type="button" role="menuitem" class="block min-h-9 touch:min-h-11 w-full px-3 text-left text-[13.5px] text-ink-700 hover:bg-surface-subtle" @click="assignRecalls(selectedRecalls.map((r) => r.patient_id!), m.id)">{{ m.full_name }}</button>
+            </div>
+          </div>
+          <div class="relative" data-row-menu>
             <button type="button" class="h-10 px-3 text-[13.5px] font-semibold text-brand-text" @click="assignMenuOpen = !assignMenuOpen">{{ t('Assign practitioner', 'Asignar profesional') }}</button>
             <div v-if="assignMenuOpen" class="absolute left-0 top-full z-20 mt-1 w-52 rounded-ctl border border-line bg-surface py-1 shadow-popover">
               <button v-for="m in teamMembers" :key="m.id" type="button" class="block min-h-9 touch:min-h-11 w-full px-3 text-left text-[13.5px] text-ink-700 hover:bg-surface-subtle" @click="bulkAssignPractitioner(m.id)">{{ m.full_name }}</button>
@@ -687,9 +827,9 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
 
         <!-- Queue -->
         <template v-if="tab === 'queue'">
-          <div class="hidden h-10 items-center gap-3 border-b border-line bg-surface-subtle px-4 text-[11.5px] font-bold uppercase tracking-wide text-ink-muted lg:grid lg:grid-cols-[44px_minmax(0,2.2fr)_minmax(0,1.3fr)_minmax(0,1fr)_110px_minmax(0,1.5fr)_250px]">
+          <div class="hidden h-10 items-center gap-3 border-b border-line bg-surface-subtle px-4 text-[11.5px] font-bold uppercase tracking-wide text-ink-muted lg:grid lg:grid-cols-[44px_minmax(0,2fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.1fr)_100px_minmax(0,1.4fr)_250px]">
             <label class="flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center"><input type="checkbox" :checked="allVisibleSelected" :aria-label="t('Select all', 'Seleccionar todos')" class="h-[18px] w-[18px] accent-brand" @change="toggleSelectAll" /></label>
-            <span>{{ t('Patient', 'Paciente') }}</span><span>{{ t('Last visit', 'Última visita') }}</span><span>{{ t('Practitioner', 'Profesional') }}</span><span class="text-right">{{ t('Balance', 'Saldo') }}</span><span>{{ t('Last contact', 'Último contacto') }}</span><span></span>
+            <span>{{ t('Patient', 'Paciente') }}</span><span>{{ t('Last visit', 'Última visita') }}</span><span>{{ t('Practitioner', 'Profesional') }}</span><span>{{ t('Assigned to', 'Asignado a') }}</span><span class="text-right">{{ t('Balance', 'Saldo') }}</span><span>{{ t('Last contact', 'Último contacto') }}</span><span></span>
           </div>
           <div v-if="loading" class="space-y-3 p-4"><UiSkeleton v-for="i in 6" :key="i" class="h-12 rounded-ctl" /></div>
           <p v-else-if="filtered.length === 0" class="px-4 py-10 text-center text-[14px] text-ink-faint">{{ t('Nobody matches these filters.', 'Nadie coincide con estos filtros.') }}</p>
@@ -699,7 +839,7 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
             :key="r.patient_id!"
             data-cy="recall-row"
             :data-patient-id="r.patient_id"
-            class="grid grid-cols-[44px_minmax(0,1fr)] gap-x-3 gap-y-2 border-b border-line-row px-4 py-3 lg:grid-cols-[44px_minmax(0,2.2fr)_minmax(0,1.3fr)_minmax(0,1fr)_110px_minmax(0,1.5fr)_250px] lg:items-center"
+            class="grid grid-cols-[44px_minmax(0,1fr)] gap-x-3 gap-y-2 border-b border-line-row px-4 py-3 lg:grid-cols-[44px_minmax(0,2fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.1fr)_100px_minmax(0,1.4fr)_250px] lg:items-center"
             :class="selectedIds.has(r.patient_id!) ? 'bg-brand-tint' : ''"
           >
             <label class="row-span-4 flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center lg:row-span-1">
@@ -722,6 +862,22 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
               <span v-if="noShowNote(r)" class="text-[11.5px] text-ink-muted" data-cy="recall-no-show">{{ noShowNote(r) }}</span>
             </div>
             <span class="text-[13.5px] text-ink-500">{{ practitionerName(r.default_practitioner_id) }}</span>
+            <!-- col-start-2 on a phone, for the reason given at the last contact below. -->
+            <label class="col-start-2 flex min-w-0 items-center gap-1.5 lg:col-start-auto">
+              <span class="text-[12.5px] text-ink-muted lg:sr-only">{{ t('Assigned to', 'Asignado a') }}</span>
+              <select
+                :value="r.assigned_to ?? ''"
+                :disabled="assigning"
+                data-cy="recall-assignee"
+                :aria-label="t(`Who follows up ${fullName(r)}`, `Quién hace el seguimiento de ${fullName(r)}`)"
+                class="h-9 touch:h-11 min-w-0 max-w-full truncate rounded-ctl border bg-surface px-2 text-[13px] focus:outline-none"
+                :class="r.assigned_to ? 'border-line-control font-semibold text-ink-900' : 'border-dashed border-line-control text-ink-muted'"
+                @change="onRowAssign(r, $event)"
+              >
+                <option value="">{{ t('Unassigned', 'Sin asignar') }}</option>
+                <option v-for="m in assignableMembers" :key="m.id" :value="m.id">{{ m.full_name }}</option>
+              </select>
+            </label>
             <div v-if="contextPending" class="flex lg:justify-end"><UiSkeleton class="h-4 w-16 rounded" /></div>
             <span v-else class="text-[13.5px] font-semibold lg:text-right" :class="balanceText(r.patient_id!).cls">{{ balanceText(r.patient_id!).text }}</span>
             <!-- col-start-2: the checkbox spans four rows on a phone, so this
@@ -793,6 +949,17 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
               <template v-else-if="p.recall_dismissed_at">{{ t(`Dismissed on ${formatShortDate(p.recall_dismissed_at)}`, `Descartado el ${formatShortDate(p.recall_dismissed_at)}`) }}</template>
               <template v-else>{{ t('Dismissed', 'Descartado') }}</template>
             </span>
+            <button
+              v-if="p.parked_as === 'dismissed'"
+              type="button"
+              data-cy="parked-stop-reason"
+              class="h-9 touch:h-11 rounded-ctl px-2 text-[13px]"
+              :class="stopByPatient[p.patient_id!] ? 'bg-chip-bg font-semibold text-chip-text' : 'font-semibold text-brand-text hover:underline'"
+              :title="stopByPatient[p.patient_id!]?.note ?? undefined"
+              @click="stopFor = p"
+            >
+              {{ stopByPatient[p.patient_id!] ? stopReasonName(stopByPatient[p.patient_id!]!.reason_id) : t('Add reason', 'Añadir motivo') }}
+            </button>
             <button type="button" data-cy="parked-restore" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3.5 text-[13px] font-semibold text-ink-700" @click="restore(p)">
               {{ p.parked_as === 'snoozed' ? t('Bring back now', 'Reactivar ya') : t('Restore', 'Restaurar') }}
             </button>
@@ -858,7 +1025,18 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
       <p class="rounded-ctl border border-line bg-surface-subtle px-3.5 py-3 text-[13.5px] leading-snug text-ink-700">
         {{ t('If they come to an appointment and then lapse again, they come back on their own. You can also restore them any time from Dismissed.', 'Si vuelve a una cita y después pasa otra vez el plazo, reaparece sola. Y puedes restaurarlo cuando quieras desde Descartados.') }}
       </p>
+      <PatientsCareStopFields v-model:reason-id="dismissReasonId" v-model:note="dismissNote" :reasons="stopReasons" optional />
     </UiConfirmDialog>
+
+    <PatientsCareStopDialog
+      v-if="stopFor"
+      :patient-id="stopFor.patient_id!"
+      :patient-name="fullName(stopFor)"
+      :reasons="stopReasons"
+      :current="stopByPatient[stopFor.patient_id!] ?? null"
+      @close="stopFor = null"
+      @saved="onStopSaved"
+    />
 
     <ContactHistoryModal v-if="historyFor" :patient-id="historyFor.patient_id!" :patient-name="fullName(historyFor)" @close="historyFor = null" />
     <SendWhatsAppModal

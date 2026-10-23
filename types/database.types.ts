@@ -5277,6 +5277,54 @@ export type Database = {
           },
         ]
       }
+      patient_segments: {
+        Row: {
+          account_id: string
+          created_at: string
+          created_by: string | null
+          filters: Json
+          id: string
+          name: string
+          shared: boolean
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          created_by?: string | null
+          filters?: Json
+          id?: string
+          name: string
+          shared?: boolean
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          created_by?: string | null
+          filters?: Json
+          id?: string
+          name?: string
+          shared?: boolean
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_segments_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_segments_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       patient_stripe_customers: {
         Row: {
           account_id: string
@@ -8935,6 +8983,19 @@ export type Database = {
         Returns: { all_count: number; mine: number; unassigned: number; unread: number }[]
       }
       inbox_growth_account_ids: { Args: never; Returns: string[] }
+      patients_matching: {
+        Args: { p_filters?: Json; p_clinic_id?: string }
+        Returns: Database["public"]["Tables"]["patients"]["Row"][]
+        SetofOptions: { from: "*"; to: "patients"; isOneToOne: false; isSetofReturn: true }
+      }
+      patient_segment_counts: {
+        Args: { p_clinic_id?: string }
+        Returns: { segment_id: string; patient_count: number }[]
+      }
+      patient_tags: {
+        Args: never
+        Returns: { tag: string; patient_count: number }[]
+      }
       patient_list_visit_summary: {
         Args: { p_patient_ids: string[] }
         Returns: { patient_id: string; last_visit_at: string | null; completed_count: number; next_visit_at: string | null; completed_in_plan: number }[]

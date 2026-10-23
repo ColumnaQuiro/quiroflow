@@ -14,6 +14,446 @@ export type Database = {
   }
   public: {
     Tables: {
+      third_parties: {
+        Row: {
+          account_id: string
+          active: boolean
+          address: string | null
+          contact_name: string | null
+          created_at: string
+          email: string | null
+          id: string
+          kind: string
+          name: string
+          notes: string | null
+          phone: string | null
+          tax_id: string | null
+        }
+        Insert: {
+          account_id: string
+          active?: boolean
+          address?: string | null
+          contact_name?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          kind?: string
+          name: string
+          notes?: string | null
+          phone?: string | null
+          tax_id?: string | null
+        }
+        Update: {
+          account_id?: string
+          active?: boolean
+          address?: string | null
+          contact_name?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          kind?: string
+          name?: string
+          notes?: string | null
+          phone?: string | null
+          tax_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "third_parties_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      third_party_rates: {
+        Row: {
+          account_id: string
+          appointment_type_id: string
+          copay_cents: number
+          created_at: string
+          id: string
+          pays_cents: number
+          third_party_id: string
+        }
+        Insert: {
+          account_id: string
+          appointment_type_id: string
+          copay_cents?: number
+          created_at?: string
+          id?: string
+          pays_cents: number
+          third_party_id: string
+        }
+        Update: {
+          account_id?: string
+          appointment_type_id?: string
+          copay_cents?: number
+          created_at?: string
+          id?: string
+          pays_cents?: number
+          third_party_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "third_party_rates_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "third_party_rates_appointment_type_id_fkey"
+            columns: ["appointment_type_id"]
+            isOneToOne: false
+            referencedRelation: "appointment_types"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "third_party_rates_third_party_id_fkey"
+            columns: ["third_party_id"]
+            isOneToOne: false
+            referencedRelation: "third_parties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      patient_third_parties: {
+        Row: {
+          account_id: string
+          active: boolean
+          authorization_number: string | null
+          authorized_sessions: number | null
+          created_at: string
+          created_by: string | null
+          id: string
+          notes: string | null
+          patient_id: string
+          policy_number: string | null
+          third_party_id: string
+          valid_until: string | null
+        }
+        Insert: {
+          account_id: string
+          active?: boolean
+          authorization_number?: string | null
+          authorized_sessions?: number | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          patient_id: string
+          policy_number?: string | null
+          third_party_id: string
+          valid_until?: string | null
+        }
+        Update: {
+          account_id?: string
+          active?: boolean
+          authorization_number?: string | null
+          authorized_sessions?: number | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          patient_id?: string
+          policy_number?: string | null
+          third_party_id?: string
+          valid_until?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_third_parties_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_third_parties_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_third_parties_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "exercise_adherence_alerts"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "patient_third_parties_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patient_live_balances"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "patient_third_parties_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_third_parties_third_party_id_fkey"
+            columns: ["third_party_id"]
+            isOneToOne: false
+            referencedRelation: "third_parties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      third_party_charges: {
+        Row: {
+          account_id: string
+          amount_cents: number
+          appointment_id: string | null
+          authorization_number: string | null
+          created_at: string
+          created_by: string | null
+          description: string
+          id: string
+          invoice_id: string | null
+          invoice_line_item_id: string | null
+          line_description: string | null
+          list_price_cents: number | null
+          patient_id: string
+          patient_third_party_id: string | null
+          policy_number: string | null
+          service_date: string
+          status: string
+          third_party_id: string
+          voided_at: string | null
+        }
+        Insert: {
+          account_id: string
+          amount_cents: number
+          appointment_id?: string | null
+          authorization_number?: string | null
+          created_at?: string
+          created_by?: string | null
+          description: string
+          id?: string
+          invoice_id?: string | null
+          invoice_line_item_id?: string | null
+          line_description?: string | null
+          list_price_cents?: number | null
+          patient_id: string
+          patient_third_party_id?: string | null
+          policy_number?: string | null
+          service_date: string
+          status?: string
+          third_party_id: string
+          voided_at?: string | null
+        }
+        Update: {
+          account_id?: string
+          amount_cents?: number
+          appointment_id?: string | null
+          authorization_number?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string
+          id?: string
+          invoice_id?: string | null
+          invoice_line_item_id?: string | null
+          line_description?: string | null
+          list_price_cents?: number | null
+          patient_id?: string
+          patient_third_party_id?: string | null
+          policy_number?: string | null
+          service_date?: string
+          status?: string
+          third_party_id?: string
+          voided_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "third_party_charges_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "third_party_charges_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "third_party_charges_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "third_party_charges_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "third_party_charges_invoice_line_item_id_fkey"
+            columns: ["invoice_line_item_id"]
+            isOneToOne: false
+            referencedRelation: "invoice_line_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "third_party_charges_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "exercise_adherence_alerts"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "third_party_charges_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patient_live_balances"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "third_party_charges_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "third_party_charges_patient_third_party_id_fkey"
+            columns: ["patient_third_party_id"]
+            isOneToOne: false
+            referencedRelation: "patient_third_parties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "third_party_charges_third_party_id_fkey"
+            columns: ["third_party_id"]
+            isOneToOne: false
+            referencedRelation: "third_parties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      third_party_payments: {
+        Row: {
+          account_id: string
+          amount_cents: number
+          created_at: string
+          created_by: string | null
+          id: string
+          method: string
+          notes: string | null
+          received_on: string
+          reference: string | null
+          third_party_id: string
+        }
+        Insert: {
+          account_id: string
+          amount_cents: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          method?: string
+          notes?: string | null
+          received_on?: string
+          reference?: string | null
+          third_party_id: string
+        }
+        Update: {
+          account_id?: string
+          amount_cents?: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          method?: string
+          notes?: string | null
+          received_on?: string
+          reference?: string | null
+          third_party_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "third_party_payments_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "third_party_payments_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "third_party_payments_third_party_id_fkey"
+            columns: ["third_party_id"]
+            isOneToOne: false
+            referencedRelation: "third_parties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      third_party_payment_allocations: {
+        Row: {
+          account_id: string
+          amount_cents: number
+          charge_id: string
+          created_at: string
+          id: string
+          payment_id: string
+        }
+        Insert: {
+          account_id: string
+          amount_cents: number
+          charge_id: string
+          created_at?: string
+          id?: string
+          payment_id: string
+        }
+        Update: {
+          account_id?: string
+          amount_cents?: number
+          charge_id?: string
+          created_at?: string
+          id?: string
+          payment_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "third_party_payment_allocations_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "third_party_payment_allocations_charge_id_fkey"
+            columns: ["charge_id"]
+            isOneToOne: false
+            referencedRelation: "third_party_charges"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "third_party_payment_allocations_payment_id_fkey"
+            columns: ["payment_id"]
+            isOneToOne: false
+            referencedRelation: "third_party_payments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       monthly_goals: {
         Row: {
           account_id: string
@@ -8954,6 +9394,33 @@ export type Database = {
       }
     }
     Functions: {
+      charge_visit_to_third_party: {
+        Args: {
+          p_appointment_id: string
+          p_list_price_cents?: number
+          p_patient_cents: number
+          p_patient_third_party_id?: string
+          p_third_party_cents: number
+          p_third_party_id: string
+        }
+        Returns: Json
+      }
+      record_third_party_payment: {
+        Args: {
+          p_allocations: Json
+          p_amount_cents: number
+          p_method: string
+          p_notes: string
+          p_received_on: string
+          p_reference: string
+          p_third_party_id: string
+        }
+        Returns: string
+      }
+      remove_third_party_charge: {
+        Args: { p_charge_id: string }
+        Returns: undefined
+      }
       acknowledge_team_alert: {
         Args: { p_message_id: string }
         Returns: undefined

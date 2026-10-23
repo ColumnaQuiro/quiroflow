@@ -14,6 +14,10 @@
 // record, and removing a link would break the chain for every record after
 // it. So the dialog checks first and offers Archive instead, rather than
 // letting a clinic press a button that cannot work.
+//
+// Visits charged to an insurer or company (third_party_charges, 20261023093754)
+// refuse the same way: their patient_id is RESTRICT, because what a third party
+// owes the clinic must not go quietly with the record.
 const props = defineProps<{ patientId: string; patientName: string; archived: boolean }>()
 const emit = defineEmits<{ close: []; deleted: []; archive: [] }>()
 
@@ -25,9 +29,9 @@ const counting = ref(true)
 const deleting = ref(false)
 const error = ref('')
 const typed = ref('')
-const counts = ref({ appointments: 0, invoices: 0, files: 0, facturas: 0 })
+const counts = ref({ appointments: 0, invoices: 0, files: 0, facturas: 0, thirdPartyCharges: 0 })
 
-const blockedByFacturas = computed(() => counts.value.facturas > 0)
+const blockedByFacturas = computed(() => counts.value.facturas > 0 || counts.value.thirdPartyCharges > 0)
 const canDelete = computed(
   () => !blockedByFacturas.value && typed.value.trim().toLowerCase() === props.patientName.trim().toLowerCase(),
 )
@@ -37,7 +41,7 @@ onMounted(async () => {
   // No note count: visit_notes is keyed by appointment, not by patient, so
   // there is no single head-count for it. The copy covers them instead --
   // they go when their appointment does.
-  const [appointments, invoices, files, facturas] = await Promise.all([
+  const [appointments, invoices, files, facturas, thirdPartyCharges] = await Promise.all([
     supabase.from('appointments').select('id', head).eq('patient_id', props.patientId),
     supabase.from('invoices').select('id', head).eq('patient_id', props.patientId),
     supabase.from('patient_files').select('id', head).eq('patient_id', props.patientId),
@@ -45,12 +49,14 @@ onMounted(async () => {
     // (recipient_patient_id, which is not a foreign key and so would not stop
     // the delete itself).
     supabase.from('facturas').select('id', head).or(`patient_id.eq.${props.patientId},recipient_patient_id.eq.${props.patientId}`),
+    supabase.from('third_party_charges').select('id', head).eq('patient_id', props.patientId),
   ])
   counts.value = {
     appointments: appointments.count ?? 0,
     invoices: invoices.count ?? 0,
     files: files.count ?? 0,
     facturas: facturas.count ?? 0,
+    thirdPartyCharges: thirdPartyCharges.count ?? 0,
   }
   counting.value = false
 })
@@ -98,7 +104,15 @@ const lines = computed(() =>
         <h2 class="text-[17px] font-semibold tracking-tightTitle text-ink-900">
           {{ t('This record cannot be deleted', 'Esta ficha no se puede eliminar') }}
         </h2>
-        <p class="mt-2.5 text-[13.5px] leading-[1.6] text-ink-700">
+        <p v-if="counts.facturas === 0" class="mt-2.5 text-[13.5px] leading-[1.6] text-ink-700">
+          {{
+            t(
+              `${patientName} has visits charged to an insurer or company. What a third party owes the clinic stays on record, so the patient it was for cannot be deleted.`,
+              `${patientName} tiene visitas facturadas a una aseguradora o empresa. Lo que debe un tercero a la clínica se conserva, así que no se puede eliminar al paciente.`,
+            )
+          }}
+        </p>
+        <p v-else class="mt-2.5 text-[13.5px] leading-[1.6] text-ink-700">
           {{
             t(
               `${patientName} has ${counts.facturas} issued factura${counts.facturas === 1 ? '' : 's'}. Facturas are fiscal records, chain-signed under VeriFactu — removing one would break the chain for every record issued after it, so they cannot be deleted and neither can the patient they belong to.`,

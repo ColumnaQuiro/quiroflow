@@ -2416,6 +2416,10 @@ function money(cents: number) {
       </div>
     </div>
 
+    <!-- Insurers, mutuas and companies this patient is covered by, and what
+    they owe for the patient's visits. Never part of "Owed now" above. -->
+    <PatientsThirdPartiesCard :patient-id="patientId" />
+
     <!-- Bonos and memberships first, then the ledger.
 
     These two are what the front desk reaches for at the counter -- how many

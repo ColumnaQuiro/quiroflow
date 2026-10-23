@@ -57,7 +57,7 @@ const rules: Rule[] = [
     // Payments and Invoicing; they keep the gate so a bookmark never lands
     // anywhere unguarded.
     test: (p) =>
-      ['/settings/services', '/settings/products', '/settings/packages', '/settings/gift-vouchers', '/settings/memberships', '/settings/payments', '/settings/invoicing', '/settings/payment-methods', '/settings/invoice-settings', '/settings/fiscal-data'].includes(p),
+      ['/settings/services', '/settings/products', '/settings/packages', '/settings/gift-vouchers', '/settings/memberships', '/settings/third-parties', '/settings/payments', '/settings/invoicing', '/settings/payment-methods', '/settings/invoice-settings', '/settings/fiscal-data'].includes(p),
     check: (s) => can(s, 'settings_access') && can(s, 'billing_config'),
   },
   {

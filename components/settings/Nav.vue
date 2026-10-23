@@ -44,6 +44,7 @@ const allGroups = computed<NavGroup[]>(() => [
       { label: t('Packages / Bonos', 'Paquetes / Bonos'), to: '/settings/packages', perm: 'billing_config' },
       { label: t('Gift vouchers', 'Bonos regalo'), to: '/settings/gift-vouchers', perm: 'billing_config' },
       { label: t('Memberships', 'Membresías'), to: '/settings/memberships', perm: 'billing_config' },
+      { label: t('Third parties', 'Terceros'), to: '/settings/third-parties', perm: 'billing_config' },
       { label: t('Payments', 'Pagos'), to: '/settings/payments', perm: 'billing_config' },
       { label: t('Invoicing', 'Facturación'), to: '/settings/invoicing', perm: 'billing_config' },
       { label: 'VeriFactu', to: '/settings/verifactu', ownerOnly: true },

@@ -45,6 +45,7 @@ const allGroups = computed(() => [
       { to: '/reports/commissions', label: t('Commissions', 'Comisiones'), description: t("What each person earned in a month from their pay plan: fixed, % of payments, per visit with tiers, bonuses.", 'Lo que ha generado cada persona en el mes según su retribución: fijo, % de cobros, por visita con tramos y pluses.'), icon: ICONS.billing },
       { to: '/reports/daily-transactions', label: t('Daily Transactions', 'Transacciones del día'), description: t('Every payment and refund on a given day, for end-of-day cash reconciliation.', 'Todos los pagos y reembolsos de un día, para el cuadre de caja.'), icon: ICONS.calendar },
       { to: '/reports/debtors', label: t('Debtors', 'Deudores'), description: t('Package/bono purchases with no paid receipt, and how much is outstanding.', 'Compras de bonos/paquetes sin recibo pagado y cuánto queda pendiente.'), icon: ICONS.exclamationTriangle },
+      { to: '/billing/third-parties', label: t('Third parties owed', 'Pendiente de terceros'), description: t('What insurers, mutuas and companies owe, aged, and the payments received from them.', 'Lo que deben aseguradoras, mutuas y empresas, por antigüedad, y los cobros recibidos.'), icon: ICONS.billing },
       { to: '/reports/memberships', label: t('Memberships', 'Membresías'), description: t('Active membership count, monthly revenue, and failed payments.', 'Número de membresías activas, ingresos mensuales y pagos fallidos.'), icon: ICONS.badgeCheck },
     ],
   },

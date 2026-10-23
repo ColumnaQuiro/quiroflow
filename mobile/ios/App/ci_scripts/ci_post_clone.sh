@@ -90,4 +90,14 @@ export NUXT_PUBLIC_SUPABASE_KEY="sb_publishable_YcvVhzmzvUvhf4vfv2edKg_PmQrl7To"
 export NUXT_PUBLIC_SENTRY_DSN="https://fce4b520c2072e4bd5d413dcb4bab4b9@o4512225986543616.ingest.de.sentry.io/4512300717178960"
 
 npm ci
-npm run cap:sync
+npm run build
+# `cap sync` ends in `pod install`, which fetches podspecs from the CocoaPods
+# CDN (raw.githubusercontent.com). On 23 Oct 2026 that timed out and failed
+# builds 356-358 in a row with nothing wrong in the code, so a failed sync is
+# retried a few times before the build gives up.
+for attempt in 1 2 3; do
+  if npx cap sync; then break; fi
+  if [ "$attempt" = 3 ]; then exit 1; fi
+  echo "cap sync failed (attempt $attempt of 3), retrying in 30 s"
+  sleep 30
+done

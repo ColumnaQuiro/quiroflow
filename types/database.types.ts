@@ -4210,6 +4210,64 @@ export type Database = {
           },
         ]
       }
+      letter_templates: {
+        Row: {
+          account_id: string
+          body: string
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          show_logo: boolean
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          account_id: string
+          body?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          show_logo?: boolean
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          account_id?: string
+          body?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          show_logo?: boolean
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "letter_templates_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "letter_templates_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "letter_templates_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       membership_payments: {
         Row: {
           account_id: string
@@ -5232,6 +5290,94 @@ export type Database = {
           {
             foreignKeyName: "patient_files_uploaded_by_fkey"
             columns: ["uploaded_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      patient_letters: {
+        Row: {
+          account_id: string
+          body: string
+          clinic_id: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          patient_id: string
+          show_logo: boolean
+          template_id: string | null
+          title: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          account_id: string
+          body?: string
+          clinic_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          patient_id: string
+          show_logo?: boolean
+          template_id?: string | null
+          title: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          account_id?: string
+          body?: string
+          clinic_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          patient_id?: string
+          show_logo?: boolean
+          template_id?: string | null
+          title?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_letters_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_letters_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_letters_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_letters_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_letters_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "letter_templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_letters_updated_by_fkey"
+            columns: ["updated_by"]
             isOneToOne: false
             referencedRelation: "team_members"
             referencedColumns: ["id"]

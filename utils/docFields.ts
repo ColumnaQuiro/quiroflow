@@ -108,6 +108,37 @@ export const DOC_MERGE_FIELDS = [
   { key: 'today', label: "Today's date" },
 ]
 
+// Letters (Settings > Letters, patient_letters) use the same {{key}} tokens,
+// with the keys above meaning the same thing, plus what a letter about a
+// patient needs and a form never did. `clinical` ones are left blank for
+// anyone without visit_notes_access, as the record hides them
+// (server/utils/letterData.ts fills them in).
+export const LETTER_MERGE_FIELDS: { key: string; en: string; es: string; clinical?: boolean }[] = [
+  { key: 'full_name', en: 'Patient name', es: 'Nombre del paciente' },
+  { key: 'first_name', en: 'First name', es: 'Nombre' },
+  { key: 'last_name', en: 'Last name', es: 'Apellidos' },
+  { key: 'national_id', en: 'DNI / NIE', es: 'DNI / NIE' },
+  { key: 'date_of_birth', en: 'Date of birth', es: 'Fecha de nacimiento' },
+  { key: 'address', en: 'Patient address', es: 'Dirección del paciente' },
+  { key: 'today', en: "Today's date", es: 'Fecha de hoy' },
+  { key: 'clinic_name', en: 'Clinic name', es: 'Nombre de la clínica' },
+  { key: 'clinic_tax_id', en: 'Clinic NIF', es: 'NIF de la clínica' },
+  { key: 'clinic_address', en: 'Clinic address', es: 'Dirección de la clínica' },
+  { key: 'practitioner_name', en: 'Practitioner', es: 'Profesional' },
+  { key: 'last_visit_date', en: 'Last visit', es: 'Última visita' },
+  { key: 'visit_count', en: 'Number of visits', es: 'Número de visitas' },
+  { key: 'chief_complaint', en: 'Chief complaint', es: 'Motivo de consulta', clinical: true },
+  { key: 'diagnosis', en: 'Diagnosis', es: 'Diagnóstico', clinical: true },
+]
+
+const MERGE_TOKEN = /\{\{(\w+)\}\}/g
+
+// Replaces each {{key}} with its value; an unknown key becomes ''. `escape`
+// is applied to each value, for a token inside HTML.
+export function fillMergeTokens(text: string, vars: Record<string, string>, escape: (value: string) => string = (v) => v): string {
+  return text.replace(MERGE_TOKEN, (_, k: string) => escape(vars[k] ?? ''))
+}
+
 function emptyValue(type: DocFieldType, multiple?: boolean): DocField['value'] {
   if (type === 'checkbox') return false
   if (type === 'choice') return multiple ? [] : null
@@ -140,7 +171,7 @@ export function renderTemplateFields(fields: unknown, vars: Record<string, strin
     const known = f.patientField ? vars[f.patientField] : undefined
     return {
       ...f,
-      label: STATIC_BLOCK_TYPES.includes(f.type) ? f.label.replace(/\{\{(\w+)\}\}/g, (_, k: string) => vars[k] ?? '') : f.label,
+      label: STATIC_BLOCK_TYPES.includes(f.type) ? fillMergeTokens(f.label, vars) : f.label,
       value: known ? known : emptyValue(f.type, f.multiple),
     }
   })

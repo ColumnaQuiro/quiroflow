@@ -66,7 +66,8 @@ const { unreadTotal: teamUnread } = useTeamChat()
 // The recalls badge counts 3+ weeks since the last visit, in the clinic
 // picked above -- the same default the Recalls page opens with, so the badge
 // is the length of the list it links to. The threshold lives with the count,
-// in get_nav_badges.
+// in get_nav_badges. Only what is the person's to do: recalls assigned to
+// them or to nobody, not a colleague's.
 
 // One token for the one request; a newer load discards an older answer.
 const badgeTokens = { myday: 0 }
@@ -103,16 +104,17 @@ async function loadBadges(only: NavBadge[] | null = null) {
     p_with_recalls: wantRecalls,
   } as never)
   if (token !== badgeTokens.myday) return
-  const badges = (data ?? {}) as { my_day?: number; automations_active?: boolean; inbox_unread?: number; support_unread?: boolean; recalls?: number | null }
+  const badges = (data ?? {}) as { my_day?: number; automations_active?: boolean; inbox_unread?: number; support_unread?: boolean; recalls?: number | null; recalls_mine?: number | null }
   myDayCount.value = badges.my_day ?? 0
   if (can('communication_config')) automationsActive.value = badges.automations_active ?? false
   if (can('inbox_access')) inboxUnreadCount.value = badges.inbox_unread ?? 0
   supportUnread.value = badges.support_unread ?? false
   if (wantRecalls && typeof badges.recalls === 'number') recallsCount.value = badges.recalls
+  if (wantRecalls && typeof badges.recalls === 'number') recallsMine.value = badges.recalls_mine ?? 0
 }
 
 const NAV_BADGES_TTL_MS = 60_000
-const { request: badgesRequest, supportUnread } = useNavBadges()
+const { request: badgesRequest, supportUnread, recallsMine } = useNavBadges()
 function onVisible() {
   if (document.visibilityState === 'visible') loadBadges()
 }

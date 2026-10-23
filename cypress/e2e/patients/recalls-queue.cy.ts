@@ -101,9 +101,12 @@ describe('Recalls', () => {
       cy.get('[data-cy=recall-follow-up]').should('contain.text', 'Laura Gómez')
       cy.get('[data-cy=recall-follow-up-2d]').click()
       cy.get(`[data-cy=recall-row][data-patient-id="${ids.laura}"]`).should('not.exist')
+      // The row also vanishes while the list reloads; the tab's count moves
+      // only once the snooze is saved, so the database is read after that.
+      cy.get('[data-cy=recalls-tab-snoozed]').should('contain.text', '1')
       cy.task<{ recall_snoozed_until: string | null }>('db:recallState', { patientId: ids.laura }).its('recall_snoozed_until').should('not.equal', null)
 
-      cy.get('[data-cy=recalls-tab-snoozed]').should('contain.text', '1').click()
+      cy.get('[data-cy=recalls-tab-snoozed]').click()
       cy.contains('[data-cy=parked-row]', 'Laura Gómez').within(() => {
         cy.get('[data-cy=parked-when]').should('contain.text', 'Back on')
         cy.get('[data-cy=parked-restore]').should('contain.text', 'Bring back now').click()

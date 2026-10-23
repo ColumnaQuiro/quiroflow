@@ -813,6 +813,8 @@ export type Database = {
           whatsapp_reminder_template_name: string | null
           waitlist_auto_offer: boolean
           waitlist_offer_mode: string
+          recall_assignee_default: string
+          recall_assignee_member_id: string | null
         }
         Insert: {
           online_booking_card_on_file?: boolean
@@ -907,6 +909,8 @@ export type Database = {
           whatsapp_reminder_template_name?: string | null
           waitlist_auto_offer?: boolean
           waitlist_offer_mode?: string
+          recall_assignee_default?: string
+          recall_assignee_member_id?: string | null
         }
         Update: {
           online_booking_card_on_file?: boolean
@@ -1002,6 +1006,8 @@ export type Database = {
           whatsapp_reminder_template_name?: string | null
           waitlist_auto_offer?: boolean
           waitlist_offer_mode?: string
+          recall_assignee_default?: string
+          recall_assignee_member_id?: string | null
         }
         Relationships: [
           {
@@ -6073,6 +6079,62 @@ export type Database = {
         }
         Relationships: []
       }
+      recall_assignments: {
+        Row: {
+          account_id: string
+          assigned_at: string
+          assigned_by: string | null
+          id: string
+          patient_id: string
+          team_member_id: string | null
+        }
+        Insert: {
+          account_id: string
+          assigned_at?: string
+          assigned_by?: string | null
+          id?: string
+          patient_id: string
+          team_member_id?: string | null
+        }
+        Update: {
+          account_id?: string
+          assigned_at?: string
+          assigned_by?: string | null
+          id?: string
+          patient_id?: string
+          team_member_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recall_assignments_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recall_assignments_assigned_by_fkey"
+            columns: ["assigned_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recall_assignments_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: true
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recall_assignments_team_member_id_fkey"
+            columns: ["team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       receptionist_config: {
         Row: {
           account_id: string
@@ -6910,6 +6972,7 @@ export type Database = {
           morning_summary: boolean
           online_bookings: boolean
           patient_actions: boolean
+          recall_assignments: boolean
           quiet_hours: boolean
           summary_sent_on: string | null
           weekly_digest: boolean
@@ -6925,6 +6988,7 @@ export type Database = {
           morning_summary?: boolean
           online_bookings?: boolean
           patient_actions?: boolean
+          recall_assignments?: boolean
           quiet_hours?: boolean
           summary_sent_on?: string | null
           weekly_digest?: boolean
@@ -6940,6 +7004,7 @@ export type Database = {
           morning_summary?: boolean
           online_bookings?: boolean
           patient_actions?: boolean
+          recall_assignments?: boolean
           quiet_hours?: boolean
           summary_sent_on?: string | null
           weekly_digest?: boolean
@@ -8581,6 +8646,7 @@ export type Database = {
       recall_candidates: {
         Row: {
           account_id: string | null
+          assigned_to: string | null
           balance_cents: number | null
           clinic_id: string | null
           days_since_last_appointment: number | null

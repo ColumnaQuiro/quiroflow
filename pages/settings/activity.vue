@@ -40,7 +40,7 @@ const memberFilter = ref('')
 
 const AREAS = computed(() => [
   { key: 'clinical', label: t('Clinical notes & files', 'Notas clínicas y archivos'), types: ['visit_note', 'patient_file', 'patient_doc'] },
-  { key: 'patients', label: t('Patients', 'Pacientes'), types: ['patient', 'care_stop', 'recall_assignment', 'patient_attribute_value'] },
+  { key: 'patients', label: t('Patients', 'Pacientes'), types: ['patient', 'care_stop', 'recall_assignment', 'patient_segment', 'patient_attribute_value'] },
   { key: 'appointments', label: t('Appointments', 'Citas'), types: ['appointment'] },
   { key: 'money', label: t('Money', 'Cobros'), types: ['payment', 'invoice', 'account_credit', 'package_purchase', 'patient_membership', 'cash_shift', 'cash_movement'] },
   { key: 'access', label: t('Team & access', 'Equipo y accesos'), types: ['team_member', 'team_member_clinic', 'role', 'invite', 'api_token', 'webhook'] },
@@ -147,6 +147,7 @@ const ENTITY_LABELS = computed<Record<string, string>>(() => ({
   care_stop: t('Reason for stopping care', 'Motivo de baja'),
   care_stop_reason: t('Reason for stopping care (list)', 'Motivo de baja (lista)'),
   recall_assignment: t('Recall assignment', 'Asignación de recordatorio'),
+  patient_segment: t('Patient segment', 'Segmento de pacientes'),
   patient_attribute: t('Custom field', 'Campo personalizado'),
   patient_attribute_value: t('Custom field answer', 'Respuesta de campo personalizado'),
 }))

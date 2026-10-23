@@ -1,7 +1,7 @@
 import type { H3Event } from 'h3'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
 import { overMonthlyLimit, recordReceptionistReply } from '~/server/utils/receptionistUsage'
-import { announceHandover, noteInConversation, sendAsReceptionist } from '~/server/utils/receptionistSend'
+import { announceHandover, heldBackBeforeSending, noteInConversation, PAST_TIME_REASON, sendAsReceptionist } from '~/server/utils/receptionistSend'
 import { bookingTool, cancelTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
 import { recentImages, withImages, type StoredImage } from '~/server/utils/receptionistImages'
 import { historyLine } from '~/utils/receptionistHistory'
@@ -65,6 +65,9 @@ export async function draftPatientReply(
   // conversation holds it back (a person in it, the day's limit, a handover
   // nobody has picked up yet), when it is stored as a draft as before.
 ): Promise<PatientDraftOutcome> {
+  // What everything below is read as of: anything the team does after this,
+  // in the conversation or the diary, holds a sent reply back (heldBackBeforeSending).
+  const readAt = new Date().toISOString()
   const { data: patient } = await supabase.from('patients').select('id, first_name').eq('id', patientId).eq('account_id', accountId).maybeSingle()
   if (!patient) return { status: 'not_found' }
 
@@ -286,6 +289,14 @@ export async function draftPatientReply(
     })
     // Not recorded, not sent: a reply it could not mark would be sent again.
     if (recordError) throw new Error(`could not record the reply before sending: ${recordError.message}`)
+    // Read again now: written from a diary or a conversation that has moved
+    // on, it stays the waiting draft recorded above rather than going out.
+    const heldBack = await heldBackBeforeSending(service, accountId, { patientId, leadId: null }, readAt, draft, calendar.timeZone)
+    if (heldBack === 'past_time') {
+      await service.from('inbox_reply_drafts').update({ handed_over_at: now }).eq('account_id', accountId).eq('conversation_key', patientId)
+      await announceHandover(service, accountId, target, name, PAST_TIME_REASON)
+    }
+    if (heldBack) return { status: 'drafted', draft }
     try {
       await sendAsReceptionist(opts.send.event, service, accountId, target, draft)
     } catch (err) {

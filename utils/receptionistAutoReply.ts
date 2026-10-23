@@ -91,6 +91,48 @@ export function personRepliedSince(messages: ConversationMessage[], since: strin
 }
 
 /**
+ * Whether a reply puts a time that has already gone by on "hoy" / "today":
+ * "¿te viene bien hoy jueves a las 18:00?" sent at 18:30, the time copied
+ * from its own message three hours earlier (22 Oct 2026). The free times it
+ * is given never include one, so a past time today came from the
+ * conversation -- and is no longer true.
+ *
+ * Only the times after "hoy" and before the next day it names ("o el lunes
+ * 26 a las 15:00" is not today), so "hoy no tengo, pero el martes a las
+ * 10:00" sent at noon is fine. A sentence about a visit that really was
+ * earlier today ("tu cita de hoy era a las 15:00") is caught too; that only
+ * makes it a draft for a person, which is the safe way to be wrong.
+ */
+export function offersPastTimeToday(text: string, now: Date, timeZone: string | null | undefined): boolean {
+  const { hour, minute } = wallClock(now, timeZone || DEFAULT_CLINIC_TIMEZONE)
+  const nowMinutes = hour * 60 + minute
+  const weekday = 'lunes|martes|miércoles|miercoles|jueves|viernes|sábado|sabado|domingo|monday|tuesday|wednesday|thursday|friday|saturday|sunday'
+  // Where talk of today stops: another day, or the end of the sentence.
+  const otherDay = new RegExp(`(?<!\\p{L})(?:mañana|pasado|tomorrow|${weekday}|el\\s+\\d{1,2}(?!\\d|[:.]\\d)|the\\s+\\d{1,2}(?!\\d|[:.]\\d))(?!\\p{L})|[?!\\n]|\\.(?!\\d)`, 'iu')
+  for (const match of text.matchAll(/(?<!\p{L})(?:hoy|today)(?!\p{L})/giu)) {
+    // "hoy jueves 22" names today itself, not another day.
+    const rest = text.slice(match.index! + match[0].length).replace(new RegExp(`^\\s*,?\\s*(?:${weekday})(?!\\p{L})(?:\\s+\\d{1,2}(?!\\d|[:.]\\d)(?:\\s+de\\s+\\p{L}+)?)?`, 'iu'), '')
+    const end = rest.search(otherDay)
+    const span = end === -1 ? rest : rest.slice(0, end)
+    for (const time of span.matchAll(/(?<!\d)([01]?\d|2[0-3])[:.]([0-5]\d)(?!\d)/g)) {
+      if (Number(time[1]) * 60 + Number(time[2]) < nowMinutes) return true
+    }
+  }
+  return false
+}
+
+/**
+ * Whether an audit_logs row for a visit changes what a reply knew: one
+ * booked or removed, or its time, status or practitioner. Not a reminder
+ * being marked as sent, which the crons do to every visit and which would
+ * otherwise hold back a reply to anyone with a visit tomorrow.
+ */
+export function changesTheDiary(entry: { action: string; changes: Record<string, unknown> | null }): boolean {
+  if (entry.action !== 'updated') return true
+  return ['starts_at', 'ends_at', 'status', 'practitioner_id', 'deleted_at'].some((column) => entry.changes != null && column in entry.changes)
+}
+
+/**
  * How long the newest message has to sit before it is answered. People write
  * in bursts -- "Sí, claro.", then their name, then their email, then their
  * phone, seconds apart -- and a reply to the first would ask for what the

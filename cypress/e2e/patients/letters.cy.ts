@@ -1,4 +1,4 @@
-// Letters (20261022185121_letters.sql): a template in Settings > Letters with
+// Letters (20261023064438_letters.sql): a template in Settings > Letters with
 // merge fields, a letter started from it on the patient's record -- filled
 // in with their details, edited, saved there -- and the PDF on the clinic's
 // letterhead, logged in the patient's access log as an export.
@@ -110,6 +110,39 @@ describe('Letters', () => {
           })
         })
       })
+    })
+  })
+
+  // merge_patients ends by deleting the duplicate, and patient_letters
+  // cascades: a merge that did not move them would delete them, report
+  // success and show nothing on screen. Driven through the modal, as
+  // merge-keeps-the-money is, and checked in the database afterwards.
+  it('moves the duplicate’s letters onto the record that is kept', () => {
+    cy.seedStaffAccount().then((account) => {
+      const mk = (lastName: string) => cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Paloma', lastName })
+      mk('Superviviente').then((survivor) =>
+        mk('Duplicada').then((duplicate) => {
+          cy.task('db:insertRows', {
+            table: 'patient_letters',
+            rows: [
+              { account_id: account.accountId, patient_id: survivor.id, title: 'Carta del superviviente', body: '<p>a</p>' },
+              { account_id: account.accountId, patient_id: duplicate.id, title: 'Carta del duplicado', body: '<p>b</p>' },
+            ],
+          })
+          cy.login(account.email, account.password)
+          cy.visit(`/patients/${survivor.id}`)
+          cy.get('button[aria-label="More actions"]').click()
+          cy.contains('button', 'Merge with another record').click()
+          cy.get('#merge-search').type('Duplicada')
+          cy.contains('button', 'Paloma Duplicada').click()
+          cy.contains('button', 'Merge').click()
+          cy.contains('Patients merged').should('be.visible')
+          cy.task('db:patientByName', { accountId: account.accountId, firstName: 'Paloma', lastName: 'Duplicada' }).should('eq', null)
+          cy.task<{ title: string }[]>('db:selectRows', { table: 'patient_letters', columns: 'title', match: { patient_id: survivor.id } }).then((rows) => {
+            expect(rows.map((r) => r.title).sort()).to.deep.eq(['Carta del duplicado', 'Carta del superviviente'])
+          })
+        }),
+      )
     })
   })
 })

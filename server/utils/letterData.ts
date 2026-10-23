@@ -5,7 +5,7 @@ import { certificateLanguage, visitWasAttended } from '~/utils/attendanceCertifi
 import { LETTER_MERGE_FIELDS } from '~/utils/docFields'
 import { parseLetterHtml, type LetterRun } from '~/utils/letters'
 
-// Letters (20261022185121_letters.sql): the values a template's merge fields
+// Letters (20261023064438_letters.sql): the values a template's merge fields
 // are filled with, and the PDF a saved letter prints as.
 //
 // The letterhead is the justificante's and the receipt's (clinic name, legal

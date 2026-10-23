@@ -36,7 +36,7 @@ const rules: Rule[] = [
       // online-booking, reschedule-reasons and new-patient-fields were missing
       // until 30 Sep 2026 and fell through to plain settings_access, so a
       // role the menu hid them from could still open them by address.
-      ['/settings/clinics', '/settings/appointment-types', '/settings/rooms', '/settings/referral-sources', '/settings/exercises', '/settings/education', '/settings/app', '/settings/online-booking', '/settings/reschedule-reasons', '/settings/new-patient-fields'].includes(p) ||
+      ['/settings/clinics', '/settings/appointment-types', '/settings/rooms', '/settings/referral-sources', '/settings/exercises', '/settings/education', '/settings/app', '/settings/online-booking', '/settings/reschedule-reasons', '/settings/new-patient-fields', '/settings/custom-fields'].includes(p) ||
       p.startsWith('/settings/clinics/') ||
       p.startsWith('/settings/appointment-types/'),
     check: (s) => can(s, 'settings_access') && can(s, 'clinic_config'),
@@ -61,7 +61,7 @@ const rules: Rule[] = [
     check: (s) => can(s, 'settings_access') && can(s, 'billing_config'),
   },
   {
-    test: (p) => ['/settings/messages', '/settings/communications-general', '/settings/whatsapp', '/settings/saved-replies', '/settings/docs', '/settings/letters', '/settings/leads'].includes(p),
+    test: (p) => ['/settings/messages', '/settings/communications-general', '/settings/whatsapp', '/settings/saved-replies', '/settings/docs', '/settings/letters', '/settings/leads', '/settings/recalls'].includes(p),
     check: (s) => can(s, 'settings_access') && can(s, 'communication_config'),
   },
   // /campaigns and /growth/automations redirect here; the old prefix keeps its

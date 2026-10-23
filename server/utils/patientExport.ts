@@ -53,6 +53,13 @@ export async function buildPatientExport(supabase: Db, patientId: string, meta: 
     rows(supabase.from('review_requests').select('sent_at, opened_at').eq('patient_id', patientId)),
     rows(supabase.from('patient_access_log').select('created_at, kind, actor_name').eq('patient_id', patientId).order('created_at')),
   ])
+  // The clinic's own fields (patient_attributes), archived ones included: the
+  // answers are still held. Clinical ones go with the clinical record.
+  const customFields = await rows(supabase.from('patient_attribute_values').select('value, updated_at, patient_attributes(label, section, kind, archived_at)').eq('patient_id', patientId))
+  const customOf = (section: string) =>
+    customFields
+      .filter((r) => (r.patient_attributes as Row | null)?.section === section)
+      .map((r) => ({ campo: (r.patient_attributes as Row).label, valor: r.value, actualizado: r.updated_at, archivado: !!(r.patient_attributes as Row).archived_at }))
 
   // Clinical record, keyed by the visits -- deleted ones included: the
   // export is what is held, and a deleted visit's row is still held.
@@ -78,14 +85,14 @@ export async function buildPatientExport(supabase: Db, patientId: string, meta: 
     archivos: 0,
   }
 
-  entries.push({ name: '01_datos_personales.json', data: json({ paciente: p, telefonos: numbers, membresias: memberships }) })
+  entries.push({ name: '01_datos_personales.json', data: json({ paciente: p, telefonos: numbers, membresias: memberships, campos_personalizados: customOf('admin') }) })
   entries.push({
     name: '02_citas.csv',
     data: toCsv(appointments.map((a) => ({ fecha: a.starts_at, fin: a.ends_at, estado: a.status, tipo: (a.appointment_types as Row | null)?.name ?? '', profesional: (a.team_members as Row | null)?.full_name ?? '', centro: (a.clinics as Row | null)?.name ?? '', llegada: a.checked_in_at, notas_de_la_cita: a.note, borrada: a.deleted_at }))),
   })
   entries.push({
     name: '03_historia_clinica.json',
-    data: json({ notas_de_visita: notes.map(byVisit), listados: listings.map(byVisit), dolor: pain.map(byVisit), planes_de_tratamiento: carePlans, ejercicios: exercises, valoraciones: surveys.map(byVisit) }),
+    data: json({ notas_de_visita: notes.map(byVisit), listados: listings.map(byVisit), dolor: pain.map(byVisit), planes_de_tratamiento: carePlans, ejercicios: exercises, valoraciones: surveys.map(byVisit), campos_clinicos_personalizados: customOf('clinical') }),
   })
   entries.push({ name: '04_facturacion/facturas.csv', data: toCsv(facturas) })
   entries.push({ name: '04_facturacion/recibos.csv', data: toCsv(invoices) })
@@ -117,9 +124,9 @@ export async function buildPatientExport(supabase: Db, patientId: string, meta: 
       `${meta.clinicName} · generada el ${generatedAt.toLocaleString('es-ES', { timeZone: 'Europe/Madrid' })} por ${meta.requestedBy}`,
       '',
       'Contenido:',
-      '  01_datos_personales.json   Datos de contacto, teléfonos, consentimientos y membresías',
+      '  01_datos_personales.json   Datos de contacto, teléfonos, consentimientos, membresías y campos propios de la clínica',
       `  02_citas.csv               Citas (${counts.citas})`,
-      `  03_historia_clinica.json   Notas de visita (${counts.notas}), listados, dolor, planes, ejercicios y valoraciones`,
+      `  03_historia_clinica.json   Notas de visita (${counts.notas}), listados, dolor, planes, ejercicios, valoraciones y campos clínicos propios de la clínica`,
       `  04_facturacion/            Facturas (${counts.facturas}), recibos, pagos (${counts.pagos}), saldo y bonos`,
       `  05_documentos_firmados.json Formularios y consentimientos (${counts.documentos})`,
       `  06_comunicaciones.json     WhatsApp, correos y mensajes de la app (${counts.mensajes})`,

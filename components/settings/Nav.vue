@@ -33,6 +33,7 @@ const allGroups = computed<NavGroup[]>(() => [
       { label: t('Exercise Library', 'Biblioteca de ejercicios'), to: '/settings/exercises', perm: 'clinic_config' },
       { label: t('Education', 'Educación'), to: '/settings/education', perm: 'clinic_config' },
       { label: t('New Patient Fields', 'Campos de nuevo paciente'), to: '/settings/new-patient-fields', perm: 'clinic_config' },
+      { label: t('Custom Fields', 'Campos personalizados'), to: '/settings/custom-fields', perm: 'clinic_config' },
     ],
   },
   {
@@ -57,6 +58,7 @@ const allGroups = computed<NavGroup[]>(() => [
       { label: t('Docs', 'Documentos'), to: '/settings/docs', perm: 'communication_config' },
       { label: t('Letters', 'Cartas'), to: '/settings/letters', perm: 'communication_config' },
       { label: t('Leads', 'Leads'), to: '/settings/leads', perm: 'communication_config' },
+      { label: t('Recalls', 'Recordatorios'), to: '/settings/recalls', perm: 'communication_config' },
     ],
   },
   {

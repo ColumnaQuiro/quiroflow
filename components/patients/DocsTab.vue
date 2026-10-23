@@ -2,6 +2,7 @@
 import type { Tables } from '~/types/database.types'
 import { formatLongDate } from '~/utils/billing'
 import type { DocField } from '~/utils/docFields'
+import { patientAttributeMergeVars } from '~/utils/patientAttributes'
 
 const props = defineProps<{ patientId: string }>()
 
@@ -105,12 +106,17 @@ async function newBlankDoc() {
 
 async function newFromTemplate(template: Template) {
   showNewMenu.value = false
-  const { data: patient } = await supabase
-    .from('patients')
-    .select('first_name, last_name, date_of_birth, email, address, city, postal_code, country, national_id, occupation, gender, emergency_contact')
-    .eq('id', props.patientId)
-    .maybeSingle()
+  const [{ data: patient }, { data: custom }] = await Promise.all([
+    supabase
+      .from('patients')
+      .select('first_name, last_name, date_of_birth, email, address, city, postal_code, country, national_id, occupation, gender, emergency_contact')
+      .eq('id', props.patientId)
+      .maybeSingle(),
+    // {{attr_<key>}}: the clinic's own fields, as far as this person may read them.
+    supabase.from('patient_attribute_values').select('value, patient_attributes(key, kind)').eq('patient_id', props.patientId),
+  ])
   const rendered = renderTemplateFields(template.fields, {
+    ...patientAttributeMergeVars(custom ?? []),
     first_name: patient?.first_name ?? '',
     last_name: patient?.last_name ?? '',
     date_of_birth: patient?.date_of_birth ?? '',

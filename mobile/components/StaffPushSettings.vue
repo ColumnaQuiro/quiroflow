@@ -6,8 +6,8 @@ const supabase = useSupabaseClient()
 const t = useT()
 const { context, can } = usePractitionerContext()
 
-type Key = 'online_bookings' | 'changes' | 'inbox' | 'check_in' | 'morning_summary' | 'patient_actions' | 'weekly_digest' | 'quiet_hours'
-const prefs = reactive<Record<Key, boolean>>({ online_bookings: true, changes: true, inbox: true, check_in: false, morning_summary: true, patient_actions: true, weekly_digest: true, quiet_hours: false })
+type Key = 'online_bookings' | 'changes' | 'inbox' | 'check_in' | 'morning_summary' | 'patient_actions' | 'recall_assignments' | 'weekly_digest' | 'quiet_hours'
+const prefs = reactive<Record<Key, boolean>>({ online_bookings: true, changes: true, inbox: true, check_in: false, morning_summary: true, patient_actions: true, recall_assignments: true, weekly_digest: true, quiet_hours: false })
 const loaded = ref(false)
 const loadFailed = ref(false)
 const error = ref('')
@@ -17,7 +17,7 @@ async function load() {
   loadFailed.value = false
   const { data, error: readError } = await supabase
     .from('staff_push_preferences')
-    .select('online_bookings, changes, inbox, check_in, morning_summary, patient_actions, weekly_digest, quiet_hours')
+    .select('online_bookings, changes, inbox, check_in, morning_summary, patient_actions, recall_assignments, weekly_digest, quiet_hours')
     .eq('team_member_id', context.value.teamMemberId)
     .maybeSingle()
   // A failed read must not look like the defaults: flipping one switch then
@@ -56,6 +56,8 @@ const rows = computed(() =>
     can('inbox_access') ? { key: 'inbox' as const, label: t('Inbox messages', 'Mensajes en la Bandeja') } : null,
     { key: 'check_in' as const, label: t('A patient checking in', 'Paciente que llega (check-in)') },
     { key: 'patient_actions' as const, label: t('Patients paying online or joining the waitlist', 'Pacientes que pagan online o se apuntan a la lista de espera') },
+    // A colleague giving you patients to follow up on Recalls.
+    can('recalls_access') ? { key: 'recall_assignments' as const, label: t('Recalls assigned to you', 'Recordatorios que te asignan') } : null,
     { key: 'morning_summary' as const, label: t('Summary of the day at 8:00', 'Resumen del día a las 8:00') },
     // Owners only: last week's money and visits, Monday 8:00, also by email.
     context.value?.isOwner ? { key: 'weekly_digest' as const, label: t('Weekly summary on Monday (also by email)', 'Resumen semanal el lunes (también por email)') } : null,

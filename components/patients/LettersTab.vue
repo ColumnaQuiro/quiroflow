@@ -3,7 +3,7 @@ import { formatLongDate } from '~/utils/billing'
 import { letterFileName, sanitizeLetterHtml } from '~/utils/letters'
 
 // Letters written about this patient (patient_letters,
-// 20261022185121_letters.sql). "New letter" fills a template from Settings ›
+// 20261023064438_letters.sql). "New letter" fills a template from Settings ›
 // Letters with their details (/api/patients/[id]/letters/draft), the writer
 // edits it, and it is kept here as written: download, print, and -- with
 // the permission for it -- edit and delete. The PDF is the clinic's

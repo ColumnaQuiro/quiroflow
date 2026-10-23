@@ -37,7 +37,8 @@ let listenersAttached = false
 
 // Where a tapped notification goes. Staff pushes (server/utils/staffPush.ts)
 // carry { type: 'appointment', appointmentId }, { type: 'my_day' }, { type: 'weekly_digest' } or
-// { type: 'patient', patientId, target? } (pushPatientAction), team
+// { type: 'patient', patientId, target? } (pushPatientAction),
+// { type: 'recalls' } (pushRecallAssignment, several patients at once), team
 // messages and help alerts { type: 'team', url }; Inbox
 // pushes { type, key } with the conversation key. A patient's own pushes
 // (sendPushToPatients) carry appointment_<purpose> with the appointment id,
@@ -52,6 +53,7 @@ function routeTap(data: Record<string, string> | undefined) {
   // The owner's Monday summary: their numbers.
   if (type === 'weekly_digest') return navigateTo('/numbers')
   if (type === 'patient' && data?.patientId) return navigateTo(data.target === 'waitlist' ? '/waitlist' : `/patients/${data.patientId}`)
+  if (type === 'recalls') return navigateTo('/recalls')
   if (type.startsWith('appointment_')) return navigateTo('/visits')
   if (type === 'patient_app_message' && !data?.key) return navigateTo('/messages')
   if (type === 'clinic_announcement') return navigateTo('/')

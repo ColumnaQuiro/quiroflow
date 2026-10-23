@@ -3,7 +3,7 @@ import type { Tables } from '~/types/database.types'
 import { sanitizeLetterHtml } from '~/utils/letters'
 
 // The templates staff start a letter from (letter_templates,
-// 20261022185121_letters.sql): a name, a body with merge fields, and whether
+// 20261023064438_letters.sql): a name, a body with merge fields, and whether
 // the clinic's logo heads the page. The rest of the letterhead -- name, NIF,
 // address -- is the clinic's own, from Settings > Clinics, as on receipts.
 

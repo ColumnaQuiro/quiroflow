@@ -176,7 +176,7 @@ watch(
       @mark-handled="emit('markHandled')"
     />
 
-    <div ref="scroller" class="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4" data-test="lead-messages">
+    <div ref="scroller" class="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden px-4 py-4" data-test="lead-messages">
       <p v-if="!thread.messages.length" class="py-8 text-center text-[12px] text-ink-faint">
         {{ t('No messages yet.', 'Aún no hay mensajes.') }}
       </p>
@@ -194,7 +194,7 @@ watch(
         :class="message.from === 'lead' ? 'items-start' : 'items-end'"
       >
         <p
-          class="relative max-w-[78%] whitespace-pre-wrap rounded-card px-3 py-2 text-[12.5px] leading-[1.45]"
+          class="relative max-w-[78%] whitespace-pre-wrap rounded-card px-3 py-2 text-[12.5px] leading-[1.45] [overflow-wrap:anywhere]"
           :class="isDryRun(message.status)
             ? 'rounded-br-[4px] border border-dashed border-line-control bg-surface-subtle text-ink-muted'
             : message.from === 'lead'

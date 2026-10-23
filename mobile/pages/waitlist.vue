@@ -237,7 +237,7 @@ const field = 'h-11 rounded-ctl border border-line-control bg-surface px-3 text-
     </div>
 
     <div v-if="addOpen" class="fixed inset-0 z-50 flex flex-col justify-end bg-black/40 md:items-center md:justify-center" data-cy="waitlist-add-sheet" @click.self="addOpen = false">
-      <form class="flex max-h-[92%] w-full flex-col gap-3 overflow-y-auto rounded-t-[22px] bg-surface px-4 pt-2.5 shadow-popover md:max-w-[460px] md:rounded-[18px] md:pt-5" style="padding-bottom: max(env(safe-area-inset-bottom), 1.25rem)" role="dialog" aria-modal="true" :aria-label="t('Add to the waitlist', 'Añadir a la lista de espera')" @submit.prevent="add">
+      <form v-sheet-drag="() => (addOpen = false)" class="flex max-h-[92%] w-full flex-col gap-3 overflow-y-auto rounded-t-[22px] bg-surface px-4 pt-2.5 shadow-popover md:max-w-[460px] md:rounded-[18px] md:pt-5" style="padding-bottom: max(env(safe-area-inset-bottom), 1.25rem)" role="dialog" aria-modal="true" :aria-label="t('Add to the waitlist', 'Añadir a la lista de espera')" @submit.prevent="add">
         <div class="mx-auto mb-0.5 h-1 w-[38px] shrink-0 rounded-full bg-line-control md:hidden" />
         <p class="text-[17px] font-semibold text-ink-900">{{ t('Add to the waitlist', 'Añadir a la lista de espera') }}</p>
 

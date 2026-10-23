@@ -261,6 +261,7 @@ async function uploadOne(file: File, patientId: string): Promise<boolean> {
     <Teleport to="body">
       <div v-if="renaming" class="fixed inset-0 z-[60] flex flex-col justify-end bg-black/40 md:items-center md:justify-center" @click.self="renaming = null">
         <form
+          v-sheet-drag="() => (renaming = null)"
           class="flex w-full flex-col gap-3 rounded-t-[22px] bg-surface px-4 pt-2.5 shadow-popover md:max-w-[480px] md:rounded-[18px] md:pt-5"
           style="padding-bottom: max(env(safe-area-inset-bottom), 1.25rem)"
           role="dialog"

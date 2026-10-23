@@ -2383,6 +2383,38 @@ export type Database = {
           },
         ]
       }
+      care_stop_reasons: {
+        Row: {
+          account_id: string
+          created_at: string
+          id: string
+          name: string
+          sort_order: number
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          id?: string
+          name: string
+          sort_order?: number
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          id?: string
+          name?: string
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "care_stop_reasons_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cash_movements: {
         Row: {
           account_id: string
@@ -4734,6 +4766,92 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "recall_candidates"
             referencedColumns: ["patient_id"]
+          },
+        ]
+      }
+      patient_care_stops: {
+        Row: {
+          account_id: string
+          clinic_id: string | null
+          id: string
+          note: string | null
+          patient_id: string
+          practitioner_id: string | null
+          reason_id: string | null
+          recorded_at: string
+          recorded_by: string | null
+        }
+        Insert: {
+          account_id: string
+          clinic_id?: string | null
+          id?: string
+          note?: string | null
+          patient_id: string
+          practitioner_id?: string | null
+          reason_id?: string | null
+          recorded_at?: string
+          recorded_by?: string | null
+        }
+        Update: {
+          account_id?: string
+          clinic_id?: string | null
+          id?: string
+          note?: string | null
+          patient_id?: string
+          practitioner_id?: string | null
+          reason_id?: string | null
+          recorded_at?: string
+          recorded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_care_stops_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_care_stops_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: false
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_care_stops_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_care_stops_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "recall_candidates"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "patient_care_stops_practitioner_id_fkey"
+            columns: ["practitioner_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_care_stops_reason_id_fkey"
+            columns: ["reason_id"]
+            isOneToOne: false
+            referencedRelation: "care_stop_reasons"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_care_stops_recorded_by_fkey"
+            columns: ["recorded_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -8759,6 +8877,10 @@ export type Database = {
         }
         Returns: Json
       }
+      current_care_stops: {
+        Args: { p_patient_ids: string[] }
+        Returns: Database["public"]["Tables"]["patient_care_stops"]["Row"][]
+      }
       current_team_member_id: {
         Args: { target_account_id: string }
         Returns: string
@@ -8959,6 +9081,11 @@ export type Database = {
       is_own_patient_account: {
         Args: { target_account_id: string }
         Returns: boolean
+      }
+      patient_last_attended_at: { Args: { p_patient_id: string }; Returns: string }
+      record_care_stop: {
+        Args: { p_note?: string; p_patient_ids: string[]; p_reason_id: string }
+        Returns: number
       }
       merge_patients: {
         Args: { p_duplicate_id: string; p_survivor_id: string }

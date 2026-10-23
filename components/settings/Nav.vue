@@ -56,6 +56,7 @@ const allGroups = computed<NavGroup[]>(() => [
       { label: t('Saved Replies', 'Respuestas guardadas'), to: '/settings/saved-replies', perm: 'communication_config' },
       { label: t('Docs', 'Documentos'), to: '/settings/docs', perm: 'communication_config' },
       { label: t('Leads', 'Leads'), to: '/settings/leads', perm: 'communication_config' },
+      { label: t('Recalls', 'Recordatorios'), to: '/settings/recalls', perm: 'communication_config' },
     ],
   },
   {

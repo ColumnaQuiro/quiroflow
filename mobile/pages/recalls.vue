@@ -399,7 +399,7 @@ const canBook = computed(() => !!context.value && !restricted('calendar_read_onl
 
     <!-- More: log a call, book, snooze, dismiss; and, back from a call, how it went -->
     <div v-if="menuFor || calledFor" class="fixed inset-0 z-50 flex flex-col justify-end bg-black/40 md:items-center md:justify-center" data-cy="recall-sheet" @click.self="menuFor = null; calledFor = null">
-      <div class="flex max-h-[92%] w-full flex-col gap-1 overflow-y-auto rounded-t-[22px] bg-surface px-4 pt-2.5 shadow-popover md:max-w-[440px] md:rounded-[18px] md:pt-5" style="padding-bottom: max(env(safe-area-inset-bottom), 1.25rem)" role="dialog" aria-modal="true" :aria-label="nameOf((menuFor ?? calledFor)!)">
+      <div v-sheet-drag="() => { menuFor = null; calledFor = null }" class="flex max-h-[92%] w-full flex-col gap-1 overflow-y-auto rounded-t-[22px] bg-surface px-4 pt-2.5 shadow-popover md:max-w-[440px] md:rounded-[18px] md:pt-5" style="padding-bottom: max(env(safe-area-inset-bottom), 1.25rem)" role="dialog" aria-modal="true" :aria-label="nameOf((menuFor ?? calledFor)!)">
         <div class="mx-auto mb-1.5 h-1 w-[38px] shrink-0 rounded-full bg-line-control md:hidden" />
         <p class="px-1 text-[16px] font-semibold text-ink-900">{{ nameOf((menuFor ?? calledFor)!) }}</p>
         <p class="px-1 pb-1 text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ calledFor ? t('How did the call go?', '¿Cómo ha ido la llamada?') : t('Log a call', 'Registrar llamada') }}</p>

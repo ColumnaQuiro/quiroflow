@@ -30,6 +30,7 @@ import { isValidQuietHours, localParts, nextAllowedSendTime, segmentCarryOverDue
 import { automationFieldValue, type MergeContext } from '~/utils/automationFields'
 import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
 import { fetchAllRows } from '~/composables/useFetchAllRows'
+import { answeredAReminderAmong } from '~/server/utils/reminderAnswers'
 
 // The automation engine: walks one run of a rule through its steps.
 //
@@ -440,7 +441,7 @@ async function walkRun(supabase: any, run: SequenceRun, origin: string, opts: { 
   if (!subject) return
 
   const appointment = run.appointment_id
-    ? ((await supabase.from('appointments').select('status, deleted_at, starts_at, confirmation_status').eq('id', run.appointment_id).maybeSingle()).data as AppointmentState | null)
+    ? ((await supabase.from('appointments').select('id, status, deleted_at, starts_at, confirmation_status, confirmation_answered_at, reminder_sent_at').eq('id', run.appointment_id).maybeSingle()).data as AppointmentState | null)
     : null
   if (await appointmentGone(supabase, run, rule, appointment)) return
   const late = lateForVisit(run, rule, appointment)
@@ -815,12 +816,14 @@ async function appointmentGone(supabase: any, run: SequenceRun, rule: EngineRule
   // answered the first -- Confirmar, or asked to change it -- so the second
   // has nothing left to ask. The same rule hours-before-cron applies before a
   // run starts, with the same switch (filters.skip_if_answered, on unless
-  // false). Moving the visit clears the answer, so a run for a moved visit
-  // carries on.
+  // false), and only for an answer given after a reminder: a Confirmar on the
+  // booking message is not one (server/utils/reminderAnswers.ts). Moving the
+  // visit clears the answer, so a run for a moved visit carries on.
   if (
     UPCOMING_VISIT_TRIGGERS.includes(rule.trigger_event) &&
     (rule.filters as { skip_if_answered?: boolean } | null | undefined)?.skip_if_answered !== false &&
-    (appt.confirmation_status === 'confirmed' || appt.confirmation_status === 'reschedule_requested')
+    appt.id &&
+    (await answeredAReminderAmong(supabase, [{ id: appt.id, confirmation_status: appt.confirmation_status ?? null, confirmation_answered_at: appt.confirmation_answered_at ?? null, reminder_sent_at: appt.reminder_sent_at ?? null }])).has(appt.id)
   ) {
     await stopRun(supabase, run, 'appointment_answered')
     return true
@@ -829,10 +832,13 @@ async function appointmentGone(supabase: any, run: SequenceRun, rule: EngineRule
 }
 
 interface AppointmentState {
+  id?: string
   status: string
   deleted_at: string | null
   starts_at: string
   confirmation_status?: string | null
+  confirmation_answered_at?: string | null
+  reminder_sent_at?: string | null
 }
 
 /**

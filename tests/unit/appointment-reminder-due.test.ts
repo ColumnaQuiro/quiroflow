@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  answeredAReminder,
   appointmentReminderDecision,
   effectiveReminderHours,
   reminderCandidateRange,
@@ -140,5 +141,26 @@ describe('what a tick asks the database for', () => {
       from: new Date(now.getTime() + HOUR),
       to: new Date(now.getTime() + 2 * HOUR + 15 * MINUTE),
     })
+  })
+})
+
+describe('an answer that silences the next reminder', () => {
+  const t = (ms: number) => at(ms).toISOString()
+
+  it('is one given after a reminder of the visit', () => {
+    expect(answeredAReminder(t(70 * HOUR), [t(72 * HOUR)])).toBe(true)
+    expect(answeredAReminder(t(72 * HOUR), [t(72 * HOUR)])).toBe(true)
+  })
+
+  it('is not one given at booking, before any reminder', () => {
+    // Confirmar on the booking message, a fortnight ahead: the 3-day reminder
+    // was sent after it, and the 24-hour one must still go.
+    expect(answeredAReminder(t(14 * 24 * HOUR), [t(72 * HOUR)])).toBe(false)
+    expect(answeredAReminder(t(14 * 24 * HOUR), [])).toBe(false)
+  })
+
+  it('is not one with no time recorded', () => {
+    expect(answeredAReminder(null, [t(72 * HOUR)])).toBe(false)
+    expect(answeredAReminder(t(1 * HOUR), [null, undefined])).toBe(false)
   })
 })

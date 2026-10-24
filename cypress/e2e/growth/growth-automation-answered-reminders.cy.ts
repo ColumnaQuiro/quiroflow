@@ -8,6 +8,10 @@
 // the answer, so a visit moved to a new time is reminded of that one. An
 // automation on this trigger that is not a reminder can switch it off.
 //
+// Only an answer to a REMINDER counts. The message sent at booking carries
+// the same Confirmar button, and a patient who tapped it then, weeks before
+// the visit, was never reminded at all (47 visits, 19-22 Oct 2026).
+//
 // Sends are asserted through dry run, as in growth-automation-engine.cy.ts.
 
 interface SeededAccount {
@@ -45,25 +49,46 @@ describe('Reminders, once the patient has answered', () => {
   function appointment(patientId: string, startsAt: string, confirmationStatus?: string) {
     return cy.task<{ id: string }>('db:createAppointment', { accountId: account.accountId, clinicId: account.clinicId, patientId, startsAt, confirmationStatus })
   }
+  /** An earlier reminder of the visit (the 3-day one), sent before the patient answered. */
+  function earlierReminder(patientId: string, appointmentId: string) {
+    return cy.task('db:createWhatsappMessage', { accountId: account.accountId, patientId, appointmentId, direction: 'outbound', templateName: 'recordatorio_72h', purpose: 'reminder', createdAt: new Date(Date.now() - 2 * HOUR).toISOString() })
+  }
   function reminderRule(filters: Record<string, unknown>, steps: { type: string; config: Record<string, unknown> }[] = [whatsapp('recordatorio')]) {
     return cy.task<{ id: string }>('auto:createFlowRule', { accountId: account.accountId, triggerEvent: 'appointment.hours_before', filters, steps })
   }
 
-  it('passes over a visit already confirmed or asked to be changed, and reminds the rest', () => {
+  it('passes over a visit confirmed or asked to be changed after an earlier reminder, and reminds the rest', () => {
     reminderRule({ hours_before: 30 }).then(() => {
       patient('Confirmada').then((confirmed) => {
         patient('Cambiar').then((changing) => {
           patient('Pendiente').then((pending) => {
-            appointment(confirmed.id, inReminderWindow(), 'confirmed')
-            appointment(changing.id, inReminderWindow(), 'reschedule_requested')
+            appointment(confirmed.id, inReminderWindow()).then((appt) => {
+              earlierReminder(confirmed.id, appt.id)
+              cy.task('db:setConfirmationStatus', { appointmentId: appt.id, confirmationStatus: 'confirmed' })
+            })
+            appointment(changing.id, inReminderWindow()).then((appt) => {
+              earlierReminder(changing.id, appt.id)
+              cy.task('db:setConfirmationStatus', { appointmentId: appt.id, confirmationStatus: 'reschedule_requested' })
+            })
             appointment(pending.id, inReminderWindow(), 'pending')
             cron('hours-before-cron')
 
-            templates(confirmed.id).should('deep.eq', [])
-            templates(changing.id).should('deep.eq', [])
+            templates(confirmed.id).should('deep.eq', ['recordatorio_72h'])
+            templates(changing.id).should('deep.eq', ['recordatorio_72h'])
             templates(pending.id).should('deep.eq', ['recordatorio'])
           })
         })
+      })
+    })
+  })
+
+  it('still reminds a visit confirmed when it was booked, before any reminder', () => {
+    reminderRule({ hours_before: 30 }).then(() => {
+      patient('Reserva').then((p) => {
+        // Confirmar on the booking message: the row is created already answered.
+        appointment(p.id, inReminderWindow(), 'confirmed')
+        cron('hours-before-cron')
+        templates(p.id).should('deep.eq', ['recordatorio'])
       })
     })
   })

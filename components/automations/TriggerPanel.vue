@@ -141,8 +141,8 @@ watch(
         @change="setFilters({ ...rule.filters, skip_if_answered: ($event.target as HTMLInputElement).checked })"
       />
       <span>
-        {{ t('Not if they have already confirmed or asked to change the appointment', 'No si ya ha confirmado o pedido cambiar la cita') }}
-        <span :class="['block', HINT]">{{ t('So a second reminder does not ask again what the first already got an answer to.', 'Así un segundo recordatorio no vuelve a preguntar lo que el primero ya respondió.') }}</span>
+        {{ t('Not if they have already answered an earlier reminder (confirmed or asked to change the appointment)', 'No si ya ha contestado a un recordatorio anterior (confirmado o pedido cambiar la cita)') }}
+        <span :class="['block', HINT]">{{ t('So a second reminder does not ask again what the first already got an answer to. Confirming when the appointment was booked does not count.', 'Así un segundo recordatorio no vuelve a preguntar lo que el primero ya respondió. Confirmar al reservar la cita no cuenta.') }}</span>
       </span>
     </label>
     <label v-if="rule.trigger_event === 'appointment.review_request'" :class="LABEL">

@@ -2,7 +2,8 @@
 // opt-out sentence, so refusing has to work through the reply itself: "No,
 // gracias" (a quick reply) or BAJA / STOP typed marks the patient "do not
 // contact", tags them, ends every sequence they are in and leaves a note on
-// their contact log. "Más adelante" parks them in Recalls for two months and
+// their contact log. "No, gracias" does that only as the answer to a recall:
+// said to the receptionist or the desk, it answers them. "Más adelante" parks them in Recalls for two months and
 // ends the recall that asked -- and only that one.
 
 interface SeededAccount {
@@ -40,6 +41,9 @@ describe('A patient answers a recall', () => {
   }
   const button = (text: string) => deliver({ type: 'button', button: { text, payload: text } })
   const text = (body: string) => deliver({ type: 'text', text: { body } })
+  /** The recall a "No, gracias" answers, as the automation stores it. */
+  const sentRecall = (patientId: string) =>
+    cy.task('db:createWhatsappMessage', { accountId: account.accountId, patientId, direction: 'outbound', templateName: 'recall_x', purpose: 'recall', bodyPreview: '¿Te busco un hueco?', createdAt: new Date(Date.now() - 60 * 1000).toISOString() })
 
   /** A recall rule (its WhatsApp step flagged as one) and a plain reminder rule, each with this patient parked at a wait. */
   function parkIn(patientId: string) {
@@ -86,6 +90,7 @@ describe('A patient answers a recall', () => {
   it('"No, gracias" marks them do-not-contact, tags them, ends every sequence and logs it', () => {
     cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Declina', lastName: 'Recall', phone: phone.replace(/^34/, '') }).then((p) => {
       parkIn(p.id).then((rules) => {
+        sentRecall(p.id)
         button('No, gracias')
 
         cy.task<{ do_not_contact: boolean; tags: string[] }>('auto:patientRow', { patientId: p.id }).then((row) => {
@@ -103,6 +108,19 @@ describe('A patient answers a recall', () => {
           expect(note, 'a contact log note').to.not.be.undefined
           expect(note!.note).to.contain('No, gracias')
         })
+      })
+    })
+  })
+
+  it('"No, gracias" said to the receptionist answers her, and is not a decline', () => {
+    cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Contesta', lastName: 'Alba', phone: phone.replace(/^34/, '') }).then((p) => {
+      sentRecall(p.id)
+      // Then the receptionist asked whether they would rather move the visit.
+      cy.task('db:createWhatsappMessage', { accountId: account.accountId, patientId: p.id, direction: 'outbound', bodyPreview: '¿Te vendría bien moverla a otro día?', sentByAi: true })
+      text('No, gracias')
+      cy.task<{ do_not_contact: boolean; tags: string[] }>('auto:patientRow', { patientId: p.id }).then((row) => {
+        expect(row.do_not_contact, 'still contactable').to.eq(false)
+        expect(row.tags ?? []).to.not.include('baja whatsapp')
       })
     })
   })

@@ -10,7 +10,7 @@ import { receptionistDraftsFor } from '~/server/utils/receptionist'
 import { findLeadIdByPhone, findPatientIdsByPhone, pickInboundPatientId } from '~/server/utils/whatsappOwner'
 import { afterUnattendedCancellation } from '~/server/utils/unattendedCancellation'
 import { applyRecallReply } from '~/server/utils/recallReplies'
-import { recallReplyIntent } from '~/utils/recallReply'
+import { declinesOnlyARecall, recallReplyIntent } from '~/utils/recallReply'
 import { appointmentReplyIntent } from '~/utils/appointmentReply'
 
 // Meta's ongoing webhook: delivers both outbound message status updates
@@ -46,6 +46,9 @@ interface MetaMessage {
   reaction?: InboundNonTextMessage['reaction']
   location?: InboundNonTextMessage['location']
   contacts?: InboundNonTextMessage['contacts']
+  // The message this one replies to: set on a quick-reply button's tap, and
+  // on a reply the patient quoted.
+  context?: { id?: string }
 }
 
 interface MetaChangeValue {
@@ -119,6 +122,31 @@ async function alreadyStored(supabase: ReturnType<typeof serverSupabaseServiceRo
 // patient actually referenced, since that's literally what they're replying
 // to, and only fall back to scanning upcoming appointments if that message
 // carried no appointment (a free-text inbox reply, say).
+// Whether a patient's message replies to a recall. A button tap or a quoted
+// reply names the message it answers; anything else answers whatever was
+// sent to them last -- a recall, or the receptionist's question, or the
+// front desk's.
+async function answersRecall(
+  supabase: ReturnType<typeof serverSupabaseServiceRole<Database>>,
+  patientIds: string[],
+  msg: MetaMessage,
+): Promise<boolean> {
+  if (msg.context?.id) {
+    const { data: quoted } = await supabase.from('whatsapp_messages').select('purpose').eq('wamid', msg.context.id).limit(1).maybeSingle()
+    if (quoted) return quoted.purpose === 'recall'
+  }
+  if (patientIds.length === 0) return false
+  const { data: last } = await supabase
+    .from('whatsapp_messages')
+    .select('purpose')
+    .in('patient_id', patientIds)
+    .eq('direction', 'outbound')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  return last?.purpose === 'recall'
+}
+
 async function resolveRepliedAppointment(
   supabase: ReturnType<typeof serverSupabaseServiceRole<Database>>,
   patientIds: string[],
@@ -513,9 +541,14 @@ export default defineEventHandler(async (event) => {
         // the sequence outright rather than letting its "replied" branch
         // carry on. Patients only: a lead has no do-not-contact flag, and
         // its drips already stop on the reply itself.
-        const recallIntent = recallReplyIntent(replyText(msg))
+        // "No, gracias" only when it answers a recall: said to the
+        // receptionist or the desk it answers them (utils/recallReply.ts).
+        const reply = replyText(msg)
+        const recallIntent = patientId
+          ? recallReplyIntent(reply, declinesOnlyARecall(reply) ? await answersRecall(supabase, patientIds, msg) : true)
+          : null
         if (recallIntent && patientId) {
-          await applyRecallReply(supabase, account.id, patientId, recallIntent, replyText(msg))
+          await applyRecallReply(supabase, account.id, patientId, recallIntent, reply)
         }
 
         // A reply is what a wait_until "whatsapp.replied" waits for, and what

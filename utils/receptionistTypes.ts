@@ -1,4 +1,5 @@
 import { orderTypes } from './appointmentTypes'
+import { FAMILY_RELATIONS } from './familyRelations'
 
 // Which appointment types the AI receptionist may offer.
 //
@@ -148,13 +149,8 @@ export function typesForSomeoneTheyBring<T extends PromptType>(offered: T[]): T[
   return referral.length ? referral : typesForAudience(offered, 'new').types
 }
 
-/** What the person they bring is to them, as patient_relations records it; 'friend' is not family. */
-export const BROUGHT_RELATIONS = ['partner', 'parent', 'child', 'sibling', 'other', 'friend'] as const
-
-/** The same link seen from the other side: her partner is his partner, his mother has him as her child. */
-export function inverseRelation(relation: string): string {
-  return relation === 'parent' ? 'child' : relation === 'child' ? 'parent' : relation
-}
+/** What the person they bring is to them, as patient_relations records it; 'friend' is not family, and is not linked. */
+export const BROUGHT_RELATIONS = [...FAMILY_RELATIONS, 'friend'] as const
 
 /**
  * The prompt section on booking for someone new the person writing brings.

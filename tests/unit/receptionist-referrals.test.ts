@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest'
 import {
   accentBlindPrefix,
   familySection,
-  inverseRelation,
   matchReferrer,
   minorsSection,
   offeredTypesSection,
@@ -72,14 +71,6 @@ describe('Which patient a referral names', () => {
   it('reads a first name whatever its accents', () => {
     expect(accentBlindPrefix('Lucía')).toBe('l_c__%')
     expect(accentBlindPrefix('Iñigo')).toBe('___g_%')
-  })
-})
-
-describe('Family links for someone they bring', () => {
-  it('records the link from the other side', () => {
-    expect(inverseRelation('partner')).toBe('partner')
-    expect(inverseRelation('parent')).toBe('child')
-    expect(inverseRelation('child')).toBe('parent')
   })
 })
 

@@ -13,7 +13,8 @@ import { claimAutomaticConfirmation, sendAppointmentConfirmation } from '~/serve
 import { receptionistServiceClient } from '~/server/utils/receptionistAudit'
 import { clinicDateOf, startOfLocalDate, wallClockToUtc } from '~/utils/clinicClock'
 import { leadPhoneAsContactNumber, phoneMatches, toE164Loose, whatsappDigits } from '~/utils/phone'
-import { BROUGHT_RELATIONS, MINOR_AGE, accentBlindPrefix, inverseRelation, matchChild, matchReferrer, newPatientDetails } from '~/utils/receptionistTypes'
+import { inverseRelation, type FamilyRelation } from '~/utils/familyRelations'
+import { BROUGHT_RELATIONS, MINOR_AGE, accentBlindPrefix, matchChild, matchReferrer, newPatientDetails } from '~/utils/receptionistTypes'
 
 // The AI receptionist booking a visit, or moving one, on its own -- only when
 // it is answering on its own (utils/receptionistAutoReply.ts): a draft a
@@ -501,7 +502,7 @@ interface BroughtPerson {
   e164: string
   contact: { countryCode: string; number: string }
   /** What they are to the person writing, as patient_relations records it; null when not said, or a friend. */
-  relation: string | null
+  relation: FamilyRelation | null
 }
 
 /**
@@ -525,7 +526,7 @@ async function readBroughtPerson(ctx: BookingContext, nameIn: unknown, phoneIn: 
   if ((await findLikelyExistingPatients(ctx.service, ctx.accountId, e164, null)).length) {
     return { error: "That number is already on the clinic's records, so a colleague has to arrange this. Call hand_over_to_colleague with the person's name and the day and time accepted, and tell them your colleague will confirm it. Never say whether that person is a patient, and do not say it is booked." }
   }
-  const relation = typeof relationIn === 'string' && (BROUGHT_RELATIONS as readonly string[]).includes(relationIn) && relationIn !== 'friend' ? relationIn : null
+  const relation = typeof relationIn === 'string' && (BROUGHT_RELATIONS as readonly string[]).includes(relationIn) && relationIn !== 'friend' ? (relationIn as FamilyRelation) : null
   return { name, firstName, lastName: rest.join(' '), e164, contact, relation }
 }
 

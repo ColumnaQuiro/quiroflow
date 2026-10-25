@@ -2,6 +2,7 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
 import { dispatchPatientRule } from '~/server/utils/automationEngine'
+import { answeredAReminderAmong } from '~/server/utils/reminderAnswers'
 
 // Fires the appointment.hours_before campaign trigger -- the flexible,
 // multi-rule replacement for the single-slot Settings > Communication >
@@ -45,7 +46,7 @@ export default defineEventHandler(async (event) => {
 
     const { data: appointments } = await supabase
       .from('appointments')
-      .select('id, patient_id, confirmation_status')
+      .select('id, patient_id, confirmation_status, confirmation_answered_at, reminder_sent_at')
       .eq('account_id', rule.account_id)
       .eq('status', 'booked')
       // A deleted appointment keeps status 'booked' (only deleted_at is set).
@@ -64,15 +65,19 @@ export default defineEventHandler(async (event) => {
       .in('appointment_id', appointments.map((a) => a.id))
     const sentIds = new Set((alreadySent ?? []).map((s) => s.appointment_id))
 
-    // The patient already answered for this time -- "Confirmar", or asked to
-    // change it -- so a reminder has nothing left to ask. Moving a visit
-    // clears its answer (20261013153850_appointments_answer_is_for_its_time),
+    // The patient already answered an earlier reminder for this time --
+    // "Confirmar", or asked to change it -- so this one has nothing left to
+    // ask. Only an answer to a REMINDER counts: the message sent at booking
+    // has the same Confirmar button, and a tap on that one weeks earlier is
+    // no reason to stay silent (server/utils/reminderAnswers.ts). Moving a
+    // visit clears its answer (20261013153850_appointments_answer_is_for_its_time),
     // so a visit moved to a new time is reminded of that one as usual.
     const skipAnswered = filters.skip_if_answered !== false
+    const answeredAReminder = skipAnswered ? await answeredAReminderAmong(supabase, appointments) : new Set<string>()
 
     for (const appt of appointments) {
       if (sentIds.has(appt.id)) continue
-      if (skipAnswered && (appt.confirmation_status === 'confirmed' || appt.confirmation_status === 'reschedule_requested')) continue
+      if (answeredAReminder.has(appt.id)) continue
       dueByRule.push({ ruleId: rule.id, accountId: rule.account_id, appointmentId: appt.id, patientId: appt.patient_id })
     }
   }

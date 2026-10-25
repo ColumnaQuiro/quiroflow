@@ -2111,6 +2111,10 @@ async function createWhatsappMessage(opts: {
   leadId?: string
   /** Written by the AI receptionist. */
   sentByAi?: boolean
+  /** What an automatic message was for: 'recall', 'reminder', 'confirmation'. */
+  purpose?: string
+  /** The visit it is about. */
+  appointmentId?: string
 }) {
   const { accountId, patientId, phoneNumber, direction, bodyPreview } = opts
   const row = unwrap(
@@ -2132,6 +2136,8 @@ async function createWhatsappMessage(opts: {
         ...(opts.wamid ? { wamid: opts.wamid } : {}),
         ...(opts.leadId ? { lead_id: opts.leadId } : {}),
         ...(opts.sentByAi ? { sent_by_ai: true } : {}),
+        ...(opts.purpose ? { purpose: opts.purpose } : {}),
+        ...(opts.appointmentId ? { appointment_id: opts.appointmentId } : {}),
       })
       .select('id, channel')
       .single(),

@@ -1891,6 +1891,7 @@ export type Database = {
           checked_in_at: string | null
           clinic_id: string
           confirmation_sent_at: string | null
+          confirmation_answered_at: string | null
           confirmation_status: string | null
           created_at: string
           deleted_at: string | null
@@ -1921,6 +1922,7 @@ export type Database = {
           checked_in_at?: string | null
           clinic_id: string
           confirmation_sent_at?: string | null
+          confirmation_answered_at?: string | null
           confirmation_status?: string | null
           created_at?: string
           deleted_at?: string | null
@@ -1951,6 +1953,7 @@ export type Database = {
           checked_in_at?: string | null
           clinic_id?: string
           confirmation_sent_at?: string | null
+          confirmation_answered_at?: string | null
           confirmation_status?: string | null
           created_at?: string
           deleted_at?: string | null

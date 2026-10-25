@@ -26,20 +26,36 @@ const fold = (text: string) =>
     .replace(/[^a-z0-9]+/g, ' ')
     .trim()
 
-const DECLINE = new Set(['no gracias', 'no thanks', 'no thank you', 'baja', 'stop'])
+// BAJA and STOP mean "stop writing to me" whatever they answer. "No,
+// gracias" means it only as the answer to a recall -- its button. Said to
+// anything else it answers that: a patient asked by the receptionist whether
+// they would rather move a visit than cancel it said "No, gracias" and was
+// marked do-not-contact, so the confirmation of the cancellation could not be
+// sent and they dropped out of the recalls they had said they would come
+// back through (23 Oct 2026).
+const OPT_OUT = new Set(['baja', 'stop'])
+const DECLINE_TO_RECALL = new Set(['no gracias', 'no thanks', 'no thank you'])
 const SNOOZE = new Set(['mas adelante', 'later on', 'later'])
 
 /**
  * A decline, a snooze, or nothing. Accents, case, punctuation and the
  * trailing emoji a button title sometimes carries are ignored; anything
- * longer than the phrase itself is not a match.
+ * longer than the phrase itself is not a match. `answersRecall` is whether
+ * the message replies to a recall (the webhook reads it from the message it
+ * answers); "No, gracias" is a decline only then.
  */
-export function recallReplyIntent(text: string | null | undefined): RecallReplyIntent | null {
+export function recallReplyIntent(text: string | null | undefined, answersRecall: boolean): RecallReplyIntent | null {
   const key = fold(text ?? '')
   if (!key) return null
-  if (DECLINE.has(key)) return 'decline'
+  if (OPT_OUT.has(key)) return 'decline'
+  if (DECLINE_TO_RECALL.has(key)) return answersRecall ? 'decline' : null
   if (SNOOZE.has(key)) return 'snooze'
   return null
+}
+
+/** Whether what `text` means depends on it replying to a recall. */
+export function declinesOnlyARecall(text: string | null | undefined): boolean {
+  return DECLINE_TO_RECALL.has(fold(text ?? ''))
 }
 
 /** The calendar day `days` from `today` (a YYYY-MM-DD in the clinic's zone). */

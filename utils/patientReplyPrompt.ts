@@ -4,7 +4,7 @@ import { CONFIDENTIALITY_SECTION, promptSafeName } from './receptionistGuard'
 import { NO_REPLY } from './receptionistAutoReply'
 import { CONFIRM_BEFORE_BOOKING, familySection, minorsSection, offeredTypesSection, rescheduleSection, type BookedVisit, type PromptChild, type PromptRelative, type PromptType } from './receptionistTypes'
 import { receptionistBookingSection, receptionistClockSection, type ReceptionistAvailability } from './receptionistSlots'
-import { CARD_ANSWERS_LINE, historyMarkersSection, INFORMAL_ADDRESS_LINE, NO_INVENTION_LINE, NOT_CHIROPRACTIC_SYMPTOM_LINE, PART_OF_DAY_ANSWER_LINE, replyLanguageLine, SENT_FILES_LINE, WAITLIST_SECTION } from './receptionistHistory'
+import { CARD_ANSWERS_LINE, historyMarkersSection, INFORMAL_ADDRESS_LINE, LATER_ANSWER_LINE, NO_INVENTION_LINE, NOT_CHIROPRACTIC_SYMPTOM_LINE, PART_OF_DAY_ANSWER_LINE, replyLanguageLine, SENT_FILES_LINE, STATED_LIMITS_LINE, WAITLIST_SECTION } from './receptionistHistory'
 import type { ReceptionistPrompt } from './receptionistPrompt'
 
 // What the receptionist knows about a patient when drafting a reply to them
@@ -171,6 +171,8 @@ export function buildPatientReplyPrompt(
     NO_INVENTION_LINE,
     PART_OF_DAY_ANSWER_LINE,
     SENT_FILES_LINE,
+    LATER_ANSWER_LINE,
+    STATED_LIMITS_LINE,
     CARD_ANSWERS_LINE,
     NOT_CHIROPRACTIC_SYMPTOM_LINE,
     // A patient's details are on their record; asking for them again reads as

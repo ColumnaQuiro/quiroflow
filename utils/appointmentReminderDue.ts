@@ -97,3 +97,18 @@ export function appointmentReminderDecision(appt: ReminderCandidate, hoursBefore
   if (bookedLate && appt.confirmation_sent_at && !appt.rescheduled) return 'skip'
   return 'send'
 }
+
+/**
+ * Whether a patient's answer to a visit (Confirmar, or asking to change it)
+ * was an answer to a reminder of it: given at or after one of the reminders
+ * already sent for it. A reminder automation passes over a visit only then
+ * (filters.skip_if_answered). The message sent when the visit is booked
+ * carries the same Confirmar button, and an answer to that one, before any
+ * reminder, must not silence them all: it is how 47 confirmed visits went
+ * unreminded between 19 and 22 Oct 2026.
+ */
+export function answeredAReminder(answeredAt: string | null | undefined, reminderSentAts: (string | null | undefined)[]): boolean {
+  if (!answeredAt) return false
+  const answered = Date.parse(answeredAt)
+  return reminderSentAts.some((sent) => Boolean(sent) && Date.parse(sent!) <= answered)
+}

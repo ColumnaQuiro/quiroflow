@@ -266,6 +266,9 @@ export function receptionistBookingSection(opts: {
     ...lists,
     [
       `Offer times ONLY from this list${opts.searchTool ? ' or from what find_free_times returns' : ''}, at exactly the listed times, and at most ${n} time${n === 1 ? '' : 's'} per reply. Never offer a day, time or type that is not listed, never shift a listed time, and never say a time is free unless it is listed.`,
+      // A first visit being moved was offered a time from the adjustments'
+      // list, which a first visit does not fit (23 Oct 2026).
+      `Each list is for the appointments in its heading: take times only from the list for the type you are booking or moving, since a time free for a short visit may not be free for a longer one.`,
       `Choose times that fit what the patient has said about when suits them; if they have not said, offer the earliest ones, on different days where possible.`,
       multiClinic ? `Times are per clinic: offer the clinic the patient wants, and ask which one if it is not clear.` : '',
       opts.searchTool

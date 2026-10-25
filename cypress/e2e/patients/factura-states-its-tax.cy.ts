@@ -54,11 +54,27 @@ describe('A factura states its tax', () => {
         cy.task('db:facturasFor', { patientId: patient.id }).then((rows: any) => {
           // The PDF is the document the patient is actually given, so the
           // assertion is on its bytes rather than on the row that fed it.
-          cy.request({ url: `/api/facturas/${rows[0].id}/pdf`, encoding: 'binary', failOnStatusCode: false }).then((res) => {
-            expect(res.status, 'the factura renders').to.eq(200)
-            expect(res.headers['content-type']).to.contain('pdf')
-            expect(res.body.length, 'a real document, not an empty one').to.be.greaterThan(1000)
-          })
+          cy.request({ url: `/api/facturas/${rows[0].id}/pdf`, encoding: 'binary', failOnStatusCode: false })
+            .then((res) => {
+              expect(res.status, 'the factura renders').to.eq(200)
+              expect(res.headers['content-type']).to.contain('pdf')
+              expect(res.body.length, 'a real document, not an empty one').to.be.greaterThan(1000)
+              return cy.task<string[]>('pdf:text', { binary: res.body })
+            })
+            .then((texts) => {
+              const text = texts.join('\n')
+              // Amounts print as es-ES: Intl's non-breaking space, then the
+              // euro sign, which the extractor reads back as \u0080.
+              expect(text).to.contain('Base imponible: 220,00\u00a0\u0080')
+              expect(text).to.contain('IVA: exenta')
+              expect(text).to.contain('Total: 220,00\u00a0\u0080')
+              // One language on the whole document: the labels around the
+              // fiscal lines are Spanish too.
+              expect(text).to.match(/Fecha de expedición: \d{2}\/\d{2}\/\d{4}/)
+              expect(text).to.contain('Concepto').and.contain('Importe')
+              expect(text).not.to.contain('Description')
+              expect(text).not.to.contain('Issued')
+            })
         })
       })
     })

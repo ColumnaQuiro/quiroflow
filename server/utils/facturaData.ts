@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
 import { exemptionClause } from '~/utils/facturaTax'
 import { verifactuQrUrl } from '~/utils/verifactuQr'
+import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
 
 // The document the patient is actually given: one per payment, describing what
 // the money bought.
@@ -24,7 +25,7 @@ export async function loadFacturaDocumentData(
   const { data: factura } = await supabase
     .from('facturas')
     .select(
-      'number, kind, description, amount_cents, tax_base_cents, tax_rate_bp, tax_amount_cents, tax_exemption_code, issued_at, account_id, patient_id, recipient_patient_id, recipient_name, recipient_nif, recipient_address, rectifies_factura_id, issuer_name, issuer_legal_name, issuer_address, issuer_tax_id, issuer_footer_text, issuer_logo_storage_path, patients(first_name, last_name, email, address, city, postal_code, country, national_id)',
+      'number, kind, description, amount_cents, tax_base_cents, tax_rate_bp, tax_amount_cents, tax_exemption_code, issued_at, account_id, patient_id, recipient_patient_id, recipient_name, recipient_nif, recipient_address, rectifies_factura_id, issuer_clinic_id, issuer_name, issuer_legal_name, issuer_address, issuer_tax_id, issuer_footer_text, issuer_logo_storage_path, patients(first_name, last_name, email, address, city, postal_code, country, national_id)',
     )
     .eq('id', facturaId)
     .maybeSingle()
@@ -90,7 +91,7 @@ export async function loadFacturaDocumentData(
   // own. That is what lets a NIF collected next week appear on a document
   // issued today -- and what lets a delivered one be frozen so it stops
   // changing under the patient's feet.
-  const verifactuQr = await verifactuQrFor(supabase, facturaId)
+  const [verifactuQr, timeZone] = await Promise.all([verifactuQrFor(supabase, facturaId), issuerTimeZone(supabase, factura.issuer_clinic_id, factura.account_id)])
 
   const frozenName = factura.recipient_name
   const [frozenFirst, ...frozenRest] = (frozenName ?? '').split(' ')
@@ -100,6 +101,7 @@ export async function loadFacturaDocumentData(
     patientId: factura.patient_id,
     invoiceNumber: factura.number,
     createdAt: factura.issued_at,
+    timeZone,
     totalCents: factura.amount_cents,
     // A factura documents money that has already changed hands.
     paidCents: factura.amount_cents,
@@ -165,6 +167,17 @@ async function verifactuQrFor(supabase: SupabaseClient<Database>, facturaId: str
   const { default: QRCode } = await import('qrcode')
   const png = await QRCode.toBuffer(url, { errorCorrectionLevel: 'M', margin: 0, width: 600, type: 'png' })
   return { url, png }
+}
+
+// The zone the factura's date is printed in: the issuing clinic's, else the
+// account's first clinic's -- the same choice record_factura_alta makes for
+// the registro's FechaExpedicionFactura (20260928151204), so the document and
+// its registro never name different days for one issued just after midnight.
+async function issuerTimeZone(supabase: SupabaseClient<Database>, issuerClinicId: string | null, accountId: string): Promise<string> {
+  const { data } = issuerClinicId
+    ? await supabase.from('clinics').select('timezone').eq('id', issuerClinicId).maybeSingle()
+    : await supabase.from('clinics').select('timezone').eq('account_id', accountId).order('created_at').limit(1).maybeSingle()
+  return data?.timezone || DEFAULT_CLINIC_TIMEZONE
 }
 
 // The pre-snapshot behaviour: the account's first clinic, read now.

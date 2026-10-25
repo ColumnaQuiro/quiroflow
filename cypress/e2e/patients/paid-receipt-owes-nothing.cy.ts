@@ -31,8 +31,9 @@ describe('A receipt already paid', () => {
           cy.contains('No payments recorded.').should('be.visible')
           cy.contains('label', 'Amount (€)').should('not.exist')
 
-          // The extractor turns the € into an invisible character.
-          receiptText(inv.id).should('match', /Balance due: \D{0,2}0\.00/)
+          // Amounts print as es-ES: Intl's non-breaking space, then the euro
+          // sign, which the extractor reads back as \u0080 (WinAnsi as latin1).
+          receiptText(inv.id).should('match', /Pendiente: 0,00\u00a0\u0080/)
         })
       })
     })
@@ -43,7 +44,7 @@ describe('A receipt already paid', () => {
       cy.task<any>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Vic', lastName: 'Void' }).then((patient) => {
         cy.task<any>('db:createInvoice', { accountId: account.accountId, patientId: patient.id, totalCents: 4400, status: 'void' }).then((inv) => {
           cy.login(account.email, account.password)
-          receiptText(inv.id).should('match', /Balance due: \D{0,2}0\.00/)
+          receiptText(inv.id).should('match', /Pendiente: 0,00\u00a0\u0080/)
         })
       })
     })
@@ -57,7 +58,7 @@ describe('A receipt already paid', () => {
           cy.visit(`/billing/${inv.id}`)
           cy.contains('span', 'Total due').parent().should('contain.text', '44,00')
           cy.contains('label', 'Amount (€)').should('be.visible')
-          receiptText(inv.id).should('match', /Balance due: \D{0,2}44\.00/)
+          receiptText(inv.id).should('match', /Pendiente: 44,00\u00a0\u0080/)
         })
       })
     })

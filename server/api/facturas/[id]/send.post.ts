@@ -1,3 +1,5 @@
+import { formatEur } from '~/utils/billing'
+
 export default defineEventHandler(async (event) => {
   const facturaId = getRouterParam(event, 'id')
   const { supabase } = await requirePermission(event, 'billing_access')
@@ -22,7 +24,7 @@ export default defineEventHandler(async (event) => {
       <p>Hola ${data.patient.firstName},</p>
       <p>Adjuntamos tu factura por el pago recibido.</p>
       <p style="margin-top:16px">${line?.description ?? ''}<br />
-      <strong>€${(data.totalCents / 100).toFixed(2)}</strong></p>
+      <strong>${formatEur(data.totalCents)}</strong></p>
     </div>
   `
 

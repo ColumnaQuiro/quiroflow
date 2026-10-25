@@ -143,6 +143,7 @@ describe('Receptionist booking prompt', () => {
     expect(text).toContain('## Primera visita (60 min)\n- Tuesday 2026-10-06: 09:00, 10:00')
     expect(text).toContain('## Ajuste (30 min)\nNo free times in the next 14 days.')
     expect(text).toContain('Offer times ONLY from this list')
+    expect(text).toContain('take times only from the list for the type you are booking or moving')
     expect(text).toContain('at most 2 times per reply')
     expect(text).not.toContain('which one if it is not clear')
     expect(receptionistBookingSection({ availability, slotsPerReply: 1, bookingWindowDays: 14 })).toContain('at most 1 time per reply')

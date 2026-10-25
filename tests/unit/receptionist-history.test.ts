@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { AUTOMATED_MARK, COLLEAGUE_MARK, cleanReply, historyLine, offeredTimeCount } from '../../utils/receptionistHistory'
+import { AUTOMATED_MARK, COLLEAGUE_MARK, cleanReply, historyLine, historyMarkersSection, INFORMAL_ADDRESS_LINE, LATER_ANSWER_LINE, offeredTimeCount, SENT_FILES_LINE, STATED_LIMITS_LINE } from '../../utils/receptionistHistory'
 import { rescheduleSection } from '../../utils/receptionistTypes'
 
 // The reminder in the history read as one of the receptionist's own replies,
@@ -71,5 +71,39 @@ describe('Day four', () => {
     expect(line.startsWith(AUTOMATED_MARK)).toBe(true)
     expect(line).toContain('appointment_reminder')
     expect(historyLine({ direction: 'outbound', body: null, automated: false })).toBe('')
+  })
+})
+
+// 23-24 Oct: "Más adelante" on a recall answered with free times or "no hay
+// ningún mensaje previo mío", a ten-day-old document answered with "te
+// añado", usted given back to a lead who wrote in usted, a visit moved to a
+// day the patient had said she could not come, and a patient unsure of their
+// visit's date handed over with the diary already answering it.
+describe('Days twelve and thirteen', () => {
+  it('answers "Más adelante" without offering times', () => {
+    expect(LATER_ANSWER_LINE).toContain('"Más adelante"')
+    expect(LATER_ANSWER_LINE).toContain('Do not offer times')
+  })
+
+  it('treats an answer to an automatic message as an answer to the clinic', () => {
+    expect(historyMarkersSection(false)).toContain('never say there is no earlier message')
+  })
+
+  it('speaks only of documents sent since the last reply, and never adds them itself', () => {
+    expect(SENT_FILES_LINE).toContain("after the clinic's last reply")
+    expect(SENT_FILES_LINE).toContain('mi compañera lo añadirá a tu ficha')
+  })
+
+  it('keeps tú when they write in usted', () => {
+    expect(INFORMAL_ADDRESS_LINE).toContain('even when they write to you as usted')
+  })
+
+  it('checks what they said earlier before booking a time', () => {
+    expect(STATED_LIMITS_LINE).toContain('ask whether it really suits them')
+  })
+
+  it('tells them when a visit is before anything else', () => {
+    const section = rescheduleSection([{ startsAt: '2026-10-22T17:45:00Z', typeName: 'Ajuste' }] as never, 'Europe/Madrid', { listVisits: true, canBook: true })
+    expect(section).toContain('If they are unsure when one of these is')
   })
 })

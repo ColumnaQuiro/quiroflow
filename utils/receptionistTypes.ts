@@ -199,9 +199,9 @@ export function typesForReferral<T extends PromptType>(offered: T[]): T[] {
  * What may be booked for a new adult the person writing brings -- their
  * partner, a relative, a friend -- who is not on file: the referral first
  * visit, since the person writing referred them, and the plain first visit
- * for new patients when the clinic has none. Only someone who has been to
- * the clinic refers anybody (`referred`): one whose own first visit was never
- * had brings someone new like any other.
+ * for new patients when the clinic has none. The referral visit only when
+ * the writer has been to the clinic (`referred`): one whose own first visit
+ * was never had still has the referral recorded, at the regular price.
  */
 export function typesForSomeoneTheyBring<T extends PromptType>(offered: T[], referred: boolean): T[] {
   const referral = referred ? typesForReferral(offered) : []
@@ -221,7 +221,7 @@ export const BROUGHT_RELATIONS = [...FAMILY_RELATIONS, 'friend'] as const
 export function someoneTheyBringSection(opts: { types: PromptType[]; referred: boolean; canBook: boolean; canGive: boolean; sendsItself: boolean }): string {
   const list = opts.types.length ? quotedTypes(opts.types) : 'none -- your colleague arranges it'
   return [
-    `# Someone new they bring\nThey may want a first visit for someone who has not been to the clinic -- their partner, a relative, a friend -- instead of or as well as for themselves. That person is then a new patient${opts.referred ? ', referred by the person writing' : ''}: the visit is in that person's own name, and they get the confirmation on their own phone.${opts.referred ? '' : ' The person writing has not been to the clinic themselves, so this is not a referral: never offer a referral visit or price for them.'}`,
+    `# Someone new they bring\nThey may want a first visit for someone who has not been to the clinic -- their partner, a relative, a friend -- instead of or as well as for themselves. That person is then a new patient, referred by the person writing: the visit is in that person's own name, and they get the confirmation on their own phone.${opts.referred ? '' : ' The person writing has not been to the clinic themselves, so the referral visit and its price are not for that person: offer only what is listed here.'}`,
     `- Ask that person's first name and surname(s) and their mobile number, together, once. Offer them: ${list}.`,
     opts.canBook
       ? `- To book it, call book_appointment with other_person_name, other_person_phone and, if they said it, other_person_relation (what that person is to them). If it says that person may already be on file, do as it says.`

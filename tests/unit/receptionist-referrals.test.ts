@@ -49,11 +49,11 @@ describe('Receptionist types for referrals', () => {
     expect(names(typesForSomeoneTheyBring([first, offer, adjustment], true))).toEqual(['Primera visita'])
   })
 
-  it('is no referral when the person writing has never been to the clinic', () => {
+  it('records the referral but not the referral visit when the person writing has never been', () => {
     expect(names(typesForSomeoneTheyBring(all, false))).toEqual(['Primera visita'])
     const text = someoneTheyBringSection({ types: [first], referred: false, canBook: true, canGive: true, sendsItself: true })
-    expect(text).not.toContain('referred by the person writing')
-    expect(text).toContain('this is not a referral')
+    expect(text).toContain('referred by the person writing')
+    expect(text).toContain('the referral visit and its price are not for that person')
   })
 })
 

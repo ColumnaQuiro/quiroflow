@@ -25,6 +25,15 @@
     @android.webkit.JavascriptInterface <methods>;
 }
 
+# The bridge reads each plugin's @CapacitorPlugin annotation (name and
+# permissions) by reflection. Keeping the class does not keep the annotation:
+# R8 drops annotation attributes nobody keeps, and a plugin that lost its
+# annotation crashes the app the first time the bridge asks for its
+# permissions (QUIROFLOW-APP-4: NullPointerException in
+# Bridge.getPermissionStates from FirebaseMessaging.requestPermissions, a
+# fatal on a release build only).
+-keepattributes *Annotation*
+
 # Readable crash stack traces in Play Console, with the mapping file
 # uploaded beside the AAB.
 -keepattributes SourceFile,LineNumberTable

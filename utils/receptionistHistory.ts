@@ -73,7 +73,9 @@ function mediaMark(type: string | null | undefined, filename: string | null | un
 export function historyMarkersSection(handOver: boolean): string {
   return [
   '# Marks in the conversation',
-  `- A message that starts with ${AUTOMATED_MARK} was sent by the clinic's automations (a reminder, a welcome message). You did not write it. Never copy its wording, layout, asterisks or emojis, and never send it again as your reply.`,
+  // Answering a recall's "Más adelante" button, a patient was told "No hay
+  // ningún mensaje previo mío al que responder" (24 Oct 2026).
+  `- A message that starts with ${AUTOMATED_MARK} was sent by the clinic's automations (a reminder, a welcome message, a follow-up). You did not write it, but the clinic did: when they answer it, they are answering the clinic, so never say there is no earlier message. Never copy its wording, layout, asterisks or emojis, and never send it again as your reply.`,
   `- A message that starts with ${COLLEAGUE_MARK} was written by a person at the clinic. Never contradict what they offered or agreed: if the patient accepts a time or an arrangement a colleague offered, ${handOver ? 'call hand_over_to_colleague and ' : ''}say your colleague will confirm it, instead of offering something else.`,
   '- Never say an automatic message is wrong or out of date. If they misread one, explain what it means using the clinic knowledge.',
   // A time offered three hours ago was offered again after it had passed,
@@ -136,9 +138,10 @@ export function tooManyTimesNote(count: number, max: number): string {
 /**
  * Tú, always. Two patients were told "su cita... ¡Le esperamos!" and the
  * rest "tu cita" -- the reminder template says "usted", and the model drifted
- * into it.
+ * into it. A lead who wrote "sus horarios" got "Si cambia de idea" back
+ * (24 Oct 2026): their usted is not a reason for ours.
  */
-export const INFORMAL_ADDRESS_LINE = 'In Spanish, always address them as tú: "tu cita", "te esperamos" -- never "usted", "su cita" or "le esperamos", even where an automatic message in the conversation does.'
+export const INFORMAL_ADDRESS_LINE = 'In Spanish, always address them as tú: "tu cita", "te esperamos" -- never "usted", "su cita" or "le esperamos", even where an automatic message in the conversation does, and even when they write to you as usted.'
 
 /** When none of the free times suit them (add_to_waitlist). */
 export const WAITLIST_SECTION = [
@@ -173,8 +176,26 @@ export const PART_OF_DAY_ANSWER_LINE = 'A reply that is only a part of the day o
 /**
  * Sent two documents mid-visit, it said "No puedo abrir documentos" and
  * "¡Nos vemos hoy a las 13:00!" at 13:10, with the patient already inside.
+ * And a document sent ten days earlier was answered as if it had just
+ * arrived, with "Te añado el documento a tu ficha" -- which the receptionist
+ * cannot do (23 Oct 2026).
  */
-export const SENT_FILES_LINE = 'When they send a document, photo or test result (a scan, a medical report), say your colleague will add it to their record so the chiropractor can review it at the visit. Never say you cannot open, read or see it, and never speak of a visit time that has already passed as still to come.'
+export const SENT_FILES_LINE = 'When they send a document, photo or test result (a scan, a medical report), say your colleague will add it to their record so the chiropractor can review it at the visit ("mi compañera lo añadirá a tu ficha"), never that you will add it yourself ("te añado"). Only speak of one they sent after the clinic\'s last reply: an older one has already been dealt with. Never say you cannot open, read or see it, and never speak of a visit time that has already passed as still to come.'
+
+/**
+ * "Más adelante" is the second button on a recall, and the recall already
+ * parks them for two months (utils/recallReply.ts). Eight people tapped it on
+ * 24 Oct 2026: three were asked which week suited them, one was offered
+ * Tuesday's free times, and one was told there was no earlier message.
+ */
+export const LATER_ANSWER_LINE = 'When their message is "Más adelante" -- the button on a follow-up message -- or otherwise says they will book later, answer once, briefly, that the clinic will write to them later on and that they can message whenever they want an appointment before then. Do not offer times and do not ask which days or weeks suit them. If they then say why (a trip, holidays), answer in one short sentence, still without offering times.'
+
+/**
+ * Told at 14:12 "el jueves 5 tengo dentista", a patient asked at 20:15 for
+ * that same Thursday and was moved to it without a word (24 Oct 2026); she
+ * noticed herself, twenty minutes later.
+ */
+export const STATED_LIMITS_LINE = 'Before you book or move a visit to a day and time, check the whole conversation for anything they said rules it out (work, another appointment, a trip). If the time they now ask for clashes with it, point that out and ask whether it really suits them before booking.'
 
 /**
  * Asked "¿te paso el seguro que tengo?", it answered "dime qué seguro tienes",

@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
 import { CONFIRM_BEFORE_BOOKING, audienceSection, minorsSection, newPatientDetailsSection, offeredAppointmentTypes, offeredTypesSection, rescheduleSection, type BookedVisit, type PromptChild, type PromptType, type ReceptionistAudience } from '~/utils/receptionistTypes'
-import { CARD_ANSWERS_LINE, historyMarkersSection, INFORMAL_ADDRESS_LINE, NO_INVENTION_LINE, NOT_CHIROPRACTIC_SYMPTOM_LINE, PART_OF_DAY_ANSWER_LINE, replyLanguageLine, SENT_FILES_LINE, WAITLIST_SECTION } from '~/utils/receptionistHistory'
+import { CARD_ANSWERS_LINE, historyMarkersSection, INFORMAL_ADDRESS_LINE, LATER_ANSWER_LINE, NO_INVENTION_LINE, NOT_CHIROPRACTIC_SYMPTOM_LINE, PART_OF_DAY_ANSWER_LINE, replyLanguageLine, SENT_FILES_LINE, STATED_LIMITS_LINE, WAITLIST_SECTION } from '~/utils/receptionistHistory'
 import { leadOriginSection, type LeadOrigin } from '~/utils/receptionistLeadOrigin'
 import { NO_REPLY } from '~/utils/receptionistAutoReply'
 import { CONFIDENTIALITY_SECTION, promptSafeName } from '~/utils/receptionistGuard'
@@ -727,6 +727,8 @@ export function buildSystemPrompt(
     NO_INVENTION_LINE,
     PART_OF_DAY_ANSWER_LINE,
     SENT_FILES_LINE,
+    LATER_ANSWER_LINE,
+    STATED_LIMITS_LINE,
     CARD_ANSWERS_LINE,
     NOT_CHIROPRACTIC_SYMPTOM_LINE,
     // "¿Tengo artrosis, me podéis ayudar?" answered only with "lo valoramos

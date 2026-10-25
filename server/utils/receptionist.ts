@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
-import { CONFIRM_BEFORE_BOOKING, audienceSection, minorsSection, newPatientDetailsSection, offeredAppointmentTypes, offeredTypesSection, rescheduleSection, type BookedVisit, type PromptChild, type PromptType, type ReceptionistAudience } from '~/utils/receptionistTypes'
+import { CONFIRM_BEFORE_BOOKING, audienceSection, minorsSection, newPatientDetailsSection, offeredAppointmentTypes, offeredTypesSection, referralSection, rescheduleSection, someoneTheyBringSection, type BookedVisit, type PromptChild, type PromptType, type ReceptionistAudience } from '~/utils/receptionistTypes'
 import { CARD_ANSWERS_LINE, historyMarkersSection, INFORMAL_ADDRESS_LINE, LATER_ANSWER_LINE, NO_INVENTION_LINE, NOT_CHIROPRACTIC_SYMPTOM_LINE, PART_OF_DAY_ANSWER_LINE, replyLanguageLine, SENT_FILES_LINE, STATED_LIMITS_LINE, WAITLIST_SECTION } from '~/utils/receptionistHistory'
 import { leadOriginSection, type LeadOrigin } from '~/utils/receptionistLeadOrigin'
 import { NO_REPLY } from '~/utils/receptionistAutoReply'
@@ -149,7 +149,7 @@ export async function loadOfferedTypes(supabase: SupabaseClient<Database>, accou
 export function readAccountTypes(supabase: SupabaseClient<Database>, accountId: string) {
   return supabase
     .from('appointment_types')
-    .select('id, name, duration_minutes, archived_at, sort_order, stage, online_bookable_by, for_minors')
+    .select('id, name, duration_minutes, archived_at, sort_order, stage, online_bookable_by, for_minors, for_referrals')
     .eq('account_id', accountId)
 }
 
@@ -416,8 +416,8 @@ export function uniqueTypes(...lists: OfferedType[][]): OfferedType[] {
   return [...seen.values()]
 }
 
-function toOfferedType(type: { id: string; name: string; duration_minutes: number; stage?: string | null; online_bookable_by?: string | null; for_minors?: boolean | null }): OfferedType {
-  return { id: type.id, name: type.name, durationMinutes: type.duration_minutes, stage: type.stage ?? null, bookableBy: type.online_bookable_by ?? null, forMinors: !!type.for_minors }
+function toOfferedType(type: { id: string; name: string; duration_minutes: number; stage?: string | null; online_bookable_by?: string | null; for_minors?: boolean | null; for_referrals?: boolean | null }): OfferedType {
+  return { id: type.id, name: type.name, durationMinutes: type.duration_minutes, stage: type.stage ?? null, bookableBy: type.online_bookable_by ?? null, forMinors: !!type.for_minors, forReferrals: !!type.for_referrals }
 }
 
 /** What the prompt knows about the clinic's calendar at the moment of drafting. */
@@ -682,6 +682,10 @@ export function buildSystemPrompt(
     sendsItself?: boolean
     /** Booking for a child of the person writing (minorsSection); absent, nothing is said about it. */
     minors?: { forNewChild: PromptType[]; forReturningChild: PromptType[]; children: PromptChild[] }
+    /** Booking for someone new they bring (someoneTheyBringSection); canGive: give_visit_to is on. */
+    bringsSomeone?: { types: PromptType[]; canGive: boolean }
+    /** Their own first visit as someone a patient referred (referralSection), for someone new. */
+    referral?: { types: PromptType[] }
   },
 ): ReceptionistPrompt {
   const personName = promptSafeName(opts.draft?.personName)
@@ -772,8 +776,10 @@ export function buildSystemPrompt(
     // The types come from the database at the moment of drafting, not from
     // the model's reading of the knowledge cards: an owner who withholds a
     // type, or archives it, has it gone from the next reply.
-    offeredTypesSection(opts.offeredTypes, adOnly),
-    opts.minors ? minorsSection({ ...opts.minors, canBook: !!opts.canBook, sendsItself: !!opts.sendsItself }) : '',
+    offeredTypesSection(opts.offeredTypes, adOnly, { referralVisit: Boolean(opts.referral?.types.length) }),
+    opts.referral ? referralSection({ ...opts.referral, canBook: !!opts.canBook, sendsItself: !!opts.sendsItself }) : '',
+    opts.minors ? minorsSection({ ...opts.minors, canBook: !!opts.canBook, sendsItself: !!opts.sendsItself, bringsSomeone: Boolean(opts.bringsSomeone) }) : '',
+    opts.bringsSomeone ? someoneTheyBringSection({ types: opts.bringsSomeone.types, canGive: opts.bringsSomeone.canGive, canBook: !!opts.canBook, sendsItself: !!opts.sendsItself }) : '',
     rescheduleSection(opts.bookedVisits ?? [], opts.calendar.timeZone, { listVisits: true, canBook: opts.canBook }),
     // The real free times, computed by loadReceptionistCalendar, as a list to
     // offer from. Without one -- the calendar could not be read -- the model

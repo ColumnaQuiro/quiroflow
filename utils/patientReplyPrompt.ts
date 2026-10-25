@@ -2,7 +2,7 @@ import { formatEur } from './billing'
 import { DEFAULT_CLINIC_TIMEZONE } from './clinicClock'
 import { CONFIDENTIALITY_SECTION, promptSafeName } from './receptionistGuard'
 import { NO_REPLY } from './receptionistAutoReply'
-import { CONFIRM_BEFORE_BOOKING, familySection, minorsSection, offeredTypesSection, rescheduleSection, type BookedVisit, type PromptChild, type PromptRelative, type PromptType } from './receptionistTypes'
+import { CONFIRM_BEFORE_BOOKING, familySection, minorsSection, offeredTypesSection, rescheduleSection, someoneTheyBringSection, type BookedVisit, type PromptChild, type PromptRelative, type PromptType } from './receptionistTypes'
 import { receptionistBookingSection, receptionistClockSection, type ReceptionistAvailability } from './receptionistSlots'
 import { CARD_ANSWERS_LINE, historyMarkersSection, INFORMAL_ADDRESS_LINE, LATER_ANSWER_LINE, NO_INVENTION_LINE, NOT_CHIROPRACTIC_SYMPTOM_LINE, PART_OF_DAY_ANSWER_LINE, replyLanguageLine, SENT_FILES_LINE, STATED_LIMITS_LINE, WAITLIST_SECTION } from './receptionistHistory'
 import type { ReceptionistPrompt } from './receptionistPrompt'
@@ -141,6 +141,8 @@ export function buildPatientReplyPrompt(
     canWaitlist?: boolean
     /** Booking for an adult in their family (familySection); absent, nothing is said about it. */
     family?: { forNew: PromptType[]; forReturning: PromptType[]; members: PromptRelative[] }
+    /** Booking for someone new they bring (someoneTheyBringSection); canGive: give_visit_to is on. */
+    bringsSomeone?: { types: PromptType[]; canGive: boolean }
     /** The type offered to someone back after a long break (receptionist_config.reactivation_appointment_type_id), when it is on offeredTypes. */
     reactivationType?: string | null
   },
@@ -191,8 +193,9 @@ export function buildPatientReplyPrompt(
     receptionistClockSection(opts.calendar.now, opts.calendar.timeZone),
     patientFactsSection(opts.facts, opts.calendar.timeZone),
     offeredTypesSection(opts.offeredTypes),
-    opts.minors ? minorsSection({ ...opts.minors, canBook: !!opts.canBook, sendsItself: !!opts.sendsItself }) : '',
-    opts.family ? familySection({ ...opts.family, canBook: !!opts.canBook, sendsItself: !!opts.sendsItself }) : '',
+    opts.minors ? minorsSection({ ...opts.minors, canBook: !!opts.canBook, sendsItself: !!opts.sendsItself, bringsSomeone: Boolean(opts.bringsSomeone) }) : '',
+    opts.family ? familySection({ ...opts.family, canBook: !!opts.canBook, sendsItself: !!opts.sendsItself, bringsSomeone: Boolean(opts.bringsSomeone) }) : '',
+    opts.bringsSomeone ? someoneTheyBringSection({ types: opts.bringsSomeone.types, canGive: opts.bringsSomeone.canGive, canBook: !!opts.canBook, sendsItself: !!opts.sendsItself }) : '',
     // A returning patient asking for "otra cita" means another of what they
     // have been having -- their adjustment, their maintenance visit -- and
     // the clinic's own knowledge says when that changes.

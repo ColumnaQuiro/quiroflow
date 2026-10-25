@@ -1821,6 +1821,7 @@ export type Database = {
           default_price_cents: number
           duration_minutes: number
           for_minors: boolean
+          for_referrals: boolean
           id: string
           name: string
           online_bookable_by: string
@@ -1841,6 +1842,7 @@ export type Database = {
           default_price_cents?: number
           duration_minutes?: number
           for_minors?: boolean
+          for_referrals?: boolean
           id?: string
           name: string
           online_bookable_by?: string
@@ -1861,6 +1863,7 @@ export type Database = {
           default_price_cents?: number
           duration_minutes?: number
           for_minors?: boolean
+          for_referrals?: boolean
           id?: string
           name?: string
           online_bookable_by?: string

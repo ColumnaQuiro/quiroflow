@@ -57,6 +57,8 @@ export interface PromptType {
   bookableBy?: string | null
   /** appointment_types.for_minors: only for a child, booked through their tutor. */
   forMinors?: boolean
+  /** appointment_types.for_referrals: only for someone a patient referred, who names that patient. */
+  forReferrals?: boolean
 }
 
 /** Under this age a patient is a minor, booked through their tutor. */
@@ -89,8 +91,9 @@ const isFirstVisit = (type: PromptType) => type.stage === 'first_visit' || type.
  */
 export function typesForAudience<T extends PromptType>(all: T[], audience: ReceptionistAudience): { types: T[]; adOnly: T[] } {
   // A type for children is never offered to the adult writing: it is offered
-  // for their child, by typesForMinor.
-  const offered = all.filter((type) => !type.forMinors)
+  // for their child, by typesForMinor. Nor one for referrals, which takes the
+  // name of whoever referred them first (typesForReferral).
+  const offered = all.filter((type) => !type.forMinors && !type.forReferrals)
   if (audience === 'existing') {
     return { types: offered.filter((type) => !isFirstVisit(type) && type.bookableBy !== 'new_patients'), adOnly: [] }
   }
@@ -115,12 +118,82 @@ export function typesForAudience<T extends PromptType>(all: T[], audience: Recep
  *   first-visit stage); a clinic without one, its plain first visit;
  * - a child who has: anything but a first visit, as for any returning patient.
  */
-export function typesForMinor<T extends PromptType>(offered: T[], hasBeenBefore: boolean): T[] {
+export function typesForMinor<T extends PromptType>(all: T[], hasBeenBefore: boolean): T[] {
+  const offered = all.filter((type) => !type.forReferrals)
   if (hasBeenBefore) return offered.filter((type) => !isFirstVisit(type) && type.bookableBy !== 'new_patients')
   const forNew = offered.filter((type) => type.bookableBy !== 'existing_patients')
   const forChildren = forNew.filter((type) => type.forMinors && isFirstVisit(type))
   if (forChildren.length) return forChildren
   return forNew.filter((type) => !type.forMinors && type.stage === 'first_visit')
+}
+
+/**
+ * The first visit for someone a patient referred (for_referrals, at a
+ * first-visit stage): Columnaquiro's "Primera Visita Referido". Never offered
+ * on its own -- only once they have said which patient referred them, or to
+ * someone the person writing brings, who is referred by them.
+ */
+export function typesForReferral<T extends PromptType>(offered: T[]): T[] {
+  return offered.filter((type) => type.forReferrals && !type.forMinors && isFirstVisit(type) && type.bookableBy !== 'existing_patients')
+}
+
+/**
+ * What may be booked for a new adult the person writing brings -- their
+ * partner, a relative, a friend -- who is not on file: the referral first
+ * visit, since the person writing referred them, and the plain first visit
+ * for new patients when the clinic has none.
+ */
+export function typesForSomeoneTheyBring<T extends PromptType>(offered: T[]): T[] {
+  const referral = typesForReferral(offered)
+  return referral.length ? referral : typesForAudience(offered, 'new').types
+}
+
+/** What the person they bring is to them, as patient_relations records it; 'friend' is not family. */
+export const BROUGHT_RELATIONS = ['partner', 'parent', 'child', 'sibling', 'other', 'friend'] as const
+
+/** The same link seen from the other side: her partner is his partner, his mother has him as her child. */
+export function inverseRelation(relation: string): string {
+  return relation === 'parent' ? 'child' : relation === 'child' ? 'parent' : relation
+}
+
+/**
+ * The prompt section on booking for someone new the person writing brings.
+ * Somebody wrote that the first visit he had booked was really for his
+ * partner: the receptionist offered her a second time "justo antes de la
+ * tuya" and then handed him over, and the visit stayed in his name until a
+ * person moved it by hand (25 Oct 2026).
+ */
+export function someoneTheyBringSection(opts: { types: PromptType[]; canBook: boolean; canGive: boolean; sendsItself: boolean }): string {
+  const list = opts.types.length ? opts.types.map((type) => `"${type.name}"`).join(', ') : 'none -- your colleague arranges it'
+  return [
+    `# Someone new they bring\nThey may want a first visit for someone who has not been to the clinic -- their partner, a relative, a friend -- instead of or as well as for themselves. That person is then a new patient, referred by the person writing: the visit is in that person's own name, and they get the confirmation on their own phone.`,
+    `- Ask that person's first name and surname(s) and their mobile number, together, once. Offer them: ${list}.`,
+    opts.canBook
+      ? `- To book it, call book_appointment with other_person_name, other_person_phone and, if they said it, other_person_relation (what that person is to them). If it says that person may already be on file, do as it says.`
+      : `- When they pick a time, say your colleague will confirm it.`,
+    opts.canGive
+      ? `- If a first visit they already booked is really for that other person ("la cita es para mi pareja"), do NOT offer another time and do not book a second visit: ask that person's name, surname(s) and mobile, and call give_visit_to with the visit's current day and time. The visit keeps its day and time; only whose it is changes.`
+      : `- If a visit they already booked is really for someone else, ${opts.sendsItself ? 'call hand_over_to_colleague saying whose it is, with that person\'s name and mobile' : 'say your colleague will change it'}; do not offer another time.`,
+    `- Never say whether someone is a patient of the clinic, and never tell them that person has to write to the clinic themselves.`,
+  ].filter(Boolean).join('\n')
+}
+
+/**
+ * The prompt section on someone new who was referred by a patient, for a
+ * clinic with a referral first visit. Offered only once they say a patient
+ * recommended them, and booked only with that patient's name: the clinic
+ * links the two records (patients.referred_by_patient_id), as it does by hand.
+ */
+export function referralSection(opts: { types: PromptType[]; canBook: boolean; sendsItself: boolean }): string {
+  if (!opts.types.length) return ''
+  const list = opts.types.map((type) => `"${type.name}"`).join(', ')
+  return [
+    `# Referred by a patient\n${list} is the clinic's first visit for someone a patient of the clinic referred. Offer it only when they say themselves that a patient of the clinic recommended it -- a friend, a relative who comes here -- never otherwise, and never ask how they found the clinic to find out.`,
+    `- When they say so, ask the first name and surname of the patient who referred them, once.`,
+    opts.canBook
+      ? `- Book it with book_appointment, with referred_by set to that name exactly as they gave it. It checks the name against the clinic's patients: if it cannot match it, do as it says. Never tell them whether that person is a patient.`
+      : `- When they pick a time, say your colleague will confirm it.`,
+  ].join('\n')
 }
 
 /** A child of the person writing, already on file with them as tutor. */
@@ -140,7 +213,7 @@ export interface PromptChild {
  * before, no first visit existed for her daughter -- it asked what kind of
  * visit it would be and handed her to the desk.
  */
-export function minorsSection(opts: { forNewChild: PromptType[]; forReturningChild: PromptType[]; children: PromptChild[]; canBook: boolean; sendsItself: boolean }): string {
+export function minorsSection(opts: { forNewChild: PromptType[]; forReturningChild: PromptType[]; children: PromptChild[]; canBook: boolean; sendsItself: boolean; bringsSomeone?: boolean }): string {
   const list = (types: PromptType[]) => (types.length ? types.map((type) => `"${type.name}"`).join(', ') : 'none -- your colleague arranges it')
   const line = (c: PromptChild) => `- ${[c.firstName, c.lastName].filter(Boolean).join(' ')}${typeof c.age === 'number' ? `, ${c.age}` : ''}${c.hasBeenBefore ? ' (has been to the clinic)' : ' (has not been yet)'}`
   const children = opts.children.filter((c) => c.linked !== false).map(line)
@@ -149,7 +222,7 @@ export function minorsSection(opts: { forNewChild: PromptType[]; forReturningChi
     `# Appointments for their children\nThe person writing may want an appointment for their son or daughter rather than for themselves. The child is then the patient, and the person writing is the child's tutor (legal guardian), who gets the confirmation and the reminders. Everything above about prices, types and first visits is about the person writing; for their child, use this section.`,
     `- If it is not clear who the appointment is for, ask. If it is for a child and you do not have them yet, ask the child's first name and surname and their age.`,
     `- Under ${MINOR_AGE}, for a child who has not been to the clinic yet, offer only: ${list(opts.forNewChild)}. For a child who has been: ${list(opts.forReturningChild)}. A child who has been is seen by their own practitioner, not necessarily the one the person writing sees: look up their free times with find_free_times and for_name set to the child's name, and offer those. When they want several children seen, offer times next to each other, and book each child in turn.`,
-    `- ${MINOR_AGE} or over: an adult, not a child -- see "Appointments for an adult in their family" if it is there; otherwise ask that person's first name and surname, offer times, and ${opts.sendsItself ? 'call hand_over_to_colleague with the name and the time they accepted' : 'say your colleague will confirm it'}. Never tell them that person has to write to the clinic themselves.`,
+    `- ${MINOR_AGE} or over: an adult, not a child -- see "Appointments for an adult in their family" if it is there; otherwise ${opts.bringsSomeone ? 'see "Someone new they bring"' : `ask that person's first name and surname, offer times, and ${opts.sendsItself ? 'call hand_over_to_colleague with the name and the time they accepted' : 'say your colleague will confirm it'}`}. Never tell them that person has to write to the clinic themselves.`,
     opts.canBook ? `- To book it, call book_appointment with child_name and child_age as well: the visit is then in the child's name, with the person writing as their tutor. Moving or cancelling a child's visit is your colleague's: hand those over.` : '',
     children.length ? `Their children already on file with them as tutor:\n${children.join('\n')}` : '',
     probable.length
@@ -179,7 +252,7 @@ const RELATION_WORDS: Record<string, string> = { partner: 'partner', parent: 'pa
  * for (loadFamilyAdults); anyone else named is handed over, and nothing is
  * said about whether that person is a patient at all.
  */
-export function familySection(opts: { forNew: PromptType[]; forReturning: PromptType[]; members: PromptRelative[]; canBook: boolean; sendsItself: boolean }): string {
+export function familySection(opts: { forNew: PromptType[]; forReturning: PromptType[]; members: PromptRelative[]; canBook: boolean; sendsItself: boolean; bringsSomeone?: boolean }): string {
   const list = (types: PromptType[]) => (types.length ? types.map((type) => `"${type.name}"`).join(', ') : 'none -- your colleague arranges it')
   const members = opts.members.map((m) => `- ${[m.firstName, m.lastName].filter(Boolean).join(' ')}, their ${RELATION_WORDS[m.relation] ?? 'relative'}${m.hasBeenBefore ? ' (has been to the clinic)' : ' (has not been yet)'}`)
   const handOver = opts.sendsItself ? 'call hand_over_to_colleague with that person\'s full name and the day and time they accepted, and tell them your colleague will confirm it' : 'say your colleague will confirm it'
@@ -188,7 +261,9 @@ export function familySection(opts: { forNew: PromptType[]; forReturning: Prompt
     members.length
       ? `Their family on the clinic's records:\n${members.join('\n')}\n\nFor one of these, offer times as for any patient: someone who has been, the same type as they usually have (${list(opts.forReturning)}); someone who has not, ${list(opts.forNew)}. When they want both visits together, offer times next to each other.${opts.canBook ? ' To book it, call book_appointment with family_member_name as well. It checks the time with that person\'s own practitioner; if it is not free, offer one of the times it gives instead. Moving or cancelling their visits is your colleague\'s: hand those over.' : ''}`
       : '',
-    `For anyone else -- someone not listed above -- ask their first name and surname, offer times, and ${handOver}. Never tell them that person has to write to the clinic themselves.`,
+    opts.bringsSomeone
+      ? `For anyone else -- someone not listed above -- see "Someone new they bring".`
+      : `For anyone else -- someone not listed above -- ask their first name and surname, offer times, and ${handOver}. Never tell them that person has to write to the clinic themselves.`,
     `Never tell them anything about that person's visits, history, package or payments, and never say whether someone not listed above is a patient of the clinic.`,
   ].filter(Boolean).join('\n')
 }
@@ -210,6 +285,33 @@ export function matchChild<T extends { firstName: string; lastName: string | nul
   return hits[0] ?? null
 }
 
+/**
+ * The patient a referral names: their first name and every surname given
+ * have to match (accents and case aside), and the name has to have a surname
+ * at all -- "Ana" alone is half the clinic. Exactly one, or none: two
+ * patients with that name is 'ambiguous', and the booking is a person's.
+ */
+export function matchReferrer<T extends { firstName: string; lastName: string | null }>(people: T[], name: string): T | 'ambiguous' | 'need_surname' | null {
+  const [first, ...surnames] = fold(name).split(/\s+/).filter(Boolean)
+  if (!first || !surnames.length) return 'need_surname'
+  const hits = people.filter((p) => {
+    if (fold(p.firstName).split(/\s+/)[0] !== first) return false
+    const theirs = fold(p.lastName ?? '').split(/\s+/).filter(Boolean)
+    return surnames.every((s) => theirs.includes(s))
+  })
+  if (hits.length > 1) return 'ambiguous'
+  return hits[0] ?? null
+}
+
+/**
+ * A pattern for PostgREST's ilike that finds a first name whatever its
+ * accents: every vowel, and n, is "any one letter" (í, ñ). It only narrows
+ * the rows read; matchReferrer decides.
+ */
+export function accentBlindPrefix(word: string): string {
+  return `${fold(word).replace(/[^a-z]/g, '_').replace(/[aeioun]/g, '_')}%`
+}
+
 /** What the prompt says about who this is, for booking. */
 export function audienceSection(audience: ReceptionistAudience): string {
   if (audience === 'new_from_ad') {
@@ -222,7 +324,7 @@ export function audienceSection(audience: ReceptionistAudience): string {
 }
 
 /** The prompt section that says what may be offered. */
-export function offeredTypesSection(offeredTypes: PromptType[], adOnly: PromptType[] = []) {
+export function offeredTypesSection(offeredTypes: PromptType[], adOnly: PromptType[] = [], opts: { referralVisit?: boolean } = {}) {
   if (offeredTypes.length === 0) {
     return `# What you can offer\nNo type of appointment can be booked through you. Do not offer times for a new appointment. If the patient wants one, say your colleague will arrange it with them.`
   }
@@ -230,7 +332,7 @@ export function offeredTypesSection(offeredTypes: PromptType[], adOnly: PromptTy
   return [
     `# What you can offer\nOnly these types of appointment can be booked through you:\n${offeredTypes.map(line).join('\n')}`,
     adOnly.length
-      ? `The clinic also has a first-visit offer, which is NOT for everyone:\n${adOnly.map(line).join('\n')}\nDo not mention it, and do not ask how they found the clinic: give them the regular first-visit price. Only if they say themselves that they came from one of the clinic's ads or were recommended -- or whatever else the clinic knowledge says qualifies -- offer it, as an offer the clinic has right now ("ahora mismo tenemos una oferta de primera visita por Y €"), never as "because you came from our ad".`
+      ? `The clinic also has a first-visit offer, which is NOT for everyone:\n${adOnly.map(line).join('\n')}\nDo not mention it, and do not ask how they found the clinic: give them the regular first-visit price. Only if they say themselves that they came from one of the clinic's ads${opts.referralVisit ? '' : ' or were recommended'} -- or whatever else the clinic knowledge says qualifies -- offer it, as an offer the clinic has right now ("ahora mismo tenemos una oferta de primera visita por Y €"), never as "because you came from our ad".`
       : '',
     `Offer only these, by these names. If the patient wants something that is not on this list, do not offer a time for it: say your colleague will arrange it.`,
   ]

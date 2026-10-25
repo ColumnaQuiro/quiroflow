@@ -60,6 +60,27 @@ export interface PromptType {
   forMinors?: boolean
   /** appointment_types.for_referrals: only for someone a patient referred, who names that patient. */
   forReferrals?: boolean
+  /** appointment_types.default_price_cents; null or 0 when the type has none set. */
+  priceCents?: number | null
+  /** Some practitioner charges a different price for it (appointment_type_overrides). */
+  priceVaries?: boolean
+}
+
+/**
+ * A type's price as the prompt says it: "50 €", "52,50 €". Empty when the
+ * type has none -- 0 is how a type with no price set reads, and saying
+ * "free" for it would be a promise the clinic never made.
+ */
+export function typePrice(type: PromptType): string {
+  if (!type.priceCents || type.priceCents < 0) return ''
+  const euros = type.priceCents / 100
+  const amount = Number.isInteger(euros) ? String(euros) : euros.toFixed(2).replace('.', ',')
+  return `${amount} €${type.priceVaries ? ', may differ by practitioner' : ''}`
+}
+
+/** "Primera visita" (70 €), "Ajuste" -- types named in a prompt list, each with its price when it has one. */
+export function quotedTypes(types: PromptType[]): string {
+  return types.map((type) => `"${type.name}"${typePrice(type) ? ` (${typePrice(type)})` : ''}`).join(', ')
 }
 
 /** Under this age a patient is a minor, booked through their tutor. */
@@ -160,7 +181,7 @@ export const BROUGHT_RELATIONS = [...FAMILY_RELATIONS, 'friend'] as const
  * person moved it by hand (25 Oct 2026).
  */
 export function someoneTheyBringSection(opts: { types: PromptType[]; canBook: boolean; canGive: boolean; sendsItself: boolean }): string {
-  const list = opts.types.length ? opts.types.map((type) => `"${type.name}"`).join(', ') : 'none -- your colleague arranges it'
+  const list = opts.types.length ? quotedTypes(opts.types) : 'none -- your colleague arranges it'
   return [
     `# Someone new they bring\nThey may want a first visit for someone who has not been to the clinic -- their partner, a relative, a friend -- instead of or as well as for themselves. That person is then a new patient, referred by the person writing: the visit is in that person's own name, and they get the confirmation on their own phone.`,
     `- Ask that person's first name and surname(s) and their mobile number, together, once. Offer them: ${list}.`,
@@ -182,7 +203,7 @@ export function someoneTheyBringSection(opts: { types: PromptType[]; canBook: bo
  */
 export function referralSection(opts: { types: PromptType[]; canBook: boolean; sendsItself: boolean }): string {
   if (!opts.types.length) return ''
-  const list = opts.types.map((type) => `"${type.name}"`).join(', ')
+  const list = quotedTypes(opts.types)
   return [
     `# Referred by a patient\n${list} is the clinic's first visit for someone a patient of the clinic referred. Offer it only when they say themselves that a patient of the clinic recommended it -- a friend, a relative who comes here -- never otherwise, and never ask how they found the clinic to find out.`,
     `- When they say so, ask the first name and surname of the patient who referred them, once.`,
@@ -210,7 +231,7 @@ export interface PromptChild {
  * visit it would be and handed her to the desk.
  */
 export function minorsSection(opts: { forNewChild: PromptType[]; forReturningChild: PromptType[]; children: PromptChild[]; canBook: boolean; sendsItself: boolean; bringsSomeone?: boolean }): string {
-  const list = (types: PromptType[]) => (types.length ? types.map((type) => `"${type.name}"`).join(', ') : 'none -- your colleague arranges it')
+  const list = (types: PromptType[]) => (types.length ? quotedTypes(types) : 'none -- your colleague arranges it')
   const line = (c: PromptChild) => `- ${[c.firstName, c.lastName].filter(Boolean).join(' ')}${typeof c.age === 'number' ? `, ${c.age}` : ''}${c.hasBeenBefore ? ' (has been to the clinic)' : ' (has not been yet)'}`
   const children = opts.children.filter((c) => c.linked !== false).map(line)
   const probable = opts.children.filter((c) => c.linked === false).map(line)
@@ -249,7 +270,7 @@ const RELATION_WORDS: Record<string, string> = { partner: 'partner', parent: 'pa
  * said about whether that person is a patient at all.
  */
 export function familySection(opts: { forNew: PromptType[]; forReturning: PromptType[]; members: PromptRelative[]; canBook: boolean; sendsItself: boolean; bringsSomeone?: boolean }): string {
-  const list = (types: PromptType[]) => (types.length ? types.map((type) => `"${type.name}"`).join(', ') : 'none -- your colleague arranges it')
+  const list = (types: PromptType[]) => (types.length ? quotedTypes(types) : 'none -- your colleague arranges it')
   const members = opts.members.map((m) => `- ${[m.firstName, m.lastName].filter(Boolean).join(' ')}, their ${RELATION_WORDS[m.relation] ?? 'relative'}${m.hasBeenBefore ? ' (has been to the clinic)' : ' (has not been yet)'}`)
   const handOver = opts.sendsItself ? 'call hand_over_to_colleague with that person\'s full name and the day and time they accepted, and tell them your colleague will confirm it' : 'say your colleague will confirm it'
   return [
@@ -324,9 +345,12 @@ export function offeredTypesSection(offeredTypes: PromptType[], adOnly: PromptTy
   if (offeredTypes.length === 0) {
     return `# What you can offer\nNo type of appointment can be booked through you. Do not offer times for a new appointment. If the patient wants one, say your colleague will arrange it with them.`
   }
-  const line = (type: PromptType) => `- ${type.name} (${type.durationMinutes} min)`
+  const line = (type: PromptType) => `- ${type.name} (${type.durationMinutes} min${typePrice(type) ? `, ${typePrice(type)}` : ''})`
+  // The price on the type is the clinic's own, kept where it is changed --
+  // a knowledge card naming a price is a second copy that goes stale.
+  const priced = [...offeredTypes, ...adOnly].some((type) => typePrice(type))
   return [
-    `# What you can offer\nOnly these types of appointment can be booked through you:\n${offeredTypes.map(line).join('\n')}`,
+    `# What you can offer\nOnly these types of appointment can be booked through you:\n${offeredTypes.map(line).join('\n')}${priced ? '\nThe price next to a type is its price now. Give that one, even if the clinic knowledge names another for it.' : ''}`,
     adOnly.length
       ? `The clinic also has a first-visit offer, which is NOT for everyone:\n${adOnly.map(line).join('\n')}\nDo not mention it, and do not ask how they found the clinic: give them the regular first-visit price. Only if they say themselves that they came from one of the clinic's ads${opts.referralVisit ? '' : ' or were recommended'} -- or whatever else the clinic knowledge says qualifies -- offer it, as an offer the clinic has right now ("ahora mismo tenemos una oferta de primera visita por Y €"), never as "because you came from our ad".`
       : '',

@@ -142,14 +142,20 @@ export async function loadOfferedTypes(supabase: SupabaseClient<Database>, accou
     console.error('[receptionist] could not read appointment types:', error.message)
     return []
   }
-  return offeredAppointmentTypes(data ?? [], config.bookableAppointmentTypeIds).map(toOfferedType)
+  const offered = offeredAppointmentTypes(data ?? [], config.bookableAppointmentTypeIds).map(toOfferedType)
+  // A practitioner's own price for a type (Settings > Appointment types >
+  // per practitioner): the prompt says the price may differ rather than
+  // quote one that is wrong for them.
+  const { data: overrides } = await supabase.from('appointment_type_overrides').select('appointment_type_id, price_cents').eq('account_id', accountId).not('price_cents', 'is', null)
+  const varies = new Set(((overrides ?? []) as { appointment_type_id: string; price_cents: number }[]).filter((o) => offered.some((t) => t.id === o.appointment_type_id && t.priceCents !== o.price_cents)).map((o) => o.appointment_type_id))
+  return offered.map((type) => (varies.has(type.id) ? { ...type, priceVaries: true } : type))
 }
 
 /** Every type the account has, archived included, for callers that filter. */
 export function readAccountTypes(supabase: SupabaseClient<Database>, accountId: string) {
   return supabase
     .from('appointment_types')
-    .select('id, name, duration_minutes, archived_at, sort_order, stage, online_bookable_by, for_minors, for_referrals')
+    .select('id, name, duration_minutes, archived_at, sort_order, stage, online_bookable_by, for_minors, for_referrals, default_price_cents')
     .eq('account_id', accountId)
 }
 
@@ -337,7 +343,7 @@ export async function loadBookedVisits(
   const todayStart = await clinicTodayStart(supabase, accountId)
   const { data, error } = await supabase
     .from('appointments')
-    .select('id, starts_at, practitioner_id, appointment_types(id, name, duration_minutes, stage, online_bookable_by)')
+    .select('id, starts_at, practitioner_id, appointment_types(id, name, duration_minutes, stage, online_bookable_by, for_minors, for_referrals, default_price_cents)')
     .eq('account_id', accountId)
     .eq('patient_id', patientId)
     .eq('status', 'booked')
@@ -416,8 +422,8 @@ export function uniqueTypes(...lists: OfferedType[][]): OfferedType[] {
   return [...seen.values()]
 }
 
-function toOfferedType(type: { id: string; name: string; duration_minutes: number; stage?: string | null; online_bookable_by?: string | null; for_minors?: boolean | null; for_referrals?: boolean | null }): OfferedType {
-  return { id: type.id, name: type.name, durationMinutes: type.duration_minutes, stage: type.stage ?? null, bookableBy: type.online_bookable_by ?? null, forMinors: !!type.for_minors, forReferrals: !!type.for_referrals }
+function toOfferedType(type: { id: string; name: string; duration_minutes: number; stage?: string | null; online_bookable_by?: string | null; for_minors?: boolean | null; for_referrals?: boolean | null; default_price_cents?: number | null }): OfferedType {
+  return { id: type.id, name: type.name, durationMinutes: type.duration_minutes, stage: type.stage ?? null, bookableBy: type.online_bookable_by ?? null, forMinors: !!type.for_minors, forReferrals: !!type.for_referrals, priceCents: type.default_price_cents ?? null }
 }
 
 /** What the prompt knows about the clinic's calendar at the moment of drafting. */

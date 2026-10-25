@@ -5,12 +5,14 @@ import {
   matchReferrer,
   minorsSection,
   offeredTypesSection,
+  quotedTypes,
   referralSection,
   someoneTheyBringSection,
   typesForAudience,
   typesForMinor,
   typesForReferral,
   typesForSomeoneTheyBring,
+  typePrice,
   type PromptType,
 } from '../../utils/receptionistTypes'
 
@@ -108,5 +110,32 @@ describe('Prompt sections for someone they bring and referrals', () => {
     expect(minors).toContain('see "Someone new they bring"')
     const family = familySection({ forNew: [referred], forReturning: [adjustment], members: [], canBook: true, sendsItself: true, bringsSomeone: true })
     expect(family).toContain('see "Someone new they bring"')
+  })
+})
+
+// Prices come from the types themselves (appointment_types.default_price_cents):
+// a knowledge card naming a price is a second copy, and the referral first
+// visit had none until someone wrote one.
+describe('Prices in the prompt', () => {
+  const priced = { ...referred, priceCents: 5000 }
+
+  it("says a type's price in euros, and nothing for a type without one", () => {
+    expect(typePrice(priced)).toBe('50 €')
+    expect(typePrice({ ...first, priceCents: 5250 })).toBe('52,50 €')
+    expect(typePrice({ ...first, priceCents: 0 })).toBe('')
+    expect(typePrice(first)).toBe('')
+    expect(typePrice({ ...first, priceCents: 7000, priceVaries: true })).toBe('70 €, may differ by practitioner')
+  })
+
+  it('lists each type with its price, and says it wins over the knowledge', () => {
+    const text = offeredTypesSection([{ ...first, priceCents: 7000 }])
+    expect(text).toContain('- Primera visita (60 min, 70 €)')
+    expect(text).toContain('even if the clinic knowledge names another')
+    expect(offeredTypesSection([first])).not.toContain('clinic knowledge names another')
+  })
+
+  it('names the price in the other sections too', () => {
+    expect(quotedTypes([priced, adjustment])).toBe('"Primera Visita Referido" (50 €), "Ajuste"')
+    expect(referralSection({ types: [priced], canBook: true, sendsItself: true })).toContain('"Primera Visita Referido" (50 €)')
   })
 })

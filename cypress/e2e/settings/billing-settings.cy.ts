@@ -74,7 +74,7 @@ describe('Receipt options', () => {
           // As receipts have always printed: the ID, what was paid, no tax line.
           receiptText(inv.id).then((text) => {
             expect(text).to.contain('12345678Z')
-            expect(text).to.contain('Paid:')
+            expect(text).to.contain('Pagado:')
             expect(text).not.to.contain('IVA')
           })
 
@@ -89,7 +89,7 @@ describe('Receipt options', () => {
 
           receiptText(inv.id).then((text) => {
             expect(text).not.to.contain('12345678Z')
-            expect(text).not.to.contain('Paid:')
+            expect(text).not.to.contain('Pagado:')
             expect(text).to.contain('IVA')
           })
         })

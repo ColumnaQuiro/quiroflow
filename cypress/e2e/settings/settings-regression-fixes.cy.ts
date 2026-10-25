@@ -82,10 +82,12 @@ describe('Settings review fixes', () => {
           cy.wait('@saveAccount')
 
           cy.task<number>('db:liveBalance', { patientId: patient.id }).then((cents) => {
-            // The extractor turns the € into an invisible character, as on
-            // every amount in this PDF, so the sign is matched loosely.
-            const amount = (Math.abs(cents) / 100).toFixed(2).replace('.', '\\.')
-            const expected = new RegExp(`Account balance: \\D{0,2}${amount} ${cents < 0 ? 'due' : 'credit'}`)
+            // es-ES, as every amount in this PDF: decimal comma, then Intl's
+            // non-breaking space and the euro sign, which the extractor reads
+            // back as \u0080 (WinAnsi as latin1). Under 1.000 € here, so no
+            // thousands separator to account for.
+            const amount = (Math.abs(cents) / 100).toFixed(2).replace('.', ',')
+            const expected = new RegExp(`Saldo de la cuenta \\(${cents < 0 ? 'pendiente' : 'a favor'}\\): ${amount}\u00a0\u0080`)
             cy.request({ url: `/api/invoices/${inv.id}/pdf`, encoding: 'binary' })
               .then((res) => cy.task('pdf:text', { binary: res.body }))
               .then((texts) => expect((texts as string[]).join('\n')).to.match(expected))

@@ -44,11 +44,24 @@ describe('The document for a visit', () => {
       cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Pedro', lastName: 'Pdf' }).then((patient: any) => {
         cy.task('db:createInvoice', { accountId: account.accountId, patientId: patient.id, totalCents: 4400, status: 'unpaid' }).then((inv: any) => {
           cy.login(account.email, account.password)
-          cy.request({ url: `/api/invoices/${inv.id}/pdf`, encoding: 'binary' }).then((res) => {
-            expect(res.status).to.eq(200)
-            expect(res.headers['content-type']).to.contain('application/pdf')
-            expect(res.body.slice(0, 5)).to.eq('%PDF-')
-          })
+          cy.request({ url: `/api/invoices/${inv.id}/pdf`, encoding: 'binary' })
+            .then((res) => {
+              expect(res.status).to.eq(200)
+              expect(res.headers['content-type']).to.contain('application/pdf')
+              expect(res.body.slice(0, 5)).to.eq('%PDF-')
+              return cy.task<string[]>('pdf:text', { binary: res.body })
+            })
+            .then((texts) => {
+              const text = texts.join('\n')
+              // In Spanish, labels and amounts alike: Intl's non-breaking
+              // space, then the euro sign, which the extractor reads as \u0080.
+              expect(text).to.contain('Total: 44,00\u00a0\u0080')
+              expect(text).to.contain('Pagado: 0,00\u00a0\u0080')
+              expect(text).to.contain('Pendiente: 44,00\u00a0\u0080')
+              expect(text).to.match(/Fecha de expedición: \d{2}\/\d{2}\/\d{4}/)
+              expect(text).not.to.contain('Balance due')
+              expect(text).not.to.contain('Subtotal')
+            })
         })
       })
     })

@@ -2,6 +2,8 @@ import { VERIFACTU_QR_LABEL, VERIFACTU_QR_LEGEND } from '../../utils/verifactuQr
 import { exemptionClause, facturaTaxFor } from '../../utils/facturaTax'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { invoiceDueCents } from '../../utils/settleInvoice'
+import { formatEur } from '../../utils/billing'
+import { DEFAULT_CLINIC_TIMEZONE } from '../../utils/clinicClock'
 import type { Database } from '~/types/database.types'
 
 // PDF points per millimetre: the Orden sizes the VERI*FACTU QR in mm.
@@ -17,6 +19,11 @@ export interface InvoiceDocumentData {
   patientId: string | null
   invoiceNumber: string
   createdAt: string
+  // The issuing clinic's zone (clinics.timezone), so the printed date is the
+  // clinic's day rather than the server's UTC one -- and, on a factura, the
+  // same day its registro states as FechaExpedicionFactura, which
+  // record_factura_alta takes on the clinic's clock too.
+  timeZone: string
   totalCents: number
   paidCents: number
   balanceDueCents: number
@@ -42,7 +49,7 @@ export interface InvoiceDocumentData {
   //
   // documentTitle: "Factura F-2026-0001" instead of the visit document's own
   // "Recibo INV-0001".
-  // showTotalsBreakdown: a factura IS the payment, so "Paid" and "Balance due"
+  // showTotalsBreakdown: a factura IS the payment, so "Pagado" and "Pendiente"
   // are noise at best and, on a document that says what someone handed over,
   // actively confusing.
   documentTitle?: string
@@ -179,10 +186,10 @@ export async function loadInvoiceDocumentData(
   // show where to find it now. What must never move -- the document that
   // evidences the money for Hacienda -- is the factura, and that one is frozen.
   const { data: clinicRow } = appointment?.clinic_id
-    ? await supabase.from('clinics').select('name, legal_name, address, tax_id, invoice_footer_text, logo_storage_path').eq('id', appointment.clinic_id).maybeSingle()
+    ? await supabase.from('clinics').select('name, legal_name, address, tax_id, invoice_footer_text, logo_storage_path, timezone').eq('id', appointment.clinic_id).maybeSingle()
     : await supabase
         .from('clinics')
-        .select('name, legal_name, address, tax_id, invoice_footer_text, logo_storage_path')
+        .select('name, legal_name, address, tax_id, invoice_footer_text, logo_storage_path, timezone')
         .eq('account_id', invoice.account_id)
         .order('created_at')
         .limit(1)
@@ -209,6 +216,7 @@ export async function loadInvoiceDocumentData(
     patientId: invoice.patient_id,
     invoiceNumber: invoice.invoice_number,
     createdAt: invoice.created_at,
+    timeZone: clinicRow?.timezone || DEFAULT_CLINIC_TIMEZONE,
     totalCents: invoice.total_cents,
     paidCents,
     // What the patient is told they still owe: nothing on a paid or void
@@ -271,6 +279,20 @@ export function receiptOptions(account: ReceiptAccount | null, totalCents: numbe
   }
 }
 
+// The document is Spanish throughout, labels and amounts alike. There is no
+// clinic-wide language to follow: team_members.language_preference is one
+// person's screen, and the fiscal half of a factura (base imponible, the
+// exemption clause, the VERI*FACTU block) is Spanish whatever anyone's screen
+// says. It used to print English labels and "€45.00" around those Spanish
+// lines, so one factura read in two languages.
+//
+// Amounts go through formatEur like every screen does, so "45,00 €" with
+// Intl's non-breaking space before the sign -- which the standard fonts encode
+// in WinAnsi, as they do the euro sign itself.
+function pdfDate(iso: string, timeZone: string, month: 'long' | '2-digit'): string {
+  return new Date(iso).toLocaleDateString('es-ES', { timeZone, day: month === 'long' ? 'numeric' : '2-digit', month, year: 'numeric' })
+}
+
 export async function generateInvoicePdf(data: InvoiceDocumentData): Promise<Buffer> {
   const { default: PDFDocument } = await import('pdfkit')
   return new Promise((resolve, reject) => {
@@ -314,7 +336,7 @@ export async function generateInvoicePdf(data: InvoiceDocumentData): Promise<Buf
       doc.fontSize(10).font('Helvetica').fillColor('#555')
       if (data.clinic.legalName) doc.text(data.clinic.legalName, clinicX)
       for (const line of addressLines(data.clinic.address, null, null, null)) doc.text(line, clinicX)
-      if (data.clinic.taxId) doc.text(`Tax ID: ${data.clinic.taxId}`, clinicX)
+      if (data.clinic.taxId) doc.text(`NIF: ${data.clinic.taxId}`, clinicX)
       doc.moveDown(1.5)
     }
     if (logo && doc.y < headerTop + 70) doc.y = headerTop + 70
@@ -332,7 +354,7 @@ export async function generateInvoicePdf(data: InvoiceDocumentData): Promise<Buf
       .fontSize(10)
       .font('Helvetica')
       .fillColor('#555')
-      .text(`Issued ${new Date(data.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`, 50)
+      .text(`Fecha de expedición: ${pdfDate(data.createdAt, data.timeZone, '2-digit')}`, 50)
     // Said outright, so nobody -- patient, gestor or inspector -- mistakes a
     // recibo for the fiscal document. The factura is the one for the payment.
     if (!isFactura) {
@@ -343,7 +365,9 @@ export async function generateInvoicePdf(data: InvoiceDocumentData): Promise<Buf
     doc.fillColor('#000').fontSize(12).font('Helvetica-Bold').text(`${data.patient.firstName} ${data.patient.lastName ?? ''}`.trim(), 50)
     doc.fontSize(10).font('Helvetica').fillColor('#555')
     for (const line of addressLines(data.patient.address, data.patient.city, data.patient.postalCode, data.patient.country)) doc.text(line, 50)
-    if (data.patient.nationalId && (!receipt || receipt.showNationalId)) doc.text(`ID: ${data.patient.nationalId}`, 50)
+    // NIF on a factura, where it is the recipient's fiscal identifier; DNI/NIE
+    // on a receipt, as the patient record and Settings > Invoicing call it.
+    if (data.patient.nationalId && (!receipt || receipt.showNationalId)) doc.text(`${isFactura ? 'NIF' : 'DNI/NIE'}: ${data.patient.nationalId}`, 50)
     if (receipt?.showDob && data.patient.dateOfBirth) doc.text(`Fecha de nacimiento: ${new Date(data.patient.dateOfBirth).toLocaleDateString('es-ES', { timeZone: 'UTC' })}`, 50)
     if (receipt?.showPractitioner && receipt.practitionerName) doc.text(`Profesional: ${receipt.practitionerName}`, 50)
     doc.moveDown(1.5)
@@ -351,10 +375,10 @@ export async function generateInvoicePdf(data: InvoiceDocumentData): Promise<Buf
     const col = { desc: 50, qty: 340, price: 400, total: 470 }
     const tableTop = doc.y
     doc.fontSize(9).font('Helvetica-Bold').fillColor('#000')
-    doc.text('Description', col.desc, tableTop)
-    doc.text('Qty', col.qty, tableTop, { width: 40, align: 'right' })
-    doc.text('Price', col.price, tableTop, { width: 60, align: 'right' })
-    doc.text('Total', col.total, tableTop, { width: 75, align: 'right' })
+    doc.text('Concepto', col.desc, tableTop)
+    doc.text('Cant.', col.qty, tableTop, { width: 40, align: 'right' })
+    doc.text('Precio', col.price, tableTop, { width: 60, align: 'right' })
+    doc.text('Importe', col.total, tableTop, { width: 75, align: 'right' })
     doc
       .moveTo(50, tableTop + 14)
       .lineTo(545, tableTop + 14)
@@ -364,11 +388,10 @@ export async function generateInvoicePdf(data: InvoiceDocumentData): Promise<Buf
     let y = tableTop + 20
     doc.font('Helvetica').fillColor('#333')
     for (const item of data.lineItems) {
-      const lineTotal = (item.price_cents * item.quantity) / 100
       doc.text(item.description, col.desc, y, { width: 280 })
       doc.text(String(item.quantity), col.qty, y, { width: 40, align: 'right' })
-      doc.text(`€${(item.price_cents / 100).toFixed(2)}`, col.price, y, { width: 60, align: 'right' })
-      doc.text(`€${lineTotal.toFixed(2)}`, col.total, y, { width: 75, align: 'right' })
+      doc.text(formatEur(item.price_cents), col.price, y, { width: 60, align: 'right' })
+      doc.text(formatEur(item.price_cents * item.quantity), col.total, y, { width: 75, align: 'right' })
       y += 18
     }
 
@@ -385,11 +408,11 @@ export async function generateInvoicePdf(data: InvoiceDocumentData): Promise<Buf
       // print the total alone, which is not an invoice's job: the reader has
       // to be able to see what was taxed and at what rate, or why it was not.
       if (data.tax) {
-        doc.text(`Base imponible: €${(data.tax.baseCents / 100).toFixed(2)}`, col.price, totalsY, { width: 145, align: 'right' })
+        doc.text(`Base imponible: ${formatEur(data.tax.baseCents)}`, col.price, totalsY, { width: 145, align: 'right' })
         totalsY += 15
         const taxLine = data.tax.exemptionClause
           ? 'IVA: exenta'
-          : `IVA (${(data.tax.rateBp / 100).toFixed(0)}%): €${(data.tax.amountCents / 100).toFixed(2)}`
+          : `IVA (${(data.tax.rateBp / 100).toFixed(0)}%): ${formatEur(data.tax.amountCents)}`
         doc.text(taxLine, col.price, totalsY, { width: 145, align: 'right' })
         totalsY += 18
       }
@@ -397,7 +420,7 @@ export async function generateInvoicePdf(data: InvoiceDocumentData): Promise<Buf
         .font('Helvetica-Bold')
         .fontSize(11)
         .fillColor('#000')
-        .text(`Total: €${(data.totalCents / 100).toFixed(2)}`, col.price, totalsY, { width: 145, align: 'right' })
+        .text(`Total: ${formatEur(data.totalCents)}`, col.price, totalsY, { width: 145, align: 'right' })
 
       // The clause goes on its own line on the left, where a reader looks for
       // it, rather than squeezed into the totals column.
@@ -411,15 +434,15 @@ export async function generateInvoicePdf(data: InvoiceDocumentData): Promise<Buf
     } else {
       if (receipt?.showTaxes) {
         const tax = receipt.tax
-        doc.text(`Base: €${(tax.baseCents / 100).toFixed(2)}`, col.price, totalsY, { width: 145, align: 'right' })
+        doc.text(`Base: ${formatEur(tax.baseCents)}`, col.price, totalsY, { width: 145, align: 'right' })
         totalsY += 15
-        doc.text(tax.exemptionClause ? 'IVA: exenta' : `IVA (${(tax.rateBp / 100).toFixed(0)}%): €${(tax.amountCents / 100).toFixed(2)}`, col.price, totalsY, { width: 145, align: 'right' })
+        doc.text(tax.exemptionClause ? 'IVA: exenta' : `IVA (${(tax.rateBp / 100).toFixed(0)}%): ${formatEur(tax.amountCents)}`, col.price, totalsY, { width: 145, align: 'right' })
         totalsY += 15
       }
-      doc.text(`Subtotal: €${(data.totalCents / 100).toFixed(2)}`, col.price, totalsY, { width: 145, align: 'right' })
+      doc.text(`Total: ${formatEur(data.totalCents)}`, col.price, totalsY, { width: 145, align: 'right' })
       totalsY += 15
       if (!receipt || receipt.showPayments) {
-        doc.text(`Paid: €${(data.paidCents / 100).toFixed(2)}`, col.price, totalsY, { width: 145, align: 'right' })
+        doc.text(`Pagado: ${formatEur(data.paidCents)}`, col.price, totalsY, { width: 145, align: 'right' })
         totalsY += 18
       }
       if (!receipt || receipt.showBalance) {
@@ -427,16 +450,19 @@ export async function generateInvoicePdf(data: InvoiceDocumentData): Promise<Buf
           .font('Helvetica-Bold')
           .fontSize(11)
           .fillColor('#000')
-          .text(`Balance due: €${(data.balanceDueCents / 100).toFixed(2)}`, col.price, totalsY, { width: 145, align: 'right' })
+          .text(`Pendiente: ${formatEur(data.balanceDueCents)}`, col.price, totalsY, { width: 145, align: 'right' })
         totalsY += 18
       }
       if (receipt?.showAccountBalance && receipt.accountBalanceCents !== null) {
         const b = receipt.accountBalanceCents
+        // Which way it goes before the amount rather than after: macOS and
+        // iOS's PDF renderer gives the standard font's "€" too little advance,
+        // so anything printed after it overlaps it ("€pendiente").
         doc
           .font('Helvetica')
           .fontSize(10)
           .fillColor('#555')
-          .text(`Account balance: €${(Math.abs(b) / 100).toFixed(2)} ${b < 0 ? 'due' : 'credit'}`, col.price - 60, totalsY, { width: 205, align: 'right' })
+          .text(`Saldo de la cuenta (${b < 0 ? 'pendiente' : 'a favor'}): ${formatEur(Math.abs(b))}`, col.price - 100, totalsY, { width: 245, align: 'right' })
         totalsY += 15
       }
       if (receipt?.showTaxes && receipt.tax.exemptionClause) {
@@ -454,7 +480,7 @@ export async function generateInvoicePdf(data: InvoiceDocumentData): Promise<Buf
         .font('Helvetica')
         .fontSize(9)
         .fillColor('#777')
-        .text(`Your next visit: ${data.nextAppointmentDate ? new Date(data.nextAppointmentDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}`, 50, footerY)
+        .text(`Tu próxima visita: ${data.nextAppointmentDate ? pdfDate(data.nextAppointmentDate, data.timeZone, 'long') : '—'}`, 50, footerY)
     }
 
     doc.end()

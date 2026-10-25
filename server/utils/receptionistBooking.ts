@@ -162,7 +162,7 @@ export interface BookingContext {
    * Booking for someone new the person writing brings, not on file
    * (typesForSomeoneTheyBring), and give_visit_to. Absent: both refused.
    */
-  bringsSomeone?: { types: OfferedType[] }
+  bringsSomeone?: { types: OfferedType[]; referred: boolean }
   /**
    * Their own first visit as someone a patient referred (typesForReferral):
    * for someone new only. Booked only with referred_by naming that patient.
@@ -335,8 +335,9 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
       patient = { patientId: childId }
     }
     if (brought) {
-      // Referred by the person writing, who is a patient now if they were not.
-      const broughtId = await createBroughtPerson(writer, ctx, tutor.patientId, brought, chosen)
+      // Referred by the person writing when they have been to the clinic;
+      // linked to them as family either way.
+      const broughtId = await createBroughtPerson(writer, ctx, tutor.patientId, ctx.bringsSomeone!.referred, brought, chosen)
       if (!broughtId) return { content: "That person's record could not be made. Call hand_over_to_colleague with their full name and mobile and the day and time accepted; do not say it is booked.", isError: true }
       patient = { patientId: broughtId }
     }
@@ -542,12 +543,13 @@ async function isWritersOwnNumber(ctx: BookingContext, e164: string): Promise<bo
 }
 
 /**
- * Their record: a new patient referred by the person writing (Origen:
- * Paciente, Referido por -- what the desk sets by hand), at the clinic and
- * with the practitioner of the visit, with their own number for WhatsApp.
- * Linked as family both ways when they said what that person is to them.
+ * Their record: a new patient, at the clinic and with the practitioner of the
+ * visit, with their own number for WhatsApp -- referred by the person writing
+ * (Origen: Paciente, Referido por, what the desk sets by hand) when that
+ * person has been to the clinic, since nobody else refers anyone. Linked as
+ * family both ways when they said what that person is to them.
  */
-async function createBroughtPerson(writer: Supa, ctx: BookingContext, referrerId: string, person: BroughtPerson, at: { practitionerId: string | null; clinicId: string }): Promise<string | null> {
+async function createBroughtPerson(writer: Supa, ctx: BookingContext, writerId: string, referred: boolean, person: BroughtPerson, at: { practitionerId: string | null; clinicId: string }): Promise<string | null> {
   const id = randomUUID()
   // Not read back in the same statement: see createChild.
   const { error } = await writer.from('patients').insert({
@@ -557,8 +559,7 @@ async function createBroughtPerson(writer: Supa, ctx: BookingContext, referrerId
     first_name: person.firstName,
     last_name: person.lastName,
     default_practitioner_id: at.practitionerId,
-    referral_source: 'Patient',
-    referred_by_patient_id: referrerId,
+    ...(referred ? { referral_source: 'Patient', referred_by_patient_id: writerId } : {}),
   } as never)
   if (error) {
     console.error('[receptionist] could not make the record of the person they bring:', error.message)
@@ -569,8 +570,8 @@ async function createBroughtPerson(writer: Supa, ctx: BookingContext, referrerId
   if (person.relation) {
     const { error: relError } = await writer.from('patient_relations').upsert(
       [
-        { account_id: ctx.accountId, patient_id: referrerId, related_patient_id: id, relation: person.relation },
-        { account_id: ctx.accountId, patient_id: id, related_patient_id: referrerId, relation: inverseRelation(person.relation) },
+        { account_id: ctx.accountId, patient_id: writerId, related_patient_id: id, relation: person.relation },
+        { account_id: ctx.accountId, patient_id: id, related_patient_id: writerId, relation: inverseRelation(person.relation) },
       ] as never,
       { onConflict: 'patient_id,related_patient_id', ignoreDuplicates: true },
     )
@@ -581,8 +582,10 @@ async function createBroughtPerson(writer: Supa, ctx: BookingContext, referrerId
 
 /**
  * The one patient a referral names (matchReferrer), never the person writing
- * themselves. Read from the clinic's records by first name, whatever its
- * accents; the answer is a record or not, never a name for the model to say.
+ * themselves, and only someone who has been to the clinic: a person whose
+ * first visit was cancelled, or who never had one, refers nobody. Read from
+ * the clinic's records by first name, whatever its accents; the answer is a
+ * record or not, never a name for the model to say.
  */
 async function findReferrer(ctx: BookingContext, name: string): Promise<{ id: string } | 'ambiguous' | 'need_surname' | null> {
   const first = name.split(' ')[0] ?? ''
@@ -597,7 +600,12 @@ async function findReferrer(ctx: BookingContext, name: string): Promise<{ id: st
   const people = ((data ?? []) as { id: string; first_name: string; last_name: string | null }[])
     .filter((p) => p.id !== ctx.person.patientId)
     .map((p) => ({ id: p.id, firstName: p.first_name, lastName: p.last_name }))
-  const hit = matchReferrer(people, name)
+  // Everyone with that name first (few), then only those who have been.
+  const named = people.filter((p) => matchReferrer([p], name) === p)
+  if (!named.length) return matchReferrer(people, name) === 'need_surname' ? 'need_surname' : null
+  const { data: done } = await ctx.service.from('appointments').select('patient_id').in('patient_id', named.map((p) => p.id)).eq('status', 'completed').is('deleted_at', null)
+  const came = new Set(((done ?? []) as { patient_id: string }[]).map((a) => a.patient_id))
+  const hit = matchReferrer(named.filter((p) => came.has(p.id)), name)
   return hit && typeof hit === 'object' ? { id: hit.id } : hit
 }
 
@@ -649,7 +657,7 @@ export function giveVisitTool(ctx: BookingContext): (input: unknown) => Promise<
 
     const writer = receptionistServiceClient(ctx.event) as unknown as Supa
     used = true
-    const personId = await createBroughtPerson(writer, ctx, writerId, person, { practitionerId: visit.practitionerId, clinicId })
+    const personId = await createBroughtPerson(writer, ctx, writerId, ctx.bringsSomeone.referred, person, { practitionerId: visit.practitionerId, clinicId })
     if (!personId) {
       used = false
       return { content: "That person's record could not be made. Call hand_over_to_colleague with their name and mobile; do not say it is changed.", isError: true }

@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
-import { CONFIRM_BEFORE_BOOKING, audienceSection, minorsSection, newPatientDetailsSection, offeredAppointmentTypes, offeredTypesSection, referralSection, rescheduleSection, someoneTheyBringSection, type BookedVisit, type PromptChild, type PromptType, type ReceptionistAudience } from '~/utils/receptionistTypes'
+import { CONFIRM_BEFORE_BOOKING, audienceSection, minorsSection, newPatientDetailsSection, offeredAppointmentTypes, laterPricesSection, offeredTypesSection, referralSection, rescheduleSection, someoneTheyBringSection, type PromptPackage, type BookedVisit, type PromptChild, type PromptType, type ReceptionistAudience } from '~/utils/receptionistTypes'
 import { CARD_ANSWERS_LINE, historyMarkersSection, INFORMAL_ADDRESS_LINE, LATER_ANSWER_LINE, NO_INVENTION_LINE, NOT_CHIROPRACTIC_SYMPTOM_LINE, PART_OF_DAY_ANSWER_LINE, replyLanguageLine, SENT_FILES_LINE, STATED_LIMITS_LINE, WAITLIST_SECTION } from '~/utils/receptionistHistory'
 import { leadOriginSection, type LeadOrigin } from '~/utils/receptionistLeadOrigin'
 import { NO_REPLY } from '~/utils/receptionistAutoReply'
@@ -149,6 +149,16 @@ export async function loadOfferedTypes(supabase: SupabaseClient<Database>, accou
   const { data: overrides } = await supabase.from('appointment_type_overrides').select('appointment_type_id, price_cents').eq('account_id', accountId).not('price_cents', 'is', null)
   const varies = new Set(((overrides ?? []) as { appointment_type_id: string; price_cents: number }[]).filter((o) => offered.some((t) => t.id === o.appointment_type_id && t.priceCents !== o.price_cents)).map((o) => o.appointment_type_id))
   return offered.map((type) => (varies.has(type.id) ? { ...type, priceVaries: true } : type))
+}
+
+/** The clinic's bonos and their prices (Settings > Bonos), for laterPricesSection. */
+export async function loadPackagePrices(supabase: SupabaseClient<Database>, accountId: string): Promise<PromptPackage[]> {
+  const { data, error } = await supabase.from('packages').select('name, session_count, price_cents').eq('account_id', accountId).order('session_count')
+  if (error) {
+    console.error('[receptionist] could not read bonos:', error.message)
+    return []
+  }
+  return ((data ?? []) as { name: string; session_count: number | null; price_cents: number | null }[]).map((p) => ({ name: p.name, sessions: p.session_count ?? 0, priceCents: p.price_cents ?? 0 }))
 }
 
 /** Every type the account has, archived included, for callers that filter. */
@@ -689,9 +699,11 @@ export function buildSystemPrompt(
     /** Booking for a child of the person writing (minorsSection); absent, nothing is said about it. */
     minors?: { forNewChild: PromptType[]; forReturningChild: PromptType[]; children: PromptChild[] }
     /** Booking for someone new they bring (someoneTheyBringSection); canGive: give_visit_to is on. */
-    bringsSomeone?: { types: PromptType[]; canGive: boolean }
+    bringsSomeone?: { types: PromptType[]; referred: boolean; canGive: boolean }
     /** Their own first visit as someone a patient referred (referralSection), for someone new. */
     referral?: { types: PromptType[] }
+    /** What the visits after the first and the bonos cost (laterPricesSection). */
+    laterPrices?: { sessions: PromptType[]; packages: PromptPackage[] }
   },
 ): ReceptionistPrompt {
   const personName = promptSafeName(opts.draft?.personName)
@@ -777,15 +789,16 @@ export function buildSystemPrompt(
     // with the single-session and package prices, and "you need a first
     // visit" -- without its price, the one number they needed.
     opts.audience && opts.audience !== 'existing'
-      ? `# Prices for someone new\nThey have not been to the clinic yet, so whatever they call it -- la cita, la sesión, la visita, la consulta -- a question about the price is about their first visit: give that price only, as "What you can offer" says for them. Only if they then ask about the visits after it, give the session and package prices from the clinic knowledge, and add that your colleague, the chiropractor, will explain their care plan and how many sessions they need at the first visit. After giving a price, offer to send them availability.`
+      ? `# Prices for someone new\nThey have not been to the clinic yet, so whatever they call it -- la cita, la sesión, la visita, la consulta -- a question about the price is about their first visit: give that price only, as "What you can offer" says for them. Only if they then ask about the visits after it, give the session and bono prices from "Prices of the visits after the first, and bonos" (or the clinic knowledge, for anything not there), and add that your colleague, the chiropractor, will explain their care plan and how many sessions they need at the first visit. After giving a price, offer to send them availability.`
       : '',
     // The types come from the database at the moment of drafting, not from
     // the model's reading of the knowledge cards: an owner who withholds a
     // type, or archives it, has it gone from the next reply.
     offeredTypesSection(opts.offeredTypes, adOnly, { referralVisit: Boolean(opts.referral?.types.length) }),
+    opts.laterPrices ? laterPricesSection(opts.laterPrices) : '',
     opts.referral ? referralSection({ ...opts.referral, canBook: !!opts.canBook, sendsItself: !!opts.sendsItself }) : '',
     opts.minors ? minorsSection({ ...opts.minors, canBook: !!opts.canBook, sendsItself: !!opts.sendsItself, bringsSomeone: Boolean(opts.bringsSomeone) }) : '',
-    opts.bringsSomeone ? someoneTheyBringSection({ types: opts.bringsSomeone.types, canGive: opts.bringsSomeone.canGive, canBook: !!opts.canBook, sendsItself: !!opts.sendsItself }) : '',
+    opts.bringsSomeone ? someoneTheyBringSection({ types: opts.bringsSomeone.types, referred: opts.bringsSomeone.referred, canGive: opts.bringsSomeone.canGive, canBook: !!opts.canBook, sendsItself: !!opts.sendsItself }) : '',
     rescheduleSection(opts.bookedVisits ?? [], opts.calendar.timeZone, { listVisits: true, canBook: opts.canBook }),
     // The real free times, computed by loadReceptionistCalendar, as a list to
     // offer from. Without one -- the calendar could not be read -- the model

@@ -2,7 +2,7 @@ import { formatEur } from './billing'
 import { DEFAULT_CLINIC_TIMEZONE } from './clinicClock'
 import { CONFIDENTIALITY_SECTION, promptSafeName } from './receptionistGuard'
 import { NO_REPLY } from './receptionistAutoReply'
-import { CONFIRM_BEFORE_BOOKING, familySection, minorsSection, offeredTypesSection, rescheduleSection, someoneTheyBringSection, type BookedVisit, type PromptChild, type PromptRelative, type PromptType } from './receptionistTypes'
+import { CONFIRM_BEFORE_BOOKING, familySection, laterPricesSection, minorsSection, offeredTypesSection, rescheduleSection, someoneTheyBringSection, type PromptPackage, type BookedVisit, type PromptChild, type PromptRelative, type PromptType } from './receptionistTypes'
 import { receptionistBookingSection, receptionistClockSection, type ReceptionistAvailability } from './receptionistSlots'
 import { CARD_ANSWERS_LINE, historyMarkersSection, INFORMAL_ADDRESS_LINE, LATER_ANSWER_LINE, NO_INVENTION_LINE, NOT_CHIROPRACTIC_SYMPTOM_LINE, PART_OF_DAY_ANSWER_LINE, replyLanguageLine, SENT_FILES_LINE, STATED_LIMITS_LINE, WAITLIST_SECTION } from './receptionistHistory'
 import type { ReceptionistPrompt } from './receptionistPrompt'
@@ -86,7 +86,7 @@ export function returningPatientSection(f: PatientReplyFacts, opts: { reactivati
   if (!f.lastVisitAt && left <= 0) return ''
   const lines = [
     `# They have been to the clinic before
-This person is a returning patient, not someone new. Never offer them a first visit, never quote the first-visit price or the first-visit offer, and never treat a price question as one about a first visit: answer it with the session and package prices from the clinic knowledge.`,
+This person is a returning patient, not someone new. Never offer them a first visit, never quote the first-visit price or the first-visit offer, and never treat a price question as one about a first visit: answer it with the session and bono prices from "Prices of the visits after the first, and bonos" (or the clinic knowledge, for anything not there).`,
   ]
   if (left > 0) {
     lines.push(`They still have ${left} session${left === 1 ? '' : 's'} left on their package. A visit they book now uses one of them: offer their usual session (the type of their last visit, normally an adjustment), not a reactivation or report visit -- even if an earlier message in the conversation suggested one -- and do not quote a price for it. Offer times for it yourself rather than handing over; only hand over if they want to stop, pause or change the package.`)
@@ -142,7 +142,9 @@ export function buildPatientReplyPrompt(
     /** Booking for an adult in their family (familySection); absent, nothing is said about it. */
     family?: { forNew: PromptType[]; forReturning: PromptType[]; members: PromptRelative[] }
     /** Booking for someone new they bring (someoneTheyBringSection); canGive: give_visit_to is on. */
-    bringsSomeone?: { types: PromptType[]; canGive: boolean }
+    bringsSomeone?: { types: PromptType[]; referred: boolean; canGive: boolean }
+    /** What the visits after the first and the bonos cost (laterPricesSection). */
+    laterPrices?: { sessions: PromptType[]; packages: PromptPackage[] }
     /** The type offered to someone back after a long break (receptionist_config.reactivation_appointment_type_id), when it is on offeredTypes. */
     reactivationType?: string | null
   },
@@ -193,9 +195,10 @@ export function buildPatientReplyPrompt(
     receptionistClockSection(opts.calendar.now, opts.calendar.timeZone),
     patientFactsSection(opts.facts, opts.calendar.timeZone),
     offeredTypesSection(opts.offeredTypes),
+    opts.laterPrices ? laterPricesSection(opts.laterPrices) : '',
     opts.minors ? minorsSection({ ...opts.minors, canBook: !!opts.canBook, sendsItself: !!opts.sendsItself, bringsSomeone: Boolean(opts.bringsSomeone) }) : '',
     opts.family ? familySection({ ...opts.family, canBook: !!opts.canBook, sendsItself: !!opts.sendsItself, bringsSomeone: Boolean(opts.bringsSomeone) }) : '',
-    opts.bringsSomeone ? someoneTheyBringSection({ types: opts.bringsSomeone.types, canGive: opts.bringsSomeone.canGive, canBook: !!opts.canBook, sendsItself: !!opts.sendsItself }) : '',
+    opts.bringsSomeone ? someoneTheyBringSection({ types: opts.bringsSomeone.types, referred: opts.bringsSomeone.referred, canGive: opts.bringsSomeone.canGive, canBook: !!opts.canBook, sendsItself: !!opts.sendsItself }) : '',
     // A returning patient asking for "otra cita" means another of what they
     // have been having -- their adjustment, their maintenance visit -- and
     // the clinic's own knowledge says when that changes.

@@ -6,10 +6,10 @@ import { bookingTool, cancelTool, giveVisitTool, waitlistTool, type BookingConte
 import { recentImages, withImages } from '~/server/utils/receptionistImages'
 import { historyLine } from '~/utils/receptionistHistory'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage } from '~/utils/receptionistAutoReply'
-import { buildSystemPrompt, loadBookedVisits, loadOfferedTypes, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, uniqueTypes, type LeadOrigin } from '~/server/utils/receptionist'
+import { buildSystemPrompt, loadBookedVisits, loadOfferedTypes, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, uniqueTypes, type LeadOrigin } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptionistModel'
 import { cameFromAd } from '~/utils/receptionistLeadOrigin'
-import { leadNameIsTheirs, typesForAudience, typesForMinor, typesForReferral, typesForSomeoneTheyBring, type ReceptionistAudience } from '~/utils/receptionistTypes'
+import { leadNameIsTheirs, typesForAudience, typesAfterFirstVisit, typesForMinor, typesForReferral, typesForSomeoneTheyBring, type ReceptionistAudience } from '~/utils/receptionistTypes'
 import { internalNotes } from '~/utils/receptionistGuard'
 
 // Writing a receptionist reply for one lead.
@@ -194,7 +194,11 @@ export async function draftLeadReply(
   // Or for someone new they bring, referred by them (someoneTheyBringSection);
   // and someone new may have the referral visit themselves, once they name
   // the patient who referred them (referralSection).
-  const bringsSomeone = { types: typesForSomeoneTheyBring(offered) }
+  // Only someone who has been to the clinic refers the person they bring.
+  const bringsSomeone = { types: typesForSomeoneTheyBring(offered, audience === 'existing'), referred: audience === 'existing' }
+  // What comes after a first visit, for "¿y luego cuánto?" -- from the types
+  // and the clinic's bonos, not from a card kept in step by hand.
+  const laterPrices = { sessions: typesAfterFirstVisit(offered), packages: await loadPackagePrices(supabase, accountId) }
   const referralTypes = audience === 'existing' ? [] : typesForReferral(offered)
   const referral = referralTypes.length ? { types: referralTypes } : undefined
   // A lead who has booked their first visit and wants to move it is offered
@@ -258,7 +262,7 @@ export async function draftLeadReply(
   const { text: draft, refused, handedOver } = await runReceptionistModel(await createAnthropicClient(apiKey), {
     model: MODEL,
     maxTokens: MAX_TOKENS,
-    system: buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, audience, calendar, leadOrigin, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, draft: { personName: lead.full_name ?? null }, knownDetails: { name: leadNameIsTheirs(lead.channel) && Boolean(lead.full_name?.trim()), email: Boolean(lead.email?.trim()) }, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, bringsSomeone: { types: bringsSomeone.types, canGive: Boolean(give) }, referral }),
+    system: buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, audience, calendar, leadOrigin, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, draft: { personName: lead.full_name ?? null }, knownDetails: { name: leadNameIsTheirs(lead.channel) && Boolean(lead.full_name?.trim()), email: Boolean(lead.email?.trim()) }, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, referral, laterPrices }),
     messages: withImages(history, images),
     findFreeTimes,
     handOver: sends,

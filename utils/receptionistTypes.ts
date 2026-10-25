@@ -78,6 +78,42 @@ export function typePrice(type: PromptType): string {
   return `${amount} €${type.priceVaries ? ', may differ by practitioner' : ''}`
 }
 
+/** A bono as Settings > Bonos sells it (packages). */
+export interface PromptPackage {
+  name: string
+  sessions: number
+  priceCents: number
+}
+
+/** The visits after the first: what a session costs, for someone asking what comes after their first visit. */
+export function typesAfterFirstVisit<T extends PromptType>(offered: T[]): T[] {
+  return offered.filter((type) => !isFirstVisit(type) && !type.forMinors && !type.forReferrals && typePrice(type))
+}
+
+/**
+ * The prices of the visits after the first, and of the clinic's bonos --
+ * read from the types and from Settings > Bonos, where the clinic changes
+ * them, rather than from a knowledge card that has to be kept in step by
+ * hand (and that another clinic would have to write before its receptionist
+ * could quote anything). Which of these applies is the rest of the prompt's:
+ * someone new is quoted their first visit first, a patient with an open bono
+ * no price at all.
+ */
+export function laterPricesSection(opts: { sessions: PromptType[]; packages: PromptPackage[] }): string {
+  const euros = (cents: number) => typePrice({ name: '', durationMinutes: 0, priceCents: cents })
+  const sessions = opts.sessions.map((type) => `- ${type.name}: ${typePrice(type)}`)
+  const packages = opts.packages
+    .filter((p) => p.sessions > 0 && p.priceCents > 0)
+    .map((p) => `- ${p.name}: ${p.sessions} sessions for ${euros(p.priceCents)} (${euros(Math.round(p.priceCents / p.sessions))} a session)`)
+  if (!sessions.length && !packages.length) return ''
+  return [
+    `# Prices of the visits after the first, and bonos`,
+    sessions.length ? `Visits:\n${sessions.join('\n')}` : '',
+    packages.length ? `Bonos (packages of sessions, paid up front):\n${packages.join('\n')}` : '',
+    `Give these only when they ask, and only what applies to them as said above. They win over any price for these in the clinic knowledge.`,
+  ].filter(Boolean).join('\n')
+}
+
 /** "Primera visita" (70 €), "Ajuste" -- types named in a prompt list, each with its price when it has one. */
 export function quotedTypes(types: PromptType[]): string {
   return types.map((type) => `"${type.name}"${typePrice(type) ? ` (${typePrice(type)})` : ''}`).join(', ')
@@ -163,10 +199,12 @@ export function typesForReferral<T extends PromptType>(offered: T[]): T[] {
  * What may be booked for a new adult the person writing brings -- their
  * partner, a relative, a friend -- who is not on file: the referral first
  * visit, since the person writing referred them, and the plain first visit
- * for new patients when the clinic has none.
+ * for new patients when the clinic has none. Only someone who has been to
+ * the clinic refers anybody (`referred`): one whose own first visit was never
+ * had brings someone new like any other.
  */
-export function typesForSomeoneTheyBring<T extends PromptType>(offered: T[]): T[] {
-  const referral = typesForReferral(offered)
+export function typesForSomeoneTheyBring<T extends PromptType>(offered: T[], referred: boolean): T[] {
+  const referral = referred ? typesForReferral(offered) : []
   return referral.length ? referral : typesForAudience(offered, 'new').types
 }
 
@@ -180,10 +218,10 @@ export const BROUGHT_RELATIONS = [...FAMILY_RELATIONS, 'friend'] as const
  * tuya" and then handed him over, and the visit stayed in his name until a
  * person moved it by hand (25 Oct 2026).
  */
-export function someoneTheyBringSection(opts: { types: PromptType[]; canBook: boolean; canGive: boolean; sendsItself: boolean }): string {
+export function someoneTheyBringSection(opts: { types: PromptType[]; referred: boolean; canBook: boolean; canGive: boolean; sendsItself: boolean }): string {
   const list = opts.types.length ? quotedTypes(opts.types) : 'none -- your colleague arranges it'
   return [
-    `# Someone new they bring\nThey may want a first visit for someone who has not been to the clinic -- their partner, a relative, a friend -- instead of or as well as for themselves. That person is then a new patient, referred by the person writing: the visit is in that person's own name, and they get the confirmation on their own phone.`,
+    `# Someone new they bring\nThey may want a first visit for someone who has not been to the clinic -- their partner, a relative, a friend -- instead of or as well as for themselves. That person is then a new patient${opts.referred ? ', referred by the person writing' : ''}: the visit is in that person's own name, and they get the confirmation on their own phone.${opts.referred ? '' : ' The person writing has not been to the clinic themselves, so this is not a referral: never offer a referral visit or price for them.'}`,
     `- Ask that person's first name and surname(s) and their mobile number, together, once. Offer them: ${list}.`,
     opts.canBook
       ? `- To book it, call book_appointment with other_person_name, other_person_phone and, if they said it, other_person_relation (what that person is to them). If it says that person may already be on file, do as it says.`
@@ -205,7 +243,7 @@ export function referralSection(opts: { types: PromptType[]; canBook: boolean; s
   if (!opts.types.length) return ''
   const list = quotedTypes(opts.types)
   return [
-    `# Referred by a patient\n${list} is the clinic's first visit for someone a patient of the clinic referred. Offer it only when they say themselves that a patient of the clinic recommended it -- a friend, a relative who comes here -- never otherwise, and never ask how they found the clinic to find out.`,
+    `# Referred by a patient\n${list} is the clinic's first visit for someone a patient of the clinic referred: someone who has been to the clinic, not just booked. Offer it only when they say themselves that a patient of the clinic recommended it -- a friend, a relative who comes here -- never otherwise, and never ask how they found the clinic to find out. Someone recommended by a person who is not a patient here has the regular first visit.`,
     `- When they say so, ask the first name and surname of the patient who referred them, once.`,
     opts.canBook
       ? `- Book it with book_appointment, with referred_by set to that name exactly as they gave it. It checks the name against the clinic's patients: if it cannot match it, do as it says. Never tell them whether that person is a patient.`

@@ -6,9 +6,9 @@ import { bookingTool, cancelTool, giveVisitTool, waitlistTool, type BookingConte
 import { recentImages, withImages, type StoredImage } from '~/server/utils/receptionistImages'
 import { historyLine } from '~/utils/receptionistHistory'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personRepliedSince } from '~/utils/receptionistAutoReply'
-import { loadBookedVisits, loadFamilyAdults, loadOfferedTypes, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, toneWording, uniqueTypes, clinicTodayStart } from '~/server/utils/receptionist'
+import { loadBookedVisits, loadFamilyAdults, loadOfferedTypes, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, toneWording, uniqueTypes, clinicTodayStart } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel, type FreeTimesForWhom } from '~/server/utils/receptionistModel'
-import { matchChild, typesForAudience, typesForMinor, typesForSomeoneTheyBring } from '~/utils/receptionistTypes'
+import { matchChild, typesAfterFirstVisit, typesForAudience, typesForMinor, typesForSomeoneTheyBring } from '~/utils/receptionistTypes'
 import { internalNotes } from '~/utils/receptionistGuard'
 import { carePlanCadenceLabel } from '~/utils/carePlanCadence'
 import { buildPatientReplyPrompt, openBono, type PatientReplyFacts } from '~/utils/patientReplyPrompt'
@@ -173,9 +173,14 @@ export async function draftPatientReply(
   const minors = { forNewChild: typesForMinor(offered, false), forReturningChild: typesForMinor(offered, true), children: await loadTutorChildren(service, accountId, patientId) }
   // ...and an adult linked to them as family may be booked for too, as
   // anyone else would be: new, a first visit; returning, the rest.
-  // Someone new, linked or not, is referred by them: the referral visit
-  // when the clinic has one (typesForSomeoneTheyBring).
-  const bringsSomeone = { types: typesForSomeoneTheyBring(offered) }
+  // Someone new, linked or not, is referred by them -- the referral visit
+  // when the clinic has one (typesForSomeoneTheyBring) -- once they have
+  // been to the clinic themselves: a record with only a booked first visit
+  // refers nobody.
+  const referred = Boolean(facts.lastVisitAt)
+  const bringsSomeone = { types: typesForSomeoneTheyBring(offered, referred), referred }
+  // What the visits and the clinic's bonos cost, from the types and Settings > Bonos.
+  const laterPrices = { sessions: typesAfterFirstVisit(offered), packages: await loadPackagePrices(supabase, accountId) }
   const family = { forNew: bringsSomeone.types, forReturning: types, members: await loadFamilyAdults(service, accountId, patientId) }
   // Back after a long break with no bono: the clinic's own visit for that
   // (returningPatientSection), when it is one it offers.
@@ -252,7 +257,7 @@ export async function draftPatientReply(
   const { text: draft, refused, handedOver } = await runReceptionistModel(await createAnthropicClient(apiKey), {
     model: MODEL,
     maxTokens: MAX_TOKENS,
-    system: buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, family: { forNew: family.forNew, forReturning: family.forReturning, members: family.members }, bringsSomeone: { types: bringsSomeone.types, canGive: Boolean(give) }, reactivationType }),
+    system: buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, family: { forNew: family.forNew, forReturning: family.forReturning, members: family.members }, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, laterPrices, reactivationType }),
     messages: withImages(history, images),
     findFreeTimes,
     handOver: sends,

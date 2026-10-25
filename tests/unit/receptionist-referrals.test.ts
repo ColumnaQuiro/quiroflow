@@ -5,6 +5,7 @@ import {
   matchReferrer,
   minorsSection,
   offeredTypesSection,
+  laterPricesSection,
   quotedTypes,
   referralSection,
   someoneTheyBringSection,
@@ -13,6 +14,7 @@ import {
   typesForReferral,
   typesForSomeoneTheyBring,
   typePrice,
+  typesAfterFirstVisit,
   type PromptType,
 } from '../../utils/receptionistTypes'
 
@@ -43,8 +45,15 @@ describe('Receptionist types for referrals', () => {
   })
 
   it('offers someone they bring the referral visit, or the plain first visit when there is none', () => {
-    expect(names(typesForSomeoneTheyBring(all))).toEqual(['Primera Visita Referido'])
-    expect(names(typesForSomeoneTheyBring([first, offer, adjustment]))).toEqual(['Primera visita'])
+    expect(names(typesForSomeoneTheyBring(all, true))).toEqual(['Primera Visita Referido'])
+    expect(names(typesForSomeoneTheyBring([first, offer, adjustment], true))).toEqual(['Primera visita'])
+  })
+
+  it('is no referral when the person writing has never been to the clinic', () => {
+    expect(names(typesForSomeoneTheyBring(all, false))).toEqual(['Primera visita'])
+    const text = someoneTheyBringSection({ types: [first], referred: false, canBook: true, canGive: true, sendsItself: true })
+    expect(text).not.toContain('referred by the person writing')
+    expect(text).toContain('this is not a referral')
   })
 })
 
@@ -78,14 +87,14 @@ describe('Which patient a referral names', () => {
 
 describe('Prompt sections for someone they bring and referrals', () => {
   it('books someone they bring in their own name, and gives a visit already booked', () => {
-    const text = someoneTheyBringSection({ types: [referred], canBook: true, canGive: true, sendsItself: true })
+    const text = someoneTheyBringSection({ types: [referred], referred: true, canBook: true, canGive: true, sendsItself: true })
     expect(text).toContain('"Primera Visita Referido"')
     expect(text).toContain('other_person_name, other_person_phone')
     expect(text).toContain('give_visit_to')
   })
 
   it('hands a visit that is someone else\'s over when it cannot give it', () => {
-    const text = someoneTheyBringSection({ types: [referred], canBook: false, canGive: false, sendsItself: true })
+    const text = someoneTheyBringSection({ types: [referred], referred: true, canBook: false, canGive: false, sendsItself: true })
     expect(text).not.toContain('give_visit_to')
     expect(text).toContain('hand_over_to_colleague')
   })
@@ -137,5 +146,25 @@ describe('Prices in the prompt', () => {
   it('names the price in the other sections too', () => {
     expect(quotedTypes([priced, adjustment])).toBe('"Primera Visita Referido" (50 €), "Ajuste"')
     expect(referralSection({ types: [priced], canBook: true, sendsItself: true })).toContain('"Primera Visita Referido" (50 €)')
+  })
+})
+
+// What comes after the first visit, and the bonos: from the types and from
+// Settings > Bonos, so a clinic need not write its prices on a card.
+describe('Prices after the first visit', () => {
+  const session = { ...adjustment, priceCents: 5500 }
+
+  it('lists the visits after the first, never a first visit or a type without a price', () => {
+    expect(names(typesAfterFirstVisit([{ ...first, priceCents: 7000 }, session, adjustment, { ...referred, priceCents: 5000 }]))).toEqual(['Ajuste'])
+  })
+
+  it('lists the sessions and the bonos with their price a session', () => {
+    const text = laterPricesSection({ sessions: [session], packages: [{ name: 'Bono 10 sesiones', sessions: 10, priceCents: 46000 }] })
+    expect(text).toContain('- Ajuste: 55 €')
+    expect(text).toContain('- Bono 10 sesiones: 10 sessions for 460 € (46 € a session)')
+  })
+
+  it('says nothing when there is nothing to price', () => {
+    expect(laterPricesSection({ sessions: [], packages: [{ name: 'Bono', sessions: 0, priceCents: 0 }] })).toBe('')
   })
 })

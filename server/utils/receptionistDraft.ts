@@ -2,14 +2,14 @@ import type { H3Event } from 'h3'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
 import { overMonthlyLimit, recordReceptionistReply } from '~/server/utils/receptionistUsage'
 import { announceHandover, heldBackBeforeSending, noteInConversation, PAST_TIME_REASON, sendAsReceptionist } from '~/server/utils/receptionistSend'
-import { bookingTool, cancelTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
+import { bookingTool, cancelTool, giveVisitTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
 import { recentImages, withImages } from '~/server/utils/receptionistImages'
 import { historyLine } from '~/utils/receptionistHistory'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage } from '~/utils/receptionistAutoReply'
-import { buildSystemPrompt, loadBookedVisits, loadOfferedTypes, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, uniqueTypes, type LeadOrigin } from '~/server/utils/receptionist'
+import { buildSystemPrompt, loadBookedVisits, loadOfferedTypes, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, uniqueTypes, type LeadOrigin } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptionistModel'
 import { cameFromAd } from '~/utils/receptionistLeadOrigin'
-import { leadNameIsTheirs, typesForAudience, typesForMinor, type ReceptionistAudience } from '~/utils/receptionistTypes'
+import { leadNameIsTheirs, typesForAudience, typesAfterFirstVisit, typesForMinor, typesForReferral, typesForSomeoneTheyBring, type ReceptionistAudience } from '~/utils/receptionistTypes'
 import { internalNotes } from '~/utils/receptionistGuard'
 
 // Writing a receptionist reply for one lead.
@@ -191,11 +191,21 @@ export async function draftLeadReply(
   // Or for their child (minorsSection): what a child may have, and the
   // children already on file with them as tutor, once they are a patient.
   const minors = { forNewChild: typesForMinor(offered, false), forReturningChild: typesForMinor(offered, true), children: await loadTutorChildren(supabase, accountId, lead.patient_id ?? null) }
+  // Or for someone new they bring, referred by them (someoneTheyBringSection);
+  // and someone new may have the referral visit themselves, once they name
+  // the patient who referred them (referralSection).
+  // Only someone who has been to the clinic refers the person they bring.
+  const bringsSomeone = { types: typesForSomeoneTheyBring(offered, audience === 'existing'), referred: audience === 'existing' }
+  // What comes after a first visit, for "¿y luego cuánto?" -- from the types
+  // and the clinic's bonos, not from a card kept in step by hand.
+  const laterPrices = { sessions: typesAfterFirstVisit(offered), packages: await loadPackagePrices(supabase, accountId) }
+  const referralTypes = audience === 'existing' ? [] : typesForReferral(offered)
+  const referral = referralTypes.length ? { types: referralTypes } : undefined
   // A lead who has booked their first visit and wants to move it is offered
   // times for that same visit, offer price and all.
   const booked = await loadBookedVisits(supabase, accountId, lead.patient_id)
   // The child's first visit too, so its free times are in the list.
-  const bookable = uniqueTypes(types, adOnly, booked.types, minors.forNewChild)
+  const bookable = uniqueTypes(types, adOnly, booked.types, minors.forNewChild, bringsSomeone.types, referralTypes)
   // And the calendar as it is now, so the times offered are ones that are
   // free rather than ones the model made up.
   // A first visit is with whoever is free; somebody who has been before is
@@ -233,12 +243,15 @@ export async function draftLeadReply(
           practitionerIds,
           person: { kind: 'lead', leadId, patientId: lead.patient_id ?? null },
           minors,
+          bringsSomeone,
+          referral,
           onBooked: (summary) => noteInConversation(calendarClient, accountId, { kind: 'lead', leadId }, summary),
         }
       : null
   const book = actions ? bookingTool(actions) : null
   const waitlist = actions ? waitlistTool(actions) : null
   const cancel = actions ? cancelTool(actions) : null
+  const give = actions ? giveVisitTool(actions) : null
   // What they sent since the clinic last wrote, pictures included.
   const images = await recentImages(calendarClient, ordered.slice(lastOutbound + 1))
 
@@ -249,13 +262,14 @@ export async function draftLeadReply(
   const { text: draft, refused, handedOver } = await runReceptionistModel(await createAnthropicClient(apiKey), {
     model: MODEL,
     maxTokens: MAX_TOKENS,
-    system: buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, audience, calendar, leadOrigin, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, draft: { personName: lead.full_name ?? null }, knownDetails: { name: leadNameIsTheirs(lead.channel) && Boolean(lead.full_name?.trim()), email: Boolean(lead.email?.trim()) }, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors }),
+    system: buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, audience, calendar, leadOrigin, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, draft: { personName: lead.full_name ?? null }, knownDetails: { name: leadNameIsTheirs(lead.channel) && Boolean(lead.full_name?.trim()), email: Boolean(lead.email?.trim()) }, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, referral, laterPrices }),
     messages: withImages(history, images),
     findFreeTimes,
     handOver: sends,
     book,
     waitlist,
     cancel,
+    give,
     maxTimesPerReply: config.slotsPerReply,
     internalNotes: internalNotes(config),
     logLabel: `lead ${leadId}`,

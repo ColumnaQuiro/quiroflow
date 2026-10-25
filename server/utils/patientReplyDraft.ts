@@ -2,13 +2,13 @@ import type { H3Event } from 'h3'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
 import { overMonthlyLimit, recordReceptionistReply } from '~/server/utils/receptionistUsage'
 import { announceHandover, heldBackBeforeSending, noteInConversation, PAST_TIME_REASON, sendAsReceptionist } from '~/server/utils/receptionistSend'
-import { bookingTool, cancelTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
+import { bookingTool, cancelTool, giveVisitTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
 import { recentImages, withImages, type StoredImage } from '~/server/utils/receptionistImages'
 import { historyLine } from '~/utils/receptionistHistory'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personRepliedSince } from '~/utils/receptionistAutoReply'
-import { loadBookedVisits, loadFamilyAdults, loadOfferedTypes, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, toneWording, uniqueTypes, clinicTodayStart } from '~/server/utils/receptionist'
+import { loadBookedVisits, loadFamilyAdults, loadOfferedTypes, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, toneWording, uniqueTypes, clinicTodayStart } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel, type FreeTimesForWhom } from '~/server/utils/receptionistModel'
-import { matchChild, typesForAudience, typesForMinor } from '~/utils/receptionistTypes'
+import { matchChild, typesAfterFirstVisit, typesForAudience, typesForMinor, typesForSomeoneTheyBring } from '~/utils/receptionistTypes'
 import { internalNotes } from '~/utils/receptionistGuard'
 import { carePlanCadenceLabel } from '~/utils/carePlanCadence'
 import { buildPatientReplyPrompt, openBono, type PatientReplyFacts } from '~/utils/patientReplyPrompt'
@@ -173,7 +173,15 @@ export async function draftPatientReply(
   const minors = { forNewChild: typesForMinor(offered, false), forReturningChild: typesForMinor(offered, true), children: await loadTutorChildren(service, accountId, patientId) }
   // ...and an adult linked to them as family may be booked for too, as
   // anyone else would be: new, a first visit; returning, the rest.
-  const family = { forNew: typesForAudience(offered, 'new').types, forReturning: types, members: await loadFamilyAdults(service, accountId, patientId) }
+  // Someone new, linked or not, is referred by them -- the referral visit
+  // when the clinic has one (typesForSomeoneTheyBring) -- once they have
+  // been to the clinic themselves: a record with only a booked first visit
+  // refers nobody.
+  const referred = Boolean(facts.lastVisitAt)
+  const bringsSomeone = { types: typesForSomeoneTheyBring(offered, referred), referred }
+  // What the visits and the clinic's bonos cost, from the types and Settings > Bonos.
+  const laterPrices = { sessions: typesAfterFirstVisit(offered), packages: await loadPackagePrices(supabase, accountId) }
+  const family = { forNew: bringsSomeone.types, forReturning: types, members: await loadFamilyAdults(service, accountId, patientId) }
   // Back after a long break with no bono: the clinic's own visit for that
   // (returningPatientSection), when it is one it offers.
   const reactivationType = types.find((type) => type.id === config.reactivationAppointmentTypeId)?.name ?? null
@@ -181,7 +189,7 @@ export async function draftPatientReply(
   // visits themselves under patient facts.
   const booked = await loadBookedVisits(supabase, accountId, patientId)
   // The child's first visit too, so its free times are in the list.
-  const bookable = uniqueTypes(types, booked.types, minors.forNewChild, family.members.some((m) => !m.hasBeenBefore) ? family.forNew : [])
+  const bookable = uniqueTypes(types, booked.types, minors.forNewChild, bringsSomeone.types)
   // Somebody who has been before is seen by their own practitioner; a
   // patient record with no visit yet (a first visit booked, say) is still
   // somebody new, and a first visit is with whoever is free.
@@ -197,8 +205,9 @@ export async function draftPatientReply(
     if (child === 'ambiguous' || relative === 'ambiguous') return { error: 'More than one person in their family has that first name. Ask the surname.' }
     if (child) return { practitionerIds: child.practitionerIds, types: child.hasBeenBefore ? minors.forReturningChild : minors.forNewChild }
     if (relative) return { practitionerIds: relative.practitionerIds, types: relative.hasBeenBefore ? family.forReturning : family.forNew }
-    // A child who is not on file yet: a first visit, with whoever is free.
-    return { practitionerIds: null, types: minors.forNewChild }
+    // Someone not on file yet -- a child, or an adult they bring: a first
+    // visit, with whoever is free.
+    return { practitionerIds: null, types: uniqueTypes(minors.forNewChild, bringsSomeone.types) }
   }
   const findFreeTimes = calendar.availability ? freeTimesLookup(service, accountId, config, bookable, calendar.timeZone, practitionerIds, forWhom) : null
 
@@ -230,12 +239,14 @@ export async function draftPatientReply(
           person: { kind: 'patient', patientId },
           minors,
           family,
+          bringsSomeone,
           onBooked: (summary) => noteInConversation(service, accountId, { kind: 'patient', patientId, channel }, summary),
         }
       : null
   const book = actions ? bookingTool(actions) : null
   const waitlist = actions ? waitlistTool(actions) : null
   const cancel = actions ? cancelTool(actions) : null
+  const give = actions ? giveVisitTool(actions) : null
   // What they sent since the clinic last wrote, pictures included.
   const images = await recentImages(service, turns.slice(lastOutbound + 1))
 
@@ -246,13 +257,14 @@ export async function draftPatientReply(
   const { text: draft, refused, handedOver } = await runReceptionistModel(await createAnthropicClient(apiKey), {
     model: MODEL,
     maxTokens: MAX_TOKENS,
-    system: buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, family: { forNew: family.forNew, forReturning: family.forReturning, members: family.members }, reactivationType }),
+    system: buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, family: { forNew: family.forNew, forReturning: family.forReturning, members: family.members }, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, laterPrices, reactivationType }),
     messages: withImages(history, images),
     findFreeTimes,
     handOver: sends,
     book,
     waitlist,
     cancel,
+    give,
     maxTimesPerReply: config.slotsPerReply,
     internalNotes: internalNotes(config),
     logLabel: `patient ${patientId}`,

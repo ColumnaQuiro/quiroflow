@@ -12,7 +12,9 @@ import { pushAppointmentEvent } from '~/server/utils/staffPush'
 import { claimAutomaticConfirmation, sendAppointmentConfirmation } from '~/server/utils/appointmentNotifications'
 import { receptionistServiceClient } from '~/server/utils/receptionistAudit'
 import { clinicDateOf, startOfLocalDate, wallClockToUtc } from '~/utils/clinicClock'
-import { MINOR_AGE, matchChild, newPatientDetails } from '~/utils/receptionistTypes'
+import { leadPhoneAsContactNumber, phoneMatches, toE164Loose, whatsappDigits } from '~/utils/phone'
+import { inverseRelation, type FamilyRelation } from '~/utils/familyRelations'
+import { BROUGHT_RELATIONS, MINOR_AGE, accentBlindPrefix, matchChild, matchReferrer, newPatientDetails, typePrice } from '~/utils/receptionistTypes'
 
 // The AI receptionist booking a visit, or moving one, on its own -- only when
 // it is answering on its own (utils/receptionistAutoReply.ts): a draft a
@@ -70,8 +72,29 @@ export const BOOK_APPOINTMENT: Anthropic.Tool = {
       child_name: { type: 'string', description: 'When the visit is for their child, not for them: the child\'s first name and surname(s) exactly as given. The visit is then booked in the child\'s name, with the person writing as tutor.' },
       child_age: { type: 'number', description: 'With child_name: the child\'s age in years, as they said it.' },
       family_member_name: { type: 'string', description: 'When the visit is for an adult in their family listed under "Appointments for an adult in their family", not for them: that person\'s first name (and surname, if given). The visit is then booked in that person\'s name.' },
+      other_person_name: { type: 'string', description: 'When the visit is for someone new they bring (see "Someone new they bring"), not for them: that person\'s first name and surname(s) exactly as given. The visit is then booked in that person\'s own name, referred by the person writing.' },
+      other_person_phone: { type: 'string', description: 'With other_person_name: that person\'s own mobile number, as given.' },
+      other_person_relation: { type: 'string', enum: [...BROUGHT_RELATIONS], description: 'With other_person_name, if they said it: what that person is to them.' },
+      referred_by: { type: 'string', description: 'When booking someone new as referred by a patient (see "Referred by a patient"): the first name and surname of the patient who referred them, exactly as they gave it.' },
     },
     required: ['date', 'time'],
+    additionalProperties: false,
+  },
+}
+
+export const GIVE_VISIT_TO: Anthropic.Tool = {
+  name: 'give_visit_to',
+  description:
+    'Puts a first visit they booked for themselves in the name of someone new they bring, when they say it was really for that person ("la cita es para mi pareja"). Same day, time and practitioner: that person becomes a new patient referred by them, and gets the confirmation on their own phone. Only after it confirms may you tell them it is changed.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      visit_on: { type: 'string', description: 'That visit\'s current day and time, as "YYYY-MM-DD HH:MM".' },
+      person_name: { type: 'string', description: 'The other person\'s first name and surname(s), exactly as given.' },
+      person_phone: { type: 'string', description: 'The other person\'s own mobile number, as given.' },
+      person_relation: { type: 'string', enum: [...BROUGHT_RELATIONS], description: 'If they said it: what that person is to them.' },
+    },
+    required: ['visit_on', 'person_name', 'person_phone'],
     additionalProperties: false,
   },
 }
@@ -135,6 +158,16 @@ export interface BookingContext {
    * they are. Absent: book_appointment refuses family_member_name.
    */
   family?: { forNew: OfferedType[]; forReturning: OfferedType[]; members: FamilyAdult[] }
+  /**
+   * Booking for someone new the person writing brings, not on file
+   * (typesForSomeoneTheyBring), and give_visit_to. Absent: both refused.
+   */
+  bringsSomeone?: { types: OfferedType[]; referred: boolean }
+  /**
+   * Their own first visit as someone a patient referred (typesForReferral):
+   * for someone new only. Booked only with referred_by naming that patient.
+   */
+  referral?: { types: OfferedType[] }
 }
 
 type ToolResult = { content: string; isError: boolean }
@@ -150,7 +183,7 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/
 export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<ToolResult> {
   const used = new Set<string>()
   return async (input) => {
-    const value = (input ?? {}) as { appointment_type?: unknown; date?: unknown; time?: unknown; move_visit_on?: unknown; full_name?: unknown; email?: unknown; child_name?: unknown; child_age?: unknown; family_member_name?: unknown }
+    const value = (input ?? {}) as { appointment_type?: unknown; date?: unknown; time?: unknown; move_visit_on?: unknown; full_name?: unknown; email?: unknown; child_name?: unknown; child_age?: unknown; family_member_name?: unknown; other_person_name?: unknown; other_person_phone?: unknown; other_person_relation?: unknown; referred_by?: unknown }
     const date = typeof value.date === 'string' ? value.date.trim() : ''
     const time = typeof value.time === 'string' ? value.time.trim() : ''
     if (!DAY.test(date) || !HH_MM.test(time)) return { content: 'date must be YYYY-MM-DD and time HH:MM, exactly as listed.', isError: true }
@@ -188,9 +221,34 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
       relative = hit
     }
 
+    // For someone new they bring (someoneTheyBringSection): a new record of
+    // their own, with their own phone, referred by the person writing --
+    // never someone the clinic may already have, which is a person's call.
+    let brought: BroughtPerson | null = null
+    if (typeof value.other_person_name === 'string' && value.other_person_name.trim()) {
+      if (child || relative) return { content: 'Book one person per call: child_name, family_member_name or other_person_name.', isError: true }
+      if (!ctx.bringsSomeone) return { content: 'You cannot book for that person here. Call hand_over_to_colleague with their full name and mobile and the day and time accepted; do not say it is booked.', isError: true }
+      if (typeof value.move_visit_on === 'string' && value.move_visit_on.trim()) return { content: 'To put a visit they already have in that person\'s name, call give_visit_to instead.', isError: true }
+      const person = await readBroughtPerson(ctx, value.other_person_name, value.other_person_phone, value.other_person_relation)
+      if ('error' in person) return { content: person.error, isError: true }
+      brought = person
+    }
+
+    // Referred by a patient (referralSection): the patient they name has to
+    // be one, exactly, before the referral visit is theirs. Their own booking
+    // only -- whoever they bring is referred by them.
+    let referrer: { id: string } | null = null
+    const referredBy = typeof value.referred_by === 'string' ? value.referred_by.replace(/\s+/g, ' ').trim().slice(0, 120) : ''
+    if (referredBy && ctx.referral && !child && !relative && !brought) {
+      const found = await findReferrer(ctx, referredBy)
+      if (found === 'need_surname') return { content: 'Ask the surname of the patient who referred them too, then book again with referred_by. Do not book yet.', isError: true }
+      if (!found || found === 'ambiguous') return { content: 'That name cannot be matched to one patient of the clinic. Never tell them whether that person is a patient. Call hand_over_to_colleague with the name they gave and the day and time they accepted, and tell them your colleague will confirm it; do not say it is booked.', isError: true }
+      referrer = found
+    }
+
     // Who this visit is for, so the same person is not booked twice in one
     // reply -- while two children, or them and their partner, may be.
-    const whom = relative ? `relative:${relative.id}` : child ? (child.existing ? `child:${child.existing.id}` : `new-child:${child.name.toLowerCase()}`) : 'self'
+    const whom = brought ? `brought:${brought.e164}` : relative ? `relative:${relative.id}` : child ? (child.existing ? `child:${child.existing.id}` : `new-child:${child.name.toLowerCase()}`) : 'self'
     if (used.has(whom)) return { content: 'You have already booked or moved a visit for this person in this reply. Do not book them again: tell them what was booked.', isError: true }
 
     // What is being booked: a move keeps the visit's type and is found by
@@ -198,7 +256,12 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
     // -- or, for their child, one the child may have.
     let moving: BookedAppointment | null = null
     let type: OfferedType | undefined
-    if (relative) {
+    if (brought) {
+      const allowed = ctx.bringsSomeone!.types
+      const name = typeof value.appointment_type === 'string' ? value.appointment_type.trim().toLowerCase() : ''
+      type = allowed.find((t) => t.name.toLowerCase() === name) ?? (!name && allowed.length === 1 ? allowed[0] : undefined)
+      if (!type) return { content: `For ${brought.firstName}, say which type, exactly as named: ${allowed.map((t) => t.name).join(', ') || 'none can be booked by you; call hand_over_to_colleague'}.`, isError: true }
+    } else if (relative) {
       const allowed = relative.hasBeenBefore ? ctx.family!.forReturning : ctx.family!.forNew
       const name = typeof value.appointment_type === 'string' ? value.appointment_type.trim().toLowerCase() : ''
       type = allowed.find((t) => t.name.toLowerCase() === name) ?? (!name && allowed.length === 1 ? allowed[0] : undefined)
@@ -220,10 +283,15 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
       type = ctx.booked.types.find((t) => t.id === moving!.typeId)
       if (!type) return { content: 'That visit cannot be moved by you. Call hand_over_to_colleague.', isError: true }
     } else {
+      // The referral visit is theirs only with the patient who referred them.
+      const own = [...ctx.types, ...(ctx.referral?.types ?? []).filter((t) => !ctx.types.includes(t))]
       const name = typeof value.appointment_type === 'string' ? value.appointment_type.trim().toLowerCase() : ''
-      type = ctx.types.find((t) => t.name.toLowerCase() === name) ?? (!name && ctx.types.length === 1 ? ctx.types[0] : undefined)
+      type = own.find((t) => t.name.toLowerCase() === name) ?? (!name && ctx.types.length === 1 ? ctx.types[0] : undefined)
       if (!type) {
         return { content: `Say which type, exactly as named: ${ctx.types.map((t) => t.name).join(', ') || 'none can be booked by you; call hand_over_to_colleague'}.`, isError: true }
+      }
+      if (type.forReferrals && !referrer) {
+        return { content: `${type.name} is only for someone a patient referred. Ask the first name and surname of the patient who referred them and book with referred_by; if no patient referred them, offer ${ctx.types.map((t) => t.name).join(', ') || 'what a colleague arranges'} instead. Do not say it is booked.`, isError: true }
       }
     }
 
@@ -234,7 +302,8 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
     // A relative's or a child's times are with their own practitioner, not
     // the writer's: children who see one practitioner while their parent
     // sees another.
-    const own = relative ? relative.practitionerIds : (child?.existing?.practitionerIds ?? ctx.practitionerIds)
+    // Someone new they bring is seen by whoever is free, as anyone new.
+    const own = brought ? null : relative ? relative.practitionerIds : (child?.existing?.practitionerIds ?? ctx.practitionerIds)
     for (const practitionerId of await candidatePractitioners(ctx, moving, own)) {
       const calendar = await loadReceptionistCalendar(ctx.service, ctx.accountId, ctx.config, [type], new Date(), { from: dayStart, days: 1, maxTimesPerList: 1000 }, [practitionerId])
       const group = calendar.availability?.groups.find((g) => g.days.some((d) => d.date === date && d.times.includes(time)))
@@ -265,6 +334,17 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
       if (!childId) return { content: "The child's record could not be made. Call hand_over_to_colleague saying who it is for and the day and time they accepted; do not say it is booked.", isError: true }
       patient = { patientId: childId }
     }
+    if (brought) {
+      // Referred by the person writing, who is a patient now if they were not.
+      const broughtId = await createBroughtPerson(writer, ctx, tutor.patientId, brought, chosen)
+      if (!broughtId) return { content: "That person's record could not be made. Call hand_over_to_colleague with their full name and mobile and the day and time accepted; do not say it is booked.", isError: true }
+      patient = { patientId: broughtId }
+    }
+    // Their own referral, recorded on their record as the desk does it; a
+    // relative booked as new with the referral visit is referred by the
+    // person writing.
+    if (referrer) await recordReferral(writer, ctx.accountId, tutor.patientId, referrer.id)
+    if (relative && type.forReferrals && ctx.person.patientId) await recordReferral(writer, ctx.accountId, relative.id, ctx.person.patientId)
 
     const { data: practitioner } = await ctx.service.from('team_members').select('full_name').eq('id', chosen.practitionerId).maybeSingle()
     const practitionerName = (practitioner as { full_name: string | null } | null)?.full_name ?? null
@@ -294,6 +374,9 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
       )
     } catch (err) {
       used.delete(whom)
+      // A record made a moment ago for this booking goes with it: left, its
+      // phone would read as "already on file" on the next try.
+      if (brought) await writer.from('patients').delete().eq('id', patient.patientId).eq('account_id', ctx.accountId)
       console.error('[receptionist] booking refused:', (err as Error)?.message ?? err)
       return { content: `${time} on ${date} was taken a moment ago. Offer another free time; do not say it is booked.`, isError: true }
     }
@@ -305,7 +388,7 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
     const confirmed = child?.existing && !child.existing.linked ? await linkChild(writer, ctx.accountId, tutor.patientId, child.existing.id) : false
     const forChild = child
       ? ` para ${child.existing ? [child.existing.firstName, child.existing.lastName].filter(Boolean).join(' ') : child.name}${child.existing ? (confirmed ? ' (marcado como menor, con quien escribe como tutor)' : '') : ' (ficha nueva, menor, con quien escribe como tutor)'}`
-      : relative ? ` para ${[relative.firstName, relative.lastName].filter(Boolean).join(' ')} (familiar en su ficha)` : ''
+      : relative ? ` para ${[relative.firstName, relative.lastName].filter(Boolean).join(' ')} (familiar en su ficha)` : brought ? ` para ${brought.name} (ficha nueva, referida por quien escribe)` : referrer ? ' (referido por un paciente, anotado en su ficha)' : ''
     const summary = moving
       ? `He movido su ${type.name} del ${was} al ${when}${practitionerName ? ` con ${practitionerName}` : ''}.`
       : `He reservado ${type.name}${forChild} el ${when}${practitionerName ? ` con ${practitionerName}` : ''}.`
@@ -332,13 +415,13 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
     // them they now had two in a row.
     // (Their own visits, not a child's: the child's are not in this list.)
     const near = ctx.booked.appointments
-      .filter((a) => !child && !relative && a.id !== moving?.id && Math.abs(new Date(a.startsAt).getTime() - start.getTime()) < 2 * DAY_MS)
+      .filter((a) => !child && !relative && !brought && a.id !== moving?.id && Math.abs(new Date(a.startsAt).getTime() - start.getTime()) < 2 * DAY_MS)
       .map((a) => new Date(a.startsAt).toLocaleString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: ctx.timeZone }))
     // Someone coming for the first time is told where to go.
     const address = moving ? null : await firstVisitAddress(ctx.service, patient.patientId, chosen.clinicId)
     return {
       content: [
-        `${moving ? 'Moved' : 'Booked'}: ${type.name}${child ? ` for ${child.name}, in the child's name with them as tutor` : relative ? ` for ${relative.firstName}, in their own name` : ''}, ${whenEn}${practitionerName ? `, with ${practitionerName}` : ''}. ${moving ? 'Their old time is free again.' : relative ? `${relative.firstName} will get the clinic's usual confirmation themselves.` : `They will also get the clinic's usual confirmation${child ? ', as the tutor' : ''}.`} Tell them, with the day and time in words.`,
+        `${moving ? 'Moved' : 'Booked'}: ${type.name}${child ? ` for ${child.name}, in the child's name with them as tutor` : relative ? ` for ${relative.firstName}, in their own name` : brought ? ` for ${brought.firstName}, in their own name, referred by the person writing` : ''}, ${whenEn}${practitionerName ? `, with ${practitionerName}` : ''}. ${moving ? 'Their old time is free again.' : relative || brought ? `${(relative ?? brought)!.firstName} will get the clinic's usual confirmation themselves${brought ? ', on their own phone' : ''}.` : `They will also get the clinic's usual confirmation${child ? ', as the tutor' : ''}.`} Tell them, with the day and time in words.`,
         near.length ? `They also have ${near.length === 1 ? 'a visit' : 'visits'} on ${near.join(' and ')}: mention ${near.length === 1 ? 'it' : 'them'}, and ask whether they want to keep ${near.length === 1 ? 'it' : 'them'}.` : '',
         address ? `It is their first visit: give them the clinic's address, ${address}.` : '',
       ].filter(Boolean).join(' '),
@@ -408,6 +491,220 @@ async function createChild(writer: Supa, ctx: BookingContext, tutorId: string, n
     return null
   }
   return id
+}
+
+/** Someone new the person writing brings, as they described them, checked. */
+interface BroughtPerson {
+  name: string
+  firstName: string
+  lastName: string
+  /** Their mobile as WhatsApp digits, and as a patient contact number. */
+  e164: string
+  contact: { countryCode: string; number: string }
+  /** What they are to the person writing, as patient_relations records it; null when not said, or a friend. */
+  relation: FamilyRelation | null
+}
+
+/**
+ * The person they bring, from what the model passed: a first name and a
+ * surname, a mobile that is not the writer's own, and nobody the clinic may
+ * already have under that number -- which is a person's call, as it is for
+ * a lead (ensurePatient), and is never said out loud.
+ */
+async function readBroughtPerson(ctx: BookingContext, nameIn: unknown, phoneIn: unknown, relationIn: unknown): Promise<BroughtPerson | { error: string }> {
+  const name = typeof nameIn === 'string' ? nameIn.replace(/[\p{Cc}\p{Cf}]+/gu, ' ').replace(/\s+/g, ' ').trim().replace(/[.,;]+$/, '').slice(0, 120) : ''
+  const [firstName, ...rest] = name.split(' ')
+  if (!firstName || !rest.length) return { error: "Ask that person's surname(s) as well, then call again. Do not say it is booked." }
+  const phone = typeof phoneIn === 'string' ? phoneIn.trim() : ''
+  if (!phone) return { error: "Ask that person's own mobile number, then call again with it. Do not say it is booked." }
+  const { data: account } = await ctx.service.from('accounts').select('default_phone_country').eq('id', ctx.accountId).maybeSingle()
+  const country = (account as { default_phone_country: string | null } | null)?.default_phone_country ?? 'ES'
+  const e164 = toE164Loose(phone, country)
+  const contact = e164 ? leadPhoneAsContactNumber(e164, country) : null
+  if (!e164 || !contact || e164.length < 8) return { error: `"${phone}" is not a mobile number. Ask for it again. Do not say it is booked.` }
+  if (await isWritersOwnNumber(ctx, e164)) return { error: "That is the number of the person writing, not of the person they bring. Ask for that person's own mobile. Do not say it is booked." }
+  if ((await findLikelyExistingPatients(ctx.service, ctx.accountId, e164, null)).length) {
+    return { error: "That number is already on the clinic's records, so a colleague has to arrange this. Call hand_over_to_colleague with the person's name and the day and time accepted, and tell them your colleague will confirm it. Never say whether that person is a patient, and do not say it is booked." }
+  }
+  const relation = typeof relationIn === 'string' && (BROUGHT_RELATIONS as readonly string[]).includes(relationIn) && relationIn !== 'friend' ? (relationIn as FamilyRelation) : null
+  return { name, firstName, lastName: rest.join(' '), e164, contact, relation }
+}
+
+async function isWritersOwnNumber(ctx: BookingContext, e164: string): Promise<boolean> {
+  if (ctx.person.kind === 'lead') {
+    const { data: lead } = await ctx.service.from('leads').select('phone').eq('id', ctx.person.leadId).maybeSingle()
+    const phone = (lead as { phone: string | null } | null)?.phone
+    if (phone && whatsappDigits(phone) === e164) return true
+  }
+  if (!ctx.person.patientId) return false
+  const { data: numbers } = await ctx.service.from('patient_contact_numbers').select('number, country_code').eq('patient_id', ctx.person.patientId)
+  return ((numbers ?? []) as { number: string; country_code: string }[]).some((n) => phoneMatches(n.number, n.country_code, e164))
+}
+
+/**
+ * Their record: a new patient referred by the person writing (Origen:
+ * Paciente, Referido por -- what the desk sets by hand), at the clinic and
+ * with the practitioner of the visit, with their own number for WhatsApp.
+ * The link is recorded whether or not the writer has been to the clinic; the
+ * referral visit and its price are only for someone they bring once they
+ * have (typesForSomeoneTheyBring). Linked as family both ways when they said
+ * what that person is to them.
+ */
+async function createBroughtPerson(writer: Supa, ctx: BookingContext, writerId: string, person: BroughtPerson, at: { practitionerId: string | null; clinicId: string }): Promise<string | null> {
+  const id = randomUUID()
+  // Not read back in the same statement: see createChild.
+  const { error } = await writer.from('patients').insert({
+    id,
+    account_id: ctx.accountId,
+    clinic_id: at.clinicId,
+    first_name: person.firstName,
+    last_name: person.lastName,
+    default_practitioner_id: at.practitionerId,
+    referral_source: 'Patient',
+    referred_by_patient_id: writerId,
+  } as never)
+  if (error) {
+    console.error('[receptionist] could not make the record of the person they bring:', error.message)
+    return null
+  }
+  const { error: numberError } = await writer.from('patient_contact_numbers').insert({ account_id: ctx.accountId, patient_id: id, country_code: person.contact.countryCode, number: person.contact.number, is_whatsapp: true } as never)
+  if (numberError) console.error('[receptionist] could not save their number:', numberError.message)
+  if (person.relation) {
+    const { error: relError } = await writer.from('patient_relations').upsert(
+      [
+        { account_id: ctx.accountId, patient_id: writerId, related_patient_id: id, relation: person.relation },
+        { account_id: ctx.accountId, patient_id: id, related_patient_id: writerId, relation: inverseRelation(person.relation) },
+      ] as never,
+      { onConflict: 'patient_id,related_patient_id', ignoreDuplicates: true },
+    )
+    if (relError) console.error('[receptionist] could not link them as family:', relError.message)
+  }
+  return id
+}
+
+/**
+ * The one patient a referral names (matchReferrer), never the person writing
+ * themselves, and only someone who has been to the clinic: a person whose
+ * first visit was cancelled, or who never had one, refers nobody. Read from
+ * the clinic's records by first name, whatever its accents; the answer is a
+ * record or not, never a name for the model to say.
+ */
+async function findReferrer(ctx: BookingContext, name: string): Promise<{ id: string } | 'ambiguous' | 'need_surname' | null> {
+  const first = name.split(' ')[0] ?? ''
+  if (!first) return 'need_surname'
+  const { data } = await ctx.service
+    .from('patients')
+    .select('id, first_name, last_name')
+    .eq('account_id', ctx.accountId)
+    .is('anonymized_at', null)
+    .ilike('first_name', accentBlindPrefix(first))
+    .limit(500)
+  const people = ((data ?? []) as { id: string; first_name: string; last_name: string | null }[])
+    .filter((p) => p.id !== ctx.person.patientId)
+    .map((p) => ({ id: p.id, firstName: p.first_name, lastName: p.last_name }))
+  // Everyone with that name first (few), then only those who have been.
+  const named = people.filter((p) => matchReferrer([p], name) === p)
+  if (!named.length) return matchReferrer(people, name) === 'need_surname' ? 'need_surname' : null
+  const { data: done } = await ctx.service.from('appointments').select('patient_id').in('patient_id', named.map((p) => p.id)).eq('status', 'completed').is('deleted_at', null)
+  const came = new Set(((done ?? []) as { patient_id: string }[]).map((a) => a.patient_id))
+  const hit = matchReferrer(named.filter((p) => came.has(p.id)), name)
+  return hit && typeof hit === 'object' ? { id: hit.id } : hit
+}
+
+/** Origen: Paciente, Referido por: that patient -- unless the record already names who referred them. */
+async function recordReferral(writer: Supa, accountId: string, patientId: string, referrerId: string): Promise<void> {
+  if (patientId === referrerId) return
+  const { error } = await writer
+    .from('patients')
+    .update({ referral_source: 'Patient', referred_by_patient_id: referrerId } as never)
+    .eq('id', patientId)
+    .eq('account_id', accountId)
+    .is('referred_by_patient_id', null)
+  if (error) console.error('[receptionist] could not record the referral:', error.message)
+}
+
+/**
+ * give_visit_to, once per reply: a first visit the person writing booked for
+ * themselves, put in the name of someone new they bring -- "la cita es para
+ * mi pareja". Same day, time and practitioner; that person gets a record of
+ * their own, referred by the writer, and the confirmation on their own phone.
+ * It becomes the first visit that person may have (typesForSomeoneTheyBring)
+ * -- never the writer's ad offer -- when one has the same length; a longer
+ * one would need the calendar checked again, which is a person's. Only a
+ * first visit: a returning patient's visit is not someone else's first.
+ */
+export function giveVisitTool(ctx: BookingContext): (input: unknown) => Promise<ToolResult> {
+  let used = false
+  return async (input) => {
+    if (used) return { content: 'You have already changed a visit in this reply. Tell them what was changed.', isError: true }
+    if (!ctx.bringsSomeone) return { content: 'You cannot change whose visit it is here. Call hand_over_to_colleague saying whose it is, with their name and mobile.', isError: true }
+    const value = (input ?? {}) as { visit_on?: unknown; person_name?: unknown; person_phone?: unknown; person_relation?: unknown }
+    const wanted = typeof value.visit_on === 'string' ? value.visit_on.trim().replace('T', ' ') : ''
+    const visit = ctx.booked.appointments.find((a) => localStamp(a.startsAt, ctx.timeZone) === wanted) ?? null
+    const writerId = ctx.person.patientId
+    if (!visit || !writerId) {
+      const theirs = ctx.booked.appointments.map((a) => localStamp(a.startsAt, ctx.timeZone)).join(', ')
+      return { content: `They have no booked visit at ${wanted || '(no visit_on given)'}. Their visits: ${theirs || 'none'}. Do not say anything is changed.`, isError: true }
+    }
+    if (new Date(visit.startsAt).getTime() <= Date.now()) return { content: 'That visit has already started. Call hand_over_to_colleague saying whose it is.', isError: true }
+    const was = ctx.booked.types.find((t) => t.id === visit.typeId)
+    if (!was || (was.stage !== 'first_visit' && was.stage !== 'first_visit_offer')) {
+      return { content: 'Only a first visit can be put in someone new\'s name. Call hand_over_to_colleague saying whose it is, with their name and mobile; do not say it is changed.', isError: true }
+    }
+    const person = await readBroughtPerson(ctx, value.person_name, value.person_phone, value.person_relation)
+    if ('error' in person) return { content: person.error.replace('Do not say it is booked.', 'Do not say it is changed.'), isError: true }
+
+    const { data: row } = await ctx.service.from('appointments').select('clinic_id').eq('id', visit.id).maybeSingle()
+    const clinicId = (row as { clinic_id: string | null } | null)?.clinic_id
+    if (!clinicId) return { content: 'That visit could not be read. Call hand_over_to_colleague saying whose it is.', isError: true }
+
+    const writer = receptionistServiceClient(ctx.event) as unknown as Supa
+    used = true
+    const personId = await createBroughtPerson(writer, ctx, writerId, person, { practitionerId: visit.practitionerId, clinicId })
+    if (!personId) {
+      used = false
+      return { content: "That person's record could not be made. Call hand_over_to_colleague with their name and mobile; do not say it is changed.", isError: true }
+    }
+    // What that person may have, not what the writer had: the ad's offer is
+    // for whoever answered the ad, so it does not pass to the person they
+    // bring. The referral visit when the writer has been, else the plain
+    // first visit -- one of the same length, or the visit stays as it is
+    // and a person sorts the type (a longer one needs the calendar again).
+    const theirs = ctx.bringsSomeone.types.find((t) => t.durationMinutes === was.durationMinutes) ?? null
+    const type = theirs ?? was
+    const { data: changed, error } = await writer
+      .from('appointments')
+      .update({ patient_id: personId, appointment_type_id: type.id } as never)
+      .eq('id', visit.id)
+      .eq('account_id', ctx.accountId)
+      .eq('patient_id', writerId)
+      .eq('status', 'booked')
+      .is('deleted_at', null)
+      .select('id')
+    if (error || !changed?.length) {
+      used = false
+      await writer.from('patients').delete().eq('id', personId).eq('account_id', ctx.accountId)
+      console.error('[receptionist] give_visit_to refused:', error?.message ?? 'no row changed')
+      return { content: 'That visit could not be changed: a colleague may have changed it a moment ago. Call hand_over_to_colleague saying whose it is; do not say it is changed.', isError: true }
+    }
+
+    const format = (locale: string) => new Date(visit.startsAt).toLocaleString(locale, { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: ctx.timeZone })
+    console.info(`[receptionist] gave appointment ${visit.id} to a new patient (account ${ctx.accountId})`)
+    // Best-effort, as after a booking: the visit is theirs either way.
+    try {
+      await ctx.onBooked(`He pasado su ${was.name} del ${format('es-ES')} a nombre de ${person.name} (ficha nueva, referida por quien escribe)${type.id !== was.id ? `, como ${type.name}` : ''}.`)
+      await sendAppointmentConfirmation(ctx.service, ctx.accountId, visit.id)
+    } catch (err) {
+      console.error('[receptionist] after give_visit_to:', (err as Error)?.message ?? err)
+    }
+    return {
+      content: [
+        `Done: the visit on ${format('en-GB')} is now in ${person.firstName}'s name, referred by the person writing, with the same practitioner. ${person.firstName} gets the confirmation on their own phone. Tell them, with the day and time in words.`,
+        type.id !== was.id ? `It is now a ${type.name}${typePrice(type) ? ` (${typePrice(type)})` : ''}, not a ${was.name}: what ${was.name} costs was for the person writing, not for ${person.firstName}. If they ask about the price, say so.` : '',
+      ].filter(Boolean).join(' '),
+      isError: false,
+    }
+  }
 }
 
 /** The clinic's address, when this patient has never been; null otherwise or when it has none. */

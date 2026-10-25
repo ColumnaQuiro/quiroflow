@@ -41,8 +41,13 @@ export const SIF_CODE = 'QF'
  * NOT the marketing version of the whole app: a change to the calendar does
  * not make this a different invoicing system, and reissuing the declaration
  * for it would make the version meaningless.
+ *
+ * 2.0.0 is the version the declaración responsable first takes effect for:
+ * the first to remit to the AEAT and print the QR, and it carries every
+ * facturación change since 1.24.0 (rectificativas at the product's IVA,
+ * facturas to a minor's tutor, third-party payers).
  */
-export const SIF_VERSION = '1.24.0'
+export const SIF_VERSION = '2.0.0'
 
 // The formula the huella chain is built with, mirrored from the database's
 // factura_huella_spec_version(). Named here too because the declaration
@@ -97,11 +102,39 @@ export const SIF_SUPPORTS_MULTIPLE_OBLIGADOS = 'S'
 export const SIF_PRODUCER = {
   name: 'Columnaquiro S.L',
   nif: 'B16365504',
-  address: 'Calle Vivons 29, Bajo Izquierdo, 46006 Valencia',
+  address: 'Calle Vivons 29, Bajo Izquierdo, 46006 Valencia, España',
 } as const
 
-/** Whether the declaration can honestly be made yet. See the page. */
-export const SIF_DECLARATION_IN_FORCE = false
+/**
+ * Whether the declaration can honestly be made yet. See the page.
+ *
+ * True since every requirement on it is implemented: remisión runs every
+ * minute against the AEAT's VERI*FACTU service (proven on its test service
+ * since 23 Sep 2026, every record Correcto), and the QR prints on every
+ * production-chain factura.
+ */
+export const SIF_DECLARATION_IN_FORCE = true
+
+/**
+ * Orden HAC/1177/2024 art. 15.1.l): the date and place the producer signs
+ * the declaration -- a complete date, and at least the locality and country.
+ * Change the date whenever SIF_VERSION changes: each version is declared on
+ * its own.
+ */
+export const SIF_DECLARATION_SIGNED = { date: '2026-10-25', place: 'Valencia, España' } as const
+
+/**
+ * Art. 15.1.d): the hardware and software components, with a brief
+ * description of the system and its main functions.
+ */
+export const SIF_COMPONENTS = [
+  'Aplicación web alojada (software como servicio) a la que la clínica accede con un navegador; no requiere hardware ni instalación propios.',
+  'Base de datos PostgreSQL alojada en la Unión Europea, donde se guardan las facturas y sus registros de facturación encadenados.',
+  'Servicio de remisión que envía los registros al servicio web VERI*FACTU de la AEAT y conserva cada respuesta.',
+] as const
+
+export const SIF_FUNCTIONS =
+  'Gestión de una clínica sanitaria (agenda, pacientes, cobros) que expide facturas completas, simplificadas y rectificativas, genera para cada una su registro de facturación de alta encadenado mediante huella, lo remite a la AEAT e imprime en la factura el código QR tributario.'
 
 /**
  * The producer is fully identified -- every field the SistemaInformatico block

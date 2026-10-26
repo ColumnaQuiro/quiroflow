@@ -2,6 +2,7 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { sendPendingRecords } from '~/server/utils/verifactuSender'
 import { syncVerifactuFees } from '~/server/utils/verifactuFee'
+import { sendVerifactuAlerts } from '~/server/utils/verifactuAlerts'
 
 // Sends registros de facturación to the AEAT.
 //
@@ -75,10 +76,20 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  // Surfaced on every tick rather than in a separate alert nobody built. A
-  // certificate that expires stops transmission, and under VERI*FACTU that
-  // failure looks identical to a quiet week -- so the thing that runs every
-  // minute is the right place for it to be visible.
+  // Someone is told: owners by email, and Sentry, once per record still not
+  // accepted fifteen minutes after it was generated, and once per certificate
+  // at 30 and 7 days from expiry (server/utils/verifactuAlerts.ts). Every
+  // clinic that owes something, not only the ones this tick got round to.
+  // After the sends, so a record this tick got accepted is not reported.
+  const alerts = await sendVerifactuAlerts(
+    supabase,
+    (summary ?? []).filter((row) => Number(row.outstanding) > 0).map((row) => row.account_id),
+    secretKey,
+  )
+
+  // Also on every tick's response, as before. A certificate that expires
+  // stops transmission, and under VERI*FACTU that failure looks identical to
+  // a quiet week.
   const { data: expiring } = await supabase.rpc('verifactu_certificates_expiring', { p_within_days: 30 })
 
   // Parked records, on every tick, beside the expiring certificate and for the
@@ -103,6 +114,7 @@ export default defineEventHandler(async (event) => {
   return {
     fee,
     accountsOwing: owing.length,
+    ...(alerts.records || alerts.certificates || alerts.errors ? { alerts } : {}),
     ...(parked ? { parked } : {}),
     results,
     ...(expiring?.length

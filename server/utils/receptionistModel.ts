@@ -6,7 +6,7 @@ import { availabilityLists, FREE_TIMES_MAX_DAYS, FREE_TIMES_MAX_TIMES, parseFree
 import { clinicDateOf, startOfLocalDate } from '~/utils/clinicClock'
 import { briefingLeak } from '~/utils/receptionistGuard'
 import type { ReceptionistPrompt } from '~/utils/receptionistPrompt'
-import { ADD_TO_WAITLIST, BOOK_APPOINTMENT, CANCEL_APPOINTMENT, GIVE_VISIT_TO } from '~/server/utils/receptionistBooking'
+import { ADD_TO_WAITLIST, BOOK_APPOINTMENT, CANCEL_APPOINTMENT, GIVE_VISIT_TO, STOP_FOLLOW_UPS } from '~/server/utils/receptionistBooking'
 import { cleanReply, offeredTimeCount, tooManyTimesNote } from '~/utils/receptionistHistory'
 
 // How the receptionist talks to the model, for all three of its callers --
@@ -149,6 +149,8 @@ export async function runReceptionistModel(
     cancel?: ((input: unknown) => Promise<{ content: string; isError: boolean }>) | null
     /** Offer give_visit_to (receptionistBooking.ts): same terms as `book`. */
     give?: ((input: unknown) => Promise<{ content: string; isError: boolean }>) | null
+    /** Offer stop_follow_ups (receptionistBooking.ts): a patient answered on their own only. */
+    stopFollowUps?: ((input: unknown) => Promise<{ content: string; isError: boolean }>) | null
     /**
      * The clinic's limit on times offered in one reply. A reply over it is
      * written again once (offeredTimeCount): told "at most 2", it offered one
@@ -188,6 +190,7 @@ export async function runReceptionistModel(
     ...(opts.waitlist ? [ADD_TO_WAITLIST] : []),
     ...(opts.cancel ? [CANCEL_APPOINTMENT] : []),
     ...(opts.give ? [GIVE_VISIT_TO] : []),
+    ...(opts.stopFollowUps ? [STOP_FOLLOW_UPS] : []),
   ]
   let handedOver: string | null = null
   // A booking's confirmation names its time (and a move, the old one too; a
@@ -262,6 +265,11 @@ export async function runReceptionistModel(
             return { content: 'The visit could not be changed. Do not say it is changed: call hand_over_to_colleague saying whose it is, with their name and mobile.', isError: true }
           })
           if (!result.isError) booked = true
+        } else if (use.name === 'stop_follow_ups' && opts.stopFollowUps) {
+          result = await opts.stopFollowUps(use.input).catch((err) => {
+            console.error('[receptionist] stop_follow_ups failed:', (err as Error)?.message ?? err)
+            return { content: 'It could not be done. Call hand_over_to_colleague saying they have left, so a colleague takes them off the follow-ups.', isError: true }
+          })
         } else if (use.name === 'add_to_waitlist' && opts.waitlist) {
           result = await opts.waitlist(use.input).catch((err) => {
             console.error('[receptionist] add_to_waitlist failed:', (err as Error)?.message ?? err)

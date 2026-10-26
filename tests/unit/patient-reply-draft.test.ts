@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildPatientReplyPrompt, openBono, patientFactsSection, returningPatientSection, summariseVisitHistory, visitHistoryRule, type PastVisit, type PatientPromptConfig, type PatientReplyFacts } from '../../utils/patientReplyPrompt'
+import { LEFT_THE_CLINIC_LINE, buildPatientReplyPrompt, openBono, patientFactsSection, returningPatientSection, summariseVisitHistory, visitHistoryRule, type PastVisit, type PatientPromptConfig, type PatientReplyFacts } from '../../utils/patientReplyPrompt'
 import { receptionistPromptText } from '../../utils/receptionistPrompt'
 
 // A reply to a patient in the Inbox, drafted by the receptionist
@@ -164,5 +164,33 @@ describe('visit history', () => {
     expect(prompt).toContain('offer them a new time with their usual practitioner')
     expect(prompt).toContain('Do not hand over just because what they remember differs from the records')
     expect(prompt).toContain('they did NOT come')
+  })
+})
+
+// A patient wrote that she had moved away. The receptionist said goodbye and
+// handed over so someone could take her off the recalls; nobody did, and the
+// next recall would have gone to her anyway.
+describe('someone who has left', () => {
+  const config: PatientPromptConfig = { personaName: 'Alba', toneLine: 'Courteous and brief.', languages: ['es'], knowledge: [], escalationRules: [], neverSays: '', slotsPerReply: 2, bookingWindowDays: 14 }
+  const prompt = (canStopFollowUps: boolean) => receptionistPromptText(buildPatientReplyPrompt(config, {
+    facts,
+    offeredTypes: [],
+    calendar: { now: new Date('2026-10-25T09:30:00Z'), timeZone: 'Europe/Madrid', availability: null },
+    sendsItself: true,
+    canStopFollowUps,
+  }))
+
+  it('takes them off the follow-ups itself when it can, instead of handing over', () => {
+    expect(prompt(true)).toContain(LEFT_THE_CLINIC_LINE)
+    expect(LEFT_THE_CLINIC_LINE).toContain('call stop_follow_ups')
+    expect(LEFT_THE_CLINIC_LINE).toContain('This replaces handing it over to a colleague')
+  })
+
+  it('never reads a later or a trip as leaving', () => {
+    expect(LEFT_THE_CLINIC_LINE).toContain('Never call it for a later, a holiday, a trip')
+  })
+
+  it('says nothing about it when the tool is not on the request (a draft)', () => {
+    expect(prompt(false)).not.toContain('stop_follow_ups')
   })
 })

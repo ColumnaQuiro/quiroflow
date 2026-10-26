@@ -2,7 +2,7 @@ import type { H3Event } from 'h3'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
 import { overMonthlyLimit, recordReceptionistReply } from '~/server/utils/receptionistUsage'
 import { announceHandover, heldBackBeforeSending, noteInConversation, PAST_TIME_REASON, sendAsReceptionist } from '~/server/utils/receptionistSend'
-import { bookingTool, cancelTool, giveVisitTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
+import { bookingTool, cancelTool, giveVisitTool, stopFollowUpsTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
 import { recentImages, withImages, type StoredImage } from '~/server/utils/receptionistImages'
 import { historyLine } from '~/utils/receptionistHistory'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personRepliedSince } from '~/utils/receptionistAutoReply'
@@ -260,6 +260,9 @@ export async function draftPatientReply(
   const waitlist = actions ? waitlistTool(actions) : null
   const cancel = actions ? cancelTool(actions) : null
   const give = actions ? giveVisitTool(actions) : null
+  // Taking someone who has left off the recalls needs no calendar, only that
+  // the reply is sent on its own: a draft waits for a person anyway.
+  const stopFollowUps = sends && opts.send && channel ? stopFollowUpsTool({ event: opts.send.event, accountId, patientId }) : null
   // What they sent since the clinic last wrote, pictures included.
   const images = await recentImages(service, turns.slice(lastOutbound + 1))
 
@@ -270,7 +273,7 @@ export async function draftPatientReply(
   const { text: draft, refused, handedOver } = await runReceptionistModel(await createAnthropicClient(apiKey), {
     model: MODEL,
     maxTokens: MAX_TOKENS,
-    system: buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, family: { forNew: family.forNew, forReturning: family.forReturning, members: family.members }, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, laterPrices, reactivationType }),
+    system: buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, family: { forNew: family.forNew, forReturning: family.forReturning, members: family.members }, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, laterPrices, reactivationType, canStopFollowUps: Boolean(stopFollowUps) }),
     messages: withImages(history, images),
     findFreeTimes,
     handOver: sends,
@@ -278,6 +281,7 @@ export async function draftPatientReply(
     waitlist,
     cancel,
     give,
+    stopFollowUps,
     maxTimesPerReply: config.slotsPerReply,
     internalNotes: internalNotes(config),
     logLabel: `patient ${patientId}`,

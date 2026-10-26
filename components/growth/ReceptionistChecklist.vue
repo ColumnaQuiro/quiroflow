@@ -2,9 +2,15 @@
 import type { ReceptionistConfig, ReceptionistType } from '~/composables/useGrowthReceptionist'
 
 // What a clinic that has just arrived still has to do before the
-// receptionist can work, in the order it should do it: tell it something,
-// try it, connect a channel, turn it on. Hidden once every step is done --
-// it is a way in, not a dashboard.
+// receptionist can work, in the order it should do it: types it can offer
+// with their prices, what is not in the settings, try it, connect a channel,
+// turn it on. Hidden once every step is done -- it is a way in, not a
+// dashboard.
+//
+// Prices, the address and the hours come from the settings, not from the
+// knowledge cards (utils/receptionistTypes.ts, utils/receptionistClinic.ts):
+// this used to say "tell it the prices and opening hours", which is now how
+// to give it a second copy that goes stale.
 const props = defineProps<{
   config: ReceptionistConfig
   offeredTypes: ReceptionistType[]
@@ -16,9 +22,21 @@ const emit = defineEmits<{ go: [tab: 'knowledge' | 'behaviour' | 'try'] }>()
 
 const t = useT()
 
+// A type it offers with no price is one it cannot quote, and one with no
+// stage it cannot tell a first visit from a session by.
+const unfinishedTypes = computed(() => props.offeredTypes.filter((type) => !type.stage || !type.priceCents).length)
 const steps = computed(() => [
-  { key: 'knowledge', done: props.config.knowledge.length > 0, label: t('Tell it the prices and opening hours', 'Dile los precios y los horarios'), tab: 'knowledge' as const },
-  { key: 'types', done: props.offeredTypes.length > 0, label: t('Have at least one appointment type it may offer', 'Ten al menos un tipo de cita que pueda ofrecer'), tab: 'behaviour' as const },
+  props.offeredTypes.length === 0
+    ? { key: 'types', done: false, label: t('Have at least one appointment type it may offer', 'Ten al menos un tipo de cita que pueda ofrecer'), tab: 'behaviour' as const }
+    : {
+        key: 'types',
+        done: unfinishedTypes.value === 0,
+        label: unfinishedTypes.value === 1
+          ? t('Give the appointment type it offers a price and a stage', 'Ponle precio y etapa al tipo de cita que ofrece')
+          : t(`Give the ${unfinishedTypes.value || ''} appointment types it offers a price and a stage`, `Ponles precio y etapa a los ${unfinishedTypes.value || ''} tipos de cita que ofrece`),
+        link: '/settings/appointment-types',
+      },
+  { key: 'knowledge', done: props.config.knowledge.length > 0, label: t('Tell it what is not in the settings: what you treat, what the first visit includes', 'Cuéntale lo que no está en Ajustes: qué tratáis, qué incluye la primera visita'), tab: 'knowledge' as const },
   { key: 'try', done: props.tried, label: t('Try it as a patient would', 'Pruébala como lo haría un paciente'), tab: 'try' as const },
   { key: 'channel', done: props.liveChannelCount > 0, label: t('Connect WhatsApp or Instagram', 'Conecta WhatsApp o Instagram'), link: '/settings/whatsapp' },
   { key: 'on', done: props.config.enabled, label: t('Turn it on', 'Actívala') },

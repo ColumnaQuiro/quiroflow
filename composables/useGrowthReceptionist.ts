@@ -54,6 +54,10 @@ export interface ReceptionistType {
   id: string
   name: string
   durationMinutes: number
+  /** appointment_types.stage: what tells the receptionist a first visit from the rest. */
+  stage?: string | null
+  /** appointment_types.default_price_cents: the price the receptionist quotes. */
+  priceCents?: number | null
 }
 
 interface TypeChoices {

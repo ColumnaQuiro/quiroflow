@@ -216,7 +216,8 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
   return async (input) => {
     const value = (input ?? {}) as { appointment_type?: unknown; date?: unknown; time?: unknown; move_visit_on?: unknown; full_name?: unknown; email?: unknown; child_name?: unknown; child_age?: unknown; family_member_name?: unknown; other_person_name?: unknown; other_person_phone?: unknown; other_person_relation?: unknown; referred_by?: unknown }
     const date = typeof value.date === 'string' ? value.date.trim() : ''
-    const time = typeof value.time === 'string' ? value.time.trim() : ''
+    // A time listed as "10:00*" (next to a visit, receptionistSlots.ts) is 10:00.
+    const time = typeof value.time === 'string' ? value.time.trim().replace(/\*+$/, '') : ''
     if (!DAY.test(date) || !HH_MM.test(time)) return { content: 'date must be YYYY-MM-DD and time HH:MM, exactly as listed.', isError: true }
 
     const start = new Date(wallClockToUtc(date, time, ctx.timeZone))
@@ -334,7 +335,12 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
     // the writer's: children who see one practitioner while their parent
     // sees another.
     // Someone new they bring is seen by whoever is free, as anyone new.
-    const own = brought ? null : relative ? relative.practitionerIds : (child?.existing?.practitionerIds ?? ctx.practitionerIds)
+    // A new child is seen by whoever is free, as anyone new -- not by the
+    // parent's practitioner, who may not see children at all. And whoever's
+    // diary it is must do this type (appointment_types.practitioner_ids):
+    // when none of them does, it is anyone who does.
+    let own = brought ? null : relative ? relative.practitionerIds : child ? (child.existing?.practitionerIds ?? null) : ctx.practitionerIds
+    if (own && type.practitionerIds?.length && !own.some((id) => type!.practitionerIds!.includes(id))) own = null
     for (const practitionerId of await candidatePractitioners(ctx, moving, own)) {
       const calendar = await loadReceptionistCalendar(ctx.service, ctx.accountId, ctx.config, [type], new Date(), { from: dayStart, days: 1, maxTimesPerList: 1000 }, [practitionerId])
       const group = calendar.availability?.groups.find((g) => g.days.some((d) => d.date === date && d.times.includes(time)))

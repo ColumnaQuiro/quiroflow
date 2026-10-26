@@ -32,6 +32,8 @@ export interface SlotType extends PromptType {
   id: string
   /** appointment_type_overrides.duration_minutes, by practitioner. */
   durationByPractitioner?: Record<string, number>
+  /** appointment_types.practitioner_ids: only these do it; empty or absent for everyone. */
+  practitionerIds?: string[] | null
 }
 
 export interface SlotAppointment extends BookingBusyRange {
@@ -48,6 +50,12 @@ export interface SlotDay {
   date: string
   /** "09:30", on the clinic's clock. */
   times: string[]
+  /**
+   * Those of `times` that start as a visit with the same practitioner ends,
+   * or end as one starts: offered first, so the day is booked in a block
+   * rather than in islands (cluster booking). Absent when none.
+   */
+  nextTo?: string[]
 }
 
 /** One list in the prompt: the free times of one or more types at one clinic. */
@@ -140,6 +148,13 @@ export function receptionistSlotGroups(q: ReceptionistSlotQuery): ReceptionistAv
       ...q.blocks.filter((b) => b.practitionerId === practitionerId || (b.practitionerId === null && b.clinicId === clinic.id)),
     ]
     const busy = new Map(staff.map((p) => [p.id, busyFor(p.id)]))
+    // Where each practitioner's visits start and end, for cluster booking:
+    // their visits only, not blocks -- a time beside a lunch break is no gap
+    // saved.
+    const edges = new Map(staff.map((p) => {
+      const own = q.appointments.filter((a) => a.practitionerId === p.id)
+      return [p.id, { starts: new Set(own.map((a) => new Date(a.starts_at).getTime())), ends: new Set(own.map((a) => new Date(a.ends_at).getTime())) }]
+    }))
 
     const dates: string[] = []
     for (let date = clinicDateOf(start, timeZone), last = clinicDateOf(notAfter, timeZone); date <= last; date = nextDate(date)) dates.push(date)
@@ -153,18 +168,25 @@ export function receptionistSlotGroups(q: ReceptionistSlotQuery): ReceptionistAv
       let truncatedAfter: string | null = null
       for (const date of dates) {
         const starts = new Set<number>()
+        const packed = new Set<number>()
         for (const p of staff) {
+          if (type.practitionerIds?.length && !type.practitionerIds.includes(p.id)) continue
+          const durationMinutes = type.durationByPractitioner?.[p.id] ?? type.durationMinutes
+          const edge = edges.get(p.id)!
           const slots = bookingSlotsForDay({
             date,
             timeZone,
             clinicHours: clinic.businessHours,
             practitionerHours: p.businessHours,
-            durationMinutes: type.durationByPractitioner?.[p.id] ?? type.durationMinutes,
+            durationMinutes,
             busy: busy.get(p.id) ?? [],
             notBefore,
             notAfter,
           })
-          for (const at of slots) starts.add(at.getTime())
+          for (const at of slots) {
+            starts.add(at.getTime())
+            if (edge.ends.has(at.getTime()) || edge.starts.has(at.getTime() + durationMinutes * 60000)) packed.add(at.getTime())
+          }
         }
         if (starts.size === 0) continue
         if (days.length > 0 && count + starts.size > maxTimes) {
@@ -172,7 +194,9 @@ export function receptionistSlotGroups(q: ReceptionistSlotQuery): ReceptionistAv
           break
         }
         count += starts.size
-        days.push({ date, times: [...starts].sort((a, b) => a - b).map((at) => clinicTimeLabel(new Date(at), timeZone)) })
+        const label = (at: number) => clinicTimeLabel(new Date(at), timeZone)
+        const nextTo = [...packed].sort((a, b) => a - b).map(label)
+        days.push({ date, times: [...starts].sort((a, b) => a - b).map(label), ...(nextTo.length ? { nextTo } : {}) })
       }
       return { types: [{ name: type.name, durationMinutes: type.durationMinutes }], days, truncatedAfter }
     })
@@ -221,7 +245,7 @@ export function availabilityLists(availability: ReceptionistAvailability, emptyW
     const names = group.types.map((type) => `${type.name} (${type.durationMinutes} min)`).join(', ')
     const heading = `## ${names}${group.clinicName ? ` at ${group.clinicName}` : ''}`
     if (group.days.length === 0) return `${heading}\nNo free times ${emptyWindow}.`
-    const days = group.days.map((day) => `- ${dayLabel(day.date)}: ${day.times.join(', ')}`).join('\n')
+    const days = group.days.map((day) => `- ${dayLabel(day.date)}: ${day.times.map((time) => (day.nextTo?.includes(time) ? `${time}*` : time)).join(', ')}`).join('\n')
     const more = group.truncatedAfter ? `\n(This list stops at ${group.truncatedAfter}. Later days may have free times; they are just not shown.)` : ''
     return `${heading}\n${days}${more}`
   })
@@ -269,7 +293,10 @@ export function receptionistBookingSection(opts: {
       // A first visit being moved was offered a time from the adjustments'
       // list, which a first visit does not fit (23 Oct 2026).
       `Each list is for the appointments in its heading: take times only from the list for the type you are booking or moving, since a time free for a short visit may not be free for a longer one.`,
-      `Choose times that fit what the patient has said about when suits them; if they have not said, offer the earliest ones, on different days where possible.`,
+      // Cluster booking: a time beside a visit already booked keeps the
+      // practitioner's day in one block instead of islands with gaps nobody
+      // can fill.
+      `Choose times that fit what the patient has said about when suits them; if they have not said, offer the earliest ones, on different days where possible. A time marked * starts right as another visit ends, or ends right as one starts: among the times that suit them, offer those first, so the day has no gaps. The * is not part of the time -- never write it to the patient, and book the time without it.`,
       multiClinic ? `Times are per clinic: offer the clinic the patient wants, and ask which one if it is not clear.` : '',
       opts.searchTool
         ? `If they ask about a date after this list, or the list stops before the day they want, call find_free_times for those dates before answering -- never say a later day is free or full without it. If nothing found suits them, ask which days and whether mornings or afternoons suit them, and say your colleague will confirm an exact time shortly.`

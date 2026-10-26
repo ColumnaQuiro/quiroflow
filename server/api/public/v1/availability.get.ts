@@ -73,11 +73,21 @@ export default defineApiHandler({ scope: 'appointments:read' }, async ({ event, 
     .is('deleted_at', null)
     .eq('team_member_clinics.clinic_id', clinicId)
   if (practitionerFilter) practitionerQuery = practitionerQuery.eq('id', practitionerFilter)
+  // A type only some practitioners do (appointment_types.practitioner_ids)
+  // has times only with them, as on the booking page and with the AI
+  // receptionist.
+  const onlyThese = ((appointmentType as { practitioner_ids?: string[] | null }).practitioner_ids ?? []).filter(Boolean)
+  if (onlyThese.length) practitionerQuery = practitionerQuery.in('id', onlyThese)
 
   const { data: practitioners, error: practitionerError } = await practitionerQuery
   if (practitionerError) throw new ApiError('server_error', practitionerError.message)
   if (practitionerFilter && !practitioners?.length) {
-    throw badRequest(`No active practitioner with id "${practitionerFilter}" works at this clinic.`, 'practitioner_id')
+    throw badRequest(
+      onlyThese.length && !onlyThese.includes(practitionerFilter)
+        ? `Practitioner "${practitionerFilter}" does not do this appointment type.`
+        : `No active practitioner with id "${practitionerFilter}" works at this clinic.`,
+      'practitioner_id',
+    )
   }
 
   const rangeStart = new Date(`${from}T00:00:00Z`)

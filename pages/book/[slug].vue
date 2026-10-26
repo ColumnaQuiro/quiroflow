@@ -31,6 +31,8 @@ interface BookingAppointmentType {
   online_bypass_practitioner: boolean
   online_max_days_ahead: number | null
   online_deposit_cents: number | null
+  /** Only these practitioners do it; empty (or absent, before 20261026141816) for everyone. */
+  practitioner_ids?: string[]
 }
 interface BookingTeamMember {
   id: string
@@ -142,7 +144,11 @@ const ANY_PRACTITIONER = '__any__'
 const clinic = computed(() => info.value?.clinics.find((c) => c.id === clinicId.value) ?? null)
 const appointmentType = computed(() => info.value?.appointment_types.find((t) => t.id === appointmentTypeId.value) ?? null)
 const teamMember = computed(() => info.value?.team_members.find((m) => m.id === teamMemberId.value) ?? null)
-const availablePractitioners = computed(() => (info.value?.team_members ?? []).filter((m) => m.clinic_ids.includes(clinicId.value)))
+// At the clinic chosen, and doing the type chosen when only some do it.
+const availablePractitioners = computed(() => {
+  const only = appointmentType.value?.practitioner_ids ?? []
+  return (info.value?.team_members ?? []).filter((m) => m.clinic_ids.includes(clinicId.value) && (only.length === 0 || only.includes(m.id)))
+})
 const anyPractitionerMode = computed(() => teamMemberId.value === ANY_PRACTITIONER)
 // Every time on this page is the clinic's. Slots used to be built with
 // setHours -- the VISITOR's zone -- so anyone booking from outside the
@@ -397,13 +403,14 @@ function onClinicChange() {
 }
 
 // "Bypass practitioner selection" shows any available practitioner rather
-// than asking the patient to pick one -- this app has no per-type
-// practitioner-eligibility list yet, so "any" is simplified to "the first
-// one offering this clinic", same one-practitioner auto-pick the page
+// than asking the patient to pick one: "any" is "the first one offering
+// this clinic and this type", same one-practitioner auto-pick the page
 // already did before this feature existed.
 const bypassPractitioner = computed(() => !!appointmentType.value?.online_bypass_practitioner)
 watch(appointmentTypeId, () => {
   if (bypassPractitioner.value) teamMemberId.value = availablePractitioners.value[0]?.id ?? ''
+  // Someone picked before the type who does not do it is no longer a choice.
+  else if (teamMemberId.value && teamMemberId.value !== ANY_PRACTITIONER && !availablePractitioners.value.some((m) => m.id === teamMemberId.value)) teamMemberId.value = ''
 })
 
 // --- group classes ---

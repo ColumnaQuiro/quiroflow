@@ -72,6 +72,16 @@ async function sendViaResend(apiKey: string, email: OutgoingEmail): Promise<{ ok
   }
 }
 
+/**
+ * How a Brevo message is keyed in email_messages.provider_message_id. The send
+ * API returns the id wrapped in angle brackets ("<…@smtp-relay.mailin.fr>")
+ * and the webhook may or may not, so both sides strip them here and the
+ * "brevo:" prefix keeps it from ever colliding with a Resend id.
+ */
+export function brevoMessageKey(messageId: string): string {
+  return `brevo:${messageId.trim().replace(/^</, '').replace(/>$/, '')}`
+}
+
 async function sendViaBrevo(apiKey: string, senderEmail: string, email: OutgoingEmail): Promise<{ id: string | null }> {
   const response = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
@@ -97,7 +107,7 @@ async function sendViaBrevo(apiKey: string, senderEmail: string, email: Outgoing
   }
   try {
     const body = (await response.json()) as { messageId?: string }
-    return { id: body?.messageId ? `brevo:${body.messageId}` : null }
+    return { id: body?.messageId ? brevoMessageKey(body.messageId) : null }
   } catch {
     return { id: null }
   }

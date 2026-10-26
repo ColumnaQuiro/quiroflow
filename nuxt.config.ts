@@ -292,6 +292,9 @@ export default defineNuxtConfig({
     // quiroflow.com authenticated, or every fallback send is refused.
     brevoApiKey: '',
     brevoSenderEmail: '',
+    // Shared secret for /api/webhooks/brevo (Brevo does not sign webhooks).
+    // Unset means that endpoint refuses everything.
+    brevoWebhookSecret: '',
     // Where "someone just signed up" goes. Empty means no notification is
     // sent and onboarding is unaffected -- same contract as the Netlify
     // token above: a missing integration must never break an account being

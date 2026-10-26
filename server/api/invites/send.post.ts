@@ -63,24 +63,11 @@ export default defineEventHandler(async (event) => {
     </div>
   `
 
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${config.resendApiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      from: 'QuiroFlow <notifications@quiroflow.com>',
-      to: invite.email,
-      subject: `You're invited to join ${accountName} on QuiroFlow`,
-      html,
-    }),
+  await sendResendEmail({
+    to: invite.email,
+    subject: `You're invited to join ${accountName} on QuiroFlow`,
+    html,
   })
-
-  if (!response.ok) {
-    const errBody = await response.text()
-    throw createError({ statusCode: 502, statusMessage: `Resend error: ${errBody}` })
-  }
 
   // So the pending list can say when it last went out.
   await supabase.from('account_invites').update({ last_sent_at: new Date().toISOString() } as never).eq('id', invite.id)

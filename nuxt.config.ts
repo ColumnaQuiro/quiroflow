@@ -286,6 +286,12 @@ export default defineNuxtConfig({
     // unreadable, so each clinic would have to enter theirs again.
     verifactuSecretKey: '',
     resendApiKey: '',
+    // Fallback provider for when Resend's free daily quota runs out (see
+    // server/utils/resend.ts). Optional: unset means Resend only, as before.
+    // Must be QuiroFlow's own Brevo account (hola@quiroflow.com) with
+    // quiroflow.com authenticated, or every fallback send is refused.
+    brevoApiKey: '',
+    brevoSenderEmail: '',
     // Where "someone just signed up" goes. Empty means no notification is
     // sent and onboarding is unaffected -- same contract as the Netlify
     // token above: a missing integration must never break an account being

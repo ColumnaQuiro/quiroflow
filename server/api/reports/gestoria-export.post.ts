@@ -39,12 +39,12 @@ export default defineEventHandler(async (event) => {
   const end = startOfLocalDate(nextDate(body.to), tz).toISOString()
 
   // Every factura of the period, a page at a time (PostgREST answers 1,000).
-  type Row = { id: string; number: string; kind: string; issued_at: string; description: string | null; amount_cents: number; tax_base_cents: number | null; tax_rate_bp: number | null; tax_amount_cents: number | null; tax_exemption_code: string | null; recipient_name: string | null; recipient_nif: string | null; rectifies_factura_id: string | null; payment_id: string | null }
+  type Row = { id: string; number: string; kind: string; issued_at: string; description: string | null; amount_cents: number; tax_base_cents: number | null; tax_rate_bp: number | null; tax_amount_cents: number | null; tax_exemption_code: string | null; recipient_name: string | null; recipient_nif: string | null; rectifies_factura_id: string | null; payment_id: string | null; annulled_at: string | null }
   const rows: Row[] = []
   for (let from = 0; ; from += 1000) {
     const { data, error } = await supabase
       .from('facturas')
-      .select('id, number, kind, issued_at, description, amount_cents, tax_base_cents, tax_rate_bp, tax_amount_cents, tax_exemption_code, recipient_name, recipient_nif, rectifies_factura_id, payment_id')
+      .select('id, number, kind, issued_at, description, amount_cents, tax_base_cents, tax_rate_bp, tax_amount_cents, tax_exemption_code, recipient_name, recipient_nif, rectifies_factura_id, payment_id, annulled_at')
       .eq('account_id', accountId)
       .gte('issued_at', start)
       .lt('issued_at', end)

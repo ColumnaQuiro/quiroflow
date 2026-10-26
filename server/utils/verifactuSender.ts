@@ -41,7 +41,7 @@ import { Agent, request as httpsRequest } from 'node:https'
 import { readFileSync } from 'node:fs'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
-import { buildRegistroAlta } from '~/utils/registroAlta'
+import { buildRegistroAlta, buildRegistroAnulacion } from '~/utils/registroAlta'
 import { PASSPHRASE_SECRET_NAME, decryptSecret } from './verifactuCertificate'
 import { isDelegated, verifactuPlatformAccountId } from './verifactuPlatform'
 import {
@@ -54,6 +54,7 @@ import {
   chooseChain,
   describeUnjudged,
   parseVerifactuResponse,
+  sendableBeforeAnulacionWait,
   transmissionBlockedBy,
   verifactuEndpoint,
 } from '~/utils/verifactuSoap'
@@ -247,18 +248,27 @@ export async function sendPendingRecords(
   // One chain per submission, sent to that chain's own service -- see
   // chooseChain. The test chain drains first; the production one waits until
   // the clinic is live.
-  const { data: chainRows } = sendable.length
-    ? await supabase.from('factura_records').select('id, environment').in('id', sendable.map((p) => p.factura_record_id))
-    : { data: [] as { id: string; environment: string }[] }
+  const { data: chainRows } = owed.length
+    ? await supabase.from('factura_records').select('id, environment, record_type, factura_id').in('id', owed.map((p) => p.factura_record_id))
+    : { data: [] as { id: string; environment: string; record_type: string; factura_id: string }[] }
   const environmentOf = new Map((chainRows ?? []).map((r) => [r.id, r.environment === 'production' ? 'production' : 'test'] as const))
+  const rowOf = new Map((chainRows ?? []).map((r) => [r.id, r]))
+  // Facturas whose alta the AEAT does not hold yet: an anulación of one of
+  // them has to wait (sendableBeforeAnulacionWait).
+  const unacceptedAltas = new Set(
+    (chainRows ?? []).filter((r) => r.record_type === 'alta').map((r) => r.factura_id),
+  )
   const chain = chooseChain(
     sendable.map((p) => ({ sequence: p.sequence, environment: environmentOf.get(p.factura_record_id) ?? 'test' })),
     account.mode === 'live' ? 'production' : 'test',
   )
   if (chain.blocked === 'production-not-enabled') return { sent: 0, parked, blocked: chain.blocked, estadoEnvio: null }
-  const pending = sendable
-    .filter((p) => (environmentOf.get(p.factura_record_id) ?? 'test') === chain.environment)
-    .slice(0, MAX_RECORDS_PER_SUBMISSION)
+  const pending = sendableBeforeAnulacionWait(
+    sendable
+      .filter((p) => (environmentOf.get(p.factura_record_id) ?? 'test') === chain.environment)
+      .map((p) => ({ ...p, recordType: rowOf.get(p.factura_record_id)?.record_type ?? 'alta', facturaId: rowOf.get(p.factura_record_id)?.factura_id ?? '' })),
+    unacceptedAltas,
+  ).slice(0, MAX_RECORDS_PER_SUBMISSION)
 
   const { data: readyAtRaw } = await supabase.rpc('factura_submission_ready_at', { p_account_id: accountId })
   const readyAt = new Date((readyAtRaw as unknown as string) ?? Date.now())
@@ -277,7 +287,7 @@ export async function sendPendingRecords(
   // be sent again a record at a time -- see the caller below.
   const submit = async (
     registros: string[],
-    attempts: { recordId: string; attempt: number; serieNumber: string }[],
+    attempts: { recordId: string; attempt: number; serieNumber: string; operation: 'Alta' | 'Anulacion' }[],
   ): Promise<{ sent: number; estadoEnvio: string | null; schemaFault: boolean }> => {
     const envelope = buildRegFactuEnvelope({ obligado: built.obligado, registros })
     const sentAt = new Date().toISOString()
@@ -343,7 +353,11 @@ export async function sendPendingRecords(
       .in('factura_record_id', attempts.map((a) => a.recordId))
 
     for (const attempt of attempts) {
-      const matched = parsed.lines.find((l) => l.serieNumber === attempt.serieNumber)
+      // By number AND operation: an anulación names the same factura as its
+      // alta, so in one response the two answers share a serie number.
+      const matched = parsed.lines.find(
+        (l) => l.serieNumber === attempt.serieNumber && (l.operation ?? 'Alta') === attempt.operation,
+      )
       // The AEAT refused the submission as a whole and said nothing about this
       // record by name. That used to write nothing at all -- the reason was
       // read, discarded, and the record went on being refused every minute
@@ -493,7 +507,7 @@ function responseText(xml: string): string {
 async function recordAttempts(
   supabase: SupabaseClient<Database>,
   accountId: string,
-  attempts: { recordId: string; attempt: number; serieNumber: string }[],
+  attempts: { recordId: string; attempt: number; serieNumber: string; operation: 'Alta' | 'Anulacion' }[],
   outcome: { status: string; sentAt: string; errorMessage?: string },
 ): Promise<string[]> {
   const errors: string[] = []
@@ -552,7 +566,7 @@ async function buildRecordsFor(
   const ids = pending.map((p) => p.factura_record_id)
   const { data: records } = await supabase
     .from('factura_records')
-    .select('id, factura_id, sequence, issuer_nif, serie_number, issued_on, invoice_type, cuota_total_cents, importe_total_cents, generated_at, previous_huella, huella')
+    .select('id, factura_id, record_type, sequence, issuer_nif, serie_number, issued_on, invoice_type, cuota_total_cents, importe_total_cents, generated_at, previous_huella, huella')
     .in('id', ids)
     .order('sequence')
 
@@ -598,11 +612,12 @@ async function buildRecordsFor(
     : { data: [] as { id: string; first_name: string; last_name: string | null; national_id: string | null }[] }
 
   const registros: string[] = []
-  const attempts: { recordId: string; attempt: number; serieNumber: string }[] = []
+  const attempts: { recordId: string; attempt: number; serieNumber: string; operation: 'Alta' | 'Anulacion' }[] = []
 
   for (const r of records ?? []) {
     const f = (facturas ?? []).find((x) => x.id === r.factura_id)
     if (!f) continue
+    const operation = r.record_type === 'anulacion' ? ('Anulacion' as const) : ('Alta' as const)
 
     // The predecessor in full: the AEAT re-walks the chain, so its huella
     // alone does not identify it.
@@ -620,8 +635,21 @@ async function buildRecordsFor(
       .limit(1)
       .maybeSingle()
 
-    registros.push(
-      buildRegistroAlta({
+    registros.push(operation === 'Anulacion'
+      ? buildRegistroAnulacion({
+          record: {
+            issuerNif: r.issuer_nif,
+            serieNumber: r.serie_number,
+            issuedOn: r.issued_on,
+            generatedAt: r.generated_at,
+            previousHuella: r.previous_huella,
+            huella: r.huella,
+          },
+          previousRecord: prev ? { issuerNif: prev.issuer_nif, serieNumber: prev.serie_number, issuedOn: prev.issued_on } : null,
+          accountId,
+          indicadorMultiplesOt: (indicador as unknown as string) ?? 'S',
+        })
+      : buildRegistroAlta({
         record: {
           issuerNif: r.issuer_nif,
           serieNumber: r.serie_number,
@@ -691,7 +719,7 @@ async function buildRecordsFor(
       .order('attempt', { ascending: false })
       .limit(1)
       .maybeSingle()
-    attempts.push({ recordId: r.id, attempt: (lastAttempt?.attempt ?? 0) + 1, serieNumber: r.serie_number })
+    attempts.push({ recordId: r.id, attempt: (lastAttempt?.attempt ?? 0) + 1, serieNumber: r.serie_number, operation })
   }
 
   return {

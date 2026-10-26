@@ -124,7 +124,7 @@ const t = useT()
 // reading paid-minus-invoiced. See utils/owing.ts.
 const { balanceCents, outstandingCents, creditLedgerCents, bonoValueCents, lifetimeCents, refresh: refreshCreditSummary } =
   usePatientFinancialSummary(() => props.patientId)
-const { issueFactura, issueRectificativa } = useFacturas()
+const { issueFactura, issueRectificativa, annulFactura } = useFacturas()
 const { methods: paymentMethods, ensureLoaded: ensurePaymentMethodsLoaded, defaultMethod } = usePaymentMethods()
 
 // The documents the patient has actually been given, as opposed to the charges
@@ -147,6 +147,8 @@ interface FacturaRow {
   // but it no longer matches any money, which someone has to resolve.
   payment_id: string | null
   rectifies_factura_id: string | null
+  /** Annulled with a registro de anulación (annul_factura): documents nothing. */
+  annulled_at: string | null
 }
 const facturas = ref<FacturaRow[]>([])
 const sendingFacturaId = ref('')
@@ -157,7 +159,7 @@ async function loadFacturas() {
     supabase.from('patients').select('national_id, default_practitioner_id').eq('id', props.patientId).maybeSingle(),
     supabase
       .from('facturas')
-      .select('id, number, kind, description, amount_cents, issued_at, recipient_nif, recipient_patient_id, payment_id, rectifies_factura_id')
+      .select('id, number, kind, description, amount_cents, issued_at, recipient_nif, recipient_patient_id, payment_id, rectifies_factura_id, annulled_at')
       .eq('patient_id', props.patientId)
       .order('issued_at', { ascending: false }),
   ])
@@ -176,6 +178,8 @@ async function loadFacturas() {
 // What a factura still documents once its rectificativas are taken off. A
 // refund rectifies part or all of one; annulling it rectifies the rest.
 function facturaOutstandingCents(f: FacturaRow): number {
+  // Annulled outright: the AEAT holds it as annulled, so it documents nothing.
+  if (f.annulled_at) return 0
   const rectified = facturas.value
     .filter((r) => r.kind === 'rectificativa' && r.rectifies_factura_id === f.id)
     .reduce((sum, r) => sum + r.amount_cents, 0)
@@ -191,7 +195,15 @@ function canAnnulFactura(f: FacturaRow): boolean {
   return !f.payment_id && f.kind !== 'rectificativa' && facturaOutstandingCents(f) > 0
 }
 
-// Annul a factura whose payment was recorded in error.
+// Annul a factura whose payment was recorded in error -- one of two ways.
+//
+// 'anulacion' (the default): a VERI*FACTU registro de anulación, through
+// annul_factura(). The AEAT's own procedure for a factura that should never
+// have been issued: the alta is marked annulled, nothing negative is issued.
+//
+// 'rectificativa': the original route, below. A rectificativa for the
+// outstanding amount that cancels it, kept for when the clinic prefers the
+// correction to be a document of its own.
 //
 // Removing the payment (deletePayment) leaves its factura on the series --
 // numbers in a correlative series cannot disappear -- documenting money that
@@ -205,10 +217,22 @@ function canAnnulFactura(f: FacturaRow): boolean {
 const annullingFactura = ref<FacturaRow | null>(null)
 const annulReason = ref('')
 const annulBusy = ref(false)
+const annulMode = ref<'anulacion' | 'rectificativa'>('anulacion')
 async function confirmAnnulFactura() {
   const f = annullingFactura.value
   if (!f || !canAnnulFactura(f)) return
   annulBusy.value = true
+  if (annulMode.value === 'anulacion') {
+    const ok = await annulFactura(f.id, annulReason.value.trim() || null)
+    annulBusy.value = false
+    if (!ok) return
+    annullingFactura.value = null
+    annulReason.value = ''
+    annulMode.value = 'anulacion'
+    showToast(t(`${f.number} annulled`, `${f.number} anulada`))
+    await loadFacturas()
+    return
+  }
   const issued = await issueRectificativa({
     accountId: store.accountId!,
     patientId: props.patientId,
@@ -223,6 +247,7 @@ async function confirmAnnulFactura() {
   if (!issued) return
   annullingFactura.value = null
   annulReason.value = ''
+  annulMode.value = 'anulacion'
   showToast(t(`${f.number} annulled with ${issued.number}`, `${f.number} anulada con ${issued.number}`))
   await loadFacturas()
 }
@@ -251,7 +276,7 @@ const patientDefaultPractitionerId = ref<string | null>(null)
 const addresseeById = ref(new Map<string, { name: string; nif: string | null }>())
 // The NIF a factura is sent with: the tutor's when it is in their name.
 const facturaNif = (f: FacturaRow) => f.recipient_nif ?? (f.recipient_patient_id ? (addresseeById.value.get(f.recipient_patient_id)?.nif ?? null) : patientNationalId.value)
-const facturasMissingNif = computed(() => facturas.value.filter((f) => f.kind === 'full' && !validSpanishTaxId(facturaNif(f))))
+const facturasMissingNif = computed(() => facturas.value.filter((f) => f.kind === 'full' && !f.annulled_at && !validSpanishTaxId(facturaNif(f))))
 const missingNifIsTutors = computed(() => facturasMissingNif.value.length > 0 && facturasMissingNif.value.every((f) => !!f.recipient_patient_id))
 const { packageTemplates, membershipTemplates, ensureLoaded: ensureBillingTemplatesLoaded } = useBillingTemplates()
 const addCreditAmount = ref('')
@@ -2995,7 +3020,7 @@ function money(cents: number) {
               <p class="text-[11.5px] text-ink-faint">{{ new Date(f.issued_at).toLocaleDateString() }}</p>
             </div>
             <div class="flex items-center gap-2">
-              <span class="font-mono text-[13px] text-ink-900">{{ money(f.amount_cents) }}</span>
+              <span class="font-mono text-[13px]" :class="f.annulled_at ? 'text-ink-faint line-through' : 'text-ink-900'">{{ money(f.amount_cents) }}</span>
               <a
                 :href="`/api/facturas/${f.id}/pdf`"
                 target="_blank"
@@ -3034,22 +3059,55 @@ function money(cents: number) {
       v-if="annullingFactura"
       tone="danger"
       :title="t(`Annul ${annullingFactura.number}?`, `¿Anular ${annullingFactura.number}?`)"
-      :confirm-label="t('Issue rectifying factura', 'Emitir rectificativa')"
+      :confirm-label="annulMode === 'anulacion' ? t('Annul factura', 'Anular factura') : t('Issue rectifying factura', 'Emitir rectificativa')"
       :cancel-label="t('Cancel', 'Cancelar')"
       :busy="annulBusy"
       @confirm="confirmAnnulFactura"
-      @cancel="annullingFactura = null; annulReason = ''"
+      @cancel="annullingFactura = null; annulReason = ''; annulMode = 'anulacion'"
     >
       <p class="text-[14px] leading-snug text-ink-700">
         {{
           t(
-            `Issues a rectifying factura for ${money(facturaOutstandingCents(annullingFactura))} that cancels it. No money moves: use this only when the payment was recorded in error. If money went back to the patient, record a refund instead.`,
-            `Emite una factura rectificativa por ${money(facturaOutstandingCents(annullingFactura))} que la anula. No se mueve dinero: úsalo solo si el cobro se registró por error. Si se devolvió dinero al paciente, registra un reembolso.`,
+            'Use this only when the payment was recorded in error and no money was taken. If money went back to the patient, record a refund instead.',
+            'Úsalo solo si el cobro se registró por error y no se cobró nada. Si se devolvió dinero al paciente, registra un reembolso.',
           )
         }}
       </p>
+      <fieldset class="mt-3 space-y-2" data-cy="factura-annul-mode">
+        <legend class="sr-only">{{ t('How to annul it', 'Cómo anularla') }}</legend>
+        <label
+          class="flex cursor-pointer gap-2.5 rounded-ctl border px-3 py-2.5"
+          :class="annulMode === 'anulacion' ? 'border-brand bg-brand-tint' : 'border-line-control'"
+        >
+          <input v-model="annulMode" type="radio" value="anulacion" class="mt-0.5" data-cy="factura-annul-mode-anulacion" />
+          <span class="text-[13px] leading-snug text-ink-700">
+            <span class="block font-semibold text-ink-900">{{ t('Annul it (recommended)', 'Anularla (recomendado)') }}</span>
+            {{
+              t(
+                'The factura should never have been issued. An annulment record goes to the AEAT and the number stays on the series, marked annulled.',
+                'La factura no debió emitirse. Se envía a la AEAT un registro de anulación y el número queda en la serie, marcado como anulado.',
+              )
+            }}
+          </span>
+        </label>
+        <label
+          class="flex cursor-pointer gap-2.5 rounded-ctl border px-3 py-2.5"
+          :class="annulMode === 'rectificativa' ? 'border-brand bg-brand-tint' : 'border-line-control'"
+        >
+          <input v-model="annulMode" type="radio" value="rectificativa" class="mt-0.5" data-cy="factura-annul-mode-rectificativa" />
+          <span class="text-[13px] leading-snug text-ink-700">
+            <span class="block font-semibold text-ink-900">{{ t('Issue a rectifying factura', 'Emitir una rectificativa') }}</span>
+            {{
+              t(
+                `A rectifying factura for ${money(facturaOutstandingCents(annullingFactura))} that cancels it, as its own document in the R series.`,
+                `Una factura rectificativa por ${money(facturaOutstandingCents(annullingFactura))} que la anula, como documento propio en la serie R.`,
+              )
+            }}
+          </span>
+        </label>
+      </fieldset>
       <label class="mt-3 block text-[12.5px] font-medium text-ink-700">
-        {{ t('Reason (on the rectifying factura)', 'Motivo (aparece en la rectificativa)') }}
+        {{ annulMode === 'anulacion' ? t('Reason (kept with the factura)', 'Motivo (se guarda con la factura)') : t('Reason (on the rectifying factura)', 'Motivo (aparece en la rectificativa)') }}
         <input
           v-model="annulReason"
           type="text"

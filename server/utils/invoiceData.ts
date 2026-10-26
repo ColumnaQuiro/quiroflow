@@ -53,6 +53,10 @@ export interface InvoiceDocumentData {
   // are noise at best and, on a document that says what someone handed over,
   // actively confusing.
   documentTitle?: string
+  // Set on a factura annulled with a registro de anulación. Printed under the
+  // title: the document is still the one that was issued, and whoever holds a
+  // copy must be able to see that it no longer stands.
+  annulledAt?: string | null
   showTotalsBreakdown?: boolean
   // The tax a factura was issued under. Absent on the visit document, which is
   // a receipt rather than an invoice, so the block simply does not print.
@@ -355,6 +359,10 @@ export async function generateInvoicePdf(data: InvoiceDocumentData): Promise<Buf
       .font('Helvetica')
       .fillColor('#555')
       .text(`Fecha de expedición: ${pdfDate(data.createdAt, data.timeZone, '2-digit')}`, 50)
+    if (data.annulledAt) {
+      doc.fontSize(11).font('Helvetica-Bold').fillColor('#b42318').text(`ANULADA el ${pdfDate(data.annulledAt, data.timeZone, '2-digit')}`, 50)
+      doc.font('Helvetica')
+    }
     // Said outright, so nobody -- patient, gestor or inspector -- mistakes a
     // recibo for the fiscal document. The factura is the one for the payment.
     if (!isFactura) {

@@ -25,7 +25,7 @@ export async function loadFacturaDocumentData(
   const { data: factura } = await supabase
     .from('facturas')
     .select(
-      'number, kind, description, amount_cents, tax_base_cents, tax_rate_bp, tax_amount_cents, tax_exemption_code, issued_at, account_id, patient_id, recipient_patient_id, recipient_name, recipient_nif, recipient_address, rectifies_factura_id, issuer_clinic_id, issuer_name, issuer_legal_name, issuer_address, issuer_tax_id, issuer_footer_text, issuer_logo_storage_path, patients(first_name, last_name, email, address, city, postal_code, country, national_id)',
+      'number, kind, description, amount_cents, tax_base_cents, tax_rate_bp, tax_amount_cents, tax_exemption_code, issued_at, account_id, patient_id, recipient_patient_id, recipient_name, recipient_nif, recipient_address, rectifies_factura_id, annulled_at, issuer_clinic_id, issuer_name, issuer_legal_name, issuer_address, issuer_tax_id, issuer_footer_text, issuer_logo_storage_path, patients(first_name, last_name, email, address, city, postal_code, country, national_id)',
     )
     .eq('id', facturaId)
     .maybeSingle()
@@ -128,6 +128,7 @@ export async function loadFacturaDocumentData(
     // it one, rather than a factura with a minus sign.
     documentTitle: `${FACTURA_TITLES[factura.kind] ?? 'Factura'} ${factura.number}`,
     showTotalsBreakdown: false,
+    annulledAt: factura.annulled_at ?? null,
     tax: {
       baseCents: factura.tax_base_cents ?? factura.amount_cents,
       rateBp: factura.tax_rate_bp ?? 0,

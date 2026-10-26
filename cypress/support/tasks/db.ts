@@ -1145,7 +1145,7 @@ async function stripeScheduleState(opts: { subscriptionId: string }) {
 async function facturasFor(opts: { patientId: string }) {
   const { data, error } = await admin
     .from('facturas')
-    .select('id, number, kind, description, amount_cents, tax_base_cents, tax_rate_bp, tax_amount_cents, tax_exemption_code, recipient_nif, payment_id, created_by, rectifies_factura_id, issuer_clinic_id, issuer_name, issuer_legal_name, issuer_address, issuer_tax_id, issuer_footer_text')
+    .select('id, number, kind, description, amount_cents, tax_base_cents, tax_rate_bp, tax_amount_cents, tax_exemption_code, recipient_nif, payment_id, created_by, rectifies_factura_id, issuer_clinic_id, issuer_name, issuer_legal_name, issuer_address, issuer_tax_id, issuer_footer_text, annulled_at, annulment_reason')
     .eq('patient_id', opts.patientId)
     .order('issued_at')
   if (error) throw error
@@ -1400,6 +1400,13 @@ async function createClinic(opts: { accountId: string; name: string; address?: s
 // said rather than throwing, so a spec can assert the refusal.
 async function tryChangeFacturaIssuer(opts: { facturaId: string; address: string }) {
   const { error } = await admin.from('facturas').update({ issuer_address: opts.address }).eq('id', opts.facturaId)
+  return { error: error?.message ?? null }
+}
+
+// Marks a factura annulled by writing the column directly, as a REST call
+// could, and reports what the database said. Only annul_factura() may.
+async function tryMarkFacturaAnnulled(opts: { facturaId: string }) {
+  const { error } = await admin.from('facturas').update({ annulled_at: new Date().toISOString() }).eq('id', opts.facturaId)
   return { error: error?.message ?? null }
 }
 
@@ -4314,6 +4321,7 @@ export const dbTasks = {
   'db:createFacturaWithoutTax': createFacturaWithoutTax,
   'db:huellaFor': huellaFor,
   'db:facturaRecordsFor': facturaRecordsFor,
+  'db:tryMarkFacturaAnnulled': tryMarkFacturaAnnulled,
   'db:runEvents': runEvents,
   'db:setAutomationActionConfig': setAutomationActionConfig,
   'db:updateClinic': updateClinic,

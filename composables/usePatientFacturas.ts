@@ -11,6 +11,8 @@ export interface PatientFacturaRow {
   description: string
   amount_cents: number
   issued_at: string
+  /** Annulled with a registro de anulación: still listed, marked as such. */
+  annulled_at: string | null
 }
 
 export function usePatientFacturas(patientId: () => string) {
@@ -32,7 +34,7 @@ export function usePatientFacturas(patientId: () => string) {
     loading.value = true
     const { data, error } = await supabase
       .from('facturas')
-      .select('id, number, kind, description, amount_cents, issued_at')
+      .select('id, number, kind, description, amount_cents, issued_at, annulled_at')
       .eq('patient_id', id)
       .order('issued_at', { ascending: false })
       .limit(200)

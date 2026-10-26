@@ -263,6 +263,12 @@ export type EstadoEnvio = 'Correcto' | 'ParcialmenteCorrecto' | 'Incorrecto'
 
 export interface VerifactuLine {
   serieNumber: string | null
+  /**
+   * Operacion/TipoOperacion: 'Alta' or 'Anulacion'. An anulación names the
+   * same factura as its alta, so the serie number alone cannot tell the two
+   * answers apart when both are in one response.
+   */
+  operation: 'Alta' | 'Anulacion' | null
   estado: EstadoRegistro | null
   errorCode: string | null
   errorMessage: string | null
@@ -329,6 +335,7 @@ export function parseVerifactuResponse(xml: string): VerifactuResponse {
       // NumSerieFactura lives inside IDFactura; reading it from the line as a
       // whole is the same value and survives the block being reshaped.
       serieNumber: localTag(block, 'NumSerieFactura'),
+      operation: (localTag(block, 'TipoOperacion') as 'Alta' | 'Anulacion' | null) ?? null,
       estado: localTag(block, 'EstadoRegistro') as EstadoRegistro | null,
       errorCode: localTag(block, 'CodigoErrorRegistro'),
       errorMessage: msg === null ? null : unescape(msg),
@@ -401,3 +408,27 @@ export function certificateAccountFor(input: {
   if (!input.platformAccountId) return { accountId: null, blocked: 'no-platform-certificate' }
   return { accountId: input.platformAccountId, blocked: null }
 }
+
+/**
+ * The pending records that may go now, in chain order: everything up to the
+ * first ANULACIÓN whose alta the AEAT has not accepted yet.
+ *
+ * An anulación tells the AEAT to mark an alta it holds as annulled. Sent
+ * before that alta is registered -- in the same envelope, or while the alta
+ * is still being refused -- it names a record the AEAT does not have. So it
+ * waits, and so does everything after it: the chain is sent in order, and
+ * skipping one record would send its successor pointing at a predecessor the
+ * AEAT never received.
+ *
+ * `unacceptedAltaFacturaIds` are the facturas whose alta is still owed,
+ * parked or not. A parked alta therefore holds its anulación indefinitely,
+ * which is what the alerts are for.
+ */
+export function sendableBeforeAnulacionWait<T extends { recordType: string; facturaId: string }>(
+  pending: T[],
+  unacceptedAltaFacturaIds: Set<string>,
+): T[] {
+  const stop = pending.findIndex((p) => p.recordType === 'anulacion' && unacceptedAltaFacturaIds.has(p.facturaId))
+  return stop === -1 ? pending : pending.slice(0, stop)
+}
+

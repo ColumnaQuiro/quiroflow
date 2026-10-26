@@ -39,6 +39,7 @@ interface FacturaRow {
   recipient_name: string | null
   recipient_nif: string | null
   rectifies_factura_id: string | null
+  annulled_at: string | null
   patient_id: string
   patients: { first_name: string; last_name: string | null; national_id: string | null } | null
   payments: { method: string } | null
@@ -62,7 +63,7 @@ async function load() {
     const data = await fetchAllRows<FacturaRow>((f, tt) =>
       supabase
         .from('facturas')
-        .select('id, number, kind, issued_at, description, amount_cents, tax_base_cents, tax_rate_bp, tax_amount_cents, tax_exemption_code, recipient_name, recipient_nif, rectifies_factura_id, patient_id, patients(first_name, last_name, national_id), payments(method)')
+        .select('id, number, kind, issued_at, description, amount_cents, tax_base_cents, tax_rate_bp, tax_amount_cents, tax_exemption_code, recipient_name, recipient_nif, rectifies_factura_id, annulled_at, patient_id, patients(first_name, last_name, national_id), payments(method)')
         .gte('issued_at', from.toISOString())
         .lt('issued_at', to.toISOString())
         .order('issued_at', { ascending: false })
@@ -107,6 +108,7 @@ function asGestoria(r: FacturaRow): GestoriaFactura {
     recipient_nif: nifOf(r) || null,
     rectifies_number: r.rectifies_factura_id ? (numberById.value.get(r.rectifies_factura_id) ?? null) : null,
     payment_method: r.payments?.method ? labelFor(r.payments.method) : null,
+    annulled_at: r.annulled_at,
   }
 }
 
@@ -261,14 +263,16 @@ const KINDS = ['full', 'simplified', 'rectificativa'] as const
                 <td :class="td">
                   {{ KIND_LABEL[r.kind] ?? KIND_ES[r.kind] ?? r.kind }}
                   <span v-if="r.rectifies_factura_id && numberById.get(r.rectifies_factura_id)" class="text-ink-muted"> · {{ numberById.get(r.rectifies_factura_id) }}</span>
+                  <!-- Annulled with a registro de anulación: on the series, in no total. -->
+                  <span v-if="r.annulled_at" data-cy="facturas-row-annulled" class="ml-1 rounded-ctlSm bg-chip-bg px-1.5 py-0.5 text-[10.5px] text-chip-text">{{ t('annulled', 'anulada') }}</span>
                 </td>
                 <td :class="td" class="max-w-[220px] truncate">
                   <NuxtLink :to="`/patients/${r.patient_id}?tab=billing`" class="hover:underline">{{ recipientOf(r) || '—' }}</NuxtLink>
                 </td>
                 <td :class="td" class="font-mono">{{ nifOf(r) }}</td>
-                <td :class="td" class="font-mono">{{ formatEur(r.tax_base_cents ?? r.amount_cents) }}</td>
-                <td :class="td" class="font-mono">{{ formatEur(r.tax_amount_cents ?? 0) }} <span class="text-ink-muted">{{ rateOf(r) }}</span></td>
-                <td :class="td" class="font-mono font-semibold text-ink-900">{{ formatEur(r.amount_cents) }}</td>
+                <td :class="[td, r.annulled_at && 'line-through text-ink-faint']" class="font-mono">{{ formatEur(r.tax_base_cents ?? r.amount_cents) }}</td>
+                <td :class="[td, r.annulled_at && 'line-through text-ink-faint']" class="font-mono">{{ formatEur(r.tax_amount_cents ?? 0) }} <span class="text-ink-muted">{{ rateOf(r) }}</span></td>
+                <td :class="[td, r.annulled_at ? 'line-through text-ink-faint' : 'text-ink-900']" class="font-mono font-semibold">{{ formatEur(r.amount_cents) }}</td>
                 <td :class="td" data-pdf-skip>
                   <a :href="`/api/facturas/${r.id}/pdf`" target="_blank" rel="noopener" class="text-[12.5px] font-medium text-brand-text hover:underline">PDF</a>
                 </td>

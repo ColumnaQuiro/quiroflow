@@ -1,7 +1,7 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
 import { requireReceptionist } from '~/server/utils/requireGrowth'
-import { buildSystemPrompt, loadOfferedTypes, loadPackagePrices, loadReceptionistCalendar, loadReceptionistConfig, type LeadOrigin } from '~/server/utils/receptionist'
+import { buildSystemPrompt, loadClinicDetails, loadOfferedTypes, loadPackagePrices, loadReceptionistCalendar, loadReceptionistConfig, type LeadOrigin } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel, type ReceptionistToolUse } from '~/server/utils/receptionistModel'
 import { modelFailureMessage } from '~/utils/modelFailure'
 import { typesAfterFirstVisit, typesForAudience, typesForMinor, typesForReferral, typesForSomeoneTheyBring, type ReceptionistAudience } from '~/utils/receptionistTypes'
@@ -112,6 +112,7 @@ export default defineEventHandler(async (event) => {
   const referred = scenario.audience === 'existing'
   const bringsSomeone = { types: typesForSomeoneTheyBring(offered, referred), referred, canGive: false }
   const laterPrices = { sessions: typesAfterFirstVisit(offered), packages: await loadPackagePrices(supabase, teamMember.account_id) }
+  const clinicDetails = await loadClinicDetails(supabase, teamMember.account_id)
   const referralTypes = scenario.audience === 'existing' ? [] : typesForReferral(offered)
   const bookable = [...new Set([...types, ...adOnly, ...minors.forNewChild, ...bringsSomeone.types, ...referralTypes])]
   // And the same free times, read with the service role for the reason given
@@ -124,7 +125,7 @@ export default defineEventHandler(async (event) => {
     const { text: reply, refused, handedOver, toolUses } = await runReceptionistModel(await createAnthropicClient(apiKey), {
       model: MODEL,
       maxTokens: MAX_TOKENS,
-      system: buildSystemPrompt(config, { testMode: true, offeredTypes: types, adOnlyTypes: adOnly, audience: scenario.audience, calendar, leadOrigin: scenario.origin, searchTool: Boolean(findFreeTimes), sendsItself: true, minors, bringsSomeone, referral: referralTypes.length ? { types: referralTypes } : undefined, laterPrices }),
+      system: buildSystemPrompt(config, { testMode: true, offeredTypes: types, adOnlyTypes: adOnly, audience: scenario.audience, calendar, leadOrigin: scenario.origin, searchTool: Boolean(findFreeTimes), sendsItself: true, minors, bringsSomeone, referral: referralTypes.length ? { types: referralTypes } : undefined, laterPrices, clinicDetails }),
       messages: turns.map((turn) => ({ role: turn.role, content: turn.content })),
       findFreeTimes,
       // Offered as when it answers on its own; here it only reports.

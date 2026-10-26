@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
+import { clinicDetailsSection, type PromptClinic } from '~/utils/receptionistClinic'
 import { CONFIRM_BEFORE_BOOKING, audienceSection, minorsSection, newPatientDetailsSection, offeredAppointmentTypes, laterPricesSection, offeredTypesSection, referralSection, rescheduleSection, someoneTheyBringSection, type PromptPackage, type BookedVisit, type PromptChild, type PromptType, type ReceptionistAudience } from '~/utils/receptionistTypes'
 import { CARD_ANSWERS_LINE, historyMarkersSection, INFORMAL_ADDRESS_LINE, LATER_ANSWER_LINE, NO_INVENTION_LINE, NOT_CHIROPRACTIC_SYMPTOM_LINE, PART_OF_DAY_ANSWER_LINE, replyLanguageLine, SENT_FILES_LINE, STATED_LIMITS_LINE, WAITLIST_SECTION } from '~/utils/receptionistHistory'
 import { leadOriginSection, type LeadOrigin } from '~/utils/receptionistLeadOrigin'
@@ -124,6 +125,8 @@ export function toConfig(row: Row | null): ReceptionistConfig {
 /** A type as the prompt and the settings screen name it. */
 export interface OfferedType extends PromptType {
   id: string
+  /** appointment_types.practitioner_ids: only these do it; empty for everyone. */
+  practitionerIds?: string[]
 }
 
 /**
@@ -151,6 +154,37 @@ export async function loadOfferedTypes(supabase: SupabaseClient<Database>, accou
   return offered.map((type) => (varies.has(type.id) ? { ...type, priceVaries: true } : type))
 }
 
+/**
+ * Each open clinic's address, contact and hours (clinicDetailsSection): its
+ * settings, and the hours of the practitioners who take bookings there --
+ * the same people loadReceptionistCalendar offers times with.
+ */
+export async function loadClinicDetails(supabase: SupabaseClient<Database>, accountId: string): Promise<PromptClinic[]> {
+  const [{ data: clinics, error }, { data: practitioners }] = await Promise.all([
+    supabase.from('clinics').select('id, name, address, phone, email, business_hours').eq('account_id', accountId).is('archived_at', null).order('created_at'),
+    supabase
+      .from('team_members')
+      .select('business_hours, team_member_clinics(clinic_id)')
+      .eq('account_id', accountId)
+      .eq('is_practitioner', true)
+      .eq('online_booking_enabled', true)
+      .is('deleted_at', null),
+  ])
+  if (error) {
+    console.error('[receptionist] could not read clinics:', error.message)
+    return []
+  }
+  const staff = (practitioners ?? []) as unknown as { business_hours: BusinessHours | null; team_member_clinics: { clinic_id: string }[] | null }[]
+  return ((clinics ?? []) as { id: string; name: string; address: string | null; phone: string | null; email: string | null; business_hours: BusinessHours | null }[]).map((c) => ({
+    name: c.name,
+    address: c.address,
+    phone: c.phone,
+    email: c.email,
+    clinicHours: c.business_hours,
+    practitionerHours: staff.filter((p) => (p.team_member_clinics ?? []).some((tmc) => tmc.clinic_id === c.id)).map((p) => p.business_hours),
+  }))
+}
+
 /** The clinic's bonos and their prices (Settings > Bonos), for laterPricesSection. */
 export async function loadPackagePrices(supabase: SupabaseClient<Database>, accountId: string): Promise<PromptPackage[]> {
   const { data, error } = await supabase.from('packages').select('name, session_count, price_cents').eq('account_id', accountId).order('session_count')
@@ -165,7 +199,7 @@ export async function loadPackagePrices(supabase: SupabaseClient<Database>, acco
 export function readAccountTypes(supabase: SupabaseClient<Database>, accountId: string) {
   return supabase
     .from('appointment_types')
-    .select('id, name, duration_minutes, archived_at, sort_order, stage, online_bookable_by, for_minors, for_referrals, default_price_cents')
+    .select('id, name, duration_minutes, archived_at, sort_order, stage, online_bookable_by, for_minors, for_referrals, default_price_cents, practitioner_ids')
     .eq('account_id', accountId)
 }
 
@@ -353,7 +387,7 @@ export async function loadBookedVisits(
   const todayStart = await clinicTodayStart(supabase, accountId)
   const { data, error } = await supabase
     .from('appointments')
-    .select('id, starts_at, practitioner_id, appointment_types(id, name, duration_minutes, stage, online_bookable_by, for_minors, for_referrals, default_price_cents)')
+    .select('id, starts_at, practitioner_id, appointment_types(id, name, duration_minutes, stage, online_bookable_by, for_minors, for_referrals, default_price_cents, practitioner_ids)')
     .eq('account_id', accountId)
     .eq('patient_id', patientId)
     .eq('status', 'booked')
@@ -432,8 +466,8 @@ export function uniqueTypes(...lists: OfferedType[][]): OfferedType[] {
   return [...seen.values()]
 }
 
-function toOfferedType(type: { id: string; name: string; duration_minutes: number; stage?: string | null; online_bookable_by?: string | null; for_minors?: boolean | null; for_referrals?: boolean | null; default_price_cents?: number | null }): OfferedType {
-  return { id: type.id, name: type.name, durationMinutes: type.duration_minutes, stage: type.stage ?? null, bookableBy: type.online_bookable_by ?? null, forMinors: !!type.for_minors, forReferrals: !!type.for_referrals, priceCents: type.default_price_cents ?? null }
+function toOfferedType(type: { id: string; name: string; duration_minutes: number; stage?: string | null; online_bookable_by?: string | null; for_minors?: boolean | null; for_referrals?: boolean | null; default_price_cents?: number | null; practitioner_ids?: string[] | null }): OfferedType {
+  return { id: type.id, name: type.name, durationMinutes: type.duration_minutes, stage: type.stage ?? null, bookableBy: type.online_bookable_by ?? null, forMinors: !!type.for_minors, forReferrals: !!type.for_referrals, priceCents: type.default_price_cents ?? null, practitionerIds: type.practitioner_ids ?? [] }
 }
 
 /** What the prompt knows about the clinic's calendar at the moment of drafting. */
@@ -513,8 +547,16 @@ export async function loadReceptionistCalendar(
     const from = start.toISOString()
     // A day past the window: the last day's slots end after its last start.
     const to = new Date(start.getTime() + (windowDays + 1) * 86400000).toISOString()
+    // A type only some practitioners do (appointment_types.practitioner_ids)
+    // that none of these does -- a child's first visit asked for by a patient
+    // of someone who does not see children -- is offered with the people who
+    // do it, and only that type: every other stays with these.
+    const widenedFor = practitionerIds
+      ? offeredTypes.filter((type) => type.practitionerIds?.length && !type.practitionerIds.some((id) => practitionerIds.includes(id)))
+      : []
+    const staffIds = practitionerIds ? [...new Set([...practitionerIds, ...widenedFor.flatMap((type) => type.practitionerIds ?? [])])] : null
     const [practitioners, overrides, appointments, blocks] = await Promise.all([
-      (practitionerIds
+      (staffIds
         ? supabase
             .from('team_members')
             .select('id, full_name, business_hours, team_member_clinics(clinic_id)')
@@ -522,7 +564,7 @@ export async function loadReceptionistCalendar(
             .eq('is_practitioner', true)
             .eq('online_booking_enabled', true)
             .is('deleted_at', null)
-            .in('id', practitionerIds)
+            .in('id', staffIds)
         : supabase
             .from('team_members')
             .select('id, full_name, business_hours, team_member_clinics(clinic_id)')
@@ -565,6 +607,9 @@ export async function loadReceptionistCalendar(
 
     const types: SlotType[] = offeredTypes.map((type) => ({
       ...type,
+      // With someone widened in for another type, the rest keep to the
+      // practitioners asked for.
+      practitionerIds: type.practitionerIds?.length ? type.practitionerIds : widenedFor.length && practitionerIds ? practitionerIds : [],
       durationByPractitioner: Object.fromEntries(
         overrides.filter((o) => o.appointment_type_id === type.id && o.duration_minutes).map((o) => [o.team_member_id, o.duration_minutes!]),
       ),
@@ -588,7 +633,7 @@ export async function loadReceptionistCalendar(
     })
     // Named only when narrowed: "with Natacha" is what a patient of hers
     // expects to hear, and a list of everyone tells a new person nothing.
-    const withWhom = practitionerIds && availability ? practitioners.map((p) => p.full_name).filter(Boolean) : null
+    const withWhom = practitionerIds && availability ? practitioners.filter((p) => practitionerIds.includes(p.id)).map((p) => p.full_name).filter(Boolean) : null
     return { now, timeZone, availability, withWhom }
   } catch (err) {
     console.error('[receptionist] could not compute free times:', (err as Error)?.message ?? err)
@@ -704,6 +749,8 @@ export function buildSystemPrompt(
     referral?: { types: PromptType[] }
     /** What the visits after the first and the bonos cost (laterPricesSection). */
     laterPrices?: { sessions: PromptType[]; packages: PromptPackage[] }
+    /** The clinic's address, contact and hours from its settings (clinicDetailsSection). */
+    clinicDetails?: PromptClinic[]
   },
 ): ReceptionistPrompt {
   const personName = promptSafeName(opts.draft?.personName)
@@ -737,7 +784,10 @@ export function buildSystemPrompt(
     // copies out as "20/10" -- correct, and the least human way to say it.
     `Write dates in words, in the patient's language, with the weekday: "el lunes 20 de octubre", "Monday 20 October". Never "20/10" or "2026-10-20".`,
     replyLanguageLine(config.languages),
-    knowledge ? `# What you know about this clinic\n\n${knowledge}` : '# What you know about this clinic\n\nNothing has been configured yet. Say you will check with your colleague rather than guessing.',
+    clinicDetailsSection(opts.clinicDetails ?? []),
+    knowledge
+      ? `# What you know about this clinic\n\n${knowledge}`
+      : `# What you know about this clinic\n\nNothing ${opts.clinicDetails?.length ? 'else ' : ''}has been configured yet. For anything ${opts.clinicDetails?.length ? 'not under "The clinic"' : 'about the clinic'}, say you will check with your colleague rather than guessing.`,
     // The whole conversation is in the messages, and a receptionist who asks
     // for something the patient said three messages ago reads as a form.
     // Not every message wants an answer: a "Confirmar" tapped on the reminder,

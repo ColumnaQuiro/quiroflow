@@ -96,10 +96,11 @@ describe('Growth AI receptionist', () => {
 
   it('walks a new clinic through what is left to do, and stops once it is done', () => {
     cy.task('db:setInstagramAccount', { accountId: account.accountId, instagramUserId: 'ig-17841400000000001' })
-    cy.task('db:createAppointmentType', { accountId: account.accountId, name: 'Primera visita' })
+    cy.task('db:createAppointmentType', { accountId: account.accountId, name: 'Primera visita', stage: 'first_visit', defaultPriceCents: 7000 })
     cy.visit('/growth/receptionist?growth=1')
 
     cy.get('[data-test="receptionist-checklist"]').should('contain', '2 of 5')
+    cy.get('[data-test="checklist-types"]').should('have.attr', 'data-done', 'true')
     cy.get('[data-test="checklist-channel"]').should('have.attr', 'data-done', 'true')
     cy.get('[data-test="checklist-knowledge"]').should('have.attr', 'data-done', 'false')
 
@@ -113,6 +114,17 @@ describe('Growth AI receptionist', () => {
     cy.get('[data-test="receptionist-tab-overview"]').click()
     cy.get('[data-test="checklist-knowledge"]').should('have.attr', 'data-done', 'true')
     cy.get('[data-test="receptionist-checklist"]').should('contain', '3 of 5')
+  })
+
+  // Prices come from the types (utils/receptionistTypes.ts typePrice), so a
+  // type it offers with no price is one it cannot quote: the step sends the
+  // clinic to the type, not to a knowledge card.
+  it('asks for a price and a stage on the types it offers', () => {
+    cy.task('db:createAppointmentType', { accountId: account.accountId, name: 'Primera visita' })
+    cy.visit('/growth/receptionist?growth=1')
+
+    cy.get('[data-test="checklist-types"]').should('have.attr', 'data-done', 'false')
+    cy.get('[data-test="checklist-types"] a').should('have.attr', 'href', '/settings/appointment-types')
   })
 
   it('saves the persona, tone and languages, and they survive a reload', () => {

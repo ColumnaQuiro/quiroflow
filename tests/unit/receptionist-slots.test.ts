@@ -7,6 +7,7 @@ import {
   receptionistBookingSection,
   receptionistClockSection,
   receptionistSlotGroups,
+  availabilityLists,
   type ReceptionistSlotQuery,
 } from '../../utils/receptionistSlots'
 
@@ -76,6 +77,34 @@ describe('Receptionist free times', () => {
       types: [{ id: 't1', name: 'Primera visita', durationMinutes: 60, durationByPractitioner: { p2: 30 } }],
     }
     expect(days(q)[0]![1]).toEqual({ date: '2026-10-06', times: ['09:00', '10:00', '11:00', '15:00', '15:30'] })
+  })
+
+  // A type only some practitioners do (appointment_types.practitioner_ids):
+  // a children's first visit that only one of them sees.
+  it("offers a type only with the practitioners who do it", () => {
+    const q: ReceptionistSlotQuery = {
+      ...base,
+      practitioners: [
+        { id: 'p1', businessHours: null, clinicIds: ['c1'] },
+        { id: 'p2', businessHours: { tue: [['15:00', '16:00']] }, clinicIds: ['c1'] },
+      ],
+      types: [{ id: 't1', name: 'Primera visita niño', durationMinutes: 60, practitionerIds: ['p2'] }],
+    }
+    expect(days(q)[0]).toEqual([{ date: '2026-10-06', times: ['15:00'] }])
+  })
+
+  // Cluster booking: times right beside a booked visit are marked, so the
+  // receptionist offers them first and the day fills without gaps.
+  it('marks the times that start as a visit ends or end as one starts', () => {
+    const q: ReceptionistSlotQuery = {
+      ...base,
+      types: [{ id: 't1', name: 'Ajuste', durationMinutes: 30 }],
+      // Tuesday 10:00-10:30 in Madrid.
+      appointments: [{ practitionerId: 'p1', starts_at: '2026-10-06T08:00:00Z', ends_at: '2026-10-06T08:30:00Z' }],
+    }
+    const tuesday = days(q)[0]!.find((d) => d.date === '2026-10-06')!
+    expect(tuesday.nextTo).toEqual(['09:30', '10:30'])
+    expect(availabilityLists(receptionistSlotGroups(q)!, 'soon').join('\n')).toContain('09:00, 09:30*, 10:30*, 11:00')
   })
 
   it('lists types with the same times once, and others separately', () => {

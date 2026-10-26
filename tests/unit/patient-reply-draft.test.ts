@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildPatientReplyPrompt, openBono, patientFactsSection, returningPatientSection, type PatientPromptConfig, type PatientReplyFacts } from '../../utils/patientReplyPrompt'
+import { buildPatientReplyPrompt, openBono, patientFactsSection, returningPatientSection, summariseVisitHistory, visitHistoryRule, type PastVisit, type PatientPromptConfig, type PatientReplyFacts } from '../../utils/patientReplyPrompt'
 import { receptionistPromptText } from '../../utils/receptionistPrompt'
 
 // A reply to a patient in the Inbox, drafted by the receptionist
@@ -101,5 +101,68 @@ describe('returning patients', () => {
     expect(openBono([{ package_name: 'Bono 5', sessions_total: 5, sessions_used: 5 }, { package_name: 'Bono 10', sessions_total: 10, sessions_used: 4 }])).toEqual({ name: 'Bono 10', sessionsLeft: 6 })
     expect(openBono([{ package_name: 'Bono 5', sessions_total: 5, sessions_used: 5 }])).toBeNull()
     expect(openBono(null)).toBeNull()
+  })
+})
+
+// A patient missed Thursday's visit, was called about it, and wrote on Friday
+// with the following Thursday noted down. The receptionist saw only visits
+// still booked and the last one attended, so for it he had no visit at all,
+// and it handed over instead of offering the time that was free.
+describe('visit history', () => {
+  const now = new Date('2026-10-23T10:30:00Z')
+  const v = (startsAt: string, status: string, typeName = 'Mantenimiento', practitionerName = 'Natacha Felix'): PastVisit => ({ startsAt, status, typeName, practitionerName })
+  const past = [
+    v('2026-10-22T17:45:00Z', 'no_show'),
+    v('2026-09-29T15:30:00Z', 'completed'),
+    v('2026-09-10T15:30:00Z', 'cancelled'),
+    v('2026-08-27T15:30:00Z', 'completed'),
+    v('2026-08-12T15:30:00Z', 'completed', 'Ajuste', 'Natacha Felix'),
+    v('2026-05-05T15:30:00Z', 'no_show'),
+  ]
+
+  it('summarises rather than lists: the latest whatever became of it, recent misses, the usual visit', () => {
+    const h = summariseVisitHistory(past, { now, attended: 23, firstVisitAt: '2025-11-04T10:00:00Z' })!
+    expect(h.latest?.status).toBe('no_show')
+    expect(h.usualType).toBe('Mantenimiento')
+    expect(h.usualPractitioner).toBe('Natacha Felix')
+    // The latest is not repeated, and May is past the three months.
+    expect(h.recentMisses.map((m) => m.startsAt)).toEqual(['2026-09-10T15:30:00Z'])
+    expect(h.attended).toBe(23)
+  })
+
+  it('tells the receptionist a missed visit plainly, at the clinic hour', () => {
+    const history = summariseVisitHistory(past, { now, attended: 23, firstVisitAt: '2025-11-04T10:00:00Z' })
+    const s = patientFactsSection({ ...facts, upcoming: [], lastVisitAt: '2026-09-29T15:30:00Z', lastVisitType: 'Mantenimiento', history }, 'Europe/Madrid')
+    expect(s).toContain('Next visit: nothing booked.')
+    expect(s).toContain('Last visit they came to: 29 September 2026 (Mantenimiento)')
+    expect(s).toContain('Most recent appointment before now: Thursday 22 October at 19:45 (Mantenimiento with Natacha Felix) -- they did NOT come (marked as missed).')
+    expect(s).toContain('Visits they came to: 23, the first on 4 November 2025; usually Mantenimiento with Natacha Felix.')
+    expect(s).toContain('Also missed or cancelled in the last three months: Thursday 10 September at 17:30 (Mantenimiento with Natacha Felix), cancelled.')
+  })
+
+  it('does not repeat the latest when they came to it', () => {
+    const history = summariseVisitHistory(past.slice(1), { now, attended: 23, firstVisitAt: null })
+    const s = patientFactsSection({ ...facts, upcoming: [], history }, 'Europe/Madrid')
+    expect(s).not.toContain('Most recent appointment before now')
+  })
+
+  it('has nothing to say for someone with no past appointment', () => {
+    expect(summariseVisitHistory([], { now, attended: 0, firstVisitAt: null })).toBeNull()
+    expect(visitHistoryRule({ ...facts, history: null })).toBe('')
+  })
+
+  it('answers a remembered date from the records, offers a time, and never mentions a fee', () => {
+    const history = summariseVisitHistory(past, { now, attended: 23, firstVisitAt: null })
+    const config: PatientPromptConfig = { personaName: 'Alba', toneLine: 'Courteous and brief.', languages: ['es'], knowledge: [], escalationRules: [], neverSays: '', slotsPerReply: 2, bookingWindowDays: 14 }
+    const prompt = receptionistPromptText(buildPatientReplyPrompt(config, {
+      facts: { ...facts, upcoming: [], history },
+      offeredTypes: [],
+      calendar: { now, timeZone: 'Europe/Madrid', availability: null },
+    }))
+    expect(prompt).toContain('If they mention a visit that is not under "Next visit"')
+    expect(prompt).toContain('without mentioning any fee or charge')
+    expect(prompt).toContain('offer them a new time with their usual practitioner')
+    expect(prompt).toContain('Do not hand over just because what they remember differs from the records')
+    expect(prompt).toContain('they did NOT come')
   })
 })

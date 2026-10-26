@@ -6,7 +6,7 @@ import { bookingTool, cancelTool, giveVisitTool, stopFollowUpsTool, waitlistTool
 import { recentImages, withImages, type StoredImage } from '~/server/utils/receptionistImages'
 import { historyLine } from '~/utils/receptionistHistory'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personRepliedSince } from '~/utils/receptionistAutoReply'
-import { loadBookedVisits, loadFamilyAdults, loadOfferedTypes, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, toneWording, uniqueTypes, clinicTodayStart } from '~/server/utils/receptionist'
+import { loadBookedVisits, loadClinicDetails, loadFamilyAdults, loadOfferedTypes, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, toneWording, uniqueTypes, clinicTodayStart } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel, type FreeTimesForWhom } from '~/server/utils/receptionistModel'
 import { matchChild, typesAfterFirstVisit, typesForAudience, typesForMinor, typesForSomeoneTheyBring } from '~/utils/receptionistTypes'
 import { internalNotes } from '~/utils/receptionistGuard'
@@ -194,6 +194,8 @@ export async function draftPatientReply(
   const bringsSomeone = { types: typesForSomeoneTheyBring(offered, referred), referred }
   // What the visits and the clinic's bonos cost, from the types and Settings > Bonos.
   const laterPrices = { sessions: typesAfterFirstVisit(offered), packages: await loadPackagePrices(supabase, accountId) }
+  // Where the clinic is and when it sees patients, from its settings.
+  const clinicDetails = await loadClinicDetails(supabase, accountId)
   const family = { forNew: bringsSomeone.types, forReturning: types, members: await loadFamilyAdults(service, accountId, patientId) }
   // Back after a long break with no bono: the clinic's own visit for that
   // (returningPatientSection), when it is one it offers.
@@ -273,7 +275,7 @@ export async function draftPatientReply(
   const { text: draft, refused, handedOver } = await runReceptionistModel(await createAnthropicClient(apiKey), {
     model: MODEL,
     maxTokens: MAX_TOKENS,
-    system: buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, family: { forNew: family.forNew, forReturning: family.forReturning, members: family.members }, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, laterPrices, reactivationType, canStopFollowUps: Boolean(stopFollowUps) }),
+    system: buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, family: { forNew: family.forNew, forReturning: family.forReturning, members: family.members }, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, laterPrices, clinicDetails, reactivationType, canStopFollowUps: Boolean(stopFollowUps) }),
     messages: withImages(history, images),
     findFreeTimes,
     handOver: sends,

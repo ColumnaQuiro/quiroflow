@@ -35,6 +35,8 @@ interface Form {
   stage: string
   forMinors: boolean
   forReferrals: boolean
+  /** appointment_types.practitioner_ids: who does it; empty for everyone. */
+  practitionerIds: string[]
   online: boolean
   bookableBy: string
   bypass: boolean
@@ -84,6 +86,8 @@ function toForm(row: any, overrides: { team_member_id: string; duration_minutes:
     stage: row.stage ?? '',
     forMinors: !!row.for_minors,
     forReferrals: !!row.for_referrals,
+    // Only people still on the team: someone who left is no choice to show.
+    practitionerIds: ((row.practitioner_ids ?? []) as string[]).filter((id) => people.some((p) => p.id === id)),
     online: !!row.online_booking_enabled,
     bookableBy: row.online_bookable_by ?? 'all',
     bypass: !!row.online_bypass_practitioner,
@@ -174,6 +178,7 @@ const changes = computed(() => {
   if (f.stage !== before.stage) out.stage = f.stage || null
   if (f.forMinors !== before.forMinors) out.for_minors = f.forMinors
   if (f.forReferrals !== before.forReferrals) out.for_referrals = f.forReferrals
+  if (!same([...f.practitionerIds].sort(), [...before.practitionerIds].sort())) out.practitioner_ids = f.practitionerIds
   if (f.online !== before.online) out.online_booking_enabled = f.online
   if (f.bookableBy !== before.bookableBy) out.online_bookable_by = f.bookableBy
   if (f.bypass !== before.bypass) out.online_bypass_practitioner = f.bypass
@@ -644,7 +649,24 @@ const errorText = 'text-[12.5px] font-semibold text-danger-text'
                 <p class="text-[13px] text-ink-muted">{{ t('If someone takes longer or charges differently. Empty: the duration and price above are used.', 'Si alguien tarda o cobra distinto. Vacío: usa la duración y el precio de arriba.') }}</p>
               </div>
               <p v-if="practitioners.length === 0" class="text-[14px] text-ink-muted">{{ t('There are no active practitioners yet.', 'Todavía no hay profesionales activos.') }}</p>
-              <div v-else class="overflow-hidden rounded-ctl border border-line">
+              <fieldset v-else class="flex flex-col gap-2" data-cy="type-practitioners">
+                <legend class="text-[14.5px] font-semibold text-ink-900">{{ t('Who does it', 'Quién lo hace') }}</legend>
+                <div class="flex flex-wrap gap-2">
+                  <label
+                    v-for="p in practitioners"
+                    :key="p.id"
+                    class="flex h-9 touch:h-11 cursor-pointer items-center gap-2 rounded-ctl border px-3 text-[13.5px] font-semibold"
+                    :class="form.practitionerIds.includes(p.id) ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-700'"
+                  >
+                    <input v-model="form.practitionerIds" type="checkbox" :value="p.id" data-cy="type-practitioner" :data-member-id="p.id" class="h-4 w-4 accent-brand" />
+                    {{ p.full_name }}
+                  </label>
+                </div>
+                <span :class="hint">{{ form.practitionerIds.length
+                  ? t('Patients are only offered times with these people: on the booking page, through the API and by the AI receptionist. You can still book anyone from the calendar.', 'A los pacientes solo se les ofrecen horas con estas personas: en la página de reservas, por la API y con la recepcionista IA. Desde la agenda puedes seguir reservando con cualquiera.')
+                  : t('Nobody ticked: everyone does it.', 'Nadie marcado: lo hacen todos.') }}</span>
+              </fieldset>
+              <div v-if="practitioners.length > 0" class="overflow-hidden rounded-ctl border border-line">
                 <div class="hidden grid-cols-[1.6fr_1fr_1fr_60px] items-center bg-surface-subtle text-[12px] font-bold uppercase tracking-[.04em] text-ink-muted sm:grid">
                   <span class="px-3.5 py-2.5">{{ t('Practitioner', 'Profesional') }}</span>
                   <span class="px-3.5 py-2.5">{{ t('Duration (min)', 'Duración (min)') }}</span>

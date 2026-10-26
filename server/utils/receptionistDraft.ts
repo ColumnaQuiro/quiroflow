@@ -6,7 +6,7 @@ import { bookingTool, cancelTool, giveVisitTool, waitlistTool, type BookingConte
 import { recentImages, withImages } from '~/server/utils/receptionistImages'
 import { historyLine } from '~/utils/receptionistHistory'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage } from '~/utils/receptionistAutoReply'
-import { buildSystemPrompt, loadBookedVisits, loadOfferedTypes, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, uniqueTypes, type LeadOrigin } from '~/server/utils/receptionist'
+import { buildSystemPrompt, loadBookedVisits, loadClinicDetails, loadOfferedTypes, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, uniqueTypes, type LeadOrigin } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptionistModel'
 import { cameFromAd } from '~/utils/receptionistLeadOrigin'
 import { leadNameIsTheirs, typesForAudience, typesAfterFirstVisit, typesForMinor, typesForReferral, typesForSomeoneTheyBring, type ReceptionistAudience } from '~/utils/receptionistTypes'
@@ -199,6 +199,8 @@ export async function draftLeadReply(
   // What comes after a first visit, for "¿y luego cuánto?" -- from the types
   // and the clinic's bonos, not from a card kept in step by hand.
   const laterPrices = { sessions: typesAfterFirstVisit(offered), packages: await loadPackagePrices(supabase, accountId) }
+  // Where the clinic is and when it sees patients, from its settings.
+  const clinicDetails = await loadClinicDetails(supabase, accountId)
   const referralTypes = audience === 'existing' ? [] : typesForReferral(offered)
   const referral = referralTypes.length ? { types: referralTypes } : undefined
   // A lead who has booked their first visit and wants to move it is offered
@@ -262,7 +264,7 @@ export async function draftLeadReply(
   const { text: draft, refused, handedOver } = await runReceptionistModel(await createAnthropicClient(apiKey), {
     model: MODEL,
     maxTokens: MAX_TOKENS,
-    system: buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, audience, calendar, leadOrigin, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, draft: { personName: lead.full_name ?? null }, knownDetails: { name: leadNameIsTheirs(lead.channel) && Boolean(lead.full_name?.trim()), email: Boolean(lead.email?.trim()) }, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, referral, laterPrices }),
+    system: buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, audience, calendar, leadOrigin, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, draft: { personName: lead.full_name ?? null }, knownDetails: { name: leadNameIsTheirs(lead.channel) && Boolean(lead.full_name?.trim()), email: Boolean(lead.email?.trim()) }, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, referral, laterPrices, clinicDetails }),
     messages: withImages(history, images),
     findFreeTimes,
     handOver: sends,

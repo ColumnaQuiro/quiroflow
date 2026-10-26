@@ -1829,6 +1829,7 @@ export type Database = {
           online_bypass_practitioner: boolean
           online_deposit_cents: number | null
           online_max_days_ahead: number | null
+          practitioner_ids: string[]
           online_payment_required: boolean
           sort_order: number | null
           stage: string | null
@@ -1850,6 +1851,7 @@ export type Database = {
           online_bypass_practitioner?: boolean
           online_deposit_cents?: number | null
           online_max_days_ahead?: number | null
+          practitioner_ids?: string[]
           online_payment_required?: boolean
           sort_order?: number | null
           stage?: string | null
@@ -1871,6 +1873,7 @@ export type Database = {
           online_bypass_practitioner?: boolean
           online_deposit_cents?: number | null
           online_max_days_ahead?: number | null
+          practitioner_ids?: string[]
           online_payment_required?: boolean
           sort_order?: number | null
           stage?: string | null

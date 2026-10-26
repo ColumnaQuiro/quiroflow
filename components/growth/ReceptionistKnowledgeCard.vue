@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import type { KnowledgeCard, ReceptionistConfig } from '~/composables/useGrowthReceptionist'
 
-// The facts the receptionist repeats to patients. Each card is one topic
-// (prices, hours, parking) with a line per fact; editable in place, because
-// a price changes and "remove the card and type it all again" is how a
-// clinic ends up with a receptionist quoting last year's.
+// The facts the receptionist repeats to patients that are not in the
+// settings: prices, the address and the hours are read from there
+// (utils/receptionistTypes.ts, utils/receptionistClinic.ts). Each card is
+// one topic (what you treat, the first visit, parking) with a line per
+// fact; editable in place, because "remove the card and type it all again"
+// is how a clinic ends up with a receptionist repeating last year's.
 const props = defineProps<{
   config: ReceptionistConfig
   saving: boolean
@@ -64,8 +66,8 @@ const areaClass = 'resize-none rounded-ctl border border-line-control bg-surface
   <GrowthSettingCard :title="t('Clinic knowledge', 'Lo que sabe de la clínica')">
     <p v-if="!config.knowledge.length" class="text-[11.5px] leading-[1.5] text-ink-muted" data-test="knowledge-empty">
       {{ t(
-        'Nothing yet. Without it the receptionist says it will check with a colleague rather than guessing at prices or hours.',
-        'Nada todavía. Sin esto, la recepcionista dirá que lo consultará con un compañero en lugar de inventar precios u horarios.',
+        'Nothing yet. Prices, the address and the hours come from your settings; for anything else -- what you treat, what the first visit includes -- the receptionist says it will check with a colleague rather than guessing.',
+        'Nada todavía. Los precios, la dirección y el horario los saca de Ajustes; para todo lo demás (qué tratáis, qué incluye la primera visita), la recepcionista dirá que lo consultará con un compañero en lugar de inventar.',
       ) }}
     </p>
 
@@ -94,14 +96,14 @@ const areaClass = 'resize-none rounded-ctl border border-line-control bg-surface
       <input
         v-model="newTitle"
         type="text"
-        :placeholder="t('What it is about — e.g. Prices, Opening hours, Parking', 'De qué trata — p. ej. Precios, Horarios, Parking')"
+        :placeholder="t('What it is about — e.g. What we treat, The first visit, Parking', 'De qué trata — p. ej. Qué tratamos, La primera visita, Parking')"
         :class="inputClass"
         data-test="card-title"
       />
       <textarea
         v-model="newLines"
         rows="3"
-        :placeholder="t('One fact per line. First visit 50€\nFollow-up 40€', 'Un dato por línea. Primera visita 50€\nRevisión 40€')"
+        :placeholder="t('One fact per line. It lasts about an hour\nWear comfortable clothes', 'Un dato por línea. Dura cerca de una hora\nVen con ropa cómoda')"
         :class="areaClass"
         data-test="card-lines"
       />

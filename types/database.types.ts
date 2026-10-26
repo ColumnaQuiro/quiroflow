@@ -3775,6 +3775,12 @@ export type Database = {
         }
         Relationships: []
       }
+      verifactu_alerts: {
+        Row: { id: string; account_id: string; kind: string; key: string; sent_at: string }
+        Insert: { id?: string; account_id: string; kind: string; key: string; sent_at?: string }
+        Update: { id?: string; account_id?: string; kind?: string; key?: string; sent_at?: string }
+        Relationships: []
+      }
       verifactu_platform: {
         Row: { singleton: boolean; account_id: string }
         Insert: { singleton?: boolean; account_id: string }

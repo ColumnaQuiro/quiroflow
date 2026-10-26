@@ -56,3 +56,33 @@ export async function applyRecallReply(supabase: any, accountId: string, patient
     note: `Respondió «${quoted}» por WhatsApp: aparcado en revisiones hasta el ${until}.`,
   })
 }
+
+/**
+ * A patient told the receptionist they moved away or will not be coming
+ * back: what Descartar does in the Recalls queue (recall_status 'dismissed'),
+ * and their running recall sequences stopped. Not "do not contact": they did
+ * not ask for that, and a visit they still have keeps its reminders. If they
+ * come back, a visit after the dismissal puts them in the queue again
+ * (withoutParkedRecalls). Written with the receptionist's audited client.
+ */
+export async function applyPatientLeft(writer: any, accountId: string, patientId: string, said: string): Promise<boolean> {
+  const quoted = said.trim().slice(0, 120)
+  const { data, error } = await writer
+    .from('patients')
+    .update({ recall_status: 'dismissed', recall_dismissed_at: new Date().toISOString() })
+    .eq('id', patientId)
+    .eq('account_id', accountId)
+    .select('id')
+  if (error || !data?.length) {
+    console.error(`[receptionist] could not take patient ${patientId} off recalls: ${error?.message ?? 'no row changed'}`)
+    return false
+  }
+  await stopPatientRuns(writer, accountId, patientId, 'left_the_clinic', `Told the receptionist: "${quoted}".`, { recallOnly: true })
+  await writer.from('contact_log').insert({
+    account_id: accountId,
+    patient_id: patientId,
+    action: 'other',
+    note: `Dijo a la recepcionista IA que se ha mudado o que no volverá («${quoted}»): descartado de las revisiones.`,
+  })
+  return true
+}

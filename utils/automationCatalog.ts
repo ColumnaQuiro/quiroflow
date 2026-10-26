@@ -685,6 +685,7 @@ export const STOP_REASONS: Record<string, Pair> = {
   appointment_answered: ['They already confirmed or asked to change the appointment', 'Ya confirmó o pidió cambiar la cita'],
   declined: ['Asked not to be contacted (WhatsApp reply)', 'Pidió que no le contactemos (respuesta por WhatsApp)'],
   snoozed: ['Asked to be written to later (WhatsApp reply)', 'Pidió que le escribamos más adelante (respuesta por WhatsApp)'],
+  left_the_clinic: ['Said they moved away or will not be back', 'Dijo que se ha mudado o que no volverá'],
 }
 
 /** A run history row's outcome, in words. */

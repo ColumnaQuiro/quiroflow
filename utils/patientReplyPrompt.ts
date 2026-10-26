@@ -211,6 +211,14 @@ export function visitHistoryRule(f: PatientReplyFacts): string {
   return `If they mention a visit that is not under "Next visit" -- a date they have noted down, a call from the clinic about one -- answer from what you already know about them: say plainly what the records show (for example, that their visit was on Thursday 22 October at 19:45 and they did not come), without blame and without mentioning any fee or charge, and offer them a new time with their usual practitioner, as for any visit. Do not hand over just because what they remember differs from the records; hand over only if they say the records are wrong. Use the rest of their history to choose what to offer, not to recite it: never list their past visits back to them unasked, and never comment on how often they miss or cancel.`
 }
 
+/**
+ * Someone who has moved away or will not be back. Handing it over only so a
+ * person could take them off the recalls left them in them: on 25 Oct a
+ * patient wrote that she had moved, got a kind goodbye, and stayed in the
+ * queue for the next recall.
+ */
+export const LEFT_THE_CLINIC_LINE = 'If they say they have moved away, or that they will not be coming back to the clinic at all, call stop_follow_ups with their words, then say goodbye in one short sentence, without offering times. This replaces handing it over to a colleague, whatever the clinic knowledge says about it. Never call it for a later, a holiday, a trip, a busy few weeks or "not now".'
+
 /** Months without a visit after which someone is back "after a long break" -- the reactivation recall's own six. */
 export const LAPSED_MONTHS = 6
 
@@ -250,6 +258,8 @@ export function buildPatientReplyPrompt(
     minors?: { forNewChild: PromptType[]; forReturningChild: PromptType[]; children: PromptChild[] }
     /** book_appointment is on this request -- only ever with sendsItself. */
     canBook?: boolean
+    /** stop_follow_ups is on this request -- only ever with sendsItself. */
+    canStopFollowUps?: boolean
     /** add_to_waitlist is on this request -- only ever with sendsItself. */
     canWaitlist?: boolean
     /** Booking for an adult in their family (familySection); absent, nothing is said about it. */
@@ -330,6 +340,7 @@ export function buildPatientReplyPrompt(
       : `You must NEVER state that a visit is booked, moved, cancelled or confirmed, or that a payment was received or a refund made. A member of staff does those. If they ask to book or move a visit, offer times and say you are passing it on, and that they will get a confirmation; if they ask to cancel, say your colleague will take care of it.`,
     `Only mention an amount owed if they ask about money or payment, and then only exactly as given above.`,
     opts.canWaitlist ? WAITLIST_SECTION : '',
+    opts.canStopFollowUps ? LEFT_THE_CLINIC_LINE : '',
     // Last, so nothing above can be read as overriding it.
     CONFIDENTIALITY_SECTION,
   ]

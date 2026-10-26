@@ -11,6 +11,7 @@ import { afterUnattendedCancellation } from '~/server/utils/unattendedCancellati
 import { pushAppointmentEvent } from '~/server/utils/staffPush'
 import { claimAutomaticConfirmation, sendAppointmentConfirmation } from '~/server/utils/appointmentNotifications'
 import { receptionistServiceClient } from '~/server/utils/receptionistAudit'
+import { applyPatientLeft } from '~/server/utils/recallReplies'
 import { clinicDateOf, startOfLocalDate, wallClockToUtc } from '~/utils/clinicClock'
 import { leadPhoneAsContactNumber, phoneMatches, toE164Loose, whatsappDigits } from '~/utils/phone'
 import { inverseRelation, type FamilyRelation } from '~/utils/familyRelations'
@@ -128,6 +129,36 @@ export const CANCEL_APPOINTMENT: Anthropic.Tool = {
     required: ['visit_on'],
     additionalProperties: false,
   },
+}
+
+export const STOP_FOLLOW_UPS: Anthropic.Tool = {
+  name: 'stop_follow_ups',
+  description:
+    'Takes this patient off the clinic\'s follow-up and recall messages, for good. Call it only when they say they have moved away, or that they will not be coming back to the clinic at all. Never for "más adelante", a holiday, a trip, a busy few weeks or "not now": those are a later, not a goodbye. After it confirms, say goodbye in one short sentence, without offering times. It does not cancel any visit they still have.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      what_they_said: { type: 'string', description: 'Their words that say they are leaving, quoted briefly.' },
+    },
+    required: ['what_they_said'],
+    additionalProperties: false,
+  },
+}
+
+/** stop_follow_ups for one patient in one reply (applyPatientLeft). */
+export function stopFollowUpsTool(ctx: { event: H3Event; accountId: string; patientId: string }): (input: unknown) => Promise<ToolResult> {
+  let used = false
+  return async (input) => {
+    if (used) return { content: 'Already done in this reply.', isError: false }
+    const said = String((input as { what_they_said?: unknown })?.what_they_said ?? '').trim()
+    used = true
+    const done = await applyPatientLeft(receptionistServiceClient(ctx.event), ctx.accountId, ctx.patientId, said)
+    if (!done) {
+      used = false
+      return { content: 'It could not be done. Call hand_over_to_colleague saying they have left, so a colleague takes them off the follow-ups.', isError: true }
+    }
+    return { content: 'Done: they will get no more follow-up or recall messages. Now say goodbye in one short sentence, without offering times.', isError: false }
+  }
 }
 
 export interface BookingContext {

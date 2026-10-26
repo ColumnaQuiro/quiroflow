@@ -1307,7 +1307,7 @@ export async function stopPatientRuns(
   supabase: any,
   accountId: string,
   patientId: string,
-  reason: 'declined' | 'snoozed',
+  reason: 'declined' | 'snoozed' | 'left_the_clinic',
   detail: string,
   opts: { recallOnly?: boolean } = {},
 ): Promise<number> {

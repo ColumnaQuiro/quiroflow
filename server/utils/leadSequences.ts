@@ -58,6 +58,8 @@ export type StopReason =
   // The patient already answered the reminder -- confirmed, or asked to
   // change the visit -- so the rest of it has nothing left to ask.
   | 'appointment_answered'
+  // The patient told the receptionist they moved away or will not be back.
+  | 'left_the_clinic'
   // The patient replied "No, gracias", BAJA or STOP on WhatsApp: they are
   // now "do not contact", and every run they were in ends here.
   | 'declined'
@@ -243,6 +245,7 @@ export const STOP_REASON_TEXT: Record<StopReason, string> = {
   appointment_answered: 'The patient already confirmed the appointment or asked to change it',
   declined: 'The patient asked not to be contacted (WhatsApp reply)',
   snoozed: 'The patient asked to be written to later (WhatsApp reply)',
+  left_the_clinic: 'The patient said they moved away or will not be back (AI receptionist)',
 }
 
 /** What a step is called in the history, copied at the time it ran. */

@@ -28,6 +28,95 @@ export interface PatientReplyFacts {
   bono?: { name: string; sessionsLeft: number } | null
   /** Null when the asker cannot see money, or it could not be read. */
   outstandingCents: number | null
+  /**
+   * Their whole visit history, summarised (summariseVisitHistory). Without it
+   * the receptionist sees only visits still booked from today and the last
+   * one they attended -- so a patient who missed Thursday's visit and wrote
+   * on Friday "I have the 29th noted down" had, as far as it could tell, no
+   * visit at all, and was handed over instead of offered a time.
+   */
+  history?: VisitHistory | null
+}
+
+/** One past appointment, as read for the history summary. */
+export interface PastVisit {
+  startsAt: string
+  /** appointments.status: completed, no_show, cancelled, or booked (never marked). */
+  status: string
+  typeName: string | null
+  practitionerName: string | null
+}
+
+export interface VisitHistory {
+  /** Visits they came to, ever. */
+  attended: number
+  /** Their first attended visit. */
+  firstVisitAt: string | null
+  /** The type and practitioner of most of their recent attended visits. */
+  usualType: string | null
+  usualPractitioner: string | null
+  /** Their most recent appointment before now, whatever became of it. */
+  latest: PastVisit | null
+  /** Missed or cancelled in the last RECENT_MISS_DAYS, newest first, the latest excluded. */
+  recentMisses: PastVisit[]
+}
+
+/** How far back missed and cancelled visits are listed: a pattern, not a record. */
+export const RECENT_MISS_DAYS = 90
+const MAX_RECENT_MISSES = 4
+/** Recent attended visits that decide the usual type and practitioner. */
+const USUAL_FROM = 10
+
+function mostCommon(values: (string | null)[]): string | null {
+  const counts = new Map<string, number>()
+  for (const v of values) if (v) counts.set(v, (counts.get(v) ?? 0) + 1)
+  let best: string | null = null
+  let most = 0
+  // Ties go to the more recent, which comes first.
+  for (const [v, n] of counts) if (n > most) { best = v; most = n }
+  return best
+}
+
+/**
+ * A few lines about someone's whole history, from their past appointments
+ * (newest first). Not the list itself: forty rows of old visits are forty
+ * chances to misread which one is meant, and every reply pays for them.
+ * `attended` and `firstVisitAt` are counted separately, so a long history
+ * read only in part still counts in full.
+ */
+export function summariseVisitHistory(
+  past: PastVisit[],
+  opts: { now: Date; attended: number; firstVisitAt: string | null },
+): VisitHistory | null {
+  if (past.length === 0 && opts.attended === 0) return null
+  const sorted = [...past].sort((a, b) => b.startsAt.localeCompare(a.startsAt))
+  const latest = sorted[0] ?? null
+  const attendedRecent = sorted.filter((v) => v.status === 'completed').slice(0, USUAL_FROM)
+  const since = opts.now.getTime() - RECENT_MISS_DAYS * 86400000
+  const recentMisses = sorted
+    .slice(1)
+    .filter((v) => (v.status === 'no_show' || v.status === 'cancelled') && new Date(v.startsAt).getTime() >= since)
+    .slice(0, MAX_RECENT_MISSES)
+  return {
+    attended: opts.attended,
+    firstVisitAt: opts.firstVisitAt,
+    usualType: mostCommon(attendedRecent.map((v) => v.typeName)),
+    usualPractitioner: mostCommon(attendedRecent.map((v) => v.practitionerName)),
+    latest,
+    recentMisses,
+  }
+}
+
+function outcome(status: string): string {
+  if (status === 'completed') return 'they came'
+  if (status === 'no_show') return 'they did NOT come (marked as missed)'
+  if (status === 'cancelled') return 'it was cancelled'
+  return 'whether they came was not recorded'
+}
+
+function visitLine(v: PastVisit, zone: string): string {
+  const what = [v.typeName ? promptSafeName(v.typeName) : null, v.practitionerName ? `with ${promptSafeName(v.practitionerName)}` : null].filter(Boolean).join(' ')
+  return `${when(v.startsAt, zone)}${what ? ` (${what})` : ''}`
 }
 
 function when(iso: string, timeZone: string) {
@@ -48,7 +137,20 @@ export function patientFactsSection(f: PatientReplyFacts, timeZone: string | nul
       lines.push(`- ${i === 0 ? 'Next visit' : 'Then'}: ${when(v.startsAt, zone)}${what ? ` (${what})` : ''}`)
     }
   }
-  if (f.lastVisitAt) lines.push(`- Last visit: ${new Date(f.lastVisitAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: zone })}${f.lastVisitType ? ` (${f.lastVisitType})` : ''}`)
+  const day = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: zone })
+  if (f.lastVisitAt) lines.push(`- Last visit they came to: ${day(f.lastVisitAt)}${f.lastVisitType ? ` (${f.lastVisitType})` : ''}`)
+  const h = f.history
+  if (h) {
+    // Only when it is not the visit they came to, already said above.
+    if (h.latest && h.latest.status !== 'completed') lines.push(`- Most recent appointment before now: ${visitLine(h.latest, zone)} -- ${outcome(h.latest.status)}.`)
+    if (h.attended > 0) {
+      const usual = [h.usualType ? promptSafeName(h.usualType) : null, h.usualPractitioner ? `with ${promptSafeName(h.usualPractitioner)}` : null].filter(Boolean).join(' ')
+      lines.push(`- Visits they came to: ${h.attended}${h.firstVisitAt ? `, the first on ${day(h.firstVisitAt)}` : ''}${usual ? `; usually ${usual}` : ''}.`)
+    }
+    if (h.recentMisses.length) {
+      lines.push(`- Also missed or cancelled in the last three months: ${h.recentMisses.map((v) => `${visitLine(v, zone)}, ${v.status === 'no_show' ? 'missed' : 'cancelled'}`).join('; ')}.`)
+    }
+  }
   if (f.plan) {
     const left = Math.max(0, f.plan.totalVisits - f.plan.done)
     lines.push(`- Care plan "${f.plan.name}": ${f.plan.done} of ${f.plan.totalVisits} visits done, ${left} left${f.plan.cadence ? `, ${f.plan.cadence}` : ''}.`)
@@ -96,6 +198,17 @@ This person is a returning patient, not someone new. Never offer them a first vi
     lines.push(`Their last visit was more than ${LAPSED_MONTHS} months ago and they have no package to use. If they want an appointment, offer "${opts.reactivationType}" -- not the type of their last visit, and not a report visit.`)
   }
   return lines.join('\n\n')
+}
+
+/**
+ * How to use the history. Written for the case that had no answer: someone
+ * who missed a visit, got a call about it, and wrote with the date they had
+ * noted. The records hold the answer; handing over only delays it, and over
+ * a weekend past WhatsApp's 24-hour window.
+ */
+export function visitHistoryRule(f: PatientReplyFacts): string {
+  if (!f.history) return ''
+  return `If they mention a visit that is not under "Next visit" -- a date they have noted down, a call from the clinic about one -- answer from what you already know about them: say plainly what the records show (for example, that their visit was on Thursday 22 October at 19:45 and they did not come), without blame and without mentioning any fee or charge, and offer them a new time with their usual practitioner, as for any visit. Do not hand over just because what they remember differs from the records; hand over only if they say the records are wrong. Use the rest of their history to choose what to offer, not to recite it: never list their past visits back to them unasked, and never comment on how often they miss or cancel.`
 }
 
 /** Months without a visit after which someone is back "after a long break" -- the reactivation recall's own six. */
@@ -194,6 +307,7 @@ export function buildPatientReplyPrompt(
   const conversation = [
     receptionistClockSection(opts.calendar.now, opts.calendar.timeZone),
     patientFactsSection(opts.facts, opts.calendar.timeZone),
+    visitHistoryRule(opts.facts),
     offeredTypesSection(opts.offeredTypes),
     opts.laterPrices ? laterPricesSection(opts.laterPrices) : '',
     opts.minors ? minorsSection({ ...opts.minors, canBook: !!opts.canBook, sendsItself: !!opts.sendsItself, bringsSomeone: Boolean(opts.bringsSomeone) }) : '',

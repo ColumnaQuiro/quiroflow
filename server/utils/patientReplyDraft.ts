@@ -11,7 +11,7 @@ import { freeTimesLookup, runReceptionistModel, type FreeTimesForWhom } from '~/
 import { matchChild, typesAfterFirstVisit, typesForAudience, typesForMinor, typesForSomeoneTheyBring } from '~/utils/receptionistTypes'
 import { internalNotes } from '~/utils/receptionistGuard'
 import { carePlanCadenceLabel } from '~/utils/carePlanCadence'
-import { buildPatientReplyPrompt, openBono, type PatientReplyFacts } from '~/utils/patientReplyPrompt'
+import { buildPatientReplyPrompt, openBono, summariseVisitHistory, type PastVisit, type PatientReplyFacts } from '~/utils/patientReplyPrompt'
 
 // A reply to a PATIENT's message in the Inbox, drafted by the receptionist
 // (Growth's AI receptionist, the one that drafts for leads -- same persona,
@@ -136,13 +136,19 @@ export async function draftPatientReply(
   const nowIso = new Date().toISOString()
   // From midnight, so a visit earlier today is still one they can ask about.
   const todayStart = await clinicTodayStart(supabase, accountId)
-  const [{ data: upcoming }, { data: last }, { data: plans }, { data: balance }, { data: packages }] = await Promise.all([
+  const [{ data: upcoming }, { data: last }, { data: plans }, { data: balance }, { data: packages }, { data: past }, { data: first, count: attended }] = await Promise.all([
     supabase.from('appointments').select('starts_at, appointment_types(name), team_members(full_name)').eq('patient_id', patientId).eq('status', 'booked').is('deleted_at', null).gte('starts_at', todayStart).order('starts_at').limit(3),
     supabase.from('appointments').select('starts_at, appointment_types(name)').eq('patient_id', patientId).eq('status', 'completed').is('deleted_at', null).lt('starts_at', nowIso).order('starts_at', { ascending: false }).limit(1),
     supabase.from('care_plans').select('name, total_visits, started_at, frequency_value, frequency_unit, visits_per_period').eq('patient_id', patientId).order('created_at', { ascending: false }).limit(1),
     supabase.from('patient_live_balances').select('outstanding_cents').eq('patient_id', patientId).maybeSingle(),
     // An open bono: what a visit booked now is taken from (returningPatientSection).
     supabase.from('package_purchases').select('package_name, sessions_total, sessions_used').eq('patient_id', patientId).eq('account_id', accountId).eq('is_closed', false),
+    // Their past appointments, whatever became of them -- a missed one too,
+    // which nothing else here shows. Summarised (summariseVisitHistory), never
+    // handed over as a list.
+    supabase.from('appointments').select('starts_at, status, appointment_types(name), team_members(full_name)').eq('patient_id', patientId).is('deleted_at', null).lt('starts_at', nowIso).order('starts_at', { ascending: false }).limit(40),
+    // Every visit they came to, counted, and the first of them.
+    supabase.from('appointments').select('starts_at', { count: 'exact' }).eq('patient_id', patientId).eq('status', 'completed').is('deleted_at', null).order('starts_at').limit(1),
   ])
   const plan = (plans ?? [])[0] as { name: string; total_visits: number; started_at: string; frequency_value: number; frequency_unit: string; visits_per_period: number | null } | undefined
   let done = 0
@@ -163,6 +169,13 @@ export async function draftPatientReply(
     plan: plan ? { name: plan.name, totalVisits: plan.total_visits, done, cadence: carePlanCadenceLabel(plan, en) } : null,
     bono: openBono(packages),
     outstandingCents: !opts.store && typeof balance?.outstanding_cents === 'number' ? balance.outstanding_cents : null,
+    history: summariseVisitHistory(
+      ((past ?? []) as { starts_at: string; status: string; appointment_types: { name: string } | null; team_members: { full_name: string } | null }[])
+        // A visit still booked for later today is listed under the next visits.
+        .filter((a) => !(a.status === 'booked' && a.starts_at >= todayStart))
+        .map((a): PastVisit => ({ startsAt: a.starts_at, status: a.status, typeName: a.appointment_types?.name ?? null, practitionerName: a.team_members?.full_name ?? null })),
+      { now: new Date(nowIso), attended: attended ?? 0, firstVisitAt: ((first ?? []) as { starts_at: string }[])[0]?.starts_at ?? null },
+    ),
   }
 
   // A patient who writes is somebody the clinic knows: never a first visit.

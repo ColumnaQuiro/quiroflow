@@ -87,7 +87,10 @@ function eur(cents: number) {
         <ul v-else-if="facturas.length > 0" class="divide-y divide-line-divider">
           <li v-for="f in facturas" :key="f.id" class="flex items-center gap-3 px-4 py-3">
             <div class="min-w-0 flex-1">
-              <p class="text-[13.5px] font-medium text-ink-900">{{ eur(f.amount_cents) }}</p>
+              <p class="text-[13.5px] font-medium">
+                <span :class="f.annulled_at ? 'text-ink-faint line-through' : 'text-ink-900'">{{ eur(f.amount_cents) }}</span>
+                <span v-if="f.annulled_at" class="ml-1 rounded-ctlSm bg-chip-bg px-1.5 py-0.5 text-[10.5px] font-normal text-chip-text">{{ t('annulled', 'anulada') }}</span>
+              </p>
               <p class="truncate text-[12px] text-ink-muted">{{ f.description }}</p>
               <p class="text-[12px] text-ink-faint">{{ new Date(f.issued_at).toLocaleDateString() }} &middot; {{ f.number }}</p>
             </div>

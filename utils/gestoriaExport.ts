@@ -8,7 +8,10 @@ import { exemptionClause } from './facturaTax'
 //
 // Facturas only: a factura is the fiscal document; an internal receipt is
 // not. A rectificativa is in the book with its negative amounts, so the
-// totals are net of refunds. Amounts are written the Spanish way ("1234,56")
+// totals are net of refunds. An ANNULLED factura (a registro de anulación,
+// annul_factura) stays in the book -- its number is part of the series and a
+// gap would need explaining -- marked "Anulada" with zero amounts, and counts
+// in no total. Amounts are written the Spanish way ("1234,56")
 // for Excel set to Spanish, and the CSVs use ';' (toCsv).
 
 export interface GestoriaFactura {
@@ -25,6 +28,8 @@ export interface GestoriaFactura {
   recipient_nif: string | null
   rectifies_number: string | null
   payment_method: string | null
+  /** Set when a registro de anulación was issued for it: it documents nothing. */
+  annulled_at?: string | null
 }
 
 export const KIND_ES: Record<string, string> = { simplified: 'Simplificada', full: 'Completa', rectificativa: 'Rectificativa' }
@@ -45,13 +50,14 @@ export function facturaBookRows(facturas: GestoriaFactura[], timeZone: string): 
       'Fecha expedición': new Date(f.issued_at).toLocaleDateString('es-ES', { timeZone, day: '2-digit', month: '2-digit', year: 'numeric' }),
       Número: f.number,
       Tipo: KIND_ES[f.kind] ?? f.kind,
+      Estado: f.annulled_at ? 'Anulada' : '',
       'Rectifica a': f.rectifies_number ?? '',
       Destinatario: f.recipient_name ?? '',
       'NIF destinatario': f.recipient_nif ?? '',
-      'Base imponible': eurPlain(f.tax_base_cents ?? f.amount_cents),
+      'Base imponible': eurPlain(f.annulled_at ? 0 : (f.tax_base_cents ?? f.amount_cents)),
       'Tipo IVA': rateLabel(f.tax_rate_bp),
-      'Cuota IVA': eurPlain(f.tax_amount_cents ?? 0),
-      Total: eurPlain(f.amount_cents),
+      'Cuota IVA': eurPlain(f.annulled_at ? 0 : (f.tax_amount_cents ?? 0)),
+      Total: eurPlain(f.annulled_at ? 0 : f.amount_cents),
       Exención: f.tax_exemption_code ? `${f.tax_exemption_code} · ${exemptionClause(f.tax_exemption_code)}` : '',
       'Forma de pago': f.payment_method ?? '',
       Concepto: f.description ?? '',
@@ -60,10 +66,11 @@ export function facturaBookRows(facturas: GestoriaFactura[], timeZone: string): 
 
 export interface IvaLine { key: string; label: string; count: number; baseCents: number; cuotaCents: number; totalCents: number }
 
-/** One line per IVA rate (and one per exemption), net of rectificativas. */
+/** One line per IVA rate (and one per exemption), net of rectificativas, leaving annulled facturas out. */
 export function ivaSummary(facturas: GestoriaFactura[]): { lines: IvaLine[]; total: IvaLine } {
   const by = new Map<string, IvaLine>()
   for (const f of facturas) {
+    if (f.annulled_at) continue
     const exempt = !!f.tax_exemption_code
     const key = exempt ? `exempt:${f.tax_exemption_code}` : `rate:${f.tax_rate_bp ?? 0}`
     const label = exempt ? `Exenta (${f.tax_exemption_code})` : `IVA ${rateLabel(f.tax_rate_bp)}`

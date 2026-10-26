@@ -56,7 +56,10 @@ describe('A factura outlives the payment it documents', () => {
 
         // Annul it. A rectificativa for the whole amount, naming it, with no
         // payment behind it: no money moved, so there is no refund to record.
+        // The dialog offers the registro de anulación first
+        // (factura-anulacion.cy.ts); this is the other route.
         cy.get('[data-cy="factura-annul"]').click()
+        cy.get('[data-cy="factura-annul-mode-rectificativa"]').check()
         cy.get('[data-cy="factura-annul-reason"]').type('should have come from the bono')
         cy.contains('button', 'Issue rectifying factura').click()
         cy.contains('payment removed').should('not.exist')

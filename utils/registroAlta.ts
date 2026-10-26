@@ -257,6 +257,94 @@ const rate = (bp: number) => (bp / 100).toFixed(2)
  */
 const capped = (s: string, max: number) => (s.length <= max ? s : s.slice(0, max))
 
+const tag = (name: string, value: string) => `<sum1:${name}>${esc(value)}</sum1:${name}>`
+
+/** The system that generated the record. The same block on an alta and an anulación. */
+function sistemaInformatico(accountId: string, indicadorMultiplesOt: string): string[] {
+  return [
+    '<sum1:SistemaInformatico>',
+    tag('NombreRazon', SIF_PRODUCER.name),
+    tag('NIF', SIF_PRODUCER.nif),
+    tag('NombreSistemaInformatico', SIF_SYSTEM_NAME),
+    tag('IdSistemaInformatico', SIF_CODE),
+    tag('Version', SIF_VERSION),
+    tag('NumeroInstalacion', sifInstallationNumber(accountId)),
+    tag('TipoUsoPosibleSoloVerifactu', SIF_ONLY_VERIFACTU),
+    tag('TipoUsoPosibleMultiOT', SIF_SUPPORTS_MULTIPLE_OBLIGADOS),
+    tag('IndicadorMultiplesOT', indicadorMultiplesOt),
+    '</sum1:SistemaInformatico>',
+  ]
+}
+
+/**
+ * Encadenamiento: the first record this system generated for the issuer, or
+ * its predecessor named in full -- the AEAT re-walks the chain, so the huella
+ * alone does not identify what came before. The predecessor may be an alta or
+ * an anulación; either way it is named by the factura it concerns.
+ */
+function encadenamiento(previousRecord: { issuerNif: string; serieNumber: string; issuedOn: string } | null, previousHuella: string | null): string[] {
+  return previousRecord
+    ? [
+        '<sum1:RegistroAnterior>',
+        tag('IDEmisorFactura', previousRecord.issuerNif),
+        tag('NumSerieFactura', previousRecord.serieNumber),
+        tag('FechaExpedicionFactura', aeatDate(previousRecord.issuedOn)),
+        tag('Huella', previousHuella ?? ''),
+        '</sum1:RegistroAnterior>',
+      ]
+    : [tag('PrimerRegistro', 'S')]
+}
+
+export interface RegistroAnulacionInput {
+  /** The anulación record, carrying the ANNULLED factura's emisor, serie and date. */
+  record: {
+    issuerNif: string
+    serieNumber: string
+    /** ISO date, as stored (YYYY-MM-DD). */
+    issuedOn: string
+    generatedAt: string
+    previousHuella: string | null
+    huella: string
+  }
+  previousRecord: { issuerNif: string; serieNumber: string; issuedOn: string } | null
+  accountId: string
+  indicadorMultiplesOt: string
+}
+
+/**
+ * The RegistroAnulacion for a factura annulled with annul_factura().
+ *
+ * Field order from the AEAT's SuministroInformacion.xsd
+ * (RegistroFacturacionAnulacionType): IDVersion, IDFactura, the optional
+ * RefExterna / SinRegistroPrevio / RechazoPrevio / GeneradoPor / Generador,
+ * Encadenamiento, SistemaInformatico, FechaHoraHusoGenRegistro, TipoHuella,
+ * Huella. IDFactura uses the "Anulada" names, as the huella does.
+ *
+ * None of the optional fields is sent. SinRegistroPrevio says the AEAT never
+ * received the alta, and the sender holds an anulación back until it has;
+ * GeneradoPor defaults to the expedidor, which is who annuls here.
+ */
+export function buildRegistroAnulacion(input: RegistroAnulacionInput): string {
+  const { record } = input
+  return [
+    '<sum1:RegistroAnulacion>',
+    tag('IDVersion', ID_VERSION),
+    '<sum1:IDFactura>',
+    tag('IDEmisorFacturaAnulada', record.issuerNif),
+    tag('NumSerieFacturaAnulada', record.serieNumber),
+    tag('FechaExpedicionFacturaAnulada', aeatDate(record.issuedOn)),
+    '</sum1:IDFactura>',
+    '<sum1:Encadenamiento>',
+    ...encadenamiento(input.previousRecord, record.previousHuella),
+    '</sum1:Encadenamiento>',
+    ...sistemaInformatico(input.accountId, input.indicadorMultiplesOt),
+    tag('FechaHoraHusoGenRegistro', aeatDateTime(record.generatedAt)),
+    tag('TipoHuella', TIPO_HUELLA_SHA256),
+    tag('Huella', record.huella),
+    '</sum1:RegistroAnulacion>',
+  ].join('')
+}
+
 export function buildRegistroAlta(input: RegistroAltaInput): string {
   const { record, previousRecord, factura, issuerName, accountId } = input
   const L = (tag: string, value: string) => `<sum1:${tag}>${esc(value)}</sum1:${tag}>`
@@ -293,16 +381,7 @@ export function buildRegistroAlta(input: RegistroAltaInput): string {
   // Encadenamiento. Either this is the first record this system generated for
   // the issuer, or it names its predecessor in full -- the AEAT re-walks the
   // chain, so the huella alone is not enough to identify what came before.
-  const encadenamiento = previousRecord
-    ? [
-        '<sum1:RegistroAnterior>',
-        L('IDEmisorFactura', previousRecord.issuerNif),
-        L('NumSerieFactura', previousRecord.serieNumber),
-        L('FechaExpedicionFactura', aeatDate(previousRecord.issuedOn)),
-        L('Huella', record.previousHuella ?? ''),
-        '</sum1:RegistroAnterior>',
-      ]
-    : [L('PrimerRegistro', 'S')]
+  const chained = encadenamiento(previousRecord, record.previousHuella)
 
   // Destinatarios is required for a full invoice and must be absent from a
   // simplificada, which is the whole point of the distinction: F2 is the one
@@ -469,19 +548,9 @@ export function buildRegistroAlta(input: RegistroAltaInput): string {
     L('CuotaTotal', money(record.cuotaTotalCents)),
     L('ImporteTotal', money(record.importeTotalCents)),
     '<sum1:Encadenamiento>',
-    ...encadenamiento,
+    ...chained,
     '</sum1:Encadenamiento>',
-    '<sum1:SistemaInformatico>',
-    L('NombreRazon', SIF_PRODUCER.name),
-    L('NIF', SIF_PRODUCER.nif),
-    L('NombreSistemaInformatico', SIF_SYSTEM_NAME),
-    L('IdSistemaInformatico', SIF_CODE),
-    L('Version', SIF_VERSION),
-    L('NumeroInstalacion', sifInstallationNumber(accountId)),
-    L('TipoUsoPosibleSoloVerifactu', SIF_ONLY_VERIFACTU),
-    L('TipoUsoPosibleMultiOT', SIF_SUPPORTS_MULTIPLE_OBLIGADOS),
-    L('IndicadorMultiplesOT', input.indicadorMultiplesOt),
-    '</sum1:SistemaInformatico>',
+    ...sistemaInformatico(accountId, input.indicadorMultiplesOt),
     L('FechaHoraHusoGenRegistro', aeatDateTime(record.generatedAt)),
     L('TipoHuella', TIPO_HUELLA_SHA256),
     L('Huella', record.huella),

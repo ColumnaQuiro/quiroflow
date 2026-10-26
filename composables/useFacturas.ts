@@ -217,5 +217,22 @@ export function useFacturas() {
     })
   }
 
-  return { issueFactura, issueRectificativa, facturaDescription, facturaKind }
+  /**
+   * Annul a factura that should never have been issued: annul_factura()
+   * appends a VERI*FACTU registro de anulación to its chain and marks it
+   * annulled. The alternative to a rectificativa, for a factura whose
+   * payment was recorded in error. Returns false (having said why) when the
+   * database refuses.
+   */
+  async function annulFactura(facturaId: string, reason: string | null): Promise<boolean> {
+    const { error } = await supabase.rpc('annul_factura', { p_factura_id: facturaId, p_reason: reason ?? undefined })
+    if (error) {
+      console.error('[facturas] could not annul', facturaId, error)
+      showToast(t(`The factura could not be annulled: ${error.message}`, `No se ha podido anular la factura: ${error.message}`), 'error', 10000)
+      return false
+    }
+    return true
+  }
+
+  return { issueFactura, issueRectificativa, annulFactura, facturaDescription, facturaKind }
 }

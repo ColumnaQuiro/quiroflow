@@ -3850,6 +3850,9 @@ export type Database = {
           issuer_name: string | null
           issuer_tax_id: string | null
           recipient_patient_id: string | null
+          annulled_at: string | null
+          annulled_by: string | null
+          annulment_reason: string | null
         }
         Insert: {
           account_id: string
@@ -3879,6 +3882,9 @@ export type Database = {
           issuer_name?: string | null
           issuer_tax_id?: string | null
           recipient_patient_id?: string | null
+          annulled_at?: string | null
+          annulled_by?: string | null
+          annulment_reason?: string | null
         }
         Update: {
           account_id?: string
@@ -3908,6 +3914,9 @@ export type Database = {
           issuer_name?: string | null
           issuer_tax_id?: string | null
           recipient_patient_id?: string | null
+          annulled_at?: string | null
+          annulled_by?: string | null
+          annulment_reason?: string | null
         }
         Relationships: [
           {
@@ -9818,6 +9827,7 @@ export type Database = {
         Returns: { account_id: string; outstanding: number; parked: number; oldest_sequence: number }[]
       }
       factura_records_release_parked: { Args: { p_account_id: string }; Returns: number }
+      annul_factura: { Args: { p_factura_id: string; p_reason?: string }; Returns: string }
       verifactu_certificates_expiring: {
         Args: { p_within_days?: number }
         Returns: { account_id: string; subject: string | null; not_after: string; days_left: number }[]

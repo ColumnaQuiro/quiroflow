@@ -65,6 +65,9 @@ describe('Wall-clock times at the clinic', () => {
   it('turns a date and a time into the instant, across daylight saving', () => {
     expect(new Date(wallClockToUtc('2026-07-15', '09:00', 'Europe/Madrid')).toISOString()).toBe('2026-07-15T07:00:00.000Z')
     expect(new Date(wallClockToUtc('2026-01-15', '09:00', 'Europe/Madrid')).toISOString()).toBe('2026-01-15T08:00:00.000Z')
+    // The day the clocks go back: midnight is +02:00, the afternoon +01:00.
+    // Midnight plus 17h05 would have said 16:05 (a clock-out correction did).
+    expect(new Date(wallClockToUtc('2026-10-25', '17:05', 'Europe/Madrid')).toISOString()).toBe('2026-10-25T16:05:00.000Z')
     // The day the clocks go forward (29 Mar 2026, 02:00 -> 03:00).
     expect(new Date(wallClockToUtc('2026-03-29', '10:00', 'Europe/Madrid')).toISOString()).toBe('2026-03-29T08:00:00.000Z')
     expect(new Date(wallClockToUtc('2026-07-15', '09:00', 'America/Mexico_City')).toISOString()).toBe('2026-07-15T15:00:00.000Z')

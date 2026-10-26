@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { workdaySummary, workdaysOf, formatWorked, workdayClock, workdayWeekStart, workdayMonthBounds, workEntryLabel, type WorkEntry, type WorkdaySummary } from '../../utils/workday'
-import { clinicDateOf, startOfLocalDate } from '../../utils/clinicClock'
+import { clinicDateOf, wallClockToUtc } from '../../utils/clinicClock'
 
 // Registro de jornada: one person's month -- their days, hours and the
 // corrections they have asked for -- and where they ask for one. A
@@ -121,8 +121,10 @@ async function send() {
   }
   const fixing = target.value.startsWith('fix:') ? editingDay.value?.entries.find((e) => e.id === target.value.slice(4)) ?? null : null
   const kind = fixing ? fixing.kind : target.value.slice(4)
-  const [h, m] = time.value.split(':').map(Number)
-  let at = new Date(startOfLocalDate(date, props.timeZone).getTime() + (h! * 60 + m!) * 60_000)
+  // The wall-clock time on that date, not midnight plus hours: on the day
+  // the clocks change those differ by an hour (17:05 on 25 Oct was saved
+  // as 16:05).
+  let at = new Date(wallClockToUtc(date, time.value, props.timeZone))
   // A salida (or a vuelta) earlier than the day's entrada is after midnight.
   const firstIn = editingDay.value?.firstIn
   if ((kind === 'out' || kind === 'break_end') && firstIn && at.getTime() < Date.parse(firstIn)) at = new Date(at.getTime() + 24 * 3600_000)

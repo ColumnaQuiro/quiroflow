@@ -1143,7 +1143,7 @@ async function runEmailAction(
   // diagnose of the two. A dry run does not need one, for the same reason a
   // WhatsApp dry run does not need Meta credentials: rehearsing before the
   // channel is set up is the order a clinic actually does things in.
-  if (!dryRun && !runtimeConfig.resendApiKey) throw new Error('Email sending is not configured (no Resend API key on this deployment).')
+  if (!dryRun && !runtimeConfig.resendApiKey && !runtimeConfig.brevoApiKey) throw new Error('Email sending is not configured (no Resend API key on this deployment).')
 
   // A tutor is told whose message this is: the body was written for the
   // patient and need not name them.
@@ -1185,16 +1185,12 @@ async function runEmailAction(
   }
 
   try {
-    const sent = await $fetch<{ id?: string }>('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${runtimeConfig.resendApiKey}`, 'Content-Type': 'application/json' },
-      body: {
-        from: 'QuiroFlow <notifications@quiroflow.com>',
-        to: recipient.email,
-        subject: mergedSubject,
-        html,
-        ...(unsubscribe ? { headers: unsubscribeHeaders(unsubscribe) } : {}),
-      },
+    // Resend first, Brevo when Resend is over its quota -- see deliverEmail.
+    const sent = await deliverEmail({
+      to: recipient.email,
+      subject: mergedSubject,
+      html,
+      ...(unsubscribe ? { headers: unsubscribeHeaders(unsubscribe) } : {}),
     })
 
     // Best-effort, and deliberately after the send rather than around it: the
@@ -1215,10 +1211,8 @@ async function runEmailAction(
       if (error) console.error(`[automations] could not record email ${sent.id}: ${error.message}`)
     }
   } catch (e: any) {
-    // Resend answers a refusal with {name, message} in the body; the HTTP
-    // status alone ("422") says nothing a person can act on.
-    const detail = e?.data?.message || e?.data?.error?.message || e?.message || 'unknown error'
-    throw new Error(`Resend rejected the email: ${detail}`, { cause: e })
+    // deliverEmail already names the provider and carries its own message.
+    throw new Error(e?.message || 'The email provider rejected the email.', { cause: e })
   }
   return 'sent'
 }

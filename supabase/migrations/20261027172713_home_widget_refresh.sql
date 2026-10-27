@@ -87,7 +87,14 @@ as $$
   select public.get_home_widget(p_account_id, p_time_zone);
 $$;
 
+-- Postgres only hands a function to an owner that may create in its schema,
+-- and "authenticated" may not create in public. It needs that for this one
+-- statement and never again (an owner keeps its function without it), so it
+-- has it for exactly that long: one transaction in production, and nothing
+-- outside this migration ever runs as "authenticated" holding it.
+grant create on schema public to authenticated;
 alter function public.home_widget_as_authenticated(uuid, text) owner to authenticated;
+revoke create on schema public from authenticated;
 revoke all on function public.home_widget_as_authenticated(uuid, text) from public, anon;
 
 -- The widget, through the server: its token, the clinic and its time zone.

@@ -203,6 +203,7 @@ describe('Messages it leaves alone', () => {
   it("reads the model's own decision to stay quiet", () => {
     expect(isNoReply('NO_REPLY')).toBe(true)
     expect(isNoReply('  NO_REPLY.')).toBe(true)
+    expect(isNoReply('No_REPLY')).toBe(true)
     expect(isNoReply('Gracias a ti, ¡hasta el martes!')).toBe(false)
   })
 })

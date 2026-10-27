@@ -83,6 +83,7 @@ describe('Days twelve and thirteen', () => {
   it('answers "Más adelante" without offering times', () => {
     expect(LATER_ANSWER_LINE).toContain('"Más adelante"')
     expect(LATER_ANSWER_LINE).toContain('Do not offer times')
+    expect(LATER_ANSWER_LINE).toContain('Sin problema, te escribimos más adelante')
   })
 
   it('treats an answer to an automatic message as an answer to the clinic', () => {

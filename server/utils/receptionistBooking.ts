@@ -134,7 +134,7 @@ export const CANCEL_APPOINTMENT: Anthropic.Tool = {
 export const STOP_FOLLOW_UPS: Anthropic.Tool = {
   name: 'stop_follow_ups',
   description:
-    'Takes this patient off the clinic\'s follow-up and recall messages, for good. Call it only when they say they have moved away, or that they will not be coming back to the clinic at all. Never for "más adelante", a holiday, a trip, a busy few weeks or "not now": those are a later, not a goodbye. After it confirms, say goodbye in one short sentence, without offering times. It does not cancel any visit they still have.',
+    'Takes this patient off the clinic\'s follow-up and recall messages, for good. Call it only when they say they have moved away, that they now see another chiropractor or go to another clinic, or that they will not be coming back to the clinic at all. Never for "más adelante", a holiday, a trip, a busy few weeks or "not now": those are a later, not a goodbye. After it confirms, say goodbye in one short sentence, without offering times. It does not cancel any visit they still have.',
   input_schema: {
     type: 'object',
     properties: {

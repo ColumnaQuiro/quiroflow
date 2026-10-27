@@ -153,9 +153,12 @@ export function stillTyping(newestInboundAt: string, now: Date, pauseSeconds = T
  */
 export const NO_REPLY = 'NO_REPLY'
 
-/** Whether a reply is the model saying nothing needs to be said. */
+/**
+ * Whether a reply is the model saying nothing needs to be said. Any case:
+ * "No_REPLY" was saved as a draft and sat in the Inbox (26 Oct 2026).
+ */
 export function isNoReply(text: string): boolean {
-  return /^\W*NO_REPLY\W*$/.test(text.trim())
+  return /^\W*NO_REPLY\W*$/i.test(text.trim())
 }
 
 /** Lower case, no accents, no punctuation; emoji kept ("👍" is a message). */

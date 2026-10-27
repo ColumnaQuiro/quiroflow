@@ -161,10 +161,14 @@ export const NO_INVENTION_LINE = 'Only offer what the clinic knowledge and these
  * en" read as a limit: a patient who wrote in French was answered in Spanish
  * (20 Oct 2026), and one in English the day before. The list is the
  * languages a visit can be held in, not the ones a message can be answered in.
+ *
+ * A button is not a language: six Spanish speakers who tapped "Más adelante"
+ * on a recall were answered "No problem, we will write to you later on"
+ * (26 Oct 2026).
  */
 export function replyLanguageLine(languages: string[]): string {
   const names = languages.map((code) => RECEPTIONIST_LANGUAGES[code]?.en ?? code).join(', ')
-  return `Reply in the language of their latest message, whatever it is: French gets French, English gets English. Never answer in Spanish someone who wrote in another language. Visits themselves can be held in: ${names}; if theirs is not one of those and they want to come, say so, in their language.`
+  return `Reply in the language of their latest message, whatever it is: French gets French, English gets English. Never answer in Spanish someone who wrote in another language. A button they tapped ("Confirmar", "Cambiar cita", "Más adelante") or a message too short to tell is answered in the language of the rest of the conversation, Spanish when there is none: never switch to English for it. Visits themselves can be held in: ${names}; if theirs is not one of those and they want to come, say so, in their language.`
 }
 
 /**
@@ -186,9 +190,11 @@ export const SENT_FILES_LINE = 'When they send a document, photo or test result 
  * "Más adelante" is the second button on a recall, and the recall already
  * parks them for two months (utils/recallReply.ts). Eight people tapped it on
  * 24 Oct 2026: three were asked which week suited them, one was offered
- * Tuesday's free times, and one was told there was no earlier message.
+ * Tuesday's free times, and one was told there was no earlier message. On
+ * 26 Oct six of seven were answered in English, copying the card's English
+ * line, so the Spanish wording is spelled out here.
  */
-export const LATER_ANSWER_LINE = 'When their message is "Más adelante" -- the button on a follow-up message -- or otherwise says they will book later, answer once, briefly, that the clinic will write to them later on and that they can message whenever they want an appointment before then. Do not offer times and do not ask which days or weeks suit them. If they then say why (a trip, holidays), answer in one short sentence, still without offering times.'
+export const LATER_ANSWER_LINE = 'When their message is "Más adelante" -- the button on a follow-up message -- or otherwise says they will book later, answer once, briefly and in their language, that the clinic will write to them later on and that they can message whenever they want an appointment before then -- in Spanish: "Sin problema, te escribimos más adelante. Si antes quieres cita, escríbenos." Do not offer times and do not ask which days or weeks suit them. If they then say why (a trip, holidays), answer in one short sentence, still without offering times.'
 
 /**
  * Told at 14:12 "el jueves 5 tengo dentista", a patient asked at 20:15 for

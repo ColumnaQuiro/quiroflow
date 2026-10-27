@@ -183,6 +183,7 @@ describe('someone who has left', () => {
   it('takes them off the follow-ups itself when it can, instead of handing over', () => {
     expect(prompt(true)).toContain(LEFT_THE_CLINIC_LINE)
     expect(LEFT_THE_CLINIC_LINE).toContain('call stop_follow_ups')
+    expect(LEFT_THE_CLINIC_LINE).toContain('another chiropractor')
     expect(LEFT_THE_CLINIC_LINE).toContain('This replaces handing it over to a colleague')
   })
 

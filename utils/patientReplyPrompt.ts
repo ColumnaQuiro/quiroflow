@@ -218,7 +218,7 @@ export function visitHistoryRule(f: PatientReplyFacts): string {
  * patient wrote that she had moved, got a kind goodbye, and stayed in the
  * queue for the next recall.
  */
-export const LEFT_THE_CLINIC_LINE = 'If they say they have moved away, or that they will not be coming back to the clinic at all, call stop_follow_ups with their words, then say goodbye in one short sentence, without offering times. This replaces handing it over to a colleague, whatever the clinic knowledge says about it. Never call it for a later, a holiday, a trip, a busy few weeks or "not now".'
+export const LEFT_THE_CLINIC_LINE = 'If they say they have moved away, that they now see another chiropractor or go to another clinic, or that they will not be coming back to the clinic at all, call stop_follow_ups with their words, then say goodbye in one short sentence, without offering times. This replaces handing it over to a colleague, whatever the clinic knowledge says about it. Never call it for a later, a holiday, a trip, a busy few weeks or "not now".'
 
 /** Months without a visit after which someone is back "after a long break" -- the reactivation recall's own six. */
 export const LAPSED_MONTHS = 6

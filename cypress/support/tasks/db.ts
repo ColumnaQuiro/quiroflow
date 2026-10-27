@@ -4176,6 +4176,34 @@ async function homeWidgetAs(opts: { email: string; password: string; accountId: 
   return { data: data ?? null, error: error?.message ?? null }
 }
 
+/**
+ * A widget token (issue_home_widget_token), issued from a fresh signed-in
+ * session the way the app does. The session is kept so the spec can sign
+ * it out again and watch the token die with it.
+ */
+const widgetSessions = new Map<string, { auth: { signOut(o: { scope: 'local' }): Promise<{ error: unknown }> } }>()
+async function homeWidgetTokenAs(opts: { email: string; password: string }) {
+  const client = createClient(SUPABASE_URL, ANON_KEY, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+  const { error: signInErr } = await client.auth.signInWithPassword({ email: opts.email, password: opts.password })
+  if (signInErr) throw signInErr
+  const { data, error } = await client.rpc('issue_home_widget_token' as never)
+  if (error) return { token: null, error: error.message }
+  widgetSessions.set(data as unknown as string, client)
+  return { token: data as unknown as string, error: null }
+}
+
+/** Signs out the session a widget token came from, as the app's sign-out does. */
+async function signOutHomeWidgetSession(opts: { token: string }) {
+  const client = widgetSessions.get(opts.token)
+  if (!client) throw new Error('No session for that widget token')
+  const { error } = await client.auth.signOut({ scope: 'local' })
+  if (error) throw error
+  widgetSessions.delete(opts.token)
+  return null
+}
+
 /** Backdates a bono sale, to put it in an earlier month. */
 async function setPackagePurchasedAt(opts: { id: string; purchasedAt: string }) {
   assertOk(await admin.from('package_purchases').update({ purchased_at: opts.purchasedAt }).eq('id', opts.id))
@@ -4456,5 +4484,7 @@ export const dbTasks = {
   'db:createReferralSource': createReferralSource,
   'db:bookingAttribution': bookingAttribution,
   'db:homeWidgetAs': homeWidgetAs,
+  'db:homeWidgetTokenAs': homeWidgetTokenAs,
+  'db:signOutHomeWidgetSession': signOutHomeWidgetSession,
   'db:setPackagePurchasedAt': setPackagePurchasedAt,
 }

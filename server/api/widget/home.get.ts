@@ -1,8 +1,8 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import { widgetSnapshotFromRpc, type HomeWidgetRpc } from '~/utils/homeWidget'
 
-// The iOS home-screen widget, fetching its own snapshot while the app is
-// closed (mobile/ios/App/QuiroFlowWidgets/QuiroFlowWidgets.swift). It carries
+// The home-screen widget, fetching its own snapshot while the app is closed
+// (iOS: QuiroFlowWidgets.swift; Android: WidgetRefreshWorker.java). It carries
 // "Authorization: Bearer <widget token>", which the app got from
 // issue_home_widget_token (20261027172713_home_widget_refresh.sql) -- not a
 // Supabase session, which the extension must never refresh under the app.

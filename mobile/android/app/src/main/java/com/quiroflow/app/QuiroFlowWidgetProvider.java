@@ -20,10 +20,11 @@ import java.util.TimeZone;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-// QuiroFlow's home-screen widget on Android: the snapshot the app last wrote
-// (HomeWidgetPlugin, utils/homeWidget.ts) and how long ago. It never talks to
-// the server. What it holds depends on who is signed in, as get_home_widget
-// decided:
+// QuiroFlow's home-screen widget on Android: a snapshot (HomeWidgetPlugin,
+// utils/homeWidget.ts) and how long ago it was taken. The app writes one
+// whenever it has fresh data; for staff, WidgetRefreshWorker also fetches one
+// every quarter of an hour while the app is closed. What it holds depends on
+// who is signed in, as get_home_widget decided:
 //   patient -- the next visit and the bono;
 //   clinic  -- an owner: money taken this month, visits done of booked today,
 //              bonos sold this month, each figure its own tap at 4x2;
@@ -38,6 +39,15 @@ public class QuiroFlowWidgetProvider extends AppWidgetProvider {
     @Override
     public void onUpdate(Context context, AppWidgetManager manager, int[] ids) {
         for (int id : ids) update(context, manager, id);
+        // A widget added with a token already there starts fetching (KEEP:
+        // an existing schedule is left alone).
+        if (WidgetRefreshWorker.hasToken(context)) WidgetRefreshWorker.schedule(context);
+    }
+
+    /** The last widget is gone: nothing to fetch for. */
+    @Override
+    public void onDisabled(Context context) {
+        WidgetRefreshWorker.cancel(context);
     }
 
     @Override

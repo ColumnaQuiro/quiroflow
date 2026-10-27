@@ -1,4 +1,4 @@
-// The iOS widget fetching its own snapshot while the app is closed
+// The home-screen widget fetching its own snapshot while the app is closed
 // (server/api/widget/home.get.ts, 20261027172713_home_widget_refresh.sql).
 // It holds a widget token, not a session: good only while the session that
 // issued it is, and only for running get_home_widget as that person -- with

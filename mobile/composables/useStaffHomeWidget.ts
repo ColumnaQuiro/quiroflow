@@ -8,10 +8,9 @@ import { widgetSnapshotFromRpc, type HomeWidgetRpc } from '../../utils/homeWidge
 //
 // This runs when the app opens or comes back (layouts/practitioner.vue),
 // when My Day loads, and after taking money or checking someone in. Between
-// those, the iOS widget fetches the same snapshot itself, every quarter of an
-// hour or so (server/api/widget/home.get.ts): each run here also hands it the
+// those, the widget fetches the same snapshot itself, every quarter of an hour
+// or so (server/api/widget/home.get.ts): each run here also hands it the
 // clinic, the language, privacy mode and, once per session, a widget token.
-// Android's widget is still only as fresh as the last run here.
 //
 // Module-level throttle: the layout, My Day and an action can all ask within
 // the same second; once a minute is plenty unless something just changed.

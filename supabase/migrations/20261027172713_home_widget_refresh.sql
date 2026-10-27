@@ -1,9 +1,9 @@
--- Lets the iOS home-screen widget fetch its own figures while the app is
+-- Lets the home-screen widget (iOS and Android) fetch its own figures while the app is
 -- closed (server/api/widget/home.get.ts), instead of showing only what the
 -- app last wrote -- an owner's widget read "hace 3 h" whenever the app had
 -- not been opened since the morning.
 --
--- The widget extension does not get a Supabase session. A refresh token is
+-- The widget does not get a Supabase session. A refresh token is
 -- single-use: if the extension refreshed one, the app's copy would be spent
 -- and the app signed out (or, past the reuse window, the whole session
 -- revoked). So the app asks for a widget token instead: a random secret,

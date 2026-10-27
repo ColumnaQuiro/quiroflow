@@ -8,8 +8,8 @@ import type { WidgetSnapshot } from '../../utils/homeWidget'
 // asked to redraw. Nothing on the web, and nothing on an app build from
 // before the plugin existed -- the call fails quietly there.
 //
-// On iOS the widget also fetches its own snapshot while the app is closed
-// (server/api/widget/home.get.ts). setRefresh hands it what it needs: where
+// The widget also fetches its own snapshot while the app is closed
+// (server/api/widget/home.get.ts; WidgetKit on iOS, WorkManager on Android). setRefresh hands it what it needs: where
 // to ask, for which clinic, in which language and privacy mode, and a widget
 // token (issue_home_widget_token) -- never the app's own session. Without a
 // token it only updates the settings and says whether one is already there.
@@ -39,10 +39,10 @@ export function useHomeWidget() {
   }
   /**
    * Lets the widget refresh itself; `issue` is asked for a token only when
-   * the widget has none. iOS only: Android's widget still waits for the app.
+   * the widget has none.
    */
   async function keepFresh(refresh: Omit<WidgetRefresh, 'token'>, issue: () => Promise<string | null>) {
-    if (Capacitor.getPlatform() !== 'ios') return
+    if (!Capacitor.isNativePlatform()) return
     try {
       const { hasToken } = await HomeWidget.setRefresh(refresh)
       if (hasToken) return

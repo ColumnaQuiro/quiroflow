@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12 and up: the same rule as backup_rules.xml, for cloud backups
+     and device-to-device transfers. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="quiroflow_widget.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="quiroflow_widget.xml" />
+    </device-transfer>
+</data-extraction-rules>

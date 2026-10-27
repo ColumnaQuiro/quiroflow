@@ -88,6 +88,18 @@ describe('Receptionist types by audience', () => {
     expect(section).not.toContain('hand_over_to_colleague straight away')
     expect(section).not.toContain('your colleague will take care of it')
   })
+
+  // A patient who could not come this week, offered another day, answered
+  // "¡Tengo cita el día 5!" -- keep that one, drop this -- and was offered
+  // the same two times again (26 Oct 2026).
+  it('takes pointing to a visit they already have as no to another time', () => {
+    const visits = [{ startsAt: '2026-10-27T18:30:00Z', typeName: 'Ajuste' }, { startsAt: '2026-11-05T16:30:00Z', typeName: 'Ajuste' }]
+    const own = rescheduleSection(visits, 'Europe/Madrid', { listVisits: true, canBook: true })
+    expect(own).toContain('point to a visit they already have instead')
+    expect(own).toContain('Cancel the one they cannot come to with cancel_appointment')
+    const draft = rescheduleSection(visits, 'Europe/Madrid', { listVisits: true })
+    expect(draft).toContain('your colleague will cancel the one they cannot come to and that the other stands')
+  })
 })
 
 

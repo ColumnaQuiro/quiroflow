@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { AUTOMATED_MARK, COLLEAGUE_MARK, cleanReply, historyLine, historyMarkersSection, INFORMAL_ADDRESS_LINE, LATER_ANSWER_LINE, offeredTimeCount, SENT_FILES_LINE, STATED_LIMITS_LINE } from '../../utils/receptionistHistory'
+import { AUTOMATED_MARK, COLLEAGUE_MARK, cleanReply, historyLine, historyMarkersSection, INFORMAL_ADDRESS_LINE, LATER_ANSWER_LINE, offeredTimeCount, REPLY_DETAILS_LINE, SENT_FILES_LINE, STATED_LIMITS_LINE } from '../../utils/receptionistHistory'
 import { rescheduleSection } from '../../utils/receptionistTypes'
 
 // The reminder in the history read as one of the receptionist's own replies,
@@ -84,6 +84,12 @@ describe('Days twelve and thirteen', () => {
     expect(LATER_ANSWER_LINE).toContain('"Más adelante"')
     expect(LATER_ANSWER_LINE).toContain('Do not offer times')
     expect(LATER_ANSWER_LINE).toContain('Sin problema, te escribimos más adelante')
+  })
+
+  it('does not ask twice, offers the full count and names a cancelled visit', () => {
+    expect(REPLY_DETAILS_LINE).toContain('Never ask again')
+    expect(REPLY_DETAILS_LINE).toContain('only free time that fits')
+    expect(REPLY_DETAILS_LINE).toContain('queda cancelada')
   })
 
   it('treats an answer to an automatic message as an answer to the clinic', () => {

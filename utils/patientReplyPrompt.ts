@@ -5,7 +5,7 @@ import { NO_REPLY } from './receptionistAutoReply'
 import { clinicDetailsSection, type PromptClinic } from './receptionistClinic'
 import { CONFIRM_BEFORE_BOOKING, familySection, laterPricesSection, minorsSection, offeredTypesSection, rescheduleSection, someoneTheyBringSection, type PromptPackage, type BookedVisit, type PromptChild, type PromptRelative, type PromptType } from './receptionistTypes'
 import { receptionistBookingSection, receptionistClockSection, type ReceptionistAvailability } from './receptionistSlots'
-import { CARD_ANSWERS_LINE, historyMarkersSection, INFORMAL_ADDRESS_LINE, LATER_ANSWER_LINE, NO_INVENTION_LINE, NOT_CHIROPRACTIC_SYMPTOM_LINE, PART_OF_DAY_ANSWER_LINE, replyLanguageLine, SENT_FILES_LINE, STATED_LIMITS_LINE, WAITLIST_SECTION } from './receptionistHistory'
+import { CARD_ANSWERS_LINE, historyMarkersSection, INFORMAL_ADDRESS_LINE, LATER_ANSWER_LINE, NO_INVENTION_LINE, NOT_CHIROPRACTIC_SYMPTOM_LINE, PART_OF_DAY_ANSWER_LINE, REPLY_DETAILS_LINE, replyLanguageLine, SENT_FILES_LINE, STATED_LIMITS_LINE, WAITLIST_SECTION } from './receptionistHistory'
 import type { ReceptionistPrompt } from './receptionistPrompt'
 
 // What the receptionist knows about a patient when drafting a reply to them
@@ -303,6 +303,7 @@ export function buildPatientReplyPrompt(
     PART_OF_DAY_ANSWER_LINE,
     SENT_FILES_LINE,
     LATER_ANSWER_LINE,
+    REPLY_DETAILS_LINE,
     STATED_LIMITS_LINE,
     CARD_ANSWERS_LINE,
     NOT_CHIROPRACTIC_SYMPTOM_LINE,

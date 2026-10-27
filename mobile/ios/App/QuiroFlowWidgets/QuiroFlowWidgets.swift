@@ -1,10 +1,12 @@
 import SwiftUI
 import WidgetKit
 
-// QuiroFlow's home-screen widget. It never talks to the server: it shows the
-// snapshot the app last wrote (utils/homeWidget.ts, SharedSnapshot), with
-// how long ago. What that snapshot holds depends on who is signed in, as
-// get_home_widget decided it:
+// QuiroFlow's home-screen widget. It shows a snapshot (utils/homeWidget.ts,
+// SharedSnapshot), with how long ago it was taken. The app writes one
+// whenever it has fresh data; for staff, the widget also fetches one itself
+// each time WidgetKit asks for a timeline (SelfRefresh), so an owner's
+// figures move on while the app stays closed. What the snapshot holds
+// depends on who is signed in, as get_home_widget decided it:
 //   patient -- the next visit and the bono;
 //   clinic  -- an owner: money taken this month, visits done of booked today,
 //              bonos sold this month (and their own day on the large size);
@@ -159,10 +161,68 @@ struct Entry: TimelineEntry {
     let snapshot: Snapshot?
 }
 
+/// The widget fetching its own snapshot (server/api/widget/home.get.ts) with
+/// the widget token the app gave it -- never the app's session, whose
+/// refresh token the app must keep. The answer is exactly what the app would
+/// have written, mapped on the server by the same widgetSnapshotFromRpc, so
+/// nothing here interprets it. Whatever happens, the timeline then draws
+/// whatever snapshot is stored: a failed fetch (offline, a slow server) keeps
+/// the last one, with its age.
+enum SelfRefresh {
+    static func run(_ done: @escaping () -> Void) {
+        guard let c = WidgetRefreshConfig.load(), let token = c.token, var parts = URLComponents(string: c.url) else { return done() }
+        parts.queryItems = [
+            URLQueryItem(name: "account", value: c.accountId),
+            URLQueryItem(name: "tz", value: c.timeZone),
+            URLQueryItem(name: "lang", value: c.lang),
+            URLQueryItem(name: "privacy", value: c.privacy ? "1" : "0"),
+        ]
+        guard let u = parts.url else { return done() }
+        var req = URLRequest(url: u, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        URLSession.shared.dataTask(with: req) { data, response, _ in
+            switch (response as? HTTPURLResponse)?.statusCode {
+            case 200:
+                if let data, (try? JSONDecoder().decode(Snapshot.self, from: data)) != nil { SharedSnapshot.write(data) }
+            case 204:
+                // Nobody's day to show any more.
+                SharedSnapshot.clear()
+            case 401:
+                // The session that issued the token has ended: signed out, or
+                // revoked. Nothing on the phone is theirs to show now.
+                SharedSnapshot.clear()
+                SharedSnapshot.clearRefresh()
+            case 403:
+                // A second factor is now required, or they left the team: the
+                // figures wait for the app, which asks for the code.
+                SharedSnapshot.clear()
+            default:
+                break
+            }
+            done()
+        }.resume()
+    }
+
+    /// Every quarter of an hour while the clinic is open (WidgetKit spaces it
+    /// out to its own budget); hourly overnight. Without a token, every half
+    /// hour only to move the age on, as before.
+    static func nextAsk(_ snap: Snapshot?) -> Date {
+        guard WidgetRefreshConfig.load()?.token != nil else { return Date.now.addingTimeInterval(30 * 60) }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = snap?.timeZone.flatMap { TimeZone(identifier: $0) } ?? .current
+        let hour = cal.component(.hour, from: .now)
+        return Date.now.addingTimeInterval((hour >= 7 && hour < 22 ? 15 : 60) * 60)
+    }
+}
+
 struct Provider: TimelineProvider {
     func placeholder(in context: Context) -> Entry { Entry(date: .now, snapshot: nil) }
     func getSnapshot(in context: Context, completion: @escaping (Entry) -> Void) { completion(Entry(date: .now, snapshot: Snapshot.load())) }
     func getTimeline(in context: Context, completion: @escaping (Timeline<Entry>) -> Void) {
+        SelfRefresh.run { completion(timeline()) }
+    }
+
+    private func timeline() -> Timeline<Entry> {
         let snap = Snapshot.load()
         var dates: [Date] = [.now]
         // A list drops each visit a quarter of an hour after it starts.
@@ -174,7 +234,7 @@ struct Provider: TimelineProvider {
         cal.timeZone = snap?.timeZone.flatMap { TimeZone(identifier: $0) } ?? .current
         if let midnight = cal.nextDate(after: .now, matching: DateComponents(hour: 0, minute: 0), matchingPolicy: .nextTime) { dates.append(midnight) }
         let entries = dates.sorted().prefix(12).map { Entry(date: $0, snapshot: snap) }
-        completion(Timeline(entries: Array(entries), policy: .after(Date.now.addingTimeInterval(30 * 60))))
+        return Timeline(entries: Array(entries), policy: .after(SelfRefresh.nextAsk(snap)))
     }
 }
 

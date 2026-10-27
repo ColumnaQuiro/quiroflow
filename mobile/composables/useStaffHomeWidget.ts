@@ -6,11 +6,12 @@ import { widgetSnapshotFromRpc, type HomeWidgetRpc } from '../../utils/homeWidge
 // owner the clinic's month, a practitioner their day, the front desk the
 // clinic's day -- and hands the snapshot to the native widget.
 //
-// The widget never talks to the server, so it is only as fresh as the last
-// call here. That used to be My Day's own load and nothing else, so someone
-// who lived in the calendar saw a widget from the morning. It is now called
-// when the app opens or comes back (layouts/practitioner.vue), when My Day
-// loads, and after taking money or checking someone in.
+// This runs when the app opens or comes back (layouts/practitioner.vue),
+// when My Day loads, and after taking money or checking someone in. Between
+// those, the iOS widget fetches the same snapshot itself, every quarter of an
+// hour or so (server/api/widget/home.get.ts): each run here also hands it the
+// clinic, the language, privacy mode and, once per session, a widget token.
+// Android's widget is still only as fresh as the last run here.
 //
 // Module-level throttle: the layout, My Day and an action can all ask within
 // the same second; once a minute is plenty unless something just changed.
@@ -22,7 +23,8 @@ export function useStaffHomeWidget() {
   const { context } = usePractitionerContext()
   const { preference } = useLang()
   const { privacy } = usePrivacyMode()
-  const { publish, clear } = useHomeWidget()
+  const { publish, keepFresh, clear } = useHomeWidget()
+  const apiBase = useRuntimeConfig().public.apiBase as string
 
   async function run() {
     const ctx = context.value
@@ -31,9 +33,14 @@ export function useStaffHomeWidget() {
     // A failed call (offline, a pending second factor) keeps what the widget
     // shows, with its age, rather than replacing it with nothing.
     if (error || !data) return
-    const snapshot = widgetSnapshotFromRpc(data as unknown as HomeWidgetRpc, { lang: preference.value === 'es' ? 'es' : 'en', privacy: privacy.value })
-    if (snapshot) await publish(snapshot)
-    else await clear()
+    const lang = preference.value === 'es' ? 'es' : 'en'
+    const snapshot = widgetSnapshotFromRpc(data as unknown as HomeWidgetRpc, { lang, privacy: privacy.value })
+    if (!snapshot) return clear()
+    await publish(snapshot)
+    await keepFresh({ url: `${apiBase}/api/widget/home`, accountId: ctx.accountId, timeZone: ctx.timeZone, lang, privacy: privacy.value }, async () => {
+      const { data: token } = await supabase.rpc('issue_home_widget_token' as never)
+      return typeof token === 'string' ? token : null
+    })
   }
 
   /** `force` after something the widget shows has changed (money taken, a check-in). */

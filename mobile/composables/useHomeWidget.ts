@@ -7,8 +7,23 @@ import type { WidgetSnapshot } from '../../utils/homeWidget'
 // Android in SharedPreferences (HomeWidgetPlugin.java), and the widget is
 // asked to redraw. Nothing on the web, and nothing on an app build from
 // before the plugin existed -- the call fails quietly there.
+//
+// On iOS the widget also fetches its own snapshot while the app is closed
+// (server/api/widget/home.get.ts). setRefresh hands it what it needs: where
+// to ask, for which clinic, in which language and privacy mode, and a widget
+// token (issue_home_widget_token) -- never the app's own session. Without a
+// token it only updates the settings and says whether one is already there.
+export interface WidgetRefresh {
+  url: string
+  accountId: string
+  timeZone: string
+  lang: 'es' | 'en'
+  privacy: boolean
+  token?: string
+}
 interface HomeWidgetPlugin {
   setSnapshot(options: { json: string }): Promise<void>
+  setRefresh(options: WidgetRefresh): Promise<{ hasToken: boolean }>
   clear(): Promise<void>
 }
 const HomeWidget = registerPlugin<HomeWidgetPlugin>('HomeWidget')
@@ -22,7 +37,22 @@ export function useHomeWidget() {
       // An older app build without the plugin: no widget to feed.
     }
   }
-  /** On sign-out: the widget must not keep showing someone's day. */
+  /**
+   * Lets the widget refresh itself; `issue` is asked for a token only when
+   * the widget has none. iOS only: Android's widget still waits for the app.
+   */
+  async function keepFresh(refresh: Omit<WidgetRefresh, 'token'>, issue: () => Promise<string | null>) {
+    if (Capacitor.getPlatform() !== 'ios') return
+    try {
+      const { hasToken } = await HomeWidget.setRefresh(refresh)
+      if (hasToken) return
+      const token = await issue()
+      if (token) await HomeWidget.setRefresh({ ...refresh, token })
+    } catch {
+      // An app build from before setRefresh: the widget waits for the app.
+    }
+  }
+  /** On sign-out: the widget must not keep showing someone's day, nor fetch it. */
   async function clear() {
     if (!Capacitor.isNativePlatform()) return
     try {
@@ -31,5 +61,5 @@ export function useHomeWidget() {
       // As above.
     }
   }
-  return { publish, clear }
+  return { publish, keepFresh, clear }
 }

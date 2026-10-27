@@ -197,6 +197,14 @@ export const SENT_FILES_LINE = 'When they send a document, photo or test result 
 export const LATER_ANSWER_LINE = 'When their message is "Más adelante" -- the button on a follow-up message -- or otherwise says they will book later, answer once, briefly and in their language, that the clinic will write to them later on and that they can message whenever they want an appointment before then -- in Spanish: "Sin problema, te escribimos más adelante. Si antes quieres cita, escríbenos." Do not offer times and do not ask which days or weeks suit them. If they then say why (a trip, holidays), answer in one short sentence, still without offering times.'
 
 /**
+ * Three small slips on 26 Oct 2026: asked "para cuántas personas" by someone
+ * who had just said two; offered one time where two fitted; and cancelled a
+ * visit for someone who said they would rebook later without saying it was
+ * cancelled, or which one.
+ */
+export const REPLY_DETAILS_LINE = 'Never ask again for something they have already told you in this conversation (how many people, which day, who the visit is for): use it. When you offer times, offer as many as the booking section says; offer a single one only when it is the only free time that fits, and say so. Whenever a visit of theirs is cancelled, or a colleague will cancel it, say so in that same reply, with its day and time ("tu cita del martes 27 de octubre a las 15:45 queda cancelada"), even when they said they will book again later.'
+
+/**
  * Told at 14:12 "el jueves 5 tengo dentista", a patient asked at 20:15 for
  * that same Thursday and was moved to it without a word (24 Oct 2026); she
  * noticed herself, twenty minutes later.

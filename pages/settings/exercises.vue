@@ -13,6 +13,10 @@
 // programme (exercise_program_items cascades the same way); anything else is
 // archived: off the picker, still on the patients who have it.
 //
+// QuiroFlow's starter catalogue sits below (ExercisesCatalog): adding from it
+// makes an ordinary row here, marked with starter_key, whose demonstration
+// video plays wherever the exercise does unless the clinic uploads its own.
+//
 // The counts are read under the viewer's own RLS, so a role limited to its
 // own patients counts only those; this page is for clinic_config roles,
 // which in practice see all of them.
@@ -23,6 +27,7 @@ interface LibraryExercise {
   instructions: string | null
   media_url: string | null
   media_path: string | null
+  starter_key: string | null
   archived_at: string | null
   current: { count: number }[]
   ever: { count: number }[]
@@ -34,6 +39,8 @@ const store = useAccountStore()
 const t = useT()
 const { showToast } = useToast()
 const media = useExerciseMedia()
+const catalog = useExerciseCatalog()
+const catalogSection = ref<{ reload: () => Promise<void> } | null>(null)
 
 const exercises = ref<LibraryExercise[]>([])
 const loading = ref(true)
@@ -43,7 +50,7 @@ async function load() {
   // ended) and ever, which is what decides whether delete is safe.
   const { data, error } = await supabase
     .from('exercises')
-    .select('id, name, instructions, media_url, media_path, archived_at, current:patient_exercises(count), ever:patient_exercises(count), in_programs:exercise_program_items(count)')
+    .select('id, name, instructions, media_url, media_path, starter_key, archived_at, current:patient_exercises(count), ever:patient_exercises(count), in_programs:exercise_program_items(count)')
     .is('current.ended_at', null)
     .order('name')
   if (error) showToast(error.message, 'error')
@@ -51,6 +58,7 @@ async function load() {
   loading.value = false
   // A renamed or archived exercise shows in the programmes too.
   programsSection.value?.reload()
+  catalogSection.value?.reload()
 }
 onMounted(load)
 
@@ -78,6 +86,7 @@ const savedPath = ref<string | null>(null)
 const saving = ref(false)
 const formError = ref('')
 const nameInput = ref<HTMLInputElement | null>(null)
+const editingCatalog = computed(() => !!exercises.value.find((e) => e.id === editingId.value)?.starter_key)
 
 // The form sits above the list, so whichever row opened it may be a screen
 // further down: bring it into view with the name ready to type.
@@ -206,6 +215,7 @@ const iconBtn = 'flex h-9 w-9 touch:h-11 touch:w-11 shrink-0 items-center justif
               <input v-model="form.media_url" type="text" inputmode="url" autocapitalize="off" placeholder="https://" :class="[inputClass, 'mt-1']" data-cy="library-link" />
             </label>
             <ExercisesMediaField v-if="store.accountId" v-model="form.media_path" :account-id="store.accountId" />
+            <p v-if="editingCatalog && !form.media_path" class="text-[12.5px] text-ink-muted">{{ t('From the QuiroFlow catalogue: its demonstration video plays for patients unless you upload your own.', 'Del catálogo de QuiroFlow: los pacientes ven su vídeo de demostración salvo que subas uno propio.') }}</p>
             <p v-if="formError" role="alert" class="text-[12.5px] font-semibold text-danger-text">{{ formError }}</p>
             <div class="flex gap-2">
               <UiBtn type="submit" variant="primary" :disabled="saving" data-cy="library-save">{{ saving ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}</UiBtn>
@@ -226,7 +236,7 @@ const iconBtn = 'flex h-9 w-9 touch:h-11 touch:w-11 shrink-0 items-center justif
               </div>
             </template>
             <p v-else-if="active.length === 0" class="border-t border-line-row px-[18px] py-6 text-center text-[14px] text-ink-muted">
-              {{ t("No exercises yet. Add one here, or assign a new one on a patient's record.", 'Aún no hay ejercicios. Añade uno aquí, o asigna uno nuevo en la ficha de un paciente.') }}
+              {{ t("No exercises yet. Add some from the QuiroFlow catalogue below, write your own, or assign one on a patient's record.", 'Aún no hay ejercicios. Añade algunos del catálogo de QuiroFlow, más abajo, escribe los tuyos o asigna uno en la ficha de un paciente.') }}
             </p>
 
             <div v-for="e in active" :key="e.id" data-cy="library-row" class="flex min-h-[60px] items-center gap-3 border-t border-line-row py-2.5 pl-[18px] pr-3">
@@ -235,6 +245,7 @@ const iconBtn = 'flex h-9 w-9 touch:h-11 touch:w-11 shrink-0 items-center justif
                 <span v-if="e.instructions" class="line-clamp-1 text-[13px] text-ink-muted">{{ e.instructions }}</span>
                 <a v-if="e.media_url" :href="e.media_url" target="_blank" rel="noopener" class="truncate text-[12.5px] text-brand-text hover:underline">{{ e.media_url }}</a>
                 <button v-if="e.media_path" type="button" class="self-start text-[12.5px] font-medium text-brand-text hover:underline" data-cy="library-row-media" @click="openWhenReady(() => media.signedUrl(e.media_path!))">{{ exerciseMediaKind(e.media_path) === 'video' ? t('▶ Video', '▶ Vídeo') : t('Photo', 'Foto') }}</button>
+                <button v-else-if="e.starter_key" type="button" class="self-start text-[12.5px] font-medium text-brand-text hover:underline" data-cy="library-row-catalog-video" @click="openWhenReady(async () => catalog.media(e.starter_key!).video)">{{ t('▶ Demonstration', '▶ Demostración') }}</button>
               </div>
               <span class="w-[110px] shrink-0 text-right text-[13.5px] text-ink-500" data-cy="library-row-count">{{ countLabel(e) }}</span>
               <button type="button" data-cy="library-edit" :class="iconBtn" :aria-label="t(`Edit ${e.name}`, `Editar ${e.name}`)" :title="t('Edit', 'Editar')" @click="openEdit(e)">
@@ -247,6 +258,15 @@ const iconBtn = 'flex h-9 w-9 touch:h-11 touch:w-11 shrink-0 items-center justif
           </section>
 
           <ExercisesPrograms v-if="store.accountId" ref="programsSection" :account-id="store.accountId" :exercises="active.map((e) => ({ id: e.id, name: e.name }))" @changed="load" />
+
+          <ExercisesCatalog
+            v-if="store.accountId"
+            ref="catalogSection"
+            :account-id="store.accountId"
+            :team-member-id="store.teamMember?.id ?? null"
+            :in-library="active.map((e) => e.starter_key).filter((s): s is string => !!s)"
+            @changed="load"
+          />
 
           <section v-if="archived.length > 0" aria-labelledby="h-archived" class="overflow-hidden rounded-card border border-line bg-surface" data-cy="library-archived">
             <div class="px-[18px] pb-3 pt-4">

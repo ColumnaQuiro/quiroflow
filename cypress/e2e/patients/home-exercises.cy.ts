@@ -16,6 +16,7 @@ describe('Home exercises', () => {
         cy.visit(`/patients/${patient.id}?tab=clinical`)
         cy.get('[data-cy="staff-exercises"]').should('contain.text', 'None assigned yet')
         cy.get('[data-cy="exercises-assign-open"]').click()
+        cy.get('[data-cy="exercise-pick"]').select('__new')
         cy.get('[data-cy="exercise-name"]').type('Gato-camello')
         cy.get('[data-cy="exercise-link"]').type('https://example.com/gato-camello')
         cy.get('[data-cy="exercise-sets"]').type('3')

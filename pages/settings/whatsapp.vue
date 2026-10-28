@@ -35,6 +35,10 @@ const hasInstagramToken = ref(false)
 const hasMetaAdsToken = ref(false)
 const instagramUserId = ref('')
 const instagramAccessToken = ref('')
+// Same rule as manualOpen: decided once per load, open until connected.
+const instagramManualOpen = ref(false)
+const instagramConnect = useFacebookPageConnect('instagram')
+const connectingInstagram = ref(false)
 const newLeadNotifyTemplateName = ref('')
 const newLeadNotifyTemplateLanguage = ref('es')
 const staffNotifyTemplateLanguage = ref('es')
@@ -100,6 +104,7 @@ async function load() {
   metaAdsAccountId.value = data?.meta_ads_account_id ?? ''
   metaAdsAccessToken.value = ''
   instagramUserId.value = data?.instagram_user_id ?? ''
+  instagramManualOpen.value = !instagramUserId.value
   instagramAccessToken.value = ''
   newLeadNotifyTemplateName.value = data?.new_lead_notify_whatsapp_template_name ?? ''
   newLeadNotifyTemplateLanguage.value = data?.new_lead_notify_whatsapp_template_language ?? 'es'
@@ -186,6 +191,29 @@ function saveErrorMessage(error: { code?: string; message: string }) {
     )
   }
   return error.message
+}
+
+// Meta's dialog: the clinic ticks its Instagram account and the Page it is
+// linked to, and the server finds the one behind it, subscribes the Page and
+// stores both. Nothing here to save afterwards -- it is already stored.
+async function connectInstagram() {
+  connectingInstagram.value = true
+  try {
+    const code = await instagramConnect.launch()
+    const result = await useStaffFetch<{ instagramUserId: string; username: string | null }>('/api/meta/instagram/connect', { method: 'POST', body: { code } })
+    instagramUserId.value = result.instagramUserId
+    hasInstagramToken.value = true
+    instagramAccessToken.value = ''
+    instagramManualOpen.value = false
+    const who = result.username ? `@${result.username}` : result.instagramUserId
+    showToast(t(`Instagram connected: ${who}.`, `Instagram conectado: ${who}.`), 'success')
+  } catch (err: any) {
+    // Closing Meta's dialog is not a failure (see WhatsAppConnectCard).
+    if (err?.message === 'CANCELLED') return
+    showToast(err?.data?.statusMessage ?? err?.message ?? t('Could not connect Instagram.', 'No se pudo conectar Instagram.'), 'error')
+  } finally {
+    connectingInstagram.value = false
+  }
 }
 
 async function save() {
@@ -343,18 +371,32 @@ async function save() {
                 <UiPill v-else-if="instagramUserId" tone="warning" dot>{{ t('Receiving only', 'Solo recibe') }}</UiPill>
                 <UiPill v-else tone="neutral">{{ t('Not connected', 'Sin conectar') }}</UiPill>
               </div>
-              <p class="px-[18px] pb-2 text-[13px] text-ink-muted">{{ t('DMs to your professional account arrive in the Inbox beside WhatsApp. Leave it empty to keep Instagram disconnected.', 'Los mensajes a tu cuenta profesional llegan a la Bandeja junto a WhatsApp. Déjalo vacío para no conectar Instagram.') }}</p>
-              <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
-                <label for="ig-id" class="min-w-[220px] flex-1 text-[14.5px] font-bold text-ink-900">{{ t('Instagram account ID', 'ID de la cuenta de Instagram') }}</label>
-                <input id="ig-id" v-model="instagramUserId" type="text" placeholder="17841400000000000" data-test="instagram-user-id" :class="[inputClass, 'w-full font-mono text-[13px] sm:w-[300px]']" />
+              <p class="px-[18px] pb-2 text-[13px] text-ink-muted">{{ t('DMs to your professional account arrive in the Inbox beside WhatsApp, and you can answer them from there.', 'Los mensajes a tu cuenta profesional llegan a la Bandeja junto a WhatsApp, y puedes responderlos desde allí.') }}</p>
+              <div v-if="instagramConnect.available.value" class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
+                <span class="min-w-[220px] flex-1 text-[13px] leading-snug text-ink-500">{{ t('Sign in with Meta and tick your Instagram account and the Facebook Page it is linked to.', 'Inicia sesión con Meta y marca tu cuenta de Instagram y la página de Facebook a la que está vinculada.') }}</span>
+                <UiBtn variant="primary" :disabled="connectingInstagram || loading" data-cy="instagram-connect" @click="connectInstagram">
+                  {{ connectingInstagram ? t('Connecting…', 'Conectando…') : instagramUserId ? t('Reconnect Instagram', 'Volver a conectar Instagram') : t('Connect Instagram', 'Conectar Instagram') }}
+                </UiBtn>
               </div>
-              <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
-                <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
-                  <label for="ig-token" class="text-[14.5px] font-bold text-ink-900">{{ t('Access token', 'Token de acceso') }}</label>
-                  <span class="text-[13px] text-ink-500">{{ t('A Page token with instagram_manage_messages. Only needed to reply.', 'Un token de página con instagram_manage_messages. Solo hace falta para responder.') }}</span>
+              <!-- Without the button (no configuration on this deployment) the fields are the only way, so they stay open. -->
+              <details :open="!instagramConnect.available.value || instagramManualOpen" class="group border-t border-line" data-cy="instagram-manual">
+                <summary class="flex min-h-[52px] cursor-pointer list-none items-center gap-2 px-[18px] text-[14px] font-semibold text-ink-500 hover:bg-surface-subtle">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="transition-transform group-open:rotate-90"><path d="M9 6l6 6-6 6" /></svg>
+                  {{ t('Set it up by hand', 'Configúralo a mano') }}
+                </summary>
+                <p class="px-[18px] pb-2 text-[13px] text-ink-muted">{{ t('Leave the account ID empty to keep Instagram disconnected.', 'Deja el ID vacío para no conectar Instagram.') }}</p>
+                <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
+                  <label for="ig-id" class="min-w-[220px] flex-1 text-[14.5px] font-bold text-ink-900">{{ t('Instagram account ID', 'ID de la cuenta de Instagram') }}</label>
+                  <input id="ig-id" v-model="instagramUserId" type="text" placeholder="17841400000000000" data-test="instagram-user-id" :class="[inputClass, 'w-full font-mono text-[13px] sm:w-[300px]']" />
                 </div>
-                <input id="ig-token" v-model="instagramAccessToken" type="password" autocomplete="off" :placeholder="hasInstagramToken ? '••••••••••••••••••••' : 'EAA…'" data-test="instagram-access-token" :class="[inputClass, 'w-full sm:w-[300px]']" />
-              </div>
+                <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
+                  <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
+                    <label for="ig-token" class="text-[14.5px] font-bold text-ink-900">{{ t('Access token', 'Token de acceso') }}</label>
+                    <span class="text-[13px] text-ink-500">{{ t('A Page token with instagram_manage_messages. Only needed to reply.', 'Un token de página con instagram_manage_messages. Solo hace falta para responder.') }}</span>
+                  </div>
+                  <input id="ig-token" v-model="instagramAccessToken" type="password" autocomplete="off" :placeholder="hasInstagramToken ? '••••••••••••••••••••' : 'EAA…'" data-test="instagram-access-token" :class="[inputClass, 'w-full sm:w-[300px]']" />
+                </div>
+              </details>
             </section>
 
             <!-- Reading only: the token asked for is ads_read, so a leaked one cannot spend money. -->

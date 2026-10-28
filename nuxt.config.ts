@@ -422,6 +422,15 @@ export default defineNuxtConfig({
       // pages_read_engagement, pages_manage_metadata, pages_manage_ads and
       // ads_management. Blank hides the Connect card.
       metaLeadAdsConfigId: '2889323534772175',
+      // A third, for the Instagram section of Settings > WhatsApp: "QuiroFlow
+      // Instagram DMs", created 28 Oct 2026. Pages and Instagram accounts
+      // both required, and instagram_basic, instagram_manage_messages,
+      // pages_show_list, pages_read_engagement and pages_manage_metadata (the
+      // Page-level webhook subscription). Same never-expiring system-user
+      // token as lead ads, for the same reason. Until instagram_manage_messages
+      // passes App Review, Meta only offers it to people with a role on the
+      // app. Blank hides the Connect button and leaves the manual fields.
+      metaInstagramConfigId: '1399986838997555',
       // Connect "client ID" (ca_...) from Stripe Dashboard > Connect >
       // Settings -- not a secret, it's meant to sit in a redirect URL.
       stripeConnectClientId: '',

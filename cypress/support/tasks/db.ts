@@ -2898,6 +2898,13 @@ async function setInstagramAccount(opts: { accountId: string; instagramUserId: s
   return { ok: true }
 }
 
+/** What an Instagram connect left on the account: the id it routes by, and the token in account_secrets. */
+async function instagramConnection(opts: { accountId: string }) {
+  const { data } = await admin.from('accounts').select('instagram_user_id').eq('id', opts.accountId).single()
+  const { data: secret } = await admin.from('account_secrets').select('value').eq('account_id', opts.accountId).eq('name', 'instagram_access_token').maybeSingle()
+  return { instagramUserId: data?.instagram_user_id ?? null, token: secret?.value ?? null }
+}
+
 /**
  * Tries to give an account an Instagram id, returning the database's refusal
  * rather than throwing, so a spec can assert that
@@ -3223,6 +3230,13 @@ let metaGraphStubSends: unknown[] = []
 async function metaGraphStubSendsOf() {
   return metaGraphStubSends
 }
+// Which webhook subscriptions were asked for, as "<node id>:<fields>": the
+// field is the difference between a Page that delivers leads and one that
+// delivers DMs.
+let metaGraphStubSubscriptions: string[] = []
+async function metaGraphStubSubscriptionsOf() {
+  return metaGraphStubSubscriptions
+}
 let metaGraphStub: import('node:http').Server | null = null
 
 async function startMetaGraphStub(opts: {
@@ -3244,8 +3258,11 @@ async function startMetaGraphStub(opts: {
    * gets it -- which is how a status that beats its own message is staged.
    */
   wamidPrefix?: string
-  /** Facebook Pages the lead-ads login grants (GET /me/accounts). */
-  pages?: { id: string; name: string; access_token: string }[]
+  /**
+   * Facebook Pages the login grants (GET /me/accounts), with the Instagram
+   * account linked to each for the Instagram connect.
+   */
+  pages?: { id: string; name: string; access_token: string; instagram_business_account?: { id: string; username?: string } }[]
   /** Lead forms on those Pages, and which leads each holds. */
   leadForms?: { id: string; name: string; pageId: string; leadIds: string[] }[]
   /** Leads Meta hands over for GET /{leadgen_id} and GET /{form}/leads. */
@@ -3362,6 +3379,7 @@ async function startMetaGraphStub(opts: {
     }
     if (path.endsWith('/subscribed_apps')) {
       if (opts.failAt === 'subscribe') return refuse('Application does not have permission for this action.')
+      metaGraphStubSubscriptions.push(`${path.split('/').at(-2)}:${query.get('subscribed_fields') ?? ''}`)
       return send(200, { success: true })
     }
     return send(404, { error: { message: `stub has no route for ${path}` } })
@@ -3374,6 +3392,7 @@ async function startMetaGraphStub(opts: {
 
 async function stopMetaGraphStub() {
   metaGraphStubSends = []
+  metaGraphStubSubscriptions = []
   const server = metaGraphStub
   metaGraphStub = null
   if (!server) return { ok: true }
@@ -4245,6 +4264,7 @@ export const dbTasks = {
   'db:leadAdPage': leadAdPage,
   'db:leadAttribution': leadAttribution,
   'db:setInstagramAccount': setInstagramAccount,
+  'db:instagramConnection': instagramConnection,
   'db:messagesOnChannel': messagesOnChannel,
   'db:setChannelSpend': setChannelSpend,
   'db:setStaffLanguage': setStaffLanguage,
@@ -4459,6 +4479,7 @@ export const dbTasks = {
   'db:startMetaGraphStub': startMetaGraphStub,
   'db:stopMetaGraphStub': stopMetaGraphStub,
   'db:metaGraphStubSends': metaGraphStubSendsOf,
+  'db:metaGraphStubSubscriptions': metaGraphStubSubscriptionsOf,
   'db:setAutomaticMessages': setAutomaticMessages,
   'db:appointmentMessageState': appointmentMessageState,
   'db:readAsStaff': readAsStaff,

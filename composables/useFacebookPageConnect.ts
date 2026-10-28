@@ -1,23 +1,24 @@
 import { loadFacebookSdk } from './useEmbeddedSignup'
 
-// Connecting a clinic's Facebook Page for lead ads: the same FB.login() popup
-// as WhatsApp's Embedded Signup, on the same platform app, but a different
-// Login for Business configuration -- one that asks for Pages and the lead
-// permissions instead of a WhatsApp Business Account.
+// Connecting something that lives on a clinic's Facebook Page: the same
+// FB.login() popup as WhatsApp's Embedded Signup, on the same platform app,
+// but a different Login for Business configuration per purpose -- lead ads
+// asks for Pages and the lead permissions, Instagram for the Instagram
+// account behind a Page and instagram_manage_messages.
 //
 // As there, what comes back is a short-lived code, and only the server can
-// turn it into a token (/api/meta/lead-pages/connect).
+// turn it into a token (/api/meta/lead-pages/connect, /api/meta/instagram/connect).
 
-export function useFacebookPageConnect() {
+export function useFacebookPageConnect(purpose: 'leadAds' | 'instagram' = 'leadAds') {
   const config = useRuntimeConfig()
   const appId = config.public.metaPlatformAppId
-  const configId = config.public.metaLeadAdsConfigId
+  const configId = purpose === 'instagram' ? config.public.metaInstagramConfigId : config.public.metaLeadAdsConfigId
 
   const available = computed(() => Boolean(appId && configId))
 
   /** Resolves with the code; rejects with 'CANCELLED' when the dialog is closed. */
   async function launch(): Promise<string> {
-    if (!available.value) throw new Error('Facebook lead ads are not configured on this deployment.')
+    if (!available.value) throw new Error('This Meta connection is not configured on this deployment.')
     await loadFacebookSdk(appId)
 
     return new Promise<string>((resolve, reject) => {

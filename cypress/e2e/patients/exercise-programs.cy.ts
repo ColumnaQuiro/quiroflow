@@ -48,13 +48,12 @@ describe('Exercise programmes', () => {
           cy.visit(`/patients/${patient.id}?tab=clinical`)
           cy.get('[data-cy="exercise-row"]').should('have.length', 1)
           cy.get('[data-cy="exercises-assign-open"]').click()
-          cy.get('[data-cy="exercise-pick"] option').contains('Lumbalgia básica (2)').then((o) => {
-            cy.get('[data-cy="exercise-pick"]').select(o.val() as string)
-          })
-          cy.get('[data-cy="exercise-program-preview"]').should('contain', 'Gato-camello').and('contain', '10 · 2 veces al día')
-          cy.get('[data-cy="exercise-sets"]').should('not.exist')
-          cy.get('[data-cy="exercise-save"]').should('contain', 'Assign 2').click()
-          cy.get('[data-cy="exercises-notice"]').should('contain', 'Added 1; 1 they already had.')
+          // The programme ticks only the one they lack, with its dose to adjust.
+          cy.contains('[data-cy="exercise-option"]', 'Puente de glúteo').should('contain', 'Already has it').find('input').should('be.disabled')
+          cy.contains('[data-cy="exercise-group"]', 'Lumbalgia básica (2)').find('input').check()
+          cy.get('[data-cy="exercise-chosen"]').should('have.length', 1).and('contain', 'Gato-camello')
+          cy.get('[data-cy="exercise-chosen"] [data-cy="exercise-frequency"]').should('have.value', '2 veces al día')
+          cy.get('[data-cy="exercise-save"]').should('contain', 'Assign 1').click()
           cy.get('[data-cy="exercise-row"]').should('have.length', 2)
           // The existing one keeps its own dose; the new one takes the programme's.
           cy.contains('[data-cy="exercise-row"]', 'Puente de glúteo').should('contain', '2 × 8')

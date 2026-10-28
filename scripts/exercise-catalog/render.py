@@ -74,7 +74,7 @@ def camera(ex, poses):
             ys.append(y)
     for prop in ex.get('props', []):
         kind = prop[0]
-        if kind == 'wall':
+        if kind in ('wall', 'door', 'roller', 'ball'):
             xs.append(prop[1])
         elif kind in ('mat', 'box', 'table', 'chair', 'stool'):
             xs += [prop[1], prop[2]]
@@ -124,6 +124,17 @@ def draw_props(pt, props, behind=True):
         elif kind == 'wall' and behind:
             x = prop[1]
             pt.rect(x, 0, x + 0.07, 2.4, PROP, 0.0)
+        elif kind == 'door' and behind:
+            # A door frame seen from the side: the post, and the lintel above.
+            x = prop[1]
+            pt.rect(x, 0, x + 0.06, 2.05, PROP_DARK, 0.0)
+            pt.rect(x - 0.25, 2.0, x + 0.31, 2.08, PROP_DARK, 0.0)
+        elif kind == 'roller' and behind:
+            x, r = prop[1], prop[2]
+            pt.dot((x, r), r, PROP_DARK)
+            pt.dot((x, r), r * 0.45, PROP)
+        elif kind == 'ball' and behind:
+            pt.dot((prop[1], prop[2]), prop[3], BAND)
         elif kind == 'box' and behind:
             pt.rect(prop[1], 0, prop[2], prop[3], PROP, 0.02)
         elif kind in ('stool', 'chair', 'table') and behind:
@@ -183,11 +194,12 @@ def draw_figure(pt, j, p, view, near=NEAR, far=FAR, face=FACE):
             side = up - math.pi / 2
             def on_face(o, lift):
                 return (C[0] + o * math.cos(side) + lift * math.cos(up), C[1] + o * math.sin(side) + lift * math.sin(up))
+            nod = p['nod'] * 0.035
             for k in (-1, 1):
                 o = k * 0.036 + p['turn'] * 0.05
                 if abs(o) < r * 0.8:
-                    pt.dot(on_face(o, 0.018), 0.013, face)
-            pt.dot(on_face(p['turn'] * 0.075, -0.03), 0.011, face)
+                    pt.dot(on_face(o, 0.018 + nod), 0.013, face)
+            pt.dot(on_face(p['turn'] * 0.075, -0.03 + nod), 0.011, face)
 
     if view == 'side':
         arm('b', far)

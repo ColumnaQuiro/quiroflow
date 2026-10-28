@@ -4,6 +4,7 @@ Each entry:
   slug     the file name, and the key utils/exerciseCatalog.ts uses
   view     'side' (default) or 'front'
   props    what is drawn around the figure: ('mat', x0, x1), ('wall', x),
+           ('door', x), ('roller', x, r), ('ball', x, y, r),
            ('box', x0, x1, h), ('stool' | 'chair' | 'table', x0, x1, h),
            ('band' | 'strap', joint, joint-or-point) drawn over the figure
   start    the rest pose
@@ -15,7 +16,9 @@ Each entry:
 A limb keeps one mode (angles or a target) through an exercise, because the
 frames in between are interpolated key by key.
 """
-from figure import pose
+import math
+
+from figure import pose, solve
 
 # ---- base poses ------------------------------------------------------------
 
@@ -247,3 +250,106 @@ _bug['seq'] = [
     (p(_s, arm_a={'a': (172.0, 172.0)}, leg_b={'a': (10.0, 10.0), 'foot': 70.0}), 1.6, 1.0), (_s, 1.3, 0.3),
     (p(_s, arm_b={'a': (172.0, 172.0)}, leg_a={'a': (10.0, 10.0), 'foot': 70.0}), 1.6, 1.0), (_s, 1.3, 0.3),
 ]
+
+# ---- added from the clinic's own list (28 Oct 2026) ---------------------------
+
+# Both scalene stretches tilt the head away from the side being stretched
+# (screen-left here, the person's right): the anterior one looking up, with
+# both hands holding that collarbone down; the posterior one looking down,
+# with that arm reaching for the floor and the other hand resting on the head.
+_ant = p(STAND_F, arm_a={'t': (-0.06, 1.30), 'bend': 1}, arm_b={'t': (-0.11, 1.28), 'bend': -1})
+_post_head = p(STAND_F, neck=66.0, head=38.0, nod=-0.7)
+_hc = solve(_post_head, 'front')['head']
+_post_rest = p(STAND_F, arm_a={'t': (0.19, 0.83), 'bend': -1}, arm_b={'a': (-96.0, -92.0)})
+_post = p(_post_head, arm_a={'t': (_hc[0] - 0.02, _hc[1] + 0.09), 'bend': -1}, arm_b={'a': (-100.0, -97.0)}, sh=(0.0, -0.02))
+
+
+def _crab(px, a, b):
+    """Lateral band walk, front view: the pelvis follows the feet, hands on hips."""
+    return p(STAND_F, pelvis=(px, 0.84),
+             leg_a={'t': a, 'bend': 1, 'foot': -25.0, 'foot_len': 0.5},
+             leg_b={'t': b, 'bend': -1, 'foot': -155.0, 'foot_len': 0.5},
+             arm_a={'t': (px + 0.15, 0.97), 'bend': 1}, arm_b={'t': (px - 0.15, 0.97), 'bend': -1})
+
+
+_crab0 = _crab(0.0, (0.15, 0.07), (-0.15, 0.07))
+
+
+def _roller(hi, neck, head):
+    """On a foam roller with the hands behind the head: the hands follow the
+    head, so their targets come from the solved pose."""
+    base = p(SUPINE, lo=150.0, hi=hi, neck=neck, head=head)
+    c = solve(base)['head']
+    back = math.radians(head + 90.0)
+    hand = (c[0] + 0.10 * math.cos(back), c[1] + 0.10 * math.sin(back))
+    return p(base, arm_a={'t': hand, 'bend': -1}, arm_b={'t': (hand[0] + 0.02, hand[1] - 0.01), 'bend': -1})
+
+
+_roll0 = _roller(166.0, 170.0, 165.0)
+
+_door0 = p(STAND, arm_a={'a': (178.0, 92.0), 'scale': (0.42, 1.0)}, arm_b={'a': (176.0, 94.0), 'scale': (0.42, 1.0)})
+_STAGGER = dict(leg_a={'t': (0.15, 0.07), 'bend': 1}, leg_b={'t': (-0.12, 0.07), 'bend': 1})
+_face0 = p(STAND, arm_a={'t': (0.53, 1.50), 'bend': 1, 'scale': (1.0, 1.0)}, arm_b={'t': (0.51, 1.48), 'bend': 1, 'scale': (1.0, 1.0)}, **_STAGGER)
+_row0 = p(STAND, arm_a={'t': (0.50, 1.08), 'bend': -1}, arm_b={'t': (0.48, 1.06), 'bend': -1}, **_STAGGER)
+_pnf0 = p(STAND_F, arm_a={'t': (-0.20, 0.92), 'bend': -1, 'scale': (1.0, 1.0)}, turn=-0.4, nod=-0.4)
+_pnf_mid = p(STAND_F, arm_a={'t': (0.22, 1.22), 'bend': -1, 'scale': (0.3, 0.3)}, turn=0.0, nod=0.0)
+_pnf1 = p(STAND_F, arm_a={'t': (0.52, 1.82), 'bend': -1, 'scale': (1.0, 1.0)}, turn=0.5, nod=0.6)
+_psoas0 = p(SIT, lo=90.0, arm_a={'t': (0.15, 0.50), 'bend': -1}, arm_b={'t': (0.13, 0.50), 'bend': -1})
+_piri = dict(lo=95.0, hi=104.0, neck=94.0, head=90.0,
+             leg_a={'t': (0.22, 0.07), 'bend': 1}, leg_b={'t': (0.18, 0.07), 'bend': 1})
+_hip_pend0 = p(STAND, pelvis=(0.0, 1.06), arm_a={'t': (0.60, 1.30), 'bend': -1},
+               leg_a={'a': (-90.0, -90.0), 'foot': 0.0}, leg_b={'t': (0.0, 0.22), 'bend': 1})
+
+EXERCISES += [
+    dict(slug='anterior-scalene-stretch', view='front',
+         start=_ant,
+         seq=[(p(_ant, neck=66.0, head=38.0, nod=0.9), 1.6, 3.0), (_ant, 1.4, 0.6)]),
+    dict(slug='posterior-scalene-stretch', view='front',
+         start=_post_rest,
+         seq=[(_post, 1.8, 3.0), (_post_rest, 1.5, 0.6)]),
+    dict(slug='thoracic-extension-roller', props=[MAT, ('roller', -0.21, 0.075)],
+         start=_roll0,
+         seq=[(_roller(186.0, 190.0, 195.0), 1.6, 2.0), (_roll0, 1.4, 0.6)]),
+    dict(slug='doorway-pec-stretch', props=[('door', -0.165)],
+         start=_door0,
+         seq=[(p(_door0, pelvis=(0.10, 0.90), lo=86.0, hi=84.0, neck=86.0,
+                 arm_a={'a': (180.0, 92.0), 'scale': (0.95, 1.0)}, arm_b={'a': (178.0, 94.0), 'scale': (0.95, 1.0)},
+                 leg_a={'t': (0.38, 0.07), 'bend': 1}), 1.6, 3.0),
+              (_door0, 1.4, 0.6)], repeat=1),
+    dict(slug='band-row', props=[('wall', 1.0), ('band', 'hand_a', (1.0, 1.05))],
+         start=_row0,
+         seq=[(p(_row0, sh=(-0.04, 0.0), arm_a={'t': (0.12, 1.02), 'bend': -1}, arm_b={'t': (0.10, 1.00), 'bend': -1}), 1.2, 1.0),
+              (_row0, 1.2, 0.4)]),
+    dict(slug='face-pull', props=[('wall', 1.0), ('band', 'hand_a', (1.0, 1.55))],
+         start=_face0,
+         seq=[(p(_face0, sh=(-0.03, 0.0), arm_a={'t': (0.15, 1.63), 'bend': 1, 'scale': (0.6, 1.0)},
+                 arm_b={'t': (0.13, 1.61), 'bend': 1, 'scale': (0.6, 1.0)}), 1.2, 1.0),
+              (_face0, 1.2, 0.4)]),
+    dict(slug='pnf-shoulder-diagonal', view='front', props=[('band', 'hand_a', (-0.10, 0.05))],
+         start=_pnf0,
+         seq=[(_pnf_mid, 0.7, 0.0), (_pnf1, 0.7, 0.6), (_pnf_mid, 0.8, 0.0), (_pnf0, 0.8, 0.4)], poster=1),
+    dict(slug='lateral-band-walk', view='front', props=[('band', 'ankle_a', 'ankle_b')],
+         start=_crab0,
+         seq=[(_crab(0.07, (0.40, 0.13), (-0.15, 0.07)), 0.45, 0.0),
+              (_crab(0.12, (0.40, 0.07), (-0.15, 0.07)), 0.3, 0.1),
+              (_crab(0.20, (0.40, 0.07), (0.12, 0.13)), 0.45, 0.0),
+              (_crab(0.25, (0.40, 0.07), (0.10, 0.07)), 0.3, 0.2),
+              (_crab(0.18, (0.40, 0.07), (-0.15, 0.13)), 0.45, 0.0),
+              (_crab(0.13, (0.40, 0.07), (-0.15, 0.07)), 0.3, 0.1),
+              (_crab(0.05, (0.17, 0.13), (-0.15, 0.07)), 0.45, 0.0),
+              (_crab0, 0.3, 0.2)], poster=1),
+    dict(slug='psoas-activation', props=[STOOL],
+         start=_psoas0,
+         seq=[(p(_psoas0, leg_a={'t': (0.40, 0.30), 'bend': 1}), 1.0, 3.0), (_psoas0, 1.0, 0.6)]),
+    dict(slug='piriformis-ball-release', props=[('wall', -0.30), ('ball', -0.175, 0.86, 0.055)],
+         start=p(STAND, pelvis=(-0.03, 0.86), **_piri),
+         seq=[(p(STAND, pelvis=(-0.03, 0.93), **_piri), 1.3, 0.0),
+              (p(STAND, pelvis=(-0.03, 0.79), **_piri), 2.0, 0.0),
+              (p(STAND, pelvis=(-0.03, 0.86), **_piri), 1.2, 2.0)]),
+    dict(slug='hip-pendulum', props=[('box', -0.30, 0.22, 0.15), ('wall', 0.62)],
+         start=_hip_pend0, seq=[], repeat=1),
+]
+
+_hp = EXERCISES[[e['slug'] for e in EXERCISES].index('hip-pendulum')]
+_hp['seq'] = [(p(_hip_pend0, leg_a={'a': (a, a + s), 'foot': f}), 0.85, 0.0)
+              for a, s, f in [(-62.0, -6.0, 20.0), (-118.0, 8.0, -20.0)] * 3] + [(_hip_pend0, 0.6, 0.4)]

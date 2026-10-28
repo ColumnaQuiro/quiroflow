@@ -91,6 +91,30 @@ export const EXERCISE_CATALOG: CatalogExercise[] = [
     reps: repsEach(8),
     frequency: DAILY,
   },
+  {
+    slug: 'anterior-scalene-stretch',
+    region: 'neck',
+    name: { en: 'Anterior scalene stretch', es: 'Estiramiento de escaleno anterior' },
+    instructions: {
+      en: 'Sit or stand tall. Place both hands on the collarbone of the side you are stretching and hold it down gently.\nTilt your head away to the other side, then look up diagonally until you feel a stretch at the front of the neck.\nHold, come back slowly and swap sides.',
+      es: 'Sentado o de pie, con la espalda recta. Coloca las dos manos sobre la clavícula del lado que vas a estirar y sujétala suavemente hacia abajo.\nInclina la cabeza hacia el lado contrario y después mira en diagonal hacia arriba hasta notar el estiramiento en la parte delantera del cuello.\nMantén, vuelve despacio y cambia de lado.',
+    },
+    sets: 1,
+    reps: holdEach(20),
+    frequency: TWICE_DAILY,
+  },
+  {
+    slug: 'posterior-scalene-stretch',
+    region: 'neck',
+    name: { en: 'Posterior scalene stretch', es: 'Estiramiento de escaleno posterior' },
+    instructions: {
+      en: 'Sit or stand tall. Let the arm on the side you are stretching hang down, reaching towards the floor to keep that shoulder low.\nTilt your head away to the other side and bring your chin slightly down. Rest the other hand on your head without pulling.\nHold, come back slowly and swap sides.',
+      es: 'Sentado o de pie, con la espalda recta. Deja caer el brazo del lado que vas a estirar, como si quisieras tocar el suelo, para mantener ese hombro bajo.\nInclina la cabeza hacia el lado contrario y baja ligeramente la barbilla. Apoya la otra mano sobre la cabeza, sin tirar.\nMantén, vuelve despacio y cambia de lado.',
+    },
+    sets: 1,
+    reps: holdEach(20),
+    frequency: TWICE_DAILY,
+  },
   // ---- shoulder and upper back --------------------------------------------------
   {
     slug: 'scapular-retraction',
@@ -163,6 +187,66 @@ export const EXERCISE_CATALOG: CatalogExercise[] = [
     sets: 1,
     reps: holdEach(30),
     frequency: DAILY,
+  },
+  {
+    slug: 'thoracic-extension-roller',
+    region: 'shoulder',
+    name: { en: 'Thoracic extension on a foam roller', es: 'Extensión torácica con rodillo' },
+    instructions: {
+      en: 'Lie on your back with a foam roller (or a rolled-up towel) across your upper back, under your shoulder blades. Knees bent, hands supporting your head.\nKeeping your buttocks on the floor, let your upper back arch gently over the roller.\nPause and come back. Move the roller a few centimetres up or down and repeat. Do not roll it under your lower back.',
+      es: 'Túmbate boca arriba con un rodillo de espuma (o una toalla enrollada) atravesado bajo las escápulas, rodillas dobladas y las manos sujetando la cabeza.\nSin despegar los glúteos del suelo, deja que la parte alta de la espalda se arquee suavemente sobre el rodillo.\nPausa y vuelve. Desplaza el rodillo unos centímetros arriba o abajo y repite. No lo coloques bajo la zona lumbar.',
+    },
+    sets: 2,
+    reps: reps(8),
+    frequency: DAILY,
+  },
+  {
+    slug: 'doorway-pec-stretch',
+    region: 'shoulder',
+    name: { en: 'Doorway chest stretch', es: 'Estiramiento pectoral en el marco de la puerta' },
+    instructions: {
+      en: 'Stand in a doorway with your forearms on the frame, elbows at shoulder height and bent at 90 degrees.\nStep forward with one foot until you feel a stretch across the front of your chest and shoulders. Keep your back straight and do not shrug.\nHold, then step back.',
+      es: 'Colócate en el marco de una puerta con los antebrazos apoyados en él, los codos a la altura de los hombros y doblados a 90 grados.\nDa un paso adelante hasta notar el estiramiento en el pecho y la parte delantera de los hombros, con la espalda recta y sin subir los hombros.\nMantén y vuelve atrás.',
+    },
+    sets: 1,
+    reps: { en: '3 × 30 s hold', es: '3 × 30 s' },
+    frequency: DAILY,
+  },
+  {
+    slug: 'band-row',
+    region: 'shoulder',
+    name: { en: 'Row with band', es: 'Remo con banda elástica' },
+    instructions: {
+      en: 'Fix an elastic band at waist height (a door anchor or something sturdy) and hold one end in each hand, arms straight in front of you.\nPull your elbows back past your body, squeezing your shoulder blades together. Keep your shoulders down and your wrists straight.\nReturn slowly.',
+      es: 'Ancla una banda elástica a la altura de la cintura (en una puerta o algo firme) y sujeta un extremo con cada mano, con los brazos estirados al frente.\nLleva los codos hacia atrás pasando junto al cuerpo y junta las escápulas, sin subir los hombros y con las muñecas rectas.\nVuelve despacio.',
+    },
+    sets: 3,
+    reps: reps(12),
+    frequency: ALT_DAYS,
+  },
+  {
+    slug: 'face-pull',
+    region: 'shoulder',
+    name: { en: 'Face pull with band', es: 'Face pull con banda elástica' },
+    instructions: {
+      en: 'Fix an elastic band at head height and hold one end in each hand, arms straight in front of you, palms down.\nPull the band towards your face, elbows high and out to the sides, finishing with your hands beside your ears.\nSqueeze your shoulder blades for a second and return slowly.',
+      es: 'Ancla una banda elástica a la altura de la cabeza y sujeta un extremo con cada mano, brazos estirados al frente y palmas hacia abajo.\nTira de la banda hacia la cara con los codos altos y abiertos, hasta dejar las manos junto a las orejas.\nJunta las escápulas un segundo y vuelve despacio.',
+    },
+    sets: 3,
+    reps: reps(12),
+    frequency: ALT_DAYS,
+  },
+  {
+    slug: 'pnf-shoulder-diagonal',
+    region: 'shoulder',
+    name: { en: 'PNF diagonal (D2) with band', es: 'Diagonal FNP (D2) con banda elástica' },
+    instructions: {
+      en: 'Stand on one end of an elastic band with the opposite foot and hold the other end, hand by the opposite hip, thumb down.\nDraw the arm diagonally up and out across your body until it is above your head on the same side, thumb pointing back, as if drawing a sword. Follow your hand with your eyes.\nReturn slowly along the same diagonal.',
+      es: 'Pisa un extremo de la banda elástica con el pie contrario y sujeta el otro con la mano junto a la cadera opuesta, con el pulgar hacia abajo.\nLleva el brazo en diagonal hacia arriba y afuera, cruzando por delante del cuerpo, hasta dejarlo por encima de la cabeza en su mismo lado, con el pulgar hacia atrás, como si desenvainaras una espada. Sigue la mano con la mirada.\nVuelve despacio por la misma diagonal.',
+    },
+    sets: 2,
+    reps: repsEach(10),
+    frequency: ALT_DAYS,
   },
   // ---- low back and core -----------------------------------------------------
   {
@@ -346,6 +430,54 @@ export const EXERCISE_CATALOG: CatalogExercise[] = [
     reps: holdEach(30),
     frequency: DAILY,
   },
+  {
+    slug: 'lateral-band-walk',
+    region: 'hip',
+    name: { en: 'Lateral band walk (crab walk)', es: 'Paso lateral con banda (cangrejo)' },
+    instructions: {
+      en: 'Put a loop band around your ankles (or just above your knees). Stand with your feet hip-width apart, knees slightly bent and hands on your hips.\nTake a step to the side, then bring the other foot after it, keeping the band tight. Keep your knees pushed out and your hips level.\nTake the same number of steps back the other way.',
+      es: 'Coloca una banda elástica cerrada alrededor de los tobillos (o justo encima de las rodillas). De pie, pies a la anchura de la cadera, rodillas algo flexionadas y manos en la cintura.\nDa un paso lateral y acerca el otro pie sin que la banda pierda tensión, con las rodillas hacia fuera y la cadera nivelada.\nVuelve con el mismo número de pasos hacia el otro lado.',
+    },
+    sets: 3,
+    reps: { en: '10 steps each way', es: '10 pasos a cada lado' },
+    frequency: ALT_DAYS,
+  },
+  {
+    slug: 'psoas-activation',
+    region: 'hip',
+    name: { en: 'Seated psoas activation', es: 'Activación de psoas sentado' },
+    instructions: {
+      en: 'Sit tall on the front of a chair or stool, holding its sides.\nLift one knee above the level of your hip without leaning back, and hold it there.\nLower slowly and swap legs.',
+      es: 'Siéntate erguido en el borde de una silla o taburete, sujetándote a los lados.\nEleva una rodilla por encima de la altura de la cadera sin echarte hacia atrás y mantenla arriba.\nBaja despacio y cambia de pierna.',
+    },
+    sets: 2,
+    reps: { en: '5 × 5 s hold each side', es: '5 × 5 s por lado' },
+    frequency: DAILY,
+  },
+  {
+    slug: 'piriformis-ball-release',
+    region: 'hip',
+    name: { en: 'Piriformis release with a ball', es: 'Liberación del piramidal con pelota' },
+    instructions: {
+      en: 'Stand with your back to a wall and place a massage or tennis ball between the wall and the middle of one buttock.\nBend and straighten your knees slowly so the ball rolls over the muscle. When you find a tender spot, stay on it and breathe until it eases.\nKeep the pressure firm but bearable, and avoid rolling on the bone.',
+      es: 'De pie, de espaldas a una pared, coloca una pelota de masaje o de tenis entre la pared y el centro de un glúteo.\nFlexiona y estira las rodillas despacio para que la pelota recorra el músculo. Cuando encuentres un punto sensible, quédate en él y respira hasta que ceda.\nPresión firme pero tolerable, sin apoyar sobre el hueso.',
+    },
+    sets: 1,
+    reps: { en: '1 minute each side', es: '1 minuto por lado' },
+    frequency: DAILY,
+  },
+  {
+    slug: 'hip-pendulum',
+    region: 'hip',
+    name: { en: 'Hip pendulum swings', es: 'Péndulo de cadera' },
+    instructions: {
+      en: 'Stand sideways on a step or a thick book, holding on to a wall, with one leg hanging free over the edge.\nLet the hanging leg swing gently forwards and backwards like a pendulum, relaxed, without forcing the range.\nSwap legs.',
+      es: 'De pie de lado sobre un escalón o un libro grueso, apoyado en la pared, con una pierna colgando libre por fuera del borde.\nDeja que la pierna que cuelga se balancee suavemente hacia delante y hacia atrás como un péndulo, relajada y sin forzar.\nCambia de pierna.',
+    },
+    sets: 1,
+    reps: { en: '1 minute each side', es: '1 minuto por lado' },
+    frequency: TWICE_DAILY,
+  },
   // ---- knee, ankle and balance -----------------------------------------------
   {
     slug: 'sit-to-stand',
@@ -481,6 +613,12 @@ export const EXERCISE_CATALOG_PROGRAMS: CatalogProgram[] = [
     name: { en: 'Knee', es: 'Rodilla' },
     description: { en: 'From range of movement to strength and balance.', es: 'Del rango de movimiento a la fuerza y el equilibrio.' },
     items: ['heel-slides', 'straight-leg-raise', 'sit-to-stand', 'step-up', 'calf-raise'],
+  },
+  {
+    slug: 'upper-posture',
+    name: { en: 'Upper back posture', es: 'Postura de espalda alta' },
+    description: { en: 'Open the chest and strengthen the upper back, for rounded shoulders and a forward head.', es: 'Abrir el pecho y fortalecer la espalda alta, para hombros adelantados y cabeza adelantada.' },
+    items: ['chin-tuck', 'doorway-pec-stretch', 'thoracic-extension-roller', 'band-row', 'face-pull'],
   },
 ]
 

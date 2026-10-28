@@ -3332,7 +3332,9 @@ async function startMetaGraphStub(opts: {
       req.on('data', (chunk) => (raw += chunk))
       req.on('end', () => {
         try {
-          metaGraphStubSends.push(JSON.parse(raw))
+          // _path says which node it was posted to: a WhatsApp send goes to
+          // /{phone-number-id}/messages, an Instagram reply to /me/messages.
+          metaGraphStubSends.push({ ...JSON.parse(raw), _path: path })
         } catch {
           metaGraphStubSends.push(raw)
         }

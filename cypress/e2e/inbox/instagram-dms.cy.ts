@@ -6,9 +6,10 @@
 // entry[].changes[], a sender identified by IGSID rather than phone number,
 // and the clinic's own messages echoed back.
 //
-// Nothing here talks to Instagram. Sending is one Graph call and is not
-// reachable from CI; receiving is a POST we can make ourselves, which is
-// where the parsing, the routing to an account and the threading live.
+// Nothing here talks to Instagram. Receiving is a POST we can make
+// ourselves, which is where the parsing, the routing to an account and the
+// threading live; sending goes to the Graph stub (NUXT_META_GRAPH_BASE_URL),
+// which records where each reply was posted.
 
 interface StoredMessage {
   direction: string
@@ -298,6 +299,30 @@ describe('Instagram DMs in the Inbox', () => {
       expect(body.leadId, 'addressed by the lead it was written in').to.be.a('string')
       expect(body.text).to.eq('Buenas, sí que hacemos')
     })
+  })
+
+  it('sends the reply through the Page, which is the only address Meta accepts', () => {
+    // With Facebook Login the reply is POST /me/messages on the Page token.
+    // It used to go to /{ig-user-id}/messages, the Instagram Login endpoint,
+    // and Meta refused every one -- "Object with ID ... does not support this
+    // operation" -- which nothing caught, because no test ever sent one.
+    cy.task('db:startMetaGraphStub', {})
+    deliver([message('igsid-reply', 'Hola, ¿tenéis cita el jueves?')])
+    cy.login(staff!.email, staff!.password)
+    cy.visit('/dashboard')
+    cy.request('POST', '/api/instagram/send', { recipientId: 'igsid-reply', text: 'Sí, a las 10:00' }).its('body.ok').should('eq', true)
+    cy.task<any[]>('db:metaGraphStubSends').then((sends) => {
+      const reply = sends.find((s) => s?.recipient?.id === 'igsid-reply')
+      expect(reply, 'one reply reached Meta').to.exist
+      expect(reply._path).to.match(/\/me\/messages$/)
+      expect(reply.message).to.deep.equal({ text: 'Sí, a las 10:00' })
+    })
+    stored().should((rows) => {
+      const out = rows.filter((r) => r.direction === 'outbound')
+      expect(out, 'recorded only once Meta accepted it').to.have.length(1)
+      expect(out[0].body_preview).to.eq('Sí, a las 10:00')
+    })
+    cy.task('db:stopMetaGraphStub')
   })
 
   it('refuses to reply outside the 24h window, in words', () => {

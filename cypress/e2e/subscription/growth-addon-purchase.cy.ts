@@ -40,8 +40,8 @@ describe('Buying the Growth add-on', () => {
       cy.get('@growthCard').contains('39,00').should('be.visible')
       cy.get('@growthCard').find('[role="switch"]').should('have.attr', 'aria-checked', 'false')
 
-      // Solo is 49€/mo on its own; with Growth the owner has to be shown 88€,
-      // not 49, or they are told one number and billed another. 88 is also
+      // Solo is 45€/mo on its own; with Growth the owner has to be shown 84€,
+      // not 45, or they are told one number and billed another. 84 is also
       // the number the pricing is built around -- QuiroHiro Plus, the nearest
       // competitor with an AI receptionist in it, is 97€.
       //
@@ -49,12 +49,12 @@ describe('Buying the Growth add-on', () => {
       // carries the configured total, so the combined figure is asserted
       // where it is actually rendered.
       cy.get('.grid.lg\\:grid-cols-3').contains('.rounded-card', 'Solo').as('soloCard')
-      cy.get('@soloCard').should('contain', '49,00')
+      cy.get('@soloCard').should('contain', '45,00')
       cy.contains('button', 'Confirm change').closest('.rounded-card').as('footer')
-      cy.get('@footer').should('contain', '49,00')
+      cy.get('@footer').should('contain', '45,00')
 
       cy.get('@growthCard').find('[role="switch"]').click()
-      cy.get('@footer').should('contain', '88,00')
+      cy.get('@footer').should('contain', '84,00')
 
       cy.get('@soloCard').contains('button', /^Switch to |^Stay on /).should('exist')
       cy.contains('button', 'Confirm change').click()
@@ -103,9 +103,9 @@ describe('Buying the AI receptionist on its own', () => {
       cy.get('@receptionistCard').find('[role="switch"]').should('have.attr', 'aria-checked', 'false')
 
       cy.contains('button', 'Confirm change').closest('.rounded-card').as('footer')
-      cy.get('@footer').should('contain', '49,00')
+      cy.get('@footer').should('contain', '45,00')
       cy.get('@receptionistCard').find('[role="switch"]').click()
-      cy.get('@footer').should('contain', '68,00')
+      cy.get('@footer').should('contain', '64,00')
 
       cy.contains('button', 'Confirm change').click()
       cy.wait('@subscribe').its('request.body').should('deep.equal', { planId: 'starter', interval: 'monthly', extraProfessionals: 0, growth: false, receptionist: true })

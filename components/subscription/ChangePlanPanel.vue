@@ -39,7 +39,7 @@ const selectedPlanId = ref(props.currentPlanId)
 const selectedPlan = computed(() => props.plans.find((p) => p.id === selectedPlanId.value) ?? null)
 const selectedIncludesGrowth = computed(() => planIncludesGrowth(selectedPlanId.value))
 
-// Clinic bundles Growth, so a clinic on it is never quoted a price for it --
+// Practice and Clinic bundle Growth, so a clinic on either is never quoted a price for it --
 // there is no Stripe line item to quote.
 const growthChargeable = computed(() => wantsGrowth.value && !selectedIncludesGrowth.value)
 

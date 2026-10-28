@@ -12,6 +12,7 @@ A pose is a dict; every key is optional and falls back to DEFAULT:
   neck     neck angle
   head     head angle         the direction the top of the head points
   turn     -1..1              head rotation, shown by the eyes (front view)
+  nod      -1..1              looking up (+) or down (-), shown the same way
   sh       (dx, dy)           both shoulders moved (shrug, retraction)
   arm_a, arm_b, leg_a, leg_b  a limb, either
            {'a': (a1, a2)}             upper and lower segment angles, or
@@ -35,7 +36,7 @@ WIDTH = dict(trunk=0.17, hips_front=0.24, neck=0.07,
              upper_arm=0.085, forearm=0.072, thigh=0.12, shin=0.095, foot=0.055, hand=0.075)
 
 DEFAULT = {
-    'pelvis': (0.0, 0.92), 'lo': 90.0, 'hi': 90.0, 'neck': 88.0, 'head': 90.0, 'turn': 0.0, 'sh': (0.0, 0.0),
+    'pelvis': (0.0, 0.92), 'lo': 90.0, 'hi': 90.0, 'neck': 88.0, 'head': 90.0, 'turn': 0.0, 'nod': 0.0, 'sh': (0.0, 0.0),
     'arm_a': {'a': (-92.0, -88.0)}, 'arm_b': {'a': (-92.0, -88.0)},
     'leg_a': {'t': (0.02, 0.07), 'bend': 1, 'foot': 0.0}, 'leg_b': {'t': (-0.02, 0.07), 'bend': 1, 'foot': 0.0},
 }

@@ -16,9 +16,10 @@
  * A third copy lives in SQL, in inbox_growth_account_ids()
  * (20260930142159_inbox_lead_messages_without_growth.sql): the Inbox list and
  * badge are computed by the database and need the same answer. Adding a plan
- * here means redefining that function too, or its clinics see each lead twice.
+ * here means redefining that function too, or its clinics see each lead twice
+ * -- as 20261028145810_practice_includes_growth.sql did when Practice joined.
  */
-export const PLANS_INCLUDING_GROWTH = new Set(['clinic'])
+export const PLANS_INCLUDING_GROWTH = new Set(['pro', 'clinic'])
 
 export function planIncludesGrowth(planId: string | null | undefined): boolean {
   return PLANS_INCLUDING_GROWTH.has(planId ?? '')

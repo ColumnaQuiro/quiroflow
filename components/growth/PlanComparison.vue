@@ -8,7 +8,7 @@ const { growth, solo, bundled } = useGrowthCatalogue()
 // something this table is told, and marking one as theirs was a guess.
 const columns = computed(() => [
   { key: 'solo' as const, name: solo.value?.name ?? 'Solo', price: monthlyLabel(solo.value?.monthly_price_cents), current: false },
-  { key: 'clinic' as const, name: bundled.value?.name ?? 'Clinic', price: monthlyLabel(bundled.value?.monthly_price_cents), current: false },
+  { key: 'clinic' as const, name: bundled.value?.name ?? 'Practice', price: monthlyLabel(bundled.value?.monthly_price_cents), current: false },
   { key: 'growth' as const, name: 'Your plan + Growth', price: monthlyLabel(growth.value?.monthly_price_cents, '+'), current: false },
 ])
 
@@ -43,8 +43,8 @@ function cellClass(value: string) {
         </h2>
         <p class="text-[11.5px] text-ink-muted">
           {{ t(
-            'Campaigns and WhatsApp recalls are already in your plan — Growth adds the acquisition layer above them, and Clinic includes it.',
-            'Las campañas y los recordatorios por WhatsApp ya están en tu plan: Growth añade la capa de captación por encima, y el plan Clinic lo incluye.',
+            'Campaigns and WhatsApp recalls are already in your plan — Growth adds the acquisition layer above them, and Practice and Clinic include it.',
+            'Las campañas y los recordatorios por WhatsApp ya están en tu plan: Growth añade la capa de captación por encima, y los planes Practice y Clinic lo incluyen.',
           ) }}
         </p>
       </div>

@@ -1,4 +1,5 @@
-// Clinic includes Growth in its price, and the two numbers that follow from it.
+// Practice and Clinic include Growth in their price, and the two numbers that
+// follow from it.
 //
 // The packaging exists to answer one competitor: QuiroHiro Plus is 97 EUR
 // with unlimited users and an AI receptionist in the box. Selling Clinic at
@@ -16,22 +17,44 @@ interface SeededAccount {
   accountId: string
 }
 
-function onClinic(interval: 'monthly' | 'annual' = 'monthly') {
+function onPlan(planId: 'pro' | 'clinic', interval: 'monthly' | 'annual' = 'monthly') {
   return cy.seedStaffAccount().then((seeded) => {
     const account = seeded as SeededAccount
     // growth_addon false on purpose -- the plan is the only thing entitling
     // this account, which is exactly what is under test.
     cy.task('db:setGrowthAddon', { accountId: account.accountId, enabled: false })
-    cy.task('db:setSubscriptionPlan', { accountId: account.accountId, planId: 'clinic', interval })
+    cy.task('db:setSubscriptionPlan', { accountId: account.accountId, planId, interval })
     cy.setSubscriptionStatus(account.accountId, 'active')
     cy.login(account.email, account.password)
     return cy.wrap(account)
   })
 }
 
-describe('Growth included in the Clinic plan', () => {
+describe('Growth included in the Practice and Clinic plans', () => {
+  it('opens the Growth screens on Practice, which includes it since 28 Oct 2026', () => {
+    onPlan('pro').then(() => {
+      cy.visit('/growth/leads')
+      cy.contains('Growth is part of the Growth tier.').should('not.exist')
+      cy.request({ url: '/api/growth/reputation', failOnStatusCode: false })
+        .its('status')
+        .should('eq', 200)
+    })
+  })
+
+  it('adds nothing to a Practice bill for Growth', () => {
+    onPlan('pro').then(() => {
+      cy.visit('/subscription')
+      cy.contains('button', 'Change plan').click()
+      cy.contains('h3', 'Growth add-on').closest('.rounded-card').as('growthCard')
+      cy.get('@growthCard').scrollIntoView()
+      cy.get('@growthCard').should('contain', 'Included')
+      cy.get('@growthCard').find('[role="switch"]').should('be.disabled')
+      cy.contains('138,00').should('not.exist')
+    })
+  })
+
   it('opens the Growth screens without the add-on ever being bought', () => {
-    onClinic().then(() => {
+    onPlan('clinic').then(() => {
       // No ?growth=1 here -- that preview flag would make this pass whatever
       // the server thought, which is the mistake worth avoiding.
       cy.visit('/growth/leads')
@@ -45,7 +68,7 @@ describe('Growth included in the Clinic plan', () => {
   })
 
   it('adds nothing to the bill for something already in the price', () => {
-    onClinic().then(() => {
+    onPlan('clinic').then(() => {
       cy.visit('/subscription')
       cy.contains('button', 'Change plan').click()
 
@@ -73,7 +96,7 @@ describe('Growth included in the Clinic plan', () => {
   })
 
   it('quotes an annual subscription its actual next charge, not a twelfth of it', () => {
-    onClinic('annual').then((account) => {
+    onPlan('clinic', 'annual').then((account) => {
       // The next-payment line only renders for a real Stripe subscription,
       // and billing-info calls Stripe, which CI has no keys for. Both are
       // stubbed so the arithmetic is what gets tested.
@@ -104,7 +127,7 @@ describe('Growth included in the Clinic plan', () => {
   })
 
   it('says prices exclude IVA, because Stripe adds 21% to every one of them', () => {
-    onClinic().then(() => {
+    onPlan('clinic').then(() => {
       cy.visit('/subscription')
       cy.contains('button', 'Change plan').click()
       cy.contains('+ IVA').should('be.visible')

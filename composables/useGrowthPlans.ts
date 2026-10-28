@@ -10,10 +10,10 @@
 // asked to buy, because nothing tied it to the catalogue. A price that lives
 // in two places drifts; this one now lives in one.
 //
-// Who sees it: an account WITHOUT Growth, which after the reprice means Solo
-// or Practice -- Clinic includes Growth (utils/growthPlans.ts), and a trial
+// Who sees it: an account WITHOUT Growth, which since 28 Oct 2026 means Solo
+// -- Practice and Clinic include Growth (utils/growthPlans.ts), and a trial
 // already has it. So the comparison is "your plan", "your plan + Growth" and
-// "Clinic, where it is included".
+// "Practice, the cheapest plan where it is included".
 
 import { formatEur } from '~/utils/billing'
 import { PLANS_INCLUDING_GROWTH } from '~/utils/growthPlans'
@@ -45,8 +45,8 @@ export const GROWTH_INCLUDED: string[] = [
   'Spend and ROAS attribution',
 ]
 
-// The Clinic column reads "Included" on the Growth rows because Clinic's price
-// includes Growth; it read "—" until the reprice bundled it, which is the
+// The bundled-plan column (Practice since 28 Oct 2026) reads "Included" on the
+// Growth rows because that plan's price includes Growth; it read "—" until the reprice bundled it, which is the
 // other half of what this screen got wrong.
 export const PLAN_COMPARISON: PlanComparisonRow[] = [
   { feature: 'Scheduling with room auto-assign', note: 'Already included', solo: 'Included', clinic: 'Included', growth: 'Included' },
@@ -101,9 +101,15 @@ export function useGrowthCatalogue() {
   const plans = computed(() => data.value?.plans ?? [])
   const growth = computed(() => data.value?.growth ?? null)
   const solo = computed(() => plans.value.find((p) => p.id === 'starter') ?? null)
-  // The plan Growth comes bundled with, found through the same set the
-  // entitlement check uses rather than by a second hard-coded id.
-  const bundled = computed(() => plans.value.find((p) => PLANS_INCLUDING_GROWTH.has(p.id)) ?? null)
+  // The cheapest plan Growth comes bundled with, found through the same set
+  // the entitlement check uses rather than by a second hard-coded id. The
+  // step a Solo clinic would actually take, so Practice rather than Clinic.
+  const bundled = computed(
+    () =>
+      plans.value
+        .filter((p) => PLANS_INCLUDING_GROWTH.has(p.id))
+        .sort((a, b) => a.monthly_price_cents - b.monthly_price_cents)[0] ?? null,
+  )
 
   return { growth, solo, bundled }
 }

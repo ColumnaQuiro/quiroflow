@@ -56,7 +56,7 @@ const onCreateAnyway = async () => done(await createAnyway(props.leadId))
   record for someone who is already a patient splits their history and
   their balance, and someone has to merge it back by hand. -->
   <Teleport to="body">
-    <div v-if="candidates.length" class="fixed inset-0 z-[60] flex items-center justify-center bg-ink-900/30 p-6" data-test="duplicate-warning" @click.self="dismissCandidates">
+    <div v-if="candidates.length" class="fixed inset-0 z-[60] flex items-center justify-center bg-scrim/30 p-6" data-test="duplicate-warning" @click.self="dismissCandidates">
       <div class="flex w-full max-w-[420px] flex-col gap-3 rounded-card border border-line bg-surface p-5 shadow-popover">
         <div class="flex flex-col gap-1">
           <h3 class="text-[14px] font-semibold tracking-tightTitle text-ink-900">

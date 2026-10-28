@@ -112,6 +112,7 @@ export const tokens = {
         toggle: {
           off: themeColor('--color-toggle-off'),
         },
+        scrim: themeColor('--color-scrim'),
       },
       borderRadius: {
         card: '11px',

@@ -94,7 +94,7 @@ const field = 'mt-1 w-full rounded-ctl border border-line-control bg-surface px-
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" @click.self="emit('close')">
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/30 p-4" @click.self="emit('close')">
     <div class="max-h-full w-full max-w-lg overflow-y-auto rounded-card border border-line bg-surface p-6 shadow-popover" role="dialog" aria-modal="true" aria-labelledby="new-class-title" data-cy="new-class">
       <div class="flex items-center justify-between">
         <h2 id="new-class-title" class="text-[16px] font-[640] text-ink-900">{{ t('New class', 'Nueva clase') }}</h2>

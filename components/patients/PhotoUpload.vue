@@ -107,7 +107,7 @@ function closeQr() {
     >
       <img v-if="photoUrl" :src="photoUrl" class="h-full w-full object-cover" alt="" />
       <span v-else>{{ initials }}</span>
-      <span v-if="uploading" class="absolute inset-0 flex items-center justify-center bg-ink-900/40 text-[9px] text-white">…</span>
+      <span v-if="uploading" class="absolute inset-0 flex items-center justify-center bg-scrim/40 text-[9px] text-white">…</span>
     </button>
 
     <div v-if="menuOpen" class="absolute left-0 top-11 z-20 w-44 rounded-card border border-line bg-surface py-1 shadow-popover" @click.self="menuOpen = false">
@@ -120,7 +120,7 @@ function closeQr() {
     </div>
     <input ref="fileInput" type="file" accept="image/*" class="hidden" @change="onFileChosen" />
 
-    <div v-if="qrOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 p-4" @click.self="closeQr">
+    <div v-if="qrOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/30 p-4" @click.self="closeQr">
       <div class="max-h-full w-full overflow-y-auto max-w-xs rounded-card border border-line bg-surface p-6 text-center shadow-popover">
         <p class="text-[13.5px] font-[620] text-ink-900">{{ t('Scan with your phone', 'Escanea con tu móvil') }}</p>
         <p class="mt-1 text-[12px] text-ink-muted2">{{ t("Take a photo -- it'll appear here automatically.", 'Haz una foto: aparecerá aquí automáticamente.') }}</p>

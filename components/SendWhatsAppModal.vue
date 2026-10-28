@@ -149,7 +149,7 @@ async function send() {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/40 p-4" @click.self="emit('close')">
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4" @click.self="emit('close')">
     <div class="max-h-full w-full overflow-y-auto max-w-md rounded-card border border-line bg-surface p-5 shadow-popover">
       <h3 class="text-[14px] font-semibold text-ink-900">{{ title ?? t('Send WhatsApp message', 'Enviar mensaje de WhatsApp') }}</h3>
 

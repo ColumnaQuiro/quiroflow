@@ -394,7 +394,7 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
 
 <template>
   <div
-    class="fixed inset-0 z-50 flex items-end justify-center bg-ink-900/30 p-0 lg:items-start lg:overflow-y-auto lg:p-8"
+    class="fixed inset-0 z-50 flex items-end justify-center bg-scrim/30 p-0 lg:items-start lg:overflow-y-auto lg:p-8"
     @click.self="emit('close')"
   >
     <div

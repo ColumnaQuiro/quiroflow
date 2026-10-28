@@ -47,7 +47,7 @@ const when = computed(() => {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-end justify-center bg-ink-900/40 p-4 sm:items-center" @click.self="emit('cancel')">
+  <div class="fixed inset-0 z-50 flex items-end justify-center bg-scrim/40 p-4 sm:items-center" @click.self="emit('cancel')">
     <div role="dialog" aria-modal="true" aria-labelledby="seg-title" class="w-full max-w-[520px] rounded-card border border-line bg-surface shadow-popover" data-test="segment-activate">
       <div class="flex flex-col gap-3 px-6 pb-2 pt-6">
         <h2 id="seg-title" class="text-[18px] font-bold text-ink-900">{{ t('Switch on a group', 'Activar un segmento') }}</h2>

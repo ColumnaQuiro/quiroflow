@@ -78,7 +78,7 @@ const inputClass = 'h-9 touch:h-11 w-full rounded-ctl border border-line-control
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex justify-end bg-ink-900/30" @click.self="emit('close')">
+  <div class="fixed inset-0 z-50 flex justify-end bg-scrim/30" @click.self="emit('close')">
     <form
       ref="panel"
       role="dialog"

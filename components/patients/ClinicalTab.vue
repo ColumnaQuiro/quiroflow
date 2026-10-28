@@ -284,7 +284,7 @@ const goalChips = computed(() =>
 
     <div
       v-if="editingClinical"
-      class="fixed inset-0 z-20 flex items-center justify-center bg-ink-900/40 p-4"
+      class="fixed inset-0 z-20 flex items-center justify-center bg-scrim/40 p-4"
       @click.self="editingClinical = false; load({ silent: true })"
     >
       <div class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-card bg-surface p-5 shadow-drawer">
@@ -301,7 +301,7 @@ const goalChips = computed(() =>
     <!-- Reloads on the way out, the same as the ✕ does. Without it, editing a
          note and then dismissing by clicking the backdrop left the list
          showing the text that had just been replaced. -->
-    <div v-if="notesAppointmentId" class="fixed inset-0 z-20 flex items-center justify-center bg-ink-900/40 p-4" @click.self="notesAppointmentId = null; load({ silent: true })">
+    <div v-if="notesAppointmentId" class="fixed inset-0 z-20 flex items-center justify-center bg-scrim/40 p-4" @click.self="notesAppointmentId = null; load({ silent: true })">
       <div class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-card bg-surface p-6 shadow-drawer">
         <div class="flex items-center justify-between">
           <h2 class="text-[15px] font-semibold text-ink-900">{{ t('Visit notes', 'Notas de la visita') }}</h2>

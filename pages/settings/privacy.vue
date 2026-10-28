@@ -213,7 +213,7 @@ const td = 'border-t border-line-row px-3 py-2.5 text-[13.5px] text-ink-900'
       </div>
     </div>
 
-    <div v-if="keeping" class="fixed inset-0 z-30 flex items-center justify-center bg-ink-900/40 p-4">
+    <div v-if="keeping" class="fixed inset-0 z-30 flex items-center justify-center bg-scrim/40 p-4">
       <form class="flex w-full max-w-[440px] flex-col gap-3 rounded-card bg-surface p-5 shadow-popover" data-cy="retention-keep-form" @submit.prevent="keep">
         <h2 class="text-[17px] font-bold text-ink-900">{{ t(`Keep ${keeping.length} more`, `Conservar ${keeping.length} más tiempo`) }}</h2>
         <label class="flex flex-col gap-1 text-[13px] font-semibold text-ink-700">

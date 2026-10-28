@@ -125,7 +125,7 @@ async function save() {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-20 flex items-center justify-center bg-ink-900/40 p-4" @click.self="emit('close')">
+  <div class="fixed inset-0 z-20 flex items-center justify-center bg-scrim/40 p-4" @click.self="emit('close')">
     <div class="max-h-full w-full overflow-y-auto max-w-sm rounded-lg bg-white p-6 shadow-xl">
       <div class="flex items-center justify-between">
         <h2 class="text-lg font-semibold text-gray-900">{{ plan ? t('Edit Plan', 'Editar plan') : t('New Care Plan', 'Nuevo plan de cuidados') }}</h2>

@@ -46,7 +46,7 @@ function confirm() {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-end justify-center bg-ink-900/40 p-4 sm:items-center" @click.self="emit('cancel')">
+  <div class="fixed inset-0 z-50 flex items-end justify-center bg-scrim/40 p-4 sm:items-center" @click.self="emit('cancel')">
     <div
       ref="panel"
       role="dialog"

@@ -271,7 +271,7 @@ watch(() => route.fullPath, () => emit('close'))
 
 
 <template>
-  <div v-if="props.open" class="fixed inset-0 z-30 bg-ink-900/40 lg:hidden" @click="emit('close')" />
+  <div v-if="props.open" class="fixed inset-0 z-30 bg-scrim/40 lg:hidden" @click="emit('close')" />
 
   <aside
     data-cy="sidebar"

@@ -144,7 +144,7 @@ const listboxId = computed(() => `${props.id}-listbox`)
     </button>
 
     <!-- Backdrop, bottom sheet only. -->
-    <div v-if="open" class="fixed inset-0 z-40 bg-ink-900/25 lg:hidden" aria-hidden="true" @click="closeList(false)" />
+    <div v-if="open" class="fixed inset-0 z-40 bg-scrim/25 lg:hidden" aria-hidden="true" @click="closeList(false)" />
 
     <div
       v-if="open"

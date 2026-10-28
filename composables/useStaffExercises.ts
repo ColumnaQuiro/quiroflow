@@ -9,6 +9,8 @@ export interface ExerciseRow {
   instructions: string | null
   media_url: string | null
   media_path?: string | null
+  /** Copied from QuiroFlow's catalogue: its demonstration video plays (useExerciseCatalog). */
+  starter_key?: string | null
 }
 
 export interface AssignedExercise {
@@ -49,12 +51,12 @@ export function useStaffExercises(opts: { accountId: () => string | null | undef
     const [{ data, error: readError }, { data: lib }] = await Promise.all([
       supabase
         .from('patient_exercises')
-        .select('id, sets, reps, frequency, notes, created_at, exercises(id, name, instructions, media_url, media_path), patient_exercise_logs(done_on)')
+        .select('id, sets, reps, frequency, notes, created_at, exercises(id, name, instructions, media_url, media_path, starter_key), patient_exercise_logs(done_on)')
         .eq('patient_id', opts.patientId())
         .is('ended_at', null)
         .gte('patient_exercise_logs.done_on', weekAgo)
         .order('created_at'),
-      supabase.from('exercises').select('id, name, instructions, media_url, media_path').is('archived_at', null).order('name'),
+      supabase.from('exercises').select('id, name, instructions, media_url, media_path, starter_key').is('archived_at', null).order('name'),
     ])
     loading.value = false
     loadError.value = !!readError

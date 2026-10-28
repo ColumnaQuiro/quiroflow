@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { exerciseWeek } from '../../utils/exerciseWeek'
 import { EXERCISE_CATALOG, EXERCISE_CATALOG_PROGRAMS, EXERCISE_CATALOG_REGIONS, exerciseCatalogItem } from '../../utils/exerciseCatalog'
+import { normalizeSearchTerm } from '../../utils/searchText'
 
 // "Ejercicios en casa" on a patient's record, in the web app and the staff
 // app: what they have been given, how this week has gone (their ticks), and
-// assigning another -- from the clinic's library or new, which saves it to
-// the library for next time -- or a whole programme at once. QuiroFlow's
-// starter catalogue is offered too, exercises and programmes, with their
-// demonstration videos: picking one copies it into the library as it is
-// assigned (useExerciseCatalog). What a patient has can also be saved as a
-// programme, for the next patient like them.
+// assigning more. The picker is a checklist: any number of exercises from
+// the clinic's library and QuiroFlow's starter catalogue, a whole programme
+// or body region with one tick, each chosen one with its own dose to adjust
+// before they all go in one insert. A new exercise is written here too, and
+// saved to the library for next time. Picking a catalogue exercise copies it
+// into the library as it is assigned (useExerciseCatalog). What a patient
+// has can also be saved as a programme, for the next patient like them.
 const props = defineProps<{ accountId: string; patientId: string; teamMemberId: string | null }>()
 
 const t = useT()
@@ -24,9 +26,7 @@ const programs = exercisePrograms.programs
 onMounted(exercisePrograms.load)
 
 const open = ref(false)
-const pick = ref<string>('')
-// A programme is picked as "program:<id>" in the same select.
-const pickedProgram = computed(() => (pick.value.startsWith('program:') ? programs.value.find((p) => `program:${p.id}` === pick.value) ?? null : null))
+const creating = ref(false)
 const notice = ref('')
 const name = ref('')
 const instructions = ref('')
@@ -37,38 +37,133 @@ const sets = ref('')
 const reps = ref('')
 const frequency = ref('')
 const notes = ref('')
-const isNew = computed(() => pick.value === '__new')
 const formError = ref('')
-
-// The catalogue: exercises picked as "catalog:<slug>", starter programmes as
-// "catalog-program:<slug>". One the clinic already copied is offered from
-// its library instead, so it is never offered twice.
+const query = ref('')
 const catalog = useExerciseCatalog()
-const copied = computed(() => new Set(library.value.map((e) => e.starter_key).filter(Boolean)))
-const catalogByRegion = computed(() =>
-  EXERCISE_CATALOG_REGIONS.map((r) => ({ ...r, items: EXERCISE_CATALOG.filter((e) => e.region === r.key && !copied.value.has(e.slug)) })).filter((r) => r.items.length),
-)
-const pickedCatalog = computed(() => (pick.value.startsWith('catalog:') ? exerciseCatalogItem(pick.value.slice('catalog:'.length)) : null))
-const pickedCatalogProgram = computed(() => (pick.value.startsWith('catalog-program:') ? EXERCISE_CATALOG_PROGRAMS.find((p) => `catalog-program:${p.slug}` === pick.value) ?? null : null))
-// The demonstration of whatever is picked, from the catalogue or a copy of it.
-const pickedVideo = computed(() => pickedCatalog.value?.slug ?? library.value.find((e) => e.id === pick.value)?.starter_key ?? null)
-const catalogProgramItems = computed(() => (pickedCatalogProgram.value?.items ?? []).map(exerciseCatalogItem).filter((i): i is NonNullable<typeof i> => !!i))
-// The catalogue's usual dose, as a starting point to change.
-watch(pickedCatalog, (item) => {
-  if (!item) return
-  const d = catalog.dose(item)
-  sets.value = d.sets ? String(d.sets) : ''
-  reps.value = d.reps
-  frequency.value = d.frequency
-})
 const copying = ref(false)
+
+// Something that can be ticked: a library exercise ("lib:<id>") or a
+// catalogue one the clinic has not copied yet ("catalog:<slug>"). A copied
+// catalogue exercise is always its library row, so nothing is offered twice.
+interface Entry {
+  key: string
+  name: string
+  /** Its demonstration video, from the catalogue. */
+  slug: string | null
+  instructions: string | null
+  sets: number | null
+  reps: string | null
+  frequency: string | null
+  notes: string | null
+  /** The patient already has it on. */
+  had: boolean
+}
+// A ticked one, its dose as typed.
+interface Chosen {
+  key: string
+  name: string
+  sets: string
+  reps: string
+  frequency: string
+  notes: string
+}
+
+const has = computed(() => new Set(assigned.value.map((a) => a.exercises?.id).filter(Boolean)))
+const bySlug = computed(() => new Map(library.value.filter((e) => e.starter_key).map((e) => [e.starter_key!, e])))
+
+function libraryEntry(ex: { id: string; name: string; instructions?: string | null; starter_key?: string | null }, d?: { sets: number | null; reps: string | null; frequency: string | null; notes?: string | null }): Entry {
+  const item = exerciseCatalogItem(ex.starter_key)
+  const usual = d ?? (item ? catalog.dose(item) : null)
+  return {
+    key: `lib:${ex.id}`,
+    name: ex.name,
+    slug: item?.slug ?? null,
+    instructions: ex.instructions ?? null,
+    sets: usual?.sets ?? null,
+    reps: usual?.reps || null,
+    frequency: usual?.frequency || null,
+    notes: d?.notes ?? null,
+    had: has.value.has(ex.id),
+  }
+}
+
+function catalogEntry(slug: string): Entry | null {
+  const copy = bySlug.value.get(slug)
+  if (copy) return libraryEntry(copy)
+  const item = exerciseCatalogItem(slug)
+  if (!item) return null
+  const d = catalog.dose(item)
+  return { key: `catalog:${slug}`, name: t(item.name.en, item.name.es), slug, instructions: t(item.instructions.en, item.instructions.es), sets: d.sets, reps: d.reps || null, frequency: d.frequency || null, notes: null, had: false }
+}
+
+const matches = (text: string) => !query.value.trim() || normalizeSearchTerm(text).includes(normalizeSearchTerm(query.value.trim()))
+const isEntry = (e: Entry | null): e is Entry => !!e
+
+// Programmes are one tick each, found by their name; lists filter by exercise.
+const clinicPrograms = computed(() =>
+  programs.value
+    .filter((p) => matches(p.name))
+    .map((p) => ({
+      key: `program:${p.id}`,
+      name: p.name,
+      entries: p.exercise_program_items.map((i) => libraryEntry({ id: i.exercise_id, name: i.exercises?.name ?? '', starter_key: library.value.find((e) => e.id === i.exercise_id)?.starter_key }, i)),
+    })),
+)
+const catalogPrograms = computed(() =>
+  EXERCISE_CATALOG_PROGRAMS.map((p) => ({ key: `catalog-program:${p.slug}`, name: t(p.name.en, p.name.es), entries: p.items.map(catalogEntry).filter(isEntry) })).filter((p) => matches(p.name)),
+)
+const lists = computed(() =>
+  [
+    { key: 'library', label: t('Your library', 'Tu biblioteca'), all: false, entries: library.value.map((e) => libraryEntry(e)) },
+    ...EXERCISE_CATALOG_REGIONS.map((r) => ({
+      key: `region:${r.key}`,
+      label: `QuiroFlow · ${t(r.label.en, r.label.es)}`,
+      all: true,
+      // Copied ones are in the library list already.
+      entries: EXERCISE_CATALOG.filter((e) => e.region === r.key && !bySlug.value.has(e.slug)).map((e) => catalogEntry(e.slug)).filter(isEntry),
+    })),
+  ]
+    .map((l) => ({ ...l, entries: l.entries.filter((e) => matches(e.name)) }))
+    .filter((l) => l.entries.length),
+)
+
+const chosen = ref<Chosen[]>([])
+const isChosen = (key: string) => chosen.value.some((c) => c.key === key)
+// The demonstration shown under the list: the last one ticked or previewed.
+const preview = ref<Entry | null>(null)
+
+function add(e: Entry) {
+  if (e.had || isChosen(e.key)) return
+  chosen.value.push({ key: e.key, name: e.name, sets: e.sets ? String(e.sets) : '', reps: e.reps ?? '', frequency: e.frequency ?? '', notes: e.notes ?? '' })
+  if (e.slug) preview.value = e
+}
+function drop(key: string) {
+  chosen.value = chosen.value.filter((c) => c.key !== key)
+  if (preview.value?.key === key) preview.value = null
+}
+function toggle(e: Entry) {
+  if (isChosen(e.key)) drop(e.key)
+  else add(e)
+}
+/** Every one of a group the patient does not have yet is ticked. */
+function allChosen(entries: Entry[]) {
+  const free = entries.filter((e) => !e.had)
+  return free.length > 0 && free.every((e) => isChosen(e.key))
+}
+function toggleGroup(entries: Entry[]) {
+  if (allChosen(entries)) entries.forEach((e) => drop(e.key))
+  else entries.forEach(add)
+}
 
 function reset(opts: { kept?: boolean } = {}) {
   // Cancelled (or the new exercise was not saved): nothing keeps the upload.
   if (!opts.kept && mediaPath.value) exerciseMedia.remove(mediaPath.value)
   mediaPath.value = null
   open.value = false
-  pick.value = ''
+  creating.value = false
+  chosen.value = []
+  preview.value = null
+  query.value = ''
   name.value = instructions.value = mediaUrl.value = sets.value = reps.value = frequency.value = notes.value = ''
   formError.value = ''
 }
@@ -106,23 +201,12 @@ async function copyFromCatalog(slugs: string[]): Promise<string[] | null> {
 async function save() {
   formError.value = ''
   notice.value = ''
-  if (pickedProgram.value) {
-    await assignItems(pickedProgram.value.exercise_program_items)
+  if (!creating.value) {
+    await assignChosen()
     return
   }
-  if (pickedCatalogProgram.value) {
-    const items = catalogProgramItems.value
-    const ids = await copyFromCatalog(items.map((i) => i.slug))
-    if (!ids) return
-    await assignItems(items.map((item, i) => ({ exercise_id: ids[i], ...catalog.dose(item), notes: null })))
-    return
-  }
-  if (isNew.value && !name.value.trim()) {
+  if (!name.value.trim()) {
     formError.value = t('Give the exercise a name.', 'Pon un nombre al ejercicio.')
-    return
-  }
-  if (!isNew.value && !pick.value) {
-    formError.value = t('Choose an exercise.', 'Elige un ejercicio.')
     return
   }
   const link = mediaUrl.value.trim()
@@ -135,21 +219,41 @@ async function save() {
     formError.value = t('Sets must be a whole number.', 'Las series deben ser un número entero.')
     return
   }
-  let exerciseId: string | null = isNew.value ? null : pick.value
-  if (pickedCatalog.value) {
-    const ids = await copyFromCatalog([pickedCatalog.value.slug])
-    if (!ids) return
-    exerciseId = ids[0]
-  }
   const ok = await assign({
-    exerciseId,
-    newExercise: isNew.value ? { name: name.value, instructions: instructions.value.trim() || null, media_url: link || null, media_path: mediaPath.value } : undefined,
+    exerciseId: null,
+    newExercise: { name: name.value, instructions: instructions.value.trim() || null, media_url: link || null, media_path: mediaPath.value },
     sets: n,
     reps: reps.value.trim() || null,
     frequency: frequency.value.trim() || null,
     notes: notes.value.trim() || null,
   })
-  if (ok) reset({ kept: isNew.value })
+  if (ok) reset({ kept: true })
+}
+
+/** Everything ticked, in one insert, copying catalogue ones into the library first. */
+async function assignChosen() {
+  if (!chosen.value.length) {
+    formError.value = t('Choose at least one exercise.', 'Elige al menos un ejercicio.')
+    return
+  }
+  const bad = chosen.value.find((c) => c.sets.trim() && !(Number.isInteger(Number(c.sets)) && Number(c.sets) >= 1))
+  if (bad) {
+    formError.value = t(`Sets must be a whole number (${bad.name}).`, `Las series deben ser un número entero (${bad.name}).`)
+    return
+  }
+  const slugs = chosen.value.filter((c) => c.key.startsWith('catalog:')).map((c) => c.key.slice('catalog:'.length))
+  const ids = await copyFromCatalog(slugs)
+  if (!ids) return
+  const copiedIds = new Map(slugs.map((s, i) => [s, ids[i]]))
+  await assignItems(
+    chosen.value.map((c) => ({
+      exercise_id: c.key.startsWith('lib:') ? c.key.slice('lib:'.length) : copiedIds.get(c.key.slice('catalog:'.length))!,
+      sets: c.sets.trim() ? Number(c.sets) : null,
+      reps: c.reps.trim() || null,
+      frequency: c.frequency.trim() || null,
+      notes: c.notes.trim() || null,
+    })),
+  )
 }
 
 // "Save as programme": what this patient has now, with their doses.
@@ -222,67 +326,79 @@ const input = 'h-10 w-full rounded-ctl border border-line-control bg-surface px-
     </div>
 
     <form v-if="open" class="mt-3 space-y-2.5 border-t border-line-row pt-3" data-cy="exercises-assign-form" @submit.prevent="save">
-      <label class="block text-[12.5px] font-medium text-ink-700">
-        {{ t('Exercise', 'Ejercicio') }}
-        <select v-model="pick" :class="[input, 'mt-1']" data-cy="exercise-pick">
-          <option value="" disabled>{{ library.length ? t('Choose from your library…', 'Elige de tu biblioteca…') : t('Choose an exercise…', 'Elige un ejercicio…') }}</option>
-          <optgroup v-if="programs.length" :label="t('Programmes', 'Programas')">
-            <option v-for="p in programs" :key="p.id" :value="`program:${p.id}`">{{ p.name }} ({{ p.exercise_program_items.length }})</option>
-          </optgroup>
-          <optgroup v-if="library.length" :label="t('Exercises', 'Ejercicios')">
-            <option v-for="ex in library" :key="ex.id" :value="ex.id">{{ ex.name }}</option>
-          </optgroup>
-          <optgroup :label="t('QuiroFlow programmes', 'Programas de QuiroFlow')">
-            <option v-for="p in EXERCISE_CATALOG_PROGRAMS" :key="p.slug" :value="`catalog-program:${p.slug}`">{{ t(p.name.en, p.name.es) }} ({{ p.items.length }})</option>
-          </optgroup>
-          <optgroup v-for="r in catalogByRegion" :key="r.key" :label="`QuiroFlow · ${t(r.label.en, r.label.es)}`">
-            <option v-for="e in r.items" :key="e.slug" :value="`catalog:${e.slug}`">{{ t(e.name.en, e.name.es) }}</option>
-          </optgroup>
-          <option value="__new">{{ t('+ New exercise', '+ Ejercicio nuevo') }}</option>
-        </select>
-      </label>
-      <div v-if="pickedVideo" class="max-w-[360px]" data-cy="exercise-pick-preview">
-        <ExercisesCatalogVideo :slug="pickedVideo" />
-        <p v-if="pickedCatalog" class="mt-1.5 whitespace-pre-line text-[12.5px] leading-relaxed text-ink-muted">{{ t(pickedCatalog.instructions.en, pickedCatalog.instructions.es) }}</p>
-      </div>
-      <template v-if="isNew">
+      <template v-if="!creating">
+        <input v-model="query" type="search" :class="input" :placeholder="t('Search exercises or programmes', 'Buscar ejercicios o programas')" data-cy="exercise-search" />
+        <div class="max-h-[340px] overflow-y-auto rounded-ctl border border-line-control" data-cy="exercise-pick">
+          <template v-for="section in [{ key: 'clinic', label: t('Your programmes', 'Tus programas'), items: clinicPrograms }, { key: 'catalog', label: t('QuiroFlow programmes', 'Programas de QuiroFlow'), items: catalogPrograms }]" :key="section.key">
+            <template v-if="section.items.length">
+              <p class="sticky top-0 z-[1] bg-surface-subtle px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ section.label }}</p>
+              <label v-for="p in section.items" :key="p.key" class="flex cursor-pointer items-start gap-2.5 px-3 py-2 hover:bg-surface-subtle" data-cy="exercise-group">
+                <input type="checkbox" class="mt-0.5 rounded border-line-control text-brand-text focus:ring-brand" :checked="allChosen(p.entries)" :disabled="!p.entries.some((e) => !e.had)" @change="toggleGroup(p.entries)" />
+                <span class="min-w-0 flex-1">
+                  <span class="block text-[13.5px] font-medium text-ink-900">{{ p.name }} ({{ p.entries.length }})</span>
+                  <span class="block truncate text-[12px] text-ink-muted">{{ p.entries.map((e) => e.name).join(' · ') }}</span>
+                </span>
+              </label>
+            </template>
+          </template>
+          <template v-for="l in lists" :key="l.key">
+            <p class="sticky top-0 z-[1] flex items-center justify-between gap-2 bg-surface-subtle px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted">
+              {{ l.label }}
+              <button v-if="l.all" type="button" class="text-[11.5px] font-medium normal-case tracking-normal text-brand-text" data-cy="exercise-group-all" @click="toggleGroup(l.entries)">
+                {{ allChosen(l.entries) ? t('Untick all', 'Quitar todos') : t('Tick all', 'Marcar todos') }}
+              </button>
+            </p>
+            <label v-for="e in l.entries" :key="e.key" class="flex items-center gap-2.5 px-3 py-2" :class="e.had ? 'opacity-60' : 'cursor-pointer hover:bg-surface-subtle'" data-cy="exercise-option">
+              <input type="checkbox" class="rounded border-line-control text-brand-text focus:ring-brand" :checked="e.had || isChosen(e.key)" :disabled="e.had" @change="toggle(e)" />
+              <span class="min-w-0 flex-1 text-[13.5px] text-ink-900">{{ e.name }}</span>
+              <span v-if="e.had" class="shrink-0 text-[11.5px] text-ink-muted">{{ t('Already has it', 'Ya lo tiene') }}</span>
+              <button v-else-if="e.slug" type="button" class="shrink-0 text-[11.5px] font-medium text-brand-text" :aria-label="t(`Watch ${e.name}`, `Ver ${e.name}`)" @click.prevent="preview = preview?.key === e.key ? null : e">▶</button>
+            </label>
+          </template>
+          <p v-if="!clinicPrograms.length && !catalogPrograms.length && !lists.length" class="px-3 py-3 text-[13px] text-ink-faint">{{ t('Nothing matches.', 'No hay coincidencias.') }}</p>
+        </div>
+        <button type="button" class="text-[12.5px] font-medium text-brand-text" data-cy="exercise-new" @click="creating = true; formError = ''">{{ t('+ New exercise', '+ Ejercicio nuevo') }}</button>
+
+        <div v-if="preview?.slug" class="max-w-[360px]" data-cy="exercise-pick-preview">
+          <ExercisesCatalogVideo :key="preview.slug" :slug="preview.slug" :label="preview.name" />
+          <p v-if="preview.instructions" class="mt-1.5 whitespace-pre-line text-[12.5px] leading-relaxed text-ink-muted">{{ preview.instructions }}</p>
+        </div>
+
+        <div v-if="chosen.length" class="space-y-1.5" data-cy="exercise-chosen-list">
+          <p class="text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t(`Chosen (${chosen.length})`, `Elegidos (${chosen.length})`) }}</p>
+          <div v-for="c in chosen" :key="c.key" class="rounded-ctl bg-surface-subtle px-3 py-2" data-cy="exercise-chosen">
+            <div class="flex items-center justify-between gap-2">
+              <span class="min-w-0 text-[13.5px] font-medium text-ink-900">{{ c.name }}</span>
+              <button type="button" class="shrink-0 text-[12px] font-medium text-ink-muted" data-cy="exercise-chosen-remove" @click="drop(c.key)">{{ t('Remove', 'Quitar') }}</button>
+            </div>
+            <div class="mt-1.5 grid grid-cols-[4.5rem_1fr_1fr] gap-2">
+              <input v-model="c.sets" inputmode="numeric" :class="input" :placeholder="t('Sets', 'Series')" :aria-label="t('Sets', 'Series')" data-cy="exercise-sets" />
+              <input v-model="c.reps" :class="input" :placeholder="t('Reps or time', 'Reps o tiempo')" :aria-label="t('Reps or time', 'Reps o tiempo')" data-cy="exercise-reps" />
+              <input v-model="c.frequency" :class="input" :placeholder="t('How often', 'Frecuencia')" :aria-label="t('How often', 'Frecuencia')" data-cy="exercise-frequency" />
+            </div>
+            <input v-if="chosen.length === 1" v-model="c.notes" :class="[input, 'mt-2']" :placeholder="t('Note for the patient (optional)', 'Nota para el paciente (opcional)')" data-cy="exercise-notes" />
+          </div>
+        </div>
+      </template>
+
+      <template v-else>
+        <button type="button" class="text-[12.5px] font-medium text-ink-muted hover:text-brand-text" data-cy="exercise-back" @click="creating = false; formError = ''">{{ t('← Back to the list', '← Volver a la lista') }}</button>
         <input v-model="name" :class="input" :placeholder="t('Name, e.g. Cat-camel', 'Nombre, p. ej. Gato-camello')" data-cy="exercise-name" />
         <textarea v-model="instructions" rows="2" :class="[input, 'h-auto py-2']" :placeholder="t('How to do it (optional)', 'Cómo hacerlo (opcional)')" />
         <input v-model="mediaUrl" type="url" inputmode="url" :class="input" :placeholder="t('Video or image link (optional)', 'Enlace a vídeo o imagen (opcional)')" data-cy="exercise-link" />
         <ExercisesMediaField v-model="mediaPath" :account-id="accountId" />
+        <div class="grid grid-cols-3 gap-2">
+          <input v-model="sets" inputmode="numeric" :class="input" :placeholder="t('Sets', 'Series')" data-cy="exercise-sets" />
+          <input v-model="reps" :class="input" :placeholder="t('Reps or time', 'Reps o tiempo')" data-cy="exercise-reps" />
+          <input v-model="frequency" :class="input" :placeholder="t('How often', 'Frecuencia')" data-cy="exercise-frequency" />
+        </div>
+        <input v-model="notes" :class="input" :placeholder="t('Note for the patient (optional)', 'Nota para el paciente (opcional)')" data-cy="exercise-notes" />
       </template>
-      <ul v-if="pickedProgram" class="space-y-1 rounded-ctl bg-surface-subtle px-3 py-2 text-[13px]" data-cy="exercise-program-preview">
-        <li v-for="item in pickedProgram.exercise_program_items" :key="item.exercise_id" class="flex justify-between gap-3">
-          <span class="text-ink-900">{{ item.exercises?.name }}</span>
-          <span class="shrink-0 text-ink-muted">{{ dose(item) }}</span>
-        </li>
-        <li v-if="!pickedProgram.exercise_program_items.length" class="text-ink-muted">{{ t('This programme has no exercises yet.', 'Este programa aún no tiene ejercicios.') }}</li>
-      </ul>
-      <ul v-if="pickedCatalogProgram" class="space-y-1 rounded-ctl bg-surface-subtle px-3 py-2 text-[13px]" data-cy="exercise-program-preview">
-        <li v-for="item in catalogProgramItems" :key="item.slug" class="flex justify-between gap-3">
-          <span class="text-ink-900">{{ t(item.name.en, item.name.es) }}</span>
-          <span class="shrink-0 text-ink-muted">{{ dose(catalog.dose(item)) }}</span>
-        </li>
-        <li class="pt-1 text-[12px] text-ink-muted">{{ t('Each one is added to your library too.', 'Cada uno se añade también a tu biblioteca.') }}</li>
-      </ul>
-      <div v-if="!pickedProgram && !pickedCatalogProgram" class="grid grid-cols-3 gap-2">
-        <input v-model="sets" inputmode="numeric" :class="input" :placeholder="t('Sets', 'Series')" data-cy="exercise-sets" />
-        <input v-model="reps" :class="input" :placeholder="t('Reps or time', 'Reps o tiempo')" data-cy="exercise-reps" />
-        <input v-model="frequency" :class="input" :placeholder="t('How often', 'Frecuencia')" data-cy="exercise-frequency" />
-      </div>
-      <input v-if="!pickedProgram && !pickedCatalogProgram" v-model="notes" :class="input" :placeholder="t('Note for the patient (optional)', 'Nota para el paciente (opcional)')" />
+
       <p v-if="formError || error" role="alert" class="text-[12.5px] text-danger-text">{{ formError || error }}</p>
       <div class="flex gap-2">
-        <UiBtn type="submit" variant="primary" :disabled="saving || copying || (!!pickedProgram && !pickedProgram.exercise_program_items.length)" data-cy="exercise-save">
-          {{
-            saving || copying
-              ? t('Saving…', 'Guardando…')
-              : pickedProgram
-                ? t(`Assign ${pickedProgram.exercise_program_items.length}`, `Asignar ${pickedProgram.exercise_program_items.length}`)
-                : pickedCatalogProgram
-                  ? t(`Assign ${pickedCatalogProgram.items.length}`, `Asignar ${pickedCatalogProgram.items.length}`)
-                  : t('Assign', 'Asignar')
-          }}
+        <UiBtn type="submit" variant="primary" :disabled="saving || copying || (!creating && !chosen.length)" data-cy="exercise-save">
+          {{ saving || copying ? t('Saving…', 'Guardando…') : !creating && chosen.length ? t(`Assign ${chosen.length}`, `Asignar ${chosen.length}`) : t('Assign', 'Asignar') }}
         </UiBtn>
         <UiBtn type="button" variant="secondary" @click="reset()">{{ t('Cancel', 'Cancelar') }}</UiBtn>
       </div>

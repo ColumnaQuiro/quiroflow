@@ -41,21 +41,25 @@ describe('Exercise catalogue', () => {
         // On the record, straight from the catalogue, with its usual dose.
         cy.visit(`/patients/${patient.id}?tab=clinical`)
         cy.get('[data-cy="exercises-assign-open"]').click()
-        cy.get('[data-cy="exercise-pick"]').select('catalog:chin-tuck')
+        cy.get('[data-cy="exercise-search"]').type('chin')
+        cy.contains('[data-cy="exercise-option"]', 'Chin tuck').find('input').check()
         cy.get('[data-cy="exercise-pick-preview"] [data-cy="catalog-video"]').should('have.attr', 'src', '/exercise-catalog/chin-tuck.mp4')
-        cy.get('[data-cy="exercise-sets"]').should('have.value', '2')
-        cy.get('[data-cy="exercise-save"]').click()
+        cy.contains('[data-cy="exercise-chosen"]', 'Chin tuck').find('[data-cy="exercise-sets"]').should('have.value', '2')
+        cy.get('[data-cy="exercise-save"]').should('contain.text', 'Assign 1').click()
         cy.contains('[data-cy="exercise-row"]', 'Chin tuck').should('contain.text', '2 × 10 · Twice a day')
 
-        // Copied now, so offered from the library rather than the catalogue;
-        // a starter programme skips what the patient already has.
+        // Copied now, so offered once, from the library, as one the patient
+        // has; ticking a starter programme takes only the rest of it, and
+        // another exercise ticked by hand goes in the same assignment.
         cy.get('[data-cy="exercises-assign-open"]').click()
-        cy.get('[data-cy="exercise-pick"] option[value="catalog:chin-tuck"]').should('not.exist')
-        cy.get('[data-cy="exercise-pick"]').select('catalog-program:neck-pain')
-        cy.get('[data-cy="exercise-program-preview"]').should('contain.text', 'Neck rotation')
+        cy.get('[data-cy="exercise-search"]').type('chin')
+        cy.get('[data-cy="exercise-option"]').should('have.length', 1).and('contain.text', 'Already has it').find('input').should('be.disabled')
+        cy.get('[data-cy="exercise-search"]').clear()
+        cy.contains('[data-cy="exercise-group"]', 'Neck pain').find('input').check()
+        cy.get('[data-cy="exercise-chosen"]').should('have.length', 4).and('contain.text', 'Neck rotation')
+        cy.contains('[data-cy="exercise-option"]', 'Cat-camel').find('input').check()
         cy.get('[data-cy="exercise-save"]').should('contain.text', 'Assign 5').click()
-        cy.get('[data-cy="exercises-notice"]').should('contain.text', 'Added 4; 1 they already had.')
-        cy.get('[data-cy="exercise-row"]').should('have.length', 5)
+        cy.get('[data-cy="exercise-row"]').should('have.length', 6)
 
         // Ten exercises in the library, each once.
         cy.task<{ starter_key: string | null }[]>('db:selectRows', { table: 'exercises', columns: 'starter_key', match: { account_id: account.accountId } }).then((rows) => {

@@ -39,6 +39,10 @@ const instagramAccessToken = ref('')
 const instagramManualOpen = ref(false)
 const instagramConnect = useFacebookPageConnect('instagram')
 const connectingInstagram = ref(false)
+// Set when one grant reached several Instagram accounts: the clinic picks
+// here, and the ticket carries the rest back to the server.
+const instagramChoices = ref<{ instagramUserId: string; username: string | null; pageName: string | null }[]>([])
+const instagramTicket = ref('')
 const newLeadNotifyTemplateName = ref('')
 const newLeadNotifyTemplateLanguage = ref('es')
 const staffNotifyTemplateLanguage = ref('es')
@@ -196,17 +200,30 @@ function saveErrorMessage(error: { code?: string; message: string }) {
 // Meta's dialog: the clinic ticks its Instagram account and the Page it is
 // linked to, and the server finds the one behind it, subscribes the Page and
 // stores both. Nothing here to save afterwards -- it is already stored.
+//
+// Unless the grant reached more than one account (a portfolio with two
+// locations, or a Page an earlier connection granted): then the server
+// answers with the choices instead, and finishInstagram sends the pick back.
+interface InstagramConnectResult {
+  connected: boolean
+  instagramUserId?: string
+  username?: string | null
+  choose?: { instagramUserId: string; username: string | null; pageName: string | null }[]
+  ticket?: string
+}
+
 async function connectInstagram() {
   connectingInstagram.value = true
+  instagramChoices.value = []
   try {
     const code = await instagramConnect.launch()
-    const result = await useStaffFetch<{ instagramUserId: string; username: string | null }>('/api/meta/instagram/connect', { method: 'POST', body: { code } })
-    instagramUserId.value = result.instagramUserId
-    hasInstagramToken.value = true
-    instagramAccessToken.value = ''
-    instagramManualOpen.value = false
-    const who = result.username ? `@${result.username}` : result.instagramUserId
-    showToast(t(`Instagram connected: ${who}.`, `Instagram conectado: ${who}.`), 'success')
+    const result = await useStaffFetch<InstagramConnectResult>('/api/meta/instagram/connect', { method: 'POST', body: { code } })
+    if (result.choose?.length && result.ticket) {
+      instagramChoices.value = result.choose
+      instagramTicket.value = result.ticket
+      return
+    }
+    instagramConnected(result)
   } catch (err: any) {
     // Closing Meta's dialog is not a failure (see WhatsAppConnectCard).
     if (err?.message === 'CANCELLED') return
@@ -214,6 +231,32 @@ async function connectInstagram() {
   } finally {
     connectingInstagram.value = false
   }
+}
+
+async function finishInstagram(instagramUserIdPicked: string) {
+  connectingInstagram.value = true
+  try {
+    const result = await useStaffFetch<InstagramConnectResult>('/api/meta/instagram/connect', {
+      method: 'POST',
+      body: { ticket: instagramTicket.value, instagramUserId: instagramUserIdPicked },
+    })
+    instagramChoices.value = []
+    instagramTicket.value = ''
+    instagramConnected(result)
+  } catch (err: any) {
+    showToast(err?.data?.statusMessage ?? err?.message ?? t('Could not connect Instagram.', 'No se pudo conectar Instagram.'), 'error')
+  } finally {
+    connectingInstagram.value = false
+  }
+}
+
+function instagramConnected(result: InstagramConnectResult) {
+  instagramUserId.value = result.instagramUserId ?? ''
+  hasInstagramToken.value = true
+  instagramAccessToken.value = ''
+  instagramManualOpen.value = false
+  const who = result.username ? `@${result.username}` : result.instagramUserId
+  showToast(t(`Instagram connected: ${who}.`, `Instagram conectado: ${who}.`), 'success')
 }
 
 async function save() {
@@ -377,6 +420,14 @@ async function save() {
                 <UiBtn variant="primary" :disabled="connectingInstagram || loading" data-cy="instagram-connect" @click="connectInstagram">
                   {{ connectingInstagram ? t('Connecting…', 'Conectando…') : instagramUserId ? t('Reconnect Instagram', 'Volver a conectar Instagram') : t('Connect Instagram', 'Conectar Instagram') }}
                 </UiBtn>
+              </div>
+              <div v-if="instagramChoices.length" class="flex flex-col gap-2 border-t border-line-row px-[18px] py-3" data-cy="instagram-choices">
+                <p class="text-[13px] leading-snug text-ink-500">{{ t('That connection reached more than one Instagram account. Which one is this clinic’s?', 'Esa conexión incluye más de una cuenta de Instagram. ¿Cuál es la de esta clínica?') }}</p>
+                <div class="flex flex-wrap gap-2">
+                  <UiBtn v-for="c in instagramChoices" :key="c.instagramUserId" :disabled="connectingInstagram" :data-instagram-user-id="c.instagramUserId" @click="finishInstagram(c.instagramUserId)">
+                    {{ c.username ? `@${c.username}` : c.instagramUserId }}<span v-if="c.pageName" class="ml-1 text-ink-500">· {{ c.pageName }}</span>
+                  </UiBtn>
+                </div>
               </div>
               <!-- Without the button (no configuration on this deployment) the fields are the only way, so they stay open. -->
               <details :open="!instagramConnect.available.value || instagramManualOpen" class="group border-t border-line" data-cy="instagram-manual">

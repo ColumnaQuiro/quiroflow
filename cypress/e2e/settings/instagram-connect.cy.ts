@@ -66,7 +66,7 @@ describe('Connecting Instagram', () => {
       })
     })
 
-    it('rejects an empty code', () => {
+    it('rejects a call with neither a code nor a ticket', () => {
       for (const body of [{}, { code: '   ' }]) {
         cy.request({ method: 'POST', url: '/api/meta/instagram/connect', body, failOnStatusCode: false }).its('status').should('eq', 400)
       }
@@ -110,19 +110,94 @@ describe('Connecting Instagram', () => {
       cy.task<any>('db:instagramConnection', { accountId: account.accountId }).its('instagramUserId').should('eq', null)
     })
 
-    it('asks instead of guessing when more than one Instagram account was ticked', () => {
+    it('connects only the account the grant names, when the token sees more than one', () => {
+      // Business login keeps every asset any earlier login granted, so a
+      // clinic that connected lead ads first brings that Page along. The
+      // instagram_* scopes say which account THIS grant was for.
+      const wanted = freshId()
+      const leadAdsPage = `2${Date.now()}`
+      const pageId = `1${Date.now()}`
       cy.task('db:startMetaGraphStub', {
         pages: [
-          { id: `1${Date.now()}`, name: 'Clínica Demo Valencia', access_token: 'T1', instagram_business_account: { id: freshId(), username: 'demovalencia' } },
-          { id: `2${Date.now()}`, name: 'Clínica Demo Jerez', access_token: 'T2', instagram_business_account: { id: freshId(), username: 'demojerez' } },
+          { id: leadAdsPage, name: 'Clínica Demo Valencia', access_token: 'T-LEADS', instagram_business_account: { id: freshId(), username: 'demovalencia' } },
+          { id: pageId, name: 'Clínica Demo Jerez', access_token: 'T-IG', instagram_business_account: { id: wanted, username: 'demojerez' } },
+        ],
+        granularScopes: [
+          { scope: 'pages_show_list', target_ids: [leadAdsPage, pageId] },
+          { scope: 'instagram_manage_messages', target_ids: [wanted] },
         ],
       })
       connect().then((res) => {
-        expect(res.status).to.eq(400)
-        expect(res.body.message ?? res.body.statusMessage).to.contain('@demovalencia').and.contain('@demojerez')
+        expect(res.status).to.eq(200)
+        expect(res.body).to.deep.include({ connected: true, instagramUserId: wanted, username: 'demojerez' })
       })
-      cy.task<string[]>('db:metaGraphStubSubscriptions').should('deep.equal', [])
-      cy.task<any>('db:instagramConnection', { accountId: account.accountId }).its('instagramUserId').should('eq', null)
+      cy.task<any>('db:instagramConnection', { accountId: account.accountId }).should('deep.equal', { instagramUserId: wanted, token: 'T-IG' })
+      cy.task<string[]>('db:metaGraphStubSubscriptions').should('deep.equal', [`${pageId}:messages`])
+    })
+
+    describe('when the grant still reaches more than one account', () => {
+      let valencia: string
+      let jerez: string
+      let jerezPage: string
+
+      beforeEach(() => {
+        valencia = freshId()
+        jerez = freshId()
+        jerezPage = `2${Date.now()}`
+        cy.task('db:startMetaGraphStub', {
+          pages: [
+            { id: `1${Date.now()}`, name: 'Clínica Demo Valencia', access_token: 'T1', instagram_business_account: { id: valencia, username: 'demovalencia' } },
+            { id: jerezPage, name: 'Clínica Demo Jerez', access_token: 'T2', instagram_business_account: { id: jerez, username: 'demojerez' } },
+          ],
+        })
+      })
+
+      it('asks which one, storing and subscribing nothing, and hands out no token', () => {
+        connect().then((res) => {
+          expect(res.status).to.eq(200)
+          expect(res.body.connected).to.eq(false)
+          expect(res.body.choose).to.deep.equal([
+            { instagramUserId: valencia, username: 'demovalencia', pageName: 'Clínica Demo Valencia' },
+            { instagramUserId: jerez, username: 'demojerez', pageName: 'Clínica Demo Jerez' },
+          ])
+          // The Page tokens travel only inside the encrypted ticket.
+          expect(JSON.stringify(res.body)).not.to.contain('T1').and.not.to.contain('T2')
+        })
+        cy.task<string[]>('db:metaGraphStubSubscriptions').should('deep.equal', [])
+        cy.task<any>('db:instagramConnection', { accountId: account.accountId }).its('instagramUserId').should('eq', null)
+      })
+
+      it('connects the one the clinic picks, with that Page and its token', () => {
+        connect().then((res) => {
+          cy.request('POST', '/api/meta/instagram/connect', { ticket: res.body.ticket, instagramUserId: jerez }).its('body').should('deep.include', {
+            connected: true,
+            instagramUserId: jerez,
+            username: 'demojerez',
+          })
+        })
+        cy.task<any>('db:instagramConnection', { accountId: account.accountId }).should('deep.equal', { instagramUserId: jerez, token: 'T2' })
+        cy.task<string[]>('db:metaGraphStubSubscriptions').should('deep.equal', [`${jerezPage}:messages`])
+      })
+
+      it('only lets the clinic pick an account it was offered, with a ticket that is its own', () => {
+        connect().then((res) => {
+          const ticket = res.body.ticket as string
+          cy.request({ method: 'POST', url: '/api/meta/instagram/connect', body: { ticket, instagramUserId: freshId() }, failOnStatusCode: false }).its('status').should('eq', 400)
+          // Changing one character of the authentication tag breaks the seal.
+          const [version, iv, tag, sealed] = ticket.split(':')
+          const tampered = [version, iv, (tag[0] === 'A' ? 'B' : 'A') + tag.slice(1), sealed].join(':')
+          cy.request({ method: 'POST', url: '/api/meta/instagram/connect', body: { ticket: tampered, instagramUserId: jerez }, failOnStatusCode: false }).its('status').should('eq', 400)
+          // Another clinic holding the same ticket gets nothing from it.
+          cy.seedStaffAccount().then((other: any) => {
+            cy.login(other.email, other.password)
+            cy.visit('/dashboard')
+            cy.request({ method: 'POST', url: '/api/meta/instagram/connect', body: { ticket, instagramUserId: jerez }, failOnStatusCode: false }).its('status').should('eq', 400)
+            cy.task<any>('db:instagramConnection', { accountId: other.accountId }).its('instagramUserId').should('eq', null)
+          })
+        })
+        cy.task<any>('db:instagramConnection', { accountId: account.accountId }).its('instagramUserId').should('eq', null)
+        cy.task<string[]>('db:metaGraphStubSubscriptions').should('deep.equal', [])
+      })
     })
 
     it('refuses an Instagram account another clinic already has, and leaves it with them', () => {

@@ -3247,6 +3247,8 @@ async function startMetaGraphStub(opts: {
   displayPhoneNumber?: string
   /** Scopes granted, so a connection with no WABA on it can be simulated. */
   scope?: string
+  /** The whole granular_scopes answer, when one scope is not enough to say it. */
+  granularScopes?: { scope: string; target_ids: string[] }[]
   /** The template list Meta answers with, variants and statuses included. */
   templates?: { name: string; language: string; status: string; body: string }[]
   /** Refuse template sends, as Meta does for a paused template. */
@@ -3297,6 +3299,7 @@ async function startMetaGraphStub(opts: {
     }
     if (path.endsWith('/debug_token')) {
       if (opts.failAt === 'debug') return refuse('Invalid OAuth access token.')
+      if (opts.granularScopes) return send(200, { data: { granular_scopes: opts.granularScopes } })
       return send(200, {
         data: { granular_scopes: [{ scope: opts.scope ?? 'whatsapp_business_management', target_ids: opts.scope === 'none' ? [] : [wabaId] }] },
       })

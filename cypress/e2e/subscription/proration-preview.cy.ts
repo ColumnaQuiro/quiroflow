@@ -20,9 +20,10 @@ describe('Subscription proration preview', () => {
       // CI. This verifies the client shows the preview and, once confirmed,
       // sends the same body to /api/billing/subscribe that produced it.
       //
-      // growth: true because seedStaffAccount() grants the add-on -- a plan
-      // switch has to carry it across, or changing plan would silently cancel
-      // Growth. See cypress/e2e/subscription/growth-addon-purchase.cy.ts.
+      // seedStaffAccount() grants the add-on, yet growth is false: Practice
+      // includes Growth, so switching to it must drop the Growth line rather
+      // than bill 39 EUR for what the plan already has. A switch to Solo
+      // carries it across instead -- see growth-addon-purchase.cy.ts.
       cy.intercept('POST', '/api/billing/preview', {
         statusCode: 200,
         body: { previewable: true, amountDueCents: 4500, taxCents: 945, currency: 'eur' },
@@ -31,7 +32,7 @@ describe('Subscription proration preview', () => {
 
       cy.get('.grid.lg\\:grid-cols-3').contains('.rounded-card', 'Practice').as('practiceCard')
       cy.get('@practiceCard').contains('button', 'Switch to Practice').click()
-      cy.wait('@preview').its('request.body').should('deep.equal', { planId: 'pro', interval: 'monthly', extraProfessionals: 0, growth: true, receptionist: false })
+      cy.wait('@preview').its('request.body').should('deep.equal', { planId: 'pro', interval: 'monthly', extraProfessionals: 0, growth: false, receptionist: false })
 
       // Not committed yet -- the preview lands on the card, and nothing is
       // charged until the footer bar is confirmed.
@@ -39,7 +40,7 @@ describe('Subscription proration preview', () => {
       cy.get('@subscribe.all').should('have.length', 0)
 
       cy.contains('button', 'Confirm change').click()
-      cy.wait('@subscribe').its('request.body').should('deep.equal', { planId: 'pro', interval: 'monthly', extraProfessionals: 0, growth: true, receptionist: false })
+      cy.wait('@subscribe').its('request.body').should('deep.equal', { planId: 'pro', interval: 'monthly', extraProfessionals: 0, growth: false, receptionist: false })
     })
   })
 

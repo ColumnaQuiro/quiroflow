@@ -34,8 +34,9 @@ describe('Growth dashboard', () => {
     cy.contains('No card required').should('not.exist')
 
     // The plan delta has to be honest about what the clinic already pays for.
+    // The bundled column is Practice, the cheapest plan Growth is part of.
     cy.contains('What changes, and what does not').scrollIntoView().should('be.visible')
-    cy.contains('th', 'Clinic').should('contain', '149,00')
+    cy.contains('th', 'Practice').should('contain', '99,00')
     cy.contains('th', 'Your plan + Growth').should('contain', '+39,00')
     cy.contains('You are on Clinic today').should('not.exist')
     cy.contains('td', 'Campaigns').scrollIntoView().should('be.visible')

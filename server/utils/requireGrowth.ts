@@ -48,9 +48,9 @@ export async function requireGrowth(event: H3Event): Promise<GrowthAccess> {
  * lead capture stops until they buy -- which is why the refusal says so in
  * words rather than failing quietly.
  *
- * The Clinic plan includes Growth in its price, so it is entitled without
- * growth_addon ever being set. That is a packaging decision, not a flag: a
- * Clinic subscription has no Growth line item on its Stripe invoice, because
+ * The Practice and Clinic plans include Growth in their price, so they are
+ * entitled without growth_addon ever being set. That is a packaging decision,
+ * not a flag: such a subscription has no Growth line item on its Stripe invoice, because
  * charging 39 euros on top of a plan sold as "Growth included" is exactly the
  * bill nobody wants to explain. Read the plan here rather than writing
  * growth_addon = true on those rows, so the entitlement cannot drift from what

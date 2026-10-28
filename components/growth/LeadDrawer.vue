@@ -72,7 +72,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 
 <template>
   <div class="fixed inset-0 z-50 flex justify-end">
-    <div class="absolute inset-0 bg-ink-900/20" @click="emit('close')" />
+    <div class="absolute inset-0 bg-scrim/20" @click="emit('close')" />
 
     <aside
       class="relative flex h-full w-full max-w-[720px] flex-col bg-surface shadow-drawer"

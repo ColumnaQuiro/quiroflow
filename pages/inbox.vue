@@ -2588,7 +2588,7 @@ function avatarInitials(name: string) {
       <!-- Beside the thread on a wide screen: who this is, without leaving
       the Inbox -- the patient's next visit, balance and recall, or, for a
       number no patient has, a way to attach it to one. -->
-      <div v-if="panelOpen" class="fixed inset-0 z-30 bg-ink-900/40 xl:hidden" data-cy="panel-backdrop" @click="panelOpen = false" />
+      <div v-if="panelOpen" class="fixed inset-0 z-30 bg-scrim/40 xl:hidden" data-cy="panel-backdrop" @click="panelOpen = false" />
       <InboxPatientPanel
         v-if="selected?.patientId && !selectedLead"
         :key="selected.patientId"

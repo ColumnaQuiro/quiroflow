@@ -273,7 +273,7 @@ const SECTIONS = computed<{ value: PatientAttributeSection; label: string; hint:
     </div>
 
     <!-- Add / edit -->
-    <div v-if="draft" class="fixed inset-0 z-50 flex items-end justify-center bg-ink-900/30 sm:items-center sm:p-4" @click.self="draft = null">
+    <div v-if="draft" class="fixed inset-0 z-50 flex items-end justify-center bg-scrim/30 sm:items-center sm:p-4" @click.self="draft = null">
       <form
         role="dialog"
         aria-modal="true"

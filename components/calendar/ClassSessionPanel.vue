@@ -274,7 +274,7 @@ const toggle = 'h-[30px] rounded-ctl border px-2.5 text-[12px] font-semibold dis
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex justify-end bg-ink-900/20" @click.self="emit('close')">
+  <div class="fixed inset-0 z-50 flex justify-end bg-scrim/20" @click.self="emit('close')">
     <aside class="flex h-full w-full max-w-[420px] flex-col gap-3 overflow-y-auto border-l border-line bg-surface p-5 shadow-popover" role="dialog" aria-modal="true" aria-labelledby="class-title" data-cy="class-panel">
       <div class="flex items-start justify-between gap-2">
         <div>

@@ -356,7 +356,7 @@ const stats = computed(() => [
       </section>
     </template>
 
-    <div v-if="notesAppointmentId" class="fixed inset-0 z-20 flex items-center justify-center bg-ink-900/40 p-4" @click.self="notesAppointmentId = null">
+    <div v-if="notesAppointmentId" class="fixed inset-0 z-20 flex items-center justify-center bg-scrim/40 p-4" @click.self="notesAppointmentId = null">
       <div class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-card bg-surface p-6 shadow-drawer">
         <div class="flex items-center justify-between">
           <h2 class="text-[15px] font-semibold text-ink-900">{{ t('Visit notes', 'Notas de la visita') }}</h2>

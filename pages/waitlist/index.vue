@@ -234,7 +234,7 @@ function formatDate(iso: string | null) {
       </div>
     </div>
 
-    <div v-if="addOpen" class="fixed inset-0 z-50 flex justify-end bg-ink-900/30" @click.self="addOpen = false">
+    <div v-if="addOpen" class="fixed inset-0 z-50 flex justify-end bg-scrim/30" @click.self="addOpen = false">
       <div class="flex h-full w-full max-w-md flex-col overflow-y-auto border-l border-line bg-surface p-4 shadow-popover sm:p-6">
         <div class="flex items-center justify-between">
           <h2 class="text-[15px] font-semibold text-ink-900">{{ t('Add to waitlist', 'Añadir a la lista de espera') }}</h2>

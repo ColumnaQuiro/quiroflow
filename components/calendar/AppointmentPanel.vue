@@ -619,7 +619,7 @@ async function useExpectedType() {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-40 bg-ink-900/20" aria-hidden="true" @click="emit('close')" />
+  <div class="fixed inset-0 z-40 bg-scrim/20" aria-hidden="true" @click="emit('close')" />
   <div
     ref="panel"
     role="dialog"

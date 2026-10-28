@@ -82,7 +82,7 @@ const label = 'flex flex-wrap items-center justify-between gap-2 text-[13.5px] t
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/40 p-4" @click.self="emit('close')">
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4" @click.self="emit('close')">
     <div class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-card border border-line bg-surface p-5 shadow-popover" data-cy="pay-plan-editor" role="dialog" :aria-label="t(`Pay for ${name}`, `Retribución de ${name}`)">
       <h2 class="text-[17px] font-[640] text-ink-900">{{ t(`Pay for ${name}`, `Retribución de ${name}`) }}</h2>
       <p class="mt-1 text-[12.5px] text-ink-muted">{{ t('Fill in the parts you use; anything left empty does not count.', 'Rellena las partes que uses; lo que dejes vacío no cuenta.') }}</p>

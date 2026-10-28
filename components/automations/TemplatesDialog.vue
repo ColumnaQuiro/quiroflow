@@ -43,7 +43,7 @@ useFocusTrap(panel, () => emit('close'))
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-end justify-center bg-ink-900/40 p-4 sm:items-center" @click.self="emit('close')">
+  <div class="fixed inset-0 z-50 flex items-end justify-center bg-scrim/40 p-4 sm:items-center" @click.self="emit('close')">
     <div ref="panel" role="dialog" aria-modal="true" aria-labelledby="tpl-title" class="flex max-h-[90vh] w-full max-w-[920px] flex-col rounded-card border border-line bg-surface shadow-popover" data-test="templates-dialog">
       <div class="flex flex-col gap-1 px-6 pb-3 pt-6">
         <h2 id="tpl-title" class="text-[18px] font-bold text-ink-900">{{ t('Start from a template', 'Empezar desde una plantilla') }}</h2>

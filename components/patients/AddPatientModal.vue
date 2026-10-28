@@ -171,7 +171,7 @@ async function onSubmit() {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex justify-end bg-ink-900/30" @click.self="emit('close')">
+  <div class="fixed inset-0 z-50 flex justify-end bg-scrim/30" @click.self="emit('close')">
     <div class="flex h-full w-full max-w-lg flex-col overflow-y-auto border-l border-line bg-surface p-4 shadow-popover sm:p-6">
       <div class="flex items-center justify-between">
         <h2 class="text-[16px] font-[640] text-ink-900">{{ t('Add Patient', 'Añadir paciente') }}</h2>

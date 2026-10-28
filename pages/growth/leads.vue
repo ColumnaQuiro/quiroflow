@@ -226,7 +226,7 @@ async function onLeadChanged() {
   <!-- The drawer opens on click and fills in when the fetch lands, rather
   than the row staying inert until it does. -->
   <div v-else-if="leadLoading" class="fixed inset-0 z-50 flex justify-end" data-test="lead-drawer-loading">
-    <div class="absolute inset-0 bg-ink-900/20" @click="closeLead" />
+    <div class="absolute inset-0 bg-scrim/20" @click="closeLead" />
     <aside class="relative flex h-full w-full max-w-[720px] flex-col gap-3 bg-surface p-5 shadow-drawer">
       <UiSkeleton class="h-9 w-48 rounded-ctl" />
       <UiSkeleton class="h-4 w-64 rounded-ctlSm" />

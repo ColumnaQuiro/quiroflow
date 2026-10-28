@@ -85,7 +85,7 @@ const lines = computed(() =>
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-end justify-center bg-ink-900/30 p-0 lg:items-center lg:p-6" @click.self="emit('close')">
+  <div class="fixed inset-0 z-50 flex items-end justify-center bg-scrim/30 p-0 lg:items-center lg:p-6" @click.self="emit('close')">
     <div
       role="dialog"
       aria-modal="true"

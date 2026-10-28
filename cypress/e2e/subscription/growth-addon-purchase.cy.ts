@@ -129,7 +129,7 @@ describe('Buying the AI receptionist on its own', () => {
       cy.get('@receptionistCard').should('contain', 'Included in Growth')
       cy.get('@receptionistCard').find('[role="switch"]').should('be.disabled')
       // Solo + Growth, and nothing for the receptionist on top.
-      cy.contains('button', 'Confirm change').closest('.rounded-card').should('contain', '88,00')
+      cy.contains('button', 'Confirm change').closest('.rounded-card').should('contain', '84,00')
 
       cy.contains('button', 'Confirm change').click()
       cy.wait('@subscribe').its('request.body').should('deep.equal', { planId: 'starter', interval: 'monthly', extraProfessionals: 0, growth: true, receptionist: false })

@@ -43,6 +43,10 @@ const connectingInstagram = ref(false)
 // here, and the ticket carries the rest back to the server.
 const instagramChoices = ref<{ instagramUserId: string; username: string | null; pageName: string | null }[]>([])
 const instagramTicket = ref('')
+// The last thing that went wrong, kept in the card: a toast is gone in four
+// seconds, and Meta's reason is usually the only clue to what to do next.
+const instagramError = ref('')
+const instagramChoicesEl = ref<HTMLElement | null>(null)
 const newLeadNotifyTemplateName = ref('')
 const newLeadNotifyTemplateLanguage = ref('es')
 const staffNotifyTemplateLanguage = ref('es')
@@ -215,19 +219,26 @@ interface InstagramConnectResult {
 async function connectInstagram() {
   connectingInstagram.value = true
   instagramChoices.value = []
+  instagramError.value = ''
   try {
     const code = await instagramConnect.launch()
     const result = await useStaffFetch<InstagramConnectResult>('/api/meta/instagram/connect', { method: 'POST', body: { code } })
     if (result.choose?.length && result.ticket) {
       instagramChoices.value = result.choose
       instagramTicket.value = result.ticket
+      // Nothing is connected until they pick, and coming back from Meta's
+      // popup they are not looking at this card: say so, and bring it into
+      // view. A grey line under the button went unnoticed twice.
+      showToast(t('One more step: choose which Instagram account is this clinic’s.', 'Un paso más: elige cuál es la cuenta de Instagram de esta clínica.'), 'info', 8000)
+      await nextTick()
+      instagramChoicesEl.value?.scrollIntoView({ behavior: 'smooth', block: 'center' })
       return
     }
     instagramConnected(result)
   } catch (err: any) {
     // Closing Meta's dialog is not a failure (see WhatsAppConnectCard).
     if (err?.message === 'CANCELLED') return
-    showToast(err?.data?.statusMessage ?? err?.message ?? t('Could not connect Instagram.', 'No se pudo conectar Instagram.'), 'error')
+    instagramFailed(err)
   } finally {
     connectingInstagram.value = false
   }
@@ -235,6 +246,7 @@ async function connectInstagram() {
 
 async function finishInstagram(instagramUserIdPicked: string) {
   connectingInstagram.value = true
+  instagramError.value = ''
   try {
     const result = await useStaffFetch<InstagramConnectResult>('/api/meta/instagram/connect', {
       method: 'POST',
@@ -244,13 +256,19 @@ async function finishInstagram(instagramUserIdPicked: string) {
     instagramTicket.value = ''
     instagramConnected(result)
   } catch (err: any) {
-    showToast(err?.data?.statusMessage ?? err?.message ?? t('Could not connect Instagram.', 'No se pudo conectar Instagram.'), 'error')
+    instagramFailed(err)
   } finally {
     connectingInstagram.value = false
   }
 }
 
+function instagramFailed(err: any) {
+  instagramError.value = err?.data?.statusMessage ?? err?.message ?? t('Could not connect Instagram.', 'No se pudo conectar Instagram.')
+  showToast(instagramError.value, 'error')
+}
+
 function instagramConnected(result: InstagramConnectResult) {
+  instagramError.value = ''
   instagramUserId.value = result.instagramUserId ?? ''
   hasInstagramToken.value = true
   instagramAccessToken.value = ''
@@ -421,14 +439,16 @@ async function save() {
                   {{ connectingInstagram ? t('Connecting…', 'Conectando…') : instagramUserId ? t('Reconnect Instagram', 'Volver a conectar Instagram') : t('Connect Instagram', 'Conectar Instagram') }}
                 </UiBtn>
               </div>
-              <div v-if="instagramChoices.length" class="flex flex-col gap-2 border-t border-line-row px-[18px] py-3" data-cy="instagram-choices">
-                <p class="text-[13px] leading-snug text-ink-500">{{ t('That connection reached more than one Instagram account. Which one is this clinic’s?', 'Esa conexión incluye más de una cuenta de Instagram. ¿Cuál es la de esta clínica?') }}</p>
+              <div v-if="instagramChoices.length" ref="instagramChoicesEl" role="group" aria-labelledby="h-ig-choose" class="flex flex-col gap-2 border-t border-brand-tint bg-brand-tint px-[18px] py-3.5" data-cy="instagram-choices">
+                <strong id="h-ig-choose" class="text-[14.5px] text-ink-900">{{ t('One more step: which Instagram account is this clinic’s?', 'Un paso más: ¿cuál es la cuenta de Instagram de esta clínica?') }}</strong>
+                <p class="text-[13px] leading-snug text-ink-500">{{ t('Meta shared more than one account with QuiroFlow. Nothing is connected until you choose.', 'Meta ha compartido más de una cuenta con QuiroFlow. No se conecta nada hasta que elijas.') }}</p>
                 <div class="flex flex-wrap gap-2">
-                  <UiBtn v-for="c in instagramChoices" :key="c.instagramUserId" :disabled="connectingInstagram" :data-instagram-user-id="c.instagramUserId" @click="finishInstagram(c.instagramUserId)">
-                    {{ c.username ? `@${c.username}` : c.instagramUserId }}<span v-if="c.pageName" class="ml-1 text-ink-500">· {{ c.pageName }}</span>
+                  <UiBtn v-for="c in instagramChoices" :key="c.instagramUserId" variant="primary" :disabled="connectingInstagram" :data-instagram-user-id="c.instagramUserId" @click="finishInstagram(c.instagramUserId)">
+                    {{ c.username ? `@${c.username}` : c.instagramUserId }}<span v-if="c.pageName" class="ml-1 font-normal opacity-80">· {{ c.pageName }}</span>
                   </UiBtn>
                 </div>
               </div>
+              <p v-if="instagramError" role="alert" class="border-t border-line-row px-[18px] py-2.5 text-[13px] font-semibold text-danger-text" data-cy="instagram-connect-error">{{ instagramError }}</p>
               <!-- Without the button (no configuration on this deployment) the fields are the only way, so they stay open. -->
               <details :open="!instagramConnect.available.value || instagramManualOpen" class="group border-t border-line" data-cy="instagram-manual">
                 <summary class="flex min-h-[52px] cursor-pointer list-none items-center gap-2 px-[18px] text-[14px] font-semibold text-ink-500 hover:bg-surface-subtle">

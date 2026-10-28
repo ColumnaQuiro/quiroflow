@@ -215,6 +215,10 @@ export default defineEventHandler(async (event) => {
   //    webhook is not enough on its own, and its absence is silent: an
   //    unsubscribed Page simply never delivers. This is the step that was
   //    missing for two hours when Columnaquiro's DMs were first set up by hand.
+  //    It needs pages_messaging on the token, not just pages_manage_metadata:
+  //    without it Meta answers "(#200) To subscribe to the messages field, one
+  //    of these permissions is needed: pages_messaging", which is what the
+  //    first real connection hit.
   try {
     await $fetch(`${GRAPH}/${chosen.pageId}/subscribed_apps`, {
       method: 'POST',

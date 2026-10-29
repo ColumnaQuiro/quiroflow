@@ -734,7 +734,7 @@ export function buildSystemPrompt(
     /** A real draft for staff to send, to this person (not Try Alba). */
     draft?: { personName: string | null }
     /** What the lead already holds, so a new patient is not asked for it again. */
-    knownDetails?: { name: boolean; email: boolean }
+    knownDetails?: { name: boolean; email: boolean; phone?: boolean }
     /**
      * Sent without a person reading it first (receptionist-draft-cron, when
      * the clinic's hours switches say so), rather than left as a draft. The
@@ -831,7 +831,11 @@ export function buildSystemPrompt(
     // They are writing from their phone: asking for its number is asking for
     // what the clinic already has, whatever the clinic knowledge says a
     // booking needs.
-    `Never ask for their phone number when they are writing on WhatsApp: you are talking to them on it. ${newPatientDetailsSection(opts.knownDetails ?? { name: false, email: false })}`,
+    // Unless they are not: the website chat and Messenger carry no number,
+    // and a new patient booked without one never gets a confirmation.
+    opts.knownDetails?.phone === false
+      ? `They are writing from the chat on the clinic's website or from Messenger, so the clinic does not have their phone number. ${newPatientDetailsSection(opts.knownDetails)} To book them you also need their mobile number: ask for it together with those, once, and pass it to book_appointment as phone exactly as they wrote it.`
+      : `Never ask for their phone number when they are writing on WhatsApp: you are talking to them on it. ${newPatientDetailsSection(opts.knownDetails ?? { name: false, email: false })}`,
     // Booking outranks qualifying. A patient who writes "quiero una cita" and
     // gets "¿qué te ocurre?" back has been handed a form before they were
     // handed an appointment, and that is where enquiries go quiet.

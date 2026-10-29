@@ -70,6 +70,7 @@ export const BOOK_APPOINTMENT: Anthropic.Tool = {
       move_visit_on: { type: 'string', description: 'To move a visit they already have instead of booking a new one: that visit\'s current day and time, as "YYYY-MM-DD HH:MM".' },
       full_name: { type: 'string', description: 'For someone not yet a patient: their first name and surname(s) exactly as they wrote them in the conversation. Leave out if they have not given it.' },
       email: { type: 'string', description: 'For someone not yet a patient: the email address they wrote in the conversation. Leave out if they have not given one.' },
+      phone: { type: 'string', description: 'For someone not yet a patient who wrote from the website chat or Messenger: the mobile number they gave you. Leave out otherwise.' },
       child_name: { type: 'string', description: 'When the visit is for their child, not for them: the child\'s first name and surname(s) exactly as given. The visit is then booked in the child\'s name, with the person writing as tutor.' },
       child_age: { type: 'number', description: 'With child_name: the child\'s age in years, as they said it.' },
       family_member_name: { type: 'string', description: 'When the visit is for an adult in their family listed under "Appointments for an adult in their family", not for them: that person\'s first name (and surname, if given). The visit is then booked in that person\'s name.' },
@@ -111,6 +112,7 @@ export const ADD_TO_WAITLIST: Anthropic.Tool = {
       preference: { type: 'string', description: 'When they can come, in a few words in the clinic\'s language, for your colleagues: "solo viernes por la tarde", "lunes o martes a partir de las 18:00".' },
       full_name: { type: 'string', description: 'For someone not yet a patient: their first name and surname(s) exactly as they wrote them. Leave out if they have not given it.' },
       email: { type: 'string', description: 'For someone not yet a patient: the email address they wrote. Leave out if they have not given one.' },
+      phone: { type: 'string', description: 'For someone not yet a patient who wrote from the website chat or Messenger: the mobile number they gave you. Leave out otherwise.' },
     },
     required: ['preference'],
     additionalProperties: false,
@@ -214,7 +216,7 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/
 export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<ToolResult> {
   const used = new Set<string>()
   return async (input) => {
-    const value = (input ?? {}) as { appointment_type?: unknown; date?: unknown; time?: unknown; move_visit_on?: unknown; full_name?: unknown; email?: unknown; child_name?: unknown; child_age?: unknown; family_member_name?: unknown; other_person_name?: unknown; other_person_phone?: unknown; other_person_relation?: unknown; referred_by?: unknown }
+    const value = (input ?? {}) as { appointment_type?: unknown; date?: unknown; time?: unknown; move_visit_on?: unknown; full_name?: unknown; email?: unknown; phone?: unknown; child_name?: unknown; child_age?: unknown; family_member_name?: unknown; other_person_name?: unknown; other_person_phone?: unknown; other_person_relation?: unknown; referred_by?: unknown }
     const date = typeof value.date === 'string' ? value.date.trim() : ''
     // A time listed as "10:00*" (next to a visit, receptionistSlots.ts) is 10:00.
     const time = typeof value.time === 'string' ? value.time.trim().replace(/\*+$/, '') : ''
@@ -363,7 +365,7 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
     // The patient: a lead becomes one first, as the Convert button does it.
     // For a child, that person is the tutor and the child is the patient.
     // A relative already has a record of their own: nothing to make.
-    const tutor = relative ? { patientId: relative.id } : await ensurePatient(ctx, writer, chosen.practitionerId, newPatientDetails(value.full_name, value.email))
+    const tutor = relative ? { patientId: relative.id } : await ensurePatient(ctx, writer, chosen.practitionerId, { ...newPatientDetails(value.full_name, value.email), phone: value.phone })
     if ('error' in tutor) return { content: tutor.error, isError: true }
     let patient = tutor
     if (child) {
@@ -765,7 +767,7 @@ export function waitlistTool(ctx: BookingContext): (input: unknown) => Promise<T
   let used = false
   return async (input) => {
     if (used) return { content: 'They are already on the waiting list from this reply.', isError: true }
-    const value = (input ?? {}) as { appointment_type?: unknown; preference?: unknown; full_name?: unknown; email?: unknown }
+    const value = (input ?? {}) as { appointment_type?: unknown; preference?: unknown; full_name?: unknown; email?: unknown; phone?: unknown }
     const preference = typeof value.preference === 'string' ? value.preference.replace(/\s+/g, ' ').trim().slice(0, 300) : ''
     if (!preference) return { content: 'Say when they can come (preference).', isError: true }
     const name = typeof value.appointment_type === 'string' ? value.appointment_type.trim().toLowerCase() : ''
@@ -773,7 +775,7 @@ export function waitlistTool(ctx: BookingContext): (input: unknown) => Promise<T
     if (!type) return { content: `Say which type, exactly as named: ${ctx.types.map((t) => t.name).join(', ')}.`, isError: true }
 
     const writer = receptionistServiceClient(ctx.event) as unknown as Supa
-    const patient = await ensurePatient(ctx, writer, ctx.practitionerIds?.[0] ?? null, newPatientDetails(value.full_name, value.email))
+    const patient = await ensurePatient(ctx, writer, ctx.practitionerIds?.[0] ?? null, { ...newPatientDetails(value.full_name, value.email), phone: value.phone })
     // ensurePatient's reasons are worded for a booking; the answer here is the same hand-over.
     if ('error' in patient) return { content: 'A colleague has to add them to the waiting list. Call hand_over_to_colleague saying when they can come.', isError: true }
 
@@ -909,7 +911,7 @@ async function ensurePatient(
   ctx: BookingContext,
   writer: Supa,
   practitionerId: string | null,
-  given: { fullName: string | null; email: string | null },
+  given: { fullName: string | null; email: string | null; phone?: unknown },
 ): Promise<{ patientId: string } | { error: string }> {
   let patientId: string | null = ctx.person.patientId
   if (!patientId && ctx.person.kind === 'lead') {
@@ -924,16 +926,28 @@ async function ensurePatient(
     // What they told us in the conversation wins over the WhatsApp profile name.
     const l = { ...found, full_name: given.fullName ?? found.full_name, email: given.email ?? found.email }
     patientId = l.patient_id
+    const { data: account } = await ctx.service.from('accounts').select('default_phone_country').eq('id', ctx.accountId).maybeSingle()
+    const country = (account as { default_phone_country: string | null } | null)?.default_phone_country ?? 'ES'
+    // Only a lead from the website chat or Messenger arrives with no number.
+    // Booked without one, the new patient would never get a confirmation or a
+    // reminder, so the number they gave is required, and kept on the lead.
+    if (!patientId && !l.phone) {
+      const raw = typeof given.phone === 'string' ? given.phone.trim() : ''
+      if (!raw) return { error: 'Ask for their mobile number, then call again with it as phone. Do not say it is booked.' }
+      const e164 = toE164Loose(raw, country)
+      if (!e164 || e164.length < 8 || !leadPhoneAsContactNumber(e164, country)) return { error: `"${raw}" is not a mobile number. Ask for it again. Do not say it is booked.` }
+      l.phone = e164
+      await writer.from('leads').update({ phone: e164 } as never).eq('id', l.id).eq('account_id', ctx.accountId)
+    }
     if (!patientId) {
       // Maybe already a patient: a person decides which record, never a guess.
       const likely = await findLikelyExistingPatients(ctx.service, ctx.accountId, l.phone, l.email)
       if (likely.length) {
         return { error: 'They may already be a patient here, so a colleague has to book this. Call hand_over_to_colleague saying the day, time and type they accepted; do not say it is booked.' }
       }
-      const { data: account } = await ctx.service.from('accounts').select('default_phone_country').eq('id', ctx.accountId).maybeSingle()
       const created = await createPatientFromLead(writer, ctx.accountId, l, {
         defaultPractitionerId: practitionerId,
-        defaultCountry: (account as { default_phone_country: string | null } | null)?.default_phone_country ?? 'ES',
+        defaultCountry: country,
       })
       // The lead keeps the same name and email the patient record got.
       if (given.fullName || given.email) {

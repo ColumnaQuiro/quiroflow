@@ -82,6 +82,8 @@ watch(search, () => {
 const CHANNELS = computed(() => [
   { value: 'whatsapp', label: 'WhatsApp' },
   { value: 'instagram', label: 'Instagram' },
+  { value: 'messenger', label: 'Messenger' },
+  { value: 'webchat', label: t('Website chat', 'Chat de la web') },
   { value: 'email', label: t('Email', 'Correo') },
   { value: 'app', label: t('App message', 'Mensaje en la app') },
   { value: 'push', label: t('Push notification', 'Notificación push') },

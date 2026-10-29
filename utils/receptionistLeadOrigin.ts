@@ -62,4 +62,6 @@ const CHANNEL_WORDING: Record<string, string> = {
   instagram: 'on Instagram',
   walk_in: 'in person at the clinic',
   facebook: 'on Facebook',
+  messenger: 'on Facebook Messenger',
+  webchat: 'through the chat on the clinic\'s website',
 }

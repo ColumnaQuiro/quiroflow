@@ -2915,6 +2915,33 @@ async function claimInstagramId(opts: { accountId: string; instagramUserId: stri
   return { rejected: !!error, message: error?.message ?? null }
 }
 
+/** The Facebook Page whose Messenger DMs are this account's, as an Instagram connect leaves it. */
+async function setMessengerPage(opts: { accountId: string; pageId: string | null; accessToken?: string | null }) {
+  assertOk(
+    await admin
+      .from('accounts')
+      .update({
+        messenger_page_id: opts.pageId,
+        instagram_access_token: opts.accessToken === undefined ? 'ig-test-token' : opts.accessToken,
+      })
+      .eq('id', opts.accountId),
+  )
+  return { ok: true }
+}
+
+/** Switches the website chat on or off, returning the slug its snippet addresses. */
+async function setWebchat(opts: { accountId: string; enabled: boolean; greeting?: string | null }) {
+  const { data } = await admin.from('accounts').select('slug').eq('id', opts.accountId).single()
+  const slug = data?.slug ?? `chat-${opts.accountId.slice(0, 8)}`
+  assertOk(
+    await admin
+      .from('accounts')
+      .update({ webchat_enabled: opts.enabled, webchat_greeting: opts.greeting ?? null, slug })
+      .eq('id', opts.accountId),
+  )
+  return { slug }
+}
+
 /** Every message stored on a channel, for asserting what a webhook did. */
 async function messagesOnChannel(opts: { accountId: string; channel: string }) {
   const { data } = await admin
@@ -4271,6 +4298,8 @@ export const dbTasks = {
   'db:setInstagramAccount': setInstagramAccount,
   'db:instagramConnection': instagramConnection,
   'db:messagesOnChannel': messagesOnChannel,
+  'db:setMessengerPage': setMessengerPage,
+  'db:setWebchat': setWebchat,
   'db:setChannelSpend': setChannelSpend,
   'db:setStaffLanguage': setStaffLanguage,
   'db:reviewRequestsFor': reviewRequestsFor,

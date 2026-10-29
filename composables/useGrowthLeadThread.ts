@@ -1,5 +1,13 @@
 import { readLeadThread } from '~/utils/leadThread'
 
+// Where a reply to a lead goes when it is not WhatsApp: each of these
+// addresses the person by the id the lead carries, not by a phone number.
+const LEAD_REPLY_ROUTES: Record<string, string> = {
+  instagram: '/api/instagram/send',
+  messenger: '/api/messenger/send',
+  webchat: '/api/webchat/send',
+}
+
 // One lead conversation: its messages, and the context beside them.
 
 export interface LeadThreadMessage {
@@ -214,7 +222,8 @@ export function useGrowthLeadThread() {
       // phone number and an Instagram lead has none, so every answer to a DM
       // came back 400. The lead carries the IGSID, which is what that route
       // resolves it by.
-      const path = thread.value?.channel === 'instagram' ? '/api/instagram/send' : '/api/whatsapp/inbox-send'
+      // The website chat and Messenger the same way: a lead with no phone.
+      const path = LEAD_REPLY_ROUTES[thread.value?.channel ?? ''] ?? '/api/whatsapp/inbox-send'
       // Shown at once with a clock, as a patient thread does -- 'pending'
       // claims nothing about delivery. The row the server wrote replaces it
       // on the re-read below, with its real id and status, so a message

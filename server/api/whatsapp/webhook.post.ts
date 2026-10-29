@@ -260,12 +260,17 @@ export default defineEventHandler(async (event) => {
   // catch-up sync retries it. A non-200 would only make Meta redeliver the
   // same notification on its own schedule, and after enough of those Meta
   // disables the subscription -- every later lead lost to save this one.
+  //
+  // Messenger DMs to the same Page arrive as object 'page' too, under
+  // entry[].messaging[] rather than entry[].changes[]. Each pass reads only
+  // its own half of an entry, so both run over the whole delivery.
   if (body.object === 'page') {
     const handled = await handleLeadgenEntries(supabase, (body.entry ?? []) as LeadgenEntry[], auth, rawBody, getRequestURL(event).origin)
-    if (handled.unverified > 0) {
+    const messenger = await handleMessengerEntries(supabase, body.entry ?? [], auth, rawBody)
+    if (handled.unverified + messenger.unverified > 0) {
       throw createError({
         statusCode: 401,
-        statusMessage: `Could not verify ${handled.unverified} lead notification(s).`,
+        statusMessage: `Could not verify ${handled.unverified} lead notification(s) and ${messenger.unverified} Messenger message(s).`,
       })
     }
     return { success: true }

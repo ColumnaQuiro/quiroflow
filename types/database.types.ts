@@ -650,6 +650,7 @@ export type Database = {
           notes: string | null
           position: number
           program_id: string
+          progressive: boolean
           reps: string | null
           sets: number | null
         }
@@ -662,6 +663,7 @@ export type Database = {
           notes?: string | null
           position?: number
           program_id: string
+          progressive?: boolean
           reps?: string | null
           sets?: number | null
         }
@@ -674,6 +676,7 @@ export type Database = {
           notes?: string | null
           position?: number
           program_id?: string
+          progressive?: boolean
           reps?: string | null
           sets?: number | null
         }
@@ -3678,6 +3681,7 @@ export type Database = {
           id: string
           notes: string | null
           patient_id: string
+          progressive: boolean
           reps: string | null
           sets: number | null
         }
@@ -3691,6 +3695,7 @@ export type Database = {
           id?: string
           notes?: string | null
           patient_id: string
+          progressive?: boolean
           reps?: string | null
           sets?: number | null
         }
@@ -3704,6 +3709,7 @@ export type Database = {
           id?: string
           notes?: string | null
           patient_id?: string
+          progressive?: boolean
           reps?: string | null
           sets?: number | null
         }

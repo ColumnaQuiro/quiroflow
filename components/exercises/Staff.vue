@@ -2,6 +2,8 @@
 import { exerciseWeek } from '../../utils/exerciseWeek'
 import { EXERCISE_CATALOG, EXERCISE_CATALOG_PROGRAMS, EXERCISE_CATALOG_REGIONS, exerciseCatalogItem } from '../../utils/exerciseCatalog'
 import { normalizeSearchTerm } from '../../utils/searchText'
+import { exerciseDoseLabel } from '../../utils/exerciseDose'
+import type { AssignedExercise } from '../../composables/useStaffExercises'
 
 // "Ejercicios en casa" on a patient's record, in the web app and the staff
 // app: what they have been given, how this week has gone (their ticks), and
@@ -12,6 +14,12 @@ import { normalizeSearchTerm } from '../../utils/searchText'
 // saved to the library for next time. Picking a catalogue exercise copies it
 // into the library as it is assigned (useExerciseCatalog). What a patient
 // has can also be saved as a programme, for the next patient like them.
+//
+// Each exercise shows its demonstration as a picture, on the record and in
+// the picker, and any dose can be "progressive": no fixed numbers, the
+// patient builds up as they can. The #app slot is for whatever tells the
+// clinician whether the patient will see it (the web record puts the app
+// status there; patients without the app never see their exercises).
 const props = defineProps<{ accountId: string; patientId: string; teamMemberId: string | null }>()
 
 const t = useT()
@@ -37,6 +45,7 @@ const sets = ref('')
 const reps = ref('')
 const frequency = ref('')
 const notes = ref('')
+const progressive = ref(false)
 const formError = ref('')
 const query = ref('')
 const catalog = useExerciseCatalog()
@@ -55,6 +64,7 @@ interface Entry {
   reps: string | null
   frequency: string | null
   notes: string | null
+  progressive: boolean
   /** The patient already has it on. */
   had: boolean
 }
@@ -66,12 +76,15 @@ interface Chosen {
   reps: string
   frequency: string
   notes: string
+  progressive: boolean
+  /** Its demonstration's poster, to recognise it by. */
+  slug: string | null
 }
 
 const has = computed(() => new Set(assigned.value.map((a) => a.exercises?.id).filter(Boolean)))
 const bySlug = computed(() => new Map(library.value.filter((e) => e.starter_key).map((e) => [e.starter_key!, e])))
 
-function libraryEntry(ex: { id: string; name: string; instructions?: string | null; starter_key?: string | null }, d?: { sets: number | null; reps: string | null; frequency: string | null; notes?: string | null }): Entry {
+function libraryEntry(ex: { id: string; name: string; instructions?: string | null; starter_key?: string | null }, d?: { sets: number | null; reps: string | null; frequency: string | null; notes?: string | null; progressive?: boolean }): Entry {
   const item = exerciseCatalogItem(ex.starter_key)
   const usual = d ?? (item ? catalog.dose(item) : null)
   return {
@@ -83,6 +96,7 @@ function libraryEntry(ex: { id: string; name: string; instructions?: string | nu
     reps: usual?.reps || null,
     frequency: usual?.frequency || null,
     notes: d?.notes ?? null,
+    progressive: !!d?.progressive,
     had: has.value.has(ex.id),
   }
 }
@@ -93,7 +107,7 @@ function catalogEntry(slug: string): Entry | null {
   const item = exerciseCatalogItem(slug)
   if (!item) return null
   const d = catalog.dose(item)
-  return { key: `catalog:${slug}`, name: t(item.name.en, item.name.es), slug, instructions: t(item.instructions.en, item.instructions.es), sets: d.sets, reps: d.reps || null, frequency: d.frequency || null, notes: null, had: false }
+  return { key: `catalog:${slug}`, name: t(item.name.en, item.name.es), slug, instructions: t(item.instructions.en, item.instructions.es), sets: d.sets, reps: d.reps || null, frequency: d.frequency || null, notes: null, progressive: false, had: false }
 }
 
 const matches = (text: string) => !query.value.trim() || normalizeSearchTerm(text).includes(normalizeSearchTerm(query.value.trim()))
@@ -134,7 +148,7 @@ const preview = ref<Entry | null>(null)
 
 function add(e: Entry) {
   if (e.had || isChosen(e.key)) return
-  chosen.value.push({ key: e.key, name: e.name, sets: e.sets ? String(e.sets) : '', reps: e.reps ?? '', frequency: e.frequency ?? '', notes: e.notes ?? '' })
+  chosen.value.push({ key: e.key, name: e.name, sets: e.sets ? String(e.sets) : '', reps: e.reps ?? '', frequency: e.frequency ?? '', notes: e.notes ?? '', progressive: e.progressive, slug: e.slug })
   if (e.slug) preview.value = e
 }
 function drop(key: string) {
@@ -155,6 +169,14 @@ function toggleGroup(entries: Entry[]) {
   else entries.forEach(add)
 }
 
+// Every chosen one progressive, or none: one switch for the lot.
+const allProgressive = computed({
+  get: () => chosen.value.length > 0 && chosen.value.every((c) => c.progressive),
+  set: (on: boolean) => chosen.value.forEach((c) => (c.progressive = on)),
+})
+
+const poster = (slug: string | null | undefined) => (slug ? catalog.media(slug).poster : null)
+
 function reset(opts: { kept?: boolean } = {}) {
   // Cancelled (or the new exercise was not saved): nothing keeps the upload.
   if (!opts.kept && mediaPath.value) exerciseMedia.remove(mediaPath.value)
@@ -165,6 +187,7 @@ function reset(opts: { kept?: boolean } = {}) {
   preview.value = null
   query.value = ''
   name.value = instructions.value = mediaUrl.value = sets.value = reps.value = frequency.value = notes.value = ''
+  progressive.value = false
   formError.value = ''
 }
 
@@ -214,7 +237,7 @@ async function save() {
     formError.value = t('The link must start with https://', 'El enlace debe empezar por https://')
     return
   }
-  const n = sets.value.trim() ? Number(sets.value) : null
+  const n = !progressive.value && sets.value.trim() ? Number(sets.value) : null
   if (n !== null && (!Number.isInteger(n) || n < 1)) {
     formError.value = t('Sets must be a whole number.', 'Las series deben ser un número entero.')
     return
@@ -223,9 +246,10 @@ async function save() {
     exerciseId: null,
     newExercise: { name: name.value, instructions: instructions.value.trim() || null, media_url: link || null, media_path: mediaPath.value },
     sets: n,
-    reps: reps.value.trim() || null,
+    reps: progressive.value ? null : reps.value.trim() || null,
     frequency: frequency.value.trim() || null,
     notes: notes.value.trim() || null,
+    progressive: progressive.value,
   })
   if (ok) reset({ kept: true })
 }
@@ -236,7 +260,7 @@ async function assignChosen() {
     formError.value = t('Choose at least one exercise.', 'Elige al menos un ejercicio.')
     return
   }
-  const bad = chosen.value.find((c) => c.sets.trim() && !(Number.isInteger(Number(c.sets)) && Number(c.sets) >= 1))
+  const bad = chosen.value.find((c) => !c.progressive && c.sets.trim() && !(Number.isInteger(Number(c.sets)) && Number(c.sets) >= 1))
   if (bad) {
     formError.value = t(`Sets must be a whole number (${bad.name}).`, `Las series deben ser un número entero (${bad.name}).`)
     return
@@ -248,10 +272,12 @@ async function assignChosen() {
   await assignItems(
     chosen.value.map((c) => ({
       exercise_id: c.key.startsWith('lib:') ? c.key.slice('lib:'.length) : copiedIds.get(c.key.slice('catalog:'.length))!,
-      sets: c.sets.trim() ? Number(c.sets) : null,
-      reps: c.reps.trim() || null,
+      // Progressive has no numbers; any prefilled from the catalogue are dropped.
+      sets: !c.progressive && c.sets.trim() ? Number(c.sets) : null,
+      reps: c.progressive ? null : c.reps.trim() || null,
       frequency: c.frequency.trim() || null,
       notes: c.notes.trim() || null,
+      progressive: c.progressive,
     })),
   )
 }
@@ -268,7 +294,7 @@ async function saveAsProgram() {
   }
   const items = assigned.value
     .filter((a) => a.exercises?.id)
-    .map((a) => ({ exercise_id: a.exercises!.id, sets: a.sets, reps: a.reps, frequency: a.frequency, notes: a.notes }))
+    .map((a) => ({ exercise_id: a.exercises!.id, sets: a.sets, reps: a.reps, frequency: a.frequency, notes: a.notes, progressive: a.progressive }))
   const result = await exercisePrograms.save({ id: null, name: programName.value, description: null, items })
   if ('error' in result) {
     programError.value = t("Couldn't save it. Try again.", 'No se ha podido guardar. Inténtalo de nuevo.')
@@ -279,37 +305,49 @@ async function saveAsProgram() {
   programName.value = ''
 }
 
-function dose(pe: { sets: number | null; reps: string | null; frequency: string | null }) {
-  const sr = pe.sets && pe.reps ? `${pe.sets} × ${pe.reps}` : pe.sets ? t(`${pe.sets} sets`, `${pe.sets} series`) : pe.reps ?? ''
-  return [sr, pe.frequency].filter(Boolean).join(' · ')
-}
+const dose = (pe: Parameters<typeof exerciseDoseLabel>[0]) => exerciseDoseLabel(pe, t)
+const daysDone = (pe: AssignedExercise) => exerciseWeek(pe.patient_exercise_logs.map((l) => l.done_on))
 
 const input = 'h-10 w-full rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand'
 </script>
 
 <template>
-  <section class="rounded-card border border-line bg-surface px-3.5 py-3 shadow-card" data-cy="staff-exercises">
-    <div class="flex items-center justify-between gap-2">
-      <h2 class="text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Home exercises', 'Ejercicios en casa') }}</h2>
-      <button v-if="!open" type="button" class="text-[12.5px] font-medium text-brand-text" data-cy="exercises-assign-open" @click="open = true">{{ t('+ Assign', '+ Asignar') }}</button>
+  <section class="rounded-card border border-line bg-surface p-4 shadow-card" data-cy="staff-exercises">
+    <div class="flex flex-wrap items-start justify-between gap-2">
+      <div class="min-w-0">
+        <h2 class="text-[13.5px] font-semibold text-ink-700">
+          {{ t('Home exercises', 'Ejercicios en casa') }}
+          <span v-if="!loading && assigned.length" class="ml-1 font-normal text-ink-faint">{{ assigned.length }}</span>
+        </h2>
+        <slot name="app" />
+      </div>
+      <UiBtn v-if="!open" variant="primary" size="sm" data-cy="exercises-assign-open" @click="open = true">{{ t('Assign exercises', 'Asignar ejercicios') }}</UiBtn>
     </div>
 
-    <div v-if="loading" class="mt-2"><UiSkeleton class="h-4 w-40 rounded-ctlSm" /></div>
+    <div v-if="loading" class="mt-3 grid gap-2.5 md:grid-cols-2"><UiSkeleton v-for="i in 2" :key="i" class="h-[76px] rounded-ctl" /></div>
     <p v-else-if="loadError" class="mt-2 text-[12.5px] text-danger-text">
       {{ t("Couldn't load them.", 'No se han podido cargar.') }}
       <button type="button" class="ml-1 font-semibold text-brand-text" @click="load">{{ t('Try again', 'Reintentar') }}</button>
     </p>
-    <ul v-else-if="assigned.length" class="mt-1.5 divide-y divide-line-row">
-      <li v-for="pe in assigned" :key="pe.id" class="flex items-start gap-3 py-2.5" data-cy="exercise-row">
-        <div class="min-w-0 flex-1">
-          <p class="text-[14px] font-medium text-ink-900">{{ pe.exercises?.name }}</p>
-          <p v-if="dose(pe)" class="text-[12.5px] text-ink-muted">{{ dose(pe) }}</p>
-          <div class="mt-1.5 flex items-center gap-1" :aria-label="t('Last seven days', 'Últimos siete días')">
-            <span v-for="d in exerciseWeek(pe.patient_exercise_logs.map((l) => l.done_on))" :key="d.date" class="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold" :class="d.done ? 'bg-success-accent text-white' : 'bg-chip-bg text-ink-faint'" :title="d.date">{{ d.initial }}</span>
-            <span class="ml-1.5 text-[11.5px] text-ink-muted2" data-cy="exercise-adherence">{{ t(`${exerciseWeek(pe.patient_exercise_logs.map((l) => l.done_on)).filter((d) => d.done).length} of 7 days`, `${exerciseWeek(pe.patient_exercise_logs.map((l) => l.done_on)).filter((d) => d.done).length} de 7 días`) }}</span>
+    <ul v-else-if="assigned.length" class="mt-3 grid gap-2.5 md:grid-cols-2 2xl:grid-cols-3">
+      <li v-for="pe in assigned" :key="pe.id" class="flex gap-3 rounded-ctl border border-line-row p-2.5" data-cy="exercise-row">
+        <div class="h-[54px] w-24 shrink-0 overflow-hidden rounded-ctlSm bg-surface-subtle">
+          <img v-if="poster(pe.exercises?.starter_key)" :src="poster(pe.exercises?.starter_key)!" alt="" loading="lazy" class="h-full w-full object-cover" />
+          <div v-else class="flex h-full w-full items-center justify-center text-ink-faint">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true" class="h-6 w-6"><circle cx="12" cy="4.5" r="2" /><path d="M12 7v7M12 14l-3 6M12 14l3 6M7 10l5-2 5 2" /></svg>
           </div>
         </div>
-        <button type="button" class="shrink-0 text-[12px] font-medium text-ink-muted" :data-cy="`exercise-end-${pe.id}`" @click="end(pe.id)">{{ t('Remove', 'Quitar') }}</button>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-start justify-between gap-2">
+            <p class="min-w-0 text-[13.5px] font-medium leading-snug text-ink-900">{{ pe.exercises?.name }}</p>
+            <button type="button" class="shrink-0 text-[12px] font-medium text-ink-muted hover:text-ink-700" :data-cy="`exercise-end-${pe.id}`" @click="end(pe.id)">{{ t('Remove', 'Quitar') }}</button>
+          </div>
+          <p v-if="dose(pe)" class="text-[12.5px] text-ink-muted" data-cy="exercise-row-dose">{{ dose(pe) }}</p>
+          <div class="mt-1.5 flex items-center gap-1" :aria-label="t('Last seven days', 'Últimos siete días')">
+            <span v-for="d in daysDone(pe)" :key="d.date" class="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold" :class="d.done ? 'bg-success-accent text-white' : 'bg-chip-bg text-ink-faint'" :title="d.date">{{ d.initial }}</span>
+            <span class="ml-1.5 text-[11.5px] text-ink-muted2" data-cy="exercise-adherence">{{ t(`${daysDone(pe).filter((d) => d.done).length} of 7 days`, `${daysDone(pe).filter((d) => d.done).length} de 7 días`) }}</span>
+          </div>
+        </div>
       </li>
     </ul>
     <p v-else-if="!open" class="mt-1.5 text-[13px] text-ink-faint">{{ t('None assigned yet.', 'Aún no tiene ninguno.') }}</p>
@@ -350,6 +388,7 @@ const input = 'h-10 w-full rounded-ctl border border-line-control bg-surface px-
             </p>
             <label v-for="e in l.entries" :key="e.key" class="flex items-center gap-2.5 px-3 py-2" :class="e.had ? 'opacity-60' : 'cursor-pointer hover:bg-surface-subtle'" data-cy="exercise-option">
               <input type="checkbox" class="rounded border-line-control text-brand-text focus:ring-brand" :checked="e.had || isChosen(e.key)" :disabled="e.had" @change="toggle(e)" />
+              <img v-if="poster(e.slug)" :src="poster(e.slug)!" alt="" loading="lazy" class="h-[27px] w-12 shrink-0 rounded-ctlSm bg-surface-subtle object-cover" />
               <span class="min-w-0 flex-1 text-[13.5px] text-ink-900">{{ e.name }}</span>
               <span v-if="e.had" class="shrink-0 text-[11.5px] text-ink-muted">{{ t('Already has it', 'Ya lo tiene') }}</span>
               <button v-else-if="e.slug" type="button" class="shrink-0 text-[11.5px] font-medium text-brand-text" :aria-label="t(`Watch ${e.name}`, `Ver ${e.name}`)" @click.prevent="preview = preview?.key === e.key ? null : e">▶</button>
@@ -365,17 +404,33 @@ const input = 'h-10 w-full rounded-ctl border border-line-control bg-surface px-
         </div>
 
         <div v-if="chosen.length" class="space-y-1.5" data-cy="exercise-chosen-list">
-          <p class="text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t(`Chosen (${chosen.length})`, `Elegidos (${chosen.length})`) }}</p>
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <p class="text-[11px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t(`Chosen (${chosen.length})`, `Elegidos (${chosen.length})`) }}</p>
+            <label v-if="chosen.length > 1" class="flex items-center gap-1.5 text-[12px] text-ink-700">
+              <input v-model="allProgressive" type="checkbox" class="rounded border-line-control text-brand-text focus:ring-brand" data-cy="exercise-all-progressive" />
+              {{ t('All progressive', 'Todos progresivos') }}
+            </label>
+          </div>
           <div v-for="c in chosen" :key="c.key" class="rounded-ctl bg-surface-subtle px-3 py-2" data-cy="exercise-chosen">
             <div class="flex items-center justify-between gap-2">
-              <span class="min-w-0 text-[13.5px] font-medium text-ink-900">{{ c.name }}</span>
+              <span class="flex min-w-0 items-center gap-2">
+                <img v-if="poster(c.slug)" :src="poster(c.slug)!" alt="" class="h-[27px] w-12 shrink-0 rounded-ctlSm bg-surface object-cover" />
+                <span class="min-w-0 text-[13.5px] font-medium text-ink-900">{{ c.name }}</span>
+              </span>
               <button type="button" class="shrink-0 text-[12px] font-medium text-ink-muted" data-cy="exercise-chosen-remove" @click="drop(c.key)">{{ t('Remove', 'Quitar') }}</button>
             </div>
             <div class="mt-1.5 grid grid-cols-[4.5rem_1fr_1fr] gap-2">
-              <input v-model="c.sets" inputmode="numeric" :class="input" :placeholder="t('Sets', 'Series')" :aria-label="t('Sets', 'Series')" data-cy="exercise-sets" />
-              <input v-model="c.reps" :class="input" :placeholder="t('Reps or time', 'Reps o tiempo')" :aria-label="t('Reps or time', 'Reps o tiempo')" data-cy="exercise-reps" />
+              <template v-if="!c.progressive">
+                <input v-model="c.sets" inputmode="numeric" :class="input" :placeholder="t('Sets', 'Series')" :aria-label="t('Sets', 'Series')" data-cy="exercise-sets" />
+                <input v-model="c.reps" :class="input" :placeholder="t('Reps or time', 'Reps o tiempo')" :aria-label="t('Reps or time', 'Reps o tiempo')" data-cy="exercise-reps" />
+              </template>
+              <span v-else class="col-span-2 flex items-center text-[12.5px] text-ink-muted">{{ t('No fixed number', 'Sin número fijo') }}</span>
               <input v-model="c.frequency" :class="input" :placeholder="t('How often', 'Frecuencia')" :aria-label="t('How often', 'Frecuencia')" data-cy="exercise-frequency" />
             </div>
+            <label class="mt-1.5 flex items-center gap-2 text-[12.5px] text-ink-700">
+              <input v-model="c.progressive" type="checkbox" class="rounded border-line-control text-brand-text focus:ring-brand" data-cy="exercise-progressive" />
+              {{ t('Progressive: they build up as they can', 'Progresivo: va aumentando según pueda') }}
+            </label>
             <input v-if="chosen.length === 1" v-model="c.notes" :class="[input, 'mt-2']" :placeholder="t('Note for the patient (optional)', 'Nota para el paciente (opcional)')" data-cy="exercise-notes" />
           </div>
         </div>
@@ -388,10 +443,17 @@ const input = 'h-10 w-full rounded-ctl border border-line-control bg-surface px-
         <input v-model="mediaUrl" type="url" inputmode="url" :class="input" :placeholder="t('Video or image link (optional)', 'Enlace a vídeo o imagen (opcional)')" data-cy="exercise-link" />
         <ExercisesMediaField v-model="mediaPath" :account-id="accountId" />
         <div class="grid grid-cols-3 gap-2">
-          <input v-model="sets" inputmode="numeric" :class="input" :placeholder="t('Sets', 'Series')" data-cy="exercise-sets" />
-          <input v-model="reps" :class="input" :placeholder="t('Reps or time', 'Reps o tiempo')" data-cy="exercise-reps" />
+          <template v-if="!progressive">
+            <input v-model="sets" inputmode="numeric" :class="input" :placeholder="t('Sets', 'Series')" data-cy="exercise-sets" />
+            <input v-model="reps" :class="input" :placeholder="t('Reps or time', 'Reps o tiempo')" data-cy="exercise-reps" />
+          </template>
+          <span v-else class="col-span-2 flex items-center text-[12.5px] text-ink-muted">{{ t('No fixed number', 'Sin número fijo') }}</span>
           <input v-model="frequency" :class="input" :placeholder="t('How often', 'Frecuencia')" data-cy="exercise-frequency" />
         </div>
+        <label class="flex items-center gap-2 text-[12.5px] text-ink-700">
+          <input v-model="progressive" type="checkbox" class="rounded border-line-control text-brand-text focus:ring-brand" data-cy="exercise-progressive" />
+          {{ t('Progressive: they build up as they can', 'Progresivo: va aumentando según pueda') }}
+        </label>
         <input v-model="notes" :class="input" :placeholder="t('Note for the patient (optional)', 'Nota para el paciente (opcional)')" data-cy="exercise-notes" />
       </template>
 

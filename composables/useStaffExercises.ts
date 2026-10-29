@@ -19,6 +19,8 @@ export interface AssignedExercise {
   reps: string | null
   frequency: string | null
   notes: string | null
+  /** No fixed sets or reps: the patient builds up as they can. */
+  progressive: boolean
   created_at: string
   exercises: ExerciseRow | null
   patient_exercise_logs: { done_on: string }[]
@@ -32,6 +34,7 @@ export interface NewAssignment {
   reps: string | null
   frequency: string | null
   notes: string | null
+  progressive?: boolean
 }
 
 export function useStaffExercises(opts: { accountId: () => string | null | undefined; patientId: () => string; teamMemberId: () => string | null | undefined }) {
@@ -51,7 +54,7 @@ export function useStaffExercises(opts: { accountId: () => string | null | undef
     const [{ data, error: readError }, { data: lib }] = await Promise.all([
       supabase
         .from('patient_exercises')
-        .select('id, sets, reps, frequency, notes, created_at, exercises(id, name, instructions, media_url, media_path, starter_key), patient_exercise_logs(done_on)')
+        .select('id, sets, reps, frequency, notes, progressive, created_at, exercises(id, name, instructions, media_url, media_path, starter_key), patient_exercise_logs(done_on)')
         .eq('patient_id', opts.patientId())
         .is('ended_at', null)
         .gte('patient_exercise_logs.done_on', weekAgo)
@@ -90,6 +93,7 @@ export function useStaffExercises(opts: { accountId: () => string | null | undef
         reps: a.reps,
         frequency: a.frequency,
         notes: a.notes,
+        progressive: !!a.progressive,
         assigned_by: opts.teamMemberId() ?? null,
       } as never).select('id').single()
       if (e) throw e
@@ -111,7 +115,7 @@ export function useStaffExercises(opts: { accountId: () => string | null | undef
    * one insert (all or nothing). One the patient already has is skipped
    * rather than given twice. Returns how many were added and skipped, or null.
    */
-  async function assignProgram(items: { exercise_id: string; sets: number | null; reps: string | null; frequency: string | null; notes: string | null }[]): Promise<{ added: number; skipped: number } | null> {
+  async function assignProgram(items: { exercise_id: string; sets: number | null; reps: string | null; frequency: string | null; notes: string | null; progressive?: boolean }[]): Promise<{ added: number; skipped: number } | null> {
     const accountId = opts.accountId()
     if (!accountId) return null
     const have = new Set(assigned.value.map((a) => a.exercises?.id).filter(Boolean))
@@ -123,7 +127,7 @@ export function useStaffExercises(opts: { accountId: () => string | null | undef
     try {
       const { data, error: e } = await supabase
         .from('patient_exercises')
-        .insert(fresh.map((i) => ({ account_id: accountId, patient_id: opts.patientId(), exercise_id: i.exercise_id, sets: i.sets, reps: i.reps, frequency: i.frequency, notes: i.notes, assigned_by: opts.teamMemberId() ?? null })) as never)
+        .insert(fresh.map((i) => ({ account_id: accountId, patient_id: opts.patientId(), exercise_id: i.exercise_id, sets: i.sets, reps: i.reps, frequency: i.frequency, notes: i.notes, progressive: !!i.progressive, assigned_by: opts.teamMemberId() ?? null })) as never)
         .select('id')
       if (e) throw e
       // One push for the lot ("Nuevos ejercicios para casa"), not one each.

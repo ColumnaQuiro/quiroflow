@@ -54,16 +54,16 @@ export async function notifyExerciseAssigned(service: Service, patientExerciseId
   try {
     const { data } = await service
       .from('patient_exercises')
-      .select('account_id, patient_id, sets, reps, frequency, created_at, exercises(name)')
+      .select('account_id, patient_id, sets, reps, frequency, progressive, created_at, exercises(name)')
       .in('id', ids)
       .order('created_at')
-    const rows = (data as unknown as { account_id: string; patient_id: string; sets: number | null; reps: string | null; frequency: string | null; exercises: { name: string } | null }[] | null) ?? []
+    const rows = (data as unknown as { account_id: string; patient_id: string; sets: number | null; reps: string | null; frequency: string | null; progressive: boolean; exercises: { name: string } | null }[] | null) ?? []
     const pe = rows[0]
     if (!pe) return
     let title = 'Nuevo ejercicio para casa'
     let body: string
     if (rows.length === 1) {
-      const dose = [pe.sets && pe.reps ? `${pe.sets} × ${pe.reps}` : pe.reps, pe.frequency].filter(Boolean).join(' · ')
+      const dose = [pe.progressive ? 'Progresivo' : pe.sets && pe.reps ? `${pe.sets} × ${pe.reps}` : pe.reps, pe.frequency].filter(Boolean).join(' · ')
       body = [pe.exercises?.name, dose].filter(Boolean).join(' · ')
     } else {
       title = 'Nuevos ejercicios para casa'

@@ -38,6 +38,46 @@ const error = ref('')
 const loading = ref(false)
 const done = ref(false)
 
+// The emailed link carries the recovery token itself, in the fragment:
+// #token_hash=…&type=recovery (the "Reset password" template in the Supabase
+// dashboard builds it as {{ .RedirectTo }}#token_hash={{ .TokenHash }}&type=recovery).
+//
+// The default link went through supabase.co/auth/v1/verify and came back with
+// ?code=, which is PKCE: only the browser that asked for the reset holds the
+// verifier that code is exchanged with. Asked on the laptop and opened on the
+// phone, in the Gmail app, or from the mobile app (whose storage the browser
+// never sees), the token was spent at /verify and no session followed -- so
+// the person read "invalid or has expired" on their first and only click, and
+// every retry hit an already-used token. verifyOtp needs nothing but the hash,
+// and a fragment never reaches a server, so a mail scanner fetching the link
+// cannot spend it either.
+//
+// ?code= links already sent keep working: the Supabase client exchanges those
+// on its own before this page renders, as it always has.
+// The fragment never reaches the server, so until the page is running in the
+// browser it cannot tell a link it is about to verify from no link at all --
+// "invalid or has expired" would flash on every good link first.
+const verifying = ref(true)
+onMounted(async () => {
+  verifying.value = false
+  const tokenHash = new URLSearchParams(window.location.hash.slice(1)).get('token_hash')
+  if (!tokenHash) return
+  const cleanUrl = route.fullPath.split('#')[0]
+  verifying.value = true
+  const { error: verifyError } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: 'recovery' })
+  if (verifyError) {
+    history.replaceState(history.state, '', cleanUrl)
+    verifying.value = false
+    return
+  }
+  // A full load rather than carrying on in place: the session now exists, and
+  // the route middleware has to see it -- an account owing its second factor
+  // is sent to /two-factor first and brought back here, exactly as a ?code=
+  // link is. Replacing also drops the spent token from the address bar and
+  // the history.
+  window.location.replace(cleanUrl)
+})
+
 async function onSubmit() {
   error.value = ''
   if (password.value.length < 8) {
@@ -71,6 +111,10 @@ async function onSubmit() {
     <template #form>
       <p v-if="done" class="mt-5 text-[14px] font-medium text-success-text" role="status">
         {{ t(`Password updated. Taking you to ${destinationLabel}…`, `Contraseña cambiada. Te llevamos a ${destinationLabel}…`) }}
+      </p>
+
+      <p v-else-if="verifying && !user" class="mt-4 text-[14.5px] leading-[1.55] text-ink-muted" role="status">
+        {{ t('Checking your link…', 'Comprobando el enlace…') }}
       </p>
 
       <p v-else-if="!user" class="mt-4 text-[14.5px] leading-[1.55] text-ink-muted">

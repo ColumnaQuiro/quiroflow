@@ -10,14 +10,18 @@ import { NuxtLink } from '#components'
 // `buttons` is the mobile app, where changing side is not a page of its own:
 // it clears or sets the stored clinic code (mobile/pages/login.vue), so the
 // page decides what a tap does.
+//
+// The app is mostly patients' phones, so there the patient side comes first
+// and the team second; the web keeps the team first, being their address.
 const props = defineProps<{ current: 'staff' | 'patient'; buttons?: boolean }>()
 const emit = defineEmits<{ select: [side: 'staff' | 'patient'] }>()
 const t = useT()
 
-const sides = computed(() => [
-  { key: 'staff' as const, to: '/login', label: t('Clinic team', 'Equipo de la clínica') },
-  { key: 'patient' as const, to: '/portal/login', label: t("I'm a patient", 'Soy paciente') },
-])
+const sides = computed(() => {
+  const staff = { key: 'staff' as const, to: '/login', label: t('Clinic team', 'Equipo de la clínica') }
+  const patient = { key: 'patient' as const, to: '/portal/login', label: t("I'm a patient", 'Soy paciente') }
+  return props.buttons ? [patient, staff] : [staff, patient]
+})
 </script>
 
 <template>

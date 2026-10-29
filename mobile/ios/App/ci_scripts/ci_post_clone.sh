@@ -47,9 +47,9 @@ export LC_ALL=en_US.UTF-8
 # build, which is how 1.0 sat closed for a while before anyone noticed.
 #
 # So: after each App Store release, bump MARKETING_VERSION in
-# project.pbxproj by hand (and mobile/android/app/build.gradle's
-# versionName alongside it, to keep the two platforms showing the same
-# version).
+# project.pbxproj by hand. Android follows it on its own:
+# .github/workflows/android.yml builds with this as its versionName
+# (build.gradle's own literal is only the fallback for a hand build).
 cd "$CI_PRIMARY_REPOSITORY_PATH/mobile/ios/App"
 agvtool new-version -all "$(date -u +%Y%m%d%H%M)"
 

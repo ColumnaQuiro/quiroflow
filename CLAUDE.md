@@ -585,6 +585,41 @@ round trip to work out, neither is discoverable from the code.
   allows CREATE and GET only); the checkbox only appears inside the Manage
   Availability wizard's second step, which needs a pending country change
   to reach. Untick it next time you add a country there.
+- **Android builds in GitHub Actions and lands on Play's internal testing
+  track, never production.** `.github/workflows/android.yml` runs on every
+  push to `main` that touches `mobile/` (the same pushes Xcode Cloud builds
+  iOS on), and by hand from the Actions tab for a shared-code fix outside
+  `mobile/`. It builds the signed AAB, uploads Sentry's source maps and R8
+  mapping, and makes it the internal testing release; the bundle is also
+  kept as a run artifact for a week. Going to production stays a click in
+  Play Console (Testing → Internal testing → Promote release → Production),
+  because Play publishes a production release the moment it is approved --
+  sending it to review *is* the release. The service account only holds
+  "release to testing tracks", so the workflow could not reach production
+  if it tried.
+  **versionCode is no longer edited by hand**: `scripts/google-play.mjs`
+  asks Play for the highest code it has ever had, on any track, and builds
+  with one more (`-PquiroflowVersionCode`). versionName is the iOS
+  `MARKETING_VERSION` (`-PquiroflowVersionName`), so bumping that one value
+  moves both stores. The literals in `build.gradle` are only what a hand
+  build gets without those properties -- a hand build must pass the next
+  code itself, or Play refuses it as already used. Prefer running the
+  workflow.
+  Repository secrets it needs (an unset or misspelt secret is an empty
+  string, not an error, so the first step checks each one and names
+  whichever is empty):
+  - `PLAY_SERVICE_ACCOUNT_JSON` -- the JSON key of a Google Cloud service
+    account invited in Play Console (under `hola@`) with "View app
+    information" and "Release apps to testing tracks" on QuiroFlow only.
+  - `ANDROID_UPLOAD_KEYSTORE_BASE64` -- `quiroflow-upload.keystore`, base64.
+  - `ANDROID_KEYSTORE_PROPERTIES` -- the whole `keystore.properties` file;
+    its `storeFile` must stay a bare file name, which is where the
+    workflow writes the keystore.
+  - `SENTRY_APP_AUTH_TOKEN` -- the `org:ci` token in
+    `~/.quiroflow/sentry_auth_token`. Not the web's `SENTRY_AUTH_TOKEN`
+    secret, whose scope nobody can read back.
+  The repo is public, so the run logs are too: never `echo` or `cat`
+  anything built from those secrets in a step.
 - **The Android release build needs JDK 21.** The default JDK here is 17
   and `capacitor-android` compiles at source level 21, so `./gradlew
   bundleRelease` dies with "invalid source release: 21". Run it as

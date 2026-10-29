@@ -25,7 +25,7 @@ const supabase = useSupabaseClient()
 const t = useT()
 const { can } = usePermission()
 
-const patient = ref<Pick<Tables<'patients'>, 'chief_complaint' | 'diagnosis' | 'red_flags' | 'yellow_flags' | 'goals'> | null>(null)
+const patient = ref<Pick<Tables<'patients'>, 'chief_complaint' | 'diagnosis' | 'red_flags' | 'yellow_flags' | 'goals' | 'user_id' | 'first_name' | 'preferred_language' | 'is_minor' | 'do_not_contact'> | null>(null)
 
 interface NoteRow {
   id: string
@@ -53,7 +53,7 @@ const latestAppointmentId = ref<string | null>(null)
 async function load({ silent = false } = {}) {
   if (!silent) loading.value = true
   const [{ data: p }, { data: rows }, { data: appts }] = await Promise.all([
-    supabase.from('patients').select('chief_complaint, diagnosis, red_flags, yellow_flags, goals').eq('id', props.patientId).maybeSingle(),
+    supabase.from('patients').select('chief_complaint, diagnosis, red_flags, yellow_flags, goals, user_id, first_name, preferred_language, is_minor, do_not_contact').eq('id', props.patientId).maybeSingle(),
     supabase
       .from('visit_notes')
       .select('id, body, created_at, appointment_id, appointments!inner(starts_at, patient_id, appointment_types(name), team_members(full_name), practitioner_name)')
@@ -277,10 +277,21 @@ const goalChips = computed(() =>
         </section>
 
         <PatientsStickyNotePanel :patient-id="patientId" />
-        <ExercisesStaff v-if="exercisesAccountId" :account-id="exercisesAccountId" :patient-id="patientId" :team-member-id="exercisesTeamMemberId" />
         <LearnStaffSend v-if="exercisesAccountId" :account-id="exercisesAccountId" :patient-id="patientId" :complaint="patient?.chief_complaint" :diagnosis="patient?.diagnosis" />
       </div>
     </div>
+
+    <!-- Home exercises, full width so each one shows with its picture and
+         its week. Patients only see them in the app, so whether this one
+         has it -- and the invite if not -- sits in the same place. -->
+    <ExercisesStaff v-if="exercisesAccountId" :account-id="exercisesAccountId" :patient-id="patientId" :team-member-id="exercisesTeamMemberId">
+      <template v-if="patient" #app>
+        <p class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5" data-cy="exercises-app">
+          <PatientsAppStatus :patient-id="patientId" :user-id="patient.user_id" :first-name="patient.first_name" :preferred-language="patient.preferred_language" :can-contact="!patient.is_minor && !patient.do_not_contact" />
+          <span v-if="!patient.user_id" class="text-[12px] text-ink-muted">{{ t('They see their exercises and videos in the app.', 'Los ejercicios y sus vídeos los ve en la app.') }}</span>
+        </p>
+      </template>
+    </ExercisesStaff>
 
     <div
       v-if="editingClinical"

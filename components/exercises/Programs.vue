@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ProgramItem } from '../../composables/useExercisePrograms'
+import { exerciseDoseLabel } from '../../utils/exerciseDose'
 
 // Settings > Exercise Library's programmes: a named set of the library's
 // exercises with their usual dose, picked on a patient's record to assign
@@ -13,14 +14,14 @@ const t = useT()
 const { programs, loading, load, save, remove } = useExercisePrograms({ accountId: () => props.accountId })
 onMounted(load)
 
-interface DraftItem { exercise_id: string; sets: string; reps: string; frequency: string; notes: string | null }
+interface DraftItem { exercise_id: string; sets: string; reps: string; frequency: string; notes: string | null; progressive: boolean }
 const editing = ref<{ id: string | null; name: string; description: string; items: DraftItem[] } | null>(null)
 const saving = ref(false)
 const formError = ref('')
 const deleting = ref<{ id: string; name: string } | null>(null)
 const deletingBusy = ref(false)
 
-const blankItem = (): DraftItem => ({ exercise_id: '', sets: '', reps: '', frequency: '', notes: null })
+const blankItem = (): DraftItem => ({ exercise_id: '', sets: '', reps: '', frequency: '', notes: null, progressive: false })
 function openNew() {
   editing.value = { id: null, name: '', description: '', items: [blankItem()] }
   formError.value = ''
@@ -30,7 +31,7 @@ function openEdit(p: (typeof programs.value)[number]) {
     id: p.id,
     name: p.name,
     description: p.description ?? '',
-    items: p.exercise_program_items.map((i) => ({ exercise_id: i.exercise_id, sets: i.sets ? String(i.sets) : '', reps: i.reps ?? '', frequency: i.frequency ?? '', notes: i.notes })),
+    items: p.exercise_program_items.map((i) => ({ exercise_id: i.exercise_id, sets: i.sets ? String(i.sets) : '', reps: i.reps ?? '', frequency: i.frequency ?? '', notes: i.notes, progressive: !!i.progressive })),
   }
   formError.value = ''
 }
@@ -66,12 +67,13 @@ async function submit() {
   }
   const items: ProgramItem[] = []
   for (const i of rows) {
-    const n = i.sets.trim() ? Number(i.sets) : null
+    // Progressive has no numbers; any typed before it was ticked are dropped.
+    const n = !i.progressive && i.sets.trim() ? Number(i.sets) : null
     if (n !== null && (!Number.isInteger(n) || n < 1)) {
       formError.value = t('Sets must be a whole number.', 'Las series deben ser un número entero.')
       return
     }
-    items.push({ exercise_id: i.exercise_id, sets: n, reps: i.reps.trim() || null, frequency: i.frequency.trim() || null, notes: i.notes })
+    items.push({ exercise_id: i.exercise_id, sets: n, reps: i.progressive ? null : i.reps.trim() || null, frequency: i.frequency.trim() || null, notes: i.notes, progressive: i.progressive })
   }
   saving.value = true
   const result = await save({ id: d.id, name: d.name, description: d.description.trim() || null, items })
@@ -93,10 +95,7 @@ async function confirmDelete() {
   emit('changed')
 }
 
-function dose(i: ProgramItem) {
-  const sr = i.sets && i.reps ? `${i.sets} × ${i.reps}` : i.sets ? t(`${i.sets} sets`, `${i.sets} series`) : i.reps ?? ''
-  return [sr, i.frequency].filter(Boolean).join(' · ')
-}
+const dose = (i: ProgramItem) => exerciseDoseLabel(i, t)
 
 defineExpose({ reload: load })
 
@@ -134,9 +133,16 @@ const iconBtn = 'flex h-9 w-9 touch:h-11 touch:w-11 shrink-0 items-center justif
             <svg width="15" height="15" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M2 2l10 10M12 2L2 12" /></svg>
           </button>
           <div class="col-span-2 grid grid-cols-3 gap-2 sm:col-span-3 sm:grid-cols-[4rem_minmax(0,1fr)_minmax(0,1.3fr)]">
-            <input v-model="item.sets" inputmode="numeric" :class="input" :placeholder="t('Sets', 'Series')" data-cy="program-item-sets" />
-            <input v-model="item.reps" :class="input" :placeholder="t('Reps or time', 'Reps o tiempo')" data-cy="program-item-reps" />
+            <template v-if="!item.progressive">
+              <input v-model="item.sets" inputmode="numeric" :class="input" :placeholder="t('Sets', 'Series')" data-cy="program-item-sets" />
+              <input v-model="item.reps" :class="input" :placeholder="t('Reps or time', 'Reps o tiempo')" data-cy="program-item-reps" />
+            </template>
+            <span v-else class="col-span-2 flex items-center text-[13px] text-ink-muted sm:col-span-2">{{ t('Progressive: no fixed number', 'Progresivo: sin número fijo') }}</span>
             <input v-model="item.frequency" :class="input" :placeholder="t('How often', 'Frecuencia')" data-cy="program-item-frequency" />
+            <label class="col-span-full flex items-center gap-2 text-[12.5px] text-ink-700">
+              <input v-model="item.progressive" type="checkbox" class="rounded border-line-control text-brand-text focus:ring-brand" data-cy="program-item-progressive" />
+              {{ t('Progressive: the patient builds up as they can', 'Progresivo: el paciente va aumentando según pueda') }}
+            </label>
           </div>
         </div>
         <button type="button" class="text-[13px] font-medium text-brand-text" data-cy="program-item-add" @click="editing.items.push(blankItem())">{{ t('+ Add exercise', '+ Añadir ejercicio') }}</button>

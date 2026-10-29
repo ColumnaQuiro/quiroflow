@@ -34,9 +34,12 @@ describe('Exercise programmes', () => {
             cy.get('[data-cy="program-item-exercise"]').select('Gato-camello')
             cy.get('[data-cy="program-item-reps"]').type('10')
             cy.get('[data-cy="program-item-frequency"]').type('2 veces al día')
+            // Progressive: no fixed number, so the reps typed go.
+            cy.get('[data-cy="program-item-progressive"]').check()
+            cy.get('[data-cy="program-item-reps"]').should('not.exist')
           })
           cy.get('[data-cy="program-save"]').click()
-          cy.contains('[data-cy="program-row"]', 'Lumbalgia básica').should('contain', '2 exercises').and('contain', '3 × 12').and('contain', '2 veces al día')
+          cy.contains('[data-cy="program-row"]', 'Lumbalgia básica').should('contain', '2 exercises').and('contain', '3 × 12').and('contain', 'Progressive · 2 veces al día')
 
           // In a programme, so the library will not offer to delete it even archived.
           cy.contains('[data-cy="library-row"]', 'Gato-camello').find('[data-cy="library-archive"]').click()
@@ -53,11 +56,12 @@ describe('Exercise programmes', () => {
           cy.contains('[data-cy="exercise-group"]', 'Lumbalgia básica (2)').find('input').check()
           cy.get('[data-cy="exercise-chosen"]').should('have.length', 1).and('contain', 'Gato-camello')
           cy.get('[data-cy="exercise-chosen"] [data-cy="exercise-frequency"]').should('have.value', '2 veces al día')
+          cy.get('[data-cy="exercise-chosen"] [data-cy="exercise-progressive"]').should('be.checked')
           cy.get('[data-cy="exercise-save"]').should('contain', 'Assign 1').click()
           cy.get('[data-cy="exercise-row"]').should('have.length', 2)
           // The existing one keeps its own dose; the new one takes the programme's.
           cy.contains('[data-cy="exercise-row"]', 'Puente de glúteo').should('contain', '2 × 8')
-          cy.contains('[data-cy="exercise-row"]', 'Gato-camello').should('contain', '10 · 2 veces al día')
+          cy.contains('[data-cy="exercise-row"]', 'Gato-camello').should('contain', 'Progressive · 2 veces al día').and('not.contain', '10')
 
           // Deleting the programme leaves the patient's exercises alone.
           cy.visit('/settings/exercises')

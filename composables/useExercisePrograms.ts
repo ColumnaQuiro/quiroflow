@@ -9,6 +9,7 @@ export interface ProgramItem {
   reps: string | null
   frequency: string | null
   notes: string | null
+  progressive?: boolean
   position?: number
   exercises?: { name: string; archived_at: string | null } | null
 }
@@ -28,7 +29,7 @@ export function useExercisePrograms(opts: { accountId: () => string | null | und
   async function load() {
     const { data } = await supabase
       .from('exercise_programs')
-      .select('id, name, description, exercise_program_items(exercise_id, sets, reps, frequency, notes, position, exercises(name, archived_at))')
+      .select('id, name, description, exercise_program_items(exercise_id, sets, reps, frequency, notes, progressive, position, exercises(name, archived_at))')
       .order('name')
       .order('position', { referencedTable: 'exercise_program_items' })
     programs.value = (data as unknown as ExerciseProgram[] | null) ?? []
@@ -44,7 +45,7 @@ export function useExercisePrograms(opts: { accountId: () => string | null | und
       p_program_id: p.id,
       p_name: p.name,
       p_description: p.description,
-      p_items: p.items.map((i) => ({ exercise_id: i.exercise_id, sets: i.sets, reps: i.reps, frequency: i.frequency, notes: i.notes })),
+      p_items: p.items.map((i) => ({ exercise_id: i.exercise_id, sets: i.sets, reps: i.reps, frequency: i.frequency, notes: i.notes, progressive: !!i.progressive })),
     } as never)
     if (error || !data) return { error: error?.message ?? 'Not saved' }
     await load()

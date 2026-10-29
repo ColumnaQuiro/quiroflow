@@ -58,6 +58,9 @@ describe('Exercise catalogue', () => {
         cy.contains('[data-cy="exercise-group"]', 'Neck pain').find('input').check()
         cy.get('[data-cy="exercise-chosen"]').should('have.length', 4).and('contain.text', 'Neck rotation')
         cy.contains('[data-cy="exercise-option"]', 'Cat-camel').find('input').check()
+        // One switch makes them all progressive: no numbers, built up gradually.
+        cy.get('[data-cy="exercise-all-progressive"]').check()
+        cy.get('[data-cy="exercise-chosen"] [data-cy="exercise-sets"]').should('not.exist')
         cy.get('[data-cy="exercise-save"]').should('contain.text', 'Assign 5').click()
         cy.get('[data-cy="exercise-row"]').should('have.length', 6)
 
@@ -71,6 +74,11 @@ describe('Exercise catalogue', () => {
         // The patient plays the demonstration in the portal.
         cy.login(email, password)
         cy.visit('/portal/exercises')
+        cy.contains('[data-cy="patient-exercise"]', 'Cat-camel').find('[data-cy="exercise-dose"]').should('contain.text', 'Progressive').and('not.contain.text', '×')
+        cy.contains('[data-cy="patient-exercise"]', 'Cat-camel').find('[data-cy="exercise-progressive-hint"]').should('contain.text', 'a little more each time')
+        cy.contains('[data-cy="patient-exercise"]', 'Chin tuck').find('[data-cy="exercise-progressive-hint"]').should('not.exist')
+        // The demonstration shows as a picture to tap.
+        cy.contains('[data-cy="patient-exercise"]', 'Chin tuck').find('[data-cy="exercise-catalog-toggle"] img').should('have.attr', 'src', '/exercise-catalog/chin-tuck.jpg')
         cy.contains('[data-cy="patient-exercise"]', 'Chin tuck').find('[data-cy="exercise-catalog-toggle"]').click()
         cy.contains('[data-cy="patient-exercise"]', 'Chin tuck').find('[data-cy="exercise-catalog-player"] video').should('have.attr', 'src', '/exercise-catalog/chin-tuck.mp4')
         cy.request('/exercise-catalog/chin-tuck.mp4').its('headers.content-type').should('contain', 'video/mp4')

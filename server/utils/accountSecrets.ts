@@ -20,6 +20,19 @@ export type AccountSecretName =
   | 'instagram_access_token'
   | 'meta_ads_access_token'
 
+// The secrets that once had a column on `accounts`. practicehub_v3_api_key
+// arrived after the move and never did: selecting or clearing it there is a
+// PostgREST 42703, which reached Sentry from every read of the PracticeHub
+// connection (JAVASCRIPT-NUXT-H).
+const LEGACY_COLUMNS: ReadonlySet<AccountSecretName> = new Set([
+  'stripe_secret_key',
+  'stripe_webhook_secret',
+  'practicehub_api_key',
+  'whatsapp_access_token',
+  'instagram_access_token',
+  'meta_ads_access_token',
+])
+
 /**
  * The named secret for this account, or null.
  *
@@ -35,6 +48,7 @@ export async function getAccountSecret(
 ): Promise<string | null> {
   const { data } = await supabase.from('account_secrets').select('value').eq('account_id', accountId).eq('name', name).maybeSingle()
   if (data?.value) return data.value
+  if (!LEGACY_COLUMNS.has(name)) return null
 
   const { data: legacy } = await supabase.from('accounts').select(name).eq('id', accountId).maybeSingle()
   return (legacy as Record<string, string | null> | null)?.[name] ?? null
@@ -67,6 +81,7 @@ export async function setAccountSecret(
     .from('account_secrets')
     .upsert({ account_id: accountId, name, value, updated_at: new Date().toISOString() }, { onConflict: 'account_id,name' })
   if (error) throw createError({ statusCode: 500, statusMessage: error.message })
+  if (!LEGACY_COLUMNS.has(name)) return
 
   await supabase
     .from('accounts')

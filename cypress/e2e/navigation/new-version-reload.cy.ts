@@ -14,8 +14,13 @@ function openDashboard() {
   cy.window().then((win) => ((win as any).__sameDocument = true))
 }
 
+// A headless run's document can report itself 'hidden', which the plugin
+// rightly ignores -- so say it is in front, then say it changed.
 function returnToTab() {
-  cy.document().then((doc) => doc.dispatchEvent(new Event('visibilitychange')))
+  cy.document().then((doc) => {
+    Object.defineProperty(doc, 'visibilityState', { configurable: true, get: () => 'visible' })
+    doc.dispatchEvent(new Event('visibilitychange'))
+  })
 }
 
 describe('A new release while the tab is open', () => {

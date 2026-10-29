@@ -73,8 +73,8 @@ export default defineNuxtPlugin((nuxtApp) => {
 
   onNuxtReady(() => {
     timer = setInterval(check, CHECK_EVERY_MS)
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') check()
-    })
+  })
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') check()
   })
 })

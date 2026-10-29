@@ -91,12 +91,16 @@ function slot(n: number) {
   return `{{${n}}}`
 }
 
+// What {{1}}, {{2}}... are prefilled with: the patient's first name, then
+// whatever the caller knows (an appointment's date and time, say). The
+// picker's previews use the same values.
+const guesses = computed(() => [props.patientFirstName ?? '', ...(props.autofill ? Object.values(props.autofill) : [])])
+
 function selectTemplate(key: string) {
   selectedTemplateKey.value = key
   const t = templates.value.find((tpl) => templateKey(tpl) === key)
   const count = t?.variableCount ?? 0
-  const guesses = [props.patientFirstName ?? '', ...(props.autofill ? Object.values(props.autofill) : [])]
-  variables.value = Array.from({ length: count }, (_, i) => guesses[i] ?? '')
+  variables.value = Array.from({ length: count }, (_, i) => guesses.value[i] ?? '')
   attachmentFileId.value = ''
   locationLatitude.value = ''
   locationLongitude.value = ''
@@ -150,7 +154,7 @@ async function send() {
 
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4" @click.self="emit('close')">
-    <div class="max-h-full w-full overflow-y-auto max-w-md rounded-card border border-line bg-surface p-5 shadow-popover">
+    <div class="max-h-full w-full overflow-y-auto max-w-lg rounded-card border border-line bg-surface p-5 shadow-popover">
       <h3 class="text-[14px] font-semibold text-ink-900">{{ title ?? t('Send WhatsApp message', 'Enviar mensaje de WhatsApp') }}</h3>
 
       <div v-if="loadingTemplates" class="mt-3 text-[13px] text-ink-faint">{{ t('Loading templates…', 'Cargando plantillas…') }}</div>
@@ -159,17 +163,15 @@ async function send() {
         {{ missingTemplateMessage ?? t('No default template is configured. Set one in Settings > WhatsApp.', 'No hay ninguna plantilla predeterminada configurada. Configura una en Ajustes > WhatsApp.') }}
       </p>
       <template v-else>
-        <div v-if="allowTemplateOverride" class="mt-3">
-          <label class="block text-xs font-medium text-ink-muted">{{ t('Template', 'Plantilla') }}</label>
-          <select
-            :value="selectedTemplateKey"
-            class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-1.5 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
-            @change="selectTemplate(($event.target as HTMLSelectElement).value)"
-          >
-            <option value="" disabled>{{ t('Choose a template…', 'Elige una plantilla…') }}</option>
-            <option v-for="tpl in templates" :key="templateKey(tpl)" :value="templateKey(tpl)">{{ tpl.name }} ({{ tpl.language }})</option>
-          </select>
-        </div>
+        <WhatsAppTemplatePicker
+          v-if="allowTemplateOverride"
+          class="mt-3"
+          :model-value="selectedTemplateKey"
+          :templates="templates"
+          :preferred-language="patientPreferredLanguage"
+          :fill="guesses"
+          @update:model-value="selectTemplate"
+        />
 
         <template v-if="selectedTemplate">
           <p class="mt-3 whitespace-pre-wrap rounded-ctl bg-surface-subtle p-2.5 text-xs text-ink-muted2">{{ selectedTemplate.bodyText }}</p>

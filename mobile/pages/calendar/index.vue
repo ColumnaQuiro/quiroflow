@@ -30,6 +30,8 @@ definePageMeta({ layout: 'practitioner', keepalive: true })
 // rendered.
 import type { BusinessHours } from '../../../utils/businessHours'
 import { appointmentStage } from '../../../utils/appointmentStage'
+import { shortPatientName } from '../../../utils/appointmentBlock'
+import type { BlockView } from '../../../components/calendar/AppointmentBlock.vue'
 
 const user = useSupabaseUser()
 watch(user, (u) => { if (!u) navigateTo('/login') }, { immediate: true })
@@ -364,8 +366,8 @@ const shownAppointments = computed<Appointment[]>(() => {
     })),
   ]
 })
-// A tile's first line: the patient, or the class and how full it is (never
-// shortened by privacy mode -- it names nobody).
+// A week-list row's first line: the patient, or the class and how full it is
+// (never shortened by privacy mode -- it names nobody).
 const tileLabel = (a: Appointment) => (a._class ? `${a.appointment_types?.name ?? t('Class', 'Clase')} · ${a._class.taken}/${a._class.capacity}` : shown(nameOf(a)))
 function layout(list: Appointment[], date: string): Placed[] {
   const sorted = [...list].sort((x, y) => Date.parse(x.starts_at) - Date.parse(y.starts_at))
@@ -475,6 +477,29 @@ function open(a: Appointment) {
 // A class tile has no stage of its own: its places each have one.
 const stageOf = (a: Appointment) => appointmentStage(a)
 const arrivedAt = (a: Appointment) => (a.checked_in_at ? timeLabel(a.checked_in_at) : null)
+// A visit's tile is the web calendar's own block (CalendarAppointmentBlock):
+// the same border per stage, type tint, pill and what-fits ladder, so a
+// one-line tile is centred and nothing hangs off its edge. Money, bonos, notes
+// and forms are not loaded here, so those badges stay off.
+function blockView(a: Appointment, c: Column): BlockView {
+  return {
+    id: a.id,
+    name: shown(nameOf(a)),
+    shortName: privacy.value ? shown(nameOf(a)) : shortPatientName(a.patients?.first_name, a.patients?.last_name),
+    stage: stageOf(a),
+    arrivedAt: arrivedAt(a),
+    timeLabel: timeLabel(a.starts_at),
+    typeName: a.appointment_types?.name ?? null,
+    typeColor: a.appointment_types?.color ?? null,
+    practitionerName: c.practitionerId ? null : (practitionerName(a.practitioner_id)?.split(/\s+/)[0] ?? null),
+    owesCents: 0,
+    bono: null,
+    hasNote: false,
+    pendingForms: 0,
+    movedCount: 0,
+    noNext: false,
+  }
+}
 // A class is changed as a whole, on the web; its tile does not drag.
 const canChange = (a: Appointment) => !readOnly.value && a.status === 'booked' && !a._class
 
@@ -750,22 +775,20 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
                   :key="p.a.id"
                   type="button"
                   data-appt
-                  class="absolute overflow-hidden rounded-[8px] border-l-[3px] px-2 py-1 text-left"
-                  :class="[p.a.status === 'completed' || p.a.status === 'no_show' ? 'opacity-55' : '', selectedId === p.a.id ? 'ring-2 ring-brand' : '', drag?.a.id === p.a.id ? 'opacity-30' : '']"
-                  :style="{ top: `${p.top + 1}px`, height: `${p.height - 2}px`, left: `calc(${(p.lane / p.lanes) * 100}% + 4px)`, width: `calc(${100 / p.lanes}% - 8px)`, ...tint(p.a.appointment_types?.color) }"
+                  class="absolute text-left"
+                  :class="[p.a._class ? 'flex flex-col items-start overflow-hidden rounded-ctl border border-brand bg-brand px-2 py-1 text-[12px] leading-tight text-white shadow-card' : '', p.a._class && selectedId === p.a.id ? 'ring-2 ring-brand ring-offset-2' : '', drag?.a.id === p.a.id ? 'opacity-30' : '']"
+                  :style="{ top: `${p.top + 1}px`, height: `${p.height - 2}px`, left: `calc(${(p.lane / p.lanes) * 100}% + 4px)`, width: `calc(${100 / p.lanes}% - 8px)` }"
                   data-cy="agenda-item"
                   :data-appt-id="p.a.id"
                   @pointerdown.stop="onApptDown($event, p.a, c)"
                   @click="open(p.a)"
                 >
-                  <span class="flex items-center gap-1.5">
-                    <!-- Icon only, as the web's narrow blocks: a column is too thin for the words. Done needs none: the faded tile says it. -->
-                    <AppStagePill v-if="!p.a._class && p.a.status !== 'completed'" icon :stage="stageOf(p.a)" :arrived-at="arrivedAt(p.a)" />
-                    <span class="truncate text-[12.5px] font-semibold text-ink-900" :class="p.a.status === 'no_show' ? 'line-through' : ''">{{ tileLabel(p.a) }}</span>
-                  </span>
-                  <span v-if="p.height >= 38" class="block truncate text-[11.5px] text-ink-muted">
-                    {{ timeLabel(p.a.starts_at) }} · <template v-if="p.a._class">{{ p.a._class.capacity - p.a._class.taken > 0 ? t(`${p.a._class.capacity - p.a._class.taken} places left`, `${p.a._class.capacity - p.a._class.taken} plazas libres`) : t('Full', 'Completa') }}</template><template v-else>{{ p.a.appointment_types?.name ?? t('Appointment', 'Cita') }}</template><template v-if="!c.practitionerId && p.lanes === 1 && practitionerName(p.a.practitioner_id)"> · {{ practitionerName(p.a.practitioner_id) }}</template>
-                  </span>
+                  <!-- A class is one block for all its places, as the web draws it. -->
+                  <template v-if="p.a._class">
+                    <strong class="max-w-full truncate font-semibold">{{ p.a.appointment_types?.name ?? t('Class', 'Clase') }} · {{ p.a._class.taken }}/{{ p.a._class.capacity }}</strong>
+                    <span v-if="p.height >= 38" class="max-w-full truncate opacity-85">{{ p.a._class.capacity - p.a._class.taken > 0 ? t(`${p.a._class.capacity - p.a._class.taken} places left`, `${p.a._class.capacity - p.a._class.taken} plazas libres`) : t('Full', 'Completa') }}</span>
+                  </template>
+                  <CalendarAppointmentBlock v-else :view="blockView(p.a, c)" :density="multiDay ? 'week' : 'day'" :height="p.height - 2" :selected="selectedId === p.a.id" />
                 </button>
 
                 <!-- Now, in today's column of the week -->

@@ -19,6 +19,8 @@ export type AccountSecretName =
   | 'whatsapp_access_token'
   | 'instagram_access_token'
   | 'meta_ads_access_token'
+  /** Google Business Profile: the offline token that reads reviews and posts replies. */
+  | 'google_business_refresh_token'
 
 // The secrets that once had a column on `accounts`. practicehub_v3_api_key
 // arrived after the move and never did: selecting or clearing it there is a

@@ -244,5 +244,13 @@ export default defineEventHandler(async (event) => {
   }
   await setAccountSecret(admin, teamMember.account_id, 'instagram_access_token', chosen.pageToken)
 
-  return { connected: true, instagramUserId: chosen.instagramUserId, username: chosen.username, pageName: chosen.pageName }
+  // 8. The same Page's Messenger conversations. Step 6 already subscribed it
+  //    to `messages`, which delivers Messenger DMs as well as Instagram's, and
+  //    the webhook routes those by this id. Its own update so a Page another
+  //    account claims (accounts_messenger_page_id_key) costs Messenger only,
+  //    never the Instagram connection that has just worked.
+  const { error: messengerError } = await admin.from('accounts').update({ messenger_page_id: chosen.pageId }).eq('id', teamMember.account_id)
+  if (messengerError) console.error(`[meta/instagram/connect] could not set the Messenger Page for ${teamMember.account_id}:`, messengerError.message)
+
+  return { connected: true, instagramUserId: chosen.instagramUserId, username: chosen.username, pageName: chosen.pageName, messengerPageId: messengerError ? null : chosen.pageId }
 })

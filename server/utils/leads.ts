@@ -8,7 +8,7 @@ import type { Database } from '~/types/database.types'
 export const LEAD_STAGES = ['new', 'contacted', 'qualified', 'booked', 'showed', 'converted', 'lost'] as const
 export type LeadStage = (typeof LEAD_STAGES)[number]
 
-export const LEAD_CHANNELS = ['whatsapp', 'sms', 'phone', 'web', 'instagram', 'facebook', 'walk_in'] as const
+export const LEAD_CHANNELS = ['whatsapp', 'sms', 'phone', 'web', 'instagram', 'facebook', 'walk_in', 'messenger', 'webchat'] as const
 export type LeadChannel = (typeof LEAD_CHANNELS)[number]
 
 export const STAGE_TITLES: Record<LeadStage, string> = {
@@ -170,6 +170,8 @@ const CHANNEL_TAGS: Record<LeadChannel, string> = {
   instagram: 'IG',
   facebook: 'FB',
   walk_in: 'WALK',
+  messenger: 'MSG',
+  webchat: 'CHAT',
 }
 
 export function channelTag(channel: string) {

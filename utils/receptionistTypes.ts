@@ -485,11 +485,12 @@ export function rescheduleSection(visits: BookedVisit[], timeZone: string, opts:
 
 /**
  * Whether the name on a lead is the one the person gave. A form -- the ad's,
- * the website's -- asks for it; a WhatsApp or Instagram lead carries only the
- * profile name ("Mari", "Javi 🏄"), which is not what goes on a patient record.
+ * the website's -- asks for it; a WhatsApp, Instagram or Messenger lead
+ * carries only the profile name ("Mari", "Javi 🏄"), which is not what goes on
+ * a patient record, and a website chat carries none at all.
  */
 export function leadNameIsTheirs(channel: string | null | undefined): boolean {
-  return Boolean(channel) && channel !== 'whatsapp' && channel !== 'instagram'
+  return Boolean(channel) && !['whatsapp', 'instagram', 'messenger', 'webchat'].includes(channel!)
 }
 
 /**

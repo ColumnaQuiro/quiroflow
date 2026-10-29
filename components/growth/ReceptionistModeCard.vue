@@ -62,7 +62,7 @@ const CHANNEL_CLASS: Record<string, string> = {
 }
 // Where a channel is set up. Instagram is connected from the WhatsApp page
 // too (the same Meta app); the two that are not built have nowhere to go.
-const CHANNEL_LINK: Record<string, string> = { whatsapp: '/settings/whatsapp', instagram: '/settings/whatsapp' }
+const CHANNEL_LINK: Record<string, string> = { whatsapp: '/settings/whatsapp', instagram: '/settings/whatsapp', messenger: '/settings/whatsapp', 'web-chat': '/settings/whatsapp' }
 
 const noLiveChannel = computed(() => props.config.enabled && !props.channels.some((c) => c.status === 'connected'))
 </script>

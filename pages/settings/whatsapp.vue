@@ -47,6 +47,24 @@ const instagramTicket = ref('')
 // seconds, and Meta's reason is usually the only clue to what to do next.
 const instagramError = ref('')
 const instagramChoicesEl = ref<HTMLElement | null>(null)
+// The Facebook Page whose Messenger DMs reach the Inbox: the one Instagram is
+// connected through, filled in by the Connect button.
+const messengerPageId = ref('')
+// Web chat on the clinic's own website (public/webchat.js), addressed by the
+// booking page's slug.
+const webchatEnabled = ref(false)
+const webchatGreeting = ref('')
+const accountSlug = ref('')
+// The closing tag is split: written whole, it would end this <script setup>.
+const webchatSnippet = computed(() => (accountSlug.value && appOrigin.value ? `<script src="${appOrigin.value}/webchat.js" data-clinic="${accountSlug.value}" async><` + `/script>` : ''))
+async function copySnippet() {
+  try {
+    await navigator.clipboard.writeText(webchatSnippet.value)
+    showToast(t('Copied. Paste it before </body> on every page of your website.', 'Copiado. Pégalo antes de </body> en todas las páginas de tu web.'), 'success')
+  } catch {
+    showToast(t('Could not copy. Select the code and copy it by hand.', 'No se pudo copiar. Selecciona el código y cópialo a mano.'), 'error')
+  }
+}
 const newLeadNotifyTemplateName = ref('')
 const newLeadNotifyTemplateLanguage = ref('es')
 const staffNotifyTemplateLanguage = ref('es')
@@ -59,8 +77,10 @@ const saving = ref(false)
 // that would render an empty string during SSR but the real URL on the
 // client's first render, and Vue flags that mismatch as a hydration error.
 const webhookUrl = ref('')
+const appOrigin = ref('')
 onMounted(() => {
   webhookUrl.value = `${window.location.origin}/api/whatsapp/webhook`
+  appOrigin.value = window.location.origin
 })
 
 interface Template {
@@ -78,7 +98,7 @@ async function load() {
   const { data } = await supabase
     .from('accounts')
     .select(
-      'whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_confirmation_template_name, whatsapp_confirmation_template_language, whatsapp_recall_template_name, whatsapp_recall_template_language, whatsapp_reminder_template_name, whatsapp_reminder_template_language, online_booking_notify_whatsapp_template_name, online_booking_notify_whatsapp_template_language, new_lead_notify_whatsapp_template_name, new_lead_notify_whatsapp_template_language, instagram_user_id, meta_ads_account_id',
+      'whatsapp_phone_number_id, whatsapp_business_account_id, whatsapp_confirmation_template_name, whatsapp_confirmation_template_language, whatsapp_recall_template_name, whatsapp_recall_template_language, whatsapp_reminder_template_name, whatsapp_reminder_template_language, online_booking_notify_whatsapp_template_name, online_booking_notify_whatsapp_template_language, new_lead_notify_whatsapp_template_name, new_lead_notify_whatsapp_template_language, instagram_user_id, meta_ads_account_id, messenger_page_id, webchat_enabled, webchat_greeting, slug',
     )
     .eq('id', store.accountId!)
     .maybeSingle()
@@ -114,6 +134,10 @@ async function load() {
   instagramUserId.value = data?.instagram_user_id ?? ''
   instagramManualOpen.value = !instagramUserId.value
   instagramAccessToken.value = ''
+  messengerPageId.value = data?.messenger_page_id ?? ''
+  webchatEnabled.value = data?.webchat_enabled ?? false
+  webchatGreeting.value = data?.webchat_greeting ?? ''
+  accountSlug.value = data?.slug ?? ''
   newLeadNotifyTemplateName.value = data?.new_lead_notify_whatsapp_template_name ?? ''
   newLeadNotifyTemplateLanguage.value = data?.new_lead_notify_whatsapp_template_language ?? 'es'
   staffNotifyTemplateLanguage.value = data?.online_booking_notify_whatsapp_template_language ?? 'es'
@@ -192,6 +216,12 @@ function saveErrorMessage(error: { code?: string; message: string }) {
       'Esta cuenta de Instagram ya está conectada a otra cuenta de QuiroFlow. Desconéctala allí primero.',
     )
   }
+  if (error.code === '23505' && error.message.includes('messenger_page_id')) {
+    return t(
+      'This Facebook Page already receives Messenger for another QuiroFlow account. Disconnect it there first.',
+      'Esta página de Facebook ya recibe Messenger en otra cuenta de QuiroFlow. Desconéctala allí primero.',
+    )
+  }
   if (error.code === '23505' && error.message.includes('whatsapp_phone_number_id')) {
     return t(
       'This WhatsApp number is already connected to another QuiroFlow account. Disconnect it there first.',
@@ -212,6 +242,7 @@ interface InstagramConnectResult {
   connected: boolean
   instagramUserId?: string
   username?: string | null
+  messengerPageId?: string | null
   choose?: { instagramUserId: string; username: string | null; pageName: string | null }[]
   ticket?: string
 }
@@ -273,6 +304,7 @@ function instagramConnected(result: InstagramConnectResult) {
   hasInstagramToken.value = true
   instagramAccessToken.value = ''
   instagramManualOpen.value = false
+  if (result.messengerPageId) messengerPageId.value = result.messengerPageId
   const who = result.username ? `@${result.username}` : result.instagramUserId
   showToast(t(`Instagram connected: ${who}.`, `Instagram conectado: ${who}.`), 'success')
 }
@@ -291,6 +323,9 @@ async function save() {
     online_booking_notify_whatsapp_template_name: staffNotifyTemplateName.value.trim() || null,
     meta_ads_account_id: metaAdsAccountId.value.trim() || null,
     instagram_user_id: instagramUserId.value.trim() || null,
+    messenger_page_id: messengerPageId.value.trim() || null,
+    webchat_enabled: webchatEnabled.value,
+    webchat_greeting: webchatGreeting.value.trim() || null,
     new_lead_notify_whatsapp_template_name: newLeadNotifyTemplateName.value.trim() || null,
     new_lead_notify_whatsapp_template_language: newLeadNotifyTemplateLanguage.value.trim() || 'es',
     online_booking_notify_whatsapp_template_language: staffNotifyTemplateLanguage.value.trim() || 'es',
@@ -467,7 +502,59 @@ async function save() {
                   </div>
                   <input id="ig-token" v-model="instagramAccessToken" type="password" autocomplete="off" :placeholder="hasInstagramToken ? '••••••••••••••••••••' : 'EAA…'" data-test="instagram-access-token" :class="[inputClass, 'w-full sm:w-[300px]']" />
                 </div>
+                <div class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
+                  <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
+                    <label for="fb-page-id" class="text-[14.5px] font-bold text-ink-900">{{ t('Facebook Page ID', 'ID de la página de Facebook') }}</label>
+                    <span class="text-[13px] text-ink-500">{{ t('The Page that token belongs to. Its Messenger DMs arrive in the Inbox too.', 'La página a la que pertenece ese token. Sus mensajes de Messenger también llegan a la Bandeja.') }}</span>
+                  </div>
+                  <input id="fb-page-id" v-model="messengerPageId" type="text" placeholder="105600000000000" data-test="messenger-page-id" :class="[inputClass, 'w-full font-mono text-[13px] sm:w-[300px]']" />
+                </div>
               </details>
+              <!-- Messenger is not a second connection: it is the Page Instagram already goes through. -->
+              <div class="flex flex-wrap items-center gap-3 border-t border-line-row px-[18px] py-3" data-cy="messenger-status">
+                <span class="min-w-[220px] flex-1 text-[13px] leading-snug text-ink-500">
+                  <strong class="text-ink-900">{{ t('Facebook Messenger', 'Facebook Messenger') }}</strong> ·
+                  {{ messengerPageId ? t('Messages to the same Facebook Page arrive in the Inbox as well, and you can answer them there.', 'Los mensajes a la misma página de Facebook también llegan a la Bandeja, y puedes responderlos desde allí.') : t('Connect Instagram and the Facebook Page you tick receives Messenger here too.', 'Conecta Instagram y la página de Facebook que marques también recibirá Messenger aquí.') }}
+                </span>
+                <UiPill v-if="messengerPageId && (hasInstagramToken || instagramAccessToken)" tone="success" dot>{{ t('Receiving and replying', 'Recibe y responde') }}</UiPill>
+                <UiPill v-else-if="messengerPageId" tone="warning" dot>{{ t('Receiving only', 'Solo recibe') }}</UiPill>
+                <UiPill v-else tone="neutral">{{ t('Not connected', 'Sin conectar') }}</UiPill>
+              </div>
+            </section>
+
+            <!-- A chat bubble on the clinic's own website, answered from the Inbox (and by the receptionist, when it is on). -->
+            <section aria-labelledby="h-webchat" class="overflow-hidden rounded-card border border-line bg-surface" data-cy="webchat-settings">
+              <div class="flex flex-wrap items-center gap-3 px-[18px] pb-1 pt-4">
+                <h2 id="h-webchat" class="flex-1 text-[16px] font-bold text-ink-900">{{ t('Chat on your website', 'Chat en tu web') }}</h2>
+                <UiPill v-if="webchatEnabled" tone="success" dot>{{ t('On', 'Activado') }}</UiPill>
+                <UiPill v-else tone="neutral">{{ t('Off', 'Desactivado') }}</UiPill>
+              </div>
+              <p class="px-[18px] pb-2 text-[13px] text-ink-muted">{{ t('A chat button on your website. Each visitor who writes becomes a lead, their messages arrive in the Inbox, and the AI receptionist answers them if it is on.', 'Un botón de chat en tu web. Cada visitante que escribe se convierte en lead, sus mensajes llegan a la Bandeja y la recepcionista con IA le contesta si está activada.') }}</p>
+              <label class="flex cursor-pointer flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">
+                <span class="flex min-w-[220px] flex-1 flex-col gap-0.5">
+                  <span class="text-[14.5px] font-bold text-ink-900">{{ t('Show the chat on my website', 'Mostrar el chat en mi web') }}</span>
+                  <span class="text-[13px] text-ink-500">{{ t('Off hides it everywhere, even where the code is still pasted.', 'Desactivado lo oculta en todas partes, aunque el código siga pegado.') }}</span>
+                </span>
+                <input v-model="webchatEnabled" type="checkbox" data-cy="webchat-enabled" class="h-5 w-5 rounded border-line-control text-brand focus:ring-brand/30" />
+              </label>
+              <div class="flex flex-wrap items-start gap-4 border-t border-line-row px-[18px] py-3">
+                <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
+                  <label for="webchat-greeting" class="text-[14.5px] font-bold text-ink-900">{{ t('Greeting', 'Saludo') }}</label>
+                  <span class="text-[13px] text-ink-500">{{ t('The first thing a visitor reads when they open the chat.', 'Lo primero que lee un visitante al abrir el chat.') }}</span>
+                </div>
+                <textarea id="webchat-greeting" v-model="webchatGreeting" rows="2" maxlength="300" data-cy="webchat-greeting" :placeholder="t('Hi! How can we help you?', '¡Hola! ¿En qué te podemos ayudar?')" :class="[inputClass, 'w-full sm:w-[300px]']" />
+              </div>
+              <div class="flex flex-col gap-2 border-t border-line-row px-[18px] py-3">
+                <span class="text-[14.5px] font-bold text-ink-900">{{ t('Code for your website', 'Código para tu web') }}</span>
+                <template v-if="webchatSnippet">
+                  <span class="text-[13px] text-ink-500">{{ t('Paste it once, before </body>, on every page. Whoever manages your website can do it in a minute.', 'Pégalo una vez, antes de </body>, en todas las páginas. Quien lleve tu web lo hace en un minuto.') }}</span>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <code class="min-w-0 flex-1 overflow-x-auto whitespace-nowrap rounded-ctl border border-line bg-surface-subtle px-3 py-2 font-mono text-[12.5px] text-ink-700" data-cy="webchat-snippet">{{ webchatSnippet }}</code>
+                    <UiBtn data-cy="webchat-copy" @click="copySnippet">{{ t('Copy', 'Copiar') }}</UiBtn>
+                  </div>
+                </template>
+                <span v-else class="text-[13px] text-ink-500">{{ t('Your clinic needs a booking page address first: set it in Settings > Online booking.', 'Primero tu clínica necesita una dirección de reservas: ponla en Ajustes > Reserva online.') }}</span>
+              </div>
             </section>
 
             <!-- Reading only: the token asked for is ads_read, so a leaked one cannot spend money. -->

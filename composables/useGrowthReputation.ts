@@ -34,6 +34,14 @@ export interface ReputationData {
   trendLabel: string | null
   pendingCount: number
   reviews: ReputationReview[]
+  google: {
+    /** Whether this deployment can connect Google at all. */
+    configured: boolean
+    /** The listing being read ("locations/456"), or null until one is chosen. */
+    location: string | null
+    locationTitle: string | null
+    syncedAt: string | null
+  }
   funnel: {
     sent: number
     opened: number
@@ -90,11 +98,10 @@ export function useGrowthReputation() {
   async function approve(reviewId: string, body?: string) {
     busyId.value = reviewId
     try {
-      await useStaffFetch(`/api/growth/reputation/${reviewId}/reply`, { method: 'POST', body: { body } })
-      // Deliberately not "Posted": nothing reaches Google until the platform
-      // integration exists, and a toast that says otherwise would be the
-      // easiest possible thing to believe.
-      showToast(t('Reply approved and saved.', 'Respuesta aprobada y guardada.'))
+      const result = await useStaffFetch<{ postedToPlatform: boolean }>(`/api/growth/reputation/${reviewId}/reply`, { method: 'POST', body: { body } })
+      // "Published" only when Google said yes. Anything else is saved here
+      // and nowhere else, and the toast must not be the thing that says otherwise.
+      showToast(result.postedToPlatform ? t('Reply published on Google.', 'Respuesta publicada en Google.') : t('Reply approved and saved.', 'Respuesta aprobada y guardada.'))
       await load()
     } catch (e) {
       showToast(serverMessage(e) ?? t('Could not save that reply.', 'No se ha podido guardar la respuesta.'), 'error')
@@ -117,5 +124,71 @@ export function useGrowthReputation() {
   }
 
 
-  return { data, loading, error, busyId, draftReply, approve, discard, reload: load }
+  // Google: connect, choose the listing, and keep its reviews current.
+  const googleLocations = ref<{ account: string; location: string; title: string; address: string | null }[] | null>(null)
+  const googleBusy = ref(false)
+
+  async function connectGoogle() {
+    googleBusy.value = true
+    try {
+      const { url } = await useStaffFetch<{ url: string }>('/api/google-business/connect')
+      window.location.href = url
+    } catch (e) {
+      showToast(serverMessage(e) ?? t('Could not start connecting Google.', 'No se ha podido empezar a conectar Google.'), 'error')
+      googleBusy.value = false
+    }
+  }
+
+  async function loadGoogleLocations() {
+    googleBusy.value = true
+    try {
+      googleLocations.value = (await useStaffFetch<{ locations: NonNullable<typeof googleLocations.value> }>('/api/google-business/locations')).locations
+    } catch (e) {
+      showToast(serverMessage(e) ?? t('Could not read your Google listings.', 'No se han podido leer tus fichas de Google.'), 'error')
+    } finally {
+      googleBusy.value = false
+    }
+  }
+
+  async function chooseGoogleLocation(location: string) {
+    googleBusy.value = true
+    try {
+      const result = await useStaffFetch<{ title: string; imported: number; syncError?: string }>('/api/google-business/location', { method: 'POST', body: { location } })
+      googleLocations.value = null
+      if (result.syncError) showToast(result.syncError, 'error')
+      else showToast(t(`Connected to ${result.title}: ${result.imported} reviews imported.`, `Conectado a ${result.title}: ${result.imported} reseñas importadas.`), 'success')
+      await load()
+    } catch (e) {
+      showToast(serverMessage(e) ?? t('Could not choose that listing.', 'No se ha podido elegir esa ficha.'), 'error')
+    } finally {
+      googleBusy.value = false
+    }
+  }
+
+  /** Quietly, when the page opens; with a toast when somebody presses Refresh. */
+  async function syncGoogle(force = false) {
+    if (force) googleBusy.value = true
+    try {
+      const result = await useStaffFetch<{ synced: boolean; imported: number }>('/api/google-business/sync', { method: 'POST', body: { force } })
+      if (result.synced) await load()
+      if (force) showToast(t('Google reviews are up to date.', 'Las reseñas de Google están al día.'), 'success')
+    } catch (e) {
+      if (force) showToast(serverMessage(e) ?? t('Could not read your Google reviews.', 'No se han podido leer tus reseñas de Google.'), 'error')
+    } finally {
+      googleBusy.value = false
+    }
+  }
+
+  async function disconnectGoogle() {
+    googleBusy.value = true
+    try {
+      await useStaffFetch('/api/google-business/disconnect', { method: 'POST' })
+      googleLocations.value = null
+      await load()
+    } finally {
+      googleBusy.value = false
+    }
+  }
+
+  return { data, loading, error, busyId, draftReply, approve, discard, reload: load, googleLocations, googleBusy, connectGoogle, loadGoogleLocations, chooseGoogleLocation, syncGoogle, disconnectGoogle }
 }

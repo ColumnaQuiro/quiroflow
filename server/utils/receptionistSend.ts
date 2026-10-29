@@ -2,6 +2,8 @@ import type { H3Event } from 'h3'
 import { sendInboxMessage } from '~/server/utils/inboxSend'
 import { notifyInboxTeamMembers, sendPushToPatients } from '~/server/utils/pushNotifications'
 import { changesTheDiary, offersPastTimeToday } from '~/utils/receptionistAutoReply'
+import { sendWebchatText } from '~/server/utils/webchat'
+import { sendMessengerToLead } from '~/server/utils/messengerSend'
 
 // The AI receptionist sending a reply on its own, and passing a conversation
 // to a person -- what receptionist-draft-cron does instead of leaving a draft
@@ -15,7 +17,8 @@ import { changesTheDiary, offersPastTimeToday } from '~/utils/receptionistAutoRe
 // /api/patient-messages/send gives a person's reply.
 
 export type ReceptionistTarget =
-  | { kind: 'lead'; leadId: string }
+  /** `channel`: the one they last wrote on, which the reply goes back on. WhatsApp when unsaid. */
+  | { kind: 'lead'; leadId: string; channel?: string }
   | { kind: 'patient'; patientId: string; channel: 'whatsapp' | 'app' }
 
 /** Sends `text` as the receptionist. Throws when it cannot be sent (e.g. outside WhatsApp's window). */
@@ -27,6 +30,16 @@ export async function sendAsReceptionist(event: H3Event, service: any, accountId
     if (error) throw new Error(`could not store the app reply: ${error.message}`)
     const { data: account } = await service.from('accounts').select('name').eq('id', accountId).maybeSingle()
     await sendPushToPatients(service, accountId, [target.patientId], { title: account?.name ?? 'Your clinic', body: text, data: { type: 'patient_app_message' } })
+    return
+  }
+  // The website chat and Messenger have no phone number for sendInboxMessage
+  // to address: each has its own send, the one the Inbox composer uses too.
+  if (target.kind === 'lead' && target.channel === 'webchat') {
+    await sendWebchatText(service, accountId, target.leadId, text, { sentByAi: true })
+    return
+  }
+  if (target.kind === 'lead' && target.channel === 'messenger') {
+    await sendMessengerToLead(service, accountId, target.leadId, text, { sentByAi: true })
     return
   }
   // sendInboxMessage reads only the sender's account; the receptionist has no

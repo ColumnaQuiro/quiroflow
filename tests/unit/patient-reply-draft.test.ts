@@ -26,6 +26,16 @@ describe('patientFactsSection', () => {
     expect(s).toMatch(/Unpaid: 45,00\s€\./)
   })
 
+  // 28 Oct 2026: asked for the mobile of the patient it was writing to, and
+  // unable to see a visit the desk had already cancelled.
+  it('says the patient is the one writing, and lists visits already cancelled', () => {
+    const s = patientFactsSection({ ...facts, cancelledAhead: [{ startsAt: '2026-10-29T14:00:00Z', typeName: 'Primera visita' }] }, 'Europe/Madrid')
+    expect(s).toContain('this is the person writing to you')
+    expect(s).toContain('never ask for their mobile')
+    expect(s).toContain('Already cancelled, no longer booked: Thursday 29 October at 15:00 (Primera visita)')
+    expect(patientFactsSection(facts, 'Europe/Madrid')).not.toContain('Already cancelled')
+  })
+
   it('says nothing about money when the asker cannot see it, and says when nothing is booked', () => {
     const s = patientFactsSection({ ...facts, upcoming: [], plan: null, outstandingCents: null }, 'Europe/Madrid')
     expect(s).toContain('Next visit: nothing booked.')

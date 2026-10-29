@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { AUTOMATED_MARK, COLLEAGUE_MARK, cleanReply, historyLine, historyMarkersSection, INFORMAL_ADDRESS_LINE, LATER_ANSWER_LINE, offeredTimeCount, REPLY_DETAILS_LINE, SENT_FILES_LINE, STATED_LIMITS_LINE } from '../../utils/receptionistHistory'
+import { AUTOMATED_MARK, COLLEAGUE_MARK, cleanReply, historyLine, historyMarkersSection, INFORMAL_ADDRESS_LINE, LATER_ANSWER_LINE, offeredTimeCount, REPLY_DETAILS_LINE, SENT_FILES_LINE, standingClockTimes, STATED_LIMITS_LINE, unbookedClaim } from '../../utils/receptionistHistory'
 import { rescheduleSection } from '../../utils/receptionistTypes'
 
 // The reminder in the history read as one of the receptionist's own replies,
@@ -112,5 +112,48 @@ describe('Days twelve and thirteen', () => {
   it('tells them when a visit is before anything else', () => {
     const section = rescheduleSection([{ startsAt: '2026-10-22T17:45:00Z', typeName: 'Ajuste' }] as never, 'Europe/Madrid', { listVisits: true, canBook: true })
     expect(section).toContain('If they are unsure when one of these is')
+  })
+})
+
+// 28 Oct 2026: "Te confirmo tu cita del jueves 29 a las 15:00" with nothing
+// booked, and "tu cita queda a las 18:30" beside the one move it made.
+describe('A reply that states a booking nothing made', () => {
+  const none = new Set<string>()
+
+  it('catches a confirmation with nothing booked in the reply', () => {
+    expect(unbookedClaim('Te confirmo tu cita del jueves 29 de octubre a las 15:00 con Ana; para la de tu pareja, mi compañera se pondrá en contacto.', none, none)).toContain('15:00')
+  })
+
+  it('catches a second visit beside the one it did book', () => {
+    const text = 'Queda todo listo: la cita de Pablo pasa al jueves 12 de noviembre a las 18:00 con Ana, y tu cita queda a las 18:30, también con Ana.'
+    expect(unbookedClaim(text, new Set(['18:00', '15:00']), none)).toContain('18:30')
+    expect(unbookedClaim(text, new Set(['18:00', '18:30']), none)).toBeNull()
+  })
+
+  it('lets through what the tools confirmed, offers and visits they already have', () => {
+    expect(unbookedClaim('Tu cita queda movida al miércoles 4 de noviembre a las 17:15 con Ana.', new Set(['17:15']), none)).toBeNull()
+    expect(unbookedClaim('Hecho, tu cita del miércoles 4 de noviembre a las 16:00 queda cancelada.', new Set(['16:00']), none)).toBeNull()
+    expect(unbookedClaim('Mañana tengo a las 18:00 o a las 18:30. ¿Cuál te confirmo?', none, none)).toBeNull()
+    expect(unbookedClaim('¿Te confirmo el jueves a las 18:00?', none, none)).toBeNull()
+    expect(unbookedClaim('Gracias por avisar, te esperamos a las 12:00 con Ana.', none, none)).toBeNull()
+    expect(unbookedClaim('Te confirmo que tu cita del jueves a las 15:00 sigue en pie.', none, new Set(['15:00']))).toBeNull()
+  })
+
+  it('catches an untimed booking only when nothing was done', () => {
+    expect(unbookedClaim('Listo, te he reservado la cita.', none, none)).not.toBeNull()
+    expect(unbookedClaim('Listo, te he reservado la cita.', new Set(['10:00']), none)).toBeNull()
+    expect(unbookedClaim('Mi compañera se encargará de la cancelación y te escribirá en breve.', none, none)).toBeNull()
+  })
+
+  it('reads visit times on the clinic clock', () => {
+    expect(standingClockTimes([{ startsAt: '2026-10-29T14:00:00Z' }], 'Europe/Madrid')).toEqual(new Set(['15:00']))
+  })
+})
+
+describe('Moving a visit, when it is today', () => {
+  it('cancels the one they cannot make rather than leaving it booked', () => {
+    const s = rescheduleSection([{ startsAt: '2026-10-28T18:30:00Z', typeName: 'Ajuste' }], 'Europe/Madrid', { listVisits: true, canBook: true })
+    expect(s).toContain('A visit TODAY that they say they cannot make')
+    expect(s).toContain("only times listed under that type's own name")
   })
 })

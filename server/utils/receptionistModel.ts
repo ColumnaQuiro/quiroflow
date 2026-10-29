@@ -7,7 +7,7 @@ import { clinicDateOf, startOfLocalDate } from '~/utils/clinicClock'
 import { briefingLeak } from '~/utils/receptionistGuard'
 import type { ReceptionistPrompt } from '~/utils/receptionistPrompt'
 import { ADD_TO_WAITLIST, BOOK_APPOINTMENT, CANCEL_APPOINTMENT, GIVE_VISIT_TO, STOP_FOLLOW_UPS } from '~/server/utils/receptionistBooking'
-import { cleanReply, offeredTimeCount, tooManyTimesNote } from '~/utils/receptionistHistory'
+import { cleanReply, clockTimes, offeredTimeCount, tooManyTimesNote, unbookedClaim, unbookedClaimNote } from '~/utils/receptionistHistory'
 
 // How the receptionist talks to the model, for all three of its callers --
 // lead drafts, patient drafts and "Try Alba" -- so they cannot drift apart.
@@ -157,6 +157,13 @@ export async function runReceptionistModel(
      * person five.
      */
     maxTimesPerReply?: number
+    /**
+     * The clock times ("H:MM", the clinic's) of the visits they already have,
+     * which a reply may restate without having booked them. With `book`, a
+     * reply that states a booking at any other time nothing in it made is
+     * written again once, and refused the second time (unbookedClaim).
+     */
+    standingTimes?: Set<string>
     /** The clinic's text that is not for patients (internalNotes). */
     internalNotes: string[]
     /** Names the conversation in the log when a draft is withheld; never its content. */
@@ -197,6 +204,10 @@ export async function runReceptionistModel(
   // cancellation, the one that was): not an offer, so not counted.
   let booked = false
   let rewritten = false
+  // The times the booking tools confirmed in this reply, and whether a reply
+  // stating a booking they did not make has already been sent back once.
+  const done = new Set<string>()
+  let claimRewritten = false
   for (let round = 0; ; round++) {
     const message = await client.messages.create({
       model: opts.model,
@@ -226,6 +237,19 @@ export async function runReceptionistModel(
         rewritten = true
         messages.push({ role: 'assistant', content: message.content })
         messages.push({ role: 'user', content: tooManyTimesNote(offered, opts.maxTimesPerReply) })
+        continue
+      }
+      const claim = opts.book && text ? unbookedClaim(text, done, opts.standingTimes ?? new Set()) : null
+      if (claim) {
+        // Told it was booked, they come to a visit nobody has. A second
+        // attempt goes to a person instead (refused, so handed over).
+        if (claimRewritten) {
+          console.warn(`[receptionist] withheld a reply for ${opts.logLabel}: it states a booking it did not make`)
+          return { text: '', refused: true, handedOver, toolUses }
+        }
+        claimRewritten = true
+        messages.push({ role: 'assistant', content: message.content })
+        messages.push({ role: 'user', content: unbookedClaimNote(claim) })
         continue
       }
       const leak = text ? briefingLeak(text, opts.internalNotes) : null
@@ -286,6 +310,9 @@ export async function runReceptionistModel(
           result = { content: 'Done: your colleagues have been told, and you will not answer in this conversation until one of them has. Now write your last message: tell them your colleague will pick this up shortly. Do not promise a time.', isError: false }
         } else {
           result = { content: `There is no tool called ${use.name}.`, isError: true }
+        }
+        if (!result.isError && (use.name === 'book_appointment' || use.name === 'cancel_appointment' || use.name === 'give_visit_to')) {
+          for (const t of clockTimes(JSON.stringify(use.input ?? {}))) done.add(t)
         }
         toolUses.push({ name: use.name, input: (use.input ?? {}) as Record<string, unknown>, ok: !result.isError })
         return { type: 'tool_result', tool_use_id: use.id, content: result.content, is_error: result.isError }

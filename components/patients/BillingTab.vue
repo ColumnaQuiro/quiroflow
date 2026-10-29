@@ -2404,12 +2404,12 @@ const fieldId = useId()
                only needs a single "Record payment" click. -->
           <div v-for="(row, i) in paymentRows" :key="i" class="flex flex-wrap items-end gap-2">
             <div>
-              <label class="block text-[11px] text-ink-muted">{{ t('Amount (€)', 'Importe (€)') }}</label>
-              <input v-model="row.amount" type="number" min="0" step="0.01" class="mt-0.5 w-24 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]" />
+              <label :for="`${fieldId}-amount-${i}`" class="block text-[11px] text-ink-muted">{{ t('Amount (€)', 'Importe (€)') }}</label>
+              <input :id="`${fieldId}-amount-${i}`" v-model="row.amount" type="number" min="0" step="0.01" class="mt-0.5 w-24 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]" />
             </div>
             <div>
-              <label class="block text-[11px] text-ink-muted">{{ t('Method', 'Método') }}</label>
-              <select v-model="row.method" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
+              <label :for="`${fieldId}-method-${i}`" class="block text-[11px] text-ink-muted">{{ t('Method', 'Método') }}</label>
+              <select :id="`${fieldId}-method-${i}`" v-model="row.method" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
                 <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
                 <!-- Not one of the configured methods: this spends the
                      patient's own balance rather than taking money, so it is
@@ -2615,12 +2615,12 @@ const fieldId = useId()
             <div v-if="collectOnPackageId === p.id" class="mt-2.5 rounded-ctl border border-line-divider bg-surface-subtle p-2.5">
               <div class="flex flex-wrap items-end gap-2">
                 <div>
-                  <label class="block text-[11px] text-ink-muted">{{ t('Amount', 'Importe') }}</label>
-                  <input v-model="collectAmount" type="number" step="0.01" min="0" class="bg-surface mt-0.5 w-28 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]" />
+                  <label :for="`${fieldId}-collectAmount-${p.id}`" class="block text-[11px] text-ink-muted">{{ t('Amount', 'Importe') }}</label>
+                  <input :id="`${fieldId}-collectAmount-${p.id}`" v-model="collectAmount" type="number" step="0.01" min="0" class="bg-surface mt-0.5 w-28 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]" />
                 </div>
                 <div>
-                  <label class="block text-[11px] text-ink-muted">{{ t('Method', 'Método') }}</label>
-                  <select v-model="collectMethod" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
+                  <label :for="`${fieldId}-collectMethod-${p.id}`" class="block text-[11px] text-ink-muted">{{ t('Method', 'Método') }}</label>
+                  <select :id="`${fieldId}-collectMethod-${p.id}`" v-model="collectMethod" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
                     <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
                     <option value="credit" :disabled="spendableCreditCents <= 0">
                       {{ t('Credit on account', 'Crédito en cuenta') }}

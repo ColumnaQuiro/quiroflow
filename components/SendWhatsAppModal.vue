@@ -188,8 +188,8 @@ const fieldId = useId()
 
           <div v-if="variables.length > 0" class="mt-3 space-y-2">
             <div v-for="(v, i) in variables" :key="i">
-              <label class="block text-xs font-medium text-ink-muted">{{ slot(i + 1) }}</label>
-              <input
+              <label :for="`${fieldId}-variable-${i}`" class="block text-xs font-medium text-ink-muted">{{ slot(i + 1) }}</label>
+              <input :id="`${fieldId}-variable-${i}`"
                 v-model="variables[i]"
                 type="text"
                 class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-1.5 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"

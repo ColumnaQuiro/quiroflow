@@ -113,6 +113,10 @@ async function send() {
 
 const sentCount = computed(() => results.value.filter((r) => r.ok).length)
 const failedCount = computed(() => results.value.filter((r) => !r.ok).length)
+
+// Ties each visible <label> to the field under it (for/id), so a screen
+// reader announces the field by its name.
+const fieldId = useId()
 </script>
 
 <template>
@@ -138,8 +142,8 @@ const failedCount = computed(() => results.value.filter((r) => !r.ok).length)
 
             <div v-if="sharedVariables.length > 0" class="mt-3 space-y-2">
               <div v-for="(v, i) in sharedVariables" :key="i">
-                <label class="block text-xs font-medium text-ink-muted">{{ slot(i + 2) }} {{ t('(same for everyone)', '(igual para todos)') }}</label>
-                <input
+                <label :for="`${fieldId}-variable-${i}`" class="block text-xs font-medium text-ink-muted">{{ slot(i + 2) }} {{ t('(same for everyone)', '(igual para todos)') }}</label>
+                <input :id="`${fieldId}-variable-${i}`"
                   v-model="sharedVariables[i]"
                   type="text"
                   class="mt-1 w-full rounded-ctl border border-line-control px-3 py-1.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand-tintBorder"

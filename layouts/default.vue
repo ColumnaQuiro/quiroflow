@@ -62,6 +62,15 @@ function dismissDenied() {
 
 const contactHref = 'mailto:hola@quiroflow.com'
 
+// A release published since this tab loaded (plugins/stale-build-reload.client.ts).
+// The next navigation reloads anyway; this is for someone who stays put.
+const { available: newVersion } = useNewVersion()
+// fullPath: reloadNuxtApp() on its own reloads location.pathname, dropping
+// the query -- the calendar's date and view, a patient's open tab.
+function reloadForNewVersion() {
+  reloadNuxtApp({ path: route.fullPath, force: true })
+}
+
 // A Supabase read that failed (plugins/supabase-failures.client.ts) would
 // otherwise show as an empty list and nothing else. One toast per page, not
 // one per query: a page whose data is gone fails several reads at once, and
@@ -155,6 +164,14 @@ watch(supabaseFailure, (f) => {
           </div>
         </div>
         <TeamAlertBanner />
+        <div
+          v-if="newVersion"
+          data-cy="new-version-banner"
+          class="flex items-center justify-between gap-3 border-b border-info-border bg-info-bg px-6 py-2 text-sm text-info-text"
+        >
+          <span>{{ t('A new version of QuiroFlow is available. It loads when you change screen.', 'Hay una versión nueva de QuiroFlow. Se cargará al cambiar de pantalla.') }}</span>
+          <button type="button" class="shrink-0 font-medium underline" @click="reloadForNewVersion">{{ t('Reload now', 'Recargar ahora') }}</button>
+        </div>
         <div v-if="showDenied" class="flex items-center justify-between bg-amber-50 px-6 py-2 text-sm text-amber-800">
           <span>You don't have access to that section.</span>
           <button type="button" class="font-medium underline" @click="dismissDenied">Dismiss</button>

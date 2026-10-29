@@ -203,6 +203,10 @@ export default defineNuxtConfig({
   // day, so a stylesheet the browser keeps is the better trade than saving a
   // first-ever visitor one request.
   features: { inlineStyles: false },
+  // plugins/stale-build-reload.client.ts checks for a new release itself --
+  // more often than this hourly default, and when the tab regains focus --
+  // so Nuxt's own poll would only repeat it.
+  experimental: { checkOutdatedBuildInterval: false },
   supabase: {
     redirectOptions: {
       login: '/login',

@@ -1,4 +1,5 @@
 import { requireGrowth } from '~/server/utils/requireGrowth'
+import { googleBusinessConfigured } from '~/server/utils/googleBusiness'
 
 // The reputation screen, computed from whatever the clinic actually has.
 //
@@ -19,7 +20,7 @@ export default defineEventHandler(async (event) => {
 
   const yearAgo = new Date(Date.now() - 365 * 24 * 3600 * 1000).toISOString()
 
-  const [{ data: reviews, error }, { data: requests }] = await Promise.all([
+  const [{ data: reviews, error }, { data: requests }, { data: account }] = await Promise.all([
     supabase
       .from('reviews')
       .select('id, platform, author_name, rating, body, posted_at, replied_at, reply_body, reply_was_ai_drafted, draft_body, clinics:clinic_id(name)')
@@ -32,6 +33,7 @@ export default defineEventHandler(async (event) => {
       .select('id, sent_at, opened_at, review_id')
       .eq('account_id', teamMember.account_id)
       .gte('sent_at', yearAgo),
+    supabase.from('accounts').select('google_business_location, google_business_location_title, google_reviews_synced_at').eq('id', teamMember.account_id).maybeSingle(),
   ])
 
   if (error) throw createError({ statusCode: 500, statusMessage: error.message })
@@ -88,6 +90,14 @@ export default defineEventHandler(async (event) => {
       replyWasAiDrafted: review.reply_was_ai_drafted,
       draftBody: review.draft_body,
     })),
+    // Where the Google half stands: not offered on this deployment, offered
+    // but not connected, connected with no listing chosen yet, or reading one.
+    google: {
+      configured: googleBusinessConfigured(),
+      location: account?.google_business_location ?? null,
+      locationTitle: account?.google_business_location_title ?? null,
+      syncedAt: account?.google_reviews_synced_at ?? null,
+    },
     funnel: {
       sent,
       opened,

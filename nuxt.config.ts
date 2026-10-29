@@ -375,6 +375,19 @@ export default defineNuxtConfig({
     // or makes live calls to Meta from a test -- which is what it started
     // doing the moment metaPlatformAppId stopped being blank.
     metaGraphBaseUrl: 'https://graph.facebook.com/v21.0',
+    // Google Business Profile, for importing a clinic's Google reviews and
+    // posting the replies it approves (Growth > Reputation). An OAuth web
+    // client in Google Cloud, with the redirect URI
+    // https://app.quiroflow.com/api/google-business/callback and the
+    // Business Profile APIs enabled -- which Google only does after approving
+    // a Basic API Access request; until then every call answers with a quota
+    // of 0. Blank leaves Reputation's "coming soon" card in place.
+    googleBusinessClientId: '',
+    googleBusinessClientSecret: '',
+    // Blank in production, where each API is called on its own host. Set,
+    // every Google host is reached as <this>/<host>/<path> instead, which is
+    // how a test points them all at one local stub.
+    googleApiBaseUrl: '',
     public: {
       // Sentry: the DSN only allows sending events, so it is public by
       // design. Blank turns monitoring off (NUXT_PUBLIC_SENTRY_DSN), and the

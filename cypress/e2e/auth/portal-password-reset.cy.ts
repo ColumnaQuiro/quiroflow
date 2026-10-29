@@ -31,3 +31,34 @@ describe('A patient resetting their portal password', () => {
     cy.contains('a', 'Request a new one').should('have.attr', 'href', '/forgot-password')
   })
 })
+
+// The emailed link carries the token itself (#token_hash=…), and the page
+// verifies it. The link it replaced came back from supabase.co with ?code=,
+// which only the browser that asked for the reset could exchange -- opened on
+// another device, in the Gmail app, or after asking from the mobile app, it
+// said "invalid or has expired" on the first click. Visiting the page fresh,
+// with nothing in storage, is exactly that other device.
+describe('A password-reset link opened on a different device', () => {
+  it('lets the person choose a new password, and works only once', () => {
+    cy.seedStaffAccount().then((owner) => {
+      cy.task<string>('db:recoveryTokenHash', { email: owner.email }).then((tokenHash) => {
+        cy.visit(`/reset-password#token_hash=${tokenHash}&type=recovery`)
+
+        // The spent token is gone from the address bar once it is verified.
+        cy.location('hash').should('eq', '')
+        cy.get('#password').type('NewPass123!')
+        cy.get('#confirm').type('NewPass123!')
+        cy.contains('button', 'Update password').click()
+        cy.contains('Password updated.').should('be.visible')
+        cy.task('db:passwordWorks', { email: owner.email, password: 'NewPass123!' }).should('eq', true)
+
+        // The same link again, signed out: refused.
+        cy.clearAllCookies()
+        cy.clearAllLocalStorage()
+        cy.visit(`/reset-password#token_hash=${tokenHash}&type=recovery`)
+        cy.contains('This link is invalid or has expired.').should('be.visible')
+        cy.contains('a', 'Request a new one').should('have.attr', 'href', '/forgot-password')
+      })
+    })
+  })
+})

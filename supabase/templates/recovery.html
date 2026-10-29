@@ -1,0 +1,19 @@
+<!--
+  "Reset password" email. Production does not read this file: paste it into the
+  Supabase dashboard (Authentication -> Emails -> Reset password) whenever it
+  changes. Local Supabase uses it through config.toml.
+
+  The link goes straight to QuiroFlow with the token in the fragment, and
+  pages/reset-password.vue verifies it there. Not {{ .ConfirmationURL }}: that
+  is a supabase.co link that returns with a PKCE ?code=, which only the browser
+  that asked for the reset can redeem -- opened anywhere else, it said "invalid
+  or has expired" on the first click. {{ .RedirectTo }} is the page the app
+  asked for (/reset-password, plus ?portal=1 for a patient), so a fragment
+  appends cleanly whether or not it has a query.
+-->
+<h2>Elige una contraseña nueva</h2>
+<p>Hemos recibido una solicitud para cambiar la contraseña de tu cuenta de QuiroFlow.</p>
+<p><a href="{{ .RedirectTo }}#token_hash={{ .TokenHash }}&type=recovery">Cambiar contraseña</a></p>
+<p>El enlace sirve una sola vez y caduca en una hora. Si no lo has pedido tú, ignora este correo: tu contraseña no cambia.</p>
+<hr>
+<p>We received a request to reset your QuiroFlow password. <a href="{{ .RedirectTo }}#token_hash={{ .TokenHash }}&type=recovery">Choose a new password</a>. The link works once and expires in an hour. If you didn't ask for this, ignore this email.</p>

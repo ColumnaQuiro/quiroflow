@@ -4261,6 +4261,24 @@ async function setPackagePurchasedAt(opts: { id: string; purchasedAt: string }) 
   return null
 }
 
+/**
+ * The token a password-reset email carries, minted the way the email's is.
+ * generateLink sends nothing; its hashed_token is the {{ .TokenHash }} the
+ * "Reset password" template puts in the link.
+ */
+async function recoveryTokenHash(opts: { email: string }) {
+  const { data, error } = await admin.auth.admin.generateLink({ type: 'recovery', email: opts.email })
+  if (error) throw error
+  return data.properties.hashed_token
+}
+
+/** Whether a password signs in, without touching the browser's session. */
+async function passwordWorks(opts: { email: string; password: string }) {
+  const client = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
+  const { error } = await client.auth.signInWithPassword(opts)
+  return !error
+}
+
 export const dbTasks = {
   'db:seedReportDataset': seedReportDataset,
   'db:inboxUnreadCounts': inboxUnreadCounts,
@@ -4280,6 +4298,8 @@ export const dbTasks = {
   'db:setRequireTwoFactor': setRequireTwoFactor,
   'db:passwordOnlyReads': passwordOnlyReads,
   'db:createStaffAccount': createStaffAccount,
+  'db:recoveryTokenHash': recoveryTokenHash,
+  'db:passwordWorks': passwordWorks,
   'db:createLead': createLead,
   'db:createLeadMessage': createLeadMessage,
   'db:leadAiState': leadAiState,

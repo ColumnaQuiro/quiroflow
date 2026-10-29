@@ -23,7 +23,7 @@ export const REPLY_WINDOW_WARN_MS = 6 * 60 * 60 * 1000
 export const REPLY_WINDOW_URGENT_MS = 60 * 60 * 1000
 
 /** Channels that only allow a free reply within 24h of the patient's last message. */
-const WINDOWED_CHANNELS = new Set(['whatsapp', 'instagram'])
+const WINDOWED_CHANNELS = new Set(['whatsapp', 'instagram', 'messenger'])
 
 // Words that close a conversation on their own.
 const CLOSING_WORDS = new Set([

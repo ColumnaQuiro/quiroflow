@@ -132,7 +132,21 @@ function keyOf(m: { patient_id: string | null; phone_number: string | null; exte
 const CHANNEL_NAMES: Record<string, [string, string]> = {
   whatsapp: ['WhatsApp', 'WhatsApp'],
   instagram: ['Instagram', 'Instagram'],
+  messenger: ['Messenger', 'Messenger'],
+  webchat: ['Website chat', 'Chat de la web'],
   in_app: ['App', 'App'],
+}
+// Channels where the person is an id rather than a phone number: no
+// templates, no files, and "no patient linked" says nothing useful.
+const ID_CHANNELS = new Set(['instagram', 'messenger', 'webchat'])
+const CHANNEL_BADGES: Record<string, string> = { whatsapp: 'WA', instagram: 'IG', messenger: 'FB', webchat: 'WEB' }
+function channelBadge(channel: string) {
+  return CHANNEL_BADGES[channel] ?? 'App'
+}
+function channelTone(channel: string) {
+  if (channel === 'whatsapp') return 'bg-success-bg text-success-text'
+  if (channel === 'instagram' || channel === 'messenger') return 'bg-info-bg text-info-text'
+  return 'bg-brand-tint text-brand-text'
 }
 function channelName(channel: string) {
   const pair = CHANNEL_NAMES[channel]
@@ -1277,7 +1291,9 @@ const within24h = computed(() => {
   // Unknown until the thread has loaded -- no "more than 24h" warning, no
   // template prompt, for a conversation that has not arrived yet.
   if (!threadReady.value) return true
-  if (replyChannel.value === 'in_app') return true
+  // Neither has a window: the app's thread is ours, and a website visitor
+  // reads the answer whenever they next open the chat.
+  if (replyChannel.value === 'in_app' || replyChannel.value === 'webchat') return true
   // Whichever channel the reply goes out on -- not always WhatsApp. An
   // Instagram thread's inbound messages carry channel 'instagram', so looking
   // only at WhatsApp ones found nothing and every Instagram conversation read
@@ -1387,6 +1403,11 @@ async function performTextSend(tempId: string, text: string, channel: string, ta
       // WhatsApp with no number and failed.
       if (!target.externalContactId) throw new Error('This Instagram conversation has no sender id')
       await useStaffFetch('/api/instagram/send', { method: 'POST', body: { recipientId: target.externalContactId, text } })
+    } else if (channel === 'messenger' || channel === 'webchat') {
+      // The same reasoning: addressed by the id they wrote from, which the
+      // route turns back into their lead.
+      if (!target.externalContactId) throw new Error('This conversation has no sender id')
+      await useStaffFetch(channel === 'messenger' ? '/api/messenger/send' : '/api/webchat/send', { method: 'POST', body: { recipientId: target.externalContactId, text } })
     } else {
       await useStaffFetch('/api/whatsapp/inbox-send', {
         method: 'POST',
@@ -2125,9 +2146,9 @@ function avatarInitials(name: string) {
                 {{ avatarInitials(row.c.name) }}
                 <span
                   class="absolute -bottom-1 -right-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full border-2 border-surface px-1 text-[9px] font-extrabold"
-                  :class="row.c.channel === 'whatsapp' ? 'bg-success-bg text-success-text' : row.c.channel === 'instagram' ? 'bg-info-bg text-info-text' : 'bg-brand-tint text-brand-text'"
+                  :class="channelTone(row.c.channel)"
                   :title="channelName(row.c.channel)"
-                >{{ row.c.channel === 'whatsapp' ? 'WA' : row.c.channel === 'instagram' ? 'IG' : 'App' }}</span>
+                >{{ channelBadge(row.c.channel) }}</span>
               </span>
               <div class="min-w-0 flex-1">
                 <div class="flex items-baseline justify-between gap-2">
@@ -2313,11 +2334,11 @@ function avatarInitials(name: string) {
               WhatsApp used to be labelled "In-app", Instagram included. -->
               <span
                 class="rounded-pill px-2 py-px text-[12px] font-bold"
-                :class="replyChannel === 'whatsapp' ? 'bg-success-bg text-success-text' : replyChannel === 'instagram' ? 'bg-info-bg text-info-text' : 'bg-brand-tint text-brand-text'"
+                :class="channelTone(replyChannel)"
                 data-cy="thread-channel"
               >{{ channelName(replyChannel) }}</span>
               <span v-if="selected.phoneNumber">{{ selected.phoneNumber }}</span>
-              <span v-else-if="!selected.patientId && replyChannel !== 'instagram'">{{ t('No patient linked', 'Sin paciente vinculado') }}</span>
+              <span v-else-if="!selected.patientId && !ID_CHANNELS.has(replyChannel)">{{ t('No patient linked', 'Sin paciente vinculado') }}</span>
               <!-- What a reply is usually about: their next visit, or none. -->
               <span v-if="selected.patientId && nextVisitLoaded" class="truncate" :class="nextVisit ? 'text-ink-700' : 'text-warning-text'" data-cy="thread-next-visit">
                 · {{ nextVisit ? `${t('Next', 'Próxima')}: ${nextVisitWhen(nextVisit.starts_at)}` : t('Nothing booked', 'Sin cita') }}
@@ -2567,10 +2588,10 @@ function avatarInitials(name: string) {
               there is nothing to send, only a wait. Saying "send a template
               instead" and showing the button sends staff looking for one that
               cannot exist. -->
-              <template v-else-if="replyChannel === 'instagram'">{{ t('More than 24h since', 'Han pasado más de 24h desde que') }} {{ selected.name }} {{ t('last messaged — Instagram blocks replies until they write again.', 'escribió por última vez — Instagram bloquea las respuestas hasta que vuelva a escribir.') }}</template>
+              <template v-else-if="replyChannel === 'instagram' || replyChannel === 'messenger'">{{ t('More than 24h since', 'Han pasado más de 24h desde que') }} {{ selected.name }} {{ t(`last messaged — ${channelName(replyChannel)} blocks replies until they write again.`, `escribió por última vez — ${channelName(replyChannel)} bloquea las respuestas hasta que vuelva a escribir.`) }}</template>
               <template v-else>{{ t('More than 24h since', 'Han pasado más de 24h desde que') }} {{ selected.name }} {{ t('last messaged — free-form replies are blocked by WhatsApp. Send a template instead.', 'escribió por última vez — WhatsApp bloquea las respuestas libres. Envía una plantilla en su lugar.') }}</template>
             </p>
-            <UiBtn v-if="(selected.patientId || selected.phoneNumber) && replyChannel !== 'instagram'" variant="primary" size="sm" @click="templateModalOpen = true">{{ t('Send template', 'Enviar plantilla') }}</UiBtn>
+            <UiBtn v-if="(selected.patientId || selected.phoneNumber) && !ID_CHANNELS.has(replyChannel)" variant="primary" size="sm" @click="templateModalOpen = true">{{ t('Send template', 'Enviar plantilla') }}</UiBtn>
           </div>
           <InboxComposer
             v-else
@@ -2578,7 +2599,7 @@ function avatarInitials(name: string) {
             v-model="composerText"
             :sending="sending"
             :disabled="!threadReady"
-            :media="replyChannel !== 'instagram'"
+            :media="!ID_CHANNELS.has(replyChannel)"
             @send="sendText"
             @media="(m) => sendMedia(m.base64, m.mimeType, m.filename, m.kind)"
             @error="(message) => (sendError = message)"

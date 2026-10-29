@@ -48,6 +48,17 @@ const MAX_TOKENS = 1024
  */
 const HISTORY_TURNS = 24
 
+/**
+ * Where the receptionist may answer a lead on its own. WhatsApp through the
+ * Inbox's own send; the website chat and Messenger through theirs
+ * (sendAsReceptionist). Instagram stays a draft for a person until its replies
+ * have been watched going out from the Inbox for a while.
+ */
+const AUTO_SEND_CHANNELS = ['whatsapp', 'webchat', 'messenger']
+
+/** Channels a lead writes on without the clinic learning their number. */
+const NUMBERLESS_CHANNELS = ['webchat', 'messenger']
+
 export type DraftOutcome =
   /** Written to ai_draft_body. */
   | { status: 'drafted'; draft: string }
@@ -97,7 +108,7 @@ export async function draftLeadReply(
     .from('leads')
     // Where they came from, so a reply that depends on it (an ad-only price)
     // is given without asking a question the record already answers.
-    .select('id, full_name, email, ai_state, patient_id, channel, source, external_source, lead_attribution(campaign, ad)')
+    .select('id, full_name, email, phone, ai_state, patient_id, channel, source, external_source, lead_attribution(campaign, ad)')
     .eq('id', leadId)
     .eq('account_id', accountId)
     .is('deleted_at', null)
@@ -218,13 +229,14 @@ export async function draftLeadReply(
   const { calendar, practitionerIds } = await loadPatientCalendar(calendarClient, accountId, config, bookable, own)
   const findFreeTimes = calendar.availability ? freeTimesLookup(calendarClient, accountId, config, bookable, calendar.timeZone, practitionerIds) : null
 
-  // Sent rather than drafted: asked for, a WhatsApp conversation (the one
-  // channel the composer's send reaches for a lead), and nothing holding it
-  // back in the conversation itself.
+  // Sent rather than drafted: asked for, a conversation on a channel it can
+  // send on by itself (AUTO_SEND_CHANNELS), and nothing holding it back in
+  // the conversation itself.
   const lastInbound = [...ordered].reverse().find((m: { direction: string }) => m.direction === 'inbound') as { channel?: string | null } | undefined
+  const replyChannel = lastInbound?.channel ?? 'whatsapp'
   const sends =
     Boolean(opts.send) &&
-    (lastInbound?.channel ?? 'whatsapp') === 'whatsapp' &&
+    AUTO_SEND_CHANNELS.includes(replyChannel) &&
     autoReplyHeldBack(
       ordered.map((m: { direction: string; sent_by_ai?: boolean | null; created_at: string; template_name?: string | null; rule_id?: string | null; automation_action_id?: string | null }) => ({ direction: m.direction, sentByAi: m.sent_by_ai === true, automated: Boolean(m.template_name || m.rule_id || m.automation_action_id), createdAt: m.created_at })),
       new Date(),
@@ -264,7 +276,7 @@ export async function draftLeadReply(
   const { text: draft, refused, handedOver } = await runReceptionistModel(await createAnthropicClient(apiKey), {
     model: MODEL,
     maxTokens: MAX_TOKENS,
-    system: buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, audience, calendar, leadOrigin, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, draft: { personName: lead.full_name ?? null }, knownDetails: { name: leadNameIsTheirs(lead.channel) && Boolean(lead.full_name?.trim()), email: Boolean(lead.email?.trim()) }, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, referral, laterPrices, clinicDetails }),
+    system: buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, audience, calendar, leadOrigin, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, draft: { personName: lead.full_name ?? null }, knownDetails: { name: leadNameIsTheirs(lead.channel) && Boolean(lead.full_name?.trim()), email: Boolean(lead.email?.trim()), phone: !(NUMBERLESS_CHANNELS.includes(lead.channel) && !lead.phone) }, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, referral, laterPrices, clinicDetails }),
     messages: withImages(history, images),
     findFreeTimes,
     handOver: sends,
@@ -289,7 +301,7 @@ export async function draftLeadReply(
   // and not an error -- reported as such rather than dressed up as a failed
   // request or, worse, saved as a reply.
   if (sends && opts.send) {
-    const target = { kind: 'lead' as const, leadId }
+    const target = { kind: 'lead' as const, leadId, channel: replyChannel }
     const name = lead.full_name ?? 'Lead'
     // Nothing to send: the lead still has a question nobody answers, so it
     // goes to a person now rather than waiting for the next tick to fail too.

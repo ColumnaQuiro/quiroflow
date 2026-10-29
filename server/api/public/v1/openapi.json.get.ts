@@ -207,7 +207,7 @@ function leadsPath() {
                 phone: { type: 'string', description: 'E.164, or a local number with phone_country_code. Required unless email is given.' },
                 phone_country_code: { type: 'string', default: '+34' },
                 email: { type: 'string', format: 'email', description: 'Required unless phone is given.' },
-                channel: { type: 'string', enum: ['whatsapp', 'sms', 'phone', 'web', 'instagram', 'facebook', 'walk_in'], default: 'facebook' },
+                channel: { type: 'string', enum: ['whatsapp', 'sms', 'phone', 'web', 'instagram', 'facebook', 'walk_in', 'messenger', 'webchat'], default: 'facebook' },
                 source: { type: 'string', description: 'Campaign or referrer, e.g. "Meta Ads · Sciatica". The dashboard groups spend by the part before the "·".' },
                 stage: { type: 'string', enum: ['new', 'contacted', 'qualified', 'booked'], default: 'new', description: 'Outcomes (converted, lost) are the clinic\'s to set, not a form\'s.' },
                 clinic_id: uuid(),

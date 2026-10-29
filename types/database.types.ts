@@ -1195,6 +1195,7 @@ export type Database = {
           invoice_email_subject: string | null
           meta_ads_access_token: string | null
           meta_ads_account_id: string | null
+          messenger_page_id: string | null
           missed_appointment_fee_cents: number | null
           name: string
           new_patient_field_config: Json
@@ -1259,6 +1260,8 @@ export type Database = {
           whatsapp_reminder_template_name: string | null
           waitlist_auto_offer: boolean
           waitlist_offer_mode: string
+          webchat_enabled: boolean
+          webchat_greeting: string | null
           recall_assignee_default: string
           recall_assignee_member_id: string | null
         }
@@ -1292,6 +1295,7 @@ export type Database = {
           invoice_email_subject?: string | null
           meta_ads_access_token?: string | null
           meta_ads_account_id?: string | null
+          messenger_page_id?: string | null
           missed_appointment_fee_cents?: number | null
           name: string
           new_patient_field_config?: Json
@@ -1355,6 +1359,8 @@ export type Database = {
           whatsapp_reminder_template_name?: string | null
           waitlist_auto_offer?: boolean
           waitlist_offer_mode?: string
+          webchat_enabled?: boolean
+          webchat_greeting?: string | null
           recall_assignee_default?: string
           recall_assignee_member_id?: string | null
         }
@@ -1388,6 +1394,7 @@ export type Database = {
           invoice_email_subject?: string | null
           meta_ads_access_token?: string | null
           meta_ads_account_id?: string | null
+          messenger_page_id?: string | null
           missed_appointment_fee_cents?: number | null
           name?: string
           new_patient_field_config?: Json
@@ -1452,6 +1459,8 @@ export type Database = {
           whatsapp_reminder_template_name?: string | null
           waitlist_auto_offer?: boolean
           waitlist_offer_mode?: string
+          webchat_enabled?: boolean
+          webchat_greeting?: string | null
           recall_assignee_default?: string
           recall_assignee_member_id?: string | null
         }

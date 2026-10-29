@@ -111,7 +111,8 @@ function submit() {
 
 // Files and voice notes are WhatsApp only (see InboxComposer).
 const { showToast } = useToast()
-const isWhatsApp = computed(() => props.thread.channel !== 'instagram')
+const isWhatsApp = computed(() => !['instagram', 'messenger', 'webchat'].includes(props.thread.channel))
+const platformName = computed(() => (props.thread.channel === 'messenger' ? 'Messenger' : 'Instagram'))
 
 // Opens at the newest message and stays there as messages arrive -- unless
 // somebody has scrolled up to read, who is left where they are. Their own
@@ -289,7 +290,7 @@ watch(
       <div class="flex items-center justify-between gap-3 rounded-ctl border border-warning-border bg-warning-bg px-3 py-2">
         <p class="text-[12.5px] text-warning-text">
           <template v-if="isWhatsApp">{{ t('More than 24h since', 'Han pasado más de 24h desde que') }} {{ thread.name }} {{ t('last messaged — free-form replies are blocked by WhatsApp. Send a template instead.', 'escribió por última vez — WhatsApp bloquea las respuestas libres. Envía una plantilla en su lugar.') }}</template>
-          <template v-else>{{ t('More than 24h since', 'Han pasado más de 24h desde que') }} {{ thread.name }} {{ t('last messaged — Instagram blocks replies until they write again.', 'escribió por última vez — Instagram bloquea las respuestas hasta que vuelva a escribir.') }}</template>
+          <template v-else>{{ t('More than 24h since', 'Han pasado más de 24h desde que') }} {{ thread.name }} {{ t(`last messaged — ${platformName} blocks replies until they write again.`, `escribió por última vez — ${platformName} bloquea las respuestas hasta que vuelva a escribir.`) }}</template>
         </p>
         <!-- Instagram has no templates, and a lead with no number has nowhere
         for one to go. -->

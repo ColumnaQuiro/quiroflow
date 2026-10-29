@@ -1188,6 +1188,10 @@ export type Database = {
           hide_payments_on_invoices: boolean
           hide_provider_on_invoices: boolean
           google_review_url: string | null
+          google_business_account: string | null
+          google_business_location: string | null
+          google_business_location_title: string | null
+          google_reviews_synced_at: string | null
           id: string
           instagram_access_token: string | null
           instagram_user_id: string | null
@@ -1288,6 +1292,10 @@ export type Database = {
           hide_payments_on_invoices?: boolean
           hide_provider_on_invoices?: boolean
           google_review_url?: string | null
+          google_business_account?: string | null
+          google_business_location?: string | null
+          google_business_location_title?: string | null
+          google_reviews_synced_at?: string | null
           id?: string
           instagram_access_token?: string | null
           instagram_user_id?: string | null
@@ -1387,6 +1395,10 @@ export type Database = {
           hide_payments_on_invoices?: boolean
           hide_provider_on_invoices?: boolean
           google_review_url?: string | null
+          google_business_account?: string | null
+          google_business_location?: string | null
+          google_business_location_title?: string | null
+          google_reviews_synced_at?: string | null
           id?: string
           instagram_access_token?: string | null
           instagram_user_id?: string | null

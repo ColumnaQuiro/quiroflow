@@ -111,24 +111,20 @@ const failedCount = computed(() => results.value.filter((r) => !r.ok).length)
 
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4" @click.self="emit('close')">
-    <div class="max-h-full w-full overflow-y-auto max-w-md rounded-card border border-line bg-surface p-5 shadow-popover">
+    <div class="max-h-full w-full overflow-y-auto max-w-lg rounded-card border border-line bg-surface p-5 shadow-popover">
       <h3 class="text-[14px] font-semibold text-ink-900">{{ t('Send WhatsApp to', 'Enviar WhatsApp a') }} {{ targets.length }} {{ targets.length === 1 ? t('patient', 'paciente') : t('patients', 'pacientes') }}</h3>
 
       <template v-if="results.length === 0">
         <div v-if="loadingTemplates" class="mt-3 text-[13px] text-ink-faint">{{ t('Loading templates…', 'Cargando plantillas…') }}</div>
         <p v-else-if="templatesError" class="mt-3 text-[13px] text-danger-text">{{ templatesError }}</p>
         <template v-else>
-          <div class="mt-3">
-            <label class="block text-xs font-medium text-ink-muted">{{ t('Template', 'Plantilla') }}</label>
-            <select
-              :value="selectedTemplateKey"
-              class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-1.5 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand-tintBorder"
-              @change="selectTemplate(($event.target as HTMLSelectElement).value)"
-            >
-              <option value="" disabled>{{ t('Choose a template…', 'Elige una plantilla…') }}</option>
-              <option v-for="tpl in templates" :key="templateKey(tpl)" :value="templateKey(tpl)">{{ tpl.name }} ({{ tpl.language }})</option>
-            </select>
-          </div>
+          <WhatsAppTemplatePicker
+            class="mt-3"
+            :model-value="selectedTemplateKey"
+            :templates="templates"
+            :slot-labels="{ 1: t('first name', 'nombre') }"
+            @update:model-value="selectTemplate"
+          />
 
           <template v-if="selectedTemplate">
             <p class="mt-3 whitespace-pre-wrap rounded-ctl bg-surface-subtle p-2.5 text-xs text-ink-muted">{{ selectedTemplate.bodyText }}</p>

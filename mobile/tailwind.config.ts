@@ -10,7 +10,8 @@ import { tokens, touchVariant } from '../tailwind.tokens'
 // the root config gained a plugin.
 export default <Partial<Config>>{
   ...tokens,
-  content: ['./components/**/*.{vue,js,ts}', './pages/**/*.vue', './app.vue', '../components/**/*.vue'],
+  // useAppointmentStage holds the stage pill's tone classes (AppStagePill).
+  content: ['./components/**/*.{vue,js,ts}', './pages/**/*.vue', './app.vue', '../components/**/*.vue', '../composables/useAppointmentStage.ts'],
   // The shared components size controls with touch:h-11; without the variant
   // they would be 36px on a phone.
   plugins: [touchVariant],

@@ -52,9 +52,13 @@ describe('A password-reset link opened on a different device', () => {
         cy.contains('Password updated.').should('be.visible')
         cy.task('db:passwordWorks', { email: owner.email, password: 'NewPass123!' }).should('eq', true)
 
-        // The same link again, signed out: refused.
+        // The same link again, signed out: refused. Another page first, because
+        // a visit that differs from the current URL only by its fragment is a
+        // hash change, not a load -- the page would still be showing
+        // "Password updated" and never look at the token again.
         cy.clearAllCookies()
         cy.clearAllLocalStorage()
+        cy.visit('/forgot-password')
         cy.visit(`/reset-password#token_hash=${tokenHash}&type=recovery`)
         cy.contains('This link is invalid or has expired.').should('be.visible')
         cy.contains('a', 'Request a new one').should('have.attr', 'href', '/forgot-password')

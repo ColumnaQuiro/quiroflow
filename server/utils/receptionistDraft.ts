@@ -4,7 +4,7 @@ import { overMonthlyLimit, recordReceptionistReply } from '~/server/utils/recept
 import { announceHandover, heldBackBeforeSending, noteInConversation, PAST_TIME_REASON, sendAsReceptionist } from '~/server/utils/receptionistSend'
 import { bookingTool, cancelTool, giveVisitTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
 import { recentImages, withImages } from '~/server/utils/receptionistImages'
-import { historyLine } from '~/utils/receptionistHistory'
+import { historyLine, standingClockTimes } from '~/utils/receptionistHistory'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage } from '~/utils/receptionistAutoReply'
 import { buildSystemPrompt, loadBookedVisits, loadClinicDetails, loadOfferedTypes, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, uniqueTypes, type LeadOrigin } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptionistModel'
@@ -273,6 +273,7 @@ export async function draftLeadReply(
     cancel,
     give,
     maxTimesPerReply: config.slotsPerReply,
+    standingTimes: standingClockTimes(booked.appointments, calendar.timeZone),
     internalNotes: internalNotes(config),
     logLabel: `lead ${leadId}`,
   })

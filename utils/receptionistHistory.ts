@@ -125,9 +125,64 @@ const TIME = /\b([01]?\d|2[0-3])[:.h]([0-5]\d)\b/g
  * to the instruction: told "at most 2 per reply", it offered one person five.
  */
 export function offeredTimeCount(text: string): number {
+  return clockTimes(text).size
+}
+
+/** The clock times in `text` (ranges left out), as "H:MM". */
+export function clockTimes(text: string): Set<string> {
   const times = new Set<string>()
   for (const m of text.replace(RANGE, ' ').matchAll(TIME)) times.add(`${Number(m[1])}:${m[2]}`)
-  return times.size
+  return times
+}
+
+// "Te confirmo tu cita", "queda reservada", "tu cita queda a las 18:30",
+// "queda todo listo": a visit stated as booked. A question ("¿Te confirmo
+// las 18:00?") offers it, and is not one.
+const BOOKED_CLAIM = /\b(?:te\s+confirmo|confirmad[oa]s?\b|te\s+(?:he\s+)?(?:reservado|apuntado|movido|cambiado)|he\s+(?:reservado|movido|cambiado|apuntado)|queda(?:n)?\s+(?:reservad|confirmad|movid|cambiad|apuntad|cancelad|todo\s+listo|para\s+el|el\s|a\s+las)|(?:tu|su|la)\s+cita\s+(?:queda|pasa)\b|pasa\s+al?\s)/i
+// A claim with no time in it is checked only when it is unmistakably a
+// booking -- "Confirmado" alone may answer "¿lo tenéis apuntado?".
+const UNTIMED_CLAIM = /\b(?:queda(?:n)?\s+(?:reservad|movid|cambiad|todo\s+listo)|te\s+(?:he\s+)?(?:reservado|movido)|he\s+(?:reservado|movido))/i
+
+/**
+ * The sentence of a finished reply that says a visit is booked, moved or
+ * cancelled when nothing in this reply did it -- or null.
+ *
+ * Asked by a patient for a visit for herself and her partner, it wrote "Te
+ * confirmo tu cita del jueves 29 a las 15:00" and booked nothing; asked to
+ * move her son's visit and book one for her, it moved his and told her "tu
+ * cita queda a las 18:30" -- a time nobody had (28 Oct 2026). Both believed
+ * it. The prompt already said "only after it confirms"; this is the check.
+ *
+ * `done` holds the times the booking tools confirmed in this reply (their
+ * inputs: the new time, and the old one of a move or a cancellation);
+ * `standing` the times of visits they already have, which a reply may
+ * restate ("tu cita del jueves a las 15:00 sigue en pie").
+ */
+export function unbookedClaim(text: string, done: Set<string>, standing: Set<string>): string | null {
+  for (const sentence of text.split(/(?<=[.!?;])\s+|\n+/)) {
+    const s = sentence.trim()
+    if (!s || s.startsWith('¿') || s.endsWith('?') || !BOOKED_CLAIM.test(s)) continue
+    const times = clockTimes(s)
+    if (times.size === 0) {
+      if (done.size === 0 && UNTIMED_CLAIM.test(s)) return s
+      continue
+    }
+    for (const t of times) if (!done.has(t) && !standing.has(t)) return s
+  }
+  return null
+}
+
+/** The clinic-clock times ("H:MM") of visits they already have, for unbookedClaim. */
+export function standingClockTimes(visits: { startsAt: string }[], timeZone: string): Set<string> {
+  return new Set(visits.map((v) => {
+    const [h, m] = new Date(v.startsAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone }).split(':')
+    return `${Number(h)}:${m}`
+  }))
+}
+
+/** What is said to the model when its reply states a booking it did not make. */
+export function unbookedClaimNote(sentence: string): string {
+  return `[Note from the clinic system, not from the patient] Your reply says "${sentence.slice(0, 200)}", but nothing was booked, moved or cancelled at that time in this reply, and they have no visit then. Never say a visit is booked, moved or cancelled unless the tool confirmed it in this reply. If they accepted that time, call book_appointment for it now (for someone else, with what the tool asks for that person, such as their name and mobile). If you cannot, call hand_over_to_colleague and tell them your colleague will book it and confirm. Write only the message.`
 }
 
 /** What is said to the model when its reply offered too many times. */

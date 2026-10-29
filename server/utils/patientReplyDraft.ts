@@ -4,7 +4,7 @@ import { overMonthlyLimit, recordReceptionistReply } from '~/server/utils/recept
 import { announceHandover, heldBackBeforeSending, noteInConversation, PAST_TIME_REASON, sendAsReceptionist } from '~/server/utils/receptionistSend'
 import { bookingTool, cancelTool, giveVisitTool, stopFollowUpsTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
 import { recentImages, withImages, type StoredImage } from '~/server/utils/receptionistImages'
-import { historyLine } from '~/utils/receptionistHistory'
+import { historyLine, standingClockTimes } from '~/utils/receptionistHistory'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personRepliedSince } from '~/utils/receptionistAutoReply'
 import { loadBookedVisits, loadClinicDetails, loadFamilyAdults, loadOfferedTypes, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, toneWording, uniqueTypes, clinicTodayStart } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel, type FreeTimesForWhom } from '~/server/utils/receptionistModel'
@@ -136,7 +136,7 @@ export async function draftPatientReply(
   const nowIso = new Date().toISOString()
   // From midnight, so a visit earlier today is still one they can ask about.
   const todayStart = await clinicTodayStart(supabase, accountId)
-  const [{ data: upcoming }, { data: last }, { data: plans }, { data: balance }, { data: packages }, { data: past }, { data: first, count: attended }] = await Promise.all([
+  const [{ data: upcoming }, { data: last }, { data: plans }, { data: balance }, { data: packages }, { data: past }, { data: first, count: attended }, { data: cancelledAhead }] = await Promise.all([
     supabase.from('appointments').select('starts_at, appointment_types(name), team_members(full_name)').eq('patient_id', patientId).eq('status', 'booked').is('deleted_at', null).gte('starts_at', todayStart).order('starts_at').limit(3),
     supabase.from('appointments').select('starts_at, appointment_types(name)').eq('patient_id', patientId).eq('status', 'completed').is('deleted_at', null).lt('starts_at', nowIso).order('starts_at', { ascending: false }).limit(1),
     supabase.from('care_plans').select('name, total_visits, started_at, frequency_value, frequency_unit, visits_per_period').eq('patient_id', patientId).order('created_at', { ascending: false }).limit(1),
@@ -149,6 +149,10 @@ export async function draftPatientReply(
     supabase.from('appointments').select('starts_at, status, appointment_types(name), team_members(full_name)').eq('patient_id', patientId).is('deleted_at', null).lt('starts_at', nowIso).order('starts_at', { ascending: false }).limit(40),
     // Every visit they came to, counted, and the first of them.
     supabase.from('appointments').select('starts_at', { count: 'exact' }).eq('patient_id', patientId).eq('status', 'completed').is('deleted_at', null).order('starts_at').limit(1),
+    // Visits still ahead that are already cancelled: asked to cancel one the
+    // desk had cancelled the day before, it could not see it and handed the
+    // patient to a person instead of saying so (28 Oct 2026).
+    supabase.from('appointments').select('starts_at, appointment_types(name)').eq('patient_id', patientId).eq('status', 'cancelled').is('deleted_at', null).gte('starts_at', todayStart).order('starts_at').limit(3),
   ])
   const plan = (plans ?? [])[0] as { name: string; total_visits: number; started_at: string; frequency_value: number; frequency_unit: string; visits_per_period: number | null } | undefined
   let done = 0
@@ -164,6 +168,7 @@ export async function draftPatientReply(
       typeName: a.appointment_types?.name ?? null,
       practitionerName: a.team_members?.full_name ?? null,
     })),
+    cancelledAhead: ((cancelledAhead ?? []) as { starts_at: string; appointment_types: { name: string } | null }[]).map((a) => ({ startsAt: a.starts_at, typeName: a.appointment_types?.name ?? null })),
     lastVisitAt: (last ?? [])[0]?.starts_at ?? null,
     lastVisitType: ((last ?? [])[0] as { appointment_types?: { name: string } | null } | undefined)?.appointment_types?.name ?? null,
     plan: plan ? { name: plan.name, totalVisits: plan.total_visits, done, cadence: carePlanCadenceLabel(plan, en) } : null,
@@ -285,6 +290,7 @@ export async function draftPatientReply(
     give,
     stopFollowUps,
     maxTimesPerReply: config.slotsPerReply,
+    standingTimes: standingClockTimes(booked.appointments, calendar.timeZone),
     internalNotes: internalNotes(config),
     logLabel: `patient ${patientId}`,
   })

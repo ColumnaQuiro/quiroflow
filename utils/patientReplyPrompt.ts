@@ -18,6 +18,8 @@ import type { ReceptionistPrompt } from './receptionistPrompt'
 export interface PatientReplyFacts {
   firstName: string | null
   upcoming: { startsAt: string; typeName: string | null; practitionerName: string | null }[]
+  /** Visits from today on that are already cancelled, so "anula la del jueves" can be answered. */
+  cancelledAhead?: { startsAt: string; typeName: string | null }[]
   lastVisitAt: string | null
   /** The type of that visit, which is what "otra cita" usually means. */
   lastVisitType?: string | null
@@ -130,13 +132,19 @@ export function patientFactsSection(f: PatientReplyFacts, timeZone: string | nul
   // A name the patient may have typed themselves: flattened, so it cannot
   // start a section of the prompt.
   const name = promptSafeName(f.firstName)
-  if (name) lines.push(`- Name: ${name}`)
+  // Told about "la primera visita de" himself, by name, a patient was
+  // then asked for that person's mobile -- his own, the one it was writing
+  // to (28 Oct 2026).
+  if (name) lines.push(`- Name: ${name}. Unless they say they write for someone else, this is the person writing to you: the visits below are theirs. Speak to them, never about them by name, and never ask for their mobile: it is the number you are writing to.`)
   if (f.upcoming.length === 0) lines.push('- Next visit: nothing booked.')
   else {
     for (const [i, v] of f.upcoming.entries()) {
       const what = [v.typeName, v.practitionerName ? `with ${v.practitionerName}` : null].filter(Boolean).join(' ')
       lines.push(`- ${i === 0 ? 'Next visit' : 'Then'}: ${when(v.startsAt, zone)}${what ? ` (${what})` : ''}`)
     }
+  }
+  if (f.cancelledAhead?.length) {
+    lines.push(`- Already cancelled, no longer booked: ${f.cancelledAhead.map((v) => `${when(v.startsAt, zone)}${v.typeName ? ` (${v.typeName})` : ''}`).join('; ')}. If they ask to cancel or move one of these, tell them it is already cancelled, with its day and time, and offer another time only if they want one.`)
   }
   const day = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: zone })
   if (f.lastVisitAt) lines.push(`- Last visit they came to: ${day(f.lastVisitAt)}${f.lastVisitType ? ` (${f.lastVisitType})` : ''}`)

@@ -137,7 +137,7 @@ function formatDue(iso: string) {
         <button
           type="button"
           data-cy="my-day-task-toggle"
-          class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full"
+          class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full relative touch:after:absolute touch:after:-inset-3 touch:after:content-['']"
           :class="task.done_at ? 'bg-success-accent text-success-on' : 'border border-line-control text-ink-faint3 hover:border-line-controlHover hover:text-ink-muted2'"
           :title="task.done_at ? t('Mark as not done', 'Marcar como pendiente') : t('Mark as done', 'Marcar como hecha')"
           :aria-label="task.done_at ? t('Mark as not done', 'Marcar como pendiente') : t('Mark as done', 'Marcar como hecha')"

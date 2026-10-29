@@ -88,6 +88,7 @@ export const tokens = {
           bg: themeColor('--color-warning-bg'),
           bg2: themeColor('--color-warning-bg2'),
           border: themeColor('--color-warning-border'),
+          on: themeColor('--color-on-fill'),
         },
         info: {
           text: themeColor('--color-info-text'),

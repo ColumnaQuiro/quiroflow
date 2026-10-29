@@ -34,7 +34,7 @@ const t = useT()
         v-for="p in visiblePages"
         :key="p"
         type="button"
-        class="flex h-7 w-7 items-center justify-center rounded-ctlSm border text-[12.5px]"
+        class="flex h-7 w-7 items-center justify-center rounded-ctlSm border text-[12.5px] touch:h-10 touch:w-10"
         :class="p === page ? 'border-brand-tintBorder bg-brand-tint font-semibold text-brand-text' : 'border-line-control bg-surface text-ink-500 hover:border-line-controlHover'"
         @click="emit('goToPage', p)"
       >

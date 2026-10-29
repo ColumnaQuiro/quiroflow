@@ -63,19 +63,19 @@ async function submit() {
 
 <template>
   <div class="fixed inset-0 z-20 flex items-center justify-center bg-scrim/40 p-4" @click.self="emit('close')">
-    <div ref="dialogPanel" role="dialog" aria-modal="true" :aria-labelledby="dialogTitleId" class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
+    <div ref="dialogPanel" role="dialog" aria-modal="true" :aria-labelledby="dialogTitleId" class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-card bg-surface p-6 shadow-popover">
       <div class="flex items-center justify-between">
-        <h2 :id="dialogTitleId" class="text-lg font-semibold text-gray-900">{{ t('Add card', 'Añadir tarjeta') }}</h2>
-        <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-gray-400 hover:text-gray-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="emit('close')">✕</button>
+        <h2 :id="dialogTitleId" class="text-lg font-semibold text-ink-900">{{ t('Add card', 'Añadir tarjeta') }}</h2>
+        <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="emit('close')">✕</button>
       </div>
 
-      <UiSkeleton v-if="loading" class="mt-6 h-9 w-full rounded-md" />
+      <UiSkeleton v-if="loading" class="mt-6 h-9 w-full rounded-ctl" />
       <form v-show="!loading" class="mt-4" @submit.prevent="submit">
         <div ref="mountEl"></div>
-        <p v-if="error" class="mt-3 text-sm text-red-600">{{ error }}</p>
+        <p v-if="error" class="mt-3 text-sm text-danger-text">{{ error }}</p>
         <div class="mt-4 flex justify-end gap-2">
-          <button type="button" class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" @click="emit('close')">{{ t('Cancel', 'Cancelar') }}</button>
-          <button type="submit" :disabled="submitting" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
+          <button type="button" class="rounded-ctl border border-line-control px-4 py-2 text-sm text-ink-700 hover:bg-surface-subtle" @click="emit('close')">{{ t('Cancel', 'Cancelar') }}</button>
+          <button type="submit" :disabled="submitting" class="rounded-ctl bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50">
             {{ submitting ? t('Saving…', 'Guardando…') : t('Save card', 'Guardar tarjeta') }}
           </button>
         </div>

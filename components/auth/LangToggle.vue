@@ -26,7 +26,7 @@ const isOn = (value: string) => mounted.value && preference.value === value
         :lang="option.value"
         :aria-label="option.name"
         :aria-pressed="isOn(option.value)"
-        class="rounded-ctlSm px-1.5 py-1 outline-none focus-visible:shadow-focus"
+        class="rounded-ctlSm px-1.5 py-1 outline-none focus-visible:shadow-focus touch:min-h-11 touch:min-w-11"
         :class="isOn(option.value) ? 'text-ink-900' : 'text-ink-faint hover:text-ink-muted'"
         @click="setPreference(option.value)"
       >

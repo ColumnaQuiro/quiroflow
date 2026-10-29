@@ -105,9 +105,9 @@ async function sell() {
         </div>
         <span class="font-mono text-[13.5px] font-semibold text-ink-900">{{ formatEur(p.price_cents) }}</span>
         <span v-if="basket.has(p.id)" class="inline-flex items-center overflow-hidden rounded-ctl border border-line-control">
-          <button type="button" class="h-8 w-8 bg-surface-subtle text-[15px]" :aria-label="t('Fewer', 'Menos')" data-cy="sell-product-less" @click="setQty(p, basket.get(p.id)! - 1)">−</button>
+          <button type="button" class="h-8 w-8 bg-surface-subtle text-[15px] touch:h-10 touch:w-10" :aria-label="t('Fewer', 'Menos')" data-cy="sell-product-less" @click="setQty(p, basket.get(p.id)! - 1)">−</button>
           <span class="w-8 text-center text-[13.5px] font-semibold" data-cy="sell-product-qty">{{ basket.get(p.id) }}</span>
-          <button type="button" class="h-8 w-8 bg-surface-subtle text-[15px]" :aria-label="t('More', 'Más')" :disabled="p.stock_units !== null && basket.get(p.id)! >= p.stock_units" data-cy="sell-product-more" @click="setQty(p, basket.get(p.id)! + 1)">+</button>
+          <button type="button" class="h-8 w-8 bg-surface-subtle text-[15px] touch:h-10 touch:w-10" :aria-label="t('More', 'Más')" :disabled="p.stock_units !== null && basket.get(p.id)! >= p.stock_units" data-cy="sell-product-more" @click="setQty(p, basket.get(p.id)! + 1)">+</button>
         </span>
         <UiBtn v-else size="sm" :disabled="stockStatus(p.stock_units, p.min_stock) === 'out'" data-cy="sell-product-add" @click="setQty(p, 1)">
           {{ stockStatus(p.stock_units, p.min_stock) === 'out' ? t('Out of stock', 'Agotado') : t('Add', 'Añadir') }}

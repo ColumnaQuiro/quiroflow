@@ -239,9 +239,9 @@ const pdfRoot = ref<HTMLElement | null>(null)
     <div ref="pdfRoot" class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] sm:px-6">
       <div class="flex flex-wrap items-center gap-2">
         <div class="flex items-center gap-1 rounded-ctl border border-line-control bg-surface">
-          <button type="button" class="flex h-8 w-8 items-center justify-center text-ink-muted2 hover:text-ink-700" :aria-label="t('Previous day', 'Día anterior')" @click="shiftDay(-1)"><UiChevron dir="left" /></button>
+          <button type="button" class="flex h-8 w-8 items-center justify-center text-ink-muted2 hover:text-ink-700 touch:h-10 touch:w-10" :aria-label="t('Previous day', 'Día anterior')" @click="shiftDay(-1)"><UiChevron dir="left" /></button>
           <input v-model="dateStr" type="date" class="h-8 border-0 bg-transparent px-1 text-[13px] text-ink-700 focus:outline-none" />
-          <button type="button" class="flex h-8 w-8 items-center justify-center text-ink-muted2 hover:text-ink-700" :aria-label="t('Next day', 'Día siguiente')" @click="shiftDay(1)"><UiChevron dir="right" /></button>
+          <button type="button" class="flex h-8 w-8 items-center justify-center text-ink-muted2 hover:text-ink-700 touch:h-10 touch:w-10" :aria-label="t('Next day', 'Día siguiente')" @click="shiftDay(1)"><UiChevron dir="right" /></button>
         </div>
         <button type="button" class="h-8 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-600 hover:bg-surface-subtle" @click="dateStr = todayISO()">
           {{ t('Today', 'Hoy') }}

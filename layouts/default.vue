@@ -172,9 +172,9 @@ watch(supabaseFailure, (f) => {
           <span>{{ t('A new version of QuiroFlow is available. It loads when you change screen.', 'Hay una versión nueva de QuiroFlow. Se cargará al cambiar de pantalla.') }}</span>
           <button type="button" class="shrink-0 font-medium underline" @click="reloadForNewVersion">{{ t('Reload now', 'Recargar ahora') }}</button>
         </div>
-        <div v-if="showDenied" class="flex items-center justify-between bg-amber-50 px-6 py-2 text-sm text-amber-800">
-          <span>You don't have access to that section.</span>
-          <button type="button" class="font-medium underline" @click="dismissDenied">Dismiss</button>
+        <div v-if="showDenied" class="flex items-center justify-between bg-warning-bg px-6 py-2 text-sm text-warning-text">
+          <span>{{ t("You don't have access to that section.", 'No tienes acceso a esa sección.') }}</span>
+          <button type="button" class="font-medium underline" @click="dismissDenied">{{ t('Dismiss', 'Cerrar') }}</button>
         </div>
         <main class="flex flex-1 flex-col overflow-hidden">
           <slot />

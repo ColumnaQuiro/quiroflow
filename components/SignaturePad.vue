@@ -185,20 +185,20 @@ function clear() {
 
 <template>
   <div>
-    <div v-if="showSaved" class="rounded-md border border-gray-300 bg-white p-2">
+    <div v-if="showSaved" class="rounded-ctl border border-line-control bg-white p-2">
       <img :src="modelValue ?? ''" :alt="t('Signature', 'Firma')" class="h-24" />
     </div>
     <canvas
       v-else
       ref="canvasRef"
-      class="h-[120px] w-full touch-none rounded-md border border-gray-300 bg-white"
+      class="h-[120px] w-full touch-none rounded-ctl border border-line-control bg-white"
       @pointerdown="start"
       @pointermove="move"
       @pointerup="end"
       @pointercancel="end"
       @pointerleave="leave"
     ></canvas>
-    <button type="button" class="mt-1 text-xs font-medium text-indigo-600 hover:text-indigo-700" @click="clear">
+    <button type="button" class="mt-1 text-xs font-medium text-brand-text hover:text-brand-text2" @click="clear">
       {{ hasInk ? t('Clear signature', 'Borrar firma') : t('Clear', 'Borrar') }}
     </button>
   </div>

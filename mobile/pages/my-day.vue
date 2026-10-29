@@ -514,7 +514,6 @@ const nextUp = computed(() => (loading.value || inClinicNow.value ? null : appoi
 const showDone = ref(false)
 const doneVisits = computed(() => appointments.value.filter((a) => rowState(a) === 'done'))
 const shownVisits = computed(() => appointments.value.filter((a) => showDone.value || rowState(a) !== 'done'))
-const STATE_DOT: Record<RowState, string> = { done: 'bg-success-accent', in: 'bg-brand', noshow: 'bg-danger-text', upcoming: 'bg-line-controlHover' }
 const lastNote = ref<{ day: string; text: string } | null>(null)
 watch(
   () => inClinicNow.value?.id,
@@ -662,10 +661,7 @@ function initialsOf(a: Appointment) {
               </p>
             </div>
             <div class="flex shrink-0 flex-col items-end gap-1">
-              <span class="inline-flex items-center gap-1.5 text-[12.5px] font-medium" :class="rowState(a) === 'done' ? 'text-success-text' : rowState(a) === 'in' ? 'text-brand-text' : rowState(a) === 'noshow' ? 'text-danger-text' : 'text-ink-muted'">
-                <span class="h-[7px] w-[7px] rounded-full" :class="STATE_DOT[rowState(a)]" aria-hidden="true" />
-                {{ rowState(a) === 'done' ? t('Done', 'Hecha') : rowState(a) === 'in' ? t('In clinic', 'En clínica') : rowState(a) === 'noshow' ? t('No-show', 'No vino') : t('Booked', 'Reservada') }}
-              </span>
+              <AppStagePill :stage="stageOf(a)" :arrived-at="a.checked_in_at ? clinicTime(a.checked_in_at) : null" />
               <PractitionerNoShowRiskPill v-if="riskShown(a) && rowState(a) !== 'done' && rowState(a) !== 'noshow'" :risk="riskShown(a)" />
               <button
                 v-if="canCheckIn(a)"

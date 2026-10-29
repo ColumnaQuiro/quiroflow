@@ -1,5 +1,6 @@
-import type { AppointmentStage, StageFilter } from '~/utils/appointmentStage'
-import { formatShortDate, formatTime } from '~/utils/billing'
+import type { AppointmentStage, StageFilter } from '../utils/appointmentStage'
+// Relative, not ~/: the app (mobile/) reuses these labels, and there ~ is mobile/.
+import { formatShortDate, formatTime } from '../utils/billing'
 
 // The words and tones for each stage, in one place, so the block, the counts
 // row, the hover card and the appointment panel say the same thing about the

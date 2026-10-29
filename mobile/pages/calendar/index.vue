@@ -29,6 +29,7 @@ definePageMeta({ layout: 'practitioner', keepalive: true })
 // of calendar/[id].vue, and with no <NuxtPage /> in it the child never
 // rendered.
 import type { BusinessHours } from '../../../utils/businessHours'
+import { appointmentStage } from '../../../utils/appointmentStage'
 
 const user = useSupabaseUser()
 watch(user, (u) => { if (!u) navigateTo('/login') }, { immediate: true })
@@ -41,6 +42,12 @@ interface Appointment {
   ends_at: string
   status: string
   checked_in_at: string | null
+  // The rest of what the web calendar reads a visit's stage from
+  // (utils/appointmentStage): confirmed, in session, at checkout.
+  confirmation_status: string | null
+  source: string | null
+  flow_with_practitioner_at: string | null
+  flow_checkout_at: string | null
   practitioner_id: string | null
   room_id: string | null
   appointment_type_id: string | null
@@ -201,7 +208,7 @@ async function load(quiet = false) {
   const [ap, bl, pr, links, cl, cs] = await Promise.all([
     supabase
       .from('appointments')
-      .select('id, patient_id, clinic_id, starts_at, ends_at, status, checked_in_at, practitioner_id, room_id, appointment_type_id, class_session_id, patients(first_name, last_name), appointment_types(name, color)')
+      .select('id, patient_id, clinic_id, starts_at, ends_at, status, checked_in_at, confirmation_status, source, flow_with_practitioner_at, flow_checkout_at, practitioner_id, room_id, appointment_type_id, class_session_id, patients(first_name, last_name), appointment_types(name, color)')
       .eq('clinic_id', clinicId)
       .neq('status', 'cancelled')
       // Deleted on the web calendar: status stays 'booked', only deleted_at is set.
@@ -344,6 +351,10 @@ const shownAppointments = computed<Appointment[]>(() => {
       ends_at: c.ends_at,
       status: 'booked',
       checked_in_at: null,
+      confirmation_status: null,
+      source: null,
+      flow_with_practitioner_at: null,
+      flow_checkout_at: null,
       practitioner_id: c.practitioner_id,
       room_id: c.room_id,
       appointment_type_id: c.appointment_type_id,
@@ -460,6 +471,10 @@ function open(a: Appointment) {
   else if (panelWide.value) selectedId.value = a.id
   else navigateTo(`/calendar/${a.id}`)
 }
+// Where each visit stands, as the web calendar's pill says it (AppStagePill).
+// A class tile has no stage of its own: its places each have one.
+const stageOf = (a: Appointment) => appointmentStage(a)
+const arrivedAt = (a: Appointment) => (a.checked_in_at ? timeLabel(a.checked_in_at) : null)
 // A class is changed as a whole, on the web; its tile does not drag.
 const canChange = (a: Appointment) => !readOnly.value && a.status === 'booked' && !a._class
 
@@ -689,7 +704,7 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
                   <span class="block truncate text-[14px] font-semibold text-ink-900" :class="a.status === 'no_show' ? 'line-through' : ''">{{ tileLabel(a) }}</span>
                   <span class="block truncate text-[12px] text-ink-muted"><template v-if="a._class">{{ a._class.capacity - a._class.taken > 0 ? t(`${a._class.capacity - a._class.taken} places left`, `${a._class.capacity - a._class.taken} plazas libres`) : t('Full', 'Completa') }}</template><template v-else>{{ a.appointment_types?.name ?? t('Appointment', 'Cita') }}</template><template v-if="!scopePractitioner && practitionerName(a.practitioner_id)"> · {{ practitionerName(a.practitioner_id) }}</template></span>
                 </span>
-                <span v-if="a.checked_in_at && a.status === 'booked'" class="h-2 w-2 shrink-0 rounded-full bg-success-accent" :title="t('Checked in', 'Ha llegado')" />
+                <AppStagePill v-if="!a._class" :stage="stageOf(a)" :arrived-at="arrivedAt(a)" />
               </button>
             </div>
             <p v-else class="px-1 text-[12.5px] text-ink-faint">{{ t('Nothing booked.', 'Sin citas.') }}</p>
@@ -744,7 +759,8 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
                   @click="open(p.a)"
                 >
                   <span class="flex items-center gap-1.5">
-                    <span v-if="p.a.checked_in_at && p.a.status === 'booked'" class="h-1.5 w-1.5 shrink-0 rounded-full bg-success-accent" :title="t('Checked in', 'Ha llegado')" />
+                    <!-- Icon only, as the web's narrow blocks: a column is too thin for the words. Done needs none: the faded tile says it. -->
+                    <AppStagePill v-if="!p.a._class && p.a.status !== 'completed'" icon :stage="stageOf(p.a)" :arrived-at="arrivedAt(p.a)" />
                     <span class="truncate text-[12.5px] font-semibold text-ink-900" :class="p.a.status === 'no_show' ? 'line-through' : ''">{{ tileLabel(p.a) }}</span>
                   </span>
                   <span v-if="p.height >= 38" class="block truncate text-[11.5px] text-ink-muted">
@@ -786,7 +802,7 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
               {{ selected.appointment_types?.name ?? t('Appointment', 'Cita') }} · {{ timeLabel(selected.starts_at) }}–{{ timeLabel(selected.ends_at) }}
             </p>
             <p v-if="practitionerName(selected.practitioner_id)" class="text-[12.5px] text-ink-muted">{{ practitionerName(selected.practitioner_id) }}</p>
-            <p v-if="selected.checked_in_at && selected.status === 'booked'" class="mt-2 inline-flex rounded-full bg-success-bg px-2 py-0.5 text-[11.5px] font-semibold text-success-text">{{ t('Checked in', 'Ha llegado') }}</p>
+            <AppStagePill v-if="!selected._class" class="mt-2" :stage="stageOf(selected)" :arrived-at="arrivedAt(selected)" />
           </div>
           <AppButton variant="primary" :to="`/calendar/${selected.id}`" data-cy="agenda-panel-open">{{ t('Open visit', 'Abrir la cita') }}</AppButton>
           <div v-if="canChange(selected)" class="grid grid-cols-2 gap-2">

@@ -10,12 +10,13 @@
 //     allows, and the notes are otherwise read-only;
 //   - bono sessions left with billing_history_view (the patient record's key
 //     for money); charging with billing_access, as before;
-//   - check-in, no-show and finish not on a read-only calendar
+//   - the visit's stage (check-in, into session, to checkout, and undoing
+//     each), no-show and finish not on a read-only calendar
 //     (calendar_read_only), which the database refuses anyway (0047);
 //   - booking the next visit as the patient record offers it.
 import { formatEur } from '../../../utils/billing'
 import { listingActionLine, listingSummary, sideLettersFor, syncListingLine, type Listings } from '../../../utils/spinalListings'
-import { appointmentStage } from '../../../utils/appointmentStage'
+import { appointmentStage, hasArrived, isUnconfirmedStage, nextStep, STAGE_TRACK, trackIndex } from '../../../utils/appointmentStage'
 
 definePageMeta({ layout: 'practitioner' })
 
@@ -35,6 +36,8 @@ interface Appointment {
   ends_at: string
   status: string
   checked_in_at: string | null
+  flow_with_practitioner_at: string | null
+  flow_checkout_at: string | null
   confirmation_status: string | null
   source: string | null
   appointment_type_id: string | null
@@ -65,7 +68,7 @@ async function loadAppointment() {
   const { data } = await supabase
     .from('appointments')
     .select(
-      'id, patient_id, starts_at, ends_at, status, checked_in_at, confirmation_status, source, appointment_type_id, practitioner_id, clinic_id, room_id, team_members(full_name), patients(first_name, last_name, red_flags, yellow_flags, sticky_note, chief_complaint, diagnosis), appointment_types(name, default_price_cents), clinics(timezone)',
+      'id, patient_id, starts_at, ends_at, status, checked_in_at, flow_with_practitioner_at, flow_checkout_at, confirmation_status, source, appointment_type_id, practitioner_id, clinic_id, room_id, team_members(full_name), patients(first_name, last_name, red_flags, yellow_flags, sticky_note, chief_complaint, diagnosis), appointment_types(name, default_price_cents), clinics(timezone)',
     )
     .eq('id', appointmentId)
     .maybeSingle()
@@ -107,16 +110,71 @@ const showMoney = computed(() => can('billing_history_view'))
 // practitioner saw -- "visit 1 of 12" on a plan half done. The plan's length
 // is shown instead of a number that is wrong (ownDiaryOnly).
 
-// -- Status --------------------------------------------------------------------
-const statusChip = computed<{ label: string; cls: string } | null>(() => {
+// -- Where it stands ------------------------------------------------------------
+// The web's appointment panel ("Dónde está", AppointmentPanel.vue): one stage
+// read from status, the confirmation and the three flow times
+// (utils/appointmentStage), the same words and pill as the web calendar
+// (useStageLabels), the track Confirmada -> Llegó -> En consulta -> Por
+// cobrar -> Hecha, and the one step forward from here. This screen used to
+// know only "in clinic" or not, so a patient the desk had moved on to
+// checkout still read "En clínica" here.
+const { stageLabel, stageLine } = useStageLabels()
+const stage = computed(() => (appointment.value ? appointmentStage(appointment.value) : null))
+const arrivedAt = computed(() => (appointment.value?.checked_in_at ? clinicTimeLabel(new Date(appointment.value.checked_in_at), timeZone.value) : null))
+const onTrack = computed(() => !!stage.value && stage.value !== 'noshow' && stage.value !== 'cancelled')
+const trackSteps = computed(() => {
   const a = appointment.value
-  if (!a) return null
-  if (a.status === 'completed') return { label: t('Done', 'Hecha'), cls: 'bg-success-bg text-success-text' }
-  if (a.status === 'no_show') return { label: t('No-show', 'No vino'), cls: 'bg-danger-bg text-danger-text' }
-  if (a.status === 'cancelled') return { label: t('Cancelled', 'Cancelada'), cls: 'bg-surface-subtle text-ink-muted' }
-  if (a.checked_in_at) return { label: t('In clinic', 'En clínica'), cls: 'bg-brand-tint text-brand-text' }
-  if (canAct.value) return null // the Check in button stands there instead
-  return { label: t('Booked', 'Reservada'), cls: 'bg-surface-subtle text-ink-muted' }
+  const s = stage.value
+  if (!a || !s) return []
+  const idx = Math.max(0, trackIndex(s))
+  const waiting = isUnconfirmedStage(s)
+  const labels = [waiting ? stageLabel(s) : t('Confirmed', 'Confirmada'), t('Arrived', 'Llegó'), t('In session', 'En consulta'), t('To pay', 'Por cobrar'), t('Done', 'Hecha')]
+  const times = [null, a.checked_in_at, a.flow_with_practitioner_at, a.flow_checkout_at, null]
+  return STAGE_TRACK.map((key, i) => ({
+    key,
+    label: labels[i],
+    when: times[i] ? clinicTimeLabel(new Date(times[i]!), timeZone.value) : '',
+    state: waiting && i === 0 ? 'waiting' : i < idx ? 'done' : i === idx ? 'current' : 'next',
+  }))
+})
+// The detail under the track ("había confirmado"). The not-yet-confirmed
+// stages have their own box below the track, which says what to do about it.
+const stageText = computed(() => {
+  const a = appointment.value
+  const s = stage.value
+  if (!a || !s) return null
+  return stageLine({ ...a, confirmation_sent_at: null, reminder_sent_at: null }, s)
+})
+// "Cobrar" is a step only for someone who may charge, and only until the
+// billing card is open; "Finish visit" below completes a visit with nothing
+// to charge, as the web's "Hecha, sin cobro" does.
+const next = computed(() => {
+  if (!stage.value || readOnlyCalendar.value) return null
+  const n = nextStep(stage.value)
+  if (n === 'charge' && (!can('billing_access') || billingOpen.value)) return null
+  return n
+})
+const nextLabel = computed(() => {
+  switch (next.value) {
+    case 'checkin':
+      return t('Check in', 'Registrar llegada')
+    case 'withp':
+      return t('Into session', 'Pasa a consulta')
+    case 'checkout':
+      return t('To checkout', 'Pasar a cobro')
+    case 'charge':
+      return t('Charge', 'Cobrar')
+    default:
+      return ''
+  }
+})
+// Undo the last flow step, for the tap that landed on the wrong patient.
+const undoable = computed(() => {
+  if (!canAct.value) return null
+  if (stage.value === 'checkout') return { field: 'flow_checkout_at' as const, label: t('Undo checkout', 'Deshacer paso a cobro') }
+  if (stage.value === 'withp') return { field: 'flow_with_practitioner_at' as const, label: t('Undo session', 'Deshacer consulta') }
+  if (stage.value === 'arrived') return { field: 'checked_in_at' as const, label: t('Undo arrival', 'Deshacer llegada') }
+  return null
 })
 
 const busy = ref(false)
@@ -139,6 +197,50 @@ async function checkIn() {
     .select('id')
   if (error) actionError.value = error.message
   else if ((data ?? []).length > 0 && appointment.value) fire('appointment.checked_in', { patientId: appointment.value.patient_id, appointmentId })
+  await loadAppointment()
+  busy.value = false
+  homeWidget.refresh({ force: true })
+}
+
+// Into session and to checkout: the web panel's advance, the same columns.
+// Only while the step is still open, so a double tap does not move the time.
+async function stepTo(field: 'flow_with_practitioner_at' | 'flow_checkout_at') {
+  if (busy.value) return
+  busy.value = true
+  actionError.value = ''
+  const { error } = await supabase
+    .from('appointments')
+    .update({ [field]: new Date().toISOString() } as never)
+    .eq('id', appointmentId)
+    .eq('status', 'booked')
+    .is(field, null)
+  if (error) actionError.value = error.message
+  await loadAppointment()
+  busy.value = false
+  homeWidget.refresh({ force: true })
+}
+const billingCard = ref<HTMLElement | null>(null)
+async function advance() {
+  switch (next.value) {
+    case 'checkin':
+      return checkIn()
+    case 'withp':
+      return stepTo('flow_with_practitioner_at')
+    case 'checkout':
+      return stepTo('flow_checkout_at')
+    case 'charge':
+      // The web opens its Cobro tab; here billing is a card further down.
+      await openBilling()
+      billingCard.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+}
+async function undoStep() {
+  const u = undoable.value
+  if (!u || busy.value) return
+  busy.value = true
+  actionError.value = ''
+  const { error } = await supabase.from('appointments').update({ [u.field]: null } as never).eq('id', appointmentId).eq('status', 'booked')
+  if (error) actionError.value = error.message
   await loadAppointment()
   busy.value = false
   homeWidget.refresh({ force: true })
@@ -585,11 +687,11 @@ async function onMoved(e: { startsAt: string }) {
 const unconfirmed = computed<{ title: string; sub: string } | null>(() => {
   const a = appointment.value
   if (!a) return null
-  const stage = appointmentStage({ ...a, flow_with_practitioner_at: null, flow_checkout_at: null })
+  const s = stage.value
   const markHint = t('If they confirmed by phone or at the desk, mark it here.', 'Si lo ha confirmado por teléfono o en recepción, márcala aquí.')
-  if (stage === 'pending') return { title: t('Not confirmed yet', 'Sin confirmar'), sub: `${t('The reminder went out and they have not replied.', 'Se envió el recordatorio y no ha respondido.')} ${markHint}` }
-  if (stage === 'online') return { title: t('Not confirmed yet', 'Sin confirmar'), sub: `${t('They booked it online.', 'La reservó en línea.')} ${markHint}` }
-  if (stage === 'resched') return { title: t('Asked to change it', 'Ha pedido cambiarla'), sub: t('They replied to the reminder asking for another time. Change it below, or mark it confirmed if they are keeping it.', 'Respondió al recordatorio pidiendo otra hora. Cámbiala abajo, o márcala como confirmada si la mantiene.') }
+  if (s === 'pending') return { title: t('Not confirmed yet', 'Sin confirmar'), sub: `${t('The reminder went out and they have not replied.', 'Se envió el recordatorio y no ha respondido.')} ${markHint}` }
+  if (s === 'online') return { title: t('Not confirmed yet', 'Sin confirmar'), sub: `${t('They booked it online.', 'La reservó en línea.')} ${markHint}` }
+  if (s === 'resched') return { title: t('Asked to change it', 'Ha pedido cambiarla'), sub: t('They replied to the reminder asking for another time. Change it below, or mark it confirmed if they are keeping it.', 'Respondió al recordatorio pidiendo otra hora. Cámbiala abajo, o márcala como confirmada si la mantiene.') }
   return null
 })
 
@@ -691,17 +793,7 @@ watch(
         <AppChevron dir="left" :size="24" />
       </button>
       <h1 class="min-w-0 flex-1 truncate text-[17px] font-semibold text-ink-900" data-cy="visit-patient-name">{{ appointment ? fullName : t('Visit', 'Visita') }}</h1>
-      <span v-if="statusChip" class="inline-flex h-6 shrink-0 items-center rounded-pill px-2.5 text-[11.5px] font-semibold" :class="statusChip.cls" data-cy="visit-status">{{ statusChip.label }}</span>
-      <button
-        v-else-if="appointment && canAct && !appointment.checked_in_at"
-        type="button"
-        class="inline-flex h-8 shrink-0 items-center rounded-pill border border-brand-tintBorder bg-brand-tint px-3 text-[13px] font-semibold text-brand-text disabled:opacity-50"
-        :disabled="busy"
-        data-cy="visit-check-in"
-        @click="checkIn"
-      >
-        {{ t('Check in', 'Registrar llegada') }}
-      </button>
+      <AppStagePill v-if="stage" :stage="stage" :arrived-at="arrivedAt" data-cy="visit-status" />
     </div>
 
     <div v-if="loading" class="flex-1 space-y-2.5 px-3.5 py-3">
@@ -749,6 +841,32 @@ watch(
               <span class="line-clamp-2">{{ al.text }}</span>
             </span>
             <span v-if="bonoChip" class="inline-flex h-6 items-center rounded-pill bg-warning-bg px-2.5 text-[11.5px] font-semibold text-warning-text" data-cy="visit-bono">{{ bonoChip }}</span>
+          </div>
+        </section>
+
+        <!-- Where it stands, and the one step forward: the web panel's track -->
+        <section class="rounded-card border border-line bg-surface shadow-card px-3.5 py-3" data-cy="visit-stage">
+          <h2 class="mb-2 text-[10.5px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Where it stands', 'Dónde está') }}</h2>
+          <ol v-if="onTrack" class="grid grid-cols-5 gap-1.5" :aria-label="t('Appointment stage', 'Estado de la cita')" data-cy="visit-stage-track">
+            <li v-for="s in trackSteps" :key="s.key" class="flex min-w-0 flex-col gap-1" :data-state="s.state" :aria-current="s.state === 'current' ? 'step' : undefined">
+              <span class="h-1.5 rounded-[3px]" :class="s.state === 'done' || s.state === 'current' ? 'bg-success-accent' : s.state === 'waiting' ? 'bg-warning-accent' : 'bg-line'" />
+              <span class="text-[11.5px] font-semibold leading-tight [overflow-wrap:anywhere]" :class="s.state === 'next' ? 'text-ink-faint' : s.state === 'current' ? 'font-bold text-success-text' : s.state === 'waiting' ? 'font-bold text-warning-text' : 'text-ink-700'">{{ s.label }}</span>
+              <span class="font-mono text-[11px] text-ink-muted">{{ s.when || '\u00A0' }}</span>
+            </li>
+          </ol>
+          <p v-else-if="stageText" class="text-[14px] font-semibold text-ink-700" data-cy="visit-stage-off-track">{{ stageText.title }}</p>
+          <p v-if="onTrack && stageText?.sub && !unconfirmed" class="mt-2 text-[12.5px] text-ink-muted">{{ stageText.title }} · {{ stageText.sub }}</p>
+
+          <!-- Whether they are coming, while that is still open -->
+          <div v-if="canAct && unconfirmed" class="mt-2.5 rounded-card border border-warning-border bg-warning-bg px-3.5 py-3" data-cy="visit-unconfirmed">
+            <p class="text-[14px] font-semibold text-warning-text">{{ unconfirmed.title }}</p>
+            <p class="mt-0.5 text-[12.5px] leading-snug text-ink-700">{{ unconfirmed.sub }}</p>
+            <AppButton class="mt-2.5 w-full" :disabled="busy" data-cy="visit-confirm" @click="markConfirmed">{{ t('Mark as confirmed', 'Marcar como confirmada') }}</AppButton>
+          </div>
+
+          <div v-if="next || undoable" class="mt-2.5 flex flex-wrap gap-2">
+            <AppButton v-if="next" variant="tint" class="flex-1" :disabled="busy" :data-cy="next === 'checkin' ? 'visit-check-in' : 'visit-advance'" :data-next="next" @click="advance">{{ nextLabel }}</AppButton>
+            <AppButton v-if="undoable" variant="quiet" :disabled="busy" data-cy="visit-undo-stage" @click="undoStep">{{ undoable.label }}</AppButton>
           </div>
         </section>
 
@@ -887,7 +1005,7 @@ watch(
           </AppButton>
         </div>
 
-        <div v-else-if="billingOpen" class="rounded-card border border-line bg-surface shadow-card p-3.5" data-cy="visit-billing">
+        <div v-else-if="billingOpen" ref="billingCard" class="scroll-mt-3 rounded-card border border-line bg-surface shadow-card p-3.5" data-cy="visit-billing">
           <p class="mb-2 text-[10.5px] font-semibold uppercase tracking-[.05em] text-ink-muted">{{ t('Billing', 'Cobro') }}</p>
           <p v-if="loadingInvoice" class="text-[13px] text-ink-faint">{{ t('Loading…', 'Cargando…') }}</p>
           <p v-else-if="!invoice && appointmentIsUpcoming" class="text-[13px] text-ink-faint">
@@ -963,23 +1081,11 @@ watch(
 
         <p v-if="actionError" class="text-[13px] text-danger-text">{{ actionError }}</p>
 
-        <!-- Whether they are coming, and move or cancel, as the agenda does:
-             before the visit has started -->
-        <template v-if="canAct && !appointment.checked_in_at">
-          <section v-if="unconfirmed" class="rounded-card border border-warning-border bg-warning-bg px-3.5 py-3" data-cy="visit-unconfirmed">
-            <p class="text-[14px] font-semibold text-warning-text">{{ unconfirmed.title }}</p>
-            <p class="mt-0.5 text-[12.5px] leading-snug text-ink-700">{{ unconfirmed.sub }}</p>
-            <AppButton class="mt-2.5 w-full" :disabled="busy" data-cy="visit-confirm" @click="markConfirmed">{{ t('Mark as confirmed', 'Marcar como confirmada') }}</AppButton>
-          </section>
-          <p v-else-if="appointment.confirmation_status === 'confirmed'" class="flex items-center gap-1.5 px-1 text-[13px] font-medium text-success-text" data-cy="visit-confirmed">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
-            {{ t('Confirmed', 'Confirmada') }}
-          </p>
-          <div class="grid grid-cols-2 gap-2" data-cy="visit-change">
-            <AppButton data-cy="visit-move" @click="moveOpen = true">{{ t('Change', 'Cambiar') }}</AppButton>
-            <AppButton variant="danger" data-cy="visit-cancel" @click="cancelOpen = true">{{ t('Cancel visit', 'Cancelar cita') }}</AppButton>
-          </div>
-        </template>
+        <!-- Move or cancel, as the agenda does: before the visit has started -->
+        <div v-if="canAct && !appointment.checked_in_at" class="grid grid-cols-2 gap-2" data-cy="visit-change">
+          <AppButton data-cy="visit-move" @click="moveOpen = true">{{ t('Change', 'Cambiar') }}</AppButton>
+          <AppButton variant="danger" data-cy="visit-cancel" @click="cancelOpen = true">{{ t('Cancel visit', 'Cancelar cita') }}</AppButton>
+        </div>
         <!-- Finished by mistake -->
         <AppButton v-if="canUndoVisit" variant="quiet" :disabled="busy" data-cy="visit-undo" @click="undoVisit">{{ t('Undo visit', 'Deshacer visita') }}</AppButton>
         </div>
@@ -988,7 +1094,8 @@ watch(
       <!-- No-show / Finish visit, or book the next one once it is done -->
       <div v-if="keyboardHeight === 0 && (canAct || (appointment.status === 'completed' && canBook))" class="flex shrink-0 gap-2 border-t border-line bg-surface-page px-3.5 py-2.5" data-cy="visit-footer">
         <template v-if="canAct">
-          <AppButton class="flex-1" :disabled="busy" data-cy="visit-no-show" @click="markNoShow">
+          <!-- Locked once they are in the building, as on the web -->
+          <AppButton class="flex-1" :disabled="busy || (!!stage && hasArrived(stage))" data-cy="visit-no-show" @click="markNoShow">
             {{ t('No-show', 'No vino') }}
           </AppButton>
           <AppButton variant="primary" class="flex-[2]" :disabled="busy" data-cy="visit-finish" @click="finishVisit">

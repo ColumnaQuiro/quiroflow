@@ -7,8 +7,9 @@ definePageMeta({ layout: 'practitioner', keepalive: true })
 
 // The agenda: the day as a timeline, read in the CLINIC's time zone.
 //
-// - iPhone: "Mis citas" / "Toda la clínica", one column; visits that overlap
-//   sit side by side.
+// - Whose diary, as the web's practitioner tabs: "Toda la clínica", one tab
+//   per practitioner, "Sin profesional". One column on iPhone; visits that
+//   overlap sit side by side.
 // - "Semana": on iPad a column per day (the scope's visits, overlaps side by
 //   side, hold and drag as in the day); on iPhone, seven columns do not fit,
 //   so the week is a list grouped by day. Tapping the date opens a picker to
@@ -175,16 +176,49 @@ const loading = ref(true)
 const loadError = ref('')
 
 const amPractitioner = computed(() => !!context.value && practitioners.value.some((p) => p.id === context.value!.teamMemberId))
-const scope = ref<'mine' | 'all'>('mine')
-const canScopeMine = computed(() => amPractitioner.value && !ownDiaryOnly.value)
-watch(amPractitioner, (yes) => { if (!yes && !ownDiaryOnly.value) scope.value = 'all' })
-const effectiveScope = computed(() => (ownDiaryOnly.value || (scope.value === 'mine' && amPractitioner.value) ? 'mine' : 'all'))
+// Whose diary is open, as the web calendar's practitioner tabs: everyone, one
+// practitioner, or the visits with none. Remembered on this device; until
+// something is chosen, a practitioner opens on their own diary and anyone
+// else on the whole clinic. Someone who sees only their own diary gets no tabs.
+const ALL_PRACTITIONERS = '__all'
+const UNASSIGNED_PRACTITIONER = '__unassigned'
+const WHO_KEY = 'quiroflow_agenda_practitioner'
+const chosenWho = ref<string | null>(null)
+onMounted(() => {
+  try {
+    chosenWho.value = localStorage.getItem(WHO_KEY)
+  } catch {}
+})
+function setWho(v: string) {
+  chosenWho.value = v
+  selectedId.value = null
+  try {
+    localStorage.setItem(WHO_KEY, v)
+  } catch {}
+}
+const who = computed(() => {
+  const me = context.value?.teamMemberId ?? null
+  if (ownDiaryOnly.value) return me ?? ALL_PRACTITIONERS
+  const c = chosenWho.value
+  // A practitioner since removed from this clinic falls back like a first visit.
+  if (c === ALL_PRACTITIONERS || c === UNASSIGNED_PRACTITIONER || (c && practitioners.value.some((p) => p.id === c))) return c
+  return amPractitioner.value ? me! : ALL_PRACTITIONERS
+})
+const showWhoTabs = computed(() => !ownDiaryOnly.value && practitioners.value.length > 0)
+// The open tab in view: on a phone the row scrolls, and your own may be fourth.
+const whoTabs = ref<HTMLElement | null>(null)
+watch([who, showWhoTabs], async () => {
+  await nextTick()
+  whoTabs.value?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ inline: 'nearest', block: 'nearest' })
+}, { immediate: true })
+const inWho = (a: { practitioner_id: string | null }) =>
+  who.value === ALL_PRACTITIONERS || (who.value === UNASSIGNED_PRACTITIONER ? a.practitioner_id === null : a.practitioner_id === who.value)
 // The home-screen widget's "Pacientes hoy" and the front desk's widget open
 // today's whole clinic (?scope=clinic). The page is kept alive, so a later tap
 // arrives as a new `w` rather than as a fresh page.
 watch(() => [route.query.scope, route.query.w], () => {
   if (route.query.scope !== 'clinic') return
-  scope.value = 'all'
+  chosenWho.value = ALL_PRACTITIONERS
   day.value = today()
 }, { immediate: true })
 
@@ -316,7 +350,8 @@ const yOf = (minute: number) => ((minute - range.value.start) / 60) * HOUR.value
 // A column is a practitioner's day, everyone's day, or (week) one day of the
 // scope's diary.
 interface Column { key: string; practitionerId: string | null; name: string; date: string }
-const scopePractitioner = computed(() => (effectiveScope.value === 'mine' ? (context.value?.teamMemberId ?? null) : null))
+/** One practitioner's tab is open (not everyone, not "no practitioner"). */
+const scopePractitioner = computed(() => (who.value === ALL_PRACTITIONERS || who.value === UNASSIGNED_PRACTITIONER ? null : who.value))
 // The week's days: the ones anyone works or anything is booked on, so a
 // clinic closed at weekends gets five wider columns, not seven.
 const weekColumnsDates = computed(() => {
@@ -327,8 +362,9 @@ const weekColumnsDates = computed(() => {
 const columns = computed<Column[]>(() => {
   if (isWeek.value) return weekColumnsDates.value.map((date) => ({ key: date, practitionerId: scopePractitioner.value, name: dayHead(date), date }))
   if (isThree.value) return spanDates.value.map((date) => ({ key: date, practitionerId: scopePractitioner.value, name: dayHead(date), date }))
-  const me = context.value?.teamMemberId ?? null
-  if (effectiveScope.value === 'mine') return [{ key: 'mine', practitionerId: me, name: context.value?.fullName ?? '', date: day.value }]
+  const one = scopePractitioner.value
+  if (one) return [{ key: one, practitionerId: one, name: practitionerName(one) ?? context.value?.fullName ?? '', date: day.value }]
+  if (who.value === UNASSIGNED_PRACTITIONER) return [{ key: UNASSIGNED_PRACTITIONER, practitionerId: null, name: t('No practitioner', 'Sin profesional'), date: day.value }]
   if (!wide.value || practitioners.value.length === 0) return [{ key: 'all', practitionerId: null, name: '', date: day.value }]
   return practitioners.value.map((p) => ({ key: p.id, practitionerId: p.id, name: p.full_name, date: day.value }))
 })
@@ -406,7 +442,7 @@ function layout(list: Appointment[], date: string): Placed[] {
 const placedByColumn = computed(() => {
   const map: Record<string, Placed[]> = {}
   for (const c of columns.value) {
-    const list = shownAppointments.value.filter((a) => (!c.practitionerId || a.practitioner_id === c.practitionerId) && (!multiDay.value || dateOfIso(a.starts_at) === c.date))
+    const list = shownAppointments.value.filter((a) => inWho(a) && (!c.practitionerId || a.practitioner_id === c.practitionerId) && (!multiDay.value || dateOfIso(a.starts_at) === c.date))
     map[c.key] = layout(list, c.date)
   }
   return map
@@ -449,7 +485,7 @@ watch([loading, day, view], async ([l]) => {
 const weekList = computed(() =>
   weekDates.value.map((date) => ({
     date,
-    items: shownAppointments.value.filter((a) => dateOfIso(a.starts_at) === date && (!scopePractitioner.value || a.practitioner_id === scopePractitioner.value)),
+    items: shownAppointments.value.filter((a) => dateOfIso(a.starts_at) === date && inWho(a)),
   })),
 )
 const timeLabel = (iso: string) => clinicTimeLabel(new Date(iso), tz.value)
@@ -516,10 +552,11 @@ function say(message: string) {
   noticeTimer = setTimeout(() => (notice.value = ''), 3500)
 }
 function columnPractitioner(c: Column) {
-  return c.practitionerId ?? (amPractitioner.value ? context.value!.teamMemberId : null)
+  if (c.practitionerId || who.value === UNASSIGNED_PRACTITIONER) return c.practitionerId
+  return amPractitioner.value ? context.value!.teamMemberId : null
 }
 function startNew() {
-  newVisit.value = { preferredStart: null, practitionerId: effectiveScope.value === 'mine' ? (context.value?.teamMemberId ?? null) : null }
+  newVisit.value = { preferredStart: null, practitionerId: scopePractitioner.value }
 }
 async function afterBooked(b: { appointmentId: string }, message: string) {
   newVisit.value = null
@@ -685,7 +722,7 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
         <button type="button" class="flex h-9 w-9 items-center justify-center rounded-ctl border" :class="privacy ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-700'" role="switch" :aria-checked="privacy" :aria-label="t('Privacy mode: names as initials', 'Modo privacidad: nombres como iniciales')" data-cy="agenda-privacy" @click="togglePrivacy">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path v-if="!privacy" d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" /><circle v-if="!privacy" cx="12" cy="12" r="3" /><path v-if="privacy" d="M3 3l18 18M10.6 5.1A10.4 10.4 0 0112 5c6.5 0 10 7 10 7a17.6 17.6 0 01-3.1 4M6.6 6.6C3.9 8.3 2 12 2 12s3.5 7 10 7a9.7 9.7 0 005.4-1.6M9.9 9.9a3 3 0 004.2 4.2" /></svg>
         </button>
-        <button type="button" class="flex h-9 w-9 items-center justify-center rounded-ctl border border-line-control text-ink-700 md:w-auto md:gap-1.5 md:px-3" :aria-label="t('Block time', 'Bloquear tiempo')" data-cy="agenda-block" @click="blockAt = { time: null, practitionerId: effectiveScope === 'mine' ? (context?.teamMemberId ?? null) : null }">
+        <button type="button" class="flex h-9 w-9 items-center justify-center rounded-ctl border border-line-control text-ink-700 md:w-auto md:gap-1.5 md:px-3" :aria-label="t('Block time', 'Bloquear tiempo')" data-cy="agenda-block" @click="blockAt = { time: null, practitionerId: scopePractitioner }">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5" /><path d="M6 6l12 12" /></svg>
           <span class="hidden text-[13px] font-medium md:inline">{{ t('Block', 'Bloquear') }}</span>
         </button>
@@ -697,9 +734,17 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
     </div>
 
     <div class="flex shrink-0 items-center gap-2 border-b border-line bg-surface px-3 pb-2 pt-1 md:px-5">
-      <div v-if="canScopeMine" role="tablist" :aria-label="t('Whose diary', 'De quién')" class="grid min-w-0 flex-1 grid-cols-2 gap-1 rounded-ctl bg-chip-bg p-[3px] md:max-w-[360px]">
-        <button v-for="s in (['mine', 'all'] as const)" :key="s" type="button" role="tab" :aria-selected="effectiveScope === s" class="h-8 min-w-0 truncate whitespace-nowrap rounded-ctlSm px-1.5 text-[13px] font-semibold" :class="effectiveScope === s ? 'bg-surface text-ink-900 shadow-card' : 'text-ink-muted'" :data-cy="`agenda-scope-${s}`" @click="scope = s; selectedId = null">
-          {{ s === 'mine' ? t('My visits', 'Mis citas') : t('Whole clinic', 'Toda la clínica') }}
+      <!-- Whose diary, as the web calendar's practitioner tabs. -->
+      <div v-if="showWhoTabs" ref="whoTabs" role="tablist" :aria-label="t('Whose diary', 'De quién')" class="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" data-cy="agenda-practitioners">
+        <button type="button" role="tab" :aria-selected="who === ALL_PRACTITIONERS" class="h-8 shrink-0 rounded-ctlSm px-3 text-[13px] font-medium" :class="who === ALL_PRACTITIONERS ? 'bg-brand text-white' : 'text-ink-600'" data-cy="agenda-practitioner-all" @click="setWho(ALL_PRACTITIONERS)">
+          {{ t('Whole clinic', 'Toda la clínica') }}
+        </button>
+        <span class="mx-0.5 h-4 w-px shrink-0 bg-line" aria-hidden="true" />
+        <button v-for="pr in practitioners" :key="pr.id" type="button" role="tab" :aria-selected="who === pr.id" class="h-8 shrink-0 whitespace-nowrap rounded-ctlSm px-3 text-[13px] font-medium" :class="who === pr.id ? 'bg-brand text-white' : 'text-ink-600'" data-cy="agenda-practitioner" :data-practitioner-id="pr.id" @click="setWho(pr.id)">
+          {{ pr.full_name }}
+        </button>
+        <button type="button" role="tab" :aria-selected="who === UNASSIGNED_PRACTITIONER" class="h-8 shrink-0 whitespace-nowrap rounded-ctlSm px-3 text-[13px] font-medium" :class="who === UNASSIGNED_PRACTITIONER ? 'bg-brand text-white' : 'text-ink-faint'" data-cy="agenda-practitioner-unassigned" @click="setWho(UNASSIGNED_PRACTITIONER)">
+          {{ t('No practitioner', 'Sin profesional') }}
         </button>
       </div>
       <div v-else class="flex-1" />

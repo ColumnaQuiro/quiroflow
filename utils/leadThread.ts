@@ -71,7 +71,9 @@ export async function readLeadThread(supabase: SupabaseClient<Database>, leadId:
   // possible, so the composer needs to know before it lets someone type a
   // message WhatsApp will refuse.
   const lastInbound = [...messages].reverse().find((m) => m.direction === 'inbound')
-  const withinWindow = lastInbound ? Date.now() - new Date(lastInbound.created_at).getTime() < 24 * 3600 * 1000 : false
+  // The website chat has none: the visitor reads the answer whenever they
+  // next open the chat.
+  const withinWindow = lead.channel === 'webchat' || (lastInbound ? Date.now() - new Date(lastInbound.created_at).getTime() < 24 * 3600 * 1000 : false)
 
   return {
     id: lead.id,

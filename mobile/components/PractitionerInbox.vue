@@ -1215,7 +1215,9 @@ watch(thread, async (msgs) => {
 
 const replyChannel = computed(() => (thread.value.length === 0 ? 'whatsapp' : thread.value[thread.value.length - 1].channel))
 const within24h = computed(() => {
-  if (replyChannel.value === 'in_app') return true
+  // The website chat has no window: a visitor reads the answer whenever
+  // they next open the chat.
+  if (replyChannel.value === 'in_app' || replyChannel.value === 'webchat') return true
   // Whichever channel the reply goes out on -- not always WhatsApp. An
   // Instagram thread's inbound messages carry channel 'instagram', so looking
   // only at WhatsApp ones found nothing and every Instagram conversation read
@@ -1330,6 +1332,13 @@ async function performTextSend(tempId: string, text: string, channel: string, ta
       // WhatsApp with no number and failed.
       if (!target.externalContactId) throw new Error('This Instagram conversation has no sender id')
       await authedFetch('/api/instagram/send', { method: 'POST', body: { recipientId: target.externalContactId, text } })
+    } else if (channel === 'messenger' || channel === 'webchat') {
+      // No phone either: addressed by lead, or by the id they wrote from.
+      if (!target.leadId && !target.externalContactId) throw new Error('This conversation has no sender id')
+      await authedFetch(channel === 'messenger' ? '/api/messenger/send' : '/api/webchat/send', {
+        method: 'POST',
+        body: { leadId: target.leadId ?? undefined, recipientId: target.leadId ? undefined : target.externalContactId, text },
+      })
     } else {
       // A lead's own thread is addressed by lead, as the web does
       // (useGrowthLeadThread.reply): the route finds the number and files
@@ -1995,8 +2004,8 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
            visit (a link) or that nothing is booked, then who has it. -->
       <div class="flex items-center gap-1.5 overflow-x-auto whitespace-nowrap px-4 pb-2 text-[12.5px] text-ink-muted [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <span class="inline-flex shrink-0 items-center gap-1.5">
-          <span class="h-2 w-2 rounded-full" :class="selected.channel === 'whatsapp' ? 'bg-[#25D366]' : selected.channel === 'instagram' ? 'bg-[#D6249F]' : 'bg-brand'" aria-hidden="true" />
-          {{ selected.channel === 'whatsapp' ? 'WhatsApp' : selected.channel === 'instagram' ? 'Instagram' : t('In-app', 'App') }}
+          <span class="h-2 w-2 rounded-full" :class="selected.channel === 'whatsapp' ? 'bg-[#25D366]' : selected.channel === 'instagram' ? 'bg-[#D6249F]' : selected.channel === 'messenger' ? 'bg-[#0866FF]' : 'bg-brand'" aria-hidden="true" />
+          {{ selected.channel === 'whatsapp' ? 'WhatsApp' : selected.channel === 'instagram' ? 'Instagram' : selected.channel === 'messenger' ? 'Messenger' : selected.channel === 'webchat' ? t('Website chat', 'Chat de la web') : t('In-app', 'App') }}
         </span>
         <template v-if="selected.patientId && nextVisitLoaded">
           <span aria-hidden="true">·</span>
@@ -2174,10 +2183,10 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
                       `${selected.name} hasn't written to you yet. Until they reply, WhatsApp only lets the clinic send an approved template.`,
                       `${selected.name} aún no te ha escrito. Hasta que responda, WhatsApp solo permite enviarle una plantilla aprobada.`,
                     )
-                : replyChannel === 'instagram'
+                : replyChannel === 'instagram' || replyChannel === 'messenger'
                   ? t(
-                      `More than 24h since ${selected.name} last messaged — free-form replies are blocked by Instagram.`,
-                      `Han pasado más de 24h desde que ${selected.name} escribió por última vez — Instagram bloquea las respuestas libres.`,
+                      `More than 24h since ${selected.name} last messaged — free-form replies are blocked by ${replyChannel === 'messenger' ? 'Messenger' : 'Instagram'}.`,
+                      `Han pasado más de 24h desde que ${selected.name} escribió por última vez — ${replyChannel === 'messenger' ? 'Messenger' : 'Instagram'} bloquea las respuestas libres.`,
                     )
                   : t(
                       `More than 24h since ${selected.name} last messaged — free-form replies are blocked by WhatsApp; only an approved template can be sent.`,
@@ -2210,7 +2219,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
                upload it, and fail at the very last step. Same reasoning as
                the web Inbox. -->
           <button
-            v-if="replyChannel !== 'instagram'"
+            v-if="!['instagram', 'messenger', 'webchat'].includes(replyChannel)"
             type="button"
             class="flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-muted disabled:opacity-50"
             :disabled="sending"
@@ -2261,7 +2270,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
           </button>
           <template v-else>
           <button
-            v-if="replyChannel !== 'instagram'"
+            v-if="!['instagram', 'messenger', 'webchat'].includes(replyChannel)"
             type="button"
             class="flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-muted disabled:opacity-50"
             :disabled="sending"
@@ -2274,7 +2283,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             </svg>
           </button>
           <button
-            v-if="replyChannel !== 'instagram'"
+            v-if="!['instagram', 'messenger', 'webchat'].includes(replyChannel)"
             type="button"
             class="flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-muted disabled:opacity-50"
             :disabled="sending"

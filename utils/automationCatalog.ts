@@ -733,4 +733,6 @@ export const LEAD_CHANNEL_OPTIONS: { value: string; label: Pair }[] = [
   { value: 'instagram', label: ['Instagram', 'Instagram'] },
   { value: 'facebook', label: ['Facebook', 'Facebook'] },
   { value: 'walk_in', label: ['Walk-in', 'En persona'] },
+  { value: 'messenger', label: ['Messenger', 'Messenger'] },
+  { value: 'webchat', label: ['Website chat', 'Chat de la web'] },
 ]

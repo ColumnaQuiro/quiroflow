@@ -2,7 +2,9 @@
 const t = useT()
 const { can } = usePermission()
 const { hasGrowth, resolved } = useGrowthTier()
-const { data, loading, error, busyId, draftReply, approve, discard } = useGrowthReputation()
+const { data, loading, error, busyId, draftReply, approve, discard, googleLocations, googleBusy, connectGoogle, loadGoogleLocations, chooseGoogleLocation, syncGoogle, disconnectGoogle } = useGrowthReputation()
+const route = useRoute()
+const { showToast } = useToast()
 
 const allowed = computed(() => can('communication_config'))
 
@@ -19,6 +21,26 @@ const trendPath = computed(() => {
   const span = Math.max(...values) - min || 1
   const step = 520 / (points.length - 1)
   return points.map((p, i) => `${Math.round(i * step)},${(66 - ((p.value - min) / span) * 52).toFixed(1)}`).join(' ')
+})
+
+// Back from Google's consent screen: choose the listing, or say what went wrong.
+// Once the page has loaded, a connected listing is brought up to date.
+const googleOutcome = String(route.query.google ?? '')
+watch(
+  () => data.value?.google,
+  (google, before) => {
+    if (!google || before) return
+    if (googleOutcome === 'choose') loadGoogleLocations()
+    else if (google.location) syncGoogle()
+  },
+)
+onMounted(() => {
+  const problems: Record<string, string> = {
+    declined: t('Google was not connected: the permission was declined.', 'No se ha conectado Google: se rechazó el permiso.'),
+    expired: t('That took too long. Connect Google again.', 'Ha tardado demasiado. Vuelve a conectar Google.'),
+    failed: t('Google did not complete the connection. Try again.', 'Google no completó la conexión. Inténtalo de nuevo.'),
+  }
+  if (problems[googleOutcome]) showToast(problems[googleOutcome]!, 'error', 8000)
 })
 
 function when(iso: string) {
@@ -63,8 +85,35 @@ function when(iso: string) {
           that answers "not configured on this deployment", which reads as a
           bug to anybody being shown the product. With a key, it is an
           invitation to connect. -->
+          <!-- Google, once this deployment can connect it: where it stands, and the next step. -->
+          <section v-if="data.google?.configured" class="flex flex-col gap-3 rounded-card border border-line bg-surface p-4 shadow-card" data-test="google-reviews">
+            <div class="flex flex-wrap items-center gap-3">
+              <div class="flex min-w-[220px] flex-1 flex-col gap-0.5">
+                <h2 class="text-[13.5px] font-semibold tracking-tightTitle text-ink-900">{{ t('Google reviews', 'Reseñas de Google') }}</h2>
+                <p v-if="data.google.location" class="text-[12px] text-ink-muted" data-test="google-connected">
+                  {{ data.google.locationTitle }}<template v-if="data.google.syncedAt"> · {{ t('updated', 'actualizado') }} {{ when(data.google.syncedAt) }}</template>
+                </p>
+                <p v-else class="text-[12px] leading-snug text-ink-muted">
+                  {{ t('Connect your Google Business Profile: your reviews appear here, a reply is drafted for each, and the one you approve is published on Google.', 'Conecta tu perfil de Google Business: tus reseñas aparecen aquí, se redacta una respuesta para cada una y la que apruebes se publica en Google.') }}
+                </p>
+              </div>
+              <template v-if="data.google.location">
+                <UiBtn variant="secondary" size="sm" :disabled="googleBusy" data-test="google-refresh" @click="syncGoogle(true)">{{ t('Refresh', 'Actualizar') }}</UiBtn>
+                <UiBtn variant="secondary" size="sm" :disabled="googleBusy" data-test="google-disconnect" @click="disconnectGoogle">{{ t('Disconnect', 'Desconectar') }}</UiBtn>
+              </template>
+              <UiBtn v-else variant="primary" size="sm" :disabled="googleBusy" data-test="google-connect" @click="connectGoogle">{{ t('Connect Google', 'Conectar Google') }}</UiBtn>
+            </div>
+            <div v-if="googleLocations" class="flex flex-col gap-2 border-t border-line-divider pt-3" data-test="google-locations">
+              <strong class="text-[12.5px] text-ink-900">{{ t('Which listing is this clinic’s?', '¿Cuál es la ficha de esta clínica?') }}</strong>
+              <p v-if="googleLocations.length === 0" class="text-[12px] text-ink-muted">{{ t('This Google account manages no listings. Connect with the account that owns the clinic’s profile.', 'Esta cuenta de Google no gestiona ninguna ficha. Conecta con la cuenta propietaria del perfil de la clínica.') }}</p>
+              <UiBtn v-for="l in googleLocations" :key="l.location" variant="secondary" size="sm" class="justify-start" :disabled="googleBusy" @click="chooseGoogleLocation(l.location)">
+                {{ l.title }}<span v-if="l.address" class="ml-1 font-normal text-ink-muted">· {{ l.address }}</span>
+              </UiBtn>
+            </div>
+          </section>
+
           <UiEmptyState
-            v-if="!data.hasReviews"
+            v-if="!data.hasReviews && !data.google?.configured"
             data-test="reviews-coming-soon"
             :eyebrow="t('Coming soon', 'Próximamente')"
             tone="soon"

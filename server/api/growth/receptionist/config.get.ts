@@ -13,7 +13,7 @@ export default defineEventHandler(async (event) => {
   // WhatsApp session expired.
   const { data: account } = await supabase
     .from('accounts')
-    .select('whatsapp_phone_number_id, whatsapp_access_token, instagram_user_id, instagram_access_token')
+    .select('whatsapp_phone_number_id, whatsapp_access_token, instagram_user_id, instagram_access_token, messenger_page_id, webchat_enabled')
     .eq('id', teamMember.account_id)
     .maybeSingle()
   await withMessagingTokens(teamMember.account_id, account)
@@ -24,6 +24,8 @@ export default defineEventHandler(async (event) => {
   // needs, so an account id alone is a real, working, half-connected state
   // and is reported as connected rather than as nothing.
   const instagramReady = Boolean(account?.instagram_user_id)
+  const messengerReady = Boolean(account?.messenger_page_id)
+  const webchatReady = Boolean(account?.webchat_enabled)
 
   return {
     config,
@@ -46,8 +48,19 @@ export default defineEventHandler(async (event) => {
       },
       // Stated as not built rather than omitted: an owner comparing this
       // screen to what they were sold should see which channels exist.
+      {
+        key: 'messenger',
+        name: 'Facebook Messenger',
+        status: messengerReady ? 'connected' : 'not_set_up',
+        statusLabel: messengerReady ? 'Connected' : 'Not set up',
+      },
+      {
+        key: 'web-chat',
+        name: 'Web chat',
+        status: webchatReady ? 'connected' : 'not_set_up',
+        statusLabel: webchatReady ? 'Connected' : 'Not set up',
+      },
       { key: 'sms', name: 'SMS', status: 'not_built', statusLabel: 'Not available yet' },
-      { key: 'web-chat', name: 'Web chat', status: 'not_built', statusLabel: 'Not available yet' },
     ],
     testModelAvailable: Boolean(useRuntimeConfig().anthropicApiKey),
     // Why the clinic has it (Growth, the add-on, a trial), for the header.

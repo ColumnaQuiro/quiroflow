@@ -1,4 +1,7 @@
+import { serverSupabaseServiceRole } from '#supabase/server'
+import type { Database } from '~/types/database.types'
 import { requireGrowth } from '~/server/utils/requireGrowth'
+import { postGoogleReply } from '~/server/utils/googleBusiness'
 
 interface Body {
   /** Approve the stored draft, or send different text entirely. */
@@ -9,10 +12,12 @@ interface Body {
 /**
  * Approves (or discards) a reply to a review.
  *
- * Nothing is posted to Google, Doctoralia or Facebook here -- that needs the
- * platform OAuth this change does not include. What this records is the
- * clinic's decision, so when posting does exist it has an approved body to
- * send rather than a draft nobody read.
+ * A Google review imported from the clinic's connected profile is answered on
+ * Google too, under the clinic's name, before anything is recorded here: a
+ * reply marked as sent that Google refused would be the one lie this screen
+ * must not tell. Doctoralia and Facebook have no posting yet, so for them
+ * this records the clinic's decision, with an approved body ready for when
+ * they do.
  *
  * There is no auto-post and no timer. The design has the draft posting itself
  * after 22 hours if nobody acts; that means an AI-written sentence appearing
@@ -31,7 +36,7 @@ export default defineEventHandler(async (event) => {
 
   const { data: review } = await supabase
     .from('reviews')
-    .select('id, draft_body, replied_at')
+    .select('id, draft_body, replied_at, platform, external_id')
     .eq('id', id)
     .eq('account_id', teamMember.account_id)
     .maybeSingle()
@@ -54,6 +59,16 @@ export default defineEventHandler(async (event) => {
   const text = edited || review.draft_body?.trim() || ''
   if (!text) throw createError({ statusCode: 400, statusMessage: 'There is nothing to reply with' })
 
+  let postedToPlatform = false
+  if (review.platform === 'google' && review.external_id) {
+    const service = serverSupabaseServiceRole<Database>(event)
+    const { data: account } = await service.from('accounts').select('google_business_location').eq('id', teamMember.account_id).maybeSingle()
+    if (account?.google_business_location) {
+      await postGoogleReply(service, teamMember.account_id, review.external_id, text)
+      postedToPlatform = true
+    }
+  }
+
   const { error } = await supabase
     .from('reviews')
     .update({
@@ -70,5 +85,5 @@ export default defineEventHandler(async (event) => {
 
   if (error) throw createError({ statusCode: 500, statusMessage: error.message })
 
-  return { discarded: false, replied: true, postedToPlatform: false }
+  return { discarded: false, replied: true, postedToPlatform }
 })

@@ -179,15 +179,18 @@ describe('Growth AI receptionist', () => {
   it('shows which channels exist rather than hiding the ones that do not', () => {
     cy.visit('/growth/receptionist?growth=1')
 
-    // Three different nothings, and the row each one lands on is the point.
-    // WhatsApp and Instagram are built and merely unconfigured on a fresh
-    // account; SMS and web chat do not exist at all. An owner comparing this
-    // screen to what they were sold has to be able to tell those apart.
+    // Two different nothings, and the row each one lands on is the point.
+    // WhatsApp, Instagram, Messenger and the website chat are built and
+    // merely unconfigured on a fresh account; SMS does not exist at all. An
+    // owner comparing this screen to what they were sold has to be able to
+    // tell those apart.
     cy.get('[data-test="channel-whatsapp"]').should('contain', 'Not set up')
     cy.get('[data-test="channel-instagram"]').should('contain', 'Not set up')
     cy.get('[data-test="channel-instagram"]').should('not.contain', 'Not available yet')
+    cy.get('[data-test="channel-messenger"]').should('contain', 'Not set up')
+    cy.get('[data-test="channel-web-chat"]').should('contain', 'Not set up')
+    cy.get('[data-test="channel-web-chat-setup"]').should('have.attr', 'href', '/settings/whatsapp')
     cy.get('[data-test="channel-sms"]').should('contain', 'Not available yet')
-    cy.get('[data-test="channel-web-chat"]').should('contain', 'Not available yet')
   })
 
   it('calls Instagram connected once it is, and counts it as a live channel', () => {

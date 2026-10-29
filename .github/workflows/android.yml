@@ -1,0 +1,172 @@
+name: Android internal release
+
+# Builds the signed Android App Bundle of the Capacitor app in mobile/ and
+# makes it Google Play's INTERNAL TESTING release. The Android counterpart of
+# Xcode Cloud, which builds iOS on the same pushes.
+#
+# Never production. Play publishes a production release the moment it is
+# approved (managed publishing is off), so sending a build to review IS the
+# release decision, and that stays a person's click in Play Console: Testing ->
+# Internal testing -> Promote release -> Production. The service account is
+# only meant to hold "release to testing tracks", so it could not do more even
+# if this file asked it to.
+#
+# versionCode comes from Play: one above the highest code it has ever been
+# given (scripts/google-play.mjs), so hand uploads and CI cannot collide and
+# nobody edits build.gradle for it. versionName comes from the iOS
+# MARKETING_VERSION, so the two stores show the same version.
+on:
+  push:
+    branches: [main]
+    # Mirrors Xcode Cloud, which builds on pushes to main that touch mobile/.
+    paths: ['mobile/**']
+  # For a fix in shared code (root composables/, utils/, components/) that the
+  # app imports but that does not touch mobile/, and so started no build.
+  workflow_dispatch:
+
+concurrency:
+  # Two runs at once would both read the same "highest versionCode" from Play
+  # and the second upload would be refused. Queue them instead; GitHub keeps
+  # only the newest pending run, which is the one worth having.
+  group: android-internal-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      # Fail before spending minutes on a build that cannot be signed or
+      # uploaded. A secret that is not set, or whose name has a typo, is an
+      # empty string rather than an error, so say which one instead of letting
+      # gradle produce an unsigned bundle or Play answer 401.
+      - name: Check secrets
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PROPERTIES: ${{ secrets.ANDROID_KEYSTORE_PROPERTIES }}
+          SENTRY_APP_AUTH_TOKEN: ${{ secrets.SENTRY_APP_AUTH_TOKEN }}
+        run: |
+          missing=0
+          for name in PLAY_SERVICE_ACCOUNT_JSON ANDROID_UPLOAD_KEYSTORE_BASE64 ANDROID_KEYSTORE_PROPERTIES SENTRY_APP_AUTH_TOKEN; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Secret $name is empty or not set. Add it under Settings -> Secrets and variables -> Actions -> Repository secrets. CLAUDE.md, 'Releasing the mobile app to the stores', says what goes in each."
+              missing=1
+            fi
+          done
+          exit $missing
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      # capacitor-android compiles at source level 21; JDK 17 fails with
+      # "invalid source release: 21".
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Version
+        id: version
+        run: |
+          # Every target in the Xcode project carries its own MARKETING_VERSION
+          # (the app and its widget). They must agree, or which one Android
+          # takes would be an accident.
+          names=$(grep -o 'MARKETING_VERSION = [^;]*' mobile/ios/App/App.xcodeproj/project.pbxproj | sed 's/.*= //' | sort -u)
+          if [ "$(printf '%s\n' "$names" | wc -l)" -ne 1 ] || [ -z "$names" ]; then
+            echo "::error::MARKETING_VERSION differs between targets in project.pbxproj: $(echo $names)"
+            exit 1
+          fi
+          code=$(node scripts/google-play.mjs next-version-code)
+          echo "name=$names" >> "$GITHUB_OUTPUT"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "### Android $names (versionCode $code)" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+
+      # Same reason as ci_post_clone.sh: mobile/ imports shared files from the
+      # repo root, whose tsconfig `extends` the root app's .nuxt/tsconfig.json.
+      # Only mobile/node_modules is installed, so an empty stub stands in.
+      - name: Root tsconfig stub
+        run: mkdir -p .nuxt && echo '{}' > .nuxt/tsconfig.json
+
+      - name: Build the web bundle
+        working-directory: mobile
+        env:
+          # Public values, the same ones ci_post_clone.sh sets for iOS: the
+          # Supabase publishable key and a Sentry DSN can only do what any
+          # installed copy of the app can.
+          NUXT_PUBLIC_SUPABASE_URL: https://oyaprkfurtuujdfafptw.supabase.co
+          NUXT_PUBLIC_SUPABASE_KEY: sb_publishable_YcvVhzmzvUvhf4vfv2edKg_PmQrl7To
+          NUXT_PUBLIC_SENTRY_DSN: https://fce4b520c2072e4bd5d413dcb4bab4b9@o4512225986543616.ingest.de.sentry.io/4512300717178960
+          # Uploads the JS source maps (scripts/sentry-sourcemaps.mjs).
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_APP_AUTH_TOKEN }}
+        run: |
+          npm ci
+          npm run build
+          npx cap sync android
+
+      # The two gitignored files a hand build takes from the owner's Mac.
+      # keystore.properties names the keystore by a path relative to
+      # mobile/android (build.gradle resolves it with rootProject.file), so the
+      # keystore is written to exactly that name.
+      - name: Signing files
+        working-directory: mobile/android
+        env:
+          ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PROPERTIES: ${{ secrets.ANDROID_KEYSTORE_PROPERTIES }}
+        run: |
+          printf '%s\n' "$ANDROID_KEYSTORE_PROPERTIES" | tr -d '\r' > keystore.properties
+          for key in storeFile storePassword keyAlias keyPassword; do
+            grep -q "^$key=." keystore.properties || { echo "::error::ANDROID_KEYSTORE_PROPERTIES has no $key= line"; exit 1; }
+          done
+          store=$(sed -n 's/^storeFile=//p' keystore.properties)
+          case "$store" in
+            */*|'') echo "::error::storeFile in ANDROID_KEYSTORE_PROPERTIES must be a bare file name, like the one beside keystore.properties on the Mac"; exit 1 ;;
+          esac
+          printf '%s' "$ANDROID_UPLOAD_KEYSTORE_BASE64" | base64 --decode > "$store"
+
+      # ANDROID_HOME is preset on GitHub's Ubuntu image, so no local.properties.
+      - name: Build the release bundle
+        working-directory: mobile/android
+        env:
+          # Uploads the R8 mapping, so crashes in Sentry name real classes.
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_APP_AUTH_TOKEN }}
+        run: |
+          ./gradlew bundleRelease --no-daemon \
+            -PquiroflowVersionCode=${{ steps.version.outputs.code }} \
+            -PquiroflowVersionName=${{ steps.version.outputs.name }}
+          # build.gradle leaves the bundle UNSIGNED when keystore.properties
+          # cannot be read, rather than failing. Play would refuse it, but only
+          # after the upload; catch it here.
+          jarsigner -verify app/build/outputs/bundle/release/app-release.aab | grep -q 'jar verified' \
+            || { echo "::error::app-release.aab is not signed"; exit 1; }
+
+      # Kept for a week: if Play refuses the upload, the same bundle can be
+      # uploaded by hand without building it again.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: quiroflow-${{ steps.version.outputs.name }}-code${{ steps.version.outputs.code }}
+          path: mobile/android/app/build/outputs/bundle/release/app-release.aab
+          retention-days: 7
+
+      - name: Upload to Play (internal testing)
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          # A merge commit's subject is "Merge pull request #N from <branch>";
+          # the PR's title is the first line of its body.
+          subject=$(git log -1 --format=%s)
+          case "$subject" in 'Merge pull request'*) subject=$(git log -1 --format=%b | head -n 1) ;; esac
+          notes="Build interno ${GITHUB_SHA::7}: $subject"
+          node scripts/google-play.mjs upload \
+            mobile/android/app/build/outputs/bundle/release/app-release.aab \
+            ${{ steps.version.outputs.code }} "$notes"

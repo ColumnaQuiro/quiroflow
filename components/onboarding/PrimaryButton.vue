@@ -16,7 +16,7 @@ withDefaults(
     :type="type"
     :disabled="loading"
     :aria-busy="loading || undefined"
-    class="flex w-full items-center justify-center gap-2.5 rounded-ctl font-semibold tracking-[-0.006em] text-white outline-none focus-visible:shadow-focus disabled:cursor-wait"
+    class="flex w-full items-center justify-center gap-2.5 rounded-ctl font-semibold tracking-[-0.006em] text-brand-on outline-none focus-visible:shadow-focus disabled:cursor-wait"
     :class="[
       size === 'lg' ? 'h-12 text-[15px] lg:h-11' : 'h-[46px] text-[15px] lg:h-10 lg:text-[14.5px]',
       loading ? 'bg-brand-hover' : 'bg-brand hover:bg-brand-hover',

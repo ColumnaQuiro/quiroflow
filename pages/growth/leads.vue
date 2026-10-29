@@ -107,7 +107,7 @@ async function onLeadChanged() {
     </div>
     <button
       type="button"
-      class="flex h-8 items-center rounded-ctl bg-brand px-3.5 text-[12.5px] font-semibold text-white hover:bg-brand-hover"
+      class="flex h-8 items-center rounded-ctl bg-brand px-3.5 text-[12.5px] font-semibold text-brand-on hover:bg-brand-hover"
     >{{ t('Add lead', 'Añadir contacto') }}</button>
   </PageHeader>
 
@@ -120,7 +120,7 @@ async function onLeadChanged() {
     upgrade screen rather than repeating it. -->
     <div v-else-if="resolved && !hasGrowth" class="mx-auto max-w-sm py-16 text-center">
       <p class="text-[13px] text-ink-muted">{{ t('Leads are part of the Growth tier.', 'Los contactos forman parte del plan Growth.') }}</p>
-      <NuxtLink to="/growth" class="mt-3 inline-flex h-9 items-center rounded-ctl bg-brand px-4 text-[12.5px] font-semibold text-white hover:bg-brand-hover">
+      <NuxtLink to="/growth" class="mt-3 inline-flex h-9 items-center rounded-ctl bg-brand px-4 text-[12.5px] font-semibold text-brand-on hover:bg-brand-hover">
         {{ t('See what Growth adds', 'Ver qué añade Growth') }}
       </NuxtLink>
     </div>

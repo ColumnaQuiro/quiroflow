@@ -29,7 +29,7 @@ const t = useT()
 
     <div class="flex flex-wrap gap-1">
       <span class="rounded-pill border border-chip-border bg-chip-bg px-1.5 py-px text-[9.5px] text-ink-muted">{{ lead.source }}</span>
-      <span v-if="lead.aiHandling" class="rounded-pill bg-brand px-1.5 py-px text-[9.5px] font-semibold text-white">
+      <span v-if="lead.aiHandling" class="rounded-pill bg-brand px-1.5 py-px text-[9.5px] font-semibold text-brand-on">
         {{ t('AI handling', 'IA gestionando') }}
       </span>
     </div>

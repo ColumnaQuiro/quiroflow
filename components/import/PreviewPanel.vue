@@ -103,7 +103,7 @@ const hiddenCount = computed(() => Math.max(0, props.rows.length - props.sampleL
       <button
         type="button"
         :disabled="applyDisabled || (rows.length === 0 && !allowEmptyApply)"
-        class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50"
+        class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50"
         @click="emit('apply')"
       >
         {{ applyLabel }}

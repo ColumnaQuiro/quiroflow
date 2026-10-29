@@ -1777,7 +1777,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             @click="filtersOpen = true"
           >
             <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M3 5.5h14M5.5 10h9M8 14.5h4" /></svg>
-            <span v-if="activeFilterChips.length" class="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-brand px-1 text-[10.5px] font-bold text-white">{{ activeFilterChips.length }}</span>
+            <span v-if="activeFilterChips.length" class="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-brand px-1 text-[10.5px] font-bold text-brand-on">{{ activeFilterChips.length }}</span>
           </button>
         </div>
         <!-- Only what is narrowing the list, each with its own way out -->
@@ -1852,10 +1852,10 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
           <!-- Only there while the row is swiped: left drawn underneath, a
                sliver of it showed below every row as a coloured line. -->
           <div class="absolute inset-y-0 right-0 flex" :class="swipedKey === c.key || draggingKey === c.key ? '' : 'invisible'">
-            <button type="button" class="flex w-[76px] items-center justify-center bg-brand text-[12px] font-medium text-white" @click="toggleUnread(c)">
+            <button type="button" class="flex w-[76px] items-center justify-center bg-brand text-[12px] font-medium text-brand-on" @click="toggleUnread(c)">
               {{ c.unread ? t('Read', 'Leída') : t('Unread', 'No leída') }}
             </button>
-            <button type="button" class="flex w-[76px] items-center justify-center bg-ink-muted text-[12px] font-medium text-white" @click="toggleArchive(c)">
+            <button type="button" class="flex w-[76px] items-center justify-center bg-ink-muted text-[12px] font-medium text-surface" @click="toggleArchive(c)">
               {{ archivedKeys.has(c.key) ? t('Unarchive', 'Desarchivar') : t('Archive', 'Archivar') }}
             </button>
           </div>
@@ -1876,7 +1876,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             class="mt-1.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border"
             :class="selectedKeys.has(c.key) ? 'border-brand bg-brand' : 'border-line-control bg-surface'"
           >
-            <svg v-if="selectedKeys.has(c.key)" viewBox="0 0 16 16" class="h-3 w-3 text-white" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg v-if="selectedKeys.has(c.key)" viewBox="0 0 16 16" class="h-3 w-3 text-brand-on" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M3 8l3.5 3.5L13 5" />
             </svg>
           </span>
@@ -1974,7 +1974,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
         <button type="button" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-700" :aria-label="t('Assign', 'Asignar')" data-cy="inbox-assign" @click="assignOpen = true">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M6.5 7.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM2 13.5c0-2.2 2-3.5 4.5-3.5 1 0 1.9.2 2.6.6M12 9.5v4M10 11.5h4" /></svg>
         </button>
-        <button v-if="canLinkSelected" type="button" class="flex h-9 shrink-0 items-center rounded-ctl bg-brand px-2.5 text-[13px] font-semibold text-white" data-cy="inbox-link" @click="linkOpen = true">{{ t('Link', 'Vincular') }}</button>
+        <button v-if="canLinkSelected" type="button" class="flex h-9 shrink-0 items-center rounded-ctl bg-brand px-2.5 text-[13px] font-semibold text-brand-on" data-cy="inbox-link" @click="linkOpen = true">{{ t('Link', 'Vincular') }}</button>
         <!-- Record, the booking link and a payment link (InboxChatActions, as
              on the web); Book stays a button of its own, the one used most. -->
         <InboxChatActions
@@ -1991,7 +1991,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
           @open-record="navigateTo(`/patients/${selected!.patientId}`)"
         />
         <template v-if="selected.patientId">
-          <NuxtLink v-if="canBookFromThread" :to="`/patients/${selected.patientId}?book=1`" class="flex h-9 shrink-0 items-center rounded-ctl bg-brand px-2.5 text-[13px] font-semibold text-white" data-cy="inbox-book">
+          <NuxtLink v-if="canBookFromThread" :to="`/patients/${selected.patientId}?book=1`" class="flex h-9 shrink-0 items-center rounded-ctl bg-brand px-2.5 text-[13px] font-semibold text-brand-on" data-cy="inbox-book">
             {{ t('Book', 'Reservar') }}
           </NuxtLink>
         </template>
@@ -2066,7 +2066,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
           <div
             class="relative min-w-0 max-w-[80%] rounded-card px-[8px] py-[6px] shadow-card [overflow-wrap:anywhere]"
             :class="[
-              m.direction === 'outbound' ? 'bg-brand text-white' : 'border border-line bg-surface text-ink-900',
+              m.direction === 'outbound' ? 'bg-brand text-brand-on' : 'border border-line bg-surface text-ink-900',
               m.status === 'failed' && 'cursor-pointer',
             ]"
             @click="m.status === 'failed' && retryMessage(m)"
@@ -2260,7 +2260,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
           <button
             v-if="composerText.trim()"
             type="button"
-            class="flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl bg-brand text-white disabled:opacity-50"
+            class="flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl bg-brand text-brand-on disabled:opacity-50"
             :disabled="sending"
             :aria-label="t('Send', 'Enviar')"
             data-cy="inbox-send"

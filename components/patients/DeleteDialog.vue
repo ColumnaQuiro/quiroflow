@@ -139,7 +139,7 @@ const lines = computed(() =>
           <button
             v-if="!archived"
             type="button"
-            class="flex h-9 touch:h-11 items-center justify-center rounded-ctl bg-brand px-3.5 text-[13.5px] font-semibold text-white outline-none hover:bg-brand-hover focus-visible:shadow-focus lg:h-[34px]"
+            class="flex h-9 touch:h-11 items-center justify-center rounded-ctl bg-brand px-3.5 text-[13.5px] font-semibold text-brand-on outline-none hover:bg-brand-hover focus-visible:shadow-focus lg:h-[34px]"
             @click="emit('archive')"
           >
             {{ t('Archive instead', 'Archivar en su lugar') }}
@@ -197,7 +197,7 @@ const lines = computed(() =>
           <button
             type="button"
             :disabled="!canDelete || deleting"
-            class="flex h-9 touch:h-11 items-center justify-center rounded-ctl bg-danger-text px-3.5 text-[13.5px] font-semibold text-white outline-none focus-visible:shadow-focusDanger disabled:cursor-not-allowed disabled:opacity-50 lg:h-[34px]"
+            class="flex h-9 touch:h-11 items-center justify-center rounded-ctl bg-danger-text px-3.5 text-[13.5px] font-semibold text-danger-on outline-none focus-visible:shadow-focusDanger disabled:cursor-not-allowed disabled:opacity-50 lg:h-[34px]"
             @click="remove"
           >
             {{ deleting ? t('Deleting…', 'Eliminando…') : t('Delete permanently', 'Eliminar permanentemente') }}

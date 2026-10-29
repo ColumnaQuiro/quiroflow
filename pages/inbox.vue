@@ -2481,7 +2481,7 @@ function avatarInitials(name: string) {
                 data-cy="thread-message"
                 class="relative min-w-0 max-w-[70%] rounded-card px-[8px] py-[6px] shadow-card [overflow-wrap:anywhere]"
                 :class="[
-                  m.direction === 'outbound' ? 'bg-brand text-white' : 'border border-line bg-surface text-ink-900',
+                  m.direction === 'outbound' ? 'bg-brand text-brand-on' : 'border border-line bg-surface text-ink-900',
                   m.status === 'failed' && 'cursor-pointer',
                 ]"
                 @click="m.status === 'failed' && retryMessage(m)"

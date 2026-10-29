@@ -650,7 +650,7 @@ function heldReasonLabel(reason: HeldReason): string {
         <button
           type="button"
           :disabled="!targetClinicId || preparingPreview"
-          class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50"
+          class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50"
           @click="proceedToPreview"
         >
           {{ preparingPreview ? t('Preparing…', 'Preparando…') : t('Continue', 'Continuar') }}
@@ -780,7 +780,7 @@ function heldReasonLabel(reason: HeldReason): string {
         <button
           type="button"
           :disabled="toImport.length === 0 && toUpdate.length === 0"
-          class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50"
+          class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50"
           @click="runImport"
         >
           {{ t(`Import ${toImport.length}, update ${toUpdate.length}`, `Importar ${toImport.length}, actualizar ${toUpdate.length}`) }}
@@ -807,7 +807,7 @@ function heldReasonLabel(reason: HeldReason): string {
         <p class="font-medium">{{ t('Import failed:', 'Error al importar:') }}</p>
         <p class="mt-1">{{ runError }}</p>
       </div>
-      <button type="button" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover" @click="retryImport">
+      <button type="button" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover" @click="retryImport">
         {{ t('Retry', 'Reintentar') }}
       </button>
     </div>
@@ -820,7 +820,7 @@ function heldReasonLabel(reason: HeldReason): string {
         </ul>
       </div>
       <div class="flex gap-3">
-        <NuxtLink to="/calendar" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover">
+        <NuxtLink to="/calendar" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover">
           {{ t('View Calendar', 'Ver calendario') }}
         </NuxtLink>
         <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-ink-600 hover:bg-surface-subtle" @click="reset">

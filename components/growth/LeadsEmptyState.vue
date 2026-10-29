@@ -34,7 +34,7 @@ const doneCount = steps.filter((s) => s.done).length
       <div class="flex flex-wrap justify-center gap-2">
         <NuxtLink
           to="/settings/whatsapp"
-          class="flex h-9 items-center rounded-ctl bg-brand px-4 text-[12.5px] font-semibold text-white hover:bg-brand-hover"
+          class="flex h-9 items-center rounded-ctl bg-brand px-4 text-[12.5px] font-semibold text-brand-on hover:bg-brand-hover"
         >{{ t('Connect WhatsApp', 'Conectar WhatsApp') }}</NuxtLink>
         <button
           type="button"

@@ -92,7 +92,7 @@ const chip = 'h-8 touch:h-10 shrink-0 rounded-full border px-3 text-[13px] font-
         <button v-else type="button" class="relative block overflow-hidden rounded-ctl" :aria-label="t(`Play ${e.name.en}`, `Ver ${e.name.es}`)" data-cy="catalog-play" @click="playing = e.slug">
           <img :src="catalog.media(e.slug).poster" alt="" loading="lazy" class="aspect-video w-full bg-surface-subtle object-contain" />
           <span class="absolute inset-0 flex items-center justify-center">
-            <span class="flex h-10 w-10 items-center justify-center rounded-full bg-brand text-white shadow-card">
+            <span class="flex h-10 w-10 items-center justify-center rounded-full bg-brand text-brand-on shadow-card">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
             </span>
           </span>

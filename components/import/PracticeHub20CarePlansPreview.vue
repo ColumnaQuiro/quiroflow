@@ -111,7 +111,7 @@ function becomes(o: CarePlanOutcome): string {
       {{ t('For a clinic on PracticeHub 2.0, its bonos and memberships are care plans there. This reads them through the 2.0 API and shows what each would become in QuiroFlow. It is read-only: nothing is written yet.', 'En una clínica que ya está en PracticeHub 2.0, sus bonos y membresías son planes de cuidados. Esto los lee con la API 2.0 y muestra en qué se convertiría cada uno en QuiroFlow. Solo lectura: todavía no escribe nada.') }}
     </p>
     <div class="flex flex-wrap items-center gap-3">
-      <button type="button" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50" :disabled="running || !hydrated" data-cy="ph20-read" @click="run">
+      <button type="button" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50" :disabled="running || !hydrated" data-cy="ph20-read" @click="run">
         {{ running ? progress || t('Reading…', 'Leyendo…') : t('Read 2.0 care plans', 'Leer planes 2.0') }}
       </button>
       <label class="flex items-center gap-2 text-sm text-ink-700">

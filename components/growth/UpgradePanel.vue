@@ -43,7 +43,7 @@ const monthsCovered = computed(() => (pricing.value ? Math.floor(CARE_PLAN_CENTS
 <template>
   <div class="mx-auto flex w-full max-w-[560px] flex-col gap-4 rounded-card border border-line bg-surface p-6 shadow-popover">
     <div class="flex flex-col gap-2">
-      <span class="self-start rounded-pill bg-brand px-[9px] py-[3px] text-[10px] font-bold uppercase tracking-[.08em] text-white">
+      <span class="self-start rounded-pill bg-brand px-[9px] py-[3px] text-[10px] font-bold uppercase tracking-[.08em] text-brand-on">
         {{ t('Growth tier', 'Plan Growth') }}
       </span>
       <h2 class="text-[19px] font-semibold tracking-tightTitle text-ink-900">
@@ -107,7 +107,7 @@ const monthsCovered = computed(() => (pricing.value ? Math.floor(CARE_PLAN_CENTS
         <NuxtLink
           v-if="store.isOwner"
           to="/subscription"
-          class="flex h-9 items-center rounded-ctl bg-brand px-4 text-[12.5px] font-semibold text-white hover:bg-brand-hover"
+          class="flex h-9 items-center rounded-ctl bg-brand px-4 text-[12.5px] font-semibold text-brand-on hover:bg-brand-hover"
         >{{ t('Add Growth', 'Añadir Growth') }}</NuxtLink>
         <a
           href="mailto:hola@quiroflow.com?subject=QuiroFlow%20Growth"

@@ -17,7 +17,7 @@ function startEditing() {
 <template>
   <div class="flex flex-col gap-2.5 border-t border-brand-tintBorder bg-brand-tint p-4" data-test="pending-reply">
     <div class="flex items-center gap-2">
-      <span class="flex h-[18px] w-[18px] items-center justify-center rounded-[6px] bg-brand text-[9px] font-bold text-white">AI</span>
+      <span class="flex h-[18px] w-[18px] items-center justify-center rounded-[6px] bg-brand text-[9px] font-bold text-brand-on">AI</span>
       <span class="text-[12px] font-semibold text-brand-text">
         {{ t('Drafted by AI · needs your approval', 'Redactado por la IA · requiere tu aprobación') }}
       </span>

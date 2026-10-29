@@ -13,7 +13,7 @@ const TONES = {
   danger: 'text-danger-text bg-danger-bg border-danger-border',
   // The only filled pill in the set: locked is the one state where the clinic
   // has actually lost something, so it stops being a tint.
-  dangerFilled: 'text-white bg-danger-text border-danger-text',
+  dangerFilled: 'text-danger-on bg-danger-text border-danger-text',
   chip: 'text-chip-text bg-chip-bg border-chip-border',
   brand: 'text-brand-text bg-brand-tint border-brand-tintBorder',
   warning: 'text-warning-text bg-warning-bg border-warning-border',

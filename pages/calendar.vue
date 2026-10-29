@@ -2543,7 +2543,7 @@ function showNowLineOn(day: Date) {
         type="button"
         data-testid="practitioner-tab-all"
         class="h-8 shrink-0 rounded-ctlSm px-3 text-[12.5px] font-medium transition-colors touch:h-11"
-        :class="practitionerFilter === ALL_PRACTITIONERS ? 'bg-brand text-white' : 'text-ink-600 hover:bg-surface-subtle'"
+        :class="practitionerFilter === ALL_PRACTITIONERS ? 'bg-brand text-brand-on' : 'text-ink-600 hover:bg-surface-subtle'"
         :aria-pressed="practitionerFilter === ALL_PRACTITIONERS"
         @click="practitionerFilter = ALL_PRACTITIONERS"
       >
@@ -2556,7 +2556,7 @@ function showNowLineOn(day: Date) {
         type="button"
         data-testid="practitioner-tab"
         class="flex h-8 shrink-0 items-center gap-1.5 rounded-ctlSm px-3 text-[12.5px] font-medium transition-colors touch:h-11"
-        :class="practitionerFilter === m.id ? 'bg-brand text-white' : 'text-ink-600 hover:bg-surface-subtle'"
+        :class="practitionerFilter === m.id ? 'bg-brand text-brand-on' : 'text-ink-600 hover:bg-surface-subtle'"
         :aria-pressed="practitionerFilter === m.id"
         @click="practitionerFilter = m.id"
       >
@@ -2566,7 +2566,7 @@ function showNowLineOn(day: Date) {
         type="button"
         data-testid="practitioner-tab-unassigned"
         class="h-8 shrink-0 rounded-ctlSm px-3 text-[12.5px] font-medium transition-colors touch:h-11"
-        :class="practitionerFilter === UNASSIGNED_PRACTITIONER ? 'bg-brand text-white' : 'text-ink-faint hover:bg-surface-subtle'"
+        :class="practitionerFilter === UNASSIGNED_PRACTITIONER ? 'bg-brand text-brand-on' : 'text-ink-faint hover:bg-surface-subtle'"
         :aria-pressed="practitionerFilter === UNASSIGNED_PRACTITIONER"
         @click="practitionerFilter = UNASSIGNED_PRACTITIONER"
       >
@@ -2652,7 +2652,7 @@ function showNowLineOn(day: Date) {
                 type="button"
                 class="mx-auto flex h-6 w-6 items-center justify-center rounded-full text-[11px]"
                 :class="[
-                  isSameDate(cell, new Date()) ? 'bg-brand font-semibold text-white' : isSameDate(cell, anchorDate) ? 'font-semibold text-brand-text ring-1 ring-inset ring-brand' : 'text-ink-600 hover:bg-surface-subtle',
+                  isSameDate(cell, new Date()) ? 'bg-brand font-semibold text-brand-on' : isSameDate(cell, anchorDate) ? 'font-semibold text-brand-text ring-1 ring-inset ring-brand' : 'text-ink-600 hover:bg-surface-subtle',
                 ]"
                 @click="selectMiniDate(cell)"
               >
@@ -2908,7 +2908,7 @@ function showNowLineOn(day: Date) {
                       type="button"
                       data-cy="class-block"
                       :data-session-id="appt._class.sessionId"
-                      class="absolute flex flex-col items-start overflow-hidden rounded-ctl border border-brand bg-brand px-2.5 py-1 text-left text-[12px] leading-tight text-white shadow-card"
+                      class="absolute flex flex-col items-start overflow-hidden rounded-ctl border border-brand bg-brand px-2.5 py-1 text-left text-[12px] leading-tight text-brand-on shadow-card"
                       :style="columnStyle(appt, timeToPx(appt.starts_at, DAY_HOUR_PX) + 1, Math.max(0, durationToPx(appt.starts_at, appt.ends_at, DAY_HOUR_PX, DAY_MIN_BLOCK_PX) - 3))"
                       @click.stop="classPanelId = appt._class.sessionId"
                     >
@@ -3129,7 +3129,7 @@ function showNowLineOn(day: Date) {
                         type="button"
                         data-cy="class-block"
                         :data-session-id="appt._class.sessionId"
-                        class="absolute flex flex-col items-start overflow-hidden rounded-[7px] border border-brand bg-brand px-1.5 py-0.5 text-left text-[10.5px] leading-tight text-white"
+                        class="absolute flex flex-col items-start overflow-hidden rounded-[7px] border border-brand bg-brand px-1.5 py-0.5 text-left text-[10.5px] leading-tight text-brand-on"
                         :style="columnStyle(appt, timeToPx(appt.starts_at, WEEK_HOUR_PX), Math.max(0, durationToPx(appt.starts_at, appt.ends_at, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX) - 2))"
                         @click.stop="classPanelId = appt._class.sessionId"
                       >

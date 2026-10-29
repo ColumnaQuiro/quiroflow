@@ -62,7 +62,7 @@ const t = useT()
     <div class="mt-3.5 flex flex-col gap-2.5 lg:flex-row lg:items-center">
       <button
         type="button"
-        class="flex h-9 touch:h-11 items-center justify-center gap-1.5 rounded-ctl bg-danger-text px-3.5 text-[13.5px] font-semibold text-white outline-none focus-visible:shadow-focusDanger lg:h-[34px]"
+        class="flex h-9 touch:h-11 items-center justify-center gap-1.5 rounded-ctl bg-danger-text px-3.5 text-[13.5px] font-semibold text-danger-on outline-none focus-visible:shadow-focusDanger lg:h-[34px]"
         @click="$emit('updateCard')"
       >
         {{ t('Update card in Stripe', 'Actualizar tarjeta en Stripe') }}

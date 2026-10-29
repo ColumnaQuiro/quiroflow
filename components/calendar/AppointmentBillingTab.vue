@@ -159,7 +159,7 @@ const chargeLabel = computed(() =>
           :key="p.id"
           type="button"
           :disabled="savingPayment"
-          class="rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50"
+          class="rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50"
           @click="usePackageSession(p)"
         >
           {{ savingPayment ? t('Working…', 'Procesando…') : `${t('Use', 'Usar')} ${p.package_name} — ${perSessionLabel(p)}` }}
@@ -176,7 +176,7 @@ const chargeLabel = computed(() =>
           :class="
             activePackages.length > 0
               ? 'rounded-ctl border border-line-control px-3 py-1.5 text-sm font-medium text-ink-700 hover:border-line-controlHover hover:text-ink-900 disabled:opacity-50'
-              : 'rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50'
+              : 'rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50'
           "
           @click="chargeVisit"
         >
@@ -270,7 +270,7 @@ const chargeLabel = computed(() =>
             + {{ t('Split into another method', 'Dividir en otro método') }}
           </button>
           <span v-if="paymentRows.length > 1" class="text-xs text-ink-faint">{{ t('Total:', 'Total:') }} {{ formatEur(paymentTotalCents) }}</span>
-          <button type="submit" :disabled="savingPayment || paymentTotalCents <= 0" class="rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50">
+          <button type="submit" :disabled="savingPayment || paymentTotalCents <= 0" class="rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50">
             {{ savingPayment ? t('Processing…', 'Procesando…') : t('Process', 'Procesar') }}
           </button>
         </div>

@@ -82,7 +82,7 @@ watch(search, () => {
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V5a1 1 0 011-1h3M16 4h3a1 1 0 011 1v3M20 16v3a1 1 0 01-1 1h-3M8 20H5a1 1 0 01-1-1v-3M7 12h10" /></svg>
           {{ t('Scan', 'Escanear') }}
         </button>
-        <button type="button" class="flex h-8 items-center gap-1 rounded-ctl bg-brand px-3 text-[13px] font-semibold text-white" data-cy="patients-new" @click="adding = true">
+        <button type="button" class="flex h-8 items-center gap-1 rounded-ctl bg-brand px-3 text-[13px] font-semibold text-brand-on" data-cy="patients-new" @click="adding = true">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
           {{ t('New', 'Nuevo') }}
         </button>

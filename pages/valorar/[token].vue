@@ -72,7 +72,7 @@ const low = computed(() => score.value !== null && score.value <= 3)
             :aria-checked="score === n"
             :disabled="busy || survey.locked"
             class="h-12 rounded-ctl text-[18px] font-semibold disabled:opacity-70"
-            :class="score === n ? 'bg-brand text-white' : 'border border-line-control bg-surface text-ink-700'"
+            :class="score === n ? 'bg-brand text-brand-on' : 'border border-line-control bg-surface text-ink-700'"
             :data-cy="`satisfaction-score-${n}`"
             @click="send({ score: n })"
           >
@@ -87,7 +87,7 @@ const low = computed(() => score.value !== null && score.value <= 3)
           <label for="improve" class="text-[14.5px] font-semibold text-ink-900">Sentimos que no haya ido bien. ¿Qué podemos mejorar?</label>
           <textarea id="improve" v-model="comment" rows="4" maxlength="2000" class="mt-2 w-full resize-none rounded-ctl border border-line-control bg-surface px-3 py-2 text-[14.5px] text-ink-900" data-cy="satisfaction-comment" />
           <p class="mt-1 text-[12px] text-ink-muted">Lo lee directamente la dirección de la clínica. Es opcional.</p>
-          <button type="button" class="mt-3 flex min-h-11 w-full items-center justify-center rounded-ctl bg-brand text-[15px] font-semibold text-white disabled:opacity-60" :disabled="busy || !comment.trim()" data-cy="satisfaction-send" @click="send({ comment })">
+          <button type="button" class="mt-3 flex min-h-11 w-full items-center justify-center rounded-ctl bg-brand text-[15px] font-semibold text-brand-on disabled:opacity-60" :disabled="busy || !comment.trim()" data-cy="satisfaction-send" @click="send({ comment })">
             {{ busy ? 'Enviando…' : 'Enviar' }}
           </button>
         </div>
@@ -97,7 +97,7 @@ const low = computed(() => score.value !== null && score.value <= 3)
           <p class="text-[14.5px] text-ink-700">¡Nos alegra mucho! Gracias por tu valoración.</p>
           <template v-if="reviewUrl">
             <p class="mt-2 text-[13.5px] text-ink-muted">Si te apetece, una reseña en Google ayuda a que otras personas nos encuentren.</p>
-            <a :href="reviewUrl" class="mt-3 flex min-h-11 w-full items-center justify-center rounded-ctl bg-brand text-[15px] font-semibold text-white" data-cy="satisfaction-review">Dejar reseña en Google</a>
+            <a :href="reviewUrl" class="mt-3 flex min-h-11 w-full items-center justify-center rounded-ctl bg-brand text-[15px] font-semibold text-brand-on" data-cy="satisfaction-review">Dejar reseña en Google</a>
           </template>
         </div>
       </template>

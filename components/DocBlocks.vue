@@ -429,7 +429,7 @@ const showAddMenu = ref(false)
               :key="n"
               type="button"
               class="h-8 w-8 rounded-md border text-sm font-medium"
-              :class="field.value === n - 1 ? 'border-brand bg-brand text-white' : 'border-line-control text-ink-700 hover:border-brand'"
+              :class="field.value === n - 1 ? 'border-brand bg-brand text-brand-on' : 'border-line-control text-ink-700 hover:border-brand'"
               @click="update(i, { value: n - 1 })"
             >
               {{ n - 1 }}

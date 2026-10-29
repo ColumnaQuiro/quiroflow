@@ -275,7 +275,7 @@ const selectedState = computed<StaffTimeState | null>(() => times.value.find((x)
 const forcing = computed(() => selectedState.value === 'busy' || selectedState.value === 'closed')
 function slotClass(s: StaffTime) {
   const chosen = selectedSlot.value === s.at.getTime()
-  if (s.state === 'free') return chosen ? 'bg-brand font-semibold text-white' : 'border border-line-control bg-surface text-ink-700'
+  if (s.state === 'free') return chosen ? 'bg-brand font-semibold text-brand-on' : 'border border-line-control bg-surface text-ink-700'
   if (chosen) return 'border-[1.5px] border-warning-border bg-warning-bg font-semibold text-warning-text'
   return `border border-dashed border-line bg-surface-subtle text-ink-faint ${s.state === 'busy' ? 'line-through' : ''}`
 }

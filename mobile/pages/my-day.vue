@@ -685,7 +685,7 @@ function initialsOf(a: Appointment) {
           <p class="truncate text-[13px] text-ink-muted">{{ inClinicNow.appointment_types?.name ?? t('Appointment', 'Cita') }} · {{ clinicTime(inClinicNow.starts_at) }}</p>
           <p v-if="lastNote" class="mt-2.5 rounded-ctl bg-surface px-3 py-2 text-[13px] leading-[1.45] text-ink-700">{{ t('Last note', 'Última nota') }} ({{ lastNote.day }}): {{ lastNote.text }}</p>
           <div class="mt-3 grid grid-cols-2 gap-2">
-            <NuxtLink :to="`/calendar/${inClinicNow.id}`" class="flex h-11 items-center justify-center rounded-ctl bg-brand text-[14px] font-semibold text-white">{{ t('Open visit', 'Abrir visita') }}</NuxtLink>
+            <NuxtLink :to="`/calendar/${inClinicNow.id}`" class="flex h-11 items-center justify-center rounded-ctl bg-brand text-[14px] font-semibold text-brand-on">{{ t('Open visit', 'Abrir visita') }}</NuxtLink>
             <NuxtLink :to="`/patients/${inClinicNow.patient_id}`" class="flex h-11 items-center justify-center rounded-ctl border border-line-control bg-surface text-[14px] font-semibold text-ink-700">{{ t('Record', 'Ficha') }}</NuxtLink>
           </div>
         </section>
@@ -694,7 +694,7 @@ function initialsOf(a: Appointment) {
           <p class="mt-1 truncate text-[18px] font-bold text-ink-900">{{ shown(patientName(nextUp)) }}</p>
           <p class="truncate text-[13px] text-ink-muted">{{ nextUp.appointment_types?.name ?? t('Appointment', 'Cita') }}</p>
           <div class="mt-3 grid gap-2" :class="canCheckIn(nextUp) ? 'grid-cols-2' : 'grid-cols-1'">
-            <button v-if="canCheckIn(nextUp)" type="button" class="h-11 rounded-ctl bg-brand text-[14px] font-semibold text-white" data-test="myday-next-checkin" @click="checkIn(nextUp)">{{ t('Check in', 'Registrar llegada') }}</button>
+            <button v-if="canCheckIn(nextUp)" type="button" class="h-11 rounded-ctl bg-brand text-[14px] font-semibold text-brand-on" data-test="myday-next-checkin" @click="checkIn(nextUp)">{{ t('Check in', 'Registrar llegada') }}</button>
             <NuxtLink :to="`/patients/${nextUp.patient_id}`" class="flex h-11 items-center justify-center rounded-ctl border border-line-control bg-surface text-[14px] font-semibold text-ink-700">{{ t('Record', 'Ficha') }}</NuxtLink>
           </div>
         </section>
@@ -750,7 +750,7 @@ function initialsOf(a: Appointment) {
               <button
                 type="button"
                 class="tap-target mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
-                :class="task.done_at ? 'bg-success-accent text-white' : 'border border-line-control text-ink-faint3'"
+                :class="task.done_at ? 'bg-success-accent text-success-on' : 'border border-line-control text-ink-faint3'"
                 :aria-label="task.done_at ? t('Mark as not done', 'Marcar como pendiente') : t('Mark as done', 'Marcar como hecha')"
                 @click="toggleTask(task)"
               >

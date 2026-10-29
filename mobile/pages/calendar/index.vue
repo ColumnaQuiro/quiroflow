@@ -726,7 +726,7 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5" /><path d="M6 6l12 12" /></svg>
           <span class="hidden text-[13px] font-medium md:inline">{{ t('Block', 'Bloquear') }}</span>
         </button>
-        <button type="button" class="flex h-9 w-9 items-center justify-center rounded-ctl bg-brand text-white md:w-auto md:gap-1.5 md:px-3.5" :aria-label="t('New visit', 'Nueva cita')" data-cy="agenda-new" @click="startNew">
+        <button type="button" class="flex h-9 w-9 items-center justify-center rounded-ctl bg-brand text-brand-on md:w-auto md:gap-1.5 md:px-3.5" :aria-label="t('New visit', 'Nueva cita')" data-cy="agenda-new" @click="startNew">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
           <span class="hidden text-[13.5px] font-semibold md:inline">{{ t('New visit', 'Nueva cita') }}</span>
         </button>
@@ -736,14 +736,14 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
     <div class="flex shrink-0 items-center gap-2 border-b border-line bg-surface px-3 pb-2 pt-1 md:px-5">
       <!-- Whose diary, as the web calendar's practitioner tabs. -->
       <div v-if="showWhoTabs" ref="whoTabs" role="tablist" :aria-label="t('Whose diary', 'De quién')" class="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" data-cy="agenda-practitioners">
-        <button type="button" role="tab" :aria-selected="who === ALL_PRACTITIONERS" class="h-8 shrink-0 rounded-ctlSm px-3 text-[13px] font-medium" :class="who === ALL_PRACTITIONERS ? 'bg-brand text-white' : 'text-ink-600'" data-cy="agenda-practitioner-all" @click="setWho(ALL_PRACTITIONERS)">
+        <button type="button" role="tab" :aria-selected="who === ALL_PRACTITIONERS" class="h-8 shrink-0 rounded-ctlSm px-3 text-[13px] font-medium" :class="who === ALL_PRACTITIONERS ? 'bg-brand text-brand-on' : 'text-ink-600'" data-cy="agenda-practitioner-all" @click="setWho(ALL_PRACTITIONERS)">
           {{ t('Whole clinic', 'Toda la clínica') }}
         </button>
         <span class="mx-0.5 h-4 w-px shrink-0 bg-line" aria-hidden="true" />
-        <button v-for="pr in practitioners" :key="pr.id" type="button" role="tab" :aria-selected="who === pr.id" class="h-8 shrink-0 whitespace-nowrap rounded-ctlSm px-3 text-[13px] font-medium" :class="who === pr.id ? 'bg-brand text-white' : 'text-ink-600'" data-cy="agenda-practitioner" :data-practitioner-id="pr.id" @click="setWho(pr.id)">
+        <button v-for="pr in practitioners" :key="pr.id" type="button" role="tab" :aria-selected="who === pr.id" class="h-8 shrink-0 whitespace-nowrap rounded-ctlSm px-3 text-[13px] font-medium" :class="who === pr.id ? 'bg-brand text-brand-on' : 'text-ink-600'" data-cy="agenda-practitioner" :data-practitioner-id="pr.id" @click="setWho(pr.id)">
           {{ pr.full_name }}
         </button>
-        <button type="button" role="tab" :aria-selected="who === UNASSIGNED_PRACTITIONER" class="h-8 shrink-0 whitespace-nowrap rounded-ctlSm px-3 text-[13px] font-medium" :class="who === UNASSIGNED_PRACTITIONER ? 'bg-brand text-white' : 'text-ink-faint'" data-cy="agenda-practitioner-unassigned" @click="setWho(UNASSIGNED_PRACTITIONER)">
+        <button type="button" role="tab" :aria-selected="who === UNASSIGNED_PRACTITIONER" class="h-8 shrink-0 whitespace-nowrap rounded-ctlSm px-3 text-[13px] font-medium" :class="who === UNASSIGNED_PRACTITIONER ? 'bg-brand text-brand-on' : 'text-ink-faint'" data-cy="agenda-practitioner-unassigned" @click="setWho(UNASSIGNED_PRACTITIONER)">
           {{ t('No practitioner', 'Sin profesional') }}
         </button>
       </div>
@@ -821,7 +821,7 @@ onBeforeUnmount(() => document.removeEventListener('touchmove', onTouchMove))
                   type="button"
                   data-appt
                   class="absolute text-left"
-                  :class="[p.a._class ? 'flex flex-col items-start overflow-hidden rounded-ctl border border-brand bg-brand px-2 py-1 text-[12px] leading-tight text-white shadow-card' : '', p.a._class && selectedId === p.a.id ? 'ring-2 ring-brand ring-offset-2' : '', drag?.a.id === p.a.id ? 'opacity-30' : '']"
+                  :class="[p.a._class ? 'flex flex-col items-start overflow-hidden rounded-ctl border border-brand bg-brand px-2 py-1 text-[12px] leading-tight text-brand-on shadow-card' : '', p.a._class && selectedId === p.a.id ? 'ring-2 ring-brand ring-offset-2' : '', drag?.a.id === p.a.id ? 'opacity-30' : '']"
                   :style="{ top: `${p.top + 1}px`, height: `${p.height - 2}px`, left: `calc(${(p.lane / p.lanes) * 100}% + 4px)`, width: `calc(${100 / p.lanes}% - 8px)` }"
                   data-cy="agenda-item"
                   :data-appt-id="p.a.id"

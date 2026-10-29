@@ -26,7 +26,7 @@ const mine = computed(() => entries.value.find((e) => e.clinic_id === props.clin
     <template v-else>
       <p class="text-[13.5px] font-medium text-ink-900">{{ hasNextVisit ? t('Would earlier suit you?', '¿Te vendría bien antes?') : t('No slot that suits you?', '¿No encuentras hueco?') }}</p>
       <p class="mt-0.5 text-[12.5px] text-ink-muted">{{ t("Join the waitlist and we'll let you know if a slot frees up.", 'Apúntate a la lista de espera y te avisaremos si queda un hueco libre.') }}</p>
-      <button type="button" class="mt-2 min-h-9 rounded-ctl bg-brand px-3.5 text-[13px] font-semibold text-white" :disabled="busy" data-cy="patient-waitlist-join" @click="join(clinicId)">
+      <button type="button" class="mt-2 min-h-9 rounded-ctl bg-brand px-3.5 text-[13px] font-semibold text-brand-on" :disabled="busy" data-cy="patient-waitlist-join" @click="join(clinicId)">
         {{ busy ? t('Adding you…', 'Apuntándote…') : t('Let me know', 'Avísame') }}
       </button>
     </template>

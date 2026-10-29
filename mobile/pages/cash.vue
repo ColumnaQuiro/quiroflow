@@ -280,7 +280,7 @@ const row = 'flex items-center justify-between gap-3 text-[14px]'
             <form v-if="editingFloat" :class="row" class="mt-1.5 text-ink-muted" @submit.prevent="saveFloat">
               <span class="flex-1">{{ t('Change at the start', 'Cambio inicial') }}</span>
               <input v-model="floatInput" type="text" inputmode="decimal" class="h-9 w-24 rounded-ctl border border-line-control bg-surface px-2 text-right text-[15px] text-ink-900 focus:border-brand focus:outline-none" data-cy="cash-float-input" />
-              <button type="submit" :disabled="savingFloat" class="h-9 rounded-ctl bg-brand px-3 text-[13px] font-semibold text-white disabled:opacity-50" data-cy="cash-float-save">{{ t('Save', 'Guardar') }}</button>
+              <button type="submit" :disabled="savingFloat" class="h-9 rounded-ctl bg-brand px-3 text-[13px] font-semibold text-brand-on disabled:opacity-50" data-cy="cash-float-save">{{ t('Save', 'Guardar') }}</button>
             </form>
             <div v-else :class="row" class="mt-1.5 text-ink-muted">
               <button type="button" class="text-left" data-cy="cash-float-edit" @click="editFloat">{{ t('Change at the start', 'Cambio inicial') }} <span class="text-[12px] font-semibold text-brand">{{ t('Edit', 'Editar') }}</span></button>

@@ -435,7 +435,7 @@ function formatDate(iso: string) {
             <button
               type="submit"
               :disabled="savingPayment"
-              class="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-ctl border border-brand bg-brand px-3.5 text-[13px] font-semibold text-white hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-50"
+              class="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-ctl border border-brand bg-brand px-3.5 text-[13px] font-semibold text-brand-on hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-50"
             >
               {{ savingPayment ? t('Recording…', 'Registrando…') : t('Record payment', 'Registrar pago') }}
             </button>

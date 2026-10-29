@@ -193,7 +193,7 @@ const field = 'h-11 rounded-ctl border border-line-control bg-surface px-3 text-
 <template>
   <div class="flex h-full min-h-0 flex-col bg-surface-page" data-cy="waitlist">
     <AppPageHeader :title="t('Waitlist', 'Lista de espera')" back @back="router.back()">
-      <button v-if="allowed" type="button" class="flex h-9 shrink-0 items-center gap-1 rounded-ctl bg-brand px-3 text-[13.5px] font-semibold text-white" data-cy="waitlist-add" @click="openAdd">
+      <button v-if="allowed" type="button" class="flex h-9 shrink-0 items-center gap-1 rounded-ctl bg-brand px-3 text-[13.5px] font-semibold text-brand-on" data-cy="waitlist-add" @click="openAdd">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
         {{ t('Add', 'Añadir') }}
       </button>

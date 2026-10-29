@@ -337,7 +337,7 @@ const pdfRoot = ref<HTMLElement | null>(null)
                 <button
                   type="button"
                   :disabled="!customFrom || !customTo"
-                  class="mt-2 w-full rounded-ctl border border-brand bg-brand px-2 py-1.5 text-xs font-semibold text-white hover:bg-brand-hover disabled:opacity-50"
+                  class="mt-2 w-full rounded-ctl border border-brand bg-brand px-2 py-1.5 text-xs font-semibold text-brand-on hover:bg-brand-hover disabled:opacity-50"
                   @click="applyCustomRange"
                 >
                   {{ t('Apply', 'Aplicar') }}

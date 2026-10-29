@@ -53,7 +53,7 @@ const quietText = computed(() => {
     data-state="handling"
   >
     <div class="flex min-w-0 items-start gap-2.5">
-      <span class="mt-px flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[6px] bg-brand text-[9px] font-bold text-white">AI</span>
+      <span class="mt-px flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[6px] bg-brand text-[9px] font-bold text-brand-on">AI</span>
       <div class="flex min-w-0 flex-col">
         <span class="text-[12.5px] font-semibold text-brand-text">{{ t('AI is handling this conversation', 'La IA está gestionando esta conversación') }}</span>
         <span class="text-[11.5px] text-ink-muted">

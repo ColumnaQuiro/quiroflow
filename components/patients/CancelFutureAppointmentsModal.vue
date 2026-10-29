@@ -161,7 +161,7 @@ async function confirm() {
           v-if="appointments.length"
           type="button"
           :disabled="!n || busy"
-          class="flex h-9 touch:h-11 items-center justify-center rounded-ctl bg-danger-text px-3.5 text-[13.5px] font-semibold text-white outline-none focus-visible:shadow-focusDanger disabled:cursor-not-allowed disabled:opacity-50 lg:h-[34px]"
+          class="flex h-9 touch:h-11 items-center justify-center rounded-ctl bg-danger-text px-3.5 text-[13.5px] font-semibold text-danger-on outline-none focus-visible:shadow-focusDanger disabled:cursor-not-allowed disabled:opacity-50 lg:h-[34px]"
           data-cy="cancel-future-confirm"
           @click="confirm"
         >

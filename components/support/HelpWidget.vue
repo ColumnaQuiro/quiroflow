@@ -300,7 +300,7 @@ function articleTitle(url: string) {
 
     <button
       type="button"
-      class="relative ml-auto flex h-11 w-11 items-center justify-center rounded-full bg-brand text-white shadow-popover hover:bg-brand-hover sm:h-12 sm:w-12"
+      class="relative ml-auto flex h-11 w-11 items-center justify-center rounded-full bg-brand text-brand-on shadow-popover hover:bg-brand-hover sm:h-12 sm:w-12"
       :title="t('Help', 'Ayuda')"
       @click="toggle"
     >

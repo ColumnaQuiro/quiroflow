@@ -58,7 +58,7 @@ async function change() {
   >
     <span
       aria-hidden="true"
-      class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-ctl bg-brand text-[12.5px] font-bold text-white"
+      class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-ctl bg-brand text-[12.5px] font-bold text-brand-on"
     >{{ clinic.clinicName.value.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() }}</span>
     <div class="min-w-0 flex-1">
       <p class="truncate text-[14px] font-semibold text-ink-900">{{ clinic.clinicName.value }}</p>

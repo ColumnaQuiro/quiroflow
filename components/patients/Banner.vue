@@ -175,7 +175,7 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
         <button
           v-if="canBook"
           type="button"
-          class="hidden h-9 touch:h-11 items-center rounded-ctl bg-brand px-3.5 text-[13.5px] font-semibold text-white outline-none hover:bg-brand-hover focus-visible:shadow-focus lg:flex"
+          class="hidden h-9 touch:h-11 items-center rounded-ctl bg-brand px-3.5 text-[13.5px] font-semibold text-brand-on outline-none hover:bg-brand-hover focus-visible:shadow-focus lg:flex"
           @click="$emit('book')"
         >
           {{ t('Book visit', 'Reservar visita') }}
@@ -355,7 +355,7 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
       <button
         v-if="canBook"
         type="button"
-        class="flex h-[46px] flex-1 items-center justify-center rounded-ctl bg-brand text-[14px] font-semibold text-white"
+        class="flex h-[46px] flex-1 items-center justify-center rounded-ctl bg-brand text-[14px] font-semibold text-brand-on"
         @click="$emit('book')"
       >
         {{ t('Book', 'Reservar') }}

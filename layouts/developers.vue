@@ -100,6 +100,7 @@ const tokenSettingsUrl = 'https://app.quiroflow.com/settings/developers'
           <a href="mailto:hola@quiroflow.com" class="hover:text-ink-600">hola@quiroflow.com</a>
           <a href="https://app.quiroflow.com/legal/terms" class="hover:text-ink-600">Terms</a>
           <a href="https://app.quiroflow.com/legal/privacy" class="hover:text-ink-600">Privacy</a>
+          <a href="https://app.quiroflow.com/legal/security" class="hover:text-ink-600">Security</a>
           <!-- Only shown on the app-host copies: on the docs subdomain the
                reader is already on the canonical site. -->
           <a v-if="!onDevHost" :href="DEV_PORTAL_ORIGIN" class="hover:text-ink-600">developers.quiroflow.com</a>

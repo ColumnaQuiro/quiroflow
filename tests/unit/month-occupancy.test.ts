@@ -24,10 +24,10 @@ describe('monthOccupancy', () => {
       appointments: [visit('ana', monday, '09:00', '10:00'), visit('ana', monday, '09:30', '10:30'), visit('ana', monday, '13:30', '14:30')],
       blocks: [{ practitioner_id: 'ana', room_id: null, starts_at: at(monday, '18:00'), ends_at: at(monday, '19:00') }],
     })
-    // 5 h + 3 h, less the 1 h block = 7 h; booked 9:00-10:30 and 13:30-14:00 (the
-    // rest of that visit is outside her hours) = 2 h.
-    expect(mon).toMatchObject({ capacityMin: 420, bookedMin: 120, freeMin: 300, visits: 3 })
-    expect(mon!.share).toBeCloseTo(120 / 420)
+    // 5 h + 3 h, less the 1 h block = 7 h, plus the half hour of the 13:30 visit
+    // that runs past 14:00; booked 9:00-10:30 and 13:30-14:30 = 2 h 30.
+    expect(mon).toMatchObject({ capacityMin: 450, bookedMin: 150, freeMin: 300, visits: 3 })
+    expect(mon!.share).toBeCloseTo(150 / 450)
     // Tuesday is her day off.
     expect(tue).toMatchObject({ capacityMin: 0, bookedMin: 0, share: null })
   })
@@ -45,10 +45,35 @@ describe('monthOccupancy', () => {
       ],
     })
     // Ana: her own 8 h less the 9-11 closure = 6 h. Luis: the clinic's 10-18
-    // less 10-11 = 7 h.
-    expect(mon!.capacityMin).toBe(360 + 420)
-    // Luis's 10-11 falls in the closure; 11-12 counts.
-    expect(mon!.bookedMin).toBe(60)
+    // less 10-11 = 7 h, and the hour he saw someone in the closure anyway.
+    expect(mon!.capacityMin).toBe(360 + 420 + 60)
+    expect(mon!.bookedMin).toBe(120)
+  })
+
+  it('counts visits outside someone’s hours as time they worked', () => {
+    // Afternoon hours on Thursdays, patients seen in the morning instead.
+    const thursday = new Date(2026, 9, 1) // Thu 1 Oct 2026
+    const later = new Date(2026, 9, 15)
+    const eva = { id: 'eva', business_hours: { thu: [['15:00', '20:00']] as [string, string][] } }
+    const [day, blocked] = monthOccupancy({
+      days: [thursday, later],
+      practitioners: [eva],
+      clinicHours: null,
+      appointments: [
+        visit('eva', thursday, '09:30', '10:30'),
+        visit('eva', thursday, '11:30', '12:30'),
+        visit('eva', thursday, '12:30', '13:30'),
+        visit('eva', thursday, '13:30', '14:00'),
+        visit('eva', later, '10:00', '11:00'),
+      ],
+      // The afternoon blocked off: without the morning visit this is a closed day.
+      blocks: [{ practitioner_id: 'eva', room_id: null, starts_at: at(later, '15:00'), ends_at: at(later, '20:00') }],
+    })
+    // Never 0 % beside four visits: 5 h of hours plus the 3 h 30 worked.
+    expect(day).toMatchObject({ capacityMin: 510, bookedMin: 210, freeMin: 300, visits: 4 })
+    expect(day!.share).toBeCloseTo(210 / 510)
+    // Not "Closed" with a visit on it.
+    expect(blocked).toMatchObject({ capacityMin: 60, bookedMin: 60, freeMin: 0, share: 1, visits: 1 })
   })
 
   it('has no percentage when nobody configured hours, and still counts the visits', () => {

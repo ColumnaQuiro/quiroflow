@@ -9,8 +9,16 @@ import { dayKeyFor, hasBusinessHoursConfigured, practitionerWindowsForDay, windo
 // clinic's for someone who never set any (practitionerWindowsForDay, the
 // calendar's own rule), less the blocks that keep them away: their own, and
 // any for the whole clinic. A room's block closes a room, not a person, so it
-// takes nothing off. Booked time is their visits inside that working time,
-// overlapping ones counted once, so a day can be full but never over 100 %.
+// takes nothing off. Booked time is their visits, overlapping ones counted
+// once.
+//
+// A visit outside those hours is still time they worked, so it adds to the
+// working time as well as to the booked: a day can be full but never over
+// 100 %, and never 0 % with visits on it. The hours are a weekly template
+// with no history. A practitioner whose Thursdays moved from mornings to
+// afternoons had every morning Thursday before the change come out as 0 %
+// and "5 h libres" beside four visits, and a Thursday whose afternoon they had
+// blocked as "Cerrado".
 //
 // When nobody has configured any hours there is no working time to measure
 // against: the day still counts its visits and booked hours, without a
@@ -64,11 +72,6 @@ function subtract(spans: Span[], cut: Span[]): Span[] {
   }
   return out
 }
-function intersect(spans: Span[], within: Span[]): Span[] {
-  const out: Span[] = []
-  for (const [a, b] of merge(spans)) for (const [c, d] of within) if (Math.min(b, d) > Math.max(a, c)) out.push([Math.max(a, c), Math.min(b, d)])
-  return merge(out)
-}
 
 /** A timestamp range as minutes into `day` (local), clipped to that day; null when it misses it. */
 function spanOn(day: Date, r: { starts_at: string; ends_at: string }): Span | null {
@@ -104,9 +107,9 @@ export function monthOccupancy(input: {
       }
       const windows = practitionerWindowsForDay(windowsForDay(day, input.clinicHours), p.business_hours, dayKeyFor(day)).map(([s, e]) => [toMin(s), toMin(e)] as Span)
       const away = input.blocks.filter((b) => b.practitioner_id === p.id).map((b) => spanOn(day, b)).filter((s): s is Span => !!s)
-      const working = subtract(windows, [...clinicWide, ...away])
+      const working = merge([...subtract(windows, [...clinicWide, ...away]), ...visits])
       if (capacity !== null) capacity += total(working)
-      booked += total(intersect(visits, working))
+      booked += total(merge(visits))
     }
     const visits = input.appointments.filter((a) => a.practitioner_id && ids.has(a.practitioner_id) && spanOn(day, a)).length
     const bookedMin = Math.round(booked)

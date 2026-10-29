@@ -2210,6 +2210,10 @@ const activePurchases = computed(() => purchases.value.filter((p) => !p.is_close
 function money(cents: number) {
   return formatEur(cents)
 }
+
+// Ties each visible <label> to the field under it (for/id), so a screen
+// reader announces the field by its name.
+const fieldId = useId()
 </script>
 
 <template>
@@ -2350,33 +2354,33 @@ function money(cents: number) {
       <div v-if="activePanel === 'credit'" class="mt-4 border-t border-line-divider pt-4">
         <form class="flex flex-wrap items-end gap-2" @submit.prevent="addCredit">
           <div>
-            <label class="block text-[11px] text-ink-muted">{{ t('Amount (€)', 'Importe (€)') }}</label>
-            <input v-model="addCreditAmount" type="number" min="0" step="0.01" class="mt-0.5 w-24 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]" />
+            <label :for="`${fieldId}-addCreditAmount`" class="block text-[11px] text-ink-muted">{{ t('Amount (€)', 'Importe (€)') }}</label>
+            <input :id="`${fieldId}-addCreditAmount`" v-model="addCreditAmount" type="number" min="0" step="0.01" class="mt-0.5 w-24 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]" />
           </div>
           <div>
-            <label class="block text-[11px] text-ink-muted">{{ t('Method', 'Método') }}</label>
-            <select v-model="addCreditMethod" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
+            <label :for="`${fieldId}-addCreditMethod`" class="block text-[11px] text-ink-muted">{{ t('Method', 'Método') }}</label>
+            <select :id="`${fieldId}-addCreditMethod`" v-model="addCreditMethod" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
               <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
             </select>
           </div>
           <div class="flex-1">
-            <label class="block text-[11px] text-ink-muted">{{ t('Reason', 'Motivo') }}</label>
-            <input v-model="addCreditReason" type="text" :placeholder="t('e.g. Birthday gift', 'p. ej. regalo de cumpleaños')" class="mt-0.5 w-full rounded-ctlSm border border-line-control px-2 py-1 text-[13px]" />
+            <label :for="`${fieldId}-addCreditReason`" class="block text-[11px] text-ink-muted">{{ t('Reason', 'Motivo') }}</label>
+            <input :id="`${fieldId}-addCreditReason`" v-model="addCreditReason" type="text" :placeholder="t('e.g. Birthday gift', 'p. ej. regalo de cumpleaños')" class="mt-0.5 w-full rounded-ctlSm border border-line-control px-2 py-1 text-[13px]" />
           </div>
           <UiBtn variant="primary" size="sm" :disabled="!addCreditAmount || addingCredit" @click="addCredit">{{ addingCredit ? t('Adding…', 'Añadiendo…') : t('Add credit', 'Añadir crédito') }}</UiBtn>
         </form>
 
         <form v-if="spendableCreditCents > 0 && unpaidInvoices.length > 0" class="mt-3 flex flex-wrap items-end gap-2 border-t border-line-divider pt-3" @submit.prevent="applyCreditToInvoice">
           <div>
-            <label class="block text-[11px] text-ink-muted">{{ t('Apply to receipt', 'Aplicar a recibo') }}</label>
-            <select v-model="applyCreditInvoiceId" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
+            <label :for="`${fieldId}-applyCreditInvoiceId`" class="block text-[11px] text-ink-muted">{{ t('Apply to receipt', 'Aplicar a recibo') }}</label>
+            <select :id="`${fieldId}-applyCreditInvoiceId`" v-model="applyCreditInvoiceId" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
               <option value="" disabled>{{ t('Select receipt…', 'Seleccionar recibo…') }}</option>
               <option v-for="inv in unpaidInvoices" :key="inv.id" :value="inv.id">{{ inv.invoice_number }} ({{ money(inv.total_cents) }})</option>
             </select>
           </div>
           <div>
-            <label class="block text-[11px] text-ink-muted">{{ t('Amount (€)', 'Importe (€)') }}</label>
-            <input v-model="applyCreditAmount" type="number" min="0" step="0.01" class="mt-0.5 w-24 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]" />
+            <label :for="`${fieldId}-applyCreditAmount`" class="block text-[11px] text-ink-muted">{{ t('Amount (€)', 'Importe (€)') }}</label>
+            <input :id="`${fieldId}-applyCreditAmount`" v-model="applyCreditAmount" type="number" min="0" step="0.01" class="mt-0.5 w-24 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]" />
           </div>
           <UiBtn variant="secondary" size="sm" :disabled="!applyCreditInvoiceId || !applyCreditAmount || applyingCredit" @click="applyCreditToInvoice">
             {{ applyingCredit ? t('Applying…', 'Aplicando…') : t('Apply credit', 'Aplicar crédito') }}
@@ -2389,8 +2393,8 @@ function money(cents: number) {
       <div v-if="activePanel === 'payment'" class="mt-4 border-t border-line-divider pt-4">
         <form v-if="unpaidInvoices.length > 0" class="space-y-2" @submit.prevent="takePayment">
           <div>
-            <label class="block text-[11px] text-ink-muted">{{ t('Receipt', 'Recibo') }}</label>
-            <select v-model="paymentInvoiceId" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
+            <label :for="`${fieldId}-paymentInvoiceId`" class="block text-[11px] text-ink-muted">{{ t('Receipt', 'Recibo') }}</label>
+            <select :id="`${fieldId}-paymentInvoiceId`" v-model="paymentInvoiceId" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[13px]">
               <option v-for="inv in unpaidInvoices" :key="inv.id" :value="inv.id">{{ inv.invoice_number }} ({{ money(inv.total_cents) }})</option>
             </select>
           </div>
@@ -2711,12 +2715,12 @@ function money(cents: number) {
             <option v-for="t in packageTemplates" :key="t.id" :value="t.id">{{ t.name }} ({{ t.session_count }}, {{ money(t.price_cents) }})</option>
           </select>
           <div v-if="sellPackageId">
-            <label class="block text-[11px] text-ink-muted">{{ t('Paid now (€)', 'Pagado ahora (€)') }}</label>
-            <input v-model="sellAmountPaid" type="number" min="0" step="0.01" class="mt-0.5 w-24 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]" />
+            <label :for="`${fieldId}-sellAmountPaid`" class="block text-[11px] text-ink-muted">{{ t('Paid now (€)', 'Pagado ahora (€)') }}</label>
+            <input :id="`${fieldId}-sellAmountPaid`" v-model="sellAmountPaid" type="number" min="0" step="0.01" class="mt-0.5 w-24 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]" />
           </div>
           <div v-if="sellPackageId && Number(sellAmountPaid) > 0">
-            <label class="block text-[11px] text-ink-muted">{{ t('Method', 'Método') }}</label>
-            <select v-model="sellMethod" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]">
+            <label :for="`${fieldId}-sellMethod`" class="block text-[11px] text-ink-muted">{{ t('Method', 'Método') }}</label>
+            <select :id="`${fieldId}-sellMethod`" v-model="sellMethod" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]">
               <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
               <!--
                 Always rendered, disabled when there is nothing spendable,
@@ -2830,12 +2834,12 @@ function money(cents: number) {
             <option v-for="t in membershipTemplates" :key="t.id" :value="t.id">{{ t.name }} ({{ money(t.price_cents) }})</option>
           </select>
           <div v-if="activateMembershipId">
-            <label class="block text-[11px] text-ink-muted">{{ t('Paid now (€)', 'Pagado ahora (€)') }}</label>
-            <input v-model="activateAmountPaid" type="number" min="0" step="0.01" class="mt-0.5 w-24 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]" />
+            <label :for="`${fieldId}-activateAmountPaid`" class="block text-[11px] text-ink-muted">{{ t('Paid now (€)', 'Pagado ahora (€)') }}</label>
+            <input :id="`${fieldId}-activateAmountPaid`" v-model="activateAmountPaid" type="number" min="0" step="0.01" class="mt-0.5 w-24 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]" />
           </div>
           <div v-if="activateMembershipId && Number(activateAmountPaid) > 0">
-            <label class="block text-[11px] text-ink-muted">{{ t('Method', 'Método') }}</label>
-            <select v-model="activateMethod" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]">
+            <label :for="`${fieldId}-activateMethod`" class="block text-[11px] text-ink-muted">{{ t('Method', 'Método') }}</label>
+            <select :id="`${fieldId}-activateMethod`" v-model="activateMethod" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]">
               <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
               <option value="credit" :disabled="spendableCreditCents <= 0">
                 {{ t('Credit on account', 'Crédito en cuenta') }}

@@ -162,6 +162,16 @@ function formatDate(iso: string | null) {
   if (!iso) return '—'
   return new Date(iso).toLocaleString('es-ES', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
+
+// Modal dialogs on this screen: focus stays inside while open, Escape closes,
+// focus returns to what opened it (useFocusTrap, following each v-if).
+const addTitleId = useId()
+const addPanel = ref<HTMLElement | null>(null)
+useFocusTrap(addPanel, () => (addOpen.value = false), () => addOpen.value)
+
+// Ties each visible <label> to the field under it (for/id), so a screen
+// reader announces the field by its name.
+const fieldId = useId()
 </script>
 
 <template>
@@ -235,16 +245,16 @@ function formatDate(iso: string | null) {
     </div>
 
     <div v-if="addOpen" class="fixed inset-0 z-50 flex justify-end bg-scrim/30" @click.self="addOpen = false">
-      <div class="flex h-full w-full max-w-md flex-col overflow-y-auto border-l border-line bg-surface p-4 shadow-popover sm:p-6">
+      <div ref="addPanel" role="dialog" aria-modal="true" :aria-labelledby="addTitleId" class="flex h-full w-full max-w-md flex-col overflow-y-auto border-l border-line bg-surface p-4 shadow-popover sm:p-6">
         <div class="flex items-center justify-between">
-          <h2 class="text-[15px] font-semibold text-ink-900">{{ t('Add to waitlist', 'Añadir a la lista de espera') }}</h2>
+          <h2 :id="addTitleId" class="text-[15px] font-semibold text-ink-900">{{ t('Add to waitlist', 'Añadir a la lista de espera') }}</h2>
           <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="addOpen = false">✕</button>
         </div>
 
         <form class="mt-4 space-y-4" @submit.prevent="addToWaitlist">
           <div>
-            <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Patient', 'Paciente') }}</label>
-            <input
+            <label :for="`${fieldId}-patientQuery`" class="block text-[12.5px] font-medium text-ink-600">{{ t('Patient', 'Paciente') }}</label>
+            <input :id="`${fieldId}-patientQuery`"
               v-model="patientQuery"
               type="text"
               :placeholder="selectedPatient ? `${selectedPatient.first_name} ${selectedPatient.last_name ?? ''}` : t('Search by name…', 'Buscar por nombre…')"
@@ -259,16 +269,16 @@ function formatDate(iso: string | null) {
           </div>
 
           <div>
-            <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Appointment type', 'Tipo de cita') }}</label>
-            <select v-model="appointmentTypeId" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
+            <label :for="`${fieldId}-appointmentTypeId`" class="block text-[12.5px] font-medium text-ink-600">{{ t('Appointment type', 'Tipo de cita') }}</label>
+            <select :id="`${fieldId}-appointmentTypeId`" v-model="appointmentTypeId" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
               <option value="">{{ t('Any type', 'Cualquier tipo') }}</option>
               <option v-for="a in appointmentTypes" :key="a.id" :value="a.id">{{ a.name }}</option>
             </select>
           </div>
 
           <div>
-            <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Practitioner', 'Profesional') }}</label>
-            <select v-model="practitionerId" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
+            <label :for="`${fieldId}-practitionerId`" class="block text-[12.5px] font-medium text-ink-600">{{ t('Practitioner', 'Profesional') }}</label>
+            <select :id="`${fieldId}-practitionerId`" v-model="practitionerId" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
               <option value="">{{ t('Any practitioner', 'Cualquier profesional') }}</option>
               <option v-for="m in teamMembers" :key="m.id" :value="m.id">{{ m.full_name }}</option>
             </select>

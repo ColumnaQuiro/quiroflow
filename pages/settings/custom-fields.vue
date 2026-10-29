@@ -183,6 +183,11 @@ const SECTIONS = computed<{ value: PatientAttributeSection; label: string; hint:
   },
   { value: 'admin', label: t('Admin', 'Administrativos'), hint: t('In Patient details, for everyone who can see the patient.', 'En Datos del paciente, para todos los que ven al paciente.') },
 ])
+
+// Modal dialogs on this screen: focus stays inside while open, Escape closes,
+// focus returns to what opened it (useFocusTrap, following each v-if).
+const draftPanel = ref<HTMLElement | null>(null)
+useFocusTrap(draftPanel, () => (draft.value = null), () => !!draft.value)
 </script>
 
 <template>
@@ -275,7 +280,7 @@ const SECTIONS = computed<{ value: PatientAttributeSection; label: string; hint:
     <!-- Add / edit -->
     <div v-if="draft" class="fixed inset-0 z-50 flex items-end justify-center bg-scrim/30 sm:items-center sm:p-4" @click.self="draft = null">
       <form
-        role="dialog"
+        ref="draftPanel" role="dialog"
         aria-modal="true"
         :aria-label="draft.id ? t('Edit field', 'Editar campo') : t('Add field', 'Añadir campo')"
         class="flex max-h-[92vh] w-full max-w-md flex-col gap-4 overflow-y-auto rounded-t-card bg-surface p-5 shadow-drawer sm:rounded-card"

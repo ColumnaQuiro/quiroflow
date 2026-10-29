@@ -575,6 +575,10 @@ function heldReasonLabel(reason: HeldReason): string {
       return t("PracticeHub moved this visit's id to another day or patient and re-created the visit", 'PracticeHub movió el id de esta visita a otro día o paciente y recreó la visita')
   }
 }
+
+// Ties each visible <label> to the field under it (for/id), so a screen
+// reader announces the field by its name.
+const fieldId = useId()
 </script>
 
 <template>
@@ -604,8 +608,8 @@ function heldReasonLabel(reason: HeldReason): string {
       </div>
 
       <div>
-        <label class="block text-sm font-medium text-ink-700">{{ t('Import into clinic', 'Importar a la clínica') }}</label>
-        <select v-model="targetClinicId" class="mt-1 w-full rounded-md border border-line-control bg-surface px-3 py-2 text-sm text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand">
+        <label :for="`${fieldId}-targetClinicId`" class="block text-sm font-medium text-ink-700">{{ t('Import into clinic', 'Importar a la clínica') }}</label>
+        <select :id="`${fieldId}-targetClinicId`" v-model="targetClinicId" class="mt-1 w-full rounded-md border border-line-control bg-surface px-3 py-2 text-sm text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand">
           <option value="" disabled>{{ t('Select a clinic', 'Selecciona una clínica') }}</option>
           <option v-for="c in store.clinics" :key="c.id" :value="c.id">{{ c.name }}</option>
         </select>

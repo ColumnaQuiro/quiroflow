@@ -13,6 +13,11 @@ import { normalizeSearchTerm, sanitizeSearchToken } from '~/utils/searchText'
 const props = defineProps<{ sessionId: string; readOnly?: boolean }>()
 const emit = defineEmits<{ close: []; changed: []; openAppointment: [id: string] }>()
 const t = useT()
+
+// A modal dialog: focus stays inside it, Escape closes it, and focus goes
+// back to whatever opened it (useFocusTrap).
+const dialogPanel = ref<HTMLElement | null>(null)
+useFocusTrap(dialogPanel, () => emit('close'))
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const { fire } = useAutomations()
@@ -275,7 +280,7 @@ const toggle = 'h-[30px] rounded-ctl border px-2.5 text-[12px] font-semibold dis
 
 <template>
   <div class="fixed inset-0 z-50 flex justify-end bg-scrim/20" @click.self="emit('close')">
-    <aside class="flex h-full w-full max-w-[420px] flex-col gap-3 overflow-y-auto border-l border-line bg-surface p-5 shadow-popover" role="dialog" aria-modal="true" aria-labelledby="class-title" data-cy="class-panel">
+    <aside class="flex h-full w-full max-w-[420px] flex-col gap-3 overflow-y-auto border-l border-line bg-surface p-5 shadow-popover" ref="dialogPanel" role="dialog" aria-modal="true" aria-labelledby="class-title" data-cy="class-panel">
       <div class="flex items-start justify-between gap-2">
         <div>
           <p class="text-[12px] text-ink-muted">{{ t('Class', 'Clase') }}</p>

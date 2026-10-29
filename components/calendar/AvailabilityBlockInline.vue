@@ -71,25 +71,29 @@ async function save() {
   }
   emit('saved')
 }
+
+// Ties each visible <label> to the field under it (for/id), so a screen
+// reader announces the field by its name.
+const fieldId = useId()
 </script>
 
 <template>
   <form class="space-y-4" @submit.prevent="save">
     <div>
-      <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Room', 'Sala') }}</label>
-      <select v-model="roomId" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
+      <label :for="`${fieldId}-roomId`" class="block text-[12.5px] font-medium text-ink-600">{{ t('Room', 'Sala') }}</label>
+      <select :id="`${fieldId}-roomId`" v-model="roomId" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
         <option value="">{{ t('Whole clinic', 'Toda la clínica') }}</option>
         <option v-for="room in rooms" :key="room.id" :value="room.id">{{ room.name }}</option>
       </select>
     </div>
     <div class="flex gap-3">
       <div class="flex-1">
-        <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Start date', 'Fecha de inicio') }}</label>
-        <input v-model="startDate" type="date" required class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
+        <label :for="`${fieldId}-startDate`" class="block text-[12.5px] font-medium text-ink-600">{{ t('Start date', 'Fecha de inicio') }}</label>
+        <input :id="`${fieldId}-startDate`" v-model="startDate" type="date" required class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
       </div>
       <div class="flex-1">
-        <label class="block text-[12.5px] font-medium text-ink-600">{{ t('End date', 'Fecha de fin') }}</label>
-        <input v-model="endDate" type="date" required :min="startDate" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
+        <label :for="`${fieldId}-endDate`" class="block text-[12.5px] font-medium text-ink-600">{{ t('End date', 'Fecha de fin') }}</label>
+        <input :id="`${fieldId}-endDate`" v-model="endDate" type="date" required :min="startDate" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
       </div>
     </div>
     <label class="flex items-center gap-2 text-[13px] text-ink-600">
@@ -98,17 +102,17 @@ async function save() {
     </label>
     <div v-if="!wholeDay" class="flex gap-3">
       <div class="flex-1">
-        <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Start time', 'Hora de inicio') }}</label>
-        <input v-model="startTime" type="time" required class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
+        <label :for="`${fieldId}-startTime`" class="block text-[12.5px] font-medium text-ink-600">{{ t('Start time', 'Hora de inicio') }}</label>
+        <input :id="`${fieldId}-startTime`" v-model="startTime" type="time" required class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
       </div>
       <div class="flex-1">
-        <label class="block text-[12.5px] font-medium text-ink-600">{{ t('End time', 'Hora de fin') }}</label>
-        <input v-model="endTime" type="time" required class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
+        <label :for="`${fieldId}-endTime`" class="block text-[12.5px] font-medium text-ink-600">{{ t('End time', 'Hora de fin') }}</label>
+        <input :id="`${fieldId}-endTime`" v-model="endTime" type="time" required class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
       </div>
     </div>
     <div>
-      <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Note', 'Nota') }}</label>
-      <input v-model="note" type="text" :placeholder="t('e.g. maintenance, holiday', 'p. ej. mantenimiento, festivo')" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
+      <label :for="`${fieldId}-note`" class="block text-[12.5px] font-medium text-ink-600">{{ t('Note', 'Nota') }}</label>
+      <input :id="`${fieldId}-note`" v-model="note" type="text" :placeholder="t('e.g. maintenance, holiday', 'p. ej. mantenimiento, festivo')" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none" />
     </div>
 
     <CalendarBlockClashes v-model:count="clashCount" :starts-at="clashStartsAt" :ends-at="clashEndsAt" :practitioner-id="null" :room-id="roomId || null" />

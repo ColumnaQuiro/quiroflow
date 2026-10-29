@@ -577,6 +577,10 @@ const introNotes = computed(() => [
         { title: t('Nothing is written until you press Apply.', 'No se escribe nada hasta que pulses Aplicar.'), body: t('The preview lists what will be created or updated so you can check it first.', 'La vista previa muestra qué se creará o actualizará para que lo compruebes antes.') },
         { title: t('Safe to run again.', 'Se puede volver a ejecutar.'), body: t('A patient already carrying their PracticeHub reference is matched and updated, never duplicated.', 'Un paciente que ya tiene su referencia de PracticeHub se empareja y se actualiza, nunca se duplica.') },
 ])
+
+// Ties each visible <label> to the field under it (for/id), so a screen
+// reader announces the field by its name.
+const fieldId = useId()
 </script>
 
 <template>
@@ -628,8 +632,8 @@ const introNotes = computed(() => [
       </div>
 
       <div>
-        <label class="block text-sm font-medium text-ink-700">{{ t('Import into clinic', 'Importar a la clínica') }}</label>
-        <select
+        <label :for="`${fieldId}-targetClinicId`" class="block text-sm font-medium text-ink-700">{{ t('Import into clinic', 'Importar a la clínica') }}</label>
+        <select :id="`${fieldId}-targetClinicId`"
           v-model="targetClinicId"
           class="mt-1 w-full rounded-md border border-line-control bg-surface px-3 py-2 text-sm text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
           @change="clinicManuallySet = true"

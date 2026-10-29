@@ -35,6 +35,12 @@ const emit = defineEmits<{ close: []; sent: [] }>()
 
 const supabase = useSupabaseClient()
 const t = useT()
+
+// A modal dialog: focus stays inside it, Escape closes it, and focus goes
+// back to whatever opened it (useFocusTrap).
+const dialogPanel = ref<HTMLElement | null>(null)
+const dialogTitleId = useId()
+useFocusTrap(dialogPanel, () => emit('close'))
 const accountStore = useAccountStore()
 const templates = ref<Template[]>([])
 const templatesError = ref('')
@@ -150,12 +156,16 @@ async function send() {
     sending.value = false
   }
 }
+
+// Ties each visible <label> to the field under it (for/id), so a screen
+// reader announces the field by its name.
+const fieldId = useId()
 </script>
 
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4" @click.self="emit('close')">
-    <div class="max-h-full w-full overflow-y-auto max-w-lg rounded-card border border-line bg-surface p-5 shadow-popover">
-      <h3 class="text-[14px] font-semibold text-ink-900">{{ title ?? t('Send WhatsApp message', 'Enviar mensaje de WhatsApp') }}</h3>
+    <div ref="dialogPanel" role="dialog" aria-modal="true" :aria-labelledby="dialogTitleId" class="max-h-full w-full overflow-y-auto max-w-lg rounded-card border border-line bg-surface p-5 shadow-popover">
+      <h3 :id="dialogTitleId" class="text-[14px] font-semibold text-ink-900">{{ title ?? t('Send WhatsApp message', 'Enviar mensaje de WhatsApp') }}</h3>
 
       <div v-if="loadingTemplates" class="mt-3 text-[13px] text-ink-faint">{{ t('Loading templates…', 'Cargando plantillas…') }}</div>
       <p v-else-if="templatesError" class="mt-3 text-[13px] text-danger-text">{{ templatesError }}</p>
@@ -219,8 +229,8 @@ async function send() {
             />
           </div>
           <div v-else-if="selectedTemplate.mediaHeaderFormat" class="mt-3">
-            <label class="block text-xs font-medium text-ink-muted">{{ t('Attach', 'Adjuntar') }} {{ selectedTemplate.mediaHeaderFormat.toLowerCase() }} {{ t('(required by template)', '(requerido por la plantilla)') }}</label>
-            <select v-model="attachmentFileId" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-1.5 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20">
+            <label :for="`${fieldId}-attachmentFileId`" class="block text-xs font-medium text-ink-muted">{{ t('Attach', 'Adjuntar') }} {{ selectedTemplate.mediaHeaderFormat.toLowerCase() }} {{ t('(required by template)', '(requerido por la plantilla)') }}</label>
+            <select :id="`${fieldId}-attachmentFileId`" v-model="attachmentFileId" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-1.5 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20">
               <option value="">{{ t('No attachment', 'Sin adjunto') }}</option>
               <option v-for="f in files" :key="f.id" :value="f.id">{{ f.file_name }}</option>
             </select>

@@ -224,6 +224,10 @@ const introNotes = computed(() => [
   { title: t('Read-only.', 'Solo lectura.'), body: t('Nothing here changes any record.', 'Aquí no se modifica ningún registro.') },
   { title: t('Use it whenever a number looks wrong.', 'Úsalo cuando un número parezca incorrecto.'), body: t('It answers in one click what otherwise means logging into PracticeHub and comparing by eye.', 'Responde en un clic lo que si no obliga a entrar en PracticeHub y comparar a ojo.') },
 ])
+
+// Ties each visible <label> to the field under it (for/id), so a screen
+// reader announces the field by its name.
+const fieldId = useId()
 </script>
 
 <template>
@@ -246,8 +250,8 @@ const introNotes = computed(() => [
 
     <div v-else class="mt-4 space-y-4">
       <div>
-        <label class="block text-sm font-medium text-ink-700">{{ t('Find a patient', 'Buscar un paciente') }}</label>
-        <input
+        <label :for="`${fieldId}-search`" class="block text-sm font-medium text-ink-700">{{ t('Find a patient', 'Buscar un paciente') }}</label>
+        <input :id="`${fieldId}-search`"
           v-model="search"
           type="text"
           class="mt-1 w-full max-w-md rounded-md border border-line px-3 py-2 text-sm"

@@ -19,6 +19,11 @@ const props = defineProps<{
 const emit = defineEmits<{ activate: [testMode: boolean]; cancel: [] }>()
 const t = useT()
 
+// A modal dialog: focus stays inside it, Escape closes it, and focus goes
+// back to whatever opened it (useFocusTrap).
+const dialogPanel = ref<HTMLElement | null>(null)
+useFocusTrap(dialogPanel, () => emit('cancel'))
+
 const preview = ref<{ count: number; alreadyIn: number; whatsapp: number; email: number } | null>(null)
 onMounted(async () => {
   try {
@@ -48,7 +53,7 @@ const when = computed(() => {
 
 <template>
   <div class="fixed inset-0 z-50 flex items-end justify-center bg-scrim/40 p-4 sm:items-center" @click.self="emit('cancel')">
-    <div role="dialog" aria-modal="true" aria-labelledby="seg-title" class="w-full max-w-[520px] rounded-card border border-line bg-surface shadow-popover" data-test="segment-activate">
+    <div ref="dialogPanel" role="dialog" aria-modal="true" aria-labelledby="seg-title" class="w-full max-w-[520px] rounded-card border border-line bg-surface shadow-popover" data-test="segment-activate">
       <div class="flex flex-col gap-3 px-6 pb-2 pt-6">
         <h2 id="seg-title" class="text-[18px] font-bold text-ink-900">{{ t('Switch on a group', 'Activar un segmento') }}</h2>
         <p class="text-[14px] leading-relaxed text-ink-500">

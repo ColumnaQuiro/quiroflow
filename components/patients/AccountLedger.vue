@@ -623,6 +623,22 @@ async function sendStatement() {
   statementSending.value = false
   setTimeout(() => (statementMessage.value = ''), 4000)
 }
+
+// Modal dialogs on this screen: focus stays inside while open, Escape closes,
+// focus returns to what opened it (useFocusTrap, following each v-if).
+const transferTitleId = useId()
+const transferPanel = ref<HTMLElement | null>(null)
+useFocusTrap(transferPanel, () => (transferModalOpen.value = false), () => transferModalOpen.value)
+const methodTitleId = useId()
+const methodPanel = ref<HTMLElement | null>(null)
+useFocusTrap(methodPanel, closeMethodModal, () => !!methodModalPaymentId.value)
+const refundTitleId = useId()
+const refundPanel = ref<HTMLElement | null>(null)
+useFocusTrap(refundPanel, closeRefundModal, () => refundModalOpen.value)
+
+// Ties each visible <label> to the field under it (for/id), so a screen
+// reader announces the field by its name.
+const fieldId = useId()
 </script>
 
 <template>
@@ -819,8 +835,8 @@ async function sendStatement() {
   </div>
 
   <div v-if="transferModalOpen" class="fixed inset-0 z-20 flex items-center justify-center bg-scrim/40 p-4" @click.self="transferModalOpen = false">
-    <div class="max-h-full w-full max-w-sm overflow-y-auto rounded-card border border-line bg-surface p-4 shadow-popover">
-      <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Transfer credit', 'Transferir crédito') }}</p>
+    <div ref="transferPanel" role="dialog" aria-modal="true" :aria-labelledby="transferTitleId" class="max-h-full w-full max-w-sm overflow-y-auto rounded-card border border-line bg-surface p-4 shadow-popover">
+      <p :id="transferTitleId" class="text-[13.5px] font-semibold text-ink-700">{{ t('Transfer credit', 'Transferir crédito') }}</p>
       <p class="mt-1 text-[12px] text-ink-faint">{{ t('Moves an amount from this patient\'s credit', 'Mueve un importe del crédito de este paciente') }} ({{ formatEur(spendableCreditCents) }} {{ t('available', 'disponible') }}) {{ t('to another patient\'s account.', 'a la cuenta de otro paciente.') }}</p>
 
       <div class="mt-3">
@@ -850,8 +866,8 @@ async function sendStatement() {
       </div>
 
       <div class="mt-3">
-        <label class="block text-[11px] text-ink-muted">{{ t('Amount (€)', 'Importe (€)') }}</label>
-        <input v-model="transferAmount" type="number" min="0" step="0.01" class="mt-0.5 w-32 rounded-ctlSm border border-line-control px-2 py-1.5 text-[13px]" />
+        <label :for="`${fieldId}-transferAmount`" class="block text-[11px] text-ink-muted">{{ t('Amount (€)', 'Importe (€)') }}</label>
+        <input :id="`${fieldId}-transferAmount`" v-model="transferAmount" type="number" min="0" step="0.01" class="mt-0.5 w-32 rounded-ctlSm border border-line-control px-2 py-1.5 text-[13px]" />
       </div>
 
       <p v-if="transferError" class="mt-2 text-[12px] text-danger-text">{{ transferError }}</p>
@@ -866,8 +882,8 @@ async function sendStatement() {
   </div>
 
   <div v-if="methodModalPaymentId" class="fixed inset-0 z-20 flex items-center justify-center bg-scrim/40 p-4" @click.self="closeMethodModal">
-    <div class="max-h-full w-full max-w-sm overflow-y-auto rounded-card border border-line bg-surface p-4 shadow-popover" data-cy="payment-method-modal">
-      <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Change payment method', 'Cambiar método de pago') }}</p>
+    <div ref="methodPanel" role="dialog" aria-modal="true" :aria-labelledby="methodTitleId" class="max-h-full w-full max-w-sm overflow-y-auto rounded-card border border-line bg-surface p-4 shadow-popover" data-cy="payment-method-modal">
+      <p :id="methodTitleId" class="text-[13.5px] font-semibold text-ink-700">{{ t('Change payment method', 'Cambiar método de pago') }}</p>
       <p class="mt-1 text-[12px] text-ink-faint">
         {{
           t(
@@ -877,8 +893,8 @@ async function sendStatement() {
         }}
       </p>
       <div class="mt-3">
-        <label class="block text-[11px] text-ink-muted">{{ t('Paid with', 'Pagado con') }}</label>
-        <select v-model="methodModalChoice" data-cy="payment-method-select" class="bg-surface mt-0.5 w-full rounded-ctlSm border border-line-control px-2 py-1.5 text-[13px]">
+        <label :for="`${fieldId}-methodModalChoice`" class="block text-[11px] text-ink-muted">{{ t('Paid with', 'Pagado con') }}</label>
+        <select :id="`${fieldId}-methodModalChoice`" v-model="methodModalChoice" data-cy="payment-method-select" class="bg-surface mt-0.5 w-full rounded-ctlSm border border-line-control px-2 py-1.5 text-[13px]">
           <option v-if="!paymentMethods.some((m) => m.key === methodModalCurrent)" :value="methodModalCurrent" disabled>{{ methodModalCurrent }}</option>
           <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
         </select>
@@ -893,8 +909,8 @@ async function sendStatement() {
   </div>
 
   <div v-if="refundModalOpen" class="fixed inset-0 z-20 flex items-center justify-center bg-scrim/40 p-4" @click.self="closeRefundModal">
-    <div class="max-h-full w-full max-w-sm overflow-y-auto rounded-card border border-line bg-surface p-4 shadow-popover">
-      <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Refund', 'Reembolso') }}</p>
+    <div ref="refundPanel" role="dialog" aria-modal="true" :aria-labelledby="refundTitleId" class="max-h-full w-full max-w-sm overflow-y-auto rounded-card border border-line bg-surface p-4 shadow-popover">
+      <p :id="refundTitleId" class="text-[13.5px] font-semibold text-ink-700">{{ t('Refund', 'Reembolso') }}</p>
       <p class="mt-1 text-[12px] text-ink-faint">
         {{
           refundModalPaymentId
@@ -910,12 +926,12 @@ async function sendStatement() {
       </p>
 
       <div class="mt-3">
-        <label class="block text-[11px] text-ink-muted">{{ t('Amount (€)', 'Importe (€)') }} -- {{ t('up to', 'hasta') }} {{ money(refundMaxCents) }}</label>
-        <input v-model="refundAmount" type="number" min="0" :max="refundMaxCents / 100" step="0.01" class="mt-0.5 w-32 rounded-ctlSm border border-line-control px-2 py-1.5 text-[13px]" />
+        <label :for="`${fieldId}-refundAmount`" class="block text-[11px] text-ink-muted">{{ t('Amount (€)', 'Importe (€)') }} -- {{ t('up to', 'hasta') }} {{ money(refundMaxCents) }}</label>
+        <input :id="`${fieldId}-refundAmount`" v-model="refundAmount" type="number" min="0" :max="refundMaxCents / 100" step="0.01" class="mt-0.5 w-32 rounded-ctlSm border border-line-control px-2 py-1.5 text-[13px]" />
       </div>
       <div class="mt-3">
-        <label class="block text-[11px] text-ink-muted">{{ t('Refunded via', 'Reembolsado vía') }}</label>
-        <select v-model="refundMethod" class="bg-surface mt-0.5 w-full rounded-ctlSm border border-line-control px-2 py-1.5 text-[13px]">
+        <label :for="`${fieldId}-refundMethod`" class="block text-[11px] text-ink-muted">{{ t('Refunded via', 'Reembolsado vía') }}</label>
+        <select :id="`${fieldId}-refundMethod`" v-model="refundMethod" class="bg-surface mt-0.5 w-full rounded-ctlSm border border-line-control px-2 py-1.5 text-[13px]">
           <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
         </select>
       </div>
@@ -931,8 +947,8 @@ async function sendStatement() {
         <p class="mt-1 text-[11.5px] text-ink-faint">{{ t('0 if it is not coming back (opened, broken).', '0 si no vuelve (abierto, roto).') }}</p>
       </div>
       <div class="mt-3">
-        <label class="block text-[11px] text-ink-muted">{{ t('Reason (optional)', 'Motivo (opcional)') }}</label>
-        <input
+        <label :for="`${fieldId}-refundReason`" class="block text-[11px] text-ink-muted">{{ t('Reason (optional)', 'Motivo (opcional)') }}</label>
+        <input :id="`${fieldId}-refundReason`"
           v-model="refundReason"
           type="text"
           class="mt-0.5 w-full rounded-ctlSm border border-line-control px-2 py-1.5 text-[13px]"

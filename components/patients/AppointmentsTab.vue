@@ -221,6 +221,12 @@ const stats = computed(() => [
     tone: counts.value.cancelled > 0 ? 'text-warning-accent' : 'text-ink-900',
   },
 ])
+
+// Modal dialogs on this screen: focus stays inside while open, Escape closes,
+// focus returns to what opened it (useFocusTrap, following each v-if).
+const notesTitleId = useId()
+const notesPanel = ref<HTMLElement | null>(null)
+useFocusTrap(notesPanel, () => (notesAppointmentId.value = null), () => !!notesAppointmentId.value)
 </script>
 
 <template>
@@ -357,9 +363,9 @@ const stats = computed(() => [
     </template>
 
     <div v-if="notesAppointmentId" class="fixed inset-0 z-20 flex items-center justify-center bg-scrim/40 p-4" @click.self="notesAppointmentId = null">
-      <div class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-card bg-surface p-6 shadow-drawer">
+      <div ref="notesPanel" role="dialog" aria-modal="true" :aria-labelledby="notesTitleId" class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-card bg-surface p-6 shadow-drawer">
         <div class="flex items-center justify-between">
-          <h2 class="text-[15px] font-semibold text-ink-900">{{ t('Visit notes', 'Notas de la visita') }}</h2>
+          <h2 :id="notesTitleId" class="text-[15px] font-semibold text-ink-900">{{ t('Visit notes', 'Notas de la visita') }}</h2>
           <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="notesAppointmentId = null">✕</button>
         </div>
         <div class="mt-4">

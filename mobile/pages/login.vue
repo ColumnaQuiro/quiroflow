@@ -10,12 +10,17 @@ const loading = ref(false)
 const isStaffOnly = useStaffOnlyCheck()
 
 // One sign-in serves both sides in the app; which one this device is on is
-// whatever /join left behind. A stored clinic code means a patient (the
-// clinic's name heads the page); "I'm on the team" leaves none.
-const side = ref<'staff' | 'patient'>('staff')
+// whatever /join left behind. Patient unless someone chose the team there:
+// "I'm on the team" marks the gate seen and leaves no clinic code. Read at
+// setup (the app has no SSR), not on mount, so a patient's phone never
+// shows the team side for a frame first.
+const side = ref<'staff' | 'patient'>(
+  localStorage.getItem('clinic_gate_seen') && !localStorage.getItem('clinic_slug') ? 'staff' : 'patient',
+)
 onMounted(async () => {
   clinic.prefill()
   if (!clinic.code.value) return
+  // A ?clinic= link brings a code nothing stored yet.
   side.value = 'patient'
   try {
     await clinic.resolve()

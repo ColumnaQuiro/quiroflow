@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { formatEur } from '~/utils/billing'
-import { blockLadder, type BlockDensity } from '~/utils/appointmentBlock'
-import { pendingFormsLabel, type AppointmentStage } from '~/utils/appointmentStage'
-import { STAGE_TONE, STAGE_TONE_CLASS } from '~/composables/useAppointmentStage'
-import type { VisitBono } from '~/utils/visitPayment'
+// Relative, not ~/: the app (mobile/) draws its agenda with this block too,
+// and there ~ is mobile/.
+import { formatEur } from '../../utils/billing'
+import { blockLadder, type BlockDensity } from '../../utils/appointmentBlock'
+import { pendingFormsLabel, type AppointmentStage } from '../../utils/appointmentStage'
+import { STAGE_TONE, STAGE_TONE_CLASS } from '../../composables/useAppointmentStage'
+import type { VisitBono } from '../../utils/visitPayment'
 
 // One appointment on the grid, drawn the way the canvas's BlockAnatomy board
 // lays it out:

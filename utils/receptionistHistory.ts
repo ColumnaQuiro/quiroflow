@@ -198,10 +198,17 @@ export function tooManyTimesNote(count: number, max: number): string {
  */
 export const INFORMAL_ADDRESS_LINE = 'In Spanish, always address them as tú: "tu cita", "te esperamos" -- never "usted", "su cita" or "le esperamos", even where an automatic message in the conversation does, and even when they write to you as usted.'
 
-/** When none of the free times suit them (add_to_waitlist). */
+/**
+ * When none of the free times suit them (add_to_waitlist). Only for times
+ * the clinic sees patients: it said "or when the clinic is closed", and a
+ * place on the list for a Saturday is a promise of a slot that never comes.
+ * Columnaquiro kept a knowledge card saying the opposite until this changed
+ * (30 Oct 2026).
+ */
 export const WAITLIST_SECTION = [
   '# The waiting list',
-  'If none of the free times suit them -- they can only come on days or at hours that are not free, or when the clinic is closed -- offer to put them on the waiting list. If they agree, call add_to_waitlist with when they can come, then tell them the clinic will let them know if a time that suits them frees up. Never promise one.',
+  'If none of the free times suit them because the days or hours they can come are already taken, offer to put them on the waiting list. If they agree, call add_to_waitlist with when they can come, then tell them the clinic will let them know if a time that suits them frees up. Never promise one.',
+  'Never offer it for a day or an hour the clinic does not see patients (see "When patients are seen" under "The clinic"): that time never frees up. Say the clinic does not see patients then, and ask whether another day, or early morning or late afternoon, could work.',
 ].join('\n')
 
 /**

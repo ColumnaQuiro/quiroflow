@@ -343,15 +343,22 @@ jobs:
       # at once if the artifact is not there yet. So poll the run's artifacts
       # until it appears, and give up early if the build job has already
       # failed rather than sitting out the timeout.
+      #
+      # A failed API call is a poll that learned nothing, not a failure: the
+      # step runs under `bash -e`, so one HTTP 502 from the jobs endpoint
+      # failed eleven shards within a minute of each other on 30 Oct 2026,
+      # with the build green. On an error gh also prints the error body to
+      # stdout, which `!= "0"` would read as "found" -- hence the reassignment
+      # rather than a fallback appended to the output.
       - name: Wait for the app build
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           run="repos/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           for _ in $(seq 1 120); do
-            found="$(gh api "$run/artifacts?name=e2e-app" -q '.total_count')"
+            found="$(gh api "$run/artifacts?name=e2e-app" -q '.total_count')" || found=0
             if [ "$found" != "0" ]; then exit 0; fi
-            build="$(gh api "$run/jobs" -q '.jobs[] | select(.name == "build") | .conclusion')"
+            build="$(gh api "$run/jobs" -q '.jobs[] | select(.name == "build") | .conclusion')" || build=""
             if [ -n "$build" ] && [ "$build" != "success" ]; then
               echo "::error::The build job finished as '$build' without uploading the app"
               exit 1

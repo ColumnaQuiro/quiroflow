@@ -114,7 +114,10 @@
     var bubble = el('button', 'bubble')
     bubble.type = 'button'
     bubble.setAttribute('aria-label', T.open)
-    bubble.innerHTML = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>'
+    // The shape of WhatsApp's bubble -- a round ring with its tail at the
+    // bottom left -- without the handset inside: the one chat icon a
+    // visitor already reads as "write to us".
+    bubble.innerHTML = '<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linejoin="round" aria-hidden="true"><path d="M8.88 20.32A9.4 9.4 0 1 0 3.88 15.57L2.2 21.8Z"/></svg>'
     var dot = el('span', 'dot')
     dot.hidden = true
     bubble.appendChild(dot)

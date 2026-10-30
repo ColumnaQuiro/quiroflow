@@ -23,11 +23,11 @@ function seed(): Cypress.Chainable<{ account: StaffAccount; roomId: string }> {
   )
 }
 
-function openCalendar(account: StaffAccount) {
+function openCalendar(account: StaffAccount, waitFor = 'Laura Gómez') {
   cy.login(account.email, account.password)
   cy.visit('/calendar')
   cy.contains('select', 'Work week').select('day')
-  cy.contains('[data-cy=appt-block]', 'Laura Gómez').should('exist')
+  cy.contains('[data-cy=appt-block]', waitFor).should('exist')
 }
 
 function block(name: string) {
@@ -123,7 +123,7 @@ describe('Opening a visit', () => {
         seedVisit(account, room.id, 'Marta', 'Ruiz', 12, 0, { confirmationStatus: 'confirmed' }).then(({ patientId }) => {
           cy.task('db:createInvoice', { accountId: account.accountId, patientId, totalCents: 4500, status: 'unpaid' })
         })
-        openCalendar(account)
+        openCalendar(account, 'Marta Ruiz')
         block('Marta Ruiz').click()
         cy.get('[data-cy=appt-sheet]').within(() => {
           cy.contains('[data-cy=patient-balance]', 'Owes 45,00 €').should('be.visible')

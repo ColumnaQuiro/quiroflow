@@ -86,7 +86,7 @@ describe('Opening a visit', () => {
         // before the €, which only cy.contains normalises.
         cy.get('[data-cy=visit-money]').should('contain.text', 'Bono Ajustes 10').and('contain.text', '3 of 10 left')
         cy.contains('[data-cy=visit-money]', 'uses 1 session at 40,00 €').should('exist')
-        cy.get('[data-cy=patient-balance]').should('contain.text', 'Owes')
+        cy.get('[data-cy=patient-balance]').should('contain.text', 'Owes').and('not.contain.text', 'Nothing owed')
         cy.get('[data-cy=collect-balance]').should('have.attr', 'href').and('include', '?tab=money')
         cy.get('[data-cy=messages-sent]').should('contain.text', 'Confirmation · today 08:00')
         // In the building: "No-show" is not an option any more.
@@ -111,6 +111,27 @@ describe('Opening a visit', () => {
         cy.contains('Not charged yet').should('be.visible')
       })
     })
+  })
+
+  it('says a patient who owes and holds no credit owes -- and nothing else', () => {
+    // Laura above holds a bono, so her balance row has credit to show. With no
+    // credit at all, the row used to fall through to "Nothing owed" under
+    // "Owes 45,00 €".
+    cy.seedStaffAccount().then((account) =>
+      cy.task<{ id: string }>('db:createRoom', { accountId: account.accountId, clinicId: account.clinicId, name: 'Sala 1' }).then((room) => {
+        cy.task('db:setTeamMemberHours', { teamMemberId: account.teamMemberId, hours: EVERY_DAY_9_TO_7 })
+        seedVisit(account, room.id, 'Marta', 'Ruiz', 12, 0, { confirmationStatus: 'confirmed' }).then(({ patientId }) => {
+          cy.task('db:createInvoice', { accountId: account.accountId, patientId, totalCents: 4500, status: 'unpaid' })
+        })
+        openCalendar(account)
+        block('Marta Ruiz').click()
+        cy.get('[data-cy=appt-sheet]').within(() => {
+          cy.contains('[data-cy=patient-balance]', 'Owes 45,00 €').should('be.visible')
+          cy.get('[data-cy=patient-balance]').should('not.contain.text', 'Nothing owed').and('not.contain.text', 'available')
+          cy.contains('[data-cy=collect-balance]', 'Collect 45,00 €').should('be.visible')
+        })
+      }),
+    )
   })
 
   it('confirms by hand, marks a no-show, keeps the notes and edits the time inline', () => {

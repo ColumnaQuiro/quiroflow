@@ -10,6 +10,19 @@ const baseUrl = ref(sharedConn.value?.baseUrl ?? '')
 const apiKey = ref(sharedConn.value?.apiKey ?? '')
 const email = ref(user.value?.email ?? '')
 
+// The connection saved under Connection arrives without its key, which stays
+// on the server (practicehub-proxy adds it to a request that carries none).
+// This form used to demand a key regardless, so every step asked for the key
+// the clinic had just saved -- eleven times over a migration. A saved
+// connection is now one click; typing a key is the exception.
+const saved = computed(() => (sharedConn.value?.baseUrl && !sharedConn.value.apiKey ? sharedConn.value : null))
+const useAnotherKey = ref(false)
+
+function useSaved() {
+  if (!saved.value) return
+  emit('connect', { ...saved.value })
+}
+
 function submit() {
   if (!baseUrl.value.trim() || !apiKey.value.trim() || !email.value.trim()) return
   const conn = {
@@ -28,7 +41,20 @@ const fieldId = useId()
 </script>
 
 <template>
-  <form class="space-y-4" @submit.prevent="submit">
+  <div v-if="saved && !useAnotherKey" class="space-y-3">
+    <p class="text-sm text-ink-700">
+      {{ t(`Using the saved connection · ${saved.baseUrl.replace(/^https?:\/\//, '')}`, `Con la conexión guardada · ${saved.baseUrl.replace(/^https?:\/\//, '')}`) }}
+    </p>
+    <div class="flex flex-wrap items-center gap-3">
+      <button type="button" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover" data-cy="ph-use-saved-connection" @click="useSaved">
+        {{ t('Start', 'Empezar') }}
+      </button>
+      <button type="button" class="text-sm font-medium text-ink-600 hover:underline" @click="useAnotherKey = true">
+        {{ t('Use another key', 'Usar otra clave') }}
+      </button>
+    </div>
+  </div>
+  <form v-else class="space-y-4" @submit.prevent="submit">
     <div>
       <label :for="`${fieldId}-baseUrl`" class="block text-sm font-medium text-ink-700">{{ t('PracticeHub URL', 'URL de PracticeHub') }}</label>
       <input :id="`${fieldId}-baseUrl`"

@@ -2,6 +2,7 @@
 import { formatEur } from '~/utils/billing'
 import Papa from 'papaparse'
 import type { TablesInsert, TablesUpdate } from '~/types/database.types'
+import { practiceHubPatientNumberMap, practiceHubPatientRows, practiceHubUtc, type PHApiPatient, type PHNamed } from '~/utils/practicehubApiRows'
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
@@ -19,15 +20,33 @@ const { showToast } = useToast()
 // "+34 (303) 710-5245" and any WhatsApp sent to it would have gone to a
 // Spanish number instead. On the first live migration that was 90 numbers
 // across 16 countries.
-interface PHNumber { number: string | null; iso2: string | null }
-interface PHPatientNumbers { patient_number: string | number | null; numbers: PHNumber[] | null }
-
 const connection = usePracticeHubConnection()
 const numberCountries = ref(new Map<string, string>())
 const countryLookupState = ref<'idle' | 'loading' | 'ready' | 'unavailable'>('idle')
+// The CSV's "Patient Number" holds a custom reference (DNI, passport) for
+// the patients who have one, and every later step matches on the real
+// patient number -- so their payments and bonos never arrived. The API knows
+// which is which; a CSV row is stored under the number it maps to.
+const patientNumberFor = ref(new Map<string, string>())
 
 function countryKey(patientNumber: string, number: string) {
   return `${patientNumber.trim()}|${number.trim()}`
+}
+
+function readNumberCountries(patients: PHApiPatient[]) {
+  const map = new Map<string, string>()
+  for (const p of patients) {
+    const ref = String(p.patient_number ?? '').trim()
+    if (!ref) continue
+    for (const n of p.numbers ?? []) {
+      const num = (n?.number ?? '').trim()
+      const iso = (n?.iso2 ?? '').trim().toUpperCase()
+      if (num && iso) map.set(countryKey(ref, num), iso)
+    }
+  }
+  numberCountries.value = map
+  patientNumberFor.value = practiceHubPatientNumberMap(patients)
+  countryLookupState.value = 'ready'
 }
 
 async function loadNumberCountries() {
@@ -38,23 +57,59 @@ async function loadNumberCountries() {
   countryLookupState.value = 'loading'
   try {
     const api = usePracticeHubApi(connection.value)
-    const patients = await api.fetchAll<PHPatientNumbers>('/patients')
-    const map = new Map<string, string>()
-    for (const p of patients) {
-      const ref = String(p.patient_number ?? '').trim()
-      if (!ref) continue
-      for (const n of p.numbers ?? []) {
-        const num = (n?.number ?? '').trim()
-        const iso = (n?.iso2 ?? '').trim().toUpperCase()
-        if (num && iso) map.set(countryKey(ref, num), iso)
-      }
-    }
-    numberCountries.value = map
-    countryLookupState.value = 'ready'
+    readNumberCountries(await api.fetchAll<PHApiPatient>('/patients'))
   } catch {
     // A failed lookup imports the numbers rather than the whole file --
     // every other field is in the CSV and is still worth having.
     countryLookupState.value = 'unavailable'
+  }
+}
+
+// Reads the patients straight from PracticeHub's API instead of a CSV
+// export: the same rows, built by utils/practicehubApiRows.ts, through the
+// same preview. Tags are only in PracticeHub 2.0's API, so they come across
+// when that key is saved too, and the preview says so when it is not.
+const loadingFromApi = ref(false)
+const apiProgress = ref('')
+const tagsUnavailable = ref(false)
+
+async function loadTagsByPatientNumber(): Promise<Map<string, string[]> | undefined> {
+  const saved = await useStaffFetch<{ hasV3Key?: boolean }>('/api/import/practicehub-connection').catch(() => null)
+  if (!saved?.hasV3Key) return undefined
+  try {
+    const patients = await usePracticeHubV3().fetchAll<{ patient_number: string | null; tags?: { name: string }[] | null }>('/patients')
+    return new Map(patients.map((p) => [String(p.patient_number ?? '').trim(), (p.tags ?? []).map((tag) => tag.name).filter(Boolean)]))
+  } catch {
+    return undefined
+  }
+}
+
+async function loadFromPracticeHub() {
+  if (!connection.value) return
+  fileError.value = ''
+  loadingFromApi.value = true
+  try {
+    const api = usePracticeHubApi(connection.value)
+    apiProgress.value = t('Reading practitioners and referral sources…', 'Leyendo profesionales y fuentes de referencia…')
+    const practitioners = await api.fetchAll<PHNamed>('/practitioners')
+    const referralSources = await api.fetchAll<PHNamed>('/referral_sources')
+    const patients = await api.fetchAll<PHApiPatient>('/patients', (fetched, total) => {
+      apiProgress.value = t(`Reading patients… ${fetched} / ${total}`, `Leyendo pacientes… ${fetched} / ${total}`)
+    })
+    apiProgress.value = t('Reading tags…', 'Leyendo etiquetas…')
+    const tagsByPatientNumber = await loadTagsByPatientNumber()
+    tagsUnavailable.value = !tagsByPatientNumber
+
+    readNumberCountries(patients)
+    rawRows.value = practiceHubPatientRows(patients, { practitioners, referralSources, tagsByPatientNumber })
+    fileName.value = t('PracticeHub, read just now', 'PracticeHub, leído ahora mismo')
+    await computeDiff()
+    stage.value = 'preview'
+  } catch (e: any) {
+    fileError.value = e?.data?.statusMessage ?? e?.message ?? t('Could not read PracticeHub.', 'No se pudo leer PracticeHub.')
+  } finally {
+    loadingFromApi.value = false
+    apiProgress.value = ''
   }
 }
 
@@ -163,6 +218,11 @@ const toUpdate = ref<MappedUpdate[]>([])
 const skippedDuplicate = ref(0)
 const skippedDeleted = ref(0)
 const skippedNoName = ref(0)
+// PracticeHub practitioners named as a patient's default who are not on this
+// clinic's team yet. A new clinic imports before inviting anyone, so without
+// this every default practitioner is silently dropped; adding them under Team
+// and reading again fills them in.
+const unmatchedPractitioners = ref<{ name: string; patients: number }[]>([])
 const totalRows = ref(0)
 
 const importing = ref(false)
@@ -203,15 +263,15 @@ function parseLanguage(value: string): string {
   return LANGUAGES.some((l) => l.code === code) ? code : 'es'
 }
 
-// Same "Created" column/parsing PracticeHubFileAttachmentsImporter.vue
-// already uses. Without this, every migrated patient's created_at defaults
-// to the moment of import (now()) instead of when they actually joined the
-// practice -- e.g. tenure-based reports and "new patient" filters would be
-// wrong for the entire migrated patient base.
-function parseCreatedAt(value: string): string | undefined {
-  if (!value?.trim()) return undefined
-  const d = new Date(value.trim().replace(' ', 'T'))
-  return Number.isNaN(d.getTime()) ? undefined : d.toISOString()
+// Without this, every migrated patient's created_at defaults to the moment
+// of import (now()) instead of when they actually joined the practice --
+// tenure-based reports and "new patient" filters are wrong for the entire
+// migrated patient base. The export calls the column "Patient Created" and
+// this read "Created", so that is exactly what happened: all 1,529 of
+// Columnaquiro's imported patients carry an import day as their join date.
+// PracticeHub writes it in UTC with no zone.
+function parseCreatedAt(row: CsvRow): string | undefined {
+  return practiceHubUtc(row['Patient Created'] || row['Created']) || undefined
 }
 
 function buildNotes(row: CsvRow): string | null {
@@ -238,6 +298,7 @@ function buildPatientUpdate(
   existing: ExistingPatient,
   incoming: TablesInsert<'patients'>,
   externalRef: string,
+  fileRef: string,
   realCreatedAt: string | undefined,
 ) {
   const updates: TablesUpdate<'patients'> = {}
@@ -255,16 +316,21 @@ function buildPatientUpdate(
     }
   }
 
-  if (realCreatedAt && valuesDiffer(realCreatedAt, existing.created_at)) {
+  // Compared as instants: Postgres hands back "…+00:00" and the parsed value
+  // is "…Z", so a string comparison flagged every patient on every re-run.
+  if (realCreatedAt && new Date(realCreatedAt).getTime() !== new Date(existing.created_at).getTime()) {
     updates.created_at = realCreatedAt
     diff.push({ field: 'created_at', from: formatValue(existing.created_at), to: formatValue(realCreatedAt) })
   }
 
   // A patient matched by email only (e.g. created directly in QuiroFlow)
   // won't have this set yet -- backfill it so future re-syncs match by ref.
-  if (!existing.external_reference && externalRef) {
+  // One stored under their custom reference gets their patient number, so
+  // the later steps find them.
+  const misreferenced = existing.external_reference === fileRef && fileRef !== externalRef
+  if (externalRef && (!existing.external_reference || misreferenced)) {
     updates.external_reference = externalRef
-    diff.push({ field: 'external_reference', from: '(blank)', to: externalRef })
+    diff.push({ field: 'external_reference', from: formatValue(existing.external_reference), to: externalRef })
   }
 
   return { updates, diff }
@@ -336,6 +402,7 @@ async function computeDiff() {
   const mapped: MappedPatient[] = []
   const updates: MappedUpdate[] = []
   const matchedIds: string[] = []
+  const unmatched = new Map<string, number>()
 
   rows.forEach((row, index) => {
     if ((row['Deleted'] || '').trim().toUpperCase() === 'TRUE') {
@@ -350,16 +417,27 @@ async function computeDiff() {
     }
 
     const email = row['Email Address']?.trim() || ''
-    const externalRef = row['Patient Number']?.trim() || ''
-    const existing = (externalRef && byRef.get(externalRef)) || (email && byEmail.get(email.toLowerCase())) || undefined
+    const fileRef = row['Patient Number']?.trim() || ''
+    const externalRef = patientNumberFor.value.get(fileRef) ?? fileRef
+    // Also by the reference as the file gave it: a patient imported earlier
+    // under their custom reference is the same patient, not a new one.
+    const existing = (externalRef && byRef.get(externalRef)) || (fileRef && byRef.get(fileRef)) || (email && byEmail.get(email.toLowerCase())) || undefined
 
     const numbers: ContactNumber[] = []
     const mobile = row['Mobile']?.trim()
     const home = row['Home']?.trim()
     if (mobile) numbers.push({ country_code: countryFor(externalRef, mobile), number: mobile, is_whatsapp: false })
     if (home) numbers.push({ country_code: countryFor(externalRef, home), number: home, is_whatsapp: false })
+    for (const other of (row['Other Numbers'] ?? '').split('\n').map((n) => n.trim()).filter(Boolean)) {
+      numbers.push({ country_code: countryFor(externalRef, other), number: other, is_whatsapp: false })
+    }
 
-    const realCreatedAt = parseCreatedAt(row['Created'] || '')
+    const practitionerName = row['Default Practitioner']?.trim() || ''
+    if (practitionerName && !matchPractitioner(practitionerName)) {
+      unmatched.set(practitionerName, (unmatched.get(practitionerName) ?? 0) + 1)
+    }
+
+    const realCreatedAt = parseCreatedAt(row)
     const patient: TablesInsert<'patients'> = {
       account_id: store.accountId!,
       clinic_id: targetClinicId.value || null,
@@ -375,7 +453,7 @@ async function computeDiff() {
       // fallback never gets treated as a real change on an update.
       created_at: realCreatedAt ?? new Date().toISOString(),
       balance_cents: parseBalanceCents(row['Account Balance'] || '0'),
-      tags: row['Tags']?.trim() ? [row['Tags'].trim()] : [],
+      tags: (row['Tags'] ?? '').split(',').map((tag) => tag.trim()).filter(Boolean),
       referral_source: row['Referral Source']?.trim() || null,
       preferred_language: parseLanguage(row['Preferred Language'] || ''),
       notes: buildNotes(row),
@@ -390,8 +468,10 @@ async function computeDiff() {
     }
 
     matchedIds.push(existing.id)
-    const { updates: fieldUpdates, diff } = buildPatientUpdate(existing, patient, externalRef, realCreatedAt)
-    if (Object.keys(fieldUpdates).length === 0) {
+    const { updates: fieldUpdates, diff } = buildPatientUpdate(existing, patient, externalRef, fileRef, realCreatedAt)
+    // Kept even with no field changes while it carries numbers: one of them
+    // may be new, which is only known once they are compared below.
+    if (Object.keys(fieldUpdates).length === 0 && numbers.length === 0) {
       skippedDuplicate.value++
       return
     }
@@ -423,11 +503,15 @@ async function computeDiff() {
     for (const u of updates) {
       const existingSet = existingNumbersByPatient.get(u.id) ?? new Set<string>()
       u.numbers = u.numbers.filter((n) => !existingSet.has(n.number.replace(/\D/g, '')))
+      for (const n of u.numbers) u.diff.push({ field: 'phone', from: '(new)', to: n.number })
     }
   }
+  const changed = updates.filter((u) => Object.keys(u.updates).length > 0 || u.numbers.length > 0)
+  skippedDuplicate.value += updates.length - changed.length
 
   toImport.value = mapped
-  toUpdate.value = updates
+  toUpdate.value = changed
+  unmatchedPractitioners.value = [...unmatched].map(([name, patients]) => ({ name, patients })).sort((a, b) => b.patients - a.patients)
 }
 
 function onDrop(e: DragEvent) {
@@ -520,7 +604,8 @@ async function runImport() {
     for (let i = 0; i < toUpdate.value.length; i += UPDATE_CHUNK_SIZE) {
       const chunk = toUpdate.value.slice(i, i + UPDATE_CHUNK_SIZE)
       await runWithConcurrency(chunk, CONCURRENCY, async (row) => {
-        const { error } = await supabase.from('patients').update(row.updates).eq('id', row.id)
+        // A row that only brings a new number has nothing to update.
+        const { error } = Object.keys(row.updates).length > 0 ? await supabase.from('patients').update(row.updates).eq('id', row.id) : { error: null }
         if (error) {
           importErrors.value.push(
             t(`Row ${row.sourceRow} (${row.label}): ${error.message}`, `Fila ${row.sourceRow} (${row.label}): ${error.message}`),
@@ -565,15 +650,16 @@ function reset() {
   stage.value = 'pick'
   fileName.value = ''
   fileError.value = ''
+  tagsUnavailable.value = false
   toImport.value = []
   toUpdate.value = []
   importedCount.value = 0
   updatedCount.value = 0
   importErrors.value = []
 }
-const introLead = computed(() => t('Brings patients across from a PracticeHub CSV export. Every other step matches its records to a patient by the reference stored here, so this one has to run first.', 'Trae los pacientes desde una exportación CSV de PracticeHub. Todos los demás pasos emparejan sus registros con un paciente por la referencia que se guarda aquí, así que este debe ir primero.'))
+const introLead = computed(() => t('Brings patients across from PracticeHub. Every other step matches its records to a patient by the reference stored here, so this one has to run first.', 'Trae los pacientes desde PracticeHub. Todos los demás pasos emparejan sus registros con un paciente por la referencia que se guarda aquí, así que este debe ir primero.'))
 const introNotes = computed(() => [
-        { title: t('Where the file comes from.', 'De dónde sale el archivo.'), body: t('Export "Patients" as CSV from PracticeHub under Settings -> Data Exports, then drop it here.', 'Exporta "Patients" como CSV desde PracticeHub en Settings -> Data Exports y suéltalo aquí.') },
+        { title: t('Read straight from PracticeHub.', 'Leído directamente de PracticeHub.'), body: t('With the connection saved, nothing needs exporting. A CSV export from Settings -> Data Exports still works.', 'Con la conexión guardada, no hace falta exportar nada. Una exportación CSV desde Settings -> Data Exports sigue sirviendo.') },
         { title: t('Nothing is written until you press Apply.', 'No se escribe nada hasta que pulses Aplicar.'), body: t('The preview lists what will be created or updated so you can check it first.', 'La vista previa muestra qué se creará o actualizará para que lo compruebes antes.') },
         { title: t('Safe to run again.', 'Se puede volver a ejecutar.'), body: t('A patient already carrying their PracticeHub reference is matched and updated, never duplicated.', 'Un paciente que ya tiene su referencia de PracticeHub se empareja y se actualiza, nunca se duplica.') },
 ])
@@ -587,15 +673,34 @@ const fieldId = useId()
   <div>
     <ImportIntro :lead="introLead" :notes="introNotes" />
 
-    <div v-if="stage === 'pick'" class="mt-4">
+    <div v-if="stage === 'pick'" class="mt-4 space-y-3">
+      <div class="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface p-4">
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-medium text-ink-900">{{ t('From PracticeHub', 'Desde PracticeHub') }}</p>
+          <p class="text-[12.5px] text-ink-muted2">
+            {{ connection
+              ? (loadingFromApi ? apiProgress : t('Reads every patient through the saved connection. Takes a minute or two.', 'Lee todos los pacientes con la conexión guardada. Tarda un minuto o dos.'))
+              : t('Save the connection first, under Connection.', 'Guarda antes la conexión, en Conexión.') }}
+          </p>
+        </div>
+        <button
+          type="button"
+          class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50"
+          :disabled="!connection || loadingFromApi"
+          data-cy="ph-patients-from-api"
+          @click="loadFromPracticeHub"
+        >
+          {{ loadingFromApi ? t('Reading…', 'Leyendo…') : t('Read patients', 'Leer pacientes') }}
+        </button>
+      </div>
       <div
-        class="flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-12 text-center"
+        class="flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 text-center"
         :class="dragOver ? 'border-brand bg-brand-tint' : 'border-line-control bg-surface'"
         @dragover.prevent="dragOver = true"
         @dragleave.prevent="dragOver = false"
         @drop.prevent="onDrop"
       >
-        <p class="text-sm text-ink-600">{{ t('Drag and drop a CSV file here, or', 'Arrastra y suelta un archivo CSV aquí, o') }}</p>
+        <p class="text-sm text-ink-600">{{ t('Or drag and drop a PracticeHub CSV export here, or', 'O arrastra y suelta aquí una exportación CSV de PracticeHub, o') }}</p>
         <label class="mt-2 cursor-pointer text-sm font-medium text-brand-text hover:text-brand-text">
           {{ t('browse for a file', 'busca un archivo') }}
           <input type="file" accept=".csv" class="hidden" @change="onFileInput" />
@@ -627,6 +732,18 @@ const fieldId = useId()
           {{ t(
             `No PracticeHub connection, so every phone number will be saved as ${defaultCountryName}. Connect PracticeHub under Settings → Import → PracticeHub → General and re-run this to get each number's real country.`,
             `Sin conexión con PracticeHub, todos los teléfonos se guardarán como ${defaultCountryName}. Conecta PracticeHub en Ajustes → Importar → PracticeHub → General y vuelve a ejecutarlo para obtener el país real de cada número.`,
+          ) }}
+        </p>
+        <p v-if="tagsUnavailable" class="mt-1 text-[12.5px] text-warning-text" data-cy="ph-patients-no-tags">
+          {{ t(
+            'Tags are only in PracticeHub 2.0’s API, so they are not included. Save the 2.0 key under Connection and read again to bring them.',
+            'Las etiquetas solo están en la API de PracticeHub 2.0, así que no se incluyen. Guarda la clave 2.0 en Conexión y vuelve a leer para traerlas.',
+          ) }}
+        </p>
+        <p v-if="unmatchedPractitioners.length > 0" class="mt-1 text-[12.5px] text-warning-text" data-cy="ph-patients-unmatched-practitioners">
+          {{ t(
+            `Not on your team yet, so these patients get no default practitioner: ${unmatchedPractitioners.map((p) => `${p.name} (${p.patients})`).join(', ')}. Add them under Settings → Team with the same name and read again.`,
+            `Aún no están en tu equipo, así que estos pacientes quedan sin profesional habitual: ${unmatchedPractitioners.map((p) => `${p.name} (${p.patients})`).join(', ')}. Añádelos en Ajustes → Equipo con el mismo nombre y vuelve a leer.`,
           ) }}
         </p>
       </div>

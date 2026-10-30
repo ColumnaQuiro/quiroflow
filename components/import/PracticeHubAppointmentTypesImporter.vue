@@ -4,7 +4,7 @@ const store = useAccountStore()
 const t = useT()
 const { showToast } = useToast()
 
-interface PHAppointmentType { id: number; name: string }
+interface PHAppointmentType { id: number; name: string; active?: number | boolean | null; duration?: number | null; color?: string | null }
 interface PHAppointment { id: number; appointment_type_id: number | null }
 
 // Best-effort mapping from PracticeHub's own type names to the Statistics
@@ -26,7 +26,27 @@ interface TypeCandidate {
   /** Set when a type of the same name is already here; null means it gets created. */
   ourTypeId: string | null
   funnelStage: string | null
+  /** PracticeHub's appointments of this type that are already here, by reference. */
   appointmentRefs: string[]
+  /** All of PracticeHub's appointments of this type, here or not. */
+  inPracticeHub: number
+  durationMinutes: number | null
+  color: string | null
+  /** Retired in PracticeHub but still on old visits: created archived, never offered. */
+  archived: boolean
+}
+
+// PracticeHub keeps retired types, often a near-duplicate of a live one
+// ("Primera Visita" beside "Primera visita"). One that is retired AND was
+// never used is not brought across: on Columnaquiro that was five of fourteen,
+// and a new clinic's type list started out with them.
+function isWorthBringing(phType: PHAppointmentType, used: number) {
+  return used > 0 || !(phType.active === 0 || phType.active === false)
+}
+
+function hexColor(value: string | null | undefined): string | null {
+  const hex = (value ?? '').trim().replace(/^#/, '')
+  return /^[0-9a-f]{6}$/i.test(hex) ? `#${hex.toLowerCase()}` : null
 }
 
 const stage = ref<'connect' | 'scanning' | 'preview' | 'importing' | 'done' | 'error'>('connect')
@@ -42,7 +62,7 @@ const typesCreated = ref(0)
 const appointmentsUpdated = ref(0)
 const importErrors = ref<string[]>([])
 
-const newTypeCount = computed(() => candidates.value.filter((c) => !c.ourTypeId).length)
+const newTypeCount = computed(() => new Set(candidates.value.filter((c) => !c.ourTypeId).map((c) => c.name.trim().toLowerCase())).size)
 const appointmentsToRelink = computed(() => candidates.value.reduce((sum, c) => sum + c.appointmentRefs.length, 0))
 
 const previewColumns = computed(() => [
@@ -54,12 +74,12 @@ const previewColumns = computed(() => [
 
 const previewRows = computed(() =>
   [...candidates.value]
-    .sort((a, b) => b.appointmentRefs.length - a.appointmentRefs.length)
+    .sort((a, b) => b.inPracticeHub - a.inPracticeHub)
     .map((c) => ({
       name: c.name,
       status: c.ourTypeId ? t('Already here', 'Ya existe') : t('Will be created', 'Se creará'),
       funnelStage: c.funnelStage ?? t('—', '—'),
-      appointments: String(c.appointmentRefs.length),
+      appointments: String(c.inPracticeHub),
     })),
 )
 
@@ -89,6 +109,21 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     const { data: existing } = await supabase.from('appointment_types').select('id, name')
     const existingByName = new Map((existing ?? []).map((row) => [row.name.trim().toLowerCase(), row.id]))
 
+    // Only the visits already here can be re-pointed. Counting PracticeHub's
+    // own told a clinic with no appointments yet that 8,695 would be relinked.
+    const refsHere = new Set<string>()
+    const PAGE_SIZE = 1000
+    for (let page = 0; ; page++) {
+      const { data } = await supabase
+        .from('appointments')
+        .select('external_reference')
+        .not('external_reference', 'is', null)
+        .order('id')
+        .range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+      for (const a of data ?? []) refsHere.add(a.external_reference!)
+      if (!data || data.length < PAGE_SIZE) break
+    }
+
     phase.value = t('Fetching appointments…', 'Obteniendo citas…')
     progress.value = { done: 0, total: 0 }
     const phAppointments = await api.fetchAll<PHAppointment>('/appointments', (done, total) => (progress.value = { done, total }))
@@ -105,16 +140,23 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
       refsByPhTypeId.set(appt.appointment_type_id, list)
     }
 
-    candidates.value = phTypes.map((phType) => {
-      const key = phType.name.trim().toLowerCase()
-      return {
-        phTypeId: phType.id,
-        name: phType.name,
-        ourTypeId: existingByName.get(key) ?? null,
-        funnelStage: STAGE_BY_NAME[key] ?? null,
-        appointmentRefs: refsByPhTypeId.get(phType.id) ?? [],
-      }
-    })
+    candidates.value = phTypes
+      .filter((phType) => isWorthBringing(phType, refsByPhTypeId.get(phType.id)?.length ?? 0))
+      .map((phType) => {
+        const key = phType.name.trim().toLowerCase()
+        const refs = refsByPhTypeId.get(phType.id) ?? []
+        return {
+          phTypeId: phType.id,
+          name: phType.name,
+          ourTypeId: existingByName.get(key) ?? null,
+          funnelStage: STAGE_BY_NAME[key] ?? null,
+          appointmentRefs: refs.filter((ref) => refsHere.has(ref)),
+          inPracticeHub: refs.length,
+          durationMinutes: phType.duration && phType.duration > 0 ? phType.duration : null,
+          color: hexColor(phType.color),
+          archived: phType.active === 0 || phType.active === false,
+        }
+      })
     stage.value = 'preview'
   } catch (err) {
     runError.value = err instanceof Error ? err.message : String(err)
@@ -132,16 +174,31 @@ async function apply() {
   try {
     phase.value = t('Creating appointment types…', 'Creando tipos de cita…')
     const ourTypeIdByPhTypeId = new Map<number, string>()
+    // Two PracticeHub types can share a name; the second reuses the first
+    // rather than creating a twin.
+    const createdByName = new Map<string, string>()
     for (const c of candidates.value) {
-      if (c.ourTypeId) {
-        ourTypeIdByPhTypeId.set(c.phTypeId, c.ourTypeId)
+      const key = c.name.trim().toLowerCase()
+      const known = c.ourTypeId ?? createdByName.get(key)
+      if (known) {
+        ourTypeIdByPhTypeId.set(c.phTypeId, known)
         continue
       }
       const { data: created, error } = await supabase
         .from('appointment_types')
         // Not bookable online: an imported type is the history's, and the
         // clinic decides which ones patients may book on the type's own page.
-        .insert({ account_id: store.accountId!, name: c.name, stage: c.funnelStage, online_booking_enabled: false })
+        // Its length and colour are PracticeHub's, so the calendar looks the
+        // way the clinic is used to.
+        .insert({
+          account_id: store.accountId!,
+          name: c.name,
+          stage: c.funnelStage,
+          online_booking_enabled: false,
+          ...(c.durationMinutes ? { duration_minutes: c.durationMinutes } : {}),
+          ...(c.color ? { color: c.color } : {}),
+          ...(c.archived ? { archived_at: new Date().toISOString() } : {}),
+        })
         .select('id')
         .single()
       if (error || !created) {
@@ -149,6 +206,7 @@ async function apply() {
         continue
       }
       ourTypeIdByPhTypeId.set(c.phTypeId, created.id)
+      createdByName.set(key, created.id)
       typesCreated.value++
     }
 
@@ -162,12 +220,12 @@ async function apply() {
       if (!ourTypeId) continue
       for (let i = 0; i < c.appointmentRefs.length; i += CHUNK_SIZE) {
         const chunk = c.appointmentRefs.slice(i, i + CHUNK_SIZE)
-        const { error } = await supabase.from('appointments').update({ appointment_type_id: ourTypeId }).in('external_reference', chunk)
+        const { error, count } = await supabase.from('appointments').update({ appointment_type_id: ourTypeId }, { count: 'exact' }).in('external_reference', chunk)
         if (error)
           importErrors.value.push(
             t(`Updating batch near ref ${chunk[0]}: ${error.message}`, `Actualizando lote cerca de la referencia ${chunk[0]}: ${error.message}`),
           )
-        else appointmentsUpdated.value += chunk.length
+        else appointmentsUpdated.value += count ?? 0
         done += chunk.length
         progress.value = { done, total: appointmentsToRelink.value }
       }
@@ -203,7 +261,7 @@ function reset() {
   importErrors.value = []
   progress.value = { done: 0, total: 0 }
 }
-const introLead = computed(() => t('Repairs visits that came across attached to the wrong appointment type, matching each one back to what PracticeHub says it was.', 'Corrige las visitas que llegaron con el tipo de cita equivocado, emparejando cada una con lo que dice PracticeHub.'))
+const introLead = computed(() => t('Brings PracticeHub’s appointment types across, with their length and colour, and points every visit already here at the type PracticeHub says it was. Run it before Appointments, so their types match by name.', 'Trae los tipos de cita de PracticeHub, con su duración y color, y asocia cada visita que ya esté aquí al tipo que dice PracticeHub. Ejecútalo antes de Citas, para que sus tipos coincidan por nombre.'))
 const introNotes = computed(() => [
         { title: t('Nothing is written until you press Apply.', 'No se escribe nada hasta que pulses Aplicar.'), body: t('The preview lists every visit it will re-point so you can check it first.', 'La vista previa muestra cada visita que reasignará para que la compruebes antes.') },
         { title: t('Safe to run again.', 'Se puede volver a ejecutar.'), body: t('Visits already on the right type are skipped.', 'Las visitas que ya tienen el tipo correcto se omiten.') },

@@ -127,7 +127,7 @@ async function fixMarker(row: MarkerMismatchRow) {
   await loadMarkerMismatches()
 }
 function formatDateTime(iso: string) {
-  return new Date(iso).toLocaleString('es-ES', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+  return new Date(iso).toLocaleString(t('en-GB', 'es-ES'), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 onMounted(() => load())
 
@@ -138,7 +138,7 @@ function cadenceLabel(row: AlertRow) {
   return carePlanCadenceLabel(row, t)
 }
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })
+  return new Date(iso).toLocaleDateString(t('en-GB', 'es-ES'), { day: 'numeric', month: 'short' })
 }
 function openMessage(row: { patient_id: string }) {
   messagingPatientId.value = row.patient_id

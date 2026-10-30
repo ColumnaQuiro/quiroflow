@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatEur, formatLongDate, formatShortDate } from '~/utils/billing'
+import { formatEur } from '~/utils/billing'
 import { normalizeSearchTerm } from '~/utils/searchText'
 import { BONO_PAYMENTS_EMBED, bonoOwedCents } from '~/utils/bonoOwed'
 import { settleInvoiceIfCovered } from '~/utils/settleInvoice'
@@ -116,6 +116,7 @@ function paymentRefusedMessage(error: { message?: string } | null) {
 }
 const { fire } = useAutomations()
 const t = useT()
+const { formatLongDate, formatShortDate } = useDates()
 
 // outstandingCents is what "Owed now" shows. It was computed here as
 // -balanceCents, which made this one card contradict itself: it printed
@@ -2127,7 +2128,6 @@ async function logPayment(m: PatientMembershipRow, status: 'paid' | 'failed') {
   await loadAll()
 }
 
-
 // -- Money asks three questions, so the tab answers them in three places ---
 // "What do they owe right now", "what have they already got with us", and
 // "how do they pay". Those were one flat strip of figures, which meant
@@ -3057,7 +3057,6 @@ const fieldId = useId()
         </ul>
       </div>
     </div>
-
 
     <UiConfirmDialog
       v-if="annullingFactura"

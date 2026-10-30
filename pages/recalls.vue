@@ -2,7 +2,7 @@
 import type { Tables } from '~/types/database.types'
 import { sanitizeSearchToken } from '~/utils/searchText'
 import { fetchAllRows, fetchByIds } from '~/composables/useFetchAllRows'
-import { formatEur, formatShortDate } from '~/utils/billing'
+import { formatEur } from '~/utils/billing'
 import type { CareStop } from '~/composables/useCareStopReasons'
 
 // Recordatorios: patients with no appointment ahead, worked through by the
@@ -39,6 +39,7 @@ interface ContactLogRow {
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+const { formatShortDate } = useDates()
 const logAccess = useAccessLog()
 const { preference: language } = useLang()
 const { showToast } = useToast()

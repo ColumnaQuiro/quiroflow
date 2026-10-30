@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatLongDate, formatTime } from '~/utils/billing'
+import { formatTime } from '~/utils/billing'
 import { formatPhoneDisplay } from '~/utils/phone'
 import type { Tables } from '~/types/database.types'
 
@@ -39,6 +39,7 @@ interface MessageRow {
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+const { formatLongDate } = useDates()
 
 const messages = ref<MessageRow[]>([])
 const loading = ref(true)

@@ -270,7 +270,7 @@ async function confirmDelete() {
                       <UiPill v-if="categoryLabel(tpl.category)" tone="brand">{{ categoryLabel(tpl.category) }}</UiPill>
                       <UiPill v-if="tpl.translation_of" data-cy="doc-language">{{ languageName(tpl.language) }}</UiPill>
                     </span>
-                    <span class="text-[12.5px] text-ink-muted">{{ questionCount(tpl) }} · {{ t('edited', 'editada el') }} {{ new Date(tpl.updated_at).toLocaleDateString('es-ES') }}</span>
+                    <span class="text-[12.5px] text-ink-muted">{{ questionCount(tpl) }} · {{ t('edited', 'editada el') }} {{ new Date(tpl.updated_at).toLocaleDateString(t('en-GB', 'es-ES')) }}</span>
                   </span>
                   <span class="flex w-[170px] shrink-0 flex-col items-end gap-1.5 max-sm:hidden">
                     <span class="text-[13px] text-ink-500" data-cy="doc-counts">{{ countsLabel(tpl.id) }}</span>

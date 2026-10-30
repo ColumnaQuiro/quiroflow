@@ -55,10 +55,10 @@ describe('A failed payment names its dates, or says it cannot', () => {
       cy.contains('Your last payment failed').should('be.visible')
       // The amount Stripe actually tried to take, not the plan's price.
       cy.contains('166,98').should('be.visible')
-      cy.contains('21 de septiembre de 2026').should('be.visible')
+      cy.contains('21 September 2026').should('be.visible')
       cy.contains('Your card has insufficient funds.').should('be.visible')
-      cy.contains('We try again on 24 de septiembre de 2026').should('be.visible')
-      cy.contains('access ends on 5 de octubre de 2026').should('be.visible')
+      cy.contains('We try again on 24 September 2026').should('be.visible')
+      cy.contains('access ends on 5 October 2026').should('be.visible')
       cy.contains('a', 'View the failed invoice').should('have.attr', 'href', 'https://invoice.stripe.com/i/test')
 
       // The reassurance is the most important sentence on the screen.

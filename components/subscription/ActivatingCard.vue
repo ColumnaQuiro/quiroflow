@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatEur, formatLongDate } from '~/utils/billing'
+import { formatEur } from '~/utils/billing'
 
 // Back from Stripe checkout before the webhook has landed. The money is
 // already gone from the customer's side, so the copy leads with that and says
@@ -20,6 +20,7 @@ defineProps<{
 defineEmits<{ refresh: [] }>()
 
 const t = useT()
+const { formatLongDate } = useDates()
 </script>
 
 <template>

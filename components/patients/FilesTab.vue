@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { formatShortDate } from '~/utils/billing'
 import type { Tables } from '~/types/database.types'
 import { sanitizeStorageFilename } from '~/utils/storageFilename'
 import { editableFileName, renamedFileName } from '~/utils/renameFile'
@@ -10,6 +9,7 @@ const props = defineProps<{ patientId: string }>()
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+const { formatShortDate } = useDates()
 const { can } = usePermission()
 const { showToast } = useToast()
 const logAccess = useAccessLog()

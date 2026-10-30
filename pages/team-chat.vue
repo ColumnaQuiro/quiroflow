@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatTime, formatShortDate } from '~/utils/billing'
+import { formatTime } from '~/utils/billing'
 import type { ThreadKey } from '~/utils/teamMessages'
 
 // Team: messages between the people who work here -- the whole team in one
@@ -10,6 +10,7 @@ import type { ThreadKey } from '~/utils/teamMessages'
 // for the same reason; what each person can read is RLS's
 // (20261020074859_team_messages.sql).
 const t = useT()
+const { formatShortDate } = useDates()
 const route = useRoute()
 const router = useRouter()
 const chat = useTeamChat()

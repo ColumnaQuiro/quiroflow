@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatEur, formatShortDate, formatTime, formatWeekdayDate } from '~/utils/billing'
+import { formatEur, formatTime } from '~/utils/billing'
 import type { BusinessHours } from '~/utils/businessHours'
 import { dayKeyFor, hasBusinessHoursConfigured, practitionerWindowsForDay, windowsForDay, withinWindows } from '~/utils/businessHours'
 import { effectiveDuration, type AppointmentTypeOverride } from '~/utils/appointmentOverrides'
@@ -95,6 +95,7 @@ const supabase = useSupabaseClient()
 const store = useAccountStore()
 const { fire } = useAutomations()
 const t = useT()
+const { formatShortDate, formatWeekdayDate } = useDates()
 const { stageLabel, stageLine, when } = useStageLabels()
 const { facts, refresh: refreshFacts } = useAppointmentFacts(() => props.appointment)
 // Credit and the pack's rate: kept off the block on purpose, stated here.

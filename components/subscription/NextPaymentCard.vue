@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatEur, formatLongDate, formatRelativeDays } from '~/utils/billing'
+import { formatEur, formatRelativeDays } from '~/utils/billing'
 
 // The number this page exists for. It used to be a fragment of a string in
 // the page header, joined to the status with five literal spaces.
@@ -27,6 +27,7 @@ const props = withDefaults(
 const emit = defineEmits<{ portal: [] }>()
 
 const t = useT()
+const { formatLongDate } = useDates()
 const { preference: lang } = useLang()
 
 const eyebrow = computed(() =>

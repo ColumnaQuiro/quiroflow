@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { formatLongDate } from '~/utils/billing'
 import { parseVisitNote, visitNotePreview } from '~/utils/visitNote'
 import type { Tables } from '~/types/database.types'
 
@@ -23,6 +22,7 @@ const exercisesTeamMemberId = computed(() => exercisesStore.teamMember?.id ?? nu
 
 const supabase = useSupabaseClient()
 const t = useT()
+const { formatLongDate } = useDates()
 const { can } = usePermission()
 
 const patient = ref<Pick<Tables<'patients'>, 'chief_complaint' | 'diagnosis' | 'red_flags' | 'yellow_flags' | 'goals' | 'user_id' | 'first_name' | 'preferred_language' | 'is_minor' | 'do_not_contact'> | null>(null)

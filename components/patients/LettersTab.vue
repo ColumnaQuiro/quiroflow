@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { formatLongDate } from '~/utils/billing'
 import { letterFileName, sanitizeLetterHtml } from '~/utils/letters'
 
 // Letters written about this patient (patient_letters,
@@ -15,6 +14,7 @@ const props = defineProps<{ patientId: string }>()
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+const { formatLongDate } = useDates()
 const { showToast } = useToast()
 const { can } = usePermission()
 const logAccess = useAccessLog()

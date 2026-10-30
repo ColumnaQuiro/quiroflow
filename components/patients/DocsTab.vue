@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Tables } from '~/types/database.types'
-import { formatLongDate } from '~/utils/billing'
+
 import type { DocField } from '~/utils/docFields'
 import { patientAttributeMergeVars } from '~/utils/patientAttributes'
 
@@ -9,6 +9,7 @@ const props = defineProps<{ patientId: string }>()
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+const { formatLongDate } = useDates()
 const { showToast } = useToast()
 const { can } = usePermission()
 

@@ -811,8 +811,11 @@ async function useExpectedType() {
                      payment, while "available" is loose credit plus unused bono
                      value. When they disagree, say both rather than pick one. -->
                 <span v-if="view.owesCents > 0 && availableCents > 0" class="text-[12.5px] font-semibold text-success-text">{{ t(`${formatEur(availableCents)} available`, `${formatEur(availableCents)} disponible`) }}</span>
-                <span v-else-if="availableCents > 0" class="text-[14px] font-semibold text-success-text">{{ t(`${formatEur(availableCents)} available`, `${formatEur(availableCents)} disponible`) }}</span>
-                <span v-else class="text-[14px] font-semibold text-ink-700">{{ t('Nothing owed', 'Sin saldo pendiente') }}</span>
+                <span v-else-if="view.owesCents <= 0 && availableCents > 0" class="text-[14px] font-semibold text-success-text">{{ t(`${formatEur(availableCents)} available`, `${formatEur(availableCents)} disponible`) }}</span>
+                <!-- Only when nothing is owed. A plain v-else also caught "owes,
+                     with no credit", and put "Nothing owed" right under "Owes
+                     44,00 €" on the screen the money is taken from. -->
+                <span v-else-if="view.owesCents <= 0" class="text-[14px] font-semibold text-ink-700">{{ t('Nothing owed', 'Sin saldo pendiente') }}</span>
                 <span v-if="view.owesCents > 0 && unpaidList" class="truncate text-[12px] text-ink-500">{{ t(`${unpaidList}, unpaid`, `${unpaidList}, sin cobrar`) }}</span>
               </div>
               <NuxtLink v-if="view.owesCents > 0" :to="`/patients/${appointment.patient_id}?tab=money`" data-cy="collect-balance" class="flex h-9 touch:h-11 shrink-0 items-center rounded-ctl bg-danger-text px-3.5 text-[13.5px] font-bold text-surface hover:opacity-90">

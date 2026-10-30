@@ -1,6 +1,26 @@
 // The front-desk check-in portal (pages/check-in/[token].vue): a patient types
 // their date of birth as six digits, DDMMAA, the way PracticeHub's portal asks
-// for it, and is matched against the visits about to start at that location.
+// for it -- or their DNI/NIE, if the location chose that -- and is matched
+// against the visits about to start at that location.
+
+/** How a location's tablet identifies a patient (check_in_portals.identify_by). */
+export type PortalIdentifyBy = 'birth_date' | 'national_id'
+
+export function isPortalIdentifyBy(value: unknown): value is PortalIdentifyBy {
+  return value === 'birth_date' || value === 'national_id'
+}
+
+/**
+ * A DNI, NIE or passport number as it is compared: upper case, with no
+ * spaces, dots or dashes, since a file may hold "12.345.678-Z" and a patient
+ * types "12345678z". Null for anything too short to be one (fewer than five
+ * letters and digits), so an empty or partial entry never matches a patient
+ * whose own national_id is blank.
+ */
+export function normalizeNationalId(value: string | null | undefined): string | null {
+  const id = (value ?? '').toUpperCase().replace(/[^0-9A-Z]/g, '')
+  return id.length >= 5 ? id : null
+}
 
 export interface PortalBirthDate {
   day: number

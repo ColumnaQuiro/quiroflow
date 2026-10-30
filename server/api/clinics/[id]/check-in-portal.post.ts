@@ -1,12 +1,11 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
-import { checkInPortalSettings, newCheckInPortalToken } from '~/server/utils/checkInPortal'
-
-const SELECT = 'token, language, welcome_message, success_message, not_found_message'
+import { PORTAL_SETTINGS_SELECT as SELECT, checkInPortalSettings, newCheckInPortalToken } from '~/server/utils/checkInPortal'
 
 // Turns this location's check-in portal on, or with { renew: true } gives it
 // a new link -- for a tablet that went missing: the old link stops working at
-// once. Its language and messages are kept across a renewal. Answers the
+// once. How it identifies patients, its language and its messages are kept
+// across a renewal. Answers the
 // portal as Settings shows it.
 export default defineEventHandler(async (event) => {
   const { supabase, teamMember } = await requireSettingsPermission(event, 'clinic_config')

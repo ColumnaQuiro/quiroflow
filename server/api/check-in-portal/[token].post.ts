@@ -5,13 +5,13 @@ import { verifyCheckInCode } from '~/server/utils/checkInCode'
 import { afterPatientArrival } from '~/server/utils/patientArrival'
 import { throttlePublic } from '~/server/utils/publicRateLimit'
 import { SELF_CHECK_IN_EARLY_MINUTES } from '~/utils/selfCheckIn'
-import { birthDateMatches, maskedPortalName, parsePortalBirthDate, pickPortalVisit } from '~/utils/checkInPortal'
+import { birthDateMatches, maskedPortalName, normalizeNationalId, parsePortalBirthDate, pickPortalVisit } from '~/utils/checkInPortal'
 
-// A patient at the front-desk tablet typing their date of birth (DDMMAA), or
-// showing it the QR code from their app (server/utils/checkInCode.ts).
-// Body { birthDate, appointmentId? } -- the second only once the tablet has
-// asked "which of these is you?" -- or { code }, which names one patient and
-// so never asks.
+// A patient at the front-desk tablet typing their date of birth (DDMMAA) or
+// their DNI/NIE -- whichever the location chose -- or showing it the QR code
+// from their app (server/utils/checkInCode.ts). Body { birthDate } or
+// { nationalId }, with { appointmentId } once the tablet has asked "which of
+// these is you?"; or { code }, which names one patient and so never asks.
 //
 // Matched against this location's visits that the app's own "Ya estoy aquí"
 // would accept -- still booked, from 90 minutes before the start until the
@@ -27,30 +27,39 @@ import { birthDateMatches, maskedPortalName, parsePortalBirthDate, pickPortalVis
 // (afterPatientArrival), only the first time.
 export default defineEventHandler(async (event) => {
   // A clinic's busiest hour is a few dozen arrivals from one tablet. Far
-  // more than that from one address is someone trying birthdays.
+  // more than that from one address is someone trying birthdays or DNIs.
   await throttlePublic(event, { scope: 'check-in-portal', limit: 60, windowSeconds: 600 })
 
-  const body = await readBody<{ birthDate?: string; code?: string; appointmentId?: string }>(event)
-  // A code that does not verify is a patient nobody can find, not a bad
-  // request: the tablet says "we could not find your appointment" either way.
-  let codePatientId: string | null = null
-  let typed: ReturnType<typeof parsePortalBirthDate> = null
-  if (body?.code !== undefined) {
-    const key = checkInCodeKey()
-    codePatientId = key ? verifyCheckInCode(key, String(body.code)) : null
-    if (!codePatientId) return { status: 'not_found' as const }
-  } else {
-    typed = parsePortalBirthDate(String(body?.birthDate ?? ''))
-    if (!typed) throw createError({ statusCode: 400, statusMessage: 'Invalid date of birth' })
-  }
-
+  const body = await readBody<{ birthDate?: string; nationalId?: string; code?: string; appointmentId?: string }>(event)
   const service = serverSupabaseServiceRole<Database>(event)
   const clinic = await checkInPortalClinic(service, getRouterParam(event, 'token'))
+
+  // Who is at the tablet: the QR code, whatever the location chose, or what
+  // the location chose to ask for -- and only that, so a portal that asks for
+  // a DNI cannot be worked through by trying birthdays. A code that does not
+  // verify is a patient nobody can find, not a bad request: the tablet says
+  // "we could not find your appointment" either way.
+  type Row = { patient_id: string | null; patients: { date_of_birth: string | null; national_id: string | null } }
+  let matches: (r: Row) => boolean
+  if (body?.code !== undefined) {
+    const key = checkInCodeKey()
+    const patientId = key ? verifyCheckInCode(key, String(body.code)) : null
+    if (!patientId) return { status: 'not_found' as const }
+    matches = (r) => r.patient_id === patientId
+  } else if (clinic.identifyBy === 'national_id') {
+    const typed = normalizeNationalId(String(body?.nationalId ?? ''))
+    if (!typed) throw createError({ statusCode: 400, statusMessage: 'Invalid DNI/NIE' })
+    matches = (r) => normalizeNationalId(r.patients.national_id) === typed
+  } else {
+    const typed = parsePortalBirthDate(String(body?.birthDate ?? ''))
+    if (!typed) throw createError({ statusCode: 400, statusMessage: 'Invalid date of birth' })
+    matches = (r) => birthDateMatches(r.patients.date_of_birth, typed)
+  }
 
   const now = Date.now()
   const { data: rows, error } = await service
     .from('appointments')
-    .select('id, patient_id, starts_at, checked_in_at, patients!inner(first_name, last_name, date_of_birth, anonymized_at), team_members(full_name)')
+    .select('id, patient_id, starts_at, checked_in_at, patients!inner(first_name, last_name, date_of_birth, national_id, anonymized_at), team_members(full_name)')
     .eq('clinic_id', clinic.id)
     .eq('status', 'booked')
     .is('deleted_at', null)
@@ -60,7 +69,7 @@ export default defineEventHandler(async (event) => {
   if (error) throw createError({ statusCode: 500, statusMessage: error.message })
 
   const visits = (rows ?? [])
-    .filter((r) => !r.patients.anonymized_at && (codePatientId ? r.patient_id === codePatientId : birthDateMatches(r.patients.date_of_birth, typed!)))
+    .filter((r) => !r.patients.anonymized_at && matches(r))
     .map((r) => ({ ...r, patient_id: r.patient_id! }))
   const picked = pickPortalVisit(visits, body?.appointmentId)
   if (picked.kind === 'none') return { status: 'not_found' as const }

@@ -15,7 +15,7 @@ export async function checkInPortalClinic(service: SupabaseClient<Database>, tok
   if (!token || !/^[0-9a-f]{32,64}$/.test(token)) throw createError({ statusCode: 404, statusMessage: 'This check-in portal is switched off.' })
   const { data } = await service
     .from('check_in_portals')
-    .select('clinic_id, account_id, language, welcome_message, success_message, not_found_message, clinics(name, timezone, archived_at)')
+    .select('clinic_id, account_id, identify_by, language, welcome_message, success_message, not_found_message, clinics(name, timezone, archived_at)')
     .eq('token', token)
     .maybeSingle()
   const clinic = data?.clinics
@@ -25,17 +25,22 @@ export async function checkInPortalClinic(service: SupabaseClient<Database>, tok
     accountId: data.account_id,
     name: clinic.name,
     timezone: clinic.timezone,
+    identifyBy: data.identify_by === 'national_id' ? ('national_id' as const) : ('birth_date' as const),
     language: data.language,
     messages: { welcome: data.welcome_message, success: data.success_message, notFound: data.not_found_message },
   }
 }
 
-type PortalSettingsRow = { token: string; language: string; welcome_message: string | null; success_message: string | null; not_found_message: string | null }
+/** The columns Settings reads, for checkInPortalSettings. */
+export const PORTAL_SETTINGS_SELECT = 'token, identify_by, language, welcome_message, success_message, not_found_message'
+
+type PortalSettingsRow = { token: string; identify_by: string; language: string; welcome_message: string | null; success_message: string | null; not_found_message: string | null }
 
 /** What the Settings section reads and gets back after each change: a null token while the portal is off. */
 export function checkInPortalSettings(row: PortalSettingsRow | null) {
   return {
     token: row?.token ?? null,
+    identifyBy: row?.identify_by ?? 'birth_date',
     language: row?.language ?? 'es',
     welcomeMessage: row?.welcome_message ?? '',
     successMessage: row?.success_message ?? '',

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { birthDateMatches, maskedPortalName, parsePortalBirthDate, pickPortalVisit } from '../../utils/checkInPortal'
+import { birthDateMatches, maskedPortalName, normalizeNationalId, parsePortalBirthDate, pickPortalVisit } from '../../utils/checkInPortal'
 
 // The front-desk check-in portal: a date of birth typed as DDMMAA, matched
 // against the visits about to start at the location.
@@ -32,6 +32,19 @@ describe('birthDateMatches', () => {
   it('never matches a patient with no date of birth', () => {
     expect(birthDateMatches(null, typed)).toBe(false)
     expect(birthDateMatches('', typed)).toBe(false)
+  })
+})
+
+describe('normalizeNationalId', () => {
+  it('compares a DNI or NIE however it was written down or typed', () => {
+    expect(normalizeNationalId('12.345.678-z')).toBe('12345678Z')
+    expect(normalizeNationalId(' 12345678Z ')).toBe('12345678Z')
+    expect(normalizeNationalId('x-1234567-l')).toBe('X1234567L')
+  })
+  it('is null for nothing, or too little to be a document', () => {
+    expect(normalizeNationalId(null)).toBeNull()
+    expect(normalizeNationalId('')).toBeNull()
+    expect(normalizeNationalId('12-3')).toBeNull()
   })
 })
 

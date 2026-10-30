@@ -1,9 +1,10 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
-import { checkInPortalSettings } from '~/server/utils/checkInPortal'
+import { PORTAL_SETTINGS_SELECT, checkInPortalSettings } from '~/server/utils/checkInPortal'
 
 // Settings > Clínicas > one location > Portal de llegada: this location's
-// tablet link, its language and messages, or a null token while it is off.
+// tablet link, how it identifies patients, its language and messages, or a
+// null token while it is off.
 // Read on the service role -- check_in_portals has no policies -- after the
 // guard has checked the caller may configure this account's clinics.
 export default defineEventHandler(async (event) => {
@@ -14,7 +15,7 @@ export default defineEventHandler(async (event) => {
 
   const { data } = await serverSupabaseServiceRole<Database>(event)
     .from('check_in_portals')
-    .select('token, language, welcome_message, success_message, not_found_message')
+    .select(PORTAL_SETTINGS_SELECT)
     .eq('clinic_id', clinic.id)
     .maybeSingle()
   return checkInPortalSettings(data)

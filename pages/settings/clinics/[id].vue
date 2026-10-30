@@ -524,7 +524,7 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
             <section v-if="!archivedAt" id="llegada" aria-labelledby="h-llegada" class="flex scroll-mt-4 flex-col gap-4 rounded-card border border-line bg-surface p-6">
               <div class="flex flex-col gap-1">
                 <h2 id="h-llegada" class="text-[16px] font-bold text-ink-900">{{ t('Check-in portal', 'Portal de llegada') }}</h2>
-                <p class="text-[13px] text-ink-muted">{{ t('A tablet at the front desk where patients type their date of birth, or show the QR code in their app, to say they have arrived. They show as arrived on the calendar and My Day, and their practitioner is told. Saved on its own, apart from the rest of this page.', 'Una tablet en recepción donde los pacientes escriben su fecha de nacimiento, o enseñan el código QR de su app, para avisar de que han llegado. Aparecen como llegados en el calendario y en Mi día, y se avisa a su profesional. Se guarda aparte del resto de esta página.') }}</p>
+                <p class="text-[13px] text-ink-muted">{{ t('A tablet at the front desk where patients type their date of birth or DNI/NIE, or show the QR code in their app, to say they have arrived. They show as arrived on the calendar and My Day, and their practitioner is told. Saved on its own, apart from the rest of this page.', 'Una tablet en recepción donde los pacientes escriben su fecha de nacimiento o su DNI/NIE, o enseñan el código QR de su app, para avisar de que han llegado. Aparecen como llegados en el calendario y en Mi día, y se avisa a su profesional. Se guarda aparte del resto de esta página.') }}</p>
               </div>
               <SettingsClinicCheckInPortal :clinic-id="clinicId" />
             </section>

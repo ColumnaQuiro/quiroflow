@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { parsePortalBirthDate } from '~/utils/checkInPortal'
+import { normalizeNationalId, parsePortalBirthDate, type PortalIdentifyBy } from '~/utils/checkInPortal'
 import { PORTAL_LANGUAGES, PORTAL_LANGUAGE_NAMES, PORTAL_LOCALES, PORTAL_TEXT, isPortalLanguage, type PortalLanguage } from '~/utils/checkInPortalText'
 
 // The check-in portal: a tablet at a location's front desk, left on this page
-// all day. A patient types their date of birth (DDMMAA) or shows the QR code
-// from their app, and is marked as arrived -- no login, the way PracticeHub's
+// all day. A patient types their date of birth (DDMMAA) or their DNI/NIE --
+// whichever the location chose in Settings -- or shows the QR code from their
+// app, and is marked as arrived -- no login, the way PracticeHub's
 // Check-in Portal works. The link is the key (Settings > Clínicas > the
 // location > Portal de llegada); the tablet holds no staff session.
 //
@@ -30,6 +31,7 @@ interface Messages { welcome: string | null; success: string | null; notFound: s
 const phase = ref<'loading' | 'off' | 'ready'>('loading')
 const clinicName = ref('')
 const timeZone = ref('Europe/Madrid')
+const identifyBy = ref<PortalIdentifyBy>('birth_date')
 const portalLanguage = ref<PortalLanguage>('es')
 const messages = ref<Messages>({ welcome: null, success: null, notFound: null })
 const lang = ref<PortalLanguage>('es')
@@ -41,6 +43,11 @@ function custom(kind: keyof Messages): string | null {
 }
 
 const digits = ref('')
+const nationalId = ref('')
+const nationalIdInput = ref<HTMLInputElement | null>(null)
+// What the patient last gave, sent again with their pick from "which one is
+// you?".
+let identity: { birthDate: string } | { nationalId: string } | null = null
 const busy = ref(false)
 const error = ref('')
 const result = ref<Result | null>(null)
@@ -49,9 +56,10 @@ const video = ref<HTMLVideoElement | null>(null)
 
 onMounted(async () => {
   try {
-    const r = await $fetch<{ clinicName: string; timeZone: string; language: string; messages: Messages }>(`/api/check-in-portal/${token}`)
+    const r = await $fetch<{ clinicName: string; timeZone: string; identifyBy: PortalIdentifyBy; language: string; messages: Messages }>(`/api/check-in-portal/${token}`)
     clinicName.value = r.clinicName
     timeZone.value = r.timeZone
+    identifyBy.value = r.identifyBy
     portalLanguage.value = isPortalLanguage(r.language) ? r.language : 'es'
     lang.value = portalLanguage.value
     messages.value = r.messages
@@ -89,6 +97,8 @@ function startOver() {
   clearTimeout(resetTimer)
   stopCamera()
   digits.value = ''
+  nationalId.value = ''
+  identity = null
   error.value = ''
   result.value = null
   lang.value = portalLanguage.value
@@ -104,7 +114,7 @@ function pickLanguage(next: PortalLanguage) {
 }
 
 function press(d: string) {
-  if (busy.value || result.value || digits.value.length >= 6) return
+  if (identifyBy.value !== 'birth_date' || busy.value || result.value || digits.value.length >= 6) return
   error.value = ''
   digits.value += d
   if (digits.value.length === 6) submitBirthDate()
@@ -120,6 +130,9 @@ function erase() {
 let scanned = ''
 let scanTimer: ReturnType<typeof setTimeout> | undefined
 function onKey(e: KeyboardEvent) {
+  // The DNI/NIE box takes its own keys; a scanner typing into it is caught
+  // when it is sent (submitNationalId).
+  if (e.target instanceof HTMLInputElement) return
   if (e.key === 'Enter') {
     if (scanned) submitCode(scanned)
     scanned = ''
@@ -185,20 +198,36 @@ function stopCamera() {
   camera.value = 'off'
 }
 
-function submitBirthDate(appointmentId?: string) {
+function submitBirthDate() {
   if (!parsePortalBirthDate(digits.value)) {
     error.value = tx.value.badDate
     digits.value = ''
     return
   }
-  return submit({ birthDate: digits.value, appointmentId })
+  identity = { birthDate: digits.value }
+  return submit(identity)
+}
+function submitNationalId() {
+  const typed = nationalId.value.trim()
+  if (/^qfci\./i.test(typed)) return submitCode(typed)
+  if (!normalizeNationalId(typed)) {
+    error.value = tx.value.badNationalId
+    return
+  }
+  identity = { nationalId: typed }
+  return submit(identity)
+}
+function choose(appointmentId: string) {
+  if (identity) return submit({ ...identity, appointmentId })
 }
 function submitCode(code: string) {
   if (busy.value) return
   digits.value = ''
+  nationalId.value = ''
+  identity = null
   return submit({ code: code.trim() })
 }
-async function submit(body: { birthDate?: string; appointmentId?: string; code?: string }) {
+async function submit(body: { birthDate?: string; nationalId?: string; appointmentId?: string; code?: string }) {
   busy.value = true
   error.value = ''
   try {
@@ -209,6 +238,7 @@ async function submit(body: { birthDate?: string; appointmentId?: string; code?:
     else {
       error.value = tx.value.failed
       digits.value = ''
+      nationalId.value = ''
     }
   } finally {
     busy.value = false
@@ -253,7 +283,7 @@ const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9']
       <!-- ¿Cuál eres tú? -->
       <div v-else-if="result?.status === 'choose'" class="mt-6" data-cy="check-in-portal-choose">
         <h1 class="text-center text-[24px] font-semibold">{{ tx.chooseTitle }}</h1>
-        <p class="mt-1 text-center text-[15px] text-ink-muted">{{ tx.chooseText }}</p>
+        <p class="mt-1 text-center text-[15px] text-ink-muted">{{ identifyBy === 'national_id' ? tx.chooseTextNationalId : tx.chooseText }}</p>
         <div class="mt-5 flex flex-col gap-3">
           <button
             v-for="o in result.options"
@@ -262,7 +292,7 @@ const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9']
             class="flex min-h-[64px] items-center justify-between rounded-card border border-line-control bg-surface px-5 text-left shadow-card disabled:opacity-60"
             :disabled="busy"
             data-cy="check-in-portal-option"
-            @click="submitBirthDate(o.appointmentId)"
+            @click="choose(o.appointmentId)"
           >
             <span class="text-[20px] font-semibold tracking-wide">{{ o.name }}</span>
             <span class="text-[16px] text-ink-muted">{{ tx.visitAt(time(o.startsAt)) }}</span>
@@ -284,6 +314,33 @@ const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9']
         <video ref="video" class="mt-5 aspect-square w-full max-w-[360px] -scale-x-100 rounded-card bg-ink-900 object-cover" muted playsinline />
         <p v-if="busy" class="mt-4 text-center text-[15px] text-ink-muted">{{ tx.searching }}</p>
         <button type="button" class="mt-5 h-12 w-full max-w-[360px] rounded-ctl border border-line-control bg-surface text-[16px] font-semibold text-ink-700" @click="startOver">{{ tx.cancel }}</button>
+      </div>
+
+      <!-- DNI / NIE -->
+      <div v-else-if="identifyBy === 'national_id'" class="mt-4">
+        <h1 class="whitespace-pre-line text-center text-[26px] font-semibold leading-tight" data-cy="check-in-portal-welcome">{{ custom('welcome') || tx.welcomeTitle }}</h1>
+        <form class="mx-auto mt-6 flex max-w-[400px] flex-col gap-3" data-cy="check-in-portal-national-id-form" @submit.prevent="submitNationalId">
+          <label for="national-id" class="text-center text-[16px] text-ink-muted">{{ tx.typeNationalId }}</label>
+          <input
+            id="national-id"
+            ref="nationalIdInput"
+            v-model="nationalId"
+            type="text"
+            inputmode="text"
+            autocomplete="off"
+            autocapitalize="characters"
+            autocorrect="off"
+            spellcheck="false"
+            maxlength="100"
+            :placeholder="tx.nationalIdHint"
+            :disabled="busy"
+            class="h-[72px] rounded-card border-[1.5px] border-line-control bg-surface px-5 text-center font-mono text-[30px] font-medium uppercase tracking-[.08em] text-ink-900 placeholder:font-sans placeholder:text-[16px] placeholder:normal-case placeholder:tracking-normal placeholder:text-ink-faint focus:border-brand focus:outline-none"
+            data-cy="check-in-portal-national-id"
+          />
+          <p v-if="error" role="alert" class="text-center text-[15px] font-medium text-danger-text" data-cy="check-in-portal-error">{{ error }}</p>
+          <p v-else-if="busy" class="text-center text-[15px] text-ink-muted">{{ tx.searching }}</p>
+          <button type="submit" class="h-14 rounded-ctl bg-brand text-[18px] font-semibold text-brand-on disabled:opacity-60" :disabled="busy || !nationalId.trim()" data-cy="check-in-portal-continue">{{ tx.continue }}</button>
+        </form>
       </div>
 
       <!-- Fecha de nacimiento -->
@@ -314,7 +371,10 @@ const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9']
             <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 5H9l-6 7 6 7h12a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1zM17 9l-6 6M11 9l6 6" /></svg>
           </button>
         </div>
+      </div>
 
+      <!-- Escanear, under either way of typing; and the language, back to the tablet's own after each patient. -->
+      <template v-if="!result && camera === 'off'">
         <div class="mx-auto mt-6 flex max-w-[360px] flex-col items-center gap-2">
           <span class="text-[14px] text-ink-muted">{{ tx.orScan }}</span>
           <button type="button" class="flex h-12 w-full items-center justify-center gap-2 rounded-ctl border border-line-control bg-surface text-[16px] font-semibold text-ink-700 disabled:opacity-60" :disabled="busy" data-cy="check-in-portal-scan" @click="startCamera">
@@ -322,9 +382,7 @@ const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9']
             {{ tx.scan }}
           </button>
         </div>
-      </div>
-
-      <!-- Idioma: only before anyone is identified, and back to the tablet's own after them. -->
+      </template>
       <div v-if="!result && camera === 'off'" class="mt-8 flex flex-wrap justify-center gap-1.5" role="group" :aria-label="tx.language" data-cy="check-in-portal-languages">
         <button
           v-for="l in PORTAL_LANGUAGES"

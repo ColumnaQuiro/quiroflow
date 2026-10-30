@@ -14,6 +14,10 @@
 -- again to set up a second tablet. Only the service role reads this table:
 -- the settings routes behind clinic_config and the portal's own routes.
 --
+-- `identify_by` is what a patient types on the tablet: their date of birth
+-- (DDMMAA, as PracticeHub asks) or their DNI/NIE, matched against
+-- patients.national_id. The QR code from the app works under either.
+--
 -- `language` is what the tablet speaks until a patient picks another on it
 -- (utils/checkInPortalText.ts). The three messages replace the standard
 -- welcome, arrival and not-found wording, in that language only: a patient
@@ -23,6 +27,7 @@ create table public.check_in_portals (
   clinic_id uuid primary key references public.clinics(id) on delete cascade,
   account_id uuid not null references public.accounts(id) on delete cascade,
   token text not null unique,
+  identify_by text not null default 'birth_date' check (identify_by in ('birth_date', 'national_id')),
   language text not null default 'es' check (language in ('es', 'en', 'fr', 'de', 'it', 'pt', 'ca')),
   welcome_message text check (char_length(welcome_message) <= 300),
   success_message text check (char_length(success_message) <= 300),

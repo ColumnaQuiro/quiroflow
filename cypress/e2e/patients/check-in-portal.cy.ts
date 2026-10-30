@@ -161,6 +161,44 @@ describe('Check-in portal', () => {
     })
   })
 
+  it('identifies patients by DNI/NIE when the location chooses it, and then not by birthday', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Dani', lastName: 'Documento', dateOfBirth: '1980-04-05', nationalId: '12.345.678-Z' }).then((patient) => {
+        cy.task<{ id: string }>('db:createAppointment', { accountId: account.accountId, clinicId: account.clinicId, patientId: patient.id, practitionerId: account.teamMemberId, startsAt: minutesFromNow(30) }).then((appt) => {
+          cy.login(account.email, account.password)
+          cy.visit(`/settings/clinics/${account.clinicId}#llegada`)
+          cy.get('[data-cy=clinic-check-in-portal][data-ready=true]')
+          cy.get('[data-cy=clinic-check-in-portal-on]').click()
+          cy.get('[data-cy=clinic-check-in-portal-identify-national_id]').click()
+          cy.intercept('PATCH', `/api/clinics/${account.clinicId}/check-in-portal`).as('save')
+          cy.get('[data-cy=clinic-check-in-portal-save]').click()
+          cy.wait('@save').its('response.body.identifyBy').should('eq', 'national_id')
+          cy.get('[data-cy=clinic-check-in-portal-url]')
+            .invoke('text')
+            .then((url) => {
+              const path = new URL(url.trim()).pathname
+              cy.clearAllCookies()
+              cy.clearAllLocalStorage()
+
+              // A birthday is no way in once the location asks for a DNI.
+              cy.request({ method: 'POST', url: `/api/check-in-portal${path.slice('/check-in'.length)}`, body: { birthDate: '050480' }, failOnStatusCode: false }).its('status').should('eq', 400)
+
+              cy.visit(path)
+              cy.get('[data-cy=check-in-portal-date]').should('not.exist')
+              cy.get('[data-cy=check-in-portal-national-id]').type('12345678z{enter}')
+              cy.get('[data-cy=check-in-portal-done][data-status=checked_in]').should('contain.text', 'Dani')
+              cy.task<{ checked_in_at: string | null }>('db:appointmentById', { appointmentId: appt.id }).its('checked_in_at').should('not.be.null')
+
+              cy.get('[data-cy=check-in-portal-finish]').click()
+              cy.get('[data-cy=check-in-portal-national-id]').type('87654321X')
+              cy.get('[data-cy=check-in-portal-continue]').click()
+              cy.get('[data-cy=check-in-portal-not-found]').should('be.visible')
+            })
+        })
+      })
+    })
+  })
+
   it('stops working once turned off', () => {
     cy.seedStaffAccount().then((account) => {
       portalLink(account).then((path) => {

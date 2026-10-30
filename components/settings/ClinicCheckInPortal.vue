@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { PORTAL_LANGUAGES, PORTAL_LANGUAGE_NAMES, PORTAL_TEXT, isPortalLanguage, type PortalLanguage } from '~/utils/checkInPortalText'
+import { isPortalIdentifyBy, type PortalIdentifyBy } from '~/utils/checkInPortal'
 
 // The location's check-in portal (pages/check-in/[token].vue): a link opened
 // on a tablet at the front desk, where patients type their date of birth or
-// show their app's QR code to say they have arrived. Turning it on makes the
+// their DNI/NIE (the location's choice), or show their app's QR code, to say
+// they have arrived. Turning it on makes the
 // link; "New link" replaces it for a tablet that went missing; turning it off
 // deletes it. The tablet's language and the clinic's own wording for its three
 // screens are saved with their own button.
@@ -13,7 +15,7 @@ const authedFetch = useAuthedFetch()
 const t = useT()
 const { showToast } = useToast()
 
-interface Portal { token: string | null; language: string; welcomeMessage: string; successMessage: string; notFoundMessage: string }
+interface Portal { token: string | null; identifyBy: string; language: string; welcomeMessage: string; successMessage: string; notFoundMessage: string }
 
 const loaded = ref(false)
 const token = ref<string | null>(null)
@@ -21,7 +23,7 @@ const busy = ref(false)
 const renewOpen = ref(false)
 const offOpen = ref(false)
 const copied = ref(false)
-const form = ref({ language: 'es' as PortalLanguage, welcomeMessage: '', successMessage: '', notFoundMessage: '' })
+const form = ref({ identifyBy: 'birth_date' as PortalIdentifyBy, language: 'es' as PortalLanguage, welcomeMessage: '', successMessage: '', notFoundMessage: '' })
 const saved = ref('')
 const dirty = computed(() => JSON.stringify(form.value) !== saved.value)
 const standard = computed(() => PORTAL_TEXT[form.value.language])
@@ -30,7 +32,7 @@ const url = computed(() => (token.value && import.meta.client ? `${window.locati
 
 function apply(p: Portal) {
   token.value = p.token
-  form.value = { language: isPortalLanguage(p.language) ? p.language : 'es', welcomeMessage: p.welcomeMessage, successMessage: p.successMessage, notFoundMessage: p.notFoundMessage }
+  form.value = { identifyBy: isPortalIdentifyBy(p.identifyBy) ? p.identifyBy : 'birth_date', language: isPortalLanguage(p.language) ? p.language : 'es', welcomeMessage: p.welcomeMessage, successMessage: p.successMessage, notFoundMessage: p.notFoundMessage }
   saved.value = JSON.stringify(form.value)
 }
 
@@ -81,11 +83,34 @@ const textareaClass = 'min-h-[64px] resize-y rounded-ctl border border-line-cont
           <a :href="url" target="_blank" rel="noopener" class="inline-flex h-9 touch:h-11 items-center rounded-ctl border border-line-control bg-surface px-3.5 text-[13px] font-medium text-ink-500 hover:border-line-controlHover" data-cy="clinic-check-in-portal-open">{{ t('Open', 'Abrir') }}</a>
         </div>
         <span class="text-[12.5px] leading-snug text-ink-muted">
-          {{ t('Open it on the tablet and leave it there, plugged in. It needs no login: the link is the key, so keep it to the tablet. Patients are found by their date of birth on file, or by the QR code in their app, when they have a visit here starting within 90 minutes. A USB or Bluetooth QR scanner works plugged into the tablet; without one, the tablet uses its own camera.', 'Ábrelo en la tablet y déjalo ahí, enchufada. No necesita iniciar sesión: el enlace es la llave, así que no lo compartas fuera de la tablet. Encuentra a los pacientes por la fecha de nacimiento de su ficha, o por el código QR de su app, cuando tienen una cita aquí en los próximos 90 minutos. Un lector de QR USB o Bluetooth funciona conectado a la tablet; sin lector, la tablet usa su propia cámara.') }}
+          {{ t('Open it on the tablet and leave it there, plugged in. It needs no login: the link is the key, so keep it to the tablet. It only finds patients with a visit here starting within 90 minutes. A USB or Bluetooth QR scanner works plugged into the tablet; without one, the tablet uses its own camera.', 'Ábrelo en la tablet y déjalo ahí, enchufada. No necesita iniciar sesión: el enlace es la llave, así que no lo compartas fuera de la tablet. Solo encuentra a pacientes con una cita aquí en los próximos 90 minutos. Un lector de QR USB o Bluetooth funciona conectado a la tablet; sin lector, la tablet usa su propia cámara.') }}
         </span>
       </div>
 
       <div class="flex flex-col gap-4 rounded-ctl border border-line px-4 py-4">
+        <div class="flex flex-col gap-1.5">
+          <span id="identify-label" class="text-[13px] font-semibold text-ink-700">{{ t('Patients identify themselves with', 'Los pacientes se identifican con') }}</span>
+          <div role="radiogroup" aria-labelledby="identify-label" class="flex flex-wrap gap-1.5">
+            <button
+              v-for="o in [{ value: 'birth_date', label: t('Date of birth', 'Fecha de nacimiento') }, { value: 'national_id', label: t('DNI / NIE', 'DNI / NIE') }]"
+              :key="o.value"
+              type="button"
+              role="radio"
+              :aria-checked="form.identifyBy === o.value"
+              class="h-9 touch:h-11 rounded-ctl px-3.5 text-[14px] font-semibold"
+              :class="form.identifyBy === o.value ? 'border-[1.5px] border-brand bg-brand-tint text-brand-text' : 'border border-line-control bg-surface text-ink-700 hover:bg-surface-subtle'"
+              :data-cy="`clinic-check-in-portal-identify-${o.value}`"
+              @click="form.identifyBy = o.value as PortalIdentifyBy"
+            >
+              {{ o.label }}
+            </button>
+          </div>
+          <span class="text-[12.5px] leading-snug text-ink-muted">
+            {{ form.identifyBy === 'national_id'
+              ? t('Matched against the DNI/NIE in their record, so patients without one are not found: they can use the QR code or tell the front desk. Harder to guess than a date of birth.', 'Se compara con el DNI/NIE de su ficha, así que no encuentra a quien no lo tenga: pueden usar el código QR o avisar en recepción. Más difícil de adivinar que una fecha de nacimiento.')
+              : t('Typed as six digits, DDMMYY, matched against the date of birth in their record. Two patients due at once with the same birthday pick theirs from their initials.', 'Se escribe con seis cifras, DDMMAA, y se compara con la fecha de nacimiento de su ficha. Si dos pacientes con cita a la vez cumplen el mismo día, eligen el suyo por las iniciales.') }}
+          </span>
+        </div>
         <label class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
           {{ t("Tablet's language", 'Idioma de la tablet') }}
           <select v-model="form.language" class="h-9 touch:h-11 max-w-[240px] rounded-ctl border border-line-control bg-surface px-3 text-[14px] font-normal text-ink-900" data-cy="clinic-check-in-portal-language">

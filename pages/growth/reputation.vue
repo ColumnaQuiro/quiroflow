@@ -106,9 +106,19 @@ function when(iso: string) {
             <div v-if="googleLocations" class="flex flex-col gap-2 border-t border-line-divider pt-3" data-test="google-locations">
               <strong class="text-[12.5px] text-ink-900">{{ t('Which listing is this clinic’s?', '¿Cuál es la ficha de esta clínica?') }}</strong>
               <p v-if="googleLocations.length === 0" class="text-[12px] text-ink-muted">{{ t('This Google account manages no listings. Connect with the account that owns the clinic’s profile.', 'Esta cuenta de Google no gestiona ninguna ficha. Conecta con la cuenta propietaria del perfil de la clínica.') }}</p>
-              <UiBtn v-for="l in googleLocations" :key="l.location" variant="secondary" size="sm" class="justify-start" :disabled="googleBusy" @click="chooseGoogleLocation(l.location)">
-                {{ l.title }}<span v-if="l.address" class="ml-1 font-normal text-ink-muted">· {{ l.address }}</span>
-              </UiBtn>
+              <!-- Not a UiBtn: that one is a single nowrap line, and a listing's
+                   title is whatever the owner typed into Google -- often a
+                   string of keywords long enough to run out of the card. -->
+              <button
+                v-for="l in googleLocations"
+                :key="l.location"
+                type="button"
+                class="flex min-h-8 w-full flex-wrap items-baseline gap-x-1 rounded-ctl border border-line-control bg-surface px-2.5 py-1.5 text-left text-[12.5px] font-medium text-ink-500 hover:border-line-controlHover focus-visible:shadow-focus disabled:cursor-not-allowed disabled:opacity-50 touch:min-h-10"
+                :disabled="googleBusy"
+                @click="chooseGoogleLocation(l.location)"
+              >
+                <span class="min-w-0 break-words">{{ l.title }}</span><span v-if="l.address" class="font-normal text-ink-muted">· {{ l.address }}</span>
+              </button>
             </div>
           </section>
 

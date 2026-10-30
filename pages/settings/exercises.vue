@@ -92,7 +92,7 @@ const editingCatalog = computed(() => !!exercises.value.find((e) => e.id === edi
 // further down: bring it into view with the name ready to type.
 function focusForm() {
   nextTick(() => {
-    nameInput.value?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    nameInput.value?.scrollIntoView({ block: 'center', behavior: smoothScroll() })
     nameInput.value?.focus({ preventScroll: true })
   })
 }

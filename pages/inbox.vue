@@ -951,7 +951,7 @@ function isThreadNearBottom(threshold = 120) {
 function scrollThreadToBottom(smooth = false) {
   const el = threadScrollEl.value
   if (!el) return
-  el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
+  el.scrollTo({ top: el.scrollHeight, behavior: smooth ? smoothScroll() : 'auto' })
 }
 // nextTick alone lands a few pixels short -- it resolves once Vue has
 // patched the DOM, but the browser hasn't necessarily run layout yet, so

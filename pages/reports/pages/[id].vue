@@ -146,7 +146,7 @@ const builderFor = ref<ReportBlock | 'new' | null>(null)
 
 function addBlock(b: ReportBlock) {
   blocks.value.push(b)
-  nextTick(() => document.querySelector(`[data-block-id="${b.id}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }))
+  nextTick(() => document.querySelector(`[data-block-id="${b.id}"]`)?.scrollIntoView({ behavior: smoothScroll(), block: 'nearest' }))
 }
 async function onBuilt(b: ReportBlock, alsoSave: boolean) {
   const existing = blocks.value.findIndex((x) => x.id === b.id)

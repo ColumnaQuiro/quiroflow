@@ -138,7 +138,7 @@ async function deleteNote(note: VisitNoteRow) {
         <span class="font-semibold">{{ t('Listing', 'Listado') }}:</span> {{ listingLine(note) }}
       </p>
       <div class="mt-2.5">
-        <p class="text-[10.5px] font-semibold uppercase tracking-wide text-ink-faint">{{ t('Note', 'Nota') }}</p>
+        <p class="text-[11px] font-semibold uppercase tracking-wide text-ink-faint">{{ t('Note', 'Nota') }}</p>
 
         <template v-if="editingId === note.id">
           <textarea

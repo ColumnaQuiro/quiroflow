@@ -166,7 +166,7 @@ const STAGES = computed(() => [
                   :class="autoConvert ? 'bg-brand' : 'bg-line-control'"
                   @click="autoConvert = !autoConvert"
                 >
-                  <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card transition-all" :class="autoConvert ? 'left-[21px]' : 'left-[3px]'" />
+                  <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card left-[3px] transition-transform" :class="autoConvert ? 'translate-x-[18px]' : 'translate-x-0'" />
                 </button>
               </div>
               <div v-if="autoConvert" class="flex flex-wrap items-center gap-2.5 border-t border-line-row px-[18px] py-3.5 text-[14px] text-ink-500">

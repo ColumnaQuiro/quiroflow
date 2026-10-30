@@ -57,7 +57,7 @@ const RATE_TONE: Record<GrowthFunnelStep['tone'], string> = {
           <div v-if="i > 0" class="flex w-[52px] shrink-0 flex-col items-center justify-center gap-1 pt-[18px] lg:w-[92px]">
             <span class="text-[12px] font-semibold" :class="RATE_TONE[steps[i - 1]!.tone]">{{ steps[i - 1]!.pct }}%</span>
             <span
-              class="whitespace-nowrap text-[9.5px]"
+              class="whitespace-nowrap text-[11px]"
               :class="
                 steps[i - 1]!.emphasis
                   ? 'rounded-pill border border-danger-border bg-danger-bg px-1.5 py-px text-danger-text'
@@ -70,7 +70,7 @@ const RATE_TONE: Record<GrowthFunnelStep['tone'], string> = {
             <span class="text-[11px] text-ink-muted">{{ stage.label }}</span>
             <span class="text-[22px] font-semibold leading-none tracking-tightTitle text-ink-900">{{ stage.count }}</span>
             <div class="rounded-ctl" :class="SHADE[i]" :style="{ height: `${bars[i]}px` }" />
-            <span v-if="stage.caption" class="text-[10.5px] text-ink-faint">{{ stage.caption }}</span>
+            <span v-if="stage.caption" class="text-[11px] text-ink-faint">{{ stage.caption }}</span>
           </div>
         </template>
       </div>

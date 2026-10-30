@@ -76,7 +76,7 @@ function saveLimit() {
     </div>
 
     <div class="flex flex-col gap-1.5 border-t border-line-divider pt-3">
-      <span class="text-[9.5px] font-semibold uppercase tracking-[.06em] text-ink-faint">{{ t('Monthly limit', 'Límite mensual') }}</span>
+      <span class="text-[11px] font-semibold uppercase tracking-[.06em] text-ink-faint">{{ t('Monthly limit', 'Límite mensual') }}</span>
       <div class="flex flex-wrap items-center gap-2">
         <input
           v-model="draft"

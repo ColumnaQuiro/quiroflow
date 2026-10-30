@@ -59,7 +59,7 @@ const isSoon = computed(() => props.tone === 'soon')
       <div class="flex flex-col items-center gap-2">
         <span
           v-if="eyebrow"
-          class="rounded-pill px-2 py-px text-[10.5px] font-semibold uppercase tracking-[.06em]"
+          class="rounded-pill px-2 py-px text-[11px] font-semibold uppercase tracking-[.06em]"
           :class="isSoon ? 'bg-chip-bg text-ink-muted' : 'bg-brand-tint text-brand-text'"
           data-test="empty-state-eyebrow"
         >{{ eyebrow }}</span>

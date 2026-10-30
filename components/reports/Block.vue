@@ -211,8 +211,8 @@ function closeMenuSoon() {
       <h3 class="min-w-0 flex-1 text-[13.5px] font-semibold leading-snug text-ink-800" :class="chart === 'number' && 'text-[11px] font-medium uppercase tracking-wide text-ink-muted2'" data-pdf-label>
         {{ block.title }}
       </h3>
-      <span v-if="periodTag" class="shrink-0 rounded-ctlSm bg-warning-bg px-1.5 py-0.5 text-[10.5px] font-semibold text-warning-text">{{ periodTag }}</span>
-      <span v-if="block.origin && !editing && chart !== 'number'" class="hidden shrink-0 rounded-ctlSm bg-chip-bg px-1.5 py-0.5 text-[10.5px] font-semibold text-chip-text sm:inline" data-pdf-skip>{{ block.origin }}</span>
+      <span v-if="periodTag" class="shrink-0 rounded-ctlSm bg-warning-bg px-1.5 py-0.5 text-[11px] font-semibold text-warning-text">{{ periodTag }}</span>
+      <span v-if="block.origin && !editing && chart !== 'number'" class="hidden shrink-0 rounded-ctlSm bg-chip-bg px-1.5 py-0.5 text-[11px] font-semibold text-chip-text sm:inline" data-pdf-skip>{{ block.origin }}</span>
       <div v-if="editing" class="relative -mr-1.5 -mt-1 shrink-0" data-pdf-skip>
         <button type="button" class="flex h-7 w-7 items-center justify-center rounded-ctlSm text-ink-muted2 hover:bg-surface-subtle touch:h-10 touch:w-10" data-cy="report-block-menu" :aria-label="t('Block options', 'Opciones del bloque')" @click="menuOpen = !menuOpen" @blur="closeMenuSoon">
           <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>

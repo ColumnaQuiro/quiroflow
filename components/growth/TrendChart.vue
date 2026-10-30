@@ -30,7 +30,7 @@ const scaled = computed(() => {
       <h2 class="text-[13.5px] font-semibold tracking-tightTitle text-ink-900">
         {{ t('Leads vs booked · last 90 days', 'Contactos vs reservas · últimos 90 días') }}
       </h2>
-      <div class="flex gap-3.5 text-[10.5px] text-ink-muted">
+      <div class="flex gap-3.5 text-[11px] text-ink-muted">
         <span class="flex items-center gap-[5px]"><span class="h-0.5 w-[9px] bg-brand" />{{ t('Leads', 'Contactos') }}</span>
         <span class="flex items-center gap-[5px]"><span class="h-0.5 w-[9px] bg-ink-faint" />{{ t('Booked', 'Reservas') }}</span>
       </div>
@@ -52,7 +52,7 @@ const scaled = computed(() => {
       <polyline :points="scaled.booked" fill="none" class="stroke-ink-faint" stroke-width="2" vector-effect="non-scaling-stroke" />
     </svg>
 
-    <div class="mt-1 flex justify-between text-[10px] text-ink-faint">
+    <div class="mt-1 flex justify-between text-[11px] text-ink-faint">
       <span v-for="label in axis" :key="label">{{ label }}</span>
     </div>
   </section>

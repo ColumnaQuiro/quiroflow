@@ -55,11 +55,11 @@ function time(at: string) {
 <template>
   <div class="flex flex-col gap-2.5 rounded-ctl border border-brand-tintBorder bg-brand-tint p-3" data-test="ai-draft" data-cy="reply-draft">
     <div class="flex flex-wrap items-center gap-2">
-      <span class="flex h-[18px] w-[18px] items-center justify-center rounded-[6px] bg-brand text-[9px] font-bold text-brand-on">AI</span>
+      <span class="flex h-[18px] w-[18px] items-center justify-center rounded-[6px] bg-brand text-[11px] font-bold text-brand-on">AI</span>
       <span class="text-[12px] font-semibold text-brand-text">
         {{ t('Drafted by the receptionist · needs your approval', 'Redactado por la recepcionista · requiere tu aprobación') }}
       </span>
-      <span v-if="at" class="text-[10.5px] text-ink-muted">{{ time(at) }}</span>
+      <span v-if="at" class="text-[11px] text-ink-muted">{{ time(at) }}</span>
     </div>
 
     <textarea
@@ -99,7 +99,7 @@ function time(at: string) {
         data-test="ai-draft-discard"
         @click="emit('discard')"
       >{{ t('Discard', 'Descartar') }}</button>
-      <span class="ml-auto text-[10.5px] text-ink-muted">
+      <span class="ml-auto text-[11px] text-ink-muted">
         {{ t('Nothing sends without your approval', 'No se envía nada sin tu aprobación') }}
       </span>
     </div>

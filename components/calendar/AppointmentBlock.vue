@@ -239,7 +239,7 @@ const ariaLabel = computed(() =>
       <span
         v-if="ladder.pill !== 'none'"
         class="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full font-semibold leading-none"
-        :class="[STAGE_TONE_CLASS[STAGE_TONE[view.stage]], week ? 'text-[10px]' : 'text-[11px]', ladder.pill === 'label' ? 'px-[7px] py-[3px]' : 'p-[2px]']"
+        :class="[STAGE_TONE_CLASS[STAGE_TONE[view.stage]], week ? 'text-[11px]' : 'text-[11px]', ladder.pill === 'label' ? 'px-[7px] py-[3px]' : 'p-[2px]']"
         :title="pillText"
         data-cy="appt-block-stage"
       >
@@ -268,7 +268,7 @@ const ariaLabel = computed(() =>
 
     <span
       v-if="ladder.owes === 'dot'"
-      class="absolute bottom-[3px] right-[3px] flex h-[13px] w-[13px] items-center justify-center rounded-full bg-danger-text text-[9px] font-bold text-surface"
+      class="absolute bottom-[3px] right-[3px] flex h-[13px] w-[13px] items-center justify-center rounded-full bg-danger-text text-[11px] font-bold text-surface"
       :title="owesText"
       data-cy="appt-block-owes"
     >€</span>

@@ -270,7 +270,7 @@ function articleTitle(url: string) {
             >
               <span class="whitespace-pre-line">{{ m.body }}</span>
             </div>
-            <p class="mt-0.5 text-[10.5px] text-ink-faint" :class="m.direction === 'from_clinic' ? 'text-right' : ''">
+            <p class="mt-0.5 text-[11px] text-ink-faint" :class="m.direction === 'from_clinic' ? 'text-right' : ''">
               {{ m.direction === 'from_clinic' ? t('You', 'Tú') : t('QuiroFlow', 'QuiroFlow') }} ·
               {{ new Date(m.created_at).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) }}
             </p>

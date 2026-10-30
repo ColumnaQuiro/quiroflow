@@ -346,7 +346,7 @@ const fieldId = useId()
           <div class="px-6">
             <table class="w-full text-[13px]">
               <thead>
-                <tr class="text-left text-[10px] font-semibold uppercase tracking-wide text-ink-faint2">
+                <tr class="text-left text-[11px] font-semibold uppercase tracking-wide text-ink-faint2">
                   <th class="py-[11px]">{{ t('Item', 'Concepto') }}</th>
                   <th class="py-[11px] text-right">{{ t('Qty', 'Cant.') }}</th>
                   <th class="py-[11px] text-right">{{ t('Price', 'Precio') }}</th>

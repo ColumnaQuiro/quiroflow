@@ -68,7 +68,7 @@ function percent(value: number | null) {
     <div class="overflow-x-auto">
       <table class="w-full min-w-[520px] border-collapse text-[12px]">
         <thead>
-          <tr class="border-b border-line-divider text-[10px] uppercase tracking-[.06em] text-ink-faint">
+          <tr class="border-b border-line-divider text-[11px] uppercase tracking-[.06em] text-ink-faint">
             <th class="px-4 pb-[7px] text-left font-normal sm:pl-[18px]">{{ t('Channel', 'Canal') }}</th>
             <th class="px-2 pb-[7px] text-right font-normal">{{ t('Spend', 'Gasto') }}</th>
             <th class="px-2 pb-[7px] text-right font-normal">{{ t('Leads', 'Contactos') }}</th>

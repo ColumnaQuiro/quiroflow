@@ -419,7 +419,7 @@ const fieldId = useId()
             </button>
           </div>
 
-          <div class="mt-2 grid grid-cols-6 gap-1 text-[10.5px] leading-tight">
+          <div class="mt-2 grid grid-cols-6 gap-1 text-[11px] leading-tight">
             <button
               v-for="code in CODE_GRID.flat()"
               :key="code"

@@ -79,8 +79,8 @@ const inputClass = 'h-8 min-w-0 rounded-ctl border border-line-control bg-surfac
             <span class="text-ink-faint">· {{ t('then', 'entonces') }}</span> {{ rule.action }}
           </span>
           <span class="flex shrink-0 items-center gap-2">
-            <button type="button" class="text-[10.5px] font-medium text-brand-text hover:underline" :disabled="saving" data-test="rule-edit" @click="startEdit(i)">{{ t('Edit', 'Editar') }}</button>
-            <button type="button" class="text-[10.5px] font-medium text-danger-text hover:underline" :disabled="saving" data-test="rule-remove" @click="remove(i)">{{ t('Remove', 'Quitar') }}</button>
+            <button type="button" class="text-[11px] font-medium text-brand-text hover:underline" :disabled="saving" data-test="rule-edit" @click="startEdit(i)">{{ t('Edit', 'Editar') }}</button>
+            <button type="button" class="text-[11px] font-medium text-danger-text hover:underline" :disabled="saving" data-test="rule-remove" @click="remove(i)">{{ t('Remove', 'Quitar') }}</button>
           </span>
         </div>
       </li>
@@ -106,7 +106,7 @@ const inputClass = 'h-8 min-w-0 rounded-ctl border border-line-control bg-surfac
       <UiBtn variant="secondary" size="sm" class="self-start" :disabled="saving || !newRule.trim() || !newAction.trim()" data-test="add-rule" @click="add">
         {{ t('Add rule', 'Añadir regla') }}
       </UiBtn>
-      <p class="text-[10.5px] leading-[1.5] text-ink-muted">
+      <p class="text-[11px] leading-[1.5] text-ink-muted">
         {{ t(
           'Whatever the rules say, it also hands over anything it cannot do and anything it is unsure of. A handover notifies the team, leaves a note in the conversation and a task in My day.',
           'Digan lo que digan las reglas, también pasa a una persona lo que no puede hacer y lo que no tiene claro. Un traspaso avisa al equipo, deja una nota en la conversación y una tarea en Mi día.',

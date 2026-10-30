@@ -153,7 +153,7 @@ const includedLabel = computed(() => (includedBy.value ? t(INCLUDED[includedBy.v
           it has done, and what the month costs. -->
           <template v-if="tab === 'overview'">
             <p class="flex flex-wrap items-baseline gap-x-2 text-[13px] text-ink-700" data-test="receptionist-mode-sentence">
-              <span class="text-[10.5px] font-semibold uppercase tracking-[.06em] text-ink-faint">{{ t('Right now', 'Ahora mismo') }}</span>
+              <span class="text-[11px] font-semibold uppercase tracking-[.06em] text-ink-faint">{{ t('Right now', 'Ahora mismo') }}</span>
               <span class="font-semibold text-ink-900">{{ modeSentence }}</span>
             </p>
             <GrowthReceptionistChecklist :config="config" :offered-types="offeredTypes" :live-channel-count="liveChannelCount" :tried="tried" @go="show" />

@@ -89,7 +89,7 @@ const noLiveChannel = computed(() => props.config.enabled && !props.channels.som
     for the choice above so the hours are read as part of it; the switches
     themselves are the two columns the tick reads. -->
     <div v-if="mode === 'auto'" class="flex flex-col gap-2 border-t border-line-divider pt-3" data-test="auto-reply">
-      <span class="text-[9.5px] font-semibold uppercase tracking-[.06em] text-ink-faint">{{ t('When it sends on its own', 'Cuándo envía sola') }}</span>
+      <span class="text-[11px] font-semibold uppercase tracking-[.06em] text-ink-faint">{{ t('When it sends on its own', 'Cuándo envía sola') }}</span>
       <label class="flex items-start gap-2 text-[11.5px] text-ink-700">
         <input
           type="checkbox"
@@ -121,7 +121,7 @@ const noLiveChannel = computed(() => props.config.enabled && !props.channels.som
     </div>
 
     <div class="flex flex-col gap-1.5 border-t border-line-divider pt-3">
-      <span class="text-[9.5px] font-semibold uppercase tracking-[.06em] text-ink-faint">{{ t('Channels', 'Canales') }}</span>
+      <span class="text-[11px] font-semibold uppercase tracking-[.06em] text-ink-faint">{{ t('Channels', 'Canales') }}</span>
       <div v-for="channel in channels" :key="channel.key" :data-test="`channel-${channel.key}`" class="flex items-center justify-between gap-3">
         <span class="text-[11.5px] text-ink-700">{{ channel.name }}</span>
         <span class="flex shrink-0 items-center gap-2">
@@ -131,7 +131,7 @@ const noLiveChannel = computed(() => props.config.enabled && !props.channels.som
             class="text-[11px] font-medium text-brand-text hover:underline"
             :data-test="`channel-${channel.key}-setup`"
           >{{ t('Set up', 'Configurar') }} →</NuxtLink>
-          <span class="rounded-pill border px-2 py-0.5 text-[10.5px] font-medium" :class="CHANNEL_CLASS[channel.status]">
+          <span class="rounded-pill border px-2 py-0.5 text-[11px] font-medium" :class="CHANNEL_CLASS[channel.status]">
             {{ channel.statusLabel }}
           </span>
         </span>

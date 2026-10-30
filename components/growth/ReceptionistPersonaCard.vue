@@ -37,7 +37,7 @@ function toggleLanguage(code: string) {
   <GrowthSettingCard :title="t('Persona', 'Personalidad')">
     <div class="grid gap-3 sm:grid-cols-2">
       <label class="flex flex-col gap-1">
-        <span class="text-[10.5px] uppercase tracking-[.06em] text-ink-faint">{{ t('Name it answers with', 'Nombre con el que responde') }}</span>
+        <span class="text-[11px] uppercase tracking-[.06em] text-ink-faint">{{ t('Name it answers with', 'Nombre con el que responde') }}</span>
         <input
           :value="config.personaName"
           type="text"
@@ -47,7 +47,7 @@ function toggleLanguage(code: string) {
         >
       </label>
       <div class="flex flex-col gap-1.5">
-        <span class="text-[10.5px] uppercase tracking-[.06em] text-ink-faint">{{ t('Tone', 'Tono') }}</span>
+        <span class="text-[11px] uppercase tracking-[.06em] text-ink-faint">{{ t('Tone', 'Tono') }}</span>
         <div class="flex flex-wrap gap-1.5">
           <button
             v-for="tone in TONES"
@@ -64,7 +64,7 @@ function toggleLanguage(code: string) {
     </div>
 
     <div class="flex flex-col gap-1.5">
-      <span class="text-[10.5px] uppercase tracking-[.06em] text-ink-faint">{{ t('Languages it answers in', 'Idiomas en los que responde') }}</span>
+      <span class="text-[11px] uppercase tracking-[.06em] text-ink-faint">{{ t('Languages it answers in', 'Idiomas en los que responde') }}</span>
       <div class="flex flex-wrap gap-1.5" data-test="languages">
         <button
           v-for="lang in languages"
@@ -78,13 +78,13 @@ function toggleLanguage(code: string) {
           @click="toggleLanguage(lang.code)"
         >{{ lang.label }}</button>
       </div>
-      <p class="text-[10.5px] leading-[1.5] text-ink-muted">
+      <p class="text-[11px] leading-[1.5] text-ink-muted">
         {{ t('It replies in the language the patient writes in, within these.', 'Responde en el idioma en que escribe el paciente, dentro de estos.') }}
       </p>
     </div>
 
     <label class="flex flex-col gap-1">
-      <span class="text-[10.5px] uppercase tracking-[.06em] text-ink-faint">{{ t('Never says', 'Nunca dice') }}</span>
+      <span class="text-[11px] uppercase tracking-[.06em] text-ink-faint">{{ t('Never says', 'Nunca dice') }}</span>
       <textarea
         :value="config.neverSays"
         rows="3"

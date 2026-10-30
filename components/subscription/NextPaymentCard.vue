@@ -41,7 +41,7 @@ const eyebrow = computed(() =>
 <template>
   <SubscriptionCard :tone="variant === 'past_due' ? 'danger' : 'default'">
     <p
-      class="text-[10.5px] font-semibold uppercase tracking-[0.08em]"
+      class="text-[11px] font-semibold uppercase tracking-[0.08em]"
       :class="variant === 'trial' ? 'text-info-text' : variant === 'past_due' ? 'text-danger-text' : 'text-ink-muted'"
     >
       {{ eyebrow }}

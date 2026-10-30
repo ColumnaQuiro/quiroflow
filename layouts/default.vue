@@ -154,7 +154,7 @@ watch(supabaseFailure, (f) => {
             >
               <svg width="13" height="13" viewBox="0 0 14 14" class="shrink-0"><circle cx="6" cy="6" r="4.2" stroke="currentColor" stroke-width="1.4" fill="none" /><line x1="9.2" y1="9.2" x2="12" y2="12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /></svg>
               <span class="hidden flex-1 lg:inline">{{ t('Search or jump to', 'Buscar o ir a') }}</span>
-              <span class="hidden rounded border border-line-control bg-surface px-1 py-px font-mono text-[10.5px] text-ink-faint2 lg:inline">⌘K</span>
+              <span class="hidden rounded border border-line-control bg-surface px-1 py-px font-mono text-[11px] text-ink-faint2 lg:inline">⌘K</span>
             </button>
           </div>
           <div class="flex shrink-0 items-center gap-2">

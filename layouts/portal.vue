@@ -106,7 +106,7 @@ const clinicInitials = computed(() =>
          thumb-reachable bar at the bottom. -->
     <header class="flex h-14 items-center justify-between border-b border-line bg-surface px-4 lg:hidden">
       <span class="flex items-center gap-2">
-        <span class="flex h-7 w-7 items-center justify-center rounded-ctlSm bg-brand-tint text-[10px] font-bold text-brand">
+        <span class="flex h-7 w-7 items-center justify-center rounded-ctlSm bg-brand-tint text-[11px] font-bold text-brand">
           <template v-if="clinicInitials">{{ clinicInitials }}</template>
           <img v-else src="/logo/quiroflow-mark.svg" alt="" class="h-3.5 w-3.5" />
         </span>
@@ -126,7 +126,7 @@ const clinicInitials = computed(() =>
         v-for="item in nav.filter((i) => i.phone !== false)"
         :key="item.to"
         :to="item.to"
-        class="flex flex-1 flex-col items-center gap-1 py-2.5 text-[10.5px]"
+        class="flex flex-1 flex-col items-center gap-1 py-2.5 text-[11px]"
         :class="isActive(item.to) ? 'font-semibold text-brand-text' : 'text-ink-muted'"
       >
         <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path :d="item.icon" /></svg>

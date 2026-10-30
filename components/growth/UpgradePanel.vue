@@ -43,7 +43,7 @@ const monthsCovered = computed(() => (pricing.value ? Math.floor(CARE_PLAN_CENTS
 <template>
   <div class="mx-auto flex w-full max-w-[560px] flex-col gap-4 rounded-card border border-line bg-surface p-6 shadow-popover">
     <div class="flex flex-col gap-2">
-      <span class="self-start rounded-pill bg-brand px-[9px] py-[3px] text-[10px] font-bold uppercase tracking-[.08em] text-brand-on">
+      <span class="self-start rounded-pill bg-brand px-[9px] py-[3px] text-[11px] font-bold uppercase tracking-[.08em] text-brand-on">
         {{ t('Growth tier', 'Plan Growth') }}
       </span>
       <h2 class="text-[19px] font-semibold tracking-tightTitle text-ink-900">
@@ -71,14 +71,14 @@ const monthsCovered = computed(() => (pricing.value ? Math.floor(CARE_PLAN_CENTS
         class="flex flex-col gap-1.5 rounded-ctl border p-3"
         :class="option.featured ? 'border-brand-tintBorder bg-brand-tint' : 'border-line-control bg-surface'"
       >
-        <span class="text-[10.5px] font-semibold uppercase tracking-[.06em]" :class="option.featured ? 'text-brand-text' : 'text-ink-muted'">
+        <span class="text-[11px] font-semibold uppercase tracking-[.06em]" :class="option.featured ? 'text-brand-text' : 'text-ink-muted'">
           {{ option.label }}
         </span>
         <div class="flex items-baseline gap-1.5">
           <span class="text-[24px] font-semibold leading-none tracking-tightTitle text-ink-900">{{ option.price }}</span>
           <span class="text-[11px] text-ink-muted">{{ t('/ month', '/ mes') }}</span>
         </div>
-        <span class="text-[10.5px] text-ink-faint">{{ option.note }}</span>
+        <span class="text-[11px] text-ink-faint">{{ option.note }}</span>
       </div>
     </div>
 
@@ -114,7 +114,7 @@ const monthsCovered = computed(() => (pricing.value ? Math.floor(CARE_PLAN_CENTS
           class="flex h-9 items-center rounded-ctl border border-line-control bg-surface px-4 text-[12.5px] font-semibold text-ink-700 hover:bg-surface-subtle"
         >{{ t('Talk to us', 'Hablemos') }}</a>
       </div>
-      <p class="text-[10.5px] text-ink-faint">
+      <p class="text-[11px] text-ink-faint">
         <template v-if="store.isOwner">
           {{ t(
             'Added to your current plan · your existing recalls and campaigns keep running',

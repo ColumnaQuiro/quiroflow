@@ -95,9 +95,9 @@ async function confirmRemove() {
         <div v-for="g in library" :key="g.report" class="space-y-0.5">
           <p class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-faint2">{{ g.report }}</p>
           <div v-for="b in g.blocks" :key="b.title" class="flex items-center gap-2.5 rounded-ctlSm px-2 py-1.5 hover:bg-surface-subtle">
-            <span class="w-14 shrink-0 rounded-ctlSm bg-chip-bg px-1.5 py-0.5 text-center text-[10.5px] font-semibold text-chip-text">{{ t(...KIND[b.config.chart]!) }}</span>
+            <span class="w-14 shrink-0 rounded-ctlSm bg-chip-bg px-1.5 py-0.5 text-center text-[11px] font-semibold text-chip-text">{{ t(...KIND[b.config.chart]!) }}</span>
             <span class="min-w-0 flex-1 truncate text-[13px] text-ink-800">{{ b.title }}</span>
-            <span v-if="onPage(b.config.metric, b.config.split, b.config.chart)" class="shrink-0 rounded-ctlSm bg-success-bg px-1.5 py-0.5 text-[10.5px] font-semibold text-success-text">{{ t('On page', 'En la página') }}</span>
+            <span v-if="onPage(b.config.metric, b.config.split, b.config.chart)" class="shrink-0 rounded-ctlSm bg-success-bg px-1.5 py-0.5 text-[11px] font-semibold text-success-text">{{ t('On page', 'En la página') }}</span>
             <UiBtn size="sm" class="shrink-0" :data-cy="`report-add-${b.config.metric}-${b.config.split}`" @click="addPreset(b)">+ {{ t('Add', 'Añadir') }}</UiBtn>
           </div>
         </div>
@@ -110,7 +110,7 @@ async function confirmRemove() {
           {{ t('No saved reports yet. Build one with New report and tick "Also save to Saved reports".', 'Todavía no hay informes guardados. Crea uno con Nuevo informe y marca "Guardar también en Informes guardados".') }}
         </p>
         <div v-for="s in savedBlocks" :key="s.saved.id" class="flex items-center gap-2.5 rounded-ctlSm px-2 py-1.5 hover:bg-surface-subtle" data-cy="report-saved-row">
-          <span class="w-14 shrink-0 rounded-ctlSm bg-chip-bg px-1.5 py-0.5 text-center text-[10.5px] font-semibold text-chip-text">{{ t(...KIND[s.config.split === 'none' ? 'number' : s.config.chart]!) }}</span>
+          <span class="w-14 shrink-0 rounded-ctlSm bg-chip-bg px-1.5 py-0.5 text-center text-[11px] font-semibold text-chip-text">{{ t(...KIND[s.config.split === 'none' ? 'number' : s.config.chart]!) }}</span>
           <span class="min-w-0 flex-1 truncate text-[13px] text-ink-800">{{ s.saved.name }}</span>
           <button type="button" class="shrink-0 rounded-ctlSm px-1.5 text-[12px] text-ink-faint2 hover:text-danger-text" :aria-label="t('Delete saved report', 'Eliminar informe guardado')" @click="removing = s.saved">✕</button>
           <UiBtn size="sm" class="shrink-0" data-cy="report-add-saved" @click="addSaved(s)">+ {{ t('Add', 'Añadir') }}</UiBtn>

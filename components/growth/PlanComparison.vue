@@ -64,7 +64,7 @@ function cellClass(value: string) {
                   <span class="text-[12.5px] font-semibold text-ink-900">{{ col.name }}</span>
                   <span
                     v-if="col.current"
-                    class="rounded-pill border border-chip-border bg-chip-bg px-1.5 py-px text-[9.5px] font-semibold uppercase tracking-[.06em] text-chip-text"
+                    class="rounded-pill border border-chip-border bg-chip-bg px-1.5 py-px text-[11px] font-semibold uppercase tracking-[.06em] text-chip-text"
                   >{{ t('Current', 'Actual') }}</span>
                 </span>
                 <span class="text-[11px] font-normal text-ink-muted">{{ col.price }}</span>
@@ -77,7 +77,7 @@ function cellClass(value: string) {
             <td class="px-4 py-2.5 sm:pl-[18px]">
               <span class="flex flex-col gap-0.5">
                 <span class="text-[12px] text-ink-700">{{ row.feature }}</span>
-                <span v-if="row.note" class="text-[10.5px] text-ink-faint">{{ row.note }}</span>
+                <span v-if="row.note" class="text-[11px] text-ink-faint">{{ row.note }}</span>
               </span>
             </td>
             <td v-for="col in columns" :key="col.key" class="px-3 py-2.5 text-[11.5px]" :class="cellClass(row[col.key])">

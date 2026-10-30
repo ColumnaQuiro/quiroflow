@@ -52,7 +52,7 @@ function remove(index: number) {
           {{ t('Add', 'Añadir') }}
         </UiBtn>
       </div>
-      <p class="text-[10.5px] leading-[1.5] text-ink-muted">
+      <p class="text-[11px] leading-[1.5] text-ink-muted">
         {{ t(
           'When a message is only one of these (case, accents and punctuation aside), it neither answers nor drafts — "Confirmar" on the reminder is already recorded. It also stays quiet on its own when a message clearly needs no answer.',
           'Cuando un mensaje es solo una de estas (sin importar mayúsculas, tildes o signos), ni contesta ni deja borrador: el "Confirmar" del recordatorio ya queda registrado. También se calla sola cuando un mensaje claramente no necesita respuesta.',

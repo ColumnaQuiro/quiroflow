@@ -44,7 +44,7 @@ const android = playStoreUrl()
 const boxClass = computed(() =>
   props.size === 'lg'
     ? 'h-[54px] gap-3 px-4 [&_.store-sub]:text-[11px] [&_.store-name]:text-[17px]'
-    : 'h-12 gap-2.5 px-3.5 [&_.store-sub]:text-[10px] [&_.store-name]:text-[15px]',
+    : 'h-12 gap-2.5 px-3.5 [&_.store-sub]:text-[11px] [&_.store-name]:text-[15px]',
 )
 </script>
 

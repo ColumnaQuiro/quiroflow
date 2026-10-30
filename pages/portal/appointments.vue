@@ -42,7 +42,7 @@ const timeOnly = (a: Visit) => fmt(a, { hour: '2-digit', minute: '2-digit' })
                scanned by date, not read. -->
           <span class="flex h-9 touch:h-11 w-9 touch:w-11 shrink-0 flex-col items-center justify-center rounded-ctl bg-brand-tint leading-none">
             <span class="text-[15px] font-[640] text-brand">{{ dayNumber(appt) }}</span>
-            <span class="mt-0.5 text-[10px] font-medium uppercase text-brand">{{ monthShort(appt) }}</span>
+            <span class="mt-0.5 text-[11px] font-medium uppercase text-brand">{{ monthShort(appt) }}</span>
           </span>
           <div class="min-w-0 flex-1">
             <p class="text-[13.5px] font-medium text-ink-900">

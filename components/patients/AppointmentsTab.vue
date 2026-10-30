@@ -305,7 +305,7 @@ useFocusTrap(notesPanel, () => (notesAppointmentId.value = null), () => !!notesA
             <!-- Date block -->
             <div class="flex h-9 touch:h-11 w-9 touch:w-11 shrink-0 flex-col items-center justify-center rounded-ctl border border-line bg-surface-subtle2">
               <span class="font-mono text-[14px] font-semibold leading-none text-ink-900">{{ dateBlock(appt.starts_at).day }}</span>
-              <span class="mt-0.5 text-[9.5px] uppercase leading-none text-ink-muted2">{{ dateBlock(appt.starts_at).month }}</span>
+              <span class="mt-0.5 text-[11px] uppercase leading-none text-ink-muted2">{{ dateBlock(appt.starts_at).month }}</span>
             </div>
 
             <div class="min-w-0 flex-1">

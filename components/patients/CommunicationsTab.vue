@@ -206,7 +206,7 @@ onMounted(loadTemplates)
         <div class="flex flex-wrap items-center justify-between gap-2 border-b border-line-divider px-4 py-3">
           <div class="min-w-0">
             <h2 id="comms-thread" class="flex items-center gap-2 text-[13.5px] font-semibold text-ink-700">
-              <span aria-hidden="true" class="flex h-5 w-5 items-center justify-center rounded-ctlSm bg-success-bg text-[9px] font-bold text-success-text">WA</span>
+              <span aria-hidden="true" class="flex h-5 w-5 items-center justify-center rounded-ctlSm bg-success-bg text-[11px] font-bold text-success-text">WA</span>
               WhatsApp
             </h2>
             <p class="mt-0.5 text-[12px] text-ink-muted2">
@@ -260,7 +260,7 @@ onMounted(loadTemplates)
                 <p class="flex items-center gap-1.5 text-[11px]" :class="m.status === 'failed' ? 'text-danger-text' : 'text-ink-muted2'">
                   <span
                     v-if="m.channel === 'email'"
-                    class="rounded-ctlSm bg-chip-bg px-1 py-px text-[9px] font-bold uppercase text-chip-text"
+                    class="rounded-ctlSm bg-chip-bg px-1 py-px text-[11px] font-bold uppercase text-chip-text"
                   >{{ t('Email', 'Correo') }}</span>
                   <span v-if="titleFor(m)">{{ titleFor(m) }}</span>
                 </p>

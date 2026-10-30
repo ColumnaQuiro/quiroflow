@@ -492,7 +492,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
                         :class="o.on ? 'bg-brand' : 'bg-line-control'"
                         @click="o.set(!o.on)"
                       >
-                        <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card transition-all" :class="o.on ? 'left-[21px]' : 'left-[3px]'" />
+                        <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card left-[3px] transition-transform" :class="o.on ? 'translate-x-[18px]' : 'translate-x-0'" />
                       </button>
                     </div>
                   </div>
@@ -505,7 +505,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
                   <figcaption class="text-[12.5px] font-semibold text-ink-500">{{ t('Preview', 'Vista previa') }}</figcaption>
                   <div class="flex flex-col gap-3 rounded-ctl border border-line bg-white p-5 text-[12px] text-[#22252F] shadow-card">
                     <div class="flex items-start justify-between">
-                      <span v-if="!hideLogo" class="flex h-10 w-10 items-center justify-center rounded-ctl bg-[#EEF0FE] text-[10px] font-bold text-[#3B32C9]">LOGO</span>
+                      <span v-if="!hideLogo" class="flex h-10 w-10 items-center justify-center rounded-ctl bg-[#EEF0FE] text-[11px] font-bold text-[#3B32C9]">LOGO</span>
                       <span v-else />
                       <span class="text-right leading-snug"><strong class="text-[13px]">{{ t('Receipt', 'Recibo') }} {{ receiptNumberPreview(receiptNext) }}</strong><br />{{ new Date().toLocaleDateString('es-ES') }}</span>
                     </div>

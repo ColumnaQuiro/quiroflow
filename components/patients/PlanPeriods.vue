@@ -71,7 +71,7 @@ const label = (start: string) => {
         <span class="flex h-10 w-10 items-center justify-center rounded-full border-2 text-[11.5px] font-semibold tabular-nums" :class="[RING[p.status], p.isCurrent ? 'ring-2 ring-brand/30 ring-offset-1 ring-offset-surface' : '']">
           {{ p.completed }}/{{ p.expected }}
         </span>
-        <span class="text-[10.5px]" :class="p.isCurrent ? 'font-semibold text-brand-text' : 'text-ink-faint'">{{ p.isCurrent ? t('Now', 'Ahora') : label(p.start) }}</span>
+        <span class="text-[11px]" :class="p.isCurrent ? 'font-semibold text-brand-text' : 'text-ink-faint'">{{ p.isCurrent ? t('Now', 'Ahora') : label(p.start) }}</span>
       </li>
     </ol>
     <div v-if="!loading" class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink-muted">

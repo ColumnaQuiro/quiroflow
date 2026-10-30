@@ -188,7 +188,7 @@ const lineClass = computed(() => {
 
     <div class="flex items-center gap-1.5 border-t border-line-divider px-3.5 py-2 text-[11.5px] text-ink-muted">
       {{ t('Click or', 'Clic o') }}
-      <kbd class="rounded border border-line-control bg-surface-subtle px-[5px] py-px font-mono text-[10.5px]">{{ t('Enter', 'Intro') }}</kbd>
+      <kbd class="rounded border border-line-control bg-surface-subtle px-[5px] py-px font-mono text-[11px]">{{ t('Enter', 'Intro') }}</kbd>
       {{ t('to open the appointment', 'para abrir la cita') }}
     </div>
   </div>

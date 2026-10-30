@@ -93,12 +93,12 @@ useFocusTrap(panel, () => emit('close'))
           :placeholder="t('Search patients or jump to a page…', 'Busca pacientes o ve a una página…')"
           class="flex-1 border-0 bg-transparent text-[14px] text-ink-900 outline-none placeholder:text-ink-faint"
         />
-        <kbd class="rounded border border-line-control bg-surface-subtle px-1.5 py-0.5 font-mono text-[10.5px] text-ink-faint2">Esc</kbd>
+        <kbd class="rounded border border-line-control bg-surface-subtle px-1.5 py-0.5 font-mono text-[11px] text-ink-faint2">Esc</kbd>
       </div>
 
       <div class="max-h-96 overflow-y-auto py-2">
         <template v-if="query.trim() && (searching || patients.length > 0)">
-          <div class="px-3 py-1 text-[10.5px] font-[640] uppercase tracking-[.06em] text-ink-faint">{{ t('Patients', 'Pacientes') }}</div>
+          <div class="px-3 py-1 text-[11px] font-[640] uppercase tracking-[.06em] text-ink-faint">{{ t('Patients', 'Pacientes') }}</div>
           <p v-if="searching" class="px-3 py-2 text-[13px] text-ink-faint">{{ t('Searching…', 'Buscando…') }}</p>
           <button
             v-for="p in patients"
@@ -107,14 +107,14 @@ useFocusTrap(panel, () => emit('close'))
             class="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13.5px] text-ink-700 hover:bg-surface-subtle"
             @click="openPatient(p.id)"
           >
-            <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-ctlSm bg-brand-tint text-[10px] font-bold text-brand">
+            <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-ctlSm bg-brand-tint text-[11px] font-bold text-brand">
               {{ (p.first_name[0] ?? '').toUpperCase() }}
             </span>
             {{ p.first_name }} {{ p.last_name }}
           </button>
         </template>
 
-        <div class="px-3 py-1 text-[10.5px] font-[640] uppercase tracking-[.06em] text-ink-faint">{{ t('Go to', 'Ir a') }}</div>
+        <div class="px-3 py-1 text-[11px] font-[640] uppercase tracking-[.06em] text-ink-faint">{{ t('Go to', 'Ir a') }}</div>
         <p v-if="filteredNav.length === 0" class="px-3 py-2 text-[13px] text-ink-faint">{{ t('No matches.', 'Sin resultados.') }}</p>
         <button
           v-for="n in filteredNav"

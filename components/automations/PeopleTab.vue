@@ -304,7 +304,7 @@ const inboxLink = computed(() => {
                   <span class="flex items-center gap-2.5">
                     <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[11.5px] font-bold text-brand-text">{{ initials(r.subject.name) }}</span>
                     <span class="whitespace-nowrap font-semibold text-ink-900">{{ r.subject.name }}</span>
-                    <span v-if="r.subject.kind === 'lead'" class="rounded-pill bg-chip-bg px-1.5 text-[10.5px] font-semibold text-chip-text">Lead</span>
+                    <span v-if="r.subject.kind === 'lead'" class="rounded-pill bg-chip-bg px-1.5 text-[11px] font-semibold text-chip-text">Lead</span>
                   </span>
                 </td>
                 <td class="px-2 py-2.5 text-ink-700">{{ r.status === 'running' || r.status === 'failed' ? whereLabel(r) : '—' }}</td>
@@ -365,13 +365,13 @@ const inboxLink = computed(() => {
 
         <aside class="flex min-h-0 flex-col overflow-y-auto border-l border-line bg-surface" data-test="journey-step">
           <div v-if="pickedStep === 'trigger'" class="flex flex-col gap-1 border-b border-line-divider px-5 py-4">
-            <span class="text-[10.5px] font-bold uppercase tracking-[.06em] text-ink-faint">{{ t('Trigger', 'Disparador') }}</span>
+            <span class="text-[11px] font-bold uppercase tracking-[.06em] text-ink-faint">{{ t('Trigger', 'Disparador') }}</span>
             <strong class="text-[15px] text-ink-900">{{ t(`Entered ${when(detail.run.startedAt)}`, `Entró el ${when(detail.run.startedAt)}`) }}</strong>
           </div>
           <div v-else-if="picked" class="flex flex-col gap-3 border-b border-line-divider px-5 py-4">
             <div class="flex items-start justify-between gap-2">
               <div class="min-w-0">
-                <span class="text-[10.5px] font-bold uppercase tracking-[.06em] text-ink-faint">{{ t('Step', 'Paso') }}</span>
+                <span class="text-[11px] font-bold uppercase tracking-[.06em] text-ink-faint">{{ t('Step', 'Paso') }}</span>
                 <strong class="block text-[15px] leading-snug text-ink-900">{{ picked.step ? stepTitle(t, picked.step, b.lookup.value) : '—' }}</strong>
               </div>
               <UiPill v-if="picked.j" :tone="STATE_TONE[picked.j.state]" data-test="journey-step-state">{{ STATE_LABEL[picked.j.state] }}</UiPill>

@@ -58,19 +58,19 @@ watch(() => turns.value.length + (thinking.value ? 1 : 0), () => {
   >
     <header class="flex shrink-0 items-start justify-between gap-3 border-b border-line-divider p-4">
       <div class="flex items-center gap-2.5">
-        <span class="flex h-[22px] w-[22px] items-center justify-center rounded-[7px] bg-brand text-[10px] font-bold text-brand-on">AI</span>
+        <span class="flex h-[22px] w-[22px] items-center justify-center rounded-[7px] bg-brand text-[11px] font-bold text-brand-on">AI</span>
         <div class="flex flex-col">
           <span class="text-[12.5px] font-semibold tracking-tightTitle text-ink-900">{{ t('Try', 'Prueba a') }} {{ personaName }}</span>
-          <span class="text-[10.5px] text-ink-muted">{{ t('Nothing is sent and nothing is booked', 'No se envía ni se reserva nada') }}</span>
+          <span class="text-[11px] text-ink-muted">{{ t('Nothing is sent and nothing is booked', 'No se envía ni se reserva nada') }}</span>
         </div>
       </div>
-      <span class="shrink-0 rounded-pill border border-warning-border bg-warning-bg px-2 py-0.5 text-[10px] font-semibold text-warning-text">
+      <span class="shrink-0 rounded-pill border border-warning-border bg-warning-bg px-2 py-0.5 text-[11px] font-semibold text-warning-text">
         {{ t('Test mode', 'Modo de prueba') }}
       </span>
     </header>
 
     <div v-if="usable" class="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-line-divider px-3 py-2" data-test="test-chat-scenarios">
-      <span class="mr-1 text-[10.5px] text-ink-faint">{{ t('You are…', 'Eres…') }}</span>
+      <span class="mr-1 text-[11px] text-ink-faint">{{ t('You are…', 'Eres…') }}</span>
       <button
         v-for="s in SCENARIOS"
         :key="s.key"
@@ -106,7 +106,7 @@ watch(() => turns.value.length + (thinking.value ? 1 : 0), () => {
       <template v-else>
         <div v-if="!turns.length" class="flex flex-col gap-1.5 py-6 text-center text-[11.5px] text-ink-faint">
           <p>{{ t('Write as a patient would, and see what comes back.', 'Escribe como lo haría un paciente y mira qué responde.') }}</p>
-          <p class="text-[10.5px]">{{ t('It uses what you have saved on this page and the real free times in the calendar. Escalation rules are tried too: it says when it would hand over.', 'Usa lo que tengas guardado en esta página y las horas libres reales del calendario. Las reglas de escalado también se prueban: dice cuándo pasaría a una persona.') }}</p>
+          <p class="text-[11px]">{{ t('It uses what you have saved on this page and the real free times in the calendar. Escalation rules are tried too: it says when it would hand over.', 'Usa lo que tengas guardado en esta página y las horas libres reales del calendario. Las reglas de escalado también se prueban: dice cuándo pasaría a una persona.') }}</p>
         </div>
 
         <div v-for="(turn, i) in turns" :key="i" class="flex flex-col gap-1" :class="turn.role === 'assistant' ? 'items-start' : 'items-end'">
@@ -126,7 +126,7 @@ watch(() => turns.value.length + (thinking.value ? 1 : 0), () => {
           <!-- What it did to write that: the lookups, and whether it would
           have handed over. The part of a reply a chat bubble cannot show,
           and the part an owner setting escalation rules is here to see. -->
-          <ul v-if="turn.trace && (turn.trace.lookups.length || turn.trace.handedOver)" class="flex max-w-[88%] flex-col gap-0.5 px-1 text-[10.5px] text-ink-faint" data-test="test-chat-trace">
+          <ul v-if="turn.trace && (turn.trace.lookups.length || turn.trace.handedOver)" class="flex max-w-[88%] flex-col gap-0.5 px-1 text-[11px] text-ink-faint" data-test="test-chat-trace">
             <li v-for="(lookup, j) in turn.trace.lookups" :key="j" class="flex items-center gap-1.5">
               <span class="h-1 w-1 shrink-0 rounded-full" :class="lookup.ok ? 'bg-info-accent' : 'bg-danger-text'" />
               <span>{{ lookup.ok ? t('Looked up free times', 'Consultó las horas libres') : t('Could not read the calendar', 'No pudo leer el calendario') }}<template v-if="lookup.detail"> · {{ lookup.detail }}</template></span>

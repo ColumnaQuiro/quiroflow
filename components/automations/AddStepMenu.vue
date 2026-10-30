@@ -41,7 +41,7 @@ function pick(type: string, locked: boolean) {
     </div>
     <div class="overflow-y-auto p-1.5">
       <template v-for="g in groups" :key="g.key">
-        <span class="block px-2.5 pb-1 pt-2 text-[10.5px] font-bold uppercase tracking-[.06em] text-ink-faint">{{ say(t, g.label) }}</span>
+        <span class="block px-2.5 pb-1 pt-2 text-[11px] font-bold uppercase tracking-[.06em] text-ink-faint">{{ say(t, g.label) }}</span>
         <button
           v-for="s in g.items"
           :key="s.type"
@@ -56,7 +56,7 @@ function pick(type: string, locked: boolean) {
           <span class="flex min-w-0 flex-col">
             <span class="flex items-center gap-1.5">
               <strong class="text-[13px] font-semibold text-ink-900">{{ say(t, s.label) }}</strong>
-              <span v-if="s.leadOnly" class="rounded-pill bg-brand-tint px-1.5 py-px text-[9.5px] font-bold tracking-[.04em] text-brand-text">GROWTH</span>
+              <span v-if="s.leadOnly" class="rounded-pill bg-brand-tint px-1.5 py-px text-[11px] font-bold tracking-[.04em] text-brand-text">GROWTH</span>
             </span>
             <span class="text-[11.5px] text-ink-muted">{{ say(t, s.hint) }}</span>
           </span>

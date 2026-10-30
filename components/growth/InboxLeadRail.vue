@@ -13,7 +13,7 @@ const t = useT()
   <aside class="hidden w-[248px] shrink-0 flex-col gap-4 overflow-y-auto border-l border-line bg-surface px-4 py-4 xl:flex" data-test="lead-rail">
     <div class="flex flex-col gap-1.5">
       <span class="text-[12.5px] font-semibold text-ink-900">{{ thread.name }}</span>
-      <span class="text-[10.5px] text-ink-muted">
+      <span class="text-[11px] text-ink-muted">
         {{ t('Lead', 'Contacto') }} · {{ thread.stage }}<template v-if="thread.source"> · {{ thread.source }}</template>
       </span>
       <span v-if="thread.phone" class="text-[11.5px] text-ink-700">{{ thread.phone }}</span>
@@ -26,7 +26,7 @@ const t = useT()
     a lead has no visit history and no balance, and rendering those as zeroes
     would state something false rather than leave a gap. -->
     <section class="flex flex-col gap-1.5 border-t border-line-divider pt-3.5">
-      <h3 class="text-[9.5px] font-semibold uppercase tracking-[.06em] text-ink-faint">{{ t('In QuiroFlow', 'En QuiroFlow') }}</h3>
+      <h3 class="text-[11px] font-semibold uppercase tracking-[.06em] text-ink-faint">{{ t('In QuiroFlow', 'En QuiroFlow') }}</h3>
 
       <div class="flex items-baseline justify-between gap-2">
         <span class="text-[11px] text-ink-faint">{{ t('Patient record', 'Ficha de paciente') }}</span>

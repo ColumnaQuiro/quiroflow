@@ -31,7 +31,7 @@ const t = useT()
         <template v-if="editing">
           <button
             type="button"
-            class="rounded-ctlSm border border-line-control px-1.5 py-0.5 text-[10.5px] font-medium text-ink-muted2 hover:border-line-controlHover hover:text-ink-600"
+            class="rounded-ctlSm border border-line-control px-1.5 py-0.5 text-[11px] font-medium text-ink-muted2 hover:border-line-controlHover hover:text-ink-600"
             :title="t('Cycle widget width', 'Cambiar el ancho del widget')"
             @click="emit('cycleSize')"
           >

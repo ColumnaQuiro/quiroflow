@@ -47,7 +47,7 @@ function onFileChosen(event: Event) {
     <div class="flex items-start gap-3">
       <div class="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-ctl border border-line bg-surface-subtle">
         <img v-if="imageUrl" :src="imageUrl" class="h-full w-full object-contain" :alt="t('Diagram', 'Diagrama')" />
-        <span v-else class="px-1 text-center text-[10px] leading-tight text-ink-faint">{{ t('No diagram', 'Sin diagrama') }}</span>
+        <span v-else class="px-1 text-center text-[11px] leading-tight text-ink-faint">{{ t('No diagram', 'Sin diagrama') }}</span>
       </div>
       <div class="space-y-1">
         <div class="flex items-center gap-3">

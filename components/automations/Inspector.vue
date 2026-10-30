@@ -73,7 +73,7 @@ function pick(type: string) {
   <div class="flex h-full min-h-0 flex-col" data-test="inspector">
     <div class="flex items-start justify-between gap-3 border-b border-line-divider px-5 py-3.5">
       <div class="flex min-w-0 flex-col gap-0.5">
-        <span class="truncate text-[10.5px] font-bold uppercase tracking-[.06em] text-ink-faint">{{ eyebrow }}</span>
+        <span class="truncate text-[11px] font-bold uppercase tracking-[.06em] text-ink-faint">{{ eyebrow }}</span>
         <strong class="truncate text-[15px] text-ink-900" data-test="inspector-title">{{ title }}</strong>
       </div>
       <button

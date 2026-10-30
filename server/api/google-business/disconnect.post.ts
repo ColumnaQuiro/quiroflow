@@ -9,7 +9,7 @@ export default defineEventHandler(async (event) => {
   await service.from('account_secrets').delete().eq('account_id', teamMember.account_id).eq('name', 'google_business_refresh_token')
   await service
     .from('accounts')
-    .update({ google_business_account: null, google_business_location: null, google_business_location_title: null, google_reviews_synced_at: null })
+    .update({ google_business_account: null, google_business_location: null, google_business_location_title: null, google_reviews_synced_at: null, google_rating: null, google_review_count: null })
     .eq('id', teamMember.account_id)
   return { ok: true }
 })

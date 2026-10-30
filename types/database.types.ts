@@ -1192,6 +1192,8 @@ export type Database = {
           google_business_location: string | null
           google_business_location_title: string | null
           google_reviews_synced_at: string | null
+          google_rating: number | null
+          google_review_count: number | null
           id: string
           instagram_access_token: string | null
           instagram_user_id: string | null
@@ -1296,6 +1298,8 @@ export type Database = {
           google_business_location?: string | null
           google_business_location_title?: string | null
           google_reviews_synced_at?: string | null
+          google_rating?: number | null
+          google_review_count?: number | null
           id?: string
           instagram_access_token?: string | null
           instagram_user_id?: string | null
@@ -1399,6 +1403,8 @@ export type Database = {
           google_business_location?: string | null
           google_business_location_title?: string | null
           google_reviews_synced_at?: string | null
+          google_rating?: number | null
+          google_review_count?: number | null
           id?: string
           instagram_access_token?: string | null
           instagram_user_id?: string | null

@@ -1,14 +1,17 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
-import { checkInPortalClinic } from '~/server/utils/checkInPortal'
+import { checkInCodeKey, checkInPortalClinic } from '~/server/utils/checkInPortal'
+import { verifyCheckInCode } from '~/server/utils/checkInCode'
 import { afterPatientArrival } from '~/server/utils/patientArrival'
 import { throttlePublic } from '~/server/utils/publicRateLimit'
 import { SELF_CHECK_IN_EARLY_MINUTES } from '~/utils/selfCheckIn'
 import { birthDateMatches, maskedPortalName, parsePortalBirthDate, pickPortalVisit } from '~/utils/checkInPortal'
 
-// A patient at the front-desk tablet typing their date of birth (DDMMAA).
-// Body { birthDate, appointmentId? }: the second only once the tablet has
-// asked "which of these is you?".
+// A patient at the front-desk tablet typing their date of birth (DDMMAA), or
+// showing it the QR code from their app (server/utils/checkInCode.ts).
+// Body { birthDate, appointmentId? } -- the second only once the tablet has
+// asked "which of these is you?" -- or { code }, which names one patient and
+// so never asks.
 //
 // Matched against this location's visits that the app's own "Ya estoy aquí"
 // would accept -- still booked, from 90 minutes before the start until the
@@ -27,9 +30,19 @@ export default defineEventHandler(async (event) => {
   // more than that from one address is someone trying birthdays.
   await throttlePublic(event, { scope: 'check-in-portal', limit: 60, windowSeconds: 600 })
 
-  const body = await readBody<{ birthDate?: string; appointmentId?: string }>(event)
-  const typed = parsePortalBirthDate(String(body?.birthDate ?? ''))
-  if (!typed) throw createError({ statusCode: 400, statusMessage: 'Invalid date of birth' })
+  const body = await readBody<{ birthDate?: string; code?: string; appointmentId?: string }>(event)
+  // A code that does not verify is a patient nobody can find, not a bad
+  // request: the tablet says "we could not find your appointment" either way.
+  let codePatientId: string | null = null
+  let typed: ReturnType<typeof parsePortalBirthDate> = null
+  if (body?.code !== undefined) {
+    const key = checkInCodeKey()
+    codePatientId = key ? verifyCheckInCode(key, String(body.code)) : null
+    if (!codePatientId) return { status: 'not_found' as const }
+  } else {
+    typed = parsePortalBirthDate(String(body?.birthDate ?? ''))
+    if (!typed) throw createError({ statusCode: 400, statusMessage: 'Invalid date of birth' })
+  }
 
   const service = serverSupabaseServiceRole<Database>(event)
   const clinic = await checkInPortalClinic(service, getRouterParam(event, 'token'))
@@ -47,7 +60,7 @@ export default defineEventHandler(async (event) => {
   if (error) throw createError({ statusCode: 500, statusMessage: error.message })
 
   const visits = (rows ?? [])
-    .filter((r) => !r.patients.anonymized_at && birthDateMatches(r.patients.date_of_birth, typed))
+    .filter((r) => !r.patients.anonymized_at && (codePatientId ? r.patient_id === codePatientId : birthDateMatches(r.patients.date_of_birth, typed!)))
     .map((r) => ({ ...r, patient_id: r.patient_id! }))
   const picked = pickPortalVisit(visits, body?.appointmentId)
   if (picked.kind === 'none') return { status: 'not_found' as const }

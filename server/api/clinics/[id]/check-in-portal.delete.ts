@@ -1,8 +1,10 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
+import { checkInPortalSettings } from '~/server/utils/checkInPortal'
 
 // Turns this location's check-in portal off. The link goes with the row, so
-// a tablet still showing it says "switched off" on its next patient.
+// a tablet still showing it says "switched off" on its next patient; so do
+// its language and messages.
 export default defineEventHandler(async (event) => {
   const { supabase, teamMember } = await requireSettingsPermission(event, 'clinic_config')
   const clinicId = getRouterParam(event, 'id')!
@@ -11,5 +13,5 @@ export default defineEventHandler(async (event) => {
 
   const { error } = await serverSupabaseServiceRole<Database>(event).from('check_in_portals').delete().eq('clinic_id', clinic.id)
   if (error) throw createError({ statusCode: 500, statusMessage: error.message })
-  return { token: null }
+  return checkInPortalSettings(null)
 })

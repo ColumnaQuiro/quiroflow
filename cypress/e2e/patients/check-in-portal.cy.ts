@@ -82,6 +82,85 @@ describe('Check-in portal', () => {
     })
   })
 
+  it('checks a patient in from the QR code in their app, read by a scanner', () => {
+    const email = `checkin-qr-tablet-${Date.now()}@example.test`
+    const password = 'valencia2026'
+    cy.seedStaffAccount().then((account) => {
+      cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Quim', lastName: 'Codigo' }).then((patient) => {
+        cy.task('db:givePatientAppLogin', { accountId: account.accountId, patientId: patient.id, email, password })
+        cy.task<{ id: string }>('db:createAppointment', { accountId: account.accountId, clinicId: account.clinicId, patientId: patient.id, practitionerId: account.teamMemberId, startsAt: minutesFromNow(15) }).then((appt) => {
+          portalLink(account).then((path) => {
+            // The patient's app shows the code only because this location has a tablet.
+            cy.intercept('GET', '/api/portal/appointments/check-in-code*').as('code')
+            cy.login(email, password)
+            cy.visit('/portal')
+            cy.wait('@code').its('response.body.code').should('match', /^qfci\./).then((code) => {
+              cy.get('[data-cy=patient-check-in-code-toggle]').click()
+              cy.get('[data-cy=patient-check-in-code-qr]').should('be.visible').and('have.attr', 'src').and('match', /^data:image\/svg\+xml/)
+              cy.clearAllCookies()
+              cy.clearAllLocalStorage()
+
+              // A USB scanner types the code and Enter, as a keyboard would.
+              cy.visit(path)
+              cy.get('[data-cy=check-in-portal][data-phase=ready]')
+              cy.get('body').type(`${code}{enter}`, { delay: 0 })
+              cy.get('[data-cy=check-in-portal-done][data-status=checked_in]').should('contain.text', 'Quim')
+              cy.task<{ checked_in_at: string | null }>('db:appointmentById', { appointmentId: appt.id }).its('checked_in_at').should('not.be.null')
+
+              // An edited code finds nobody.
+              cy.get('[data-cy=check-in-portal-finish]').click()
+              cy.get('body').type(`${String(code).slice(0, -2)}xx{enter}`, { delay: 0 })
+              cy.get('[data-cy=check-in-portal-not-found]').should('be.visible')
+            })
+          })
+        })
+      })
+    })
+  })
+
+  it('speaks the language chosen in Settings, with the clinic’s own messages, and a patient can switch', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Lily', lastName: 'Visitor', dateOfBirth: '1992-11-23' }).then((patient) => {
+        cy.task('db:createAppointment', { accountId: account.accountId, clinicId: account.clinicId, patientId: patient.id, practitionerId: account.teamMemberId, startsAt: minutesFromNow(25) })
+        cy.login(account.email, account.password)
+        cy.visit(`/settings/clinics/${account.clinicId}#llegada`)
+        cy.get('[data-cy=clinic-check-in-portal][data-ready=true]')
+        cy.get('[data-cy=clinic-check-in-portal-on]').click()
+        cy.get('[data-cy=clinic-check-in-portal-language]').select('en')
+        cy.get('[data-cy=clinic-check-in-portal-welcome]').type('Welcome to the demo clinic')
+        cy.get('[data-cy=clinic-check-in-portal-success]').type('Please go straight to room 2')
+        cy.intercept('PATCH', `/api/clinics/${account.clinicId}/check-in-portal`).as('save')
+        cy.get('[data-cy=clinic-check-in-portal-save]').click()
+        cy.wait('@save').its('response.statusCode').should('eq', 200)
+        cy.get('[data-cy=clinic-check-in-portal-url]')
+          .invoke('text')
+          .then((url) => {
+            cy.clearAllCookies()
+            cy.clearAllLocalStorage()
+            cy.visit(new URL(url.trim()).pathname)
+          })
+
+        cy.get('[data-cy=check-in-portal-welcome]').should('have.text', 'Welcome to the demo clinic')
+        // In Spanish the clinic's English wording gives way to the standard text.
+        cy.get('[data-cy=check-in-portal-lang-es]').click()
+        cy.get('[data-cy=check-in-portal-welcome]').should('have.text', '¡Bienvenido! Registra tu llegada')
+        cy.get('[data-cy=check-in-portal-lang-en]').click()
+        typeBirthDate('231192')
+        cy.get('[data-cy=check-in-portal-done-text]').should('contain.text', 'Please go straight to room 2')
+        cy.get('[data-cy=check-in-portal-done]').should('contain.text', 'Hello, Lily!')
+
+        // After a patient who switched to German, the tablet is back in English.
+        cy.get('[data-cy=check-in-portal-finish]').click()
+        cy.get('[data-cy=check-in-portal-lang-de]').click()
+        cy.contains('Geben Sie Ihr Geburtsdatum ein')
+        typeBirthDate('231192')
+        cy.get('[data-cy=check-in-portal-done][data-status=already]').should('contain.text', 'Hallo, Lily!')
+        cy.get('[data-cy=check-in-portal-finish]').click()
+        cy.get('[data-cy=check-in-portal-welcome]').should('have.text', 'Welcome to the demo clinic')
+      })
+    })
+  })
+
   it('stops working once turned off', () => {
     cy.seedStaffAccount().then((account) => {
       portalLink(account).then((path) => {

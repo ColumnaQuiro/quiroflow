@@ -3059,19 +3059,31 @@ export type Database = {
           account_id: string
           clinic_id: string
           created_at: string
+          language: string
+          not_found_message: string | null
+          success_message: string | null
           token: string
+          welcome_message: string | null
         }
         Insert: {
           account_id: string
           clinic_id: string
           created_at?: string
+          language?: string
+          not_found_message?: string | null
+          success_message?: string | null
           token: string
+          welcome_message?: string | null
         }
         Update: {
           account_id?: string
           clinic_id?: string
           created_at?: string
+          language?: string
+          not_found_message?: string | null
+          success_message?: string | null
           token?: string
+          welcome_message?: string | null
         }
         Relationships: [
           {

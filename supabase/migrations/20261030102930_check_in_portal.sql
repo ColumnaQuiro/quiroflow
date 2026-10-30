@@ -13,10 +13,20 @@
 -- The token is kept as it is, not as a hash, because Settings shows the link
 -- again to set up a second tablet. Only the service role reads this table:
 -- the settings routes behind clinic_config and the portal's own routes.
+--
+-- `language` is what the tablet speaks until a patient picks another on it
+-- (utils/checkInPortalText.ts). The three messages replace the standard
+-- welcome, arrival and not-found wording, in that language only: a patient
+-- who switches the tablet to English gets the standard English text, not the
+-- clinic's Spanish. Null is the standard wording.
 create table public.check_in_portals (
   clinic_id uuid primary key references public.clinics(id) on delete cascade,
   account_id uuid not null references public.accounts(id) on delete cascade,
   token text not null unique,
+  language text not null default 'es' check (language in ('es', 'en', 'fr', 'de', 'it', 'pt', 'ca')),
+  welcome_message text check (char_length(welcome_message) <= 300),
+  success_message text check (char_length(success_message) <= 300),
+  not_found_message text check (char_length(not_found_message) <= 300),
   created_at timestamptz not null default now()
 );
 

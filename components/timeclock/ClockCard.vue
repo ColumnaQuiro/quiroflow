@@ -9,7 +9,12 @@ import { clinicDateOf } from '../../utils/clinicClock'
 //
 // Shared by the web's My Day and the app's, so no account store: the caller
 // passes who and where.
-const props = defineProps<{ accountId: string; teamMemberId: string; timeZone: string; monthTo: string }>()
+// `compact`: web My Day, where the day's visits come first. Once the person
+// has clocked in today the card shrinks to one line with the same buttons --
+// a full card of "0 h 00" stood above the schedule all day. Before the first
+// clock-in, or with an earlier day left open, it stays the full card: then
+// the clock is the thing to deal with.
+const props = defineProps<{ accountId: string; teamMemberId: string; timeZone: string; monthTo: string; compact?: boolean }>()
 const t = useT()
 const supabase = useSupabaseClient()
 
@@ -53,6 +58,7 @@ const leftOpen = computed(() => {
   return !!last && last.kind !== 'out' && now.value.getTime() - Date.parse(last.at) > WORKDAY_STALE_HOURS * 3600_000
 })
 const state = computed(() => day.value?.state ?? 'off')
+const asBar = computed(() => props.compact && !!day.value && !leftOpen.value)
 
 const detail = computed(() => {
   const d = day.value
@@ -76,7 +82,28 @@ async function clock(kind: 'in' | 'break_start' | 'break_end' | 'out') {
 </script>
 
 <template>
-  <section v-if="exempt === false" class="rounded-card border border-line bg-surface p-4" data-cy="clock-card" :data-state="state">
+  <section
+    v-if="exempt === false && asBar"
+    class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-card border border-line bg-surface px-4 py-2"
+    data-cy="clock-card"
+    :data-state="state"
+  >
+    <span class="font-mono text-[15px] font-semibold text-ink-900" data-cy="clock-worked">{{ formatWorked(day?.workedMinutes ?? 0) }}</span>
+    <span class="min-w-0 flex-1 truncate text-[12.5px] text-ink-muted" data-cy="clock-detail">
+      {{ detail }}<template v-if="state === 'working'"> · {{ t('working', 'trabajando') }}</template><template v-else-if="state === 'on_break'"> · {{ t('on a break', 'en pausa') }}</template>
+    </span>
+    <div class="flex items-center gap-2">
+      <UiBtn v-if="state === 'off'" variant="secondary" size="sm" :disabled="busy" data-cy="clock-in" @click="clock('in')">{{ t('Clock in again', 'Volver a fichar entrada') }}</UiBtn>
+      <template v-else>
+        <UiBtn v-if="state === 'working'" variant="secondary" size="sm" :disabled="busy" data-cy="clock-break" @click="clock('break_start')">{{ t('Break', 'Pausa') }}</UiBtn>
+        <UiBtn v-else variant="secondary" size="sm" :disabled="busy" data-cy="clock-back" @click="clock('break_end')">{{ t('Back from break', 'Vuelta') }}</UiBtn>
+        <UiBtn variant="secondary" size="sm" class="!text-danger-text" :disabled="busy" data-cy="clock-out" @click="clock('out')">{{ t('Clock out', 'Salida') }}</UiBtn>
+      </template>
+      <NuxtLink :to="monthTo" class="text-[12.5px] font-semibold text-brand-text" data-cy="clock-month">{{ t('My month', 'Mi mes') }}</NuxtLink>
+    </div>
+    <p v-if="error" role="alert" class="w-full text-[12.5px] text-danger-text">{{ error }}</p>
+  </section>
+  <section v-else-if="exempt === false" class="rounded-card border border-line bg-surface p-4" data-cy="clock-card" :data-state="state">
     <div class="flex items-baseline justify-between gap-3">
       <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ t("Today's working time", 'Jornada de hoy') }}</p>
       <span class="font-mono text-[20px] font-semibold text-ink-900" data-cy="clock-worked">{{ formatWorked(day?.workedMinutes ?? 0) }}</span>

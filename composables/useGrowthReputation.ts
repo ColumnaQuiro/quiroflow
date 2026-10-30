@@ -29,9 +29,11 @@ export interface ReputationData {
   hasReviews: boolean
   rating: number | null
   reviewCount: number
+  /** The headline is the connected Google listing's own rating and count, not an average of the imported rows. */
+  ratingFromGoogle: boolean
   distribution: { stars: number; count: number }[]
-  trend: { label: string; value: number }[]
-  trendLabel: string | null
+  /** Monthly averages over the whole record, oldest first; `month` is YYYY-MM. */
+  trend: { month: string; label: string; value: number }[]
   pendingCount: number
   reviews: ReputationReview[]
   google: {

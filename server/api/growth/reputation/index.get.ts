@@ -25,15 +25,18 @@ export default defineEventHandler(async (event) => {
       .from('reviews')
       .select('id, platform, author_name, rating, body, posted_at, replied_at, reply_body, reply_was_ai_drafted, draft_body, clinics:clinic_id(name)')
       .eq('account_id', teamMember.account_id)
-      .gte('posted_at', yearAgo)
+      // Every review, not the last year's: the list pages through them on
+      // the client and the trend chooses its own period. 2,000 is far past
+      // any one clinic's record and keeps a runaway import from becoming a
+      // runaway response.
       .order('posted_at', { ascending: false })
-      .limit(200),
+      .limit(2000),
     supabase
       .from('review_requests')
       .select('id, sent_at, opened_at, review_id')
       .eq('account_id', teamMember.account_id)
       .gte('sent_at', yearAgo),
-    supabase.from('accounts').select('google_business_location, google_business_location_title, google_reviews_synced_at').eq('id', teamMember.account_id).maybeSingle(),
+    supabase.from('accounts').select('google_business_location, google_business_location_title, google_reviews_synced_at, google_rating, google_review_count').eq('id', teamMember.account_id).maybeSingle(),
   ])
 
   if (error) throw createError({ statusCode: 500, statusMessage: error.message })
@@ -48,7 +51,8 @@ export default defineEventHandler(async (event) => {
 
   const average = rated.length === 0 ? null : rated.reduce((sum, review) => sum + review.rating, 0) / rated.length
 
-  // Monthly averages over the year, oldest first. Only months that actually
+  // Monthly averages over the whole record, oldest first; the page chooses
+  // which stretch to draw (12 months by default). Only months that actually
   // had a review appear -- interpolating a flat line through a quiet month
   // would invent a rating nobody gave.
   const byMonth = new Map<string, number[]>()
@@ -59,6 +63,7 @@ export default defineEventHandler(async (event) => {
   const trend = [...byMonth.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([month, ratings]) => ({
+      month,
       label: new Date(`${month}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }),
       value: Number((ratings.reduce((sum, r) => sum + r, 0) / ratings.length).toFixed(2)),
     }))
@@ -67,15 +72,19 @@ export default defineEventHandler(async (event) => {
   const opened = (requests ?? []).filter((r) => r.opened_at).length
   const converted = (requests ?? []).filter((r) => r.review_id).length
 
+  // The headline is Google's own figure when the listing is connected: the
+  // rating and count its patients see. An average of the imported rows only
+  // approximates it (Google weighs nothing differently, but a review removed
+  // on Google, or one past the import's cap, would make the two disagree).
+  const fromGoogle = Boolean(account?.google_business_location) && account?.google_rating != null && account?.google_review_count != null
+
   return {
     hasReviews: all.length > 0,
-    rating: average === null ? null : Number(average.toFixed(1)),
-    reviewCount: rated.length,
+    rating: fromGoogle ? Number(account!.google_rating) : average === null ? null : Number(average.toFixed(1)),
+    reviewCount: fromGoogle ? account!.google_review_count! : rated.length,
+    ratingFromGoogle: fromGoogle,
     distribution,
     trend,
-    // One decimal, matching the headline rating. `4 → 4` next to `4.3`
-    // reads like a different quantity.
-    trendLabel: trend.length >= 2 ? `${trend[0]!.value.toFixed(1)} → ${trend[trend.length - 1]!.value.toFixed(1)}` : null,
     pendingCount: all.filter((review) => review.draft_body && !review.replied_at).length,
     reviews: all.map((review) => ({
       id: review.id,

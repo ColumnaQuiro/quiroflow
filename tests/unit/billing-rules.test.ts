@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import {
   MONTHS_PER_YEAR,
+  dateBlock,
   formatEur,
   formatGb,
   formatLongDate,
+  formatShortDate,
+  formatWeekdayDate,
   meterPercent,
   nextChargeTotal,
   planLimitsWaived,
@@ -111,6 +114,16 @@ describe('es-ES formatting', () => {
     // The page used to render this date as "October 21, 2026" beside those
     // amounts, in one sentence.
     expect(formatLongDate('2026-10-21T00:00:00.000Z')).to.eq('21 de octubre de 2026')
+  })
+
+  it('writes dates in English for someone reading in English, amounts unchanged', () => {
+    // Amounts stay Spanish -- the money is in Spain -- but a date is words, and
+    // "Patient since 16 de junio de 2025" in the English UI read as unfinished.
+    expect(formatLongDate('2026-10-21T00:00:00.000Z', 'en')).to.eq('21 October 2026')
+    expect(formatShortDate('2026-09-13T12:00:00.000Z', 'en')).to.eq('13 Sept')
+    expect(formatWeekdayDate('2026-09-23T12:00:00.000Z', 'en')).to.eq('Wed 23 Sept')
+    expect(dateBlock('2026-10-05T12:00:00.000Z', 'en')).to.deep.eq({ day: '5', month: 'Oct' })
+    expect(formatShortDate('2026-09-13T12:00:00.000Z')).to.eq('13 sept')
   })
 
   it('formats storage with a decimal that suits the size', () => {

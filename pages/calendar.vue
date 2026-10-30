@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatEur, formatLongWeekdayDate, formatShortDate, formatTime, formatWeekdayDate } from '~/utils/billing'
+import { formatEur, formatTime } from '~/utils/billing'
 import type { BusinessHours } from '~/utils/businessHours'
 import { dayKeyFor, hasBusinessHoursConfigured, outsideWorkingHours, practitionerWindowsForDay, unionWorkingWindows, windowsForDay, withinWindows } from '~/utils/businessHours'
 import type { AppointmentTypeOverride } from '~/utils/appointmentOverrides'
@@ -147,6 +147,7 @@ const { can, restricted } = usePermission()
 // dragging, resizing, blocking time -- instead of letting each one fail.
 const readOnly = computed(() => restricted('calendar_read_only'))
 const t = useT()
+const { formatShortDate, formatWeekdayDate, formatLongWeekdayDate } = useDates()
 
 const SLOT_MIN = computed(() => store.currentClinic?.slot_duration_minutes ?? 30)
 
@@ -892,7 +893,6 @@ function hasFutureAppointment(appt: AppointmentRow) {
   if (!ids) return false
   return ids.size > 1 || !ids.has(appt.id)
 }
-
 
 // Its own counter, not loadToken: blocks reload alone after a block is
 // saved, and that must not void an appointments load still in flight.

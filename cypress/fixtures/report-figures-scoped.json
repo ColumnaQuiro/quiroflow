@@ -15,15 +15,15 @@
       "Sun",
       "Income this month",
       "1 Jun – 17 Jun",
-      "204,00 €",
-      "-65% vs previous period",
+      "226,00 €",
+      "-66% vs previous period",
       "Charged",
-      "456,00 €",
+      "585,00 €",
       "Outstanding",
-      "20,00 €",
+      "42,00 €",
       "Visit summary",
       "This week",
-      "[Cancellations | 0 ; Estimated visits | 6 ; Payments this week | 164,00 € ; Remaining visits | 4 ; Service generated | 40,00 €]",
+      "[Cancellations | 0 ; Estimated visits | 6 ; Payments this week | 186,00 € ; Remaining visits | 4 ; Service generated | 84,00 €]",
       "By type",
       "Mantenimiento",
       "1",
@@ -31,7 +31,7 @@
       "Nothing left booked today.",
       "Active patients",
       "38",
-      "(253%)",
+      "(200%)",
       "Seen in the last 90 days",
       "No-show rate",
       "This week",
@@ -40,7 +40,7 @@
       "Recalls due: (server clock)",
       "Care plans behind schedule: (server clock)",
       "Total patients",
-      "15",
+      "19",
       "Appointment distribution",
       "1 Jun – 17 Jun",
       "[Afternoon | 4 visits | 100% ; Evening | 6 visits | 83% ; Morning | 5 visits | 100%]",
@@ -59,27 +59,24 @@
       "Only your own figures",
       "<select: All clinics>",
       "Total charged",
-      "456,00 €",
+      "500,00 €",
       "Total paid",
-      "204,00 €",
+      "226,00 €",
       "Outstanding",
-      "20,00 €",
-      "Plus",
-      "513,00 €",
-      "in this period that no filter can attribute — money with no visit and no practitioner on the patient.",
+      "42,00 €",
       "Revenue by month",
       "height 256px",
       "By payment method",
       "height 224px",
       "By practitioner",
-      "[Beatriz Ferrando | 204,00 €]",
+      "[Beatriz Ferrando | 226,00 €]",
       "By service",
       "e.g. \"Primera Visita €600, Informe €6,000\" — set up under Billing → Services.",
-      "[Ajuste | 44,00 € ; Informe | 60,00 € ; Mantenimiento | 40,00 € ; Primera visita | 60,00 €]"
+      "[Ajuste | 44,00 € ; Informe | 60,00 € ; Mantenimiento | 40,00 € ; Not identified | 44,00 € ; Primera visita | 60,00 €]"
     ],
     "charts": [
-      "Revenue (€): Bank transfer=80, Card=44, Cash=60, Other=20",
-      "Revenue (€): Jun 26=204"
+      "Revenue (€): Bank transfer=80, Card=66, Cash=60, Other=20",
+      "Revenue (€): Jun 26=226"
     ]
   },
   "Beatriz / /reports/daily-transactions": {
@@ -104,10 +101,10 @@
       "Revenue by practitioner, by month",
       "height 320px",
       "Total over range",
-      "[Beatriz Ferrando | 204,00 €]"
+      "[Beatriz Ferrando | 226,00 €]"
     ],
     "charts": [
-      "Beatriz Ferrando: Jun 26=204"
+      "Beatriz Ferrando: Jun 26=226"
     ]
   },
   "Beatriz / /reports/statistics": {

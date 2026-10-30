@@ -118,7 +118,7 @@ function appointmentsLabel(id: string) {
   return n === 1 ? t('1 appointment', '1 cita') : t(`${n.toLocaleString('es-ES')} appointments`, `${n.toLocaleString('es-ES')} citas`)
 }
 function formatDay(iso: string) {
-  return new Date(iso).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })
+  return new Date(iso).toLocaleDateString(t('en-GB', 'es-ES'), { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
 // --- Order -------------------------------------------------------------------------

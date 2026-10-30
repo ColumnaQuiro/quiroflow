@@ -5,7 +5,7 @@ import { effectivePriceCents, effectiveDuration, type AppointmentTypeOverride } 
 import { normalizeSearchTerm, sanitizeSearchToken } from '~/utils/searchText'
 import { COUNTRIES_BY_NAME } from '~/utils/countries'
 import { splitDialPrefix } from '~/utils/phone'
-import { formatEur, formatShortDate, formatTime, formatWeekdayDate } from '~/utils/billing'
+import { formatEur, formatTime } from '~/utils/billing'
 import { findFreeSlots, firstClash, type Busy } from '~/utils/freeSlots'
 import { seriesProblems, seriesStarts, type RepeatRule, type SeriesProblem } from '~/utils/repeatSeries'
 import { visitMarkerLabel } from '~/utils/carePlanVisitMarkers'
@@ -63,6 +63,7 @@ const { fire } = useAutomations()
 const { issueFactura } = useFacturas()
 const { phoneProblem } = usePhoneValidation()
 const t = useT()
+const { formatShortDate, formatWeekdayDate } = useDates()
 
 const activeTab = ref<'create' | 'availability'>('create')
 

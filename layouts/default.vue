@@ -133,7 +133,9 @@ watch(supabaseFailure, (f) => {
         which not every page even has) so the account menu has one home
         instead of living in the sidebar, where it permanently cost a row of
         vertical space on every screen. -->
-        <div class="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-line bg-surface px-4 touch:h-12">
+        <!-- relative: the support panel (SupportHelpWidget) hangs from this
+        bar's right edge rather than from its own button. -->
+        <div class="relative flex h-10 shrink-0 items-center justify-between gap-2 border-b border-line bg-surface px-4 touch:h-12">
           <div class="flex min-w-0 items-center gap-2">
             <!-- The sidebar is an off-canvas drawer below lg (AppSidebar.vue),
             so this is the only way to reach it on a phone or narrow tablet. -->
@@ -159,6 +161,7 @@ watch(supabaseFailure, (f) => {
           </div>
           <div class="flex shrink-0 items-center gap-2">
             <TeamAlertButton />
+            <SupportHelpWidget />
             <AppThemeToggle />
             <AppAccountMenu />
           </div>
@@ -182,6 +185,5 @@ watch(supabaseFailure, (f) => {
       </div>
     </div>
     <AppCommandPalette v-if="paletteOpen" @close="paletteOpen = false" />
-    <SupportHelpWidget />
   </div>
 </template>

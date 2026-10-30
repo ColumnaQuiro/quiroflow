@@ -160,7 +160,7 @@ function patientName(row: WaitlistRow) {
 }
 function formatDate(iso: string | null) {
   if (!iso) return '—'
-  return new Date(iso).toLocaleString('es-ES', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+  return new Date(iso).toLocaleString(t('en-GB', 'es-ES'), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 
 // Modal dialogs on this screen: focus stays inside while open, Escape closes,

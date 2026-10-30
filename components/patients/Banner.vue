@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { formatLongDate } from '~/utils/billing'
 import { patientAge } from '~/utils/patientAge'
 import { formatPhoneDisplay } from '~/utils/phone'
 import { clinicDateOf, DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
@@ -40,6 +39,7 @@ const props = defineProps<{
 defineEmits<{ message: []; sendApp: []; cancelFuture: []; book: []; charge: []; archive: []; merge: []; remove: []; exportData: []; photoUpdated: [] }>()
 
 const t = useT()
+const { formatLongDate } = useDates()
 
 // "Embarazada · 24+3 sem" beside the name, on every tab (PregnancyCard has the rest).
 const pregnancy = computed(() => (props.patient.pregnancy_due_date ? pregnancyProgress(props.patient.pregnancy_due_date, clinicDateOf(new Date(), DEFAULT_CLINIC_TIMEZONE)) : null))

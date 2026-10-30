@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { dateBlock, formatEur, formatTime } from '~/utils/billing'
+import { formatEur, formatTime } from '~/utils/billing'
 import type { VisitPayment } from '~/utils/visitPayment'
 
 // Every visit this patient has had or has booked, and -- the part that was
@@ -40,6 +40,7 @@ const supabase = useSupabaseClient()
 const { fetchVisitPayments } = useVisitPayments()
 const store = useAccountStore()
 const t = useT()
+const { dateBlock } = useDates()
 const { preference: langPreference } = useLang()
 
 const appointments = ref<AppointmentRow[]>([])

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { dateBlock, formatEur, formatLongDate, formatTime } from '~/utils/billing'
+import { formatEur, formatTime } from '~/utils/billing'
 import { patientAge } from '~/utils/patientAge'
 import { resolveVisitPayment, type VisitPayment } from '~/utils/visitPayment'
 import type { Tables } from '~/types/database.types'
@@ -23,6 +23,7 @@ const emit = defineEmits<{ updated: [] }>()
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+const { formatLongDate, dateBlock } = useDates()
 const { can } = usePermission()
 
 const detailsOpen = ref(false)

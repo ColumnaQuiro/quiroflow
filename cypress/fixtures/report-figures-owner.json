@@ -141,8 +141,8 @@
       "Sun",
       "Income this month",
       "18 May – 17 Jun",
-      "608,00 €",
-      "-42% vs previous period",
+      "688,00 €",
+      "-54% vs previous period",
       "Charged",
       "1112,00 €",
       "Outstanding",
@@ -160,7 +160,7 @@
       "Nothing left booked today.",
       "Active patients",
       "38",
-      "(253%)",
+      "(200%)",
       "Seen in the last 90 days",
       "No-show rate",
       "This week",
@@ -169,7 +169,7 @@
       "Recalls due: (server clock)",
       "Care plans behind schedule: (server clock)",
       "Total patients",
-      "15",
+      "19",
       "Appointment distribution",
       "18 May – 17 Jun",
       "[Afternoon | 9 visits | 100% ; Evening | 10 visits | 90% ; Morning | 12 visits | 100%]",
@@ -205,7 +205,7 @@
       "By payment method",
       "height 224px",
       "By practitioner",
-      "[Beatriz Ferrando | 204,00 € ; Natacha Ruiz | 2306,00 € ; Olga Owner | 1634,00 € ; Unassigned | 380,00 €]",
+      "[Beatriz Ferrando | 204,00 € ; Natacha Ruiz | 2306,00 € ; Olga Owner | 2014,00 €]",
       "By service",
       "e.g. \"Primera Visita €600, Informe €6,000\" — set up under Billing → Services.",
       "[Ajuste | 396,00 € ; Almohada cervical | 90,00 € ; Informe radiológico | 30,00 € ; Informe | 60,00 € ; Mantenimiento | 120,00 € ; Not identified | 528,00 € ; Plantillas | 90,00 € ; Primera visita | 60,00 € ; Sin etiquetar | 30,00 €]"
@@ -226,9 +226,6 @@
       "204,00 €",
       "Outstanding",
       "20,00 €",
-      "Plus",
-      "380,00 €",
-      "in this period that no filter can attribute — money with no visit and no practitioner on the patient.",
       "Revenue by month",
       "height 256px",
       "By payment method",
@@ -263,7 +260,7 @@
       "By payment method",
       "height 224px",
       "By practitioner",
-      "[Beatriz Ferrando | 1346,00 € ; Natacha Ruiz | 619,50 € ; Olga Owner | 898,00 € ; Unassigned | 980,00 €]",
+      "[Beatriz Ferrando | 1866,00 € ; Natacha Ruiz | 1019,50 € ; Olga Owner | 898,00 € ; Unassigned | 60,00 €]",
       "By service",
       "e.g. \"Primera Visita €600, Informe €6,000\" — set up under Billing → Services.",
       "[Ajuste | 528,00 € ; Almohada cervical | 45,00 € ; Bono 10 | 44,00 € ; Informe radiológico | 15,00 € ; Informe | 60,00 € ; Mantenimiento | 160,00 € ; Not identified | 440,00 € ; Oferta primera visita | 25,00 € ; Plantillas | 90,00 € ; Primera visita | 60,00 € ; Revisión | 44,00 € ; Sin etiquetar | 30,00 €]"
@@ -281,25 +278,22 @@
       "Total charged",
       "1367,00 €",
       "Total paid",
-      "619,50 €",
+      "1019,50 €",
       "Outstanding",
       "49,50 €",
-      "Plus",
-      "920,00 €",
-      "in this period that no filter can attribute — money with no visit and no practitioner on the patient.",
       "Revenue by month",
       "height 256px",
       "By payment method",
       "height 224px",
       "By practitioner",
-      "[Natacha Ruiz | 619,50 €]",
+      "[Natacha Ruiz | 1019,50 €]",
       "By service",
       "e.g. \"Primera Visita €600, Informe €6,000\" — set up under Billing → Services.",
       "[Ajuste | 176,00 € ; Bono 10 | 44,00 € ; Informe radiológico | 15,00 € ; Mantenimiento | 40,00 € ; Primera visita | 60,00 € ; Revisión | 44,00 €]"
     ],
     "charts": [
-      "Revenue (€): Card=321.5, Cash=194, Other=104",
-      "Revenue (€): May 26=619.5"
+      "Revenue (€): Bank transfer=100, Card=601.5, Cash=214, Other=104",
+      "Revenue (€): May 26=1019.5"
     ]
   },
   "income / last month / Norte": {
@@ -321,7 +315,7 @@
       "By payment method",
       "height 224px",
       "By practitioner",
-      "[Beatriz Ferrando | 372,00 € ; Natacha Ruiz | 252,00 € ; Olga Owner | 449,00 € ; Unassigned | 270,00 €]",
+      "[Beatriz Ferrando | 452,00 € ; Natacha Ruiz | 442,00 € ; Olga Owner | 449,00 €]",
       "By service",
       "e.g. \"Primera Visita €600, Informe €6,000\" — set up under Billing → Services.",
       "[Ajuste | 308,00 € ; Almohada cervical | 45,00 € ; Mantenimiento | 120,00 € ; Plantillas | 90,00 € ; Revisión | 44,00 €]"
@@ -413,10 +407,10 @@
       "Revenue by practitioner, by month",
       "height 320px",
       "Total over range",
-      "[Beatriz Ferrando | 204,00 € ; Natacha Ruiz | 2306,00 € ; Olga Owner | 1634,00 € ; Unassigned | 380,00 €]"
+      "[Beatriz Ferrando | 204,00 € ; Natacha Ruiz | 2306,00 € ; Olga Owner | 2014,00 €]"
     ],
     "charts": [
-      "Beatriz Ferrando: Jun 26=204 || Natacha Ruiz: Jun 26=2306 || Olga Owner: Jun 26=1634 || Unassigned: Jun 26=380"
+      "Beatriz Ferrando: Jun 26=204 || Natacha Ruiz: Jun 26=2306 || Olga Owner: Jun 26=2014"
     ]
   },
   "income performance / Beatriz": {
@@ -441,10 +435,10 @@
       "Revenue by practitioner, by month",
       "height 320px",
       "Total over range",
-      "[Beatriz Ferrando | 1346,00 € ; Natacha Ruiz | 619,50 € ; Olga Owner | 898,00 € ; Unassigned | 980,00 €]"
+      "[Beatriz Ferrando | 1866,00 € ; Natacha Ruiz | 1019,50 € ; Olga Owner | 898,00 € ; Unassigned | 60,00 €]"
     ],
     "charts": [
-      "Beatriz Ferrando: May 26=1346 || Natacha Ruiz: May 26=619.5 || Olga Owner: May 26=898 || Unassigned: May 26=980"
+      "Beatriz Ferrando: May 26=1866 || Natacha Ruiz: May 26=1019.5 || Olga Owner: May 26=898 || Unassigned: May 26=60"
     ]
   },
   "income performance / last month / Norte": {
@@ -455,10 +449,10 @@
       "Revenue by practitioner, by month",
       "height 320px",
       "Total over range",
-      "[Beatriz Ferrando | 372,00 € ; Natacha Ruiz | 252,00 € ; Olga Owner | 449,00 € ; Unassigned | 270,00 €]"
+      "[Beatriz Ferrando | 452,00 € ; Natacha Ruiz | 442,00 € ; Olga Owner | 449,00 €]"
     ],
     "charts": [
-      "Beatriz Ferrando: May 26=372 || Natacha Ruiz: May 26=252 || Olga Owner: May 26=449 || Unassigned: May 26=270"
+      "Beatriz Ferrando: May 26=452 || Natacha Ruiz: May 26=442 || Olga Owner: May 26=449"
     ]
   },
   "statistics": {

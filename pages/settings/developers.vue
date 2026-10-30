@@ -150,7 +150,7 @@ const curlExample = `curl "${API_BASE_URL}/appointments?starts_at=gte:2026-03-01
                     <td class="whitespace-nowrap px-3.5 py-2.5 text-[13px]" :class="tk.last_used_at ? 'text-ink-700' : 'text-warning-text'">{{ relativeTime(tk.last_used_at) }}</td>
                     <td class="whitespace-nowrap px-3.5 py-2.5 text-[13px] text-ink-muted">
                       <UiPill v-if="isExpired(tk)" tone="danger">{{ t('Expired', 'Caducado') }}</UiPill>
-                      <template v-else>{{ tk.expires_at ? new Date(tk.expires_at).toLocaleDateString('es-ES') : t('Never', 'Nunca') }}</template>
+                      <template v-else>{{ tk.expires_at ? new Date(tk.expires_at).toLocaleDateString(t('en-GB', 'es-ES')) : t('Never', 'Nunca') }}</template>
                     </td>
                     <td class="py-2.5 pr-[18px] text-right">
                       <UiBtn size="sm" class="!border-danger-border !text-danger-text" data-cy="token-revoke" @click="revoking = tk">{{ t('Revoke', 'Revocar') }}</UiBtn>
@@ -185,7 +185,7 @@ const curlExample = `curl "${API_BASE_URL}/appointments?starts_at=gte:2026-03-01
                 </thead>
                 <tbody>
                   <tr v-for="log in logs" :key="log.id" class="border-b border-line-row align-top last:border-b-0">
-                    <td class="whitespace-nowrap py-2.5 pl-[18px] pr-3.5 text-[13px] text-ink-muted">{{ new Date(log.created_at).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' }) }}</td>
+                    <td class="whitespace-nowrap py-2.5 pl-[18px] pr-3.5 text-[13px] text-ink-muted">{{ new Date(log.created_at).toLocaleString(t('en-GB', 'es-ES'), { dateStyle: 'short', timeStyle: 'short' }) }}</td>
                     <td class="px-3.5 py-2.5">
                       <p class="break-all font-mono text-[12.5px] text-ink-900"><strong class="font-semibold">{{ log.method }}</strong> {{ log.path }}</p>
                       <p v-if="log.error_message" class="mt-0.5 text-[12px] leading-snug text-danger-text">{{ log.error_message }}</p>

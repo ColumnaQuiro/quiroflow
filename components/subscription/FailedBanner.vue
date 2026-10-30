@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatEur, formatLongDate } from '~/utils/billing'
+import { formatEur } from '~/utils/billing'
 
 // One banner, one rail card, one pill. The page does not turn red: a clinic
 // whose card bounced needs to find the fix, not be shouted at.
@@ -15,6 +15,7 @@ defineProps<{
 defineEmits<{ updateCard: [] }>()
 
 const t = useT()
+const { formatLongDate } = useDates()
 </script>
 
 <template>

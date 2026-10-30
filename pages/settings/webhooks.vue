@@ -232,7 +232,7 @@ if (expected !== req.headers['x-quiroflow-signature']) return res.status(401).en
               <ul v-else>
                 <li v-for="d in deliveries[w.id]" :key="d.id" class="border-b border-line-row last:border-b-0">
                   <button type="button" class="flex w-full items-center gap-3 px-[18px] py-2 text-left hover:bg-surface-subtle" @click="openPayload = openPayload === d.id ? null : d.id">
-                    <span class="w-[150px] shrink-0 text-[13px] text-ink-muted">{{ new Date(d.created_at).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' }) }}</span>
+                    <span class="w-[150px] shrink-0 text-[13px] text-ink-muted">{{ new Date(d.created_at).toLocaleString(t('en-GB', 'es-ES'), { dateStyle: 'short', timeStyle: 'short' }) }}</span>
                     <span class="flex-1 font-mono text-[12.5px] text-ink-900">{{ d.event_type }}</span>
                     <span v-if="d.request_id" class="font-mono text-[12px] text-ink-faint">#{{ d.request_id }}</span>
                   </button>

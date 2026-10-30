@@ -35,7 +35,7 @@ async function load() {
 onMounted(load)
 
 function fmt(iso: string) {
-  return new Date(iso).toLocaleDateString('es-ES', { timeZone: props.timezone, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+  return new Date(iso).toLocaleDateString(t('en-GB', 'es-ES'), { timeZone: props.timezone, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
 }
 function clock(iso: string) {
   return new Date(iso).toLocaleTimeString('es-ES', { timeZone: props.timezone, hour: '2-digit', minute: '2-digit' })

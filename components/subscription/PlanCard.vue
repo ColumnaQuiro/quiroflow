@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatEur, formatLongDate, type SubscriptionState } from '~/utils/billing'
+import { formatEur, type SubscriptionState } from '~/utils/billing'
 
 // The plan, and what it adds up to.
 //
@@ -24,6 +24,7 @@ const props = defineProps<{
 defineEmits<{ changePlan: [] }>()
 
 const t = useT()
+const { formatLongDate } = useDates()
 const comped = computed(() => props.state === 'comped')
 </script>
 

@@ -342,7 +342,7 @@ function codeMeta(c: Tables<'online_booking_discount_codes'>) {
   const used = c.max_uses ? t(`${c.times_used} of ${c.max_uses} used`, `${c.times_used} de ${c.max_uses} usados`) : t(`${c.times_used} used`, `${c.times_used} usados`)
   if (!c.expires_at) return used
   // The last day it works: the instant stored is the start of the day after.
-  const day = new Date(new Date(c.expires_at).getTime() - 1).toLocaleDateString('es-ES', { timeZone: codesTimeZone.value })
+  const day = new Date(new Date(c.expires_at).getTime() - 1).toLocaleDateString(t('en-GB', 'es-ES'), { timeZone: codesTimeZone.value })
   return new Date(c.expires_at).getTime() < Date.now() ? t(`${used} · expired ${day}`, `${used} · caducó el ${day}`) : t(`${used} · expires ${day}`, `${used} · caduca el ${day}`)
 }
 

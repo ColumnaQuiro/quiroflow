@@ -89,7 +89,7 @@ function metaLine(c: ClinicRow) {
 }
 
 function formatDay(iso: string) {
-  return new Date(iso).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })
+  return new Date(iso).toLocaleDateString(t('en-GB', 'es-ES'), { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
 // --- Add a location --------------------------------------------------------------

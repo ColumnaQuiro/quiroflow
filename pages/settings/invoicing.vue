@@ -300,7 +300,7 @@ const verifactuLine = computed(() => {
   if (!v) return '…'
   if (v.mode === 'off') return t('Off', 'Desactivado')
   if (v.mode === 'test') return t('Test service', 'Servicio de pruebas')
-  const day = v.productionFrom ? new Date(v.productionFrom).toLocaleDateString('es-ES', { timeZone: 'Europe/Madrid', day: 'numeric', month: 'short', year: 'numeric' }) : ''
+  const day = v.productionFrom ? new Date(v.productionFrom).toLocaleDateString(t('en-GB', 'es-ES'), { timeZone: 'Europe/Madrid', day: 'numeric', month: 'short', year: 'numeric' }) : ''
   return v.productionFrom && new Date(v.productionFrom).getTime() > Date.now() ? t(`Test · live from ${day}`, `Pruebas · producción desde ${day}`) : t(`Live since ${day}`, `En producción desde ${day}`)
 })
 

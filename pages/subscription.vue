@@ -1,16 +1,6 @@
 <script setup lang="ts">
 import { planIncludesGrowth } from '~/utils/growthPlans'
-import {
-  planLimitsWaived,
-  bytesToGb,
-  checkoutTrialEnd,
-  formatEur,
-  formatLongDate,
-  nextChargeTotal,
-  pricePerMonth,
-  seatAllowance,
-  subscriptionState,
-} from '~/utils/billing'
+import { planLimitsWaived, bytesToGb, checkoutTrialEnd, formatEur, nextChargeTotal, pricePerMonth, seatAllowance, subscriptionState } from '~/utils/billing'
 import type { PaymentEntry } from '~/components/subscription/PaymentsTable.vue'
 
 // /subscription.
@@ -95,6 +85,7 @@ const router = useRouter()
 const store = useAccountStore()
 const supabase = useSupabaseClient()
 const t = useT()
+const { formatLongDate } = useDates()
 const { showToast } = useToast()
 const { loading: loadingPortal, openPortal } = useBillingPortal()
 

@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { formatLongDate } from '~/utils/billing'
-
 export interface PaymentEntry {
   saleId: string
   date: string
@@ -16,6 +14,7 @@ const props = defineProps<{ payments: PaymentEntry[]; loading: boolean; firstCha
 defineEmits<{ downloadAll: [] }>()
 
 const t = useT()
+const { formatLongDate } = useDates()
 
 const PAGE = 8
 const shown = ref(PAGE)

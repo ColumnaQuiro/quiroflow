@@ -27,7 +27,7 @@ const today = computed(() => clinicDateOf(new Date(), props.timezone))
 const upcoming = computed(() => (region.value ? holidaysFor(region.value, today.value, HOLIDAYS_KNOWN_THROUGH) : []))
 const nextYear = HOLIDAY_YEARS[HOLIDAY_YEARS.length - 1]! + 1
 function fmt(date: string) {
-  return new Date(`${date}T12:00:00Z`).toLocaleDateString('es-ES', { timeZone: 'UTC', weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+  return new Date(`${date}T12:00:00Z`).toLocaleDateString(t('en-GB', 'es-ES'), { timeZone: 'UTC', weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
 }
 
 const saving = ref(false)

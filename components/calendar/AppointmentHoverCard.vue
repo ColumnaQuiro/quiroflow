@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatEur, formatShortDate, formatTime } from '~/utils/billing'
+import { formatEur, formatTime } from '~/utils/billing'
 import type { BlockView } from '~/components/calendar/AppointmentBlock.vue'
 import type { StageFacts } from '~/composables/useAppointmentStage'
 import { pendingFormsLabel } from '~/utils/appointmentStage'
@@ -38,6 +38,7 @@ const props = defineProps<{
 }>()
 
 const t = useT()
+const { formatShortDate } = useDates()
 const typeNotes = useAppointmentTypeNotes()
 onMounted(() => typeNotes.load())
 const { can } = usePermission()

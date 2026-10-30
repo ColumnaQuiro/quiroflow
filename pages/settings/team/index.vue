@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { formatShortDate } from '~/utils/billing'
-
 // Settings -> Team: everyone who signs in, and who of them sees patients.
 // Each person opens onto their own page (/settings/team/<id>) where
 // everything about them is edited. The old Settings -> Practitioners page is
@@ -10,6 +8,7 @@ import { formatShortDate } from '~/utils/billing'
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+const { formatShortDate } = useDates()
 const { showToast } = useToast()
 
 interface MemberRow {

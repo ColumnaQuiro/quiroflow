@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { formatLongDate } from '~/utils/billing'
-
 // Everything that edits billing, in one place, all of it outbound.
 //
 // There is deliberately no in-app equivalent of any of these: QuiroFlow never
@@ -10,6 +8,7 @@ defineProps<{ customerSince: string | null; accessEndsAt: string | null }>()
 defineEmits<{ portal: [], cancel: [] }>()
 
 const t = useT()
+const { formatLongDate } = useDates()
 </script>
 
 <template>

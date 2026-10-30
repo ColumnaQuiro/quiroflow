@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Tables } from '~/types/database.types'
 import { clinicDateOf, DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
-import { formatLongDate } from '~/utils/billing'
+
 import { pregnancyProgress, pregnancyWeeksLabel } from '~/utils/pregnancy'
 
 // Pregnancy on the patient's Overview: weeks + days, the trimester, a bar
@@ -18,6 +18,7 @@ const emit = defineEmits<{ updated: [] }>()
 
 const supabase = useSupabaseClient()
 const t = useT()
+const { formatLongDate } = useDates()
 const { can } = usePermission()
 const { showToast } = useToast()
 

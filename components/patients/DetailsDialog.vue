@@ -11,7 +11,7 @@
 //
 // Nothing about the form itself changed: same fields, same validation, same
 // save, same referral-campaign side effect. It is lifted, not rewritten.
-import { formatEur, formatLongDate } from '~/utils/billing'
+import { formatEur } from '~/utils/billing'
 import { ADULT_AGE, patientAge } from '~/utils/patientAge'
 import type { Tables } from '~/types/database.types'
 import { normalizeSearchTerm } from '~/utils/searchText'
@@ -24,6 +24,7 @@ const emit = defineEmits<{ updated: []; close: [] }>()
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+const { formatLongDate } = useDates()
 
 // A modal dialog: focus stays inside it, Escape closes it, and focus goes
 // back to whatever opened it (useFocusTrap).
@@ -190,7 +191,6 @@ const reminderHourChoices = computed(() => {
   if (stored !== null) all.add(stored)
   return [...all].sort((a, b) => a - b)
 })
-
 
 // -- Details edit form -------------------------------------------------
 const editing = ref(true)

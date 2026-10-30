@@ -218,7 +218,7 @@ function device(ua: string | null) {
 }
 
 function when(iso: string) {
-  return new Date(iso).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })
+  return new Date(iso).toLocaleString(t('en-GB', 'es-ES'), { dateStyle: 'short', timeStyle: 'short' })
 }
 
 // -- Detail of one change ------------------------------------------------------

@@ -296,12 +296,12 @@ const lastAnswerLabel = computed(() => {
 })
 
 function formatDateTime(iso: string | null) {
-  return iso ? new Date(iso).toLocaleString('es-ES', { dateStyle: 'medium', timeStyle: 'short' }) : '—'
+  return iso ? new Date(iso).toLocaleString(t('en-GB', 'es-ES'), { dateStyle: 'medium', timeStyle: 'short' }) : '—'
 }
 
 // --- the page's summary: one sentence, then four facts ------------------------
 function madridDate(iso: string) {
-  return new Date(iso).toLocaleDateString('es-ES', { timeZone: 'Europe/Madrid', day: 'numeric', month: 'long', year: 'numeric' })
+  return new Date(iso).toLocaleDateString(t('en-GB', 'es-ES'), { timeZone: 'Europe/Madrid', day: 'numeric', month: 'long', year: 'numeric' })
 }
 const liveInFuture = computed(() => !!settings.value?.productionFrom && new Date(settings.value.productionFrom).getTime() > Date.now())
 const daysToLive = computed(() => (settings.value?.productionFrom ? Math.ceil((new Date(settings.value.productionFrom).getTime() - Date.now()) / 86_400_000) : null))

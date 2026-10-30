@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatShortDate, formatTime } from '~/utils/billing'
+import { formatTime } from '~/utils/billing'
 
 // Beside an Inbox thread: the patient behind it, so a reply about a visit can
 // be written without leaving to look it up. Balance and bono come from the
@@ -7,6 +7,7 @@ import { formatShortDate, formatTime } from '~/utils/billing'
 const props = defineProps<{ patientId: string }>()
 const supabase = useSupabaseClient()
 const t = useT()
+const { formatShortDate } = useDates()
 
 const { outstandingCents, availableCents, activePackages } = usePatientFinancialSummary(() => props.patientId)
 
@@ -43,7 +44,7 @@ onMounted(async () => {
 })
 
 function when(v: Visit) {
-  return `${new Date(v.starts_at).toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' })} · ${formatTime(v.starts_at)}`
+  return `${new Date(v.starts_at).toLocaleDateString(t('en-GB', 'es-ES'), { weekday: 'short', day: 'numeric', month: 'short' })} · ${formatTime(v.starts_at)}`
 }
 const recallText = computed(() => {
   if (next.value) return t('Up to date: has a visit booked.', 'Al día: tiene cita reservada.')

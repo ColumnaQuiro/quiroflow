@@ -171,7 +171,7 @@ async function confirmDelete() {
                   </span>
                   <span class="flex min-w-0 flex-1 flex-col gap-1">
                     <strong class="truncate text-[15px] text-ink-900" data-cy="letter-template-name">{{ tpl.name }}</strong>
-                    <span class="text-[12.5px] text-ink-muted">{{ t('edited', 'editada el') }} {{ new Date(tpl.updated_at).toLocaleDateString('es-ES') }}</span>
+                    <span class="text-[12.5px] text-ink-muted">{{ t('edited', 'editada el') }} {{ new Date(tpl.updated_at).toLocaleDateString(t('en-GB', 'es-ES')) }}</span>
                   </span>
                 </button>
                 <button

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatEur, formatLongDate } from '~/utils/billing'
+import { formatEur } from '~/utils/billing'
 
 // One charge. The amount shown is the total Stripe took, IVA INCLUDED -- the
 // old table put "Transaction Amount" and "Tax Amount" in adjacent columns,
@@ -22,6 +22,7 @@ const props = defineProps<{
 }>()
 
 const t = useT()
+const { formatLongDate } = useDates()
 const open = ref(false)
 const copied = ref(false)
 

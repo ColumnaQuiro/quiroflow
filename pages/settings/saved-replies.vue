@@ -173,7 +173,7 @@ const inputClass = 'h-9 touch:h-11 w-full rounded-ctl border border-line-control
             <div v-if="active" class="flex min-w-0 flex-1 flex-col gap-3.5 p-[18px]" data-cy="reply-editor">
               <div class="flex flex-wrap items-center gap-2.5">
                 <span class="flex-1 text-[12.5px] text-ink-muted">
-                  {{ dirty ? t('Unsaved changes', 'Cambios sin guardar') : t(`Edited ${new Date(active.updated_at).toLocaleDateString('es-ES')}`, `Editada el ${new Date(active.updated_at).toLocaleDateString('es-ES')}`) }}
+                  {{ dirty ? t('Unsaved changes', 'Cambios sin guardar') : t(`Edited ${new Date(active.updated_at).toLocaleDateString(t('en-GB', 'es-ES'))}`, `Editada el ${new Date(active.updated_at).toLocaleDateString(t('en-GB', 'es-ES'))}`) }}
                 </span>
                 <UiBtn class="!border-danger-border !text-danger-text" data-cy="reply-delete" @click="deleting = active">{{ t('Delete', 'Eliminar') }}</UiBtn>
                 <UiBtn variant="primary" data-cy="reply-save" :disabled="saving || !dirty" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}</UiBtn>

@@ -406,7 +406,8 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- Registro de jornada: the viewer's own clock, whoever's day is shown. -->
+      <!-- Registro de jornada: the viewer's own clock, whoever's day is shown.
+      One line once they have clocked in, so the day's visits come first. -->
       <TimeclockClockCard
         v-if="store.accountId && store.teamMember"
         class="mx-4 mt-4 sm:mx-6"
@@ -414,22 +415,7 @@ onMounted(() => {
         :team-member-id="store.teamMember.id"
         :time-zone="accountTimeZone"
         month-to="/jornada?tab=mine"
-      />
-      <PractitionerLowStock v-if="store.isOwner" class="mx-4 mt-3 sm:mx-6" to="/settings/products" />
-
-      <!-- What automations asked this person (or their role) to do. Outside
-      the loading switch, so changing day does not reload it. -->
-      <PractitionerMyDayTasks :privacy-mode="privacyMode" />
-
-      <!-- Who has not confirmed between now and tomorrow night, riskiest
-      first. Also outside the loading switch: it is not about the day shown. -->
-      <PractitionerNeedsConfirming
-        class="mx-4 mt-4 sm:mx-6"
-        :clinic-id="store.currentClinicId"
-        :practitioner-id="practitionerId || null"
-        :can-see-all="canSeeAll"
-        :privacy-mode="privacyMode"
-        @message="(id) => navigateTo(`/inbox?open=${encodeURIComponent(id)}`)"
+        compact
       />
 
       <div v-if="loading" class="flex flex-col gap-4 p-4 sm:p-6">
@@ -543,7 +529,7 @@ onMounted(() => {
           <div class="grid min-w-[840px] grid-cols-7 gap-3">
             <div v-for="day in weekDays" :key="toDateKey(day)" class="overflow-hidden rounded-card border border-line bg-surface shadow-card">
               <div class="border-b border-line-row bg-surface-subtle2 px-2 py-1.5">
-                <span class="text-[12px] font-medium text-ink-700">{{ day.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' }) }}</span>
+                <span class="text-[12px] font-medium text-ink-700">{{ day.toLocaleDateString(t('en-GB', 'es-ES'), { weekday: 'short', day: 'numeric' }) }}</span>
               </div>
               <div class="min-h-[120px] space-y-1 p-1.5">
                 <button
@@ -582,6 +568,26 @@ onMounted(() => {
           {{ t('Select a patient to chart their visit.', 'Selecciona un paciente para registrar su visita.') }}
         </div>
         </div>
+      </div>
+
+      <!-- Below the day, not above it. A practitioner opens My Day between
+      visits to see who is next; with these on top the first visit sat 2.5
+      screens down at 1440 and 3.4 on a phone. All three stay outside the
+      loading switch, so changing day does not reload them. -->
+      <div class="flex flex-col gap-4 pb-4 sm:pb-6">
+        <!-- Who has not confirmed between now and tomorrow night, riskiest
+        first. Not about the day shown. -->
+        <PractitionerNeedsConfirming
+          class="mx-4 sm:mx-6"
+          :clinic-id="store.currentClinicId"
+          :practitioner-id="practitionerId || null"
+          :can-see-all="canSeeAll"
+          :privacy-mode="privacyMode"
+          @message="(id) => navigateTo(`/inbox?open=${encodeURIComponent(id)}`)"
+        />
+        <!-- What automations asked this person (or their role) to do. -->
+        <PractitionerMyDayTasks class="mx-4 sm:mx-6" :privacy-mode="privacyMode" />
+        <PractitionerLowStock v-if="store.isOwner" class="mx-4 sm:mx-6" to="/settings/products" />
       </div>
     </div>
 

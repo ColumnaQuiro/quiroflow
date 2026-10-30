@@ -34,7 +34,7 @@ const loaded = ref(false)
 // are none, so it cannot hold its place with a skeleton unconditionally -- a
 // placeholder that then vanishes is its own jump. But when there were tasks
 // last time there almost certainly are now, and without a placeholder the
-// card arrived after the worklist and pushed it down the screen.
+// card arrived late and pushed what follows it down the screen.
 const hadTasksKey = computed(() => `myday-had-tasks:${store.teamMember?.id ?? ''}`)
 const expectTasks = ref(false)
 function readHadTasks() {
@@ -79,17 +79,40 @@ watch(() => store.teamMember?.id, () => {
 })
 
 // Open first (oldest at the top: the longest-waiting call comes first), then done.
+// A task ticked here keeps its place, greyed, rather than sorting to the end --
+// with the list cut to three, the end is out of sight.
+const tickedHere = ref(new Set<string>())
 const ordered = computed(() => {
-  const open = tasks.value.filter((x) => !x.done_at).sort((a, b) => (a.due_at ?? a.created_at).localeCompare(b.due_at ?? b.created_at))
-  const done = tasks.value.filter((x) => x.done_at)
+  const isOpen = (x: TaskRow) => !x.done_at || tickedHere.value.has(x.id)
+  const open = tasks.value.filter(isOpen).sort((a, b) => (a.due_at ?? a.created_at).localeCompare(b.due_at ?? b.created_at))
+  const done = tasks.value.filter((x) => !isOpen(x))
   return [...open, ...done]
 })
 const openCount = computed(() => tasks.value.filter((x) => !x.done_at).length)
+
+// Three, then "Show all". Tasks sat above the day's visits and an automation
+// can raise twenty at once -- the same "Llamar para reprogramar" for each
+// patient -- so a practitioner opening My Day met a wall of them before their
+// first patient. What is hidden is still counted, by title, so a pile of one
+// kind of task reads as one thing to deal with.
+const COLLAPSED = 3
+const expanded = ref(false)
+const visible = computed(() => (expanded.value ? ordered.value : ordered.value.slice(0, COLLAPSED)))
+const hiddenSummary = computed(() => {
+  const counts = new Map<string, number>()
+  for (const task of ordered.value.slice(COLLAPSED)) if (!task.done_at) counts.set(task.title, (counts.get(task.title) ?? 0) + 1)
+  return [...counts]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 2)
+    .map(([title, n]) => (n > 1 ? `${n} × «${title}»` : `«${title}»`))
+    .join(', ')
+})
 
 async function toggle(task: TaskRow) {
   const next = task.done_at ? null : new Date().toISOString()
   const previous = task.done_at
   task.done_at = next
+  tickedHere.value.add(task.id)
   const { error } = await supabase.from('staff_tasks').update({ done_at: next }).eq('id', task.id)
   if (error) task.done_at = previous
 }
@@ -113,7 +136,7 @@ function formatDue(iso: string) {
 </script>
 
 <template>
-  <div v-if="!loaded && expectTasks" class="px-4 pt-4 sm:px-6 sm:pt-6" aria-busy="true">
+  <div v-if="!loaded && expectTasks" aria-busy="true">
     <div class="w-full overflow-hidden rounded-card border border-line bg-surface-sidebar shadow-card">
       <div class="flex items-baseline gap-2 border-b border-line-row px-4 py-2.5">
         <h2 class="text-[13.5px] font-[620] text-ink-900">{{ t('Tasks', 'Tareas') }}</h2>
@@ -126,14 +149,14 @@ function formatDue(iso: string) {
       </div>
     </div>
   </div>
-  <div v-else-if="loaded && tasks.length > 0" class="px-4 pt-4 sm:px-6 sm:pt-6">
+  <div v-else-if="loaded && tasks.length > 0">
   <div class="w-full overflow-hidden rounded-card border border-line bg-surface-sidebar shadow-card" data-cy="my-day-tasks">
     <div class="flex items-baseline gap-2 border-b border-line-row px-4 py-2.5">
       <h2 class="text-[13.5px] font-[620] text-ink-900">{{ t('Tasks', 'Tareas') }}</h2>
       <span class="text-[12px] text-ink-muted2">{{ openCount }} {{ openCount === 1 ? t('to do', 'pendiente') : t('to do', 'pendientes') }}</span>
     </div>
     <ul class="flex flex-col gap-0.5 p-2">
-      <li v-for="task in ordered" :key="task.id" class="flex items-start gap-2.5 rounded-ctl px-2 py-2" data-cy="my-day-task">
+      <li v-for="task in visible" :key="task.id" class="flex items-start gap-2.5 rounded-ctl px-2 py-2" data-cy="my-day-task">
         <button
           type="button"
           data-cy="my-day-task-toggle"
@@ -162,6 +185,12 @@ function formatDue(iso: string) {
         </div>
       </li>
     </ul>
+    <div v-if="ordered.length > COLLAPSED" class="flex flex-wrap items-baseline gap-x-2 border-t border-line-row px-4 py-2">
+      <button type="button" class="text-[12.5px] font-semibold text-brand-text hover:underline" data-cy="my-day-tasks-more" :aria-expanded="expanded" @click="expanded = !expanded">
+        {{ expanded ? t('Show fewer', 'Ver menos') : t(`Show all ${ordered.length}`, `Ver las ${ordered.length}`) }}
+      </button>
+      <span v-if="!expanded && hiddenSummary" class="min-w-0 truncate text-[12px] text-ink-muted2">{{ t('Also', 'Además') }} {{ hiddenSummary }}</span>
+    </div>
   </div>
   </div>
 </template>

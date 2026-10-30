@@ -3447,7 +3447,9 @@ async function practiceHubStubLastKeyOf() {
   return practiceHubStubLastKey
 }
 
-async function startPracticeHubStub(opts: { totalEntries?: number; emails?: string[]; delayMs?: number }) {
+// `routes` answers each Classic endpoint (`/patients`, `/appointments`, ...)
+// with its own records, in one page; any other path gets the `emails` list.
+async function startPracticeHubStub(opts: { totalEntries?: number; emails?: string[]; delayMs?: number; routes?: Record<string, unknown[]> }) {
   await stopPracticeHubStub()
   const { createServer } = await import('node:http')
   const emails = opts.emails ?? []
@@ -3457,6 +3459,14 @@ async function startPracticeHubStub(opts: { totalEntries?: number; emails?: stri
     // what widens a race between two processes walking the same run.
     if (opts.delayMs) await new Promise((resolve) => setTimeout(resolve, opts.delayMs))
     res.setHeader('content-type', 'application/json')
+    const url = new URL(req.url ?? '/', 'http://stub')
+    const routed = opts.routes?.[url.pathname.replace(/^\/api/, '')]
+    if (routed) {
+      // One page holds everything; a later page is empty, as PracticeHub's is.
+      const page = Number(url.searchParams.get('page') ?? 1)
+      res.end(JSON.stringify({ total_entries: routed.length, data: page > 1 ? [] : routed }))
+      return
+    }
     res.end(
       JSON.stringify({
         total_entries: opts.totalEntries ?? emails.length,

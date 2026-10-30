@@ -3,6 +3,7 @@ import Papa from 'papaparse'
 import type { TablesInsert, TablesUpdate } from '~/types/database.types'
 import { matchIncomingAppointments, type HeldReason, type IncomingAppointment } from '~/utils/importAppointmentMatch'
 import { quiroflowKeeps, type KeptReason } from '~/utils/importAppointmentGuard'
+import { practiceHubAppointmentRows, practiceHubPatientNumberMap, practiceHubWallClock, type PHApiAppointment, type PHApiPatient, type PHNamed } from '~/utils/practicehubApiRows'
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
@@ -116,7 +117,46 @@ onMounted(async () => {
   ])
   teamMembers.value = tm ?? []
   appointmentTypes.value = at ?? []
+  await loadSavedPracticeHubConnection()
 })
+
+const connection = usePracticeHubConnection()
+// A CSV row's "Patient Number" is the patient's custom reference (DNI,
+// passport) when they have one, while the patient is stored under their real
+// number -- so those visits were skipped as having no patient. Filled from the
+// API whenever there is a connection.
+const patientNumberFor = ref(new Map<string, string>())
+const loadingFromApi = ref(false)
+const apiProgress = ref('')
+
+// Reads the appointments straight from PracticeHub's API instead of a CSV
+// export, as rows the rest of this step already understands
+// (utils/practicehubApiRows.ts).
+async function loadFromPracticeHub() {
+  if (!connection.value) return
+  fileError.value = ''
+  loadingFromApi.value = true
+  try {
+    const api = usePracticeHubApi(connection.value)
+    apiProgress.value = t('Reading practitioners and appointment types…', 'Leyendo profesionales y tipos de cita…')
+    const practitioners = await api.fetchAll<PHNamed>('/practitioners')
+    const types = await api.fetchAll<PHNamed>('/appointment_types')
+    const patients = await api.fetchAll<PHApiPatient>('/patients', (fetched, total) => {
+      apiProgress.value = t(`Reading patients… ${fetched} / ${total}`, `Leyendo pacientes… ${fetched} / ${total}`)
+    })
+    const appointments = await api.fetchAll<PHApiAppointment>('/appointments', (fetched, total) => {
+      apiProgress.value = t(`Reading appointments… ${fetched} / ${total}`, `Leyendo citas… ${fetched} / ${total}`)
+    })
+    patientNumberFor.value = new Map()
+    fileName.value = t('PracticeHub, read just now', 'PracticeHub, leído ahora mismo')
+    useRows(practiceHubAppointmentRows(appointments, { patients, practitioners, appointmentTypes: types }))
+  } catch (e: any) {
+    fileError.value = e?.data?.statusMessage ?? e?.message ?? t('Could not read PracticeHub.', 'No se pudo leer PracticeHub.')
+  } finally {
+    loadingFromApi.value = false
+    apiProgress.value = ''
+  }
+}
 
 interface HeldRow {
   sourceRow: number
@@ -178,8 +218,20 @@ async function handleFile(file: File) {
     return
   }
 
-  rawRows.value = parsed.data
-  totalRows.value = parsed.data.length
+  patientNumberFor.value = new Map()
+  if (connection.value) {
+    try {
+      patientNumberFor.value = practiceHubPatientNumberMap(await usePracticeHubApi(connection.value).fetchAll<PHApiPatient>('/patients'))
+    } catch {
+      // Without it a visit is matched by the reference the file gives, as before.
+    }
+  }
+  useRows(parsed.data)
+}
+
+function useRows(rows: CsvRow[]) {
+  rawRows.value = rows
+  totalRows.value = rows.length
 
   const practSet = new Set<string>()
   const typeSet = new Set<string>()
@@ -280,14 +332,18 @@ async function proceedToPreview() {
   rawRows.value.forEach((row, index) => {
     const extRef = refOf(row)
     const patientRef = row['Patient Number']?.trim()
-    const patientId = patientRef ? patientByRef.get(patientRef) : undefined
+    const patientNumber = patientRef ? patientNumberFor.value.get(patientRef) : undefined
+    const patientId = patientRef ? (patientNumber && patientByRef.get(patientNumber)) || patientByRef.get(patientRef) : undefined
     if (!existingRefs.has(extRef) && !patientId) {
       skippedNoPatient.value++
       return
     }
 
-    const start = row['Start']?.trim() ? new Date(row['Start'].trim().replace(' ', 'T')) : null
-    const end = row['End']?.trim() ? new Date(row['End'].trim().replace(' ', 'T')) : null
+    // The clinic's wall clock, read in the clinic's time zone -- not the
+    // browser's, which put every visit an hour or two out for whoever ran the
+    // import from elsewhere.
+    const start = practiceHubWallClock(row['Start'], clinic?.timezone ?? '')
+    const end = practiceHubWallClock(row['End'], clinic?.timezone ?? '')
     if (!start || Number.isNaN(start.getTime()) || !end || Number.isNaN(end.getTime())) {
       skippedInvalidDate.value++
       return
@@ -534,10 +590,10 @@ function reset() {
   updatedCount.value = 0
   importErrors.value = []
 }
-const introLead = computed(() => t('Brings past and upcoming visits across from a PracticeHub CSV export, matched to the patient each one belongs to.', 'Trae las visitas pasadas y futuras desde una exportación CSV de PracticeHub, emparejadas con el paciente al que pertenecen.'))
+const introLead = computed(() => t('Brings past and upcoming visits across from PracticeHub, matched to the patient each one belongs to.', 'Trae las visitas pasadas y futuras desde PracticeHub, emparejadas con el paciente al que pertenecen.'))
 const introNotes = computed(() => [
         { title: t('Run Patients first.', 'Ejecuta Pacientes primero.'), body: t('A visit whose patient has no PracticeHub reference here cannot be matched and is skipped.', 'Una visita cuyo paciente no tenga referencia de PracticeHub aquí no se puede emparejar y se omite.') },
-        { title: t('Where the file comes from.', 'De dónde sale el archivo.'), body: t('Export "Appointments" as CSV from PracticeHub under Settings -> Data Exports, then drop it here.', 'Exporta "Appointments" como CSV desde PracticeHub en Settings -> Data Exports y suéltalo aquí.') },
+        { title: t('Read straight from PracticeHub.', 'Leído directamente de PracticeHub.'), body: t('With the connection saved, nothing needs exporting. A CSV export from Settings -> Data Exports still works.', 'Con la conexión guardada, no hace falta exportar nada. Una exportación CSV desde Settings -> Data Exports sigue sirviendo.') },
         { title: t('Safe to run again.', 'Se puede volver a ejecutar.'), body: t('A re-run updates a visit that changed in PracticeHub rather than adding a second one.', 'Volver a ejecutarlo actualiza una visita que cambió en PracticeHub en lugar de añadir otra.') },
         { title: t('QuiroFlow wins once you use it.', 'QuiroFlow manda en cuanto lo usas.'), body: t('A visit moved in QuiroFlow, or already checked in, completed, missed or cancelled here, keeps its QuiroFlow version. The preview lists what PracticeHub has for it instead of changing it.', 'Una visita movida en QuiroFlow, o ya registrada, completada, no presentada o cancelada aquí, conserva su versión de QuiroFlow. La vista previa muestra lo que tiene PracticeHub en lugar de cambiarla.') },
         { title: t('Re-created in PracticeHub.', 'Recreadas en PracticeHub.'), body: t('An appointment deleted and re-created in PracticeHub gets a new id. When the patient has one visit here that day, that visit takes the new id instead of a second one arriving; when that is not certain, the row is held back and listed for you to check.', 'Una cita borrada y recreada en PracticeHub recibe un id nuevo. Si el paciente tiene una visita aquí ese día, esa visita toma el id nuevo en lugar de llegar una segunda; si no es seguro, la fila se aparta y se lista para que la revises.') },
@@ -585,15 +641,34 @@ const fieldId = useId()
   <div>
     <ImportIntro :lead="introLead" :notes="introNotes" />
 
-    <div v-if="stage === 'pick'" class="mt-4">
+    <div v-if="stage === 'pick'" class="mt-4 space-y-3">
+      <div class="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface p-4">
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-medium text-ink-900">{{ t('From PracticeHub', 'Desde PracticeHub') }}</p>
+          <p class="text-[12.5px] text-ink-muted2">
+            {{ connection
+              ? (loadingFromApi ? apiProgress : t('Reads every appointment through the saved connection. Takes a few minutes.', 'Lee todas las citas con la conexión guardada. Tarda unos minutos.'))
+              : t('Save the connection first, under Connection.', 'Guarda antes la conexión, en Conexión.') }}
+          </p>
+        </div>
+        <button
+          type="button"
+          class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50"
+          :disabled="!connection || loadingFromApi"
+          data-cy="ph-appointments-from-api"
+          @click="loadFromPracticeHub"
+        >
+          {{ loadingFromApi ? t('Reading…', 'Leyendo…') : t('Read appointments', 'Leer citas') }}
+        </button>
+      </div>
       <div
-        class="flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-12 text-center"
+        class="flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 text-center"
         :class="dragOver ? 'border-brand bg-brand-tint' : 'border-line-control bg-surface'"
         @dragover.prevent="dragOver = true"
         @dragleave.prevent="dragOver = false"
         @drop.prevent="onDrop"
       >
-        <p class="text-sm text-ink-600">{{ t('Drag and drop a CSV file here, or', 'Arrastra y suelta un archivo CSV aquí, o') }}</p>
+        <p class="text-sm text-ink-600">{{ t('Or drag and drop a PracticeHub CSV export here, or', 'O arrastra y suelta aquí una exportación CSV de PracticeHub, o') }}</p>
         <label class="mt-2 cursor-pointer text-sm font-medium text-brand-text hover:text-brand-text">
           {{ t('browse for a file', 'busca un archivo') }}
           <input type="file" accept=".csv" class="hidden" @change="onFileInput" />

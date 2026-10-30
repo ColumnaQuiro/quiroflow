@@ -61,7 +61,7 @@ const sources = computed<Source[]>(() => [
         note: t('Start here: everything else is matched to a patient.', 'Empieza aquí: todo lo demás se empareja con un paciente.'),
         steps: [
           { key: 'patients', label: t('Patients', 'Pacientes'), hint: t('Runs first: everything after it finds its patient by the PracticeHub reference stored here.', 'Va primero: todo lo demás encuentra a su paciente por la referencia de PracticeHub guardada aquí.'), count: counted('patients') },
-          { key: 'appointment_types', label: t('Appointment types', 'Tipos de cita'), hint: t('Repairs visits attached to the wrong type.', 'Corrige visitas asociadas al tipo equivocado.') },
+          { key: 'appointment_types', label: t('Appointment types', 'Tipos de cita'), hint: t('Creates the types, and repairs visits attached to the wrong one.', 'Crea los tipos y corrige visitas asociadas al equivocado.') },
           { key: 'appointments', label: t('Appointments', 'Citas'), hint: t('Past and upcoming visits.', 'Visitas pasadas y futuras.'), count: counted('appointments') },
         ],
       },

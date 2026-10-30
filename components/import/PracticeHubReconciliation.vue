@@ -29,7 +29,7 @@ const misreferenced = ref<MisreferencedPatient[]>([])
 interface PHPatient { id: number; patient_number: string | null; custom_reference?: string | null; first_name?: string | null; last_name?: string | null }
 
 interface PHPayment { id: number; amount: string | number | null; patient_id: string | number | null }
-interface PHPackage { id: number; name: string | null; package_type: string | null }
+interface PHPackage { id: number; name: string | null; package_type: string | null; active?: number | boolean | null; visits?: number | null; visits_left?: number | null }
 
 interface Row {
   key: string
@@ -38,6 +38,10 @@ interface Row {
   hereCount: number
   missing: string[]
   extra: string[]
+  // Not here because the importer leaves them out on purpose, with why. Kept
+  // apart from `missing` so a clean import does not show up in red: on a
+  // fresh clinic that was 38 bonos and 2 invoices, every one deliberate.
+  leftOut?: { count: number; why: string }
   // Money only reconciles for payments; null hides the column for the rest.
   phTotalCents: number | null
   hereTotalCents: number | null
@@ -162,7 +166,7 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     // from payments instead, so there was no per-visit record to compare.
     phase.value = t('Reconciling invoices…', 'Cotejando facturas…')
     progress.value = { done: 0, total: 0 }
-    const phInvoices = await api.fetchAll<{ id: number; total: string }>('/invoices', (done, total) => (progress.value = { done, total }))
+    const phInvoices = await api.fetchAll<{ id: number; total: string; patient_id?: string | number | null }>('/invoices', (done, total) => (progress.value = { done, total }))
     const phInvoiceRefs = new Set(phInvoices.map((i) => `phinv-${i.id}`))
     const phInvoiceCents = phInvoices.reduce((sum, i) => sum + Math.round(Number(i.total ?? 0) * 100), 0)
 
@@ -174,12 +178,20 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     const hereInvoiceRefs = new Set(hereInvoiceRows.map((i) => String(i.external_reference)))
     const hereInvoiceCents = hereInvoiceRows.reduce((sum, i) => sum + i.total_cents, 0)
 
+    // An invoice of a patient PracticeHub has since deleted has nobody to
+    // belong to here; the Ledger import skips it.
+    const phPatientIds = new Set(phPatients.map((p) => String(p.id)))
+    const orphanInvoiceRefs = new Set(phInvoices.filter((i) => !phPatientIds.has(String(i.patient_id ?? ''))).map((i) => `phinv-${i.id}`))
+    const invoiceDiff = diff(phInvoiceRefs, hereInvoiceRefs)
+    const orphanInvoices = invoiceDiff.missing.filter((ref) => orphanInvoiceRefs.has(ref))
     built.push({
       key: 'invoices',
       label: t('Invoices (one per visit)', 'Facturas (una por visita)'),
       phCount: phInvoiceRefs.size,
       hereCount: hereInvoiceRefs.size,
-      ...diff(phInvoiceRefs, hereInvoiceRefs),
+      missing: invoiceDiff.missing.filter((ref) => !orphanInvoiceRefs.has(ref)),
+      extra: invoiceDiff.extra,
+      leftOut: { count: orphanInvoices.length, why: t('of patients deleted in PracticeHub', 'de pacientes eliminados en PracticeHub') },
       phTotalCents: phInvoiceCents,
       hereTotalCents: hereInvoiceCents,
     })
@@ -191,12 +203,25 @@ async function run(conn: { baseUrl: string; apiKey: string; appDetails: string }
     const phPackageRefs = new Set(phPackages.map((p) => `PH-package-${p.id}`))
     const herePackages = await readAll<{ external_reference: string | null }>('package_purchases', 'external_reference', (q) => q.like('external_reference', 'PH-package-%'))
     const herePackageRefs = new Set(herePackages.map((p) => String(p.external_reference)))
+    // The Bonos import leaves out a bono closed in PracticeHub with not one
+    // session used: sold and never started, or a duplicate PracticeHub made
+    // of a bono it then used under another id. Bringing it would hand the
+    // patient sessions they never bought.
+    const unusedClosed = new Set(
+      phPackages
+        .filter((p) => (p.active === 0 || p.active === false) && (p.visits ?? 0) > 0 && (p.visits_left ?? 0) >= (p.visits ?? 0))
+        .map((p) => `PH-package-${p.id}`),
+    )
+    const packageDiff = diff(phPackageRefs, herePackageRefs)
+    const unusedClosedMissing = packageDiff.missing.filter((ref) => unusedClosed.has(ref))
     built.push({
       key: 'packages',
       label: t('Packages / bonos', 'Bonos'),
       phCount: phPackageRefs.size,
       hereCount: herePackageRefs.size,
-      ...diff(phPackageRefs, herePackageRefs),
+      missing: packageDiff.missing.filter((ref) => !unusedClosed.has(ref)),
+      extra: packageDiff.extra,
+      leftOut: { count: unusedClosedMissing.length, why: t('closed in PracticeHub without a session used', 'cerrados en PracticeHub sin ninguna sesión usada') },
       phTotalCents: null,
       hereTotalCents: null,
     })
@@ -219,6 +244,7 @@ function reset() {
   expanded.value = null
 }
 
+const anyLeftOut = computed(() => rows.value.some((r) => (r.leftOut?.count ?? 0) > 0))
 const allClear = computed(() => rows.value.length > 0 && rows.value.every((r) => r.missing.length === 0 && r.extra.length === 0 && (r.phTotalCents === null || r.phTotalCents === r.hereTotalCents)))
 const introLead = computed(() => t('Compares what PracticeHub holds right now against what was imported here, and names anything that does not line up.', 'Compara lo que PracticeHub tiene ahora mismo con lo que se importó aquí, y señala todo lo que no cuadra.'))
 const introNotes = computed(() => [
@@ -276,7 +302,9 @@ const introNotes = computed(() => [
       </div>
 
       <div v-if="allClear && misreferenced.length === 0" class="rounded-lg border border-success-border bg-success-bg p-3 text-sm text-success-text">
-        {{ t('Everything matches. Every PracticeHub record is here, and nothing here references a record PracticeHub no longer has.', 'Todo cuadra. Todos los registros de PracticeHub están aquí, y nada de aquí hace referencia a un registro que PracticeHub ya no tiene.') }}
+        {{ anyLeftOut
+          ? t('Everything matches. Every PracticeHub record is here apart from the ones left out on purpose, listed below, and nothing here references a record PracticeHub no longer has.', 'Todo cuadra. Todos los registros de PracticeHub están aquí salvo los omitidos a propósito, indicados abajo, y nada de aquí hace referencia a un registro que PracticeHub ya no tiene.')
+          : t('Everything matches. Every PracticeHub record is here, and nothing here references a record PracticeHub no longer has.', 'Todo cuadra. Todos los registros de PracticeHub están aquí, y nada de aquí hace referencia a un registro que PracticeHub ya no tiene.') }}
       </div>
 
       <div class="overflow-x-auto rounded-lg border border-line">
@@ -307,6 +335,9 @@ const introNotes = computed(() => [
                     {{ r.missing.length }}
                   </button>
                   <span v-else class="text-ink-faint">0</span>
+                  <span v-if="r.leftOut?.count" class="ml-1 text-ink-muted2" :data-cy="`ph-reconcile-left-out-${r.key}`">
+                    {{ t(`+ ${r.leftOut.count} left out on purpose: ${r.leftOut.why}`, `+ ${r.leftOut.count} omitidos a propósito: ${r.leftOut.why}`) }}
+                  </span>
                 </td>
                 <td class="px-3 py-2">
                   <button

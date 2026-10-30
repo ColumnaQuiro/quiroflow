@@ -1,23 +1,15 @@
 <script setup lang="ts">
-// Floating help assistant. Answers from the help centre first (server/api/
-// support/ask.post.ts), and hands off to a real person when it can't -- the
-// escalation becomes a support_conversations thread answered from the admin
-// panel, and the reply comes back into this same panel.
+// Help assistant, opened from the top bar. Answers from the help centre
+// first (server/api/support/ask.post.ts), and hands off to a real person
+// when it can't -- the escalation becomes a support_conversations thread
+// answered from the admin panel, and the reply comes back into this same
+// panel.
 import { isHelpCentreUrl } from '../../utils/helpAssistantGuard'
 
 const t = useT()
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const { preference: langPreference } = useLang()
-const route = useRoute()
-
-// The inbox's (and Team's) composer sits at the bottom of the screen with its own Send
-// button flush right -- on a narrow viewport that's the same corner this
-// widget's floating launcher occupies (fixed bottom-5 right-5), so it sits
-// on top of the Send button rather than beside it. Sidebar's "Help Centre"
-// link still reaches docs from there; the assistant stays one click away
-// on every other page.
-const hideOnRoute = computed(() => route.path === '/inbox' || route.path === '/team-chat')
 
 interface Turn {
   role: 'user' | 'assistant'
@@ -187,19 +179,40 @@ function articleTitle(url: string) {
 </script>
 
 <template>
-  <!-- Above page content but below modals (z-50) and toasts (z-[200]), so a
-  dialog opened from behind it still covers it. -->
-  <!-- Tucked further into the corner and smaller on a phone, where at 48px
-  it sat over the right-hand column of every list -- amounts, totals, the last
-  action button. -->
-  <div v-if="!hideOnRoute" class="fixed bottom-3 right-3 z-40 print:hidden sm:bottom-5 sm:right-5">
+  <!-- In the top bar, not floating. A launcher fixed to the bottom-right
+  corner sat over the last row of every page -- a report's total, a list's
+  amount column, the Inbox's Send button -- and since each page scrolls its
+  own container there was no single place to leave room for it.
+  Deliberately not `relative`: the panel anchors to the top bar itself
+  (layouts/default.vue), so it lines up with the page's right edge on a phone
+  instead of hanging off the left of a button that sits mid-row. -->
+  <!-- The panel is z-40: above page content, below modals (z-50) and toasts
+  (z-[200]), so a dialog opened from behind it still covers it. -->
+  <div class="print:hidden">
+    <button
+      type="button"
+      class="relative flex h-7 w-7 items-center justify-center rounded-ctl border touch:h-10 touch:w-10"
+      :class="open ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control bg-chip-bg text-ink-muted hover:bg-surface-subtle'"
+      :title="t('Support', 'Soporte')"
+      :aria-label="t('Support', 'Soporte')"
+      :aria-expanded="open"
+      data-cy="support-open"
+      @click="toggle"
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.5 8.5 0 0 1-3.8-.9L3 20.5l1.6-4.1A8.4 8.4 0 0 1 3.6 12a8.4 8.4 0 0 1 8.4-8.5 8.4 8.4 0 0 1 9 8Z" />
+      </svg>
+      <span v-if="unreadReply && !open" class="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-surface bg-danger-text"></span>
+    </button>
+
     <div
       v-if="open"
-      class="mb-2.5 flex h-[min(560px,calc(100vh-7rem))] w-[380px] max-w-[calc(100vw-2.5rem)] flex-col overflow-hidden rounded-card border border-line bg-surface shadow-popover"
+      data-cy="support-panel"
+      class="absolute right-3 top-[calc(100%+6px)] z-40 flex h-[min(560px,calc(100vh-5rem))] w-[380px] max-w-[calc(100%-1.5rem)] flex-col overflow-hidden rounded-card border border-line bg-surface shadow-popover"
     >
       <div class="flex shrink-0 items-center justify-between border-b border-line-divider px-4 py-2.5">
         <div class="flex items-center gap-2">
-          <p class="text-[13.5px] font-[620] text-ink-900">{{ t('Help', 'Ayuda') }}</p>
+          <p class="text-[13.5px] font-[620] text-ink-900">{{ t('Support', 'Soporte') }}</p>
           <button
             type="button"
             class="rounded-ctlSm px-1.5 py-0.5 text-[11.5px] font-medium"
@@ -297,20 +310,5 @@ function articleTitle(url: string) {
         <UiBtn variant="primary" size="sm" type="submit" :disabled="sending || !humanMessage.trim()">{{ sending ? t('Sending…', 'Enviando…') : t('Send', 'Enviar') }}</UiBtn>
       </form>
     </div>
-
-    <button
-      type="button"
-      class="relative ml-auto flex h-11 w-11 items-center justify-center rounded-full bg-brand text-brand-on shadow-popover hover:bg-brand-hover sm:h-12 sm:w-12"
-      :title="t('Help', 'Ayuda')"
-      @click="toggle"
-    >
-      <svg v-if="!open" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.5 8.5 0 0 1-3.8-.9L3 20.5l1.6-4.1A8.4 8.4 0 0 1 3.6 12a8.4 8.4 0 0 1 8.4-8.5 8.4 8.4 0 0 1 9 8Z" />
-      </svg>
-      <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-        <path d="M6 6l12 12M18 6L6 18" />
-      </svg>
-      <span v-if="unreadReply && !open" class="absolute right-0 top-0 h-3 w-3 rounded-full border-2 border-surface bg-danger-text"></span>
-    </button>
   </div>
 </template>

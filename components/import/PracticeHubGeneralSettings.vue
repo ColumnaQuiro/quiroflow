@@ -92,6 +92,10 @@ async function disconnect() {
   usePracticeHubConnection().value = null
   showToast(t('Disconnected', 'Desconectado'))
 }
+
+// Ties each visible <label> to the field under it (for/id), so a screen
+// reader announces the field by its name.
+const fieldId = useId()
 </script>
 
 <template>
@@ -113,8 +117,8 @@ async function disconnect() {
     </div>
     <form v-else class="mt-4 space-y-4" @submit.prevent="save">
       <div>
-        <label class="block text-sm font-medium text-ink-700">{{ t('PracticeHub URL', 'URL de PracticeHub') }}</label>
-        <input
+        <label :for="`${fieldId}-baseUrl`" class="block text-sm font-medium text-ink-700">{{ t('PracticeHub URL', 'URL de PracticeHub') }}</label>
+        <input :id="`${fieldId}-baseUrl`"
           v-model="baseUrl"
           type="text"
           placeholder="https://your-clinic.practicehub.io"
@@ -122,8 +126,8 @@ async function disconnect() {
         />
       </div>
       <div>
-        <label class="block text-sm font-medium text-ink-700">{{ t('API Key', 'Clave API') }}</label>
-        <input
+        <label :for="`${fieldId}-apiKey`" class="block text-sm font-medium text-ink-700">{{ t('API Key', 'Clave API') }}</label>
+        <input :id="`${fieldId}-apiKey`"
           v-model="apiKey"
           type="password"
           autocomplete="off"
@@ -132,8 +136,8 @@ async function disconnect() {
         />
       </div>
       <div>
-        <label class="block text-sm font-medium text-ink-700">{{ t('PracticeHub 2.0 API key', 'Clave API de PracticeHub 2.0') }}</label>
-        <input
+        <label :for="`${fieldId}-v3ApiKey`" class="block text-sm font-medium text-ink-700">{{ t('PracticeHub 2.0 API key', 'Clave API de PracticeHub 2.0') }}</label>
+        <input :id="`${fieldId}-v3ApiKey`"
           v-model="v3ApiKey"
           type="password"
           autocomplete="off"
@@ -153,8 +157,8 @@ async function disconnect() {
         </div>
       </div>
       <div>
-        <label class="block text-sm font-medium text-ink-700">{{ t('Your email', 'Tu correo electrónico') }}</label>
-        <input
+        <label :for="`${fieldId}-contactEmail`" class="block text-sm font-medium text-ink-700">{{ t('Your email', 'Tu correo electrónico') }}</label>
+        <input :id="`${fieldId}-contactEmail`"
           v-model="contactEmail"
           type="email"
           class="mt-1 w-full rounded-md border border-line-control bg-surface px-3 py-2 text-sm text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
@@ -162,7 +166,7 @@ async function disconnect() {
         <p class="mt-1 text-xs text-ink-muted2">{{ t("Sent as PracticeHub's required app identifier.", 'Se envía como identificador de aplicación requerido por PracticeHub.') }}</p>
       </div>
       <div class="flex items-center gap-3">
-        <button type="submit" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50" :disabled="saving">
+        <button type="submit" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50" :disabled="saving">
           {{ saving ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}
         </button>
         <button v-if="hasStoredKey" type="button" class="text-sm font-medium text-danger-text hover:underline" :disabled="saving" @click="disconnecting = true">

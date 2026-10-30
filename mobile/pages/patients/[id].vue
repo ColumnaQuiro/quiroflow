@@ -443,7 +443,7 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
             WhatsApp
           </button>
           <button v-if="canBook" type="button" class="flex w-16 flex-col items-center gap-1.5 text-[12.5px] font-semibold text-brand-text" data-cy="patient-book" @click="bookOpen = true">
-            <span class="flex h-12 w-12 items-center justify-center rounded-full bg-brand text-white">
+            <span class="flex h-12 w-12 items-center justify-center rounded-full bg-brand text-brand-on">
               <svg width="19" height="19" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M2.5 3.5h11v10h-11zM2.5 6.6h11M5.6 2v2M10.4 2v2M8 8.4v3.4M6.3 10.1h3.4" /></svg>
             </span>
             {{ t('Book', 'Reservar') }}

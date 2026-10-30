@@ -22,7 +22,7 @@ const soon = computed(() => new Date(props.appt.starts_at).getTime() - Date.now(
   <button
     v-else-if="appt.status === 'booked' && soon"
     type="button"
-    class="min-h-9 rounded-ctl bg-brand px-3 text-[12.5px] font-semibold text-white disabled:opacity-60"
+    class="min-h-9 rounded-ctl bg-brand px-3 text-[12.5px] font-semibold text-brand-on disabled:opacity-60"
     :disabled="busy"
     data-cy="patient-confirm-visit"
     @click="emit('confirm', appt)"

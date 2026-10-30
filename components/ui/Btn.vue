@@ -15,7 +15,7 @@ withDefaults(defineProps<{ variant?: 'primary' | 'secondary' | 'ghost'; size?: '
       // grow on a touch screen. lg is 44px everywhere, for the buttons a thumb
       // aims at in the app.
       size === 'lg' ? 'h-11 px-4 text-[14px]' : size === 'md' ? 'h-9 px-3.5 text-[13px] touch:h-11' : 'h-8 px-2.5 text-[12.5px] touch:h-10',
-      variant === 'primary' && 'border border-brand bg-brand font-semibold text-white hover:bg-brand-hover',
+      variant === 'primary' && 'border border-brand bg-brand font-semibold text-brand-on hover:bg-brand-hover',
       variant === 'secondary' && 'border border-line-control bg-surface text-ink-500 hover:border-line-controlHover',
       variant === 'ghost' && 'border border-transparent text-ink-muted2 hover:bg-surface-subtle',
     ]"

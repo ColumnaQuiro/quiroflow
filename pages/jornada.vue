@@ -27,7 +27,7 @@ const exportUrl = (format: 'csv' | 'pdf') => `/api/time-records/export?month=${m
       <template v-if="store.isOwner && tab === 'team'">
         <input v-model="month" type="month" class="h-9 rounded-ctl border border-line-control bg-surface px-2.5 text-[13px] text-ink-700" data-cy="jornada-month" />
         <a :href="exportUrl('csv')" class="inline-flex h-9 items-center rounded-ctl border border-line-control bg-surface px-3.5 text-[13px] font-medium text-ink-500 hover:border-line-controlHover" data-cy="jornada-export-csv">{{ t('Export CSV', 'Exportar CSV') }}</a>
-        <a :href="exportUrl('pdf')" class="inline-flex h-9 items-center rounded-ctl border border-brand bg-brand px-3.5 text-[13px] font-semibold text-white hover:bg-brand-hover" data-cy="jornada-export-pdf">{{ t('PDF to sign', 'PDF para firmar') }}</a>
+        <a :href="exportUrl('pdf')" class="inline-flex h-9 items-center rounded-ctl border border-brand bg-brand px-3.5 text-[13px] font-semibold text-brand-on hover:bg-brand-hover" data-cy="jornada-export-pdf">{{ t('PDF to sign', 'PDF para firmar') }}</a>
       </template>
     </PageHeader>
 

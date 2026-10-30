@@ -1206,7 +1206,7 @@ const introNotes = computed(() => [
         <p class="font-medium">{{ t('Import failed:', 'Fallo en la importación:') }}</p>
         <p class="mt-1">{{ runError }}</p>
       </div>
-      <button type="button" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover" @click="retryRun">
+      <button type="button" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover" @click="retryRun">
         {{ t('Retry', 'Reintentar') }}
       </button>
     </div>
@@ -1466,7 +1466,7 @@ const introNotes = computed(() => [
       <div class="flex gap-3">
         <button
           type="button"
-          class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50"
+          class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50"
           :disabled="candidates.filter((c) => c.status === 'pending').length === 0 && duplicateMerges.length === 0"
           @click="applyFixes"
         >

@@ -49,7 +49,7 @@ async function signOut() {
       class="flex h-8 items-center gap-2 rounded-ctl pl-1 pr-2 text-left hover:bg-surface-subtle"
       @click="menuOpen = !menuOpen"
     >
-      <span class="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-brand text-[10px] font-bold text-white">
+      <span class="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-brand text-[10px] font-bold text-brand-on">
         <img v-if="photoUrl" :src="photoUrl" class="h-full w-full object-cover" alt="" />
         <template v-else>{{ initials }}</template>
       </span>

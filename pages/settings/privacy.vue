@@ -139,6 +139,12 @@ const day = (iso: string) => new Date(iso).toLocaleDateString(t('en-GB', 'es-ES'
 const yearsAgo = (iso: string) => Math.floor((Date.now() - Date.parse(iso)) / (365.25 * 86400_000))
 const th = 'px-3 py-2 text-left text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted'
 const td = 'border-t border-line-row px-3 py-2.5 text-[13.5px] text-ink-900'
+
+// Modal dialogs on this screen: focus stays inside while open, Escape closes,
+// focus returns to what opened it (useFocusTrap, following each v-if).
+const keepTitleId = useId()
+const keepPanel = ref<HTMLElement | null>(null)
+useFocusTrap(keepPanel, () => (keeping.value = null), () => !!keeping.value)
 </script>
 
 <template>
@@ -218,8 +224,8 @@ const td = 'border-t border-line-row px-3 py-2.5 text-[13.5px] text-ink-900'
     </div>
 
     <div v-if="keeping" class="fixed inset-0 z-30 flex items-center justify-center bg-scrim/40 p-4">
-      <form class="flex w-full max-w-[440px] flex-col gap-3 rounded-card bg-surface p-5 shadow-popover" data-cy="retention-keep-form" @submit.prevent="keep">
-        <h2 class="text-[17px] font-bold text-ink-900">{{ t(`Keep ${keeping.length} more`, `Conservar ${keeping.length} más tiempo`) }}</h2>
+      <form ref="keepPanel" role="dialog" aria-modal="true" :aria-labelledby="keepTitleId" class="flex w-full max-w-[440px] flex-col gap-3 rounded-card bg-surface p-5 shadow-popover" data-cy="retention-keep-form" @submit.prevent="keep">
+        <h2 :id="keepTitleId" class="text-[17px] font-bold text-ink-900">{{ t(`Keep ${keeping.length} more`, `Conservar ${keeping.length} más tiempo`) }}</h2>
         <label class="flex flex-col gap-1 text-[13px] font-semibold text-ink-700">
           {{ t('For', 'Durante') }}
           <select v-model.number="keepYears" class="h-9 rounded-ctl border border-line-control bg-surface px-2.5 text-[14px] font-normal">

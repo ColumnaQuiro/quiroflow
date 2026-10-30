@@ -139,7 +139,7 @@ const inputClass = 'h-9 touch:h-11 w-full rounded-ctl border border-line-control
             <!-- The list -->
             <div class="flex w-full shrink-0 flex-col border-line max-md:border-b md:w-[320px] md:border-r">
               <div class="p-3.5">
-                <label class="flex h-9 touch:h-11 items-center gap-2 rounded-ctl border border-line-control px-3 text-ink-muted">
+                <label class="flex h-9 touch:h-11 items-center gap-2 rounded-ctl border border-line-control px-3 text-ink-muted focus-within:border-brand focus-within:shadow-focus">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
                   <input v-model="query" type="search" :placeholder="t(`Search ${replies.length} replies`, `Buscar en ${replies.length} respuestas`)" :aria-label="t('Search replies', 'Buscar respuestas')" class="min-w-0 flex-1 border-0 bg-transparent text-[14px] text-ink-900 outline-none" />
                 </label>
@@ -195,7 +195,7 @@ const inputClass = 'h-9 touch:h-11 w-full rounded-ctl border border-line-control
               <div v-if="body.trim()" class="flex flex-col gap-2">
                 <span class="text-[12.5px] font-semibold text-ink-500">{{ t('In the Inbox', 'En la Bandeja') }}</span>
                 <div class="flex justify-end rounded-ctl bg-surface-page p-4">
-                  <p class="max-w-[380px] whitespace-pre-line rounded-[12px_12px_4px_12px] bg-brand px-3 py-2.5 text-[13.5px] leading-snug text-white">{{ body }}</p>
+                  <p class="max-w-[380px] whitespace-pre-line rounded-[12px_12px_4px_12px] bg-brand px-3 py-2.5 text-[13.5px] leading-snug text-brand-on">{{ body }}</p>
                 </div>
               </div>
             </div>

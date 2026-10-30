@@ -575,6 +575,10 @@ function heldReasonLabel(reason: HeldReason): string {
       return t("PracticeHub moved this visit's id to another day or patient and re-created the visit", 'PracticeHub movió el id de esta visita a otro día o paciente y recreó la visita')
   }
 }
+
+// Ties each visible <label> to the field under it (for/id), so a screen
+// reader announces the field by its name.
+const fieldId = useId()
 </script>
 
 <template>
@@ -604,8 +608,8 @@ function heldReasonLabel(reason: HeldReason): string {
       </div>
 
       <div>
-        <label class="block text-sm font-medium text-ink-700">{{ t('Import into clinic', 'Importar a la clínica') }}</label>
-        <select v-model="targetClinicId" class="mt-1 w-full rounded-md border border-line-control bg-surface px-3 py-2 text-sm text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand">
+        <label :for="`${fieldId}-targetClinicId`" class="block text-sm font-medium text-ink-700">{{ t('Import into clinic', 'Importar a la clínica') }}</label>
+        <select :id="`${fieldId}-targetClinicId`" v-model="targetClinicId" class="mt-1 w-full rounded-md border border-line-control bg-surface px-3 py-2 text-sm text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand">
           <option value="" disabled>{{ t('Select a clinic', 'Selecciona una clínica') }}</option>
           <option v-for="c in store.clinics" :key="c.id" :value="c.id">{{ c.name }}</option>
         </select>
@@ -650,7 +654,7 @@ function heldReasonLabel(reason: HeldReason): string {
         <button
           type="button"
           :disabled="!targetClinicId || preparingPreview"
-          class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50"
+          class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50"
           @click="proceedToPreview"
         >
           {{ preparingPreview ? t('Preparing…', 'Preparando…') : t('Continue', 'Continuar') }}
@@ -780,7 +784,7 @@ function heldReasonLabel(reason: HeldReason): string {
         <button
           type="button"
           :disabled="toImport.length === 0 && toUpdate.length === 0"
-          class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50"
+          class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50"
           @click="runImport"
         >
           {{ t(`Import ${toImport.length}, update ${toUpdate.length}`, `Importar ${toImport.length}, actualizar ${toUpdate.length}`) }}
@@ -807,7 +811,7 @@ function heldReasonLabel(reason: HeldReason): string {
         <p class="font-medium">{{ t('Import failed:', 'Error al importar:') }}</p>
         <p class="mt-1">{{ runError }}</p>
       </div>
-      <button type="button" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover" @click="retryImport">
+      <button type="button" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover" @click="retryImport">
         {{ t('Retry', 'Reintentar') }}
       </button>
     </div>
@@ -820,7 +824,7 @@ function heldReasonLabel(reason: HeldReason): string {
         </ul>
       </div>
       <div class="flex gap-3">
-        <NuxtLink to="/calendar" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover">
+        <NuxtLink to="/calendar" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover">
           {{ t('View Calendar', 'Ver calendario') }}
         </NuxtLink>
         <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-ink-600 hover:bg-surface-subtle" @click="reset">

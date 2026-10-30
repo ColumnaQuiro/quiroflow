@@ -175,7 +175,7 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
         <button
           v-if="canBook"
           type="button"
-          class="hidden h-9 touch:h-11 items-center rounded-ctl bg-brand px-3.5 text-[13.5px] font-semibold text-white outline-none hover:bg-brand-hover focus-visible:shadow-focus lg:flex"
+          class="hidden h-9 touch:h-11 items-center rounded-ctl bg-brand px-3.5 text-[13.5px] font-semibold text-brand-on outline-none hover:bg-brand-hover focus-visible:shadow-focus lg:flex"
           @click="$emit('book')"
         >
           {{ t('Book visit', 'Reservar visita') }}
@@ -280,7 +280,7 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
         <button
           type="button"
           :aria-label="t('Copy phone number', 'Copiar teléfono')"
-          class="flex h-5 w-5 items-center justify-center rounded text-ink-faint outline-none hover:text-ink-700 focus-visible:text-ink-700"
+          class="flex h-5 w-5 items-center justify-center rounded text-ink-faint outline-none hover:text-ink-700 focus-visible:text-ink-700 focus-visible:shadow-focus"
           @click="copy(phone, 'phone')"
         >
           <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" class="h-3 w-3">
@@ -302,7 +302,7 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
         <button
           type="button"
           :aria-label="t('Copy email address', 'Copiar correo')"
-          class="flex h-5 w-5 shrink-0 items-center justify-center rounded text-ink-faint outline-none hover:text-ink-700 focus-visible:text-ink-700"
+          class="flex h-5 w-5 shrink-0 items-center justify-center rounded text-ink-faint outline-none hover:text-ink-700 focus-visible:text-ink-700 focus-visible:shadow-focus"
           @click="copy(patient.email!, 'email')"
         >
           <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" class="h-3 w-3">
@@ -355,7 +355,7 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
       <button
         v-if="canBook"
         type="button"
-        class="flex h-[46px] flex-1 items-center justify-center rounded-ctl bg-brand text-[14px] font-semibold text-white"
+        class="flex h-[46px] flex-1 items-center justify-center rounded-ctl bg-brand text-[14px] font-semibold text-brand-on"
         @click="$emit('book')"
       >
         {{ t('Book', 'Reservar') }}

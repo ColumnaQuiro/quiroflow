@@ -20,7 +20,7 @@ const initials = computed(() =>
   <div v-if="name" class="flex min-w-0 items-center gap-[9px]">
     <span
       aria-hidden="true"
-      class="flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-ctl bg-brand text-[11px] font-bold text-white"
+      class="flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-ctl bg-brand text-[11px] font-bold text-brand-on"
     >{{ initials }}</span>
     <span class="truncate text-[16px] font-semibold tracking-tightTitle text-ink-900">{{ name }}</span>
   </div>

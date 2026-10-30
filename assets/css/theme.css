@@ -76,6 +76,13 @@
   --color-brand-tintBorder: 216 220 251;
   --color-brand-tintDeep: 242 243 254;
   --color-brand-tintDeepBorder: 222 225 252;
+  /* Text and icons drawn ON a solid colour fill -- bg-brand, bg-danger-text,
+     bg-success-accent: primary buttons, selected segments, destructive
+     buttons, avatars. Tailwind exposes it as text-brand-on, text-danger-on
+     and text-success-on. White here; dark in the dark palette, where those
+     fills are light (brand is a pale indigo that white text only reached
+     3:1 against, success-accent a mint it reached 1.6:1 against). */
+  --color-on-fill: 255 255 255;
 
   --color-surface-page: 247 248 250;
   --color-surface-sidebar: 251 251 252;
@@ -103,15 +110,25 @@
   --color-ink-550: 49 54 74;
   --color-ink-500: 58 63 82;
   --color-ink-450: 74 79 96;
-  --color-ink-muted: 107 113 128;
-  --color-ink-muted2: 138 143 160;
-  --color-ink-faint: 155 160 176;
-  --color-ink-faint2: 162 167 182;
+  /* muted, muted2, faint and faint2 are TEXT colours -- secondary labels,
+     timestamps, hints, placeholders -- so each has to reach WCAG AA (4.5:1)
+     on the surfaces it sits on. They used to step down to 2.4:1 (faint2 on
+     the page), which is how roughly a thousand labels across the app ended
+     up below the line. Now: muted >=4.5 on chip-bg, the other three >=4.5 on
+     surface-page, and white cards are higher still. The steps between them
+     are small because AA leaves little room below muted; hierarchy comes
+     from size and weight first, colour second.
+     faint3 stays light on purpose: it is for dots and separators, which are
+     decoration rather than text -- never use it for words. */
+  --color-ink-muted: 104 109 125;
+  --color-ink-muted2: 106 110 127;
+  --color-ink-faint: 108 112 129;
+  --color-ink-faint2: 110 114 130;
   --color-ink-faint3: 182 186 198;
 
   --color-success-text: 21 127 82;
   --color-success-deep: 19 107 71;
-  --color-success-accent: 29 138 91;
+  --color-success-accent: 26 132 87; /* 4.7:1 under a white label (text-success-on) */
   --color-success-bg: 233 246 239;
   --color-success-bg2: 240 249 244;
   --color-success-border: 203 233 218;
@@ -138,7 +155,7 @@
   --color-chip-bg: 241 242 245;
   --color-chip-bg2: 244 245 248;
   --color-chip-border: 228 229 235;
-  --color-chip-text: 107 113 128;
+  --color-chip-text: 104 109 125;
 
   --color-chart-cancelled: 246 199 206;
   --color-chart-projected: 199 203 250;
@@ -162,6 +179,7 @@
   --color-brand-tintBorder: 63 63 110;
   --color-brand-tintDeep: 46 46 84;
   --color-brand-tintDeepBorder: 71 71 122;
+  --color-on-fill: 15 16 20;
 
   --color-surface-page: 15 16 20;
   --color-surface-sidebar: 19 20 25;
@@ -186,9 +204,9 @@
   --color-ink-500: 160 164 179;
   --color-ink-450: 138 142 158;
   --color-ink-muted: 148 152 166;
-  --color-ink-muted2: 118 122 137;
-  --color-ink-faint: 100 104 118;
-  --color-ink-faint2: 92 96 110;
+  --color-ink-muted2: 136 140 151;
+  --color-ink-faint: 132 136 147;
+  --color-ink-faint2: 130 134 145;
   --color-ink-faint3: 79 83 96;
 
   --color-success-text: 74 222 149;

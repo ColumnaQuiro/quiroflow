@@ -263,7 +263,7 @@ const field = 'mt-1 w-full rounded-ctl border border-line-control bg-surface px-
         {{ t("The patient's receipt keeps only their share; the rest is owed by the third party.", 'El recibo del paciente queda solo con su parte; el resto lo debe el tercero.') }}
       </p>
       <div class="flex items-center gap-3">
-        <button type="submit" data-cy="tp-visit-save" :disabled="saving || !selectedThirdPartyId" class="rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50">
+        <button type="submit" data-cy="tp-visit-save" :disabled="saving || !selectedThirdPartyId" class="rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50">
           {{ saving ? t('Working…', 'Procesando…') : t('Bill', 'Facturar') }}
         </button>
         <button type="button" class="text-xs font-medium text-ink-muted hover:text-ink-900" @click="open = false">{{ t('Cancel', 'Cancelar') }}</button>

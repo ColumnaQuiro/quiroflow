@@ -83,6 +83,10 @@ const chargeLabel = computed(() =>
     ? `${t('Charge', 'Cobrar')} ${formatEur(visitPriceCents.value)}`
     : t('Charge this visit', 'Cobrar esta visita'),
 )
+
+// Ties each visible <label> to the field under it (for/id), so a screen
+// reader announces the field by its name.
+const fieldId = useId()
 </script>
 
 <template>
@@ -159,7 +163,7 @@ const chargeLabel = computed(() =>
           :key="p.id"
           type="button"
           :disabled="savingPayment"
-          class="rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50"
+          class="rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50"
           @click="usePackageSession(p)"
         >
           {{ savingPayment ? t('Working…', 'Procesando…') : `${t('Use', 'Usar')} ${p.package_name} — ${perSessionLabel(p)}` }}
@@ -176,7 +180,7 @@ const chargeLabel = computed(() =>
           :class="
             activePackages.length > 0
               ? 'rounded-ctl border border-line-control px-3 py-1.5 text-sm font-medium text-ink-700 hover:border-line-controlHover hover:text-ink-900 disabled:opacity-50'
-              : 'rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50'
+              : 'rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50'
           "
           @click="chargeVisit"
         >
@@ -251,12 +255,12 @@ const chargeLabel = computed(() =>
       >
         <div v-for="(row, i) in paymentRows" :key="i" class="flex items-end gap-2">
           <div>
-            <label class="block text-xs font-medium text-ink-700">{{ t('Amount (€)', 'Importe (€)') }}</label>
-            <input v-model="row.amount" type="number" step="0.01" min="0" class="mt-1 w-24 rounded-ctl border border-line-control bg-surface px-2 py-1.5 text-sm text-ink-700 focus:border-brand focus:outline-none" />
+            <label :for="`${fieldId}-amount-${i}`" class="block text-xs font-medium text-ink-700">{{ t('Amount (€)', 'Importe (€)') }}</label>
+            <input :id="`${fieldId}-amount-${i}`" v-model="row.amount" type="number" step="0.01" min="0" class="mt-1 w-24 rounded-ctl border border-line-control bg-surface px-2 py-1.5 text-sm text-ink-700 focus:border-brand focus:outline-none" />
           </div>
           <div>
-            <label class="block text-xs font-medium text-ink-700">{{ t('Method', 'Método') }}</label>
-            <select v-model="row.method" class="mt-1 rounded-ctl border border-line-control bg-surface px-2 py-1.5 text-sm text-ink-700 focus:border-brand focus:outline-none">
+            <label :for="`${fieldId}-method-${i}`" class="block text-xs font-medium text-ink-700">{{ t('Method', 'Método') }}</label>
+            <select :id="`${fieldId}-method-${i}`" v-model="row.method" class="mt-1 rounded-ctl border border-line-control bg-surface px-2 py-1.5 text-sm text-ink-700 focus:border-brand focus:outline-none">
               <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
               <option v-if="creditLedgerCents > 0" value="credit">{{ t('Credit on account', 'Crédito en cuenta') }} ({{ formatEur(creditLedgerCents) }} {{ t('available', 'disponible') }})</option>
             </select>
@@ -270,7 +274,7 @@ const chargeLabel = computed(() =>
             + {{ t('Split into another method', 'Dividir en otro método') }}
           </button>
           <span v-if="paymentRows.length > 1" class="text-xs text-ink-faint">{{ t('Total:', 'Total:') }} {{ formatEur(paymentTotalCents) }}</span>
-          <button type="submit" :disabled="savingPayment || paymentTotalCents <= 0" class="rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50">
+          <button type="submit" :disabled="savingPayment || paymentTotalCents <= 0" class="rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50">
             {{ savingPayment ? t('Processing…', 'Procesando…') : t('Process', 'Procesar') }}
           </button>
         </div>

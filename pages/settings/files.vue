@@ -157,7 +157,7 @@ function patientName(f: MissingFile) {
               <NuxtLink
                 to="/settings/import?source=practicehub&type=file_attachments"
                 data-cy="files-fetch"
-                class="inline-flex h-9 shrink-0 items-center justify-center self-start rounded-ctl border border-brand bg-brand px-3.5 text-[13px] font-semibold text-white hover:bg-brand-hover touch:h-11"
+                class="inline-flex h-9 shrink-0 items-center justify-center self-start rounded-ctl border border-brand bg-brand px-3.5 text-[13px] font-semibold text-brand-on hover:bg-brand-hover touch:h-11"
               >
                 {{ t('Fetch from PracticeHub', 'Traer de PracticeHub') }}
               </NuxtLink>

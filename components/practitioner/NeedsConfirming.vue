@@ -148,8 +148,8 @@ defineExpose({ reload: load })
         </span>
       </div>
       <div v-if="canSeeAll && practitionerId" class="flex h-7 overflow-hidden rounded-ctlSm border border-line-control text-[12px]">
-        <button type="button" class="px-2.5" :class="!everyone ? 'bg-brand font-semibold text-white' : 'text-ink-500 hover:bg-surface-subtle'" @click="everyone = false">{{ t('Mine', 'Mías') }}</button>
-        <button type="button" class="border-l border-line-control px-2.5" :class="everyone ? 'bg-brand font-semibold text-white' : 'text-ink-500 hover:bg-surface-subtle'" data-cy="needs-confirming-everyone" @click="everyone = true">{{ t('Everyone', 'Todos') }}</button>
+        <button type="button" class="px-2.5" :class="!everyone ? 'bg-brand font-semibold text-brand-on' : 'text-ink-500 hover:bg-surface-subtle'" @click="everyone = false">{{ t('Mine', 'Mías') }}</button>
+        <button type="button" class="border-l border-line-control px-2.5" :class="everyone ? 'bg-brand font-semibold text-brand-on' : 'text-ink-500 hover:bg-surface-subtle'" data-cy="needs-confirming-everyone" @click="everyone = true">{{ t('Everyone', 'Todos') }}</button>
       </div>
     </header>
     <p v-if="error" role="alert" class="border-b border-line-row px-4 py-2 text-[12.5px] text-danger-text">{{ error }}</p>
@@ -172,7 +172,7 @@ defineExpose({ reload: load })
         <span class="ml-auto flex shrink-0 items-center gap-1.5">
           <a v-if="phones.get(r.patient_id)" :href="telHref(phones.get(r.patient_id)!)" class="flex h-8 items-center rounded-ctl border border-line-control px-2.5 text-[12.5px] font-medium text-ink-700 hover:bg-surface-subtle touch:h-10" data-cy="needs-confirming-call">{{ t('Call', 'Llamar') }}</a>
           <button type="button" class="flex h-8 items-center rounded-ctl border border-line-control px-2.5 text-[12.5px] font-medium text-ink-700 hover:bg-surface-subtle touch:h-10" data-cy="needs-confirming-message" @click="emit('message', r.patient_id)">{{ t('Message', 'Escribir') }}</button>
-          <button type="button" class="flex h-8 items-center rounded-ctl bg-brand px-2.5 text-[12.5px] font-semibold text-white disabled:opacity-50 touch:h-10" :disabled="confirmingId === r.id" data-cy="needs-confirming-confirm" @click="markConfirmed(r)">{{ t('Confirmed', 'Confirmada') }}</button>
+          <button type="button" class="flex h-8 items-center rounded-ctl bg-brand px-2.5 text-[12.5px] font-semibold text-brand-on disabled:opacity-50 touch:h-10" :disabled="confirmingId === r.id" data-cy="needs-confirming-confirm" @click="markConfirmed(r)">{{ t('Confirmed', 'Confirmada') }}</button>
         </span>
       </li>
     </ul>

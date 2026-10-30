@@ -58,7 +58,7 @@ watch(() => turns.value.length + (thinking.value ? 1 : 0), () => {
   >
     <header class="flex shrink-0 items-start justify-between gap-3 border-b border-line-divider p-4">
       <div class="flex items-center gap-2.5">
-        <span class="flex h-[22px] w-[22px] items-center justify-center rounded-[7px] bg-brand text-[10px] font-bold text-white">AI</span>
+        <span class="flex h-[22px] w-[22px] items-center justify-center rounded-[7px] bg-brand text-[10px] font-bold text-brand-on">AI</span>
         <div class="flex flex-col">
           <span class="text-[12.5px] font-semibold tracking-tightTitle text-ink-900">{{ t('Try', 'Prueba a') }} {{ personaName }}</span>
           <span class="text-[10.5px] text-ink-muted">{{ t('Nothing is sent and nothing is booked', 'No se envía ni se reserva nada') }}</span>

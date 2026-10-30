@@ -46,7 +46,7 @@ async function checkIn() {
     <PatientPainAsk class="mt-3" :appointment-id="appt.id" />
   </div>
   <div v-else-if="open">
-    <button type="button" class="flex min-h-11 w-full items-center justify-center gap-2 rounded-ctl bg-brand px-4 text-[15px] font-semibold text-white disabled:opacity-60" :disabled="busy" data-cy="patient-check-in" @click="checkIn">
+    <button type="button" class="flex min-h-11 w-full items-center justify-center gap-2 rounded-ctl bg-brand px-4 text-[15px] font-semibold text-brand-on disabled:opacity-60" :disabled="busy" data-cy="patient-check-in" @click="checkIn">
       {{ busy ? t('Checking in…', 'Registrando…') : t("I'm here", 'Ya estoy aquí') }}
     </button>
     <p v-if="error" role="alert" class="mt-2 text-[12.5px] text-danger-text">{{ error }}</p>

@@ -33,7 +33,7 @@ const t = useT()
         <path :d="item.icon" />
       </svg>
       <span class="min-w-0 flex-1 truncate">{{ item.label }}</span>
-      <span v-if="item.badge" class="flex h-[20px] min-w-[20px] items-center justify-center rounded-full bg-danger-text px-1.5 text-[11px] font-bold text-white" data-cy="nav-badge">{{ item.badge > 99 ? '99+' : item.badge }}<span class="sr-only">&nbsp;{{ t('unread', 'sin leer') }}</span></span>
+      <span v-if="item.badge" class="flex h-[20px] min-w-[20px] items-center justify-center rounded-full bg-danger-text px-1.5 text-[11px] font-bold text-danger-on" data-cy="nav-badge">{{ item.badge > 99 ? '99+' : item.badge }}<span class="sr-only">&nbsp;{{ t('unread', 'sin leer') }}</span></span>
     </NuxtLink>
     <div class="flex-1" />
     <slot name="footer" />

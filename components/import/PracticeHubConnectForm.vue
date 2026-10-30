@@ -21,13 +21,17 @@ function submit() {
   emit('connect', conn)
   showToast(t('Connected to PracticeHub', 'Conectado a PracticeHub'))
 }
+
+// Ties each visible <label> to the field under it (for/id), so a screen
+// reader announces the field by its name.
+const fieldId = useId()
 </script>
 
 <template>
   <form class="space-y-4" @submit.prevent="submit">
     <div>
-      <label class="block text-sm font-medium text-ink-700">{{ t('PracticeHub URL', 'URL de PracticeHub') }}</label>
-      <input
+      <label :for="`${fieldId}-baseUrl`" class="block text-sm font-medium text-ink-700">{{ t('PracticeHub URL', 'URL de PracticeHub') }}</label>
+      <input :id="`${fieldId}-baseUrl`"
         v-model="baseUrl"
         type="text"
         required
@@ -36,8 +40,8 @@ function submit() {
       />
     </div>
     <div>
-      <label class="block text-sm font-medium text-ink-700">{{ t('API Key', 'Clave API') }}</label>
-      <input
+      <label :for="`${fieldId}-apiKey`" class="block text-sm font-medium text-ink-700">{{ t('API Key', 'Clave API') }}</label>
+      <input :id="`${fieldId}-apiKey`"
         v-model="apiKey"
         type="password"
         autocomplete="off"
@@ -48,8 +52,8 @@ function submit() {
       <p class="mt-1 text-xs text-ink-muted2">{{ t('Not stored — used only for this import.', 'No se almacena; se usa solo para esta importación.') }}</p>
     </div>
     <div>
-      <label class="block text-sm font-medium text-ink-700">{{ t('Your email', 'Tu correo electrónico') }}</label>
-      <input
+      <label :for="`${fieldId}-email`" class="block text-sm font-medium text-ink-700">{{ t('Your email', 'Tu correo electrónico') }}</label>
+      <input :id="`${fieldId}-email`"
         v-model="email"
         type="email"
         required
@@ -57,7 +61,7 @@ function submit() {
       />
       <p class="mt-1 text-xs text-ink-muted2">{{ t("Sent as PracticeHub's required app identifier.", 'Se envía como identificador de aplicación requerido por PracticeHub.') }}</p>
     </div>
-    <button type="submit" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover">
+    <button type="submit" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover">
       {{ t('Connect', 'Conectar') }}
     </button>
   </form>

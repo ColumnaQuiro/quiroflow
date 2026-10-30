@@ -156,6 +156,10 @@ async function save() {
   }
   await navigateTo(`/billing/${invoice.id}`)
 }
+
+// Ties each visible <label> to the field under it (for/id), so a screen
+// reader announces the field by its name.
+const fieldId = useId()
 </script>
 
 <template>
@@ -168,8 +172,8 @@ async function save() {
     <div class="flex-1 overflow-y-auto bg-surface-page p-4 sm:p-6">
       <div class="mx-auto max-w-2xl space-y-4">
         <div class="rounded-card border border-line bg-surface p-4 shadow-card sm:p-6">
-          <label class="block text-[12.5px] font-medium text-ink-500">{{ t('Patient', 'Paciente') }}</label>
-          <input
+          <label :for="`${fieldId}-patientQuery`" class="block text-[12.5px] font-medium text-ink-500">{{ t('Patient', 'Paciente') }}</label>
+          <input :id="`${fieldId}-patientQuery`"
             v-model="patientQuery"
             type="text"
             :placeholder="selectedPatientLabel || t('Search patients…', 'Buscar pacientes…')"

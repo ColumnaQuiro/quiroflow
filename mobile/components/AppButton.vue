@@ -42,11 +42,11 @@ const tag = computed(() => (props.to ? NuxtLink : props.href ? 'a' : 'button'))
     class="flex shrink-0 items-center justify-center gap-1.5 rounded-card border text-center leading-tight disabled:opacity-50"
     :class="[
       size === 'lg' ? 'min-h-12 px-6 py-2.5 text-[16px]' : 'min-h-11 px-4 py-2 text-[15px]',
-      variant === 'primary' && 'border-brand bg-brand font-semibold text-white active:opacity-90',
+      variant === 'primary' && 'border-brand bg-brand font-semibold text-brand-on active:opacity-90',
       variant === 'secondary' && 'border-line-control bg-surface font-medium text-ink-700 active:bg-surface-subtle',
       variant === 'danger' && 'border-line-control bg-surface font-medium text-danger-text active:bg-surface-subtle',
       variant === 'strong' && 'border-ink-900 bg-ink-900 font-semibold text-surface active:opacity-90',
-      variant === 'destructive' && 'border-danger-text bg-danger-text font-semibold text-white active:opacity-90',
+      variant === 'destructive' && 'border-danger-text bg-danger-text font-semibold text-danger-on active:opacity-90',
       variant === 'tint' && 'border-brand-tintBorder bg-brand-tint font-semibold text-brand-text active:brightness-95',
       variant === 'quiet' && 'border-transparent font-medium text-ink-muted active:bg-surface-subtle',
     ]"

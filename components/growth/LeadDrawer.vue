@@ -92,7 +92,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
             </div>
           </div>
           <div class="flex items-center gap-2">
-            <span v-if="lead.aiHandling" class="rounded-pill bg-brand px-2 py-0.5 text-[10px] font-semibold text-white">
+            <span v-if="lead.aiHandling" class="rounded-pill bg-brand px-2 py-0.5 text-[10px] font-semibold text-brand-on">
               {{ t('AI handling', 'IA gestionando') }}
             </span>
             <button
@@ -259,7 +259,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
             v-slot="{ converting }"
             :lead-id="lead.id"
             :lead-name="lead.name"
-            class="flex h-9 items-center gap-1.5 rounded-ctl bg-brand px-4 text-[12.5px] font-semibold text-white hover:bg-brand-hover disabled:opacity-60"
+            class="flex h-9 items-center gap-1.5 rounded-ctl bg-brand px-4 text-[12.5px] font-semibold text-brand-on hover:bg-brand-hover disabled:opacity-60"
             data-test="convert-lead"
             @converted="(id: string) => emit('converted', id)"
           >

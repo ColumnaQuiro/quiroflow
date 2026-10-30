@@ -376,6 +376,10 @@ function reset() {
   updatedCount.value = 0
   importErrors.value = []
 }
+
+// Ties each visible <label> to the field under it (for/id), so a screen
+// reader announces the field by its name.
+const fieldId = useId()
 </script>
 
 <template>
@@ -437,8 +441,8 @@ function reset() {
       <p v-if="!mappingComplete" class="text-sm text-danger-text">{{ t('Map at least First name to continue.', 'Mapea al menos Nombre para continuar.') }}</p>
 
       <div>
-        <label class="block text-sm font-medium text-ink-700">{{ t('Import into clinic', 'Importar a la clínica') }}</label>
-        <select
+        <label :for="`${fieldId}-targetClinicId`" class="block text-sm font-medium text-ink-700">{{ t('Import into clinic', 'Importar a la clínica') }}</label>
+        <select :id="`${fieldId}-targetClinicId`"
           v-model="targetClinicId"
           class="mt-1 w-full max-w-xs rounded-md border border-line-control bg-surface px-3 py-2 text-sm text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
           @change="clinicManuallySet = true"
@@ -452,7 +456,7 @@ function reset() {
         <button
           type="button"
           :disabled="!mappingComplete"
-          class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50"
+          class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50"
           @click="confirmMapping"
         >
           {{ t('Continue', 'Continuar') }}
@@ -531,7 +535,7 @@ function reset() {
         <button
           type="button"
           :disabled="toImport.length === 0 && toUpdate.length === 0"
-          class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50"
+          class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50"
           @click="runImport"
         >
           {{ t(`Import ${toImport.length}, update ${toUpdate.length}`, `Importar ${toImport.length}, actualizar ${toUpdate.length}`) }}
@@ -556,7 +560,7 @@ function reset() {
         <p class="font-medium">{{ t('Import failed:', 'Error al importar:') }}</p>
         <p class="mt-1">{{ runError }}</p>
       </div>
-      <button type="button" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover" @click="retryImport">
+      <button type="button" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover" @click="retryImport">
         {{ t('Retry', 'Reintentar') }}
       </button>
     </div>
@@ -569,7 +573,7 @@ function reset() {
         </ul>
       </div>
       <div class="flex gap-3">
-        <NuxtLink to="/patients" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover">
+        <NuxtLink to="/patients" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover">
           {{ t('View Patients', 'Ver pacientes') }}
         </NuxtLink>
         <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-ink-600 hover:bg-surface-subtle" @click="reset">

@@ -201,7 +201,7 @@ const field = 'h-11 w-full rounded-ctl border border-line-control bg-surface px-
         </div>
 
         <aside class="flex flex-col gap-4 rounded-card border border-line bg-surface p-4 shadow-card lg:sticky lg:top-6">
-          <div class="flex flex-col gap-4 rounded-card bg-brand p-5 text-white">
+          <div class="flex flex-col gap-4 rounded-card bg-brand p-5 text-brand-on">
             <div class="flex justify-between text-[12.5px] font-semibold opacity-90"><span>{{ options.clinicName }}</span><span>Bono regalo</span></div>
             <div class="text-[28px] font-bold leading-tight" data-cy="gift-preview">{{ chosen?.label ?? '—' }}</div>
             <div class="text-[13px] opacity-95">{{ toName ? `Para ${toName}` : 'Para …' }}{{ fromName ? `, de parte de ${fromName}` : '' }}</div>

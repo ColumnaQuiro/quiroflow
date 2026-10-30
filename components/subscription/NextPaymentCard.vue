@@ -101,8 +101,8 @@ const eyebrow = computed(() =>
       <button
         v-if="variant !== 'active'"
         type="button"
-        class="flex h-9 touch:h-11 w-full items-center justify-center gap-1.5 rounded-ctl text-[13.5px] font-semibold text-white outline-none focus-visible:shadow-focus lg:h-10"
-        :class="variant === 'past_due' ? 'bg-danger-text' : 'bg-brand hover:bg-brand-hover'"
+        class="flex h-9 touch:h-11 w-full items-center justify-center gap-1.5 rounded-ctl text-[13.5px] font-semibold outline-none focus-visible:shadow-focus lg:h-10"
+        :class="variant === 'past_due' ? 'bg-danger-text text-danger-on' : 'bg-brand text-brand-on hover:bg-brand-hover'"
         @click="emit('portal')"
       >
         {{ variant === 'past_due' ? t('Update card in Stripe', 'Actualizar tarjeta en Stripe') : t('Add payment method', 'Añadir método de pago') }}

@@ -92,7 +92,7 @@ const yearlyCents = computed(() => props.annualPriceCents * MONTHS_PER_YEAR)
         type="button"
         :disabled="current || busy"
         class="flex h-9 touch:h-11 w-full items-center justify-center rounded-ctl text-[13.5px] font-semibold outline-none focus-visible:shadow-focus disabled:cursor-default lg:h-[34px]"
-        :class="current ? 'border border-line-control bg-surface text-ink-700' : 'bg-brand text-white hover:bg-brand-hover'"
+        :class="current ? 'border border-line-control bg-surface text-ink-700' : 'bg-brand text-brand-on hover:bg-brand-hover'"
         @click="$emit('choose')"
       >
         {{ current ? t(`Stay on ${name}`, `Seguir en ${name}`) : busy ? t('Working…', 'Procesando…') : t(`Switch to ${name}`, `Cambiar a ${name}`) }}

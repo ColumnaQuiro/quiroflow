@@ -115,6 +115,15 @@ const goalChips = computed(() =>
     .map((g) => g.trim())
     .filter(Boolean),
 )
+
+// Modal dialogs on this screen: focus stays inside while open, Escape closes,
+// focus returns to what opened it (useFocusTrap, following each v-if).
+const clinicalTitleId = useId()
+const clinicalPanel = ref<HTMLElement | null>(null)
+useFocusTrap(clinicalPanel, () => { editingClinical.value = false; load({ silent: true }) }, () => editingClinical.value)
+const notesTitleId = useId()
+const notesPanel = ref<HTMLElement | null>(null)
+useFocusTrap(notesPanel, () => { notesAppointmentId.value = null; load({ silent: true }) }, () => !!notesAppointmentId.value)
 </script>
 
 <template>
@@ -298,9 +307,9 @@ const goalChips = computed(() =>
       class="fixed inset-0 z-20 flex items-center justify-center bg-scrim/40 p-4"
       @click.self="editingClinical = false; load({ silent: true })"
     >
-      <div class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-card bg-surface p-5 shadow-drawer">
+      <div ref="clinicalPanel" role="dialog" aria-modal="true" :aria-labelledby="clinicalTitleId" class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-card bg-surface p-5 shadow-drawer">
         <div class="flex items-center justify-between">
-          <h2 class="text-[15px] font-semibold text-ink-900">{{ t('Clinical details', 'Datos clínicos') }}</h2>
+          <h2 :id="clinicalTitleId" class="text-[15px] font-semibold text-ink-900">{{ t('Clinical details', 'Datos clínicos') }}</h2>
           <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="editingClinical = false; load({ silent: true })">✕</button>
         </div>
         <div class="mt-4">
@@ -313,9 +322,9 @@ const goalChips = computed(() =>
          note and then dismissing by clicking the backdrop left the list
          showing the text that had just been replaced. -->
     <div v-if="notesAppointmentId" class="fixed inset-0 z-20 flex items-center justify-center bg-scrim/40 p-4" @click.self="notesAppointmentId = null; load({ silent: true })">
-      <div class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-card bg-surface p-6 shadow-drawer">
+      <div ref="notesPanel" role="dialog" aria-modal="true" :aria-labelledby="notesTitleId" class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-card bg-surface p-6 shadow-drawer">
         <div class="flex items-center justify-between">
-          <h2 class="text-[15px] font-semibold text-ink-900">{{ t('Visit notes', 'Notas de la visita') }}</h2>
+          <h2 :id="notesTitleId" class="text-[15px] font-semibold text-ink-900">{{ t('Visit notes', 'Notas de la visita') }}</h2>
           <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="notesAppointmentId = null; load({ silent: true })">✕</button>
         </div>
         <div class="mt-4">

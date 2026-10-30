@@ -400,7 +400,7 @@ const activeLast30Days = computed(() => usage.value.active)
                   <span class="text-[12.5px] font-semibold text-ink-500">{{ t('Preview', 'Vista previa') }}</span>
                   <div class="flex flex-1 items-start rounded-[14px] bg-brand-tint px-4 py-5">
                     <div class="flex w-full gap-2.5 rounded-[14px] bg-surface/95 p-3 shadow-popover">
-                      <span class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-ctl bg-brand text-[16px] font-bold text-white" aria-hidden="true">Q</span>
+                      <span class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-ctl bg-brand text-[16px] font-bold text-brand-on" aria-hidden="true">Q</span>
                       <div class="flex min-w-0 flex-col gap-0.5">
                         <div class="flex justify-between gap-2 text-[12px] text-ink-muted"><span>QuiroFlow</span><span>{{ t('now', 'ahora') }}</span></div>
                         <strong class="break-words text-[13.5px] text-ink-900">{{ pushTitle.trim() || t('Your title', 'Tu título') }}</strong>

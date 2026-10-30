@@ -152,7 +152,7 @@ const dayLabel = (d: Date) => d.toLocaleDateString(t('en-GB', 'es-ES'), { weekda
         @click="emit('openDay', d.day)"
       >
         <span class="flex items-center justify-between">
-          <span class="flex h-6 w-6 items-center justify-center rounded-full text-[12.5px] font-semibold" :class="isToday(d.day) ? 'bg-brand text-white' : 'text-ink-900'">{{ d.day.getDate() }}</span>
+          <span class="flex h-6 w-6 items-center justify-center rounded-full text-[12.5px] font-semibold" :class="isToday(d.day) ? 'bg-brand text-brand-on' : 'text-ink-900'">{{ d.day.getDate() }}</span>
           <span v-if="d.visits" class="text-[11.5px] text-ink-muted">{{ d.visits }}</span>
         </span>
         <template v-if="loading">

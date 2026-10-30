@@ -86,7 +86,7 @@ async function send() {
 
       <button
         type="button"
-        class="h-12 w-full rounded-ctl bg-danger-text text-[15px] font-bold text-white active:opacity-80 disabled:opacity-60"
+        class="h-12 w-full rounded-ctl bg-danger-text text-[15px] font-bold text-danger-on active:opacity-80 disabled:opacity-60"
         :disabled="sending"
         data-cy="team-alert-send"
         @click="send"

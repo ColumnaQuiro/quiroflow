@@ -271,6 +271,10 @@ function backToBilling() {
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 }
+
+// Ties each visible <label> to the field under it (for/id), so a screen
+// reader announces the field by its name.
+const fieldId = useId()
 </script>
 
 <template>
@@ -416,8 +420,8 @@ function formatDate(iso: string) {
 
           <form v-if="canTakePayments && invoice.status !== 'void' && balanceDueCents > 0" class="mt-4 flex items-end gap-2" @submit.prevent="recordPayment">
             <div>
-              <label class="block text-[12.5px] font-medium text-ink-500">{{ t('Amount (€)', 'Importe (€)') }}</label>
-              <input
+              <label :for="`${fieldId}-paymentAmount`" class="block text-[12.5px] font-medium text-ink-500">{{ t('Amount (€)', 'Importe (€)') }}</label>
+              <input :id="`${fieldId}-paymentAmount`"
                 v-model="paymentAmount"
                 type="number"
                 step="0.01"
@@ -426,8 +430,8 @@ function formatDate(iso: string) {
               />
             </div>
             <div>
-              <label class="block text-[12.5px] font-medium text-ink-500">{{ t('Method', 'Método') }}</label>
-              <select v-model="paymentMethod" class="mt-1 rounded-ctl border border-line-control px-3 py-1.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand">
+              <label :for="`${fieldId}-paymentMethod`" class="block text-[12.5px] font-medium text-ink-500">{{ t('Method', 'Método') }}</label>
+              <select :id="`${fieldId}-paymentMethod`" v-model="paymentMethod" class="mt-1 rounded-ctl border border-line-control px-3 py-1.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand">
                 <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
                 <option v-if="creditLedgerCents > 0" value="credit">{{ t('Credit on account', 'Crédito en cuenta') }} ({{ formatEur(creditLedgerCents) }} {{ t('available', 'disponible') }})</option>
               </select>
@@ -435,7 +439,7 @@ function formatDate(iso: string) {
             <button
               type="submit"
               :disabled="savingPayment"
-              class="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-ctl border border-brand bg-brand px-3.5 text-[13px] font-semibold text-white hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-50"
+              class="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-ctl border border-brand bg-brand px-3.5 text-[13px] font-semibold text-brand-on hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-50"
             >
               {{ savingPayment ? t('Recording…', 'Registrando…') : t('Record payment', 'Registrar pago') }}
             </button>

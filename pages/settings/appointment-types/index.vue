@@ -264,7 +264,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border bg-surface px-3 text-[15px
           <section aria-labelledby="h-types" class="overflow-hidden rounded-card border border-line bg-surface">
             <div class="flex flex-wrap items-center gap-2 px-[18px] pb-3 pt-4">
               <h2 id="h-types" class="flex-1 text-[16px] font-bold text-ink-900">{{ t(`Appointment types · ${active.length}`, `Tipos de cita · ${active.length}`) }}</h2>
-              <label class="flex h-9 touch:h-11 w-full items-center gap-2 rounded-ctl border border-line-control px-3 text-ink-muted sm:w-[260px]">
+              <label class="flex h-9 touch:h-11 w-full items-center gap-2 rounded-ctl border border-line-control px-3 text-ink-muted focus-within:border-brand focus-within:shadow-focus sm:w-[260px]">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
                 <input
                   v-model="query"

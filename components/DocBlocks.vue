@@ -196,6 +196,10 @@ function updateOtherText(index: number, text: string) {
 }
 
 const showAddMenu = ref(false)
+
+// Ties each visible <label> to the field under it (for/id), so a screen
+// reader announces the field by its name.
+const fieldId = useId()
 </script>
 
 <template>
@@ -429,7 +433,7 @@ const showAddMenu = ref(false)
               :key="n"
               type="button"
               class="h-8 w-8 rounded-md border text-sm font-medium"
-              :class="field.value === n - 1 ? 'border-brand bg-brand text-white' : 'border-line-control text-ink-700 hover:border-brand'"
+              :class="field.value === n - 1 ? 'border-brand bg-brand text-brand-on' : 'border-line-control text-ink-700 hover:border-brand'"
               @click="update(i, { value: n - 1 })"
             >
               {{ n - 1 }}
@@ -456,10 +460,10 @@ const showAddMenu = ref(false)
         </div>
 
         <div v-else>
-          <label class="block text-sm font-medium text-ink-700">
+          <label :for="`${fieldId}-field-${field.id}`" class="block text-sm font-medium text-ink-700">
             {{ field.label }}<span v-if="field.required" class="text-danger-text">*</span>
           </label>
-          <textarea
+          <textarea :id="`${fieldId}-field-${field.id}`"
             v-if="field.type === 'long_text'"
             :value="field.value as string"
             rows="3"
@@ -485,6 +489,7 @@ const showAddMenu = ref(false)
             @update:model-value="(v) => update(i, { value: v })"
           />
           <input
+            :id="`${fieldId}-field-${field.id}`"
             v-else
             type="text"
             :value="field.value as string"

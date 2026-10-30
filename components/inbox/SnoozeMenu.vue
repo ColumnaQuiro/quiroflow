@@ -83,7 +83,7 @@ const btn = computed(() => (props.size === 'lg' ? 'h-11 w-11' : props.size === '
           <input v-model="customDate" type="date" :min="minDate" class="h-10 min-w-0 flex-1 rounded-ctl border border-line-control bg-surface px-2 text-[14px] text-ink-900" data-cy="thread-snooze-date" />
           <input v-model="customTime" type="time" class="h-10 w-[96px] rounded-ctl border border-line-control bg-surface px-2 text-[14px] text-ink-900" data-cy="thread-snooze-time" />
         </div>
-        <button type="button" class="mt-1.5 h-10 w-full rounded-ctl bg-brand text-[13.5px] font-semibold text-white disabled:opacity-50" :disabled="!customValid" data-cy="thread-snooze-custom" @click="customAt && pick(customAt)">
+        <button type="button" class="mt-1.5 h-10 w-full rounded-ctl bg-brand text-[13.5px] font-semibold text-brand-on disabled:opacity-50" :disabled="!customValid" data-cy="thread-snooze-custom" @click="customAt && pick(customAt)">
           {{ t('Snooze', 'Posponer') }}
         </button>
       </div>

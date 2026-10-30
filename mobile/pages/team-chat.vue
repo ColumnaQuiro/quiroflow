@@ -158,7 +158,7 @@ function bubbleTime(iso: string) {
             :data-cy="`team-thread-${r.key === 'team' ? 'team' : 'member'}`"
             @click="open(r.key)"
           >
-            <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[13px] font-bold" :class="r.key === 'team' ? 'bg-brand text-white' : 'bg-brand-tint text-brand-text'">
+            <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[13px] font-bold" :class="r.key === 'team' ? 'bg-brand text-brand-on' : 'bg-brand-tint text-brand-text'">
               {{ r.key === 'team' ? '#' : initials(r.name) }}
             </span>
             <span class="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -168,7 +168,7 @@ function bubbleTime(iso: string) {
               </span>
               <span class="flex items-center justify-between gap-2">
                 <span class="truncate text-[13px] text-ink-muted">{{ r.last ?? (r.key === 'team' ? t('Everyone who works here', 'Todas las personas de la clínica') : t('No messages yet', 'Sin mensajes todavía')) }}</span>
-                <span v-if="r.unread" class="flex h-[19px] min-w-[19px] shrink-0 items-center justify-center rounded-full bg-brand px-1.5 text-[11px] font-bold text-white" data-cy="team-thread-unread">{{ r.unread }}</span>
+                <span v-if="r.unread" class="flex h-[19px] min-w-[19px] shrink-0 items-center justify-center rounded-full bg-brand px-1.5 text-[11px] font-bold text-brand-on" data-cy="team-thread-unread">{{ r.unread }}</span>
               </span>
             </span>
           </button>
@@ -201,7 +201,7 @@ function bubbleTime(iso: string) {
           <div v-for="m in current" :key="m.id" class="mb-2 flex" :class="m.sender_id === me ? 'justify-end' : 'justify-start'" data-cy="team-message">
             <div
               class="max-w-[80%] rounded-[16px] px-3 py-2"
-              :class="m.kind === 'alert' ? 'border border-danger-border bg-danger-bg text-danger-text' : m.sender_id === me ? 'bg-brand text-white' : 'border border-line bg-surface text-ink-900'"
+              :class="m.kind === 'alert' ? 'border border-danger-border bg-danger-bg text-danger-text' : m.sender_id === me ? 'bg-brand text-brand-on' : 'border border-line bg-surface text-ink-900'"
             >
               <p v-if="m.sender_id !== me && selected === 'team'" class="mb-0.5 text-[12px] font-semibold" :class="m.kind === 'alert' ? '' : 'text-brand-text'">{{ chat.memberName(m.sender_id) }}</p>
               <p v-if="m.kind === 'alert'" class="text-[11.5px] font-bold uppercase tracking-[.04em]">{{ t('Help needed', 'Piden ayuda') }}</p>
@@ -228,7 +228,7 @@ function bubbleTime(iso: string) {
           />
           <button
             type="submit"
-            class="flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl bg-brand text-white disabled:opacity-50"
+            class="flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl bg-brand text-brand-on disabled:opacity-50"
             :disabled="sending || !draft.trim()"
             :aria-label="t('Send', 'Enviar')"
             data-cy="team-send"

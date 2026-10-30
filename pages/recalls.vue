@@ -719,7 +719,7 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
 
       <!-- Filters -->
       <div class="flex flex-wrap items-center gap-2">
-        <label class="flex h-9 touch:h-11 w-full items-center gap-2 rounded-ctl border border-line-control bg-surface px-3 sm:w-72">
+        <label class="flex h-9 touch:h-11 w-full items-center gap-2 rounded-ctl border border-line-control bg-surface px-3 focus-within:border-brand focus-within:shadow-focus sm:w-72">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="shrink-0 text-ink-muted" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
           <input v-model="search" type="search" data-cy="recalls-search" :aria-label="t('Search patient', 'Buscar paciente')" :placeholder="t('Search patient', 'Buscar paciente')" class="min-w-0 flex-1 bg-transparent text-[14px] text-ink-900 outline-none placeholder:text-ink-faint" />
         </label>

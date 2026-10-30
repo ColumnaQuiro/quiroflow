@@ -45,7 +45,7 @@ async function answer(id: string) {
 
 <template>
   <div v-if="alerts.length || answeredMine.length" class="shrink-0" role="alert" aria-live="assertive">
-    <div v-for="a in alerts" :key="a.id" class="flex items-center gap-3 border-b border-danger-border bg-danger-text px-4 py-2.5 text-white" data-cy="team-alert-banner">
+    <div v-for="a in alerts" :key="a.id" class="flex items-center gap-3 border-b border-danger-border bg-danger-text px-4 py-2.5 text-danger-on" data-cy="team-alert-banner">
       <div class="min-w-0 flex-1">
         <p class="text-[14px] font-bold leading-snug">
           <template v-if="a.sender_id === me">{{ t('Your alert is out · waiting for an answer', 'Tu aviso se ha enviado · esperando respuesta') }}</template>

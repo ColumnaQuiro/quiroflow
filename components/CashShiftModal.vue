@@ -8,6 +8,12 @@ const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
 
+// A modal dialog: focus stays inside it, Escape closes it, and focus goes
+// back to whatever opened it (useFocusTrap).
+const dialogPanel = ref<HTMLElement | null>(null)
+const dialogTitleId = useId()
+useFocusTrap(dialogPanel, () => emit('close'))
+
 const loading = ref(true)
 const shift = ref<Tables<'cash_shifts'> | null>(null)
 const opening = ref(false)
@@ -231,13 +237,17 @@ async function addMovement() {
   note.value = ''
   await load()
 }
+
+// Ties each visible <label> to the field under it (for/id), so a screen
+// reader announces the field by its name.
+const fieldId = useId()
 </script>
 
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4" @click.self="emit('close')">
-    <div class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 shadow-xl">
+    <div ref="dialogPanel" role="dialog" aria-modal="true" :aria-labelledby="dialogTitleId" class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 shadow-xl">
       <div class="flex items-center justify-between">
-        <h3 class="text-sm font-semibold text-gray-900">{{ t('Cash Shift', 'Turno de caja') }}</h3>
+        <h3 :id="dialogTitleId" class="text-sm font-semibold text-gray-900">{{ t('Cash Shift', 'Turno de caja') }}</h3>
         <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-gray-400 hover:text-gray-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="emit('close')">✕</button>
       </div>
 
@@ -318,19 +328,19 @@ async function addMovement() {
 
         <form class="mt-4 flex flex-wrap items-end gap-2" @submit.prevent="addMovement">
           <div>
-            <label class="block text-xs font-medium text-gray-500">{{ t('Type', 'Tipo') }}</label>
-            <select v-model="type" class="mt-1 rounded-md border border-gray-300 px-2 py-1.5 text-sm">
+            <label :for="`${fieldId}-type`" class="block text-xs font-medium text-gray-500">{{ t('Type', 'Tipo') }}</label>
+            <select :id="`${fieldId}-type`" v-model="type" class="mt-1 rounded-md border border-gray-300 px-2 py-1.5 text-sm">
               <option value="cash_in">{{ t('Cash in', 'Entrada de efectivo') }}</option>
               <option value="cash_out">{{ t('Cash out', 'Salida de efectivo') }}</option>
             </select>
           </div>
           <div>
-            <label class="block text-xs font-medium text-gray-500">{{ t('Amount', 'Importe') }}</label>
-            <input v-model="amount" type="number" step="0.01" min="0" class="mt-1 w-24 rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
+            <label :for="`${fieldId}-amount`" class="block text-xs font-medium text-gray-500">{{ t('Amount', 'Importe') }}</label>
+            <input :id="`${fieldId}-amount`" v-model="amount" type="number" step="0.01" min="0" class="mt-1 w-24 rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
           </div>
           <div class="flex-1">
-            <label class="block text-xs font-medium text-gray-500">{{ t('Note', 'Nota') }}</label>
-            <input v-model="note" type="text" :placeholder="t('e.g. bank drop', 'p. ej. ingreso en banco')" class="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
+            <label :for="`${fieldId}-note`" class="block text-xs font-medium text-gray-500">{{ t('Note', 'Nota') }}</label>
+            <input :id="`${fieldId}-note`" v-model="note" type="text" :placeholder="t('e.g. bank drop', 'p. ej. ingreso en banco')" class="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
           </div>
           <button type="submit" :disabled="saving" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
             {{ saving ? t('Saving…', 'Guardando…') : t('Add', 'Añadir') }}
@@ -349,8 +359,8 @@ async function addMovement() {
         </div>
 
         <div class="mt-4 border-t border-gray-100 pt-3">
-          <label class="block text-xs font-medium text-gray-500">{{ t('End of shift note', 'Nota de fin de turno') }}</label>
-          <input v-model="closeNote" type="text" :placeholder="t('Optional', 'Opcional')" class="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
+          <label :for="`${fieldId}-closeNote`" class="block text-xs font-medium text-gray-500">{{ t('End of shift note', 'Nota de fin de turno') }}</label>
+          <input :id="`${fieldId}-closeNote`" v-model="closeNote" type="text" :placeholder="t('Optional', 'Opcional')" class="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
           <button
             type="button"
             :disabled="closing"

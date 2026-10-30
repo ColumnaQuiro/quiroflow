@@ -102,18 +102,18 @@ watch(supabaseFailure, (f) => {
   working while the account is locked. -->
   <div v-if="store.isBillingLocked && currentPath !== '/subscription'" class="flex h-screen supports-[height:100dvh]:h-dvh items-center justify-center bg-surface-page px-6">
     <div class="max-w-sm text-center">
-      <h1 class="text-lg font-semibold text-gray-900">Account locked</h1>
-      <p class="mt-2 text-sm text-gray-600">This QuiroFlow account is locked pending payment.</p>
+      <h1 class="text-lg font-semibold text-ink-900">{{ t('Account locked', 'Cuenta bloqueada') }}</h1>
+      <p class="mt-2 text-sm text-ink-600">{{ t('This QuiroFlow account is locked pending payment.', 'Esta cuenta de QuiroFlow está bloqueada hasta que se complete el pago.') }}</p>
       <NuxtLink
         v-if="store.isOwner"
         to="/subscription"
-        class="mt-4 block w-full rounded-ctl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+        class="mt-4 flex h-11 w-full items-center justify-center rounded-ctl bg-brand px-4 text-sm font-semibold text-brand-on hover:bg-brand-hover"
       >
-        Choose a plan
+        {{ t('Choose a plan', 'Elegir un plan') }}
       </NuxtLink>
-      <p v-else class="mt-4 text-sm text-gray-600">Ask the account owner to renew the subscription.</p>
-      <p class="mt-3 text-sm text-gray-600">Or contact us directly:</p>
-      <a :href="contactHref" class="mt-1 inline-block text-sm font-medium text-indigo-600 hover:text-indigo-800">hola@quiroflow.com</a>
+      <p v-else class="mt-4 text-sm text-ink-600">{{ t('Ask the account owner to renew the subscription.', 'Pide a la persona titular de la cuenta que renueve la suscripción.') }}</p>
+      <p class="mt-3 text-sm text-ink-600">{{ t('Or contact us directly:', 'O escríbenos directamente:') }}</p>
+      <a :href="contactHref" class="mt-1 inline-block text-sm font-medium text-brand-text hover:underline">hola@quiroflow.com</a>
     </div>
   </div>
   <!-- 100dvh where the browser has it: 100vh on iPhone Safari is the height

@@ -37,7 +37,7 @@ function onKeydown(event: KeyboardEvent) {
       role="tab"
       :aria-selected="item.key === modelValue"
       :tabindex="item.key === modelValue ? 0 : -1"
-      class="inline-flex h-8 touch:h-10 items-center whitespace-nowrap rounded-[7px] px-3 text-[13px] outline-none"
+      class="inline-flex h-8 touch:h-10 items-center whitespace-nowrap rounded-[7px] px-3 text-[13px] outline-none focus-visible:shadow-focus"
       :class="
         item.key === modelValue
           ? 'border border-line-control bg-surface font-semibold text-ink-900 shadow-card'

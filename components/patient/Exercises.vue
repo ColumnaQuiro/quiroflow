@@ -56,7 +56,7 @@ async function toggleUpload(pe: { id: string; exercises: { media_path?: string |
           <button
             type="button"
             class="min-h-9 shrink-0 rounded-ctl px-3 text-[12.5px] font-semibold"
-            :class="doneToday(pe) ? 'bg-success-bg text-success-text' : 'bg-brand text-white'"
+            :class="doneToday(pe) ? 'bg-success-bg text-success-text' : 'bg-brand text-brand-on'"
             :disabled="busyId === pe.id"
             :aria-pressed="doneToday(pe)"
             data-cy="exercise-done-today"
@@ -68,7 +68,7 @@ async function toggleUpload(pe: { id: string; exercises: { media_path?: string |
         <p v-if="pe.progressive" class="mt-2 text-[12.5px] leading-relaxed text-ink-700" data-cy="exercise-progressive-hint">{{ exerciseProgressiveHint(t) }}</p>
         <p v-if="pe.notes" class="mt-2 rounded-ctl bg-surface-subtle px-3 py-2 text-[12.5px] text-ink-700">{{ pe.notes }}</p>
         <div class="mt-2.5 flex gap-1" :aria-label="t('Last seven days', 'Últimos siete días')">
-          <span v-for="d in exerciseWeek(pe.patient_exercise_logs.map((l) => l.done_on))" :key="d.date" class="flex h-6 w-6 items-center justify-center rounded-full text-[10.5px] font-semibold" :class="[d.done ? 'bg-success-accent text-white' : 'bg-chip-bg text-ink-faint', d.isToday ? 'ring-2 ring-brand/40' : '']">{{ d.initial }}</span>
+          <span v-for="d in exerciseWeek(pe.patient_exercise_logs.map((l) => l.done_on))" :key="d.date" class="flex h-6 w-6 items-center justify-center rounded-full text-[10.5px] font-semibold" :class="[d.done ? 'bg-success-accent text-success-on' : 'bg-chip-bg text-ink-faint', d.isToday ? 'ring-2 ring-brand/40' : '']">{{ d.initial }}</span>
         </div>
         <div v-if="pe.exercises?.instructions || pe.exercises?.media_url || pe.exercises?.media_path" class="mt-2.5 flex flex-wrap items-center gap-3">
           <button v-if="pe.exercises?.instructions" type="button" class="text-[12.5px] font-medium text-brand-text" @click="openId = openId === pe.id ? null : pe.id">

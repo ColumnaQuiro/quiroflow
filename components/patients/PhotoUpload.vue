@@ -95,6 +95,12 @@ function closeQr() {
   qrOpen.value = false
   stopPolling()
 }
+
+// Modal dialogs on this screen: focus stays inside while open, Escape closes,
+// focus returns to what opened it (useFocusTrap, following each v-if).
+const qrTitleId = useId()
+const qrPanel = ref<HTMLElement | null>(null)
+useFocusTrap(qrPanel, closeQr, () => qrOpen.value)
 </script>
 
 <template>
@@ -121,8 +127,8 @@ function closeQr() {
     <input ref="fileInput" type="file" accept="image/*" class="hidden" @change="onFileChosen" />
 
     <div v-if="qrOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/30 p-4" @click.self="closeQr">
-      <div class="max-h-full w-full overflow-y-auto max-w-xs rounded-card border border-line bg-surface p-6 text-center shadow-popover">
-        <p class="text-[13.5px] font-[620] text-ink-900">{{ t('Scan with your phone', 'Escanea con tu móvil') }}</p>
+      <div ref="qrPanel" role="dialog" aria-modal="true" :aria-labelledby="qrTitleId" class="max-h-full w-full overflow-y-auto max-w-xs rounded-card border border-line bg-surface p-6 text-center shadow-popover">
+        <p :id="qrTitleId" class="text-[13.5px] font-[620] text-ink-900">{{ t('Scan with your phone', 'Escanea con tu móvil') }}</p>
         <p class="mt-1 text-[12px] text-ink-muted2">{{ t("Take a photo -- it'll appear here automatically.", 'Haz una foto: aparecerá aquí automáticamente.') }}</p>
         <img :src="qrDataUrl" class="mx-auto mt-4 h-[220px] w-[220px]" :alt="t('QR code', 'Código QR')" />
         <UiBtn variant="secondary" class="mt-4 w-full justify-center" @click="closeQr">{{ t('Cancel', 'Cancelar') }}</UiBtn>

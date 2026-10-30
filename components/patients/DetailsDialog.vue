@@ -24,6 +24,11 @@ const emit = defineEmits<{ updated: []; close: [] }>()
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+
+// A modal dialog: focus stays inside it, Escape closes it, and focus goes
+// back to whatever opened it (useFocusTrap).
+const dialogPanel = ref<HTMLElement | null>(null)
+useFocusTrap(dialogPanel, () => emit('close'))
 const { showToast } = useToast()
 const { can } = usePermission()
 
@@ -390,6 +395,10 @@ async function save() {
 
 const inputClass = 'mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none'
 const labelClass = 'block text-[12px] font-medium text-ink-muted'
+
+// Ties each visible <label> to the field under it (for/id), so a screen
+// reader announces the field by its name.
+const fieldId = useId()
 </script>
 
 <template>
@@ -398,7 +407,7 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
     @click.self="emit('close')"
   >
     <div
-      role="dialog"
+      ref="dialogPanel" role="dialog"
       aria-modal="true"
       :aria-label="t('Patient details', 'Datos del paciente')"
       class="max-h-[92vh] w-full overflow-y-auto rounded-t-card bg-surface-page lg:max-w-[900px] lg:rounded-card"
@@ -535,56 +544,56 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
       <form v-else class="mt-4 space-y-4" @submit.prevent="save">
         <div class="grid grid-cols-3 gap-4">
           <div>
-            <label :class="labelClass">{{ t('First name', 'Nombre') }}</label>
-            <input v-model="firstName" type="text" required :class="inputClass" />
+            <label :for="`${fieldId}-firstName`" :class="labelClass">{{ t('First name', 'Nombre') }}</label>
+            <input :id="`${fieldId}-firstName`" v-model="firstName" type="text" required :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">{{ t('Last name', 'Apellidos') }}</label>
-            <input v-model="lastName" type="text" :class="inputClass" />
+            <label :for="`${fieldId}-lastName`" :class="labelClass">{{ t('Last name', 'Apellidos') }}</label>
+            <input :id="`${fieldId}-lastName`" v-model="lastName" type="text" :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">{{ t('Date of birth', 'Fecha de nacimiento') }}</label>
-            <input v-model="dateOfBirth" type="date" :class="inputClass" />
+            <label :for="`${fieldId}-dateOfBirth`" :class="labelClass">{{ t('Date of birth', 'Fecha de nacimiento') }}</label>
+            <input :id="`${fieldId}-dateOfBirth`" v-model="dateOfBirth" type="date" :class="inputClass" />
             <p v-if="typedAge !== null" class="mt-1 text-[12px] text-ink-muted2" data-cy="patient-age">{{ ageText(typedAge) }}</p>
           </div>
           <div>
-            <label :class="labelClass">{{ t('Email', 'Correo electrónico') }}</label>
-            <input v-model="email" type="email" :class="inputClass" />
+            <label :for="`${fieldId}-email`" :class="labelClass">{{ t('Email', 'Correo electrónico') }}</label>
+            <input :id="`${fieldId}-email`" v-model="email" type="email" :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">{{ t('Street address', 'Dirección') }}</label>
-            <input v-model="address" type="text" :class="inputClass" />
+            <label :for="`${fieldId}-address`" :class="labelClass">{{ t('Street address', 'Dirección') }}</label>
+            <input :id="`${fieldId}-address`" v-model="address" type="text" :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">{{ t('Postal code', 'Código postal') }}</label>
-            <input v-model="postalCode" type="text" :class="inputClass" />
+            <label :for="`${fieldId}-postalCode`" :class="labelClass">{{ t('Postal code', 'Código postal') }}</label>
+            <input :id="`${fieldId}-postalCode`" v-model="postalCode" type="text" :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">{{ t('City', 'Ciudad') }}</label>
-            <input v-model="city" type="text" :class="inputClass" />
+            <label :for="`${fieldId}-city`" :class="labelClass">{{ t('City', 'Ciudad') }}</label>
+            <input :id="`${fieldId}-city`" v-model="city" type="text" :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">{{ t('Country', 'País') }}</label>
-            <input v-model="country" type="text" :class="inputClass" />
+            <label :for="`${fieldId}-country`" :class="labelClass">{{ t('Country', 'País') }}</label>
+            <input :id="`${fieldId}-country`" v-model="country" type="text" :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">{{ t('National ID', 'DNI/NIE') }}</label>
-            <input v-model="nationalId" type="text" data-cy="patient-national-id" :class="inputClass" />
+            <label :for="`${fieldId}-nationalId`" :class="labelClass">{{ t('National ID', 'DNI/NIE') }}</label>
+            <input :id="`${fieldId}-nationalId`" v-model="nationalId" type="text" data-cy="patient-national-id" :class="inputClass" />
             <p v-if="nationalIdMessage" data-cy="patient-national-id-warning" class="mt-1 text-[12px]" :class="nationalIdCheck.kind === 'invalid' ? 'text-danger-text' : 'text-warning-text'">
               {{ nationalIdMessage }}
             </p>
           </div>
           <div>
-            <label :class="labelClass">{{ t('Occupation', 'Profesión') }}</label>
-            <input v-model="occupation" type="text" :class="inputClass" />
+            <label :for="`${fieldId}-occupation`" :class="labelClass">{{ t('Occupation', 'Profesión') }}</label>
+            <input :id="`${fieldId}-occupation`" v-model="occupation" type="text" :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">{{ t('Emergency contact', 'Contacto de emergencia') }}</label>
-            <input v-model="emergencyContact" type="text" :class="inputClass" />
+            <label :for="`${fieldId}-emergencyContact`" :class="labelClass">{{ t('Emergency contact', 'Contacto de emergencia') }}</label>
+            <input :id="`${fieldId}-emergencyContact`" v-model="emergencyContact" type="text" :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">{{ t('Referral source', 'Origen de la referencia') }}</label>
-            <select v-model="referralSource" :class="inputClass" data-cy="referral-source-select">
+            <label :for="`${fieldId}-referralSource`" :class="labelClass">{{ t('Referral source', 'Origen de la referencia') }}</label>
+            <select :id="`${fieldId}-referralSource`" v-model="referralSource" :class="inputClass" data-cy="referral-source-select">
               <option value="">{{ t('Not set', 'Sin especificar') }}</option>
               <option v-for="s in referralSources" :key="s.id" :value="s.name">{{ s.name }}</option>
               <!-- Preserves legacy freeform data that doesn't match a configured source. -->
@@ -609,32 +618,32 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
             </div>
           </div>
           <div>
-            <label :class="labelClass">{{ t('Preferred language', 'Idioma preferido') }}</label>
-            <select v-model="preferredLanguage" :class="inputClass">
+            <label :for="`${fieldId}-preferredLanguage`" :class="labelClass">{{ t('Preferred language', 'Idioma preferido') }}</label>
+            <select :id="`${fieldId}-preferredLanguage`" v-model="preferredLanguage" :class="inputClass">
               <option v-for="l in LANGUAGES" :key="l.code" :value="l.code">{{ l.label }}</option>
             </select>
           </div>
           <div>
-            <label :class="labelClass">{{ t('Default practitioner', 'Profesional predeterminado') }}</label>
-            <select v-model="defaultPractitionerId" :class="inputClass">
+            <label :for="`${fieldId}-defaultPractitionerId`" :class="labelClass">{{ t('Default practitioner', 'Profesional predeterminado') }}</label>
+            <select :id="`${fieldId}-defaultPractitionerId`" v-model="defaultPractitionerId" :class="inputClass">
               <option value="">{{ t('None', 'Ninguno') }}</option>
               <option v-for="m in teamMembers" :key="m.id" :value="m.id">{{ m.full_name }}</option>
             </select>
           </div>
           <div>
-            <label :class="labelClass">{{ t('Clinic', 'Clínica') }}</label>
-            <select v-model="clinicId" :class="inputClass">
+            <label :for="`${fieldId}-clinicId`" :class="labelClass">{{ t('Clinic', 'Clínica') }}</label>
+            <select :id="`${fieldId}-clinicId`" v-model="clinicId" :class="inputClass">
               <option value="">{{ t('No primary clinic', 'Sin clínica principal') }}</option>
               <option v-for="clinic in store.clinics" :key="clinic.id" :value="clinic.id">{{ clinic.name }}</option>
             </select>
           </div>
           <div class="col-span-3">
-            <label :class="labelClass">{{ t('Tags', 'Etiquetas') }}</label>
-            <input v-model="tagsInput" type="text" :placeholder="t('comma, separated, tags', 'etiquetas, separadas, por, comas')" :class="inputClass" />
+            <label :for="`${fieldId}-tagsInput`" :class="labelClass">{{ t('Tags', 'Etiquetas') }}</label>
+            <input :id="`${fieldId}-tagsInput`" v-model="tagsInput" type="text" :placeholder="t('comma, separated, tags', 'etiquetas, separadas, por, comas')" :class="inputClass" />
           </div>
           <div>
-            <label :class="labelClass">{{ t('Status', 'Estado') }}</label>
-            <select v-model="status" :class="inputClass">
+            <label :for="`${fieldId}-status`" :class="labelClass">{{ t('Status', 'Estado') }}</label>
+            <select :id="`${fieldId}-status`" v-model="status" :class="inputClass">
               <option value="active">{{ t('Active', 'Activo') }}</option>
               <option value="inactive">{{ t('Inactive', 'Inactivo') }}</option>
             </select>
@@ -701,14 +710,14 @@ const labelClass = 'block text-[12px] font-medium text-ink-muted'
 
           <div class="mt-3 grid grid-cols-2 gap-4">
             <div>
-              <label :class="labelClass">{{ t('Reminder type', 'Tipo de recordatorio') }}</label>
-              <select v-model="reminderChannel" :class="inputClass">
+              <label :for="`${fieldId}-reminderChannel`" :class="labelClass">{{ t('Reminder type', 'Tipo de recordatorio') }}</label>
+              <select :id="`${fieldId}-reminderChannel`" v-model="reminderChannel" :class="inputClass">
                 <option v-for="opt in CHANNEL_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
               </select>
             </div>
             <div>
-              <label :class="labelClass">{{ t('Confirmation type', 'Tipo de confirmación') }}</label>
-              <select v-model="confirmationChannel" :class="inputClass">
+              <label :for="`${fieldId}-confirmationChannel`" :class="labelClass">{{ t('Confirmation type', 'Tipo de confirmación') }}</label>
+              <select :id="`${fieldId}-confirmationChannel`" v-model="confirmationChannel" :class="inputClass">
                 <option v-for="opt in CHANNEL_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
               </select>
             </div>

@@ -5,6 +5,12 @@ const props = defineProps<{ patientId: string }>()
 const emit = defineEmits<{ close: []; saved: [] }>()
 const t = useT()
 
+// A modal dialog: focus stays inside it, Escape closes it, and focus goes
+// back to whatever opened it (useFocusTrap).
+const dialogPanel = ref<HTMLElement | null>(null)
+const dialogTitleId = useId()
+useFocusTrap(dialogPanel, () => emit('close'))
+
 const loading = ref(true)
 const submitting = ref(false)
 const error = ref('')
@@ -57,9 +63,9 @@ async function submit() {
 
 <template>
   <div class="fixed inset-0 z-20 flex items-center justify-center bg-scrim/40 p-4" @click.self="emit('close')">
-    <div class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
+    <div ref="dialogPanel" role="dialog" aria-modal="true" :aria-labelledby="dialogTitleId" class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg bg-white p-6 shadow-xl">
       <div class="flex items-center justify-between">
-        <h2 class="text-lg font-semibold text-gray-900">{{ t('Add card', 'Añadir tarjeta') }}</h2>
+        <h2 :id="dialogTitleId" class="text-lg font-semibold text-gray-900">{{ t('Add card', 'Añadir tarjeta') }}</h2>
         <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-gray-400 hover:text-gray-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="emit('close')">✕</button>
       </div>
 

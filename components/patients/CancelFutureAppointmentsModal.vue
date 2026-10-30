@@ -32,6 +32,11 @@ const store = useAccountStore()
 const { fire } = useAutomations()
 const t = useT()
 
+// A modal dialog: focus stays inside it, Escape closes it, and focus goes
+// back to whatever opened it (useFocusTrap).
+const dialogPanel = ref<HTMLElement | null>(null)
+useFocusTrap(dialogPanel, () => emit('close'))
+
 const loading = ref(true)
 const appointments = ref<FutureAppointment[]>([])
 const picked = ref<Set<string>>(new Set())
@@ -98,7 +103,7 @@ async function confirm() {
 <template>
   <div class="fixed inset-0 z-50 flex items-end justify-center bg-scrim/30 p-0 lg:items-center lg:p-6" @click.self="emit('close')">
     <div
-      role="dialog"
+      ref="dialogPanel" role="dialog"
       aria-modal="true"
       :aria-label="t('Cancel future appointments', 'Anular citas futuras')"
       class="flex max-h-[92vh] w-full flex-col rounded-t-card border border-line bg-surface p-5 shadow-popover lg:max-w-[520px] lg:rounded-card"
@@ -161,7 +166,7 @@ async function confirm() {
           v-if="appointments.length"
           type="button"
           :disabled="!n || busy"
-          class="flex h-9 touch:h-11 items-center justify-center rounded-ctl bg-danger-text px-3.5 text-[13.5px] font-semibold text-white outline-none focus-visible:shadow-focusDanger disabled:cursor-not-allowed disabled:opacity-50 lg:h-[34px]"
+          class="flex h-9 touch:h-11 items-center justify-center rounded-ctl bg-danger-text px-3.5 text-[13.5px] font-semibold text-danger-on outline-none focus-visible:shadow-focusDanger disabled:cursor-not-allowed disabled:opacity-50 lg:h-[34px]"
           data-cy="cancel-future-confirm"
           @click="confirm"
         >

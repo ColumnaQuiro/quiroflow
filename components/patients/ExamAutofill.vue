@@ -277,6 +277,10 @@ function bringSection(section: 'Subjective' | 'Objective' | 'Action' | 'Plan' | 
 }
 
 defineExpose({ save, copyLastNote, setListingLine, bringSection })
+
+// Ties each visible <label> to the field under it (for/id), so a screen
+// reader announces the field by its name.
+const fieldId = useId()
 </script>
 
 <template>
@@ -314,8 +318,8 @@ defineExpose({ save, copyLastNote, setListingLine, bringSection })
     <!-- S/O/A/P grid -->
     <div class="grid grid-cols-1 gap-3 p-5">
       <div>
-        <label class="mb-1 block text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">{{ t('Subjective', 'Subjetivo') }}</label>
-        <textarea
+        <label :for="`${fieldId}-subjective`" class="mb-1 block text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">{{ t('Subjective', 'Subjetivo') }}</label>
+        <textarea :id="`${fieldId}-subjective`"
           v-model="subjective"
           data-cy="soap-subjective"
           class="w-full min-h-[96px] rounded-[9px] border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
@@ -323,8 +327,8 @@ defineExpose({ save, copyLastNote, setListingLine, bringSection })
         ></textarea>
       </div>
       <div>
-        <label class="mb-1 block text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">{{ t('Objective', 'Objetivo') }}</label>
-        <textarea
+        <label :for="`${fieldId}-objective`" class="mb-1 block text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">{{ t('Objective', 'Objetivo') }}</label>
+        <textarea :id="`${fieldId}-objective`"
           v-model="objective"
           data-cy="soap-objective"
           class="w-full min-h-[96px] rounded-[9px] border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
@@ -332,8 +336,8 @@ defineExpose({ save, copyLastNote, setListingLine, bringSection })
         ></textarea>
       </div>
       <div>
-        <label class="mb-1 block text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">{{ t('Action', 'Acción') }}</label>
-        <textarea
+        <label :for="`${fieldId}-action`" class="mb-1 block text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">{{ t('Action', 'Acción') }}</label>
+        <textarea :id="`${fieldId}-action`"
           v-model="action"
           data-cy="soap-action"
           class="w-full min-h-[76px] rounded-[9px] border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
@@ -341,8 +345,8 @@ defineExpose({ save, copyLastNote, setListingLine, bringSection })
         ></textarea>
       </div>
       <div>
-        <label class="mb-1 block text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">{{ t('Plan', 'Plan') }}</label>
-        <textarea
+        <label :for="`${fieldId}-plan`" class="mb-1 block text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">{{ t('Plan', 'Plan') }}</label>
+        <textarea :id="`${fieldId}-plan`"
           v-model="plan"
           data-cy="soap-plan"
           class="w-full min-h-[76px] rounded-[9px] border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
@@ -371,7 +375,7 @@ defineExpose({ save, copyLastNote, setListingLine, bringSection })
             <button
               type="button"
               class="w-5 rounded-[5px] text-center font-medium"
-              :class="selectedSegment?.level === seg.level && selectedSegment?.side === 'L' ? 'bg-brand text-white' : 'text-ink-muted2 hover:bg-white'"
+              :class="selectedSegment?.level === seg.level && selectedSegment?.side === 'L' ? 'bg-brand text-brand-on' : 'text-ink-muted2 hover:bg-white'"
               @click="pickSegment(seg.level, 'L')"
             >
               L
@@ -380,7 +384,7 @@ defineExpose({ save, copyLastNote, setListingLine, bringSection })
             <button
               type="button"
               class="w-5 rounded-[5px] text-center font-medium"
-              :class="selectedSegment?.level === seg.level && selectedSegment?.side === 'R' ? 'bg-brand text-white' : 'text-ink-muted2 hover:bg-white'"
+              :class="selectedSegment?.level === seg.level && selectedSegment?.side === 'R' ? 'bg-brand text-brand-on' : 'text-ink-muted2 hover:bg-white'"
               @click="pickSegment(seg.level, 'R')"
             >
               R
@@ -408,7 +412,7 @@ defineExpose({ save, copyLastNote, setListingLine, bringSection })
               :key="m"
               type="button"
               class="rounded-ctlSm py-1.5 font-medium"
-              :class="selectedModifier === m ? 'bg-brand text-white' : 'bg-ink-700 text-white hover:bg-ink-600'"
+              :class="selectedModifier === m ? 'bg-brand text-brand-on' : 'bg-ink-700 text-surface hover:bg-ink-600'"
               @click="toggleModifier(m)"
             >
               {{ m }}

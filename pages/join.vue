@@ -79,7 +79,7 @@ watch(user, async (value) => {
         <h1 class="text-lg font-semibold text-ink-900">You've been invited to QuiroFlow</h1>
         <p class="mt-2 text-sm text-ink-500">Sign in or create an account to join.</p>
         <div class="mt-4 flex flex-col gap-2">
-          <NuxtLink to="/login" class="rounded-ctl bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover">
+          <NuxtLink to="/login" class="rounded-ctl bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover">
             Sign in
           </NuxtLink>
           <NuxtLink to="/signup" class="rounded-ctl border border-line-control px-4 py-2 text-sm font-medium text-ink-700 hover:bg-surface-subtle">

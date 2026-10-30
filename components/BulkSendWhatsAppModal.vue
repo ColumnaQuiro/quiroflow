@@ -12,6 +12,12 @@ interface Template {
 const props = defineProps<{ targets: Target[]; defaultTemplateName?: string }>()
 const emit = defineEmits<{ close: []; sent: [] }>()
 const t = useT()
+
+// A modal dialog: focus stays inside it, Escape closes it, and focus goes
+// back to whatever opened it (useFocusTrap).
+const dialogPanel = ref<HTMLElement | null>(null)
+const dialogTitleId = useId()
+useFocusTrap(dialogPanel, () => emit('close'))
 const accountStore = useAccountStore()
 
 const templates = ref<Template[]>([])
@@ -107,12 +113,16 @@ async function send() {
 
 const sentCount = computed(() => results.value.filter((r) => r.ok).length)
 const failedCount = computed(() => results.value.filter((r) => !r.ok).length)
+
+// Ties each visible <label> to the field under it (for/id), so a screen
+// reader announces the field by its name.
+const fieldId = useId()
 </script>
 
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4" @click.self="emit('close')">
-    <div class="max-h-full w-full overflow-y-auto max-w-lg rounded-card border border-line bg-surface p-5 shadow-popover">
-      <h3 class="text-[14px] font-semibold text-ink-900">{{ t('Send WhatsApp to', 'Enviar WhatsApp a') }} {{ targets.length }} {{ targets.length === 1 ? t('patient', 'paciente') : t('patients', 'pacientes') }}</h3>
+    <div ref="dialogPanel" role="dialog" aria-modal="true" :aria-labelledby="dialogTitleId" class="max-h-full w-full overflow-y-auto max-w-lg rounded-card border border-line bg-surface p-5 shadow-popover">
+      <h3 :id="dialogTitleId" class="text-[14px] font-semibold text-ink-900">{{ t('Send WhatsApp to', 'Enviar WhatsApp a') }} {{ targets.length }} {{ targets.length === 1 ? t('patient', 'paciente') : t('patients', 'pacientes') }}</h3>
 
       <template v-if="results.length === 0">
         <div v-if="loadingTemplates" class="mt-3 text-[13px] text-ink-faint">{{ t('Loading templates…', 'Cargando plantillas…') }}</div>
@@ -132,8 +142,8 @@ const failedCount = computed(() => results.value.filter((r) => !r.ok).length)
 
             <div v-if="sharedVariables.length > 0" class="mt-3 space-y-2">
               <div v-for="(v, i) in sharedVariables" :key="i">
-                <label class="block text-xs font-medium text-ink-muted">{{ slot(i + 2) }} {{ t('(same for everyone)', '(igual para todos)') }}</label>
-                <input
+                <label :for="`${fieldId}-variable-${i}`" class="block text-xs font-medium text-ink-muted">{{ slot(i + 2) }} {{ t('(same for everyone)', '(igual para todos)') }}</label>
+                <input :id="`${fieldId}-variable-${i}`"
                   v-model="sharedVariables[i]"
                   type="text"
                   class="mt-1 w-full rounded-ctl border border-line-control px-3 py-1.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand-tintBorder"

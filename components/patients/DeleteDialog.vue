@@ -23,6 +23,11 @@ const emit = defineEmits<{ close: []; deleted: []; archive: [] }>()
 
 const supabase = useSupabaseClient()
 const t = useT()
+
+// A modal dialog: focus stays inside it, Escape closes it, and focus goes
+// back to whatever opened it (useFocusTrap).
+const dialogPanel = ref<HTMLElement | null>(null)
+useFocusTrap(dialogPanel, () => emit('close'))
 const { showToast } = useToast()
 
 const counting = ref(true)
@@ -87,7 +92,7 @@ const lines = computed(() =>
 <template>
   <div class="fixed inset-0 z-50 flex items-end justify-center bg-scrim/30 p-0 lg:items-center lg:p-6" @click.self="emit('close')">
     <div
-      role="dialog"
+      ref="dialogPanel" role="dialog"
       aria-modal="true"
       :aria-label="t('Delete patient', 'Eliminar paciente')"
       class="max-h-[92vh] w-full overflow-y-auto rounded-t-card border border-line bg-surface p-5 shadow-popover lg:max-w-[520px] lg:rounded-card"
@@ -139,7 +144,7 @@ const lines = computed(() =>
           <button
             v-if="!archived"
             type="button"
-            class="flex h-9 touch:h-11 items-center justify-center rounded-ctl bg-brand px-3.5 text-[13.5px] font-semibold text-white outline-none hover:bg-brand-hover focus-visible:shadow-focus lg:h-[34px]"
+            class="flex h-9 touch:h-11 items-center justify-center rounded-ctl bg-brand px-3.5 text-[13.5px] font-semibold text-brand-on outline-none hover:bg-brand-hover focus-visible:shadow-focus lg:h-[34px]"
             @click="emit('archive')"
           >
             {{ t('Archive instead', 'Archivar en su lugar') }}
@@ -197,7 +202,7 @@ const lines = computed(() =>
           <button
             type="button"
             :disabled="!canDelete || deleting"
-            class="flex h-9 touch:h-11 items-center justify-center rounded-ctl bg-danger-text px-3.5 text-[13.5px] font-semibold text-white outline-none focus-visible:shadow-focusDanger disabled:cursor-not-allowed disabled:opacity-50 lg:h-[34px]"
+            class="flex h-9 touch:h-11 items-center justify-center rounded-ctl bg-danger-text px-3.5 text-[13.5px] font-semibold text-danger-on outline-none focus-visible:shadow-focusDanger disabled:cursor-not-allowed disabled:opacity-50 lg:h-[34px]"
             @click="remove"
           >
             {{ deleting ? t('Deleting…', 'Eliminando…') : t('Delete permanently', 'Eliminar permanentemente') }}

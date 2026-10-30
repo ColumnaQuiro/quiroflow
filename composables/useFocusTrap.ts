@@ -1,11 +1,25 @@
 // Keeps keyboard focus inside a dialog while it is open, closes it on Escape,
 // and hands focus back to whatever had it before -- the three things a modal
-// side panel owes a keyboard user. Nothing else in the app traps focus yet;
-// written small so the next dialog can use it too.
+// owes a keyboard user.
+//
+// A dialog that is its own component (mounted only while open) passes just the
+// container and the close. A dialog that lives inside a bigger component
+// behind a `v-if` passes `active` too, so the trap follows that flag instead
+// of the component's whole lifetime:
+//
+//   useFocusTrap(refundPanel, closeRefundModal, () => refundModalOpen.value)
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
-export function useFocusTrap(container: Ref<HTMLElement | null>, onEscape: () => void) {
+// The traps that are open, innermost last. Only the innermost one answers Tab
+// and Escape. Every trap listens on document, and listeners run in the order
+// they were added, so without this a panel opened first took Escape before
+// the confirm opened on top of it -- and closed itself underneath it.
+const openTraps: object[] = []
+
+export function useFocusTrap(container: Ref<HTMLElement | null>, onEscape: () => void, active?: () => boolean) {
+  const self = {}
   let previous: HTMLElement | null = null
+  let on = false
 
   function focusables(): HTMLElement[] {
     const el = container.value
@@ -14,8 +28,8 @@ export function useFocusTrap(container: Ref<HTMLElement | null>, onEscape: () =>
   }
 
   function onKeydown(e: KeyboardEvent) {
+    if (openTraps[openTraps.length - 1] !== self) return
     if (e.key === 'Escape') {
-      // A nested dialog (confirm, reschedule) handles its own Escape first.
       if (e.defaultPrevented) return
       e.preventDefault()
       onEscape()
@@ -26,29 +40,43 @@ export function useFocusTrap(container: Ref<HTMLElement | null>, onEscape: () =>
     if (list.length === 0) return
     const first = list[0]
     const last = list[list.length - 1]
-    const active = document.activeElement as HTMLElement | null
-    if (e.shiftKey && (active === first || !container.value?.contains(active))) {
+    const activeEl = document.activeElement as HTMLElement | null
+    if (e.shiftKey && (activeEl === first || !container.value?.contains(activeEl))) {
       e.preventDefault()
       last.focus()
-    } else if (!e.shiftKey && (active === last || !container.value?.contains(active))) {
+    } else if (!e.shiftKey && (activeEl === last || !container.value?.contains(activeEl))) {
       e.preventDefault()
       first.focus()
     }
   }
 
-  onMounted(() => {
+  function activate() {
+    if (on) return
+    on = true
     previous = document.activeElement as HTMLElement | null
+    openTraps.push(self)
     document.addEventListener('keydown', onKeydown)
     nextTick(() => {
       const el = container.value
-      if (!el) return
+      if (!el || !on) return
       const autofocus = el.querySelector<HTMLElement>('[autofocus], [data-autofocus]')
       ;(autofocus ?? focusables()[0] ?? el).focus()
     })
-  })
-  onBeforeUnmount(() => {
+  }
+
+  function deactivate() {
+    if (!on) return
+    on = false
+    const i = openTraps.indexOf(self)
+    if (i !== -1) openTraps.splice(i, 1)
     document.removeEventListener('keydown', onKeydown)
     // Back to the block or cell that opened it, if it is still there.
     if (previous && document.contains(previous)) previous.focus()
+  }
+
+  if (active) watch(active, (open) => (open ? activate() : deactivate()))
+  onMounted(() => {
+    if (!active || active()) activate()
   })
+  onBeforeUnmount(deactivate)
 }

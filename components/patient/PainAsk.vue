@@ -48,7 +48,7 @@ async function save() {
         role="radio"
         :aria-checked="picked === n - 1"
         class="h-11 rounded-ctl text-[15px] font-semibold"
-        :class="picked === n - 1 ? 'bg-brand text-white' : 'border border-line-control bg-surface text-ink-700'"
+        :class="picked === n - 1 ? 'bg-brand text-brand-on' : 'border border-line-control bg-surface text-ink-700'"
         :data-cy="`pain-ask-${n - 1}`"
         @click="picked = n - 1"
       >
@@ -61,7 +61,7 @@ async function save() {
     <p v-if="error" role="alert" class="mt-2 text-[12.5px] text-danger-text">{{ error }}</p>
     <div class="mt-3 flex gap-2">
       <button type="button" class="min-h-11 flex-1 rounded-ctl border border-line-control bg-surface text-[14px] font-medium text-ink-700" data-cy="pain-ask-skip" @click="dismissed = true">{{ t('Not now', 'Ahora no') }}</button>
-      <button type="button" class="min-h-11 flex-[2] rounded-ctl bg-brand text-[15px] font-semibold text-white disabled:opacity-60" :disabled="picked === null || busy" data-cy="pain-ask-save" @click="save">
+      <button type="button" class="min-h-11 flex-[2] rounded-ctl bg-brand text-[15px] font-semibold text-brand-on disabled:opacity-60" :disabled="picked === null || busy" data-cy="pain-ask-save" @click="save">
         {{ busy ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}
       </button>
     </div>

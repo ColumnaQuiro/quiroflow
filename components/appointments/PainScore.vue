@@ -67,7 +67,7 @@ function tap(n: number) {
         :aria-checked="score === n - 1"
         :disabled="loading || !editable"
         class="h-8 min-w-8 rounded-ctlSm px-1 text-[12.5px] font-semibold disabled:cursor-default"
-        :class="score === n - 1 ? 'bg-brand text-white' : 'border border-line-control bg-surface text-ink-700 hover:border-line-controlHover'"
+        :class="score === n - 1 ? 'bg-brand text-brand-on' : 'border border-line-control bg-surface text-ink-700 hover:border-line-controlHover'"
         :data-cy="`pain-score-${n - 1}`"
         @click="tap(n - 1)"
       >

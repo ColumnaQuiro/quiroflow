@@ -179,7 +179,7 @@ const num = (n: number | null | undefined) => (n === null || n === undefined ? '
       <h3 class="text-[15px] font-bold text-ink-900">{{ t('Posture', 'Postura') }}</h3>
       <span class="text-[12.5px] text-ink-muted">{{ t('Estimates from photos, to document and explain', 'Estimaciones a partir de fotos, para documentar y explicar') }}</span>
       <span class="flex-1" />
-      <NuxtLink v-if="can('visit_notes_access')" :to="`/patients/posture/${patientId}`" class="inline-flex h-9 items-center rounded-ctl bg-brand px-3.5 text-[13px] font-semibold text-white" data-cy="posture-new">{{ t('New assessment', 'Nueva valoración') }}</NuxtLink>
+      <NuxtLink v-if="can('visit_notes_access')" :to="`/patients/posture/${patientId}`" class="inline-flex h-9 items-center rounded-ctl bg-brand px-3.5 text-[13px] font-semibold text-brand-on" data-cy="posture-new">{{ t('New assessment', 'Nueva valoración') }}</NuxtLink>
     </div>
 
     <p v-if="!loading && !list.length" class="rounded-card border border-dashed border-line-control p-6 text-center text-[13.5px] text-ink-muted" data-cy="posture-empty">

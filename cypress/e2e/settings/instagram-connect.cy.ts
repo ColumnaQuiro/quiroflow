@@ -144,10 +144,14 @@ describe('Connecting Instagram', () => {
         valencia = freshId()
         jerez = freshId()
         jerezPage = `2${Date.now()}`
+        // The fake Page tokens carry a '-', which base64 never contains, so the
+        // "no token in the response" check below cannot be tripped by the
+        // random ciphertext of the ticket. 'T1'/'T2' could be, and were:
+        // a ticket containing "...L1T2is..." failed this spec at random.
         cy.task('db:startMetaGraphStub', {
           pages: [
-            { id: `1${Date.now()}`, name: 'Clínica Demo Valencia', access_token: 'T1', instagram_business_account: { id: valencia, username: 'demovalencia' } },
-            { id: jerezPage, name: 'Clínica Demo Jerez', access_token: 'T2', instagram_business_account: { id: jerez, username: 'demojerez' } },
+            { id: `1${Date.now()}`, name: 'Clínica Demo Valencia', access_token: 'PAGE-TOKEN-VALENCIA', instagram_business_account: { id: valencia, username: 'demovalencia' } },
+            { id: jerezPage, name: 'Clínica Demo Jerez', access_token: 'PAGE-TOKEN-JEREZ', instagram_business_account: { id: jerez, username: 'demojerez' } },
           ],
         })
       })
@@ -161,7 +165,7 @@ describe('Connecting Instagram', () => {
             { instagramUserId: jerez, username: 'demojerez', pageName: 'Clínica Demo Jerez' },
           ])
           // The Page tokens travel only inside the encrypted ticket.
-          expect(JSON.stringify(res.body)).not.to.contain('T1').and.not.to.contain('T2')
+          expect(JSON.stringify(res.body)).not.to.contain('PAGE-TOKEN')
         })
         cy.task<string[]>('db:metaGraphStubSubscriptions').should('deep.equal', [])
         cy.task<any>('db:instagramConnection', { accountId: account.accountId }).its('instagramUserId').should('eq', null)
@@ -175,7 +179,7 @@ describe('Connecting Instagram', () => {
             username: 'demojerez',
           })
         })
-        cy.task<any>('db:instagramConnection', { accountId: account.accountId }).should('deep.equal', { instagramUserId: jerez, token: 'T2' })
+        cy.task<any>('db:instagramConnection', { accountId: account.accountId }).should('deep.equal', { instagramUserId: jerez, token: 'PAGE-TOKEN-JEREZ' })
         cy.task<string[]>('db:metaGraphStubSubscriptions').should('deep.equal', [`${jerezPage}:messages`])
       })
 

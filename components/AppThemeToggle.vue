@@ -42,7 +42,7 @@ async function choose(value: 'light' | 'dark' | 'system') {
   <div ref="menuRef" class="relative">
     <button
       type="button"
-      class="flex h-7 w-7 items-center justify-center rounded-ctl border border-line-control bg-chip-bg text-ink-muted hover:bg-surface-subtle"
+      class="flex h-7 w-7 items-center justify-center rounded-ctl border border-line-control bg-chip-bg text-ink-muted hover:bg-surface-subtle touch:h-10 touch:w-10"
       :title="t('Appearance', 'Apariencia')"
       :aria-label="t('Appearance', 'Apariencia')"
       data-cy="theme-toggle"

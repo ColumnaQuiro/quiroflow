@@ -213,7 +213,7 @@ function clear() {
          loaded, and at all if the object behind imagePath has gone: the box
          takes its height from the <img>, and a box of zero height gets no
          drawing buffer from fit() and never recovers. -->
-    <div class="relative min-h-[200px] overflow-hidden rounded-md border border-gray-300 bg-white">
+    <div class="relative min-h-[200px] overflow-hidden rounded-ctl border border-line-control bg-white">
       <img
         v-if="imageUrl"
         :src="imageUrl"
@@ -231,7 +231,7 @@ function clear() {
         @pointerleave="leave"
       ></canvas>
     </div>
-    <button type="button" class="mt-1 text-xs font-medium text-indigo-600 hover:text-indigo-700" @click="clear">
+    <button type="button" class="mt-1 text-xs font-medium text-brand-text hover:text-brand-text2" @click="clear">
       {{ hasInk ? t('Clear drawing', 'Borrar dibujo') : t('Clear', 'Borrar') }}
     </button>
   </div>

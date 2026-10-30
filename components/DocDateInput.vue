@@ -72,21 +72,21 @@ watch([day, month, year], ([d, m, y]) => {
   <div class="mt-1 flex gap-1.5">
     <select
       v-model="day"
-      class="rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+      class="rounded-ctl border border-line-control px-2 py-1.5 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand bg-surface text-ink-900"
     >
       <option value="" disabled>{{ t('Day', 'Día') }}</option>
       <option v-for="d in DAYS" :key="d" :value="d">{{ Number(d) }}</option>
     </select>
     <select
       v-model="month"
-      class="min-w-0 flex-1 rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+      class="min-w-0 flex-1 rounded-ctl border border-line-control px-2 py-1.5 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand bg-surface text-ink-900"
     >
       <option value="" disabled>{{ t('Month', 'Mes') }}</option>
       <option v-for="m in MONTHS" :key="m.value" :value="m.value">{{ m.label }}</option>
     </select>
     <select
       v-model="year"
-      class="rounded-md border border-gray-300 px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+      class="rounded-ctl border border-line-control px-2 py-1.5 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand bg-surface text-ink-900"
     >
       <option value="" disabled>{{ t('Year', 'Año') }}</option>
       <option v-for="y in YEARS" :key="y" :value="String(y)">{{ y }}</option>

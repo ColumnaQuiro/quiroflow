@@ -280,7 +280,7 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
         <button
           type="button"
           :aria-label="t('Copy phone number', 'Copiar teléfono')"
-          class="flex h-5 w-5 items-center justify-center rounded text-ink-faint outline-none hover:text-ink-700 focus-visible:text-ink-700 focus-visible:shadow-focus"
+          class="flex h-5 w-5 items-center justify-center rounded text-ink-faint outline-none hover:text-ink-700 focus-visible:text-ink-700 focus-visible:shadow-focus relative touch:after:absolute touch:after:-inset-3 touch:after:content-['']"
           @click="copy(phone, 'phone')"
         >
           <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" class="h-3 w-3">
@@ -302,7 +302,7 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
         <button
           type="button"
           :aria-label="t('Copy email address', 'Copiar correo')"
-          class="flex h-5 w-5 shrink-0 items-center justify-center rounded text-ink-faint outline-none hover:text-ink-700 focus-visible:text-ink-700 focus-visible:shadow-focus"
+          class="flex h-5 w-5 shrink-0 items-center justify-center rounded text-ink-faint outline-none hover:text-ink-700 focus-visible:text-ink-700 focus-visible:shadow-focus relative touch:after:absolute touch:after:-inset-3 touch:after:content-['']"
           @click="copy(patient.email!, 'email')"
         >
           <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" class="h-3 w-3">

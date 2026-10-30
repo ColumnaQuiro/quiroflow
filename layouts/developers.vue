@@ -43,7 +43,7 @@ const tokenSettingsUrl = 'https://app.quiroflow.com/settings/developers'
           </a>
           <button
             type="button"
-            class="inline-flex h-8 w-8 items-center justify-center rounded-ctl border border-line-control text-ink-muted2 lg:hidden"
+            class="inline-flex h-8 w-8 items-center justify-center rounded-ctl border border-line-control text-ink-muted2 lg:hidden touch:h-10 touch:w-10"
             :aria-expanded="mobileNavOpen"
             aria-label="Toggle documentation navigation"
             @click="mobileNavOpen = !mobileNavOpen"

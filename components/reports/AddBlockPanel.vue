@@ -78,7 +78,7 @@ async function confirmRemove() {
     <div class="space-y-3 border-b border-line p-4">
       <div class="flex items-center justify-between">
         <h2 class="text-[15px] font-semibold text-ink-900">{{ t('Add a block', 'Añadir un bloque') }}</h2>
-        <button type="button" class="flex h-8 w-8 items-center justify-center rounded-ctlSm text-[18px] text-ink-muted2 hover:bg-surface-subtle" :aria-label="t('Close', 'Cerrar')" @click="emit('close')">×</button>
+        <button type="button" class="flex h-8 w-8 items-center justify-center rounded-ctlSm text-[18px] text-ink-muted2 hover:bg-surface-subtle touch:h-10 touch:w-10" :aria-label="t('Close', 'Cerrar')" @click="emit('close')">×</button>
       </div>
       <div class="flex gap-1 rounded-ctl bg-surface-subtle p-1 text-[12.5px]">
         <button type="button" class="h-8 flex-1 rounded-ctlSm" :class="tab === 'reports' ? 'bg-surface font-semibold text-ink-900 shadow-card' : 'text-ink-muted2'" data-cy="report-add-tab-reports" @click="tab = 'reports'">{{ t('From reports', 'De los informes') }}</button>

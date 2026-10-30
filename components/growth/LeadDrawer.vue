@@ -97,7 +97,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
             </span>
             <button
               type="button"
-              class="flex h-7 w-7 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle"
+              class="flex h-7 w-7 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle touch:h-10 touch:w-10"
               :aria-label="t('Close', 'Cerrar')"
               @click="emit('close')"
             >

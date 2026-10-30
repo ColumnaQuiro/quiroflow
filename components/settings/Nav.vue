@@ -120,7 +120,7 @@ watch(() => route.fullPath, () => (mobileOpen.value = false))
   >
     <div class="flex items-center justify-between lg:block">
       <NuxtLink to="/settings" class="block px-2 text-[13px] font-semibold text-ink-900 hover:text-brand"> {{ t('Settings', 'Ajustes') }} </NuxtLink>
-      <button type="button" class="flex h-6 w-6 items-center justify-center rounded-ctlSm text-ink-muted2 hover:bg-surface-subtle lg:hidden" @click="mobileOpen = false">
+      <button type="button" class="flex h-6 w-6 items-center justify-center rounded-ctlSm text-ink-muted2 hover:bg-surface-subtle lg:hidden touch:h-10 touch:w-10" @click="mobileOpen = false">
         <svg width="13" height="13" viewBox="0 0 14 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2 2l10 10M12 2L2 12" /></svg>
       </button>
     </div>

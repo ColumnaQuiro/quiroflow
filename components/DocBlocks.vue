@@ -230,7 +230,7 @@ const fieldId = useId()
           <div class="flex items-center gap-1 text-xs text-ink-faint">
             <button
               type="button"
-              class="flex h-7 w-7 items-center justify-center rounded-ctlSm hover:bg-surface-subtle hover:text-ink-700 disabled:opacity-25 disabled:hover:bg-transparent"
+              class="flex h-7 w-7 items-center justify-center rounded-ctlSm hover:bg-surface-subtle hover:text-ink-700 disabled:opacity-25 disabled:hover:bg-transparent touch:h-10 touch:w-10"
               :disabled="i === 0"
               :title="t('Move up', 'Subir')"
               :aria-label="t('Move up', 'Subir')"
@@ -240,7 +240,7 @@ const fieldId = useId()
             </button>
             <button
               type="button"
-              class="flex h-7 w-7 items-center justify-center rounded-ctlSm hover:bg-surface-subtle hover:text-ink-700 disabled:opacity-25 disabled:hover:bg-transparent"
+              class="flex h-7 w-7 items-center justify-center rounded-ctlSm hover:bg-surface-subtle hover:text-ink-700 disabled:opacity-25 disabled:hover:bg-transparent touch:h-10 touch:w-10"
               :disabled="i === fields.length - 1"
               :title="t('Move down', 'Bajar')"
               :aria-label="t('Move down', 'Bajar')"
@@ -432,7 +432,7 @@ const fieldId = useId()
               v-for="n in 11"
               :key="n"
               type="button"
-              class="h-8 w-8 rounded-md border text-sm font-medium"
+              class="h-8 w-8 rounded-md border text-sm font-medium touch:h-10 touch:w-10"
               :class="field.value === n - 1 ? 'border-brand bg-brand text-brand-on' : 'border-line-control text-ink-700 hover:border-brand'"
               @click="update(i, { value: n - 1 })"
             >

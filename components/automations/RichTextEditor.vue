@@ -176,9 +176,9 @@ function onInput() {
 <template>
   <div class="overflow-hidden rounded-ctl border border-line-control">
     <div class="flex flex-wrap items-center gap-1 border-b border-line-control bg-surface-subtle px-2 py-1.5">
-      <button type="button" class="flex h-6 w-6 items-center justify-center rounded-ctlSm text-[13px] font-bold text-ink-600 hover:bg-line-faint" @click="exec('bold')">B</button>
-      <button type="button" class="flex h-6 w-6 items-center justify-center rounded-ctlSm text-[13px] italic text-ink-600 hover:bg-line-faint" @click="exec('italic')">I</button>
-      <button type="button" class="flex h-6 w-6 items-center justify-center rounded-ctlSm text-[13px] underline text-ink-600 hover:bg-line-faint" @click="exec('underline')">U</button>
+      <button type="button" class="flex h-6 w-6 items-center justify-center rounded-ctlSm text-[13px] font-bold text-ink-600 hover:bg-line-faint touch:h-10 touch:w-10" @click="exec('bold')">B</button>
+      <button type="button" class="flex h-6 w-6 items-center justify-center rounded-ctlSm text-[13px] italic text-ink-600 hover:bg-line-faint touch:h-10 touch:w-10" @click="exec('italic')">I</button>
+      <button type="button" class="flex h-6 w-6 items-center justify-center rounded-ctlSm text-[13px] underline text-ink-600 hover:bg-line-faint touch:h-10 touch:w-10" @click="exec('underline')">U</button>
       <span class="mx-1 h-4 w-px bg-line-control"></span>
       <button type="button" class="rounded-ctlSm px-2 py-1 text-[12px] font-medium text-ink-600 hover:bg-line-faint" :title="t('Link (Ctrl/Cmd + K)', 'Enlace (Ctrl/Cmd + K)')" @click="insertLink">{{ t('Link', 'Enlace') }}</button>
       <button type="button" class="rounded-ctlSm px-2 py-1 text-[12px] font-medium text-ink-600 hover:bg-line-faint" :disabled="uploading" @click="pickImage">

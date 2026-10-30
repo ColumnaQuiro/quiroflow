@@ -77,11 +77,12 @@
   --color-brand-tintDeep: 242 243 254;
   --color-brand-tintDeepBorder: 222 225 252;
   /* Text and icons drawn ON a solid colour fill -- bg-brand, bg-danger-text,
-     bg-success-accent: primary buttons, selected segments, destructive
-     buttons, avatars. Tailwind exposes it as text-brand-on, text-danger-on
-     and text-success-on. White here; dark in the dark palette, where those
-     fills are light (brand is a pale indigo that white text only reached
-     3:1 against, success-accent a mint it reached 1.6:1 against). */
+     bg-success-accent, bg-warning-accent: primary buttons, selected
+     segments, destructive buttons, banners, avatars. Tailwind exposes it as
+     text-brand-on, text-danger-on, text-success-on and text-warning-on.
+     White here; dark in the dark palette, where those fills are light
+     (brand is a pale indigo that white text only reached 3:1 against,
+     success-accent a mint it reached 1.6:1 against). */
   --color-on-fill: 255 255 255;
 
   --color-surface-page: 247 248 250;

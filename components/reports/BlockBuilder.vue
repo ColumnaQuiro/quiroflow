@@ -130,7 +130,7 @@ const optionClass = (on: boolean) =>
     <div ref="dialog" role="dialog" aria-modal="true" :aria-label="initial ? t('Edit block', 'Editar bloque') : t('New report', 'Nuevo informe')" class="flex max-h-[92vh] w-full max-w-[1100px] flex-col overflow-hidden rounded-card bg-surface shadow-popover" data-cy="report-builder">
       <div class="flex h-14 shrink-0 items-center justify-between border-b border-line px-5">
         <h2 class="text-[16px] font-semibold text-ink-900">{{ initial ? t('Edit block', 'Editar bloque') : t('New report', 'Nuevo informe') }}</h2>
-        <button type="button" class="flex h-8 w-8 items-center justify-center rounded-ctlSm text-[18px] text-ink-muted2 hover:bg-surface-subtle" :aria-label="t('Close', 'Cerrar')" @click="emit('cancel')">×</button>
+        <button type="button" class="flex h-8 w-8 items-center justify-center rounded-ctlSm text-[18px] text-ink-muted2 hover:bg-surface-subtle touch:h-10 touch:w-10" :aria-label="t('Close', 'Cerrar')" @click="emit('cancel')">×</button>
       </div>
 
       <div class="flex min-h-0 flex-1 flex-col lg:flex-row">

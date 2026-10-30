@@ -2440,7 +2440,7 @@ function showNowLineOn(day: Date) {
       <div v-if="bookingFor || readOnly" class="mt-2 flex">
         <span v-if="bookingFor && !readOnly" class="inline-flex h-8 max-w-full items-center gap-1.5 rounded-pill bg-brand-tint pl-3 pr-1.5 text-[12.5px] font-semibold text-brand-text">
           <span class="truncate">{{ t(`Booking for ${bookingFor.name} · pick a time`, `Reservando para ${bookingFor.name} · elige una hora`) }}</span>
-          <button type="button" class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-pill hover:bg-surface" :aria-label="t('Stop booking for this patient', 'Dejar de reservar para este paciente')" @click="stopBookingFor">&times;</button>
+          <button type="button" class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-pill hover:bg-surface relative touch:after:absolute touch:after:-inset-3 touch:after:content-['']" :aria-label="t('Stop booking for this patient', 'Dejar de reservar para este paciente')" @click="stopBookingFor">&times;</button>
         </span>
         <span v-else-if="readOnly" class="inline-flex h-7 items-center rounded-pill bg-chip-bg px-3 text-[12.5px] font-semibold text-chip-text">{{ t('Read-only', 'Solo lectura') }}</span>
       </div>
@@ -2505,7 +2505,7 @@ function showNowLineOn(day: Date) {
             {{ t(`Booking for ${bookingFor.name} · pick a time`, `Reservando para ${bookingFor.name} · elige una hora`) }}
             <button
               type="button"
-              class="inline-flex h-5 w-5 items-center justify-center rounded-pill hover:bg-surface"
+              class="inline-flex h-5 w-5 items-center justify-center rounded-pill hover:bg-surface relative touch:after:absolute touch:after:-inset-3 touch:after:content-['']"
               :aria-label="t('Stop booking for this patient', 'Dejar de reservar para este paciente')"
               data-cy="booking-for-clear"
               @click="stopBookingFor"
@@ -2650,7 +2650,7 @@ function showNowLineOn(day: Date) {
               <button
                 v-if="cell"
                 type="button"
-                class="mx-auto flex h-6 w-6 items-center justify-center rounded-full text-[11px]"
+                class="mx-auto flex h-6 w-6 items-center justify-center rounded-full text-[11px] touch:h-10 touch:w-10"
                 :class="[
                   isSameDate(cell, new Date()) ? 'bg-brand font-semibold text-brand-on' : isSameDate(cell, anchorDate) ? 'font-semibold text-brand-text ring-1 ring-inset ring-brand' : 'text-ink-600 hover:bg-surface-subtle',
                 ]"

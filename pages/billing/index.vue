@@ -220,7 +220,7 @@ function formatDate(iso: string) {
             {{ patientName || t('This patient', 'Este paciente') }}
             <button
               type="button"
-              class="flex h-5 w-5 items-center justify-center rounded-full text-brand-text hover:bg-brand-tintDeep"
+              class="flex h-5 w-5 items-center justify-center rounded-full text-brand-text hover:bg-brand-tintDeep relative touch:after:absolute touch:after:-inset-3 touch:after:content-['']"
               :aria-label="t('Show every patient', 'Mostrar todos los pacientes')"
               @click="clearPatientFilter"
             >

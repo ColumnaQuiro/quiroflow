@@ -395,9 +395,9 @@ onMounted(() => {
 
     <div class="flex-1 overflow-y-auto bg-surface-page">
       <div class="flex flex-wrap items-center gap-3 border-b border-line bg-surface px-4 py-2.5 sm:px-6">
-        <button type="button" class="flex h-7 w-7 items-center justify-center rounded-ctlSm border border-line-control text-[13px] text-ink-500 hover:border-line-controlHover" :aria-label="t('Previous', 'Anterior')" @click="anchorDate = addDays(anchorDate, viewMode === 'day' ? -1 : -7)"><UiChevron dir="left" /></button>
+        <button type="button" class="flex h-7 w-7 items-center justify-center rounded-ctlSm border border-line-control text-[13px] text-ink-500 hover:border-line-controlHover touch:h-10 touch:w-10" :aria-label="t('Previous', 'Anterior')" @click="anchorDate = addDays(anchorDate, viewMode === 'day' ? -1 : -7)"><UiChevron dir="left" /></button>
         <button type="button" class="flex h-7 items-center rounded-ctlSm border border-line-control px-2.5 text-[12.5px] font-medium text-ink-500 hover:border-line-controlHover" @click="anchorDate = new Date()">{{ t('Today', 'Hoy') }}</button>
-        <button type="button" class="flex h-7 w-7 items-center justify-center rounded-ctlSm border border-line-control text-[13px] text-ink-500 hover:border-line-controlHover" :aria-label="t('Next', 'Siguiente')" @click="anchorDate = addDays(anchorDate, viewMode === 'day' ? 1 : 7)"><UiChevron dir="right" /></button>
+        <button type="button" class="flex h-7 w-7 items-center justify-center rounded-ctlSm border border-line-control text-[13px] text-ink-500 hover:border-line-controlHover touch:h-10 touch:w-10" :aria-label="t('Next', 'Siguiente')" @click="anchorDate = addDays(anchorDate, viewMode === 'day' ? 1 : 7)"><UiChevron dir="right" /></button>
         <span class="text-[13px] font-medium text-ink-700">{{ dayLabel }}</span>
 
         <div class="ml-auto flex h-8 overflow-hidden rounded-ctl border border-line-control text-[12.5px]">
@@ -465,7 +465,7 @@ onMounted(() => {
                 <div class="flex items-center gap-2.5">
                   <button
                     type="button"
-                    class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full"
+                    class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full relative touch:after:absolute touch:after:-inset-3 touch:after:content-['']"
                     :class="a.checked_in_at ? 'bg-success-accent text-success-on' : 'border border-line-control text-ink-faint3 hover:border-line-controlHover hover:text-ink-muted2'"
                     :title="a.checked_in_at ? `${t('Arrived', 'Llegada')} ${formatTime(a.checked_in_at)}` : t('Mark as arrived', 'Marcar como llegado')"
                     @click.stop="toggleCheckedIn(a)"
@@ -521,7 +521,7 @@ onMounted(() => {
               <button
                 type="button"
                 data-cy="practitioner-open-appointment"
-                class="pointer-events-none absolute right-1 top-1 flex h-8 w-8 items-center justify-center rounded-ctlSm opacity-0 focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100 [@media(pointer:coarse)]:pointer-events-auto [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11 [@media(pointer:coarse)]:opacity-100"
+                class="pointer-events-none absolute right-1 top-1 flex h-8 w-8 items-center justify-center rounded-ctlSm opacity-0 focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100 [@media(pointer:coarse)]:pointer-events-auto [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11 [@media(pointer:coarse)]:opacity-100 touch:h-10 touch:w-10"
                 :class="{ 'pointer-events-auto animate-pulse opacity-100': openingPanelId === a.id }"
                 :aria-busy="openingPanelId === a.id || undefined"
                 :title="t('Appointment details', 'Detalles de la cita')"

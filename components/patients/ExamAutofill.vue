@@ -375,7 +375,7 @@ const fieldId = useId()
             <button
               type="button"
               class="w-5 rounded-[5px] text-center font-medium"
-              :class="selectedSegment?.level === seg.level && selectedSegment?.side === 'L' ? 'bg-brand text-brand-on' : 'text-ink-muted2 hover:bg-white'"
+              :class="selectedSegment?.level === seg.level && selectedSegment?.side === 'L' ? 'bg-brand text-brand-on' : 'text-ink-muted2 hover:bg-surface'"
               @click="pickSegment(seg.level, 'L')"
             >
               L
@@ -384,7 +384,7 @@ const fieldId = useId()
             <button
               type="button"
               class="w-5 rounded-[5px] text-center font-medium"
-              :class="selectedSegment?.level === seg.level && selectedSegment?.side === 'R' ? 'bg-brand text-brand-on' : 'text-ink-muted2 hover:bg-white'"
+              :class="selectedSegment?.level === seg.level && selectedSegment?.side === 'R' ? 'bg-brand text-brand-on' : 'text-ink-muted2 hover:bg-surface'"
               @click="pickSegment(seg.level, 'R')"
             >
               R

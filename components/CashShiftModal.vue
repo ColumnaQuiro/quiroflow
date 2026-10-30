@@ -245,26 +245,26 @@ const fieldId = useId()
 
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4" @click.self="emit('close')">
-    <div ref="dialogPanel" role="dialog" aria-modal="true" :aria-labelledby="dialogTitleId" class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 shadow-xl">
+    <div ref="dialogPanel" role="dialog" aria-modal="true" :aria-labelledby="dialogTitleId" class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-card bg-surface p-5 shadow-popover">
       <div class="flex items-center justify-between">
-        <h3 :id="dialogTitleId" class="text-sm font-semibold text-gray-900">{{ t('Cash Shift', 'Turno de caja') }}</h3>
-        <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-gray-400 hover:text-gray-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="emit('close')">✕</button>
+        <h3 :id="dialogTitleId" class="text-sm font-semibold text-ink-900">{{ t('Cash Shift', 'Turno de caja') }}</h3>
+        <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="emit('close')">✕</button>
       </div>
 
       <div v-if="loading" class="mt-4 space-y-3">
         <UiSkeleton class="h-3 w-64 rounded-ctlSm" />
-        <div class="space-y-2 rounded-md bg-gray-50 p-3">
+        <div class="space-y-2 rounded-ctl bg-surface-subtle p-3">
           <UiSkeleton class="h-3.5 w-full rounded-ctlSm" />
           <UiSkeleton class="h-3.5 w-full rounded-ctlSm" />
         </div>
       </div>
 
       <div v-else-if="!shift" class="mt-4">
-        <p class="text-sm text-gray-500">{{ t("Couldn't open today's shift automatically.", 'No se ha podido abrir el turno de hoy automáticamente.') }}</p>
+        <p class="text-sm text-ink-muted">{{ t("Couldn't open today's shift automatically.", 'No se ha podido abrir el turno de hoy automáticamente.') }}</p>
         <button
           type="button"
           :disabled="opening"
-          class="mt-3 rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+          class="mt-3 rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50"
           @click="openShift"
         >
           {{ opening ? t('Opening…', 'Abriendo…') : t('Open Shift', 'Abrir turno') }}
@@ -272,22 +272,22 @@ const fieldId = useId()
       </div>
 
       <template v-else>
-        <p class="mt-1 text-xs text-gray-400">
+        <p class="mt-1 text-xs text-ink-faint">
           {{ t("Today's shift, open since", 'Turno de hoy, abierto desde') }} {{ new Date(shift.opened_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) }}. {{ t('Closes itself over into tomorrow -- only close it now if you want to leave an end-of-day note.', 'Se cierra automáticamente hacia el día siguiente -- ciérralo ahora solo si quieres dejar una nota de fin de día.') }}
         </p>
 
-        <div class="mt-4 rounded-md bg-gray-50 p-3 text-sm">
-          <div class="flex justify-between text-gray-500"><span>{{ t('Charged this shift', 'Cargado en este turno') }}</span><span>{{ fmt(invoicedCents) }}</span></div>
-          <div class="mt-1.5 flex justify-between border-t border-gray-200 pt-1.5 font-semibold text-gray-900"><span>{{ t('Total collected', 'Total cobrado') }}</span><span>{{ fmt(totalPaidCents) }}</span></div>
+        <div class="mt-4 rounded-ctl bg-surface-subtle p-3 text-sm">
+          <div class="flex justify-between text-ink-muted"><span>{{ t('Charged this shift', 'Cargado en este turno') }}</span><span>{{ fmt(invoicedCents) }}</span></div>
+          <div class="mt-1.5 flex justify-between border-t border-line pt-1.5 font-semibold text-ink-900"><span>{{ t('Total collected', 'Total cobrado') }}</span><span>{{ fmt(totalPaidCents) }}</span></div>
         </div>
 
         <div v-if="paidByMethod.length > 0" class="mt-3 space-y-1 text-sm">
-          <div v-for="m in paidByMethod" :key="m.method" class="flex justify-between text-gray-500">
+          <div v-for="m in paidByMethod" :key="m.method" class="flex justify-between text-ink-muted">
             <span>{{ METHOD_LABEL[m.method] ?? m.method }}</span>
             <span>{{ fmt(m.cents) }}</span>
           </div>
         </div>
-        <div v-if="settledWithoutMoney.length > 0" data-cy="shift-settled-without-money" class="mt-2 space-y-1 border-t border-gray-100 pt-2 text-xs text-gray-400">
+        <div v-if="settledWithoutMoney.length > 0" data-cy="shift-settled-without-money" class="mt-2 space-y-1 border-t border-line-divider pt-2 text-xs text-ink-faint">
           <p>{{ t('Settled without money coming in (not in the total):', 'Saldado sin entrada de dinero (no incluido en el total):') }}</p>
           <div v-for="m in settledWithoutMoney" :key="m.method" class="flex justify-between">
             <span>{{ METHOD_LABEL[m.method] ?? m.method }}</span>
@@ -295,60 +295,60 @@ const fieldId = useId()
           </div>
         </div>
 
-        <div v-if="unprocessed.length > 0" class="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+        <div v-if="unprocessed.length > 0" class="mt-3 rounded-ctl border border-warning-border bg-warning-bg p-3 text-xs text-warning-text">
           <p class="font-medium">{{ unprocessed.length }} {{ unprocessed.length === 1 ? t('completed appointment with no charge recorded this shift:', 'cita completada sin registrar el cargo en este turno:') : t('completed appointments with no charge recorded this shift:', 'citas completadas sin registrar el cargo en este turno:') }}</p>
           <ul class="mt-1.5 space-y-1">
             <li v-for="a in unprocessed" :key="a.appointmentId">
-              <NuxtLink :to="`/patients/${a.patientId}?tab=billing`" class="underline hover:text-amber-900" @click="emit('close')">
+              <NuxtLink :to="`/patients/${a.patientId}?tab=billing`" class="underline hover:text-warning-accent" @click="emit('close')">
                 {{ new Date(a.startsAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) }} — {{ a.patientName }}
               </NuxtLink>
             </li>
           </ul>
         </div>
 
-        <div class="mt-4 rounded-md bg-gray-50 p-3 text-sm">
-          <p class="text-xs font-medium uppercase tracking-wide text-gray-400">{{ t('Cash drawer', 'Caja registradora') }}</p>
-          <form v-if="editingFloat" class="mt-1.5 flex items-center justify-between gap-2 text-gray-500" @submit.prevent="saveFloat">
+        <div class="mt-4 rounded-ctl bg-surface-subtle p-3 text-sm">
+          <p class="text-xs font-medium uppercase tracking-wide text-ink-faint">{{ t('Cash drawer', 'Caja registradora') }}</p>
+          <form v-if="editingFloat" class="mt-1.5 flex items-center justify-between gap-2 text-ink-muted" @submit.prevent="saveFloat">
             <label for="shift-float" class="flex-1">{{ t('Change at the start', 'Cambio inicial') }}</label>
-            <input id="shift-float" v-model="floatInput" type="text" inputmode="decimal" class="w-24 rounded-md border border-gray-300 px-2 py-1 text-right text-sm" data-cy="shift-float-input" />
-            <button type="submit" :disabled="savingFloat" class="rounded-md bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-50" data-cy="shift-float-save">{{ t('Save', 'Guardar') }}</button>
+            <input id="shift-float" v-model="floatInput" type="text" inputmode="decimal" class="w-24 rounded-ctl border border-line-control px-2 py-1 text-right text-sm bg-surface text-ink-900" data-cy="shift-float-input" />
+            <button type="submit" :disabled="savingFloat" class="rounded-ctl bg-brand px-2.5 py-1 text-xs font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50" data-cy="shift-float-save">{{ t('Save', 'Guardar') }}</button>
           </form>
-          <div v-else class="mt-1.5 flex justify-between text-gray-500">
+          <div v-else class="mt-1.5 flex justify-between text-ink-muted">
             <span>
               {{ t('Change at the start', 'Cambio inicial') }}
-              <button type="button" class="ml-1 text-xs text-indigo-600 underline hover:text-indigo-800" data-cy="shift-float-edit" @click="editFloat">{{ t('Edit', 'Editar') }}</button>
+              <button type="button" class="ml-1 text-xs text-brand-text underline hover:text-brand-text2" data-cy="shift-float-edit" @click="editFloat">{{ t('Edit', 'Editar') }}</button>
             </span>
             <span data-cy="shift-float">{{ fmt(floatCents) }}</span>
           </div>
-          <div class="flex justify-between text-gray-500"><span>{{ t('Cash payments', 'Pagos en efectivo') }}</span><span>{{ fmt(cashPaymentsCents) }}</span></div>
-          <div class="flex justify-between text-gray-500"><span>{{ t('Cash in', 'Entrada de efectivo') }}</span><span>{{ fmt(movementsInCents) }}</span></div>
-          <div class="flex justify-between text-gray-500"><span>{{ t('Cash out', 'Salida de efectivo') }}</span><span>-{{ fmt(movementsOutCents) }}</span></div>
-          <div class="mt-1.5 flex justify-between border-t border-gray-200 pt-1.5 font-semibold text-gray-900"><span>{{ t('Expected in drawer', 'Esperado en caja') }}</span><span data-cy="shift-expected">{{ fmt(expectedInDrawerCents) }}</span></div>
+          <div class="flex justify-between text-ink-muted"><span>{{ t('Cash payments', 'Pagos en efectivo') }}</span><span>{{ fmt(cashPaymentsCents) }}</span></div>
+          <div class="flex justify-between text-ink-muted"><span>{{ t('Cash in', 'Entrada de efectivo') }}</span><span>{{ fmt(movementsInCents) }}</span></div>
+          <div class="flex justify-between text-ink-muted"><span>{{ t('Cash out', 'Salida de efectivo') }}</span><span>-{{ fmt(movementsOutCents) }}</span></div>
+          <div class="mt-1.5 flex justify-between border-t border-line pt-1.5 font-semibold text-ink-900"><span>{{ t('Expected in drawer', 'Esperado en caja') }}</span><span data-cy="shift-expected">{{ fmt(expectedInDrawerCents) }}</span></div>
         </div>
 
         <form class="mt-4 flex flex-wrap items-end gap-2" @submit.prevent="addMovement">
           <div>
-            <label :for="`${fieldId}-type`" class="block text-xs font-medium text-gray-500">{{ t('Type', 'Tipo') }}</label>
-            <select :id="`${fieldId}-type`" v-model="type" class="mt-1 rounded-md border border-gray-300 px-2 py-1.5 text-sm">
+            <label :for="`${fieldId}-type`" class="block text-xs font-medium text-ink-muted">{{ t('Type', 'Tipo') }}</label>
+            <select :id="`${fieldId}-type`" v-model="type" class="mt-1 rounded-ctl border border-line-control px-2 py-1.5 text-sm bg-surface text-ink-900">
               <option value="cash_in">{{ t('Cash in', 'Entrada de efectivo') }}</option>
               <option value="cash_out">{{ t('Cash out', 'Salida de efectivo') }}</option>
             </select>
           </div>
           <div>
-            <label :for="`${fieldId}-amount`" class="block text-xs font-medium text-gray-500">{{ t('Amount', 'Importe') }}</label>
-            <input :id="`${fieldId}-amount`" v-model="amount" type="number" step="0.01" min="0" class="mt-1 w-24 rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
+            <label :for="`${fieldId}-amount`" class="block text-xs font-medium text-ink-muted">{{ t('Amount', 'Importe') }}</label>
+            <input :id="`${fieldId}-amount`" v-model="amount" type="number" step="0.01" min="0" class="mt-1 w-24 rounded-ctl border border-line-control px-2 py-1.5 text-sm bg-surface text-ink-900" />
           </div>
           <div class="flex-1">
-            <label :for="`${fieldId}-note`" class="block text-xs font-medium text-gray-500">{{ t('Note', 'Nota') }}</label>
-            <input :id="`${fieldId}-note`" v-model="note" type="text" :placeholder="t('e.g. bank drop', 'p. ej. ingreso en banco')" class="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
+            <label :for="`${fieldId}-note`" class="block text-xs font-medium text-ink-muted">{{ t('Note', 'Nota') }}</label>
+            <input :id="`${fieldId}-note`" v-model="note" type="text" :placeholder="t('e.g. bank drop', 'p. ej. ingreso en banco')" class="mt-1 w-full rounded-ctl border border-line-control px-2 py-1.5 text-sm bg-surface text-ink-900" />
           </div>
-          <button type="submit" :disabled="saving" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
+          <button type="submit" :disabled="saving" class="rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50">
             {{ saving ? t('Saving…', 'Guardando…') : t('Add', 'Añadir') }}
           </button>
         </form>
-        <p v-if="error" class="mt-1.5 text-xs text-red-600">{{ error }}</p>
+        <p v-if="error" class="mt-1.5 text-xs text-danger-text">{{ error }}</p>
 
-        <div v-if="movements.length > 0" class="mt-4 max-h-32 space-y-1.5 overflow-y-auto border-t border-gray-100 pt-3 text-xs text-gray-500">
+        <div v-if="movements.length > 0" class="mt-4 max-h-32 space-y-1.5 overflow-y-auto border-t border-line-divider pt-3 text-xs text-ink-muted">
           <div v-for="m in movements" :key="m.id" class="flex justify-between">
             <span>
               {{ new Date(m.created_at).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) }} —
@@ -358,13 +358,13 @@ const fieldId = useId()
           </div>
         </div>
 
-        <div class="mt-4 border-t border-gray-100 pt-3">
-          <label :for="`${fieldId}-closeNote`" class="block text-xs font-medium text-gray-500">{{ t('End of shift note', 'Nota de fin de turno') }}</label>
-          <input :id="`${fieldId}-closeNote`" v-model="closeNote" type="text" :placeholder="t('Optional', 'Opcional')" class="mt-1 w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
+        <div class="mt-4 border-t border-line-divider pt-3">
+          <label :for="`${fieldId}-closeNote`" class="block text-xs font-medium text-ink-muted">{{ t('End of shift note', 'Nota de fin de turno') }}</label>
+          <input :id="`${fieldId}-closeNote`" v-model="closeNote" type="text" :placeholder="t('Optional', 'Opcional')" class="mt-1 w-full rounded-ctl border border-line-control px-2 py-1.5 text-sm bg-surface text-ink-900" />
           <button
             type="button"
             :disabled="closing"
-            class="mt-2 w-full rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+            class="mt-2 w-full rounded-ctl bg-ink-900 px-3 py-1.5 text-sm font-medium text-surface hover:bg-ink-700 disabled:opacity-50"
             @click="closeShift"
           >
             {{ closing ? t('Closing…', 'Cerrando…') : t('Close Shift', 'Cerrar turno') }}

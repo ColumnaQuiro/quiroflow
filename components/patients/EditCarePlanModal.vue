@@ -136,79 +136,79 @@ const fieldId = useId()
 
 <template>
   <div class="fixed inset-0 z-20 flex items-center justify-center bg-scrim/40 p-4" @click.self="emit('close')">
-    <div ref="dialogPanel" role="dialog" aria-modal="true" :aria-labelledby="dialogTitleId" class="max-h-full w-full overflow-y-auto max-w-sm rounded-lg bg-white p-6 shadow-xl">
+    <div ref="dialogPanel" role="dialog" aria-modal="true" :aria-labelledby="dialogTitleId" class="max-h-full w-full overflow-y-auto max-w-sm rounded-card bg-surface p-6 shadow-popover">
       <div class="flex items-center justify-between">
-        <h2 :id="dialogTitleId" class="text-lg font-semibold text-gray-900">{{ plan ? t('Edit Plan', 'Editar plan') : t('New Care Plan', 'Nuevo plan de cuidados') }}</h2>
-        <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-gray-400 hover:text-gray-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="emit('close')">✕</button>
+        <h2 :id="dialogTitleId" class="text-lg font-semibold text-ink-900">{{ plan ? t('Edit Plan', 'Editar plan') : t('New Care Plan', 'Nuevo plan de cuidados') }}</h2>
+        <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="emit('close')">✕</button>
       </div>
 
       <form class="mt-4 space-y-4" @submit.prevent="save">
         <div>
-          <label :for="`${fieldId}-name`" class="block text-sm font-medium text-gray-700">{{ t('Name', 'Nombre') }}</label>
-          <input :id="`${fieldId}-name`" v-model="name" type="text" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          <label :for="`${fieldId}-name`" class="block text-sm font-medium text-ink-700">{{ t('Name', 'Nombre') }}</label>
+          <input :id="`${fieldId}-name`" v-model="name" type="text" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand bg-surface text-ink-900" />
         </div>
         <div class="flex flex-wrap items-end gap-2">
           <div>
-            <label :for="`${fieldId}-visitsPerPeriod`" class="block text-sm font-medium text-gray-700">{{ t('Visits', 'Visitas') }}</label>
-            <input :id="`${fieldId}-visitsPerPeriod`" v-model.number="visitsPerPeriod" type="number" min="1" max="7" class="mt-1 w-16 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" data-cy="plan-visits-per-period" />
+            <label :for="`${fieldId}-visitsPerPeriod`" class="block text-sm font-medium text-ink-700">{{ t('Visits', 'Visitas') }}</label>
+            <input :id="`${fieldId}-visitsPerPeriod`" v-model.number="visitsPerPeriod" type="number" min="1" max="7" class="mt-1 w-16 rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand bg-surface text-ink-900" data-cy="plan-visits-per-period" />
           </div>
-          <span class="pb-2 text-sm text-gray-500">{{ t('every', 'cada') }}</span>
-          <input v-model.number="frequencyValue" type="number" min="1" :aria-label="t('Every how many', 'Cada cuántas')" class="w-16 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" data-cy="plan-every" />
+          <span class="pb-2 text-sm text-ink-muted">{{ t('every', 'cada') }}</span>
+          <input v-model.number="frequencyValue" type="number" min="1" :aria-label="t('Every how many', 'Cada cuántas')" class="w-16 rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand bg-surface text-ink-900" data-cy="plan-every" />
           <div class="min-w-[7rem] flex-1">
-            <select v-model="frequencyUnit" :aria-label="t('Period', 'Periodo')" class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" data-cy="plan-unit">
+            <select v-model="frequencyUnit" :aria-label="t('Period', 'Periodo')" class="w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand bg-surface text-ink-900" data-cy="plan-unit">
               <option value="week">{{ frequencyValue > 1 ? t('weeks', 'semanas') : t('week', 'semana') }}</option>
               <option value="month">{{ frequencyValue > 1 ? t('months', 'meses') : t('month', 'mes') }}</option>
             </select>
           </div>
-          <p class="w-full text-[12px] text-gray-500" data-cy="plan-cadence-preview">{{ carePlanCadenceLabel({ frequency_value: frequencyValue || 1, frequency_unit: frequencyUnit, visits_per_period: visitsPerPeriod || 1 }, t) }}</p>
+          <p class="w-full text-[12px] text-ink-muted" data-cy="plan-cadence-preview">{{ carePlanCadenceLabel({ frequency_value: frequencyValue || 1, frequency_unit: frequencyUnit, visits_per_period: visitsPerPeriod || 1 }, t) }}</p>
         </div>
         <div>
-          <label :for="`${fieldId}-totalVisits`" class="block text-sm font-medium text-gray-700">{{ t('Total visits in plan', 'Visitas totales en el plan') }}</label>
-          <input :id="`${fieldId}-totalVisits`" v-model.number="totalVisits" type="number" min="1" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          <label :for="`${fieldId}-totalVisits`" class="block text-sm font-medium text-ink-700">{{ t('Total visits in plan', 'Visitas totales en el plan') }}</label>
+          <input :id="`${fieldId}-totalVisits`" v-model.number="totalVisits" type="number" min="1" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand bg-surface text-ink-900" />
         </div>
         <div>
-          <label :for="`${fieldId}-startedAt`" class="block text-sm font-medium text-gray-700">{{ t('Start date', 'Fecha de inicio') }}</label>
-          <input :id="`${fieldId}-startedAt`" v-model="startedAt" type="date" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          <label :for="`${fieldId}-startedAt`" class="block text-sm font-medium text-ink-700">{{ t('Start date', 'Fecha de inicio') }}</label>
+          <input :id="`${fieldId}-startedAt`" v-model="startedAt" type="date" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand bg-surface text-ink-900" />
         </div>
 
         <fieldset data-cy="plan-markers">
-          <legend class="block text-sm font-medium text-gray-700">{{ t('Re-exams', 'Revisiones') }}</legend>
-          <p class="text-[12px] text-gray-500">{{ t('Visits counted from the start of the plan, booked ones included.', 'Visitas contadas desde el inicio del plan, incluidas las reservadas.') }}</p>
-          <div v-for="(m, i) in markers" :key="i" class="mt-2 space-y-1.5 rounded-md border border-gray-200 p-2" data-cy="plan-marker">
-            <div class="flex flex-wrap items-center gap-1.5 text-sm text-gray-700">
+          <legend class="block text-sm font-medium text-ink-700">{{ t('Re-exams', 'Revisiones') }}</legend>
+          <p class="text-[12px] text-ink-muted">{{ t('Visits counted from the start of the plan, booked ones included.', 'Visitas contadas desde el inicio del plan, incluidas las reservadas.') }}</p>
+          <div v-for="(m, i) in markers" :key="i" class="mt-2 space-y-1.5 rounded-ctl border border-line p-2" data-cy="plan-marker">
+            <div class="flex flex-wrap items-center gap-1.5 text-sm text-ink-700">
               <span>{{ t('Visit', 'Visita') }}</span>
-              <input v-model.number="m.at" type="number" min="1" max="999" :aria-label="t('Visit number', 'Número de visita')" class="w-16 rounded-md border border-gray-300 px-2 py-1 text-sm" data-cy="plan-marker-at" />
+              <input v-model.number="m.at" type="number" min="1" max="999" :aria-label="t('Visit number', 'Número de visita')" class="w-16 rounded-ctl border border-line-control px-2 py-1 text-sm bg-surface text-ink-900" data-cy="plan-marker-at" />
               <label class="inline-flex items-center gap-1">
                 <input v-model="m.repeat" type="checkbox" data-cy="plan-marker-repeat" />
                 {{ t('then every', 'y luego cada') }}
               </label>
-              <input v-if="m.repeat" v-model.number="m.every" type="number" min="1" max="999" :aria-label="t('Every how many visits', 'Cada cuántas visitas')" class="w-16 rounded-md border border-gray-300 px-2 py-1 text-sm" data-cy="plan-marker-every" />
+              <input v-if="m.repeat" v-model.number="m.every" type="number" min="1" max="999" :aria-label="t('Every how many visits', 'Cada cuántas visitas')" class="w-16 rounded-ctl border border-line-control px-2 py-1 text-sm bg-surface text-ink-900" data-cy="plan-marker-every" />
               <span v-if="m.repeat">{{ t('visits', 'visitas') }}</span>
-              <button type="button" :aria-label="t('Remove', 'Quitar')" class="ml-auto text-gray-400 hover:text-gray-600" data-cy="plan-marker-remove" @click="markers.splice(i, 1)">✕</button>
+              <button type="button" :aria-label="t('Remove', 'Quitar')" class="ml-auto text-ink-faint hover:text-ink-600" data-cy="plan-marker-remove" @click="markers.splice(i, 1)">✕</button>
             </div>
             <div class="flex gap-1.5">
-              <select v-model="m.appointment_type_id" :aria-label="t('Booked as', 'Se reserva como')" class="min-w-0 flex-1 rounded-md border border-gray-300 px-2 py-1 text-sm" data-cy="plan-marker-type">
+              <select v-model="m.appointment_type_id" :aria-label="t('Booked as', 'Se reserva como')" class="min-w-0 flex-1 rounded-ctl border border-line-control px-2 py-1 text-sm bg-surface text-ink-900" data-cy="plan-marker-type">
                 <option value="">{{ t('Any type (highlight only)', 'Cualquier tipo (solo destacar)') }}</option>
                 <option v-for="ty in appointmentTypes" :key="ty.id" :value="ty.id">{{ t(`Booked as ${ty.name}`, `Como ${ty.name}`) }}</option>
               </select>
-              <input v-model="m.label" type="text" maxlength="40" :placeholder="t('Re-exam', 'Revisión')" :aria-label="t('Label', 'Etiqueta')" class="w-28 rounded-md border border-gray-300 px-2 py-1 text-sm" data-cy="plan-marker-label" />
+              <input v-model="m.label" type="text" maxlength="40" :placeholder="t('Re-exam', 'Revisión')" :aria-label="t('Label', 'Etiqueta')" class="w-28 rounded-ctl border border-line-control px-2 py-1 text-sm bg-surface text-ink-900" data-cy="plan-marker-label" />
             </div>
-            <p class="text-[12px] text-gray-500" data-cy="plan-marker-preview">{{ markerPreview(m) }}</p>
+            <p class="text-[12px] text-ink-muted" data-cy="plan-marker-preview">{{ markerPreview(m) }}</p>
           </div>
-          <button v-if="markers.length < MAX_VISIT_MARKERS" type="button" class="mt-2 text-[12.5px] font-medium text-indigo-600 hover:underline" data-cy="plan-marker-add" @click="addMarker">
+          <button v-if="markers.length < MAX_VISIT_MARKERS" type="button" class="mt-2 text-[12.5px] font-medium text-brand-text hover:underline" data-cy="plan-marker-add" @click="addMarker">
             {{ t('+ Add re-exam visit', '+ Añadir visita de revisión') }}
           </button>
         </fieldset>
 
         <fieldset data-cy="plan-payment">
-          <legend class="block text-sm font-medium text-gray-700">{{ t('How it is paid', 'Cómo se paga') }}</legend>
+          <legend class="block text-sm font-medium text-ink-700">{{ t('How it is paid', 'Cómo se paga') }}</legend>
           <div class="mt-1 grid grid-cols-3 gap-1.5">
             <button
               v-for="k in (['per_visit', 'bono', 'membership'] as const)"
               :key="k"
               type="button"
-              class="rounded-md border px-2 py-2 text-[12.5px] font-medium"
-              :class="paymentKind === k ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-gray-300 text-gray-700'"
+              class="rounded-ctl border px-2 py-2 text-[12.5px] font-medium"
+              :class="paymentKind === k ? 'border-brand bg-brand-tint text-brand-text2' : 'border-line-control text-ink-700'"
               :aria-pressed="paymentKind === k"
               :data-cy="`plan-pay-${k}`"
               @click="paymentKind = k"
@@ -216,22 +216,22 @@ const fieldId = useId()
               {{ k === 'per_visit' ? t('Per visit', 'Por visita') : k === 'bono' ? t('Bono', 'Bono') : t('Membership', 'Membresía') }}
             </button>
           </div>
-          <select v-if="paymentKind === 'bono'" v-model="bonoId" class="mt-2 w-full rounded-md border border-gray-300 px-3 py-2 text-sm" data-cy="plan-pay-bono-select">
+          <select v-if="paymentKind === 'bono'" v-model="bonoId" class="mt-2 w-full rounded-ctl border border-line-control px-3 py-2 text-sm bg-surface text-ink-900" data-cy="plan-pay-bono-select">
             <option value="" disabled>{{ bonos.length ? t('Choose a bono…', 'Elige un bono…') : t('No open bono — sell one in Money', 'Sin bono abierto — véndelo en Dinero') }}</option>
             <option v-for="b in bonos" :key="b.id" :value="b.id">{{ b.label }}</option>
           </select>
-          <select v-if="paymentKind === 'membership'" v-model="membershipId" class="mt-2 w-full rounded-md border border-gray-300 px-3 py-2 text-sm" data-cy="plan-pay-membership-select">
+          <select v-if="paymentKind === 'membership'" v-model="membershipId" class="mt-2 w-full rounded-ctl border border-line-control px-3 py-2 text-sm bg-surface text-ink-900" data-cy="plan-pay-membership-select">
             <option value="" disabled>{{ memberships.length ? t('Choose a membership…', 'Elige una membresía…') : t('No active membership — start one in Money', 'Sin membresía activa — empiézala en Dinero') }}</option>
             <option v-for="m in memberships" :key="m.id" :value="m.id">{{ m.label }}</option>
           </select>
-          <p v-if="paymentKind === 'per_visit'" class="mt-1.5 text-[12px] text-gray-500">{{ t('Each visit is charged at its normal price.', 'Cada visita se cobra a su precio habitual.') }}</p>
+          <p v-if="paymentKind === 'per_visit'" class="mt-1.5 text-[12px] text-ink-muted">{{ t('Each visit is charged at its normal price.', 'Cada visita se cobra a su precio habitual.') }}</p>
         </fieldset>
 
-        <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
+        <p v-if="error" class="text-sm text-danger-text">{{ error }}</p>
 
         <div class="flex justify-end gap-2 pt-2">
-          <button type="button" class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50" @click="emit('close')">{{ t('Cancel', 'Cancelar') }}</button>
-          <button type="submit" :disabled="saving" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
+          <button type="button" class="rounded-ctl border border-line-control px-4 py-2 text-sm text-ink-700 hover:bg-surface-subtle" @click="emit('close')">{{ t('Cancel', 'Cancelar') }}</button>
+          <button type="submit" :disabled="saving" class="rounded-ctl bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50">
             {{ saving ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}
           </button>
         </div>

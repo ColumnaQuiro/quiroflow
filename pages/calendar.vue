@@ -2645,7 +2645,7 @@ function showNowLineOn(day: Date) {
             <button type="button" :aria-label="t('Next month', 'Mes siguiente')" class="rounded-ctlSm p-1 text-ink-faint hover:bg-surface-subtle hover:text-ink-600" @click="miniBase = addMonths(miniBase, 1)"><UiChevron dir="right" /></button>
           </div>
           <div class="mt-2 grid grid-cols-7 gap-y-1 text-center">
-            <span v-for="d in miniWeekdayAbbrevs" :key="d" class="text-[10px] font-medium uppercase text-ink-faint">{{ d }}</span>
+            <span v-for="d in miniWeekdayAbbrevs" :key="d" class="text-[11px] font-medium uppercase text-ink-faint">{{ d }}</span>
             <template v-for="(cell, i) in miniGrid" :key="i">
               <button
                 v-if="cell"
@@ -2825,7 +2825,7 @@ function showNowLineOn(day: Date) {
               <div class="relative flex" :style="{ height: `${dayGridHeight}px` }">
                 <div class="sticky left-0 z-[25] w-[58px] shrink-0 border-r border-line bg-surface">
                   <!-- In the gutter, which stays put when the rooms scroll sideways. -->
-                  <span v-if="showNowLine" class="pointer-events-none absolute left-1 z-10 -translate-y-1/2 rounded-full bg-danger-text px-1.5 py-px font-mono text-[10.5px] font-semibold leading-4 text-surface" data-cy="now-label" :style="{ top: `${nowLinePx}px` }">{{ formatTime(now) }}</span>
+                  <span v-if="showNowLine" class="pointer-events-none absolute left-1 z-10 -translate-y-1/2 rounded-full bg-danger-text px-1.5 py-px font-mono text-[11px] font-semibold leading-4 text-surface" data-cy="now-label" :style="{ top: `${nowLinePx}px` }">{{ formatTime(now) }}</span>
                   <span
                     v-for="h in hourMarks"
                     :key="h"
@@ -2837,7 +2837,7 @@ function showNowLineOn(day: Date) {
                   <span
                     v-for="m in slotMarks"
                     :key="`slot-label-${m}`"
-                    class="pointer-events-none absolute left-0 right-0 px-2 font-mono text-[9.5px] text-ink-faint2"
+                    class="pointer-events-none absolute left-0 right-0 px-2 font-mono text-[11px] text-ink-faint2"
                     :style="{ top: `${Math.max(0, (m / 60) * DAY_HOUR_PX - 6)}px` }"
                   >
                     {{ slotLabel(m) }}
@@ -2897,7 +2897,7 @@ function showNowLineOn(day: Date) {
                   <template v-for="(appt, i) in layoutForRoomOnDay(anchorDate, col.id)" :key="isOverflowBlock(appt) ? `overflow-${col.id}-${i}` : appt.id">
                     <div
                       v-if="isOverflowBlock(appt)"
-                      class="absolute flex items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[10.5px] font-medium text-ink-muted2 shadow-card"
+                      class="absolute flex items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[11px] font-medium text-ink-muted2 shadow-card"
                       :title="`${appt.count} ${appt.count === 1 ? t('more appointment', 'cita más') : t('more appointments', 'citas más')} ${t('at this time', 'a esta hora')}`"
                       :style="columnStyle(appt, timeToPx(appt.starts_at, DAY_HOUR_PX), OVERFLOW_CHIP_PX)"
                     >
@@ -3000,7 +3000,7 @@ function showNowLineOn(day: Date) {
               <div class="sticky left-0 z-[25] w-[58px] shrink-0 bg-surface">
                 <div class="sticky top-0 z-30 border-b border-r border-line bg-surface" :style="{ height: `${WEEK_HEADER_PX}px` }"></div>
                 <div class="relative border-r border-line" :style="{ height: `${weekGridHeight}px` }">
-                  <span v-if="showWeekNowLabel" class="pointer-events-none absolute left-1 z-20 -translate-y-1/2 rounded-full bg-danger-text px-1.5 py-px font-mono text-[10.5px] font-semibold leading-4 text-surface" data-cy="now-label" :style="{ top: `${nowLineWeekPx}px` }">{{ formatTime(now) }}</span>
+                  <span v-if="showWeekNowLabel" class="pointer-events-none absolute left-1 z-20 -translate-y-1/2 rounded-full bg-danger-text px-1.5 py-px font-mono text-[11px] font-semibold leading-4 text-surface" data-cy="now-label" :style="{ top: `${nowLineWeekPx}px` }">{{ formatTime(now) }}</span>
                   <span
                     v-for="h in hourMarks"
                     :key="h"
@@ -3012,7 +3012,7 @@ function showNowLineOn(day: Date) {
                   <span
                     v-for="m in slotMarks"
                     :key="`slot-label-${m}`"
-                    class="pointer-events-none absolute left-0 right-0 px-2 font-mono text-[9px] text-ink-faint2"
+                    class="pointer-events-none absolute left-0 right-0 px-2 font-mono text-[11px] text-ink-faint2"
                     :style="{ top: `${Math.max(0, (m / 60) * WEEK_HOUR_PX - 5)}px` }"
                   >
                     {{ slotLabel(m) }}
@@ -3031,7 +3031,7 @@ function showNowLineOn(day: Date) {
                     <button v-if="!readOnly" type="button" :aria-label="t('New appointment on this day', 'Nueva cita este día')" class="absolute right-1 top-0.5 text-[11px] text-ink-faint hover:text-brand-text" @click.stop="openCreateModalForDay(day)">+</button>
                   </div>
                   <!-- Per-day counts: the two that need someone to act. -->
-                  <div class="flex h-[18px] items-center justify-center gap-2 border-b border-line text-[10.5px] text-ink-muted" data-cy="day-header-counts" :class="isSameDate(day, new Date()) ? 'bg-brand-tintDeep' : ''">
+                  <div class="flex h-[18px] items-center justify-center gap-2 border-b border-line text-[11px] text-ink-muted" data-cy="day-header-counts" :class="isSameDate(day, new Date()) ? 'bg-brand-tintDeep' : ''">
                     <UiSkeleton v-if="loading" class="h-2.5 w-16 rounded-ctlSm" />
                     <template v-else>
                       <template v-for="c in [dayHeaderCounts(day)]" :key="`c-${toDateKey(day)}`">
@@ -3044,7 +3044,7 @@ function showNowLineOn(day: Date) {
                     <div
                       v-for="col in dayColumns"
                       :key="col.id"
-                      class="flex flex-1 items-center justify-center truncate border-r border-line-divider px-1 text-[10.5px] font-medium text-ink-muted2 last:border-r-0"
+                      class="flex flex-1 items-center justify-center truncate border-r border-line-divider px-1 text-[11px] font-medium text-ink-muted2 last:border-r-0"
                       :style="{ minWidth: `${WEEK_ROOM_COL_PX}px` }"
                     >
                       {{ col.name }}
@@ -3092,7 +3092,7 @@ function showNowLineOn(day: Date) {
                     <div
                       v-for="block in blocksForRoomOnDay(day, col.id)"
                       :key="block.id"
-                      class="cal-blocked absolute left-0.5 right-0.5 z-0 flex cursor-pointer items-center justify-center overflow-hidden rounded-[6px] border border-line font-mono text-[10px] text-ink-muted2"
+                      class="cal-blocked absolute left-0.5 right-0.5 z-0 flex cursor-pointer items-center justify-center overflow-hidden rounded-[6px] border border-line font-mono text-[11px] text-ink-muted2"
                       :style="{ top: `${timeToPx(block.starts_at, WEEK_HOUR_PX)}px`, height: `${durationToPx(block.starts_at, block.ends_at, WEEK_HOUR_PX, WEEK_MIN_AVAILABILITY_PX)}px` }"
                       :title="blockLabel(block)"
                       @click.stop="openBlockEditModal(block)"
@@ -3105,7 +3105,7 @@ function showNowLineOn(day: Date) {
                       :key="o.id"
                       data-cy="freed-slot"
                       role="note"
-                      class="absolute left-0.5 right-0.5 z-[5] flex cursor-default items-center overflow-hidden rounded-[6px] border-[1.5px] border-dashed border-success-accent bg-success-bg px-1 text-[10.5px] font-semibold text-success-text"
+                      class="absolute left-0.5 right-0.5 z-[5] flex cursor-default items-center overflow-hidden rounded-[6px] border-[1.5px] border-dashed border-success-accent bg-success-bg px-1 text-[11px] font-semibold text-success-text"
                       :title="`${freedSlotLabel(o)} · ${freedSlotUntil(o)}`"
                       :style="{ top: `${timeToPx(o.offered_starts_at, WEEK_HOUR_PX)}px`, height: `${durationToPx(o.offered_starts_at, o.offered_ends_at ?? o.offered_starts_at, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX) - 2}px` }"
                       @click.stop
@@ -3117,7 +3117,7 @@ function showNowLineOn(day: Date) {
                       <button
                         v-if="isOverflowBlock(appt)"
                         type="button"
-                        class="absolute flex items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[10px] font-medium text-ink-muted2 shadow-card hover:border-line-controlHover"
+                        class="absolute flex items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[11px] font-medium text-ink-muted2 shadow-card hover:border-line-controlHover"
                         :title="`${appt.count} ${appt.count === 1 ? t('more appointment', 'cita más') : t('more appointments', 'citas más')} ${t('at this time -- click to see them all in Day view', 'a esta hora -- haz clic para verlas todas en la vista Día')}`"
                         :style="columnStyle(appt, timeToPx(appt.starts_at, WEEK_HOUR_PX), OVERFLOW_CHIP_PX)"
                         @click.stop="showOverflowDay(day)"
@@ -3129,7 +3129,7 @@ function showNowLineOn(day: Date) {
                         type="button"
                         data-cy="class-block"
                         :data-session-id="appt._class.sessionId"
-                        class="absolute flex flex-col items-start overflow-hidden rounded-[7px] border border-brand bg-brand px-1.5 py-0.5 text-left text-[10.5px] leading-tight text-brand-on"
+                        class="absolute flex flex-col items-start overflow-hidden rounded-[7px] border border-brand bg-brand px-1.5 py-0.5 text-left text-[11px] leading-tight text-brand-on"
                         :style="columnStyle(appt, timeToPx(appt.starts_at, WEEK_HOUR_PX), Math.max(0, durationToPx(appt.starts_at, appt.ends_at, WEEK_HOUR_PX, WEEK_MIN_BLOCK_PX) - 2))"
                         @click.stop="classPanelId = appt._class.sessionId"
                       >
@@ -3145,7 +3145,7 @@ function showNowLineOn(day: Date) {
                         :title="`${movedMarkerName(appt)} · ${movedMarkerLabel(appt)}`"
                         @click.stop="openEditModal(appt._movedFrom)"
                       >
-                        <div class="flex h-full flex-col overflow-hidden rounded-[6px] border border-dashed border-line-control bg-surface-page px-1 py-0.5 text-[10.5px] leading-tight text-ink-muted opacity-60 hover:opacity-90">
+                        <div class="flex h-full flex-col overflow-hidden rounded-[6px] border border-dashed border-line-control bg-surface-page px-1 py-0.5 text-[11px] leading-tight text-ink-muted opacity-60 hover:opacity-90">
                           <span class="truncate font-semibold">{{ movedMarkerName(appt) }}</span>
                           <span class="truncate">{{ movedMarkerLabel(appt) }}</span>
                         </div>

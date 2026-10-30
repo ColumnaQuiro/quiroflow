@@ -98,8 +98,8 @@ const runNoteTone = computed(() => (props.runState === 'failed' ? 'text-danger-t
           <path :d="ICON_PATH[kind]" />
         </svg>
       </span>
-      <span class="truncate text-[10.5px] font-bold uppercase tracking-[.06em] text-ink-muted2">{{ eyebrow }}</span>
-      <span v-if="growth" class="ml-auto shrink-0 rounded-pill bg-brand-tint px-1.5 py-px text-[9.5px] font-bold tracking-[.04em] text-brand-text">GROWTH</span>
+      <span class="truncate text-[11px] font-bold uppercase tracking-[.06em] text-ink-muted2">{{ eyebrow }}</span>
+      <span v-if="growth" class="ml-auto shrink-0 rounded-pill bg-brand-tint px-1.5 py-px text-[11px] font-bold tracking-[.04em] text-brand-text">GROWTH</span>
       <span
         v-if="problem"
         class="shrink-0 rounded-full bg-warning-accent"
@@ -111,7 +111,7 @@ const runNoteTone = computed(() => (props.runState === 'failed' ? 'text-danger-t
     <span class="line-clamp-1 text-[13.5px] font-semibold leading-snug text-ink-900">{{ title }}</span>
     <span v-if="detail" class="line-clamp-2 text-[11.5px] leading-snug text-ink-muted">{{ detail }}</span>
     <span v-if="runNote" class="mt-auto truncate text-[11px] font-semibold" :class="runNoteTone" data-test="node-run-note">{{ runNote }}</span>
-    <span v-else-if="stats && !runState" class="mt-auto truncate font-mono text-[10.5px] text-ink-muted2" data-test="node-stats">{{ stats }}</span>
+    <span v-else-if="stats && !runState" class="mt-auto truncate font-mono text-[11px] text-ink-muted2" data-test="node-stats">{{ stats }}</span>
     <span
       v-if="runState && RUN_BADGE[runState]"
       class="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full shadow-card"

@@ -89,7 +89,7 @@ function eur(cents: number) {
             <div class="min-w-0 flex-1">
               <p class="text-[13.5px] font-medium">
                 <span :class="f.annulled_at ? 'text-ink-faint line-through' : 'text-ink-900'">{{ eur(f.amount_cents) }}</span>
-                <span v-if="f.annulled_at" class="ml-1 rounded-ctlSm bg-chip-bg px-1.5 py-0.5 text-[10.5px] font-normal text-chip-text">{{ t('annulled', 'anulada') }}</span>
+                <span v-if="f.annulled_at" class="ml-1 rounded-ctlSm bg-chip-bg px-1.5 py-0.5 text-[11px] font-normal text-chip-text">{{ t('annulled', 'anulada') }}</span>
               </p>
               <p class="truncate text-[12px] text-ink-muted">{{ f.description }}</p>
               <p class="text-[12px] text-ink-faint">{{ new Date(f.issued_at).toLocaleDateString() }} &middot; {{ f.number }}</p>

@@ -107,7 +107,7 @@ onUnmounted(() => {
           :class="m.direction === 'inbound' ? 'bg-brand text-brand-on' : 'border border-line bg-surface text-ink-900'"
         >
           <p class="whitespace-pre-wrap text-[13.5px]">{{ m.body }}</p>
-          <p class="mt-1 text-right text-[10.5px]" :class="m.direction === 'inbound' ? 'text-white/70' : 'text-ink-faint'">{{ shortTime(m.created_at) }}</p>
+          <p class="mt-1 text-right text-[11px]" :class="m.direction === 'inbound' ? 'text-white/70' : 'text-ink-faint'">{{ shortTime(m.created_at) }}</p>
         </div>
       </div>
     </div>

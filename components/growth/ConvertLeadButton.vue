@@ -79,7 +79,7 @@ const onCreateAnyway = async () => done(await createAnyway(props.leadId))
           >
             <span class="flex min-w-0 flex-col">
               <span class="truncate text-[12.5px] font-medium text-ink-900">{{ candidate.name }}</span>
-              <span class="text-[10.5px] text-ink-muted">{{ candidate.reason }}</span>
+              <span class="text-[11px] text-ink-muted">{{ candidate.reason }}</span>
             </span>
             <span class="shrink-0 text-[11px] font-semibold text-brand-text">{{ t('Link', 'Vincular') }}</span>
           </button>

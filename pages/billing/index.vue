@@ -278,7 +278,7 @@ function formatDate(iso: string) {
               @click="navigateTo(`/billing/${invoice.id}`)"
             >
               <div class="flex min-w-0 items-center gap-3">
-                <span class="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full bg-brand-tint text-[10.5px] font-semibold text-brand-text">
+                <span class="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full bg-brand-tint text-[11px] font-semibold text-brand-text">
                   {{ initials(invoice) }}
                 </span>
                 <div class="min-w-0">

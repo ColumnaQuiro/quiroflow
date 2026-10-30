@@ -63,7 +63,7 @@ const tokenSettingsUrl = 'https://app.quiroflow.com/settings/developers'
       >
         <div class="space-y-6 lg:sticky lg:top-[72px]">
           <div v-for="section in sections" :key="section.en">
-            <p class="px-2 text-[10.5px] font-[640] uppercase tracking-[.06em] text-ink-faint">{{ section.en }}</p>
+            <p class="px-2 text-[11px] font-[640] uppercase tracking-[.06em] text-ink-faint">{{ section.en }}</p>
             <div class="mt-1 space-y-0.5">
               <NuxtLink
                 v-for="page in section.pages"

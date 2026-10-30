@@ -196,7 +196,7 @@ function statusOf(step: Step): { text: string; done: boolean } | null {
             <!-- The steps, each saying how far it got -->
             <nav :aria-label="t('Steps', 'Pasos')" class="shrink-0 border-line py-2 max-md:border-b md:w-[280px] md:border-r">
               <div v-for="group in activeSource.groups" :key="group.key" class="pb-1">
-                <p class="px-4 pb-1 pt-2.5 text-[10.5px] font-semibold uppercase tracking-[.06em] text-ink-faint">{{ group.label }}</p>
+                <p class="px-4 pb-1 pt-2.5 text-[11px] font-semibold uppercase tracking-[.06em] text-ink-faint">{{ group.label }}</p>
                 <button
                   v-for="step in group.steps"
                   :key="step.key"

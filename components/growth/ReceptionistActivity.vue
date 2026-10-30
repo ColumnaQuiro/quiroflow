@@ -73,10 +73,10 @@ function detail(event: ReceptionistEvent) {
       <dl class="grid gap-2 sm:grid-cols-4" data-test="activity-month">
         <div v-for="tile in tiles" :key="tile.key" class="flex flex-col gap-0.5 rounded-ctl border border-line bg-surface-subtle px-3 py-2">
           <dd class="text-[16px] font-semibold text-ink-900" :data-test="`activity-${tile.key}`">{{ tile.value.toLocaleString('es-ES') }}</dd>
-          <dt class="text-[10.5px] text-ink-muted">{{ tile.label }}</dt>
+          <dt class="text-[11px] text-ink-muted">{{ tile.label }}</dt>
         </div>
       </dl>
-      <p class="text-[10.5px] text-ink-faint">{{ t('This month. Each reply it writes counts towards the allowance, sent or left as a draft.', 'Este mes. Cada respuesta que escribe cuenta para el cupo, enviada o como borrador.') }}</p>
+      <p class="text-[11px] text-ink-faint">{{ t('This month. Each reply it writes counts towards the allowance, sent or left as a draft.', 'Este mes. Cada respuesta que escribe cuenta para el cupo, enviada o como borrador.') }}</p>
 
       <!-- What is waiting on a person right now: the two queues the
       receptionist creates, each a link to the Inbox filtered to it. -->
@@ -91,7 +91,7 @@ function detail(event: ReceptionistEvent) {
       </ul>
 
       <div class="flex flex-col gap-1.5 border-t border-line-divider pt-2.5">
-        <span class="text-[9.5px] font-semibold uppercase tracking-[.06em] text-ink-faint">{{ t('Most recent', 'Lo más reciente') }}</span>
+        <span class="text-[11px] font-semibold uppercase tracking-[.06em] text-ink-faint">{{ t('Most recent', 'Lo más reciente') }}</span>
         <p v-if="!activity.recent.length" class="text-[11.5px] text-ink-muted" data-test="activity-empty">
           {{ t('Nothing yet. What it books, moves or hands over appears here, with a note in the conversation.', 'Nada todavía. Lo que reserve, mueva o pase a una persona aparece aquí, con una nota en la conversación.') }}
         </p>
@@ -103,7 +103,7 @@ function detail(event: ReceptionistEvent) {
                 <span class="flex flex-wrap items-baseline gap-x-2 text-[12px]">
                   <span class="font-semibold text-ink-900 group-hover:text-brand-text">{{ label(event) }}</span>
                   <span v-if="event.name" class="text-ink-700">· {{ event.name }}</span>
-                  <span class="text-[10.5px] text-ink-faint">{{ when(event.at) }}</span>
+                  <span class="text-[11px] text-ink-faint">{{ when(event.at) }}</span>
                 </span>
                 <span class="line-clamp-2 text-[11.5px] leading-[1.45] text-ink-muted">{{ detail(event) }}</span>
               </span>

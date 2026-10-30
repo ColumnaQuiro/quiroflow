@@ -17,7 +17,7 @@ function startEditing() {
 <template>
   <div class="flex flex-col gap-2.5 border-t border-brand-tintBorder bg-brand-tint p-4" data-test="pending-reply">
     <div class="flex items-center gap-2">
-      <span class="flex h-[18px] w-[18px] items-center justify-center rounded-[6px] bg-brand text-[9px] font-bold text-brand-on">AI</span>
+      <span class="flex h-[18px] w-[18px] items-center justify-center rounded-[6px] bg-brand text-[11px] font-bold text-brand-on">AI</span>
       <span class="text-[12px] font-semibold text-brand-text">
         {{ t('Drafted by AI · needs your approval', 'Redactado por la IA · requiere tu aprobación') }}
       </span>
@@ -57,7 +57,7 @@ function startEditing() {
       saying so is the point: an AI sentence appearing under the clinic's name
       on a public review with nobody having read it is a decision for the
       clinic to make, not a default to inherit from a mockup. -->
-      <span class="ml-auto text-[10.5px] text-ink-muted">
+      <span class="ml-auto text-[11px] text-ink-muted">
         {{ t('Nothing posts without your approval', 'No se publica nada sin tu aprobación') }}
       </span>
     </div>

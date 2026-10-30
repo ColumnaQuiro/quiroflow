@@ -2993,13 +2993,13 @@ const fieldId = useId()
             <div class="min-w-0">
               <p class="font-mono text-[12.5px] font-medium text-ink-900">
                 {{ f.number }}
-                <span v-if="f.kind === 'simplified'" class="ml-1 rounded-ctlSm bg-chip-bg px-1.5 py-0.5 font-sans text-[10.5px] text-chip-text">
+                <span v-if="f.kind === 'simplified'" class="ml-1 rounded-ctlSm bg-chip-bg px-1.5 py-0.5 font-sans text-[11px] text-chip-text">
                   {{ t('simplified', 'simplificada') }}
                 </span>
                 <!-- Money going back, in a series of its own. Marked here so a
                      negative amount in this list reads as a correction rather
                      than as a sale somebody typed wrong. -->
-                <span v-else-if="f.kind === 'rectificativa'" class="ml-1 rounded-ctlSm bg-amber-bg px-1.5 py-0.5 font-sans text-[10.5px] text-amber-text">
+                <span v-else-if="f.kind === 'rectificativa'" class="ml-1 rounded-ctlSm bg-amber-bg px-1.5 py-0.5 font-sans text-[11px] text-amber-text">
                   {{ t('rectifying', 'rectificativa') }}
                 </span>
                 <!--
@@ -3008,13 +3008,13 @@ const fieldId = useId()
                   holes punched in it -- but it now documents money that is no
                   longer recorded, which needs resolving rather than ignoring.
                 -->
-                <span v-if="canAnnulFactura(f)" class="ml-1 rounded-ctlSm bg-warning-bg px-1.5 py-0.5 font-sans text-[10.5px] text-warning-text">
+                <span v-if="canAnnulFactura(f)" class="ml-1 rounded-ctlSm bg-warning-bg px-1.5 py-0.5 font-sans text-[11px] text-warning-text">
                   {{ t('payment removed', 'pago eliminado') }}
                 </span>
                 <!-- Resolved: a rectificativa now cancels it. -->
                 <span
                   v-else-if="!f.payment_id && f.kind !== 'rectificativa'"
-                  class="ml-1 rounded-ctlSm bg-chip-bg px-1.5 py-0.5 font-sans text-[10.5px] text-chip-text"
+                  class="ml-1 rounded-ctlSm bg-chip-bg px-1.5 py-0.5 font-sans text-[11px] text-chip-text"
                 >
                   {{ t('annulled', 'anulada') }}
                 </span>

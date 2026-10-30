@@ -24,21 +24,21 @@ const t = useT()
   >
     <div class="flex items-start justify-between gap-1.5">
       <span class="text-[11.5px] font-semibold leading-[1.25] tracking-tightTitle text-ink-900">{{ lead.name }}</span>
-      <span class="shrink-0 rounded-ctlSm border border-chip-border px-1 py-px font-mono text-[8.5px] font-medium text-ink-muted">{{ lead.channel }}</span>
+      <span class="shrink-0 rounded-ctlSm border border-chip-border px-1 py-px font-mono text-[11px] font-medium text-ink-muted">{{ lead.channel }}</span>
     </div>
 
     <div class="flex flex-wrap gap-1">
-      <span class="rounded-pill border border-chip-border bg-chip-bg px-1.5 py-px text-[9.5px] text-ink-muted">{{ lead.source }}</span>
-      <span v-if="lead.aiHandling" class="rounded-pill bg-brand px-1.5 py-px text-[9.5px] font-semibold text-brand-on">
+      <span class="rounded-pill border border-chip-border bg-chip-bg px-1.5 py-px text-[11px] text-ink-muted">{{ lead.source }}</span>
+      <span v-if="lead.aiHandling" class="rounded-pill bg-brand px-1.5 py-px text-[11px] font-semibold text-brand-on">
         {{ t('AI handling', 'IA gestionando') }}
       </span>
     </div>
 
-    <div v-if="lead.appointment" class="rounded-ctlSm border border-success-border bg-success-bg px-1.5 py-[3px] text-[9.5px] leading-[1.3] text-success-text">
+    <div v-if="lead.appointment" class="rounded-ctlSm border border-success-border bg-success-bg px-1.5 py-[3px] text-[11px] leading-[1.3] text-success-text">
       {{ lead.appointment }}
     </div>
 
-    <div class="flex items-center justify-between gap-1 text-[9.5px] text-ink-faint">
+    <div class="flex items-center justify-between gap-1 text-[11px] text-ink-faint">
       <span>{{ lead.timeInStage }}</span>
       <span class="font-mono">{{ lead.value }}</span>
     </div>

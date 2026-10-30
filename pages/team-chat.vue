@@ -128,7 +128,7 @@ onMounted(() => {
                 </span>
                 <span class="flex items-center justify-between gap-2">
                   <span class="truncate text-[12.5px] text-ink-muted">{{ r.last ?? (r.key === 'team' ? t('Everyone who works here', 'Todas las personas de la clínica') : t('No messages yet', 'Sin mensajes todavía')) }}</span>
-                  <span v-if="r.unread" class="shrink-0 rounded-pill bg-brand px-1.5 py-px text-[10.5px] font-semibold text-surface" data-cy="team-thread-unread">{{ r.unread }}</span>
+                  <span v-if="r.unread" class="shrink-0 rounded-pill bg-brand px-1.5 py-px text-[11px] font-semibold text-surface" data-cy="team-thread-unread">{{ r.unread }}</span>
                 </span>
               </span>
             </button>
@@ -155,7 +155,7 @@ onMounted(() => {
               <p v-if="m.sender_id !== me && selected === 'team'" class="mb-0.5 text-[11.5px] font-semibold" :class="m.kind === 'alert' ? '' : 'text-brand-text'">{{ chat.memberName(m.sender_id) }}</p>
               <p v-if="m.kind === 'alert'" class="text-[11.5px] font-bold uppercase tracking-[.04em]">{{ t('Help needed', 'Piden ayuda') }}</p>
               <p class="whitespace-pre-wrap break-words text-[14px] leading-snug">{{ m.body }}</p>
-              <p class="mt-0.5 text-right font-mono text-[10.5px] opacity-70">
+              <p class="mt-0.5 text-right font-mono text-[11px] opacity-70">
                 {{ when(m.created_at) }}
                 <template v-if="m.kind === 'alert' && m.acknowledged_at"> · {{ t(`${chat.memberName(m.acknowledged_by)} answered`, `${chat.memberName(m.acknowledged_by)} respondió`) }}</template>
               </p>

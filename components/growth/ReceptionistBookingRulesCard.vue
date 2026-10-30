@@ -90,7 +90,7 @@ const mayBook = computed(() => {
         <a href="#bookable-types" class="text-right text-brand-text hover:underline" data-test="may-book-summary">{{ mayBook }} →</a>
       </div>
     </div>
-    <p class="text-[10.5px] leading-[1.5] text-ink-muted">
+    <p class="text-[11px] leading-[1.5] text-ink-muted">
       {{ t(
         'When it drafts, it offers times and a person books. When it answers on its own, it books or moves the visit itself once the patient accepts a time — signed "AI receptionist" in the visit\'s history, with a note in the conversation. It never cancels without asking first.',
         'Cuando redacta, ofrece horas y reserva una persona. Cuando contesta sola, reserva o mueve la cita ella misma cuando el paciente acepta una hora — firmado "Recepcionista IA" en el historial de la cita, con una nota en la conversación. Nunca cancela sin preguntar antes.',

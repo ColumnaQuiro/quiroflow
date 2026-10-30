@@ -34,7 +34,7 @@ const TITLE: Record<GrowthAlert['tone'], string> = {
       <span class="mt-1 h-1.5 w-1.5 shrink-0 rounded-full" :class="DOT[alert.tone]" />
       <div class="flex min-w-0 flex-col gap-0.5">
         <span class="text-[11.5px] font-semibold" :class="TITLE[alert.tone]">{{ alert.title }}</span>
-        <span class="text-[10.5px] text-ink-muted">{{ alert.detail }}</span>
+        <span class="text-[11px] text-ink-muted">{{ alert.detail }}</span>
       </div>
     </div>
 

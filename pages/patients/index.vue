@@ -647,7 +647,7 @@ function tagClass(tag: string) {
       <!-- The segment open, and what can be done with it. -->
       <div v-if="activeSegment" data-cy="segment-header" class="mb-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <h2 class="text-[15px] font-[650] text-ink-900">{{ activeSegment.name }}</h2>
-        <span v-if="!activeSegment.shared" class="rounded-pill bg-chip-bg2 px-1.5 py-0.5 text-[10.5px] font-[600] text-chip-text">{{ t('Private', 'Privado') }}</span>
+        <span v-if="!activeSegment.shared" class="rounded-pill bg-chip-bg2 px-1.5 py-0.5 text-[11px] font-[600] text-chip-text">{{ t('Private', 'Privado') }}</span>
         <span v-if="segmentModified" class="text-[12px] text-warning-text">{{ t('Filters changed', 'Filtros modificados') }}</span>
         <div v-if="canManage(activeSegment)" class="flex items-center gap-1">
           <UiBtn v-if="segmentModified" variant="primary" size="sm" :disabled="segmentBusy" data-cy="segment-save-changes" @click="saveSegmentChanges">
@@ -871,7 +871,7 @@ function tagClass(tag: string) {
                      widen the column past the screen. -->
                 <td class="px-5 py-2.5 max-md:sticky max-md:left-0 max-md:z-[1] max-md:max-w-[200px] max-md:bg-surface max-md:px-3 max-md:group-hover:bg-surface-subtle">
                   <div class="flex min-w-0 items-center gap-2.5">
-                    <span aria-hidden="true" class="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full bg-brand-tint text-[10.5px] font-[650] text-brand">
+                    <span aria-hidden="true" class="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full bg-brand-tint text-[11px] font-[650] text-brand">
                       {{ initials(patient) }}
                     </span>
                     <div class="min-w-0">
@@ -881,9 +881,9 @@ function tagClass(tag: string) {
                         <NuxtLink :to="`/patients/${patient.id}`" class="truncate outline-none hover:underline focus-visible:shadow-focus">
                           {{ patient.first_name }} {{ patient.last_name }}
                         </NuxtLink>
-                        <span v-if="patient.status === 'inactive'" class="shrink-0 rounded-pill bg-chip-bg2 px-1.5 py-0.5 text-[10px] font-[600] text-chip-text">{{ t('Inactive', 'Inactivo') }}</span>
-                        <span v-if="patient.is_minor" class="shrink-0 rounded-pill bg-brand-tint px-1.5 py-0.5 text-[10px] font-[600] text-brand-text2">{{ t('Minor', 'Menor') }}</span>
-                        <span v-if="patient.do_not_contact" class="shrink-0 rounded-pill bg-danger-bg px-1.5 py-0.5 text-[10px] font-[600] text-danger-text">{{ t('Do not contact', 'No contactar') }}</span>
+                        <span v-if="patient.status === 'inactive'" class="shrink-0 rounded-pill bg-chip-bg2 px-1.5 py-0.5 text-[11px] font-[600] text-chip-text">{{ t('Inactive', 'Inactivo') }}</span>
+                        <span v-if="patient.is_minor" class="shrink-0 rounded-pill bg-brand-tint px-1.5 py-0.5 text-[11px] font-[600] text-brand-text2">{{ t('Minor', 'Menor') }}</span>
+                        <span v-if="patient.do_not_contact" class="shrink-0 rounded-pill bg-danger-bg px-1.5 py-0.5 text-[11px] font-[600] text-danger-text">{{ t('Do not contact', 'No contactar') }}</span>
                       </p>
                       <p class="truncate text-[11.5px] text-ink-muted2">{{ secondaryLine(patient) || '—' }}</p>
                     </div>
@@ -902,7 +902,7 @@ function tagClass(tag: string) {
                     <span class="font-mono text-[12.5px] text-ink-700">{{ primaryPhoneByPatient[patient.id] }}</span>
                     <span
                       v-if="whatsappConsentByPatient[patient.id]"
-                      class="rounded-pill bg-success-bg px-1.5 py-0.5 text-[10px] font-[600] text-success-text"
+                      class="rounded-pill bg-success-bg px-1.5 py-0.5 text-[11px] font-[600] text-success-text"
                       :title="t('WhatsApp', 'WhatsApp')"
                     >WA</span>
                   </span>
@@ -916,7 +916,7 @@ function tagClass(tag: string) {
                   </span>
                   <span
                     v-if="patient.invoice_email_enabled"
-                    class="rounded-pill bg-brand-tint px-1.5 py-0.5 text-[10px] font-[600] text-brand-text2"
+                    class="rounded-pill bg-brand-tint px-1.5 py-0.5 text-[11px] font-[600] text-brand-text2"
                     :title="t('Invoices are emailed to this patient', 'Las facturas se envían por correo')"
                   >{{ t('Email', 'Correo') }}</span>
                   </div>

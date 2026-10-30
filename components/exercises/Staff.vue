@@ -344,7 +344,7 @@ const input = 'h-10 w-full rounded-ctl border border-line-control bg-surface px-
           </div>
           <p v-if="dose(pe)" class="text-[12.5px] text-ink-muted" data-cy="exercise-row-dose">{{ dose(pe) }}</p>
           <div class="mt-1.5 flex items-center gap-1" :aria-label="t('Last seven days', 'Últimos siete días')">
-            <span v-for="d in daysDone(pe)" :key="d.date" class="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold" :class="d.done ? 'bg-success-accent text-success-on' : 'bg-chip-bg text-ink-faint'" :title="d.date">{{ d.initial }}</span>
+            <span v-for="d in daysDone(pe)" :key="d.date" class="flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-semibold" :class="d.done ? 'bg-success-accent text-success-on' : 'bg-chip-bg text-ink-faint'" :title="d.date">{{ d.initial }}</span>
             <span class="ml-1.5 text-[11.5px] text-ink-muted2" data-cy="exercise-adherence">{{ t(`${daysDone(pe).filter((d) => d.done).length} of 7 days`, `${daysDone(pe).filter((d) => d.done).length} de 7 días`) }}</span>
           </div>
         </div>

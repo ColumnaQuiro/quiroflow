@@ -400,7 +400,7 @@ function onDetailsUpdated() {
           <div class="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
             <div class="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-ctl border border-line bg-surface-subtle2">
               <span class="font-mono text-[16px] font-semibold leading-none text-ink-900">{{ dateBlock(nextAppt.starts_at).day }}</span>
-              <span class="mt-0.5 text-[10px] uppercase leading-none text-ink-muted2">{{ dateBlock(nextAppt.starts_at).month }}</span>
+              <span class="mt-0.5 text-[11px] uppercase leading-none text-ink-muted2">{{ dateBlock(nextAppt.starts_at).month }}</span>
             </div>
             <div class="min-w-0 flex-1">
               <p class="text-[15px] text-ink-900">

@@ -14,7 +14,7 @@ const t = useT()
   <section class="flex flex-col gap-[11px] rounded-card border border-brand-tintBorder bg-brand-tint p-4" data-test="dashboard-ai-summary">
     <div class="flex items-center justify-between gap-2">
       <div class="flex items-center gap-[7px]">
-        <span class="flex h-[18px] w-[18px] items-center justify-center rounded-[6px] bg-brand text-[9px] font-bold text-brand-on">AI</span>
+        <span class="flex h-[18px] w-[18px] items-center justify-center rounded-[6px] bg-brand text-[11px] font-bold text-brand-on">AI</span>
         <h2 class="text-[12.5px] font-semibold tracking-tightTitle text-brand-text">
           {{ t('AI receptionist', 'Recepcionista IA') }}
         </h2>
@@ -36,15 +36,15 @@ const t = useT()
     <dl class="flex flex-wrap gap-[18px] border-t border-brand-tintBorder pt-[11px]">
       <div class="flex flex-col gap-0.5">
         <dd class="text-[16px] font-semibold text-ink-900">{{ ai.sent }}</dd>
-        <dt class="text-[10px] text-ink-muted">{{ t('Sent itself', 'Enviadas sola') }}</dt>
+        <dt class="text-[11px] text-ink-muted">{{ t('Sent itself', 'Enviadas sola') }}</dt>
       </div>
       <div class="flex flex-col gap-0.5">
         <dd class="text-[16px] font-semibold text-ink-900">{{ ai.drafted }}</dd>
-        <dt class="text-[10px] text-ink-muted">{{ t('Drafted', 'Borradores') }}</dt>
+        <dt class="text-[11px] text-ink-muted">{{ t('Drafted', 'Borradores') }}</dt>
       </div>
       <div class="flex flex-col gap-0.5">
         <dd class="text-[16px] font-semibold text-ink-900">{{ ai.handedOver }}</dd>
-        <dt class="text-[10px] text-ink-muted">{{ t('Handed over', 'Pasadas a una persona') }}</dt>
+        <dt class="text-[11px] text-ink-muted">{{ t('Handed over', 'Pasadas a una persona') }}</dt>
       </div>
     </dl>
   </section>

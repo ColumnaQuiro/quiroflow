@@ -17,7 +17,7 @@ defineProps<{ params: Param[]; title?: string }>()
           <tr v-for="param in params" :key="param.name" class="align-top">
             <td class="w-[30%] px-3 py-2">
               <code class="font-mono text-[12px] text-ink-900">{{ param.name }}</code>
-              <span v-if="param.required" class="ml-1.5 text-[10.5px] font-semibold uppercase tracking-wide text-danger-text">required</span>
+              <span v-if="param.required" class="ml-1.5 text-[11px] font-semibold uppercase tracking-wide text-danger-text">required</span>
               <p class="mt-0.5 font-mono text-[11px] text-ink-faint">{{ param.type }}</p>
             </td>
             <td class="px-3 py-2 leading-relaxed text-ink-muted2">

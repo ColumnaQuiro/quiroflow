@@ -43,13 +43,13 @@ const doneCount = steps.filter((s) => s.done).length
       </div>
 
       <div class="flex w-full flex-col gap-2.5 rounded-card border border-line bg-surface p-4 text-left shadow-card">
-        <span class="text-[10.5px] font-semibold uppercase tracking-[.06em] text-ink-faint">
+        <span class="text-[11px] font-semibold uppercase tracking-[.06em] text-ink-faint">
           {{ t('Set-up', 'Configuración') }} · {{ doneCount }} {{ t('of', 'de') }} {{ steps.length }} {{ t('done', 'completado') }}
         </span>
         <ul class="flex flex-col gap-1.5">
           <li v-for="step in steps" :key="step.label" class="flex items-center gap-2 text-[12px]">
             <span
-              class="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px]"
+              class="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[11px]"
               :class="step.done ? 'bg-success-bg text-success-text' : 'border border-line-control text-ink-faint'"
             >{{ step.done ? '✓' : '' }}</span>
             <span :class="step.done ? 'text-ink-muted line-through' : 'text-ink-700'">{{ step.label }}</span>

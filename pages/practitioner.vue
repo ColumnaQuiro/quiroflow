@@ -445,7 +445,7 @@ onMounted(() => {
           <div class="grid grid-cols-5 px-3 py-3">
             <div v-for="stage in flowStages" :key="stage.key" class="flex flex-col items-start gap-1.5 px-1">
               <div class="h-1 w-full rounded-full" :class="stage.barClass" />
-              <span class="truncate text-[10.5px] text-ink-muted2">{{ stage.label }}</span>
+              <span class="truncate text-[11px] text-ink-muted2">{{ stage.label }}</span>
               <span class="font-mono text-[13px] font-medium text-ink-700">{{ stage.count }}</span>
             </div>
           </div>
@@ -474,7 +474,7 @@ onMounted(() => {
                   </button>
                   <span class="w-[42px] shrink-0 font-mono text-[12px] text-ink-muted2">{{ formatTime(a.starts_at) }}</span>
                   <span
-                    class="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full bg-brand-tint text-[10.5px] font-[650] text-brand"
+                    class="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full bg-brand-tint text-[11px] font-[650] text-brand"
                     :class="{ 'blur-sm select-none': privacyMode }"
                   >
                     {{ ((a.patients?.first_name?.[0] ?? '') + (a.patients?.last_name?.[0] ?? '')).toUpperCase() || '?' }}

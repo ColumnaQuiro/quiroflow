@@ -84,8 +84,8 @@ const areaClass = 'resize-none rounded-ctl border border-line-control bg-surface
         <div class="flex items-baseline justify-between gap-2">
           <span class="text-[11.5px] font-semibold text-ink-900">{{ card.title }}</span>
           <span class="flex shrink-0 items-center gap-2">
-            <button type="button" class="text-[10.5px] font-medium text-brand-text hover:underline" :disabled="saving" :data-test="`edit-card-${card.id}`" @click="startEdit(card)">{{ t('Edit', 'Editar') }}</button>
-            <button type="button" class="text-[10.5px] font-medium text-danger-text hover:underline" :disabled="saving" :data-test="`remove-card-${card.id}`" @click="remove(card.id)">{{ t('Remove', 'Quitar') }}</button>
+            <button type="button" class="text-[11px] font-medium text-brand-text hover:underline" :disabled="saving" :data-test="`edit-card-${card.id}`" @click="startEdit(card)">{{ t('Edit', 'Editar') }}</button>
+            <button type="button" class="text-[11px] font-medium text-danger-text hover:underline" :disabled="saving" :data-test="`remove-card-${card.id}`" @click="remove(card.id)">{{ t('Remove', 'Quitar') }}</button>
           </span>
         </div>
         <span v-for="line in card.lines" :key="line" class="text-[11px] text-ink-muted">{{ line }}</span>
@@ -113,7 +113,7 @@ const areaClass = 'resize-none rounded-ctl border border-line-control bg-surface
       <!-- The model is told these are the clinic's own facts, so a wrong one
       is repeated confidently to a patient rather than hedged. Worth saying
       where it is typed. -->
-      <p class="text-[10.5px] leading-[1.5] text-ink-muted">
+      <p class="text-[11px] leading-[1.5] text-ink-muted">
         {{ t(
           'The receptionist treats these as fact and repeats them to patients. Anything not here, it says it will check.',
           'La recepcionista trata esto como un hecho y se lo repite a los pacientes. Lo que no esté aquí, dirá que lo consultará.',

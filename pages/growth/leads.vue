@@ -193,7 +193,7 @@ async function onLeadChanged() {
       <div v-else class="flex-1 overflow-auto px-4 pb-4 pt-4 sm:px-6">
         <table class="w-full min-w-[640px] border-collapse text-[12px]">
           <thead>
-            <tr class="border-b border-line text-[10px] uppercase tracking-[.06em] text-ink-faint">
+            <tr class="border-b border-line text-[11px] uppercase tracking-[.06em] text-ink-faint">
               <th class="px-2 pb-2 text-left font-normal">{{ t('Name', 'Nombre') }}</th>
               <th class="px-2 pb-2 text-left font-normal">{{ t('Stage', 'Etapa') }}</th>
               <th class="px-2 pb-2 text-left font-normal">{{ t('Source', 'Origen') }}</th>

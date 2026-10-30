@@ -38,9 +38,9 @@ function onDragOver(e: DragEvent) {
     <header class="flex items-baseline justify-between gap-2 px-0.5">
       <div class="flex items-center gap-1.5">
         <h2 class="text-[11.5px] font-semibold tracking-tightTitle text-ink-900">{{ column.title }}</h2>
-        <span data-test="lead-count" class="rounded-pill border border-chip-border bg-chip-bg px-1.5 py-px text-[9.5px] font-medium text-ink-muted">{{ column.count }}</span>
+        <span data-test="lead-count" class="rounded-pill border border-chip-border bg-chip-bg px-1.5 py-px text-[11px] font-medium text-ink-muted">{{ column.count }}</span>
       </div>
-      <span class="font-mono text-[9.5px] text-ink-faint">{{ column.value }}</span>
+      <span class="font-mono text-[11px] text-ink-faint">{{ column.value }}</span>
     </header>
 
     <div class="flex min-h-[80px] flex-col gap-2">
@@ -48,8 +48,8 @@ function onDragOver(e: DragEvent) {
         v-if="column.emptyTitle && !column.cards.length"
         class="flex flex-col gap-1 rounded-card border border-dashed border-line-control px-2.5 py-4 text-center"
       >
-        <span class="text-[10.5px] font-semibold text-ink-muted">{{ column.emptyTitle }}</span>
-        <span class="text-[9.5px] text-ink-faint">{{ column.emptyDetail }}</span>
+        <span class="text-[11px] font-semibold text-ink-muted">{{ column.emptyTitle }}</span>
+        <span class="text-[11px] text-ink-faint">{{ column.emptyDetail }}</span>
       </div>
 
       <!-- The slot a dropped card will land in. Only while something is
@@ -71,7 +71,7 @@ function onDragOver(e: DragEvent) {
       <button
         v-if="column.hidden"
         type="button"
-        class="px-0.5 py-1 text-left text-[10.5px] font-medium text-brand-text hover:underline"
+        class="px-0.5 py-1 text-left text-[11px] font-medium text-brand-text hover:underline"
         data-test="lead-column-more"
         @click="emit('more')"
       >{{ t(`Show ${column.hidden} more`, `Ver ${column.hidden} más`) }}</button>

@@ -49,13 +49,13 @@ async function signOut() {
       class="flex h-8 items-center gap-2 rounded-ctl pl-1 pr-2 text-left hover:bg-surface-subtle"
       @click="menuOpen = !menuOpen"
     >
-      <span class="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-brand text-[10px] font-bold text-brand-on">
+      <span class="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-brand text-[11px] font-bold text-brand-on">
         <img v-if="photoUrl" :src="photoUrl" class="h-full w-full object-cover" alt="" />
         <template v-else>{{ initials }}</template>
       </span>
       <span class="hidden min-w-0 flex-col items-start sm:flex">
         <span class="max-w-[140px] truncate text-[12.5px] font-medium leading-tight text-ink-700">{{ store.teamMember?.full_name }}</span>
-        <span class="text-[10.5px] leading-tight text-ink-muted2">{{ roleLine }}</span>
+        <span class="text-[11px] leading-tight text-ink-muted2">{{ roleLine }}</span>
       </span>
       <svg width="10" height="10" viewBox="0 0 10 10" class="shrink-0 text-ink-faint"><path d="M2 4l3 3 3-3" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" /></svg>
     </button>

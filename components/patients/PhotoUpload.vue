@@ -113,7 +113,7 @@ useFocusTrap(qrPanel, closeQr, () => qrOpen.value)
     >
       <img v-if="photoUrl" :src="photoUrl" class="h-full w-full object-cover" alt="" />
       <span v-else>{{ initials }}</span>
-      <span v-if="uploading" class="absolute inset-0 flex items-center justify-center bg-scrim/40 text-[9px] text-white">…</span>
+      <span v-if="uploading" class="absolute inset-0 flex items-center justify-center bg-scrim/40 text-[11px] text-white">…</span>
     </button>
 
     <div v-if="menuOpen" class="absolute left-0 top-11 z-20 w-44 rounded-card border border-line bg-surface py-1 shadow-popover" @click.self="menuOpen = false">

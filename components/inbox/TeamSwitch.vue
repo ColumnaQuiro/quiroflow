@@ -18,7 +18,7 @@ const seg = 'flex h-8 touch:h-11 items-center gap-1.5 rounded-[7px] px-3 text-[1
     </NuxtLink>
     <NuxtLink to="/team-chat" data-cy="switch-to-team" :class="[seg, current === 'team' ? 'bg-surface text-ink-900 shadow-card' : 'text-ink-muted hover:text-ink-700']" :aria-current="current === 'team' ? 'page' : undefined">
       {{ t('Team', 'Equipo') }}
-      <span v-if="unreadTotal > 0 && current !== 'team'" class="rounded-pill bg-brand px-1.5 py-px text-[10.5px] font-semibold text-surface">{{ unreadTotal }}</span>
+      <span v-if="unreadTotal > 0 && current !== 'team'" class="rounded-pill bg-brand px-1.5 py-px text-[11px] font-semibold text-surface">{{ unreadTotal }}</span>
     </NuxtLink>
   </nav>
 </template>

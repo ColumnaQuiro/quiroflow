@@ -314,7 +314,7 @@ watch(() => route.fullPath, () => emit('close'))
           :aria-expanded="store.clinics.length > 1 ? clinicMenuOpen : undefined"
           @click="store.clinics.length > 1 && (clinicMenuOpen = !clinicMenuOpen)"
         >
-          <span class="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] bg-brand-tint text-[9.5px] font-bold text-brand">{{ clinicInitials }}</span>
+          <span class="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[6px] bg-brand-tint text-[11px] font-bold text-brand">{{ clinicInitials }}</span>
           <template v-if="!collapsed">
             <span class="min-w-0 flex-1 truncate">{{ store.currentClinic?.name ?? t('Clinic', 'Clínica') }}</span>
             <svg v-if="store.clinics.length > 1" width="10" height="10" viewBox="0 0 10 10" class="shrink-0 text-ink-faint" aria-hidden="true"><path d="M2 4l3 3 3-3" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" /></svg>
@@ -354,10 +354,10 @@ watch(() => route.fullPath, () => emit('close'))
           :data-cy="`nav-group-toggle-${group.id}`"
           @click="toggleGroup(group.id)"
         >
-          <span class="text-[10.5px] font-[640] uppercase tracking-[.07em]" :class="group.tier ? 'text-brand-text' : 'text-ink-faint'">{{ group.label }}</span>
+          <span class="text-[11px] font-[640] uppercase tracking-[.07em]" :class="group.tier ? 'text-brand-text' : 'text-ink-faint'">{{ group.label }}</span>
           <span
             v-if="group.tier"
-            class="rounded-pill bg-brand px-1.5 py-px text-[8.5px] font-bold uppercase leading-none tracking-[.06em] text-surface"
+            class="rounded-pill bg-brand px-1.5 py-px text-[11px] font-bold uppercase leading-none tracking-[.06em] text-surface"
           >{{ group.tier }}</span>
           <svg
             width="10"
@@ -391,10 +391,10 @@ watch(() => route.fullPath, () => emit('close'))
               <span v-if="item.badge === 'myday' && myDayCount > 0" class="font-mono text-[11px] text-ink-muted2" data-cy="nav-badge-myday">{{ myDayCount }}</span>
               <!-- Neutral, not red: red is money owed everywhere else in the
               app, and a list of people to call is work, not an alarm. -->
-              <span v-if="item.badge === 'recalls' && recallsCount > 0" class="rounded-pill bg-chip-bg px-1.5 py-px text-[10.5px] font-semibold text-ink-700" data-cy="nav-badge-recalls">{{ recallsCount }}</span>
+              <span v-if="item.badge === 'recalls' && recallsCount > 0" class="rounded-pill bg-chip-bg px-1.5 py-px text-[11px] font-semibold text-ink-700" data-cy="nav-badge-recalls">{{ recallsCount }}</span>
               <span v-if="item.badge === 'automations' && automationsActive" class="h-[5px] w-[5px] rounded-full bg-success-accent" data-cy="nav-badge-automations" />
-              <span v-if="item.badge === 'inbox' && inboxUnreadCount > 0" class="rounded-pill bg-brand px-1.5 py-px text-[10.5px] font-semibold text-surface" data-cy="nav-badge-inbox">{{ inboxUnreadCount }}</span>
-              <span v-if="item.badge === 'team' && teamUnread > 0" class="rounded-pill bg-brand px-1.5 py-px text-[10.5px] font-semibold text-surface" data-cy="nav-badge-team">{{ teamUnread }}</span>
+              <span v-if="item.badge === 'inbox' && inboxUnreadCount > 0" class="rounded-pill bg-brand px-1.5 py-px text-[11px] font-semibold text-surface" data-cy="nav-badge-inbox">{{ inboxUnreadCount }}</span>
+              <span v-if="item.badge === 'team' && teamUnread > 0" class="rounded-pill bg-brand px-1.5 py-px text-[11px] font-semibold text-surface" data-cy="nav-badge-team">{{ teamUnread }}</span>
             </template>
             <span v-else-if="badgeText(item)" class="absolute right-1 top-1 h-[6px] w-[6px] rounded-full bg-brand" aria-hidden="true" />
           </NuxtLink>
@@ -402,7 +402,7 @@ watch(() => route.fullPath, () => emit('close'))
       </div>
 
       <div class="flex flex-col gap-0.5" :class="{ 'items-center': collapsed }">
-        <div v-if="!collapsed" class="px-[9px] py-1 text-[10.5px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Help & Support', 'Ayuda y soporte') }}</div>
+        <div v-if="!collapsed" class="px-[9px] py-1 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Help & Support', 'Ayuda y soporte') }}</div>
         <div v-else class="mb-1 h-px w-6 bg-line" aria-hidden="true" />
         <a
           :href="helpCentreUrl"

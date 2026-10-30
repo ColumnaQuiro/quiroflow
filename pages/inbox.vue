@@ -2117,7 +2117,7 @@ function avatarInitials(name: string) {
                   <span class="flex-1" />
                   <span
                     v-if="leadOwners[row.c.key]"
-                    class="flex h-[22px] min-w-[22px] items-center justify-center rounded-full border border-chip-border bg-chip-bg px-1 text-[10px] font-bold text-ink-700"
+                    class="flex h-[22px] min-w-[22px] items-center justify-center rounded-full border border-chip-border bg-chip-bg px-1 text-[11px] font-bold text-ink-700"
                     :title="t(`Assigned to ${memberName(leadOwners[row.c.key])}`, `Asignada a ${memberName(leadOwners[row.c.key])}`)"
                     data-cy="lead-row-owner"
                   >{{ memberInitials(leadOwners[row.c.key]) }}</span>
@@ -2149,7 +2149,7 @@ function avatarInitials(name: string) {
               <span class="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[13px] font-bold" :class="row.c.patientId ? 'bg-brand-tint text-brand-text' : 'bg-chip-bg text-ink-700'">
                 {{ avatarInitials(row.c.name) }}
                 <span
-                  class="absolute -bottom-1 -right-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full border-2 border-surface px-1 text-[9px] font-extrabold"
+                  class="absolute -bottom-1 -right-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full border-2 border-surface px-1 text-[11px] font-extrabold"
                   :class="channelTone(row.c.channel)"
                   :title="channelName(row.c.channel)"
                 >{{ channelBadge(row.c.channel) }}</span>
@@ -2191,7 +2191,7 @@ function avatarInitials(name: string) {
                   <span class="flex-1" />
                   <span
                     v-if="row.c.assignedTo"
-                    class="flex h-[22px] min-w-[22px] items-center justify-center rounded-full border border-chip-border bg-chip-bg px-1 text-[10px] font-bold text-ink-700"
+                    class="flex h-[22px] min-w-[22px] items-center justify-center rounded-full border border-chip-border bg-chip-bg px-1 text-[11px] font-bold text-ink-700"
                     :title="t(`Assigned to ${memberName(row.c.assignedTo)}`, `Asignada a ${memberName(row.c.assignedTo)}`)"
                     data-cy="inbox-row-owner"
                   >{{ memberInitials(row.c.assignedTo) }}</span>
@@ -2367,7 +2367,7 @@ function avatarInitials(name: string) {
               class="flex h-9 touch:h-11 items-center gap-2 rounded-ctl border border-line-control bg-surface px-3 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle"
               @click.stop="assignMenuFor = assignMenuFor === 'thread' ? null : 'thread'"
             >
-              <span class="flex h-6 min-w-6 items-center justify-center rounded-full bg-chip-bg px-1 text-[10px] font-bold text-ink-700">{{ selected.assignedTo ? memberInitials(selected.assignedTo) : '—' }}</span>
+              <span class="flex h-6 min-w-6 items-center justify-center rounded-full bg-chip-bg px-1 text-[11px] font-bold text-ink-700">{{ selected.assignedTo ? memberInitials(selected.assignedTo) : '—' }}</span>
               <span class="hidden 2xl:inline">{{ selected.assignedTo ? (selected.assignedTo === myId ? t('Assigned to you', 'Asignada a ti') : memberName(selected.assignedTo)) : t('Unassigned', 'Sin asignar') }}</span>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
             </button>
@@ -2492,7 +2492,7 @@ function avatarInitials(name: string) {
               >
                 <!-- The receptionist answered on its own: said, so nobody
                 reads it as a colleague's reply. -->
-                <p v-if="m.sent_by_ai" class="mb-0.5 text-[10.5px] font-semibold uppercase tracking-[.04em] opacity-75" data-cy="thread-message-ai">{{ t('AI receptionist', 'Recepcionista IA') }}</p>
+                <p v-if="m.sent_by_ai" class="mb-0.5 text-[11px] font-semibold uppercase tracking-[.04em] opacity-75" data-cy="thread-message-ai">{{ t('AI receptionist', 'Recepcionista IA') }}</p>
                 <img
                   v-if="m.media_type === 'image' && m.media_storage_path && mediaUrls[m.media_storage_path]"
                   :src="mediaUrls[m.media_storage_path]"
@@ -2529,7 +2529,7 @@ function avatarInitials(name: string) {
                 <p v-if="bubbleText(m)" class="whitespace-pre-wrap text-[13px]" :class="m.media_type && 'mt-1'">
                   {{ bubbleText(m) }}
                   <span
-                    class="ml-1.5 inline-flex translate-y-[2px] items-center gap-1 whitespace-nowrap text-[10.5px]"
+                    class="ml-1.5 inline-flex translate-y-[2px] items-center gap-1 whitespace-nowrap text-[11px]"
                     :class="m.direction === 'outbound' ? 'text-white/70' : 'text-ink-faint'"
                   >
                     <span v-if="m.status === 'failed'" class="underline">{{ t('Tap to retry', 'Toca para reintentar') }}</span>
@@ -2537,7 +2537,7 @@ function avatarInitials(name: string) {
                     <InboxMessageStatus v-if="m.direction === 'outbound'" :status="m.status" />
                   </span>
                 </p>
-                <p v-else class="mt-1 flex items-center justify-end gap-1.5 text-right text-[10.5px]" :class="m.direction === 'outbound' ? 'text-white/70' : 'text-ink-faint'">
+                <p v-else class="mt-1 flex items-center justify-end gap-1.5 text-right text-[11px]" :class="m.direction === 'outbound' ? 'text-white/70' : 'text-ink-faint'">
                   <span v-if="m.status === 'failed'" class="underline">{{ t('Tap to retry', 'Toca para reintentar') }}</span>
                   <span v-else>{{ shortTime(m.created_at) }}</span>
                   <InboxMessageStatus v-if="m.direction === 'outbound'" :status="m.status" />

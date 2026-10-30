@@ -264,7 +264,7 @@ const KINDS = ['full', 'simplified', 'rectificativa'] as const
                   {{ KIND_LABEL[r.kind] ?? KIND_ES[r.kind] ?? r.kind }}
                   <span v-if="r.rectifies_factura_id && numberById.get(r.rectifies_factura_id)" class="text-ink-muted"> · {{ numberById.get(r.rectifies_factura_id) }}</span>
                   <!-- Annulled with a registro de anulación: on the series, in no total. -->
-                  <span v-if="r.annulled_at" data-cy="facturas-row-annulled" class="ml-1 rounded-ctlSm bg-chip-bg px-1.5 py-0.5 text-[10.5px] text-chip-text">{{ t('annulled', 'anulada') }}</span>
+                  <span v-if="r.annulled_at" data-cy="facturas-row-annulled" class="ml-1 rounded-ctlSm bg-chip-bg px-1.5 py-0.5 text-[11px] text-chip-text">{{ t('annulled', 'anulada') }}</span>
                 </td>
                 <td :class="td" class="max-w-[220px] truncate">
                   <NuxtLink :to="`/patients/${r.patient_id}?tab=billing`" class="hover:underline">{{ recipientOf(r) || '—' }}</NuxtLink>

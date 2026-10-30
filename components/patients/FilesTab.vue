@@ -363,17 +363,17 @@ async function confirmRemove() {
           ></iframe>
           <span
             v-if="!thumbUrls[file.id]"
-            class="rounded-ctlSm bg-surface/90 px-1.5 py-0.5 font-mono text-[10.5px] font-medium text-ink-muted2"
+            class="rounded-ctlSm bg-surface/90 px-1.5 py-0.5 font-mono text-[11px] font-medium text-ink-muted2"
           >
             {{ kindLabel(file) }}
           </span>
           <span
             v-else-if="isPdf(file)"
-            class="absolute bottom-1.5 left-1.5 rounded-ctlSm bg-surface/90 px-1.5 py-0.5 font-mono text-[10px] font-medium text-ink-muted2"
+            class="absolute bottom-1.5 left-1.5 rounded-ctlSm bg-surface/90 px-1.5 py-0.5 font-mono text-[11px] font-medium text-ink-muted2"
           >
             PDF
           </span>
-          <span v-if="!file.storage_path" class="absolute right-1.5 top-1.5 rounded-pill bg-warning-bg px-1.5 py-0.5 text-[10px] font-medium text-warning-text">
+          <span v-if="!file.storage_path" class="absolute right-1.5 top-1.5 rounded-pill bg-warning-bg px-1.5 py-0.5 text-[11px] font-medium text-warning-text">
             {{ t('Not migrated', 'No migrado') }}
           </span>
         </div>
@@ -401,7 +401,7 @@ async function confirmRemove() {
           <div class="mt-1.5 flex flex-wrap items-center justify-between gap-1.5">
             <select
               v-model="file.visibility"
-              class="min-w-0 rounded border border-line-control px-1 py-0.5 text-[10.5px] text-ink-muted focus:border-brand focus:outline-none touch:min-h-10"
+              class="min-w-0 rounded border border-line-control px-1 py-0.5 text-[11px] text-ink-muted focus:border-brand focus:outline-none touch:min-h-10"
               :title="t('Whether this file will show to the patient in the mobile app', 'Si este archivo se mostrará al paciente en la aplicación móvil')"
               @change="updateVisibility(file)"
             >

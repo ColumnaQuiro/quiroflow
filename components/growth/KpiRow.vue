@@ -22,7 +22,7 @@ const PILL: Record<string, string> = {
     >
       <span class="text-[11px] text-ink-muted">{{ kpi.label }}</span>
       <span class="text-[25px] font-semibold leading-none tracking-tightTitle text-ink-900">{{ kpi.value }}</span>
-      <span class="self-start text-[10.5px]" :class="PILL[kpi.tone]">{{ kpi.delta }}</span>
+      <span class="self-start text-[11px]" :class="PILL[kpi.tone]">{{ kpi.delta }}</span>
     </div>
   </div>
 </template>

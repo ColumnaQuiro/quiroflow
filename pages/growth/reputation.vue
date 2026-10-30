@@ -138,16 +138,16 @@ function when(iso: string) {
                 <span class="text-[13px] text-ink-muted">/ 5</span>
               </div>
               <GrowthStarRating v-if="data.rating" :rating="data.rating" :size="13" />
-              <span class="text-[10.5px] text-ink-faint">{{ data.reviewCount }} {{ t('reviews', 'reseñas') }}</span>
+              <span class="text-[11px] text-ink-faint">{{ data.reviewCount }} {{ t('reviews', 'reseñas') }}</span>
             </div>
 
             <div class="flex flex-col justify-center gap-1">
               <div v-for="bucket in data.distribution" :key="bucket.stars" class="flex items-center gap-1.5">
-                <span class="w-2 text-right text-[10px] text-ink-faint">{{ bucket.stars }}</span>
+                <span class="w-2 text-right text-[11px] text-ink-faint">{{ bucket.stars }}</span>
                 <span class="h-1.5 flex-1 overflow-hidden rounded-pill bg-line-divider">
                   <span class="block h-full rounded-pill bg-warning-accent" :style="{ width: `${(bucket.count / maxBucket) * 100}%` }" />
                 </span>
-                <span class="w-7 text-right font-mono text-[10px] text-ink-muted">{{ bucket.count }}</span>
+                <span class="w-7 text-right font-mono text-[11px] text-ink-muted">{{ bucket.count }}</span>
               </div>
             </div>
 
@@ -160,7 +160,7 @@ function when(iso: string) {
                 <line x1="0" y1="66" x2="520" y2="66" class="stroke-line-divider" stroke-width="1" />
                 <polyline :points="trendPath" fill="none" class="stroke-brand" stroke-width="2" vector-effect="non-scaling-stroke" />
               </svg>
-              <div class="flex justify-between text-[10px] text-ink-faint">
+              <div class="flex justify-between text-[11px] text-ink-faint">
                 <span>{{ data.trend[0]!.label }}</span>
                 <span>{{ data.trend[data.trend.length - 1]!.label }}</span>
               </div>
@@ -189,12 +189,12 @@ function when(iso: string) {
                   <span class="text-[11px] capitalize text-ink-muted">
                     {{ review.platform }}<template v-if="review.location"> · {{ review.location }}</template>
                   </span>
-                  <span class="ml-auto text-[10.5px] text-ink-faint">{{ when(review.postedAt) }}</span>
+                  <span class="ml-auto text-[11px] text-ink-faint">{{ when(review.postedAt) }}</span>
                 </div>
                 <p v-if="review.body" class="text-[12.5px] leading-[1.5] text-ink-700">{{ review.body }}</p>
 
                 <div v-if="review.repliedAt" class="mt-1 rounded-ctl border border-line bg-surface-subtle px-3 py-2">
-                  <span class="text-[10.5px] font-semibold uppercase tracking-[.06em] text-ink-faint">
+                  <span class="text-[11px] font-semibold uppercase tracking-[.06em] text-ink-faint">
                     {{ review.replyWasAiDrafted ? t('Replied · AI drafted, approved', 'Respondido · redactado por IA, aprobado') : t('Replied', 'Respondido') }}
                   </span>
                   <p class="mt-1 text-[12px] leading-[1.5] text-ink-700">{{ review.replyBody }}</p>
@@ -234,7 +234,7 @@ function when(iso: string) {
               <div class="flex items-baseline justify-between gap-2">
                 <span class="text-[11.5px] text-ink-muted">{{ t('Opened the link', 'Abrieron el enlace') }}</span>
                 <span class="text-[12px] font-semibold text-ink-900">
-                  {{ data.funnel.opened }}<span v-if="data.funnel.openedShare !== null" class="ml-1 text-[10.5px] font-normal text-ink-muted">{{ data.funnel.openedShare }}%</span>
+                  {{ data.funnel.opened }}<span v-if="data.funnel.openedShare !== null" class="ml-1 text-[11px] font-normal text-ink-muted">{{ data.funnel.openedShare }}%</span>
                 </span>
               </div>
               <span class="h-1.5 overflow-hidden rounded-pill bg-line-divider">
@@ -247,7 +247,7 @@ function when(iso: string) {
                 <span class="text-[11.5px] text-ink-muted">{{ t('Left a review', 'Dejaron reseña') }}</span>
                 <span class="text-[12px] font-semibold" :class="data.funnel.convertedShare === null ? 'text-ink-faint' : 'text-ink-900'">
                   {{ data.funnel.convertedShare === null ? '—' : data.funnel.converted
-                  }}<span v-if="data.funnel.convertedShare !== null" class="ml-1 text-[10.5px] font-normal text-ink-muted">{{ data.funnel.convertedShare }}%</span>
+                  }}<span v-if="data.funnel.convertedShare !== null" class="ml-1 text-[11px] font-normal text-ink-muted">{{ data.funnel.convertedShare }}%</span>
                 </span>
               </div>
               <span class="h-1.5 overflow-hidden rounded-pill bg-line-divider">
@@ -258,7 +258,7 @@ function when(iso: string) {
 
           <!-- The honest gap in the funnel, named. We can see the link open
           because it goes through us; nobody can watch someone type on Google. -->
-          <p class="border-t border-line-divider pt-3 text-[10.5px] leading-[1.5] text-ink-muted" data-test="funnel-caveat">
+          <p class="border-t border-line-divider pt-3 text-[11px] leading-[1.5] text-ink-muted" data-test="funnel-caveat">
             {{ t(
               'Sent and opened are counted here, because the link goes through QuiroFlow. Whether someone then left a review is only known once a platform is connected.',
               'Enviadas y abiertas se cuentan aquí, porque el enlace pasa por QuiroFlow. Si luego dejaron reseña solo se sabe al conectar una plataforma.',

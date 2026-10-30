@@ -125,7 +125,7 @@ watch(() => route.fullPath, () => (mobileOpen.value = false))
       </button>
     </div>
     <div v-for="group in groups" :key="group.label">
-      <p class="px-2 text-[10.5px] font-[640] uppercase tracking-[.06em] text-ink-faint">{{ group.label }}</p>
+      <p class="px-2 text-[11px] font-[640] uppercase tracking-[.06em] text-ink-faint">{{ group.label }}</p>
       <div class="mt-1 space-y-0.5">
         <NuxtLink
           v-for="item in group.items"

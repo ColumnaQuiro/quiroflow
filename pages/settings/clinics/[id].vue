@@ -306,6 +306,7 @@ const SECTIONS = computed(() => [
   { id: 'zona', label: t('Time zone', 'Zona horaria') },
   { id: 'fiscal', label: t('Billing details', 'Datos fiscales'), flag: fiscalIncomplete.value },
   { id: 'logo', label: t('Logo', 'Logotipo') },
+  ...(archivedAt.value ? [] : [{ id: 'llegada', label: t('Check-in portal', 'Portal de llegada') }]),
   ...(archivedAt.value ? [] : [{ id: 'cerrar', label: t('Close this location', 'Cerrar la sede') }]),
 ])
 
@@ -517,6 +518,15 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
                 <p class="text-[13px] text-ink-muted">{{ t('On this location\'s facturas, receipts and online booking. Saved as soon as it is uploaded.', 'Aparece en facturas, recibos y la reserva online de esta sede. Se guarda al subirlo.') }}</p>
               </div>
               <SettingsClinicLogoUpload :clinic-id="clinicId" :logo-storage-path="logoPath" @uploaded="onLogoUploaded" />
+            </section>
+
+            <!-- Portal de llegada -->
+            <section v-if="!archivedAt" id="llegada" aria-labelledby="h-llegada" class="flex scroll-mt-4 flex-col gap-4 rounded-card border border-line bg-surface p-6">
+              <div class="flex flex-col gap-1">
+                <h2 id="h-llegada" class="text-[16px] font-bold text-ink-900">{{ t('Check-in portal', 'Portal de llegada') }}</h2>
+                <p class="text-[13px] text-ink-muted">{{ t('A tablet at the front desk where patients type their date of birth or DNI/NIE, or show the QR code in their app, to say they have arrived. They show as arrived on the calendar and My Day, and their practitioner is told. Saved on its own, apart from the rest of this page.', 'Una tablet en recepción donde los pacientes escriben su fecha de nacimiento o su DNI/NIE, o enseñan el código QR de su app, para avisar de que han llegado. Aparecen como llegados en el calendario y en Mi día, y se avisa a su profesional. Se guarda aparte del resto de esta página.') }}</p>
+              </div>
+              <SettingsClinicCheckInPortal :clinic-id="clinicId" />
             </section>
 
             <!-- Cerrar -->

@@ -50,5 +50,7 @@ async function checkIn() {
       {{ busy ? t('Checking in…', 'Registrando…') : t("I'm here", 'Ya estoy aquí') }}
     </button>
     <p v-if="error" role="alert" class="mt-2 text-[12.5px] text-danger-text">{{ error }}</p>
+    <!-- For a clinic whose front desk has a check-in tablet (pages/check-in). -->
+    <PatientCheckInCode class="mt-2" :appointment-id="appt.id" />
   </div>
 </template>

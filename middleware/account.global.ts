@@ -56,6 +56,9 @@ export default defineNuxtRouteMiddleware(async (to) => {
   // login to /portal, an account still owing its second factor to
   // /two-factor -- instead of the link it opened.
   if (/^\/(waitlist|photo-upload)\/[^/]+$/.test(to.path)) return
+  // The front-desk check-in portal (pages/check-in), token-gated: the tablet
+  // has no session, and must never be sent to a sign-in page.
+  if (/^\/check-in\/[^/]+$/.test(to.path)) return
 
   const user = useSupabaseUser()
   if (!user.value) return

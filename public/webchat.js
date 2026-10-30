@@ -3,6 +3,10 @@
  *
  *   <script src="https://app.quiroflow.com/webchat.js" data-clinic="<slug>" async></script>
  *
+ * To move it (a site with its own button in that corner):
+ *
+ *   [data-quiroflow-webchat] { --qf-chat-bottom: 92px; --qf-chat-right: 24px; --qf-chat-z: 45; }
+ *
  * Pasted into a clinic's own website, so it assumes nothing about the page:
  * no framework, no globals beyond one guard, and everything drawn inside a
  * shadow root so the site's CSS cannot reach it and it cannot reach the
@@ -75,12 +79,16 @@
     style.textContent = [
       ':host{all:initial}',
       '*{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}',
-      '.bubble{position:fixed;right:20px;bottom:20px;z-index:2147483000;width:58px;height:58px;border-radius:50%;border:0;background:#4F46E5;color:#fff;cursor:pointer;box-shadow:0 6px 20px rgba(21,23,30,.25);display:flex;align-items:center;justify-content:center}',
+      // Where the bubble sits, from three custom properties the host page may
+      // set on [data-quiroflow-webchat]: they are the one thing that crosses
+      // into a shadow root. A site with its own floating button in the corner
+      // moves the chat above it instead of under it.
+      '.bubble{position:fixed;right:var(--qf-chat-right,20px);bottom:var(--qf-chat-bottom,20px);z-index:var(--qf-chat-z,2147483000);width:58px;height:58px;border-radius:50%;border:0;background:#4F46E5;color:#fff;cursor:pointer;box-shadow:0 6px 20px rgba(21,23,30,.25);display:flex;align-items:center;justify-content:center}',
       '.bubble:hover{background:#4339CE}',
       '.bubble:focus-visible,.send:focus-visible,.x:focus-visible{outline:3px solid #A5B4FC;outline-offset:2px}',
       '.dot{position:absolute;top:4px;right:4px;width:13px;height:13px;border-radius:50%;background:#E5484D;border:2px solid #fff}',
-      '.panel{position:fixed;right:20px;bottom:90px;z-index:2147483000;width:370px;max-width:calc(100vw - 24px);height:540px;max-height:calc(100vh - 110px);background:#fff;color:#15171E;border-radius:16px;box-shadow:0 16px 48px rgba(21,23,30,.28);display:flex;flex-direction:column;overflow:hidden}',
-      '@media (max-width:480px){.panel{right:12px;left:12px;width:auto;bottom:84px;height:calc(100vh - 100px)}}',
+      '.panel{position:fixed;right:var(--qf-chat-right,20px);bottom:calc(var(--qf-chat-bottom,20px) + 70px);z-index:var(--qf-chat-z,2147483000);width:370px;max-width:calc(100vw - 24px);height:540px;max-height:calc(100vh - var(--qf-chat-bottom,20px) - 90px);background:#fff;color:#15171E;border-radius:16px;box-shadow:0 16px 48px rgba(21,23,30,.28);display:flex;flex-direction:column;overflow:hidden}',
+      '@media (max-width:480px){.panel{right:12px;left:12px;width:auto;height:calc(100vh - var(--qf-chat-bottom,20px) - 80px)}}',
       '.head{display:flex;align-items:center;gap:10px;padding:14px 14px 14px 18px;background:#4F46E5;color:#fff}',
       '.head strong{flex:1;font-size:15.5px;font-weight:650;line-height:1.25}',
       '.x{border:0;background:transparent;color:#fff;cursor:pointer;width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center}',

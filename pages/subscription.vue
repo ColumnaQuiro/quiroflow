@@ -453,7 +453,7 @@ async function onAddonChanged(expect: { growth: boolean; receptionist: boolean }
 // The receptionist card's "Add" opens the same confirmation, not Change plan.
 function addReceptionist() {
   addonsCard.value?.start('receptionist', true)
-  addonsCard.value?.$el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  addonsCard.value?.$el?.scrollIntoView({ behavior: smoothScroll(), block: 'center' })
 }
 
 async function onPlanChanged() {

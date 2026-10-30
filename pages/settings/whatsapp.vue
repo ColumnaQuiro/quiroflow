@@ -262,7 +262,7 @@ async function connectInstagram() {
       // view. A grey line under the button went unnoticed twice.
       showToast(t('One more step: choose which Instagram account is this clinic’s.', 'Un paso más: elige cuál es la cuenta de Instagram de esta clínica.'), 'info', 8000)
       await nextTick()
-      instagramChoicesEl.value?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      instagramChoicesEl.value?.scrollIntoView({ behavior: smoothScroll(), block: 'center' })
       return
     }
     instagramConnected(result)

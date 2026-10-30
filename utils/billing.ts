@@ -41,10 +41,19 @@ export function formatEurFromAmount(euros: number): string {
   return formatEur(Math.round(euros * 100))
 }
 
-/** "21 de octubre de 2026". */
-export function formatLongDate(iso: string | Date): string {
+// Dates, unlike amounts, follow the language they are read in. The helpers
+// below were fixed to Spanish too, and a staff member using QuiroFlow in
+// English read "Patient since 16 de junio de 2025" beside "Sat 8 Aug". Each
+// takes the reader's language; Spanish when none is given, which is what the
+// server-side callers (documents, messages to patients) want. A component gets
+// them bound to the staff member's language from useDates().
+export type DateLanguage = 'en' | 'es'
+const dateLocale = (lang: DateLanguage) => (lang === 'en' ? 'en-GB' : LOCALE)
+
+/** "21 de octubre de 2026" / "21 October 2026". */
+export function formatLongDate(iso: string | Date, lang: DateLanguage = 'es'): string {
   const date = typeof iso === 'string' ? new Date(iso) : iso
-  return date.toLocaleDateString(LOCALE, { year: 'numeric', month: 'long', day: 'numeric' })
+  return date.toLocaleDateString(dateLocale(lang), { year: 'numeric', month: 'long', day: 'numeric' })
 }
 
 /**
@@ -60,10 +69,10 @@ export function formatRelativeDays(iso: string | Date, language: 'en' | 'es', no
   return new Intl.RelativeTimeFormat(language === 'es' ? 'es-ES' : 'en-GB', { numeric: 'auto' }).format(days, 'day')
 }
 
-/** "13 sept" -- the compact form a date block or a row uses. */
-export function formatShortDate(iso: string | Date): string {
+/** "13 sept" / "13 Sept" -- the compact form a date block or a row uses. */
+export function formatShortDate(iso: string | Date, lang: DateLanguage = 'es'): string {
   const date = typeof iso === 'string' ? new Date(iso) : iso
-  return date.toLocaleDateString(LOCALE, { day: 'numeric', month: 'short' })
+  return date.toLocaleDateString(dateLocale(lang), { day: 'numeric', month: 'short' })
 }
 
 // One formatter, built once: toLocaleTimeString with options builds a new
@@ -80,24 +89,24 @@ export function formatTime(iso: string | Date): string {
   return TIME_FORMAT.format(date)
 }
 
-/** "mié 23 sept" -- a day as the calendar names it in a header or a panel. */
-export function formatWeekdayDate(iso: string | Date): string {
+/** "mié 23 sept" / "Wed 23 Sept" -- a day as the calendar names it in a header or a panel. */
+export function formatWeekdayDate(iso: string | Date, lang: DateLanguage = 'es'): string {
   const date = typeof iso === 'string' ? new Date(iso) : iso
-  return date.toLocaleDateString(LOCALE, { weekday: 'short', day: 'numeric', month: 'short' }).replace(',', '')
+  return date.toLocaleDateString(dateLocale(lang), { weekday: 'short', day: 'numeric', month: 'short' }).replace(',', '')
 }
 
-/** "miércoles, 23 sept" -- the day view's title. */
-export function formatLongWeekdayDate(iso: string | Date): string {
+/** "miércoles, 23 sept" / "Wednesday 23 Sept" -- the day view's title. */
+export function formatLongWeekdayDate(iso: string | Date, lang: DateLanguage = 'es'): string {
   const date = typeof iso === 'string' ? new Date(iso) : iso
-  return date.toLocaleDateString(LOCALE, { weekday: 'long', day: 'numeric', month: 'short' })
+  return date.toLocaleDateString(dateLocale(lang), { weekday: 'long', day: 'numeric', month: 'short' })
 }
 
 /** The day and the month, split, for a two-line date block. */
-export function dateBlock(iso: string | Date): { day: string; month: string } {
+export function dateBlock(iso: string | Date, lang: DateLanguage = 'es'): { day: string; month: string } {
   const date = typeof iso === 'string' ? new Date(iso) : iso
   return {
-    day: date.toLocaleDateString(LOCALE, { day: 'numeric' }),
-    month: date.toLocaleDateString(LOCALE, { month: 'short' }).replace('.', ''),
+    day: date.toLocaleDateString(dateLocale(lang), { day: 'numeric' }),
+    month: date.toLocaleDateString(dateLocale(lang), { month: 'short' }).replace('.', ''),
   }
 }
 

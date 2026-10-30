@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatEur, formatTime, formatWeekdayDate } from '~/utils/billing'
+import { formatEur, formatTime } from '~/utils/billing'
 import { offerExpiresAt, waitlistEntryMatches } from '~/utils/waitlistOffer'
 
 // Cancelling a visit, as a step inside the appointment panel rather than a
@@ -33,6 +33,7 @@ const store = useAccountStore()
 const { fire } = useAutomations()
 const { showToast } = useToast()
 const t = useT()
+const { formatWeekdayDate } = useDates()
 
 // Worked out once, as the step opens: the notice and the offer deadline both
 // read from this instant, so they cannot drift apart while staff decide.

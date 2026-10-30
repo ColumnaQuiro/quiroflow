@@ -3,7 +3,7 @@
 // patient's record. A value is stored as text in one form per kind -- a
 // number with a dot, a date as YYYY-MM-DD, yes/no as true/false, a choice as
 // the option's text -- and the database refuses any other.
-import { formatLongDate } from './billing'
+import { formatLongDate, type DateLanguage } from './billing'
 
 export const PATIENT_ATTRIBUTE_KINDS = ['text', 'long_text', 'number', 'date', 'boolean', 'choice'] as const
 export type PatientAttributeKind = (typeof PATIENT_ATTRIBUTE_KINDS)[number]
@@ -93,7 +93,7 @@ export function normalizePatientAttributeValue(kind: string, raw: string | boole
 export function formatPatientAttributeValue(kind: string, value: string | null | undefined, t: T): string {
   if (value === null || value === undefined || value === '') return ''
   if (kind === 'boolean') return value === 'true' ? t('Yes', 'Sí') : t('No', 'No')
-  if (kind === 'date') return /^\d{4}-\d{2}-\d{2}$/.test(value) ? formatLongDate(`${value}T12:00:00`) : value
+  if (kind === 'date') return /^\d{4}-\d{2}-\d{2}$/.test(value) ? formatLongDate(`${value}T12:00:00`, t('en', 'es') as DateLanguage) : value
   if (kind === 'number') return t(value, value.replace('.', ','))
   return value
 }

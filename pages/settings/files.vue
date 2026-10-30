@@ -165,7 +165,7 @@ function patientName(f: MissingFile) {
             <details class="border-t border-line-row">
               <summary class="cursor-pointer px-[18px] py-3 text-[13px] font-semibold text-ink-muted hover:bg-surface-subtle">{{ t('Which ones', 'Cuáles') }}</summary>
               <ul class="flex flex-col gap-1.5 px-[18px] pb-3.5 text-[13px] text-ink-700">
-                <li v-for="f in missingSample" :key="f.id">{{ f.file_name }} · {{ patientName(f) }} · {{ new Date(f.created_at).toLocaleDateString('es-ES') }}</li>
+                <li v-for="f in missingSample" :key="f.id">{{ f.file_name }} · {{ patientName(f) }} · {{ new Date(f.created_at).toLocaleDateString(t('en-GB', 'es-ES')) }}</li>
                 <li v-if="missingFiles > missingSample.length" class="text-ink-muted">{{ t(`and ${nf.format(missingFiles - missingSample.length)} more`, `y ${nf.format(missingFiles - missingSample.length)} más`) }}</li>
               </ul>
             </details>

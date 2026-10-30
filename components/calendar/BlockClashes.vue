@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatTime, formatWeekdayDate } from '~/utils/billing'
+import { formatTime } from '~/utils/billing'
 import { appointmentsUnderBlock } from '~/utils/moveClash'
 
 // The visits a block about to be saved would sit on top of ("Bloquear
@@ -36,6 +36,7 @@ const count = defineModel<number>('count', { default: 0 })
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+const { formatWeekdayDate } = useDates()
 
 const visits = ref<UnderBlockRow[]>([])
 const SHOWN = 6

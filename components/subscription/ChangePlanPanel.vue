@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { MONTHS_PER_YEAR, formatEur, formatLongDate } from '~/utils/billing'
+import { MONTHS_PER_YEAR, formatEur } from '~/utils/billing'
 import { planIncludesGrowth } from '~/utils/growthPlans'
 
 export interface ChangePlanRow {
@@ -29,6 +29,7 @@ const props = defineProps<{
 const emit = defineEmits<{ back: [], changed: [] }>()
 
 const t = useT()
+const { formatLongDate } = useDates()
 
 const interval = ref<'monthly' | 'annual'>(props.currentInterval)
 const extraSeats = ref(props.currentExtraSeats)

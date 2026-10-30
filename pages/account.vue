@@ -2,7 +2,7 @@
 import type { BusinessHours } from '~/utils/businessHours'
 import { hasBusinessHoursConfigured } from '~/utils/businessHours'
 import { CALENDAR_PALETTE, isPaletteColor } from '~/utils/calendarPalette'
-import { formatLongDate, formatShortDate, formatTime } from '~/utils/billing'
+import { formatTime } from '~/utils/billing'
 
 // "Mi cuenta": the signed-in person's own page. Design: the "QuiroFlow Mi
 // Cuenta" canvas. Four sections in the order they are reached for --
@@ -58,6 +58,7 @@ async function toggleDigest() {
 }
 const { preference: langPreference, setPreference: setLangPreference } = useLang()
 const t = useT()
+const { formatLongDate, formatShortDate } = useDates()
 const { showToast } = useToast()
 const twoFactor = useTwoFactor()
 

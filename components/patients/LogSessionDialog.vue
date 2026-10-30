@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatEur, formatTime, formatWeekdayDate } from '~/utils/billing'
+import { formatEur, formatTime } from '~/utils/billing'
 import { localDateStr, type LogSessionChoice, type UnloggedVisit } from '~/utils/unloggedVisits'
 
 // Logging a bono session: which visit it pays for, and what that does to the
@@ -28,6 +28,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ confirm: [choice: LogSessionChoice]; cancel: [] }>()
 const t = useT()
+const { formatWeekdayDate } = useDates()
 
 const today = localDateStr()
 const NEW = '__new__'

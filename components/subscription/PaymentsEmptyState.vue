@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { formatLongDate } from '~/utils/billing'
-
 defineProps<{ firstChargeDate: string | null }>()
 const t = useT()
+const { formatLongDate } = useDates()
 </script>
 
 <template>

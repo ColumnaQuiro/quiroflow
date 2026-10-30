@@ -2,7 +2,7 @@
 import { hasBusinessHoursConfigured, type BusinessHours } from '~/utils/businessHours'
 import { hoursProblems, normalizeHours } from '~/utils/clinicHours'
 import { CALENDAR_PALETTE } from '~/utils/calendarPalette'
-import { formatEur, formatShortDate } from '~/utils/billing'
+import { formatEur } from '~/utils/billing'
 import { absenceKindLabel } from '~/utils/staffShifts'
 
 // One person on the team, everything about them on one page. What used to be
@@ -19,6 +19,7 @@ const store = useAccountStore()
 const route = useRoute()
 const router = useRouter()
 const t = useT()
+const { formatShortDate } = useDates()
 const { showToast } = useToast()
 const memberId = route.params.id as string
 

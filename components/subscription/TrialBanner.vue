@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { formatLongDate } from '~/utils/billing'
-
 // An invitation, not a warning. Info purple throughout: a trial with time
 // left on it is good news, and dressing it in amber makes a clinic think
 // something has gone wrong.
@@ -13,6 +11,7 @@ const props = defineProps<{ daysLeft: number; totalDays: number; endsAt: string 
 defineEmits<{ addCard: [], comparePlans: [] }>()
 
 const t = useT()
+const { formatLongDate } = useDates()
 const elapsed = computed(() => Math.max(0, Math.min(props.totalDays, props.totalDays - props.daysLeft)))
 const percent = computed(() => Math.round((elapsed.value / props.totalDays) * 100))
 </script>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatTime, formatWeekdayDate } from '~/utils/billing'
+import { formatTime } from '~/utils/billing'
 
 // "Anular citas futuras", from a patient's "More actions" menu: every visit
 // still ahead of them, cancelled in one go -- someone who stops treatment, or
@@ -31,6 +31,7 @@ const supabase = useSupabaseClient()
 const store = useAccountStore()
 const { fire } = useAutomations()
 const t = useT()
+const { formatWeekdayDate } = useDates()
 
 // A modal dialog: focus stays inside it, Escape closes it, and focus goes
 // back to whatever opened it (useFocusTrap).

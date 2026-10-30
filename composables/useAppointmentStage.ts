@@ -1,6 +1,6 @@
 import type { AppointmentStage, StageFilter } from '../utils/appointmentStage'
 // Relative, not ~/: the app (mobile/) reuses these labels, and there ~ is mobile/.
-import { formatShortDate, formatTime } from '../utils/billing'
+import { formatShortDate, formatTime, type DateLanguage } from '../utils/billing'
 
 // The words and tones for each stage, in one place, so the block, the counts
 // row, the hover card and the appointment panel say the same thing about the
@@ -97,7 +97,7 @@ export function useStageLabels() {
     const d = new Date(iso)
     const now = new Date()
     const sameDay = d.toDateString() === now.toDateString()
-    return `${sameDay ? t('today', 'hoy') : formatShortDate(d)} ${formatTime(d)}`
+    return `${sameDay ? t('today', 'hoy') : formatShortDate(d, t('en', 'es') as DateLanguage)} ${formatTime(d)}`
   }
 
   /**

@@ -37,6 +37,9 @@ export const tokens = {
           tintBorder: themeColor('--color-brand-tintBorder'),
           tintDeep: themeColor('--color-brand-tintDeep'),
           tintDeepBorder: themeColor('--color-brand-tintDeepBorder'),
+          // Text on a bg-brand fill. Use text-brand-on there, never
+          // text-white: the dark palette's brand is light (see theme.css).
+          on: themeColor('--color-on-fill'),
         },
         surface: {
           page: themeColor('--color-surface-page'),
@@ -77,6 +80,7 @@ export const tokens = {
           bg2: themeColor('--color-success-bg2'),
           border: themeColor('--color-success-border'),
           border2: themeColor('--color-success-border2'),
+          on: themeColor('--color-on-fill'),
         },
         warning: {
           text: themeColor('--color-warning-text'),
@@ -98,6 +102,7 @@ export const tokens = {
           bg2: themeColor('--color-danger-bg2'),
           bg3: themeColor('--color-danger-bg3'),
           border: themeColor('--color-danger-border'),
+          on: themeColor('--color-on-fill'),
         },
         chip: {
           bg: themeColor('--color-chip-bg'),

@@ -213,7 +213,7 @@ const showAll = ref(false)
           <p class="text-[14.5px] font-semibold text-ink-900">{{ t('Your posture report', 'Tu informe postural') }}</p>
           <p class="text-[12.5px] text-ink-muted">{{ t(`Assessment of ${longDay(latest!.takenAt)} · PDF`, `Valoración del ${longDay(latest!.takenAt)} · PDF`) }}</p>
         </div>
-        <button type="button" class="h-11 shrink-0 rounded-ctl bg-brand px-4 text-[13.5px] font-semibold text-white disabled:opacity-60" :disabled="reporting !== null" data-cy="patient-posture-report" @click="openReport(latest!.id)">
+        <button type="button" class="h-11 shrink-0 rounded-ctl bg-brand px-4 text-[13.5px] font-semibold text-brand-on disabled:opacity-60" :disabled="reporting !== null" data-cy="patient-posture-report" @click="openReport(latest!.id)">
           {{ reporting === latest!.id ? t('Preparing…', 'Preparando…') : t('Download', 'Descargar') }}
         </button>
       </section>

@@ -114,7 +114,7 @@ const includedLabel = computed(() => (includedBy.value ? t(INCLUDED[includedBy.v
       <div v-else-if="resolved && !hasReceptionist" class="mx-auto max-w-sm py-16 text-center">
         <p class="text-[13px] text-ink-muted">{{ t('Add the AI receptionist on its own, or get it with Growth.', 'Añade la recepcionista IA por sí sola, o consíguela con Growth.') }}</p>
         <div class="mt-3 flex flex-wrap justify-center gap-2">
-          <NuxtLink to="/subscription" class="inline-flex h-9 items-center rounded-ctl bg-brand px-4 text-[12.5px] font-semibold text-white hover:bg-brand-hover">
+          <NuxtLink to="/subscription" class="inline-flex h-9 items-center rounded-ctl bg-brand px-4 text-[12.5px] font-semibold text-brand-on hover:bg-brand-hover">
             {{ t('Add the receptionist', 'Añadir la recepcionista') }}
           </NuxtLink>
           <NuxtLink to="/growth" class="inline-flex h-9 items-center rounded-ctl border border-line-control bg-surface px-4 text-[12.5px] font-semibold text-ink-700 hover:border-line-controlHover">

@@ -55,7 +55,7 @@ async function copy() {
     <p v-if="info?.reward" class="mt-1 text-[13px] font-medium text-brand-text" data-cy="patient-referral-reward">{{ info.reward }}</p>
     <p class="mt-2 truncate rounded-ctl bg-surface-subtle px-3 py-2 font-mono text-[12.5px] text-ink-700" data-cy="patient-referral-link">{{ link }}</p>
     <div class="mt-2.5 flex gap-2">
-      <button v-if="canShare" type="button" class="min-h-10 flex-1 rounded-ctl bg-brand px-3 text-[13.5px] font-semibold text-white" data-cy="patient-referral-share" @click="share">{{ t('Share', 'Compartir') }}</button>
+      <button v-if="canShare" type="button" class="min-h-10 flex-1 rounded-ctl bg-brand px-3 text-[13.5px] font-semibold text-brand-on" data-cy="patient-referral-share" @click="share">{{ t('Share', 'Compartir') }}</button>
       <button type="button" class="min-h-10 flex-1 rounded-ctl border border-line-control bg-surface px-3 text-[13.5px] font-medium text-ink-700" data-cy="patient-referral-copy" @click="copy">{{ copied ? t('Copied', 'Copiado') : t('Copy link', 'Copiar enlace') }}</button>
     </div>
   </section>

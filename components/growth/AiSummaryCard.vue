@@ -14,7 +14,7 @@ const t = useT()
   <section class="flex flex-col gap-[11px] rounded-card border border-brand-tintBorder bg-brand-tint p-4" data-test="dashboard-ai-summary">
     <div class="flex items-center justify-between gap-2">
       <div class="flex items-center gap-[7px]">
-        <span class="flex h-[18px] w-[18px] items-center justify-center rounded-[6px] bg-brand text-[9px] font-bold text-white">AI</span>
+        <span class="flex h-[18px] w-[18px] items-center justify-center rounded-[6px] bg-brand text-[9px] font-bold text-brand-on">AI</span>
         <h2 class="text-[12.5px] font-semibold tracking-tightTitle text-brand-text">
           {{ t('AI receptionist', 'Recepcionista IA') }}
         </h2>

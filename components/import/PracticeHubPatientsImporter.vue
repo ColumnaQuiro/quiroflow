@@ -698,7 +698,7 @@ const introNotes = computed(() => [
         <button
           type="button"
           :disabled="toImport.length === 0 && toUpdate.length === 0"
-          class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50"
+          class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50"
           @click="runImport"
         >
           {{ t(`Import ${toImport.length}, update ${toUpdate.length}`, `Importar ${toImport.length}, actualizar ${toUpdate.length}`) }}
@@ -725,7 +725,7 @@ const introNotes = computed(() => [
         <p class="font-medium">{{ t('Import failed:', 'Error al importar:') }}</p>
         <p class="mt-1">{{ runError }}</p>
       </div>
-      <button type="button" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover" @click="retryImport">
+      <button type="button" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover" @click="retryImport">
         {{ t('Retry', 'Reintentar') }}
       </button>
     </div>
@@ -738,7 +738,7 @@ const introNotes = computed(() => [
         </ul>
       </div>
       <div class="flex gap-3">
-        <NuxtLink to="/patients" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-hover">
+        <NuxtLink to="/patients" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover">
           {{ t('View Patients', 'Ver pacientes') }}
         </NuxtLink>
         <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-ink-600 hover:bg-surface-subtle" @click="reset">

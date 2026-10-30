@@ -401,8 +401,8 @@ onMounted(() => {
         <span class="text-[13px] font-medium text-ink-700">{{ dayLabel }}</span>
 
         <div class="ml-auto flex h-8 overflow-hidden rounded-ctl border border-line-control text-[12.5px]">
-          <button type="button" class="px-3" :class="viewMode === 'day' ? 'bg-brand font-semibold text-white' : 'text-ink-500 hover:bg-surface-subtle'" @click="viewMode = 'day'">{{ t('Day', 'Día') }}</button>
-          <button type="button" class="border-l border-line-control px-3" :class="viewMode === 'week' ? 'bg-brand font-semibold text-white' : 'text-ink-500 hover:bg-surface-subtle'" @click="viewMode = 'week'">{{ t('Week', 'Semana') }}</button>
+          <button type="button" class="px-3" :class="viewMode === 'day' ? 'bg-brand font-semibold text-brand-on' : 'text-ink-500 hover:bg-surface-subtle'" @click="viewMode = 'day'">{{ t('Day', 'Día') }}</button>
+          <button type="button" class="border-l border-line-control px-3" :class="viewMode === 'week' ? 'bg-brand font-semibold text-brand-on' : 'text-ink-500 hover:bg-surface-subtle'" @click="viewMode = 'week'">{{ t('Week', 'Semana') }}</button>
         </div>
       </div>
 
@@ -466,7 +466,7 @@ onMounted(() => {
                   <button
                     type="button"
                     class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full"
-                    :class="a.checked_in_at ? 'bg-success-accent text-white' : 'border border-line-control text-ink-faint3 hover:border-line-controlHover hover:text-ink-muted2'"
+                    :class="a.checked_in_at ? 'bg-success-accent text-success-on' : 'border border-line-control text-ink-faint3 hover:border-line-controlHover hover:text-ink-muted2'"
                     :title="a.checked_in_at ? `${t('Arrived', 'Llegada')} ${formatTime(a.checked_in_at)}` : t('Mark as arrived', 'Marcar como llegado')"
                     @click.stop="toggleCheckedIn(a)"
                   >

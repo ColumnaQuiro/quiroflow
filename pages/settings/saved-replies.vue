@@ -195,7 +195,7 @@ const inputClass = 'h-9 touch:h-11 w-full rounded-ctl border border-line-control
               <div v-if="body.trim()" class="flex flex-col gap-2">
                 <span class="text-[12.5px] font-semibold text-ink-500">{{ t('In the Inbox', 'En la Bandeja') }}</span>
                 <div class="flex justify-end rounded-ctl bg-surface-page p-4">
-                  <p class="max-w-[380px] whitespace-pre-line rounded-[12px_12px_4px_12px] bg-brand px-3 py-2.5 text-[13.5px] leading-snug text-white">{{ body }}</p>
+                  <p class="max-w-[380px] whitespace-pre-line rounded-[12px_12px_4px_12px] bg-brand px-3 py-2.5 text-[13.5px] leading-snug text-brand-on">{{ body }}</p>
                 </div>
               </div>
             </div>

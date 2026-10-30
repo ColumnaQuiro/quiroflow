@@ -476,7 +476,7 @@ async function submitBooking() {
           class="aspect-square rounded-ctl"
           :class="[
             !day.inMonth ? 'text-ink-faint2' : day.bookable ? 'text-ink-900' : 'text-ink-faint',
-            selectedDate && isSameDay(day.date, selectedDate) ? 'bg-brand text-white' : day.bookable ? 'hover:bg-surface-subtle' : '',
+            selectedDate && isSameDay(day.date, selectedDate) ? 'bg-brand text-brand-on' : day.bookable ? 'hover:bg-surface-subtle' : '',
           ]"
           :disabled="!day.bookable"
           @click="selectDate(day)"

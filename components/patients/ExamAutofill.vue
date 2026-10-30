@@ -371,7 +371,7 @@ defineExpose({ save, copyLastNote, setListingLine, bringSection })
             <button
               type="button"
               class="w-5 rounded-[5px] text-center font-medium"
-              :class="selectedSegment?.level === seg.level && selectedSegment?.side === 'L' ? 'bg-brand text-white' : 'text-ink-muted2 hover:bg-white'"
+              :class="selectedSegment?.level === seg.level && selectedSegment?.side === 'L' ? 'bg-brand text-brand-on' : 'text-ink-muted2 hover:bg-white'"
               @click="pickSegment(seg.level, 'L')"
             >
               L
@@ -380,7 +380,7 @@ defineExpose({ save, copyLastNote, setListingLine, bringSection })
             <button
               type="button"
               class="w-5 rounded-[5px] text-center font-medium"
-              :class="selectedSegment?.level === seg.level && selectedSegment?.side === 'R' ? 'bg-brand text-white' : 'text-ink-muted2 hover:bg-white'"
+              :class="selectedSegment?.level === seg.level && selectedSegment?.side === 'R' ? 'bg-brand text-brand-on' : 'text-ink-muted2 hover:bg-white'"
               @click="pickSegment(seg.level, 'R')"
             >
               R
@@ -408,7 +408,7 @@ defineExpose({ save, copyLastNote, setListingLine, bringSection })
               :key="m"
               type="button"
               class="rounded-ctlSm py-1.5 font-medium"
-              :class="selectedModifier === m ? 'bg-brand text-white' : 'bg-ink-700 text-white hover:bg-ink-600'"
+              :class="selectedModifier === m ? 'bg-brand text-brand-on' : 'bg-ink-700 text-surface hover:bg-ink-600'"
               @click="toggleModifier(m)"
             >
               {{ m }}

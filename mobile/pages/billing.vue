@@ -115,7 +115,7 @@ function eur(cents: number) {
             <button
               v-if="canPayOnline && inv.status === 'unpaid'"
               type="button"
-              class="h-9 shrink-0 rounded-ctlSm bg-brand px-3 text-[12.5px] font-semibold text-white disabled:opacity-60"
+              class="h-9 shrink-0 rounded-ctlSm bg-brand px-3 text-[12.5px] font-semibold text-brand-on disabled:opacity-60"
               :disabled="payingId === inv.id"
               :data-cy="`patient-pay-${inv.id}`"
               @click="pay(inv.id)"

@@ -89,7 +89,7 @@ async function confirm() {
         <button
           type="button"
           data-cy="unsubscribe-confirm"
-          class="mt-5 flex w-full items-center justify-center rounded-ctl bg-brand px-4 py-3 text-sm font-medium text-white hover:bg-brand-hover disabled:opacity-50"
+          class="mt-5 flex w-full items-center justify-center rounded-ctl bg-brand px-4 py-3 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50"
           :disabled="phase === 'working'"
           @click="confirm"
         >

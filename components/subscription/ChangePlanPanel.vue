@@ -410,7 +410,7 @@ const summary = computed(() => {
         <button
           type="button"
           :disabled="confirming"
-          class="flex h-12 items-center justify-center rounded-ctl bg-brand px-4 text-[13.5px] font-semibold text-white outline-none hover:bg-brand-hover focus-visible:shadow-focus disabled:cursor-wait lg:h-10"
+          class="flex h-12 items-center justify-center rounded-ctl bg-brand px-4 text-[13.5px] font-semibold text-brand-on outline-none hover:bg-brand-hover focus-visible:shadow-focus disabled:cursor-wait lg:h-10"
           @click="confirm"
         >
           {{ confirming ? t('Working…', 'Procesando…') : t('Confirm change', 'Confirmar cambio') }}

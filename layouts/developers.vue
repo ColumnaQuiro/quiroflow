@@ -37,7 +37,7 @@ const tokenSettingsUrl = 'https://app.quiroflow.com/settings/developers'
           <a :href="tokenSettingsUrl" class="hidden text-[13px] font-medium text-ink-muted2 hover:text-ink-700 sm:inline">Get a token</a>
           <a
             :href="tokenSettingsUrl"
-            class="inline-flex h-8 items-center rounded-ctl border border-brand bg-brand px-3.5 text-[13px] font-semibold text-white hover:bg-brand-hover"
+            class="inline-flex h-8 items-center rounded-ctl border border-brand bg-brand px-3.5 text-[13px] font-semibold text-brand-on hover:bg-brand-hover"
           >
             Sign in
           </a>

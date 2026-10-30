@@ -377,7 +377,7 @@ const GENERIC_ICON = 'M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6'
               </div>
               <div v-else class="flex flex-wrap items-center gap-3 border-t border-line-row px-[18px] py-3">
                 <span class="flex-1 text-[13.5px] text-ink-700">{{ t('Connect your Stripe account in one click. No API keys to copy.', 'Conecta tu cuenta de Stripe con un clic. Sin claves de API que copiar.') }}</span>
-                <a href="/api/stripe/connect/start" data-cy="stripe-connect" class="inline-flex h-9 touch:h-11 items-center rounded-ctl border border-brand bg-brand px-3.5 text-[13px] font-semibold text-white hover:bg-brand-hover">
+                <a href="/api/stripe/connect/start" data-cy="stripe-connect" class="inline-flex h-9 touch:h-11 items-center rounded-ctl border border-brand bg-brand px-3.5 text-[13px] font-semibold text-brand-on hover:bg-brand-hover">
                   {{ t('Connect with Stripe', 'Conectar con Stripe') }}
                 </a>
               </div>

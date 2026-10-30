@@ -647,7 +647,7 @@ function tagClass(tag: string) {
       <!-- The segment open, and what can be done with it. -->
       <div v-if="activeSegment" data-cy="segment-header" class="mb-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <h2 class="text-[15px] font-[650] text-ink-900">{{ activeSegment.name }}</h2>
-        <span v-if="!activeSegment.shared" class="rounded-pill bg-chip-bg2 px-1.5 py-0.5 text-[10.5px] font-[600] text-ink-faint3">{{ t('Private', 'Privado') }}</span>
+        <span v-if="!activeSegment.shared" class="rounded-pill bg-chip-bg2 px-1.5 py-0.5 text-[10.5px] font-[600] text-chip-text">{{ t('Private', 'Privado') }}</span>
         <span v-if="segmentModified" class="text-[12px] text-warning-text">{{ t('Filters changed', 'Filtros modificados') }}</span>
         <div v-if="canManage(activeSegment)" class="flex items-center gap-1">
           <UiBtn v-if="segmentModified" variant="primary" size="sm" :disabled="segmentBusy" data-cy="segment-save-changes" @click="saveSegmentChanges">
@@ -881,7 +881,7 @@ function tagClass(tag: string) {
                         <NuxtLink :to="`/patients/${patient.id}`" class="truncate outline-none hover:underline focus-visible:shadow-focus">
                           {{ patient.first_name }} {{ patient.last_name }}
                         </NuxtLink>
-                        <span v-if="patient.status === 'inactive'" class="shrink-0 rounded-pill bg-chip-bg2 px-1.5 py-0.5 text-[10px] font-[600] text-ink-faint3">{{ t('Inactive', 'Inactivo') }}</span>
+                        <span v-if="patient.status === 'inactive'" class="shrink-0 rounded-pill bg-chip-bg2 px-1.5 py-0.5 text-[10px] font-[600] text-chip-text">{{ t('Inactive', 'Inactivo') }}</span>
                         <span v-if="patient.is_minor" class="shrink-0 rounded-pill bg-brand-tint px-1.5 py-0.5 text-[10px] font-[600] text-brand-text2">{{ t('Minor', 'Menor') }}</span>
                         <span v-if="patient.do_not_contact" class="shrink-0 rounded-pill bg-danger-bg px-1.5 py-0.5 text-[10px] font-[600] text-danger-text">{{ t('Do not contact', 'No contactar') }}</span>
                       </p>

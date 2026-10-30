@@ -24,7 +24,7 @@ const t = useT()
         <svg width="21" height="21" viewBox="0 0 16 16" fill="none" stroke="currentColor" :stroke-width="isActive(tab.to) ? 1.6 : 1.3">
           <path :d="tab.icon" />
         </svg>
-        <span v-if="tab.badge" class="absolute -right-2.5 -top-1.5 flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-danger-text px-1 text-[10.5px] font-bold leading-none text-white" data-cy="nav-badge">{{ tab.badge > 99 ? '99+' : tab.badge }}</span>
+        <span v-if="tab.badge" class="absolute -right-2.5 -top-1.5 flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-danger-text px-1 text-[10.5px] font-bold leading-none text-danger-on" data-cy="nav-badge">{{ tab.badge > 99 ? '99+' : tab.badge }}</span>
       </span>
       {{ tab.label }}<span v-if="tab.badge" class="sr-only">, {{ tab.badge }} {{ t('unread', 'sin leer') }}</span>
     </NuxtLink>

@@ -64,7 +64,7 @@ function answer(f: DocField): string {
             <h3 v-if="f.type === 'heading'" class="pt-1 text-[15.5px] font-semibold text-ink-900">{{ f.label }}</h3>
             <p v-else-if="f.type === 'text'" class="whitespace-pre-wrap text-[13.5px] leading-relaxed text-ink-700">{{ f.label }}</p>
             <p v-else-if="f.type === 'checkbox'" class="flex items-start gap-2 text-[14px] text-ink-900">
-              <span class="mt-[1px] flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded border" :class="f.value ? 'border-brand bg-brand text-white' : 'border-line-control'" aria-hidden="true">
+              <span class="mt-[1px] flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded border" :class="f.value ? 'border-brand bg-brand text-brand-on' : 'border-line-control'" aria-hidden="true">
                 <svg v-if="f.value" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
               </span>
               <span>{{ f.label }}<span class="sr-only">: {{ f.value ? t('yes', 'sí') : t('no', 'no') }}</span></span>

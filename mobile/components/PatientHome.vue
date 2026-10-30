@@ -119,7 +119,7 @@ function eur(cents: number) {
       <button
         v-if="canPayOnline && unpaid.length > 0"
         type="button"
-        class="h-10 shrink-0 rounded-ctl bg-danger-text px-4 text-[13.5px] font-semibold text-white disabled:opacity-60"
+        class="h-10 shrink-0 rounded-ctl bg-danger-text px-4 text-[13.5px] font-semibold text-danger-on disabled:opacity-60"
         :disabled="payingId !== null"
         data-cy="patient-home-pay"
         @click="payOutstanding"

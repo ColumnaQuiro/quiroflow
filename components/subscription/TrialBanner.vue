@@ -50,7 +50,7 @@ const percent = computed(() => Math.round((elapsed.value / props.totalDays) * 10
         <button
           v-if="!cardOnFile"
           type="button"
-          class="flex h-9 touch:h-11 items-center justify-center gap-1.5 rounded-ctl bg-brand px-3.5 text-[13.5px] font-semibold text-white outline-none hover:bg-brand-hover focus-visible:shadow-focus lg:h-[34px]"
+          class="flex h-9 touch:h-11 items-center justify-center gap-1.5 rounded-ctl bg-brand px-3.5 text-[13.5px] font-semibold text-brand-on outline-none hover:bg-brand-hover focus-visible:shadow-focus lg:h-[34px]"
           @click="$emit('addCard')"
         >
           {{ t('Add payment method', 'Añadir método de pago') }}

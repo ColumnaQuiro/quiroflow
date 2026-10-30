@@ -93,7 +93,7 @@ const prevSide = (level: string) => {
 }
 const prevDay = computed(() => (previous.value ? new Date(previous.value.day).toLocaleDateString(t('en-GB', 'es-ES'), { day: 'numeric', month: 'short' }) : ''))
 const sideBtn = (on: boolean) =>
-  `h-7 w-7 rounded-ctlSm text-[11.5px] font-bold ${on ? 'bg-brand text-white' : 'border border-line-control bg-surface text-ink-muted'} ${props.editable ? '' : 'cursor-default'}`
+  `h-7 w-7 rounded-ctlSm text-[11.5px] font-bold ${on ? 'bg-brand text-brand-on' : 'border border-line-control bg-surface text-ink-muted'} ${props.editable ? '' : 'cursor-default'}`
 </script>
 
 <template>

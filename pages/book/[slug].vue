@@ -1106,7 +1106,7 @@ onMounted(async () => {
               type="button"
               :lang="l"
               class="rounded-[6px] px-2.5 py-1 font-medium touch:min-h-[44px]"
-              :class="l === lang ? 'bg-brand text-white' : 'text-ink-muted hover:text-ink-900'"
+              :class="l === lang ? 'bg-brand text-brand-on' : 'text-ink-muted hover:text-ink-900'"
               :aria-pressed="l === lang"
               :disabled="!hydrated"
               :data-cy="`booking-language-${l}`"
@@ -1299,7 +1299,7 @@ onMounted(async () => {
                   class="aspect-square rounded-full text-sm font-medium"
                   :class="[
                     !day.inMonth || !day.bookable ? 'text-ink-faint' : '',
-                    day.bookable && !(selectedDate && isSameDay(day.date, selectedDate)) ? 'bg-brand text-white hover:bg-brand-hover' : '',
+                    day.bookable && !(selectedDate && isSameDay(day.date, selectedDate)) ? 'bg-brand text-brand-on hover:bg-brand-hover' : '',
                     selectedDate && isSameDay(day.date, selectedDate) ? 'border-2 border-brand text-ink-900' : '',
                   ]"
                   @click="selectDate(day)"
@@ -1325,7 +1325,7 @@ onMounted(async () => {
                         v-for="s in morningSlots"
                         :key="s.time.toISOString() + s.memberId"
                         type="button"
-                        class="rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-hover"
+                        class="rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-brand-on hover:bg-brand-hover"
                         @click="pickSlot(s)"
                       >
                         {{ clinicTimeLabel(s.time, clinicTimeZone) }}
@@ -1339,7 +1339,7 @@ onMounted(async () => {
                         v-for="s in afternoonSlots"
                         :key="s.time.toISOString() + s.memberId"
                         type="button"
-                        class="rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-hover"
+                        class="rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-brand-on hover:bg-brand-hover"
                         @click="pickSlot(s)"
                       >
                         {{ clinicTimeLabel(s.time, clinicTimeZone) }}

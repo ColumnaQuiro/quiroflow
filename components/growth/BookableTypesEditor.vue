@@ -127,7 +127,7 @@ const modeClass = (value: Mode) =>
         <div v-if="dirty" class="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            class="h-9 touch:h-11 rounded-ctl bg-brand px-4 text-[12.5px] font-semibold text-white hover:bg-brand-hover disabled:opacity-60"
+            class="h-9 touch:h-11 rounded-ctl bg-brand px-4 text-[12.5px] font-semibold text-brand-on hover:bg-brand-hover disabled:opacity-60"
             :disabled="saving || needsOne"
             data-test="bookable-save"
             @click="onSave"

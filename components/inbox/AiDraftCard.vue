@@ -55,7 +55,7 @@ function time(at: string) {
 <template>
   <div class="flex flex-col gap-2.5 rounded-ctl border border-brand-tintBorder bg-brand-tint p-3" data-test="ai-draft" data-cy="reply-draft">
     <div class="flex flex-wrap items-center gap-2">
-      <span class="flex h-[18px] w-[18px] items-center justify-center rounded-[6px] bg-brand text-[9px] font-bold text-white">AI</span>
+      <span class="flex h-[18px] w-[18px] items-center justify-center rounded-[6px] bg-brand text-[9px] font-bold text-brand-on">AI</span>
       <span class="text-[12px] font-semibold text-brand-text">
         {{ t('Drafted by the receptionist · needs your approval', 'Redactado por la recepcionista · requiere tu aprobación') }}
       </span>
@@ -77,7 +77,7 @@ function time(at: string) {
     <div class="flex flex-wrap items-center gap-2">
       <button
         type="button"
-        class="flex items-center rounded-ctl bg-brand px-3 text-[13px] font-semibold text-white hover:bg-brand-hover disabled:opacity-50"
+        class="flex items-center rounded-ctl bg-brand px-3 text-[13px] font-semibold text-brand-on hover:bg-brand-hover disabled:opacity-50"
         :class="btnH"
         :disabled="sending || (editing && !edited.trim())"
         data-test="ai-draft-approve"

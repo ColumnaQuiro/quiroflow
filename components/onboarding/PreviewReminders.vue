@@ -58,10 +58,10 @@ const outboundParts = computed(() => {
       <div class="flex flex-col gap-3 p-4">
         <div class="flex justify-end">
           <div class="max-w-[430px] rounded-[11px] rounded-br-[3px] bg-brand px-3 py-2.5">
-            <p class="text-[13px] leading-[1.55] text-white">
+            <p class="text-[13px] leading-[1.55] text-brand-on">
               {{ outboundParts.before }}<strong class="font-semibold">{{ clinicName }}</strong>{{ outboundParts.after }}
             </p>
-            <p class="mt-2 text-[13px] leading-[1.55] text-white">
+            <p class="mt-2 text-[13px] leading-[1.55] text-brand-on">
               {{ instructionParts.before }}<strong class="font-semibold">{{ thread.confirm }}</strong>{{ instructionParts.middle }}<strong class="font-semibold">{{ thread.change }}</strong>{{ instructionParts.after }}
             </p>
             <p class="mt-2 text-[11px] text-white/80">{{ thread.sentAt }}</p>
@@ -85,7 +85,7 @@ const outboundParts = computed(() => {
 
         <div class="flex justify-end">
           <div class="max-w-[430px] rounded-[11px] rounded-br-[3px] bg-brand px-3 py-2.5">
-            <p class="text-[13px] leading-[1.55] text-white">{{ thread.followUp }}</p>
+            <p class="text-[13px] leading-[1.55] text-brand-on">{{ thread.followUp }}</p>
           </div>
         </div>
 

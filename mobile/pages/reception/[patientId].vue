@@ -89,7 +89,7 @@ const initials = computed(() => (lock.value?.clinicName ?? '').split(/\s+/).filt
     <!-- No top inset here: app.vue's root box already pads for the status bar. -->
     <header class="flex shrink-0 items-center justify-between gap-3 border-b border-line px-5 py-3 md:px-10">
       <div class="flex min-w-0 items-center gap-2.5">
-        <span class="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] bg-brand text-[12px] font-bold text-white">{{ initials }}</span>
+        <span class="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] bg-brand text-[12px] font-bold text-brand-on">{{ initials }}</span>
         <span class="truncate text-[15px] font-semibold text-ink-900">{{ lock.clinicName }}</span>
       </div>
       <button type="button" class="flex h-9 items-center gap-1.5 rounded-ctl px-2 text-[12.5px] text-ink-muted" data-cy="reception-exit" @click="exitOpen = true">

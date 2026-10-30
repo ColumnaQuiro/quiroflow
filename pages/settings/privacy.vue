@@ -162,6 +162,10 @@ useFocusTrap(keepPanel, () => (keeping.value = null), () => !!keeping.value)
               <UiBtn size="sm" :disabled="savingYears || Number(years) === savedYears" data-cy="retention-years-save" @click="saveYears">{{ t('Save', 'Guardar') }}</UiBtn>
             </div>
             <p class="text-[12.5px] text-ink-muted">{{ t('Spanish law (Ley 41/2002) asks for at least 5 years from discharge; some regions ask for more. Check yours.', 'La ley estatal (41/2002) pide al menos 5 años desde el alta; algunas comunidades piden más. Consulta la tuya.') }}</p>
+            <p class="text-[12.5px] text-ink-muted">
+              {{ t('Where the data is kept, how it is protected and which providers process it:', 'Dónde se guardan los datos, cómo se protegen y qué proveedores los tratan:') }}
+              <NuxtLink to="/legal/security" target="_blank" class="font-medium text-brand-text hover:text-brand-hover" data-cy="privacy-security-link">{{ t('Security & data protection', 'Seguridad y protección de datos') }}</NuxtLink>
+            </p>
           </section>
 
           <section class="overflow-hidden rounded-card border border-line bg-surface" data-cy="retention-due">

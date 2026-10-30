@@ -118,6 +118,10 @@ export const DEV_PORTAL_PAGES = DEV_PORTAL_SLUGS.map((slug) => `/developers/${sl
 //
 // /payment-done likewise: Stripe Checkout returns a patient there in the
 // phone's browser, where they have no QuiroFlow session at all.
+//
+// /legal/security is what a clinic reads before it has an account, to decide
+// whether to trust QuiroFlow with its patients; behind the login it would
+// answer no one. Its content is checked in public/legal-security-pages.cy.ts.
 export const UNAUTHENTICATED_PAGES = [
   '/login',
   '/signup',
@@ -125,6 +129,7 @@ export const UNAUTHENTICATED_PAGES = [
   '/payment-done',
   '/forgot-password',
   '/legal/declaracion-responsable',
+  '/legal/security',
   ...DEV_PORTAL_PAGES,
 ]
 
@@ -145,7 +150,7 @@ export const NOT_SWEPT_HERE: Record<string, string> = {
   '/join': 'needs a live invite token; the invite flow is covered by rbac-roles.cy.ts',
   '/reset-password': 'needs a live password-recovery token from an email',
   '/two-factor': 'only shown to a session owing an authenticator code; covered by cypress/e2e/auth/two-factor.cy.ts',
-  '/legal/privacy': 'static legal copy, no app behaviour',
+  '/legal/privacy': 'static legal copy; its contents are checked in public/legal-security-pages.cy.ts',
   '/legal/terms': 'static legal copy, no app behaviour',
   '/settings/patient-app': 'redirects to /settings/app; asserted in settings/app-store-links.cy.ts',
   '/settings/payment-methods': 'redirects to /settings/payments; asserted in settings/billing-settings.cy.ts',

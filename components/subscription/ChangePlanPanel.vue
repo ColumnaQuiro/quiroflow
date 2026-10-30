@@ -215,7 +215,7 @@ const summary = computed(() => {
       <div class="flex-1">
         <button
           type="button"
-          class="inline-flex items-center gap-1.5 text-[12.5px] text-ink-muted outline-none hover:text-ink-700 focus-visible:text-ink-700"
+          class="inline-flex items-center gap-1.5 text-[12.5px] rounded-ctlSm text-ink-muted outline-none hover:text-ink-700 focus-visible:text-ink-700 focus-visible:shadow-focus"
           @click="emit('back')"
         >
           <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" class="h-3 w-3">

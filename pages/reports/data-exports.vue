@@ -268,6 +268,10 @@ function redownload(exp: GeneratedExport) {
 // What "Download PDF" reads: the sections below marked data-pdf-block,
 // and the figure tiles (components/reports/Stat.vue).
 const pdfRoot = ref<HTMLElement | null>(null)
+
+// Ties each visible <label> to the field under it (for/id), so a screen
+// reader announces the field by its name.
+const fieldId = useId()
 </script>
 
 <template>
@@ -292,8 +296,8 @@ const pdfRoot = ref<HTMLElement | null>(null)
           <p class="mt-0.5 text-[12.5px] text-ink-muted2">{{ t('Select the data type, date range, and any filters for your export.', 'Selecciona el tipo de datos, el periodo y los filtros para tu exportación.') }}</p>
 
           <div class="mt-4">
-            <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Data Type', 'Tipo de datos') }}</label>
-            <select v-model="dataType" class="mt-1 h-9 w-full max-w-xs rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-900 focus:border-brand focus:outline-none">
+            <label :for="`${fieldId}-dataType`" class="block text-[12.5px] font-medium text-ink-600">{{ t('Data Type', 'Tipo de datos') }}</label>
+            <select :id="`${fieldId}-dataType`" v-model="dataType" class="mt-1 h-9 w-full max-w-xs rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-900 focus:border-brand focus:outline-none">
               <option v-for="dt in DATA_TYPES" :key="dt.value" :value="dt.value">{{ dt.label }}</option>
             </select>
             <p v-if="dataType !== 'patients'" class="mt-1 text-[12px] text-warning-text">{{ t("This data type isn't available to export yet.", 'Este tipo de datos todavía no se puede exportar.') }}</p>
@@ -379,8 +383,8 @@ const pdfRoot = ref<HTMLElement | null>(null)
               </label>
             </div>
             <div class="mt-3 flex items-center gap-2">
-              <label class="text-[13px] text-ink-700">{{ t('Age', 'Edad') }}</label>
-              <input v-model="filterAgeMin" type="number" min="0" :placeholder="t('Min', 'Mín.')" class="h-8 w-20 rounded-ctlSm border border-line-control px-2 text-[13px] text-ink-700" />
+              <label :for="`${fieldId}-filterAgeMin`" class="text-[13px] text-ink-700">{{ t('Age', 'Edad') }}</label>
+              <input :id="`${fieldId}-filterAgeMin`" v-model="filterAgeMin" type="number" min="0" :placeholder="t('Min', 'Mín.')" class="h-8 w-20 rounded-ctlSm border border-line-control px-2 text-[13px] text-ink-700" />
               <span class="text-ink-faint2">–</span>
               <input v-model="filterAgeMax" type="number" min="0" :placeholder="t('Max', 'Máx.')" class="h-8 w-20 rounded-ctlSm border border-line-control px-2 text-[13px] text-ink-700" />
             </div>

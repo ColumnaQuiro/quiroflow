@@ -2,6 +2,12 @@
 const emit = defineEmits<{ close: [] }>()
 
 const t = useT()
+
+// A modal dialog: focus stays inside it, Escape closes it, and focus goes
+// back to whatever opened it (useFocusTrap).
+const dialogPanel = ref<HTMLElement | null>(null)
+const dialogTitleId = useId()
+useFocusTrap(dialogPanel, () => emit('close'))
 const store = useAccountStore()
 const { showToast } = useToast()
 
@@ -15,10 +21,10 @@ function copy() {
 
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4" @click.self="emit('close')">
-    <div class="max-h-full w-full overflow-y-auto max-w-md rounded-card bg-surface shadow-xl">
+    <div ref="dialogPanel" role="dialog" aria-modal="true" :aria-labelledby="dialogTitleId" class="max-h-full w-full overflow-y-auto max-w-md rounded-card bg-surface shadow-xl">
       <div class="flex h-12 shrink-0 items-center justify-between border-b border-line px-4">
-        <h3 class="text-[13.5px] font-semibold text-ink-900">{{ t('Refer Your Friends!', '¡Recomienda a tus amigos!') }}</h3>
-        <button type="button" class="flex h-6 w-6 items-center justify-center rounded-ctlSm text-ink-faint2 hover:bg-surface-subtle" @click="emit('close')">✕</button>
+        <h3 :id="dialogTitleId" class="text-[13.5px] font-semibold text-ink-900">{{ t('Refer Your Friends!', '¡Recomienda a tus amigos!') }}</h3>
+        <button type="button" :aria-label="t('Close', 'Cerrar')" class="flex h-6 w-6 items-center justify-center rounded-ctlSm text-ink-faint2 hover:bg-surface-subtle touch:h-10 touch:w-10" @click="emit('close')">✕</button>
       </div>
       <div class="p-4">
         <p class="text-[13px] text-ink-muted">

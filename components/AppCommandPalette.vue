@@ -74,23 +74,24 @@ async function goTo(to: string) {
   emit('close')
   await navigateTo(to)
 }
-function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape') emit('close')
-}
+// Escape closes it, Tab stays inside it, and focus goes back to whatever
+// had it before the palette opened (useFocusTrap).
+const panel = ref<HTMLElement | null>(null)
+useFocusTrap(panel, () => emit('close'))
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-start justify-center bg-scrim/40 pt-[15vh]" @click.self="emit('close')" @keydown="onKeydown">
-    <div class="w-full max-w-lg overflow-hidden rounded-card border border-line bg-surface shadow-popover">
+  <div class="fixed inset-0 z-50 flex items-start justify-center bg-scrim/40 pt-[15vh]" @click.self="emit('close')">
+    <div ref="panel" role="dialog" aria-modal="true" :aria-label="t('Search', 'Buscar')" class="w-full max-w-lg overflow-hidden rounded-card border border-line bg-surface shadow-popover">
       <div class="flex items-center gap-2.5 border-b border-line px-4 py-3">
         <svg width="15" height="15" viewBox="0 0 14 14" class="shrink-0 text-ink-faint"><circle cx="6" cy="6" r="4.2" stroke="currentColor" stroke-width="1.4" fill="none" /><line x1="9.2" y1="9.2" x2="12" y2="12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /></svg>
         <input
           ref="inputRef"
           v-model="query"
           type="text"
+          :aria-label="t('Search patients or jump to a page', 'Busca pacientes o ve a una página')"
           :placeholder="t('Search patients or jump to a page…', 'Busca pacientes o ve a una página…')"
           class="flex-1 border-0 bg-transparent text-[14px] text-ink-900 outline-none placeholder:text-ink-faint"
-          @keydown="onKeydown"
         />
         <kbd class="rounded border border-line-control bg-surface-subtle px-1.5 py-0.5 font-mono text-[10.5px] text-ink-faint2">Esc</kbd>
       </div>

@@ -9,6 +9,11 @@ const props = defineProps<{ teamMemberId: string; name: string; plan: PayPlan | 
 const emit = defineEmits<{ close: []; saved: [] }>()
 
 const t = useT()
+
+// A modal dialog: focus stays inside it, Escape closes it, and focus goes
+// back to whatever opened it (useFocusTrap).
+const dialogPanel = ref<HTMLElement | null>(null)
+useFocusTrap(dialogPanel, () => emit('close'))
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 
@@ -83,7 +88,7 @@ const label = 'flex flex-wrap items-center justify-between gap-2 text-[13.5px] t
 
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4" @click.self="emit('close')">
-    <div class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-card border border-line bg-surface p-5 shadow-popover" data-cy="pay-plan-editor" role="dialog" :aria-label="t(`Pay for ${name}`, `Retribución de ${name}`)">
+    <div class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-card border border-line bg-surface p-5 shadow-popover" data-cy="pay-plan-editor" ref="dialogPanel" role="dialog" aria-modal="true" :aria-label="t(`Pay for ${name}`, `Retribución de ${name}`)">
       <h2 class="text-[17px] font-[640] text-ink-900">{{ t(`Pay for ${name}`, `Retribución de ${name}`) }}</h2>
       <p class="mt-1 text-[12.5px] text-ink-muted">{{ t('Fill in the parts you use; anything left empty does not count.', 'Rellena las partes que uses; lo que dejes vacío no cuenta.') }}</p>
 

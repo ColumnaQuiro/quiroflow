@@ -17,6 +17,12 @@ const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
 
+// A modal dialog: focus stays inside it, Escape closes it, and focus goes
+// back to whatever opened it (useFocusTrap).
+const dialogPanel = ref<HTMLElement | null>(null)
+const dialogTitleId = useId()
+useFocusTrap(dialogPanel, () => emit('close'))
+
 const reasons = ref<Tables<'reschedule_reasons'>[]>([])
 const reasonId = ref('')
 const note = ref('')
@@ -107,13 +113,17 @@ async function confirmMove() {
   confirming.value = true
   emit('confirm', { reasonId: reasonId.value || null, note: note.value.trim(), applyFee: applyFee.value, resendConfirmation: resendConfirmation.value })
 }
+
+// Ties each visible <label> to the field under it (for/id), so a screen
+// reader announces the field by its name.
+const fieldId = useId()
 </script>
 
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/30 p-4" @click.self="emit('close')">
-    <div class="max-h-full w-full overflow-y-auto max-w-md rounded-card border border-line bg-surface p-6 shadow-popover">
+    <div ref="dialogPanel" role="dialog" aria-modal="true" :aria-labelledby="dialogTitleId" class="max-h-full w-full overflow-y-auto max-w-md rounded-card border border-line bg-surface p-6 shadow-popover">
       <div class="flex items-center justify-between">
-        <h2 class="text-[16px] font-[640] text-ink-900">{{ t('Rescheduling Appointment', 'Cambiar fecha de la cita') }}</h2>
+        <h2 :id="dialogTitleId" class="text-[16px] font-[640] text-ink-900">{{ t('Rescheduling Appointment', 'Cambiar fecha de la cita') }}</h2>
         <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="emit('close')">✕</button>
       </div>
 
@@ -133,16 +143,16 @@ async function confirmMove() {
       </p>
 
       <div class="mt-4">
-        <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Reason', 'Motivo') }}</label>
-        <select v-model="reasonId" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
+        <label :for="`${fieldId}-reasonId`" class="block text-[12.5px] font-medium text-ink-600">{{ t('Reason', 'Motivo') }}</label>
+        <select :id="`${fieldId}-reasonId`" v-model="reasonId" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
           <option value="">{{ t('Select a reason', 'Selecciona un motivo') }}</option>
           <option v-for="r in reasons" :key="r.id" :value="r.id">{{ r.name }}</option>
         </select>
       </div>
 
       <div class="mt-4">
-        <label class="block text-[12.5px] font-medium text-ink-600">{{ t('Note', 'Nota') }}</label>
-        <textarea
+        <label :for="`${fieldId}-note`" class="block text-[12.5px] font-medium text-ink-600">{{ t('Note', 'Nota') }}</label>
+        <textarea :id="`${fieldId}-note`"
           v-model="note"
           rows="2"
           :placeholder="t('Optional note about the change…', 'Nota opcional sobre el cambio…')"

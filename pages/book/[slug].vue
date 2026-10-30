@@ -1084,6 +1084,10 @@ onMounted(async () => {
     document.head.appendChild(script)
   }
 })
+
+// Ties each visible <label> to the field under it (for/id), so a screen
+// reader announces the field by its name.
+const fieldId = useId()
 </script>
 
 <template>
@@ -1134,14 +1138,14 @@ onMounted(async () => {
             <div class="space-y-3 sm:col-span-2">
               <div v-if="info.clinics.length > 1 || (info.appointment_types.length > 1 && !typeLockedByQuery)" class="rounded-card border border-line bg-surface p-4 shadow-card">
                 <div v-if="info.clinics.length > 1">
-                  <label class="block text-sm font-medium text-ink-700">{{ say({ es: 'Clínica', en: 'Clinic', fr: 'Cabinet' }) }}</label>
-                  <select v-model="clinicId" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm" @change="onClinicChange">
+                  <label :for="`${fieldId}-clinicId`" class="block text-sm font-medium text-ink-700">{{ say({ es: 'Clínica', en: 'Clinic', fr: 'Cabinet' }) }}</label>
+                  <select :id="`${fieldId}-clinicId`" v-model="clinicId" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm" @change="onClinicChange">
                     <option v-for="c in info.clinics" :key="c.id" :value="c.id">{{ c.name }}</option>
                   </select>
                 </div>
                 <div v-if="info.appointment_types.length > 1 && !typeLockedByQuery" :class="info.clinics.length > 1 ? 'mt-4' : ''">
-                  <label class="block text-sm font-medium text-ink-700">{{ say({ es: 'Servicio', en: 'Service', fr: 'Prestation' }) }}</label>
-                  <select v-model="appointmentTypeId" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm">
+                  <label :for="`${fieldId}-appointmentTypeId`" class="block text-sm font-medium text-ink-700">{{ say({ es: 'Servicio', en: 'Service', fr: 'Prestation' }) }}</label>
+                  <select :id="`${fieldId}-appointmentTypeId`" v-model="appointmentTypeId" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm">
                     <option v-for="t in info.appointment_types" :key="t.id" :value="t.id">
                       {{ t.name }} — {{ t.duration_minutes }} min
                     </option>
@@ -1375,16 +1379,16 @@ onMounted(async () => {
             <form class="rounded-card border border-line bg-surface p-6 shadow-card sm:col-span-2" @submit.prevent="submitBooking">
               <div class="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <label class="block text-sm font-medium text-ink-700">{{ say(FIELD.firstName) }} *</label>
-                  <input v-model="firstName" type="text" required :placeholder="say({ es: 'Su nombre', en: 'Your first name', fr: 'Votre prénom' })" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
+                  <label :for="`${fieldId}-firstName`" class="block text-sm font-medium text-ink-700">{{ say(FIELD.firstName) }} *</label>
+                  <input :id="`${fieldId}-firstName`" v-model="firstName" type="text" required :placeholder="say({ es: 'Su nombre', en: 'Your first name', fr: 'Votre prénom' })" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
                 </div>
                 <div>
-                  <label class="block text-sm font-medium text-ink-700">{{ say(FIELD.lastName) }}</label>
-                  <input v-model="lastName" type="text" :placeholder="say({ es: 'Sus apellidos', en: 'Your last name', fr: 'Votre nom' })" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
+                  <label :for="`${fieldId}-lastName`" class="block text-sm font-medium text-ink-700">{{ say(FIELD.lastName) }}</label>
+                  <input :id="`${fieldId}-lastName`" v-model="lastName" type="text" :placeholder="say({ es: 'Sus apellidos', en: 'Your last name', fr: 'Votre nom' })" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
                 </div>
                 <div>
-                  <label class="block text-sm font-medium text-ink-700">{{ say(FIELD.email) }} *</label>
-                  <input v-model="email" type="email" required :placeholder="say({ es: 'Su dirección de correo', en: 'Your email address', fr: 'Votre adresse e-mail' })" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
+                  <label :for="`${fieldId}-email`" class="block text-sm font-medium text-ink-700">{{ say(FIELD.email) }} *</label>
+                  <input :id="`${fieldId}-email`" v-model="email" type="email" required :placeholder="say({ es: 'Su dirección de correo', en: 'Your email address', fr: 'Votre adresse e-mail' })" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
                 </div>
                 <div>
                   <label class="block text-sm font-medium text-ink-700">{{ say(FIELD.phone) }} *</label>
@@ -1412,8 +1416,8 @@ onMounted(async () => {
                 </div>
               </div>
               <div class="mt-4">
-                <label class="block text-sm font-medium text-ink-700">{{ say({ es: 'Notas', en: 'Notes', fr: 'Remarques' }) }}</label>
-                <textarea v-model="note" rows="3" :placeholder="say({ es: '¿Algo que quiera que sepamos?', en: 'Anything you would like us to know?', fr: 'Quelque chose que vous souhaitez nous dire ?' })" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"></textarea>
+                <label :for="`${fieldId}-note`" class="block text-sm font-medium text-ink-700">{{ say({ es: 'Notas', en: 'Notes', fr: 'Remarques' }) }}</label>
+                <textarea :id="`${fieldId}-note`" v-model="note" rows="3" :placeholder="say({ es: '¿Algo que quiera que sepamos?', en: 'Anything you would like us to know?', fr: 'Quelque chose que vous souhaitez nous dire ?' })" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"></textarea>
               </div>
               <div v-if="giftOffered" class="mt-4" data-cy="booking-gift">
                 <button v-if="!giftOpen" type="button" class="text-sm font-medium text-brand-text hover:underline" data-cy="booking-gift-open" @click="giftOpen = true">{{ say({ es: 'Tengo un bono regalo', en: 'I have a gift voucher', fr: 'J’ai un bon cadeau' }) }}</button>
@@ -1428,8 +1432,8 @@ onMounted(async () => {
                 </template>
               </div>
               <div v-if="info.account.discount_codes_enabled" class="mt-4">
-                <label class="block text-sm font-medium text-ink-700">{{ say({ es: 'Código de descuento', en: 'Discount code', fr: 'Code de réduction' }) }}</label>
-                <input v-model="discountCode" type="text" :placeholder="say({ es: 'Opcional', en: 'Optional', fr: 'Facultatif' })" class="mt-1 w-full max-w-[200px] rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm uppercase focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
+                <label :for="`${fieldId}-discountCode`" class="block text-sm font-medium text-ink-700">{{ say({ es: 'Código de descuento', en: 'Discount code', fr: 'Code de réduction' }) }}</label>
+                <input :id="`${fieldId}-discountCode`" v-model="discountCode" type="text" :placeholder="say({ es: 'Opcional', en: 'Optional', fr: 'Facultatif' })" class="mt-1 w-full max-w-[200px] rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm uppercase focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
               </div>
               <!-- The clinic's cancellation and no-show fees, before they book. -->
               <p v-if="policy && (policy.cancellation_fee_cents || policy.missed_appointment_fee_cents || policy.card_on_file)" class="mt-4 rounded-ctl bg-surface-subtle px-3 py-2.5 text-[13px] leading-snug text-ink-700" data-cy="booking-policy">

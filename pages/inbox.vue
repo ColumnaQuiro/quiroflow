@@ -1556,6 +1556,10 @@ async function retryMessage(m: Message) {
 // Fullscreen viewer for tapping any image in the thread (mine or theirs) --
 // mediaUrls' signed URL already works as a direct download link.
 const lightboxUrl = ref<string | null>(null)
+// The image viewer is a modal: Escape closes it and focus comes back to the
+// attachment that opened it.
+const lightboxPanel = ref<HTMLElement | null>(null)
+useFocusTrap(lightboxPanel, () => (lightboxUrl.value = null), () => !!lightboxUrl.value)
 
 async function onTemplateSent() {
   templateModalOpen.value = false
@@ -2645,8 +2649,8 @@ function avatarInitials(name: string) {
       <p class="rounded-full bg-ink-900 px-4 py-2 text-[13.5px] font-medium text-surface shadow-popover">{{ snoozeNotice }}</p>
     </div>
 
-    <div v-if="lightboxUrl" class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-6" @click="lightboxUrl = null">
-      <img :src="lightboxUrl" class="max-h-full max-w-full rounded-ctl object-contain" @click.stop />
+    <div v-if="lightboxUrl" ref="lightboxPanel" role="dialog" aria-modal="true" :aria-label="t('Image', 'Imagen')" class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-6" @click="lightboxUrl = null">
+      <img :src="lightboxUrl" :alt="t('Image sent in the conversation', 'Imagen enviada en la conversación')" class="max-h-full max-w-full rounded-ctl object-contain" @click.stop />
       <div class="absolute right-4 top-4 flex gap-2">
         <a :href="lightboxUrl" download target="_blank" class="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20" :title="t('Download', 'Descargar')" @click.stop>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">

@@ -78,6 +78,10 @@ const flagRows = computed(() => {
   if (goals.value) rows.push({ text: goals.value, dot: 'bg-ink-faint3' })
   return rows
 })
+
+// Ties each visible <label> to the field under it (for/id), so a screen
+// reader announces the field by its name.
+const fieldId = useId()
 </script>
 
 <template>
@@ -106,8 +110,8 @@ const flagRows = computed(() => {
     <template v-else>
       <div class="mt-3 space-y-2.5">
         <div>
-          <label class="block text-[11px] font-medium text-ink-muted2">{{ t('Chief complaint', 'Motivo de consulta') }}</label>
-          <textarea
+          <label :for="`${fieldId}-chiefComplaint`" class="block text-[11px] font-medium text-ink-muted2">{{ t('Chief complaint', 'Motivo de consulta') }}</label>
+          <textarea :id="`${fieldId}-chiefComplaint`"
             v-model="chiefComplaint"
             rows="2"
             :placeholder="t(`Enter patient's chief complaint here`, 'Introduce aquí el motivo de consulta del paciente')"
@@ -117,8 +121,8 @@ const flagRows = computed(() => {
         </div>
 
         <div>
-          <label class="block text-[11px] font-medium text-ink-muted2">{{ t('Diagnosis', 'Diagnóstico') }}</label>
-          <textarea
+          <label :for="`${fieldId}-diagnosis`" class="block text-[11px] font-medium text-ink-muted2">{{ t('Diagnosis', 'Diagnóstico') }}</label>
+          <textarea :id="`${fieldId}-diagnosis`"
             v-model="diagnosis"
             rows="2"
             :placeholder="t('Working diagnosis', 'Diagnóstico de trabajo')"
@@ -128,8 +132,8 @@ const flagRows = computed(() => {
         </div>
 
         <div>
-          <label class="block text-[11px] font-medium text-ink-muted2">{{ t('Goals', 'Objetivos') }}</label>
-          <textarea
+          <label :for="`${fieldId}-goals`" class="block text-[11px] font-medium text-ink-muted2">{{ t('Goals', 'Objetivos') }}</label>
+          <textarea :id="`${fieldId}-goals`"
             v-model="goals"
             rows="2"
             :placeholder="t('Treatment goals', 'Objetivos del tratamiento')"
@@ -139,8 +143,8 @@ const flagRows = computed(() => {
         </div>
 
         <div>
-          <label class="block text-[11px] font-medium text-danger-text">{{ t('Red flags', 'Alertas rojas') }}</label>
-          <textarea
+          <label :for="`${fieldId}-redFlags`" class="block text-[11px] font-medium text-danger-text">{{ t('Red flags', 'Alertas rojas') }}</label>
+          <textarea :id="`${fieldId}-redFlags`"
             v-model="redFlags"
             rows="2"
             :placeholder="t('Urgent findings requiring immediate attention', 'Hallazgos urgentes que requieren atención inmediata')"
@@ -150,8 +154,8 @@ const flagRows = computed(() => {
         </div>
 
         <div>
-          <label class="block text-[11px] font-medium text-warning-accent">{{ t('Yellow flags', 'Alertas amarillas') }}</label>
-          <textarea
+          <label :for="`${fieldId}-yellowFlags`" class="block text-[11px] font-medium text-warning-accent">{{ t('Yellow flags', 'Alertas amarillas') }}</label>
+          <textarea :id="`${fieldId}-yellowFlags`"
             v-model="yellowFlags"
             rows="2"
             :placeholder="t('Psychosocial or risk factors to keep in mind', 'Factores psicosociales o de riesgo a tener en cuenta')"

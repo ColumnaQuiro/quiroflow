@@ -23,6 +23,12 @@ const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
 
+// A modal dialog: focus stays inside it, Escape closes it, and focus goes
+// back to whatever opened it (useFocusTrap).
+const dialogPanel = ref<HTMLElement | null>(null)
+const dialogTitleId = useId()
+useFocusTrap(dialogPanel, () => emit('close'))
+
 const name = ref(props.plan?.name ?? t('Care Plan', 'Plan de cuidados'))
 // "N visits every M weeks": frequency_value is the interval M (what the
 // calendar series and Care Plan Alerts read), visits_per_period is N.
@@ -122,25 +128,29 @@ async function save() {
   }
   emit('saved')
 }
+
+// Ties each visible <label> to the field under it (for/id), so a screen
+// reader announces the field by its name.
+const fieldId = useId()
 </script>
 
 <template>
   <div class="fixed inset-0 z-20 flex items-center justify-center bg-scrim/40 p-4" @click.self="emit('close')">
-    <div class="max-h-full w-full overflow-y-auto max-w-sm rounded-lg bg-white p-6 shadow-xl">
+    <div ref="dialogPanel" role="dialog" aria-modal="true" :aria-labelledby="dialogTitleId" class="max-h-full w-full overflow-y-auto max-w-sm rounded-lg bg-white p-6 shadow-xl">
       <div class="flex items-center justify-between">
-        <h2 class="text-lg font-semibold text-gray-900">{{ plan ? t('Edit Plan', 'Editar plan') : t('New Care Plan', 'Nuevo plan de cuidados') }}</h2>
+        <h2 :id="dialogTitleId" class="text-lg font-semibold text-gray-900">{{ plan ? t('Edit Plan', 'Editar plan') : t('New Care Plan', 'Nuevo plan de cuidados') }}</h2>
         <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-gray-400 hover:text-gray-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="emit('close')">✕</button>
       </div>
 
       <form class="mt-4 space-y-4" @submit.prevent="save">
         <div>
-          <label class="block text-sm font-medium text-gray-700">{{ t('Name', 'Nombre') }}</label>
-          <input v-model="name" type="text" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          <label :for="`${fieldId}-name`" class="block text-sm font-medium text-gray-700">{{ t('Name', 'Nombre') }}</label>
+          <input :id="`${fieldId}-name`" v-model="name" type="text" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
         </div>
         <div class="flex flex-wrap items-end gap-2">
           <div>
-            <label class="block text-sm font-medium text-gray-700">{{ t('Visits', 'Visitas') }}</label>
-            <input v-model.number="visitsPerPeriod" type="number" min="1" max="7" class="mt-1 w-16 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" data-cy="plan-visits-per-period" />
+            <label :for="`${fieldId}-visitsPerPeriod`" class="block text-sm font-medium text-gray-700">{{ t('Visits', 'Visitas') }}</label>
+            <input :id="`${fieldId}-visitsPerPeriod`" v-model.number="visitsPerPeriod" type="number" min="1" max="7" class="mt-1 w-16 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" data-cy="plan-visits-per-period" />
           </div>
           <span class="pb-2 text-sm text-gray-500">{{ t('every', 'cada') }}</span>
           <input v-model.number="frequencyValue" type="number" min="1" :aria-label="t('Every how many', 'Cada cuántas')" class="w-16 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" data-cy="plan-every" />
@@ -153,12 +163,12 @@ async function save() {
           <p class="w-full text-[12px] text-gray-500" data-cy="plan-cadence-preview">{{ carePlanCadenceLabel({ frequency_value: frequencyValue || 1, frequency_unit: frequencyUnit, visits_per_period: visitsPerPeriod || 1 }, t) }}</p>
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700">{{ t('Total visits in plan', 'Visitas totales en el plan') }}</label>
-          <input v-model.number="totalVisits" type="number" min="1" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          <label :for="`${fieldId}-totalVisits`" class="block text-sm font-medium text-gray-700">{{ t('Total visits in plan', 'Visitas totales en el plan') }}</label>
+          <input :id="`${fieldId}-totalVisits`" v-model.number="totalVisits" type="number" min="1" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-700">{{ t('Start date', 'Fecha de inicio') }}</label>
-          <input v-model="startedAt" type="date" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          <label :for="`${fieldId}-startedAt`" class="block text-sm font-medium text-gray-700">{{ t('Start date', 'Fecha de inicio') }}</label>
+          <input :id="`${fieldId}-startedAt`" v-model="startedAt" type="date" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
         </div>
 
         <fieldset data-cy="plan-markers">

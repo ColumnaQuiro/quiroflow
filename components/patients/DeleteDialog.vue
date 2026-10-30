@@ -23,6 +23,11 @@ const emit = defineEmits<{ close: []; deleted: []; archive: [] }>()
 
 const supabase = useSupabaseClient()
 const t = useT()
+
+// A modal dialog: focus stays inside it, Escape closes it, and focus goes
+// back to whatever opened it (useFocusTrap).
+const dialogPanel = ref<HTMLElement | null>(null)
+useFocusTrap(dialogPanel, () => emit('close'))
 const { showToast } = useToast()
 
 const counting = ref(true)
@@ -87,7 +92,7 @@ const lines = computed(() =>
 <template>
   <div class="fixed inset-0 z-50 flex items-end justify-center bg-scrim/30 p-0 lg:items-center lg:p-6" @click.self="emit('close')">
     <div
-      role="dialog"
+      ref="dialogPanel" role="dialog"
       aria-modal="true"
       :aria-label="t('Delete patient', 'Eliminar paciente')"
       class="max-h-[92vh] w-full overflow-y-auto rounded-t-card border border-line bg-surface p-5 shadow-popover lg:max-w-[520px] lg:rounded-card"

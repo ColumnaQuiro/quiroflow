@@ -174,7 +174,7 @@ const grid = 'grid grid-cols-[minmax(0,1fr)_110px] items-center gap-3 sm:grid-co
           <section aria-labelledby="h-services" class="overflow-hidden rounded-card border border-line bg-surface">
             <div class="flex flex-wrap items-center gap-2 px-[18px] pb-3 pt-4">
               <h2 id="h-services" class="flex-1 text-[16px] font-bold text-ink-900">{{ t(`Services · ${services.length}`, `Servicios · ${services.length}`) }}</h2>
-              <label class="flex h-9 touch:h-11 w-full items-center gap-2 rounded-ctl border border-line-control px-3 text-ink-muted sm:w-[260px]">
+              <label class="flex h-9 touch:h-11 w-full items-center gap-2 rounded-ctl border border-line-control px-3 text-ink-muted focus-within:border-brand focus-within:shadow-focus sm:w-[260px]">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
                 <input v-model="query" type="search" :placeholder="t('Search service', 'Buscar servicio')" :aria-label="t('Search service', 'Buscar servicio')" class="min-w-0 flex-1 border-0 bg-transparent text-[14px] text-ink-900 outline-none" />
               </label>

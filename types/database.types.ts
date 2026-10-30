@@ -3054,6 +3054,42 @@ export type Database = {
           },
         ]
       }
+      check_in_portals: {
+        Row: {
+          account_id: string
+          clinic_id: string
+          created_at: string
+          token: string
+        }
+        Insert: {
+          account_id: string
+          clinic_id: string
+          created_at?: string
+          token: string
+        }
+        Update: {
+          account_id?: string
+          clinic_id?: string
+          created_at?: string
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "check_in_portals_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "check_in_portals_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: true
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       class_sessions: {
         Row: {
           account_id: string

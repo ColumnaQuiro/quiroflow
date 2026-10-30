@@ -41,7 +41,7 @@ describe('Receipts filtered to one patient', () => {
           cy.contains('button', /^Paid\s*·\s*1$/).should('exist')
 
           // And so does the header's outstanding figure: 45, not 144.
-          cy.contains('€45 outstanding across 1 receipt').should('be.visible')
+          cy.contains('45,00 € outstanding across 1 receipt').should('be.visible')
 
           // Clearing it gives the clinic back.
           cy.get('button[aria-label="Show every patient"]').click()

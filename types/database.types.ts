@@ -3054,6 +3054,57 @@ export type Database = {
           },
         ]
       }
+      check_in_portals: {
+        Row: {
+          account_id: string
+          clinic_id: string
+          created_at: string
+          identify_by: string
+          language: string
+          not_found_message: string | null
+          success_message: string | null
+          token: string
+          welcome_message: string | null
+        }
+        Insert: {
+          account_id: string
+          clinic_id: string
+          created_at?: string
+          identify_by?: string
+          language?: string
+          not_found_message?: string | null
+          success_message?: string | null
+          token: string
+          welcome_message?: string | null
+        }
+        Update: {
+          account_id?: string
+          clinic_id?: string
+          created_at?: string
+          identify_by?: string
+          language?: string
+          not_found_message?: string | null
+          success_message?: string | null
+          token?: string
+          welcome_message?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "check_in_portals_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "check_in_portals_clinic_id_fkey"
+            columns: ["clinic_id"]
+            isOneToOne: true
+            referencedRelation: "clinics"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       class_sessions: {
         Row: {
           account_id: string

@@ -183,11 +183,13 @@ function goToPage(p: number) {
 
 const outstandingMeta = computed(() => {
   if (!statsLoaded.value) return undefined
-  const amount = Math.round(outstandingCents.value / 100).toLocaleString('en-US')
+  // formatEur like every other amount: this was the one euro figure built by
+  // hand, in English style ("€33,842"), on a page that writes "45,00 €".
+  const amount = formatEur(outstandingCents.value)
   const noun = outstandingCount.value === 1 ? t('receipt', 'recibo') : t('receipts', 'recibos')
   return t(
-    `€${amount} outstanding across ${outstandingCount.value} ${noun}`,
-    `€${amount} pendiente en ${outstandingCount.value} ${noun}`,
+    `${amount} outstanding across ${outstandingCount.value} ${noun}`,
+    `${amount} pendiente en ${outstandingCount.value} ${noun}`,
   )
 })
 

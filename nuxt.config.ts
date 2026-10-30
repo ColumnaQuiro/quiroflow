@@ -236,6 +236,9 @@ export default defineNuxtConfig({
         // A clinic's gift voucher page: bought by someone with no QuiroFlow
         // login, like the booking page.
         '/regalo/**',
+        // The front-desk check-in portal: a tablet with no QuiroFlow session,
+        // gated by its location's link (pages/check-in).
+        '/check-in/**',
         // Where Stripe Checkout returns after a patient pays from the app: the
         // phone's browser, with no QuiroFlow session.
         '/payment-done',

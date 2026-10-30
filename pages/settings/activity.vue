@@ -44,7 +44,7 @@ const AREAS = computed(() => [
   { key: 'appointments', label: t('Appointments', 'Citas'), types: ['appointment'] },
   { key: 'money', label: t('Money', 'Cobros'), types: ['payment', 'invoice', 'account_credit', 'package_purchase', 'patient_membership', 'cash_shift', 'cash_movement', 'third_party_charge', 'third_party_payment', 'third_party_allocation'] },
   { key: 'access', label: t('Team & access', 'Equipo y accesos'), types: ['team_member', 'team_member_clinic', 'role', 'invite', 'api_token', 'webhook'] },
-  { key: 'settings', label: t('Clinic settings', 'Ajustes de la clínica'), types: ['account', 'clinic', 'verifactu_certificate', 'verifactu_delegation', 'appointment_type', 'package', 'membership', 'service', 'care_stop_reason', 'patient_attribute', 'letter_template', 'third_party', 'third_party_rate'] },
+  { key: 'settings', label: t('Clinic settings', 'Ajustes de la clínica'), types: ['account', 'clinic', 'verifactu_certificate', 'verifactu_delegation', 'appointment_type', 'package', 'membership', 'service', 'care_stop_reason', 'patient_attribute', 'letter_template', 'third_party', 'third_party_rate', 'check_in_portal'] },
 ])
 const areaFilter = ref('')
 
@@ -154,6 +154,7 @@ const ENTITY_LABELS = computed<Record<string, string>>(() => ({
   patient_attribute_value: t('Custom field answer', 'Respuesta de campo personalizado'),
   third_party: t('Third party', 'Tercero'),
   third_party_rate: t('Third-party rate', 'Tarifa de tercero'),
+  check_in_portal: t('Check-in portal', 'Portal de llegada'),
   patient_third_party: t('Patient cover', 'Cobertura del paciente'),
   third_party_charge: t('Third-party charge', 'Cargo a tercero'),
   third_party_payment: t('Third-party payment', 'Cobro de tercero'),

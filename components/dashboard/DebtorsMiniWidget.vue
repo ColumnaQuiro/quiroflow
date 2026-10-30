@@ -83,7 +83,10 @@ function euros(cents: number) {
           <span class="shrink-0 font-mono text-[12.5px] text-danger-text">{{ euros(owedCentsFor(p)) }}</span>
         </li>
       </ul>
-      <p class="mt-1.5 border-t border-line-row2 pt-1.5 text-[11.5px] text-ink-muted2">{{ t(`${debtors.length} outstanding · ${euros(totalOwed)} total`, `${debtors.length} pendientes · ${euros(totalOwed)} en total`) }}</p>
+      <!-- "Unpaid bonos", not "outstanding": this counts bono purchases only,
+           and Billing's "outstanding" is unpaid receipts -- two different
+           totals under one word. -->
+      <p class="mt-1.5 border-t border-line-row2 pt-1.5 text-[11.5px] text-ink-muted2">{{ t(`${debtors.length} unpaid ${debtors.length === 1 ? 'bono' : 'bonos'} · ${euros(totalOwed)} total`, `${debtors.length} ${debtors.length === 1 ? 'bono' : 'bonos'} sin pagar · ${euros(totalOwed)} en total`) }}</p>
     </template>
   </div>
 </template>

@@ -275,7 +275,8 @@ export function useReportDataHub(): ReportDataHub {
 
   async function loadRecalls() {
     recalls = await fetchAllRows<RecallRow>((f, t) =>
-      supabase.from('recall_candidates').select('default_practitioner_id, clinic_id').order('patient_id').range(f, t) as unknown as PromiseLike<{ data: RecallRow[] | null; error: unknown }>,
+      // 3+ weeks, as the Recalls list opens with -- the metric says "as on Recalls".
+      supabase.from('recall_candidates').select('default_practitioner_id, clinic_id').gte('days_since_last_appointment', 21).order('patient_id').range(f, t) as unknown as PromiseLike<{ data: RecallRow[] | null; error: unknown }>,
     )
   }
   async function loadCarePlans() {

@@ -267,9 +267,18 @@ watch(
 // See 20261022173310_patient_segments.sql.
 const PATIENT_COLUMNS =
   'id, first_name, last_name, tags, clinic_id, email, default_practitioner_id, invoice_email_enabled, status, is_minor, do_not_contact, date_of_birth'
+//
+// A name typed into search finds the patient whatever their status. With
+// status left at its default, Active -- the one filter not shown as a chip --
+// searching for someone marked inactive found nothing, and nothing on screen
+// said why. Their row is labelled "Inactive". Picking Inactive still narrows
+// a search, and the URL and saved segments keep the filters as chosen.
+const listFilters = computed<PatientFilters>(() =>
+  appliedSearch.value.trim() && form.status === 'active' ? { ...currentFilters.value, status: 'any' } : currentFilters.value,
+)
 function matchingPatients(columns: typeof PATIENT_COLUMNS, options?: { count: 'exact' }) {
   return supabase
-    .rpc('patients_matching', { p_filters: currentFilters.value as Json, p_clinic_id: store.currentClinicId ?? undefined }, options)
+    .rpc('patients_matching', { p_filters: listFilters.value as Json, p_clinic_id: store.currentClinicId ?? undefined }, options)
     .select(columns)
 }
 

@@ -141,6 +141,30 @@ describe('Exporting the patient list', () => {
     return cy.window().its('__csv').then((blob: Blob) => blob.text())
   }
 
+  it('finds an inactive patient by name, and says they are inactive', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Inés', lastName: 'Inactiva' }).then((patient: any) => {
+        cy.task('db:updateRows', { table: 'patients', values: { status: 'inactive' }, match: { id: patient.id } })
+        cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Alba', lastName: 'Activa' })
+
+        cy.login(account.email, account.password)
+        cy.visit('/patients')
+
+        // The list itself still opens on active patients.
+        cy.contains('Alba Activa').should('be.visible')
+        cy.contains('Inés Inactiva').should('not.exist')
+
+        // But a name typed into search is someone being looked for. Under the
+        // default -- Active, the one filter without a chip -- this found
+        // nothing, and nothing on screen said why.
+        cy.get('input[type="search"]').type('Inactiva')
+        cy.contains('Inés Inactiva').should('be.visible')
+        cy.contains('Inactive').should('be.visible')
+        cy.contains('Alba Activa').should('not.exist')
+      })
+    })
+  })
+
   it('exports exactly the rows the active filters leave on screen', () => {
     cy.seedStaffAccount().then((account) => {
       const mk = (firstName: string, lastName: string) =>

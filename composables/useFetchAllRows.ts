@@ -48,7 +48,14 @@ export async function fetchAllRows<T>(
     const pages = await Promise.all(
       Array.from({ length: size }, (_unused, i) => {
         const from = (next + i) * PAGE_SIZE
-        return build(from, from + PAGE_SIZE - 1)
+        // .then() here, not when Promise.all gets round to it. A Postgrest
+        // builder sends its request when .then() is called, with whatever
+        // range it holds at that moment, and .range() changes the builder in
+        // place. A caller that reuses one builder -- (f, t) => query.range(f, t)
+        // -- had every page of a wave sent with the LAST page's range: all
+        // came back empty, and anything past one page was counted as exactly
+        // 1000 (the dashboard's recalls, active patients, statistics).
+        return build(from, from + PAGE_SIZE - 1).then((page) => page)
       }),
     )
     next += size

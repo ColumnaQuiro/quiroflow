@@ -170,37 +170,55 @@ export async function syncGoogleReviews(service: SupabaseClient<Database>, accou
   const accessToken = await googleAccessToken(service, accountId)
   if (!accessToken) return { imported: 0, updated: 0 }
 
-  // Newest first, as Google returns them. The screen shows a year, so the
-  // import stops there rather than paging through a decade of reviews on
-  // every visit.
-  const yearAgo = Date.now() - 366 * 24 * 3600 * 1000
+  // Every review, newest first, 50 to a page (Google's maximum). It used to
+  // stop at the first page reaching back a year, which on a listing with any
+  // history meant 50 reviews and no more: Columnaquiro showed 30 of a much
+  // longer record, and an average that was not the one Google shows. The
+  // page cap is a guard against a runaway loop, not a budget: 100 pages is
+  // 5,000 reviews.
+  const MAX_PAGES = 100
   const reviews: GoogleReview[] = []
+  // Google's own figures for the whole listing, from the first page: what the
+  // listing shows, which an average of the imported rows only approximates.
+  let googleRating: number | null = null
+  let googleCount: number | null = null
   let pageToken: string | undefined
-  do {
-    const page = await $fetch<{ reviews?: GoogleReview[]; nextPageToken?: string }>(googleUrl('mybusiness.googleapis.com', reviewsPath(account.google_business_account, account.google_business_location)), {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      query: { pageSize: 50, orderBy: 'updateTime desc', ...(pageToken ? { pageToken } : {}) },
-    })
+  for (let pages = 0; pages < MAX_PAGES; pages++) {
+    const page = await $fetch<{ reviews?: GoogleReview[]; nextPageToken?: string; averageRating?: number; totalReviewCount?: number }>(
+      googleUrl('mybusiness.googleapis.com', reviewsPath(account.google_business_account, account.google_business_location)),
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        query: { pageSize: 50, orderBy: 'updateTime desc', ...(pageToken ? { pageToken } : {}) },
+      },
+    )
+    if (pages === 0) {
+      googleRating = typeof page.averageRating === 'number' ? page.averageRating : null
+      googleCount = typeof page.totalReviewCount === 'number' ? page.totalReviewCount : null
+    }
     reviews.push(...(page.reviews ?? []))
-    const oldest = page.reviews?.at(-1)?.updateTime
-    pageToken = oldest && new Date(oldest).getTime() < yearAgo ? undefined : page.nextPageToken
-  } while (pageToken)
+    pageToken = page.nextPageToken
+    if (!pageToken) break
+  }
+  const listingTotals = { google_rating: googleRating, google_review_count: googleCount }
 
   const rows = reviews.map(importedReview).filter((r): r is NonNullable<typeof r> => r !== null)
   if (rows.length === 0) {
-    await service.from('accounts').update({ google_reviews_synced_at: new Date().toISOString() }).eq('id', accountId)
+    await service.from('accounts').update({ google_reviews_synced_at: new Date().toISOString(), ...listingTotals }).eq('id', accountId)
     return { imported: 0, updated: 0 }
   }
 
   // Not an upsert: reviews_platform_external_idx is partial (external_id is
   // null for a review typed in by hand), and PostgREST cannot name a partial
-  // index as the conflict target.
+  // index as the conflict target. Every known Google review is read rather
+  // than filtered by id: hundreds of ids in an `in` filter overflow the
+  // request URL.
   const { data: known } = await service
     .from('reviews')
     .select('id, external_id, rating, body, replied_at')
     .eq('account_id', accountId)
     .eq('platform', 'google')
-    .in('external_id', rows.map((r) => r.externalId))
+    .not('external_id', 'is', null)
+    .limit(10000)
   const byId = new Map((known ?? []).map((k) => [k.external_id, k]))
 
   let imported = 0
@@ -234,7 +252,7 @@ export async function syncGoogleReviews(service: SupabaseClient<Database>, accou
     updated++
   }
 
-  await service.from('accounts').update({ google_reviews_synced_at: new Date().toISOString() }).eq('id', accountId)
+  await service.from('accounts').update({ google_reviews_synced_at: new Date().toISOString(), ...listingTotals }).eq('id', accountId)
   return { imported, updated }
 }
 

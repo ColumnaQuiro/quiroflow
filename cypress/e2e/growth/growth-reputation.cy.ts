@@ -92,6 +92,36 @@ describe('Growth reputation', () => {
     cy.get('[data-test="review-card"]').should('have.length', 4)
   })
 
+  it('keeps reviews older than a year, and lets the trend look further back', () => {
+    // The screen used to show the last 365 days and nothing else, so a
+    // listing with any history looked a fraction of its size.
+    for (const [rating, months] of [[3, 20], [4, 1], [5, 0]] as const) {
+      cy.task('db:createReview', { accountId: account.accountId, authorName: `Reviewer ${months}`, rating, body: 'Seeded review body.', postedAt: monthsAgo(months) })
+    }
+
+    cy.visit('/growth/reputation?growth=1')
+    cy.get('[data-test="review-card"]').should('have.length', 3)
+
+    // Twelve months by default: the review from 20 months ago is not drawn.
+    cy.get('[data-test="trend"]').should('contain', '4.0 → 5.0')
+    cy.get('[data-test="trend-range-all"]').click()
+    cy.get('[data-test="trend"]').should('contain', '3.0 → 5.0')
+    cy.get('[data-test="trend-range-12"]').click()
+    cy.get('[data-test="trend"]').should('contain', '4.0 → 5.0')
+  })
+
+  it('lists a long record twenty at a time', () => {
+    for (let i = 0; i < 22; i++) {
+      cy.task('db:createReview', { accountId: account.accountId, authorName: `Reviewer ${i}`, rating: 5, body: 'Seeded review body.', postedAt: monthsAgo(i % 12) })
+    }
+
+    cy.visit('/growth/reputation?growth=1')
+    cy.get('[data-test="review-card"]').should('have.length', 20)
+    cy.get('[data-test="reviews-more"]').should('contain', '2 left').click()
+    cy.get('[data-test="review-card"]').should('have.length', 22)
+    cy.get('[data-test="reviews-more"]').should('not.exist')
+  })
+
 
   it('holds a draft back for approval and says nothing posts without it', () => {
     cy.task('db:createReview', {

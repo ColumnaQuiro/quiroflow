@@ -10,11 +10,36 @@ const allowed = computed(() => can('communication_config'))
 
 const maxBucket = computed(() => Math.max(...(data.value?.distribution.map((b) => b.count) ?? [1]), 1))
 
+// Which stretch of the record the trend draws. Twelve months by default: the
+// question it answers is usually "how are we doing lately", and the whole
+// history of an older listing flattens the last year into its tail.
+type TrendRange = '12' | '24' | 'all'
+const trendRange = ref<TrendRange>('12')
+const TREND_RANGES = computed<{ key: TrendRange; label: string }[]>(() => [
+  { key: '12', label: t('12 months', '12 meses') },
+  { key: '24', label: t('2 years', '2 años') },
+  { key: 'all', label: t('All', 'Todo') },
+])
+const visibleTrend = computed(() => {
+  const points = data.value?.trend ?? []
+  if (trendRange.value === 'all') return points
+  const from = new Date()
+  from.setUTCMonth(from.getUTCMonth() - Number(trendRange.value) + 1, 1)
+  const cutoff = from.toISOString().slice(0, 7)
+  return points.filter((p) => p.month >= cutoff)
+})
+// One decimal, matching the headline rating. `4 → 4` next to `4.3` reads like
+// a different quantity.
+const trendLabel = computed(() => {
+  const points = visibleTrend.value
+  return points.length >= 2 ? `${points[0]!.value.toFixed(1)} → ${points[points.length - 1]!.value.toFixed(1)}` : null
+})
+
 // Scaled to the range the ratings actually span. On a fixed 0-5 axis a year
 // of movement between 4.5 and 4.8 is a flat line, which is the one thing the
 // chart exists to disprove.
 const trendPath = computed(() => {
-  const points = data.value?.trend ?? []
+  const points = visibleTrend.value
   if (points.length < 2) return ''
   const values = points.map((p) => p.value)
   const min = Math.min(...values)
@@ -42,6 +67,12 @@ onMounted(() => {
   }
   if (problems[googleOutcome]) showToast(problems[googleOutcome]!, 'error', 8000)
 })
+
+// The list grows twenty at a time: a listing with years of reviews would
+// otherwise render hundreds of cards before the page could be read.
+const PAGE = 20
+const visibleCount = ref(PAGE)
+const shownReviews = computed(() => (data.value?.reviews ?? []).slice(0, visibleCount.value))
 
 function when(iso: string) {
   return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
@@ -106,9 +137,19 @@ function when(iso: string) {
             <div v-if="googleLocations" class="flex flex-col gap-2 border-t border-line-divider pt-3" data-test="google-locations">
               <strong class="text-[12.5px] text-ink-900">{{ t('Which listing is this clinic’s?', '¿Cuál es la ficha de esta clínica?') }}</strong>
               <p v-if="googleLocations.length === 0" class="text-[12px] text-ink-muted">{{ t('This Google account manages no listings. Connect with the account that owns the clinic’s profile.', 'Esta cuenta de Google no gestiona ninguna ficha. Conecta con la cuenta propietaria del perfil de la clínica.') }}</p>
-              <UiBtn v-for="l in googleLocations" :key="l.location" variant="secondary" size="sm" class="justify-start" :disabled="googleBusy" @click="chooseGoogleLocation(l.location)">
-                {{ l.title }}<span v-if="l.address" class="ml-1 font-normal text-ink-muted">· {{ l.address }}</span>
-              </UiBtn>
+              <!-- Not a UiBtn: that one is a single nowrap line, and a listing's
+                   title is whatever the owner typed into Google -- often a
+                   string of keywords long enough to run out of the card. -->
+              <button
+                v-for="l in googleLocations"
+                :key="l.location"
+                type="button"
+                class="flex min-h-8 w-full flex-wrap items-baseline gap-x-1 rounded-ctl border border-line-control bg-surface px-2.5 py-1.5 text-left text-[12.5px] font-medium text-ink-500 hover:border-line-controlHover focus-visible:shadow-focus disabled:cursor-not-allowed disabled:opacity-50 touch:min-h-10"
+                :disabled="googleBusy"
+                @click="chooseGoogleLocation(l.location)"
+              >
+                <span class="min-w-0 break-words">{{ l.title }}</span><span v-if="l.address" class="font-normal text-ink-muted">· {{ l.address }}</span>
+              </button>
             </div>
           </section>
 
@@ -138,7 +179,7 @@ function when(iso: string) {
                 <span class="text-[13px] text-ink-muted">/ 5</span>
               </div>
               <GrowthStarRating v-if="data.rating" :rating="data.rating" :size="13" />
-              <span class="text-[11px] text-ink-faint">{{ data.reviewCount }} {{ t('reviews', 'reseñas') }}</span>
+              <span class="text-[11px] text-ink-faint" data-test="review-count">{{ data.reviewCount }} {{ t('reviews', 'reseñas') }}<template v-if="data.ratingFromGoogle"> · {{ t('on Google', 'en Google') }}</template></span>
             </div>
 
             <div class="flex flex-col justify-center gap-1">
@@ -151,19 +192,34 @@ function when(iso: string) {
               </div>
             </div>
 
-            <div v-if="data.trend.length >= 2" class="flex flex-col gap-1 sm:col-span-2 lg:col-span-1">
-              <div class="flex items-baseline justify-between gap-2">
+            <div v-if="data.trend.length >= 2" class="flex flex-col gap-1 sm:col-span-2 lg:col-span-1" data-test="trend">
+              <div class="flex flex-wrap items-baseline justify-between gap-2">
                 <span class="text-[11px] text-ink-muted">{{ t('Trend', 'Tendencia') }}</span>
-                <span class="text-[11px] font-semibold text-ink-700">{{ data.trendLabel }}</span>
+                <span class="flex items-center gap-1" role="group" :aria-label="t('Trend period', 'Periodo de la tendencia')">
+                  <button
+                    v-for="range in TREND_RANGES"
+                    :key="range.key"
+                    type="button"
+                    class="rounded-pill px-2 py-0.5 text-[11px] font-medium"
+                    :class="trendRange === range.key ? 'bg-brand-tint text-brand-text' : 'text-ink-muted hover:bg-surface-subtle'"
+                    :aria-pressed="trendRange === range.key"
+                    :data-test="`trend-range-${range.key}`"
+                    @click="trendRange = range.key"
+                  >{{ range.label }}</button>
+                </span>
               </div>
-              <svg viewBox="0 0 520 74" preserveAspectRatio="none" class="h-[74px] w-full" role="img" :aria-label="t('Rating over time', 'Valoración a lo largo del tiempo')">
-                <line x1="0" y1="66" x2="520" y2="66" class="stroke-line-divider" stroke-width="1" />
-                <polyline :points="trendPath" fill="none" class="stroke-brand" stroke-width="2" vector-effect="non-scaling-stroke" />
-              </svg>
-              <div class="flex justify-between text-[11px] text-ink-faint">
-                <span>{{ data.trend[0]!.label }}</span>
-                <span>{{ data.trend[data.trend.length - 1]!.label }}</span>
-              </div>
+              <template v-if="visibleTrend.length >= 2">
+                <span class="text-[11px] font-semibold text-ink-700">{{ trendLabel }}</span>
+                <svg viewBox="0 0 520 74" preserveAspectRatio="none" class="h-[74px] w-full" role="img" :aria-label="t('Rating over time', 'Valoración a lo largo del tiempo')">
+                  <line x1="0" y1="66" x2="520" y2="66" class="stroke-line-divider" stroke-width="1" />
+                  <polyline :points="trendPath" fill="none" class="stroke-brand" stroke-width="2" vector-effect="non-scaling-stroke" />
+                </svg>
+                <div class="flex justify-between text-[11px] text-ink-faint">
+                  <span>{{ visibleTrend[0]!.label }}</span>
+                  <span>{{ visibleTrend[visibleTrend.length - 1]!.label }}</span>
+                </div>
+              </template>
+              <p v-else class="py-4 text-[11.5px] text-ink-muted">{{ t('Not enough reviews in this period to draw a trend.', 'No hay reseñas suficientes en este periodo para dibujar una tendencia.') }}</p>
             </div>
           </section>
 
@@ -176,7 +232,7 @@ function when(iso: string) {
             </div>
 
             <article
-              v-for="review in data.reviews"
+              v-for="review in shownReviews"
               :key="review.id"
               class="overflow-hidden rounded-card border bg-surface shadow-card"
               :class="review.draftBody && !review.repliedAt ? 'border-brand-tintBorder' : 'border-line'"
@@ -215,6 +271,17 @@ function when(iso: string) {
                 @discard="discard(review.id)"
               />
             </article>
+
+            <UiBtn
+              v-if="data.reviews.length > shownReviews.length"
+              variant="secondary"
+              size="sm"
+              class="self-center"
+              data-test="reviews-more"
+              @click="visibleCount += PAGE"
+            >
+              {{ t(`Show more (${data.reviews.length - shownReviews.length} left)`, `Ver más (quedan ${data.reviews.length - shownReviews.length})`) }}
+            </UiBtn>
           </section>
         </div>
 

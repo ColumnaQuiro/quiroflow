@@ -217,7 +217,7 @@ if (expected !== req.headers['x-quiroflow-signature']) return res.status(401).en
                 :class="w.enabled ? 'bg-brand' : 'bg-line-control'"
                 @click="toggleEnabled(w)"
               >
-                <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card transition-all" :class="w.enabled ? 'left-[21px]' : 'left-[3px]'" />
+                <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card left-[3px] transition-transform" :class="w.enabled ? 'translate-x-[18px]' : 'translate-x-0'" />
               </button>
             </div>
             <div class="flex flex-wrap items-center gap-3 border-t border-line-row px-[18px] py-3">

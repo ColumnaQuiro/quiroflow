@@ -300,7 +300,7 @@ const GENERIC_ICON = 'M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6'
                 :class="m.is_active ? 'bg-brand' : 'bg-line-control'"
                 @click="toggleActive(m, !m.is_active)"
               >
-                <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card transition-all" :class="m.is_active ? 'left-[21px]' : 'left-[3px]'" />
+                <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card left-[3px] transition-transform" :class="m.is_active ? 'translate-x-[18px]' : 'translate-x-0'" />
               </button>
             </div>
 

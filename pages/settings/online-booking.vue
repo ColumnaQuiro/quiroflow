@@ -434,7 +434,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
                 :class="c.online_booking_enabled ? 'bg-brand' : 'bg-line-control'"
                 @click="setBookingEnabled(c, !c.online_booking_enabled)"
               >
-                <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card transition-all" :class="c.online_booking_enabled ? 'left-[21px]' : 'left-[3px]'" />
+                <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card left-[3px] transition-transform" :class="c.online_booking_enabled ? 'translate-x-[18px]' : 'translate-x-0'" />
               </button>
               <div class="flex min-w-[200px] flex-1 flex-col gap-1.5">
                 <strong class="text-[14.5px] text-ink-900">{{ c.name }}</strong>
@@ -541,7 +541,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
                       :class="!hideLogo ? 'bg-brand' : 'bg-line-control'"
                       @click="hideLogo = !hideLogo"
                     >
-                      <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card transition-all" :class="!hideLogo ? 'left-[21px]' : 'left-[3px]'" />
+                      <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card left-[3px] transition-transform" :class="!hideLogo ? 'translate-x-[18px]' : 'translate-x-0'" />
                     </button>
                   </div>
                 </div>
@@ -610,7 +610,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
                 :class="c.active ? 'bg-brand' : 'bg-line-control'"
                 @click="toggleCodeActive(c)"
               >
-                <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card transition-all" :class="c.active ? 'left-[21px]' : 'left-[3px]'" />
+                <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card left-[3px] transition-transform" :class="c.active ? 'translate-x-[18px]' : 'translate-x-0'" />
               </button>
               <button type="button" class="flex h-9 w-9 touch:h-11 touch:w-11 shrink-0 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle hover:text-ink-700" :aria-label="t(`Delete ${c.code}`, `Eliminar ${c.code}`)" data-cy="code-delete" @click="deletingCode = c">
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" /></svg>
@@ -636,7 +636,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
                   <p class="mt-1 text-[13px] leading-snug text-ink-500">{{ t("Each patient gets their own link to this page in the app and the portal. Someone new who books through it is saved as referred by them, and the clinic's \"patient referred\" automations run.", 'Cada paciente tiene su propio enlace a esta página en la app y el portal. Quien reserve por primera vez con él queda guardado como recomendado por esa persona, y se lanzan las automatizaciones de «paciente recomendado».') }}</p>
                 </div>
                 <button type="button" role="switch" :aria-checked="referralsOn" aria-labelledby="h-referrals" class="relative h-[26px] w-11 shrink-0 rounded-full" :class="referralsOn ? 'bg-brand' : 'bg-line-control'" data-cy="settings-referrals-toggle" @click="referralsOn = !referralsOn">
-                  <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card transition-all" :class="referralsOn ? 'left-[21px]' : 'left-[3px]'" />
+                  <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card left-[3px] transition-transform" :class="referralsOn ? 'translate-x-[18px]' : 'translate-x-0'" />
                 </button>
               </div>
               <div v-if="referralsOn" class="flex flex-wrap items-center gap-4 border-t border-line-row px-[18px] py-3">

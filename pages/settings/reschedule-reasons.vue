@@ -197,7 +197,7 @@ const iconBtn = 'flex h-9 w-9 touch:h-11 touch:w-11 shrink-0 items-center justif
                 :class="feeOn[f.key] ? 'bg-brand' : 'bg-line-control'"
                 @click="feeOn[f.key] = !feeOn[f.key]"
               >
-                <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card transition-all" :class="feeOn[f.key] ? 'left-[21px]' : 'left-[3px]'" />
+                <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card left-[3px] transition-transform" :class="feeOn[f.key] ? 'translate-x-[18px]' : 'translate-x-0'" />
               </button>
               <div class="flex min-w-[200px] flex-1 flex-col gap-0.5">
                 <strong :id="`fee-${f.key}`" class="text-[14.5px] text-ink-900">{{ f.title }}</strong>
@@ -222,7 +222,7 @@ const iconBtn = 'flex h-9 w-9 touch:h-11 touch:w-11 shrink-0 items-center justif
                 data-cy="card-on-file-toggle"
                 @click="cardOnFile = !cardOnFile"
               >
-                <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card transition-all" :class="cardOnFile && stripeReady ? 'left-[21px]' : 'left-[3px]'" />
+                <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card left-[3px] transition-transform" :class="cardOnFile && stripeReady ? 'translate-x-[18px]' : 'translate-x-0'" />
               </button>
               <div class="flex min-w-[200px] flex-1 flex-col gap-0.5">
                 <strong id="card-on-file-title" class="text-[14.5px] text-ink-900">{{ t('Ask for a card at online booking', 'Pedir tarjeta al reservar online') }}</strong>

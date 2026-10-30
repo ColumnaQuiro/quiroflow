@@ -492,7 +492,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
                         :class="o.on ? 'bg-brand' : 'bg-line-control'"
                         @click="o.set(!o.on)"
                       >
-                        <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card transition-all" :class="o.on ? 'left-[21px]' : 'left-[3px]'" />
+                        <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card left-[3px] transition-transform" :class="o.on ? 'translate-x-[18px]' : 'translate-x-0'" />
                       </button>
                     </div>
                   </div>

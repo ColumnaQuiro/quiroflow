@@ -332,7 +332,7 @@ function hideBanner() {
               data-test="rule-toggle"
               @click="toggle(r)"
             >
-              <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card transition-all" :class="isActive(r) ? 'left-[21px]' : 'left-[3px]'" />
+              <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card left-[3px] transition-transform" :class="isActive(r) ? 'translate-x-[18px]' : 'translate-x-0'" />
             </button>
             <NuxtLink :to="`/automations/${r.id}`" class="flex min-w-0 flex-1 flex-col gap-1" data-test="rule-link">
               <span class="flex flex-wrap items-center gap-1.5">

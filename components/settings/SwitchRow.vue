@@ -45,7 +45,7 @@ function flip() {
       :class="modelValue ? 'bg-brand' : 'bg-line-control'"
       @click="flip"
     >
-      <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card transition-all" :class="modelValue ? 'left-[21px]' : 'left-[3px]'" />
+      <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card left-[3px] transition-transform" :class="modelValue ? 'translate-x-[18px]' : 'translate-x-0'" />
     </button>
   </div>
 </template>

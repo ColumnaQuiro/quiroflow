@@ -276,7 +276,24 @@ html[data-theme='light'] {
   background-size: 200% 100%;
   animation: skeleton-shimmer 1.6s ease-in-out infinite;
 }
+/* Reduced motion, for the whole app rather than component by component: the
+   slide-ins (appointment panels, the hover card), toggles, Vue transitions
+   and the pulse placeholders all land in their end state at once. A spinner
+   is the exception -- it is the only sign that something is still loading,
+   so it keeps turning. */
 @media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .animate-spin {
+    animation-duration: 1s !important;
+    animation-iteration-count: infinite !important;
+  }
   .skeleton-shimmer {
     animation: none;
   }

@@ -49,7 +49,7 @@ const when = (iso: string) => new Date(iso).toLocaleDateString(t('en-GB', 'es-ES
       data-cy="invoice-reminders-switch"
       @click="toggle"
     >
-      <span class="absolute top-0.5 h-4 w-4 rounded-full bg-surface shadow transition-all" :class="paused ? 'left-0.5' : 'left-[18px]'" />
+      <span class="absolute top-0.5 h-4 w-4 rounded-full bg-surface shadow left-0.5 transition-transform" :class="paused ? 'translate-x-0' : 'translate-x-4'" />
     </button>
     <span :class="paused ? 'text-warning-text' : 'text-ink-muted2'" data-cy="invoice-reminders-state">{{ paused ? t('Paused for this patient', 'Pausados para este paciente') : t('On', 'Activados') }}</span>
     <span v-if="last" class="text-ink-muted2" data-cy="invoice-reminders-last">· {{ t(`Last sent ${when(last.sent_at)} (${last.invoice_number})`, `Último enviado el ${when(last.sent_at)} (${last.invoice_number})`) }}</span>

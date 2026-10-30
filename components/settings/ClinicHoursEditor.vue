@@ -80,7 +80,7 @@ function problemText(p: HoursProblem) {
           :class="(modelValue[d.key] ?? []).length > 0 ? 'bg-brand' : 'bg-line-control'"
           @click="toggle(d.key)"
         >
-          <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card transition-all" :class="(modelValue[d.key] ?? []).length > 0 ? 'left-[21px]' : 'left-[3px]'" />
+          <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card left-[3px] transition-transform" :class="(modelValue[d.key] ?? []).length > 0 ? 'translate-x-[18px]' : 'translate-x-0'" />
         </button>
         <div v-if="(modelValue[d.key] ?? []).length > 0" class="flex flex-1 flex-wrap items-center gap-2">
           <span v-for="(r, j) in modelValue[d.key]" :key="j" class="inline-flex items-center gap-1 rounded-ctl border border-line-control bg-surface py-0.5 pl-1.5 pr-0.5" data-cy="hours-range">

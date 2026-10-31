@@ -106,6 +106,13 @@ Cypress.Commands.add('clickUntil', (clickSelector: string, untilSelector: string
   })
 })
 
+// The Inbox opens on "Needs reply": threads where they wrote last, or unread.
+// A spec about a thread the clinic answered last turns the filter off first,
+// the way a person would, with the same hydration retry as clickUntil.
+Cypress.Commands.add('showAllConversations', () => {
+  cy.clickUntil('[data-cy=inbox-filter-needs-reply][aria-pressed=true]', '[data-cy=inbox-filter-needs-reply][aria-pressed=false]')
+})
+
 // The public booking page speaks the visitor's browser language -- Spanish,
 // English or French, Spanish when it is none of them -- and CI's Chrome is
 // English. Every booking spec was written against the Spanish page the
@@ -199,6 +206,7 @@ declare global {
       portalLogin(email: string, password: string, clinicCode: string): Chainable<void>
       logout(): Chainable<void>
       clickUntil(clickSelector: string, untilSelector: string, attempt?: number): Chainable<void>
+      showAllConversations(): Chainable<void>
       seedStaffAccount(
         overrides?: Partial<{
           email: string

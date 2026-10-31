@@ -88,6 +88,8 @@ describe('Inbox, as a team', () => {
 
           cy.login(account.email, account.password)
           openInbox()
+          // Tomás was answered last: every conversation means turning Needs reply off.
+          cy.showAllConversations()
           cy.get('[data-cy=inbox-row]').should('have.length', 50)
           cy.get('[data-cy=inbox-load-more]').click()
           cy.get('[data-cy=inbox-row]').should('have.length', 56)
@@ -183,12 +185,14 @@ describe('Inbox, as a team', () => {
 
         cy.login(account.email, account.password)
         openInbox()
+        cy.showAllConversations()
         row(olga.id).find('[data-cy=inbox-row-unread]').should('not.exist')
         row(olga.id).click()
         cy.get('[data-cy=thread-mark-unread]').click()
         row(olga.id).find('[data-cy=inbox-row-unread]').should('exist')
 
         // Stored, not only drawn: the list and the badge agree after a reload.
+        // Marked unread, it is back in Needs reply, which the Inbox opens on.
         openInbox()
         row(olga.id).find('[data-cy=inbox-row-unread]').should('exist')
         cy.get('[data-cy=inbox-filter-unread]').should('contain.text', '1')

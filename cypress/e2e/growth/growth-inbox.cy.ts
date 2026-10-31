@@ -52,13 +52,14 @@ describe('Growth in the shared Inbox', () => {
     cy.get('[data-test="lead-row"]').should('not.exist')
     cy.get('[data-test="filter-ai-handling"]').should('not.exist')
 
-    // The filters the base plan has always had are still there, behind
-    // "More filters", with no receptionist section. Nothing loads on this
-    // page to wait for, so the click can land before hydration and be lost;
-    // clickUntil retries it until the menu opens.
+    // The filters the base plan has always had are still there: Needs reply
+    // in the row, on by default, and the rest behind "More filters", with no
+    // receptionist section. Nothing loads on this page to wait for, so the
+    // click can land before hydration and be lost; clickUntil retries it
+    // until the menu opens.
+    cy.get('[data-cy=inbox-filter-needs-reply]').should('have.attr', 'aria-pressed', 'true')
     cy.clickUntil('[data-cy=inbox-more-filters]', '[data-cy=inbox-more-filters-menu]')
     cy.get('[data-cy=inbox-more-filters-menu]').within(() => {
-      cy.contains('button', 'Awaiting us').should('be.visible')
       cy.contains('button', 'Awaiting patient').should('be.visible')
       cy.contains('Receptionist').should('not.exist')
     })
@@ -332,6 +333,8 @@ describe('Growth in the shared Inbox', () => {
       cy.task('db:createLeadMessage', { accountId: account.accountId, leadId, direction: 'outbound', body: 'La primera visita son 70 €.', sentByAi: true })
       cy.task('db:createLeadMessage', { accountId: account.accountId, leadId, direction: 'outbound', body: 'Te llamo yo mañana.' })
       cy.reload()
+      // Answered last by the clinic: not in Needs reply.
+      cy.showAllConversations()
       cy.contains('[data-test="lead-row"]', 'AI Answered').click()
       cy.get('[data-test="lead-thread"]').within(() => {
         cy.contains('La primera visita son 70 €.').parent().find('[data-test="lead-message-ai"]').should('contain', 'AI receptionist')
@@ -367,6 +370,7 @@ describe('Growth in the shared Inbox', () => {
         createdAt: new Date(Date.now() - 3 * 60000).toISOString(),
       })
       cy.reload()
+      cy.showAllConversations()
       cy.contains('[data-test="lead-row"]', 'Dry Run Thread').click()
 
       cy.get('[data-test="lead-thread"]').within(() => {
@@ -550,6 +554,7 @@ describe('Growth in the shared Inbox', () => {
       cy.task('db:createLeadMessage', { accountId: account.accountId, leadId, direction: 'outbound', body: 'Hola, te llamamos mañana', createdAt: new Date().toISOString() })
     })
     cy.reload()
+    cy.showAllConversations()
 
     cy.contains('[data-test="lead-row"]', 'Back To Unread').click()
     cy.contains('[data-test="lead-row"] span', 'Back To Unread').should('have.class', 'font-medium')
@@ -558,8 +563,10 @@ describe('Growth in the shared Inbox', () => {
     cy.get('[data-test="lead-thread"]').should('not.exist')
     cy.contains('[data-test="lead-row"] span', 'Back To Unread').should('have.class', 'font-bold')
 
-    // Mine, and stored: still unread after a reload.
+    // Mine, and stored: still unread after a reload -- and so back in Needs
+    // reply, which the Inbox opens on, although the clinic wrote last.
     cy.reload()
+    cy.get('[data-cy=inbox-filter-needs-reply]').should('have.attr', 'aria-pressed', 'true')
     cy.contains('[data-test="lead-row"] span', 'Back To Unread').should('have.class', 'font-bold')
   })
 
@@ -726,6 +733,7 @@ describe('Growth in the shared Inbox', () => {
       cy.task('db:createWhatsappMessage', { accountId: account.accountId, patientId: patient.id, phoneNumber: '+34600555102', direction: 'outbound', bodyPreview: 'Hola Bea, dime.' })
     })
     cy.visit('/inbox?growth=1')
+    cy.showAllConversations()
 
     cy.contains('[data-cy=inbox-row]', 'Ana Answered').find('[data-cy=inbox-row-ai-handling]').should('be.visible')
     cy.contains('[data-cy=inbox-row]', 'Bea Staffed').find('[data-cy=inbox-row-ai-handling]').should('not.exist')

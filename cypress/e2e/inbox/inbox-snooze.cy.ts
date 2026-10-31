@@ -68,6 +68,9 @@ describe('Inbox, snoozing a conversation', () => {
           row(olga.id).find('[data-cy=inbox-row-unread]').should('not.exist')
           cy.reload()
           cy.get('[data-cy=inbox-list]').should('have.attr', 'data-ready', 'true')
+          // Read, and the clinic wrote last: no longer in Needs reply.
+          row(olga.id).should('not.exist')
+          cy.showAllConversations()
           row(olga.id).find('[data-cy=inbox-row-follow-up]').should('not.exist')
           cy.get('[data-cy=inbox-row]').first().should('have.attr', 'data-key', pablo.id)
         })

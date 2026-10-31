@@ -543,7 +543,18 @@ const view = ref<'active' | 'archived' | 'snoozed'>('active')
 const unreadOnly = ref(false)
 // "Por caducar", as on the web: only what carries the "Caduca en" pill.
 const expiringOnly = ref(false)
-const replyFilter = ref<'all' | 'awaiting_us' | 'awaiting_patient'>('all')
+// The Inbox opens on "Needs reply", as the web one does (20261030170019): they
+// wrote last, or it is unread for me. Opened on everything, newest first, the
+// top of the list was the clinic's own reminders -- "Tú: Recordatorio de su
+// cita" -- with the patients' questions in between, and answering people is
+// the job. A thread whose last message is our automatic send is awaiting
+// them, so it folds out of this view by itself. One tap on "All" shows
+// everything; a search always looks everywhere (replyApplied).
+//
+// "Who replies next" is deliberately not the same as unread: a conversation
+// I've read but not answered is exactly what "unread" alone would miss, and
+// one I marked unread on purpose belongs here whoever wrote last.
+const replyFilter = ref<'all' | 'needs_reply' | 'awaiting_patient'>('needs_reply')
 const labelFilter = ref<string | null>(null)
 // Patients' conversations or leads' own threads (Growth): the web Inbox's
 // Patients / Leads chips.
@@ -567,7 +578,20 @@ const needsHumanCount = computed(() => activeList.value.filter((c) => aiStateOf(
 // thread it handed to a person.
 const aiOnly = ref(false)
 const aiCount = computed(() => activeList.value.filter((c) => hasDraftOf(c) || aiStateOf(c) === 'needs_human').length)
-const awaitingCount = computed(() => activeList.value.filter((c) => c.lastMessage.direction === 'inbound').length)
+// A lead follows the same rule: its unread comes from the same inbox_reads.
+const needsReply = (c: Conversation) => c.lastMessage.direction === 'inbound' || c.unread
+const awaitingCount = computed(() => activeList.value.filter(needsReply).length)
+// The reply filter as the list applies it. "Needs reply" is the active view's
+// default, not a choice someone made, so it stays out of the archived and
+// snoozed lists and out of a search: a name typed in is someone being looked
+// for, wherever their thread stands.
+const replyApplied = computed(() => (replyFilter.value === 'needs_reply' && (view.value !== 'active' || search.value.trim()) ? 'all' : replyFilter.value))
+// Under "Needs reply" the conversation last opened stays in the list until
+// another is opened. Opening one marks it read and answering it makes it
+// theirs to reply to -- either takes it out of the view -- and a row gone
+// from the list on the way back from the thread read as lost. Archiving or
+// snoozing still takes it out: that is the view, not the reply filter.
+const keptKey = ref<string | null>(null)
 const filtersActive = computed(() => view.value !== 'active' || unreadOnly.value || expiringOnly.value || assignFilter.value !== 'all' || replyFilter.value !== 'all' || !!labelFilter.value || sourceFilter.value !== 'all' || draftReadyOnly.value || needsHumanOnly.value || aiOnly.value)
 
 // Three views on top -- everything, what waits on us, the receptionist's --
@@ -575,10 +599,10 @@ const filtersActive = computed(() => view.value !== 'active' || unreadOnly.value
 // a sideways-scrolling row were more than anyone could see at once, and the
 // ones that mattered were off the edge of the screen.
 type InboxSegment = 'all' | 'awaiting' | 'ai'
-const segment = computed<InboxSegment>(() => (aiOnly.value ? 'ai' : replyFilter.value === 'awaiting_us' ? 'awaiting' : 'all'))
+const segment = computed<InboxSegment>(() => (aiOnly.value ? 'ai' : replyFilter.value === 'needs_reply' ? 'awaiting' : 'all'))
 function setSegment(s: InboxSegment) {
   aiOnly.value = s === 'ai'
-  replyFilter.value = s === 'awaiting' ? 'awaiting_us' : 'all'
+  replyFilter.value = s === 'awaiting' ? 'needs_reply' : 'all'
 }
 const filtersOpen = ref(false)
 // What the sheet narrows, each removable on its own from the strip under the
@@ -601,13 +625,14 @@ const activeFilterChips = computed(() => {
   if (view.value === 'archived') chips.push({ key: 'archived', label: t('Archived', 'Archivadas'), clear: () => (view.value = 'active') })
   return chips
 })
+// The sheet's own filters. The view on top is not one of them: clearing
+// used to drop "Por responder" back to "All", which now is not how the
+// Inbox opens.
 function clearFilters() {
-  aiOnly.value = false
   view.value = 'active'
   unreadOnly.value = false
   expiringOnly.value = false
   assignFilter.value = 'all'
-  replyFilter.value = 'all'
   labelFilter.value = null
   sourceFilter.value = 'all'
   draftReadyOnly.value = false
@@ -639,8 +664,8 @@ const filteredConversations = computed(() => {
   if (unreadOnly.value) list = list.filter((c) => c.unread)
   // The least time left first.
   if (expiringOnly.value) list = list.filter((c) => windowPill(c)).sort((a, b) => Date.parse(a.lastMessage.created_at) - Date.parse(b.lastMessage.created_at))
-  if (replyFilter.value === 'awaiting_us') list = list.filter((c) => c.lastMessage.direction === 'inbound')
-  else if (replyFilter.value === 'awaiting_patient') list = list.filter((c) => c.lastMessage.direction === 'outbound')
+  if (replyApplied.value === 'needs_reply') list = list.filter((c) => needsReply(c) || c.key === keptKey.value)
+  else if (replyApplied.value === 'awaiting_patient') list = list.filter((c) => c.lastMessage.direction === 'outbound')
   if (labelFilter.value) list = list.filter((c) => myLabelsByKey.value[c.key]?.includes(labelFilter.value!))
   if (sourceFilter.value === 'leads') list = list.filter((c) => !!c.leadId)
   else if (sourceFilter.value === 'patients') list = list.filter((c) => !c.leadId)
@@ -688,6 +713,7 @@ const selectedKey = ref<string | null>(null)
 // newest-500 window never reached still shows its history.
 watch(selectedKey, (key) => {
   if (key) loadThreadFor(key)
+  if (key) keptKey.value = key
 })
 // A patient opened from their record (WhatsApp on the patient screen) who has
 // never exchanged a message has no conversation to find, and the thread view
@@ -1755,7 +1781,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
         <div class="flex items-center gap-2">
           <div role="tablist" :aria-label="t('View', 'Vista')" class="grid flex-1 grid-cols-3 gap-[3px] rounded-ctl bg-chip-bg p-[3px]">
             <button
-              v-for="s in ([['all', t('All', 'Todas'), 0], ['awaiting', t('To answer', 'Por responder'), awaitingCount], ['ai', t('AI', 'IA'), aiCount]] as const)"
+              v-for="s in ([['all', t('All', 'Todas'), 0], ['awaiting', t('Needs reply', 'Por responder'), awaitingCount], ['ai', t('AI', 'IA'), aiCount]] as const)"
               :key="s[0]"
               type="button"
               role="tab"
@@ -1845,8 +1871,16 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
              whatever `loading` says, so a skeleton drawn over a list that is
              already there read as placeholders mixed in with conversations. -->
         <AppSkeletonList v-if="loading && filteredConversations.length === 0" avatar :rows="7" />
-        <p v-else-if="!loading && filteredConversations.length === 0" class="p-6 text-center text-[13px] text-ink-faint">
-          {{ view === 'archived' ? t('No archived conversations.', 'No hay conversaciones archivadas.') : view === 'snoozed' ? t('Nothing snoozed.', 'Nada pospuesto.') : t('No conversations yet.', 'Aún no hay conversaciones.') }}
+        <p v-else-if="!loading && filteredConversations.length === 0" class="p-6 text-center text-[13px] text-ink-faint" data-cy="inbox-empty">
+          <template v-if="view === 'archived'">{{ t('No archived conversations.', 'No hay conversaciones archivadas.') }}</template>
+          <template v-else-if="view === 'snoozed'">{{ t('Nothing snoozed.', 'Nada pospuesto.') }}</template>
+          <template v-else-if="conversations.length === 0">{{ t('No conversations yet.', 'Aún no hay conversaciones.') }}</template>
+          <template v-else-if="segment === 'awaiting' && !search.trim() && !activeFilterChips.length">
+            {{ t('Nobody is waiting for a reply.', 'Nadie espera respuesta.') }}
+            <button type="button" class="mt-1 block w-full py-2 font-semibold text-brand-text" data-cy="inbox-show-all" @click="setSegment('all')">{{ t('Show all conversations', 'Ver todas las conversaciones') }}</button>
+          </template>
+          <template v-else-if="search.trim() || activeFilterChips.length || segment !== 'all'">{{ t('Nothing matches these filters.', 'Nada coincide con estos filtros.') }}</template>
+          <template v-else>{{ t('No conversations yet.', 'Aún no hay conversaciones.') }}</template>
         </p>
         <div v-for="c in filteredConversations" :key="c.key" class="relative overflow-hidden border-b border-line-row">
           <!-- Only there while the row is swiped: left drawn underneath, a

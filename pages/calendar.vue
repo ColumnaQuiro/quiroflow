@@ -31,7 +31,12 @@ const DAY_HOUR_PX_MIN = 127
 const WEEK_HOUR_PX_MIN = 81
 const DAY_HEADER_PX = 40 // h-10 room-header row, excluded from available grid height
 const WEEK_HEADER_PX = 70 // day label + per-day counts + room-label rows (week view has room sub-columns per day, like Day view)
-const WEEK_ROOM_COL_PX = 128 // min width per room sub-column
+const WEEK_ROOM_COL_PX = 128 // min width per room sub-column, when there is room for it
+// ...and the narrowest it gives way to before the week scrolls sideways. At
+// 128 a working week with one room and Unassigned needed 1,338px, so on a
+// 1440px laptop Friday started off the edge of the screen. Narrower columns
+// still fit a visit's name and time; the cards truncate, as on a phone.
+const WEEK_ROOM_COL_MIN_PX = 76
 
 const scrollAreaRef = ref<HTMLElement | null>(null)
 // The panels and dialogs load when first opened (Lazy*): the new- and
@@ -343,6 +348,17 @@ const weekDays = computed(() => Array.from({ length: 7 }, (_, i) => addDays(week
 // (Mon-Fri) -- data fetching and week navigation stay identical, this only
 // slices which day columns render.
 const visibleWeekDays = computed(() => (viewMode.value === 'workweek' ? weekDays.value.slice(0, 5) : weekDays.value))
+// The week grid's own width, so its room sub-columns can share it out.
+const weekScrollerRef = ref<HTMLElement | null>(null)
+const weekScrollerWidth = ref(0)
+let weekScrollerObserver: ResizeObserver | undefined
+watch(weekScrollerRef, (el) => {
+  weekScrollerObserver?.disconnect()
+  if (!el) return
+  weekScrollerObserver = new ResizeObserver(([entry]) => (weekScrollerWidth.value = entry?.contentRect.width ?? 0))
+  weekScrollerObserver.observe(el)
+})
+onBeforeUnmount(() => weekScrollerObserver?.disconnect())
 
 const rangeLabel = computed(() => {
   if (viewMode.value === 'day') return formatLongWeekdayDate(anchorDate.value)
@@ -990,6 +1006,14 @@ watch([viewMode, anchorDate, practitionerFilter], () => {
 })
 
 const dayColumns = computed(() => [...rooms.value, { id: '__none', name: t('Unassigned', 'Sin asignar') }])
+// Each room sub-column of the week: as wide as the screen allows up to
+// WEEK_ROOM_COL_PX, no narrower than WEEK_ROOM_COL_MIN_PX (past that, scroll).
+// 58 is the hour gutter. Before the grid is measured, the old width.
+const weekColPx = computed(() => {
+  const cols = visibleWeekDays.value.length * dayColumns.value.length
+  if (!weekScrollerWidth.value || !cols) return WEEK_ROOM_COL_PX
+  return Math.max(WEEK_ROOM_COL_MIN_PX, Math.min(WEEK_ROOM_COL_PX, Math.floor((weekScrollerWidth.value - 58) / cols)))
+})
 
 function blockLabel(block: AvailabilityBlock) {
   if (block.note) return block.note
@@ -3000,8 +3024,8 @@ function showNowLineOn(day: Date) {
           </div>
 
           <!-- Week view: day columns, each split into room sub-columns like Day view. -->
-          <div v-else class="min-h-0 min-w-0 flex-1 overflow-auto" data-cy="grid-scroller">
-            <div class="flex" :style="{ minWidth: `${58 + visibleWeekDays.length * dayColumns.length * WEEK_ROOM_COL_PX}px` }">
+          <div v-else ref="weekScrollerRef" class="min-h-0 min-w-0 flex-1 overflow-auto" data-cy="grid-scroller">
+            <div class="flex" :style="{ minWidth: `${58 + visibleWeekDays.length * dayColumns.length * weekColPx}px` }">
               <div class="sticky left-0 z-[25] w-[58px] shrink-0 bg-surface">
                 <div class="sticky top-0 z-30 border-b border-r border-line bg-surface" :style="{ height: `${WEEK_HEADER_PX}px` }"></div>
                 <div class="relative border-r border-line" :style="{ height: `${weekGridHeight}px` }">
@@ -3050,7 +3074,7 @@ function showNowLineOn(day: Date) {
                       v-for="col in dayColumns"
                       :key="col.id"
                       class="flex flex-1 items-center justify-center truncate border-r border-line-divider px-1 text-[11px] font-medium text-ink-muted2 last:border-r-0"
-                      :style="{ minWidth: `${WEEK_ROOM_COL_PX}px` }"
+                      :style="{ minWidth: `${weekColPx}px` }"
                     >
                       {{ col.name }}
                     </div>
@@ -3070,7 +3094,7 @@ function showNowLineOn(day: Date) {
                     :data-day-key="toDateKey(day)"
                     class="relative flex-1 cursor-pointer border-r border-line-divider last:border-r-0"
                     :class="{ 'pointer-events-none': loading }"
-                    :style="{ minWidth: `${WEEK_ROOM_COL_PX}px` }"
+                    :style="{ minWidth: `${weekColPx}px` }"
                     @pointerdown="onColumnPointerDown"
                     @pointermove="onColumnPointerMove($event, toDateKey(day), col.id, WEEK_HOUR_PX)"
                     @pointerleave="hoverCell = null"

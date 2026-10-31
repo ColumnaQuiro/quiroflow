@@ -43,7 +43,8 @@ export function snapshotRegion(doc: Document): FigureSnapshot {
   const lines: string[] = []
   const visit = (el: HTMLElement) => {
     if (!rendered(el)) return
-    const title = el.matches('.rounded-card') ? el.querySelector('h3')?.textContent?.trim() : undefined
+    // h3 on the report pages; a dashboard widget's title is an h2 (WidgetFrame).
+    const title = el.matches('.rounded-card') ? (el.querySelector('h3') ?? el.querySelector('h2'))?.textContent?.trim() : undefined
     if (title && SERVER_CLOCK_WIDGETS.includes(title)) {
       lines.push(`${title}: (server clock)`)
       return

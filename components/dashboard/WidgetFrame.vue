@@ -24,7 +24,7 @@ const t = useT()
     <div class="flex items-center justify-between gap-2">
       <div class="flex min-w-0 items-center gap-1.5">
         <span v-if="editing" class="shrink-0 cursor-move select-none text-[13px] leading-none text-ink-faint2" :title="t('Drag to reorder', 'Arrastra para reordenar')">⠿</span>
-        <h3 class="truncate text-[13px] font-semibold text-ink-900">{{ title }}</h3>
+        <h2 class="truncate text-[13px] font-semibold text-ink-900">{{ title }}</h2>
       </div>
       <div class="flex shrink-0 items-center gap-2">
         <span v-if="meta && !editing" class="text-[11.5px] text-ink-muted2">{{ meta }}</span>

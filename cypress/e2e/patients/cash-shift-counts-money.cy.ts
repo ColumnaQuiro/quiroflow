@@ -23,7 +23,7 @@ describe('The cash shift', () => {
 
         cy.login(account.email, account.password)
         cy.visit('/calendar')
-        cy.contains('button', 'Cash Shift').click()
+        cy.contains('button', 'Cash shift').click()
 
         cy.contains('Charged this shift').parent().should('contain', '60,00 €')
         // 30 in cash. Not 60: 20 of it was credit spent and 10 was forgiven.

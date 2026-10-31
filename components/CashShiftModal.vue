@@ -247,7 +247,7 @@ const fieldId = useId()
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4" @click.self="emit('close')">
     <div ref="dialogPanel" role="dialog" aria-modal="true" :aria-labelledby="dialogTitleId" class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-card bg-surface p-5 shadow-popover">
       <div class="flex items-center justify-between">
-        <h3 :id="dialogTitleId" class="text-sm font-semibold text-ink-900">{{ t('Cash Shift', 'Turno de caja') }}</h3>
+        <h3 :id="dialogTitleId" class="text-sm font-semibold text-ink-900">{{ t('Cash shift', 'Turno de caja') }}</h3>
         <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="emit('close')">✕</button>
       </div>
 

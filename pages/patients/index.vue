@@ -556,8 +556,9 @@ function clearAllFilters() {
 function balancePill(cents: number) {
   const amount = formatEur(Math.abs(cents))
   if (cents < 0) return { text: `${amount} ${t('due', 'pendiente')}`, class: 'bg-danger-bg text-danger-text' }
-  if (cents > 0) return { text: `${amount} ${t('cr', 'a favor')}`, class: 'bg-success-bg text-success-text' }
-  return { text: formatEur(0), class: 'bg-chip-bg2 text-ink-muted2' }
+  if (cents > 0) return { text: `${amount} ${t('credit', 'a favor')}`, class: 'bg-success-bg text-success-text' }
+  // ink-muted, not muted2: on this chip muted2 measured 4.1:1 in dark mode.
+  return { text: formatEur(0), class: 'bg-chip-bg2 text-ink-muted' }
 }
 
 function startOfDay(d: Date) {

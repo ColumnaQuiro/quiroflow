@@ -531,7 +531,9 @@ function onDetailsUpdated() {
 
       <PatientsFamilyCard :patient="patient" />
 
-      <PatientsCareStopCard :patient="patient" />
+      <!-- After the bookings have loaded: the card leaves itself out for a
+           patient with one coming (CareStopCard). -->
+      <PatientsCareStopCard v-if="!apptLoading" :patient="patient" :booked="!!nextAppt" />
 
       <section aria-labelledby="ov-details" class="rounded-card border border-line bg-surface p-4 shadow-card">
         <h2 id="ov-details" class="text-[13.5px] font-semibold text-ink-700">{{ t('Patient details', 'Datos del paciente') }}</h2>

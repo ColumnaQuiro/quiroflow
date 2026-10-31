@@ -3,7 +3,7 @@ import { normalizeSearchTerm } from '~/utils/searchText'
 
 interface PatientResult { id: string; first_name: string; last_name: string | null }
 
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: []; shortcuts: [] }>()
 const supabase = useSupabaseClient()
 const t = useT()
 
@@ -124,6 +124,13 @@ useFocusTrap(panel, () => emit('close'))
           @click="goTo(n.to)"
         >
           {{ n.label }}
+        </button>
+      </div>
+      <!-- Where the single-key shortcuts are found (ShortcutsDialog). -->
+      <div class="flex items-center justify-end border-t border-line px-3 py-2">
+        <button type="button" class="flex items-center gap-1.5 rounded-ctlSm px-1.5 py-1 text-[12.5px] text-ink-muted hover:bg-surface-subtle hover:text-ink-700" data-cy="palette-shortcuts" @click="emit('shortcuts')">
+          {{ t('Keyboard shortcuts', 'Atajos de teclado') }}
+          <kbd class="rounded border border-line-control bg-surface-subtle px-1.5 font-mono text-[11px] text-ink-muted">?</kbd>
         </button>
       </div>
     </div>

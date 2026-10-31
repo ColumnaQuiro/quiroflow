@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import { loadStripe, type Stripe, type StripeElements, type StripePaymentElement } from '@stripe/stripe-js'
+// Types only at the top. Evaluating @stripe/stripe-js injects js.stripe.com's
+// script (~260 KB) as a side effect, whether or not anything calls it, so a
+// static import here put Stripe on every visit to the booking page -- most of
+// which take no payment at all. It is imported below, once there is one.
+import type { Stripe, StripeElements, StripePaymentElement } from '@stripe/stripe-js'
 
 const props = defineProps<{
   accountSlug: string
@@ -26,6 +30,7 @@ onMounted(async () => {
       publishableKey: string
       connectAccountId: string | null
     }>('/api/public-booking/create-payment-intent', { method: 'POST', body: { accountSlug: props.accountSlug, invoiceId: props.invoiceId } })
+    const { loadStripe } = await import('@stripe/stripe-js')
     stripe = await loadStripe(publishableKey, connectAccountId ? { stripeAccount: connectAccountId } : undefined)
     if (!stripe || !mountEl.value) throw new Error('Stripe failed to load')
     // Stripe's own fields and messages in the page's language too.

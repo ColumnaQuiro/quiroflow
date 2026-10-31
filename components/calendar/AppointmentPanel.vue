@@ -310,6 +310,19 @@ async function advance() {
 function undo() {
   if (undoable.value) update({ [undoable.value.field]: null })
 }
+// "a" takes the next step and "p" opens Cobro, while this panel is the
+// dialog on top (useShortcuts; listed under "?").
+useShortcuts(
+  {
+    a: () => {
+      if (step.value === 'main' && next.value && !readOnly.value && !busy.value) advance()
+    },
+    p: () => {
+      if (step.value === 'main') tab.value = 'billing'
+    },
+  },
+  { within: panel },
+)
 // Confirmed by phone or at the desk, rather than by replying to WhatsApp.
 function markConfirmed() {
   update({ confirmation_status: 'confirmed' })
@@ -751,6 +764,7 @@ async function useExpectedType() {
             <button v-if="next && !isPhone" type="button" data-cy="advance-stage" :data-next="next" :disabled="busy" class="flex h-9 touch:h-11 items-center gap-2 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface hover:bg-brand-hover disabled:opacity-60" @click="advance">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
               {{ nextLabel }}
+              <kbd class="ml-0.5 rounded border border-current px-1 font-mono text-[11px] font-semibold leading-4 opacity-70 [@media(pointer:coarse)]:hidden" aria-hidden="true">A</kbd>
             </button>
             <button v-if="isUnconfirmedStage(stage)" type="button" data-cy="mark-confirmed" :disabled="busy" class="h-9 touch:h-11 rounded-ctl border border-line-control px-3.5 text-[13px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="markConfirmed">{{ t('Mark as confirmed', 'Marcar como confirmada') }}</button>
             <button v-if="stage === 'checkout'" type="button" data-cy="mark-done" :disabled="busy" class="h-9 touch:h-11 rounded-ctl border border-line-control px-3.5 text-[13px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="markDone">{{ t('Done, nothing to charge', 'Hecha, sin cobro') }}</button>

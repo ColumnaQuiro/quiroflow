@@ -67,7 +67,8 @@ function insertReply(reply: string) {
 }
 
 // The thread's header puts links in the reply too (InboxChatActions).
-defineExpose({ insertReply })
+// And "r" puts the cursor here (the Inbox's shortcuts).
+defineExpose({ insertReply, focus: () => textarea.value?.focus() })
 
 function submit() {
   if (props.sending || props.disabled || !text.value.trim()) return

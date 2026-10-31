@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { normalizeSearchTerm } from '~/utils/searchText'
+import { formatPhoneDisplay } from '~/utils/phone'
 
-interface PatientResult { id: string; first_name: string; last_name: string | null }
+interface PatientResult { id: string; first_name: string; last_name: string | null; date_of_birth: string | null; status: string; phone: string | null }
 
 const emit = defineEmits<{ close: [] }>()
 const supabase = useSupabaseClient()
 const t = useT()
+const { preference } = useLang()
 
 const NAV_ITEMS = computed(() => [
   { label: t('Dashboard', 'Panel'), to: '/dashboard' },
@@ -50,7 +52,7 @@ watch(query, (q) => {
     searching.value = true
     const { data } = await supabase
       .from('patients')
-      .select('id, first_name, last_name')
+      .select('id, first_name, last_name, date_of_birth, status')
       .ilike('search_name', `%${normalizeSearchTerm(q.trim())}%`)
       // Ordered by surname first: a search for a common first name returned
       // six rows ordered by that same first name, so which six you got was
@@ -59,12 +61,33 @@ watch(query, (q) => {
       .order('last_name')
       .order('first_name')
       .limit(25)
-    patients.value = data ?? []
+    const rows = data ?? []
+    // Names alone could not tell two María Garcías apart, and the front desk
+    // asks for a date of birth or a phone to do exactly that. The first number
+    // on record, read under the patient's own scope like the record itself.
+    const ids = rows.map((p) => p.id)
+    const { data: numbers } = ids.length
+      ? await supabase.from('patient_contact_numbers').select('patient_id, number, country_code').in('patient_id', ids).order('created_at')
+      : { data: [] }
+    if (query.value !== q) return
+    const phoneOf = new Map<string, string>()
+    for (const n of numbers ?? []) if (!phoneOf.has(n.patient_id)) phoneOf.set(n.patient_id, formatPhoneDisplay(n.number, n.country_code))
+    patients.value = rows.map((p) => ({ ...p, phone: phoneOf.get(p.id) ?? null }))
     searching.value = false
   }, 250)
 })
 
 onMounted(() => inputRef.value?.focus())
+
+// A bare date ("1985-03-12") is a calendar date, not UTC midnight.
+function birthDate(dob: string | null) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dob ?? '')
+  if (!m) return null
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString(preference.value === 'es' ? 'es-ES' : 'en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+function detailOf(p: PatientResult) {
+  return [birthDate(p.date_of_birth), p.phone, p.status === 'inactive' ? t('Inactive', 'Inactivo') : null].filter(Boolean).join(' · ')
+}
 
 async function openPatient(id: string) {
   emit('close')
@@ -105,12 +128,16 @@ useFocusTrap(panel, () => emit('close'))
             :key="p.id"
             type="button"
             class="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13.5px] text-ink-700 hover:bg-surface-subtle"
+            data-cy="palette-patient"
             @click="openPatient(p.id)"
           >
             <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-ctlSm bg-brand-tint text-[11px] font-bold text-brand">
               {{ (p.first_name[0] ?? '').toUpperCase() }}
             </span>
-            {{ p.first_name }} {{ p.last_name }}
+            <span class="flex min-w-0 flex-1 flex-col">
+              <span class="truncate">{{ p.first_name }} {{ p.last_name }}</span>
+              <span v-if="detailOf(p)" class="truncate text-[12px] text-ink-muted" data-cy="palette-patient-detail">{{ detailOf(p) }}</span>
+            </span>
           </button>
         </template>
 

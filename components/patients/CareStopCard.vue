@@ -6,7 +6,12 @@ import type { CareStop } from '~/composables/useCareStopReasons'
 // and when. Recorded, changed and cleared here as from Recalls; once the
 // patient attends again it is history, counted in Reports > Retention and no
 // longer shown.
-const props = defineProps<{ patient: { id: string; first_name: string; last_name?: string | null } }>()
+//
+// Not offered at all to a patient with a visit booked and nothing recorded:
+// "Stopped coming -- Record reason" sat on the record of someone coming next
+// week. A reason already recorded still shows, booked or not: it is a fact
+// somebody wrote down, and a booking does not unsay it.
+const props = defineProps<{ patient: { id: string; first_name: string; last_name?: string | null }; booked?: boolean }>()
 
 const supabase = useSupabaseClient()
 const t = useT()
@@ -41,7 +46,7 @@ const name = computed(() => `${props.patient.first_name} ${props.patient.last_na
 </script>
 
 <template>
-  <section aria-labelledby="ov-care-stop" class="rounded-card border border-line bg-surface p-4 shadow-card" data-cy="patient-care-stop">
+  <section v-if="loading ? !booked : current || !booked" aria-labelledby="ov-care-stop" class="rounded-card border border-line bg-surface p-4 shadow-card" data-cy="patient-care-stop">
     <div class="flex items-center justify-between gap-2">
       <h2 id="ov-care-stop" class="text-[13.5px] font-semibold text-ink-700">{{ t('Stopped coming', 'Baja') }}</h2>
       <button v-if="canRecord && !loading" type="button" class="text-[12.5px] font-medium text-brand-text outline-none hover:underline focus-visible:shadow-focus" data-cy="care-stop-edit" @click="editing = true">

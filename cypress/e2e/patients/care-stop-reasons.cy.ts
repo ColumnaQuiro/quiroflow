@@ -79,4 +79,28 @@ describe('Reasons for stopping care', () => {
       })
     })
   })
+
+  // "Stopped coming -- Record reason" on someone booked for next week asked a
+  // question that had already been answered.
+  it('is not offered for a patient with a visit booked, unless one is recorded', () => {
+    cy.seedStaffAccount().then((account) => {
+      const patient = (firstName: string) => cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName, lastName: 'Ficha', defaultPractitionerId: account.teamMemberId })
+      const visit = (patientId: string, days: number, status: string) => cy.task('db:createAppointment', { accountId: account.accountId, clinicId: account.clinicId, patientId, practitionerId: account.teamMemberId, startsAt: daysAgo(days), status })
+      cy.login(account.email, account.password)
+
+      patient('Marta').then((booked) => {
+        visit(booked.id, 40, 'completed')
+        visit(booked.id, -7, 'booked')
+        cy.visit(`/patients/${booked.id}`)
+        cy.get('section[aria-labelledby=ov-next]').should('contain.text', 'Not confirmed')
+        cy.get('[data-cy=patient-care-stop]').should('not.exist')
+      })
+
+      patient('Iris').then((lapsed) => {
+        visit(lapsed.id, 40, 'completed')
+        cy.visit(`/patients/${lapsed.id}`)
+        cy.get('[data-cy=care-stop-edit]').should('contain.text', 'Record reason')
+      })
+    })
+  })
 })

@@ -1054,10 +1054,15 @@ const appointmentsByDay = computed(() => {
 
 // Best-effort practitioner line under a room's column header (the app has
 // no fixed room->practitioner assignment, so this reflects whoever's
-// actually booked in that room today).
+// actually booked in that room today). Everyone booked there, not the first
+// one found: a shared room read as one person's. And nothing under
+// "Unassigned", which is not a room anyone works in -- named after whoever
+// had a visit without a room, it read as that person's column.
 function roomPractitionerLabel(roomId: string) {
-  const match = appointments.value.find((a) => (a.room_id ?? '__none') === roomId && a.team_members?.full_name)
-  return match?.team_members?.full_name ?? ''
+  if (roomId === '__none') return ''
+  const names = [...new Set(appointments.value.filter((a) => a.room_id === roomId && a.team_members?.full_name).map((a) => a.team_members!.full_name))]
+  if (names.length > 2) return t(`${names.length} practitioners`, `${names.length} profesionales`)
+  return names.join(' · ')
 }
 
 function timeToPx(iso: string, hourPx: number) {
@@ -2816,9 +2821,9 @@ function showNowLineOn(day: Date) {
             <div :style="{ minWidth: `${58 + dayColumns.length * 220}px` }">
               <div class="sticky top-0 z-30 flex bg-surface">
                 <div class="sticky left-0 z-10 h-10 w-[58px] shrink-0 border-b border-r border-line bg-surface"></div>
-                <div v-for="col in dayColumns" :key="col.id" class="flex h-10 flex-1 flex-col items-center justify-center border-b border-r border-line last:border-r-0">
+                <div v-for="col in dayColumns" :key="col.id" class="flex h-10 flex-1 flex-col items-center justify-center border-b border-r border-line last:border-r-0" data-cy="day-column-head" :data-room="col.name">
                   <span class="text-[13px] font-semibold text-ink-900">{{ col.name }}</span>
-                  <span v-if="!loading && roomPractitionerLabel(col.id)" class="text-[11.5px] leading-none text-ink-muted2">{{ roomPractitionerLabel(col.id) }}</span>
+                  <span v-if="!loading && roomPractitionerLabel(col.id)" class="text-[11.5px] leading-none text-ink-muted2" data-cy="day-column-staff">{{ roomPractitionerLabel(col.id) }}</span>
                 </div>
               </div>
 

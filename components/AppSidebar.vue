@@ -267,6 +267,29 @@ onUnmounted(() => {
 // doesn't have the width to spare for it at any collapsed/expanded size.
 // Any navigation should dismiss it, same as clicking the backdrop.
 watch(() => route.fullPath, () => emit('close'))
+
+// Eighteen items do not fit a 900px-tall window, and the list scrolled with
+// nothing to say so: the last three were simply not there. While anything
+// sits below the fold, the bottom edge fades and a chevron points down.
+const navRef = ref<HTMLElement | null>(null)
+const moreBelow = ref(false)
+function measureNav() {
+  const el = navRef.value
+  moreBelow.value = !!el && el.scrollHeight - el.scrollTop - el.clientHeight > 4
+}
+function scrollNavDown() {
+  navRef.value?.scrollBy({ top: navRef.value.clientHeight * 0.6, behavior: smoothScroll() })
+}
+let navObserver: ResizeObserver | undefined
+onMounted(() => {
+  if (!navRef.value) return
+  navObserver = new ResizeObserver(measureNav)
+  navObserver.observe(navRef.value)
+  measureNav()
+})
+// A group folded or opened, or a badge appeared: the content changed height.
+onUpdated(() => nextTick(measureNav))
+onUnmounted(() => navObserver?.disconnect())
 </script>
 
 
@@ -344,91 +367,100 @@ watch(() => route.fullPath, () => emit('close'))
       </div>
     </div>
 
-    <nav :aria-label="t('Main', 'Principal')" class="flex flex-1 flex-col gap-3.5 overflow-y-auto px-3 pb-3 pt-0.5" :class="{ 'items-center gap-2 px-1.5': collapsed }">
-      <div v-for="(group, gi) in visibleGroups" :key="group.id" class="flex flex-col gap-0.5" :class="{ 'items-center': collapsed }" :data-cy="`nav-group-${group.id}`">
-        <button
-          v-if="!collapsed"
-          type="button"
-          class="group/heading flex min-h-7 items-center gap-[7px] rounded-ctlSm px-[9px] py-1 text-left hover:bg-surface-sidebarHover touch:min-h-11"
-          :aria-expanded="groupOpen(group)"
-          :data-cy="`nav-group-toggle-${group.id}`"
-          @click="toggleGroup(group.id)"
-        >
-          <span class="text-[11px] font-[640] uppercase tracking-[.07em]" :class="group.tier ? 'text-brand-text' : 'text-ink-faint'">{{ group.label }}</span>
-          <span
-            v-if="group.tier"
-            class="rounded-pill bg-brand px-1.5 py-px text-[11px] font-bold uppercase leading-none tracking-[.06em] text-surface"
-          >{{ group.tier }}</span>
-          <svg
-            width="10"
-            height="10"
-            viewBox="0 0 10 10"
-            class="ml-auto shrink-0 text-ink-faint transition-transform"
-            :class="[groupOpen(group) ? '' : '-rotate-90', 'opacity-0 group-hover/heading:opacity-100 group-focus-visible/heading:opacity-100 touch:opacity-100']"
-            aria-hidden="true"
-          ><path d="M2 4l3 3 3-3" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" /></svg>
-        </button>
-        <div v-else-if="gi > 0" class="mb-1 h-px w-6 bg-line" aria-hidden="true" />
-        <template v-if="groupOpen(group)">
-          <NuxtLink
-            v-for="item in group.items"
-            :key="item.to"
-            :to="item.to"
-            data-cy="nav-item"
-            :data-to="item.to"
-            class="relative flex items-center gap-[9px] rounded-ctlSm text-[13.5px]"
-            :class="[
-              collapsed ? 'h-9 w-9 justify-center touch:h-11 touch:w-11' : 'h-8 w-full px-[9px] touch:h-11',
-              isActive(item.to, item.exact) ? 'bg-brand-tint text-brand-text font-semibold' : 'text-ink-600 hover:bg-surface-sidebarHover',
-            ]"
-            :aria-current="isActive(item.to, item.exact) ? 'page' : undefined"
-            :aria-label="collapsed ? itemName(item) : undefined"
-            :title="collapsed ? itemName(item) : undefined"
+    <div class="relative flex min-h-0 flex-1 flex-col">
+      <nav ref="navRef" :aria-label="t('Main', 'Principal')" class="flex flex-1 flex-col gap-3.5 overflow-y-auto px-3 pb-3 pt-0.5" :class="{ 'items-center gap-2 px-1.5': collapsed }" @scroll.passive="measureNav">
+        <div v-for="(group, gi) in visibleGroups" :key="group.id" class="flex flex-col gap-0.5" :class="{ 'items-center': collapsed }" :data-cy="`nav-group-${group.id}`">
+          <button
+            v-if="!collapsed"
+            type="button"
+            class="group/heading flex min-h-7 items-center gap-[7px] rounded-ctlSm px-[9px] py-1 text-left hover:bg-surface-sidebarHover touch:min-h-11"
+            :aria-expanded="groupOpen(group)"
+            :data-cy="`nav-group-toggle-${group.id}`"
+            @click="toggleGroup(group.id)"
           >
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path :d="item.icon" /></svg>
-            <template v-if="!collapsed">
-              <span class="flex-1">{{ item.label }}</span>
-              <span v-if="item.badge === 'myday' && myDayCount > 0" class="font-mono text-[11px] text-ink-muted2" data-cy="nav-badge-myday">{{ myDayCount }}</span>
-              <!-- Neutral, not red: red is money owed everywhere else in the
-              app, and a list of people to call is work, not an alarm. -->
-              <span v-if="item.badge === 'recalls' && recallsCount > 0" class="rounded-pill bg-chip-bg px-1.5 py-px text-[11px] font-semibold text-ink-700" data-cy="nav-badge-recalls">{{ recallsCount }}</span>
-              <span v-if="item.badge === 'automations' && automationsActive" class="h-[5px] w-[5px] rounded-full bg-success-accent" data-cy="nav-badge-automations" />
-              <span v-if="item.badge === 'inbox' && inboxUnreadCount > 0" class="rounded-pill bg-brand px-1.5 py-px text-[11px] font-semibold text-surface" data-cy="nav-badge-inbox">{{ inboxUnreadCount }}</span>
-              <span v-if="item.badge === 'team' && teamUnread > 0" class="rounded-pill bg-brand px-1.5 py-px text-[11px] font-semibold text-surface" data-cy="nav-badge-team">{{ teamUnread }}</span>
-            </template>
-            <span v-else-if="badgeText(item)" class="absolute right-1 top-1 h-[6px] w-[6px] rounded-full bg-brand" aria-hidden="true" />
-          </NuxtLink>
-        </template>
-      </div>
+            <span class="text-[11px] font-[640] uppercase tracking-[.07em]" :class="group.tier ? 'text-brand-text' : 'text-ink-faint'">{{ group.label }}</span>
+            <span
+              v-if="group.tier"
+              class="rounded-pill bg-brand px-1.5 py-px text-[11px] font-bold uppercase leading-none tracking-[.06em] text-surface"
+            >{{ group.tier }}</span>
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 10 10"
+              class="ml-auto shrink-0 text-ink-faint transition-transform"
+              :class="[groupOpen(group) ? '' : '-rotate-90', 'opacity-0 group-hover/heading:opacity-100 group-focus-visible/heading:opacity-100 touch:opacity-100']"
+              aria-hidden="true"
+            ><path d="M2 4l3 3 3-3" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" /></svg>
+          </button>
+          <div v-else-if="gi > 0" class="mb-1 h-px w-6 bg-line" aria-hidden="true" />
+          <template v-if="groupOpen(group)">
+            <NuxtLink
+              v-for="item in group.items"
+              :key="item.to"
+              :to="item.to"
+              data-cy="nav-item"
+              :data-to="item.to"
+              class="relative flex items-center gap-[9px] rounded-ctlSm text-[13.5px]"
+              :class="[
+                collapsed ? 'h-9 w-9 justify-center touch:h-11 touch:w-11' : 'h-8 w-full px-[9px] touch:h-11',
+                isActive(item.to, item.exact) ? 'bg-brand-tint text-brand-text font-semibold' : 'text-ink-600 hover:bg-surface-sidebarHover',
+              ]"
+              :aria-current="isActive(item.to, item.exact) ? 'page' : undefined"
+              :aria-label="collapsed ? itemName(item) : undefined"
+              :title="collapsed ? itemName(item) : undefined"
+            >
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path :d="item.icon" /></svg>
+              <template v-if="!collapsed">
+                <span class="flex-1">{{ item.label }}</span>
+                <span v-if="item.badge === 'myday' && myDayCount > 0" class="font-mono text-[11px] text-ink-muted2" data-cy="nav-badge-myday">{{ myDayCount }}</span>
+                <!-- Neutral, not red: red is money owed everywhere else in the
+                app, and a list of people to call is work, not an alarm. -->
+                <span v-if="item.badge === 'recalls' && recallsCount > 0" class="rounded-pill bg-chip-bg px-1.5 py-px text-[11px] font-semibold text-ink-700" data-cy="nav-badge-recalls">{{ recallsCount }}</span>
+                <span v-if="item.badge === 'automations' && automationsActive" class="h-[5px] w-[5px] rounded-full bg-success-accent" data-cy="nav-badge-automations" />
+                <span v-if="item.badge === 'inbox' && inboxUnreadCount > 0" class="rounded-pill bg-brand px-1.5 py-px text-[11px] font-semibold text-surface" data-cy="nav-badge-inbox">{{ inboxUnreadCount }}</span>
+                <span v-if="item.badge === 'team' && teamUnread > 0" class="rounded-pill bg-brand px-1.5 py-px text-[11px] font-semibold text-surface" data-cy="nav-badge-team">{{ teamUnread }}</span>
+              </template>
+              <span v-else-if="badgeText(item)" class="absolute right-1 top-1 h-[6px] w-[6px] rounded-full bg-brand" aria-hidden="true" />
+            </NuxtLink>
+          </template>
+        </div>
 
-      <div class="flex flex-col gap-0.5" :class="{ 'items-center': collapsed }">
-        <div v-if="!collapsed" class="px-[9px] py-1 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Help & Support', 'Ayuda y soporte') }}</div>
-        <div v-else class="mb-1 h-px w-6 bg-line" aria-hidden="true" />
-        <a
-          :href="helpCentreUrl"
-          target="_blank"
-          rel="noopener"
-          class="flex items-center gap-[9px] rounded-ctlSm text-[13.5px] text-ink-600 hover:bg-surface-sidebarHover"
-          :class="collapsed ? 'h-9 w-9 justify-center touch:h-11 touch:w-11' : 'h-8 w-full px-[9px] touch:h-11'"
-          :aria-label="collapsed ? t('Help Centre', 'Centro de ayuda') : undefined"
-          :title="collapsed ? t('Help Centre', 'Centro de ayuda') : undefined"
-        >
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="8" cy="8" r="5.8" /><path d="M6.2 6.3a1.8 1.8 0 013.4.8c0 1.2-1.6 1.4-1.6 2.5" stroke-linecap="round" /><circle cx="8" cy="11.5" r="0.15" fill="currentColor" /></svg>
-          <span v-if="!collapsed" class="flex-1">{{ t('Help Centre', 'Centro de ayuda') }}</span>
-        </a>
-        <button
-          type="button"
-          class="flex items-center gap-[9px] rounded-ctlSm text-[13.5px] text-ink-600 hover:bg-surface-sidebarHover"
-          :class="collapsed ? 'h-9 w-9 justify-center touch:h-11 touch:w-11' : 'h-8 w-full px-[9px] touch:h-11'"
-          :aria-label="collapsed ? t('Refer Your Friends!', '¡Recomienda a tus amigos!') : undefined"
-          :title="collapsed ? t('Refer Your Friends!', '¡Recomienda a tus amigos!') : undefined"
-          @click="referFriendsOpen = true"
-        >
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="8" cy="8" r="5.8" /><path d="M8 4.8v6.4M6 6.5c0-.9.9-1.5 2-1.5s2 .5 2 1.3c0 1.7-4 .9-4 2.7 0 .8.9 1.3 2 1.3s2-.6 2-1.5" stroke-linecap="round" /></svg>
-          <span v-if="!collapsed" class="flex-1 text-left">{{ t('Refer Your Friends!', '¡Recomienda a tus amigos!') }}</span>
+        <div class="flex flex-col gap-0.5" :class="{ 'items-center': collapsed }">
+          <div v-if="!collapsed" class="px-[9px] py-1 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Help & Support', 'Ayuda y soporte') }}</div>
+          <div v-else class="mb-1 h-px w-6 bg-line" aria-hidden="true" />
+          <a
+            :href="helpCentreUrl"
+            target="_blank"
+            rel="noopener"
+            class="flex items-center gap-[9px] rounded-ctlSm text-[13.5px] text-ink-600 hover:bg-surface-sidebarHover"
+            :class="collapsed ? 'h-9 w-9 justify-center touch:h-11 touch:w-11' : 'h-8 w-full px-[9px] touch:h-11'"
+            :aria-label="collapsed ? t('Help Centre', 'Centro de ayuda') : undefined"
+            :title="collapsed ? t('Help Centre', 'Centro de ayuda') : undefined"
+          >
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="8" cy="8" r="5.8" /><path d="M6.2 6.3a1.8 1.8 0 013.4.8c0 1.2-1.6 1.4-1.6 2.5" stroke-linecap="round" /><circle cx="8" cy="11.5" r="0.15" fill="currentColor" /></svg>
+            <span v-if="!collapsed" class="flex-1">{{ t('Help Centre', 'Centro de ayuda') }}</span>
+          </a>
+          <button
+            type="button"
+            class="flex items-center gap-[9px] rounded-ctlSm text-[13.5px] text-ink-600 hover:bg-surface-sidebarHover"
+            :class="collapsed ? 'h-9 w-9 justify-center touch:h-11 touch:w-11' : 'h-8 w-full px-[9px] touch:h-11'"
+            :aria-label="collapsed ? t('Refer Your Friends!', '¡Recomienda a tus amigos!') : undefined"
+            :title="collapsed ? t('Refer Your Friends!', '¡Recomienda a tus amigos!') : undefined"
+            @click="referFriendsOpen = true"
+          >
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="8" cy="8" r="5.8" /><path d="M8 4.8v6.4M6 6.5c0-.9.9-1.5 2-1.5s2 .5 2 1.3c0 1.7-4 .9-4 2.7 0 .8.9 1.3 2 1.3s2-.6 2-1.5" stroke-linecap="round" /></svg>
+            <span v-if="!collapsed" class="flex-1 text-left">{{ t('Refer Your Friends!', '¡Recomienda a tus amigos!') }}</span>
+          </button>
+        </div>
+      </nav>
+      <!-- For the pointer only: the keyboard reaches every item by tabbing,
+      and a screen reader reads the whole list either way. -->
+      <div v-if="moreBelow" class="pointer-events-none absolute inset-x-0 bottom-0 flex h-10 items-end justify-center bg-gradient-to-t from-surface-sidebar to-transparent" data-cy="sidebar-more-below">
+        <button type="button" tabindex="-1" aria-hidden="true" class="pointer-events-auto mb-0.5 flex h-6 w-8 items-center justify-center rounded-ctlSm text-ink-muted hover:bg-surface-sidebarHover" @click="scrollNavDown">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5 6 7.5 9 4.5" /></svg>
         </button>
       </div>
-    </nav>
+    </div>
 
     <!-- Settings is no longer the last thing in the column. Pinned to the
     bottom-left corner, it sat exactly where Chrome draws a hovered link's

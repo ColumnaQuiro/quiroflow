@@ -79,6 +79,9 @@ describe('Inbox, the 24-hour window', () => {
 
         cy.login(account.email, account.password)
         openInbox()
+        // Answered: out of Needs reply, and without the pill in the full list.
+        row(p.id).should('not.exist')
+        cy.showAllConversations()
         row(p.id).should('exist').find('[data-cy=inbox-row-window]').should('not.exist')
       })
     })

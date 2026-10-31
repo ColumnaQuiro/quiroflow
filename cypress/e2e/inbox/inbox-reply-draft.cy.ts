@@ -44,6 +44,7 @@ describe('Inbox: reply drafts for patients', () => {
         cy.task('db:createPatientAppMessage', { accountId: account.accountId, patientId: patient.id, direction: 'outbound', body: 'A ti' })
         cy.login(account.email, account.password)
         cy.visit('/inbox')
+        cy.showAllConversations()
         cy.contains('Leo Contestado').click()
         cy.contains('A ti').should('be.visible')
         cy.get('[data-cy=reply-draft-ask]').should('not.exist')
@@ -96,6 +97,7 @@ describe('Inbox: reply drafts for patients', () => {
 
         cy.login(account.email, account.password)
         cy.visit('/inbox')
+        cy.showAllConversations()
         cy.contains('Olga Atendida').click()
         cy.get('[data-cy="thread-message"]').filter(':contains("Los sábados estamos cerrados.")').find('[data-cy="thread-message-ai"]').should('be.visible')
         cy.get('[data-cy="thread-message"]').filter(':contains("Te esperamos el lunes.")').find('[data-cy="thread-message-ai"]').should('not.exist')

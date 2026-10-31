@@ -46,6 +46,7 @@ describe('WhatsApp reactions', () => {
 
         cy.login(account.email, account.password)
         cy.visit('/inbox')
+        cy.showAllConversations()
         cy.contains('Elena Reacciona').click()
         cy.contains('[data-cy=thread-message]', 'Tu cita queda el martes').find('[data-cy=message-reaction]').should('have.text', '👍')
 
@@ -54,6 +55,7 @@ describe('WhatsApp reactions', () => {
         // reopened here because local realtime does not deliver to Cypress.)
         const reopen = () => {
           cy.reload()
+          cy.showAllConversations()
           cy.contains('Elena Reacciona').click()
         }
         react(wamid, '❤️')

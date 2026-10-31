@@ -244,12 +244,19 @@ const unreadOnly = ref(false)
 // The database narrows to the period; the closings ("gracias", Confirmar)
 // are dropped here, by the same rule as the pill (utils/inboxReplyWindow.ts).
 const expiringOnly = ref(false)
-// "awaiting_us"/"awaiting_patient" is deliberately independent from unread:
-// unread means "I haven't opened this," awaiting-us means "the last message
-// is theirs, regardless of whether I've read it" -- a conversation I've
-// already read but haven't replied to is exactly the case this filter
-// exists to surface that "unread" alone would miss.
-const replyFilter = ref<'all' | 'awaiting_us' | 'awaiting_patient'>('all')
+// "Who replies next" is deliberately not the same as unread: unread means
+// "I haven't opened this", while "the last message is theirs" holds whether
+// or not I have read it -- a conversation I've read but not answered is
+// exactly what "unread" alone would miss. Needs reply takes both.
+//
+// The Inbox opens on "Needs reply": they wrote last, or it is unread for me
+// (needs_reply, 20261030170019). Opened on everything, newest
+// first, the top of the list was the clinic's own reminders -- "You:
+// Recordatorio de su cita" -- with the patients' questions in between, and
+// answering people is the job. A thread whose last message is our automatic
+// send is awaiting them, so it folds out of this view by itself. One click
+// shows everything; a search always looks everywhere (replyParam).
+const replyFilter = ref<'all' | 'needs_reply' | 'awaiting_patient'>('needs_reply')
 const labelFilter = ref<string | null>(null)
 const counts = ref({ all: 0, mine: 0, unassigned: 0, unread: 0 })
 
@@ -301,6 +308,15 @@ interface InboxPageResult {
   counts: { all: number; mine: number; unassigned: number; unread: number } | null
   expiring: InboxRow[] | null
 }
+// The reply filter as the list applies it. "Needs reply" is the active view's
+// default, not a choice someone made, so it stays out of the archived and
+// snoozed lists and out of a search: a name typed in is someone being looked
+// for, wherever their thread stands.
+function replyParam(): 'needs_reply' | 'awaiting_patient' | null {
+  if (replyFilter.value === 'all') return null
+  if (replyFilter.value === 'needs_reply' && (view.value !== 'active' || search.value.trim())) return null
+  return replyFilter.value
+}
 async function fetchInboxPage(opts: { limit: number; offset: number; withCounts: boolean; withExpiring: boolean; searchKeys?: string[]; term?: string }): Promise<InboxPageResult | null> {
   const at = Date.now()
   const { data, error } = await supabase.rpc('inbox_page' as never, {
@@ -309,7 +325,7 @@ async function fetchInboxPage(opts: { limit: number; offset: number; withCounts:
     p_tab: tab.value,
     p_unread_only: unreadOnly.value,
     p_expiring: expiringOnly.value,
-    p_reply: replyFilter.value === 'all' ? null : replyFilter.value,
+    p_reply: replyParam(),
     p_label_id: labelFilter.value,
     p_search_name: opts.term ? normalizeSearchTerm(opts.term) : null,
     p_search_phone: opts.term ?? null,
@@ -465,7 +481,7 @@ const chipOff = 'border-line-control text-ink-700 hover:bg-surface-subtle'
 const menuRow = 'flex min-h-9 touch:min-h-11 w-full items-center gap-2 rounded-ctlSm px-2.5 text-left text-[13.5px] text-ink-700 hover:bg-surface-subtle'
 const moreFiltersOpen = ref(false)
 const moreFiltersEl = ref<HTMLElement>()
-const moreFiltersActive = computed(() => (replyFilter.value !== 'all' ? 1 : 0) + (aiFilter.value === 'ai_handling' || aiFilter.value === 'needs_human' ? 1 : 0))
+const moreFiltersActive = computed(() => (replyFilter.value === 'awaiting_patient' ? 1 : 0) + (aiFilter.value === 'ai_handling' || aiFilter.value === 'needs_human' ? 1 : 0))
 function onMoreFiltersDocClick(e: MouseEvent) {
   if (moreFiltersOpen.value && moreFiltersEl.value && !moreFiltersEl.value.contains(e.target as Node)) moreFiltersOpen.value = false
 }
@@ -499,6 +515,11 @@ const leadConversationsInView = computed(() => {
     list = list.filter((c) => normalizeSearchTerm(`${c.name} ${c.preview}`).includes(q))
   }
   if (unreadOnly.value) list = list.filter((c) => c.unread)
+  // The same rule as the patient threads (replyParam), which leads never
+  // followed. A lead nobody has written to yet is waiting on us too.
+  const reply = replyParam()
+  if (reply === 'needs_reply') list = list.filter((c) => c.lastDirection !== 'outbound' || c.unread)
+  else if (reply === 'awaiting_patient') list = list.filter((c) => c.lastDirection === 'outbound')
   if (aiFilter.value === 'ai_handling') list = list.filter((c) => c.aiState === 'handling')
   else if (aiFilter.value === 'needs_human') list = list.filter((c) => c.aiState === 'needs_human' || c.aiState === 'blocked')
   else if (aiFilter.value === 'draft_ready') list = list.filter((c) => c.hasDraft)
@@ -738,10 +759,17 @@ function leadSortAt(c: { key: string; lastMessageAt: string }) {
 // wrote after it. "Load older conversations" brings it in at its place.
 type ListRow = { kind: 'lead'; c: (typeof leadConversations.value)[number]; at: number } | { kind: 'patient'; c: Conversation; at: number }
 const listRows = computed<ListRow[]>(() => {
-  const patients = filteredConversations.value
+  let patients = filteredConversations.value
   // Expiring runs oldest first, and is a handful: nothing to hold back.
   const oldest = hasMore.value && patients.length && !expiringOnly.value ? Date.parse(patients[patients.length - 1]!.lastMessage!.created_at) : null
-  const leads = visibleLeadConversations.value.filter((c) => oldest === null || Date.parse(c.lastMessageAt) >= oldest)
+  let leads = visibleLeadConversations.value.filter((c) => oldest === null || Date.parse(c.lastMessageAt) >= oldest)
+  // Under Needs reply the conversation that is open stays in the list until
+  // another is opened. Opening one marks it read and answering it makes it
+  // theirs to reply to -- either takes it out of the view -- and a row that
+  // vanished on the very click that opened it read as a glitch.
+  const keep = replyParam() === 'needs_reply' && selectedKey.value && !notKept.value.has(selectedKey.value) ? selectedKey.value : null
+  if (keep && selectedLead.value && sourceFilter.value !== 'patients' && !leads.some((c) => c.key === keep)) leads = [...leads, selectedLead.value]
+  else if (keep && !selectedLead.value && selected.value?.lastMessage && sourceFilter.value !== 'leads' && !patients.some((c) => c.key === keep)) patients = [...patients, selected.value]
   return [
     ...leads.map((c): ListRow => ({ kind: 'lead', c, at: expiringOnly.value ? -Date.parse(c.lastMessageAt) : view.value === 'snoozed' ? -Date.parse(leadSnoozes.value[c.key]?.snoozed_until ?? c.lastMessageAt) : leadSortAt(c) })),
     ...patients.map((c): ListRow => ({ kind: 'patient', c, at: expiringOnly.value ? -Date.parse(c.lastMessage!.created_at) : view.value === 'snoozed' ? -Date.parse(c.snoozedUntil ?? c.lastMessage!.created_at) : Date.parse(c.sortAt ?? c.lastMessage!.created_at) })),
@@ -779,11 +807,25 @@ const selectedKey = ref<string | null>(null)
 // not on the loaded page is fetched on its own into `openedRow`.
 const draftConversation = ref<Conversation | null>(null)
 const openedRow = ref<InboxRow | null>(null)
+// The last version of the open conversation the list held. Under "Needs
+// reply", answering someone moves their thread out of the list -- it is
+// awaiting them now -- and without this the conversation being written in
+// closed the moment the reply went.
+const keptSelected = ref<Conversation | null>(null)
+// Archived on purpose: it leaves the list, and the thread closes, as before.
+const notKept = ref(new Set<string>())
+watch(
+  () => conversations.value.find((c) => c.key === selectedKey.value) ?? null,
+  (c) => {
+    if (c) keptSelected.value = c
+  },
+)
 const selected = computed<Conversation | null>(() => {
   const inList = conversations.value.find((c) => c.key === selectedKey.value)
   if (inList) return inList
   if (openedRow.value?.conversation_key === selectedKey.value) return toConversation(openedRow.value)
-  return draftConversation.value?.key === selectedKey.value ? draftConversation.value : null
+  if (draftConversation.value?.key === selectedKey.value) return draftConversation.value
+  return keptSelected.value?.key === selectedKey.value && !notKept.value.has(keptSelected.value.key) ? keptSelected.value : null
 })
 
 // The open conversation's own messages, oldest first, with this tab's
@@ -1127,6 +1169,9 @@ async function conversationKeyForLead(leadId: string): Promise<string | null> {
 // --- Archive, unread, assign (single and bulk) ------------------------------------
 async function setArchived(keys: string[], archive: boolean) {
   if (keys.length === 0 || !store.teamMember || !store.accountId) return
+  const next = new Set(notKept.value)
+  for (const k of keys) archive ? next.add(k) : next.delete(k)
+  notKept.value = next
   if (archive) {
     await supabase
       .from('whatsapp_conversation_archives')
@@ -1862,6 +1907,18 @@ function avatarInitials(name: string) {
             ten chips scrolled sideways past the edge of the list, and wrapped
             it took four rows of a laptop screen before the first conversation. -->
             <div class="flex flex-wrap items-center gap-1.5" data-cy="inbox-filters">
+              <!-- On by default: see replyFilter. -->
+              <button
+                v-if="view === 'active'"
+                type="button"
+                data-cy="inbox-filter-needs-reply"
+                :aria-pressed="replyFilter === 'needs_reply'"
+                :class="[chip, replyFilter === 'needs_reply' ? chipOn : chipOff]"
+                :title="t('Where they wrote last, or marked unread. Off shows every conversation.', 'Donde escribieron los últimos, o marcadas como no leídas. Desactivado muestra todas.')"
+                @click="replyFilter = replyFilter === 'needs_reply' ? 'all' : 'needs_reply'"
+              >
+                {{ t('Needs reply', 'Por responder') }}
+              </button>
               <!-- First, and only where both kinds exist: the split people
               actually scan for. Every other filter narrows within it. -->
               <template v-if="hasGrowth && view !== 'archived'">
@@ -1945,16 +2002,13 @@ function avatarInitials(name: string) {
                 <div v-if="moreFiltersOpen" role="menu" class="absolute left-0 top-[calc(100%+4px)] z-20 w-64 rounded-card border border-line bg-surface p-1.5 shadow-popover" data-cy="inbox-more-filters-menu">
                   <p class="px-2.5 pb-1 pt-1.5 text-[11.5px] font-semibold uppercase tracking-wide text-ink-faint">{{ t('Who replies next', 'Quién responde') }}</p>
                   <button
-                    v-for="f in [
-                      { key: 'awaiting_us', label: t('Awaiting us', 'Esperan respuesta') },
-                      { key: 'awaiting_patient', label: t('Awaiting patient', 'Esperan al paciente') },
-                    ]"
+                    v-for="f in [{ key: 'awaiting_patient', label: t('Awaiting patient', 'Esperan al paciente') }]"
                     :key="f.key"
                     type="button"
                     role="menuitemcheckbox"
                     :aria-checked="replyFilter === f.key"
                     :class="menuRow"
-                    @click="replyFilter = replyFilter === f.key ? 'all' : (f.key as 'awaiting_us' | 'awaiting_patient')"
+                    @click="replyFilter = replyFilter === f.key ? 'all' : 'awaiting_patient'"
                   >
                     <span class="flex-1">{{ f.label }}</span>
                     <svg v-if="replyFilter === f.key" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" class="text-brand-text" aria-hidden="true"><path d="M3 8.5l3 3 7-7" stroke-linecap="round" stroke-linejoin="round" /></svg>
@@ -1985,7 +2039,7 @@ function avatarInitials(name: string) {
                     type="button"
                     data-cy="inbox-more-filters-clear"
                     class="mt-1 w-full border-t border-line-divider px-2.5 pt-2 text-left text-[13px] font-semibold text-brand-text hover:underline"
-                    @click="replyFilter = 'all'; if (aiFilter !== 'draft_ready') aiFilter = 'all'"
+                    @click="if (replyFilter === 'awaiting_patient') replyFilter = 'all'; if (aiFilter !== 'draft_ready') aiFilter = 'all'"
                   >
                     {{ t('Clear these filters', 'Quitar estos filtros') }}
                   </button>
@@ -2063,6 +2117,11 @@ function avatarInitials(name: string) {
           <p v-else-if="filteredConversations.length === 0 && visibleLeadConversations.length === 0" class="p-6 text-center text-[14px] text-ink-faint" data-cy="inbox-empty">
             <template v-if="view === 'archived'">{{ t('No archived conversations.', 'No hay conversaciones archivadas.') }}</template>
             <template v-else-if="view === 'snoozed'">{{ t('Nothing snoozed. Snooze a conversation from its header to have it come back later.', 'Nada pospuesto. Pospón una conversación desde su cabecera para que vuelva más tarde.') }}</template>
+            <template v-else-if="counts.all + leadConversations.length === 0 && !search.trim()">{{ t('No conversations yet.', 'Aún no hay conversaciones.') }}</template>
+            <template v-else-if="replyFilter === 'needs_reply' && !search.trim() && tab === 'all' && !unreadOnly && !expiringOnly && !labelFilter">
+              {{ t('Nobody is waiting for a reply.', 'Nadie espera respuesta.') }}
+              <button type="button" class="ml-1 font-semibold text-brand-text hover:underline" data-cy="inbox-show-all" @click="replyFilter = 'all'">{{ t('Show all conversations', 'Ver todas las conversaciones') }}</button>
+            </template>
             <template v-else-if="search.trim() || tab !== 'all' || unreadOnly || expiringOnly || replyFilter !== 'all' || labelFilter">{{ t('Nothing matches these filters.', 'Nada coincide con estos filtros.') }}</template>
             <template v-else>{{ t('No conversations yet.', 'Aún no hay conversaciones.') }}</template>
           </p>

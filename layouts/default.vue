@@ -125,6 +125,15 @@ watch(supabaseFailure, (f) => {
   in a wide table cell, say): left alone those resolve against the page
   itself and let an iPhone pan the whole app sideways. -->
   <div v-else class="relative flex h-screen supports-[height:100dvh]:h-dvh flex-col overflow-hidden bg-surface-page">
+    <!-- First thing a keyboard reaches: otherwise eighteen sidebar links and
+    the top bar come before the page, on every page. Hidden until focused. -->
+    <a
+      href="#main-content"
+      data-cy="skip-to-content"
+      class="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:rounded-ctl focus:bg-surface focus:px-3 focus:py-2 focus:text-[13.5px] focus:font-semibold focus:border focus:border-brand focus:text-ink-900 focus:shadow-focus"
+    >
+      {{ t('Skip to content', 'Saltar al contenido') }}
+    </a>
     <BillingBanner />
     <div class="flex flex-1 overflow-hidden">
       <AppSidebar :open="mobileSidebarOpen" @close="mobileSidebarOpen = false" />
@@ -179,7 +188,7 @@ watch(supabaseFailure, (f) => {
           <span>{{ t("You don't have access to that section.", 'No tienes acceso a esa sección.') }}</span>
           <button type="button" class="font-medium underline" @click="dismissDenied">{{ t('Dismiss', 'Cerrar') }}</button>
         </div>
-        <main class="flex flex-1 flex-col overflow-hidden">
+        <main id="main-content" tabindex="-1" class="flex flex-1 flex-col overflow-hidden outline-none">
           <slot />
         </main>
       </div>

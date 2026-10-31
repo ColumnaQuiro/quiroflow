@@ -74,12 +74,12 @@ describe('The day on a phone', () => {
       cy.visit('/calendar')
       cy.get('[data-cy=calendar-phone-header]').should('be.visible').invoke('outerHeight').should('be.lessThan', 60)
       cy.get('[data-cy=new-appointment]').should('not.be.visible')
-      cy.contains('button', 'Cash Shift').should('not.be.visible')
+      cy.contains('button', 'Cash shift').should('not.be.visible')
 
       cy.get('[data-cy=calendar-phone-more]').click()
       cy.get('[data-cy=calendar-phone-menu]').within(() => {
         cy.contains('button', 'Block time').should('be.visible')
-        cy.contains('button', 'Cash Shift').should('be.visible')
+        cy.contains('button', 'Cash shift').should('be.visible')
         // The agenda has its own round "+"; the menu offers New appointment
         // only where that button is not (the week grid).
         cy.contains('button', 'New appointment').should('not.exist')

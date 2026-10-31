@@ -15,7 +15,7 @@ describe('The cash shift’s opening change', () => {
 
         cy.login(account.email, account.password)
         cy.visit('/calendar')
-        cy.contains('button', 'Cash Shift').click()
+        cy.contains('button', 'Cash shift').click()
         cy.get('[data-cy=shift-float]').should('contain', '0,00 €')
         cy.get('[data-cy=shift-expected]').should('contain', '30,00 €')
 

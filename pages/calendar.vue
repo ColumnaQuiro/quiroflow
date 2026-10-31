@@ -2469,7 +2469,7 @@ function showNowLineOn(day: Date) {
             {{ t('Block time', 'Bloquear horario') }}
           </button>
           <button v-if="can('payments_allocate')" type="button" role="menuitem" class="flex h-10 w-full items-center px-3.5 text-left text-[14px] text-ink-900 active:bg-surface-subtle" @click="phoneMenu(() => (cashShiftOpen = true))">
-            {{ t('Cash Shift', 'Turno de Caja') }}
+            {{ t('Cash shift', 'Turno de caja') }}
           </button>
           <button type="button" role="menuitem" class="flex h-10 w-full items-center px-3.5 text-left text-[14px] text-ink-900 active:bg-surface-subtle" @click="phoneMenu(() => (mobileInfoOpen = true))">
             {{ t("Today's info", 'Información del día') }}
@@ -2499,7 +2499,7 @@ function showNowLineOn(day: Date) {
           <option value="week">{{ t('Week', 'Semana') }}</option>
           <option value="month">{{ t('Month', 'Mes') }}</option>
         </select>
-        <UiBtn v-if="can('payments_allocate')" variant="secondary" size="sm" @click="cashShiftOpen = true">{{ t('Cash Shift', 'Turno de Caja') }}</UiBtn>
+        <UiBtn v-if="can('payments_allocate')" variant="secondary" size="sm" @click="cashShiftOpen = true">{{ t('Cash shift', 'Turno de caja') }}</UiBtn>
         <template v-if="!readOnly">
           <span v-if="bookingFor" class="inline-flex h-8 items-center gap-1.5 rounded-pill bg-brand-tint pl-3 pr-1.5 text-[12.5px] font-semibold text-brand-text" data-cy="booking-for">
             {{ t(`Booking for ${bookingFor.name} · pick a time`, `Reservando para ${bookingFor.name} · elige una hora`) }}

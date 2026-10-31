@@ -72,7 +72,7 @@ async function signOut() {
         class="block w-full px-3 py-2 text-left text-[13px] text-ink-500 hover:bg-surface-subtle"
         @click="cashShiftOpen = true; menuOpen = false"
       >
-        {{ t('Cash Shift', 'Turno de caja') }}
+        {{ t('Cash shift', 'Turno de caja') }}
       </button>
       <button type="button" class="block w-full px-3 py-2 text-left text-[13px] text-ink-500 hover:bg-surface-subtle" @click="signOut">
         {{ t('Sign out', 'Cerrar sesión') }}

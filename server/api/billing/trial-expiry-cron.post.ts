@@ -2,7 +2,7 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 
 // The only enforcement of "free trial, then must pay" for an account that
-// never got a real Stripe subscription -- signup starts a 14-day trial
+// never got a real Stripe subscription -- signup starts a 15-day trial
 // (see 0134_billing_trial_and_enforcement.sql), but if nobody ever runs
 // "Start subscription" from the admin panel for that account, there's no
 // Stripe object to ever fire a webhook event, so the row would otherwise

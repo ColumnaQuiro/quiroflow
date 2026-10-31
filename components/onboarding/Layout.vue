@@ -85,8 +85,8 @@ useHead(() => (props.embedded ? { htmlAttrs: { class: 'auth-screen' } } : {}))
             <p class="text-[12px] leading-relaxed text-ink-muted lg:text-[12.5px]">
               {{
                 t(
-                  'Patient records stored in the EU under GDPR · 30-day trial, no card required · Cancel anytime.',
-                  'Historiales de pacientes alojados en la UE conforme al RGPD · 30 días de prueba, sin tarjeta · Cancela cuando quieras.',
+                  'Patient records stored in the EU under GDPR · 15-day trial, no card required · Cancel anytime.',
+                  'Historiales de pacientes alojados en la UE conforme al RGPD · 15 días de prueba, sin tarjeta · Cancela cuando quieras.',
                 )
               }}
             </p>

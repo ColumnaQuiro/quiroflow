@@ -87,7 +87,7 @@ async function onSubmit() {
       </form>
     </template>
 
-    <!-- Without its own, the layout's default is signup's ("30-day trial,
+    <!-- Without its own, the layout's default is signup's ("15-day trial,
          no card required"), which means nothing to someone resetting a
          password. -->
   </OnboardingLayout>

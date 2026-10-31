@@ -31,7 +31,7 @@ describe('The cash shift, a visit with a voided receipt', () => {
 
       cy.login(account.email, account.password)
       cy.visit('/calendar')
-      cy.contains('button', 'Cash Shift').click()
+      cy.contains('button', 'Cash shift').click()
       cy.contains('li', 'Rehecha Caja').should('be.visible')
       cy.contains('li', 'Pagada Caja').should('not.exist')
     })

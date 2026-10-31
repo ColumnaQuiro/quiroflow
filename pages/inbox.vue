@@ -259,6 +259,9 @@ const expiringOnly = ref(false)
 const replyFilter = ref<'all' | 'needs_reply' | 'awaiting_patient'>('needs_reply')
 const labelFilter = ref<string | null>(null)
 const counts = ref({ all: 0, mine: 0, unassigned: 0, unread: 0 })
+// Until the first counts arrive the tabs show no number: "All 0" while the
+// list was still loading read as an empty inbox.
+const countsLoaded = ref(false)
 
 // Text search covers what was said, not only names and numbers: the keys of
 // conversations with a matching message join the name/number match.
@@ -342,7 +345,10 @@ async function fetchInboxPage(opts: { limit: number; offset: number; withCounts:
 }
 
 function applyInboxCounts(result: InboxPageResult) {
-  if (result.counts) counts.value = { all: result.counts.all ?? 0, mine: result.counts.mine ?? 0, unassigned: result.counts.unassigned ?? 0, unread: result.counts.unread ?? 0 }
+  if (result.counts) {
+    counts.value = { all: result.counts.all ?? 0, mine: result.counts.mine ?? 0, unassigned: result.counts.unassigned ?? 0, unread: result.counts.unread ?? 0 }
+    countsLoaded.value = true
+  }
   if (result.expiring) expiringRows.value = result.expiring
   else if (view.value !== 'active') expiringRows.value = []
 }
@@ -1899,7 +1905,7 @@ function avatarInitials(name: string) {
                 :class="tab === tb.key ? 'bg-surface text-ink-900 shadow-card' : 'text-ink-500 hover:text-ink-700'"
                 @click="tab = tb.key as 'all' | 'mine' | 'unassigned'"
               >
-                {{ tb.label }} <span class="text-[12.5px] font-medium text-ink-muted">{{ tb.count }}</span>
+                {{ tb.label }} <span v-if="countsLoaded" class="text-[12.5px] font-medium text-ink-muted">{{ tb.count }}</span>
               </button>
             </div>
             <!-- The filters people reach for daily stay in the row; the rest

@@ -36,7 +36,7 @@ const columns = computed(() => {
     <section v-for="col in columns" :key="col.key" :data-cy="`flow-${col.key}`" class="rounded-card border border-line bg-surface p-2.5">
       <div class="flex items-center gap-1.5 px-0.5">
         <span class="h-2 w-2 shrink-0 rounded-full" :class="FILTER_DOT_CLASS[col.key]" aria-hidden="true" />
-        <h3 class="grow text-[12.5px] font-[640] text-ink-700">{{ col.title }}</h3>
+        <h2 class="grow text-[12.5px] font-[640] text-ink-700">{{ col.title }}</h2>
         <UiSkeleton v-if="loading" class="h-[18px] w-5 rounded-pill" />
         <span v-else data-cy="flow-count" class="rounded-pill bg-chip-bg px-1.5 py-0.5 text-[11px] font-medium text-chip-text">{{ col.rows.length }}</span>
       </div>

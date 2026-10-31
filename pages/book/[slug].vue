@@ -89,7 +89,31 @@ if (import.meta.server) {
   lang.value = queryLang ?? bookingLanguageFromAcceptLanguage(useRequestHeader('accept-language'))
   useResponseHeader('Netlify-Vary').value = 'query,language=es|en|fr'
 }
-useHead({ htmlAttrs: { lang } })
+useHead({
+  htmlAttrs: { lang },
+  // Nothing is shown until the stylesheet has applied. This page is embedded
+  // as a cross-site iframe, and Chrome lays such a frame out before its
+  // render-blocking stylesheet has arrived: the whole step in browser
+  // defaults (8 px body margin, unstyled buttons, the summary pushed below
+  // the frame), then again once the CSS lands. Nothing visibly flashes, but
+  // the second layout is measured as a shift of the host page: 0.66 CLS on a
+  // copy of columnaquiro.com's /reserva-cita/ (31 Oct 2026), and the
+  // dominant part of the 0.45 the site audit reported. A small stylesheet
+  // usually wins that race; entry.css, 100 KB, does not. Inlining it
+  // (features.inlineStyles) is turned off app-wide for a reason given in
+  // nuxt.config.ts, so instead --booking-styled is defined in theme.css and
+  // the page stays hidden, laid out but untracked, until it is. A top-level
+  // visit is unaffected: there the stylesheet blocks the first paint anyway.
+  // The animation shows the page after 3 s regardless, so a stylesheet that
+  // never arrives leaves it unstyled rather than blank.
+  style: [
+    {
+      key: 'booking-hide-until-styled',
+      tagPriority: 'critical',
+      innerHTML: 'html{visibility:var(--booking-styled,hidden);animation:booking-reveal 0s 3s forwards}@keyframes booking-reveal{to{visibility:visible}}',
+    },
+  ],
+})
 const LANGUAGE_NAMES: Record<BookingLanguage, string> = { es: 'Español', en: 'English', fr: 'Français' }
 function chooseLanguage(next: BookingLanguage) {
   lang.value = next
@@ -1455,7 +1479,8 @@ const fieldId = useId()
         <div v-else-if="phase === 'payment'" class="mx-auto mt-8 max-w-md">
           <h2 class="text-center text-xl font-semibold text-ink-900">{{ say({ es: 'Pago', en: 'Payment', fr: 'Paiement' }) }}</h2>
           <p class="mt-1 text-center text-sm text-ink-muted">{{ say({ es: 'Su cita ya está reservada. Complete el pago para confirmarla.', en: 'Your appointment is booked. Complete the payment to confirm it.', fr: 'Votre rendez-vous est réservé. Effectuez le paiement pour le confirmer.' }) }}</p>
-          <BookingPayment class="mt-6" :account-slug="slug" :invoice-id="invoiceId" :amount-cents="paymentRequiredCents" :format-price="formatPrice" @paid="onPaymentSucceeded" />
+          <!-- Lazy, so its chunk -- and Stripe with it -- loads only here. -->
+          <LazyBookingPayment class="mt-6" :account-slug="slug" :invoice-id="invoiceId" :amount-cents="paymentRequiredCents" :format-price="formatPrice" @paid="onPaymentSucceeded" />
         </div>
 
         <!-- Step 3b: a card to hold the booking, when the clinic asks for one -->

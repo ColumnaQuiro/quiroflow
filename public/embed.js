@@ -26,6 +26,19 @@
  *   2. <div data-quiroflow-booking data-slug="…" data-type="…"></div> has the
  *      iframe built for it, for clinics embedding it for the first time.
  *
+ * It also passes on the page's own language, as ?site_lang=, so a clinic
+ * whose site is in Spanish and English can show the booking in whichever the
+ * patient is reading -- columnaquiro.com's /reserva-cita/ and
+ * /en/book-appointment/ embedded the same iframe, and the English page booked
+ * in Spanish unless the browser said otherwise.
+ *
+ * A hint, not ?lang=: the widget follows it only for a clinic that has hidden
+ * its language picker (Settings > Online booking > Look), which is the clinic
+ * saying its site decides. Plenty of WordPress sites still declare the theme's
+ * default `<html lang="en-US">` over Spanish content, and taken as an order
+ * that would put every patient of a clinic that never touched a setting into
+ * English. With the picker shown, the widget goes on following the browser.
+ *
  * Deliberately ES5 and dependency-free: it runs on whatever a clinic's site
  * is built with, which in practice means WordPress themes of unknown vintage.
  */
@@ -129,6 +142,39 @@
   }
 
   /**
+   * The parent page's language, when it is one the widget speaks
+   * (utils/bookingLanguage.ts: es, en, fr). `<html lang="en-GB">` -> 'en'.
+   * Anything else, or nothing, is left for the widget to work out from the
+   * browser, as it did before.
+   */
+  var LANGUAGES = ['es', 'en', 'fr']
+  function languageOfTag(tag) {
+    var primary = String(tag || '').trim().toLowerCase().split(/[-_]/)[0]
+    for (var i = 0; i < LANGUAGES.length; i++) {
+      if (LANGUAGES[i] === primary) return primary
+    }
+    return null
+  }
+  function pageLanguage() {
+    return languageOfTag(document.documentElement.getAttribute('lang'))
+  }
+
+  /**
+   * What the widget picks with no ?lang= (bookingLanguageFromList): the
+   * first of the browser's languages it speaks, else Spanish. When this is
+   * already the page's language, ?site_lang= could change nothing, and an
+   * existing iframe is not reloaded to say it.
+   */
+  function browserLanguage() {
+    var tags = navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language]
+    for (var i = 0; i < tags.length; i++) {
+      var lang = languageOfTag(tags[i])
+      if (lang) return lang
+    }
+    return 'es'
+  }
+
+  /**
    * Adds the params to a /book/ url without disturbing what is already there.
    *
    * Existing keys win: `type` selects the appointment type and is the whole
@@ -219,18 +265,25 @@
 
   function run() {
     var params = campaignParams()
+    var hasCampaign = false
+    for (var key in params) {
+      if (Object.prototype.hasOwnProperty.call(params, key)) hasCampaign = true
+    }
+    // Carried like a campaign param (withParams: a value already on the
+    // iframe wins). The widget gives a ?lang= of the clinic's own precedence
+    // over it anyway.
+    var lang = pageLanguage()
+    if (lang) params.site_lang = lang
 
+    // A new iframe costs nothing to build with every key on it.
     var containers = document.querySelectorAll('[data-quiroflow-booking]')
     for (var i = 0; i < containers.length; i++) buildIframe(containers[i], params)
 
-    // Nothing to forward means nothing to rewrite: an organic visit should
-    // leave the existing embeds exactly as they are rather than reloading
-    // them to add no information.
-    var hasParams = false
-    for (var key in params) {
-      if (Object.prototype.hasOwnProperty.call(params, key)) hasParams = true
-    }
-    if (!hasParams) return
+    // An existing one is reloaded by a rewrite, so only for something the
+    // widget could not see by itself: a campaign, or a page language other
+    // than the one the browser would give it anyway. An organic visit in
+    // the browser's own language leaves the embeds exactly as they are.
+    if (!hasCampaign && (!lang || lang === browserLanguage())) return
 
     var iframes = document.getElementsByTagName('iframe')
     // Live HTMLCollection, and upgradeIframe can append nothing to it — but

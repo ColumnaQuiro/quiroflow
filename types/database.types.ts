@@ -1208,6 +1208,8 @@ export type Database = {
           next_invoice_number: number | null
           online_booking_background_color: string | null
           online_booking_gtm_id: string | null
+          online_booking_hide_heading: boolean
+          online_booking_hide_language_picker: boolean
           online_booking_hide_logo: boolean
           online_booking_max_days_ahead: number
           lead_convert_after_visits: number | null
@@ -1314,6 +1316,8 @@ export type Database = {
           next_invoice_number?: number | null
           online_booking_background_color?: string | null
           online_booking_gtm_id?: string | null
+          online_booking_hide_heading?: boolean
+          online_booking_hide_language_picker?: boolean
           online_booking_hide_logo?: boolean
           online_booking_max_days_ahead?: number
           lead_convert_after_visits?: number | null
@@ -1419,6 +1423,8 @@ export type Database = {
           next_invoice_number?: number | null
           online_booking_background_color?: string | null
           online_booking_gtm_id?: string | null
+          online_booking_hide_heading?: boolean
+          online_booking_hide_language_picker?: boolean
           online_booking_hide_logo?: boolean
           online_booking_max_days_ahead?: number
           lead_convert_after_visits?: number | null

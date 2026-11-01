@@ -119,7 +119,7 @@ describe('A reply that is sent as it is', () => {
     expect(prompt).toContain('move it with book_appointment (move_visit_on')
     expect(prompt).not.toContain('a colleague books it')
     // Cancels only through cancel_appointment, and says so only once it has.
-    expect(prompt).toContain('call cancel_appointment with its current day and time (visit_on)')
+    expect(prompt).toContain('cancel it straight away with cancel_appointment (visit_on = its current day and time)')
     expect(prompt).toContain('never that one is cancelled unless cancel_appointment has')
     expect(prompt).not.toContain('If they ask to cancel, say your colleague will take care of it.')
   })
@@ -185,7 +185,11 @@ describe('Messages it leaves alone', () => {
     expect(isNoReplyMessage(['Cambiar cita'], phrases)).toBe(false)
     expect(isNoReplyMessage(['Confirmar', 'Podemos hacerlo jueves 22?'], phrases)).toBe(false)
     expect(isNoReplyMessage([], phrases)).toBe(false)
-    expect(isNoReplyMessage(['Gracias'], [])).toBe(false)
+    // A thanks needs no answer even for a clinic that emptied its list:
+    // that is every clinic's, not a setting (31 Oct 2026). Anything else
+    // off the list is still answered.
+    expect(isNoReplyMessage(['Gracias'], [])).toBe(true)
+    expect(isNoReplyMessage(['Confirmar'], [])).toBe(false)
   })
 
   // A lead picked a time, was asked "¿Te confirmo el martes 3 a las 10:00?",

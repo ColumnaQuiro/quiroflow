@@ -195,5 +195,36 @@ export function isNoReplyMessage(
   const known = new Set(phrases.map(normalized).filter(Boolean))
   // A reaction (a 👍 on the last reply) is never a question, whatever the
   // clinic's list says.
-  return messagesSinceLastReply.every((text) => isReactionBody(text) || known.has(normalized(text)))
+  const listed = (text: string) => isReactionBody(text) || known.has(normalized(text))
+  if (messagesSinceLastReply.every(listed)) return true
+  // A thanks, however it is put, closes the exchange whatever the clinic's
+  // list says: "Vale muchas gracias 🙏" after "tu cita queda movida al
+  // miércoles 11" was answered with the same confirmation again (31 Oct
+  // 2026), because only "Gracias" on its own was on the list.
+  return messagesSinceLastReply.every((text) => listed(text) || onlyCourtesy(text)) && messagesSinceLastReply.some(saysThanks)
+}
+
+/** Words a sign-off is made of. Never "sí": after an offer it is a yes. */
+const COURTESY = new Set([
+  'vale', 'ok', 'okay', 'okey', 'oki', 'okis', 'gracias', 'graciass', 'muchas', 'muchisimas', 'mil', 'perfecto', 'perfecta', 'genial', 'estupendo', 'estupenda',
+  'de', 'acuerdo', 'entendido', 'entendida', 'bien', 'muy', 'guay', 'super', 'igualmente', 'a', 'ti', 'vosotros', 'vosotras', 'hasta', 'luego', 'pronto',
+  'saludos', 'un', 'saludo', 'buenas', 'buenos', 'noches', 'tardes', 'dias', 'buen', 'dia', 'besos', 'beso', 'abrazo', 'nos', 'vemos', 'todo', 'correcto',
+  'thanks', 'thank', 'you', 'great', 'cheers', 'merci',
+])
+
+function onlyCourtesy(text: string): boolean {
+  const words = normalized(text).split(' ').filter(Boolean)
+  return words.length > 0 && words.every((word) => COURTESY.has(word) || /^\p{Extended_Pictographic}+$/u.test(word))
+}
+
+function saysThanks(text: string): boolean {
+  return /(?<!\p{L})(?:gracias|graciass|thanks|thank you|merci)(?!\p{L})/u.test(normalized(text))
+}
+
+/** Tools whose success changes the diary or the record: their reply must reach the person. */
+const ACTING_TOOLS = ['book_appointment', 'cancel_appointment', 'give_visit_to', 'add_to_waitlist', 'stop_follow_ups']
+
+/** Whether a reply did something the person has to be told about (ACTING_TOOLS). */
+export function replyActed(toolUses: { name: string; ok: boolean }[]): boolean {
+  return toolUses.some((use) => use.ok && ACTING_TOOLS.includes(use.name))
 }

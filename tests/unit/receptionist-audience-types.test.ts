@@ -63,27 +63,34 @@ describe('Receptionist types by audience', () => {
     expect(offeredTypesSection([first])).not.toContain('Oferta')
   })
 
-  // Moving a visit keeps its type; a draft leaves cancelling to a person.
+  // Moving a visit keeps its type; a draft leaves cancelling to a person,
+  // and offers another day rather than asking first (31 Oct 2026).
   it('moves a booked visit to a new time of the same type, and as a draft leaves cancelling to a colleague', () => {
     const visits = [{ startsAt: '2026-10-20T08:00:00Z', typeName: 'Ajuste' }]
     const section = rescheduleSection(visits, 'Europe/Madrid', { listVisits: true })
     expect(section).toContain('Tuesday 20 October at 10:00 (Ajuste)')
     expect(section).toContain('that same type of appointment')
-    expect(section).toContain('first ask whether they would like to move it to another day instead. Only if they say no, say your colleague will cancel it')
+    expect(section).toContain('do not first ask whether they would rather move it: say your colleague will cancel it')
+    expect(section).toContain('in the same reply offer another day')
     expect(section).not.toContain('cancel_appointment')
     expect(rescheduleSection(visits, 'Europe/Madrid', { listVisits: false })).not.toContain('(Ajuste)')
     expect(rescheduleSection([], 'Europe/Madrid', { listVisits: true })).toBe('')
   })
 
-  // Answering on its own, it cancels the visit itself -- and does not leave
-  // one booked that the patient has said they will not come to.
-  it('cancels a visit itself when it answers on its own, and moves it when they want another time', () => {
+  // Answering on its own, it cancels the visit straight away and offers
+  // another day in the same reply. "Quisiera anular la cita" was answered
+  // with "¿prefieres cambiarla?", nobody answered, and the visit stayed
+  // booked (31 Oct 2026).
+  it('cancels a visit straight away when it answers on its own, offers another day, and moves it when they ask to change it', () => {
     const visits = [{ startsAt: '2026-10-20T08:00:00Z', typeName: 'Ajuste' }]
     const section = rescheduleSection(visits, 'Europe/Madrid', { listVisits: true, canBook: true })
-    expect(section).toContain('first ask whether they would like to move it to another day instead')
-    expect(section).toContain('call cancel_appointment with its current day and time (visit_on)')
-    expect(section).toContain('never leave a visit booked that they have said they will not come to')
-    expect(section).toContain('If they cannot come but want another time, move it instead')
+    expect(section).toContain('cancel it straight away with cancel_appointment (visit_on = its current day and time)')
+    expect(section).toContain('do not first ask whether they would rather move it')
+    expect(section).toContain('Si quieres otro día, dime cuál te viene bien y te busco hueco')
+    expect(section).toContain('book it with book_appointment as a new visit of the same type as the one cancelled')
+    expect(section).toContain('Never leave a visit booked that they have said they will not come to')
+    expect(section).toContain('that is a move, not a cancellation')
+    expect(section).not.toContain('first ask whether they would like to move it')
     expect(section).toContain('Stopping or pausing their treatment, or cancelling a package, is for a colleague')
     expect(section).not.toContain('hand_over_to_colleague straight away')
     expect(section).not.toContain('your colleague will take care of it')

@@ -25,7 +25,18 @@ interface Body {
   noReplyPhrases?: unknown
   monthlyReplyLimit?: unknown
   reactivationAppointmentTypeId?: unknown
+  /** The updated_at the screen read (ReceptionistConfig.updatedAt); see LISTS below. */
+  ifUpdatedAt?: unknown
 }
+
+/**
+ * The settings saved as whole lists. A save carrying one of them from a
+ * screen opened before somebody else's change writes the old list back over
+ * it -- which is how four knowledge cards went missing with nothing to say so
+ * (31 Oct 2026) -- so it is refused unless the row is as the screen read it.
+ * A switch or a number replaces only itself, and is let through.
+ */
+const LISTS: (keyof Body)[] = ['knowledge', 'escalationRules', 'qualificationQuestions', 'noReplyPhrases']
 
 const TONES = ['warm_brief', 'clinical', 'chatty', 'formal']
 
@@ -112,8 +123,15 @@ export default defineEventHandler(async (event) => {
 
   if (Object.keys(patch).length === 0) throw createError({ statusCode: 400, statusMessage: 'Nothing to update' })
 
-  const { error } = await supabase.from('receptionist_config').update(patch).eq('account_id', teamMember.account_id)
+  // In the update itself, so nothing can land between the check and the write.
+  const guarded = typeof body.ifUpdatedAt === 'string' && LISTS.some((key) => body[key] !== undefined)
+  let update = supabase.from('receptionist_config').update(patch).eq('account_id', teamMember.account_id)
+  if (guarded) update = update.eq('updated_at', body.ifUpdatedAt as string)
+  const { data: written, error } = await update.select('account_id')
   if (error) throw createError({ statusCode: 500, statusMessage: error.message })
+  if (guarded && !written?.length) {
+    throw createError({ statusCode: 409, statusMessage: 'Someone else changed these settings after you opened this page.' })
+  }
 
   const config = await loadReceptionistConfig(supabase, teamMember.account_id)
   return { config, ...(await loadTypeChoices(supabase, teamMember.account_id, config)) }

@@ -5,6 +5,8 @@ import { loadReceptionistCalendar, type OfferedType, type ReceptionistConfig } f
 import { availabilityLists, FREE_TIMES_MAX_DAYS, FREE_TIMES_MAX_TIMES, parseFreeTimesInput } from '~/utils/receptionistSlots'
 import { clinicDateOf, startOfLocalDate } from '~/utils/clinicClock'
 import { briefingLeak } from '~/utils/receptionistGuard'
+import { isNoReply } from '~/utils/receptionistAutoReply'
+import { FIXED_IN_CODE, fixStyle, styleNote, styleProblems } from '~/utils/receptionistStyle'
 import type { ReceptionistPrompt } from '~/utils/receptionistPrompt'
 import { ADD_TO_WAITLIST, BOOK_APPOINTMENT, CANCEL_APPOINTMENT, GIVE_VISIT_TO, STOP_FOLLOW_UPS } from '~/server/utils/receptionistBooking'
 import { cleanReply, clockTimes, offeredTimeCount, tooManyTimesNote, unbookedClaim, unbookedClaimNote } from '~/utils/receptionistHistory'
@@ -166,6 +168,8 @@ export async function runReceptionistModel(
     standingTimes?: Set<string>
     /** The clinic's text that is not for patients (internalNotes). */
     internalNotes: string[]
+    /** The practitioners' full names (loadTeamNames): a reply calls them by first name (fixStyle). */
+    teamNames?: string[]
     /** Names the conversation in the log when a draft is withheld; never its content. */
     logLabel: string
   },
@@ -208,6 +212,9 @@ export async function runReceptionistModel(
   // stating a booking they did not make has already been sent back once.
   const done = new Set<string>()
   let claimRewritten = false
+  // Whether a reply breaking the house style (styleProblems) was already
+  // sent back once to be reworded.
+  let styleRewritten = false
   for (let round = 0; ; round++) {
     const message = await client.messages.create({
       model: opts.model,
@@ -252,12 +259,23 @@ export async function runReceptionistModel(
         messages.push({ role: 'user', content: unbookedClaimNote(claim) })
         continue
       }
-      const leak = text ? briefingLeak(text, opts.internalNotes) : null
+      // The house style, checked in code (utils/receptionistStyle.ts): what
+      // needs rewording goes back once -- not after a booking, which a second
+      // round must not be tempted to repeat -- and the rest is mended here.
+      const needsWords = text ? styleProblems(text, opts.teamNames).filter((problem) => !FIXED_IN_CODE.includes(problem)) : []
+      if (needsWords.length && !styleRewritten && !booked) {
+        styleRewritten = true
+        messages.push({ role: 'assistant', content: message.content })
+        messages.push({ role: 'user', content: styleNote(needsWords) })
+        continue
+      }
+      const reply = text && !isNoReply(text) ? fixStyle(text, opts.teamNames) : text
+      const leak = reply ? briefingLeak(reply, opts.internalNotes) : null
       if (leak) {
         console.warn(`[receptionist] withheld a draft for ${opts.logLabel}: it ${leak}`)
         return { text: '', refused: true, handedOver, toolUses }
       }
-      return { text, refused: false, handedOver, toolUses }
+      return { text: reply, refused: false, handedOver, toolUses }
     }
 
     // The whole turn goes back, thinking blocks included and unchanged, and

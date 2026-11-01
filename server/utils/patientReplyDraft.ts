@@ -5,8 +5,8 @@ import { announceHandover, heldBackBeforeSending, noteInConversation, PAST_TIME_
 import { bookingTool, cancelTool, giveVisitTool, stopFollowUpsTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
 import { recentImages, withImages, type StoredImage } from '~/server/utils/receptionistImages'
 import { historyLine, standingClockTimes } from '~/utils/receptionistHistory'
-import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personRepliedSince } from '~/utils/receptionistAutoReply'
-import { loadBookedVisits, loadClinicDetails, loadFamilyAdults, loadOfferedTypes, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, toneWording, uniqueTypes, clinicTodayStart } from '~/server/utils/receptionist'
+import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personRepliedSince, replyActed } from '~/utils/receptionistAutoReply'
+import { loadBookedVisits, loadClinicDetails, loadFamilyAdults, loadOfferedTypes, loadTeamNames, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, toneWording, uniqueTypes, clinicTodayStart } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel, type FreeTimesForWhom } from '~/server/utils/receptionistModel'
 import { matchChild, typesAfterFirstVisit, typesForAudience, typesForMinor, typesForSomeoneTheyBring } from '~/utils/receptionistTypes'
 import { internalNotes } from '~/utils/receptionistGuard'
@@ -201,6 +201,8 @@ export async function draftPatientReply(
   const laterPrices = { sessions: typesAfterFirstVisit(offered), packages: await loadPackagePrices(supabase, accountId) }
   // Where the clinic is and when it sees patients, from its settings.
   const clinicDetails = await loadClinicDetails(supabase, accountId)
+  // Who sees patients, by name (teamSection, fixStyle).
+  const team = await loadTeamNames(supabase, accountId)
   const family = { forNew: bringsSomeone.types, forReturning: types, members: await loadFamilyAdults(service, accountId, patientId) }
   // Back after a long break with no bono: the clinic's own visit for that
   // (returningPatientSection), when it is one it offers.
@@ -277,10 +279,10 @@ export async function draftPatientReply(
   // asked, because the model call is what the ceiling is there to stop.
   if (await overMonthlyLimit(service, accountId, config.monthlyReplyLimit)) return { status: 'limit_reached' }
 
-  const { text: draft, refused, handedOver } = await runReceptionistModel(await createAnthropicClient(apiKey), {
+  const { text: draft, refused, handedOver, toolUses } = await runReceptionistModel(await createAnthropicClient(apiKey), {
     model: MODEL,
     maxTokens: MAX_TOKENS,
-    system: buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, family: { forNew: family.forNew, forReturning: family.forReturning, members: family.members }, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, laterPrices, clinicDetails, reactivationType, canStopFollowUps: Boolean(stopFollowUps) }),
+    system: buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, family: { forNew: family.forNew, forReturning: family.forReturning, members: family.members }, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, laterPrices, clinicDetails, team, reactivationType, canStopFollowUps: Boolean(stopFollowUps) }),
     messages: withImages(history, images),
     findFreeTimes,
     handOver: sends,
@@ -292,6 +294,7 @@ export async function draftPatientReply(
     maxTimesPerReply: config.slotsPerReply,
     standingTimes: standingClockTimes(booked.appointments, calendar.timeZone),
     internalNotes: internalNotes(config),
+    teamNames: team,
     logLabel: `patient ${patientId}`,
   })
   // The model judged that nothing needs saying (a thanks the list missed).
@@ -328,7 +331,13 @@ export async function draftPatientReply(
     if (recordError) throw new Error(`could not record the reply before sending: ${recordError.message}`)
     // Read again now: written from a diary or a conversation that has moved
     // on, it stays the waiting draft recorded above rather than going out.
-    const heldBack = await heldBackBeforeSending(service, accountId, { patientId, leadId: null }, readAt, draft, calendar.timeZone)
+    const heldBack = await heldBackBeforeSending(service, accountId, { patientId, leadId: null }, readAt, draft, calendar.timeZone, replyActed(toolUses) ? null : newestInboundAt)
+    // They wrote again meanwhile: answered whole on the next tick, which sees
+    // a message newer than drafted_through_at; this draft is put away.
+    if (heldBack === 'newer_message') {
+      await service.from('inbox_reply_drafts').update({ dismissed_at: now }).eq('account_id', accountId).eq('conversation_key', patientId)
+      return { status: 'nothing_to_answer' }
+    }
     if (heldBack === 'past_time') {
       await service.from('inbox_reply_drafts').update({ handed_over_at: now }).eq('account_id', accountId).eq('conversation_key', patientId)
       await announceHandover(service, accountId, target, name, PAST_TIME_REASON)

@@ -69,3 +69,35 @@ export function clinicDetailsSection(clinics: PromptClinic[]): string {
     `This comes from the clinic's own settings: give it when they ask where the clinic is, how to reach it or when it is open, and it wins over anything the clinic knowledge says about the same thing. The times you offer for a visit still come only from the Booking list or find_free_times.`,
   ].join('\n\n')
 }
+
+/**
+ * How the receptionist names each practitioner: the first name alone, or the
+ * whole name when two share a first name. One conversation called the same
+ * practitioner by her first name, then three times by her full name (31 Oct
+ * 2026).
+ */
+export function teamCallNames(fullNames: string[]): Map<string, string> {
+  const names = [...new Set(fullNames.map((name) => name.replace(/\s+/g, ' ').trim()).filter(Boolean))]
+  const first = (name: string) => name.split(' ')[0]!
+  const count = new Map<string, number>()
+  for (const name of names) count.set(first(name), (count.get(first(name)) ?? 0) + 1)
+  return new Map(names.map((name) => [name, count.get(first(name))! > 1 ? name : first(name)]))
+}
+
+/**
+ * The practitioners who see patients, by the name the receptionist calls them.
+ *
+ * Their gender is left to the model, read from the name, for every clinic --
+ * a setting nobody would fill in for something any receptionist knows from
+ * a colleague's name. Without the list it could not answer "¿tenéis chico y
+ * chica?" (31 Oct 2026), and wrote "mi compañera" for whoever was next.
+ */
+export function teamSection(fullNames: string[]): string {
+  const names = [...new Set(teamCallNames(fullNames).values())]
+  if (!names.length) return ''
+  return [
+    '# The team',
+    `The chiropractors who see patients: ${names.join(', ')}.`,
+    'Work out from each name whether that person is a woman or a man, and make every word about them agree in Spanish: "mi compañera Marta, la quiropráctica", "mi compañero Óscar, el quiropráctico". When they ask who sees patients, or whether there is a man or a woman, answer from this list. Call each of them only by the name given here, never with a surname. A name that could be either is used without a gendered word.',
+  ].join('\n')
+}

@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
-import { clinicDetailsSection, type PromptClinic } from '~/utils/receptionistClinic'
+import { clinicDetailsSection, teamSection, type PromptClinic } from '~/utils/receptionistClinic'
 import { CONFIRM_BEFORE_BOOKING, audienceSection, minorsSection, newPatientDetailsSection, offeredAppointmentTypes, laterPricesSection, offeredTypesSection, referralSection, rescheduleSection, someoneTheyBringSection, type PromptPackage, type BookedVisit, type PromptChild, type PromptType, type ReceptionistAudience } from '~/utils/receptionistTypes'
 import { CARD_ANSWERS_LINE, historyMarkersSection, INFORMAL_ADDRESS_LINE, LATER_ANSWER_LINE, NO_INVENTION_LINE, NOT_CHIROPRACTIC_SYMPTOM_LINE, PART_OF_DAY_ANSWER_LINE, REPLY_DETAILS_LINE, replyLanguageLine, SENT_FILES_LINE, STATED_LIMITS_LINE, WAITLIST_SECTION } from '~/utils/receptionistHistory'
 import { leadOriginSection, type LeadOrigin } from '~/utils/receptionistLeadOrigin'
@@ -60,6 +60,8 @@ export interface ReceptionistConfig {
   monthlyReplyLimit: number | null
   /** The type offered to someone back after a long break with no bono (returningPatientSection); null for none. */
   reactivationAppointmentTypeId: string | null
+  /** When the row last changed: the settings screen sends it back, so a save from a stale screen is refused (config.put). */
+  updatedAt: string | null
 }
 
 /** The clinic's chosen tone, as an instruction. Shared with review replies
@@ -119,6 +121,7 @@ export function toConfig(row: Row | null): ReceptionistConfig {
     noReplyPhrases: row?.no_reply_phrases ?? [],
     monthlyReplyLimit: row?.monthly_reply_limit ?? null,
     reactivationAppointmentTypeId: row?.reactivation_appointment_type_id ?? null,
+    updatedAt: row?.updated_at ?? null,
   }
 }
 
@@ -183,6 +186,27 @@ export async function loadClinicDetails(supabase: SupabaseClient<Database>, acco
     clinicHours: c.business_hours,
     practitionerHours: staff.filter((p) => (p.team_member_clinics ?? []).some((tmc) => tmc.clinic_id === c.id)).map((p) => p.business_hours),
   }))
+}
+
+/**
+ * The full names of the practitioners who see patients through bookings
+ * (teamSection) -- the same people loadReceptionistCalendar offers times
+ * with. Empty when they cannot be read: the prompt then names nobody.
+ */
+export async function loadTeamNames(supabase: SupabaseClient<Database>, accountId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('team_members')
+    .select('full_name')
+    .eq('account_id', accountId)
+    .eq('is_practitioner', true)
+    .eq('online_booking_enabled', true)
+    .is('deleted_at', null)
+    .order('created_at')
+  if (error) {
+    console.error('[receptionist] could not read the team:', error.message)
+    return []
+  }
+  return ((data ?? []) as { full_name: string | null }[]).map((m) => m.full_name ?? '').filter(Boolean)
 }
 
 /** The clinic's bonos and their prices (Settings > Bonos), for laterPricesSection. */
@@ -720,6 +744,8 @@ export function buildSystemPrompt(
     offeredTypes: PromptType[]
     /** The ad's first-visit offer, for someone not known to come from the ad. */
     adOnlyTypes?: PromptType[]
+    /** The plain first visit, when someone from the ad is offered the offer (typesForAudience's `regular`). */
+    regularFirstVisit?: PromptType
     audience?: ReceptionistAudience
     calendar: ReceptionistCalendar
     leadOrigin?: LeadOrigin | null
@@ -751,6 +777,8 @@ export function buildSystemPrompt(
     laterPrices?: { sessions: PromptType[]; packages: PromptPackage[] }
     /** The clinic's address, contact and hours from its settings (clinicDetailsSection). */
     clinicDetails?: PromptClinic[]
+    /** The practitioners' full names (loadTeamNames, teamSection). */
+    team?: string[]
   },
 ): ReceptionistPrompt {
   const personName = promptSafeName(opts.draft?.personName)
@@ -785,6 +813,7 @@ export function buildSystemPrompt(
     `Write dates in words, in the patient's language, with the weekday: "el lunes 20 de octubre", "Monday 20 October". Never "20/10" or "2026-10-20".`,
     replyLanguageLine(config.languages),
     clinicDetailsSection(opts.clinicDetails ?? []),
+    teamSection(opts.team ?? []),
     knowledge
       ? `# What you know about this clinic\n\n${knowledge}`
       : `# What you know about this clinic\n\nNothing ${opts.clinicDetails?.length ? 'else ' : ''}has been configured yet. For anything ${opts.clinicDetails?.length ? 'not under "The clinic"' : 'about the clinic'}, say you will check with your colleague rather than guessing.`,
@@ -849,7 +878,7 @@ export function buildSystemPrompt(
     // The types come from the database at the moment of drafting, not from
     // the model's reading of the knowledge cards: an owner who withholds a
     // type, or archives it, has it gone from the next reply.
-    offeredTypesSection(opts.offeredTypes, adOnly, { referralVisit: Boolean(opts.referral?.types.length) }),
+    offeredTypesSection(opts.offeredTypes, adOnly, { referralVisit: Boolean(opts.referral?.types.length), regularFirstVisit: opts.regularFirstVisit }),
     opts.laterPrices ? laterPricesSection(opts.laterPrices) : '',
     opts.referral ? referralSection({ ...opts.referral, canBook: !!opts.canBook, sendsItself: !!opts.sendsItself }) : '',
     opts.minors ? minorsSection({ ...opts.minors, canBook: !!opts.canBook, sendsItself: !!opts.sendsItself, bringsSomeone: Boolean(opts.bringsSomeone) }) : '',

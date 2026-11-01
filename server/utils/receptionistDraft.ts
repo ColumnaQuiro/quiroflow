@@ -5,8 +5,8 @@ import { announceHandover, heldBackBeforeSending, noteInConversation, PAST_TIME_
 import { bookingTool, cancelTool, giveVisitTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
 import { recentImages, withImages } from '~/server/utils/receptionistImages'
 import { historyLine, standingClockTimes } from '~/utils/receptionistHistory'
-import { autoReplyHeldBack, isNoReply, isNoReplyMessage } from '~/utils/receptionistAutoReply'
-import { buildSystemPrompt, loadBookedVisits, loadClinicDetails, loadOfferedTypes, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, uniqueTypes, type LeadOrigin } from '~/server/utils/receptionist'
+import { autoReplyHeldBack, isNoReply, isNoReplyMessage, replyActed } from '~/utils/receptionistAutoReply'
+import { buildSystemPrompt, loadBookedVisits, loadClinicDetails, loadOfferedTypes, loadTeamNames, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, uniqueTypes, type LeadOrigin } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptionistModel'
 import { cameFromAd } from '~/utils/receptionistLeadOrigin'
 import { leadNameIsTheirs, typesForAudience, typesAfterFirstVisit, typesForMinor, typesForReferral, typesForSomeoneTheyBring, type ReceptionistAudience } from '~/utils/receptionistTypes'
@@ -198,7 +198,7 @@ export async function draftLeadReply(
   // Read now, not when the receptionist was configured: a type archived or
   // withheld since then is gone from this reply.
   const offered = await loadOfferedTypes(supabase, accountId, config)
-  const { types, adOnly } = typesForAudience(offered, audience)
+  const { types, adOnly, regular } = typesForAudience(offered, audience)
   // Or for their child (minorsSection): what a child may have, and the
   // children already on file with them as tutor, once they are a patient.
   const minors = { forNewChild: typesForMinor(offered, false), forReturningChild: typesForMinor(offered, true), children: await loadTutorChildren(supabase, accountId, lead.patient_id ?? null) }
@@ -212,6 +212,9 @@ export async function draftLeadReply(
   const laterPrices = { sessions: typesAfterFirstVisit(offered), packages: await loadPackagePrices(supabase, accountId) }
   // Where the clinic is and when it sees patients, from its settings.
   const clinicDetails = await loadClinicDetails(supabase, accountId)
+  // Who sees patients, by name: the prompt reads their gender from it, and a
+  // reply calls them by first name (teamSection, fixStyle).
+  const team = await loadTeamNames(supabase, accountId)
   const referralTypes = audience === 'existing' ? [] : typesForReferral(offered)
   const referral = referralTypes.length ? { types: referralTypes } : undefined
   // A lead who has booked their first visit and wants to move it is offered
@@ -273,10 +276,10 @@ export async function draftLeadReply(
   // asked, because the model call is what the ceiling is there to stop.
   if (await overMonthlyLimit(supabase, accountId, config.monthlyReplyLimit)) return { status: 'limit_reached' }
 
-  const { text: draft, refused, handedOver } = await runReceptionistModel(await createAnthropicClient(apiKey), {
+  const { text: draft, refused, handedOver, toolUses } = await runReceptionistModel(await createAnthropicClient(apiKey), {
     model: MODEL,
     maxTokens: MAX_TOKENS,
-    system: buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, audience, calendar, leadOrigin, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, draft: { personName: lead.full_name ?? null }, knownDetails: { name: leadNameIsTheirs(lead.channel) && Boolean(lead.full_name?.trim()), email: Boolean(lead.email?.trim()), phone: !(NUMBERLESS_CHANNELS.includes(lead.channel) && !lead.phone) }, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, referral, laterPrices, clinicDetails }),
+    system: buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience, calendar, leadOrigin, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, draft: { personName: lead.full_name ?? null }, knownDetails: { name: leadNameIsTheirs(lead.channel) && Boolean(lead.full_name?.trim()), email: Boolean(lead.email?.trim()), phone: !(NUMBERLESS_CHANNELS.includes(lead.channel) && !lead.phone) }, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, referral, laterPrices, clinicDetails, team }),
     messages: withImages(history, images),
     findFreeTimes,
     handOver: sends,
@@ -287,6 +290,7 @@ export async function draftLeadReply(
     maxTimesPerReply: config.slotsPerReply,
     standingTimes: standingClockTimes(booked.appointments, calendar.timeZone),
     internalNotes: internalNotes(config),
+    teamNames: team,
     logLabel: `lead ${leadId}`,
   })
 
@@ -319,7 +323,13 @@ export async function draftLeadReply(
     if (recordError) throw new Error(`could not record the reply before sending: ${recordError.message}`)
     // Read again now: written from a diary or a conversation that has moved
     // on, it stays the draft recorded above rather than going out.
-    const heldBack = await heldBackBeforeSending(calendarClient, accountId, { patientId: lead.patient_id ?? null, leadId }, readAt, draft, calendar.timeZone)
+    const heldBack = await heldBackBeforeSending(calendarClient, accountId, { patientId: lead.patient_id ?? null, leadId }, readAt, draft, calendar.timeZone, replyActed(toolUses) ? null : newestInboundAt)
+    // They wrote again meanwhile: answered whole on the next tick, which sees
+    // a message newer than ai_drafted_through_at and no draft in the way.
+    if (heldBack === 'newer_message') {
+      await supabase.from('leads').update({ ai_draft_body: null }).eq('id', leadId).eq('account_id', accountId)
+      return { status: 'nothing_to_answer' }
+    }
     if (heldBack === 'past_time') {
       await handToPerson(supabase, accountId, leadId)
       await announceHandover(supabase, accountId, target, name, PAST_TIME_REASON)

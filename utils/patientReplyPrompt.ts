@@ -2,7 +2,7 @@ import { formatEur } from './billing'
 import { DEFAULT_CLINIC_TIMEZONE } from './clinicClock'
 import { CONFIDENTIALITY_SECTION, promptSafeName } from './receptionistGuard'
 import { NO_REPLY } from './receptionistAutoReply'
-import { clinicDetailsSection, type PromptClinic } from './receptionistClinic'
+import { clinicDetailsSection, teamSection, type PromptClinic } from './receptionistClinic'
 import { CONFIRM_BEFORE_BOOKING, familySection, laterPricesSection, minorsSection, offeredTypesSection, rescheduleSection, someoneTheyBringSection, type PromptPackage, type BookedVisit, type PromptChild, type PromptRelative, type PromptType } from './receptionistTypes'
 import { receptionistBookingSection, receptionistClockSection, type ReceptionistAvailability } from './receptionistSlots'
 import { CARD_ANSWERS_LINE, historyMarkersSection, INFORMAL_ADDRESS_LINE, LATER_ANSWER_LINE, NO_INVENTION_LINE, NOT_CHIROPRACTIC_SYMPTOM_LINE, PART_OF_DAY_ANSWER_LINE, REPLY_DETAILS_LINE, replyLanguageLine, SENT_FILES_LINE, STATED_LIMITS_LINE, WAITLIST_SECTION } from './receptionistHistory'
@@ -281,6 +281,8 @@ export function buildPatientReplyPrompt(
     reactivationType?: string | null
     /** The clinic's address, contact and hours from its settings (clinicDetailsSection). */
     clinicDetails?: PromptClinic[]
+    /** The practitioners' full names (teamSection). */
+    team?: string[]
   },
 ): ReceptionistPrompt {
   const knowledge = config.knowledge
@@ -300,6 +302,7 @@ export function buildPatientReplyPrompt(
     `Write dates in words, in the patient's language, with the weekday: "el lunes 20 de octubre", "Monday 20 October". Never "20/10" or "2026-10-20".`,
     replyLanguageLine(config.languages),
     clinicDetailsSection(opts.clinicDetails ?? []),
+    teamSection(opts.team ?? []),
     knowledge ? `# What you know about this clinic\n\n${knowledge}` : '',
     // Not every message wants an answer: a "Confirmar" tapped on the reminder,
     // a thanks. A re-confirmation nobody asked for is noise in their WhatsApp.

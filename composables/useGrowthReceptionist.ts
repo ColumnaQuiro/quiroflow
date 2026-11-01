@@ -37,6 +37,8 @@ export interface ReceptionistConfig {
   monthlyReplyLimit: number | null
   /** Offered to a patient back after a long break with no bono; null for none. */
   reactivationAppointmentTypeId: string | null
+  /** When the settings last changed, sent back with a save so one from a stale screen is refused. */
+  updatedAt?: string | null
 }
 
 export type ChannelStatus = 'connected' | 'not_set_up' | 'not_built'
@@ -113,17 +115,35 @@ export function useGrowthReceptionist() {
   }
   onMounted(load)
 
-  async function save(patch: Partial<ReceptionistConfig>) {
+  // One save at a time, each carrying the updatedAt the one before it
+  // returned: two quick edits on this screen must not read as somebody else's.
+  let queue: Promise<unknown> = Promise.resolve()
+  function save(patch: Partial<ReceptionistConfig>): Promise<boolean> {
+    const next = queue.then(() => saveNow(patch))
+    queue = next
+    return next
+  }
+
+  async function saveNow(patch: Partial<ReceptionistConfig>) {
     saving.value = true
     try {
-      const data = await useStaffFetch<{ config: ReceptionistConfig } & TypeChoices>('/api/growth/receptionist/config', { method: 'PUT', body: patch })
+      // The settings as this screen read them: a save over somebody else's
+      // newer change is refused rather than writing the old cards back.
+      const body = { ...patch, ifUpdatedAt: config.value?.updatedAt ?? null }
+      const data = await useStaffFetch<{ config: ReceptionistConfig } & TypeChoices>('/api/growth/receptionist/config', { method: 'PUT', body })
       config.value = data.config
       appointmentTypes.value = data.appointmentTypes
       offeredTypes.value = data.offeredTypes
       showToast(t('Saved.', 'Guardado.'))
       return true
     } catch (e) {
-      showToast(serverMessage(e) ?? t('Could not save.', 'No se ha podido guardar.'), 'error')
+      const stale = (e as { statusCode?: number; status?: number })?.statusCode === 409 || (e as { status?: number })?.status === 409
+      showToast(
+        stale
+          ? t('Someone changed these settings after you opened this page. Reload it to see their changes, then save yours again.', 'Alguien ha cambiado estos ajustes después de que abrieras la página. Recárgala para ver sus cambios y vuelve a guardar los tuyos.')
+          : serverMessage(e) ?? t('Could not save.', 'No se ha podido guardar.'),
+        'error',
+      )
       return false
     } finally {
       saving.value = false

@@ -34,6 +34,13 @@ describe('Recalls report', () => {
               cy.login(account.email, account.password)
               cy.visit('/reports/recalls')
               cy.get('[data-cy=recalls-report][data-ready=true]', { timeout: 20000 })
+              // Sent five days ago: in the first days of a month that is last
+              // month, and the report opens on this one.
+              // As in income-card-figures: the trigger itself can read "Last 7
+              // days" on the 8th, when "This month" is the same range.
+              cy.clickUntil('button:contains("month"), button:contains("days")', 'button:contains("Last 7 days") + button:contains("Last 30 days")')
+              cy.contains('Last 30 days').click()
+              cy.get('[data-cy=recalls-report][data-ready=true]', { timeout: 20000 })
               cy.get('[data-cy=recalls-contacted]').should('have.text', '3')
               cy.get('[data-cy=recalls-booked]').should('contain', '1').and('contain', '33%')
               cy.get('[data-cy=recalls-replied]').should('contain', '1')

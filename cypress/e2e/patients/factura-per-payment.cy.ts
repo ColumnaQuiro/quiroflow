@@ -26,8 +26,8 @@ describe('A factura for each payment', () => {
           expect(rows[0].amount_cents).to.eq(26400)
           // Half the money buys half the sessions, and the document says so.
           expect(rows[0].description).to.contain('Bono 12')
-          expect(rows[0].description).to.contain('€264.00 of €528.00')
-          expect(rows[0].description).to.contain('6 of 12 sessions')
+          expect(rows[0].description).to.contain('264,00\u00a0€ de 528,00\u00a0€')
+          expect(rows[0].description).to.contain('6 de 12 sesiones')
           // A bono is always a full invoice: it is over the simplified
           // threshold and the patient is buying a course of treatment.
           expect(rows[0].kind).to.eq('full')

@@ -108,8 +108,10 @@ export function usePaymentMethods() {
     labelFor: (key: string) => {
       const found = methods.value?.find((m) => m.key === key)
       if (found) return display(found)
-      const system = SYSTEM_LABELS[key]
-      return system ? t(system.name, system.es) : key
+      // A method switched off since still labels its old payments: the
+      // cache holds active methods only, and "card" on a receipt is a key.
+      const builtIn = SYSTEM_LABELS[key] ?? SEEDED_LABELS[key]
+      return builtIn ? t(builtIn.name, builtIn.es) : key
     },
     /** For a row the caller already holds -- see display(). */
     displayName: display,

@@ -23,9 +23,32 @@ const editLines = ref('')
 
 const toLines = (text: string) => text.split('\n').map((l) => l.trim()).filter(Boolean)
 
+// Where a clinic starts: the cards every clinic needs and only it can fill
+// in. The rest -- what to do when the link fails, a voice note, worsening
+// symptoms -- every receptionist already knows (utils/receptionistBaseRules.ts).
+// A blank (___) has to be filled before the card can be saved: the model
+// repeats a card as fact, blanks included.
+const BLANK = '___'
+const templates = computed(() => [
+  { title: t('What we treat', 'Qué tratamos'), lines: [t('We mostly see ___ (for example back pain, neck pain, sciatica, headaches).', 'Atendemos sobre todo ___ (por ejemplo dolor de espalda, cuello, ciática, dolores de cabeza).'), t('We do not do ___ (for example massage or physiotherapy).', 'No hacemos ___ (por ejemplo masajes ni fisioterapia).')] },
+  { title: t('The first visit', 'La primera visita'), lines: [t('It includes ___ (history, posture tests, the first adjustment...).', 'Incluye ___ (historial, pruebas posturales, el primer ajuste...).'), t('It lasts about ___ minutes.', 'Dura unos ___ minutos.')] },
+  { title: t('Payment and insurance', 'Pagos y seguros'), lines: [t('You can pay by ___ (card, cash, transfer, Bizum).', 'Se puede pagar con ___ (tarjeta, efectivo, transferencia, Bizum).'), t('With insurers: ___ (for example we do not work with them directly, but give you an invoice to claim).', 'Con las aseguradoras: ___ (por ejemplo no trabajamos directamente con ellas, pero te damos factura para reclamar).')] },
+  { title: t('What to bring', 'Qué traer'), lines: [t('Wear comfortable clothes you can move in.', 'Ven con ropa cómoda que te permita moverte.'), t('If you have recent reports or scans, bring them.', 'Si tienes informes o pruebas recientes, tráelos.')] },
+  { title: t('Running late', 'Si llegas tarde'), lines: [t('If you are more than ___ minutes late, ___.', 'Si llegas más de ___ minutos tarde, ___.')] },
+  { title: t('Children and pregnancy', 'Niños y embarazadas'), lines: [t('We see children from ___ and pregnant women ___.', 'Atendemos a niños desde ___ y a embarazadas ___.')] },
+].filter((template) => !props.config.knowledge.some((card) => card.title.trim().toLowerCase() === template.title.toLowerCase())))
+
+function useTemplate(template: { title: string; lines: string[] }) {
+  newTitle.value = template.title
+  newLines.value = template.lines.join('\n')
+}
+
+const newHasBlank = computed(() => newLines.value.includes(BLANK) || newTitle.value.includes(BLANK))
+const editHasBlank = computed(() => editLines.value.includes(BLANK) || editTitle.value.includes(BLANK))
+
 function add() {
   const title = newTitle.value.trim()
-  if (!title) return
+  if (!title || newHasBlank.value) return
   props.save({
     knowledge: [
       ...props.config.knowledge,
@@ -47,7 +70,7 @@ function startEdit(card: KnowledgeCard) {
 async function commitEdit() {
   const id = editingId.value
   const title = editTitle.value.trim()
-  if (!id || !title) return
+  if (!id || !title || editHasBlank.value) return
   const ok = await props.save({
     knowledge: props.config.knowledge.map((card) => (card.id === id ? { ...card, title: title.slice(0, 120), lines: toLines(editLines.value) } : card)),
   })
@@ -75,8 +98,9 @@ const areaClass = 'resize-none rounded-ctl border border-line-control bg-surface
       <template v-if="editingId === card.id">
         <input v-model="editTitle" type="text" :class="inputClass" :aria-label="t('Title', 'Título')" data-test="edit-card-title">
         <textarea v-model="editLines" rows="4" :class="areaClass" :aria-label="t('Facts, one per line', 'Datos, uno por línea')" data-test="edit-card-lines" />
+        <p v-if="editHasBlank" class="text-[11px] leading-[1.5] text-warning-text">{{ t('Fill in every ___ before saving.', 'Rellena cada ___ antes de guardar.') }}</p>
         <div class="flex items-center gap-2">
-          <UiBtn variant="primary" size="sm" :disabled="saving || !editTitle.trim()" data-test="edit-card-save" @click="commitEdit">{{ t('Save', 'Guardar') }}</UiBtn>
+          <UiBtn variant="primary" size="sm" :disabled="saving || !editTitle.trim() || editHasBlank" data-test="edit-card-save" @click="commitEdit">{{ t('Save', 'Guardar') }}</UiBtn>
           <UiBtn variant="ghost" size="sm" :disabled="saving" @click="editingId = null">{{ t('Cancel', 'Cancelar') }}</UiBtn>
         </div>
       </template>
@@ -93,6 +117,19 @@ const areaClass = 'resize-none rounded-ctl border border-line-control bg-surface
     </div>
 
     <div class="flex flex-col gap-1.5 border-t border-line-divider pt-2.5">
+      <div v-if="templates.length" class="flex flex-wrap items-center gap-1.5" data-test="card-templates">
+        <span class="text-[11px] text-ink-muted">{{ t('Start from:', 'Empieza por:') }}</span>
+        <button
+          v-for="template in templates"
+          :key="template.title"
+          type="button"
+          class="rounded-pill border border-line-control bg-surface px-2.5 py-0.5 text-[11px] font-medium text-ink-700 hover:border-brand hover:text-brand-text"
+          :data-test="`card-template-${template.title}`"
+          @click="useTemplate(template)"
+        >
+          {{ template.title }}
+        </button>
+      </div>
       <input
         v-model="newTitle"
         type="text"
@@ -107,7 +144,10 @@ const areaClass = 'resize-none rounded-ctl border border-line-control bg-surface
         :class="areaClass"
         data-test="card-lines"
       />
-      <UiBtn variant="secondary" size="sm" class="self-start" :disabled="saving || !newTitle.trim()" data-test="add-card" @click="add">
+      <p v-if="newHasBlank" class="text-[11px] leading-[1.5] text-warning-text" data-test="card-blank">
+        {{ t('Fill in every ___ before adding it.', 'Rellena cada ___ antes de añadirla.') }}
+      </p>
+      <UiBtn variant="secondary" size="sm" class="self-start" :disabled="saving || !newTitle.trim() || newHasBlank" data-test="add-card" @click="add">
         {{ t('Add card', 'Añadir tarjeta') }}
       </UiBtn>
       <!-- The model is told these are the clinic's own facts, so a wrong one

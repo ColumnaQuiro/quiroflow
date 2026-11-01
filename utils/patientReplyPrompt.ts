@@ -1,4 +1,5 @@
 import { formatEur } from './billing'
+import { baseBehaviourSection, escalationSection } from './receptionistBaseRules'
 import { DEFAULT_CLINIC_TIMEZONE } from './clinicClock'
 import { CONFIDENTIALITY_SECTION, promptSafeName } from './receptionistGuard'
 import { NO_REPLY } from './receptionistAutoReply'
@@ -288,7 +289,6 @@ export function buildPatientReplyPrompt(
   const knowledge = config.knowledge
     .map((card) => `## ${card.title}\n${card.lines.map((line) => `- ${line}`).join('\n')}`)
     .join('\n\n')
-  const escalations = config.escalationRules.map((rule) => `- ${rule.rule} -> ${rule.action}`).join('\n')
   const booked = opts.bookedVisits ?? []
   const hasTimes = opts.offeredTypes.length > 0 || booked.length > 0
   const availability = hasTimes ? opts.calendar.availability : null
@@ -303,6 +303,7 @@ export function buildPatientReplyPrompt(
     replyLanguageLine(config.languages),
     clinicDetailsSection(opts.clinicDetails ?? []),
     teamSection(opts.team ?? []),
+    baseBehaviourSection(),
     knowledge ? `# What you know about this clinic\n\n${knowledge}` : '',
     // Not every message wants an answer: a "Confirmar" tapped on the reminder,
     // a thanks. A re-confirmation nobody asked for is noise in their WhatsApp.
@@ -323,7 +324,7 @@ export function buildPatientReplyPrompt(
     `Never ask a patient for their name, email or phone number: the clinic has them.`,
     // Clinical questions go to the practitioner, not to the front desk's draft.
     `Never give clinical or medical advice, and never comment on their symptoms, treatment or progress beyond the visit counts under "What you already know about this patient": say their practitioner will answer that.`,
-    escalations ? `# Stop and hand over to a person when\n\n${escalations}\n\nWhen one of these applies, ${opts.sendsItself ? 'call hand_over_to_colleague, then ' : ''}say your colleague will pick this up shortly and stop.` : '',
+    escalationSection(config.escalationRules, Boolean(opts.sendsItself)),
     config.neverSays ? `# Never\n\n${config.neverSays}` : '',
     opts.sendsItself
       ? `# This reply is sent as it is\nIt goes straight to them: nobody at the clinic reads it first. Write the message itself and nothing else -- no preamble, no options to choose between, no notes to anyone. Whenever a rule under "Stop and hand over to a person when" applies, they want something you cannot do, or you are not sure what to answer, call hand_over_to_colleague with the reason before you reply. ${opts.canBook ? `${CONFIRM_BEFORE_BOOKING} Then call book_appointment with it (to move a visit they already have, with move_visit_on); only once it confirms, tell them it is booked, with the day, time and who with. If it refuses, offer another free time or call hand_over_to_colleague. To cancel a visit they already have, call cancel_appointment with visit_on.` : 'When they accept a time, call hand_over_to_colleague saying exactly what to book or move (type, day, time and who with): a colleague books it, and you tell them they will get a confirmation.'}`

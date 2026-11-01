@@ -19,7 +19,8 @@
 //   - a full Monday-to-Friday week around DEMO_DAY across all three rooms;
 //   - a care plan that has fallen behind (Marta Gil), others on track;
 //   - a 10-session bono sold on its own receipt (Pablo Herrero);
-//   - a WhatsApp conversation about moving a visit, and a few more threads;
+//   - a WhatsApp conversation in which the AI receptionist moves a visit, a
+//     reminder confirmed with a "SÍ", and a few more threads;
 //   - two posture assessments on illustrated figures, not photos (Daniel Ortega);
 //   - a patient-app login (Alba Serrano).
 //
@@ -574,6 +575,8 @@ async function main() {
   // description and tax the app computes. A test chain, so no VeriFactu QR.
   const [bonoPayment] = await insertAll<{ id: string }>('payments', [{ account_id: accountId, invoice_id: null, package_purchase_id: bono!.id, patient_id: P.Pablo!.id, amount_cents: 38000, method: 'card', paid_at: plusMinutes(bonoBought, 2).toISOString(), purpose: 'bono', created_by: alex.id }])
   ok(await admin.from('patients').update({ national_id: '12345678Z', address: 'Calle Inventada 5, 3.º B', postal_code: '46002' }).eq('id', P.Pablo!.id).select('id'))
+  // Nuria buys a bono on camera in the demo video, and a bono is a full factura.
+  ok(await admin.from('patients').update({ national_id: '87654321X', address: 'Calle Inventada 9, 1.º A', postal_code: '46003' }).eq('id', P.Nuria!.id).select('id'))
   const ownerClient = createClient(url, anonKey, { auth: { autoRefreshToken: false, persistSession: false } })
   {
     const { error } = await ownerClient.auth.signInWithPassword({ email: OWNER_EMAIL, password: PASSWORD })
@@ -618,20 +621,21 @@ async function main() {
       .select('id'),
   )
 
-  // --- the Inbox: Carmen moves her visit, and a few other threads
+  // --- the Inbox: Carmen moves her visit with the AI receptionist, Irene
+  // confirms hers from the reminder, and a few other threads
   const demoDay = (hm: string) => at(DEMO_DAY, hm).toISOString()
   const yesterday = (hm: string) => at(addDays(DEMO_DAY, -1), hm).toISOString()
   const carmen = P.Carmen!.id
   const msgs = [
     { patient_id: carmen, direction: 'outbound', status: 'read', purpose: 'reminder', template_name: 'appointment_reminder', body_preview: `Hola Carmen, te recordamos tu cita de mañana a las 17:30 con Álex Prieto en Clínica Demo. Responde SÍ para confirmar o escríbenos si necesitas cambiarla.`, created_at: yesterday('18:00') },
     { patient_id: carmen, direction: 'inbound', status: 'received', body_preview: 'Hola! Me ha surgido un imprevisto en el trabajo 😕 ¿Podría pasarla a la semana que viene?', created_at: demoDay('09:41') },
-    { patient_id: carmen, direction: 'outbound', status: 'read', body_preview: 'Claro, Carmen. Tenemos hueco con Álex el martes a las 18:00 o el miércoles a las 10:30. ¿Cuál te viene mejor?', created_at: demoDay('09:44') },
+    { patient_id: carmen, direction: 'outbound', status: 'read', sent_by_ai: true, body_preview: 'Claro, Carmen. Tenemos hueco con Álex el martes a las 18:00 o el miércoles a las 10:30. ¿Cuál te viene mejor?', created_at: demoDay('09:44') },
     { patient_id: carmen, direction: 'inbound', status: 'received', body_preview: 'El martes a las 18:00 perfecto 🙌', created_at: demoDay('09:52') },
-    { patient_id: carmen, direction: 'outbound', status: 'read', body_preview: 'Hecho ✅ Te esperamos el martes a las 18:00 con Álex. Te mandaremos un recordatorio el día antes.', created_at: demoDay('09:53') },
+    { patient_id: carmen, direction: 'outbound', status: 'read', sent_by_ai: true, body_preview: 'Hecho ✅ Te esperamos el martes a las 18:00 con Álex. Te mandaremos un recordatorio el día antes.', created_at: demoDay('09:53') },
     { patient_id: carmen, direction: 'inbound', status: 'received', body_preview: '¡Mil gracias! Hasta el martes', created_at: demoDay('09:55') },
     { patient_id: P.Hugo!.id, direction: 'inbound', status: 'received', body_preview: '¿Tenéis algún hueco el sábado por la mañana? El tobillo va mucho mejor', created_at: demoDay('10:09') },
-    { patient_id: P.Irene!.id, direction: 'outbound', status: 'delivered', purpose: 'confirmation', template_name: 'appointment_confirmation', body_preview: 'Hola Irene, tu cita con Inés Ramos es el lunes a las 11:00. ¿Nos confirmas?', created_at: yesterday('12:30') },
-    { patient_id: P.Irene!.id, direction: 'inbound', status: 'received', body_preview: 'Confirmo, allí estaré 👍', created_at: demoDay('08:58') },
+    { patient_id: P.Irene!.id, direction: 'outbound', status: 'read', purpose: 'reminder', template_name: 'appointment_reminder', body_preview: 'Hola Irene, te recordamos tu cita del lunes a las 11:00 con Inés Ramos en Clínica Demo. Responde SÍ para confirmar o escríbenos si necesitas cambiarla.', created_at: yesterday('12:30') },
+    { patient_id: P.Irene!.id, direction: 'inbound', status: 'received', body_preview: 'SÍ, allí estaré 👍', created_at: demoDay('08:58') },
     { patient_id: P.Andrés!.id, direction: 'inbound', status: 'received', body_preview: 'Os envío el justificante de la mutua para la factura', created_at: demoDay('08:31') },
     { patient_id: P.Andrés!.id, direction: 'outbound', status: 'read', body_preview: 'Recibido, Andrés. Te la mandamos hoy por correo.', created_at: demoDay('08:40') },
     { patient_id: P.Nuria!.id, direction: 'inbound', status: 'received', body_preview: '¿Cuánto cuesta el bono de 10 sesiones?', created_at: yesterday('19:12') },
@@ -639,8 +643,11 @@ async function main() {
     { patient_id: P.Lucía!.id, direction: 'outbound', status: 'read', purpose: 'recall', template_name: 'recall', body_preview: 'Hola Lucía, hace un tiempo que no te vemos. ¿Te reservamos una revisión?', created_at: yesterday('11:00') },
     { patient_id: P.Lucía!.id, direction: 'inbound', status: 'received', body_preview: 'Sí, por favor, la semana que viene por la tarde', created_at: yesterday('13:47') },
     { patient_id: P.Raúl!.id, direction: 'inbound', status: 'received', body_preview: 'Perfecto, gracias por los ejercicios!', created_at: yesterday('17:05') },
-  ].map((m) => ({ account_id: accountId, channel: 'whatsapp', phone_number: phoneOf(m.patient_id), purpose: null, template_name: null, ...m }))
+  ].map((m) => ({ account_id: accountId, channel: 'whatsapp', phone_number: phoneOf(m.patient_id), purpose: null, template_name: null, sent_by_ai: false, ...m }))
   await insertAll('whatsapp_messages', msgs)
+  // The receptionist is on, as it is in a clinic whose replies it wrote: off,
+  // the thread above them would say it is switched off.
+  ok(await admin.from('receptionist_config').upsert({ account_id: accountId, enabled: true }, { onConflict: 'account_id' }).select('account_id'))
   // Read up to now for the quiet ones; Hugo and Carmen still to read.
   await insertAll('inbox_reads', [P.Irene!.id, P.Andrés!.id, P.Nuria!.id, P.Lucía!.id, P.Raúl!.id].map((id) => ({ account_id: accountId, team_member_id: sara.id, conversation_key: id, last_read_at: demoDay('10:15') })), 'conversation_key')
 
@@ -691,7 +698,7 @@ async function main() {
         password: PASSWORD,
         staff: [OWNER_EMAIL, ...TEAM.slice(1).map((m) => `${m.name.split(' ')[0]!.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()}@${DOMAIN}`)],
         patientApp: PATIENT_APP_EMAIL,
-        patients: { carePlanBehind: P.Marta!.id, bono: P.Pablo!.id, bonoFactura: factura!.id, inbox: carmen, posture: P.Daniel!.id },
+        patients: { carePlanBehind: P.Marta!.id, bono: P.Pablo!.id, bonoFactura: factura!.id, inbox: carmen, confirmedReminder: P.Irene!.id, bonoBuyer: P.Nuria!.id, posture: P.Daniel!.id },
         counts: { patients: patients.length, appointments: appts.length, receipts: invRows.length },
       },
       null,

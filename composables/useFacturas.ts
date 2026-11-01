@@ -1,3 +1,5 @@
+import { bonoPaymentDescription } from '../utils/billingDescriptions'
+
 // Issuing the fiscal document for a payment.
 //
 // One place, because a payment can be taken from five screens (the patient
@@ -29,18 +31,11 @@ export interface IssueFacturaInput {
   serviceName?: string
 }
 
-const money = (cents: number) => `€${(cents / 100).toFixed(2)}`
-
 // What the patient reads on the document.
 export function facturaDescription(input: IssueFacturaInput): string {
   if (input.purpose === 'bono' && input.bono) {
     const { packageName, priceCents, sessionsTotal } = input.bono
-    // How much of the bono this payment buys, in sessions. Rounded down: a
-    // payment that covers five and a half sessions has bought five, and
-    // claiming six would hand over a session that has not been paid for.
-    const sessionsCovered =
-      priceCents > 0 ? Math.floor((input.amountCents / priceCents) * sessionsTotal) : 0
-    return `${packageName} — ${money(input.amountCents)} of ${money(priceCents)} (${sessionsCovered} of ${sessionsTotal} sessions)`
+    return bonoPaymentDescription(packageName, input.amountCents, priceCents, sessionsTotal)
   }
   if ((input.purpose === 'visit' || input.purpose === 'membership') && input.serviceName) return input.serviceName
   if (input.purpose === 'visit') return 'Consulta'

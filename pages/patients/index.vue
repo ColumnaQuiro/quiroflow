@@ -110,6 +110,11 @@ const enriching = ref(true)
 let loadToken = 0
 
 onMounted(async () => {
+  // ?new=1: the dashboard's first steps open the new-patient form directly.
+  if (route.query.new) {
+    showAddPatient.value = true
+    navigateTo({ query: { ...route.query, new: undefined } }, { replace: true })
+  }
   const { data, error } = await supabase.from('team_members').select('id, full_name').order('full_name')
   if (error) throw error
   teamMembers.value = data ?? []

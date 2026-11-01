@@ -66,6 +66,10 @@ const { dashboardMode, dashboardPractitionerId } = useOwnScope()
 const CLINIC_WIDE_WIDGETS = new Set(['debtors_mini', 'memberships_mini'])
 const practitionerFilter = ref(dashboardPractitionerId.value ?? '')
 // An owner-only widget left in a layout (a role changed since) is not shown.
+const widgetTitle = (type: string) => {
+  const def = widgetDef(type)
+  return def ? t(def.label, def.labelEs) : type
+}
 const ownerAllowed = (type: string) => !widgetDef(type)?.ownerOnly || store.isOwner
 const visibleWidgets = computed(() => (dashboardMode.value === 'own' ? widgets.value.filter((w) => !CLINIC_WIDE_WIDGETS.has(w.type)) : widgets.value).filter((w) => ownerAllowed(w.type)))
 const hiddenTypes = computed(() => (dashboardMode.value === 'own' ? [...CLINIC_WIDE_WIDGETS] : []))
@@ -195,6 +199,7 @@ function widgetMeta(type: string): string | undefined {
       />
     </div>
     <div v-else class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] sm:px-6">
+      <DashboardFirstSteps v-if="store.isOwner && !editing" />
       <DashboardAddWidgetPicker v-if="editing" :existing-types="[...widgets.map((w) => w.type), ...hiddenTypes]" @add="onAddWidget" />
 
       <div v-if="!loaded" class="grid grid-cols-12 gap-3">
@@ -219,7 +224,7 @@ function widgetMeta(type: string): string | undefined {
         <DashboardWidgetFrame
           v-for="(w, i) in visibleWidgets"
           :key="w.id"
-          :title="widgetDef(w.type)?.label ?? w.type"
+          :title="widgetTitle(w.type)"
           :meta="widgetMeta(w.type)"
           :size="w.size"
           :editing="editing"

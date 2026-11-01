@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { formatEur } from '~/utils/billing'
 import { fetchAllRows, fetchByIds } from '~/composables/useFetchAllRows'
+import { normalizeSearchTerm, sanitizeSearchToken } from '~/utils/searchText'
 
 interface InvoiceRow {
   id: string
+  patient_id: string | null
   invoice_number: string
   status: string
   total_cents: number
@@ -16,6 +18,7 @@ type StatusFilter = 'all' | 'unpaid' | 'paid' | 'void'
 const supabase = useSupabaseClient()
 const route = useRoute()
 const t = useT()
+const { can } = usePermission()
 
 const statusFilter = ref<StatusFilter>('unpaid')
 const invoices = ref<InvoiceRow[]>([])
@@ -41,6 +44,48 @@ const visiblePages = computed(() => Array.from({ length: Math.min(totalPages.val
 // row the user just came from keeps its selected treatment on return --
 // doesn't affect which rows are loaded, purely cosmetic.
 const highlightId = computed(() => (route.query.highlight as string) || '')
+
+// Search by patient or receipt number, and sort. With 599 unpaid receipts a
+// list in date order alone left "who owes the most" and "find this one"
+// to paging. The chips, the header's outstanding and the list all follow
+// the search, as they follow the patient filter.
+const search = ref('')
+const appliedSearch = ref('')
+let searchTimer: ReturnType<typeof setTimeout> | undefined
+watch(search, (q) => {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => (appliedSearch.value = q.trim()), 300)
+})
+// Patients whose name matches the search, worked out once per search.
+const searchPatientIds = ref<string[]>([])
+async function resolveSearch() {
+  const q = appliedSearch.value
+  if (!q) {
+    searchPatientIds.value = []
+    return
+  }
+  const { data } = await supabase.from('patients').select('id').ilike('search_name', `%${normalizeSearchTerm(sanitizeSearchToken(q))}%`).limit(500)
+  searchPatientIds.value = (data ?? []).map((p) => p.id)
+}
+type SortKey = 'newest' | 'oldest' | 'largest' | 'smallest'
+const sort = ref<SortKey>('newest')
+const SORTS = computed<{ value: SortKey; label: string }[]>(() => [
+  { value: 'newest', label: t('Newest first', 'Más recientes') },
+  { value: 'oldest', label: t('Oldest first', 'Más antiguos') },
+  { value: 'largest', label: t('Largest amount', 'Mayor importe') },
+  { value: 'smallest', label: t('Smallest amount', 'Menor importe') },
+])
+// The patient filter and the search, on any query over invoices.
+function scoped<Q extends { eq: (c: string, v: string) => Q; ilike: (c: string, v: string) => Q; or: (f: string) => Q }>(q: Q): Q {
+  let out = patientId.value ? q.eq('patient_id', patientId.value) : q
+  const term = sanitizeSearchToken(appliedSearch.value).trim()
+  if (term) {
+    out = searchPatientIds.value.length
+      ? out.or(`invoice_number.ilike.%${term}%,patient_id.in.(${searchPatientIds.value.join(',')})`)
+      : out.ilike('invoice_number', `%${term}%`)
+  }
+  return out
+}
 
 // Narrows the whole page to one patient. Lives in the URL rather than in
 // component state so a patient record can link straight here ("every receipt
@@ -86,12 +131,10 @@ let loadToken = 0
 async function load() {
   const token = ++loadToken
   loading.value = true
-  let query = supabase
-    .from('invoices')
-    .select('id, invoice_number, status, total_cents, created_at, patients(first_name, last_name)', { count: 'exact' })
-    .order('created_at', { ascending: false })
+  let query = scoped(supabase.from('invoices').select('id, patient_id, invoice_number, status, total_cents, created_at, patients(first_name, last_name)', { count: 'exact' }))
+  if (sort.value === 'largest' || sort.value === 'smallest') query = query.order('total_cents', { ascending: sort.value === 'smallest' })
+  query = query.order('created_at', { ascending: sort.value === 'oldest' }).order('id')
   if (statusFilter.value !== 'all') query = query.eq('status', statusFilter.value)
-  if (patientId.value) query = query.eq('patient_id', patientId.value)
 
   const from = (page.value - 1) * PAGE_SIZE
   const { data, count } = await query.range(from, from + PAGE_SIZE - 1)
@@ -116,13 +159,10 @@ async function loadCounts() {
   // Scoped to the patient filter as well as the status. A chip counting the
   // whole account while the list below shows one patient is the same class of
   // lie as the 1000-row cap this function was written to fix.
-  const scoped = () => {
-    const q = supabase.from('invoices').select('id', { count: 'exact', head: true })
-    return patientId.value ? q.eq('patient_id', patientId.value) : q
-  }
+  const base = () => scoped(supabase.from('invoices').select('id', { count: 'exact', head: true }))
   const [all, ...rest] = await Promise.all([
-    scoped(),
-    ...buckets.map((status) => scoped().eq('status', status)),
+    base(),
+    ...buckets.map((status) => base().eq('status', status)),
   ])
   if (token !== countsToken) return
   const next: Record<StatusFilter, number> = { all: all.count ?? 0, unpaid: 0, paid: 0, void: 0 }
@@ -136,10 +176,9 @@ async function loadOutstanding() {
   // fetchAllRows rather than a bare select() for that same 1000-row cap -- an
   // account carrying more unpaid invoices than that silently under-reported
   // what it is owed in the header.
-  const rows = await fetchAllRows<{ id: string; total_cents: number }>((from, to) => {
-    const q = supabase.from('invoices').select('id, total_cents').eq('status', 'unpaid')
-    return (patientId.value ? q.eq('patient_id', patientId.value) : q).range(from, to)
-  })
+  const rows = await fetchAllRows<{ id: string; total_cents: number }>((from, to) =>
+    scoped(supabase.from('invoices').select('id, total_cents').eq('status', 'unpaid')).order('id').range(from, to),
+  )
   const ids = rows.map((r) => r.id)
 
   const paidByInvoice: Record<string, number> = {}
@@ -165,7 +204,22 @@ onMounted(() => {
 })
 watch(statusFilter, () => {
   page.value = 1
+  selected.value = new Set()
   load()
+})
+watch(sort, () => {
+  page.value = 1
+  load()
+})
+watch(appliedSearch, async () => {
+  await resolveSearch()
+  page.value = 1
+  selected.value = new Set()
+  counts.value = null
+  statsLoaded.value = false
+  load()
+  loadCounts()
+  loadOutstanding()
 })
 watch(patientId, () => {
   page.value = 1
@@ -178,7 +232,40 @@ watch(patientId, () => {
 
 function goToPage(p: number) {
   page.value = Math.min(Math.max(1, p), totalPages.value)
+  selected.value = new Set()
   load()
+}
+
+// Unpaid receipts can be ticked and their patients sent a WhatsApp template
+// together (BulkSendWhatsAppModal, as from Recalls) -- the same send and the
+// same permission. Whoever has no phone, is a minor or asked not to be
+// contacted is left out before the dialog opens, and counted.
+const canRemind = computed(() => statusFilter.value === 'unpaid' && can('recalls_access'))
+const selected = ref(new Set<string>())
+function toggleSelected(id: string) {
+  const next = new Set(selected.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  selected.value = next
+}
+const allOnPageSelected = computed(() => invoices.value.length > 0 && invoices.value.every((i) => selected.value.has(i.id)))
+function toggleAllOnPage() {
+  selected.value = allOnPageSelected.value ? new Set() : new Set(invoices.value.map((i) => i.id))
+}
+const remindTargets = ref<{ patientId: string; firstName: string }[] | null>(null)
+const remindSkipped = ref(0)
+async function openRemind() {
+  const ids = [...new Set(invoices.value.filter((i) => selected.value.has(i.id) && i.patient_id).map((i) => i.patient_id!))]
+  if (!ids.length) return
+  const { data } = await supabase.from('patients').select('id, first_name, has_phone, is_minor, do_not_contact').in('id', ids)
+  const reachable = (data ?? []).filter((p) => p.has_phone && !p.is_minor && !p.do_not_contact)
+  remindSkipped.value = ids.length - reachable.length
+  remindTargets.value = reachable.map((p) => ({ patientId: p.id, firstName: p.first_name }))
+}
+function onReminded() {
+  remindTargets.value = null
+  remindSkipped.value = 0
+  selected.value = new Set()
 }
 
 const outstandingMeta = computed(() => {
@@ -199,9 +286,13 @@ function initials(row: InvoiceRow) {
   return (f + l).toUpperCase() || '?'
 }
 
+// In the interface language, with the year once it is not this one: sorted
+// oldest first, "3 Mar" no longer says which March.
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  const d = new Date(iso)
+  return d.toLocaleDateString(t('en-GB', 'es-ES'), { day: 'numeric', month: 'short', ...(d.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}) })
 }
+const STATUS_LABEL = computed<Record<string, string>>(() => ({ paid: t('paid', 'pagado'), unpaid: t('unpaid', 'impagado'), void: t('void', 'anulado') }))
 </script>
 
 <template>
@@ -257,15 +348,51 @@ function formatDate(iso: string) {
           </button>
         </div>
 
+        <div class="mt-3 flex flex-wrap items-center gap-2">
+          <label class="relative min-w-0 flex-1 basis-56">
+            <span class="sr-only">{{ t('Search receipts', 'Buscar recibos') }}</span>
+            <svg width="13" height="13" viewBox="0 0 14 14" class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-faint" aria-hidden="true"><circle cx="6" cy="6" r="4.2" stroke="currentColor" stroke-width="1.4" fill="none" /><line x1="9.2" y1="9.2" x2="12" y2="12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /></svg>
+            <input
+              v-model="search"
+              type="search"
+              data-cy="billing-search"
+              :placeholder="t('Patient or receipt number', 'Paciente o número de recibo')"
+              class="h-8 w-full rounded-ctl border border-line-control bg-surface pl-8 pr-2.5 text-[13px] text-ink-900 placeholder:text-ink-faint focus:border-brand focus:shadow-focus focus:outline-none touch:h-11"
+            />
+          </label>
+          <label class="flex items-center gap-1.5 text-[12.5px] text-ink-muted">
+            <span class="sr-only">{{ t('Sort', 'Ordenar') }}</span>
+            <select v-model="sort" data-cy="billing-sort" class="h-8 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 touch:h-11">
+              <option v-for="o in SORTS" :key="o.value" :value="o.value">{{ o.label }}</option>
+            </select>
+          </label>
+        </div>
+
         <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">
+          <!-- Selecting unpaid receipts to remind their patients (openRemind). -->
+          <div v-if="canRemind && !loading && invoices.length" class="flex min-h-11 items-center gap-3 border-b border-line-row px-4 py-2" data-cy="billing-select-bar">
+            <input type="checkbox" class="h-4 w-4 accent-brand" :checked="allOnPageSelected" :aria-label="t('Select every receipt on this page', 'Seleccionar todos los recibos de esta página')" data-cy="billing-select-page" @change="toggleAllOnPage" />
+            <span class="flex-1 text-[12.5px] text-ink-muted">
+              {{ selected.size ? t(`${selected.size} selected`, `${selected.size} seleccionados`) : t('Select receipts to remind their patients', 'Selecciona recibos para recordárselo a sus pacientes') }}
+            </span>
+            <UiBtn v-if="selected.size" variant="primary" size="sm" data-cy="billing-remind" @click="openRemind">{{ t('Send WhatsApp', 'Enviar WhatsApp') }}</UiBtn>
+          </div>
+          <p v-if="remindTargets && remindSkipped" role="status" class="border-b border-line-row bg-warning-bg px-4 py-2 text-[12.5px] text-warning-text" data-cy="billing-remind-skipped">
+            {{
+              t(
+                `${remindSkipped} ${remindSkipped === 1 ? 'patient is' : 'patients are'} left out: no phone, a minor, or asked not to be contacted.`,
+                `${remindSkipped} ${remindSkipped === 1 ? 'paciente queda' : 'pacientes quedan'} fuera: sin teléfono, menor o no quiere ser contactado.`,
+              )
+            }}
+          </p>
           <div v-if="loading" class="divide-y divide-line-row">
             <div v-for="i in 4" :key="i" class="flex items-center justify-between gap-3 px-4 py-3">
               <UiSkeleton class="h-3.5 w-40 rounded-ctlSm" />
               <UiSkeleton class="h-3.5 w-16 rounded-ctlSm" />
             </div>
           </div>
-          <div v-else-if="invoices.length === 0" class="px-4 py-10 text-center text-[13px] text-ink-muted2">
-            {{ patientId ? t('No receipts for this patient.', 'Este paciente no tiene recibos.') : t('No receipts yet.', 'Todavía no hay recibos.') }}
+          <div v-else-if="invoices.length === 0" class="px-4 py-10 text-center text-[13px] text-ink-muted2" data-cy="billing-empty">
+            {{ appliedSearch ? t('No receipts match this search.', 'Ningún recibo coincide con la búsqueda.') : patientId ? t('No receipts for this patient.', 'Este paciente no tiene recibos.') : t('No receipts yet.', 'Todavía no hay recibos.') }}
           </div>
           <ul v-else class="divide-y divide-line-row">
             <li
@@ -277,9 +404,20 @@ function formatDate(iso: string) {
                   ? 'bg-brand-tintDeep shadow-[inset_3px_0_0_theme(colors.brand.DEFAULT)]'
                   : 'hover:bg-surface-subtle'
               "
+              data-cy="billing-row"
               @click="navigateTo(`/billing/${invoice.id}`)"
             >
               <div class="flex min-w-0 items-center gap-3">
+                <input
+                  v-if="canRemind"
+                  type="checkbox"
+                  class="h-4 w-4 shrink-0 accent-brand"
+                  :checked="selected.has(invoice.id)"
+                  :aria-label="t(`Select receipt ${invoice.invoice_number}`, `Seleccionar recibo ${invoice.invoice_number}`)"
+                  data-cy="billing-row-select"
+                  @click.stop
+                  @change="toggleSelected(invoice.id)"
+                />
                 <span class="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full bg-brand-tint text-[11px] font-semibold text-brand-text">
                   {{ initials(invoice) }}
                 </span>
@@ -294,7 +432,7 @@ function formatDate(iso: string) {
               </div>
               <div class="flex shrink-0 flex-col items-end gap-1">
                 <span class="font-mono text-[13px] font-semibold text-ink-900">{{ formatEur(invoice.total_cents) }}</span>
-                <UiPill :tone="STATUS_TONE[invoice.status] ?? 'neutral'">{{ invoice.status }}</UiPill>
+                <UiPill :tone="STATUS_TONE[invoice.status] ?? 'neutral'">{{ STATUS_LABEL[invoice.status] ?? invoice.status }}</UiPill>
               </div>
             </li>
           </ul>
@@ -311,5 +449,7 @@ function formatDate(iso: string) {
         </div>
       </div>
     </div>
+
+    <BulkSendWhatsAppModal v-if="remindTargets?.length" :targets="remindTargets" @close="remindTargets = null" @sent="onReminded" />
   </div>
 </template>

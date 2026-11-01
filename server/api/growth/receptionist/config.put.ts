@@ -82,6 +82,9 @@ export default defineEventHandler(async (event) => {
   }
   if (body.knowledge !== undefined) {
     if (!Array.isArray(body.knowledge)) throw createError({ statusCode: 400, statusMessage: 'knowledge must be a list' })
+    // A card from a template with a blank left in (ReceptionistKnowledgeCard):
+    // the model would repeat "Dura unos ___ minutos" to a patient.
+    if (JSON.stringify(body.knowledge).includes('___')) throw createError({ statusCode: 400, statusMessage: 'Fill in every ___ on the card before saving it' })
     patch.knowledge = body.knowledge as never
   }
   if (body.escalationRules !== undefined) {

@@ -24,6 +24,8 @@
 // Pure, with no `~` imports: the app auto-imports this directory too, and in
 // its build `~` resolves to mobile/.
 
+import { BASE_ESCALATIONS } from './receptionistBaseRules'
+
 /** Goes last in every receptionist prompt. */
 export const CONFIDENTIALITY_SECTION = [
   '# Confidential',
@@ -104,5 +106,20 @@ export function briefingLeak(draft: string, internal: string[]): string | null {
 
 /** The clinic's settings that are for the receptionist only, for briefingLeak. */
 export function internalNotes(config: { escalationRules: { rule: string; action: string }[]; neverSays: string }): string[] {
-  return [...config.escalationRules.flatMap((rule) => [rule.rule, rule.action]), config.neverSays].filter((text) => text && text.trim())
+  return [...BASE_ESCALATIONS, ...config.escalationRules]
+    .flatMap((rule) => [rule.rule, rule.action])
+    .concat(config.neverSays)
+    .filter((text) => text && text.trim())
+    .map(withoutWordsToSay)
+}
+
+/**
+ * A rule with the words it tells the receptionist to say taken out. A rule
+ * that says «Siento que te hayas ido con esa sensación; se lo paso a la
+ * quiropráctica» is asking for exactly those words, and a reply that used
+ * them shared seven words with the rule -- read as quoting it, and withheld.
+ * The placeholder breaks any run of words across the gap.
+ */
+function withoutWordsToSay(text: string): string {
+  return text.replace(/«[^»]*»|"[^"]*"|“[^”]*”/g, ' zzquotedzz ')
 }

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { baseBehaviourSection, escalationSection } from '~/utils/receptionistBaseRules'
 import type { Database } from '~/types/database.types'
 import { clinicDetailsSection, teamSection, type PromptClinic } from '~/utils/receptionistClinic'
 import { CONFIRM_BEFORE_BOOKING, audienceSection, minorsSection, newPatientDetailsSection, offeredAppointmentTypes, laterPricesSection, offeredTypesSection, referralSection, rescheduleSection, someoneTheyBringSection, type PromptPackage, type BookedVisit, type PromptChild, type PromptType, type ReceptionistAudience } from '~/utils/receptionistTypes'
@@ -788,7 +789,6 @@ export function buildSystemPrompt(
     .join('\n\n')
 
   const questions = config.qualificationQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')
-  const escalations = config.escalationRules.map((rule) => `- ${rule.rule} -> ${rule.action}`).join('\n')
   // Only when there are types to offer: with none, the types section already
   // says booking goes to a colleague, and a list would contradict it.
   // Times are listed when there is something to book or a visit to move.
@@ -814,6 +814,7 @@ export function buildSystemPrompt(
     replyLanguageLine(config.languages),
     clinicDetailsSection(opts.clinicDetails ?? []),
     teamSection(opts.team ?? []),
+    baseBehaviourSection(),
     knowledge
       ? `# What you know about this clinic\n\n${knowledge}`
       : `# What you know about this clinic\n\nNothing ${opts.clinicDetails?.length ? 'else ' : ''}has been configured yet. For anything ${opts.clinicDetails?.length ? 'not under "The clinic"' : 'about the clinic'}, say you will check with your colleague rather than guessing.`,
@@ -841,7 +842,7 @@ export function buildSystemPrompt(
     questions
       ? `# Questions you may work in\nOnly once the patient's own request has been dealt with, at most one per reply, and never as a condition for booking. Skip any the conversation or "What you already know about this person" already answers. A question about how they heard about the clinic is for the clinic's records: never ask it when that is already known, never ask it to work out a price (answer the price as "What you can offer" says), and otherwise ask it at most once, at the very end, after a time has been agreed.\n\n${questions}`
       : '',
-    escalations ? `# Stop and hand over to a person when\n\n${escalations}\n\nWhen one of these applies, ${opts.sendsItself ? 'call hand_over_to_colleague, then ' : ''}say your colleague will pick this up shortly and stop.` : '',
+    escalationSection(config.escalationRules, Boolean(opts.sendsItself)),
     config.neverSays ? `# Never\n\n${config.neverSays}` : '',
     opts.testMode
       ? `# Test mode\nYou are being tried out by the clinic owner. Nothing you say reaches a patient and nothing is booked. Answer exactly as you would for real -- confidentiality included: the owner is trying what a patient would get.`

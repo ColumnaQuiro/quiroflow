@@ -3,6 +3,12 @@ export interface DateRangePreset {
   // lastMonth. Several report pages call it with a bare { months: N } just
   // to seed an initial range, with no UI preset (and so no label) involved.
   label?: string
+  /**
+   * The label in Spanish, for presets defined here outside any component
+   * (no useT() to call). Presets built inside a component pass an already
+   * translated label and leave this out.
+   */
+  labelEs?: string
   months?: number
   days?: number
   lastMonth?: boolean
@@ -49,10 +55,10 @@ export function computePresetRange(preset: DateRangePreset): DateRange {
 // The same four options on every report's date picker, so switching reports
 // doesn't mean re-learning a different preset list each time.
 export const STANDARD_PRESETS: DateRangePreset[] = [
-  { label: 'Last 7 days', days: 7 },
-  { label: 'Last 30 days', days: 30 },
-  { label: 'This month', months: 1 },
-  { label: 'Last month', lastMonth: true },
+  { label: 'Last 7 days', labelEs: 'Últimos 7 días', days: 7 },
+  { label: 'Last 30 days', labelEs: 'Últimos 30 días', days: 30 },
+  { label: 'This month', labelEs: 'Este mes', months: 1 },
+  { label: 'Last month', labelEs: 'Mes pasado', lastMonth: true },
 ]
 
 // Query-ready bounds for a DateRange: start of the "from" day through the

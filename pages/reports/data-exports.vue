@@ -329,7 +329,7 @@ const fieldId = useId()
                 class="block w-full rounded-ctlSm px-2 py-1.5 text-left text-[13px] text-ink-600 hover:bg-surface-subtle"
                 @click="selectPreset(p)"
               >
-                {{ p.label }}
+                {{ t(p.label ?? '', p.labelEs ?? p.label ?? '') }}
               </button>
               <div class="mt-1 border-t border-line-divider pt-2">
                 <p class="px-2 text-[11px] font-medium uppercase tracking-wide text-ink-faint2">{{ t('Custom range', 'Periodo personalizado') }}</p>

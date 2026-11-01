@@ -17,6 +17,8 @@
 // language, this is where that belongs -- per ACCOUNT, from a setting, not
 // per viewer.
 
+import { formatEur } from './billing'
+
 /** A visit drawn from a bono, as it reads on the invoice. */
 export function bonoSessionDescription(packageName: string): string {
   return `${packageName} — sesión`
@@ -36,4 +38,28 @@ export function refundDescription(invoiceNumber: string | null, reason: string):
   // description of anything.
   if (!invoiceNumber) return trimmed ? `Reembolso — ${trimmed}` : 'Reembolso'
   return trimmed ? `Reembolso (${invoiceNumber}) — ${trimmed}` : `Reembolso — ${invoiceNumber}`
+}
+
+/**
+ * A payment toward a bono, as the share of it the money buys.
+ *
+ * Built in two places -- useFacturas() at the desk and issueFacturaServer()
+ * for Stripe instalments and gift vouchers -- and it was English in both:
+ * "Bono 10 sesiones — €380.00 of €380.00 (10 of 10 sessions)", on a Spanish
+ * factura, whichever language the screen was in. Now one function, Spanish
+ * and with Spanish amounts like the rest of the app (formatEur), for the
+ * reasons at the top of this file.
+ *
+ * Rounded down: a payment that covers five and a half sessions has bought
+ * five, and claiming six would hand over a session that has not been paid for.
+ */
+export function bonoPaymentDescription(
+  packageName: string,
+  amountCents: number,
+  priceCents: number,
+  sessionsTotal: number,
+): string {
+  const covered = priceCents > 0 ? Math.floor((amountCents / priceCents) * sessionsTotal) : 0
+  const sessions = sessionsTotal === 1 ? 'sesión' : 'sesiones'
+  return `${packageName} — ${formatEur(amountCents)} de ${formatEur(priceCents)} (${covered} de ${sessionsTotal} ${sessions})`
 }

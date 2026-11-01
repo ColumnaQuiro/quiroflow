@@ -34,7 +34,7 @@ describe('Buying a bono', () => {
         cy.task('db:facturasFor', { patientId: patient.id }).then((rows: any) => {
           expect(rows, 'one factura for the one payment').to.have.length(1)
           expect(rows[0].amount_cents).to.eq(26400)
-          expect(rows[0].description).to.contain('€264.00 of €528.00')
+          expect(rows[0].description).to.contain('264,00\u00a0€ de 528,00\u00a0€')
         })
 
         // Collecting the rest goes straight onto the bono, no invoice in sight.

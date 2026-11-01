@@ -61,10 +61,17 @@ export async function sendAsReceptionist(event: H3Event, service: any, accountId
  *   happened with 18:15 the same afternoon.
  * 'past_time' -- it offers a time today that has already gone by
  *   (offersPastTimeToday).
+ * 'newer_message' -- they wrote again after `newestInboundAt`, the newest
+ *   message the reply answers. Asked about Monday the 9th, a patient wrote
+ *   "El 11" while the reply was being written, and got "el lunes 9 no tengo
+ *   nada" a few seconds after saying they wanted the 11th (31 Oct 2026).
+ *   Passed only while nothing in the reply changed the diary: a reply saying
+ *   what it booked or cancelled goes out whatever they wrote meanwhile.
  *
- * The first two are a person on the conversation: the reply stays a draft
- * for them, as autoReplyHeldBack's 'person' does. A past time has nobody on
- * it, so the caller hands it over.
+ * 'person' and 'diary' are a person on the conversation: the reply stays a
+ * draft for them, as autoReplyHeldBack's 'person' does. A past time has
+ * nobody on it, so the caller hands it over. A newer message is simply
+ * answered on the next tick, with the reply thrown away (dropSupersededReply).
  */
 export async function heldBackBeforeSending(
   service: any,
@@ -73,7 +80,8 @@ export async function heldBackBeforeSending(
   readAt: string,
   text: string,
   timeZone: string,
-): Promise<'person' | 'diary' | 'past_time' | null> {
+  newestInboundAt: string | null = null,
+): Promise<'person' | 'diary' | 'past_time' | 'newer_message' | null> {
   if (offersPastTimeToday(text, new Date(), timeZone)) return 'past_time'
 
   // A person's message: not the receptionist's, not a template or automation.
@@ -100,6 +108,17 @@ export async function heldBackBeforeSending(
       .gt('created_at', readAt)
       .limit(20)
     if (((changes ?? []) as { action: string; changes: Record<string, unknown> | null }[]).some(changesTheDiary)) return 'diary'
+  }
+
+  if (newestInboundAt) {
+    const theirs = (query: any) => query.eq('account_id', accountId).eq('direction', 'inbound').gt('created_at', newestInboundAt).limit(1)
+    const newer: Promise<{ data: unknown[] | null }>[] = []
+    if (who.leadId) newer.push(theirs(service.from('whatsapp_messages').select('id')).eq('lead_id', who.leadId))
+    if (who.patientId) {
+      newer.push(theirs(service.from('whatsapp_messages').select('id')).eq('patient_id', who.patientId))
+      newer.push(theirs(service.from('patient_app_messages').select('id')).eq('patient_id', who.patientId))
+    }
+    if ((await Promise.all(newer)).some(({ data }) => (data ?? []).length > 0)) return 'newer_message'
   }
   return null
 }

@@ -153,7 +153,7 @@ describe('A reply that states a booking nothing made', () => {
 describe('Moving a visit, when it is today', () => {
   it('cancels the one they cannot make rather than leaving it booked', () => {
     const s = rescheduleSection([{ startsAt: '2026-10-28T18:30:00Z', typeName: 'Ajuste' }], 'Europe/Madrid', { listVisits: true, canBook: true })
-    expect(s).toContain('A visit TODAY that they say they cannot make')
+    expect(s).toContain('a visit TODAY that they say they cannot make (ill, stuck on the road, running late past it): cancel it now with cancel_appointment even when they want another day')
     expect(s).toContain("only times listed under that type's own name")
   })
 })

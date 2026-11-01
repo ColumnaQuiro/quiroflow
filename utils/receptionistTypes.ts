@@ -78,6 +78,11 @@ export function typePrice(type: PromptType): string {
   return `${amount} €${type.priceVaries ? ', may differ by practitioner' : ''}`
 }
 
+/** The price alone ("50 €"), without typePrice's note that it may differ. */
+function amountOf(type: PromptType): string {
+  return typePrice({ ...type, priceVaries: false })
+}
+
 /** A bono as Settings > Bonos sells it (packages). */
 export interface PromptPackage {
   name: string
@@ -147,7 +152,7 @@ const isFirstVisit = (type: PromptType) => type.stage === 'first_visit' || type.
  * A clinic that has set no stages gets what it had before: every offered
  * type, for everyone.
  */
-export function typesForAudience<T extends PromptType>(all: T[], audience: ReceptionistAudience): { types: T[]; adOnly: T[] } {
+export function typesForAudience<T extends PromptType>(all: T[], audience: ReceptionistAudience): { types: T[]; adOnly: T[]; regular?: T } {
   // A type for children is never offered to the adult writing: it is offered
   // for their child, by typesForMinor. Nor one for referrals, which takes the
   // name of whoever referred them first (typesForReferral).
@@ -159,7 +164,9 @@ export function typesForAudience<T extends PromptType>(all: T[], audience: Recep
   const offers = forNew.filter((type) => type.stage === 'first_visit_offer')
   const firsts = forNew.filter((type) => type.stage === 'first_visit' || (type.bookableBy === 'new_patients' && type.stage !== 'first_visit_offer'))
   if (audience === 'new_from_ad') {
-    if (offers.length) return { types: offers, adOnly: [] }
+    // The plain first visit comes back beside the offer, so its price can be
+    // named as what the offer saves (offeredTypesSection).
+    if (offers.length) return { types: offers, adOnly: [], regular: firsts[0] }
     return { types: firsts.length ? firsts : forNew, adOnly: [] }
   }
   if (firsts.length) return { types: firsts, adOnly: offers }
@@ -379,7 +386,7 @@ export function audienceSection(audience: ReceptionistAudience): string {
 }
 
 /** The prompt section that says what may be offered. */
-export function offeredTypesSection(offeredTypes: PromptType[], adOnly: PromptType[] = [], opts: { referralVisit?: boolean } = {}) {
+export function offeredTypesSection(offeredTypes: PromptType[], adOnly: PromptType[] = [], opts: { referralVisit?: boolean; regularFirstVisit?: PromptType } = {}) {
   if (offeredTypes.length === 0) {
     return `# What you can offer\nNo type of appointment can be booked through you. Do not offer times for a new appointment. If the patient wants one, say your colleague will arrange it with them.`
   }
@@ -387,8 +394,17 @@ export function offeredTypesSection(offeredTypes: PromptType[], adOnly: PromptTy
   // The price on the type is the clinic's own, kept where it is changed --
   // a knowledge card naming a price is a second copy that goes stale.
   const priced = [...offeredTypes, ...adOnly].some((type) => typePrice(type))
+  const offer = offeredTypes.find((type) => type.stage === 'first_visit_offer')
+  const regular = opts.regularFirstVisit ? amountOf(opts.regularFirstVisit) : ''
   return [
     `# What you can offer\nOnly these types of appointment can be booked through you:\n${offeredTypes.map(line).join('\n')}${priced ? '\nThe price next to a type is its price now. Give that one, even if the clinic knowledge names another for it.' : ''}`,
+    // Someone from the ad is offered the offer itself, and was told "la
+    // primera visita tiene un precio de 50 €": true, and the offer they were
+    // promised in the welcome message reads as an ordinary price (31 Oct
+    // 2026). An offer is only worth something said as one.
+    offer && !adOnly.length
+      ? `${offeredTypes.length > 1 ? `«${offer.name}» is` : 'This is'} the clinic's first-visit offer. Whenever you give its price, give it as an offer the clinic has right now -- "ahora mismo tenemos una oferta de primera visita por ${amountOf(offer) || 'Y €'}"${regular ? ` (you may add that it normally costs ${regular})` : ''} -- never as its plain price ("la primera visita cuesta...", "tiene un precio de..."), and never as something they get because of an ad.`
+      : '',
     adOnly.length
       ? `The clinic also has a first-visit offer, which is NOT for everyone:\n${adOnly.map(line).join('\n')}\nDo not mention it, and do not ask how they found the clinic: give them the regular first-visit price. Only if they say themselves that they came from one of the clinic's ads${opts.referralVisit ? '' : ' or were recommended'} -- or whatever else the clinic knowledge says qualifies -- offer it, as an offer the clinic has right now ("ahora mismo tenemos una oferta de primera visita por Y €"), never as "because you came from our ad".`
       : '',
@@ -451,12 +467,27 @@ export interface BookedVisit {
  * refunds, packages and stopping treatment stay with a person; a draft still
  * says a colleague will take care of it.
  *
- * Either way it asks first whether they would rather move it to another day:
- * that is the clinic's rule (20 Oct), and most "no puedo ir" are a visit to
- * move, not one to lose.
+ * Cancelled first, another day offered after. It used to ask first whether
+ * they would rather move it (20 Oct), and a question nobody answered left a
+ * visit booked that nobody would use: "quisiera anular la cita" was answered
+ * with "¿prefieres cambiarla?", the patient never wrote again, and the visit
+ * stayed in the diary (31 Oct 2026). Cancelling straight away and offering
+ * another day in the same message loses nothing -- if they want one, it is
+ * booked as a new visit -- and leaves no visit hanging on an answer.
  *
  * `listVisits` is off where the prompt already lists them (patient facts).
  */
+/**
+ * What to do when they say they will not come, answering on its own
+ * (cancel_appointment) -- rescheduleSection says why it cancels first.
+ */
+export const CANCEL_FIRST_BOOKING =
+  'If they say they will not come to one of these, or ask to cancel or call it off ("quisiera anular la cita", "no voy a poder ir", "cancélala"), cancel it straight away with cancel_appointment (visit_on = its current day and time) -- with several visits, and no way to tell which, ask which one first -- and do not first ask whether they would rather move it: a question nobody answers leaves a visit booked that nobody will use. Once it confirms, in that same reply tell them it is cancelled, with its day and time, and offer another day in one sentence ("Si quieres otro día, dime cuál te viene bien y te busco hueco"). Someone who is ill is not offered the same day. If they then name a day, book it with book_appointment as a new visit of the same type as the one cancelled. If what they ask is to CHANGE the day or time ("¿me la cambias al jueves?", the reminder\'s "Cambiar cita" button), that is a move, not a cancellation: offer new times and move it, and the visit stays booked until it is moved -- except a visit TODAY that they say they cannot make (ill, stuck on the road, running late past it): cancel it now with cancel_appointment even when they want another day, and in the same reply offer other times, since the visit today left booked while they choose ends as a no-show for someone who warned the clinic. Never leave a visit booked that they have said they will not come to: "voy el jueves y la otra ya la coordinamos" means cancel the other one now. If, when you offer another day, they point to a visit they already have instead ("tengo cita el día 5", "ya voy el jueves"), that is their answer: they want no other time. Cancel the one they cannot come to with cancel_appointment if it is still booked, tell them the one they keep stands, and never offer times for it again. Stopping or pausing their treatment, or cancelling a package, is for a colleague.'
+
+/** The same, for a draft a person reads first: a colleague does the cancelling. */
+export const CANCEL_FIRST_DRAFT =
+  'If they say they will not come to one of these, or ask to cancel it, do not first ask whether they would rather move it: say your colleague will cancel it (never that you have, or that you will), with its day and time, and in the same reply offer another day in one sentence ("Si quieres otro día, dime cuál te viene bien y te busco hueco"). If what they ask is to change the day or time, that is a move: offer new times. If, when you offer another day, they point to a visit they already have instead ("tengo cita el día 5"), that is a no: say your colleague will cancel the one they cannot come to and that the other stands, and never offer times for it again.'
+
 export function rescheduleSection(visits: BookedVisit[], timeZone: string, opts: { listVisits: boolean; canBook?: boolean }): string {
   if (visits.length === 0) return ''
   const list = visits
@@ -477,7 +508,7 @@ export function rescheduleSection(visits: BookedVisit[], timeZone: string, opts:
     // patient stuck on the motorway at 19:17 was offered other days while her
     // 19:30 stayed booked -- the 27th's migraine at 9:30 ended as a no-show
     // the same way, two hours after she warned the clinic.
-    `If they want to change the day or time of one of these, offer new times for that same type of appointment -- from the Booking list, or find_free_times -- and never a different type: only times listed under that type's own name, since a time free for a shorter type may not fit theirs. Look at their other booked visits first: a time the day before, the same day or the day after another of them is offered only by saying so ("ya tienes cita el miércoles 21 a las 17:30"). This holds even when that type is not under "What you can offer", which is about new appointments. ${opts.canBook ? `${CONFIRM_BEFORE_BOOKING} Then move it with book_appointment (move_visit_on = its current day and time), and only once that confirms tell them it is moved.` : 'When they pick one, say you are passing the change on and that they will get a confirmation: it is not moved until then, and their current time stands meanwhile.'} ${opts.canBook ? 'If they say they will not come to one of these, or want to cancel it, first ask whether they would like to move it to another day instead. Only if they say no -- they want it cancelled -- or have already said they do not want another time, call cancel_appointment with its current day and time (visit_on) -- once there is no doubt which visit, which with several means asking which one -- and only once it confirms tell them it is cancelled. Never ask "¿te la quito?" -- the question is whether they want another day -- and never leave a visit booked that they have said they will not come to: "voy el jueves y la otra ya la coordinamos" means cancel the other one now. If they cannot come but want another time, move it instead. A visit TODAY that they say they cannot make (ill, stuck on the road, running late past it) will not be used whatever they answer: cancel it now with cancel_appointment -- this is the one case you do not first ask whether they want another day -- and in the same reply say so and offer other times -- never on the same day to someone who is ill. Never leave the visit today booked while they choose another: it ends as a no-show for someone who warned the clinic. If, when you offer another day, they point to a visit they already have instead ("tengo cita el día 5", "ya voy el jueves"), that is their answer: they want no other time. Cancel the one they cannot come to with cancel_appointment, tell them the one they keep stands, and never offer times for it again. Stopping or pausing their treatment, or cancelling a package, is for a colleague.' : 'If they say they cannot come to it, or want to cancel it, first ask whether they would like to move it to another day instead. Only if they say no, say your colleague will cancel it: never say you will remove it. If, when you offer another day, they point to a visit they already have instead ("tengo cita el día 5"), that is a no: say your colleague will cancel the one they cannot come to and that the other stands, and never offer times for it again.'}`,
+    `If they want to change the day or time of one of these, offer new times for that same type of appointment -- from the Booking list, or find_free_times -- and never a different type: only times listed under that type's own name, since a time free for a shorter type may not fit theirs. Look at their other booked visits first: a time the day before, the same day or the day after another of them is offered only by saying so ("ya tienes cita el miércoles 21 a las 17:30"). This holds even when that type is not under "What you can offer", which is about new appointments. ${opts.canBook ? `${CONFIRM_BEFORE_BOOKING} Then move it with book_appointment (move_visit_on = its current day and time), and only once that confirms tell them it is moved.` : 'When they pick one, say you are passing the change on and that they will get a confirmation: it is not moved until then, and their current time stands meanwhile.'} ${opts.canBook ? CANCEL_FIRST_BOOKING : CANCEL_FIRST_DRAFT}`,
   ]
     .filter(Boolean)
     .join('\n')

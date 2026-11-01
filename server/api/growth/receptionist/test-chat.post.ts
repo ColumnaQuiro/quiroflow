@@ -1,7 +1,7 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import { createAnthropicClient } from '~/server/utils/anthropicClient'
 import { requireReceptionist } from '~/server/utils/requireGrowth'
-import { buildSystemPrompt, loadClinicDetails, loadOfferedTypes, loadPackagePrices, loadReceptionistCalendar, loadReceptionistConfig, type LeadOrigin } from '~/server/utils/receptionist'
+import { buildSystemPrompt, loadClinicDetails, loadOfferedTypes, loadTeamNames, loadPackagePrices, loadReceptionistCalendar, loadReceptionistConfig, type LeadOrigin } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel, type ReceptionistToolUse } from '~/server/utils/receptionistModel'
 import { modelFailureMessage } from '~/utils/modelFailure'
 import { typesAfterFirstVisit, typesForAudience, typesForMinor, typesForReferral, typesForSomeoneTheyBring, type ReceptionistAudience } from '~/utils/receptionistTypes'
@@ -105,7 +105,7 @@ export default defineEventHandler(async (event) => {
   // ad is offered the ad's first visit, anyone else the plain one, and a
   // returning patient never a first visit.
   const offered = await loadOfferedTypes(supabase, teamMember.account_id, config)
-  const { types, adOnly } = typesForAudience(offered, scenario.audience)
+  const { types, adOnly, regular } = typesForAudience(offered, scenario.audience)
   // And a child's, so "cita para mi hija" can be tried too (minorsSection).
   const minors = { forNewChild: typesForMinor(offered, false), forReturningChild: typesForMinor(offered, true), children: [] }
   // And someone they bring, and their own referral visit (referralSection).
@@ -113,6 +113,7 @@ export default defineEventHandler(async (event) => {
   const bringsSomeone = { types: typesForSomeoneTheyBring(offered, referred), referred, canGive: false }
   const laterPrices = { sessions: typesAfterFirstVisit(offered), packages: await loadPackagePrices(supabase, teamMember.account_id) }
   const clinicDetails = await loadClinicDetails(supabase, teamMember.account_id)
+  const team = await loadTeamNames(supabase, teamMember.account_id)
   const referralTypes = scenario.audience === 'existing' ? [] : typesForReferral(offered)
   const bookable = [...new Set([...types, ...adOnly, ...minors.forNewChild, ...bringsSomeone.types, ...referralTypes])]
   // And the same free times, read with the service role for the reason given
@@ -125,12 +126,13 @@ export default defineEventHandler(async (event) => {
     const { text: reply, refused, handedOver, toolUses } = await runReceptionistModel(await createAnthropicClient(apiKey), {
       model: MODEL,
       maxTokens: MAX_TOKENS,
-      system: buildSystemPrompt(config, { testMode: true, offeredTypes: types, adOnlyTypes: adOnly, audience: scenario.audience, calendar, leadOrigin: scenario.origin, searchTool: Boolean(findFreeTimes), sendsItself: true, minors, bringsSomeone, referral: referralTypes.length ? { types: referralTypes } : undefined, laterPrices, clinicDetails }),
+      system: buildSystemPrompt(config, { testMode: true, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience: scenario.audience, calendar, leadOrigin: scenario.origin, searchTool: Boolean(findFreeTimes), sendsItself: true, minors, bringsSomeone, referral: referralTypes.length ? { types: referralTypes } : undefined, laterPrices, clinicDetails, team }),
       messages: turns.map((turn) => ({ role: turn.role, content: turn.content })),
       findFreeTimes,
       // Offered as when it answers on its own; here it only reports.
       handOver: true,
       internalNotes: internalNotes(config),
+      teamNames: team,
       logLabel: `Try ${config.personaName} (account ${teamMember.account_id})`,
     })
     const trace = toolUses.map(describe)

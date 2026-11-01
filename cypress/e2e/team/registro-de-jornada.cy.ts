@@ -51,8 +51,12 @@ describe('Registro de jornada', () => {
       const yesterday = madridDate(new Date(Date.now() - 24 * 3600_000))
       cy.task('db:insertRows', { table: 'time_entries', rows: [{ account_id: account.accountId, team_member_id: fisio.id, work_date: yesterday, kind: 'in', at: `${yesterday}T07:00:00Z` }] })
 
+      // On the 1st, yesterday is last month: both views open on this one.
+      const lastMonth = yesterday.slice(0, 7) !== madridDate(new Date()).slice(0, 7)
+
       cy.login(fisio.email, fisio.password)
       cy.visit('/jornada')
+      if (lastMonth) cy.clickUntil('[data-cy=my-month-prev]', `[data-cy=my-month-day][data-date=${yesterday}]`)
       cy.get(`[data-cy=my-month-day][data-date=${yesterday}]`, { timeout: 20000 }).click()
       cy.get('[data-cy=correction-target]').should('have.value', 'add:out')
       cy.get('[data-cy=correction-time]').type('17:05')
@@ -81,6 +85,7 @@ describe('Registro de jornada', () => {
         expect(rows[0]!.decided_by).to.eq(account.teamMemberId)
       })
 
+      if (lastMonth) cy.get('[data-cy=jornada-month]').type(yesterday.slice(0, 7))
       cy.get('[data-cy=team-month-row][data-member="Lucía Fisio"]').click()
       cy.get(`[data-cy=team-month-day][data-date=${yesterday}]`).should('contain', '17:05')
       cy.get('[data-cy=team-month-note]').should('contain', 'Corrected').and('contain', 'Olvidé fichar la salida')

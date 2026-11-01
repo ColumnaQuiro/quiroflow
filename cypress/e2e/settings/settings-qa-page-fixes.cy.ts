@@ -9,14 +9,17 @@ describe('Settings QA: page fixes', () => {
       cy.visit('/settings/online-booking')
       cy.get('[data-cy="booking-settings"][data-ready="true"]')
       cy.get('input[placeholder="BIENVENIDA"]').scrollIntoView().type('OTONO')
-      cy.get('input[type="date"]').type('2026-10-31')
+      // 31 January next year: always ahead, and in winter time (CET, +01:00)
+      // like the 31 October this was found on, which itself passed on 1 Nov 2026.
+      const year = new Date().getFullYear() + 1
+      cy.get('input[type="date"]').type(`${year}-01-31`)
       cy.contains('button', /^(Add|Añadir)/).click()
-      // Stored as the start of 1 November in Madrid (CET, +01:00), not UTC
-      // midnight on the 31st, which stopped it at 01:00 that morning.
+      // Stored as the start of 1 February in Madrid, not UTC midnight on the
+      // 31st, which stopped it at 01:00 that morning.
       cy.task<{ expires_at: string }[]>('db:selectRows', { table: 'online_booking_discount_codes', columns: 'expires_at', match: { account_id: account.accountId, code: 'OTONO' } }).then((rows) => {
-        expect(new Date(rows[0]!.expires_at).toISOString()).to.eq('2026-10-31T23:00:00.000Z')
+        expect(new Date(rows[0]!.expires_at).toISOString()).to.eq(`${year}-01-31T23:00:00.000Z`)
       })
-      cy.contains('expires 31/10/2026').should('exist')
+      cy.contains(`expires 31/01/${year}`).should('exist')
 
       cy.get('[data-cy="code-delete"]').click()
       cy.get('[data-cy="confirm-dialog"]').should('contain', 'OTONO').contains('button', 'Cancel').click()

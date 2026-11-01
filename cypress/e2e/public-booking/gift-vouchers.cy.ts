@@ -172,6 +172,22 @@ describe('Gift vouchers', () => {
     })
   })
 
+  it('offers the gift field to every visitor of a clinic that sells them, from the page itself', () => {
+    cy.task('db:enableOnlineBooking', { clinicId: account.clinicId })
+    cy.task('db:insertRows', { table: 'gift_voucher_settings', rows: [{ account_id: account.accountId, enabled: true }] })
+    cy.task('db:createAppointmentType', { accountId: account.accountId, name: 'Primera visita', durationMinutes: 30, onlineBookingEnabled: true }).then(() => {
+      // Decided while the page is rendered, so it is in the HTML the CDN
+      // keeps; the browser does not ask (it used to, on every visit).
+      cy.intercept('/api/public-booking/gift-options*').as('giftOptions')
+      cy.visit(`/book/${account.accountSlug}`)
+      selectBookableDayWithSlots()
+      cy.contains('button', /^\d{2}:\d{2}$/).first().click()
+      cy.contains('Introduzca sus datos').should('be.visible')
+      cy.get('[data-cy=booking-gift-open]').should('contain', 'Tengo un bono regalo')
+      cy.get('@giftOptions.all').should('have.length', 0)
+    })
+  })
+
   it('refuses a code that is unknown, unpaid or expired', () => {
     const check = (c: string) => cy.request('POST', '/api/public-booking/gift-check', { slug: account.accountSlug, code: c }).its('body')
     check('REGALO-NOPE99').should('deep.include', { ok: false, message: 'Ese código no existe.' })

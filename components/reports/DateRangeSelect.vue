@@ -24,12 +24,14 @@ function formatDate(iso: string) {
   return new Date(`${iso}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
+const presetLabel = (p: DateRangePreset) => (p.labelEs ? t(p.label ?? '', p.labelEs) : (p.label ?? ''))
+
 const matchedPresetLabel = computed(() => {
   const match = props.presets.find((p) => {
     const r = computePresetRange(p)
     return r.from === props.modelValue.from && r.to === props.modelValue.to
   })
-  return match?.label ?? null
+  return match ? presetLabel(match) : null
 })
 
 const buttonLabel = computed(() => matchedPresetLabel.value ?? `${formatDate(props.modelValue.from)} – ${formatDate(props.modelValue.to)}`)
@@ -74,10 +76,10 @@ onUnmounted(() => document.removeEventListener('click', onClickOutside))
         :key="p.label"
         type="button"
         class="block w-full rounded-ctlSm px-2 py-1.5 text-left text-[13px] hover:bg-surface-subtle"
-        :class="matchedPresetLabel === p.label ? 'font-medium text-brand-text' : 'text-ink-600'"
+        :class="matchedPresetLabel === presetLabel(p) ? 'font-medium text-brand-text' : 'text-ink-600'"
         @click="selectPreset(p)"
       >
-        {{ p.label }}
+        {{ presetLabel(p) }}
       </button>
       <div class="mt-1 border-t border-line-divider pt-2">
         <p class="px-2 text-[11px] font-medium uppercase tracking-wide text-ink-faint2">{{ t('Custom range', 'Rango personalizado') }}</p>

@@ -720,8 +720,8 @@ async function recordPackagePayment(
   // towards.
   if (paymentError || !payment) return paymentRefusedMessage(paymentError)
 
-  // A bono's factura says how much of it this money bought -- "264.00 EUR of
-  // 528.00 EUR (6 of 12 sessions)" -- because that is what the patient is
+  // A bono's factura says how much of it this money bought -- "264,00 € de
+  // 528,00 € (6 de 12 sesiones)" -- because that is what the patient is
   // actually purchasing when they pay an instalment. Not issued for a credit
   // payment: that money was documented when it was paid in.
   if (method !== 'credit' && bono) {

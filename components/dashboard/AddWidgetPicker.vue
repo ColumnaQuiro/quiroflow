@@ -21,7 +21,7 @@ const available = computed(() => WIDGET_REGISTRY.filter((w) => !props.existingTy
         class="flex h-7 items-center rounded-pill border border-line-control bg-surface px-3 text-[12.5px] font-medium text-ink-500 hover:border-brand-tintBorder hover:bg-brand-tint hover:text-brand-text"
         @click="emit('add', w.type)"
       >
-        + {{ w.label }}
+        + {{ t(w.label, w.labelEs) }}
       </button>
     </div>
   </div>

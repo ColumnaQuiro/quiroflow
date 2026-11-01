@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '~/types/database.types'
 import { facturaTaxFor } from '~/utils/facturaTax'
+import { bonoPaymentDescription } from '~/utils/billingDescriptions'
 
 // The server-side twin of useFacturas(). Money can also arrive without anyone
 // at a screen -- a Stripe autopay instalment on a bono, a membership renewal --
@@ -30,15 +31,10 @@ export async function issueFacturaServer(
     taxRateBp?: number
   },
 ): Promise<string | null> {
-  const money = (cents: number) => `€${(cents / 100).toFixed(2)}`
-
   let description: string
   if (input.purpose === 'bono' && input.bono) {
     const { packageName, priceCents, sessionsTotal } = input.bono
-    // Rounded down, same as the client: a payment covering five and a half
-    // sessions has bought five.
-    const covered = priceCents > 0 ? Math.floor((input.amountCents / priceCents) * sessionsTotal) : 0
-    description = `${packageName} — ${money(input.amountCents)} of ${money(priceCents)} (${covered} of ${sessionsTotal} sessions)`
+    description = bonoPaymentDescription(packageName, input.amountCents, priceCents, sessionsTotal)
   } else if (input.serviceName) {
     description = input.serviceName
   } else if (input.purpose === 'on_account') {

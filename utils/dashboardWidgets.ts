@@ -3,6 +3,12 @@ export type WidgetSize = 'sm' | 'md' | 'lg'
 export interface WidgetDef {
   type: string
   label: string
+  /**
+   * The title in Spanish. This file is plain data with no useT() to call, so
+   * both languages live here and the screen picks with t(label, labelEs).
+   * The English one alone was what a Spanish dashboard showed.
+   */
+  labelEs: string
   defaultSize: WidgetSize
   component: string
   /** Offered only to owners (the monthly goals: targets include income). */
@@ -17,17 +23,17 @@ export interface WidgetDef {
 // weekly_visits (8) + income_mini (4) fill row one, the three "sm" list
 // widgets fill row two, and the three "sm" KPIs fill row three.
 export const WIDGET_REGISTRY: WidgetDef[] = [
-  { type: 'weekly_visits', label: 'Visits this week', defaultSize: 'md', component: 'DashboardWeeklyVisitsWidget' },
-  { type: 'income_mini', label: 'Income this month', defaultSize: 'sm', component: 'DashboardIncomeMiniWidget' },
-  { type: 'visit_summary', label: 'Visit summary', defaultSize: 'sm', component: 'DashboardVisitSummaryWidget' },
-  { type: 'debtors_mini', label: 'Debtors', defaultSize: 'sm', component: 'DashboardDebtorsMiniWidget' },
-  { type: 'next_up_today', label: 'Next up today', defaultSize: 'sm', component: 'DashboardNextUpTodayMiniWidget' },
-  { type: 'active_patients', label: 'Active patients', defaultSize: 'sm', component: 'DashboardActivePatientsWidget' },
-  { type: 'no_show_rate', label: 'No-show rate', defaultSize: 'sm', component: 'DashboardNoShowRateMiniWidget' },
-  { type: 'recalls_due', label: 'Recalls due', defaultSize: 'sm', component: 'DashboardRecallsDueMiniWidget' },
-  { type: 'continuity_alerts', label: 'Care plans behind schedule', defaultSize: 'sm', component: 'DashboardContinuityAlertsMiniWidget' },
-  { type: 'total_patients', label: 'Total patients', defaultSize: 'sm', component: 'DashboardTotalPatientsWidget' },
-  { type: 'appointment_distribution_mini', label: 'Appointment distribution', defaultSize: 'sm', component: 'DashboardAppointmentDistributionMiniWidget' },
+  { type: 'weekly_visits', label: 'Visits this week', labelEs: 'Visitas esta semana', defaultSize: 'md', component: 'DashboardWeeklyVisitsWidget' },
+  { type: 'income_mini', label: 'Income this month', labelEs: 'Ingresos este mes', defaultSize: 'sm', component: 'DashboardIncomeMiniWidget' },
+  { type: 'visit_summary', label: 'Visit summary', labelEs: 'Resumen de visitas', defaultSize: 'sm', component: 'DashboardVisitSummaryWidget' },
+  { type: 'debtors_mini', label: 'Debtors', labelEs: 'Deudores', defaultSize: 'sm', component: 'DashboardDebtorsMiniWidget' },
+  { type: 'next_up_today', label: 'Next up today', labelEs: 'Próximas citas de hoy', defaultSize: 'sm', component: 'DashboardNextUpTodayMiniWidget' },
+  { type: 'active_patients', label: 'Active patients', labelEs: 'Pacientes activos', defaultSize: 'sm', component: 'DashboardActivePatientsWidget' },
+  { type: 'no_show_rate', label: 'No-show rate', labelEs: 'Tasa de ausencias', defaultSize: 'sm', component: 'DashboardNoShowRateMiniWidget' },
+  { type: 'recalls_due', label: 'Recalls due', labelEs: 'Recordatorios pendientes', defaultSize: 'sm', component: 'DashboardRecallsDueMiniWidget' },
+  { type: 'continuity_alerts', label: 'Care plans behind schedule', labelEs: 'Planes de cuidados con retraso', defaultSize: 'sm', component: 'DashboardContinuityAlertsMiniWidget' },
+  { type: 'total_patients', label: 'Total patients', labelEs: 'Total de pacientes', defaultSize: 'sm', component: 'DashboardTotalPatientsWidget' },
+  { type: 'appointment_distribution_mini', label: 'Appointment distribution', labelEs: 'Distribución de citas', defaultSize: 'sm', component: 'DashboardAppointmentDistributionMiniWidget' },
   // Note: despite their type/component names, DashboardStatisticsMiniWidget's
   // body is actually visits/PVA/retention, and DashboardUpcomingVisitsMiniWidget's
   // body is actually the monthly appointment-volume trend -- a pre-existing
@@ -35,10 +41,10 @@ export const WIDGET_REGISTRY: WidgetDef[] = [
   // describe what each component really renders rather than its file name;
   // left the `type`/`component` values alone since those are persisted in
   // team_members.dashboard_layout and renaming them would need a migration.
-  { type: 'statistics_mini', label: 'Visit value & retention', defaultSize: 'sm', component: 'DashboardStatisticsMiniWidget' },
-  { type: 'memberships_mini', label: 'Memberships', defaultSize: 'sm', component: 'DashboardMembershipsMiniWidget' },
-  { type: 'upcoming_visits_mini', label: 'Appointment volume trend', defaultSize: 'sm', component: 'DashboardUpcomingVisitsMiniWidget' },
-  { type: 'monthly_goals', label: 'Monthly goals', defaultSize: 'md', component: 'DashboardMonthlyGoalsWidget', ownerOnly: true },
+  { type: 'statistics_mini', label: 'Visit value & retention', labelEs: 'Valor por visita y retención', defaultSize: 'sm', component: 'DashboardStatisticsMiniWidget' },
+  { type: 'memberships_mini', label: 'Memberships', labelEs: 'Membresías', defaultSize: 'sm', component: 'DashboardMembershipsMiniWidget' },
+  { type: 'upcoming_visits_mini', label: 'Appointment volume trend', labelEs: 'Evolución del volumen de citas', defaultSize: 'sm', component: 'DashboardUpcomingVisitsMiniWidget' },
+  { type: 'monthly_goals', label: 'Monthly goals', labelEs: 'Objetivos mensuales', defaultSize: 'md', component: 'DashboardMonthlyGoalsWidget', ownerOnly: true },
 ]
 
 // The default dashboard layout, in grid order.

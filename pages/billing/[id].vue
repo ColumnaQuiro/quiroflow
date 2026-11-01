@@ -30,7 +30,7 @@ const loading = ref(true)
 const notFound = ref(false)
 
 const paymentAmount = ref('')
-const { methods: paymentMethods, ensureLoaded: ensurePaymentMethodsLoaded, defaultMethod } = usePaymentMethods()
+const { methods: paymentMethods, ensureLoaded: ensurePaymentMethodsLoaded, defaultMethod, labelFor: paymentMethodLabel } = usePaymentMethods()
 const paymentMethod = ref<string>('card')
 const savingPayment = ref(false)
 const error = ref('')
@@ -113,6 +113,12 @@ const STATUS_TONE: Record<string, 'success' | 'danger' | 'neutral'> = {
   paid: 'success',
   unpaid: 'danger',
   void: 'neutral',
+}
+// The stored status is a key ("paid"), and the pill used to show it as is.
+// Same words as the patient's own billing page.
+function statusLabel(status: string) {
+  const label = PATIENT_INVOICE_STATUS[status]?.label
+  return label ? t(label[0], label[1]) : status
 }
 
 async function recordPayment() {
@@ -268,8 +274,15 @@ function backToBilling() {
   navigateTo(`/billing?highlight=${invoiceId}`)
 }
 
+// In the staff member's language: these were fixed to en-GB, and a Spanish
+// receipt read "Emitida el 1 Nov 2026".
+const { preference: lang } = useLang()
+const dateLocale = computed(() => (lang.value === 'es' ? 'es-ES' : 'en-GB'))
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+  return new Date(iso).toLocaleDateString(dateLocale.value, { day: 'numeric', month: 'short', year: 'numeric' })
+}
+function formatDateTime(iso: string) {
+  return new Date(iso).toLocaleString(dateLocale.value, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
 // Ties each visible <label> to the field under it (for/id), so a screen
@@ -338,7 +351,7 @@ const fieldId = useId()
             <div class="text-right">
               <p class="font-mono text-[24px] font-semibold text-ink-900">{{ formatEur(invoice.total_cents) }}</p>
               <div class="mt-1.5 flex justify-end">
-                <UiPill :tone="STATUS_TONE[invoice.status] ?? 'neutral'">{{ invoice.status }}</UiPill>
+                <UiPill :tone="STATUS_TONE[invoice.status] ?? 'neutral'">{{ statusLabel(invoice.status) }}</UiPill>
               </div>
             </div>
           </div>
@@ -372,7 +385,7 @@ const fieldId = useId()
               </div>
               <div class="flex justify-between text-ink-muted">
                 <span>{{ t('VAT', 'IVA') }}</span>
-                <span class="font-mono">€0.00</span>
+                <span class="font-mono">{{ formatEur(0) }}</span>
               </div>
               <div class="flex justify-between border-t border-line-row2 pt-1.5 text-[14px] font-semibold text-ink-900">
                 <span>{{ t('Total due', 'Total a pagar') }}</span>
@@ -412,7 +425,7 @@ const fieldId = useId()
           <h2 class="text-[13px] font-semibold text-ink-900">{{ t('Payments', 'Pagos') }}</h2>
           <ul v-if="payments.length > 0" class="mt-3 space-y-1.5 text-[13px]">
             <li v-for="p in payments" :key="p.id" class="flex justify-between">
-              <span class="text-ink-muted">{{ new Date(p.paid_at).toLocaleString() }} &middot; {{ p.method }}</span>
+              <span class="text-ink-muted">{{ formatDateTime(p.paid_at) }} &middot; {{ paymentMethodLabel(p.method) }}</span>
               <span class="font-mono text-ink-900">{{ formatEur(p.amount_cents) }}</span>
             </li>
           </ul>

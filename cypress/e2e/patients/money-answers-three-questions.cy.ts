@@ -68,13 +68,16 @@ describe('The Money tab', () => {
 
         cy.contains('Owed now').should('be.visible')
         cy.contains('88,00').should('be.visible')
-        // The card also names the oldest unpaid document and its date, which
-        // is the "since when" half of the answer. It is not asserted here:
-        // BillingTab's invoices list comes back EMPTY for a seeded invoice --
-        // on main as much as on this branch -- so the line has nothing to
-        // name in a test. That emptiness is a pre-existing problem with the
-        // invoices select policy, not something this change introduced, and
-        // it is being raised separately rather than worked around here.
+        // And what it is made of: the unpaid receipt, its date and what is
+        // left on it. Nothing came in unallocated, so no line for that.
+        cy.get('[data-cy=owed-receipt]').should('have.length', 1).and('contain', 'INV-M-OWED')
+        cy.contains('[data-cy=owed-receipt]', '88,00').should('be.visible')
+        cy.get('[data-cy=owed-unallocated]').should('not.exist')
+
+        // Owing and holding bono value at once: the pill by the name shows
+        // both, the debt first. It used to show only "360,00 € available".
+        cy.contains('[data-cy=balance-pill]', '88,00 € due').should('be.visible')
+        cy.contains('[data-cy=balance-pill]', '360,00 € available').should('be.visible')
 
         cy.contains('On account').should('be.visible')
         // "In bonos" and its amount, not a session count. The card used to
@@ -88,10 +91,9 @@ describe('The Money tab', () => {
         cy.contains('How they pay').should('be.visible')
         cy.contains('No card on file').should('be.visible')
 
-        // The two figures that describe the account's history rather than
-        // its state. They lived in the strip these cards replaced and were
-        // briefly lost in the move.
-        cy.contains('Balance').should('be.visible')
+        // History, not state. "Balance" is gone from here: it was Owed now
+        // again with a minus sign.
+        cy.contains('dt', 'Balance').should('not.exist')
         cy.contains('Lifetime').should('be.visible')
       })
     })

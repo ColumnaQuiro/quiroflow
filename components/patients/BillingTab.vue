@@ -116,7 +116,7 @@ function paymentRefusedMessage(error: { message?: string } | null) {
 }
 const { fire } = useAutomations()
 const t = useT()
-const { formatLongDate, formatShortDate } = useDates()
+const { formatShortDate } = useDates()
 
 // outstandingCents is what "Owed now" shows. It was computed here as
 // -balanceCents, which made this one card contradict itself: it printed
@@ -2137,14 +2137,27 @@ async function logPayment(m: PatientMembershipRow, status: 'paid' | 'failed') {
 // can do that without demoting the actions staff take every day.
 const subTab = ref<'ledger' | 'documents'>('ledger')
 
-/** The oldest unpaid charge -- "since when" is the useful half of "how much". */
-const oldestUnpaid = computed(() => {
-  const open = invoices.value
+// What "Owed now" is made of, under it: each unpaid receipt, oldest first
+// ("since when" is the useful half of "how much"), with what is left on it.
+// It used to name the oldest one only, and the other figures on this tab --
+// Balance, Available -- were left to explain the rest, which they could not.
+//
+// Owed now is the smaller of two readings (utils/owing.ts): what the receipts
+// say is unpaid, and invoiced minus paid. Where money came in without
+// settling a particular receipt -- a bono sale, an imported payment -- the
+// receipts add up to more than is owed, and the difference is a line of its
+// own, so the list always adds up to the figure above it.
+const OWED_SHOWN = 3
+const owedReceipts = computed(() => {
+  const allocated = new Map<string, number>()
+  for (const p of ledgerPayments.value) if (p.invoice_id) allocated.set(p.invoice_id, (allocated.get(p.invoice_id) ?? 0) + p.amount_cents)
+  return invoices.value
     .filter((i) => i.status === 'unpaid' && !i.is_refund)
-    .slice()
-    .sort((a, b) => a.created_at.localeCompare(b.created_at))
-  return open[0] ?? null
+    .map((i) => ({ id: i.id, number: i.invoice_number, at: i.created_at, leftCents: Math.max(0, i.total_cents - (allocated.get(i.id) ?? 0)) }))
+    .filter((r) => r.leftCents > 0)
+    .sort((a, b) => a.at.localeCompare(b.at))
 })
+const unallocatedCents = computed(() => Math.max(0, owedReceipts.value.reduce((sum, r) => sum + r.leftCents, 0) - outstandingCents.value))
 
 // Which card, not just whether. See server/api/stripe/card-details -- read
 // live, because a reissued card changes its expiry under us and a stale
@@ -2233,11 +2246,20 @@ const fieldId = useId()
         <p class="mt-1 font-mono text-[24px] font-semibold" :class="outstandingCents > 0 ? 'text-danger-text' : 'text-ink-700'">
           {{ money(outstandingCents) }}
         </p>
-        <p v-if="oldestUnpaid" class="mt-0.5 text-[12px]" :class="outstandingCents > 0 ? 'text-danger-text' : 'text-ink-muted2'">
-          {{ t('Oldest unpaid', 'Más antiguo') }} <span class="font-mono">{{ oldestUnpaid.invoice_number }}</span>,
-          {{ formatLongDate(oldestUnpaid.created_at) }}
-        </p>
-        <p v-else class="mt-0.5 text-[12px] text-ink-muted2">{{ t('Nothing outstanding.', 'Nada pendiente.') }}</p>
+        <ul v-if="outstandingCents > 0 && owedReceipts.length" class="mt-2 space-y-1 text-[12.5px] text-danger-text" data-cy="owed-breakdown">
+          <li v-for="r in owedReceipts.slice(0, OWED_SHOWN)" :key="r.id" class="flex items-baseline justify-between gap-3" data-cy="owed-receipt">
+            <span class="min-w-0 truncate"><span class="font-mono">{{ r.number }}</span> · {{ formatShortDate(r.at) }}</span>
+            <span class="shrink-0 font-mono">{{ money(r.leftCents) }}</span>
+          </li>
+          <li v-if="owedReceipts.length > OWED_SHOWN" class="text-danger-text/80">
+            {{ t(`and ${owedReceipts.length - OWED_SHOWN} more`, `y ${owedReceipts.length - OWED_SHOWN} más`) }}
+          </li>
+          <li v-if="unallocatedCents > 0" class="flex items-baseline justify-between gap-3 border-t border-danger-border pt-1" data-cy="owed-unallocated">
+            <span class="min-w-0">{{ t('Paid without a receipt to settle', 'Pagado sin recibo asignado') }}</span>
+            <span class="shrink-0 font-mono">−{{ money(unallocatedCents) }}</span>
+          </li>
+        </ul>
+        <p v-else-if="outstandingCents <= 0" class="mt-0.5 text-[12px] text-ink-muted2">{{ t('Nothing outstanding.', 'Nada pendiente.') }}</p>
         <div v-if="canTakePayments" class="mt-3 flex flex-wrap gap-2">
           <UiBtn variant="primary" size="sm" @click="activePanel === 'payment' ? (activePanel = null) : openTakePayment()">
             {{ t('Take payment', 'Registrar pago') }}
@@ -2290,14 +2312,10 @@ const fieldId = useId()
         <p v-if="appliedCreditNote" class="mt-2.5 border-t border-line-divider pt-2.5 text-[11.5px] text-ink-muted2">
           {{ appliedCreditNote }}
         </p>
-        <!-- The two figures that describe the account's history rather than
-             its state. They were in the strip this card replaced, and losing
-             them would have been a quiet regression. -->
+        <!-- The account's history rather than its state. "Balance" sat here
+             too, and it was Owed now again with a minus sign -- or, with credit
+             beside a debt, a third figure agreeing with neither. -->
         <dl class="mt-2.5 flex flex-wrap gap-x-5 gap-y-1 border-t border-line-divider pt-2.5">
-          <div class="flex items-baseline gap-1.5">
-            <dt class="text-[11px] text-ink-muted2">{{ t('Balance', 'Saldo') }}</dt>
-            <dd class="font-mono text-[12px]" :class="balanceCents < 0 ? 'text-danger-text' : 'text-ink-700'">{{ money(balanceCents) }}</dd>
-          </div>
           <div class="flex items-baseline gap-1.5">
             <dt class="text-[11px] text-ink-muted2">{{ t('Lifetime', 'Total histórico') }}</dt>
             <dd class="font-mono text-[12px] text-ink-700">{{ money(lifetimeCents) }}</dd>

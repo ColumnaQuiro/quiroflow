@@ -14,6 +14,7 @@ import { DURATION_MAX, DURATION_MIN, TYPE_STAGES, moveItem, nameKey, orderTypes,
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
+const route = useRoute()
 const router = useRouter()
 const t = useT()
 const { showToast } = useToast()
@@ -78,6 +79,12 @@ onMounted(async () => {
   if (!store.accountId) await store.load()
   await load()
   ready.value = true
+  // ?new=1: the dashboard's first steps send a new clinic straight to the
+  // form rather than to an empty list with a button on it.
+  if (route.query.new) {
+    openAdd()
+    navigateTo({ query: { ...route.query, new: undefined } }, { replace: true })
+  }
 })
 
 function stageLabel(stage: string | null) {

@@ -195,6 +195,7 @@ function widgetMeta(type: string): string | undefined {
       />
     </div>
     <div v-else class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] sm:px-6">
+      <DashboardFirstSteps v-if="store.isOwner && !editing" />
       <DashboardAddWidgetPicker v-if="editing" :existing-types="[...widgets.map((w) => w.type), ...hiddenTypes]" @add="onAddWidget" />
 
       <div v-if="!loaded" class="grid grid-cols-12 gap-3">

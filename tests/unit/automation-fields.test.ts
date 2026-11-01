@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { answerKey, automationFieldValue, DEFAULT_ANSWER_FALLBACK, leadAnswersFromEvents, recallSignerId, withAnswerFallback } from '../../utils/automationFields'
+import { answerKey, automationFieldValue, DEFAULT_ANSWER_FALLBACK, leadAnswersFromEvents, recallHoldReason, recallSignerId, withAnswerFallback } from '../../utils/automationFields'
 
 const laura = { firstName: 'Laura', lastName: 'Gómez', email: 'laura@example.test' }
 const at = '2026-10-02T08:30:00Z'
@@ -113,5 +113,19 @@ describe('Who signs a recall', () => {
   })
   it('is nobody when everyone is away', () => {
     expect(recallSignerId({ usual: 'lea', recentWith: [], away: new Set(team), practitioners: team })).toBeNull()
+  })
+})
+
+describe('Holding an automated recall', () => {
+  const clear = { cancelledRecently: false, handedOver: false, alreadySentToPhone: false }
+
+  it('sends when nothing says to wait', () => {
+    expect(recallHoldReason(clear)).toBeNull()
+  })
+
+  it('waits after a cancellation, a handover, or a send to the same phone', () => {
+    expect(recallHoldReason({ ...clear, cancelledRecently: true })).toMatch(/cancelled/)
+    expect(recallHoldReason({ ...clear, handedOver: true })).toMatch(/handed to a person/)
+    expect(recallHoldReason({ ...clear, alreadySentToPhone: true })).toMatch(/this phone/)
   })
 })

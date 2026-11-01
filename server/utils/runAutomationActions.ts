@@ -1,5 +1,5 @@
 import { createHmac, randomUUID } from 'node:crypto'
-import { automationFieldValue as recipientFieldValue, withAnswerFallback, recallSignerId, leadAnswersFromEvents, type MergeContext } from '~/utils/automationFields'
+import { automationFieldValue as recipientFieldValue, withAnswerFallback, recallSignerId, recallHoldReason, RECALL_HOLD_DAYS, leadAnswersFromEvents, type MergeContext } from '~/utils/automationFields'
 import { toE164 } from '~/utils/phone'
 import { renderTemplateFields } from '~/utils/docFields'
 import { patientAttributeMergeVars } from '~/utils/patientAttributes'
@@ -974,6 +974,14 @@ async function runWhatsAppAction(
             ? 'recall'
             : 'other'
 
+  // A recall waits when the person has just cancelled, has been handed to a
+  // person, or already got it on this phone (recallHoldReason). Not for "Send
+  // test to me", which goes to the sender's own number.
+  if (purpose === 'recall' && recipient.kind === 'patient' && !toOverride) {
+    const hold = recallHoldReason(await recallHoldFacts(supabase, accountId, recipient, templateName, to))
+    if (hold) throw new ActionSkipped(hold)
+  }
+
   let wamid: string | null = null
   let errorMessage: string | null = null
 
@@ -1086,6 +1094,30 @@ async function runWhatsAppAction(
   // Meta ended here as a normal return and a drip counted it as delivered.
   if (!wamid) throw new Error(`Meta refused the WhatsApp message: ${errorMessage ?? 'no message id returned'}`)
   return 'sent'
+}
+
+/**
+ * What recallHoldReason decides on. Both the patient the recall is about and
+ * the one whose phone it goes to (a minor's tutor) count: the tutor is the
+ * person who reads it, and the thread it lands in is theirs.
+ */
+async function recallHoldFacts(supabase: any, accountId: string, recipient: Recipient, templateName: string, to: string) {
+  const people = [...new Set([recipient.id, recipient.contactPatientId].filter((id): id is string => Boolean(id)))]
+  const since = new Date(Date.now() - RECALL_HOLD_DAYS * 86_400_000).toISOString()
+  const [{ count: cancelled }, { count: handovers }, { count: sent }] = await Promise.all([
+    supabase.from('appointments').select('id', { count: 'exact', head: true }).in('patient_id', people).eq('status', 'cancelled').is('deleted_at', null).gte('starts_at', since),
+    supabase.from('inbox_reply_drafts').select('conversation_key', { count: 'exact', head: true }).in('conversation_key', people).gte('handed_over_at', since),
+    supabase
+      .from('whatsapp_messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('account_id', accountId)
+      .eq('phone_number', to)
+      .eq('template_name', templateName)
+      // Went out: not a failed send, and not a dry run's would_send.
+      .in('status', ['sent', 'delivered', 'read'])
+      .gte('created_at', new Date(Date.now() - 86_400_000).toISOString()),
+  ])
+  return { cancelledRecently: (cancelled ?? 0) > 0, handedOver: (handovers ?? 0) > 0, alreadySentToPhone: (sent ?? 0) > 0 }
 }
 
 // Email clients disagree about what an unstyled <a> looks like, and some

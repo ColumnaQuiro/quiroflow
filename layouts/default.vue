@@ -39,6 +39,15 @@ function onKeydown(e: KeyboardEvent) {
 }
 onMounted(() => document.addEventListener('keydown', onKeydown))
 
+// Single-key shortcuts that work on every staff screen (useShortcuts); "?"
+// lists them all. "/" opens the same search as ⌘K.
+const shortcutsOpen = ref(false)
+useShortcuts({
+  '?': () => (shortcutsOpen.value = true),
+  '/': () => (paletteOpen.value = true),
+})
+useGoShortcuts(() => ({ d: '/dashboard', m: '/practitioner', c: '/calendar', p: '/patients', i: '/inbox', b: '/billing', r: '/reports' }))
+
 // Team messages and alerts: one subscription for the whole staff app, so an
 // alert reaches whatever screen a colleague is on (composables/useTeamChat).
 const teamChat = useTeamChat()
@@ -193,6 +202,7 @@ watch(supabaseFailure, (f) => {
         </main>
       </div>
     </div>
-    <AppCommandPalette v-if="paletteOpen" @close="paletteOpen = false" />
+    <AppCommandPalette v-if="paletteOpen" @close="paletteOpen = false" @shortcuts="(paletteOpen = false), (shortcutsOpen = true)" />
+    <ShortcutsDialog v-if="shortcutsOpen" @close="shortcutsOpen = false" />
   </div>
 </template>

@@ -402,13 +402,7 @@ async function checkGift() {
     checkingGift.value = false
   }
 }
-onMounted(async () => {
-  try {
-    const o = await $fetch<{ enabled: boolean }>('/api/public-booking/gift-options', { query: { slug } })
-    if (o.enabled) giftOffered.value = true
-  } catch {
-    // Nothing to offer is the same as not selling them.
-  }
+onMounted(() => {
   if (giftCode.value) checkGift()
 })
 
@@ -998,7 +992,7 @@ if (import.meta.client) {
 // way down, and nothing after an await here may call a composable.
 type BookingPolicy = NonNullable<typeof policy.value>
 type BookingPayload =
-  | { status: 'ok'; info: BookingInfo; policy: BookingPolicy | null }
+  | { status: 'ok'; info: BookingInfo; policy: BookingPolicy | null; giftsSold: boolean }
   | { status: 'not_found' }
   // The RPC itself failed (database, network), as opposed to answering that
   // there is no such clinic. Kept apart so that a blip is not cached as
@@ -1013,9 +1007,17 @@ const cdnCacheControl = useResponseHeader('Netlify-CDN-Cache-Control')
 const previewedByStaff = import.meta.server && !!useSupabaseUser().value
 
 const { data: booking, refresh: refreshBooking } = await useAsyncData<BookingPayload>(`public-booking:${slug}`, async () => {
-  const [infoResult, policyResult] = await Promise.all([
+  const [infoResult, policyResult, giftsSold] = await Promise.all([
     supabase.rpc('get_public_booking_info', { p_slug: slug }),
     supabase.rpc('get_public_booking_policy', { p_slug: slug }),
+    // Whether to offer "Tengo un bono regalo". Asked here, with the rest, so
+    // the answer is in the HTML the CDN keeps: from the browser it was a
+    // function run and up to four queries on every visit, for one flag.
+    // Nothing to offer is the same as not selling them.
+    $fetch<{ enabled: boolean }>('/api/public-booking/gift-options', { query: { slug } }).then(
+      (o) => o.enabled,
+      () => false,
+    ),
   ])
   // An unknown slug is an exception from the RPC ('Not found'), not a null:
   // that one is an answer like any other and may be cached. Anything else
@@ -1023,7 +1025,7 @@ const { data: booking, refresh: refreshBooking } = await useAsyncData<BookingPay
   if (infoResult.error) return infoResult.error.message === 'Not found' ? { status: 'not_found' } : { status: 'failed' }
   const parsed = infoResult.data as unknown as BookingInfo | null
   if (!parsed || parsed.clinics.length === 0) return { status: 'not_found' }
-  return { status: 'ok', info: parsed, policy: (policyResult.data as BookingPolicy | null) ?? null }
+  return { status: 'ok', info: parsed, policy: (policyResult.data as BookingPolicy | null) ?? null, giftsSold }
 })
 
 if (import.meta.server) {
@@ -1047,6 +1049,7 @@ function applyBooking(payload: BookingPayload | null) {
   const parsed = payload.info
   info.value = parsed
   policy.value = payload.policy
+  if (payload.giftsSold) giftOffered.value = true
   dialCode.value = parsed.account.default_phone_country || 'ES'
   clinicId.value = parsed.clinics[0].id
   // Marketing pages can deep-link straight into a specific offer (e.g. a

@@ -180,3 +180,29 @@ export function recallSignerId(opts: {
     ?? opts.practitioners.find((id) => !opts.away.has(id))
     ?? null
 }
+
+/** How far back a cancellation or a handover holds an automated recall. */
+export const RECALL_HOLD_DAYS = 7
+
+/**
+ * Why an automated recall should not go out now, or null to send it.
+ *
+ * A recall asks "¿te busco un hueco?". On 30 Oct 2026 one went to a parent
+ * six hours after they had cancelled their own visit to see a trauma
+ * specialist -- a case the receptionist had just handed to the chiropractor
+ * -- and went twice, once for each child, to the same phone. Each of the
+ * three is a reason to hold it:
+ *
+ * - someone in the conversation cancelled a visit due within the last
+ *   RECALL_HOLD_DAYS or still ahead: they have just said they are not
+ *   coming, and why is the team's to follow up, not a template's;
+ * - the conversation was handed to a person in that time: a person is
+ *   dealing with it;
+ * - this phone already got this template in the last day.
+ */
+export function recallHoldReason(facts: { cancelledRecently: boolean; handedOver: boolean; alreadySentToPhone: boolean }): string | null {
+  if (facts.cancelledRecently) return `Recall held: an appointment due in the last ${RECALL_HOLD_DAYS} days or still ahead was cancelled.`
+  if (facts.handedOver) return `Recall held: the conversation was handed to a person in the last ${RECALL_HOLD_DAYS} days.`
+  if (facts.alreadySentToPhone) return 'Recall held: this phone already received this template in the last day.'
+  return null
+}

@@ -435,7 +435,7 @@ const LAUNCH_CARDS = computed(() => [
           {{ t('Get started', 'Empezar') }}
         </OnboardingPrimaryButton>
         <p class="mt-[11px] text-center text-[12.5px] text-ink-muted">
-          {{ t(`Opens your ${clinicName} calendar.`, `Abre la agenda de ${clinicName}.`) }}
+          {{ t('Three short steps there take you to your first booked visit.', 'Allí, tres pasos cortos te llevan a tu primera visita reservada.') }}
         </p>
       </div>
     </template>

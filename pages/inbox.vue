@@ -1394,7 +1394,37 @@ const nextVisitWhen = (iso: string) => new Date(iso).toLocaleString(t('en-GB', '
 const requestOrigin = useRequestURL().origin
 const canBookFromChat = computed(() => isRouteAllowed(store, '/calendar'))
 const canPayFromChat = computed(() => store.isOwner || store.permissions.billing_access === true)
-const composerBar = ref<{ insertReply: (text: string) => void } | null>(null)
+const composerBar = ref<{ insertReply: (text: string) => void; focus: () => void } | null>(null)
+
+// j/k move through the list, u jumps to the next unread one, r goes to the
+// reply (useShortcuts; listed under "?"). Off while selecting several.
+function openRow(row: ListRow) {
+  if (row.kind === 'lead') selectLeadConversation(row.c)
+  else onRowClick(row.c)
+  nextTick(() => document.querySelector(`[data-key="${CSS.escape(row.c.key)}"]`)?.scrollIntoView({ block: 'nearest' }))
+}
+function stepConversation(dir: 1 | -1) {
+  const rows = listRows.value
+  if (selectionMode.value || rows.length === 0) return
+  const at = rows.findIndex((r) => r.c.key === selectedKey.value)
+  const to = at < 0 ? (dir > 0 ? 0 : rows.length - 1) : at + dir
+  if (to >= 0 && to < rows.length) openRow(rows[to]!)
+}
+function nextUnread() {
+  const rows = listRows.value
+  if (selectionMode.value || rows.length === 0) return
+  const at = rows.findIndex((r) => r.c.key === selectedKey.value)
+  for (let i = 1; i <= rows.length; i++) {
+    const row = rows[(at + i + rows.length) % rows.length]!
+    if (row.c.unread && row.c.key !== selectedKey.value) return openRow(row)
+  }
+}
+useShortcuts({
+  j: () => stepConversation(1),
+  k: () => stepConversation(-1),
+  u: () => nextUnread(),
+  r: () => composerBar.value?.focus(),
+})
 
 // "Redactar respuesta" (InboxReplyDraft) is offered when the patient wrote
 // last -- there is something to answer -- and its one-tap Send goes the way
@@ -2142,6 +2172,7 @@ function avatarInitials(name: string) {
               class="flex min-h-[76px] w-full items-start gap-3 border-b border-l-[3px] border-b-line-row px-3.5 py-3 text-left hover:bg-surface-subtle"
               :class="selectedKey === row.c.key && !selectionMode ? 'border-l-brand bg-brand-tint' : 'border-l-transparent'"
               data-test="lead-row"
+              :data-key="row.c.key"
               @click="selectLeadConversation(row.c)"
               @mouseenter="prefetchLeadThread(row.c)"
               @mouseleave="cancelLeadPrefetch"

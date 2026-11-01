@@ -373,6 +373,20 @@ function goToday() {
   anchorDate.value = new Date()
 }
 
+// The calendar's single-key shortcuts (useShortcuts; listed under "?"). The
+// keys Google Calendar uses, which most front desks already know: j/k for
+// the next and previous day or week, t for today, c to create.
+useShortcuts({
+  c: () => openCreateModal(),
+  n: () => openCreateModal(),
+  t: () => goToday(),
+  j: () => stepDate(1),
+  k: () => stepDate(-1),
+  d: () => (viewMode.value = 'day'),
+  w: () => (viewMode.value = 'workweek'),
+  m: () => (viewMode.value = 'month'),
+})
+
 // Single mini month in the sidebar, per the redesign spec (the old two-month
 // picker is dropped). Clicking a day jumps the main calendar there.
 const miniBase = ref(startOfMonth(anchorDate.value))

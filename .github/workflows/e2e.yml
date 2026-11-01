@@ -86,6 +86,13 @@ jobs:
       # named error in the job that exists to catch it.
       - run: npm run build
 
+      # A page missing from the client manifest still builds, renders and
+      # passes every spec; the server just cannot preload its code, so each
+      # full load waits a round trip for it. Nothing else would notice --
+      # the booking page and the patient record both shipped that way. Reads
+      # the manifest the build above wrote, so it costs well under a second.
+      - run: npm run check:page-manifest
+
   # The app every Cypress shard runs against, built once. Each shard used to
   # build it for itself -- the same ~60-90s on eight runners, every one of
   # them competing with its own `supabase start` for the runner's two cores.

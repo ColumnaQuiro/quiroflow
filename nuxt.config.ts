@@ -1,4 +1,42 @@
+import type { Plugin } from 'vite'
 import { DEV_PORTAL_SLUGS } from './utils/devPortal'
+
+// Gives a page's chunk its page back as facade when Rollup leaves it without
+// one, so the client manifest keys it by source path again.
+//
+// The server finds what to modulepreload by looking each rendered component's
+// source path up in that manifest. A page that lazily loads a child (a Lazy*
+// component, an import()) sharing modules with it loses its key: Rollup puts
+// the shared modules in the page's chunk, since the page is always loaded
+// first, and has the child import them from there. The chunk then exports
+// more than the page does, so the page cannot be its facade, and Vite keys it
+// `_<hash>.js`. With no key the server preloaded the entry and the layout but
+// none of the page's own code, which was discovered only once the entry ran:
+// a round trip on every full load. The patient record lost its key that way to
+// its tabs (CustomFieldsCard and AppStatus shared with ClinicalTab,
+// usePatientFinancialSummary with BillingTab), the booking page to
+// LazyBookingPayment (#978).
+//
+// The emitted code is untouched; only the chunk's metadata names the page,
+// before the manifest is written from it. A chunk holding more than one
+// dynamically imported component is left alone rather than guessed at.
+// `npm run check:page-manifest` fails a build where a page has no key.
+function pageChunkFacade(): Plugin {
+  return {
+    name: 'quiroflow:page-chunk-facade',
+    applyToEnvironment: (environment) => environment.name === 'client',
+    generateBundle: {
+      order: 'pre',
+      handler(_options, bundle) {
+        for (const chunk of Object.values(bundle)) {
+          if (chunk.type !== 'chunk' || !chunk.isDynamicEntry || chunk.facadeModuleId) continue
+          const components = chunk.moduleIds.filter((id) => id.endsWith('.vue') && this.getModuleInfo(id)?.dynamicImporters.length)
+          if (components.length === 1) chunk.facadeModuleId = components[0]!
+        }
+      },
+    },
+  }
+}
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
@@ -510,5 +548,6 @@ export default defineNuxtConfig({
     optimizeDeps: {
       include: ['papaparse', '@stripe/stripe-js', 'vue-chartjs', 'chart.js', 'qrcode'],
     },
+    plugins: [pageChunkFacade()],
   },
 })

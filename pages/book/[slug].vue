@@ -1479,8 +1479,13 @@ const fieldId = useId()
         <div v-else-if="phase === 'payment'" class="mx-auto mt-8 max-w-md">
           <h2 class="text-center text-xl font-semibold text-ink-900">{{ say({ es: 'Pago', en: 'Payment', fr: 'Paiement' }) }}</h2>
           <p class="mt-1 text-center text-sm text-ink-muted">{{ say({ es: 'Su cita ya está reservada. Complete el pago para confirmarla.', en: 'Your appointment is booked. Complete the payment to confirm it.', fr: 'Votre rendez-vous est réservé. Effectuez le paiement pour le confirmer.' }) }}</p>
-          <!-- Lazy, so its chunk -- and Stripe with it -- loads only here. -->
-          <LazyBookingPayment class="mt-6" :account-slug="slug" :invoice-id="invoiceId" :amount-cents="paymentRequiredCents" :format-price="formatPrice" @paid="onPaymentSucceeded" />
+          <!-- Not Lazy: Payment imports Stripe itself, in onMounted, so Stripe
+          already loads only here. As a lazy chunk it shared modules with this
+          page (useBookingLang), which left the page's own chunk with no source
+          key in the build manifest -- and the server, unable to find it, sent
+          no modulepreload for the page's code, discovered only once the entry
+          ran. The component is 3 KB. -->
+          <BookingPayment class="mt-6" :account-slug="slug" :invoice-id="invoiceId" :amount-cents="paymentRequiredCents" :format-price="formatPrice" @paid="onPaymentSucceeded" />
         </div>
 
         <!-- Step 3b: a card to hold the booking, when the clinic asks for one -->

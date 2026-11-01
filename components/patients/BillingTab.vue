@@ -1406,9 +1406,12 @@ const availableCents = computed(() => creditLedgerCents.value + committedBonoCen
  * folded into it makes that term more conservative for an imported bono, and
  * under-offering is the safe direction to be wrong in.
  */
-const spendableCreditCents = computed(() =>
-  creditLedgerCents.value + Math.max(0, balanceCents.value - creditLedgerCents.value - committedBonoCents.value),
-)
+const spendableCreditCents = computed(() => creditLedgerCents.value + paidAheadCents.value)
+// The surplus term above on its own: paid beyond everything invoiced and what
+// the bonos have committed -- money on account with no receipt to settle.
+// On account shows it as "Paid ahead". "Balance" used to carry it, mixed in
+// with the debt; this is its positive part alone, the debt being Owed now.
+const paidAheadCents = computed(() => Math.max(0, balanceCents.value - creditLedgerCents.value - committedBonoCents.value))
 
 function scheduleForPackage(purchaseId: string) {
   return schedules.value.find((s) => s.package_purchase_id === purchaseId)
@@ -2312,10 +2315,15 @@ const fieldId = useId()
         <p v-if="appliedCreditNote" class="mt-2.5 border-t border-line-divider pt-2.5 text-[11.5px] text-ink-muted2">
           {{ appliedCreditNote }}
         </p>
-        <!-- The account's history rather than its state. "Balance" sat here
-             too, and it was Owed now again with a minus sign -- or, with credit
-             beside a debt, a third figure agreeing with neither. -->
+        <!-- "Balance" sat here, and it was Owed now again with a minus sign --
+             or, with credit beside a debt, a third figure agreeing with
+             neither. What it alone carried was money paid ahead of any charge,
+             so that stays, by name, when there is some. Lifetime is history. -->
         <dl class="mt-2.5 flex flex-wrap gap-x-5 gap-y-1 border-t border-line-divider pt-2.5">
+          <div v-if="paidAheadCents > 0" class="flex items-baseline gap-1.5" data-cy="money-paid-ahead">
+            <dt class="text-[11px] text-ink-muted2">{{ t('Paid ahead', 'Pagado por adelantado') }}</dt>
+            <dd class="font-mono text-[12px] text-ink-700">{{ money(paidAheadCents) }}</dd>
+          </div>
           <div class="flex items-baseline gap-1.5">
             <dt class="text-[11px] text-ink-muted2">{{ t('Lifetime', 'Total histórico') }}</dt>
             <dd class="font-mono text-[12px] text-ink-700">{{ money(lifetimeCents) }}</dd>

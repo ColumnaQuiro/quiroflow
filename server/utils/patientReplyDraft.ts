@@ -213,11 +213,13 @@ export async function draftPatientReply(
   // The child's first visit too, so its free times are in the list.
   const bookable = uniqueTypes(types, booked.types, minors.forNewChild, bringsSomeone.types)
   // Somebody who has been before is seen by their own practitioner; a
-  // patient record with no visit yet (a first visit booked, say) is still
-  // somebody new, and a first visit is with whoever is free.
+  // patient record with no visit yet is still somebody new, and a first
+  // visit is with whoever is free -- unless one is booked already.
   // When their own has no free time at all (on leave, say), the times are
   // the rest of the team's, and practitionerIds is what they are really with.
-  const own = facts.lastVisitAt ? await loadPatientPractitioners(supabase, accountId, patientId, booked.practitionerIds) : null
+  // Moving a visit already booked keeps it with that visit's practitioner,
+  // new or not, so the times offered for the move are hers.
+  const own = facts.lastVisitAt ? await loadPatientPractitioners(supabase, accountId, patientId, booked.practitionerIds) : booked.practitionerIds.length ? booked.practitionerIds : null
   const { calendar, practitionerIds } = await loadPatientCalendar(service, accountId, config, bookable, own)
   // A child's or a relative's times, by name: with their own practitioner,
   // for the types they may have.

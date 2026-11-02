@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { sanitizeStorageFilename } from '~/utils/storageFilename'
+import { shrinkImageForUpload } from '~/utils/imageShrink'
 
 // Same upload-to-public-bucket pattern as PatientsPhotoUpload, minus the
 // QR/phone flow (irrelevant here -- staff upload a clinic logo from the
@@ -23,9 +24,12 @@ function pick() {
   fileInput.value?.click()
 }
 
-async function uploadFile(file: File) {
+async function uploadFile(original: File) {
   uploading.value = true
   error.value = ''
+  // Every PDF, email and wallet pass embeds this file, so it is stored at the
+  // size they draw it, not the size it was exported at.
+  const file = await shrinkImageForUpload(original, 'logo')
   const path = `${useAccountStore().accountId}/${props.clinicId}/${Date.now()}-${sanitizeStorageFilename(file.name)}`
   const { error: uploadError } = await supabase.storage.from('clinic-logos').upload(path, file)
   if (uploadError) {

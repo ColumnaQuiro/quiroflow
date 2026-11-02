@@ -29,11 +29,14 @@ import { formatEur } from '~/utils/billing'
 // the debt off leaves 106 -- which is what he has paid beyond what he has been
 // invoiced, so the pill and the balance finally describe the same patient.
 //
-// The debt side still comes from the balance, because owing money is not the
-// absence of available money: a patient can hold four unused sessions and
-// still owe for a visit taken outside the bono. Available is checked first, so
-// the pill answers "what can they use" when there is anything to use, and
-// falls back to what they owe when there is not.
+// Owing money is not the absence of available money: a patient can hold four
+// unused sessions and still owe for a visit taken outside the bono. This pill
+// used to check Available first and show only that, so a patient owing 88
+// beside 360 of bono value read "360,00 € available" in green, with the debt
+// nowhere near their name. Both show now, the debt first: it is the one the
+// desk has to act on. Never netted into one figure -- bono value cannot pay
+// for a visit outside the bono, so "272 available" would be a third wrong
+// answer.
 const props = defineProps<{
   /** Loose credit + unused bono value less bono debt -- what they can spend. */
   availableCents: number
@@ -50,16 +53,12 @@ const props = defineProps<{
 
 const t = useT()
 
-const label = computed(() => {
-  if (props.availableCents > 0) {
-    return `${formatEur(props.availableCents)} ${t('available', 'disponible')}`
-  }
-  return `${formatEur(props.outstandingCents)} ${t('due', 'pendiente')}`
-})
-const tone = computed(() => (props.availableCents > 0 ? 'success' : 'danger'))
 const show = computed(() => props.availableCents > 0 || props.outstandingCents > 0)
 </script>
 
 <template>
-  <UiPill v-if="show" :tone="tone">{{ label }}</UiPill>
+  <span v-if="show" class="inline-flex flex-wrap items-center gap-1.5" data-cy="balance-pill">
+    <UiPill v-if="outstandingCents > 0" tone="danger">{{ formatEur(outstandingCents) }} {{ t('due', 'pendiente') }}</UiPill>
+    <UiPill v-if="availableCents > 0" tone="success">{{ formatEur(availableCents) }} {{ t('available', 'disponible') }}</UiPill>
+  </span>
 </template>

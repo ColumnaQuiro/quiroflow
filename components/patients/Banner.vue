@@ -133,8 +133,8 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
           <!-- Pills are alerts, not readouts: each one is something a
                receptionist has to act differently because of. -->
           <UiPill v-if="isVip" tone="brand">{{ t('VIP', 'VIP') }}</UiPill>
-          <!-- Money owed or money available, whichever applies -- the one
-               figure the front desk glances at. UiBalancePill decides which,
+          <!-- Money owed and money available, each when it applies, the debt
+               first -- what the front desk glances at. UiBalancePill decides,
                and renders nothing when neither is true. -->
           <UiBalancePill :available-cents="availableCents" :outstanding-cents="outstandingCents" />
           <UiPill v-if="patient.is_minor" tone="brand">{{ t('Minor', 'Menor') }}</UiPill>

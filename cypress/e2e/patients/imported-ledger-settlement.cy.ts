@@ -48,11 +48,11 @@ describe('Settling imported PracticeHub invoices', () => {
             expect(row.amount_cents, 'the amount was not split').to.eq(4500)
           })
 
-          // And the balance is what it always was: €45 paid against €90
+          // And what is owed is what it always was: €45 paid against €90
           // charged. Settling changes presentation, not money.
           cy.login(account.email, account.password)
           cy.visit(`/patients/${patient.id}?tab=billing`)
-          cy.contains('dt', 'Balance').parent().should('contain', '45,00 €')
+          cy.get('section[aria-labelledby=money-owed]').should('contain', '45,00 €')
         })
       })
     })

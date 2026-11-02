@@ -158,6 +158,11 @@ export const tokens = {
 // control there would shrink to 36px on a phone. A plain function is a valid
 // Tailwind plugin, so this needs no `tailwindcss/plugin` import -- which is
 // the import that broke Xcode Cloud (see the top of this file).
+//
+// `short:` -- a window 600px tall or less, which is any laptop at 150-200%
+// zoom and a phone on its side. Rows of chrome that are fine at full height
+// fold away there (the Inbox's filters), so the content still gets the room.
 export function touchVariant({ addVariant }: { addVariant: (name: string, definition: string) => void }) {
   addVariant('touch', '@media (pointer: coarse)')
+  addVariant('short', '@media (max-height: 600px)')
 }

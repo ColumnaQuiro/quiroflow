@@ -95,7 +95,9 @@ const supabase = useSupabaseClient()
 const store = useAccountStore()
 const webPush = useWebPush()
 const t = useT()
-const pushBannerDismissed = ref(false)
+// "Not now" lasts a month in this browser. It used to be a plain ref, so the
+// banner came back on every visit -- 50px of the list, every time.
+const pushBannerDismissed = useCookie<boolean>('qf_push_banner_dismissed', { maxAge: 60 * 60 * 24 * 30, default: () => false })
 const { refresh: refreshNavBadges } = useNavBadges()
 
 // Messages this tab has sent but the server hasn't confirmed into the real
@@ -488,6 +490,33 @@ const menuRow = 'flex min-h-9 touch:min-h-11 w-full items-center gap-2 rounded-c
 const moreFiltersOpen = ref(false)
 const moreFiltersEl = ref<HTMLElement>()
 const moreFiltersActive = computed(() => (replyFilter.value === 'awaiting_patient' ? 1 : 0) + (aiFilter.value === 'ai_handling' || aiFilter.value === 'needs_human' ? 1 : 0))
+// On a short window (short:, 600px tall or less -- a laptop at 200% zoom)
+// the tabs and chips fold behind one button beside the search: six rows of
+// chrome left room for one and a half conversations. The button says what is
+// narrowing the list -- the filter's own name when there is one, so the
+// default "Needs reply" is never a filter nobody can see.
+const filtersOpen = ref(false)
+const activeFilterNames = computed(() => {
+  const on: string[] = []
+  if (view.value === 'active' && tab.value === 'mine') on.push(t('Mine', 'Mías'))
+  if (view.value === 'active' && tab.value === 'unassigned') on.push(t('Unassigned', 'Sin asignar'))
+  if (view.value === 'active' && replyFilter.value === 'needs_reply') on.push(t('Needs reply', 'Por responder'))
+  if (replyFilter.value === 'awaiting_patient') on.push(t('Awaiting patient', 'Esperan al paciente'))
+  if (hasGrowth.value && view.value !== 'archived' && sourceFilter.value === 'patients') on.push(t('Patients', 'Pacientes'))
+  if (hasGrowth.value && view.value !== 'archived' && sourceFilter.value === 'leads') on.push(t('Leads', 'Leads'))
+  if (unreadOnly.value) on.push(t('Unread', 'No leídas'))
+  if (view.value === 'active' && expiringOnly.value) on.push(t('Expiring', 'Por caducar'))
+  if (labelFilter.value) on.push(labels.value.find((l) => l.id === labelFilter.value)?.name ?? t('Label', 'Etiqueta'))
+  if (aiFilter.value === 'ai_handling') on.push(t('AI handling', 'IA gestionando'))
+  if (aiFilter.value === 'needs_human') on.push(t('Needs human', 'Requiere persona'))
+  if (aiFilter.value === 'draft_ready') on.push(t('Draft ready', 'Borrador listo'))
+  return on
+})
+const filtersSummary = computed(() => {
+  const on = activeFilterNames.value
+  if (on.length === 1) return on[0]!
+  return on.length ? `${t('Filters', 'Filtros')} · ${on.length}` : t('Filters', 'Filtros')
+})
 function onMoreFiltersDocClick(e: MouseEvent) {
   if (moreFiltersOpen.value && moreFiltersEl.value && !moreFiltersEl.value.contains(e.target as Node)) moreFiltersOpen.value = false
 }
@@ -1828,11 +1857,11 @@ function avatarInitials(name: string) {
     <PageHeader :title="t('Inbox', 'Bandeja de entrada')">
       <InboxTeamSwitch current="patients" />
     </PageHeader>
-    <div v-if="webPush.supported.value && webPush.permission.value === 'default' && !pushBannerDismissed" class="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-line bg-brand-tint px-4 py-2">
+    <div v-if="webPush.supported.value && webPush.permission.value === 'default' && !pushBannerDismissed" data-cy="push-banner" class="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-line bg-brand-tint px-4 py-2">
       <p class="text-[12.5px] text-brand-text">{{ t('Get notified here when a patient messages you, even with the tab in the background.', 'Recibe avisos aquí cuando un paciente te escriba, incluso con la pestaña en segundo plano.') }}</p>
       <div class="flex shrink-0 items-center gap-3">
         <UiBtn variant="primary" data-cy="push-enable" @click="webPush.register()">{{ t('Enable notifications', 'Activar notificaciones') }}</UiBtn>
-        <UiBtn variant="ghost" @click="pushBannerDismissed = true">{{ t('Not now', 'Ahora no') }}</UiBtn>
+        <UiBtn variant="ghost" data-cy="push-not-now" @click="pushBannerDismissed = true">{{ t('Not now', 'Ahora no') }}</UiBtn>
       </div>
     </div>
     <div class="flex flex-1 overflow-hidden">
@@ -1859,6 +1888,24 @@ function avatarInitials(name: string) {
                   class="min-w-0 flex-1 bg-transparent text-[14px] text-ink-900 placeholder:text-ink-faint focus:outline-none"
                 />
               </label>
+              <button
+                type="button"
+                data-cy="inbox-filters-toggle"
+                class="hidden h-9 touch:h-11 min-w-9 touch:min-w-11 shrink-0 items-center justify-center gap-1 rounded-ctl border px-2 text-[13px] font-semibold short:flex"
+                :class="filtersOpen || activeFilterNames.length ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted hover:bg-surface-subtle'"
+                aria-controls="inbox-filter-rows"
+                :aria-expanded="filtersOpen"
+                :aria-label="activeFilterNames.length ? `${t('Filters', 'Filtros')}: ${activeFilterNames.join(', ')}` : t('Filters', 'Filtros')"
+                :title="activeFilterNames.length ? `${t('Filters', 'Filtros')}: ${activeFilterNames.join(', ')}` : t('Filters', 'Filtros')"
+                @click="filtersOpen = !filtersOpen"
+              >
+                <!-- The name where the list is the whole width; beside a
+                     340px list there is room for the count alone. -->
+                <span class="max-w-[9rem] truncate md:hidden" aria-hidden="true">{{ filtersSummary }}</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hidden md:block" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" /></svg>
+                <span v-if="activeFilterNames.length" class="hidden text-[12px] md:inline" aria-hidden="true">{{ activeFilterNames.length }}</span>
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" class="md:hidden" :class="filtersOpen ? 'rotate-180' : ''" aria-hidden="true"><path d="M4 6l4 4 4-4" stroke-linecap="round" stroke-linejoin="round" /></svg>
+              </button>
               <button
                 type="button"
                 data-cy="inbox-select"
@@ -1916,169 +1963,171 @@ function avatarInitials(name: string) {
                 </div>
               </div>
             </div>
-            <!-- Segments sized to their text (flex-auto), not equal thirds: in the
-            320px list "Unassigned 414" is wider than a third and ran into the
-            edge of its own pill. -->
-            <div v-if="view === 'active'" role="tablist" :aria-label="t('Whose', 'De quién')" class="flex gap-0.5 rounded-ctl bg-chip-bg p-[3px]" data-cy="inbox-tabs">
-              <button
-                v-for="tb in [
-                  { key: 'all', label: t('All', 'Todas'), count: tabCounts.all },
-                  { key: 'mine', label: t('Mine', 'Mías'), count: tabCounts.mine },
-                  { key: 'unassigned', label: t('Unassigned', 'Sin asignar'), count: tabCounts.unassigned },
-                ]"
-                :key="tb.key"
-                type="button"
-                role="tab"
-                :data-cy="`inbox-tab-${tb.key}`"
-                :aria-selected="tab === tb.key"
-                class="flex h-8 touch:h-10 flex-auto items-center justify-center gap-1.5 whitespace-nowrap rounded-[7px] px-2.5 text-[13px] font-semibold"
-                :class="tab === tb.key ? 'bg-surface text-ink-900 shadow-card' : 'text-ink-500 hover:text-ink-700'"
-                @click="tab = tb.key as 'all' | 'mine' | 'unassigned'"
-              >
-                {{ tb.label }} <span v-if="countsLoaded" class="text-[12.5px] font-medium text-ink-muted">{{ tb.count }}</span>
-              </button>
-            </div>
-            <!-- The filters people reach for daily stay in the row; the rest
-            sit behind "More filters", which says how many are on. One row of
-            ten chips scrolled sideways past the edge of the list, and wrapped
-            it took four rows of a laptop screen before the first conversation. -->
-            <div class="flex flex-wrap items-center gap-1.5" data-cy="inbox-filters">
-              <!-- On by default: see replyFilter. -->
-              <button
-                v-if="view === 'active'"
-                type="button"
-                data-cy="inbox-filter-needs-reply"
-                :aria-pressed="replyFilter === 'needs_reply'"
-                :class="[chip, replyFilter === 'needs_reply' ? chipOn : chipOff]"
-                :title="t('Where they wrote last, or marked unread. Off shows every conversation.', 'Donde escribieron los últimos, o marcadas como no leídas. Desactivado muestra todas.')"
-                @click="replyFilter = replyFilter === 'needs_reply' ? 'all' : 'needs_reply'"
-              >
-                {{ t('Needs reply', 'Por responder') }}
-              </button>
-              <!-- First, and only where both kinds exist: the split people
-              actually scan for. Every other filter narrows within it. -->
-              <template v-if="hasGrowth && view !== 'archived'">
+            <div id="inbox-filter-rows" class="contents" :class="filtersOpen ? '' : 'short:hidden'" data-cy="inbox-filter-rows">
+              <!-- Segments sized to their text (flex-auto), not equal thirds: in the
+              320px list "Unassigned 414" is wider than a third and ran into the
+              edge of its own pill. -->
+              <div v-if="view === 'active'" role="tablist" :aria-label="t('Whose', 'De quién')" class="flex gap-0.5 rounded-ctl bg-chip-bg p-[3px]" data-cy="inbox-tabs">
                 <button
+                  v-for="tb in [
+                    { key: 'all', label: t('All', 'Todas'), count: tabCounts.all },
+                    { key: 'mine', label: t('Mine', 'Mías'), count: tabCounts.mine },
+                    { key: 'unassigned', label: t('Unassigned', 'Sin asignar'), count: tabCounts.unassigned },
+                  ]"
+                  :key="tb.key"
                   type="button"
-                  :class="[chip, sourceFilter === 'patients' ? chipOn : chipOff]"
-                  :aria-pressed="sourceFilter === 'patients'"
-                  data-test="filter-patients-only"
-                  @click="sourceFilter = sourceFilter === 'patients' ? 'all' : 'patients'"
+                  role="tab"
+                  :data-cy="`inbox-tab-${tb.key}`"
+                  :aria-selected="tab === tb.key"
+                  class="flex h-8 touch:h-10 flex-auto items-center justify-center gap-1.5 whitespace-nowrap rounded-[7px] px-2.5 text-[13px] font-semibold"
+                  :class="tab === tb.key ? 'bg-surface text-ink-900 shadow-card' : 'text-ink-500 hover:text-ink-700'"
+                  @click="tab = tb.key as 'all' | 'mine' | 'unassigned'"
                 >
-                  {{ t('Patients', 'Pacientes') }}<span v-if="patientUnreadCount > 0"> · {{ patientUnreadCount }}</span>
+                  {{ tb.label }} <span v-if="countsLoaded" class="text-[12.5px] font-medium text-ink-muted">{{ tb.count }}</span>
                 </button>
+              </div>
+              <!-- The filters people reach for daily stay in the row; the rest
+              sit behind "More filters", which says how many are on. One row of
+              ten chips scrolled sideways past the edge of the list, and wrapped
+              it took four rows of a laptop screen before the first conversation. -->
+              <div class="flex flex-wrap items-center gap-1.5" data-cy="inbox-filters">
+                <!-- On by default: see replyFilter. -->
                 <button
+                  v-if="view === 'active'"
                   type="button"
-                  :class="[chip, sourceFilter === 'leads' ? chipOn : chipOff]"
-                  :aria-pressed="sourceFilter === 'leads'"
-                  data-test="filter-leads-only"
-                  @click="sourceFilter = sourceFilter === 'leads' ? 'all' : 'leads'"
+                  data-cy="inbox-filter-needs-reply"
+                  :aria-pressed="replyFilter === 'needs_reply'"
+                  :class="[chip, replyFilter === 'needs_reply' ? chipOn : chipOff]"
+                  :title="t('Where they wrote last, or marked unread. Off shows every conversation.', 'Donde escribieron los últimos, o marcadas como no leídas. Desactivado muestra todas.')"
+                  @click="replyFilter = replyFilter === 'needs_reply' ? 'all' : 'needs_reply'"
                 >
-                  {{ t('Leads', 'Leads') }}<span v-if="leadUnreadCount > 0"> · {{ leadUnreadCount }}</span>
+                  {{ t('Needs reply', 'Por responder') }}
                 </button>
-              </template>
-              <button
-                type="button"
-                data-cy="inbox-filter-unread"
-                :aria-pressed="unreadOnly"
-                :class="[chip, unreadOnly ? chipOn : chipOff]"
-                @click="unreadOnly = !unreadOnly"
-              >
-                {{ t('Unread', 'No leídas') }}<span v-if="counts.unread > 0"> · {{ counts.unread }}</span>
-              </button>
-              <button
-                v-if="view === 'active'"
-                type="button"
-                data-cy="inbox-filter-expiring"
-                :aria-pressed="expiringOnly"
-                :class="[chip, expiringOnly ? chipOn : chipOff]"
-                :title="t('They wrote last and the 24-hour window to reply freely shuts soon.', 'Escribió el último y se cierran pronto las 24 horas para responder libremente.')"
-                @click="expiringOnly = !expiringOnly"
-              >
-                {{ t('Expiring', 'Por caducar') }}<span v-if="expiringCount > 0" class="text-warning-text"> · {{ expiringCount }}</span>
-              </button>
-              <InboxLabelFilterPicker v-model="labelFilter" :labels="labels" />
-              <!-- Only when there is one. A chip reading "· 0" every day
-                   teaches people to stop looking at it, and this is the one
-                   that means somebody has work waiting. -->
-              <button
-                v-if="hasGrowth && draftReadyCount > 0"
-                type="button"
-                :class="[chip, aiFilter === 'draft_ready' ? chipOn : chipOff]"
-                :aria-pressed="aiFilter === 'draft_ready'"
-                data-test="filter-draft-ready"
-                @click="aiFilter = aiFilter === 'draft_ready' ? 'all' : 'draft_ready'"
-              >
-                {{ t('Draft ready', 'Borrador listo') }} · {{ draftReadyCount }}
-              </button>
-              <!-- Same rule: the one that means a conversation is waiting on
-              a person, shown only while there is one. -->
-              <button
-                v-if="hasGrowth && needsHumanCount > 0"
-                type="button"
-                :class="[chip, aiFilter === 'needs_human' ? chipOn : chipOff]"
-                :aria-pressed="aiFilter === 'needs_human'"
-                data-test="filter-needs-human-chip"
-                @click="aiFilter = aiFilter === 'needs_human' ? 'all' : 'needs_human'"
-              >
-                {{ t('Needs human', 'Requiere persona') }} · {{ needsHumanCount }}
-              </button>
-              <div ref="moreFiltersEl" class="relative">
-                <button
-                  type="button"
-                  data-cy="inbox-more-filters"
-                  aria-haspopup="menu"
-                  :aria-expanded="moreFiltersOpen"
-                  :class="[chip, moreFiltersActive > 0 ? chipOn : chipOff]"
-                  @click="moreFiltersOpen = !moreFiltersOpen"
-                >
-                  {{ t('More filters', 'Más filtros') }}<span v-if="moreFiltersActive > 0"> · {{ moreFiltersActive }}</span>
-                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 6l4 4 4-4" stroke-linecap="round" stroke-linejoin="round" /></svg>
-                </button>
-                <div v-if="moreFiltersOpen" role="menu" class="absolute left-0 top-[calc(100%+4px)] z-20 w-64 rounded-card border border-line bg-surface p-1.5 shadow-popover" data-cy="inbox-more-filters-menu">
-                  <p class="px-2.5 pb-1 pt-1.5 text-[11.5px] font-semibold uppercase tracking-wide text-ink-faint">{{ t('Who replies next', 'Quién responde') }}</p>
+                <!-- First, and only where both kinds exist: the split people
+                actually scan for. Every other filter narrows within it. -->
+                <template v-if="hasGrowth && view !== 'archived'">
                   <button
-                    v-for="f in [{ key: 'awaiting_patient', label: t('Awaiting patient', 'Esperan al paciente') }]"
-                    :key="f.key"
                     type="button"
-                    role="menuitemcheckbox"
-                    :aria-checked="replyFilter === f.key"
-                    :class="menuRow"
-                    @click="replyFilter = replyFilter === f.key ? 'all' : 'awaiting_patient'"
+                    :class="[chip, sourceFilter === 'patients' ? chipOn : chipOff]"
+                    :aria-pressed="sourceFilter === 'patients'"
+                    data-test="filter-patients-only"
+                    @click="sourceFilter = sourceFilter === 'patients' ? 'all' : 'patients'"
                   >
-                    <span class="flex-1">{{ f.label }}</span>
-                    <svg v-if="replyFilter === f.key" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" class="text-brand-text" aria-hidden="true"><path d="M3 8.5l3 3 7-7" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                    {{ t('Patients', 'Pacientes') }}<span v-if="patientUnreadCount > 0"> · {{ patientUnreadCount }}</span>
                   </button>
-                  <!-- Growth only. Without the tier there are no AI-handled
-                  conversations, so these would filter a list of nothing. -->
-                  <template v-if="hasGrowth">
-                    <p class="mt-1 border-t border-line-divider px-2.5 pb-1 pt-2.5 text-[11.5px] font-semibold uppercase tracking-wide text-ink-faint">{{ t('Receptionist', 'Recepcionista IA') }}</p>
+                  <button
+                    type="button"
+                    :class="[chip, sourceFilter === 'leads' ? chipOn : chipOff]"
+                    :aria-pressed="sourceFilter === 'leads'"
+                    data-test="filter-leads-only"
+                    @click="sourceFilter = sourceFilter === 'leads' ? 'all' : 'leads'"
+                  >
+                    {{ t('Leads', 'Leads') }}<span v-if="leadUnreadCount > 0"> · {{ leadUnreadCount }}</span>
+                  </button>
+                </template>
+                <button
+                  type="button"
+                  data-cy="inbox-filter-unread"
+                  :aria-pressed="unreadOnly"
+                  :class="[chip, unreadOnly ? chipOn : chipOff]"
+                  @click="unreadOnly = !unreadOnly"
+                >
+                  {{ t('Unread', 'No leídas') }}<span v-if="counts.unread > 0"> · {{ counts.unread }}</span>
+                </button>
+                <button
+                  v-if="view === 'active'"
+                  type="button"
+                  data-cy="inbox-filter-expiring"
+                  :aria-pressed="expiringOnly"
+                  :class="[chip, expiringOnly ? chipOn : chipOff]"
+                  :title="t('They wrote last and the 24-hour window to reply freely shuts soon.', 'Escribió el último y se cierran pronto las 24 horas para responder libremente.')"
+                  @click="expiringOnly = !expiringOnly"
+                >
+                  {{ t('Expiring', 'Por caducar') }}<span v-if="expiringCount > 0" class="text-warning-text"> · {{ expiringCount }}</span>
+                </button>
+                <InboxLabelFilterPicker v-model="labelFilter" :labels="labels" />
+                <!-- Only when there is one. A chip reading "· 0" every day
+                     teaches people to stop looking at it, and this is the one
+                     that means somebody has work waiting. -->
+                <button
+                  v-if="hasGrowth && draftReadyCount > 0"
+                  type="button"
+                  :class="[chip, aiFilter === 'draft_ready' ? chipOn : chipOff]"
+                  :aria-pressed="aiFilter === 'draft_ready'"
+                  data-test="filter-draft-ready"
+                  @click="aiFilter = aiFilter === 'draft_ready' ? 'all' : 'draft_ready'"
+                >
+                  {{ t('Draft ready', 'Borrador listo') }} · {{ draftReadyCount }}
+                </button>
+                <!-- Same rule: the one that means a conversation is waiting on
+                a person, shown only while there is one. -->
+                <button
+                  v-if="hasGrowth && needsHumanCount > 0"
+                  type="button"
+                  :class="[chip, aiFilter === 'needs_human' ? chipOn : chipOff]"
+                  :aria-pressed="aiFilter === 'needs_human'"
+                  data-test="filter-needs-human-chip"
+                  @click="aiFilter = aiFilter === 'needs_human' ? 'all' : 'needs_human'"
+                >
+                  {{ t('Needs human', 'Requiere persona') }} · {{ needsHumanCount }}
+                </button>
+                <div ref="moreFiltersEl" class="relative">
+                  <button
+                    type="button"
+                    data-cy="inbox-more-filters"
+                    aria-haspopup="menu"
+                    :aria-expanded="moreFiltersOpen"
+                    :class="[chip, moreFiltersActive > 0 ? chipOn : chipOff]"
+                    @click="moreFiltersOpen = !moreFiltersOpen"
+                  >
+                    {{ t('More filters', 'Más filtros') }}<span v-if="moreFiltersActive > 0"> · {{ moreFiltersActive }}</span>
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 6l4 4 4-4" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                  </button>
+                  <div v-if="moreFiltersOpen" role="menu" class="absolute left-0 top-[calc(100%+4px)] z-20 w-64 rounded-card border border-line bg-surface p-1.5 shadow-popover" data-cy="inbox-more-filters-menu">
+                    <p class="px-2.5 pb-1 pt-1.5 text-[11.5px] font-semibold uppercase tracking-wide text-ink-faint">{{ t('Who replies next', 'Quién responde') }}</p>
                     <button
-                      v-for="f in [
-                        { key: 'ai_handling', label: t('AI handling', 'IA gestionando'), count: aiHandlingCount, test: 'filter-ai-handling' },
-                        { key: 'needs_human', label: t('Needs human', 'Requiere persona'), count: needsHumanCount, test: 'filter-needs-human' },
-                      ]"
+                      v-for="f in [{ key: 'awaiting_patient', label: t('Awaiting patient', 'Esperan al paciente') }]"
                       :key="f.key"
                       type="button"
                       role="menuitemcheckbox"
-                      :aria-checked="aiFilter === f.key"
-                      :data-test="f.test"
+                      :aria-checked="replyFilter === f.key"
                       :class="menuRow"
-                      @click="aiFilter = aiFilter === f.key ? 'all' : (f.key as 'ai_handling' | 'needs_human')"
+                      @click="replyFilter = replyFilter === f.key ? 'all' : 'awaiting_patient'"
                     >
-                      <span class="flex-1">{{ f.label }} · {{ f.count }}</span>
-                      <svg v-if="aiFilter === f.key" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" class="text-brand-text" aria-hidden="true"><path d="M3 8.5l3 3 7-7" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                      <span class="flex-1">{{ f.label }}</span>
+                      <svg v-if="replyFilter === f.key" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" class="text-brand-text" aria-hidden="true"><path d="M3 8.5l3 3 7-7" stroke-linecap="round" stroke-linejoin="round" /></svg>
                     </button>
-                  </template>
-                  <button
-                    v-if="moreFiltersActive > 0"
-                    type="button"
-                    data-cy="inbox-more-filters-clear"
-                    class="mt-1 w-full border-t border-line-divider px-2.5 pt-2 text-left text-[13px] font-semibold text-brand-text hover:underline"
-                    @click="if (replyFilter === 'awaiting_patient') replyFilter = 'all'; if (aiFilter !== 'draft_ready') aiFilter = 'all'"
-                  >
-                    {{ t('Clear these filters', 'Quitar estos filtros') }}
-                  </button>
+                    <!-- Growth only. Without the tier there are no AI-handled
+                    conversations, so these would filter a list of nothing. -->
+                    <template v-if="hasGrowth">
+                      <p class="mt-1 border-t border-line-divider px-2.5 pb-1 pt-2.5 text-[11.5px] font-semibold uppercase tracking-wide text-ink-faint">{{ t('Receptionist', 'Recepcionista IA') }}</p>
+                      <button
+                        v-for="f in [
+                          { key: 'ai_handling', label: t('AI handling', 'IA gestionando'), count: aiHandlingCount, test: 'filter-ai-handling' },
+                          { key: 'needs_human', label: t('Needs human', 'Requiere persona'), count: needsHumanCount, test: 'filter-needs-human' },
+                        ]"
+                        :key="f.key"
+                        type="button"
+                        role="menuitemcheckbox"
+                        :aria-checked="aiFilter === f.key"
+                        :data-test="f.test"
+                        :class="menuRow"
+                        @click="aiFilter = aiFilter === f.key ? 'all' : (f.key as 'ai_handling' | 'needs_human')"
+                      >
+                        <span class="flex-1">{{ f.label }} · {{ f.count }}</span>
+                        <svg v-if="aiFilter === f.key" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" class="text-brand-text" aria-hidden="true"><path d="M3 8.5l3 3 7-7" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                      </button>
+                    </template>
+                    <button
+                      v-if="moreFiltersActive > 0"
+                      type="button"
+                      data-cy="inbox-more-filters-clear"
+                      class="mt-1 w-full border-t border-line-divider px-2.5 pt-2 text-left text-[13px] font-semibold text-brand-text hover:underline"
+                      @click="if (replyFilter === 'awaiting_patient') replyFilter = 'all'; if (aiFilter !== 'draft_ready') aiFilter = 'all'"
+                    >
+                      {{ t('Clear these filters', 'Quitar estos filtros') }}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

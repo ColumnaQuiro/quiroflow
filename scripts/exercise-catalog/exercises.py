@@ -6,7 +6,10 @@ Each entry:
   props    what is drawn around the figure: ('mat', x0, x1), ('wall', x),
            ('door', x), ('roller', x, r), ('ball', x, y, r),
            ('box', x0, x1, h), ('stool' | 'chair' | 'table', x0, x1, h),
-           ('band' | 'strap', joint, joint-or-point) drawn over the figure
+           ('towel', x0, x1, h) rolled lengthwise under the spine,
+           ('breath', x, y, r) a circle that fills with pose['breath'],
+           ('band' | 'strap' | 'stick', joint, joint-or-point) and
+           ('weight', joint) drawn over the figure
   start    the rest pose
   seq      [(pose, seconds moving, seconds holding), ...] from the start,
            normally ending back at it
@@ -353,3 +356,176 @@ EXERCISES += [
 _hp = EXERCISES[[e['slug'] for e in EXERCISES].index('hip-pendulum')]
 _hp['seq'] = [(p(_hip_pend0, leg_a={'a': (a, a + s), 'foot': f}), 0.85, 0.0)
               for a, s, f in [(-62.0, -6.0, 20.0), (-118.0, 8.0, -20.0)] * 3] + [(_hip_pend0, 0.6, 0.4)]
+
+# ---- shoulder list from the clinic (2 Nov 2026) --------------------------------
+
+# Towel behind the back: the far hand over the shoulder, the near one behind
+# the lower back, pulled up by the towel between them.
+def _towel(low_y, top_y):
+    return p(STAND, arm_a={'t': (-0.13, low_y), 'bend': -1}, arm_b={'t': (-0.10, top_y), 'bend': -1})
+
+
+_towel0 = _towel(0.98, 1.47)
+_towel_up = _towel(1.10, 1.58)
+
+
+def _wall_hand(y, px=0.0):
+    """Facing a wall at x = 0.40, the near hand on it at height y."""
+    return p(STAND, pelvis=(px, 0.92), arm_a={'t': (0.36, y), 'bend': -1})
+
+
+def _lean(theta, **kw):
+    """Hands on a wall at x = 0.59, the body a straight plank from the feet,
+    leaning at theta degrees from the floor."""
+    fx = -0.45
+    r = math.radians(theta)
+    return p(STAND, pelvis=(fx + 0.86 * math.cos(r), 0.07 + 0.86 * math.sin(r)),
+             lo=theta, hi=kw.pop('hi', theta), neck=theta, head=theta,
+             leg_a={'t': (fx, 0.07), 'bend': 1}, leg_b={'t': (fx - 0.02, 0.07), 'bend': 1},
+             arm_a={'t': (0.55, 1.30), 'bend': -1}, arm_b={'t': (0.53, 1.28), 'bend': -1}, **kw)
+
+
+_ir_out = p(STAND_F, arm_b={'a': (-90.0, 180.0), 'scale': (1.0, 0.9)})
+_ir_turn = p(STAND_F, arm_b={'a': (-90.0, 180.0), 'scale': (1.0, 0.08)})
+_ir_turned = p(STAND_F, arm_b={'a': (-90.0, 360.0), 'scale': (1.0, 0.08)})
+_ir_in = p(STAND_F, arm_b={'a': (-90.0, 360.0), 'scale': (1.0, 0.6)})
+
+_scap0 = p(STAND_F, arm_a={'a': (-84.0, -88.0), 'scale': (1.0, 1.0)}, arm_b={'a': (-96.0, -92.0), 'scale': (1.0, 1.0)})
+_STAG = dict(leg_a={'t': (0.15, 0.07), 'bend': 1}, leg_b={'t': (-0.12, 0.07), 'bend': 1})
+_ext0 = p(STAND, arm_a={'a': (8.0, 8.0)}, arm_b={'a': (5.0, 5.0)}, **_STAG)
+_flex0 = p(STAND, arm_a={'a': (-88.0, -88.0)}, arm_b={'a': (-91.0, -91.0)}, **_STAG)
+_add0 = p(STAND_F, arm_b={'a': (150.0, 150.0)})
+
+
+def _stick(s_b, s_a):
+    """Both elbows at the sides holding a stick: s is how far each forearm
+    has turned out to screen-left (foreshortened when it points forward)."""
+    return p(STAND_F, arm_b={'a': (-90.0, -172.0), 'scale': (1.0, s_b)}, arm_a={'a': (-90.0, -172.0), 'scale': (1.0, s_a)})
+
+
+_stick0 = _stick(0.3, 0.3)
+_d1_0 = p(STAND_F, arm_a={'t': (0.34, 0.88), 'bend': 1, 'scale': (1.0, 1.0)}, turn=0.3, nod=-0.4)
+_d1_mid = p(STAND_F, arm_a={'t': (0.05, 1.30), 'bend': 1, 'scale': (0.3, 0.3)}, turn=0.0, nod=0.0)
+_d1_1 = p(STAND_F, arm_a={'t': (-0.28, 1.78), 'bend': 1, 'scale': (1.0, 1.0)}, turn=-0.5, nod=0.6)
+
+_rs0 = p(SUPINE_ANG, arm_a={'a': (90.0, 90.0)}, arm_b={'t': (-0.42, 0.62), 'bend': 1})
+_punch0 = p(SUPINE_ANG, arm_a={'a': (90.0, 90.0)}, arm_b={'a': (92.0, 92.0)})
+
+_ytw0 = p(STAND_F)
+_sl_er0 = p(SIDE_LYING, arm_a={'a': (-8.0, -90.0), 'scale': (1.0, 0.6)})
+_press0 = p(STAND_F, arm_a={'a': (-60.0, 90.0)}, arm_b={'a': (-120.0, 90.0)})
+
+_spine0 = p(SUPINE, pelvis=(0.0, 0.15), arm_a={'a': (90.0, 90.0)}, arm_b={'a': (92.0, 92.0)})
+_ribs0 = p(STAND_F, arm_a={'t': (0.135, 1.17), 'bend': 1}, arm_b={'t': (-0.135, 1.17), 'bend': -1})
+_ribs1 = p(STAND_F, arm_a={'t': (0.165, 1.17), 'bend': 1}, arm_b={'t': (-0.165, 1.17), 'bend': -1}, breath=1.0)
+_belly0 = p(SIT, arm_a={'t': (0.13, 0.74), 'bend': -1}, arm_b={'t': (0.12, 0.86), 'bend': -1})
+
+
+def _nerve(ankle, foot, neck, head):
+    return p(SIT, neck=neck, head=head, leg_a={'t': ankle, 'bend': 1, 'foot': foot})
+
+
+_nerve0 = _nerve((0.46, 0.07), 0.0, 84.0, 90.0)
+
+EXERCISES += [
+    dict(slug='towel-internal-rotation', props=[('strap', 'hand_a', 'hand_b')],
+         start=_towel0,
+         seq=[(_towel_up, 1.6, 2.5), (_towel0, 1.4, 0.6)]),
+    dict(slug='wall-finger-walk', props=[('wall', 0.40)],
+         start=_wall_hand(1.12),
+         seq=[(_wall_hand(y), 0.35, 0.15) for y in (1.24, 1.36, 1.48, 1.60, 1.72)]
+             + [(_wall_hand(1.82, 0.03), 0.4, 2.0), (_wall_hand(1.12), 1.8, 0.6)],
+         repeat=1, poster=5),
+    dict(slug='wall-slide', props=[('wall', 0.295)],
+         start=p(STAND, arm_a={'a': (-29.0, 90.0)}, arm_b={'a': (-31.0, 88.0)}),
+         seq=[(p(STAND, arm_a={'a': (32.0, 90.0)}, arm_b={'a': (30.0, 88.0)}), 1.8, 1.0),
+              (p(STAND, arm_a={'a': (-29.0, 90.0)}, arm_b={'a': (-31.0, 88.0)}), 1.6, 0.5)]),
+    dict(slug='band-internal-rotation', view='front', props=[('wall', -0.88), ('band', 'hand_b', (-0.81, 1.10))],
+         start=_ir_out,
+         seq=[(_ir_turn, 0.5, 0.0), (_ir_turned, 0.12, 0.0), (_ir_in, 0.5, 1.0),
+              (_ir_turned, 0.5, 0.0), (_ir_turn, 0.12, 0.0), (_ir_out, 0.5, 0.5)], poster=2),
+    dict(slug='band-scaption', view='front', props=[('band', 'hand_a', (0.10, 0.03)), ('band', 'hand_b', (-0.10, 0.03))],
+         start=_scap0,
+         seq=[(p(STAND_F, arm_a={'a': (4.0, 4.0), 'scale': (0.87, 0.87)}, arm_b={'a': (-184.0, -184.0), 'scale': (0.87, 0.87)}), 1.4, 1.0),
+              (_scap0, 1.6, 0.5)]),
+    dict(slug='band-shoulder-extension', props=[('wall', 0.95), ('band', 'hand_a', (0.95, 1.50))],
+         start=_ext0,
+         seq=[(p(_ext0, arm_a={'a': (-104.0, -104.0)}, arm_b={'a': (-107.0, -107.0)}), 1.2, 1.0), (_ext0, 1.4, 0.4)]),
+    dict(slug='band-shoulder-flexion', props=[('band', 'hand_a', (0.18, 0.03))],
+         start=_flex0,
+         seq=[(p(_flex0, arm_a={'a': (62.0, 62.0)}, arm_b={'a': (59.0, 59.0)}), 1.6, 1.0), (_flex0, 1.6, 0.4)]),
+    dict(slug='band-adduction', view='front', props=[('wall', -0.95), ('band', 'hand_b', (-0.88, 1.95))],
+         start=_add0,
+         seq=[(p(STAND_F, arm_b={'a': (266.0, 266.0)}), 1.3, 1.0), (_add0, 1.5, 0.5)]),
+    # PNF: contract-relax done alone, against a stick, a towel or a wall.
+    dict(slug='pnf-contract-relax-er', view='front', props=[('stick', 'hand_a', 'hand_b')],
+         start=_stick0,
+         seq=[(_stick(0.6, 0.6), 1.2, 1.5), (_stick(0.57, 0.63), 0.3, 4.0), (_stick(0.6, 0.6), 0.3, 0.8),
+              (_stick(0.92, 0.92), 1.4, 3.0), (_stick0, 1.3, 0.5)], repeat=1, poster=3),
+    dict(slug='pnf-contract-relax-ir', props=[('strap', 'hand_a', 'hand_b')],
+         start=_towel0,
+         seq=[(_towel(1.06, 1.54), 1.3, 1.5), (_towel(1.045, 1.54), 0.3, 4.0), (_towel(1.06, 1.54), 0.3, 0.8),
+              (_towel(1.16, 1.62), 1.4, 3.0), (_towel0, 1.3, 0.5)], repeat=1, poster=3),
+    dict(slug='pnf-contract-relax-elevation', props=[('wall', 0.40)],
+         start=_wall_hand(1.30),
+         seq=[(_wall_hand(1.68), 1.3, 1.5), (_wall_hand(1.665), 0.3, 4.0), (_wall_hand(1.68), 0.3, 0.8),
+              (_wall_hand(1.84, 0.05), 1.4, 3.0), (_wall_hand(1.30), 1.4, 0.5)], repeat=1, poster=3),
+    dict(slug='pnf-shoulder-diagonal-d1', view='front', props=[('band', 'hand_a', (0.12, 0.04))],
+         start=_d1_0,
+         seq=[(_d1_mid, 0.7, 0.0), (_d1_1, 0.7, 0.6), (_d1_mid, 0.8, 0.0), (_d1_0, 0.8, 0.4)], poster=1),
+    dict(slug='rhythmic-stabilization', props=[MAT],
+         start=_rs0, seq=[], repeat=1),
+    # ---- scapular control --------------------------------------------------
+    dict(slug='serratus-punch', props=[MAT],
+         start=_punch0,
+         seq=[(p(_punch0, sh=(0.0, 0.075)), 0.8, 1.2), (_punch0, 0.8, 0.5)]),
+    dict(slug='wall-push-up', props=[('wall', 0.59)],
+         start=_lean(70.0),
+         seq=[(_lean(58.0), 1.3, 0.3), (_lean(70.0), 1.1, 0.5)]),
+    dict(slug='wall-push-up-plus', props=[('wall', 0.59)],
+         start=_lean(70.0),
+         seq=[(_lean(58.0), 1.3, 0.3), (_lean(70.0), 1.1, 0.2),
+              (_lean(72.0, hi=77.0, sh=(0.035, 0.0)), 0.7, 1.2), (_lean(70.0), 0.7, 0.4)], poster=2),
+    dict(slug='y-t-w', view='front',
+         start=_ytw0,
+         seq=[(p(STAND_F, arm_a={'a': (50.0, 50.0)}, arm_b={'a': (-230.0, -230.0)}), 1.2, 1.5), (_ytw0, 1.0, 0.3),
+              (p(STAND_F, arm_a={'a': (2.0, 2.0)}, arm_b={'a': (-182.0, -182.0)}), 1.2, 1.5), (_ytw0, 1.0, 0.3),
+              (p(STAND_F, arm_a={'a': (-40.0, 55.0)}, arm_b={'a': (-140.0, -235.0)}), 1.2, 1.5), (_ytw0, 1.0, 0.4)],
+         repeat=1),
+    # ---- rotator cuff and strength ------------------------------------------
+    dict(slug='side-lying-external-rotation', view='front', props=[MAT_SIDE, ('weight', 'hand_a')],
+         start=_sl_er0,
+         seq=[(p(SIDE_LYING, arm_a={'a': (-8.0, -90.0), 'scale': (1.0, 0.08)}), 0.5, 0.0),
+              (p(SIDE_LYING, arm_a={'a': (-8.0, 90.0), 'scale': (1.0, 0.08)}), 0.12, 0.0),
+              (p(SIDE_LYING, arm_a={'a': (-8.0, 90.0), 'scale': (1.0, 0.95)}), 0.6, 1.0),
+              (p(SIDE_LYING, arm_a={'a': (-8.0, 90.0), 'scale': (1.0, 0.08)}), 0.6, 0.0),
+              (p(SIDE_LYING, arm_a={'a': (-8.0, -90.0), 'scale': (1.0, 0.08)}), 0.12, 0.0),
+              (_sl_er0, 0.6, 0.5)], poster=2),
+    dict(slug='dumbbell-press', view='front', props=[('weight', 'hand_a'), ('weight', 'hand_b')],
+         start=_press0,
+         seq=[(p(STAND_F, arm_a={'a': (84.0, 86.0)}, arm_b={'a': (-264.0, 94.0)}), 1.3, 0.8), (_press0, 1.5, 0.5)]),
+    # ---- areas that affect the shoulder ---------------------------------------
+    dict(slug='towel-spine-chest-opener', props=[MAT, ('towel', -0.70, 0.02, 0.06)],
+         start=_spine0,
+         seq=[(p(_spine0, arm_a={'a': (172.0, 172.0)}, arm_b={'a': (174.0, 174.0)}), 2.0, 3.0), (_spine0, 1.8, 0.6)]),
+    dict(slug='lateral-costal-breathing', view='front', props=[('breath', 0.78, 1.25, 0.15)],
+         start=_ribs0,
+         seq=[(_ribs1, 3.0, 0.6), (_ribs0, 4.0, 0.6)]),
+    dict(slug='breathing-4-7-8', props=[CHAIR, ('breath', 0.78, 0.95, 0.17)],
+         start=_belly0,
+         seq=[(p(_belly0, breath=1.0, arm_a={'t': (0.15, 0.74), 'bend': -1}), 4.0, 7.0), (_belly0, 8.0, 1.0)],
+         repeat=1),
+    # ---- nerve glides (sliders) ---------------------------------------------------
+    dict(slug='sciatic-nerve-glide', props=[STOOL],
+         start=_nerve0,
+         seq=[(_nerve((0.85, 0.47), 75.0, 104.0, 118.0), 1.4, 0.3), (_nerve((0.30, 0.09), 10.0, 66.0, 62.0), 1.6, 0.3),
+              (_nerve0, 0.8, 0.4)], poster=0),
+    dict(slug='peroneal-nerve-glide', props=[STOOL],
+         start=_nerve0,
+         seq=[(_nerve((0.85, 0.47), -20.0, 104.0, 118.0), 1.4, 0.3), (_nerve((0.30, 0.09), 30.0, 66.0, 62.0), 1.6, 0.3),
+              (_nerve0, 0.8, 0.4)], poster=0),
+]
+
+_rs = EXERCISES[[e['slug'] for e in EXERCISES].index('rhythmic-stabilization')]
+_rs['seq'] = [(p(_rs0, arm_a={'a': (90.0 + w, 90.0 + w)}, arm_b={'t': (-0.47 + 0.05 * s + w * 0.008, 0.62), 'bend': 1}), 0.35, 0.25)
+              for s, w in [(1, -2.0), (-1, 2.0)] * 4] + [(_rs0, 0.4, 0.4)]

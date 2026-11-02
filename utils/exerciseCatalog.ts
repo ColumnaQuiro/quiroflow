@@ -17,7 +17,7 @@ export interface CatalogText {
   es: string
 }
 
-export type CatalogRegion = 'neck' | 'shoulder' | 'back' | 'hip' | 'leg'
+export type CatalogRegion = 'neck' | 'shoulder' | 'back' | 'hip' | 'leg' | 'breathing'
 
 export interface CatalogExercise {
   slug: string
@@ -43,6 +43,7 @@ export const EXERCISE_CATALOG_REGIONS: { key: CatalogRegion; label: CatalogText 
   { key: 'back', label: { en: 'Low back and core', es: 'Zona lumbar y core' } },
   { key: 'hip', label: { en: 'Hip', es: 'Cadera' } },
   { key: 'leg', label: { en: 'Knee, ankle and balance', es: 'Rodilla, tobillo y equilibrio' } },
+  { key: 'breathing', label: { en: 'Breathing and relaxation', es: 'Respiración y relajación' } },
 ]
 
 const DAILY = { en: 'Daily', es: 'A diario' }
@@ -248,6 +249,246 @@ export const EXERCISE_CATALOG: CatalogExercise[] = [
     reps: repsEach(10),
     frequency: ALT_DAYS,
   },
+  {
+    slug: 'towel-internal-rotation',
+    region: 'shoulder',
+    name: { en: 'Internal rotation with a towel behind the back', es: 'Rotación interna con toalla a la espalda' },
+    instructions: {
+      en: 'Hold a towel behind your back: the good arm over the shoulder holding the top end, the sore arm behind your lower back holding the bottom end.\nWith the top hand, pull the towel slowly upwards so the lower hand slides up your back.\nHold where you feel the stretch, then let it down slowly.',
+      es: 'Sujeta una toalla por detrás de la espalda: el brazo sano por encima del hombro, sujetando el extremo de arriba, y el brazo afectado por detrás de la zona lumbar, sujetando el de abajo.\nCon la mano de arriba, tira de la toalla despacio hacia arriba para que la mano de abajo suba por la espalda.\nMantén donde notes el estiramiento y baja despacio.',
+    },
+    sets: 1,
+    reps: { en: '5 × 15 s hold', es: '5 × 15 s' },
+    frequency: TWICE_DAILY,
+  },
+  {
+    slug: 'wall-finger-walk',
+    region: 'shoulder',
+    name: { en: 'Finger walk up the wall', es: 'Subir por la pared con los dedos' },
+    instructions: {
+      en: 'Stand facing a wall, a little less than an arm\'s length away, and put the fingertips of the sore arm on it at chest height.\nWalk your fingers up the wall, little by little, as high as you can without pain. Keep your shoulder down and step closer at the top if you need to.\nHold for a few seconds and slide the hand back down.',
+      es: 'De pie frente a una pared, a algo menos de un brazo de distancia, apoya en ella las puntas de los dedos del brazo afectado a la altura del pecho.\nSube los dedos por la pared poco a poco, como si caminaran, todo lo alto que puedas sin dolor. No subas el hombro; si hace falta, acércate un paso al final.\nMantén unos segundos y baja la mano deslizándola.',
+    },
+    sets: 1,
+    reps: reps(10),
+    frequency: TWICE_DAILY,
+  },
+  {
+    slug: 'wall-slide',
+    region: 'shoulder',
+    name: { en: 'Wall slide', es: 'Deslizamiento en pared (wall slide)' },
+    instructions: {
+      en: 'Stand facing a wall with your forearms on it, little-finger side touching, elbows at shoulder height.\nSlide your forearms up the wall as far as is comfortable, keeping your shoulders down and away from your ears.\nSlide back down slowly.',
+      es: 'De pie frente a una pared, con los antebrazos apoyados en ella por el lado del meñique y los codos a la altura de los hombros.\nDesliza los antebrazos hacia arriba por la pared hasta donde te resulte cómodo, con los hombros bajos y lejos de las orejas.\nBaja despacio.',
+    },
+    sets: 2,
+    reps: reps(10),
+    frequency: DAILY,
+  },
+  {
+    slug: 'band-internal-rotation',
+    region: 'shoulder',
+    name: { en: 'Internal rotation with band', es: 'Rotación interna con banda elástica' },
+    instructions: {
+      en: 'Fix an elastic band at waist height to the side of the arm you are working. Stand side-on to it and hold the band, elbow bent at 90 degrees and tucked in at your side.\nRotate your forearm in towards your stomach, keeping your elbow against your body.\nReturn slowly. Turn round to work the other arm.',
+      es: 'Ancla una banda elástica a la altura de la cintura, en el lado del brazo que vas a trabajar. Colócate de lado y sujeta la banda con el codo a 90 grados y pegado al cuerpo.\nLleva el antebrazo hacia la tripa, sin separar el codo del cuerpo.\nVuelve despacio. Date la vuelta para trabajar el otro brazo.',
+    },
+    sets: 3,
+    reps: repsEach(12),
+    frequency: ALT_DAYS,
+  },
+  {
+    slug: 'band-scaption',
+    region: 'shoulder',
+    name: { en: 'Scaption with band', es: 'Elevación en plano escapular (scaption) con banda' },
+    instructions: {
+      en: 'Stand on the middle of an elastic band and hold one end in each hand, arms by your sides, thumbs pointing forward.\nRaise your arms up and out at an angle, slightly in front of your body (halfway between forward and sideways), up to shoulder height. Keep your thumbs up and do not shrug.\nLower slowly.',
+      es: 'Pisa el centro de una banda elástica y sujeta un extremo con cada mano, brazos a los lados y pulgares hacia delante.\nEleva los brazos en diagonal, algo por delante del cuerpo (a medio camino entre hacia delante y hacia los lados), hasta la altura de los hombros. Pulgares hacia arriba y sin subir los hombros.\nBaja despacio.',
+    },
+    sets: 3,
+    reps: reps(12),
+    frequency: ALT_DAYS,
+  },
+  {
+    slug: 'band-shoulder-extension',
+    region: 'shoulder',
+    name: { en: 'Shoulder extension with band', es: 'Extensión de hombro con banda elástica' },
+    instructions: {
+      en: 'Fix an elastic band at chest height and hold one end in each hand, arms straight in front of you.\nKeeping your elbows straight, pull your arms down and back until your hands are just behind your hips. Squeeze your shoulder blades together.\nReturn slowly.',
+      es: 'Ancla una banda elástica a la altura del pecho y sujeta un extremo con cada mano, con los brazos estirados al frente.\nSin doblar los codos, lleva los brazos hacia abajo y atrás hasta dejar las manos justo por detrás de la cadera, juntando las escápulas.\nVuelve despacio.',
+    },
+    sets: 3,
+    reps: reps(12),
+    frequency: ALT_DAYS,
+  },
+  {
+    slug: 'band-shoulder-flexion',
+    region: 'shoulder',
+    name: { en: 'Shoulder flexion with band', es: 'Flexión de hombro con banda elástica' },
+    instructions: {
+      en: 'Stand on one end of an elastic band and hold the other end, arm by your side, thumb pointing forward.\nRaise your straight arm forwards and up, as high as you can without pain or arching your back.\nLower slowly.',
+      es: 'Pisa un extremo de la banda elástica y sujeta el otro, con el brazo junto al cuerpo y el pulgar hacia delante.\nEleva el brazo estirado hacia delante y hacia arriba, todo lo alto que puedas sin dolor y sin arquear la espalda.\nBaja despacio.',
+    },
+    sets: 3,
+    reps: repsEach(10),
+    frequency: ALT_DAYS,
+  },
+  {
+    slug: 'band-adduction',
+    region: 'shoulder',
+    name: { en: 'Adduction from abduction with band', es: 'Aducción desde abducción con banda elástica' },
+    instructions: {
+      en: 'Fix an elastic band high up, above head height, to the side of the arm you are working. Stand side-on to it and hold the band with your arm out to the side and up.\nPull your straight arm down to your side, as if pulling something towards your hip.\nReturn slowly. Turn round to work the other arm.',
+      es: 'Ancla una banda elástica en alto, por encima de la cabeza, en el lado del brazo que vas a trabajar. Colócate de lado y sujeta la banda con el brazo separado del cuerpo y elevado.\nBaja el brazo estirado hasta pegarlo al costado, como si tiraras de algo hacia la cadera.\nVuelve despacio. Date la vuelta para trabajar el otro brazo.',
+    },
+    sets: 3,
+    reps: repsEach(12),
+    frequency: ALT_DAYS,
+  },
+  {
+    slug: 'pnf-contract-relax-er',
+    region: 'shoulder',
+    name: { en: 'Contract-relax: external rotation', es: 'Contraer-relajar de rotación externa' },
+    instructions: {
+      en: 'Stand with both elbows bent at 90 degrees and tucked in at your sides, holding a stick (a broom handle will do) in both hands.\nWith the good arm, push the stick so the sore arm\'s forearm turns out until you feel a stretch. Then push the sore hand back against the stick for 5 seconds without letting it move, the good arm holding it still.\nRelax, breathe out and use the good arm to turn the forearm a little further. Hold, then repeat from the new position.',
+      es: 'De pie, con los codos a 90 grados y pegados al cuerpo, sujeta un palo (vale el de una escoba) con las dos manos.\nCon el brazo sano, empuja el palo para que el antebrazo afectado gire hacia fuera hasta notar el estiramiento. Después empuja con la mano afectada contra el palo durante 5 segundos, sin que se mueva: el brazo sano lo sujeta.\nRelaja, suelta el aire y usa el brazo sano para girar el antebrazo un poco más. Mantén y repite desde la nueva posición.',
+    },
+    sets: 1,
+    reps: reps(4),
+    frequency: DAILY,
+  },
+  {
+    slug: 'pnf-contract-relax-ir',
+    region: 'shoulder',
+    name: { en: 'Contract-relax: internal rotation', es: 'Contraer-relajar de rotación interna' },
+    instructions: {
+      en: 'Hold a towel behind your back: the good arm over the shoulder holding the top end, the sore arm behind your lower back holding the bottom end. Pull up with the top hand until you feel a stretch.\nPull the lower hand down against the towel for 5 seconds, the top hand holding it still so nothing moves.\nRelax, breathe out and pull the towel a little higher. Hold, then repeat from the new position.',
+      es: 'Sujeta una toalla por detrás de la espalda: el brazo sano por encima del hombro, sujetando el extremo de arriba, y el afectado por detrás de la zona lumbar, sujetando el de abajo. Tira hacia arriba con la mano de arriba hasta notar el estiramiento.\nTira con la mano de abajo hacia abajo contra la toalla durante 5 segundos, mientras la de arriba la sujeta para que nada se mueva.\nRelaja, suelta el aire y sube la toalla un poco más. Mantén y repite desde la nueva posición.',
+    },
+    sets: 1,
+    reps: reps(4),
+    frequency: DAILY,
+  },
+  {
+    slug: 'pnf-contract-relax-elevation',
+    region: 'shoulder',
+    name: { en: 'Contract-relax: elevation', es: 'Contraer-relajar de elevación' },
+    instructions: {
+      en: 'Stand facing a wall and slide the hand of the sore arm up it until you feel a stretch.\nPress the hand into the wall, as if pushing it down, for 5 seconds, without letting it move.\nRelax, breathe out and slide the hand a little higher, stepping closer if you need to. Hold, then repeat from the new position.',
+      es: 'De pie frente a una pared, sube por ella la mano del brazo afectado hasta notar el estiramiento.\nEmpuja la mano contra la pared, como si quisieras bajarla, durante 5 segundos, sin que se mueva.\nRelaja, suelta el aire y sube la mano un poco más, acercándote un paso si hace falta. Mantén y repite desde la nueva posición.',
+    },
+    sets: 1,
+    reps: reps(4),
+    frequency: DAILY,
+  },
+  {
+    slug: 'pnf-shoulder-diagonal-d1',
+    region: 'shoulder',
+    name: { en: 'PNF diagonal (D1) with band', es: 'Diagonal FNP (D1) con banda elástica' },
+    instructions: {
+      en: 'Stand on one end of an elastic band with the foot on the same side and hold the other end, hand a little out from your hip, palm facing back.\nDraw the arm diagonally up and across your body until your hand is above your head on the other side, palm turned towards you, as if reaching for something over the opposite shoulder. Follow your hand with your eyes.\nReturn slowly along the same diagonal.',
+      es: 'Pisa un extremo de la banda elástica con el pie del mismo lado y sujeta el otro con la mano algo separada de la cadera, con la palma hacia atrás.\nLleva el brazo en diagonal hacia arriba, cruzando por delante del cuerpo, hasta dejar la mano por encima de la cabeza en el lado contrario, con la palma girada hacia ti, como si fueras a coger algo por encima del hombro opuesto. Sigue la mano con la mirada.\nVuelve despacio por la misma diagonal.',
+    },
+    sets: 2,
+    reps: repsEach(10),
+    frequency: ALT_DAYS,
+  },
+  {
+    slug: 'rhythmic-stabilization',
+    region: 'shoulder',
+    name: { en: 'Rhythmic stabilisation', es: 'Estabilización rítmica' },
+    instructions: {
+      en: 'Lie on your back with your knees bent and the sore arm pointing straight up at the ceiling.\nSomeone at home (or your other hand) gives your hand short, gentle pushes in changing directions: forwards, back, in and out. Hold your arm still against each push, without letting it move.\nKeep breathing. Push more firmly and change direction faster as it gets easier.',
+      es: 'Túmbate boca arriba con las rodillas dobladas y el brazo afectado estirado hacia el techo.\nOtra persona (o tu otra mano) da a tu mano empujones cortos y suaves en direcciones cambiantes: hacia la cabeza, hacia los pies, hacia dentro y hacia fuera. Mantén el brazo quieto contra cada empujón, sin dejar que se mueva.\nSigue respirando. Cuando sea fácil, empujones algo más firmes y cambios más rápidos.',
+    },
+    sets: 3,
+    reps: { en: '30 s', es: '30 s' },
+    frequency: DAILY,
+  },
+  {
+    slug: 'serratus-punch',
+    region: 'shoulder',
+    name: { en: 'Serratus punch lying down', es: 'Serrato: punch-out tumbado' },
+    instructions: {
+      en: 'Lie on your back with your knees bent and your arms pointing straight up at the ceiling (holding a light weight if you have one).\nKeeping your elbows straight, reach your hands higher towards the ceiling so your shoulder blades lift off the floor.\nHold for 2 seconds and lower your shoulder blades back down slowly.',
+      es: 'Túmbate boca arriba con las rodillas dobladas y los brazos estirados hacia el techo (con un peso ligero si lo tienes).\nSin doblar los codos, empuja las manos más hacia el techo para que las escápulas se despeguen del suelo.\nMantén 2 segundos y vuelve a bajar las escápulas despacio.',
+    },
+    sets: 3,
+    reps: reps(12),
+    frequency: ALT_DAYS,
+  },
+  {
+    slug: 'wall-push-up-plus',
+    region: 'shoulder',
+    name: { en: 'Wall push-up plus', es: 'Push-up plus en pared' },
+    instructions: {
+      en: 'Stand facing a wall, feet back, hands on the wall at shoulder height and a little wider than your shoulders.\nBend your elbows to bring your chest towards the wall, then push back until your arms are straight.\nAt the end, push a little further so your upper back rounds slightly and your shoulder blades spread apart. Hold for 2 seconds and relax.',
+      es: 'De pie frente a una pared, con los pies algo atrasados y las manos apoyadas a la altura de los hombros, algo más separadas que ellos.\nDobla los codos para acercar el pecho a la pared y empuja hasta estirar los brazos.\nAl final, empuja un poco más para que la parte alta de la espalda se redondee ligeramente y las escápulas se separen. Mantén 2 segundos y relaja.',
+    },
+    sets: 3,
+    reps: reps(10),
+    frequency: ALT_DAYS,
+  },
+  {
+    slug: 'y-t-w',
+    region: 'shoulder',
+    name: { en: 'Y, T and W raises', es: 'Elevaciones en Y, T y W' },
+    instructions: {
+      en: 'Stand tall with your arms by your sides, thumbs pointing up.\nY: raise your arms up and out into a "Y". T: raise them out to the sides to shoulder height, a "T". W: bend your elbows and draw them down and back, hands at shoulder height, a "W". In each, squeeze your shoulder blades back and down without shrugging.\nHold each for 2 seconds. Make it harder with a light weight, or lying face down on a bed.',
+      es: 'De pie, erguido, con los brazos a los lados y los pulgares hacia arriba.\nY: eleva los brazos por encima de la cabeza y hacia fuera, en forma de «Y». T: elévalos hacia los lados hasta la altura de los hombros, en forma de «T». W: dobla los codos y llévalos hacia abajo y atrás, con las manos a la altura de los hombros, en forma de «W». En cada una, junta las escápulas hacia atrás y abajo sin subir los hombros.\nMantén 2 segundos cada una. Para hacerlo más difícil, con un peso ligero o tumbado boca abajo en una cama.',
+    },
+    sets: 2,
+    reps: { en: '8 of each letter', es: '8 de cada letra' },
+    frequency: ALT_DAYS,
+  },
+  {
+    slug: 'side-lying-external-rotation',
+    region: 'shoulder',
+    name: { en: 'Side-lying external rotation with a light weight', es: 'Rotación externa tumbado de lado con peso ligero' },
+    instructions: {
+      en: 'Lie on your good side with the top arm bent at 90 degrees, elbow resting on your side (a rolled towel between elbow and waist helps), holding a light weight with the forearm across your stomach.\nKeeping your elbow on your side, rotate the forearm up towards the ceiling.\nLower slowly.',
+      es: 'Túmbate sobre el lado sano, con el brazo de arriba doblado a 90 grados y el codo apoyado en el costado (ayuda una toalla enrollada entre el codo y la cintura), sujetando un peso ligero con el antebrazo sobre la tripa.\nSin separar el codo del costado, gira el antebrazo hacia el techo.\nBaja despacio.',
+    },
+    sets: 3,
+    reps: reps(12),
+    frequency: ALT_DAYS,
+  },
+  {
+    slug: 'wall-push-up',
+    region: 'shoulder',
+    name: { en: 'Wall or incline push-up', es: 'Flexión de brazos en pared o inclinada' },
+    instructions: {
+      en: 'Stand facing a wall, feet back, hands on the wall at shoulder height and a little wider than your shoulders. Keep your body straight from head to heels.\nBend your elbows to bring your chest towards the wall, elbows angled back rather than out to the sides.\nPush back until your arms are straight. To progress, use a kitchen worktop or a sturdy table instead of the wall.',
+      es: 'De pie frente a una pared, con los pies algo atrasados y las manos apoyadas a la altura de los hombros, algo más separadas que ellos. El cuerpo recto de la cabeza a los talones.\nDobla los codos para acercar el pecho a la pared, con los codos hacia atrás y no abiertos hacia los lados.\nEmpuja hasta estirar los brazos. Para progresar, apóyate en la encimera o en una mesa firme en lugar de la pared.',
+    },
+    sets: 3,
+    reps: reps(10),
+    frequency: ALT_DAYS,
+  },
+  {
+    slug: 'dumbbell-press',
+    region: 'shoulder',
+    name: { en: 'Overhead press with a light weight', es: 'Press con mancuerna ligera' },
+    instructions: {
+      en: 'Stand tall holding a light weight in each hand at shoulder height, elbows below your hands, palms facing forward.\nPush the weights up overhead until your arms are straight, without arching your lower back.\nLower slowly to shoulder height. Start light and increase the weight only when it is easy and pain-free.',
+      es: 'De pie, erguido, con una mancuerna ligera en cada mano a la altura de los hombros, los codos por debajo de las manos y las palmas hacia delante.\nEmpuja las mancuernas hacia arriba hasta estirar los brazos, sin arquear la zona lumbar.\nBaja despacio hasta la altura de los hombros. Empieza con poco peso y súbelo solo cuando resulte fácil y sin dolor.',
+    },
+    sets: 3,
+    reps: reps(10),
+    frequency: ALT_DAYS,
+  },
+  {
+    slug: 'towel-spine-chest-opener',
+    region: 'shoulder',
+    name: { en: 'Chest opener on a lengthwise towel', es: 'Apertura torácica sobre toalla en vertical' },
+    instructions: {
+      en: 'Roll a towel up tightly and lie on your back on it, the roll running along your spine from your lower back to your head. Knees bent.\nWith your arms pointing at the ceiling, take them slowly overhead towards the floor, as far as is comfortable. You can also rest them out to the sides, palms up, and just breathe.\nHold and bring them back slowly.',
+      es: 'Enrolla bien una toalla y túmbate boca arriba sobre ella, colocada a lo largo de la columna, desde la zona lumbar hasta la cabeza. Rodillas dobladas.\nCon los brazos estirados hacia el techo, llévalos despacio por encima de la cabeza hacia el suelo, hasta donde te resulte cómodo. También puedes dejarlos abiertos en cruz, con las palmas hacia arriba, y simplemente respirar.\nMantén y vuelve despacio.',
+    },
+    sets: 1,
+    reps: { en: '8, with a 5 s hold', es: '8, manteniendo 5 s' },
+    frequency: DAILY,
+  },
   // ---- low back and core -----------------------------------------------------
   {
     slug: 'glute-bridge',
@@ -367,6 +608,18 @@ export const EXERCISE_CATALOG: CatalogExercise[] = [
     },
     sets: 1,
     reps: holdEach(15),
+    frequency: DAILY,
+  },
+  {
+    slug: 'sciatic-nerve-glide',
+    region: 'back',
+    name: { en: 'Sciatic nerve glide', es: 'Deslizamiento neural del ciático' },
+    instructions: {
+      en: 'Sit tall on the edge of a chair.\nStraighten one knee, pulling your toes towards you, and at the same time look up.\nThen bend the knee back under the chair, pointing your foot, and look down. Move smoothly and gently: a light pull or tingle that goes away at once is fine, pain is not.',
+      es: 'Siéntate erguido en el borde de una silla.\nEstira una rodilla llevando la punta del pie hacia ti y, a la vez, mira hacia arriba.\nDespués dobla la rodilla hacia debajo de la silla, estirando la punta del pie, y mira hacia abajo. Muévete de forma fluida y suave: un ligero tirón u hormigueo que desaparece al momento es normal; dolor, no.',
+    },
+    sets: 2,
+    reps: repsEach(10),
     frequency: DAILY,
   },
   // ---- hip ---------------------------------------------------------------------
@@ -575,6 +828,43 @@ export const EXERCISE_CATALOG: CatalogExercise[] = [
     reps: holdEach(30),
     frequency: DAILY,
   },
+  {
+    slug: 'peroneal-nerve-glide',
+    region: 'leg',
+    name: { en: 'Peroneal nerve glide', es: 'Deslizamiento neural del peroneo' },
+    instructions: {
+      en: 'Sit tall on the edge of a chair.\nStraighten one knee while pointing your foot down and turning the sole inwards, and at the same time look up.\nThen bend the knee back under the chair with the foot relaxed, and look down. Move smoothly and gently: a light pull or tingle on the outside of the leg that goes away at once is fine, pain is not.',
+      es: 'Siéntate erguido en el borde de una silla.\nEstira una rodilla mientras apuntas el pie hacia abajo y giras la planta hacia dentro y, a la vez, mira hacia arriba.\nDespués dobla la rodilla hacia debajo de la silla con el pie relajado y mira hacia abajo. Muévete de forma fluida y suave: un ligero tirón u hormigueo en la parte externa de la pierna que desaparece al momento es normal; dolor, no.',
+    },
+    sets: 2,
+    reps: repsEach(10),
+    frequency: DAILY,
+  },
+  // ---- breathing and relaxation ----------------------------------------------
+  {
+    slug: 'lateral-costal-breathing',
+    region: 'breathing',
+    name: { en: 'Lateral rib breathing', es: 'Respiración costal lateral' },
+    instructions: {
+      en: 'Sit or stand tall with your hands on the sides of your lower ribs.\nBreathe in slowly through your nose, sending the air into your hands so your ribs widen sideways. Keep your shoulders and neck relaxed; they should not rise.\nBreathe out slowly through your mouth and feel the ribs close again.',
+      es: 'Sentado o de pie, erguido, con las manos a los lados de las costillas bajas.\nToma aire despacio por la nariz llevándolo hacia las manos, de forma que las costillas se abran hacia los lados. Hombros y cuello relajados: no deben subir.\nSuelta el aire despacio por la boca y nota cómo las costillas se cierran.',
+    },
+    sets: 1,
+    reps: { en: '10 breaths', es: '10 respiraciones' },
+    frequency: TWICE_DAILY,
+  },
+  {
+    slug: 'breathing-4-7-8',
+    region: 'breathing',
+    name: { en: '4-7-8 breathing', es: 'Respiración 4-7-8' },
+    instructions: {
+      en: 'Sit comfortably with your back supported, or lie down, and rest a hand on your stomach.\nBreathe in quietly through your nose for a count of 4, hold your breath for a count of 7, then breathe out slowly through your mouth for a count of 8.\nThat is one breath. Useful to relax tense muscles or before sleeping. Stop if you feel dizzy.',
+      es: 'Siéntate cómodo con la espalda apoyada, o túmbate, con una mano sobre la tripa.\nToma aire en silencio por la nariz contando hasta 4, retén el aire contando hasta 7 y suéltalo despacio por la boca contando hasta 8.\nEsa es una respiración. Útil para relajar la musculatura en tensión o antes de dormir. Para si te mareas.',
+    },
+    sets: 1,
+    reps: { en: '4 breaths', es: '4 respiraciones' },
+    frequency: TWICE_DAILY,
+  },
 ]
 
 export const EXERCISE_CATALOG_PROGRAMS: CatalogProgram[] = [
@@ -619,6 +909,42 @@ export const EXERCISE_CATALOG_PROGRAMS: CatalogProgram[] = [
     name: { en: 'Upper back posture', es: 'Postura de espalda alta' },
     description: { en: 'Open the chest and strengthen the upper back, for rounded shoulders and a forward head.', es: 'Abrir el pecho y fortalecer la espalda alta, para hombros adelantados y cabeza adelantada.' },
     items: ['chin-tuck', 'doorway-pec-stretch', 'thoracic-extension-roller', 'band-row', 'face-pull'],
+  },
+  {
+    slug: 'shoulder-assisted-mobility',
+    name: { en: 'Shoulder: assisted mobility', es: 'Hombro: movilidad asistida' },
+    description: { en: 'Regaining range without load.', es: 'Recuperar el rango de movimiento sin carga.' },
+    items: ['towel-internal-rotation', 'cross-body-stretch', 'wall-finger-walk', 'wall-slide'],
+  },
+  {
+    slug: 'shoulder-bands',
+    name: { en: 'Shoulder: bands in every plane', es: 'Hombro: banda elástica en distintos planos' },
+    description: { en: 'Strength through each of the shoulder\'s movements.', es: 'Fuerza en cada uno de los movimientos del hombro.' },
+    items: ['shoulder-external-rotation', 'band-internal-rotation', 'band-scaption', 'band-shoulder-extension', 'band-shoulder-flexion', 'band-adduction'],
+  },
+  {
+    slug: 'shoulder-pnf',
+    name: { en: 'Shoulder: PNF', es: 'Hombro: FNP' },
+    description: { en: 'Contract-relax for range, diagonal patterns and rhythmic stabilisation.', es: 'Contraer-relajar para ganar rango, diagonales y estabilización rítmica.' },
+    items: ['pnf-contract-relax-er', 'pnf-contract-relax-ir', 'pnf-contract-relax-elevation', 'pnf-shoulder-diagonal-d1', 'pnf-shoulder-diagonal', 'rhythmic-stabilization'],
+  },
+  {
+    slug: 'scapular-control',
+    name: { en: 'Scapular control', es: 'Control escapular' },
+    description: { en: 'Serratus and lower trapezius, for a shoulder blade that moves well.', es: 'Serrato y trapecio inferior, para que la escápula se mueva bien.' },
+    items: ['serratus-punch', 'wall-push-up-plus', 'y-t-w'],
+  },
+  {
+    slug: 'rotator-cuff-strength',
+    name: { en: 'Rotator cuff and strength', es: 'Manguito rotador y fuerza' },
+    description: { en: 'From the rotator cuff to pushing and pulling, as a progression.', es: 'Del manguito rotador a empujar y tirar, como progresión.' },
+    items: ['side-lying-external-rotation', 'band-internal-rotation', 'band-row', 'face-pull', 'wall-push-up', 'dumbbell-press'],
+  },
+  {
+    slug: 'shoulder-related-areas',
+    name: { en: 'Shoulder: areas that affect it', es: 'Hombro: zonas que influyen' },
+    description: { en: 'Thoracic mobility and rib breathing.', es: 'Movilidad torácica y respiración costal.' },
+    items: ['thoracic-extension-roller', 'towel-spine-chest-opener', 'lateral-costal-breathing'],
   },
 ]
 

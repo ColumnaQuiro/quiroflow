@@ -38,6 +38,7 @@ NEAR = (79, 70, 229)
 FAR = (170, 165, 241)
 FACE = (238, 240, 254)
 BAND = (245, 158, 11)
+WEIGHT = (100, 106, 128)
 
 
 def ffmpeg_exe():
@@ -76,7 +77,10 @@ def camera(ex, poses):
         kind = prop[0]
         if kind in ('wall', 'door', 'roller', 'ball'):
             xs.append(prop[1])
-        elif kind in ('mat', 'box', 'table', 'chair', 'stool'):
+        elif kind == 'breath':
+            xs += [prop[1] - prop[3], prop[1] + prop[3]]
+            ys.append(prop[2] + prop[3])
+        elif kind in ('mat', 'box', 'towel', 'table', 'chair', 'stool'):
             xs += [prop[1], prop[2]]
             ys.append(prop[3] if len(prop) > 3 else 0)
     pad = 0.22
@@ -137,6 +141,9 @@ def draw_props(pt, props, behind=True):
             pt.dot((prop[1], prop[2]), prop[3], BAND)
         elif kind == 'box' and behind:
             pt.rect(prop[1], 0, prop[2], prop[3], PROP, 0.02)
+        elif kind == 'towel' and behind:
+            # Rolled lengthwise along the spine: a long low cushion.
+            pt.rect(prop[1], 0.0, prop[2], prop[3], PROP_DARK, prop[3] / 2)
         elif kind in ('stool', 'chair', 'table') and behind:
             x0, x1, h = prop[1], prop[2], prop[3]
             pt.rect(x0, h - 0.045, x1, h, PROP_DARK if kind != 'table' else PROP, 0.015)
@@ -146,12 +153,30 @@ def draw_props(pt, props, behind=True):
                 pt.rect(x0, h, x0 + 0.04, h + 0.45, PROP_DARK, 0.015)
 
 
+def draw_breath(pt, props, p):
+    """A circle that fills as the person breathes in and empties as they
+    breathe out, so a breathing exercise shows its pace."""
+    for prop in props:
+        if prop[0] == 'breath':
+            c, r = (prop[1], prop[2]), prop[3]
+            pt.dot(c, r, PROP)
+            pt.dot(c, r * 0.94, BG)
+            pt.dot(c, r * (0.25 + 0.69 * p['breath']), FAR)
+
+
 def draw_bands(pt, props, j):
     for prop in props:
-        if prop[0] in ('band', 'strap'):
+        if prop[0] in ('band', 'strap', 'stick'):
             a = j[prop[1]] if isinstance(prop[1], str) else prop[1]
             b = j[prop[2]] if isinstance(prop[2], str) else prop[2]
-            pt.seg(a, b, 0.022 if prop[0] == 'band' else 0.03, BAND)
+            if prop[0] == 'stick':
+                pt.seg(a, b, 0.028, PROP_DARK)
+            else:
+                pt.seg(a, b, 0.022 if prop[0] == 'band' else 0.03, BAND)
+        elif prop[0] == 'weight':
+            # A light dumbbell in the hand, end on.
+            pt.dot(j[prop[1]], 0.048, WEIGHT)
+            pt.dot(j[prop[1]], 0.026, PROP_DARK)
 
 
 def draw_figure(pt, j, p, view, near=NEAR, far=FAR, face=FACE):
@@ -230,6 +255,7 @@ def render_frame(ex, p, to_px, scale, ghost=None):
     d.rectangle([0, fy, W * SS, H * SS], fill=(240, 241, 247))
     d.line([(0, fy), (W * SS, fy)], fill=FLOOR, width=3 * SS)
     draw_props(pt, ex.get('props', []))
+    draw_breath(pt, ex.get('props', []), p)
     if ghost is not None:
         layer = img.copy()
         gj = solve(ghost, view)

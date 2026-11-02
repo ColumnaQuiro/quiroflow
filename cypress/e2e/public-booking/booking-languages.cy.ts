@@ -101,4 +101,37 @@ describe('The booking page in the patient\'s language', () => {
       })
     })
   })
+
+  it('leaves out the heading and the picker for a clinic whose own site has both', () => {
+    bookableClinic().then((account) => {
+      cy.task('db:updateRows', { table: 'accounts', values: { online_booking_hide_heading: true, online_booking_hide_language_picker: true }, match: { id: account.accountId } })
+      cy.visit(`/book/${account.accountSlug}?lang=en`)
+      cy.contains('Choose your date and time').should('be.visible')
+      cy.get('[data-cy=booking-language]').should('not.exist')
+      cy.get('[data-cy=booking-clinic-name]').should('not.exist')
+      // Still the page's heading for a screen reader, just not on screen.
+      cy.get('[data-cy=booking-heading]').should('have.class', 'sr-only').and('contain.text', 'Book an appointment')
+    })
+  })
+
+  it('follows the embedding site\'s language only once the clinic hides the picker', () => {
+    // ?site_lang= is what embed.js sends from the host page's <html lang>.
+    // A Spanish browser on an English page of the clinic's site.
+    bookableClinic().then((account) => {
+      cy.visit(`/book/${account.accountSlug}?site_lang=en`)
+      // Picker shown: the browser decides, as before -- a site declaring the
+      // wrong language must not move a clinic that chose nothing.
+      cy.contains('Elija su fecha y hora').should('be.visible')
+      cy.get('[data-cy=booking-language-es]').should('have.attr', 'aria-pressed', 'true')
+
+      cy.task('db:updateRows', { table: 'accounts', values: { online_booking_hide_language_picker: true }, match: { id: account.accountId } })
+      cy.visit(`/book/${account.accountSlug}?site_lang=en`)
+      cy.contains('Choose your date and time').should('be.visible')
+      cy.get('html').should('have.attr', 'lang', 'en')
+
+      // A ?lang= on the link still outranks it.
+      cy.visit(`/book/${account.accountSlug}?site_lang=en&lang=fr`)
+      cy.contains('Choisissez la date et l’heure').should('be.visible')
+    })
+  })
 })

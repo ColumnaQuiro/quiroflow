@@ -55,6 +55,8 @@ interface BookingInfo {
     online_booking_secondary_color: string | null
     online_booking_background_color: string | null
     online_booking_hide_logo: boolean
+    online_booking_hide_heading: boolean
+    online_booking_hide_language_picker: boolean
     online_booking_text_overrides: Record<string, string>
     discount_codes_enabled: boolean
     default_phone_country: string | null
@@ -83,7 +85,15 @@ const supabase = useSupabaseClient()
 // (utils/bookingLanguage.ts), and the browser re-reads navigator.languages on
 // mount anyway, so a copy that was ever served to the wrong visitor corrects
 // itself rather than staying wrong.
+//
+// ?site_lang= is the language of the site embedding the page (public/embed.js
+// reads its <html lang>). It comes after ?lang= and before the browser, and
+// only for a clinic that hid the language picker -- the clinic saying its own
+// site decides. Taken from every site it would put the patients of a Spanish
+// WordPress site still declaring the theme's "en-US" into English, unasked.
+// Applied once the clinic's settings are known (applyBooking, onMounted).
 const queryLang = typeof route.query.lang === 'string' ? bookingLanguageOfTag(route.query.lang) : null
+const siteLang = typeof route.query.site_lang === 'string' ? bookingLanguageOfTag(route.query.site_lang) : null
 const { lang, locale, say } = useBookingLang()
 if (import.meta.server) {
   lang.value = queryLang ?? bookingLanguageFromAcceptLanguage(useRequestHeader('accept-language'))
@@ -1048,6 +1058,9 @@ function applyBooking(payload: BookingPayload | null) {
   }
   const parsed = payload.info
   info.value = parsed
+  // The embedding site's language, now that the clinic's settings say
+  // whether to follow it. Here so that the server's HTML is in it already.
+  if (!queryLang && siteLang && parsed.account.online_booking_hide_language_picker) lang.value = siteLang
   policy.value = payload.policy
   if (payload.giftsSold) giftOffered.value = true
   dialCode.value = parsed.account.default_phone_country || 'ES'
@@ -1093,8 +1106,12 @@ onMounted(async () => {
   captureAttribution()
 
   // The server's language was read from Accept-Language, or the page came
-  // from a cached copy: the browser's own list is the last word.
-  lang.value = queryLang ?? bookingLanguageFromList(navigator.languages?.length ? navigator.languages : [navigator.language])
+  // from a cached copy: the browser's own list is the last word, after
+  // anything the link itself says.
+  lang.value =
+    queryLang ??
+    (info.value?.account.online_booking_hide_language_picker ? siteLang : null) ??
+    bookingLanguageFromList(navigator.languages?.length ? navigator.languages : [navigator.language])
 
   // The server's fetch failed, so the HTML says the page is unavailable --
   // which a fetch of the browser's own can still put right.
@@ -1128,8 +1145,11 @@ const fieldId = useId()
 
       <template v-else-if="info">
         <!-- The patient's language. Any choice is kept in the address
-             (chooseLanguage), and the booking records it on the patient. -->
-        <div class="mb-4 flex justify-end">
+             (chooseLanguage), and the booking records it on the patient.
+             A clinic whose own site already chose the language hides it
+             (online_booking_hide_language_picker): ?lang=, then that site's
+             own language (?site_lang=, from embed.js), then the browser. -->
+        <div v-if="!info.account.online_booking_hide_language_picker" class="mb-4 flex justify-end">
           <div role="group" :aria-label="say({ es: 'Idioma', en: 'Language', fr: 'Langue' })" class="inline-flex rounded-ctl border border-line bg-surface p-0.5 text-xs" data-cy="booking-language">
             <button
               v-for="l in BOOKING_LANGUAGES"
@@ -1148,8 +1168,16 @@ const fieldId = useId()
           </div>
         </div>
         <img v-if="clinicLogoUrl" :src="clinicLogoUrl" alt="" class="mx-auto h-12 w-auto object-contain" />
-        <h1 class="text-center text-2xl font-semibold text-ink-900" :class="clinicLogoUrl ? 'mt-3' : ''">{{ t('heading', { es: 'Reservar una cita', en: 'Book an appointment', fr: 'Prendre rendez-vous' }) }}</h1>
-        <p class="mt-1 text-center text-sm text-ink-muted">{{ info.account.name }}</p>
+        <!-- Hidden for a page embedded under the clinic's own heading
+             (online_booking_hide_heading); the h1 stays for screen readers. -->
+        <h1
+          class="text-center text-2xl font-semibold text-ink-900"
+          :class="info.account.online_booking_hide_heading ? 'sr-only' : clinicLogoUrl ? 'mt-3' : ''"
+          data-cy="booking-heading"
+        >
+          {{ t('heading', { es: 'Reservar una cita', en: 'Book an appointment', fr: 'Prendre rendez-vous' }) }}
+        </h1>
+        <p v-if="!info.account.online_booking_hide_heading" class="mt-1 text-center text-sm text-ink-muted" data-cy="booking-clinic-name">{{ info.account.name }}</p>
 
         <!-- Step 1: service / practitioner selection -->
         <div v-if="phase === 'select'">

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { sanitizeStorageFilename } from '../../utils/storageFilename'
+import { shrinkImageForUpload } from '../../utils/imageShrink'
 
 // Same upload-to-public-bucket pattern as ClinicLogoUpload/PatientsPhotoUpload.
 // `accountId` is taken as a prop rather than read from useAccountStore()
@@ -35,8 +36,11 @@ function pick() {
   fileInput.value?.click()
 }
 
-async function uploadFile(file: File) {
+async function uploadFile(original: File) {
   uploading.value = true
+  // Drawn as a small circle everywhere; a phone photo straight off the
+  // camera is several MB that every booking-page visitor would download.
+  const file = await shrinkImageForUpload(original, 'photo')
   const path = `${props.accountId}/${props.teamMemberId}/${Date.now()}-${sanitizeStorageFilename(file.name)}`
   const { error } = await supabase.storage.from('team-member-photos').upload(path, file)
   if (error) {

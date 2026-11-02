@@ -196,6 +196,20 @@ describe('Posture assessment', () => {
         photo()
         cy.get('[data-cy=posture-found]', { timeout: 20000 }).should('have.attr', 'data-found', 'false')
         cy.get('[data-cy=posture-overlay] circle').should('have.length', 10)
+        // Dragging a point shows the magnifier, and the point moves with the
+        // pointer from where it was grabbed. Pointer 1 is the mouse, the one
+        // setPointerCapture accepts from a synthetic event.
+        cy.get('[data-cy=posture-point-hipR]').then(($c) => {
+          const r = $c[0]!.getBoundingClientRect()
+          const x = r.left + r.width / 2
+          const y = r.top + r.height / 2
+          cy.wrap($c).trigger('pointerdown', { pointerId: 1, clientX: x, clientY: y })
+          cy.get('[data-cy=posture-overlay]').trigger('pointermove', { pointerId: 1, clientX: x + 20, clientY: y - 10, force: true })
+          cy.get('[data-cy=posture-loupe]').should('have.attr', 'data-point', 'hipR')
+          cy.get('[data-cy=posture-overlay]').trigger('pointerup', { pointerId: 1, force: true })
+          cy.get('[data-cy=posture-loupe]').should('not.exist')
+          cy.get('[data-cy=posture-point-hipR]').should(($m) => expect($m[0]!.getBoundingClientRect().left).to.be.closeTo(r.left + 20, 1.5))
+        })
       })
     })
   })

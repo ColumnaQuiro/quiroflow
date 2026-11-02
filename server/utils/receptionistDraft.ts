@@ -228,7 +228,8 @@ export async function draftLeadReply(
   // seen by their own practitioner.
   // When their own has no free time at all (on leave, say), the times are
   // the rest of the team's, and practitionerIds is what they are really with.
-  const own = audience === 'existing' ? await loadPatientPractitioners(supabase, accountId, lead.patient_id, booked.practitionerIds) : null
+  // Moving a first visit already booked keeps it with its practitioner.
+  const own = audience === 'existing' ? await loadPatientPractitioners(supabase, accountId, lead.patient_id, booked.practitionerIds) : booked.practitionerIds.length ? booked.practitionerIds : null
   const { calendar, practitionerIds } = await loadPatientCalendar(calendarClient, accountId, config, bookable, own)
   const findFreeTimes = calendar.availability ? freeTimesLookup(calendarClient, accountId, config, bookable, calendar.timeZone, practitionerIds) : null
 

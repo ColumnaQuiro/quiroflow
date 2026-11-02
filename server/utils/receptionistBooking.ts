@@ -343,6 +343,10 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
     // when none of them does, it is anyone who does.
     let own = brought ? null : relative ? relative.practitionerIds : child ? (child.existing?.practitionerIds ?? null) : ctx.practitionerIds
     if (own && type.practitionerIds?.length && !own.some((id) => type!.practitionerIds!.includes(id))) own = null
+    // A move stays with the visit's own practitioner, on another day if need
+    // be: falling through to whoever was free moved a first visit offered
+    // "con Natacha" to Jordana (1 Nov).
+    if (moving?.practitionerId) own = [moving.practitionerId]
     for (const practitionerId of await candidatePractitioners(ctx, moving, own)) {
       const calendar = await loadReceptionistCalendar(ctx.service, ctx.accountId, ctx.config, [type], new Date(), { from: dayStart, days: 1, maxTimesPerList: 1000 }, [practitionerId])
       const group = calendar.availability?.groups.find((g) => g.days.some((d) => d.date === date && d.times.includes(time)))

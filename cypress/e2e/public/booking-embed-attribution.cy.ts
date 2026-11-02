@@ -101,6 +101,9 @@ describe('Booking embed attribution', () => {
     cy.visit('/login')
 
     cy.document().then((doc) => {
+      // The page in the browser's own language, which the widget would pick
+      // without being told -- so there is no language to forward either.
+      doc.documentElement.setAttribute('lang', doc.defaultView!.navigator.language)
       const iframe = doc.createElement('iframe')
       iframe.id = 'untouched-embed'
       iframe.setAttribute('src', untouched)
@@ -147,6 +150,83 @@ describe('Booking embed attribution', () => {
         expect(url.searchParams.get('gclid')).to.eq('KEEP-THIS')
         expect(url.searchParams.has('session_token')).to.eq(false)
         expect(url.searchParams.has('email')).to.eq(false)
+      })
+  })
+
+  it('builds the iframe in the host page\'s language', () => {
+    // columnaquiro.com/en/book-appointment/ embeds the same widget as the
+    // Spanish page; the English page should book in English.
+    cy.visit('/login')
+
+    cy.document().then((doc) => {
+      doc.documentElement.setAttribute('lang', 'en-GB')
+      const container = doc.createElement('div')
+      container.setAttribute('data-quiroflow-booking', '')
+      container.setAttribute('data-slug', 'embed-test-clinic')
+      doc.body.appendChild(container)
+    })
+    loadEmbedScript()
+
+    cy.get('[data-quiroflow-booking] iframe')
+      .should('have.attr', 'src')
+      .then((src) => {
+        // A hint the widget follows only if the clinic hid its picker
+        // (booking-languages.cy.ts), never ?lang= itself.
+        expect(new URL(String(src)).searchParams.get('site_lang')).to.eq('en')
+        expect(new URL(String(src)).searchParams.has('lang')).to.eq(false)
+      })
+  })
+
+  it('rewrites an existing iframe when the page is not in the browser\'s language', () => {
+    // The only organic visit worth a reload: the widget would otherwise
+    // follow the browser and book in a language the page is not in.
+    cy.visit('/login')
+
+    cy.document().then((doc) => {
+      const browser = doc.defaultView!.navigator.language.toLowerCase().startsWith('fr') ? 'es' : 'fr'
+      doc.documentElement.setAttribute('lang', browser)
+      const iframe = doc.createElement('iframe')
+      iframe.id = 'existing-embed'
+      iframe.setAttribute('src', '/book/embed-test-clinic?type=70a38844-ebb9-4a42-b59e-dd6720160e0d')
+      doc.body.appendChild(iframe)
+      cy.wrap(browser).as('pageLang')
+    })
+    loadEmbedScript()
+
+    cy.get('#existing-embed').should('have.attr', 'data-quiroflow-attributed')
+    cy.get<string>('@pageLang').then((pageLang) => {
+      cy.get('#existing-embed')
+        .invoke('attr', 'src')
+        .then((src) => {
+          const url = new URL(String(src), window.location.origin)
+          expect(url.searchParams.get('site_lang')).to.eq(pageLang)
+          expect(url.searchParams.get('type')).to.eq('70a38844-ebb9-4a42-b59e-dd6720160e0d')
+        })
+    })
+  })
+
+  it('leaves a lang the clinic wrote on the iframe as it was', () => {
+    cy.visit('/login?gclid=WITH-OWN-LANG')
+
+    cy.document().then((doc) => {
+      doc.documentElement.setAttribute('lang', 'es')
+      const iframe = doc.createElement('iframe')
+      iframe.id = 'own-lang-embed'
+      iframe.setAttribute('src', '/book/embed-test-clinic?lang=fr')
+      doc.body.appendChild(iframe)
+    })
+    loadEmbedScript()
+
+    cy.get('#own-lang-embed').should('have.attr', 'data-quiroflow-attributed')
+    cy.get('#own-lang-embed')
+      .invoke('attr', 'src')
+      .then((src) => {
+        const url = new URL(String(src), window.location.origin)
+        // ?lang= outranks ?site_lang= in the widget, so the clinic's French
+        // still wins over the page's Spanish.
+        expect(url.searchParams.get('lang')).to.eq('fr')
+        expect(url.searchParams.get('site_lang')).to.eq('es')
+        expect(url.searchParams.get('gclid')).to.eq('WITH-OWN-LANG')
       })
   })
 })

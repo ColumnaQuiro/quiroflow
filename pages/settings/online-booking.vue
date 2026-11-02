@@ -33,6 +33,8 @@ const primaryColor = ref('')
 const secondaryColor = ref('')
 const backgroundColor = ref('')
 const hideLogo = ref(false)
+const hideHeading = ref(false)
+const hideLanguagePicker = ref(false)
 const practitionerOrder = ref<'default' | 'alphabetical'>('default')
 const textOverrides = ref<Record<string, string>>({})
 const notifyEmail = ref('')
@@ -54,7 +56,7 @@ async function loadAccountSettings() {
   const { data } = await supabase
     .from('accounts')
     .select(
-      'online_booking_max_days_ahead, online_booking_gtm_id, online_booking_success_url, online_booking_primary_color, online_booking_secondary_color, online_booking_background_color, online_booking_hide_logo, online_booking_practitioner_order, online_booking_text_overrides, online_booking_notify_email, online_booking_notify_whatsapp, referral_program_enabled, referral_reward_text',
+      'online_booking_max_days_ahead, online_booking_gtm_id, online_booking_success_url, online_booking_primary_color, online_booking_secondary_color, online_booking_background_color, online_booking_hide_logo, online_booking_hide_heading, online_booking_hide_language_picker, online_booking_practitioner_order, online_booking_text_overrides, online_booking_notify_email, online_booking_notify_whatsapp, referral_program_enabled, referral_reward_text',
     )
     .eq('id', store.accountId!)
     .maybeSingle()
@@ -65,6 +67,8 @@ async function loadAccountSettings() {
   secondaryColor.value = data?.online_booking_secondary_color ?? ''
   backgroundColor.value = data?.online_booking_background_color ?? ''
   hideLogo.value = data?.online_booking_hide_logo ?? false
+  hideHeading.value = data?.online_booking_hide_heading ?? false
+  hideLanguagePicker.value = data?.online_booking_hide_language_picker ?? false
   practitionerOrder.value = (data?.online_booking_practitioner_order as 'default' | 'alphabetical') ?? 'default'
   const overrides = { ...((data?.online_booking_text_overrides as Record<string, string>) ?? {}) }
   // This page used to save the practitioner heading as 'choose_practitioner',
@@ -129,6 +133,8 @@ async function saveAccountSettings() {
     online_booking_secondary_color: secondaryColor.value.trim() || null,
     online_booking_background_color: backgroundColor.value.trim() || null,
     online_booking_hide_logo: hideLogo.value,
+    online_booking_hide_heading: hideHeading.value,
+    online_booking_hide_language_picker: hideLanguagePicker.value,
     online_booking_practitioner_order: practitionerOrder.value,
     online_booking_text_overrides: textOverrides.value,
     online_booking_notify_email: notifyEmailValue,
@@ -529,19 +535,45 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
                     <input type="color" :value="c.model || c.placeholder" :aria-label="c.label" :class="pickerClass" @input="c.set(($event.target as HTMLInputElement).value)" />
                     <input :id="`color-${c.key}`" :value="c.model" type="text" :placeholder="c.placeholder" :data-cy="`booking-color-${c.key}`" :class="[inputClass, 'w-28 font-mono text-[13px]']" @input="c.set(($event.target as HTMLInputElement).value)" />
                   </div>
-                  <div class="flex min-h-[52px] items-center gap-3">
-                    <span id="logo-label" class="flex-1 text-[14px] text-ink-900">{{ t('Show your logo', 'Mostrar tu logotipo') }}</span>
+                  <!-- Each "show" switch stores its hide_ column, so a page saved
+                       before the switch existed keeps showing it. -->
+                  <div
+                    v-for="(s, i) in [
+                      { key: 'logo', label: t('Show your logo', 'Mostrar tu logotipo'), hint: '', shown: !hideLogo, toggle: () => (hideLogo = !hideLogo) },
+                      {
+                        key: 'heading',
+                        label: t('Show the heading and clinic name', 'Mostrar el título y el nombre de la clínica'),
+                        hint: t('Turn off when your website already has its own title above the booking page.', 'Desactívalo si tu web ya pone su propio título encima de la reserva.'),
+                        shown: !hideHeading,
+                        toggle: () => (hideHeading = !hideHeading),
+                      },
+                      {
+                        key: 'language',
+                        label: t('Show the language picker', 'Mostrar el selector de idioma'),
+                        hint: t('Turned off, the page follows your website’s language (when embedded with the code above) or else the patient’s browser.', 'Desactivado, la página sigue el idioma de tu web (si la insertas con el código de arriba) o, si no, el del navegador del paciente.'),
+                        shown: !hideLanguagePicker,
+                        toggle: () => (hideLanguagePicker = !hideLanguagePicker),
+                      },
+                    ]"
+                    :key="s.key"
+                    class="flex min-h-[52px] items-center gap-3 py-2"
+                    :class="i < 2 ? 'border-b border-line-row' : ''"
+                  >
+                    <div class="flex-1">
+                      <span :id="`${s.key}-label`" class="block text-[14px] text-ink-900">{{ s.label }}</span>
+                      <span v-if="s.hint" class="mt-0.5 block text-[12.5px] text-ink-muted">{{ s.hint }}</span>
+                    </div>
                     <button
                       type="button"
                       role="switch"
-                      data-cy="booking-show-logo"
-                      :aria-checked="!hideLogo"
-                      aria-labelledby="logo-label"
+                      :data-cy="`booking-show-${s.key}`"
+                      :aria-checked="s.shown"
+                      :aria-labelledby="`${s.key}-label`"
                       class="relative h-[26px] w-11 shrink-0 rounded-full"
-                      :class="!hideLogo ? 'bg-brand' : 'bg-line-control'"
-                      @click="hideLogo = !hideLogo"
+                      :class="s.shown ? 'bg-brand' : 'bg-line-control'"
+                      @click="s.toggle()"
                     >
-                      <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card left-[3px] transition-transform" :class="!hideLogo ? 'translate-x-[18px]' : 'translate-x-0'" />
+                      <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card left-[3px] transition-transform" :class="s.shown ? 'translate-x-[18px]' : 'translate-x-0'" />
                     </button>
                   </div>
                 </div>
@@ -550,7 +582,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
                   <figcaption class="text-[12.5px] font-semibold text-ink-500">{{ t('Preview', 'Vista previa') }}</figcaption>
                   <div class="flex flex-col items-center gap-3 rounded-card border border-line px-[18px] py-5" :style="{ background: backgroundColor || '#F7F8FA' }">
                     <span v-if="!hideLogo" class="flex h-10 w-10 items-center justify-center rounded-[10px] text-[11px] font-bold text-white" :style="{ background: primaryColor || '#4C6FEB' }">LOGO</span>
-                    <strong class="text-[17px] text-[#15171E]">{{ textOverrides.heading || 'Reservar una cita' }}</strong>
+                    <strong v-if="!hideHeading" class="text-[17px] text-[#15171E]">{{ textOverrides.heading || 'Reservar una cita' }}</strong>
                     <div class="flex w-full flex-col gap-2">
                       <div class="flex items-center gap-2.5 rounded-ctl border-[1.5px] bg-white px-3 py-2.5" :style="{ borderColor: primaryColor || '#4C6FEB' }">
                         <span class="h-7 w-7 rounded-full" :style="{ background: secondaryColor || '#EEF1FF' }" />

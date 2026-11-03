@@ -104,6 +104,25 @@ describe('The Growth add-on', () => {
     get('/api/growth/dashboard').its('status').should('eq', 200)
   })
 
+  it('leaves the AI receptionist out of the trial', () => {
+    // Every reply is a paid model call and a trial is charged for none of
+    // them, so the trial gives the rest of Growth but not this.
+    cy.task('db:setGrowthAddon', { accountId: account.accountId, enabled: false })
+    cy.setSubscriptionStatus(account.accountId, 'trialing')
+    get('/api/growth/receptionist/config').its('status').should('eq', 402)
+    cy.request({ method: 'POST', url: '/api/growth/receptionist/test-chat', body: { messages: [{ role: 'user', content: 'Hola' }] }, failOnStatusCode: false })
+      .its('status').should('eq', 402)
+  })
+
+  it('gives the receptionist to a trial that bought it', () => {
+    // Bought through Checkout, with a card: from then on it is theirs, trial
+    // or not.
+    cy.task('db:setGrowthAddon', { accountId: account.accountId, enabled: false })
+    cy.task('db:setReceptionistAddon', { accountId: account.accountId, enabled: true })
+    cy.setSubscriptionStatus(account.accountId, 'trialing')
+    get('/api/growth/receptionist/config').its('status').should('eq', 200)
+  })
+
   it('stops when the trial ends and nothing was bought', () => {
     // The cliff, deliberately: lead capture stops until they buy. The
     // refusal says so in words rather than failing quietly.

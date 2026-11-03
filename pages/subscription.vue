@@ -172,18 +172,18 @@ const growthBilled = computed(() => !!subscription.value?.growth_addon && !curre
 const receptionistBilled = computed(() => !!subscription.value?.receptionist_addon && !subscription.value?.growth_addon && !currentPlanIncludesGrowth.value)
 /**
  * Why the account has the AI receptionist, for its card -- or null when it
- * does not. Complimentary and trial accounts have everything (the store's
- * hasReceptionist, and the server's), and are never charged for its replies.
+ * does not: the server's receptionistIncludedBy. A trial alone does not give
+ * it; a trialing account that has bought it is 'trial', and like a
+ * complimentary one is never charged for its replies.
  */
 const receptionistIncludedBy = computed<'comped' | 'trial' | 'growth' | 'addon' | null>(() => {
   const sub = subscription.value
   if (!sub) return null
   if (comped.value) return 'comped'
-  if (sub.status === 'trialing') return 'trial'
   if (sub.status === 'locked' || sub.status === 'canceled') return null
-  if (sub.growth_addon || currentPlanIncludesGrowth.value) return 'growth'
-  if (sub.receptionist_addon) return 'addon'
-  return null
+  if (!sub.growth_addon && !currentPlanIncludesGrowth.value && !sub.receptionist_addon) return null
+  if (sub.status === 'trialing') return 'trial'
+  return sub.growth_addon || currentPlanIncludesGrowth.value ? 'growth' : 'addon'
 })
 // This calendar month's replies (receptionist_replies_this_month), counted
 // whether or not they are charged.
@@ -674,6 +674,7 @@ async function addPaymentMethod() {
 
             <SubscriptionReceptionistCard
               :included-by="receptionistIncludedBy"
+              :trialing="subscription.status === 'trialing'"
               :replies="receptionistReplies"
               :monthly-price-cents="receptionistAddon?.monthly_price_cents ?? null"
               :can-manage="store.isOwner"

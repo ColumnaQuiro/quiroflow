@@ -11,7 +11,9 @@ import { RECEPTIONIST_BLOCK_PRICE_CENTS, RECEPTIONIST_INCLUDED_REPLIES, receptio
 //
 // The numbers are utils/receptionistAllowance.ts's, the same the monthly
 // charge (receptionist-overage-cron) reads; and who is not charged is that
-// cron's rule: complimentary, trialing, or no card to charge.
+// cron's rule: complimentary, trialing, or no card to charge. The trial on
+// its own does not include it (hasReceptionist); 'trial' is a trialing
+// account that has bought it.
 const props = defineProps<{
   /** Why it is included, or null when the account does not have it. */
   includedBy: 'comped' | 'trial' | 'growth' | 'addon' | null
@@ -19,6 +21,8 @@ const props = defineProps<{
   replies: number | null
   monthlyPriceCents: number | null
   canManage: boolean
+  /** Still in the trial, which does not include it. */
+  trialing?: boolean
 }>()
 const emit = defineEmits<{ add: [] }>()
 const t = useT()
@@ -34,6 +38,7 @@ const pill = computed(() => {
   if (props.includedBy === 'trial') return { label: t('In your trial', 'En tu prueba'), cls: 'bg-brand-tint text-brand-text' }
   if (props.includedBy === 'growth') return { label: t('Included in Growth', 'Incluida en Growth'), cls: 'bg-success-bg text-success-text' }
   if (props.includedBy === 'addon') return { label: t('Add-on', 'Complemento'), cls: 'bg-success-bg text-success-text' }
+  if (props.trialing) return { label: t('Not in the trial', 'No incluida en la prueba'), cls: 'bg-chip-bg text-chip-text' }
   return { label: t('Not on this plan', 'No contratada'), cls: 'bg-chip-bg text-chip-text' }
 })
 </script>

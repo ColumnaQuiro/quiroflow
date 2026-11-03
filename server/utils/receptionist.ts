@@ -932,7 +932,16 @@ export async function receptionistHandlesNewLeads(supabase: any, accountId: stri
     .select('enabled')
     .eq('account_id', accountId)
     .maybeSingle()
-  return Boolean(data?.enabled)
+  if (!data?.enabled) return false
+  // Switched on is not enough: a trial clinic can have switched it on, and
+  // the trial does not include it. A lead marked as the AI's that nothing
+  // drafts for is a question nobody reads.
+  const { data: subscription } = await supabase
+    .from('subscriptions')
+    .select('plan_id, growth_addon, receptionist_addon, status, comped')
+    .eq('account_id', accountId)
+    .maybeSingle()
+  return hasReceptionist(subscription)
 }
 
 /**
@@ -948,11 +957,5 @@ export async function receptionistHandlesNewLeads(supabase: any, accountId: stri
  * goes to a person.
  */
 export async function receptionistDraftsFor(supabase: any, accountId: string): Promise<boolean> {
-  if (!(await receptionistHandlesNewLeads(supabase, accountId))) return false
-  const { data: subscription } = await supabase
-    .from('subscriptions')
-    .select('plan_id, growth_addon, receptionist_addon, status, comped')
-    .eq('account_id', accountId)
-    .maybeSingle()
-  return hasReceptionist(subscription)
+  return receptionistHandlesNewLeads(supabase, accountId)
 }

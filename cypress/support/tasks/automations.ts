@@ -197,6 +197,49 @@ async function membershipOnStripe(opts: { accountId: string; patientId: string; 
   return { membershipId: membership.id }
 }
 
+/**
+ * A part-paid bono with its remaining balance on Stripe autopay -- the state
+ * the "add a card to enable autopay for the remaining balance" prompt sets up
+ * on a bono migrated half-paid from PracticeHub.
+ */
+async function bonoOnStripe(opts: { accountId: string; patientId: string; subscriptionId: string; webhookSecret: string; priceCents: number; owedCents: number }) {
+  const bono = check(
+    await admin
+      .from('package_purchases')
+      .insert({
+        account_id: opts.accountId,
+        patient_id: opts.patientId,
+        package_name: 'Bono 12',
+        sessions_total: 12,
+        sessions_used: 0,
+        price_cents: opts.priceCents,
+        owed_cents: opts.owedCents,
+        purchased_at: new Date().toISOString(),
+      })
+      .select('id')
+      .single(),
+  ) as { id: string }
+  check(
+    await admin
+      .from('payment_schedules')
+      .insert({
+        account_id: opts.accountId,
+        patient_id: opts.patientId,
+        package_purchase_id: bono.id,
+        stripe_subscription_schedule_id: `sub_sched_${opts.subscriptionId}`,
+        stripe_subscription_id: opts.subscriptionId,
+      })
+      .select('id'),
+  )
+  for (const [name, value] of [
+    ['stripe_secret_key', 'sk_test_cypress'],
+    ['stripe_webhook_secret', opts.webhookSecret],
+  ]) {
+    check(await admin.from('account_secrets').upsert({ account_id: opts.accountId, name, value }, { onConflict: 'account_id,name' }).select('account_id'))
+  }
+  return { bonoId: bono.id }
+}
+
 /** A Stripe-Signature header for a body, the way Stripe computes it. */
 async function signStripe(opts: { body: string; secret: string }) {
   const t = Math.floor(Date.now() / 1000)
@@ -672,6 +715,7 @@ export const automationTasks = {
   'auto:setReminderTemplate': setReminderTemplate,
   'auto:reviewRequestsForPatient': reviewRequestsForPatient,
   'auto:membershipOnStripe': membershipOnStripe,
+  'auto:bonoOnStripe': bonoOnStripe,
   'auto:signStripe': signStripe,
   'auto:createFlowRule': createFlowRule,
   'auto:makeRunsDue': makeRunsDue,

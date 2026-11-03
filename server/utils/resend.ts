@@ -14,6 +14,8 @@
 // webhook in server/api/webhooks/resend.post.ts matches on Resend's id. A
 // Brevo send is recorded with a "brevo:" id so it is counted as sent and is
 // never mistaken for a Resend message.
+import { alertOps, writePlatformStatus } from './opsAlert'
+
 export interface ResendAttachment {
   filename: string
   content: string // base64
@@ -49,6 +51,7 @@ async function sendViaResend(apiKey: string, email: OutgoingEmail): Promise<{ ok
       ...(email.headers ? { headers: email.headers } : {}),
     }),
   })
+  await recordResendQuota(response)
   if (!response.ok) {
     const text = await response.text()
     // Resend answers a refusal with {name, message}; the status alone says
@@ -69,6 +72,44 @@ async function sendViaResend(apiKey: string, email: OutgoingEmail): Promise<{ ok
     return { ok: true, id: body?.id ?? null }
   } catch {
     return { ok: true, id: null }
+  }
+}
+
+// Resend reports what has been used, not what is left, and only on its own
+// responses: x-resend-daily-quota (sent to free-plan accounts only, whose cap
+// is 100 a day) and x-resend-monthly-quota. Recorded from every send so the
+// admin panel can show where the month stands without an API of its own.
+// Neither header carries the limit, so it is inferred: a daily header means
+// the free plan, 100 a day and 3,000 a month.
+const RESEND_FREE_DAILY = 100
+const RESEND_FREE_MONTHLY = 3000
+
+async function recordResendQuota(response: Response) {
+  try {
+    const daily = Number.parseInt(response.headers.get('x-resend-daily-quota') ?? '', 10)
+    const monthly = Number.parseInt(response.headers.get('x-resend-monthly-quota') ?? '', 10)
+    if (!Number.isFinite(daily) && !Number.isFinite(monthly)) return
+    const freePlan = Number.isFinite(daily)
+    await writePlatformStatus('resend.quota', {
+      observed_at: new Date().toISOString(),
+      daily_used: Number.isFinite(daily) ? daily : null,
+      monthly_used: Number.isFinite(monthly) ? monthly : null,
+      daily_limit: freePlan ? RESEND_FREE_DAILY : null,
+      monthly_limit: freePlan ? RESEND_FREE_MONTHLY : null,
+    })
+    if (freePlan && Number.isFinite(monthly) && monthly >= RESEND_FREE_MONTHLY * 0.8) {
+      await alertOps(
+        'resend-monthly-80',
+        `Resend: ${monthly} of ${RESEND_FREE_MONTHLY} emails used this month`,
+        [
+          `QuiroFlow has sent ${monthly} of the ${RESEND_FREE_MONTHLY} emails Resend's free plan allows this month.`,
+          'Past the limit Resend refuses everything until the month turns over, and only the Brevo fallback (if configured) keeps email going.',
+        ],
+        72,
+      )
+    }
+  } catch (e: any) {
+    console.error('[email] could not record the Resend quota', e?.message ?? e)
   }
 }
 
@@ -133,6 +174,20 @@ export async function deliverEmail(email: OutgoingEmail): Promise<{ id: string |
   const first = await sendViaResend(config.resendApiKey, email)
   if (first.ok) return { id: first.id, provider: 'resend' }
 
+  if (first.status === 429) {
+    await alertOps(
+      'resend-quota',
+      brevoKey ? 'Resend refused an email on quota: Brevo is sending instead' : 'Resend refused an email on quota and there is no fallback',
+      [
+        `Resend answered 429: ${first.detail}`,
+        brevoKey
+          ? 'Emails are going out through Brevo (300 a day on its free plan) until Resend\'s quota resets.'
+          : 'Nothing is going out by email -- confirmations and reminders included -- until the quota resets. Set NUXT_BREVO_API_KEY for a fallback, or move Resend to a paid plan.',
+        'The admin panel\'s Platform page shows what is left.',
+      ],
+      12,
+    )
+  }
   if (first.status === 429 && brevoKey) {
     console.warn(`[email] Resend refused with 429 (${first.detail}); sending through Brevo instead`)
     return { ...(await sendViaBrevo(brevoKey, brevoSender, email)), provider: 'brevo' }

@@ -14,6 +14,68 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_usage: {
+        Row: {
+          account_id: string | null
+          cache_creation_input_tokens: number
+          cache_read_input_tokens: number
+          created_at: string
+          feature: string
+          id: number
+          input_tokens: number
+          model: string
+          output_tokens: number
+        }
+        Insert: {
+          account_id?: string | null
+          cache_creation_input_tokens?: number
+          cache_read_input_tokens?: number
+          created_at?: string
+          feature: string
+          id?: never
+          input_tokens?: number
+          model: string
+          output_tokens?: number
+        }
+        Update: {
+          account_id?: string | null
+          cache_creation_input_tokens?: number
+          cache_read_input_tokens?: number
+          created_at?: string
+          feature?: string
+          id?: never
+          input_tokens?: number
+          model?: string
+          output_tokens?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_usage_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      platform_status: {
+        Row: {
+          key: string
+          updated_at: string
+          value: Json
+        }
+        Insert: {
+          key: string
+          updated_at?: string
+          value?: Json
+        }
+        Update: {
+          key?: string
+          updated_at?: string
+          value?: Json
+        }
+        Relationships: []
+      }
       third_parties: {
         Row: {
           account_id: string
@@ -9511,6 +9573,10 @@ export type Database = {
       }
     }
     Functions: {
+      ai_usage_summary: {
+        Args: { p_since: string }
+        Returns: Json
+      }
       charge_visit_to_third_party: {
         Args: {
           p_appointment_id: string

@@ -47,7 +47,7 @@ export default defineEventHandler(async (event) => {
     .maybeSingle()
   const persona = toConfig(configRow)
 
-  const client = await createAnthropicClient(apiKey)
+  const client = await createAnthropicClient(apiKey, { feature: 'review_reply', accountId: teamMember.account_id })
   try {
     const message = await client.messages.create({
       model: MODEL,

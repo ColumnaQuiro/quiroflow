@@ -58,6 +58,7 @@ export const APP_PAGES = [
   '/calendar',
   '/automations',
   '/care-plan-alerts',
+  '/setup',
   // The sweep sees the locked/upgrade state, which is what an account
   // without the tier gets. Both states are asserted in growth/growth-dashboard.cy.ts.
   '/growth',

@@ -345,6 +345,10 @@ export default defineNuxtConfig({
     // token above: a missing integration must never break an account being
     // created. Set NUXT_SIGNUP_NOTIFY_EMAIL to switch it on.
     signupNotifyEmail: '',
+    // Where "a provider is about to stop working" goes: the Anthropic credit
+    // running out, Resend refusing on quota (server/utils/opsAlert.ts). Falls
+    // back to signupNotifyEmail, the same person, when unset.
+    opsAlertEmail: '',
     // Resend's webhook signing secret (Webhooks -> your endpoint in their
     // dashboard). Without it the delivery-event endpoint refuses everything,
     // which is the right way round: an unverified metrics feed is worse than

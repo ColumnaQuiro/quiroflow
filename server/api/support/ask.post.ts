@@ -131,7 +131,7 @@ export default defineEventHandler(async (event) => {
 
   const articles = await loadHelpArticles(lang)
 
-  const client = await createAnthropicClient(apiKey)
+  const client = await createAnthropicClient(apiKey, { feature: 'help_assistant', accountId: teamMember.account_id })
   let raw: string
   try {
     const message = await client.messages.create({

@@ -435,7 +435,7 @@ const LAUNCH_CARDS = computed(() => [
           {{ t('Get started', 'Empezar') }}
         </OnboardingPrimaryButton>
         <p class="mt-[11px] text-center text-[12.5px] text-ink-muted">
-          {{ t('Three short steps there take you to your first booked visit.', 'Allí, tres pasos cortos te llevan a tu primera visita reservada.') }}
+          {{ t('Three short steps there take you to your first booked visit, and Getting set up lists the rest: your data, WhatsApp, your team, invoicing.', 'Allí, tres pasos cortos te llevan a tu primera visita reservada, y Puesta en marcha te lista el resto: tus datos, WhatsApp, tu equipo, la facturación.') }}
         </p>
       </div>
     </template>

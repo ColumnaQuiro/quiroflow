@@ -75,6 +75,14 @@ const rows = computed(() => [
   },
 ])
 
+// The trial includes Growth but not the receptionist (hasReceptionist), so
+// "In your trial" is only true of the Growth row, and adding the receptionist
+// during a trial gives it now rather than keeping it for later.
+function pillOf(row: { key: AddonKey; state: RowState }) {
+  if (row.key === 'receptionist' && row.state === 'off' && props.trialing) return { tone: 'chip' as const, label: t('Not in the trial', 'No incluida en la prueba') }
+  return STATE_PILL.value[row.state]
+}
+
 const STATE_PILL = computed<Record<RowState, { tone: 'brand' | 'success' | 'chip'; label: string }>>(() => ({
   free: { tone: 'brand' as const, label: t('No charge', 'Sin cargo') },
   plan: { tone: 'success' as const, label: t('Included in your plan', 'Incluido en tu plan') },
@@ -163,7 +171,7 @@ defineExpose({ start })
           <div class="min-w-0 flex-1">
             <div class="flex flex-wrap items-center gap-2">
               <span class="text-[13.5px] font-semibold text-ink-900">{{ row.name }}</span>
-              <SubscriptionPill :tone="STATE_PILL[row.state].tone" :data-cy="`subscription-addon-${row.key}-state`">{{ STATE_PILL[row.state].label }}</SubscriptionPill>
+              <SubscriptionPill :tone="pillOf(row).tone" :data-cy="`subscription-addon-${row.key}-state`">{{ pillOf(row).label }}</SubscriptionPill>
             </div>
             <p class="mt-1 text-[12.5px] leading-[1.5] text-ink-muted">{{ row.description }}</p>
           </div>
@@ -179,7 +187,7 @@ defineExpose({ start })
                 :data-cy="`subscription-addon-${row.key}-add`"
                 @click="start(row.key, true)"
               >
-                {{ trialing ? t('Keep after the trial', 'Mantener tras la prueba') : t('Add', 'Añadir') }}
+                {{ trialing && row.key === 'growth' ? t('Keep after the trial', 'Mantener tras la prueba') : t('Add', 'Añadir') }}
               </UiBtn>
               <UiBtn
                 v-else-if="row.state === 'on'"

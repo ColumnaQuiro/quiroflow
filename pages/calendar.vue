@@ -43,14 +43,10 @@ const scrollAreaRef = ref<HTMLElement | null>(null)
 // existing-appointment panels alone are ~110 KB of source the calendar's
 // first paint does not draw. The ones opened all day are fetched while the
 // browser is idle once the calendar is up, so the first click does not wait.
-onMounted(() => {
-  const warm = () => {
-    import('~/components/calendar/NewAppointmentPanel.vue')
-    import('~/components/calendar/AppointmentPanel.vue')
-  }
-  if ('requestIdleCallback' in window) window.requestIdleCallback(warm, { timeout: 3000 })
-  else setTimeout(warm, 1500)
-})
+onMounted(() => warmChunks(() => [
+  import('~/components/calendar/NewAppointmentPanel.vue'),
+  import('~/components/calendar/AppointmentPanel.vue'),
+]))
 const scrollAreaHeight = ref(0)
 let scrollAreaObserver: ResizeObserver | null = null
 onMounted(() => {

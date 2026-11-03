@@ -76,10 +76,15 @@ async function loadPayments() {
   payments.value = p.filter((row) => notVoid(row) && isReceipt(row.method))
   paymentsLoading.value = false
 }
-onMounted(() => {
-  loadHistory()
-  loadPayments()
-})
+// Returned, not just started: Vue's error handling reaches a hook's failure
+// only through the promise the hook hands back. Started and dropped, a failed
+// read (fetchAllRows throws supabase's error object) went out as a bare
+// unhandled rejection -- "Object captured as promise rejection with keys:
+// code, details, hint, message", no stack and no component, which is all
+// QUIROFLOW-APP-5 had to go on from Google Play's test devices on /numbers.
+// Every other widget passes its load straight to onMounted, so this is
+// the one that was missing.
+onMounted(() => Promise.all([loadHistory(), loadPayments()]))
 watch(() => [props.practitionerId, props.clinicId], loadHistory)
 watch(() => props.dateRange, loadPayments, { deep: true })
 

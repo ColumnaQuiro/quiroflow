@@ -296,9 +296,20 @@ describe('Growth AI receptionist', () => {
   })
 
   it('points an account without the tier at the upgrade screen', () => {
+    cy.setSubscriptionStatus(account.accountId, 'active')
     cy.visit('/growth/receptionist?growth=0')
 
     cy.contains('Add the AI receptionist on its own, or get it with Growth.').should('be.visible')
+    cy.get('[data-test="test-chat"]').should('not.exist')
+  })
+
+  it('tells a trial that the receptionist is not part of it', () => {
+    // The trial gives Growth, so "get it with Growth" would be no answer.
+    cy.task('db:setGrowthAddon', { accountId: account.accountId, enabled: false })
+    cy.setSubscriptionStatus(account.accountId, 'trialing')
+    cy.visit('/growth/receptionist')
+
+    cy.get('[data-test="receptionist-locked"]', { timeout: 20000 }).should('contain', 'not part of the free trial')
     cy.get('[data-test="test-chat"]').should('not.exist')
   })
 

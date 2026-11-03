@@ -18,6 +18,10 @@ import type { ReceptionistIncludedBy } from '~/composables/useGrowthReceptionist
 const t = useT()
 const { can } = usePermission()
 const { hasReceptionist, resolved } = useGrowthTier()
+// A trial gives Growth but not the receptionist, so "get it with Growth" is
+// not what to tell someone who is already trying Growth.
+const store = useAccountStore()
+const trialing = computed(() => store.subscriptionStatus === 'trialing')
 const { config, channels, appointmentTypes, offeredTypes, testModelAvailable, repliesThisMonth, includedBy, activity, loading, saving, error, save, reload, liveChannelCount } = useGrowthReceptionist()
 const route = useRoute()
 const router = useRouter()
@@ -112,7 +116,11 @@ const includedLabel = computed(() => (includedBy.value ? t(INCLUDED[includedBy.v
       </div>
 
       <div v-else-if="resolved && !hasReceptionist" class="mx-auto max-w-sm py-16 text-center">
-        <p class="text-[13px] text-ink-muted">{{ t('Add the AI receptionist on its own, or get it with Growth.', 'Añade la recepcionista IA por sí sola, o consíguela con Growth.') }}</p>
+        <p class="text-[13px] text-ink-muted" data-test="receptionist-locked">
+          {{ trialing
+            ? t('The AI receptionist is not part of the free trial. Add it on its own, or with Growth, to use it now.', 'La recepcionista IA no está incluida en la prueba gratuita. Añádela por sí sola, o con Growth, para usarla ya.')
+            : t('Add the AI receptionist on its own, or get it with Growth.', 'Añade la recepcionista IA por sí sola, o consíguela con Growth.') }}
+        </p>
         <div class="mt-3 flex flex-wrap justify-center gap-2">
           <NuxtLink to="/subscription" class="inline-flex h-9 items-center rounded-ctl bg-brand px-4 text-[12.5px] font-semibold text-brand-on hover:bg-brand-hover">
             {{ t('Add the receptionist', 'Añadir la recepcionista') }}

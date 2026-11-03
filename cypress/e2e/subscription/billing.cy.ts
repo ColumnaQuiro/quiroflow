@@ -83,7 +83,20 @@ describe('Platform billing: trial banner, subscription page, and lock screen', (
     })
   })
 
-  it('says a trial includes the AI receptionist', () => {
+  it('says the AI receptionist is not in the trial', () => {
+    cy.seedStaffAccount().then((account) => {
+      // seedStaffAccount buys Growth; a trial as it starts has nothing.
+      cy.task('db:setGrowthAddon', { accountId: account.accountId, enabled: false })
+      cy.login(account.email, account.password)
+      cy.visit('/subscription')
+      cy.get('[data-cy=subscription-receptionist-state]', { timeout: 20000 }).should('have.text', 'Not in the trial')
+      cy.get('[data-cy=subscription-receptionist-replies]').should('not.exist')
+      cy.get('[data-cy=subscription-addon-receptionist-state]').should('have.text', 'Not in the trial')
+      cy.get('[data-cy=subscription-addon-growth-state]').should('have.text', 'In your trial')
+    })
+  })
+
+  it('says a trial that bought Growth has the AI receptionist, at no charge until it ends', () => {
     cy.seedStaffAccount().then((account) => {
       cy.login(account.email, account.password)
       cy.visit('/subscription')

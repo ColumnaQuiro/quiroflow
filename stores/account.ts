@@ -101,10 +101,12 @@ export const useAccountStore = defineStore('account', {
       ((state.growthAddon || planIncludesGrowth(state.planId))
         && state.subscriptionStatus !== 'locked' && state.subscriptionStatus !== 'canceled'),
     // hasReceptionist() on the server: Growth includes the receptionist, and
-    // it is also sold on its own.
-    hasReceptionist(): boolean {
-      return this.hasGrowthAddon || (this.receptionistAddon && this.subscriptionStatus !== 'locked' && this.subscriptionStatus !== 'canceled')
-    },
+    // it is also sold on its own -- but the trial alone does not give it,
+    // although it gives Growth.
+    hasReceptionist: (state) =>
+      state.comped ||
+      ((state.growthAddon || planIncludesGrowth(state.planId) || state.receptionistAddon)
+        && state.subscriptionStatus !== 'locked' && state.subscriptionStatus !== 'canceled'),
     // Only meaningful while still trialing -- null once on a real plan (no
     // trial_ends_at) or already past it (negative), so the banner can just
     // check `!== null`.

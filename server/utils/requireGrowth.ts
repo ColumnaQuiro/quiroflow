@@ -77,34 +77,42 @@ export function hasGrowth(
 // hasGrowth(), because an account with only the receptionist must get it
 // without the lead pipeline, reputation and the rest of Growth -- and the
 // account store's hasReceptionist getter must give the same answer.
+//
+// The trial is NOT one of the ways in, although it gives Growth. Every reply
+// is a paid model call and a trial is charged for none of them
+// (receptionist-overage-cron), so a free trial would be the receptionist's
+// most expensive customer. A trialing account still has it once it has
+// actually bought something that includes it -- the add-on, Growth, or a plan
+// with Growth -- which only happens through Checkout, with a card.
 
 export function hasReceptionist(
   subscription: { plan_id?: string | null; growth_addon?: boolean | null; receptionist_addon?: boolean | null; status?: string | null; comped?: boolean | null } | null,
 ): boolean {
-  if (hasGrowth(subscription)) return true
-  if (!subscription?.receptionist_addon) return false
+  if (!subscription) return false
+  if (subscription.comped) return true
   // The same two statuses that stop Growth stop this; past_due keeps it, for
   // the reason hasGrowth gives.
-  return subscription.status !== 'locked' && subscription.status !== 'canceled'
+  if (subscription.status === 'locked' || subscription.status === 'canceled') return false
+  return !!(subscription.growth_addon || planIncludesGrowth(subscription.plan_id) || subscription.receptionist_addon)
 }
 
 /**
  * How the account comes to have the receptionist, for the settings page's
  * header: the same reading as the Subscription page's card, so the two
  * screens cannot disagree about why a clinic is or is not charged for it.
+ * 'trial' is a trialing account that has bought it: nothing is charged, extra
+ * replies included, until the trial ends.
  */
 export type ReceptionistIncludedBy = 'comped' | 'trial' | 'growth' | 'addon' | null
 
 export function receptionistIncludedBy(
   subscription: { plan_id?: string | null; growth_addon?: boolean | null; receptionist_addon?: boolean | null; status?: string | null; comped?: boolean | null } | null,
 ): ReceptionistIncludedBy {
-  if (!subscription) return null
+  if (!subscription || !hasReceptionist(subscription)) return null
   if (subscription.comped) return 'comped'
   if (subscription.status === 'trialing') return 'trial'
-  if (subscription.status === 'locked' || subscription.status === 'canceled') return null
   if (subscription.growth_addon || planIncludesGrowth(subscription.plan_id)) return 'growth'
-  if (subscription.receptionist_addon) return 'addon'
-  return null
+  return 'addon'
 }
 
 /** requireGrowth's two questions, in the same order, for the receptionist's own routes. */

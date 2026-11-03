@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { QuirocitasStepKind } from '~/composables/useQuirocitasImport'
+
 interface Step {
   key: string
   label: string
@@ -29,13 +31,16 @@ const t = useT()
 const route = useRoute()
 const router = useRouter()
 const connection = usePracticeHubConnection()
+const quirocitas = useQuirocitasConnection()
+const quirocitasCopy = useQuirocitasSnapshot()
 
 // Head counts scoped to the account: a select of the rows would stop at
 // PostgREST's 1,000-row cap and show that as the total.
 function counted(table: 'patients' | 'appointments' | 'payments' | 'package_purchases' | 'contact_log' | 'patient_docs' | 'patient_files', prefix?: string) {
   return () => {
     const q = supabase.from(table).select('*', { count: 'exact', head: true }).eq('account_id', store.accountId!)
-    return prefix ? q.like('external_reference', `${prefix}%`) : q.not('external_reference', 'is', null)
+    // Unprefixed is PracticeHub's (bare numbers): not the "QC-" rows Quirocitas writes.
+    return prefix ? q.like('external_reference', `${prefix}%`) : q.not('external_reference', 'is', null).not('external_reference', 'like', 'QC-%')
   }
 }
 
@@ -99,6 +104,48 @@ const sources = computed<Source[]>(() => [
     ],
   },
   {
+    key: 'quirocitas',
+    label: 'Quirocitas',
+    sub: quirocitasConnected(quirocitas.value) ? t(`Connected · ${quirocitas.value!.baseUrl!.replace(/^https?:\/\//, '')}`, `Conectado · ${quirocitas.value!.baseUrl!.replace(/^https?:\/\//, '')}`) : t('Not connected yet', 'Aún sin conectar'),
+    groups: [
+      {
+        key: 'setup',
+        label: t('Set up', 'Configurar'),
+        note: t('Quirocitas has no export of its own beyond patients: QuiroFlow reads it page by page, once, then imports from that copy.', 'Quirocitas no exporta más que los pacientes: QuiroFlow lo lee página a página, una vez, y luego importa desde esa copia.'),
+        steps: [
+          { key: 'general', label: t('Connection', 'Conexión'), hint: t('Quirocitas address and a staff login.', 'Dirección de Quirocitas y un usuario del personal.') },
+          { key: 'read', label: t('Read Quirocitas', 'Leer Quirocitas'), hint: t('Reads every record into this browser. Writes nothing.', 'Lee cada ficha a este navegador. No escribe nada.') },
+        ],
+      },
+      {
+        key: 'records',
+        label: t('1 · Records', '1 · Registros'),
+        note: t('Patients first: everything else is matched to a patient.', 'Primero los pacientes: todo lo demás se empareja con uno.'),
+        steps: [
+          { key: 'patients', label: t('Patients', 'Pacientes'), hint: t('Details, phones, consent and chiropractor.', 'Datos, teléfonos, consentimiento y quiropráctico.'), count: counted('patients', 'QC-') },
+          { key: 'appointments', label: t('Appointments', 'Citas'), hint: t('Past and upcoming visits.', 'Visitas pasadas y futuras.'), count: counted('appointments', 'QC-') },
+        ],
+      },
+      {
+        key: 'clinical',
+        label: t('2 · Clinical', '2 · Clínico'),
+        steps: [
+          { key: 'clinical', label: t('Clinical history and calls', 'Historial clínico y llamadas'), hint: t('Visit notes with segments adjusted, plans, anamnesis, follow-up calls.', 'Notas de visita con segmentos, planes, anamnesis, llamadas.'), count: counted('contact_log', 'QC-') },
+          { key: 'files', label: t('Files and photos', 'Archivos y fotos'), hint: t('Attached tests, x-rays and photos.', 'Pruebas adjuntas, radiografías y fotos.'), count: () => counted('patient_files', 'QC-test-')().not('storage_path', 'is', null) },
+        ],
+      },
+      {
+        key: 'money',
+        label: t('3 · Money', '3 · Dinero'),
+        note: t('Bonos first, so each bono payment finds its bono.', 'Primero los bonos, para que cada pago encuentre su bono.'),
+        steps: [
+          { key: 'bonos', label: 'Bonos', hint: t('Sessions, price, what is owed, family sharing.', 'Sesiones, precio, pendiente, familia.'), count: counted('package_purchases', 'QC-bono-') },
+          { key: 'ledger', label: t('Payments and invoices', 'Pagos y facturas'), hint: t('The cash ledger and Quirocitas invoices.', 'La caja y las facturas de Quirocitas.'), count: counted('payments', 'QC-pay-') },
+        ],
+      },
+    ],
+  },
+  {
     key: 'other',
     label: t('Another system', 'Otro sistema'),
     sub: t('Patients from a CSV file', 'Pacientes desde un archivo CSV'),
@@ -136,7 +183,8 @@ function selectSource(key: string) {
 const counts = ref<Record<string, number>>({})
 const countsLoaded = ref(false)
 async function loadCounts() {
-  const steps = sources.value.find((s) => s.key === 'practicehub')!.groups.flatMap((g) => g.steps).filter((s) => s.count)
+  countsLoaded.value = false
+  const steps = activeSource.value.groups.flatMap((g) => g.steps).filter((s) => s.count)
   const results = await Promise.all(steps.map((s) => s.count!()))
   counts.value = Object.fromEntries(steps.map((s, i) => [s.key, results[i]?.count ?? 0]))
   countsLoaded.value = true
@@ -144,13 +192,24 @@ async function loadCounts() {
 
 onMounted(() => {
   loadSavedPracticeHubConnection()
+  loadQuirocitasConnection()
+  if (store.accountId) loadQuirocitasSnapshot(store.accountId)
   loadCounts()
 })
+// Each source counts its own steps.
+watch(sourceKey, loadCounts)
 
 const nf = new Intl.NumberFormat('es-ES')
 function statusOf(step: Step): { text: string; done: boolean } | null {
-  if (sourceKey.value !== 'practicehub') return null
-  if (step.key === 'general') return connection.value ? { text: t('Saved', 'Guardada'), done: true } : { text: t('Not set up yet', 'Aún sin configurar'), done: false }
+  if (sourceKey.value === 'other') return null
+  if (step.key === 'general') {
+    const saved = sourceKey.value === 'quirocitas' ? quirocitasConnected(quirocitas.value) : !!connection.value
+    return saved ? { text: t('Saved', 'Guardada'), done: true } : { text: t('Not set up yet', 'Aún sin configurar'), done: false }
+  }
+  if (step.key === 'read') {
+    const s = quirocitasCopy.value
+    return s?.ledgerMonths.length ? { text: t(`Read ${new Date(s.readAt).toLocaleDateString('es-ES')}`, `Leído el ${new Date(s.readAt).toLocaleDateString('es-ES')}`), done: true } : { text: s ? t('Part read', 'Leído en parte') : t('Not read yet', 'Aún sin leer'), done: false }
+  }
   if (!step.count) return null
   if (!countsLoaded.value) return { text: '…', done: false }
   const n = counts.value[step.key] ?? 0
@@ -169,7 +228,7 @@ function statusOf(step: Step): { text: string; done: boolean } | null {
             {{ t('Bring records across from the system the clinic is moving off. Every step shows a preview first; nothing is written until you confirm it.', 'Trae los registros del sistema del que se está mudando la clínica. Cada paso muestra primero una vista previa: no se escribe nada hasta que lo confirmes.') }}
           </p>
 
-          <div role="radiogroup" :aria-label="t('Import from', 'Importar desde')" class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div role="radiogroup" :aria-label="t('Import from', 'Importar desde')" class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <button
               v-for="s in sources"
               :key="s.key"
@@ -181,13 +240,14 @@ function statusOf(step: Step): { text: string; done: boolean } | null {
               :class="sourceKey === s.key ? 'border-brand ring-1 ring-brand' : 'border-line hover:border-line-controlHover'"
               @click="selectSource(s.key)"
             >
-              <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-[9px] text-[14px] font-bold" :class="s.key === 'practicehub' ? 'bg-brand-tint text-brand-text' : 'bg-surface-subtle text-ink-muted'" aria-hidden="true">
+              <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-[9px] text-[14px] font-bold" :class="s.key !== 'other' ? 'bg-brand-tint text-brand-text' : 'bg-surface-subtle text-ink-muted'" aria-hidden="true">
                 <template v-if="s.key === 'practicehub'">PH</template>
+                <template v-else-if="s.key === 'quirocitas'">QC</template>
                 <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6zM14 3v4h4M9 13h6M9 17h6" /></svg>
               </span>
               <span class="flex min-w-0 flex-1 flex-col gap-0.5">
                 <strong class="text-[15px] text-ink-900">{{ s.label }}</strong>
-                <span class="truncate text-[12.5px]" :class="s.key === 'practicehub' && connection ? 'text-success-text' : 'text-ink-muted'">{{ s.sub }}</span>
+                <span class="truncate text-[12.5px]" :class="(s.key === 'practicehub' && connection) || (s.key === 'quirocitas' && quirocitasConnected(quirocitas)) ? 'text-success-text' : 'text-ink-muted'">{{ s.sub }}</span>
               </span>
             </button>
           </div>
@@ -245,6 +305,11 @@ function statusOf(step: Step): { text: string; done: boolean } | null {
                 <ImportPracticeHubCarePlansImporter v-else-if="activeStep.key === 'care_plans'" />
                 <ImportPracticeHubCustomFormResponsesImporter v-else-if="activeStep.key === 'custom_form_responses'" />
                 <ImportPracticeHubFilesImporter v-else-if="activeStep.key === 'file_attachments'" />
+              </template>
+              <template v-else-if="sourceKey === 'quirocitas'">
+                <ImportQuirocitasConnection v-if="activeStep.key === 'general'" />
+                <ImportQuirocitasRead v-else-if="activeStep.key === 'read'" />
+                <ImportQuirocitasStep v-else :kind="activeStep.key as QuirocitasStepKind" />
               </template>
               <ImportGenericCsvPatientsImporter v-else />
             </div>

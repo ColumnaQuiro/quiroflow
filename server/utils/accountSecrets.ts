@@ -21,6 +21,18 @@ export type AccountSecretName =
   | 'meta_ads_access_token'
   /** Google Business Profile: the offline token that reads reviews and posts replies. */
   | 'google_business_refresh_token'
+  /**
+   * Quirocitas has no API: the importer signs in as a member of the clinic's
+   * staff. The address is not secret, but it is only ever read beside the
+   * other two, so it lives with them rather than in a column on `accounts`.
+   */
+  | 'quirocitas_base_url'
+  | 'quirocitas_username'
+  | 'quirocitas_password'
+  /** The signed-in session's cookie, reused so the importer logs in once rather than per call. */
+  | 'quirocitas_session'
+  /** Where the cash ledger's month-by-month walk got to: the form to submit next. */
+  | 'quirocitas_ledger_cursor'
 
 // The secrets that once had a column on `accounts`. practicehub_v3_api_key
 // arrived after the move and never did: selecting or clearing it there is a

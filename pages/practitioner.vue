@@ -350,13 +350,9 @@ const headerMeta = computed(() => {
 })
 // The appointment panel loads when first opened (Lazy*), and is fetched
 // while the browser is idle once the page is up, so opening one does not wait.
-onMounted(() => {
-  const warm = () => {
-    import('~/components/calendar/AppointmentPanel.vue')
-  }
-  if ('requestIdleCallback' in window) window.requestIdleCallback(warm, { timeout: 3000 })
-  else setTimeout(warm, 1500)
-})
+onMounted(() => warmChunks(() => [
+  import('~/components/calendar/AppointmentPanel.vue'),
+]))
 </script>
 
 <template>

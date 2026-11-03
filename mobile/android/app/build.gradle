@@ -18,8 +18,8 @@ android {
         // above the highest Play has, the versionName from the iOS
         // MARKETING_VERSION. These literals are only what a hand build gets
         // without -PquiroflowVersionCode / -PquiroflowVersionName.
-        versionCode((project.findProperty('quiroflowVersionCode') ?: '37') as Integer)
-        versionName(project.findProperty('quiroflowVersionName') ?: '1.25')
+        versionCode((project.findProperty('quiroflowVersionCode') ?: '43') as Integer)
+        versionName(project.findProperty('quiroflowVersionName') ?: '1.26')
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

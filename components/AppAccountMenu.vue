@@ -66,6 +66,9 @@ async function signOut() {
       <NuxtLink to="/subscription" class="block px-3 py-2 text-left text-[13px] text-ink-500 hover:bg-surface-subtle" @click="menuOpen = false">
         {{ t('Subscription', 'Suscripción') }}
       </NuxtLink>
+      <NuxtLink v-if="store.isOwner" to="/setup" class="block px-3 py-2 text-left text-[13px] text-ink-500 hover:bg-surface-subtle" data-cy="account-menu-setup" @click="menuOpen = false">
+        {{ t('Getting set up', 'Puesta en marcha') }}
+      </NuxtLink>
       <button
         v-if="can('payments_allocate')"
         type="button"

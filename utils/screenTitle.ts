@@ -38,6 +38,7 @@ const SCREENS: [prefix: string, title: (t: T) => string][] = [
   ['/growth', (t) => t('Growth', 'Crecimiento')],
   ['/account', (t) => t('Account', 'Cuenta')],
   ['/subscription', (t) => t('Subscription', 'Suscripción')],
+  ['/setup', (t) => t('Getting set up', 'Puesta en marcha')],
   ['/onboarding', (t) => t('Set up your clinic', 'Configura tu clínica')],
   ['/login', (t) => t('Sign in', 'Iniciar sesión')],
   ['/signup', (t) => t('Create account', 'Crear cuenta')],

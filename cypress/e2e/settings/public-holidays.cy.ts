@@ -67,6 +67,13 @@ describe('Official public holidays', () => {
   it('swaps the holidays with the comunidad, and turning it off reopens them', () => {
     const today = madridToday()
     const catalonia = holidaysFor('ES-CT', today, HOLIDAYS_KNOWN_THROUGH)
+    // The count alone cannot tell that the swap has landed: from November 2026
+    // both comunidades have 15 holidays ahead, so "15 holidays closed" is
+    // already on screen for Madrid and the database was read mid-swap. A day
+    // only one of them closes can.
+    const madrid = holidaysFor('ES-MD', today, HOLIDAYS_KNOWN_THROUGH)
+    const onlyCatalonia = catalonia.find((h) => !madrid.some((m) => m.date === h.date))!
+    const onlyMadrid = madrid.find((m) => !catalonia.some((h) => h.date === m.date))!
     cy.seedStaffAccount().then((account) => {
       cy.login(account.email, account.password)
       openClinic(account.clinicId)
@@ -75,6 +82,7 @@ describe('Official public holidays', () => {
       cy.get('[data-cy=holidays-closed]').should('be.visible')
       cy.get('[data-cy=holiday-region]').select('Cataluña')
       cy.get('[data-cy=holidays-closed]').should('contain', `${catalonia.length} holidays closed`)
+      cy.get('[data-cy=clinic-closures]').should('contain', `Festivo: ${onlyCatalonia.name}`).and('not.contain', `Festivo: ${onlyMadrid.name}`)
       officialClosures(account.clinicId).then((rows) => {
         expect(rows.map((r) => r.public_holiday)).to.deep.eq(catalonia.map((h) => h.date))
       })

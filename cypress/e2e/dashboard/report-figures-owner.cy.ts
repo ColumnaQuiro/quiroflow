@@ -19,11 +19,11 @@ const NOW = new Date(2026, 5, 17, 10, 30, 0, 0)
 
 describe('Report and dashboard figures, as the owner', () => {
   const recorded: Record<string, FigureSnapshot> = {}
-  let owner: { email: string; password: string }
+  let owner: { email: string; password: string; accountId: string }
 
   before(() => {
     cy.seedStaffAccount().then((account) => {
-      owner = { email: account.email, password: account.password }
+      owner = { email: account.email, password: account.password, accountId: account.accountId }
       cy.task('db:seedReportDataset', { accountId: account.accountId, clinicId: account.clinicId, ownerTeamMemberId: account.teamMemberId, nowIso: NOW.toISOString() }, { timeout: 120000 })
     })
   })
@@ -32,7 +32,16 @@ describe('Report and dashboard figures, as the owner', () => {
   function open(path: string) {
     cy.login(owner.email, owner.password)
     cy.clock(NOW.getTime(), ['Date'])
-    cy.visit(path, { onBeforeLoad: (win) => defaultLocale(win) })
+    cy.visit(path, {
+      onBeforeLoad: (win) => {
+        defaultLocale(win)
+        // The generated clinic never finishes Puesta en marcha (no WhatsApp,
+        // no VeriFactu), so the owner's dashboard would carry its progress
+        // line (DashboardSetupProgress) above the figures. Hidden the way the
+        // owner hides it: these are figures, and that line is not one.
+        win.localStorage.setItem(`setup-progress-hidden:${owner.accountId}`, '1')
+      },
+    })
   }
   const figures = (key: string) => expectFigures(FIXTURE, recorded, key)
   const practitioner = (name: string) => cy.get('[data-cy="report-practitioner-filter"]').select(name)

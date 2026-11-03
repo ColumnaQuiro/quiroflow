@@ -94,18 +94,14 @@ onMounted(loadBannerDetail)
 // load when first shown (Lazy*), which kept ~270 KB of tabs nobody had opened
 // off the record's first paint. Fetched once the record is up, while the
 // browser is idle, so the first click on a tab does not wait for its code.
-onMounted(() => {
-  const warm = () => {
-    import('~/components/patients/ClinicalTab.vue')
-    import('~/components/patients/ProgressTab.vue')
-    import('~/components/patients/AppointmentsTab.vue')
-    import('~/components/patients/BillingTab.vue')
-    import('~/components/patients/CommunicationsTab.vue')
-    import('~/components/patients/AttachmentsTab.vue')
-  }
-  if ('requestIdleCallback' in window) window.requestIdleCallback(warm, { timeout: 3000 })
-  else setTimeout(warm, 1500)
-})
+onMounted(() => warmChunks(() => [
+  import('~/components/patients/ClinicalTab.vue'),
+  import('~/components/patients/ProgressTab.vue'),
+  import('~/components/patients/AppointmentsTab.vue'),
+  import('~/components/patients/BillingTab.vue'),
+  import('~/components/patients/CommunicationsTab.vue'),
+  import('~/components/patients/AttachmentsTab.vue'),
+]))
 
 const clinicName = computed(() => store.clinics.find((c) => c.id === patient.value?.clinic_id)?.name ?? null)
 

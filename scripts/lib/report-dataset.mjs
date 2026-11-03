@@ -184,8 +184,8 @@ export async function seedReportDataset(admin, opts) {
   const appointments = (await insertAll(admin, 'appointments', apptSpecs, 'id')).map((a, i) => ({ ...apptSpecs[i], id: a.id }))
   const typeById = new Map(typeRows.map((t) => [t.id, t]))
 
-  // --- bonos. Most were sold with no invoice (the current model), some with
-  // a sale invoice (the old one); a few carry an explicit owed amount.
+  // --- bonos. Sold with no invoice, as every bono is: the database refuses a
+  // sale invoice (20261103193528). A few carry an explicit owed amount.
   const purchaseSpecs = Array.from({ length: scale.purchases }, () => {
     const patient = pick(patients)
     const pkg = pick(pkgRows)
@@ -204,7 +204,7 @@ export async function seedReportDataset(admin, opts) {
   const purchases = (await insertAll(admin, 'package_purchases', purchaseSpecs, 'id')).map((p, i) => ({ ...purchaseSpecs[i], id: p.id }))
 
   // --- invoices: one per completed visit until the target is reached, plus
-  // quick invoices with no appointment, plus the old-model bono sale invoices.
+  // quick invoices with no appointment.
   let invoiceNo = 0
   const invoiceSpecs = []
   const invoiceLines = []
@@ -229,27 +229,12 @@ export async function seedReportDataset(admin, opts) {
     invoiceSpecs.push({ account_id: accountId, patient_id: patient.id, appointment_id: null, invoice_number: `R-${String(++invoiceNo).padStart(5, '0')}`, status: chance(0.8) ? 'paid' : 'unpaid', total_cents: svc.price, created_at: past(between(0, scale.daysBack)).toISOString() })
     invoiceLines.push([{ description: svc.name, quantity: 1, price_cents: svc.price, service_id: svc.id, package_purchase_id: null }])
   }
-  const saleInvoiceFor = new Map()
-  for (const purchase of purchases) {
-    if (invoiceSpecs.length >= scale.invoices) break
-    if (!chance(0.5)) continue
-    saleInvoiceFor.set(invoiceSpecs.length, purchase)
-    invoiceSpecs.push({ account_id: accountId, patient_id: purchase.patient_id, appointment_id: null, invoice_number: `R-${String(++invoiceNo).padStart(5, '0')}`, status: chance(0.7) ? 'paid' : 'unpaid', total_cents: purchase.price_cents, created_at: purchase.purchased_at })
-    invoiceLines.push([{ description: purchase.package_name, quantity: 1, price_cents: purchase.price_cents, service_id: null, package_purchase_id: null }])
-  }
   const invoices = (await insertAll(admin, 'invoices', invoiceSpecs, 'id')).map((inv, i) => ({ ...invoiceSpecs[i], id: inv.id }))
   await insertAll(
     admin,
     'invoice_line_items',
     invoices.flatMap((inv, i) => invoiceLines[i].map((line) => ({ account_id: accountId, invoice_id: inv.id, ...line }))),
   )
-  const saleInvoices = []
-  for (const [index, purchase] of saleInvoiceFor) {
-    saleInvoices.push({ invoice: invoices[index], purchase })
-    purchase.invoice_id = invoices[index].id
-    const { error } = await admin.from('package_purchases').update({ invoice_id: invoices[index].id }).eq('id', purchase.id)
-    if (error) throw new Error(`package_purchases: ${error.message}`)
-  }
 
   // --- payments
   const methods = ['card', 'card', 'card', 'cash', 'cash', 'transfer', 'bizum', 'other']
@@ -273,13 +258,9 @@ export async function seedReportDataset(admin, opts) {
       push({ invoice_id: inv.id, patient_id: inv.patient_id, amount_cents: inv.total_cents, method: pick(methods), paid_at: later(inv.created_at, 600), purpose: 'visit' })
     }
   }
-  // Old-model bono sale invoices, paid against the invoice.
-  for (const { invoice, purchase } of saleInvoices) {
-    if (chance(0.6)) push({ invoice_id: invoice.id, patient_id: purchase.patient_id, amount_cents: chance(0.8) ? invoice.total_cents : Math.round(invoice.total_cents / 2), method: pick(methods), paid_at: later(invoice.created_at, 200), purpose: 'bono' })
-  }
-  // Current-model bonos: paid against the bono itself, no invoice.
+  // Bonos: paid against the bono itself, no invoice.
   for (const purchase of purchases) {
-    if (purchase.invoice_id || !chance(0.85)) continue
+    if (!chance(0.85)) continue
     push({ invoice_id: null, package_purchase_id: purchase.id, patient_id: purchase.patient_id, amount_cents: chance(0.85) ? purchase.price_cents : Math.round(purchase.price_cents / 2), method: pick(methods), paid_at: later(purchase.purchased_at, 120), purpose: 'bono' })
   }
   // Money on account and PracticeHub-imported unallocated payments.
@@ -296,7 +277,7 @@ export async function seedReportDataset(admin, opts) {
     { invoice: invoices.find((i) => i.status === 'unpaid' && i.appointment_id), method: 'card', purpose: 'visit' },
     { invoice: invoices.find((i) => i.status === 'paid' && i.appointment_id), method: 'cash', purpose: 'visit' },
     { invoice: invoices.find((i) => i.status === 'paid' && !i.appointment_id), method: 'credit', purpose: 'visit' },
-    { purchase: purchases.find((p) => !p.invoice_id), method: 'bizum', purpose: 'bono' },
+    { purchase: purchases[0], method: 'bizum', purpose: 'bono' },
     { method: 'transfer', purpose: 'on_account' },
     { method: 'card', purpose: null },
   ]

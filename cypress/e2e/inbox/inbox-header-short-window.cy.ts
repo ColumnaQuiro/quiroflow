@@ -35,6 +35,18 @@ describe('Inbox header on a short window', () => {
       cy.get('[data-cy=inbox-filters-toggle]').click()
       cy.get('[data-cy=inbox-tabs]').should('not.be.visible')
 
+      // Beside a thread the list is a 340px column with no room for the
+      // button: there the rows stay, and the search keeps the width it has
+      // on a tall window of the same width. The button once took it, and the
+      // search shrank to its icon.
+      cy.viewport(960, 900)
+      cy.get('[data-cy=inbox-search]').invoke('outerWidth').then((tall) => {
+        cy.viewport(960, 600)
+        cy.get('[data-cy=inbox-tabs]').should('be.visible')
+        cy.get('[data-cy=inbox-filters-toggle]').should('not.be.visible')
+        cy.get('[data-cy=inbox-search]').invoke('outerWidth').should('eq', tall)
+      })
+
       // A window of ordinary height shows the rows and no button.
       cy.viewport(1280, 900)
       cy.get('[data-cy=inbox-tabs]').should('be.visible')

@@ -74,6 +74,21 @@ function sendViaWhatsApp(doc: Doc) {
   window.open(`https://wa.me/${patientPhoneDigits.value}?text=${encodeURIComponent(message)}`, '_blank')
 }
 
+// The staff copy of a form, answers only (pages/patients/docs/[id].vue), for
+// keeping in a tab of its own beside the visit note. The patient's link is no
+// use for that: once completed it shows nothing but "Thank you".
+function answersPath(doc: Doc) {
+  return `/patients/docs/${doc.id}`
+}
+// The title is a real link so Cmd/Ctrl-click and middle-click open the
+// answers in a new tab, the way every other link does; a plain click still
+// opens the form here, to edit.
+function onTitleClick(event: MouseEvent, doc: Doc) {
+  if (event.metaKey || event.ctrlKey || event.shiftKey) return
+  event.preventDefault()
+  openDoc(doc)
+}
+
 function openDoc(doc: Doc) {
   activeDoc.value = doc
   title.value = doc.title
@@ -260,10 +275,10 @@ function metaFor(doc: Doc) {
             <path d="M15 3v4h4" stroke="currentColor" stroke-width="1.3" />
           </svg>
           <div class="min-w-0 flex-1 basis-[calc(100%-38px)] sm:basis-0">
-            <button type="button" class="block w-full text-left outline-none focus-visible:shadow-focus" @click="openDoc(doc)">
+            <a :href="answersPath(doc)" class="block w-full text-left outline-none focus-visible:shadow-focus" @click="onTitleClick($event, doc)">
               <p class="truncate text-[13px] font-medium text-ink-700 hover:text-brand-text">{{ doc.title }}</p>
               <p class="text-[11.5px] text-ink-faint">{{ metaFor(doc) }}</p>
-            </button>
+            </a>
             <!-- The patient's own link, on screen. It is the thing staff read
                  out on the phone, and a Copy button for a link you cannot see
                  gives you no way to check you are sending the right one. -->
@@ -281,8 +296,18 @@ function metaFor(doc: Doc) {
           <div class="flex w-full flex-wrap items-center gap-x-3 gap-y-1 pl-[38px] sm:w-auto sm:flex-nowrap sm:pl-0">
           <UiPill :tone="statusFor(doc).tone">{{ statusFor(doc).label }}</UiPill>
           <div class="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-            <button type="button" class="text-[11.5px] font-medium text-brand-text hover:text-brand-hover touch:min-h-11" :title="t('Open patient link in a new tab', 'Abrir el enlace del paciente en una pestaña nueva')" @click="openLink(doc)">
-              {{ doc.completed_at ? t('View answers', 'Ver respuestas') : t('Open', 'Abrir') }}
+            <a
+              v-if="doc.completed_at"
+              :href="answersPath(doc)"
+              target="_blank"
+              class="inline-flex items-center text-[11.5px] font-medium text-brand-text hover:text-brand-hover touch:min-h-11"
+              :title="t('Open the answers in a new tab', 'Abrir las respuestas en una pestaña nueva')"
+              data-cy="doc-view-answers"
+            >
+              {{ t('View answers', 'Ver respuestas') }} ↗
+            </a>
+            <button v-else type="button" class="text-[11.5px] font-medium text-brand-text hover:text-brand-hover touch:min-h-11" :title="t('Open patient link in a new tab', 'Abrir el enlace del paciente en una pestaña nueva')" @click="openLink(doc)">
+              {{ t('Open', 'Abrir') }}
             </button>
             <button type="button" class="text-[11.5px] font-medium text-brand-text hover:text-brand-hover touch:min-h-11" :title="t('Copy patient link', 'Copiar el enlace del paciente')" @click="copyLink(doc)">
               {{ copiedId === doc.id ? t('Copied!', '¡Copiado!') : t('Copy link', 'Copiar enlace') }}

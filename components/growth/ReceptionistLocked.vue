@@ -33,8 +33,8 @@ const t = useT()
                 'No está incluida en la prueba gratuita. Mejora tu plan para añadirla por sí sola, o con Growth, y empezará a responder WhatsApp, Instagram y el chat web en nombre de tu clínica, reservando directamente en tu agenda.',
               )
             : t(
-                'Add it on its own, or get it with Growth, and it starts answering WhatsApp, Instagram and web chat in your clinic’s name, booking straight into your calendar.',
-                'Añádela por sí sola, o consíguela con Growth, y empezará a responder WhatsApp, Instagram y el chat web en nombre de tu clínica, reservando directamente en tu agenda.',
+                'Add the AI receptionist on its own, or get it with Growth. It answers WhatsApp, Instagram and web chat in your clinic’s name, booking straight into your calendar.',
+                'Añade la recepcionista IA por sí sola, o consíguela con Growth. Responde WhatsApp, Instagram y el chat web en nombre de tu clínica, reservando directamente en tu agenda.',
               )
         }}
       </p>

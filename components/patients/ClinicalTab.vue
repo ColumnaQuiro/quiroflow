@@ -41,7 +41,11 @@ interface NoteRow {
 }
 const notes = ref<NoteRow[]>([])
 const loading = ref(true)
-const expandedId = ref<string | null>(null)
+// Several open at once: reading a course of care means reading the visits
+// one after another, and an accordion that shut the last note whenever the
+// next one opened made that impossible (asked for 4 Nov 2026, with a video
+// of someone clicking Open down the list and losing each note in turn).
+const expanded = ref<Set<string>>(new Set())
 const notesAppointmentId = ref<string | null>(null)
 // The band displays; the panel edits. Showing the panel beside the band put
 // the same five columns on screen twice.
@@ -79,12 +83,46 @@ async function load({ silent = false } = {}) {
   })
   latestAppointmentId.value = appts?.[0]?.id ?? null
   // The newest note opens itself: it is the one being asked about. After an
-  // edit, the note that was open stays open.
-  if (!silent || !notes.value.some((n) => n.id === expandedId.value)) expandedId.value = notes.value[0]?.id ?? null
+  // edit, the notes that were open stay open.
+  const ids = new Set(notes.value.map((n) => n.id))
+  const kept = silent ? [...expanded.value].filter((id) => ids.has(id)) : []
+  expanded.value = new Set(kept.length > 0 ? kept : notes.value.slice(0, 1).map((n) => n.id))
   loading.value = false
 }
 onMounted(() => load())
 watch(() => props.patientId, () => load())
+
+function toggle(id: string) {
+  const next = new Set(expanded.value)
+  if (!next.delete(id)) next.add(id)
+  expanded.value = next
+}
+const allOpen = computed(() => notes.value.length > 0 && notes.value.every((n) => expanded.value.has(n.id)))
+function toggleAll() {
+  expanded.value = new Set(allOpen.value ? [] : notes.value.map((n) => n.id))
+}
+
+// The whole history on paper (server/api/patients/[id]/clinical-history.get.ts),
+// for a report, or for the patient who asks for how their care has gone.
+// In the reader's language, since it is the reader who asked for it.
+const { preference: lang } = useLang()
+const downloading = ref(false)
+async function downloadHistory() {
+  downloading.value = true
+  try {
+    const blob = await useStaffFetch<Blob>(`/api/patients/${props.patientId}/clinical-history?lang=${lang.value === 'es' ? 'es' : 'en'}`, { responseType: 'blob' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${t('clinical-history', 'historial-clinico')}.pdf`
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 10_000)
+  } catch (e: any) {
+    useToast().showToast(e?.data?.statusMessage ?? t('Could not prepare the history.', 'No se pudo preparar el historial.'), 'error')
+  } finally {
+    downloading.value = false
+  }
+}
 
 function authorOf(note: NoteRow) {
   return note.appointments?.team_members?.full_name ?? note.appointments?.practitioner_name ?? null
@@ -182,24 +220,39 @@ useFocusTrap(notesPanel, () => { notesAppointmentId.value = null; load({ silent:
     <PatientsCustomFieldsCard :patient-id="patientId" section="clinical" />
 
     <div class="flex flex-col gap-4 xl:flex-row xl:items-start">
-      <!-- Notes: the last visit open, the rest a line each. -->
+      <!-- Notes: the last visit open, the rest a line each until opened. -->
       <section aria-labelledby="clin-notes" class="min-w-0 flex-1 rounded-card border border-line bg-surface shadow-card">
         <div class="flex flex-wrap items-center justify-between gap-2 border-b border-line-divider px-4 py-3">
           <h2 id="clin-notes" class="text-[13.5px] font-semibold text-ink-700">
             {{ t('Visit notes', 'Notas de visita') }}
             <span v-if="!loading" class="ml-1 font-normal text-ink-faint">{{ notes.length }}</span>
           </h2>
-          <!-- A note hangs off an appointment, so this opens the charting
-               panel for the most recent one rather than pretending a note
-               can exist on its own. -->
-          <UiBtn
-            v-if="can('patients_edit') && latestAppointmentId"
-            variant="primary"
-            size="sm"
-            @click="notesAppointmentId = latestAppointmentId"
-          >
-            {{ t('Add note', 'Añadir nota') }}
-          </UiBtn>
+          <div class="flex flex-wrap items-center gap-2">
+            <UiBtn v-if="!loading && notes.length > 1" variant="ghost" size="sm" data-cy="notes-toggle-all" @click="toggleAll">
+              {{ allOpen ? t('Close all', 'Cerrar todas') : t('Open all', 'Abrir todas') }}
+            </UiBtn>
+            <UiBtn
+              v-if="!loading && notes.length > 0"
+              variant="secondary"
+              size="sm"
+              :disabled="downloading"
+              data-cy="clinical-history-pdf"
+              @click="downloadHistory"
+            >
+              {{ downloading ? t('Preparing…', 'Preparando…') : t('Download PDF', 'Descargar PDF') }}
+            </UiBtn>
+            <!-- A note hangs off an appointment, so this opens the charting
+                 panel for the most recent one rather than pretending a note
+                 can exist on its own. -->
+            <UiBtn
+              v-if="can('patients_edit') && latestAppointmentId"
+              variant="primary"
+              size="sm"
+              @click="notesAppointmentId = latestAppointmentId"
+            >
+              {{ t('Add note', 'Añadir nota') }}
+            </UiBtn>
+          </div>
         </div>
 
         <div v-if="loading" class="space-y-3 p-4">
@@ -215,19 +268,19 @@ useFocusTrap(notesPanel, () => { notesAppointmentId.value = null; load({ silent:
             <button
               type="button"
               class="flex w-full items-baseline justify-between gap-3 text-left outline-none focus-visible:shadow-focus"
-              :aria-expanded="expandedId === note.id"
-              @click="expandedId = expandedId === note.id ? null : note.id"
+              :aria-expanded="expanded.has(note.id)"
+              @click="toggle(note.id)"
             >
               <span class="min-w-0">
                 <span class="text-[13px] font-medium text-ink-900">{{ visitDate(note) }}</span>
                 <span v-if="visitType(note)" class="text-[12.5px] text-ink-muted2"> · {{ visitType(note) }}</span>
               </span>
               <span class="shrink-0 text-[12px] font-medium text-brand-text">
-                {{ expandedId === note.id ? t('Close', 'Cerrar') : t('Open', 'Abrir') }}
+                {{ expanded.has(note.id) ? t('Close', 'Cerrar') : t('Open', 'Abrir') }}
               </span>
             </button>
 
-            <p v-if="expandedId !== note.id" class="mt-0.5 truncate text-[12.5px] text-ink-muted2">
+            <p v-if="!expanded.has(note.id)" class="mt-0.5 truncate text-[12.5px] text-ink-muted2">
               {{ visitNotePreview(note.body) }}
             </p>
 

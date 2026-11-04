@@ -1,3 +1,4 @@
+import { appStoreUrl, playStoreUrl } from './appLinks'
 import { formatEur } from './billing'
 import { baseBehaviourSection, escalationSection } from './receptionistBaseRules'
 import { DEFAULT_CLINIC_TIMEZONE } from './clinicClock'
@@ -229,6 +230,48 @@ export function visitHistoryRule(f: PatientReplyFacts): string {
  */
 export const LEFT_THE_CLINIC_LINE = 'If they say they have moved away, that they now see another chiropractor or go to another clinic, or that they will not be coming back to the clinic at all, call stop_follow_ups with their words, then say goodbye in one short sentence, without offering times. This replaces handing it over to a colleague, whatever the clinic knowledge says about it. Never call it for a later, a holiday, a trip, a busy few weeks or "not now".'
 
+/** What the patient app holds for them, and whether they have it (patientAppSection). */
+export interface PatientAppFacts {
+  /** Exercises the clinic has given them that are still current; null when they could not be read. */
+  exercises: number | null
+  /** They have signed in to the app (or the web portal): patients.user_id is set. */
+  hasAccount: boolean
+  /** Their latest message came through the app. */
+  writingFromApp: boolean
+  /** accounts.slug: the clinic code the app asks for the first time it is opened. */
+  clinicCode: string | null
+}
+
+/**
+ * Where their home exercises are. "¿Me mandas los ejercicios que me indicó
+ * la quiropráctica?", written from inside the app, was handed to a person to
+ * send (4 Nov 2026) -- while the exercises, videos and all, were one tap away
+ * in the app the patient was writing from. The answer is the app: where to
+ * tap if they have it, how to get it if they do not.
+ */
+export function patientAppSection(app: PatientAppFacts, sendsItself: boolean): string {
+  const ios = appStoreUrl()
+  const stores = ios ? `the App Store (${ios}) or Google Play (${playStoreUrl()})` : `Google Play (${playStoreUrl()})`
+  const code = app.clinicCode ? `enter the clinic code "${app.clinicCode}"` : 'enter the clinic code, which your colleague will give them'
+  const lines = [
+    `# Their exercises and the clinic's app
+The exercises their chiropractor gives them for home -- each with its video or photo and instructions -- are in the clinic's patient app, QuiroFlow, which also shows their visits, payments and documents. Asking for their exercises, or to be sent them again, is not a clinical question and not one to hand over: the answer is where to find them in the app, in one or two sentences. Never say a colleague will send them, and never describe or explain the exercises themselves.
+In the app they are on the home screen ("Inicio"): tap "Tus ejercicios" ("Your exercises" on a phone in English).`,
+    app.writingFromApp
+      ? 'They are writing to you from the app right now, so they already have it: tell them where to tap.'
+      : app.hasAccount
+        ? 'They already have the app: tell them where to tap.'
+        : `They do not use the app yet. Offer it, with the steps: download "QuiroFlow" from ${stores}; open it and ${code}; then create their account with the same email the clinic has for them, and their exercises appear on their own. Give each link once, and no other link.`,
+  ]
+  if (app.exercises === 0) {
+    lines.push(`Their chiropractor has not put any exercises in the app for them yet, so "Tus ejercicios" is not there. Say so, and that you will ask the chiropractor to add them; they will find them in the app once added. This is the one case to hand over${sendsItself ? ': call hand_over_to_colleague asking for their exercises to be added to the app' : ''}.`)
+  } else if (app.exercises) {
+    lines.push(`They have ${app.exercises} exercise${app.exercises === 1 ? '' : 's'} there now.`)
+  }
+  lines.push('Only if they ask how, or say they cannot find them, walk them through it step by step.')
+  return lines.join('\n')
+}
+
 /** Months without a visit after which someone is back "after a long break" -- the reactivation recall's own six. */
 export const LAPSED_MONTHS = 6
 
@@ -290,6 +333,8 @@ export function buildPatientReplyPrompt(
     clinicDetails?: PromptClinic[]
     /** The practitioners' full names (teamSection). */
     team?: string[]
+    /** What the patient app holds for them (patientAppSection); absent, nothing is said about it. */
+    app?: PatientAppFacts
   },
 ): ReceptionistPrompt {
   const knowledge = config.knowledge
@@ -341,6 +386,7 @@ export function buildPatientReplyPrompt(
     receptionistClockSection(opts.calendar.now, opts.calendar.timeZone),
     patientFactsSection(opts.facts, opts.calendar.timeZone),
     visitHistoryRule(opts.facts),
+    opts.app ? patientAppSection(opts.app, Boolean(opts.sendsItself)) : '',
     // A patient record with no visit yet -- a first visit from the ad,
     // cancelled before they came -- is still somebody new.
     opts.audience && opts.audience !== 'existing' ? audienceSection(opts.audience) : '',

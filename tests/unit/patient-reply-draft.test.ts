@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { LEFT_THE_CLINIC_LINE, buildPatientReplyPrompt, openBono, patientFactsSection, returningPatientSection, summariseVisitHistory, visitHistoryRule, type PastVisit, type PatientPromptConfig, type PatientReplyFacts } from '../../utils/patientReplyPrompt'
+import { LEFT_THE_CLINIC_LINE, buildPatientReplyPrompt, openBono, patientAppSection, patientFactsSection, returningPatientSection, summariseVisitHistory, visitHistoryRule, type PastVisit, type PatientPromptConfig, type PatientReplyFacts } from '../../utils/patientReplyPrompt'
 import { receptionistPromptText } from '../../utils/receptionistPrompt'
 
 // A reply to a patient in the Inbox, drafted by the receptionist
@@ -203,5 +203,43 @@ describe('someone who has left', () => {
 
   it('says nothing about it when the tool is not on the request (a draft)', () => {
     expect(prompt(false)).not.toContain('stop_follow_ups')
+  })
+})
+
+describe('their exercises and the app', () => {
+  const app = { exercises: 3, hasAccount: true, writingFromApp: true, clinicCode: 'clinica-demo' }
+
+  it('points someone writing from the app to where the exercises are, rather than handing over', () => {
+    const section = patientAppSection(app, true)
+    expect(section).toContain('"Inicio"')
+    expect(section).toContain('"Tus ejercicios"')
+    expect(section).toContain('not one to hand over')
+    expect(section).toContain('writing to you from the app right now')
+    expect(section).toContain('3 exercises there now')
+    expect(section).not.toContain('apps.apple.com')
+    expect(section).not.toContain('hand_over_to_colleague')
+  })
+
+  it('offers the app, with both stores and the clinic code, to someone who does not have it', () => {
+    const section = patientAppSection({ ...app, hasAccount: false, writingFromApp: false }, true)
+    expect(section).toContain('do not use the app yet')
+    expect(section).toContain('https://apps.apple.com/es/app/quiroflow/id')
+    expect(section).toContain('https://play.google.com/store/apps/details?id=com.quiroflow.app')
+    expect(section).toContain('"clinica-demo"')
+    expect(section).toContain('same email the clinic has for them')
+  })
+
+  it('hands over only when the chiropractor has put no exercises in the app', () => {
+    expect(patientAppSection({ ...app, exercises: 0 }, true)).toContain('call hand_over_to_colleague asking for their exercises to be added')
+    expect(patientAppSection({ ...app, exercises: 0 }, false)).toContain('ask the chiropractor to add them')
+    expect(patientAppSection({ ...app, exercises: 0 }, false)).not.toContain('hand_over_to_colleague')
+    expect(patientAppSection({ ...app, exercises: null }, true)).not.toContain('not put any exercises')
+  })
+
+  it('is in the prompt only when the app facts are given', () => {
+    const config: PatientPromptConfig = { personaName: 'Alba', toneLine: 'Courteous and brief.', languages: ['es'], knowledge: [], escalationRules: [], neverSays: '', slotsPerReply: 2, bookingWindowDays: 14 }
+    const prompt = (withApp: boolean) => receptionistPromptText(buildPatientReplyPrompt(config, { facts, offeredTypes: [], calendar: { now: new Date('2026-11-04T18:00:00Z'), timeZone: 'Europe/Madrid', availability: null }, ...(withApp ? { app } : {}) }))
+    expect(prompt(true)).toContain("# Their exercises and the clinic's app")
+    expect(prompt(false)).not.toContain('Tus ejercicios')
   })
 })

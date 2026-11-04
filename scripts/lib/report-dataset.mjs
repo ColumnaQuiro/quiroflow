@@ -184,8 +184,9 @@ export async function seedReportDataset(admin, opts) {
   const appointments = (await insertAll(admin, 'appointments', apptSpecs, 'id')).map((a, i) => ({ ...apptSpecs[i], id: a.id }))
   const typeById = new Map(typeRows.map((t) => [t.id, t]))
 
-  // --- bonos. Most were sold with no invoice (the current model), some with
-  // a sale invoice (the old one); a few carry an explicit owed amount.
+  // --- bonos. Most were sold with no invoice (the current model); some had
+  // a sale invoice under the old one (see below); a few carry an explicit
+  // owed amount.
   const purchaseSpecs = Array.from({ length: scale.purchases }, () => {
     const patient = pick(patients)
     const pkg = pick(pkgRows)
@@ -204,7 +205,14 @@ export async function seedReportDataset(admin, opts) {
   const purchases = (await insertAll(admin, 'package_purchases', purchaseSpecs, 'id')).map((p, i) => ({ ...purchaseSpecs[i], id: p.id }))
 
   // --- invoices: one per completed visit until the target is reached, plus
-  // quick invoices with no appointment, plus the old-model bono sale invoices.
+  // quick invoices with no appointment, plus the old model's bono sale
+  // invoices.
+  //
+  // The database no longer lets a bono point at a sale invoice, or bono money
+  // sit on one (20261103193528), so those links are not written: the invoice
+  // stays as a plain charge and its payment goes onto the bono instead. Every
+  // row and every random draw is otherwise exactly what it was, so the
+  // recorded report figures move only where those two links fed them.
   let invoiceNo = 0
   const invoiceSpecs = []
   const invoiceLines = []
@@ -246,9 +254,8 @@ export async function seedReportDataset(admin, opts) {
   const saleInvoices = []
   for (const [index, purchase] of saleInvoiceFor) {
     saleInvoices.push({ invoice: invoices[index], purchase })
-    purchase.invoice_id = invoices[index].id
-    const { error } = await admin.from('package_purchases').update({ invoice_id: invoices[index].id }).eq('id', purchase.id)
-    if (error) throw new Error(`package_purchases: ${error.message}`)
+    // In memory only: which bonos were old-model sales, for the loops below.
+    purchase.hadSaleInvoice = true
   }
 
   // --- payments
@@ -273,13 +280,14 @@ export async function seedReportDataset(admin, opts) {
       push({ invoice_id: inv.id, patient_id: inv.patient_id, amount_cents: inv.total_cents, method: pick(methods), paid_at: later(inv.created_at, 600), purpose: 'visit' })
     }
   }
-  // Old-model bono sale invoices, paid against the invoice.
+  // What was paid for an old-model bono: against its sale invoice then, on the
+  // bono now.
   for (const { invoice, purchase } of saleInvoices) {
-    if (chance(0.6)) push({ invoice_id: invoice.id, patient_id: purchase.patient_id, amount_cents: chance(0.8) ? invoice.total_cents : Math.round(invoice.total_cents / 2), method: pick(methods), paid_at: later(invoice.created_at, 200), purpose: 'bono' })
+    if (chance(0.6)) push({ invoice_id: null, package_purchase_id: purchase.id, patient_id: purchase.patient_id, amount_cents: chance(0.8) ? invoice.total_cents : Math.round(invoice.total_cents / 2), method: pick(methods), paid_at: later(invoice.created_at, 200), purpose: 'bono' })
   }
   // Current-model bonos: paid against the bono itself, no invoice.
   for (const purchase of purchases) {
-    if (purchase.invoice_id || !chance(0.85)) continue
+    if (purchase.hadSaleInvoice || !chance(0.85)) continue
     push({ invoice_id: null, package_purchase_id: purchase.id, patient_id: purchase.patient_id, amount_cents: chance(0.85) ? purchase.price_cents : Math.round(purchase.price_cents / 2), method: pick(methods), paid_at: later(purchase.purchased_at, 120), purpose: 'bono' })
   }
   // Money on account and PracticeHub-imported unallocated payments.
@@ -296,7 +304,7 @@ export async function seedReportDataset(admin, opts) {
     { invoice: invoices.find((i) => i.status === 'unpaid' && i.appointment_id), method: 'card', purpose: 'visit' },
     { invoice: invoices.find((i) => i.status === 'paid' && i.appointment_id), method: 'cash', purpose: 'visit' },
     { invoice: invoices.find((i) => i.status === 'paid' && !i.appointment_id), method: 'credit', purpose: 'visit' },
-    { purchase: purchases.find((p) => !p.invoice_id), method: 'bizum', purpose: 'bono' },
+    { purchase: purchases.find((p) => !p.hadSaleInvoice), method: 'bizum', purpose: 'bono' },
     { method: 'transfer', purpose: 'on_account' },
     { method: 'card', purpose: null },
   ]

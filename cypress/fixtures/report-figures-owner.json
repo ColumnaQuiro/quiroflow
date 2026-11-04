@@ -20,7 +20,7 @@
       "Charged",
       "2856,00 €",
       "Outstanding",
-      "348,00 €",
+      "788,00 €",
       "Visit summary",
       "This week",
       "[Cancellations | 1 ; Estimated visits | 24 ; Payments this week | 1130,00 € ; Remaining visits | 18 ; Service generated | 306,00 €]",
@@ -30,8 +30,8 @@
       "Mantenimiento",
       "1",
       "Debtors",
-      "[David González 23 | 190,00 € ; Diego Pérez 17 | 440,00 € ; Elena Gómez 40 | 220,00 € ; Manuel Alonso 26 | 380,00 € ; Noa López 32 | 220,00 €]",
-      "7 unpaid bonos · 1650,00 € total",
+      "[David González 23 | 190,00 € ; Elena Gómez 40 | 100,00 € ; Elena Gómez 40 | 220,00 € ; Elena Navarro 35 | 100,00 € ; Noa López 32 | 220,00 €]",
+      "5 unpaid bonos · 830,00 € total",
       "Next up today",
       "[Carmen García 20 | Natacha Ruiz | 04:45 PM ; Javier Sánchez 57 | Olga Owner | 11:30 AM ; Mario Romero 36 | Olga Owner | 01:00 PM]",
       "Active patients",
@@ -83,7 +83,7 @@
       "Charged",
       "4844,00 €",
       "Outstanding",
-      "438,00 €",
+      "878,00 €",
       "Visit summary",
       "This week",
       "[Cancellations | 1 ; Estimated visits | 24 ; Payments this week | 1130,00 € ; Remaining visits | 18 ; Service generated | 306,00 €]",
@@ -93,8 +93,8 @@
       "Mantenimiento",
       "1",
       "Debtors",
-      "[David González 23 | 190,00 € ; Diego Pérez 17 | 440,00 € ; Elena Gómez 40 | 220,00 € ; Manuel Alonso 26 | 380,00 € ; Noa López 32 | 220,00 €]",
-      "7 unpaid bonos · 1650,00 € total",
+      "[David González 23 | 190,00 € ; Elena Gómez 40 | 100,00 € ; Elena Gómez 40 | 220,00 € ; Elena Navarro 35 | 100,00 € ; Noa López 32 | 220,00 €]",
+      "5 unpaid bonos · 830,00 € total",
       "Next up today",
       "[Carmen García 20 | Natacha Ruiz | 04:45 PM ; Javier Sánchez 57 | Olga Owner | 11:30 AM ; Mario Romero 36 | Olga Owner | 01:00 PM]",
       "Active patients",
@@ -154,8 +154,8 @@
       "Mantenimiento",
       "1",
       "Debtors",
-      "[David González 23 | 190,00 € ; Diego Pérez 17 | 440,00 € ; Elena Gómez 40 | 220,00 € ; Manuel Alonso 26 | 380,00 € ; Noa López 32 | 220,00 €]",
-      "7 unpaid bonos · 1650,00 € total",
+      "[David González 23 | 190,00 € ; Elena Gómez 40 | 100,00 € ; Elena Gómez 40 | 220,00 € ; Elena Navarro 35 | 100,00 € ; Noa López 32 | 220,00 €]",
+      "5 unpaid bonos · 830,00 € total",
       "Next up today",
       "Nothing left booked today.",
       "Active patients",
@@ -196,7 +196,7 @@
       "Total paid",
       "4524,00 €",
       "Outstanding",
-      "348,00 €",
+      "788,00 €",
       "A further",
       "15,00 €",
       "was settled from credit on account — already counted as income on the day it was paid in, so it is not in the totals above.",
@@ -208,7 +208,7 @@
       "[Beatriz Ferrando | 204,00 € ; Natacha Ruiz | 2306,00 € ; Olga Owner | 2014,00 €]",
       "By service",
       "e.g. \"Primera Visita €600, Informe €6,000\" — set up under Billing → Services.",
-      "[Ajuste | 396,00 € ; Almohada cervical | 90,00 € ; Informe radiológico | 30,00 € ; Informe | 60,00 € ; Mantenimiento | 120,00 € ; Not identified | 528,00 € ; Plantillas | 90,00 € ; Primera visita | 60,00 € ; Sin etiquetar | 30,00 €]"
+      "[Ajuste | 396,00 € ; Almohada cervical | 90,00 € ; Informe radiológico | 30,00 € ; Informe | 60,00 € ; Mantenimiento | 120,00 € ; Not identified | 88,00 € ; Plantillas | 90,00 € ; Primera visita | 60,00 € ; Sin etiquetar | 30,00 €]"
     ],
     "charts": [
       "Revenue (€): Bank transfer=756, Bizum=424, Card=2101, Cash=1223, Other=20",
@@ -251,7 +251,7 @@
       "Total paid",
       "3843,50 €",
       "Outstanding",
-      "342,50 €",
+      "782,50 €",
       "A further",
       "178,00 €",
       "was settled from credit on account — already counted as income on the day it was paid in, so it is not in the totals above.",
@@ -263,7 +263,7 @@
       "[Beatriz Ferrando | 1866,00 € ; Natacha Ruiz | 1019,50 € ; Olga Owner | 898,00 € ; Unassigned | 60,00 €]",
       "By service",
       "e.g. \"Primera Visita €600, Informe €6,000\" — set up under Billing → Services.",
-      "[Ajuste | 528,00 € ; Almohada cervical | 45,00 € ; Bono 10 | 44,00 € ; Informe radiológico | 15,00 € ; Informe | 60,00 € ; Mantenimiento | 160,00 € ; Not identified | 440,00 € ; Oferta primera visita | 25,00 € ; Plantillas | 90,00 € ; Primera visita | 60,00 € ; Revisión | 44,00 € ; Sin etiquetar | 30,00 €]"
+      "[Ajuste | 528,00 € ; Almohada cervical | 45,00 € ; Bono 10 | 44,00 € ; Informe radiológico | 15,00 € ; Informe | 60,00 € ; Mantenimiento | 160,00 € ; Oferta primera visita | 25,00 € ; Plantillas | 90,00 € ; Primera visita | 60,00 € ; Revisión | 44,00 € ; Sin etiquetar | 30,00 €]"
     ],
     "charts": [
       "Revenue (€): Bank transfer=889, Bizum=69, Card=1579.5, Cash=942, Other=364",
@@ -908,10 +908,10 @@
   "debtors": {
     "lines": [
       "Includes any Stripe autopay charge that failed.",
-      "1650,00 €",
-      "Total outstanding across 7 purchase(s)",
+      "830,00 €",
+      "Total outstanding across 5 purchase(s)",
       "PATIENT PACKAGE PURCHASED AMOUNT OWED STATUS",
-      "[David González 23 Bono 10 3/19/2026 190,00 € no receipt ; Diego Pérez 17 Bono 12 sesiones 3/27/2026 440,00 € paid ; Elena Gómez 40 Bono 12 sesiones 5/24/2026 220,00 € no receipt ; Elena Gómez 40 Bono 5 6/6/2026 100,00 € no receipt ; Elena Navarro 35 Bono 5 2/17/2026 100,00 € no receipt ; Manuel Alonso 26 Bono 10 6/14/2026 380,00 € paid ; Noa López 32 Bono 12 sesiones 3/20/2026 220,00 € paid]"
+      "[David González 23 Bono 10 3/19/2026 190,00 € no receipt ; Elena Gómez 40 Bono 12 sesiones 5/24/2026 220,00 € no receipt ; Elena Gómez 40 Bono 5 6/6/2026 100,00 € no receipt ; Elena Navarro 35 Bono 5 2/17/2026 100,00 € no receipt ; Noa López 32 Bono 12 sesiones 3/20/2026 220,00 € no receipt]"
     ],
     "charts": []
   },

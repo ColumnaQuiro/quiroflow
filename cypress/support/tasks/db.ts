@@ -1109,7 +1109,7 @@ async function createAccountCredit(opts: {
 async function paymentsFor(opts: { patientId: string }) {
   const { data, error } = await admin
     .from('payments')
-    .select('amount_cents, method, purpose, invoice_id')
+    .select('amount_cents, method, purpose, invoice_id, package_purchase_id')
     .eq('patient_id', opts.patientId)
     .order('paid_at')
   if (error) throw error
@@ -1482,18 +1482,17 @@ async function createPackagePurchase(opts: {
   sessionsTotal?: number
   sessionsUsed?: number
   priceCents?: number
-  // The invoice the bono is billed on. Set it to test a part-paid bono: the
-  // card reads what is owed off this invoice's payments.
-  invoiceId?: string
-  // What PracticeHub said was outstanding, for a migrated bono -- which has
-  // no invoice at all, so this is the only record of the debt.
+  // What is still owed on the bono before payments against it: PracticeHub's
+  // outstanding figure for a migrated bono, the full price for one sold here.
+  // A bono has no sale invoice (the database refuses one), so this is the
+  // only record of the debt.
   owedCents?: number
   // PracticeHub has deactivated the bono. Imported as history, keeping
   // whatever was on its counter -- which is the state that used to read as a
   // second live bono.
   isClosed?: boolean
 }) {
-  const { accountId, patientId, packageName, sessionsTotal, sessionsUsed, priceCents, invoiceId, owedCents, isClosed } = opts
+  const { accountId, patientId, packageName, sessionsTotal, sessionsUsed, priceCents, owedCents, isClosed } = opts
   const row = unwrap(
     await admin
       .from('package_purchases')
@@ -1505,7 +1504,6 @@ async function createPackagePurchase(opts: {
         sessions_used: sessionsUsed ?? 0,
         price_cents: priceCents ?? 52800,
         purchased_at: new Date().toISOString(),
-        ...(invoiceId ? { invoice_id: invoiceId } : {}),
         ...(owedCents === undefined ? {} : { owed_cents: owedCents }),
         ...(isClosed === undefined ? {} : { is_closed: isClosed }),
       })

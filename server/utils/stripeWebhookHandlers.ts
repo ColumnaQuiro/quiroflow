@@ -163,67 +163,65 @@ export async function handleStripeEvent(supabase: SupabaseClient<Database>, acco
     }
   }
 
-  // Mirrors recordMembershipCharge, plus one extra step: a package
-  // installment's invoice+payment pair nets to zero on balanceCents (it's
-  // just the sale record), but the money still needs to become spendable
-  // credit against the bono's sessions -- same account_credits top-up
-  // sellPackage() already does for a manual cash/card payment at sale time.
+  // An autopay instalment on a bono is recorded exactly the way one taken at
+  // the desk is (BillingTab.recordPackagePayment): a payment ON THE BONO, with
+  // no invoice of its own and no credit row.
+  //
+  // It used to mirror recordMembershipCharge -- a paid invoice for the
+  // instalment, the payment hung off it, and an account_credits top-up -- which
+  // is the bono model 20260914150556 and 0161 retired, and it was the only
+  // place still writing it:
+  //
+  //   - the invoice charged the sessions a second time. Every visit drawn from
+  //     the bono raises its own charge at the per-session rate, and that charge
+  //     is what the bono money pays. An invoice for the instalment as well
+  //     spends the same money once on itself and leaves the visits unpaid --
+  //     one patient's migrated Bono 12 showed "88,00 EUR due" for two of its
+  //     own sessions after the second half went onto exactly such an invoice;
+  //   - the payment named no bono, so utils/bonoOwed never saw it and the card
+  //     kept saying the instalment was still owed after Stripe had taken it;
+  //   - the credit row restated money the payment already counts, the double
+  //     count 0161 offset everywhere else.
+  //
+  // A membership period is different and keeps its invoice: nothing else
+  // charges for it.
   async function recordPackageCharge(patientId: string, packagePurchaseId: string, amountCents: number, paymentIntentId: string | null) {
-    const { data: purchase } = await supabase.from('package_purchases').select('package_name').eq('id', packagePurchaseId).maybeSingle()
+    const { data: pkg } = await supabase
+      .from('package_purchases')
+      .select('package_name, price_cents, sessions_total')
+      .eq('id', packagePurchaseId)
+      .maybeSingle()
 
-    const { data: invoiceNumber } = await supabase.rpc('next_invoice_number', { p_account_id: accountId })
-    if (!invoiceNumber) return
-
-    const { data: invoice } = await supabase
-      .from('invoices')
-      .insert({ account_id: accountId, patient_id: patientId, invoice_number: invoiceNumber, status: 'paid', total_cents: amountCents })
-      .select('id')
-      .single()
-    if (!invoice) return
-
-    await supabase.from('invoice_line_items').insert({
-      account_id: accountId,
-      invoice_id: invoice.id,
-      description: `Package installment: ${purchase?.package_name ?? 'Package'}`,
-      quantity: 1,
-      price_cents: amountCents,
-    })
     const { data: payment, error: paymentError } = await supabase
       .from('payments')
-      .insert({ account_id: accountId, patient_id: patientId, invoice_id: invoice.id, amount_cents: amountCents, method: 'card', stripe_payment_intent_id: paymentIntentId, purpose: 'bono' })
+      .insert({
+        account_id: accountId,
+        patient_id: patientId,
+        invoice_id: null,
+        package_purchase_id: packagePurchaseId,
+        amount_cents: amountCents,
+        method: 'card',
+        stripe_payment_intent_id: paymentIntentId,
+        purpose: 'bono',
+      })
       .select('id')
       .single()
     if (paymentError || !payment) {
-      await dropUnpaidCharge(invoice.id, paymentError)
+      // Nothing was written before it, so there is nothing to take back out.
+      console.error('[stripe webhook] bono instalment payment insert failed', packagePurchaseId, paymentError?.message)
       return
     }
 
     // An autopay instalment describes the share of the bono it buys, exactly
     // as one taken at the desk does.
-    if (payment) {
-      const { data: pkg } = await supabase
-        .from('package_purchases')
-        .select('package_name, price_cents, sessions_total')
-        .eq('id', packagePurchaseId)
-        .maybeSingle()
-      await issueFacturaServer(supabase, {
-        accountId,
-        patientId,
-        paymentId: payment.id,
-        amountCents,
-        purpose: 'bono',
-        bono: pkg
-          ? { packageName: pkg.package_name, priceCents: pkg.price_cents, sessionsTotal: pkg.sessions_total }
-          : undefined,
-        serviceName: purchase?.package_name ?? 'Package',
-      })
-    }
-    await supabase.from('account_credits').insert({
-      account_id: accountId,
-      patient_id: patientId,
-      amount_cents: amountCents,
-      reason: `Package installment: ${purchase?.package_name ?? 'Package'}`,
-      invoice_id: invoice.id,
+    await issueFacturaServer(supabase, {
+      accountId,
+      patientId,
+      paymentId: payment.id,
+      amountCents,
+      purpose: 'bono',
+      bono: pkg ? { packageName: pkg.package_name, priceCents: pkg.price_cents, sessionsTotal: pkg.sessions_total } : undefined,
+      serviceName: pkg?.package_name ?? 'Package',
     })
   }
 

@@ -527,6 +527,8 @@ function onDetailsUpdated() {
         </div>
       </section>
 
+      <PatientsBonosCard :patient-id="patient.id" />
+
       <PatientsPregnancyCard :patient="patient" @updated="emit('updated')" />
 
       <PatientsFamilyCard :patient="patient" />

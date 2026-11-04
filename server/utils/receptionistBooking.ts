@@ -327,6 +327,15 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
       if (type.forReferrals && !referrer) {
         return { content: `${type.name} is only for someone a patient referred. Ask the first name and surname of the patient who referred them and book with referred_by; if no patient referred them, offer ${ctx.types.map((t) => t.name).join(', ') || 'what a colleague arranges'} instead. Do not say it is booked.`, isError: true }
       }
+      // "Anything later this afternoon?" about a visit at 11:30 was booked as
+      // a second visit at 16:00, with the 11:30 left in the diary and passed
+      // to a person (3 Nov 2026). A visit of their own on a day they already
+      // have one is a move of that one, not a new booking.
+      const sameDay = ctx.booked.appointments.find((a) => clinicDateOf(new Date(a.startsAt), ctx.timeZone) === date)
+      if (sameDay) {
+        const at = localStamp(sameDay.startsAt, ctx.timeZone)
+        return { content: `They already have a visit at ${at}. To change its time, book again with move_visit_on = "${at}"; if they cannot come to it at all, cancel it with cancel_appointment first. Never book them a second visit that day, and do not say anything is booked.`, isError: true }
+      }
     }
 
     // Free now, and with whom: the visit's own practitioner first for a move,
@@ -876,8 +885,10 @@ export function cancelTool(ctx: BookingContext): (input: unknown) => Promise<Too
     }
     await afterUnattendedCancellation(ctx.service, getRequestURL(ctx.event).origin, ctx.accountId, visit.id, patientId)
 
+    // Gone from their visits for the rest of this reply too, so a new time
+    // the same day can be booked once the one they cannot make is cancelled.
+    ctx.booked.appointments = ctx.booked.appointments.filter((a) => a.id !== visit.id)
     const remaining = ctx.booked.appointments
-      .filter((a) => a.id !== visit.id)
       .map((a) => new Date(a.startsAt).toLocaleString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: ctx.timeZone }))
     return {
       content: [

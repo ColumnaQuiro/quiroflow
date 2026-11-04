@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { AUTOMATED_MARK, COLLEAGUE_MARK, cleanReply, historyLine, historyMarkersSection, INFORMAL_ADDRESS_LINE, LATER_ANSWER_LINE, offeredTimeCount, REPLY_DETAILS_LINE, SENT_FILES_LINE, standingClockTimes, STATED_LIMITS_LINE, unbookedClaim } from '../../utils/receptionistHistory'
+import { AUTOMATED_MARK, COLLEAGUE_MARK, cleanReply, historyLine, historyMarkersSection, INFORMAL_ADDRESS_LINE, LATER_ANSWER_LINE, offeredTimeCount, replyLanguageLine, REPLY_DETAILS_LINE, SENT_FILES_LINE, standingClockTimes, STATED_LIMITS_LINE, unbookedClaim } from '../../utils/receptionistHistory'
 import { rescheduleSection } from '../../utils/receptionistTypes'
 
 // The reminder in the history read as one of the receptionist's own replies,
@@ -155,5 +155,13 @@ describe('Moving a visit, when it is today', () => {
     const s = rescheduleSection([{ startsAt: '2026-10-28T18:30:00Z', typeName: 'Ajuste' }], 'Europe/Madrid', { listVisits: true, canBook: true })
     expect(s).toContain('a visit TODAY that they say they cannot make (ill, stuck on the road, running late past it): cancel it now with cancel_appointment even when they want another day')
     expect(s).toContain("only times listed under that type's own name")
+  })
+})
+
+describe('Reply language', () => {
+  // "Hola! Do you have any appointments later this afternoon...?" was
+  // answered in Spanish (3 Nov 2026): the greeting set the language.
+  it('judges the message as a whole, not its greeting', () => {
+    expect(replyLanguageLine(['es', 'en'])).toContain('not its greeting')
   })
 })

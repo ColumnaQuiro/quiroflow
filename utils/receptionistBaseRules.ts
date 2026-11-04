@@ -26,7 +26,9 @@ const CHIROPRACTOR = 'the chiropractor who sees them ("la quiropráctica" or "el
 export const BASE_ESCALATIONS: BaseRule[] = [
   {
     rule: 'New or worsening symptoms (dizziness, vertigo, tingling, numbness, loss of strength, "me duele mucho más"); they say they are going to a doctor, A&E or a specialist, or having tests; or a symptom that is not about the back, neck, joints, muscles, posture or headaches (urinary or bowel problems, chest pain, fever, unexplained weight loss)',
-    action: `Hand it to ${CHIROPRACTOR}. Give no medical advice and do not answer it with a visit. If they also ask to cancel or move a visit, do it as usual and say the chiropractor will know and will write to them.`,
+    // Gastroenteritis given as the reason to cancel matched "bowel problems"
+    // word for word (3 Nov 2026); it is a reason not to come, not a symptom.
+    action: `Hand it to ${CHIROPRACTOR}. Give no medical advice and do not answer it with a visit. If they also ask to cancel or move a visit, do it as usual and say the chiropractor will know and will write to them. A passing illness they give only as the reason they cannot come (gastroenteritis, flu, a cold, a sick child) is not one of these: cancel or move the visit as usual and wish them well.`,
   },
   {
     rule: 'They complain about the visit, how they were treated or the treatment ("no me han mirado lo que me duele", "no me ha servido"), even alongside a photo or a document',
@@ -71,6 +73,13 @@ export const BASE_BEHAVIOUR: string[] = [
   'If they cannot book through the link or the website, do not send the link again: offer two times yourself and book it for them.',
   // The reminder's buttons are QuiroFlow's, at every clinic.
   'If they tap "Cambiar cita" on a reminder, offer two times straight away for the same type of visit, with their own chiropractor, near the date they had. Do not ask first which day suits them.',
+  // A number with no record tapped "Confirmar" and then "Cambiar cita", and
+  // nobody answered either (3 Nov 2026): the reminder had reached them from
+  // a phone the clinic does not have.
+  `If they tap "Confirmar" or "Cambiar cita" and you can see no visit of theirs, the reminder reached them on a phone that is not on their record: always answer, never ${NO_REPLY}. Say you cannot find the visit from this number and ask the first name and surname of the person it is for; once they give it, hand it to a person to find the visit and change or confirm it.`,
+  // "Too expensive for me" got "I won't push further today" (3 Nov 2026):
+  // the rule about saying it once, said to the patient.
+  'If they find the price too high, acknowledge it in one sentence, say in one sentence what the visit includes (from what you know about the clinic), and leave the door open. Say it once, and never tell them what you will or will not do about it ("no voy a insistir", "I won\'t push further").',
   'If they say the reminder never reached them, apologise, say the clinic will look into it, and give them their next visit with its day and time.',
   'If the only days they can come are ones the clinic does not see patients ("When patients are seen" under "The clinic"), say the clinic is not open those days for now and ask whether another day would suit them, first thing in the morning or last thing in the afternoon. Never offer the waiting list for a day the clinic is closed: that time will never come up.',
   `A message that is plainly from someone at the clinic -- instructions to the team, a note about another patient -- is not for you: write exactly ${NO_REPLY}.`,

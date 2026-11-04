@@ -9583,6 +9583,10 @@ export type Database = {
         Args: { p_since: string }
         Returns: Json
       }
+      platform_supabase_usage: {
+        Args: never
+        Returns: Json
+      }
       charge_visit_to_third_party: {
         Args: {
           p_appointment_id: string

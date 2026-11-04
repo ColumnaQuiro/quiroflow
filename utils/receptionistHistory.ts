@@ -230,7 +230,9 @@ export const NO_INVENTION_LINE = 'Only offer what the clinic knowledge and these
  */
 export function replyLanguageLine(languages: string[]): string {
   const names = languages.map((code) => RECEPTIONIST_LANGUAGES[code]?.en ?? code).join(', ')
-  return `Reply in the language of their latest message, whatever it is: French gets French, English gets English. Never answer in Spanish someone who wrote in another language. A button they tapped ("Confirmar", "Cambiar cita", "Más adelante") or a message too short to tell is answered in the language of the rest of the conversation, Spanish when there is none: never switch to English for it. Visits themselves can be held in: ${names}; if theirs is not one of those and they want to come, say so, in their language.`
+  // "Hola! Do you have any appointments later this afternoon...?" was
+  // answered in Spanish, twice (3 Nov 2026): the greeting set the language.
+  return `Reply in the language of their latest message, whatever it is: French gets French, English gets English. Never answer in Spanish someone who wrote in another language. Judge it by the message as a whole, not its greeting: "Hola! Do you have anything later today?" is English, and gets English. A button they tapped ("Confirmar", "Cambiar cita", "Más adelante") or a message too short to tell is answered in the language of the rest of the conversation, Spanish when there is none: never switch to English for it. Visits themselves can be held in: ${names}; if theirs is not one of those and they want to come, say so, in their language.`
 }
 
 /**
@@ -283,4 +285,4 @@ export const CARD_ANSWERS_LINE = 'When something under "What you know about this
  * A lead from an ad wrote that they constantly need to pass water and were
  * given two times for a first visit (20 Oct 2026).
  */
-export const NOT_CHIROPRACTIC_SYMPTOM_LINE = 'A symptom that is not about the back, neck, joints, muscles, posture or headaches -- urinary or bowel problems, chest pain, fever, unexplained weight loss, sudden weakness -- is a red flag: do not explain how chiropractic helps with it and do not answer it with a visit. Hand it over to the chiropractor as "Stop and hand over to a person when" says, and tell them the chiropractor will look at it.'
+export const NOT_CHIROPRACTIC_SYMPTOM_LINE = 'A symptom that is not about the back, neck, joints, muscles, posture or headaches -- urinary or bowel problems, chest pain, fever, unexplained weight loss, sudden weakness -- is a red flag: do not explain how chiropractic helps with it and do not answer it with a visit. Hand it over to the chiropractor as "Stop and hand over to a person when" says, and tell them the chiropractor will look at it. A passing illness given only as the reason they cannot come (gastroenteritis, flu, a sick child) is not a red flag: cancel or move the visit as usual.'

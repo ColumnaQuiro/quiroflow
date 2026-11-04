@@ -11,7 +11,7 @@ import { freeTimesLookup, runReceptionistModel, type FreeTimesForWhom } from '~/
 import { matchChild, typesAfterFirstVisit, typesForAudience, typesForMinor, typesForSomeoneTheyBring } from '~/utils/receptionistTypes'
 import { internalNotes } from '~/utils/receptionistGuard'
 import { carePlanCadenceLabel } from '~/utils/carePlanCadence'
-import { buildPatientReplyPrompt, openBono, summariseVisitHistory, type PastVisit, type PatientReplyFacts } from '~/utils/patientReplyPrompt'
+import { buildPatientReplyPrompt, type PatientAppFacts, openBono, summariseVisitHistory, type PastVisit, type PatientReplyFacts } from '~/utils/patientReplyPrompt'
 
 // A reply to a PATIENT's message in the Inbox, drafted by the receptionist
 // (Growth's AI receptionist, the one that drafts for leads -- same persona,
@@ -68,7 +68,7 @@ export async function draftPatientReply(
   // What everything below is read as of: anything the team does after this,
   // in the conversation or the diary, holds a sent reply back (heldBackBeforeSending).
   const readAt = new Date().toISOString()
-  const { data: patient } = await supabase.from('patients').select('id, first_name').eq('id', patientId).eq('account_id', accountId).maybeSingle()
+  const { data: patient } = await supabase.from('patients').select('id, first_name, user_id').eq('id', patientId).eq('account_id', accountId).maybeSingle()
   if (!patient) return { status: 'not_found' }
 
   // Both channels the Inbox shows as one conversation: WhatsApp and the app.
@@ -203,6 +203,12 @@ export async function draftPatientReply(
   const clinicDetails = await loadClinicDetails(supabase, accountId)
   // Who sees patients, by name (teamSection, fixStyle).
   const team = await loadTeamNames(supabase, accountId)
+  // What the app holds for them (patientAppSection): the exercises they ask
+  // to be sent, and the code the app asks for the first time it is opened.
+  const [{ count: exercises, error: exercisesError }, { data: account }] = await Promise.all([
+    supabase.from('patient_exercises').select('id', { count: 'exact', head: true }).eq('account_id', accountId).eq('patient_id', patientId).is('ended_at', null),
+    supabase.from('accounts').select('slug').eq('id', accountId).maybeSingle(),
+  ])
   const family = { forNew: bringsSomeone.types, forReturning: types, members: await loadFamilyAdults(service, accountId, patientId) }
   // Back after a long break with no bono: the clinic's own visit for that
   // (returningPatientSection), when it is one it offers.
@@ -239,6 +245,7 @@ export async function draftPatientReply(
   // (WhatsApp or the app), and nothing in the conversation holding it back.
   const lastInbound = [...turns].reverse().find((m) => m.direction === 'inbound')
   const channel: 'app' | 'whatsapp' | null = lastInbound?.channel === 'app' ? 'app' : lastInbound?.channel === 'whatsapp' ? 'whatsapp' : null
+  const patientApp: PatientAppFacts = { exercises: exercisesError ? null : (exercises ?? 0), hasAccount: Boolean(patient.user_id), writingFromApp: channel === 'app', clinicCode: account?.slug ?? null }
   const asTurns = turns.map((m) => ({ direction: m.direction, sentByAi: m.sent_by_ai === true, automated: m.automated === true, createdAt: m.created_at }))
   let handoverOpen = false
   if (opts.send) {
@@ -284,7 +291,7 @@ export async function draftPatientReply(
   const { text: draft, refused, handedOver, toolUses } = await runReceptionistModel(await createAnthropicClient(apiKey, { feature: 'receptionist_patient', accountId }), {
     model: MODEL,
     maxTokens: MAX_TOKENS,
-    system: buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, family: { forNew: family.forNew, forReturning: family.forReturning, members: family.members }, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, laterPrices, clinicDetails, team, reactivationType, canStopFollowUps: Boolean(stopFollowUps) }),
+    system: buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, family: { forNew: family.forNew, forReturning: family.forReturning, members: family.members }, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, laterPrices, clinicDetails, team, app: patientApp, reactivationType, canStopFollowUps: Boolean(stopFollowUps) }),
     messages: withImages(history, images),
     findFreeTimes,
     handOver: sends,

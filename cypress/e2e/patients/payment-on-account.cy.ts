@@ -29,6 +29,8 @@ describe('A payment with no invoice', () => {
         // through an inner join to invoices, which it has none of. It shows as
         // Paid ahead, the positive part of what the Balance figure was.
         cy.contains('[data-cy=money-paid-ahead]', '50,00 €').should('be.visible')
+        // And the card does not also say it holds nothing.
+        cy.contains('Nothing on account.').should('not.exist')
 
         // And it is visible as an event, not just as a number: the ledger
         // matches a payment to its invoice by invoice_id, and this one has

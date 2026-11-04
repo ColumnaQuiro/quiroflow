@@ -495,6 +495,10 @@ const moreFiltersActive = computed(() => (replyFilter.value === 'awaiting_patien
 // chrome left room for one and a half conversations. The button says what is
 // narrowing the list -- the filter's own name when there is one, so the
 // default "Needs reply" is never a filter nobody can see.
+//
+// Only where the list is the whole width (below md). Beside a thread the
+// list is a 340px column, and the button took what little room the search
+// box had left: at 960x600 (a laptop at 150%) it shrank to its icon.
 const filtersOpen = ref(false)
 const activeFilterNames = computed(() => {
   const on: string[] = []
@@ -1891,7 +1895,7 @@ function avatarInitials(name: string) {
               <button
                 type="button"
                 data-cy="inbox-filters-toggle"
-                class="hidden h-9 touch:h-11 min-w-9 touch:min-w-11 shrink-0 items-center justify-center gap-1 rounded-ctl border px-2 text-[13px] font-semibold short:flex"
+                class="hidden h-9 touch:h-11 min-w-9 touch:min-w-11 shrink-0 items-center justify-center gap-1 rounded-ctl border px-2 text-[13px] font-semibold short:max-md:flex"
                 :class="filtersOpen || activeFilterNames.length ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted hover:bg-surface-subtle'"
                 aria-controls="inbox-filter-rows"
                 :aria-expanded="filtersOpen"
@@ -1899,12 +1903,8 @@ function avatarInitials(name: string) {
                 :title="activeFilterNames.length ? `${t('Filters', 'Filtros')}: ${activeFilterNames.join(', ')}` : t('Filters', 'Filtros')"
                 @click="filtersOpen = !filtersOpen"
               >
-                <!-- The name where the list is the whole width; beside a
-                     340px list there is room for the count alone. -->
-                <span class="max-w-[9rem] truncate md:hidden" aria-hidden="true">{{ filtersSummary }}</span>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hidden md:block" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" /></svg>
-                <span v-if="activeFilterNames.length" class="hidden text-[12px] md:inline" aria-hidden="true">{{ activeFilterNames.length }}</span>
-                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" class="md:hidden" :class="filtersOpen ? 'rotate-180' : ''" aria-hidden="true"><path d="M4 6l4 4 4-4" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                <span class="max-w-[9rem] truncate" aria-hidden="true">{{ filtersSummary }}</span>
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" :class="filtersOpen ? 'rotate-180' : ''" aria-hidden="true"><path d="M4 6l4 4 4-4" stroke-linecap="round" stroke-linejoin="round" /></svg>
               </button>
               <button
                 type="button"
@@ -1963,7 +1963,7 @@ function avatarInitials(name: string) {
                 </div>
               </div>
             </div>
-            <div id="inbox-filter-rows" class="contents" :class="filtersOpen ? '' : 'short:hidden'" data-cy="inbox-filter-rows">
+            <div id="inbox-filter-rows" class="contents" :class="filtersOpen ? '' : 'short:max-md:hidden'" data-cy="inbox-filter-rows">
               <!-- Segments sized to their text (flex-auto), not equal thirds: in the
               320px list "Unassigned 414" is wider than a third and ran into the
               edge of its own pill. -->

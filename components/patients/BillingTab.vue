@@ -2305,7 +2305,9 @@ const fieldId = useId()
              hundred pixels, with two progress bars, and read as a bug.
              "In bonos" above is the part that belongs to a money summary;
              how many sessions are left is the card below's job. -->
-        <p v-if="activePurchases.length === 0 && creditLedgerCents === 0" class="mt-3 text-[12px] text-ink-faint">
+        <!-- Not while money is paid ahead: "Nothing on account" above
+             "Paid ahead 50,00 €" contradicted itself. -->
+        <p v-if="activePurchases.length === 0 && creditLedgerCents === 0 && paidAheadCents === 0" class="mt-3 text-[12px] text-ink-faint">
           {{ t('Nothing on account.', 'Nada en cuenta.') }}
         </p>
 

@@ -31,6 +31,8 @@ describe('The history beside the visit note', () => {
       seed(account, 'Pestaña').then(({ patient, doc }: any) => {
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}?tab=attachments`)
+        // The tab is a lazy component; wait for the row, not the first frame.
+        cy.contains('Historia clínica', { timeout: 15000 }).should('be.visible')
 
         cy.get('[data-cy=doc-view-answers]')
           .should('have.attr', 'target', '_blank')
@@ -66,7 +68,7 @@ describe('The history beside the visit note', () => {
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}?tab=attachments`)
 
-        cy.contains('a', 'Historia clínica').click()
+        cy.contains('a', 'Historia clínica', { timeout: 15000 }).click()
         cy.location('pathname').should('eq', `/patients/${patient.id}`)
         cy.contains('button', 'Save').should('be.visible')
         cy.get('textarea').should('have.value', 'Menisco rodilla derecha, 2019')

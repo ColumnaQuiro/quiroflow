@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { offeredTypesSection, rescheduleSection, typesForAudience, type PromptType } from '../../utils/receptionistTypes'
+import { offeredTypesSection, patientAudience, rescheduleSection, typesForAudience, type PromptType } from '../../utils/receptionistTypes'
+import { buildPatientReplyPrompt } from '../../utils/patientReplyPrompt'
+import { receptionistPromptText } from '../../utils/receptionistPrompt'
 import { leadNameIsTheirs, newPatientDetails, newPatientDetailsSection } from '../../utils/receptionistTypes'
 
 // Which appointment the receptionist offers depends on who is asking: the
@@ -144,5 +146,41 @@ describe('What a new patient is asked for before booking', () => {
     expect(newPatientDetailsSection({ name: false, email: true })).toMatch(/email is already on record.*first name and surname/s)
     expect(newPatientDetailsSection({ name: true, email: false })).toMatch(/name is already on record.*need their email/s)
     expect(newPatientDetailsSection({ name: false, email: false })).toContain('first name and surname(s) and their email')
+  })
+})
+
+// A patient writing in is not always somebody who has been. 4 Nov 2026: a
+// lead from the ad had her first visit booked as a lead, cancelled it, and
+// asked for another date as a patient. The patient path offered returning
+// patients' types only, so the receptionist found a time and then handed
+// over with nothing to book it as.
+describe('Patient audience', () => {
+  const fromAd = { channel: 'facebook', source: 'Meta Ads', externalSource: 'facebook', campaign: null, ad: null }
+  const onWhatsApp = { channel: 'whatsapp', source: null, externalSource: null, campaign: null, ad: null }
+
+  it('is somebody new from the ad while a lead of theirs came from the ad and they have not been', () => {
+    expect(patientAudience({ attended: 0, bonoSessionsLeft: 0, leadOrigins: [fromAd] })).toBe('new_from_ad')
+    expect(patientAudience({ attended: 0, bonoSessionsLeft: 0, leadOrigins: [onWhatsApp, fromAd] })).toBe('new_from_ad')
+  })
+
+  it('is somebody new, not from the ad, with no lead or none from the ad', () => {
+    expect(patientAudience({ attended: 0, bonoSessionsLeft: 0, leadOrigins: [] })).toBe('new')
+    expect(patientAudience({ attended: 0, bonoSessionsLeft: 0, leadOrigins: [onWhatsApp] })).toBe('new')
+  })
+
+  it('is returning once they came to a visit, or hold a bono, from the ad or not', () => {
+    expect(patientAudience({ attended: 1, bonoSessionsLeft: 0, leadOrigins: [fromAd] })).toBe('existing')
+    expect(patientAudience({ attended: 0, bonoSessionsLeft: 5, leadOrigins: [fromAd] })).toBe('existing')
+  })
+
+  it('offers that patient the ad offer, by name, in the reply prompt', () => {
+    const { types, adOnly, regular } = typesForAudience(all, patientAudience({ attended: 0, bonoSessionsLeft: 0, leadOrigins: [fromAd] }))
+    const prompt = receptionistPromptText(buildPatientReplyPrompt(
+      { personaName: 'Alba', toneLine: 'Courteous and brief.', languages: ['es'], knowledge: [], escalationRules: [], neverSays: '', slotsPerReply: 2, bookingWindowDays: 14 },
+      { facts: { firstName: 'Nora', upcoming: [], lastVisitAt: null, plan: null, outstandingCents: null }, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience: 'new_from_ad', calendar: { now: new Date('2026-11-04T18:00:00Z'), timeZone: 'Europe/Madrid', availability: null } },
+    ))
+    expect(prompt).toContain('- Oferta Primera visita (60 min)')
+    expect(prompt).toContain('came through one of its ads')
+    expect(prompt).not.toContain('- Ajuste (15 min)')
   })
 })

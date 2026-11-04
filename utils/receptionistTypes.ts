@@ -1,5 +1,6 @@
 import { orderTypes } from './appointmentTypes'
 import { FAMILY_RELATIONS } from './familyRelations'
+import { cameFromAd, type LeadOrigin } from './receptionistLeadOrigin'
 
 // Which appointment types the AI receptionist may offer.
 //
@@ -136,6 +137,26 @@ export const MINOR_AGE = 18
 export type ReceptionistAudience = 'new_from_ad' | 'new' | 'existing'
 
 const isFirstVisit = (type: PromptType) => type.stage === 'first_visit' || type.stage === 'first_visit_offer'
+
+/**
+ * Who a PATIENT writing in is, for booking -- decided as a lead's is
+ * (receptionistDraft.ts), from the record rather than from where the
+ * conversation happens to be filed.
+ *
+ * The patient path used to be 'existing' for everyone, on the reasoning that
+ * a patient who writes is somebody the clinic knows. Not so for someone from
+ * the ad whose first visit was booked as a lead and then cancelled: by the
+ * time they asked for another date (4 Nov 2026) they were a patient with no
+ * visit, every first visit had been taken off the list, and the receptionist
+ * found a time and then handed over because it had nothing to book it as.
+ *
+ * Returning means a visit they came to, or a bono with sessions left -- the
+ * same test returningPatientSection uses, so the types and the prompt agree.
+ */
+export function patientAudience(f: { attended: number; bonoSessionsLeft: number; leadOrigins: LeadOrigin[] }): ReceptionistAudience {
+  if (f.attended > 0 || f.bonoSessionsLeft > 0) return 'existing'
+  return f.leadOrigins.some(cameFromAd) ? 'new_from_ad' : 'new'
+}
 
 /**
  * Which of the receptionist's types this person may be offered.

@@ -4,7 +4,7 @@ import { DEFAULT_CLINIC_TIMEZONE } from './clinicClock'
 import { CONFIDENTIALITY_SECTION, promptSafeName } from './receptionistGuard'
 import { NO_REPLY } from './receptionistAutoReply'
 import { clinicDetailsSection, teamSection, type PromptClinic } from './receptionistClinic'
-import { CONFIRM_BEFORE_BOOKING, familySection, laterPricesSection, minorsSection, offeredTypesSection, rescheduleSection, someoneTheyBringSection, type PromptPackage, type BookedVisit, type PromptChild, type PromptRelative, type PromptType } from './receptionistTypes'
+import { audienceSection, CONFIRM_BEFORE_BOOKING, familySection, laterPricesSection, minorsSection, offeredTypesSection, rescheduleSection, someoneTheyBringSection, type PromptPackage, type BookedVisit, type PromptChild, type PromptRelative, type PromptType, type ReceptionistAudience } from './receptionistTypes'
 import { receptionistBookingSection, receptionistClockSection, type ReceptionistAvailability } from './receptionistSlots'
 import { CARD_ANSWERS_LINE, historyMarkersSection, INFORMAL_ADDRESS_LINE, LATER_ANSWER_LINE, NO_INVENTION_LINE, NOT_CHIROPRACTIC_SYMPTOM_LINE, PART_OF_DAY_ANSWER_LINE, REPLY_DETAILS_LINE, replyLanguageLine, SENT_FILES_LINE, STATED_LIMITS_LINE, WAITLIST_SECTION } from './receptionistHistory'
 import type { ReceptionistPrompt } from './receptionistPrompt'
@@ -255,8 +255,14 @@ export function buildPatientReplyPrompt(
   config: PatientPromptConfig,
   opts: {
     facts: PatientReplyFacts
-    /** Already narrowed to a returning patient (typesForAudience 'existing'). */
+    /** Already narrowed to who they are (typesForAudience, patientAudience). */
     offeredTypes: PromptType[]
+    /** The first-visit offer for someone new not known to be from the ad (typesForAudience's adOnly). */
+    adOnlyTypes?: PromptType[]
+    /** The plain first visit, named beside the offer as what it saves (typesForAudience's regular). */
+    regularFirstVisit?: PromptType
+    /** Who they are for booking (patientAudience); absent, a returning patient as before. */
+    audience?: ReceptionistAudience
     calendar: { now: Date; timeZone: string; availability: ReceptionistAvailability | null; withWhom?: string[] | null }
     /** Whether the find_free_times tool is on this request. */
     searchTool?: boolean
@@ -290,7 +296,7 @@ export function buildPatientReplyPrompt(
     .map((card) => `## ${card.title}\n${card.lines.map((line) => `- ${line}`).join('\n')}`)
     .join('\n\n')
   const booked = opts.bookedVisits ?? []
-  const hasTimes = opts.offeredTypes.length > 0 || booked.length > 0
+  const hasTimes = opts.offeredTypes.length > 0 || (opts.adOnlyTypes?.length ?? 0) > 0 || booked.length > 0
   const availability = hasTimes ? opts.calendar.availability : null
   // Clinic first, this patient and this moment after it: see
   // utils/receptionistPrompt.ts, and buildSystemPrompt, which is split the same way.
@@ -335,7 +341,10 @@ export function buildPatientReplyPrompt(
     receptionistClockSection(opts.calendar.now, opts.calendar.timeZone),
     patientFactsSection(opts.facts, opts.calendar.timeZone),
     visitHistoryRule(opts.facts),
-    offeredTypesSection(opts.offeredTypes),
+    // A patient record with no visit yet -- a first visit from the ad,
+    // cancelled before they came -- is still somebody new.
+    opts.audience && opts.audience !== 'existing' ? audienceSection(opts.audience) : '',
+    offeredTypesSection(opts.offeredTypes, opts.adOnlyTypes ?? [], { regularFirstVisit: opts.regularFirstVisit }),
     opts.laterPrices ? laterPricesSection(opts.laterPrices) : '',
     opts.minors ? minorsSection({ ...opts.minors, canBook: !!opts.canBook, sendsItself: !!opts.sendsItself, bringsSomeone: Boolean(opts.bringsSomeone) }) : '',
     opts.family ? familySection({ ...opts.family, canBook: !!opts.canBook, sendsItself: !!opts.sendsItself, bringsSomeone: Boolean(opts.bringsSomeone) }) : '',

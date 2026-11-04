@@ -41,18 +41,20 @@ describe('The bono card’s figures', () => {
   it('shows what is still owed on a part-paid bono, against its price', () => {
     cy.seedStaffAccount().then((account) => {
       cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Parte', lastName: 'Pagada' }).then((patient: any) => {
-        // €528 bono, €264 paid: half of it still owed.
-        cy.task('db:createInvoice', { accountId: account.accountId, patientId: patient.id, totalCents: 52800, status: 'unpaid' }).then((inv: any) => {
-          cy.task('db:createPayment', { accountId: account.accountId, invoiceId: inv.id, amountCents: 26400, method: 'card' })
-          cy.task('db:createPackagePurchase', {
-            accountId: account.accountId,
-            patientId: patient.id,
-            packageName: 'Bono 12 sesiones',
-            sessionsTotal: 12,
-            sessionsUsed: 0,
-            priceCents: 52800,
-            invoiceId: inv.id,
-          })
+        // €528 bono, €264 paid: half of it still owed. Recorded the way a sale
+        // here records it -- the price owed on the bono, the payment on the
+        // bono. It used to be a sale invoice the bono pointed at, which the
+        // database now refuses (20261103193528).
+        cy.task('db:createPackagePurchase', {
+          accountId: account.accountId,
+          patientId: patient.id,
+          packageName: 'Bono 12 sesiones',
+          sessionsTotal: 12,
+          sessionsUsed: 0,
+          priceCents: 52800,
+          owedCents: 52800,
+        }).then((bono: any) => {
+          cy.task('db:createPayment', { accountId: account.accountId, patientId: patient.id, packagePurchaseId: bono.id, amountCents: 26400, method: 'card', purpose: 'bono' })
 
           cy.login(account.email, account.password)
           cy.visit(`/patients/${patient.id}?tab=billing`)

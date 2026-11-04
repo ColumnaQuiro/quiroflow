@@ -195,6 +195,10 @@ const ACCESS_LABELS = computed<Record<string, string>>(() => ({
 function accessDetail(row: AccessRow) {
   const d = (row.detail ?? {}) as Record<string, unknown>
   if (row.kind === 'export') {
+    // One patient's document rather than a list: there are no rows to count.
+    if (d.document === 'clinical_history') return `${t('clinical history', 'historial clínico')} · ${d.notes ?? '?'} ${t('notes', 'notas')}`
+    if (d.document === 'letter') return `${t('letter', 'carta')}${d.title ? ` · ${d.title}` : ''}`
+    if (d.document === 'attendance_certificate') return t('attendance certificate', 'justificante de asistencia')
     const which = d.export === 'recalls' ? t('recalls list', 'lista de recordatorios') : d.export === 'patient_list' ? t('patient list', 'lista de pacientes') : t('data export', 'exportación de datos')
     return `${which} · ${d.rows ?? '?'} ${t('rows', 'filas')}`
   }

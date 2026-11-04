@@ -121,9 +121,10 @@ const goalChips = computed(() =>
 const clinicalTitleId = useId()
 const clinicalPanel = ref<HTMLElement | null>(null)
 useFocusTrap(clinicalPanel, () => { editingClinical.value = false; load({ silent: true }) }, () => editingClinical.value)
-const notesTitleId = useId()
-const notesPanel = ref<HTMLElement | null>(null)
-useFocusTrap(notesPanel, () => { notesAppointmentId.value = null; load({ silent: true }) }, () => !!notesAppointmentId.value)
+function closeNotes() {
+  notesAppointmentId.value = null
+  load({ silent: true })
+}
 </script>
 
 <template>
@@ -321,16 +322,6 @@ useFocusTrap(notesPanel, () => { notesAppointmentId.value = null; load({ silent:
     <!-- Reloads on the way out, the same as the ✕ does. Without it, editing a
          note and then dismissing by clicking the backdrop left the list
          showing the text that had just been replaced. -->
-    <div v-if="notesAppointmentId" class="fixed inset-0 z-20 flex items-center justify-center bg-scrim/40 p-4" @click.self="notesAppointmentId = null; load({ silent: true })">
-      <div ref="notesPanel" role="dialog" aria-modal="true" :aria-labelledby="notesTitleId" class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-card bg-surface p-6 shadow-drawer">
-        <div class="flex items-center justify-between">
-          <h2 :id="notesTitleId" class="text-[15px] font-semibold text-ink-900">{{ t('Visit notes', 'Notas de la visita') }}</h2>
-          <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="notesAppointmentId = null; load({ silent: true })">✕</button>
-        </div>
-        <div class="mt-4">
-          <AppointmentsNotesPanel :appointment-id="notesAppointmentId" />
-        </div>
-      </div>
-    </div>
+    <PatientsNotesDialog v-if="notesAppointmentId" :appointment-id="notesAppointmentId" :patient-id="patientId" @close="closeNotes" />
   </div>
 </template>

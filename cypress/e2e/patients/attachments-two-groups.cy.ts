@@ -57,7 +57,7 @@ describe('The Attachments tab', () => {
         cy.contains('Completed').should('be.visible')
         // Opening a returned form is reading what they answered, and the
         // label should say which of the two it is.
-        cy.contains('button', 'View answers').should('be.visible')
+        cy.contains('a', 'View answers').should('be.visible')
       })
     })
   })

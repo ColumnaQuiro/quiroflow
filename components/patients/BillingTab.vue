@@ -2582,11 +2582,14 @@ const fieldId = useId()
               shows these. A beneficiary viewing a bono shared to them can
               draw a session from it, same as the owner, but shouldn't see
               actions that imply they bought or control it. -->
+              <!-- Gated like the rest of the tab: anyone in the clinic can
+              read a bono now (staff_see_bono_progress), so a card is no longer
+              proof that whoever sees it may take money for it. -->
               <template v-if="!p.shared">
-                <UiBtn v-if="packageOwedCents(p) > 0" size="sm" variant="secondary" @click="collectOnPackage(p)">
+                <UiBtn v-if="canTakePayments && packageOwedCents(p) > 0" size="sm" variant="secondary" @click="collectOnPackage(p)">
                   {{ t('Take payment', 'Cobrar') }}…
                 </UiBtn>
-                <UiBtn size="sm" variant="secondary" @click="toggleLinkPayment(p.id)">
+                <UiBtn v-if="canTakePayments" size="sm" variant="secondary" @click="toggleLinkPayment(p.id)">
                   {{ t('Link payment', 'Vincular pago') }}{{ linkedPaymentsFor(p).length ? ` (${linkedPaymentsFor(p).length})` : '' }}…
                 </UiBtn>
                 <UiBtn v-if="canManagePackages" size="sm" variant="secondary" @click="toggleShares(p.id)">
@@ -2610,7 +2613,7 @@ const fieldId = useId()
                   ? t(`1 visit has no session or payment: ${formatShortDate(unpaidVisits[0].starts_at)}.`, `1 visita no tiene sesión ni pago: ${formatShortDate(unpaidVisits[0].starts_at)}.`)
                   : t(`${unpaidVisits.length} visits have no session or payment.`, `${unpaidVisits.length} visitas no tienen sesión ni pago.`)
               }}
-              <button type="button" class="ml-1 font-semibold underline" @click="openLogSession(p)">{{ t('Log it', 'Registrarla') }}</button>
+              <button v-if="canManagePackages" type="button" class="ml-1 font-semibold underline" @click="openLogSession(p)">{{ t('Log it', 'Registrarla') }}</button>
             </p>
 
             <div v-if="openSharesPackageId === p.id" class="mt-2.5 rounded-ctl border border-line-divider bg-surface-subtle p-2.5">

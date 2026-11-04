@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { hasBusinessHoursConfigured, type BusinessHours } from '~/utils/businessHours'
 import { hoursProblems, normalizeHours } from '~/utils/clinicHours'
+import { COUNTRIES_BY_NAME, countryByCode } from '~/utils/countries'
 import { looksLikePhoneNumber } from '~/utils/phone'
 
 // One clinic, everything about it on one page: what used to be spread over
@@ -22,6 +23,7 @@ const clinicId = route.params.id as string
 interface Form {
   name: string
   address: string
+  country: string
   phone: string
   email: string
   // As stored. The editor gets a full, sorted week to work on, and this only
@@ -59,6 +61,7 @@ function toForm(c: any): Form {
   return {
     name: c.name ?? '',
     address: c.address ?? '',
+    country: c.country ?? 'ES',
     phone: c.phone ?? '',
     email: c.email ?? '',
     business_hours: (c.business_hours ?? {}) as BusinessHours,
@@ -73,7 +76,7 @@ function toForm(c: any): Form {
 async function load() {
   const { data: c, error } = await supabase
     .from('clinics')
-    .select('id, name, address, phone, email, business_hours, timezone, slot_duration_minutes, legal_name, tax_id, invoice_footer_text, logo_storage_path, online_booking_enabled, archived_at, account_id')
+    .select('id, name, address, country, phone, email, business_hours, timezone, slot_duration_minutes, legal_name, tax_id, invoice_footer_text, logo_storage_path, online_booking_enabled, archived_at, account_id')
     .eq('id', clinicId)
     .maybeSingle()
   if (error || !c) {
@@ -146,6 +149,7 @@ const changes = computed(() => {
   // The column is not null: a week with nothing set is written as seven empty
   // days, its default.
   if (JSON.stringify(comparableHours(f.business_hours)) !== JSON.stringify(comparableHours(before.business_hours))) out.business_hours = normalizeHours(f.business_hours)
+  if (f.country !== before.country) out.country = f.country
   if (f.timezone !== before.timezone) out.timezone = f.timezone
   if (f.slot_duration_minutes !== before.slot_duration_minutes) out.slot_duration_minutes = f.slot_duration_minutes
   return out
@@ -382,6 +386,15 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
                 {{ t('Address', 'Dirección') }}
                 <textarea v-model="form.address" data-cy="clinic-address" rows="2" :class="[inputClass, 'h-[72px] resize-y border-line-control py-2.5 leading-snug']" />
                 <span :class="hint">{{ t('Printed on your facturas and receipts, and shown in online booking.', 'Aparece en tus facturas y recibos, y en la reserva online.') }}</span>
+              </label>
+              <label class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
+                {{ t('Country', 'País') }}
+                <select v-model="form.country" data-cy="clinic-country" :class="[inputClass, 'border-line-control']">
+                  <!-- A stored code this list does not know still shows, rather than reading as blank. -->
+                  <option v-if="!countryByCode(form.country).dial" :value="form.country">{{ form.country }}</option>
+                  <option v-for="c in COUNTRIES_BY_NAME" :key="c.code" :value="c.code">{{ c.flag }} {{ c.name }}</option>
+                </select>
+                <span :class="hint">{{ t('Where this location is. The dial code a number gets when it has none is set in Settings → Messages.', 'Dónde está esta sede. El prefijo que recibe un número sin él se elige en Ajustes → Mensajes.') }}</span>
               </label>
             </section>
 

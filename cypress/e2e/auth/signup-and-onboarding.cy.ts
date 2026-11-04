@@ -16,6 +16,7 @@ describe('Signup and onboarding', () => {
     cy.location('pathname', { timeout: 15000 }).should('eq', '/onboarding')
 
     cy.get('#owner-name').type(ownerName)
+    cy.get('#owner-phone').type('600 00 00 00')
     cy.get('#account-name').type(accountName)
     cy.get('#clinic-name').type(clinicName)
 
@@ -24,34 +25,35 @@ describe('Signup and onboarding', () => {
     cy.contains(`quiroflow.app/`).should('exist')
     cy.contains(accountName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')).should('exist')
 
-    // The phone country is asked here rather than assumed, because every
-    // number the account later stores without one falls back to it. Picking
-    // a non-default proves the choice actually reaches the account.
+    // The clinic's country is asked here rather than assumed: it is stored on
+    // the clinic, and every number the account later stores without a dial
+    // code falls back to it. Picking a non-default proves the choice actually
+    // reaches the account.
     //
     // Driven entirely from the keyboard: this replaced a native <select>, and
     // a custom combobox that can only be used with a mouse would be a
     // regression no visual check would catch.
-    cy.get('#phone-country').focus().type('{enter}')
-    cy.get('#phone-country').should('have.attr', 'aria-expanded', 'true')
+    cy.get('#clinic-country').focus().type('{enter}')
+    cy.get('#clinic-country').should('have.attr', 'aria-expanded', 'true')
 
     // Escape closes it and hands focus back to the trigger rather than
     // dropping it at the top of the document.
     cy.focused().type('{esc}')
-    cy.get('#phone-country').should('have.attr', 'aria-expanded', 'false').and('have.focus')
+    cy.get('#clinic-country').should('have.attr', 'aria-expanded', 'false').and('have.focus')
 
     // Reopen, filter by name, and take the first match with Enter.
-    cy.get('#phone-country').type('{enter}')
+    cy.get('#clinic-country').type('{enter}')
     cy.focused().type('Portugal')
-    cy.get('#phone-country-listbox').find('[role="option"]').first().should('contain', 'Portugal')
+    cy.get('#clinic-country-listbox').find('[role="option"]').first().should('contain', 'Portugal')
     cy.focused().type('{enter}')
-    cy.get('#phone-country').should('contain', '+351').and('have.attr', 'aria-expanded', 'false')
+    cy.get('#clinic-country').should('contain', 'Portugal').and('have.attr', 'aria-expanded', 'false')
 
     // Arrows open it and move between options, so the list is reachable
     // without knowing what to type.
-    cy.get('#phone-country').focus().type('{downarrow}')
-    cy.get('#phone-country').should('have.attr', 'aria-expanded', 'true')
+    cy.get('#clinic-country').focus().type('{downarrow}')
+    cy.get('#clinic-country').should('have.attr', 'aria-expanded', 'true')
     cy.focused().type('{esc}')
-    cy.get('#phone-country').should('contain', '+351')
+    cy.get('#clinic-country').should('contain', 'Portugal')
 
     cy.contains('button', 'Create practice').click()
 
@@ -66,14 +68,20 @@ describe('Signup and onboarding', () => {
     cy.contains('h1', 'Set up your practice').should('be.visible')
     cy.get('#owner-name').should('have.value', ownerName)
     cy.get('#account-name').should('have.value', accountName)
-    cy.get('#phone-country').should('contain', '+351')
+    cy.get('#clinic-country').should('contain', 'Portugal')
+    cy.get('#owner-phone').should('have.value', '600 00 00 00')
     cy.get('#account-name').clear().type(renamed)
     cy.contains('button', 'Save and continue').click()
 
     cy.contains('h1', 'Make QuiroFlow yours', { timeout: 15000 }).should('be.visible')
     cy.contains('button', 'Continue').click()
 
+    // Importing is optional: nothing chosen, the button says so.
+    cy.contains('h1', 'Coming from other software?').should('be.visible')
+    cy.get('[data-test="import-continue"]').should('contain', 'Skip for now').click()
+
     cy.contains('h1', "You're all set", { timeout: 15000 }).should('be.visible')
+    cy.contains('Portugal').should('be.visible')
     // The rename reached the account rather than being dropped by a submit
     // that only knows how to create.
     cy.contains(renamed).should('be.visible')
@@ -117,6 +125,12 @@ describe('Signup and onboarding', () => {
     cy.get('#owner-name').type(faker.person.fullName())
     cy.get('#account-name').type(`${faker.company.name()} Clinic`)
     cy.get('#clinic-name').type(faker.location.city())
+
+    // The owner's phone is the one field checked before the account exists.
+    cy.contains('button', 'Create practice').click()
+    cy.get('#owner-phone').should('have.attr', 'aria-invalid', 'true').and('have.focus')
+    cy.contains('[role="alert"]', 'Enter a phone number we can reach you on').should('be.visible')
+    cy.get('#owner-phone').type('612 345 678')
     cy.contains('button', 'Create practice').click()
     cy.contains('h1', 'Make QuiroFlow yours', { timeout: 15000 }).should('be.visible')
 
@@ -131,5 +145,13 @@ describe('Signup and onboarding', () => {
     cy.contains('h1', 'Make QuiroFlow yours', { timeout: 15000 }).should('be.visible')
 
     cy.task('db:ownerIsPractitioner', { email }).should('eq', true)
+
+    // A source picked at the Import step is where Launch sends them.
+    cy.contains('button', 'Continue').click()
+    cy.get('[data-test="import-source-practicehub"]').click()
+    cy.get('[data-test="import-continue"]').should('contain', 'Continue').click()
+    cy.get('[data-test="launch-import"]').should('contain', 'Import from PracticeHub').click()
+    cy.location('pathname', { timeout: 15000 }).should('eq', '/settings/import')
+    cy.location('search').should('contain', 'source=practicehub')
   })
 })

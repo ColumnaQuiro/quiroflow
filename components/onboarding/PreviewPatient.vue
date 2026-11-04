@@ -16,7 +16,7 @@ const p = PREVIEW_PATIENT
       )
     "
   >
-    <OnboardingPreviewFragment :top="246">
+    <OnboardingPreviewFragment>
       <div class="flex items-center gap-3 border-b border-line-divider p-4">
         <div class="flex h-[38px] w-[38px] items-center justify-center rounded-full border border-brand-tintBorder bg-brand-tint">
           <span class="text-[13px] font-semibold text-brand-text">{{ p.initials }}</span>

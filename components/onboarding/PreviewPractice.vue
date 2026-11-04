@@ -57,24 +57,24 @@ const dial = computed(() => countryByCode(props.countryCode).dial || '+34')
     "
   >
     <!-- The app header the practice name will sit in. -->
-    <OnboardingPreviewFragment :top="246">
+    <OnboardingPreviewFragment>
       <div class="flex items-center gap-[11px] px-4 py-[13px]">
-        <div class="flex h-7 w-7 items-center justify-center rounded-ctl border border-brand-tintBorder bg-brand-tint">
+        <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-ctl border border-brand-tintBorder bg-brand-tint">
           <span class="text-[11.5px] font-bold text-brand-text">{{ initials }}</span>
         </div>
-        <span class="rounded-[5px] bg-brand-tint px-[5px] py-px text-[15px] font-semibold text-ink-900">{{ practiceLabel }}</span>
-        <span class="flex h-[26px] items-center gap-[5px] rounded-pill border border-line-control px-[9px]">
-          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" class="h-3 w-3 text-ink-muted">
+        <span class="min-w-0 truncate rounded-[5px] bg-brand-tint px-[5px] py-px text-[15px] font-semibold leading-[1.4] text-ink-900">{{ practiceLabel }}</span>
+        <span class="flex h-[26px] min-w-0 shrink-0 items-center gap-[5px] whitespace-nowrap rounded-pill border border-line-control px-[9px]">
+          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" class="h-3 w-3 shrink-0 text-ink-muted">
             <path d="M8 14s5-4.2 5-7.6A5 5 0 0 0 3 6.4C3 9.8 8 14 8 14z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
             <circle cx="8" cy="6.4" r="1.7" stroke="currentColor" stroke-width="1.4" />
           </svg>
-          <span class="rounded px-1 text-[12px] font-semibold text-ink-700" :class="location.trim() && 'bg-brand-tint'">{{ locationLabel }}</span>
-          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" class="h-[11px] w-[11px] text-ink-muted">
+          <span class="max-w-[160px] truncate rounded px-1 text-[12px] font-semibold leading-[1.5] text-ink-700" :class="location.trim() && 'bg-brand-tint'">{{ locationLabel }}</span>
+          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" class="h-[11px] w-[11px] shrink-0 text-ink-muted">
             <path d="M4 6.5L8 10.5L12 6.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
         </span>
-        <span class="flex-1" />
-        <span class="flex h-[26px] w-[26px] items-center justify-center rounded-full border border-line bg-surface-subtle text-[11px] font-semibold text-ink-500">LG</span>
+        <span class="min-w-0 flex-1" />
+        <span class="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full border border-line bg-surface-subtle text-[11px] font-semibold text-ink-500">LG</span>
       </div>
       <div class="flex gap-5 border-t border-line-divider px-4">
         <span class="border-b-2 border-brand pb-[9px] pt-[11px] text-[13px] font-semibold text-ink-900">{{ t('Calendar', 'Agenda') }}</span>
@@ -85,7 +85,7 @@ const dial = computed(() => countryByCode(props.countryCode).dial || '+34')
     </OnboardingPreviewFragment>
 
     <!-- The booking URL the two typed fields build between them. -->
-    <OnboardingPreviewFragment :top="386">
+    <OnboardingPreviewFragment>
       <div class="p-4">
         <p class="text-[12.5px] font-semibold text-ink-muted">{{ t('Online booking page', 'Página de reservas online') }}</p>
         <div class="mt-[9px] flex items-center gap-2.5">
@@ -105,7 +105,7 @@ const dial = computed(() => countryByCode(props.countryCode).dial || '+34')
     </OnboardingPreviewFragment>
 
     <!-- What the first location becomes, and that more can follow. -->
-    <OnboardingPreviewFragment :top="552">
+    <OnboardingPreviewFragment>
       <div class="flex items-center justify-between border-b border-line-divider px-4 py-[13px]">
         <span class="text-[13px] font-semibold text-ink-900">{{ t('Clinic locations', 'Clínicas') }}</span>
         <span class="text-[12px] text-ink-muted">{{ t('1 of unlimited', '1 de ilimitadas') }}</span>
@@ -129,7 +129,7 @@ const dial = computed(() => countryByCode(props.countryCode).dial || '+34')
             <path d="M8 3.5V12.5M3.5 8H12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
           </svg>
         </div>
-        <span class="text-[13px] text-ink-muted">{{ t('Add Madrid, Alicante or another clinic whenever you’re ready', 'Añade Madrid, Alicante u otra clínica cuando quieras') }}</span>
+        <span class="min-w-0 text-[13px] text-ink-muted">{{ t('Add Madrid, Alicante or another clinic whenever you’re ready', 'Añade Madrid, Alicante u otra clínica cuando quieras') }}</span>
       </div>
     </OnboardingPreviewFragment>
   </OnboardingPreview>

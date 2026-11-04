@@ -48,7 +48,7 @@ useHead(() => (props.embedded ? { htmlAttrs: { class: 'auth-screen' } } : {}))
   <div class="flex bg-surface" :class="embedded ? 'min-h-full flex-1' : 'min-h-screen'">
     <!-- ============ LEFT: the form column ============ -->
     <div
-      class="flex w-full flex-col px-5 pb-5 pt-6 lg:w-[53%] lg:shrink-0 lg:px-10 lg:pb-11 lg:pt-14 xl:px-[124px]"
+      class="flex w-full flex-col px-5 pb-5 pt-6 lg:w-[53%] lg:shrink-0 lg:px-10 lg:pb-8 lg:pt-10 xl:px-[124px]"
       :class="embedded ? 'min-h-full' : 'min-h-screen'"
       :style="embedded ? undefined : 'padding-bottom: max(env(safe-area-inset-bottom), 1.25rem)'"
     >
@@ -71,7 +71,7 @@ useHead(() => (props.embedded ? { htmlAttrs: { class: 'auth-screen' } } : {}))
         </div>
 
         <div
-          class="flex flex-1 flex-col py-5 lg:py-7"
+          class="flex flex-1 flex-col py-5 lg:py-6"
           :class="align === 'center' ? 'justify-center' : 'justify-start'"
         >
           <slot name="heading" />
@@ -98,7 +98,8 @@ useHead(() => (props.embedded ? { htmlAttrs: { class: 'auth-screen' } } : {}))
     <!-- ============ RIGHT: product preview ============ -->
     <div class="relative hidden flex-1 overflow-hidden border-l border-line bg-surface-page lg:block">
       <slot name="preview" />
-      <!-- Closes the crop, so the fragment reads as cropped rather than cut off. -->
+      <!-- Closes the crop at the bottom, so a tall fragment reads as cropped
+           rather than cut off. -->
       <div
         aria-hidden="true"
         class="pointer-events-none absolute inset-x-0 bottom-0 h-[150px]"

@@ -1268,6 +1268,7 @@ export type Database = {
           name: string
           new_patient_field_config: Json
           next_invoice_number: number | null
+          owner_phone: string | null
           online_booking_background_color: string | null
           online_booking_gtm_id: string | null
           online_booking_hide_heading: boolean
@@ -1376,6 +1377,7 @@ export type Database = {
           name: string
           new_patient_field_config?: Json
           next_invoice_number?: number | null
+          owner_phone?: string | null
           online_booking_background_color?: string | null
           online_booking_gtm_id?: string | null
           online_booking_hide_heading?: boolean
@@ -1483,6 +1485,7 @@ export type Database = {
           name?: string
           new_patient_field_config?: Json
           next_invoice_number?: number | null
+          owner_phone?: string | null
           online_booking_background_color?: string | null
           online_booking_gtm_id?: string | null
           online_booking_hide_heading?: boolean
@@ -3246,6 +3249,7 @@ export type Database = {
           archived_at: string | null
           address: string | null
           business_hours: Json
+          country: string
           created_at: string
           email: string | null
           holiday_region: string | null
@@ -3267,6 +3271,7 @@ export type Database = {
           archived_at?: string | null
           address?: string | null
           business_hours?: Json
+          country?: string
           created_at?: string
           email?: string | null
           holiday_region?: string | null
@@ -3288,6 +3293,7 @@ export type Database = {
           archived_at?: string | null
           address?: string | null
           business_hours?: Json
+          country?: string
           created_at?: string
           email?: string | null
           holiday_region?: string | null
@@ -9822,6 +9828,8 @@ export type Database = {
               p_referred_by_slug?: string
               p_default_phone_country?: string
               p_owner_is_practitioner?: boolean
+              p_clinic_country?: string
+              p_owner_phone?: string
             }
             Returns: {
               account_id: string

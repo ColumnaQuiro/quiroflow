@@ -1,27 +1,32 @@
 <script setup lang="ts">
-// The four-step progress indicator, roughly 50px tall, at the top of the
+// The five-step progress indicator, roughly 50px tall, at the top of the
 // onboarding shell's left column.
 //
 // It replaces a numbered-circle stepper that stood taller than the two-field
 // form it introduced. Three rows -- a "Step n of 4" line, a hairline segment
 // bar, and four labels -- carry the same information in a fraction of the
 // height, which is the whole point: the stepper is orientation, not content.
+//
+// Five since Import joined: a clinic arriving from other software was only
+// offered its import as a footnote on the dashboard, after onboarding had
+// already called it "all set".
 const props = withDefaults(defineProps<{ current: number; nameOverride?: string }>(), {
   nameOverride: undefined,
 })
 
 const t = useT()
 
-const TOTAL = 4
+const TOTAL = 5
 
 // Row 1 names the step in full; row 3 labels it short enough that four of
-// them fit a 515px measure. They are separate strings rather than one
+// them fit a 515px measure (five, now). They are separate strings rather than one
 // truncated at render, so Spanish can shorten differently from English --
 // "Preferencias" does not clip where "Preferences" does.
 const stepNames = computed(() => [
   t('Create account', 'Crear cuenta'),
   t('Practice setup', 'Configurar consulta'),
   t('Preferences', 'Preferencias'),
+  t('Bring your data', 'Trae tus datos'),
   t('Launch', 'Empezar'),
 ])
 
@@ -29,6 +34,7 @@ const stepLabels = computed(() => [
   t('Account', 'Cuenta'),
   t('Practice', 'Consulta'),
   t('Preferences', 'Preferencias'),
+  t('Import', 'Importar'),
   t('Launch', 'Empezar'),
 ])
 
@@ -39,6 +45,7 @@ const shortLabels = computed(() => [
   t('Account', 'Cuenta'),
   t('Practice', 'Consulta'),
   t('Prefs', 'Prefs'),
+  t('Import', 'Importar'),
   t('Launch', 'Empezar'),
 ])
 
@@ -64,7 +71,7 @@ const currentName = computed(() => props.nameOverride ?? stepNames.value[props.c
       />
     </div>
 
-    <!-- Row 3: the four names, so the shape of the whole flow stays visible. -->
+    <!-- Row 3: every step's name, so the shape of the whole flow stays visible. -->
     <ol class="flex gap-1 lg:gap-[5px]">
       <li
         v-for="(label, i) in stepLabels"

@@ -2,7 +2,10 @@
 import { COUNTRIES_BY_NAME, countryByCode } from '~/utils/countries'
 import { normalizeSearchTerm } from '~/utils/searchText'
 
-// The default-dial-code picker.
+// The country picker: a clinic's country in onboarding, a default dial code
+// elsewhere. `dial` shows the dial code beside each name, which is the whole
+// point when the choice is about phone numbers and only noise when it is
+// about where the clinic is.
 //
 // A native <select> cannot show a flag, cannot be searched, and on a ~100-item
 // list forces a clinic to scroll for its own country. This is a real combobox:
@@ -10,7 +13,7 @@ import { normalizeSearchTerm } from '~/utils/searchText'
 //
 // Below lg it becomes a bottom sheet. A popover anchored under the trigger has
 // nowhere to go on a 844px-tall phone once the keyboard is up.
-const props = defineProps<{ id: string; describedBy?: string }>()
+const props = withDefaults(defineProps<{ id: string; describedBy?: string; dial?: boolean }>(), { describedBy: undefined, dial: true })
 
 const model = defineModel<string>({ required: true })
 
@@ -135,8 +138,8 @@ const listboxId = computed(() => `${props.id}-listbox`)
       @keydown="onTriggerKeydown"
     >
       <OnboardingCountryFlag :code="selected.code" />
-      <span class="text-[15px] font-semibold text-ink-900 lg:text-[14px]">{{ selected.dial || '—' }}</span>
-      <span class="truncate text-[15px] text-ink-500 lg:text-[14px]">{{ selected.name }}</span>
+      <span v-if="dial" class="text-[15px] font-semibold text-ink-900 lg:text-[14px]">{{ selected.dial || '—' }}</span>
+      <span class="truncate text-[15px] lg:text-[14px]" :class="dial ? 'text-ink-500' : 'text-ink-900'">{{ selected.name }}</span>
       <span class="flex-1" />
       <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" class="h-3.5 w-3.5 shrink-0 text-ink-muted">
         <path :d="open ? 'M4 10L8 6L12 10' : 'M4 6.5L8 10.5L12 6.5'" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
@@ -165,8 +168,8 @@ const listboxId = computed(() => `${props.id}-listbox`)
           :aria-controls="listboxId"
           :aria-expanded="true"
           :aria-activedescendant="results[activeIndex] ? `${id}-option-${results[activeIndex].code}` : undefined"
-          :placeholder="t('Search countries or dial codes', 'Busca países o prefijos')"
-          :aria-label="t('Search countries or dial codes', 'Busca países o prefijos')"
+          :placeholder="dial ? t('Search countries or dial codes', 'Busca países o prefijos') : t('Search countries', 'Busca un país')"
+          :aria-label="dial ? t('Search countries or dial codes', 'Busca países o prefijos') : t('Search countries', 'Busca un país')"
           class="h-10 w-full bg-transparent text-[14px] text-ink-900 outline-none placeholder:text-ink-muted lg:h-8 lg:text-[13.5px]"
           @keydown="onSearchKeydown"
         />
@@ -189,7 +192,7 @@ const listboxId = computed(() => `${props.id}-listbox`)
           @mousemove="activeIndex = i"
         >
           <OnboardingCountryFlag :code="country.code" />
-          <span class="w-[42px] shrink-0 text-[13.5px] font-semibold text-ink-900">{{ country.dial }}</span>
+          <span v-if="dial" class="w-[42px] shrink-0 text-[13.5px] font-semibold text-ink-900">{{ country.dial }}</span>
           <span class="flex-1 truncate text-[13.5px] text-ink-700">{{ country.name }}</span>
           <svg v-if="country.code === model" viewBox="0 0 12 12" fill="none" aria-hidden="true" class="h-[13px] w-[13px] shrink-0 text-brand-text">
             <path d="M2.4 6.3L4.8 8.7L9.6 3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />

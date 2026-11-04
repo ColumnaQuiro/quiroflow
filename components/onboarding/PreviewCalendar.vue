@@ -29,7 +29,7 @@ function at(day: number, slot: number) {
       )
     "
   >
-    <OnboardingPreviewFragment :top="246" :width="760">
+    <OnboardingPreviewFragment>
       <div class="flex items-center gap-3 border-b border-line-divider px-4 py-[13px]">
         <span class="text-[14px] font-semibold text-ink-900">{{ t(PREVIEW_WEEK.label, PREVIEW_WEEK.labelEs) }}</span>
         <span class="text-[12.5px] text-ink-muted">Valencia</span>

@@ -44,6 +44,47 @@ describe('Dashboard first steps', () => {
     })
   })
 
+  // Onboarding's Import step names a source; the card then leads with the
+  // import, and once it has brought visits under names from the old software,
+  // asks for those names to be linked to the team.
+  it('leads with the import a new clinic asked for, then the practitioners it left unlinked', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.login(account.email, account.password)
+      cy.window().then((win) => win.localStorage.setItem(`first-steps-import:${account.accountId}`, 'practicehub'))
+      cy.visit('/dashboard')
+      cy.get('[data-cy=first-steps-import]', { timeout: 20000 })
+        .should('have.attr', 'aria-current', 'step')
+        .and('contain', 'Bring your records from PracticeHub')
+        .contains('a', 'Import')
+        .should('have.attr', 'href', '/settings/import?source=practicehub')
+      cy.get('[data-cy=first-steps-link]').should('not.exist')
+
+      cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Imported', lastName: 'Patient', externalReference: '1001' }).then((patient) => {
+        cy.task('db:createAppointment', { accountId: account.accountId, clinicId: account.clinicId, patientId: patient.id, practitionerId: null, practitionerName: 'A. Esteve', startsAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString() })
+      })
+      cy.visit('/dashboard')
+      cy.get('[data-cy=first-steps-import]', { timeout: 20000 }).should('have.attr', 'data-done', 'true')
+      cy.get('[data-cy=first-steps-link]')
+        .should('have.attr', 'data-done', 'false')
+        .and('contain', '1 visit is under a name from your old software')
+        .contains('a', 'Link names')
+        .should('have.attr', 'href', '/settings/team#importados')
+    })
+  })
+
+  it('drops the optional import for a clinic starting fresh', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.login(account.email, account.password)
+      cy.visit('/dashboard')
+      cy.get('[data-cy=first-steps-import]', { timeout: 20000 }).should('contain', 'Optional').and('not.have.attr', 'aria-current')
+      cy.get('[data-cy=first-steps-import-alternative]').click()
+      cy.get('[data-cy=first-steps-import]').should('not.exist')
+      cy.reload()
+      cy.get('[data-cy=first-steps-type]', { timeout: 20000 }).should('have.attr', 'aria-current', 'step')
+      cy.get('[data-cy=first-steps-import]').should('not.exist')
+    })
+  })
+
   it('is never shown to a clinic that already has all three', () => {
     cy.seedStaffAccount().then((account) => {
       cy.task('db:createAppointmentType', { accountId: account.accountId, name: 'Ajuste' })

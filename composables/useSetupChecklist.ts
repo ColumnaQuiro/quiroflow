@@ -89,7 +89,7 @@ export function useSetupChecklist() {
   async function load() {
     readSkipped()
     const accountId = store.accountId!
-    const [account, clinics, types, members, invites, imported, appointments, mfa] = await Promise.all([
+    const [account, clinics, types, members, invites, imported, appointments, reminderRules, mfa] = await Promise.all([
       supabase
         .from('accounts')
         .select('whatsapp_phone_number_id, whatsapp_reminder_template_name, appointment_reminder_enabled, verifactu_mode')
@@ -103,11 +103,15 @@ export function useSetupChecklist() {
       // typed in by hand does not, so one test patient does not tick it.
       supabase.from('patients').select('id', { count: 'exact', head: true }).eq('account_id', accountId).not('external_reference', 'is', null),
       supabase.from('appointments').select('id', { count: 'exact', head: true }),
+      // A clinic can remind through an automation instead of the built-in
+      // reminder ("24h before", "3 days before"), and then the built-in one
+      // is rightly off.
+      supabase.from('automation_rules').select('id', { count: 'exact', head: true }).eq('account_id', accountId).eq('trigger_event', 'appointment.hours_before').eq('enabled', true),
       twoFactor.isEnabled().catch(() => false),
     ])
     // A failed read must not tell an established clinic to redo its setup,
     // so any error shows a notice instead of a list of open steps.
-    if (account.error || clinics.error || types.error || members.error || invites.error || imported.error || appointments.error) {
+    if (account.error || clinics.error || types.error || members.error || invites.error || imported.error || appointments.error || reminderRules.error) {
       failed.value = true
       loaded.value = true
       return
@@ -119,7 +123,7 @@ export function useSetupChecklist() {
     facts.team = (members.count ?? 0) > 1 || (invites.count ?? 0) > 0
     facts.imported = (imported.count ?? 0) > 0
     facts.whatsapp = !!a?.whatsapp_phone_number_id
-    facts.reminders = !!a?.appointment_reminder_enabled && !!a?.whatsapp_reminder_template_name
+    facts.reminders = (!!a?.appointment_reminder_enabled && !!a?.whatsapp_reminder_template_name) || (reminderRules.count ?? 0) > 0
     facts.onlineBooking = c.some((x) => x.online_booking_enabled)
     facts.fiscal = c.length > 0 && c.every((x) => !!x.tax_id?.trim() && !!x.legal_name?.trim())
     facts.verifactu = !!a?.verifactu_mode && a.verifactu_mode !== 'off'

@@ -62,6 +62,22 @@ describe('Behaviour every clinic has', () => {
     expect(prompt).toContain('Never offer the waiting list for a day the clinic is closed')
   })
 
+  // 3 Nov 2026: "Cambiar cita" from a number with no record went unanswered,
+  // and a price objection was told "I won't push further today".
+  it('answers a reminder button from a number with no visit', () => {
+    const section = baseBehaviourSection()
+    expect(section).toContain('you can see no visit of theirs')
+    expect(section).toContain('always answer, never NO_REPLY')
+  })
+
+  it('answers a price objection without announcing what it will do', () => {
+    expect(baseBehaviourSection()).toContain('never tell them what you will or will not do about it')
+  })
+
+  it('does not hand over a passing illness given as the reason to cancel', () => {
+    expect(BASE_ESCALATIONS[0]!.action).toContain('gastroenteritis')
+  })
+
   it('leaves a message from the team unanswered', () => {
     expect(baseBehaviourSection()).toContain('plainly from someone at the clinic')
     expect(baseBehaviourSection()).toContain('write exactly NO_REPLY')

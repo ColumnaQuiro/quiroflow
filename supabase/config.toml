@@ -246,7 +246,7 @@ otp_expiry = 3600
 # The reset link carries its own token so it works on any device; see the
 # comment in the template. Production's copy lives in the Supabase dashboard.
 [auth.email.template.recovery]
-subject = "Cambia tu contraseña de QuiroFlow"
+subject = "Reset your password"
 content_path = "./supabase/templates/recovery.html"
 
 # Uncomment to customize email template

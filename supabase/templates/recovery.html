@@ -1,7 +1,10 @@
 <!--
   "Reset password" email. Production does not read this file: paste it into the
   Supabase dashboard (Authentication -> Emails -> Reset password) whenever it
-  changes. Local Supabase uses it through config.toml.
+  changes, with the subject from config.toml. Local Supabase uses it through
+  config.toml. Until 4 Nov 2026 production still had the old
+  {{ .ConfirmationURL }} version, months after this file changed -- so a fix
+  here is not live until the dashboard says the same thing.
 
   The link goes straight to QuiroFlow with the token in the fragment, and
   pages/reset-password.vue verifies it there. Not {{ .ConfirmationURL }}: that
@@ -11,9 +14,4 @@
   asked for (/reset-password, plus ?portal=1 for a patient), so a fragment
   appends cleanly whether or not it has a query.
 -->
-<h2>Elige una contraseña nueva</h2>
-<p>Hemos recibido una solicitud para cambiar la contraseña de tu cuenta de QuiroFlow.</p>
-<p><a href="{{ .RedirectTo }}#token_hash={{ .TokenHash }}&type=recovery">Cambiar contraseña</a></p>
-<p>El enlace sirve una sola vez y caduca en una hora. Si no lo has pedido tú, ignora este correo: tu contraseña no cambia.</p>
-<hr>
-<p>We received a request to reset your QuiroFlow password. <a href="{{ .RedirectTo }}#token_hash={{ .TokenHash }}&type=recovery">Choose a new password</a>. The link works once and expires in an hour. If you didn't ask for this, ignore this email.</p>
+<div style="background:#F4F4F6;padding:40px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;"><div style="max-width:480px;margin:0 auto;background:#FFFFFF;border-radius:14px;border:1px solid #E4E4EA;overflow:hidden;"><div style="padding:32px 32px 0;"><img src="https://app.quiroflow.com/logo/quiroflow-mark.svg" width="32" height="32" alt="QuiroFlow" style="display:block;" /></div><div style="padding:24px 32px 32px;"><h1 style="margin:0 0 12px;font-size:20px;font-weight:600;color:#17171C;letter-spacing:-0.01em;">Reset your password</h1><p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#4A4A57;">We received a request to reset the password for your QuiroFlow account. Click below to choose a new one.</p><a href="{{ .RedirectTo }}#token_hash={{ .TokenHash }}&type=recovery" style="display:inline-block;background:#4F46E5;color:#FFFFFF;font-size:14px;font-weight:600;text-decoration:none;padding:11px 22px;border-radius:8px;">Reset password</a><p style="margin:24px 0 0;font-size:12px;line-height:1.6;color:#9A9AA6;word-break:break-all;">Or paste this link into your browser:<br /><a href="{{ .RedirectTo }}#token_hash={{ .TokenHash }}&type=recovery" style="color:#4F46E5;">{{ .RedirectTo }}#token_hash={{ .TokenHash }}&type=recovery</a></p></div></div><p style="max-width:480px;margin:16px auto 0;font-size:12px;line-height:1.5;color:#9A9AA6;text-align:center;">Sent by QuiroFlow. If you didn't request this, you can safely ignore this email.</p></div>

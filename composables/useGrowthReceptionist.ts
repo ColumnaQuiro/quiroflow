@@ -93,6 +93,13 @@ export function useGrowthReceptionist() {
   const loading = ref(true)
   const saving = ref(false)
   const error = ref<string | null>(null)
+  // The server's 402: this subscription does not include the receptionist.
+  // Not an error to show -- the page shows what it would take to get it. The
+  // page already asks the account store first, but the store can say yes
+  // where the server says no (the ?growth=1 preview flag, a plan changed in
+  // another tab), and that used to surface as "Could not load the
+  // receptionist settings".
+  const notIncluded = ref(false)
   const { showToast } = useToast()
   const t = useT()
 
@@ -107,7 +114,12 @@ export function useGrowthReceptionist() {
       repliesThisMonth.value = data.repliesThisMonth ?? 0
       includedBy.value = data.includedBy ?? null
       activity.value = data.activity ?? null
-    } catch {
+    } catch (e) {
+      const status = (e as { statusCode?: number; status?: number } | null)?.statusCode ?? (e as { status?: number } | null)?.status
+      if (status === 402) {
+        notIncluded.value = true
+        return
+      }
       error.value = t('Could not load the receptionist settings.', 'No se ha podido cargar la configuración de la recepcionista.')
     } finally {
       loading.value = false
@@ -152,5 +164,5 @@ export function useGrowthReceptionist() {
 
   const liveChannelCount = computed(() => channels.value.filter((c) => c.status === 'connected').length)
 
-  return { config, channels, appointmentTypes, offeredTypes, testModelAvailable, repliesThisMonth, includedBy, activity, loading, saving, error, save, reload: load, liveChannelCount }
+  return { config, channels, appointmentTypes, offeredTypes, testModelAvailable, repliesThisMonth, includedBy, activity, loading, saving, error, notIncluded, save, reload: load, liveChannelCount }
 }

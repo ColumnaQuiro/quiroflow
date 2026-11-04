@@ -12,6 +12,13 @@
 // it just the same, and an established clinic, which has all three, never
 // sees this at all.
 //
+// Two steps come and go. Bringing records from other software is offered
+// first, optional unless the Import step of onboarding named a source (then
+// it is the step to do now) and gone once the clinic said it is starting
+// fresh. Linking imported practitioners appears only once an import has left
+// visits under a name from the old software rather than a person on the team:
+// until they are linked those visits sit in nobody's calendar column.
+//
 // The one exception is the "done" state. A clinic that has everything would
 // otherwise be congratulated on first load, years in; so it only appears in a
 // browser that saw at least one step still open.
@@ -24,9 +31,15 @@ const loaded = ref(false)
 const hasType = ref(false)
 const latestPatientId = ref<string | null>(null)
 const hasAppointment = ref(false)
+const hasImported = ref(false)
+const unlinkedVisits = ref(0)
+// What onboarding's Import step answered: a source key, 'none', or nothing
+// (an account from before that step, or another browser).
+const importChoice = ref<string | null>(null)
 
 const dismissed = ref(false)
 const sawOpen = ref(false)
+const sawLink = ref(false)
 
 // localStorage can throw (private windows, blocked site data). Losing it only
 // means the card comes back or the "done" state is skipped, so failures are
@@ -39,23 +52,40 @@ function readFlag(what: string) {
     return false
   }
 }
-function writeFlag(what: string) {
+function writeFlag(what: string, value = '1') {
   try {
-    localStorage.setItem(storageKey(what), '1')
+    localStorage.setItem(storageKey(what), value)
   } catch {
     // ignore
   }
 }
+function readValue(what: string) {
+  try {
+    return localStorage.getItem(storageKey(what))
+  } catch {
+    return null
+  }
+}
 
 async function load() {
-  const [types, patients, appointments] = await Promise.all([
+  const [types, patients, appointments, imported, unlinked] = await Promise.all([
     supabase.from('appointment_types').select('id', { count: 'exact', head: true }).is('archived_at', null),
     supabase.from('patients').select('id').order('created_at', { ascending: false }).limit(1),
     supabase.from('appointments').select('id', { count: 'exact', head: true }),
+    // Every importer stamps external_reference on what it writes; a patient
+    // typed in by hand has none.
+    supabase.from('patients').select('id', { count: 'exact', head: true }).not('external_reference', 'is', null),
+    // The same rows Settings -> Team lists as "Imported names not linked".
+    supabase
+      .from('appointments')
+      .select('id', { count: 'exact', head: true })
+      .is('practitioner_id', null)
+      .not('practitioner_name', 'is', null)
+      .is('deleted_at', null),
   ])
   // A failed read must not invite an established clinic to "add its first
   // patient", so any error hides the card instead of showing a step as open.
-  if (types.error || patients.error || appointments.error) {
+  if (types.error || patients.error || appointments.error || imported.error || unlinked.error) {
     dismissed.value = true
     loaded.value = true
     return
@@ -63,12 +93,16 @@ async function load() {
   hasType.value = (types.count ?? 0) > 0
   latestPatientId.value = patients.data?.[0]?.id ?? null
   hasAppointment.value = (appointments.count ?? 0) > 0
+  hasImported.value = (imported.count ?? 0) > 0
+  unlinkedVisits.value = unlinked.count ?? 0
   loaded.value = true
 }
 
 onMounted(async () => {
   dismissed.value = readFlag('dismissed')
+  sawLink.value = readFlag('link-seen')
   sawOpen.value = readFlag('seen')
+  importChoice.value = readValue('import')
   if (dismissed.value) {
     loaded.value = true
     return
@@ -76,7 +110,66 @@ onMounted(async () => {
   await load()
 })
 
-const steps = computed(() => [
+const importSource = computed(() => (['practicehub', 'quirocitas', 'other'].includes(importChoice.value ?? '') ? importChoice.value! : null))
+const importSourceName = computed(() =>
+  importSource.value === 'practicehub' ? 'PracticeHub' : importSource.value === 'quirocitas' ? 'Quirocitas' : t('a CSV file', 'un archivo CSV'),
+)
+
+function startFresh() {
+  importChoice.value = 'none'
+  writeFlag('import', 'none')
+}
+
+interface Step {
+  key: string
+  done: boolean
+  /** Shown, but not needed for the card to count as complete. */
+  optional?: boolean
+  title: string
+  body: string
+  action: { label: string; to: string }
+  alternative?: { label: string; to?: string; onClick?: () => void }
+}
+
+const steps = computed<Step[]>(() => [
+  // Before the three below because an import does all of them at once: it
+  // brings the types, the patients and their visits.
+  ...(importChoice.value === 'none' && !hasImported.value
+    ? []
+    : [
+        {
+          key: 'import',
+          done: hasImported.value,
+          optional: !importSource.value,
+          title: importSource.value ? t(`Bring your records from ${importSourceName.value}`, `Trae tus datos desde ${importSourceName.value}`) : t('Coming from other software?', '¿Vienes de otro programa?'),
+          body: t(
+            'Patients first, then their visits, bonos, invoices and notes. Optional: skip it if you are starting fresh.',
+            'Primero los pacientes, luego sus visitas, bonos, facturas y notas. Opcional: sáltalo si empiezas de cero.',
+          ),
+          action: { label: t('Import', 'Importar'), to: `/settings/import${importSource.value ? `?source=${importSource.value}` : ''}` },
+          alternative: { label: t('Starting fresh', 'Empiezo de cero'), onClick: startFresh },
+        },
+      ]),
+  ...(sawLink.value
+    ? [
+        {
+          key: 'link',
+          done: unlinkedVisits.value === 0,
+          title: t('Link imported practitioners', 'Vincula los profesionales importados'),
+          body:
+            unlinkedVisits.value === 1
+              ? t(
+                  '1 visit is under a name from your old software. Link the name to someone on your team, so the visit lands in their column.',
+                  '1 visita está a nombre de alguien de tu programa anterior. Vincula el nombre con alguien de tu equipo para que caiga en su columna.',
+                )
+              : t(
+                  `${unlinkedVisits.value} visits are under a name from your old software. Link each name to someone on your team, so the visits land in their column.`,
+                  `${unlinkedVisits.value} visitas están a nombre de alguien de tu programa anterior. Vincula cada nombre con alguien de tu equipo para que caigan en su columna.`,
+                ),
+          action: { label: t('Link names', 'Vincular nombres'), to: '/settings/team#importados' },
+        },
+      ]
+    : []),
   {
     key: 'type',
     done: hasType.value,
@@ -96,7 +189,6 @@ const steps = computed(() => [
       'Con el nombre y un teléfono basta para empezar.',
     ),
     action: { label: t('New patient', 'Nuevo paciente'), to: '/patients?new=1' },
-    alternative: { label: t('Coming from PracticeHub? Import', '¿Vienes de PracticeHub? Importa'), to: '/settings/import' },
   },
   {
     key: 'visit',
@@ -113,12 +205,29 @@ const steps = computed(() => [
   },
 ])
 
-const doneCount = computed(() => steps.value.filter((s) => s.done).length)
-const complete = computed(() => doneCount.value === steps.value.length)
-// The step to do now: the first open one. Earlier steps can be done out of
-// order (an import brings patients before any type exists), so this is not
-// simply doneCount.
-const currentKey = computed(() => steps.value.find((s) => !s.done)?.key ?? null)
+const complete = computed(() => steps.value.every((s) => s.done || s.optional))
+// The step to do now: the first open one that is not optional. Earlier steps
+// can be done out of order (an import brings patients before any type
+// exists), so this is not simply a count of the done ones.
+const currentKey = computed(() => steps.value.find((s) => !s.done && !s.optional)?.key ?? null)
+
+// "Your first visit, three steps away" -- counting the steps there are, which
+// is no longer always three.
+const headingCount = computed(() => {
+  const n = steps.value.filter((s) => !s.optional).length
+  return [t('three', 'tres'), t('four', 'cuatro'), t('five', 'cinco')][n - 3] ?? String(n)
+})
+
+// Only for a clinic still on its first steps (this browser saw one open): a
+// clinic that migrated long ago and still has a name or two unlinked must not
+// get the card back years in. Once on screen the step stays, ticked, after
+// the last name is linked, rather than vanishing the moment it is done.
+watch([unlinkedVisits, sawOpen], ([n, open]) => {
+  if (n > 0 && open) {
+    sawLink.value = true
+    writeFlag('link-seen')
+  }
+})
 
 watch([loaded, complete], ([isLoaded, isComplete]) => {
   if (isLoaded && !isComplete && !dismissed.value) {
@@ -126,6 +235,8 @@ watch([loaded, complete], ([isLoaded, isComplete]) => {
     writeFlag('seen')
   }
 })
+
+const wide = computed(() => steps.value.length > 3)
 
 const visible = computed(() => store.isOwner && loaded.value && !dismissed.value && (!complete.value || sawOpen.value))
 
@@ -176,7 +287,7 @@ function dismiss() {
         <div class="flex items-start justify-between gap-3 px-4 pt-4 sm:px-5">
           <div>
             <h2 id="first-steps-heading" class="text-[15px] font-semibold tracking-tightTitle text-ink-900">
-              {{ t('Your first visit, three steps away', 'Tu primera visita, a tres pasos') }}
+              {{ t(`Your first visit, ${headingCount} steps away`, `Tu primera visita, a ${headingCount} pasos`) }}
             </h2>
             <p class="mt-0.5 text-[12.5px] text-ink-muted">
               {{ t('Each one ticks itself off once it is done, however you do it.', 'Cada uno se marca solo cuando está hecho, lo hagas como lo hagas.') }}
@@ -192,12 +303,17 @@ function dismiss() {
           </button>
         </div>
 
-        <ol class="mt-3.5 grid grid-cols-1 border-t border-line-divider md:grid-cols-3">
+        <!-- Three steps sit side by side from md; four or five need lg. -->
+        <ol class="mt-3.5 grid grid-cols-1 border-t border-line-divider" :class="wide ? 'lg:auto-cols-fr lg:grid-flow-col' : 'md:grid-cols-3'">
           <li
             v-for="(step, i) in steps"
             :key="step.key"
-            class="flex gap-3 border-line-divider px-4 py-3.5 sm:px-5 md:flex-col md:gap-2.5 md:py-4"
-            :class="[i > 0 && 'border-t md:border-l md:border-t-0', step.key === currentKey && 'bg-brand-tint/40']"
+            class="flex gap-3 border-line-divider px-4 py-3.5 sm:px-5"
+            :class="[
+              wide ? 'lg:flex-col lg:gap-2.5 lg:py-4' : 'md:flex-col md:gap-2.5 md:py-4',
+              i > 0 && (wide ? 'border-t lg:border-l lg:border-t-0' : 'border-t md:border-l md:border-t-0'),
+              step.key === currentKey && 'bg-brand-tint/40',
+            ]"
             :data-cy="`first-steps-${step.key}`"
             :data-done="step.done ? 'true' : 'false'"
             :aria-current="step.key === currentKey ? 'step' : undefined"
@@ -220,7 +336,10 @@ function dismiss() {
             </span>
 
             <div class="min-w-0 flex-1">
-              <h3 class="text-[13.5px] font-semibold" :class="step.done ? 'text-ink-muted' : 'text-ink-900'">{{ step.title }}</h3>
+              <h3 class="text-[13.5px] font-semibold" :class="step.done ? 'text-ink-muted' : 'text-ink-900'">
+                {{ step.title }}
+                <span v-if="step.optional && !step.done" class="ml-1 text-[11.5px] font-medium text-ink-muted">{{ t('Optional', 'Opcional') }}</span>
+              </h3>
               <p v-if="!step.done" class="mt-1 max-w-[42ch] text-[12.5px] leading-[1.5] text-ink-muted">{{ step.body }}</p>
 
               <div v-if="!step.done" class="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
@@ -236,12 +355,21 @@ function dismiss() {
                   {{ step.action.label }}
                 </NuxtLink>
                 <NuxtLink
-                  v-if="'alternative' in step && step.alternative"
+                  v-if="step.alternative?.to"
                   :to="step.alternative.to"
                   class="text-[12px] text-ink-muted underline decoration-line-control underline-offset-[3px] hover:text-brand-text hover:decoration-current"
                 >
                   {{ step.alternative.label }}
                 </NuxtLink>
+                <button
+                  v-else-if="step.alternative?.onClick"
+                  type="button"
+                  class="text-[12px] text-ink-muted underline decoration-line-control underline-offset-[3px] hover:text-brand-text hover:decoration-current"
+                  :data-cy="`first-steps-${step.key}-alternative`"
+                  @click="step.alternative.onClick"
+                >
+                  {{ step.alternative.label }}
+                </button>
               </div>
             </div>
           </li>

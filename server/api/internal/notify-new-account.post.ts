@@ -54,8 +54,18 @@ export default defineEventHandler(async (event) => {
 
   const { data: account } = await service
     .from('accounts')
-    .select('name, slug')
+    .select('name, slug, owner_phone')
     .eq('id', teamMember.account_id)
+    .maybeSingle()
+
+  // The clinic onboarding just created: its country is the one fact about
+  // where a sign-up is that the form asks for.
+  const { data: clinic } = await service
+    .from('clinics')
+    .select('name, country')
+    .eq('account_id', teamMember.account_id)
+    .order('created_at')
+    .limit(1)
     .maybeSingle()
 
   const { data: owner } = await service
@@ -95,6 +105,8 @@ export default defineEventHandler(async (event) => {
         ${row('Slug', escapeHtml(account?.slug ?? '—'))}
         ${row('Propietario', escapeHtml(owner?.full_name ?? '—'))}
         ${row('Email', escapeHtml(email))}
+        ${row('Teléfono', escapeHtml(account?.owner_phone ?? '—'))}
+        ${row('Clínica', escapeHtml(clinic ? `${clinic.name} (${clinic.country})` : '—'))}
         ${row('Procedencia', escapeHtml(source))}
         ${attribution.utm_campaign ? row('Campaña', escapeHtml(attribution.utm_campaign)) : ''}
       </table>

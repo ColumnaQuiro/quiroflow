@@ -43,7 +43,7 @@ const outboundParts = computed(() => {
       )
     "
   >
-    <OnboardingPreviewFragment :top="246" :width="700">
+    <OnboardingPreviewFragment>
       <div class="flex items-center gap-2.5 border-b border-line-divider px-4 py-[13px]">
         <div class="flex h-7 w-7 items-center justify-center rounded-full border border-line-control bg-surface-subtle">
           <span class="text-[11px] font-semibold text-ink-500">LF</span>

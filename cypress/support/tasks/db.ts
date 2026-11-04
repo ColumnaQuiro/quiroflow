@@ -2591,6 +2591,8 @@ async function createAppointment(opts: {
   deletedAt?: string | null
   /** Moved at some point, as a drag or the public API leaves it. */
   rescheduled?: boolean
+  /** The practitioner as an importer leaves it: a name, with no team member behind it. */
+  practitionerName?: string | null
 }) {
   const startsAt = new Date(opts.startsAt)
   const endsAt = new Date(startsAt.getTime() + (opts.durationMinutes ?? 30) * 60000)
@@ -2618,6 +2620,7 @@ async function createAppointment(opts: {
         ...(opts.confirmationSentAt !== undefined ? { confirmation_sent_at: opts.confirmationSentAt } : {}),
         ...(opts.reminderSentAt !== undefined ? { reminder_sent_at: opts.reminderSentAt } : {}),
         ...(opts.deletedAt !== undefined ? { deleted_at: opts.deletedAt } : {}),
+        ...(opts.practitionerName !== undefined ? { practitioner_name: opts.practitionerName } : {}),
       })
       .select('id, practitioner_id')
       .single(),

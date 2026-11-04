@@ -12,7 +12,7 @@ const t = useT()
     :title="t(`This is what's waiting in your inbox`, 'Esto es lo que te espera en tu bandeja')"
     :body="t('One button, one link, no account details in the message.', 'Un botón, un enlace, y ningún dato de la cuenta en el mensaje.')"
   >
-    <OnboardingPreviewFragment :top="246" :width="700">
+    <OnboardingPreviewFragment>
       <div class="border-b border-line-divider p-4">
         <p class="text-[15px] font-semibold text-ink-900">{{ t('Confirm your email to open QuiroFlow', 'Confirma tu correo para abrir QuiroFlow') }}</p>
         <div class="mt-[9px] flex items-center gap-[9px]">

@@ -24,7 +24,7 @@ const invoices = [
       )
     "
   >
-    <OnboardingPreviewFragment :top="246" :width="520">
+    <OnboardingPreviewFragment>
       <div class="px-5 py-4">
         <p class="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">{{ t('Next appointment', 'Próxima cita') }}</p>
         <p class="mt-1.5 text-[19px] font-semibold tracking-tightTitle text-ink-900">{{ t('Thursday 9 Oct · 17:30', 'Jueves 9 oct · 17:30') }}</p>
@@ -36,7 +36,7 @@ const invoices = [
       </div>
     </OnboardingPreviewFragment>
 
-    <OnboardingPreviewFragment :top="432" :width="520">
+    <OnboardingPreviewFragment>
       <div class="grid grid-cols-2 divide-x divide-line-divider">
         <div class="px-5 py-4">
           <p class="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">Bono 10</p>
@@ -51,7 +51,7 @@ const invoices = [
       </div>
     </OnboardingPreviewFragment>
 
-    <OnboardingPreviewFragment :top="574" :width="520">
+    <OnboardingPreviewFragment>
       <div class="divide-y divide-line-divider px-5">
         <div v-for="invoice in invoices" :key="invoice.number" class="flex items-center justify-between py-3 text-[13.5px]">
           <span class="text-ink-700">{{ t('Invoice', 'Factura') }} {{ invoice.number }} · {{ t(invoice.dateEn, invoice.date) }}</span>

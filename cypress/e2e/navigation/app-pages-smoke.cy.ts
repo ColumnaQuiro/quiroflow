@@ -32,7 +32,9 @@ describe('Every authenticated app page renders for the account owner', () => {
 
           cy.visit(`/settings/clinics/${account.clinicId}`)
           cy.location('pathname').should('eq', `/settings/clinics/${account.clinicId}`)
-          cy.contains('Opening hours').should('be.visible')
+          // Below the location's name, address and country: on Cypress's
+          // viewport it starts under the fold of the page's scroll box.
+          cy.contains('Opening hours').scrollIntoView().should('be.visible')
 
           cy.visit(`/settings/team/${account.teamMemberId}`)
           cy.location('pathname').should('eq', `/settings/team/${account.teamMemberId}`)

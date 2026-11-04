@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { COUNTRIES, countryByCode } from '~/utils/countries'
-import { previewSlug } from '~/components/onboarding/previewFixtures'
+import { looksLikePhoneNumber, toE164Loose } from '~/utils/phone'
+import { previewSlug, type ImportSource } from '~/components/onboarding/previewFixtures'
 
 definePageMeta({ layout: false })
 
@@ -11,6 +12,12 @@ const { preference: themePreference, setPreference: setThemePreference } = useTh
 const { preference: langPreference, setPreference: setLangPreference } = useLang()
 
 const ownerName = ref('')
+// A number QuiroFlow can reach the person signing up on. Stored on the
+// account (accounts.owner_phone) and sent in the new-account email; patients
+// never see it.
+const ownerPhone = ref('')
+const ownerPhoneError = ref('')
+const phoneInput = ref<{ focus: () => void } | null>(null)
 // Whether the owner treats patients. Yes for most practices signing up -- a
 // chiropractor who owns the clinic -- and yes is what puts them in the
 // calendar and on the booking page straight away. A practice run by a
@@ -19,14 +26,17 @@ const ownerName = ref('')
 const ownerIsPractitioner = ref(true)
 const accountName = ref('')
 const clinicName = ref('')
-// The country every phone number defaults to from here on -- the manual
-// "add a number" field, the new-patient forms, the public booking page and
-// an import's fallback all read it. Asking once, here, is what stops a
-// clinic outside Spain from silently storing Spanish numbers.
+// The country the first clinic is in (clinics.country). It also becomes the
+// account's default dial code -- the manual "add a number" field, the
+// new-patient forms, the public booking page and an import's fallback all
+// read that -- which is what stops a clinic outside Spain from silently
+// storing Spanish numbers. This page used to ask for the dial code itself
+// ("Phone numbers are mostly from"); a clinic whose patients mostly phone
+// from abroad changes it in Settings -> Messages.
 //
 // Guessed from the browser's own region so most practices never touch it;
 // anything unrecognised lands on ES, which is what it was before.
-const phoneCountry = ref('ES')
+const country = ref('ES')
 
 // Guessed on the client only: this page server-renders, and `navigator`
 // doesn't exist there. Starting at ES and correcting on mount keeps the
@@ -34,20 +44,61 @@ const phoneCountry = ref('ES')
 onMounted(() => {
   try {
     const region = new Intl.Locale(navigator.language || 'es-ES').maximize().region
-    if (region && COUNTRIES.some((c) => c.code === region)) phoneCountry.value = region
+    if (region && COUNTRIES.some((c) => c.code === region)) country.value = region
   } catch {
     // An exotic or missing navigator.language just leaves the default.
   }
 })
 const error = ref('')
 const loading = ref(false)
-// 'form' -> 'preferences' -> 'launch': a couple of quick preference picks
-// and a brief "you're all set" moment instead of dropping straight into the
-// dashboard the instant the account exists -- matches signup.vue's step 1,
-// this page covering steps 2-4 of the same flow.
-const step = ref<'form' | 'preferences' | 'launch'>('form')
+// 'form' -> 'preferences' -> 'import' -> 'launch': a couple of quick
+// preference picks, where the clinic's records are coming from, and a brief
+// "you're all set" moment instead of dropping straight into the dashboard
+// the instant the account exists -- matches signup.vue's step 1, this page
+// covering steps 2-5 of the same flow.
+const step = ref<'form' | 'preferences' | 'import' | 'launch'>('form')
 
-const stepNumber = computed(() => ({ form: 2, preferences: 3, launch: 4 })[step.value])
+const stepNumber = computed(() => ({ form: 2, preferences: 3, import: 4, launch: 5 })[step.value])
+
+// Optional, and nothing is imported here: the import needs the clinic's
+// PracticeHub key or Quirocitas login, and runs for minutes, so it belongs
+// on Settings -> Import, not inside a sign-up. What this step does is make
+// the question visible before "all set", point Launch at the right source,
+// and tell the dashboard's first steps (components/dashboard/FirstSteps.vue)
+// whether to offer the import at all -- through the same per-account key
+// that card reads.
+const importSource = ref<ImportSource | null>(null)
+function chooseImport() {
+  try {
+    localStorage.setItem(`first-steps-import:${store.accountId}`, importSource.value ?? 'none')
+  } catch {
+    // Without it the dashboard simply offers the import as optional.
+  }
+  step.value = 'launch'
+}
+
+const IMPORT_OPTIONS = computed<{ key: ImportSource; title: string; body: string }[]>(() => [
+  {
+    key: 'practicehub',
+    title: 'PracticeHub',
+    body: t('Patients, visits, bonos, invoices, notes and files', 'Pacientes, citas, bonos, facturas, notas y archivos'),
+  },
+  {
+    key: 'quirocitas',
+    title: 'Quirocitas',
+    body: t('Patients, visits and invoices', 'Pacientes, citas y facturas'),
+  },
+  {
+    key: 'other',
+    title: t('Another program', 'Otro programa'),
+    body: t('Patients from a CSV file', 'Pacientes desde un archivo CSV'),
+  },
+  {
+    key: 'none',
+    title: t('Starting fresh', 'Empiezo de cero'),
+    body: t('Nothing to bring across', 'No hay nada que traer'),
+  },
+])
 
 // Moving focus to the new heading is what tells a screen reader the step
 // changed -- without it, focus stays on a button that no longer exists and
@@ -73,8 +124,10 @@ async function createPractice() {
     p_clinic_name: clinicName.value,
     p_owner_name: ownerName.value,
     p_referred_by_slug: localStorage.getItem('signup_referred_by') || null,
-    p_default_phone_country: phoneCountry.value,
+    p_default_phone_country: country.value,
     p_owner_is_practitioner: ownerIsPractitioner.value,
+    p_clinic_country: country.value,
+    p_owner_phone: ownerPhoneE164(),
   })
   if (rpcError) return rpcError.message
   localStorage.removeItem('signup_referred_by')
@@ -103,7 +156,16 @@ async function createPractice() {
   return null
 }
 
-// The same four answers, written to the rows the RPC created. Deliberately
+// Stored as E.164 when it parses, so whoever reads the new-account email can
+// dial it from anywhere; as typed when it does not, rather than lost.
+// toE164Loose returns WhatsApp's bare digits, so the + is put back here.
+function ownerPhoneE164() {
+  const typed = ownerPhone.value.trim()
+  const e164 = toE164Loose(typed, country.value)
+  return e164 ? `+${e164}` : typed
+}
+
+// The same answers, written to the rows the RPC created. Deliberately
 // not a re-run of the RPC and not a delete-and-recreate: the clinic's slug
 // and its booking subdomain were registered under the original name, and
 // tearing those down to rename a practice mid-onboarding would cost more
@@ -113,12 +175,12 @@ async function updatePractice() {
   const clinicId = store.clinics[0]?.id
   const { error: accountError } = await supabase
     .from('accounts')
-    .update({ name: accountName.value, default_phone_country: phoneCountry.value })
+    .update({ name: accountName.value, default_phone_country: country.value, owner_phone: ownerPhoneE164() })
     .eq('id', store.accountId!)
   if (accountError) return accountError.message
 
   if (clinicId) {
-    const { error: clinicError } = await supabase.from('clinics').update({ name: clinicName.value }).eq('id', clinicId)
+    const { error: clinicError } = await supabase.from('clinics').update({ name: clinicName.value, country: country.value }).eq('id', clinicId)
     if (clinicError) return clinicError.message
   }
 
@@ -136,6 +198,15 @@ async function updatePractice() {
 async function onSubmit() {
   if (loading.value) return
   error.value = ''
+  ownerPhoneError.value = ''
+  // The one field checked here: everything else has a fallback in the RPC,
+  // and a number nobody can dial is worse than none, because it looks like
+  // we have one.
+  if (!looksLikePhoneNumber(ownerPhone.value.trim(), country.value)) {
+    ownerPhoneError.value = t('Enter a phone number we can reach you on.', 'Escribe un teléfono en el que podamos localizarte.')
+    phoneInput.value?.focus()
+    return
+  }
   loading.value = true
   const message = alreadyCreated.value ? await updatePractice() : await createPractice()
   loading.value = false
@@ -168,14 +239,31 @@ async function chooseLanguage(value: 'en' | 'es') {
   await supabase.from('team_members').update({ language_preference: value }).eq('id', store.teamMember!.id)
 }
 
-const dialCode = computed(() => countryByCode(phoneCountry.value).dial || '—')
+// The country's name in the interface language, not COUNTRIES' English one.
+const countryName = computed(() => {
+  try {
+    return new Intl.DisplayNames([langPreference.value], { type: 'region' }).of(country.value) ?? countryByCode(country.value).name
+  } catch {
+    return countryByCode(country.value).name
+  }
+})
 const languageName = computed(() => (langPreference.value === 'es' ? t('Spanish', 'español') : t('English', 'inglés')))
 
+const importing = computed(() => !!importSource.value && importSource.value !== 'none')
+const importSourceName = computed(() =>
+  importSource.value === 'practicehub' ? 'PracticeHub' : importSource.value === 'quirocitas' ? 'Quirocitas' : t('a CSV file', 'un archivo CSV'),
+)
+
 const launchSummary = computed(() =>
-  t(
-    `${accountName.value} is live in ${clinicName.value}, in ${languageName.value}, with ${dialCode.value} as the default dial code. Four things are waiting for you inside.`,
-    `${accountName.value} ya está en marcha en ${clinicName.value}, en ${languageName.value}, con ${dialCode.value} como prefijo por defecto. Dentro te esperan cuatro cosas.`,
-  ),
+  importing.value
+    ? t(
+        `${accountName.value} is live in ${clinicName.value}, ${countryName.value}, in ${languageName.value}. Next, bring your records across from ${importSourceName.value}.`,
+        `${accountName.value} ya está en marcha en ${clinicName.value}, ${countryName.value}, en ${languageName.value}. Ahora, trae tus datos desde ${importSourceName.value}.`,
+      )
+    : t(
+        `${accountName.value} is live in ${clinicName.value}, ${countryName.value}, in ${languageName.value}. This is what is waiting inside.`,
+        `${accountName.value} ya está en marcha en ${clinicName.value}, ${countryName.value}, en ${languageName.value}. Esto es lo que te espera dentro.`,
+      ),
 )
 
 const LAUNCH_CARDS = computed(() => [
@@ -203,16 +291,11 @@ const LAUNCH_CARDS = computed(() => [
       'Emite la factura en euros y cobra con tarjeta vía Stripe, en un solo paso.',
     ),
   },
-  {
-    key: 'support',
-    title: t('Need a hand?', '¿Necesitas ayuda?'),
-    body: '',
-  },
 ])
 </script>
 
 <template>
-  <OnboardingLayout :align="step === 'form' ? 'start' : 'center'">
+  <OnboardingLayout :align="step === 'form' || step === 'launch' ? 'start' : 'center'">
     <template #stepper>
       <OnboardingStepper :current="stepNumber" />
     </template>
@@ -246,6 +329,20 @@ const LAUNCH_CARDS = computed(() => [
       </p>
     </template>
 
+    <template v-else-if="step === 'import'" #heading>
+      <h1 ref="headingEl" tabindex="-1" class="text-[25px] font-semibold leading-[1.18] tracking-tightTitle text-ink-900 outline-none lg:text-[30px]">
+        {{ t('Coming from other software?', '¿Vienes de otro programa?') }}
+      </h1>
+      <p class="mt-2 text-[14.5px] leading-[1.55] text-ink-muted lg:mt-[11px] lg:text-[15px]">
+        {{
+          t(
+            'Bring your patients and their history with you, or start empty. Optional, and you can change your mind later.',
+            'Trae a tus pacientes y su historial, o empieza de cero. Es opcional, y puedes cambiar de idea más tarde.',
+          )
+        }}
+      </p>
+    </template>
+
     <template v-else #heading>
       <div class="flex items-center gap-2.5">
         <span class="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full border border-success-border bg-success-bg">
@@ -263,9 +360,26 @@ const LAUNCH_CARDS = computed(() => [
     <template #form>
       <!-- Step 2 -->
       <form v-if="step === 'form'" class="mt-5 flex flex-col gap-4 lg:mt-7" novalidate @submit.prevent="onSubmit">
-        <OnboardingFormField id="owner-name" :label="t('Your name', 'Tu nombre')">
-          <OnboardingTextInput id="owner-name" v-model="ownerName" autocomplete="name" required :readonly="loading" placeholder="Alba Esteve" />
-        </OnboardingFormField>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-3">
+          <OnboardingFormField id="owner-name" :label="t('Your name', 'Tu nombre')">
+            <OnboardingTextInput id="owner-name" v-model="ownerName" autocomplete="name" required :readonly="loading" placeholder="Alba Esteve" />
+          </OnboardingFormField>
+          <OnboardingFormField id="owner-phone" :label="t('Your phone', 'Tu teléfono')" :error="ownerPhoneError">
+            <OnboardingTextInput
+              id="owner-phone"
+              ref="phoneInput"
+              v-model="ownerPhone"
+              type="tel"
+              autocomplete="tel"
+              required
+              :readonly="loading"
+              :invalid="!!ownerPhoneError"
+              :described-by="ownerPhoneError ? 'owner-phone-error' : undefined"
+              placeholder="600 00 00 00"
+              data-test="owner-phone"
+            />
+          </OnboardingFormField>
+        </div>
 
         <div>
           <p class="mb-1.5 text-[14px] font-medium text-ink-700">
@@ -297,9 +411,14 @@ const LAUNCH_CARDS = computed(() => [
           <OnboardingTextInput id="account-name" v-model="accountName" required :readonly="loading" :placeholder="t('Your practice name', 'Nombre de tu consulta')" />
         </OnboardingFormField>
 
-        <OnboardingFormField id="clinic-name" :label="t('First clinic location', 'Primera clínica')">
-          <OnboardingTextInput id="clinic-name" v-model="clinicName" required :readonly="loading" placeholder="Valencia" />
-        </OnboardingFormField>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-3">
+          <OnboardingFormField id="clinic-name" :label="t('First clinic location', 'Primera clínica')">
+            <OnboardingTextInput id="clinic-name" v-model="clinicName" required :readonly="loading" placeholder="Valencia" />
+          </OnboardingFormField>
+          <OnboardingFormField id="clinic-country" :label="t('Country', 'País')">
+            <OnboardingCountrySelect id="clinic-country" v-model="country" :dial="false" data-test="clinic-country" />
+          </OnboardingFormField>
+        </div>
 
         <!-- The booking URL the right panel shows, folded inline where there is
              no right panel to show it in. -->
@@ -310,14 +429,6 @@ const LAUNCH_CARDS = computed(() => [
             >/<strong class="font-semibold">{{ previewSlug(clinicName) || t('clinic', 'clinica') }}</strong>
           </p>
         </div>
-
-        <OnboardingFormField
-          id="phone-country"
-          :label="t('Phone numbers are mostly from', 'Los números de teléfono son sobre todo de')"
-          :description="t(`Used when a patient's number doesn't say. You can change it later.`, 'Se usa cuando el número del paciente no lo indica. Puedes cambiarlo más tarde.')"
-        >
-          <OnboardingCountrySelect id="phone-country" v-model="phoneCountry" described-by="phone-country-description" />
-        </OnboardingFormField>
 
         <p v-if="error" role="alert" class="text-[12.5px] text-danger-text">{{ error }}</p>
 
@@ -385,21 +496,63 @@ const LAUNCH_CARDS = computed(() => [
           <OnboardingSecondaryButton @click="step = 'form'">
             {{ t('Back', 'Atrás') }}
           </OnboardingSecondaryButton>
-          <OnboardingPrimaryButton class="flex-1" type="button" @click="step = 'launch'">
+          <OnboardingPrimaryButton class="flex-1" type="button" @click="step = 'import'">
             {{ t('Continue', 'Continuar') }}
           </OnboardingPrimaryButton>
         </div>
       </div>
 
       <!-- Step 4 -->
-      <div v-else class="mt-5 lg:mt-7">
-        <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
-          <div
+      <div v-else-if="step === 'import'" class="mt-5 flex flex-col gap-[22px] lg:mt-[30px]">
+        <OnboardingTileGroup :label="t('Where are your records now?', '¿Dónde están ahora tus datos?')" :columns="2">
+          <OnboardingSelectTile
+            v-for="opt in IMPORT_OPTIONS"
+            :key="opt.key"
+            layout="inline"
+            :selected="importSource === opt.key"
+            :data-test="`import-source-${opt.key}`"
+            @click="importSource = opt.key"
+          >
+            <span class="min-w-0 flex-1">
+              <span class="block text-[13.5px] font-semibold text-ink-700">{{ opt.title }}</span>
+              <span class="mt-0.5 block text-[12px] text-ink-muted">{{ opt.body }}</span>
+            </span>
+            <OnboardingTileCheck :selected="importSource === opt.key" />
+          </OnboardingSelectTile>
+        </OnboardingTileGroup>
+
+        <p class="text-[12.5px] leading-[1.5] text-ink-muted">
+          {{
+            t(
+              'The import runs inside, from Settings → Import, whenever you are ready. Afterwards you link each practitioner it brings to someone on your team, so their visits land in their own column.',
+              'La importación se hace dentro, desde Ajustes → Importar, cuando quieras. Después vinculas cada profesional que traiga con alguien de tu equipo, para que sus visitas caigan en su propia columna.',
+            )
+          }}
+        </p>
+
+        <div class="flex gap-2.5">
+          <OnboardingSecondaryButton @click="step = 'preferences'">
+            {{ t('Back', 'Atrás') }}
+          </OnboardingSecondaryButton>
+          <OnboardingPrimaryButton class="flex-1" type="button" data-test="import-continue" @click="chooseImport">
+            {{ importSource ? t('Continue', 'Continuar') : t('Skip for now', 'Saltar por ahora') }}
+          </OnboardingPrimaryButton>
+        </div>
+      </div>
+
+      <!-- Step 5 -->
+      <div v-else class="mt-4 lg:mt-5">
+        <!-- One list rather than a 2x2 grid of cards: the grid made the step
+             taller than a laptop screen, so the button that finishes
+             onboarding sat below the fold. Support is a line under the
+             button for the same reason. -->
+        <ul class="divide-y divide-line-divider rounded-card border border-line bg-surface-subtle">
+          <li
             v-for="card in LAUNCH_CARDS"
             :key="card.key"
-            class="rounded-card border border-line bg-surface-subtle p-3.5"
+            class="flex gap-3 px-3.5 py-2.5"
           >
-            <div class="flex h-[30px] w-[30px] items-center justify-center rounded-ctl border border-brand-tintBorder bg-brand-tint">
+            <div class="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-ctl border border-brand-tintBorder bg-brand-tint">
               <svg viewBox="0 0 18 18" fill="none" aria-hidden="true" class="h-4 w-4 text-brand-text">
                 <template v-if="card.key === 'calendar'">
                   <rect x="2.5" y="3.8" width="13" height="11.2" rx="2.2" stroke="currentColor" stroke-width="1.4" />
@@ -414,28 +567,37 @@ const LAUNCH_CARDS = computed(() => [
                   <path d="M4 2.8h10v12.4l-2-1.2-2 1.2-2-1.2-2 1.2-2-1.2z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
                   <path d="M11 6.4H7.6a1.7 1.7 0 0 0 0 3.4h1.6a1.7 1.7 0 0 1 0 3.4H6.9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
                 </template>
-                <template v-else>
-                  <circle cx="9" cy="9" r="6.2" stroke="currentColor" stroke-width="1.4" />
-                  <circle cx="9" cy="9" r="2.4" stroke="currentColor" stroke-width="1.4" />
-                  <path d="M4.6 4.6l2.7 2.7M10.7 10.7l2.7 2.7M13.4 4.6l-2.7 2.7M7.3 10.7l-2.7 2.7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
-                </template>
               </svg>
             </div>
-            <p class="mt-[11px] text-[14px] font-semibold text-ink-900">{{ card.title }}</p>
-            <p v-if="card.body" class="mt-[5px] text-[13px] leading-[1.5] text-ink-muted">{{ card.body }}</p>
-            <p v-else class="mt-[5px] text-[13px] leading-[1.5] text-ink-muted">
-              {{ t('Write to', 'Escríbenos a') }}
-              <a href="mailto:hola@quiroflow.com" class="font-semibold text-brand-text hover:text-brand-hover">hola@quiroflow.com</a>
-              {{ t('— a real person answers, in English or Spanish.', '— te responde una persona, en inglés o en español.') }}
-            </p>
-          </div>
-        </div>
+            <div class="min-w-0 flex-1">
+              <p class="text-[14px] font-semibold text-ink-900">{{ card.title }}</p>
+              <p class="mt-0.5 text-[13px] leading-[1.45] text-ink-muted">{{ card.body }}</p>
+            </div>
+          </li>
+        </ul>
 
-        <OnboardingPrimaryButton class="mt-6" type="button" size="lg" @click="navigateTo('/dashboard')">
-          {{ t('Get started', 'Empezar') }}
-        </OnboardingPrimaryButton>
-        <p class="mt-[11px] text-center text-[12.5px] text-ink-muted">
-          {{ t('Three short steps there take you to your first booked visit, and Getting set up lists the rest: your data, WhatsApp, your team, invoicing.', 'Allí, tres pasos cortos te llevan a tu primera visita reservada, y Puesta en marcha te lista el resto: tus datos, WhatsApp, tu equipo, la facturación.') }}
+        <template v-if="importing">
+          <OnboardingPrimaryButton class="mt-5" type="button" size="lg" data-test="launch-import" @click="navigateTo(`/settings/import?source=${importSource}`)">
+            {{ t(`Import from ${importSourceName}`, `Importar desde ${importSourceName}`) }}
+          </OnboardingPrimaryButton>
+          <p class="mt-2.5 text-center text-[12.5px] text-ink-muted">
+            <NuxtLink to="/dashboard" class="font-semibold text-brand-text hover:text-brand-hover">{{ t('Go to the dashboard instead', 'Ir al panel') }}</NuxtLink>
+            · {{ t('the import waits for you in its first steps.', 'la importación te espera en sus primeros pasos.') }}
+          </p>
+        </template>
+        <template v-else>
+          <OnboardingPrimaryButton class="mt-5" type="button" size="lg" @click="navigateTo('/dashboard')">
+            {{ t('Get started', 'Empezar') }}
+          </OnboardingPrimaryButton>
+          <p class="mt-2.5 text-center text-[12.5px] text-ink-muted">
+            {{ t('Three short steps there take you to your first booked visit.', 'Allí, tres pasos cortos te llevan a tu primera visita reservada.') }}
+          </p>
+        </template>
+        <!-- Was a fourth card; a line costs a fifth of the height. -->
+        <p class="mt-1.5 text-center text-[12.5px] text-ink-muted">
+          {{ t('Need a hand? Write to', '¿Necesitas ayuda? Escríbenos a') }}
+          <a href="mailto:hola@quiroflow.com" class="font-semibold text-brand-text hover:text-brand-hover">hola@quiroflow.com</a>
+          {{ t('— a real person answers.', '— te responde una persona.') }}
         </p>
       </div>
     </template>
@@ -445,7 +607,7 @@ const LAUNCH_CARDS = computed(() => [
         v-if="step === 'form'"
         :practice="accountName"
         :location="clinicName"
-        :country-code="phoneCountry"
+        :country-code="country"
       />
       <OnboardingPreviewReminders
         v-else-if="step === 'preferences'"
@@ -453,6 +615,7 @@ const LAUNCH_CARDS = computed(() => [
         :theme="themePreference"
         :language="langPreference"
       />
+      <OnboardingPreviewImport v-else-if="step === 'import'" :source="importSource" />
       <OnboardingPreviewPatient v-else />
     </template>
   </OnboardingLayout>

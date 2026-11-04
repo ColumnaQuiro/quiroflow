@@ -21,6 +21,13 @@
 // The phone number is 600 00 00 00 for the same reason: all-zero after the
 // prefix, so it reads as a format example and cannot belong to anybody.
 
+/**
+ * Where a new clinic's records are coming from, as the Import step asks it.
+ * The keys are pages/settings/import.vue's own ?source= values; 'none' is a
+ * clinic starting empty.
+ */
+export type ImportSource = 'practicehub' | 'quirocitas' | 'other' | 'none'
+
 export type PreviewTone = 'brand' | 'success' | 'neutral'
 
 export interface PreviewAppointment {

@@ -8,7 +8,7 @@ import { historyLine, standingClockTimes } from '~/utils/receptionistHistory'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personRepliedSince, replyActed } from '~/utils/receptionistAutoReply'
 import { loadBookedVisits, loadClinicDetails, loadFamilyAdults, loadOfferedTypes, loadTeamNames, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, toneWording, uniqueTypes, clinicTodayStart } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel, type FreeTimesForWhom } from '~/server/utils/receptionistModel'
-import { matchChild, typesAfterFirstVisit, typesForAudience, typesForMinor, typesForSomeoneTheyBring } from '~/utils/receptionistTypes'
+import { matchChild, patientAudience, typesAfterFirstVisit, typesForAudience, typesForMinor, typesForSomeoneTheyBring } from '~/utils/receptionistTypes'
 import { internalNotes } from '~/utils/receptionistGuard'
 import { carePlanCadenceLabel } from '~/utils/carePlanCadence'
 import { buildPatientReplyPrompt, type PatientAppFacts, openBono, summariseVisitHistory, type PastVisit, type PatientReplyFacts } from '~/utils/patientReplyPrompt'
@@ -183,9 +183,28 @@ export async function draftPatientReply(
     ),
   }
 
-  // A patient who writes is somebody the clinic knows: never a first visit.
+  // A patient who has been before is never offered a first visit. One who
+  // has not -- a lead from the ad whose first visit was cancelled before they
+  // came -- is still somebody new, and offered the ad's offer if a lead of
+  // theirs came from the ad (patientAudience). The leads are read with the
+  // service role: they only decide which type is offered, nothing of them
+  // reaches the reply, and an asker without Growth access must not turn the
+  // offer into the full-price visit.
   const offered = await loadOfferedTypes(supabase, accountId, config)
-  const { types } = typesForAudience(offered, 'existing')
+  const { data: leads } = await service.from('leads').select('channel, source, external_source, lead_attribution(campaign, ad)').eq('account_id', accountId).eq('patient_id', patientId)
+  const audience = patientAudience({
+    attended: attended ?? 0,
+    bonoSessionsLeft: facts.bono?.sessionsLeft ?? 0,
+    leadOrigins: ((leads ?? []) as { channel: string | null; source: string | null; external_source: string | null; lead_attribution: { campaign: string | null; ad: string | null } | { campaign: string | null; ad: string | null }[] | null }[]).map((lead) => {
+      // One-to-one on lead_id: an object, or an array, as receptionistDraft.ts reads it.
+      const attribution = Array.isArray(lead.lead_attribution) ? lead.lead_attribution[0] : lead.lead_attribution
+      return { channel: lead.channel, source: lead.source, externalSource: lead.external_source, campaign: attribution?.campaign ?? null, ad: attribution?.ad ?? null }
+    }),
+  })
+  const { types, adOnly, regular } = typesForAudience(offered, audience)
+  // What a returning relative is offered, and the reactivation visit: a
+  // returning patient's types, whoever is writing.
+  const returning = audience === 'existing' ? types : typesForAudience(offered, 'existing').types
   // ...but their child may well be new: a patient writing "cita para mi
   // hija" was told there was no first visit (minorsSection).
   const minors = { forNewChild: typesForMinor(offered, false), forReturningChild: typesForMinor(offered, true), children: await loadTutorChildren(service, accountId, patientId) }
@@ -209,15 +228,15 @@ export async function draftPatientReply(
     supabase.from('patient_exercises').select('id', { count: 'exact', head: true }).eq('account_id', accountId).eq('patient_id', patientId).is('ended_at', null),
     supabase.from('accounts').select('slug').eq('id', accountId).maybeSingle(),
   ])
-  const family = { forNew: bringsSomeone.types, forReturning: types, members: await loadFamilyAdults(service, accountId, patientId) }
+  const family = { forNew: bringsSomeone.types, forReturning: returning, members: await loadFamilyAdults(service, accountId, patientId) }
   // Back after a long break with no bono: the clinic's own visit for that
   // (returningPatientSection), when it is one it offers.
-  const reactivationType = types.find((type) => type.id === config.reactivationAppointmentTypeId)?.name ?? null
+  const reactivationType = returning.find((type) => type.id === config.reactivationAppointmentTypeId)?.name ?? null
   // Moving a visit keeps its type, offered or not -- the prompt lists the
   // visits themselves under patient facts.
   const booked = await loadBookedVisits(supabase, accountId, patientId)
   // The child's first visit too, so its free times are in the list.
-  const bookable = uniqueTypes(types, booked.types, minors.forNewChild, bringsSomeone.types)
+  const bookable = uniqueTypes(types, adOnly, booked.types, minors.forNewChild, bringsSomeone.types)
   // Somebody who has been before is seen by their own practitioner; a
   // patient record with no visit yet is still somebody new, and a first
   // visit is with whoever is free -- unless one is booked already.
@@ -264,7 +283,7 @@ export async function draftPatientReply(
           accountId,
           config,
           timeZone: calendar.timeZone,
-          types,
+          types: [...types, ...adOnly],
           booked: { appointments: booked.appointments, types: booked.types },
           practitionerIds,
           person: { kind: 'patient', patientId },
@@ -291,7 +310,7 @@ export async function draftPatientReply(
   const { text: draft, refused, handedOver, toolUses } = await runReceptionistModel(await createAnthropicClient(apiKey, { feature: 'receptionist_patient', accountId }), {
     model: MODEL,
     maxTokens: MAX_TOKENS,
-    system: buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, family: { forNew: family.forNew, forReturning: family.forReturning, members: family.members }, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, laterPrices, clinicDetails, team, app: patientApp, reactivationType, canStopFollowUps: Boolean(stopFollowUps) }),
+    system: buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, family: { forNew: family.forNew, forReturning: family.forReturning, members: family.members }, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, laterPrices, clinicDetails, team, app: patientApp, reactivationType, canStopFollowUps: Boolean(stopFollowUps) }),
     messages: withImages(history, images),
     findFreeTimes,
     handOver: sends,

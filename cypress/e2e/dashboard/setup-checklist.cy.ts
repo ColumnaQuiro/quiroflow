@@ -41,6 +41,24 @@ describe('Setup checklist', () => {
     })
   })
 
+  // Reminding through an automation is as good as the built-in reminder,
+  // which such a clinic has rightly switched off.
+  it('counts a reminder automation as the reminder being set up', () => {
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:updateRows', { table: 'accounts', values: { appointment_reminder_enabled: false }, match: { id: account.accountId } })
+      cy.task('db:createAutomationRule', {
+        accountId: account.accountId,
+        triggerEvent: 'appointment.hours_before',
+        name: 'Recordatorio 24h antes',
+        filters: { hours_before: 24 },
+        actions: [{ type: 'whatsapp_template', config: { template_name: 'recordatorio_cita', template_language: 'es' } }],
+      })
+      cy.login(account.email, account.password)
+      cy.visit('/setup')
+      cy.get('[data-cy=setup-reminders]', { timeout: 20000 }).should('have.attr', 'data-state', 'done')
+    })
+  })
+
   it('shows the owner where it stands from the dashboard', () => {
     cy.seedStaffAccount().then((account) => {
       cy.login(account.email, account.password)

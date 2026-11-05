@@ -3,8 +3,8 @@ import { OUTLETS, say, stepDef, triggerDef } from '~/utils/automationCatalog'
 import { stepEyebrow, stepTitle } from '~/utils/automationDescribe'
 import { subtreeIds } from '~/utils/automationTree'
 
-// The selected step's panel: on the right beside the canvas on a wide
-// screen, a sheet from the bottom on a tablet (the page decides which).
+// The selected step's panel: a drawer on the right, beside the canvas on a
+// wide screen and over it on a tablet (the page decides which).
 
 const props = defineProps<{ sheet?: boolean }>()
 const emit = defineEmits<{ close: [] }>()
@@ -71,10 +71,10 @@ function pick(type: string) {
 
 <template>
   <div class="flex h-full min-h-0 flex-col" data-test="inspector">
-    <div class="flex items-start justify-between gap-3 border-b border-line-divider px-5 py-3.5">
+    <div class="flex items-start justify-between gap-3 border-b border-line-divider px-6 py-4">
       <div class="flex min-w-0 flex-col gap-0.5">
         <span class="truncate text-[11px] font-bold uppercase tracking-[.06em] text-ink-faint">{{ eyebrow }}</span>
-        <strong class="truncate text-[15px] text-ink-900" data-test="inspector-title">{{ title }}</strong>
+        <strong class="truncate text-[16px] font-semibold tracking-[-.012em] text-ink-900" data-test="inspector-title">{{ title }}</strong>
       </div>
       <button
         v-if="sheet"
@@ -92,7 +92,7 @@ function pick(type: string) {
       >✕</button>
     </div>
 
-    <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+    <div class="min-h-0 flex-1 overflow-y-auto px-6 py-5">
       <ul v-if="stepProblems.length" class="mb-4 flex flex-col gap-1 rounded-ctl border border-warning-border bg-warning-bg px-3 py-2.5 text-[12.5px] text-warning-text" data-test="inspector-problems">
         <li v-for="(p, i) in stepProblems" :key="i">{{ t(p.message[0], p.message[1]) }}</li>
       </ul>
@@ -133,7 +133,7 @@ function pick(type: string) {
       <p v-else class="text-[13px] text-ink-muted">{{ t('Select a step on the canvas to edit it, or a "+" to add one.', 'Selecciona un paso del lienzo para editarlo, o un «+» para añadir uno.') }}</p>
     </div>
 
-    <div v-if="step" class="flex flex-wrap items-center justify-between gap-2 border-t border-line-divider px-5 py-3">
+    <div v-if="step" class="flex flex-wrap items-center justify-between gap-2 border-t border-line-divider px-6 py-3">
       <UiBtn v-if="canDuplicate && !lockedLeadStep" variant="secondary" data-test="step-duplicate" @click="b.duplicateStep(step.id)">{{ t('Duplicate', 'Duplicar') }}</UiBtn>
       <span v-else />
       <span v-if="confirmRemove" class="text-[12px] text-danger-text">{{ t(`Also removes the ${below} step(s) in its paths.`, `También elimina los ${below} pasos de sus ramas.`) }}</span>

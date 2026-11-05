@@ -11,10 +11,17 @@
 // can't be a signed URL that expires.
 import { sanitizeStorageFilename } from '~/utils/storageFilename'
 
-// `variables`: the merge fields offered as chips. Without it, the three the
-// settings emails use (name, surname, email); the automation builder passes
-// every field an automated email can resolve.
-const props = defineProps<{ modelValue: string; variables?: { key: string; label: string }[] }>()
+// `variables`: the merge fields the { } picker offers. Without it, the three
+// the settings emails use (name, surname, email); the automation builder
+// passes every field an automated email can resolve, grouped.
+//
+// A merge field shows as a chip while editing -- one piece, named in words,
+// that cannot be half-deleted into "{{first_nam" -- and is written back as
+// plain {{key}} text, so the stored HTML is exactly what it was before the
+// chips existed and the send path never sees one.
+import type { PickerVariable } from './VariablePicker.vue'
+
+const props = defineProps<{ modelValue: string; variables?: PickerVariable[] }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 
 const MAX_IMAGE_BYTES = 3 * 1024 * 1024
@@ -30,12 +37,12 @@ const uploadError = ref('')
 const dragOver = ref(false)
 
 onMounted(() => {
-  if (editorRef.value) editorRef.value.innerHTML = props.modelValue
+  if (editorRef.value) editorRef.value.innerHTML = toEditor(props.modelValue)
 })
 watch(
   () => props.modelValue,
   (value) => {
-    if (editorRef.value && editorRef.value.innerHTML !== value) editorRef.value.innerHTML = value
+    if (editorRef.value && fromEditor() !== value) editorRef.value.innerHTML = toEditor(value)
   },
 )
 
@@ -152,7 +159,7 @@ async function uploadAndInsert(file: File) {
   }
 }
 
-const chips = computed(
+const fields = computed<PickerVariable[]>(
   () =>
     props.variables ?? [
       { key: 'first_name', label: t('First name', 'Nombre') },
@@ -161,16 +168,121 @@ const chips = computed(
     ],
 )
 
-function insertVariable(name: string) {
-  // Into the editor even when the cursor was elsewhere: focusing first keeps
-  // the chip from typing into whatever field had focus.
-  if (document.activeElement !== editorRef.value) editorRef.value?.focus()
-  document.execCommand('insertText', false, `{{${name}}}`)
+// ---- merge fields as chips
+
+const CHIP = 'rounded-[5px] border border-brand-tintBorder bg-brand-tint px-1 text-[12px] font-semibold text-brand-text whitespace-nowrap'
+const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+const labelOf = (key: string) => fields.value.find((f) => f.key === key)?.label ?? key
+function chipNode(key: string) {
+  const span = document.createElement('span')
+  span.dataset.var = key
+  span.contentEditable = 'false'
+  span.className = CHIP
+  span.textContent = labelOf(key)
+  return span
+}
+function toEditor(html: string) {
+  return html.replace(/\{\{(\w+)\}\}/g, (_, key: string) => `<span data-var="${key}" contenteditable="false" class="${CHIP}">${escapeHtml(labelOf(key))}</span>`)
+}
+function fromEditor() {
+  const el = editorRef.value
+  if (!el) return ''
+  if (!el.querySelector('[data-var]')) return el.innerHTML
+  const copy = el.cloneNode(true) as HTMLElement
+  copy.querySelectorAll<HTMLElement>('[data-var]').forEach((chip) => chip.replaceWith(document.createTextNode(`{{${chip.dataset.var}}}`)))
+  return copy.innerHTML
+}
+
+// Put a chip where the caret is (or over `range`), and the caret after it.
+function insertChip(key: string, range?: Range) {
+  const el = editorRef.value
+  if (!el) return
+  const sel = window.getSelection()
+  let r = range ?? (document.activeElement === el && sel && sel.rangeCount && el.contains(sel.getRangeAt(0).startContainer) ? sel.getRangeAt(0) : null)
+  if (!r) {
+    // Nowhere in the editor yet: at the end of it.
+    r = document.createRange()
+    r.selectNodeContents(el)
+    r.collapse(false)
+  }
+  r.deleteContents()
+  const chip = chipNode(key)
+  // A space after it, so typing carries on outside the chip.
+  const space = document.createTextNode('\u00a0')
+  r.insertNode(space)
+  r.insertNode(chip)
+  const after = document.createRange()
+  after.setStartAfter(space)
+  after.collapse(true)
+  sel?.removeAllRanges()
+  sel?.addRange(after)
+  el.focus()
   onInput()
 }
-function onInput() {
-  emit('update:modelValue', editorRef.value?.innerHTML ?? '')
+
+// ---- the picker: from the toolbar, or by typing "{{"
+
+const pickerButton = ref<HTMLButtonElement | null>(null)
+const picker = ref<{ handleKey: (e: KeyboardEvent) => boolean } | null>(null)
+const open = ref<null | { at: { x: number; y: number }; typed: boolean; query: string }>(null)
+let savedRange: Range | null = null
+
+// "{{" and the word after it, right before the caret, in the text node the caret is in.
+function typedQuery(): { query: string; range: Range } | null {
+  const sel = window.getSelection()
+  if (!sel || !sel.isCollapsed || !sel.rangeCount) return null
+  const node = sel.anchorNode
+  if (!node || node.nodeType !== Node.TEXT_NODE || !editorRef.value?.contains(node)) return null
+  const before = (node as Text).data.slice(0, sel.anchorOffset)
+  const m = /\{\{(\w*)$/.exec(before)
+  if (!m) return null
+  const range = document.createRange()
+  range.setStart(node, sel.anchorOffset - m[0].length)
+  range.setEnd(node, sel.anchorOffset)
+  return { query: m[1]!, range }
 }
+function caretPoint(range: Range) {
+  const rect = range.getBoundingClientRect()
+  if (rect.width || rect.height) return { x: rect.left, y: rect.bottom }
+  const box = editorRef.value!.getBoundingClientRect()
+  return { x: box.left + 12, y: box.top + 28 }
+}
+function openFromToolbar() {
+  if (open.value) return (open.value = null)
+  // Where the caret was, if it was in here; otherwise the field goes at the end.
+  const sel = window.getSelection()
+  const focused = document.activeElement === editorRef.value
+  savedRange = focused && sel && sel.rangeCount && editorRef.value?.contains(sel.getRangeAt(0).startContainer) ? sel.getRangeAt(0).cloneRange() : null
+  const r = pickerButton.value!.getBoundingClientRect()
+  open.value = { at: { x: r.right - 300, y: r.bottom }, typed: false, query: '' }
+}
+function pick(key: string) {
+  if (open.value?.typed) {
+    const typed = typedQuery()
+    open.value = null
+    insertChip(key, typed?.range)
+  } else {
+    open.value = null
+    insertChip(key, savedRange ?? undefined)
+    savedRange = null
+  }
+}
+function onEditorInput() {
+  onInput()
+  const typed = typedQuery()
+  if (typed) open.value = { at: caretPoint(typed.range), typed: true, query: typed.query }
+  else if (open.value?.typed) open.value = null
+}
+function onEditorKeydown(e: KeyboardEvent) {
+  if (open.value?.typed && picker.value?.handleKey(e)) return
+  onKeydown(e)
+}
+
+function onInput() {
+  emit('update:modelValue', fromEditor())
+}
+// In script, not the template: a "{{" in template text would open an interpolation.
+const fieldHint = computed(() => t('{ } Field, or typing {{, inserts their details.', '{ } Campo, o escribir {{, inserta sus datos.'))
 </script>
 
 <template>
@@ -185,31 +297,40 @@ function onInput() {
         {{ uploading ? t('Uploading…', 'Subiendo…') : t('Image', 'Imagen') }}
       </button>
       <input ref="fileInputRef" type="file" accept="image/*" class="hidden" @change="onFileChosen" />
-      <div class="ml-auto flex flex-wrap items-center gap-1">
-        <button
-          v-for="v in chips"
-          :key="v.key"
-          type="button"
-          class="rounded-pill border border-line-control bg-surface px-2 py-0.5 text-[11px] text-ink-muted2 hover:border-brand-tintBorder hover:bg-brand-tint hover:text-brand-text touch:min-h-9"
-          @mousedown.prevent
-          @click="insertVariable(v.key)"
-        >{{ v.label }}</button>
-      </div>
+      <button
+        ref="pickerButton"
+        type="button"
+        class="ml-auto flex items-center gap-1.5 rounded-ctlSm px-2 py-1 text-[12px] font-medium text-ink-600 hover:bg-line-faint hover:text-brand-text touch:min-h-10"
+        :aria-expanded="!!open"
+        data-test="email-body-fields"
+        @mousedown.prevent
+        @click="openFromToolbar"
+      ><span class="font-mono font-semibold">{ }</span>{{ t('Field', 'Campo') }}</button>
     </div>
     <div
       ref="editorRef"
       data-test="email-body"
       contenteditable="true"
-      class="min-h-[120px] px-3 py-2 text-[13.5px] text-ink-900 focus:outline-none [&_img]:max-w-full [&_a]:text-brand-text [&_a]:underline"
+      class="min-h-[120px] px-3 py-2 text-[13.5px] font-normal text-ink-900 focus:outline-none [&_img]:max-w-full [&_a]:text-brand-text [&_a]:underline"
       :class="dragOver ? 'bg-brand-tint' : ''"
-      @input="onInput"
-      @keydown="onKeydown"
+      @input="onEditorInput"
+      @keydown="onEditorKeydown"
       @paste="onPaste"
       @dragover.prevent="dragOver = true"
       @dragleave="dragOver = false"
       @drop.prevent="onDrop"
     ></div>
+    <AutomationsVariablePicker
+      v-if="open"
+      ref="picker"
+      :variables="fields"
+      :at="open.at"
+      :searchable="!open.typed"
+      :query="open.query"
+      @pick="pick"
+      @close="open = null"
+    />
     <p v-if="uploadError" class="border-t border-line-control px-3 py-1.5 text-[11.5px] text-danger-text">{{ uploadError }}</p>
-    <p class="border-t border-line-control px-3 py-1.5 text-[11px] text-ink-faint2">{{ t('Ctrl/Cmd + B, I, U for bold, italic and underline; Ctrl/Cmd + K, or paste a URL over selected text, to link it. Drag an image in, or use the Image button. Max', 'Ctrl/Cmd + B, I, U para negrita, cursiva y subrayado; Ctrl/Cmd + K, o pega una URL sobre el texto seleccionado, para enlazarlo. Arrastra una imagen, o usa el botón Imagen. Máx.') }} {{ (MAX_IMAGE_BYTES / (1024 * 1024)).toFixed(0) }} MB.</p>
+    <p class="border-t border-line-control px-3 py-1.5 text-[11px] text-ink-faint2">{{ fieldHint }} {{ t('Ctrl/Cmd + B, I, U for bold, italic and underline; Ctrl/Cmd + K, or paste a URL over selected text, to link it. Drag an image in, or use the Image button. Max', 'Ctrl/Cmd + B, I, U para negrita, cursiva y subrayado; Ctrl/Cmd + K, o pega una URL sobre el texto seleccionado, para enlazarlo. Arrastra una imagen, o usa el botón Imagen. Máx.') }} {{ (MAX_IMAGE_BYTES / (1024 * 1024)).toFixed(0) }} MB.</p>
   </div>
 </template>

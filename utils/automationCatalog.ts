@@ -627,29 +627,31 @@ export function defaultFilterValue(key: FilterKey): Record<string, unknown> {
 
 // ------------------------------------------------------------------ WhatsApp variables
 
-export const VARIABLE_SOURCES: { value: string; label: Pair }[] = [
-  { value: 'first_name', label: ['First name', 'Nombre del paciente'] },
-  { value: 'last_name', label: ['Last name', 'Apellidos'] },
-  { value: 'email', label: ['Email', 'Email'] },
-  { value: 'next_appointment', label: ['Appointment date & time', 'Fecha y hora de la cita'] },
-  { value: 'appointment_date', label: ['Appointment date', 'Fecha de la cita'] },
-  { value: 'appointment_time', label: ['Appointment time', 'Hora de la cita'] },
-  { value: 'google_review_link', label: ['Google review link', 'Enlace de reseña de Google'] },
-  { value: 'satisfaction_link', label: ['Satisfaction question link', 'Enlace para valorar la visita'] },
-  { value: 'waitlist_claim_link', label: ['Waitlist claim link', 'Enlace para reservar el hueco'] },
-  { value: 'waitlist_slot_datetime', label: ['Offered slot date & time', 'Fecha y hora del hueco ofrecido'] },
-  { value: 'invoice_number', label: ['Invoice number', 'Número de factura'] },
-  { value: 'invoice_amount_owed', label: ['Amount owed', 'Importe pendiente'] },
-  { value: 'invoice_pay_link', label: ['Payment link (card)', 'Enlace de pago (tarjeta)'] },
-  { value: 'booking_link', label: ['Online booking link', 'Enlace de reserva online'] },
-  { value: 'clinic_name', label: ['Clinic name', 'Nombre de la clínica'] },
-  { value: 'clinic_phone', label: ['Clinic phone', 'Teléfono de la clínica'] },
-  { value: 'clinic_address', label: ['Clinic address', 'Dirección de la clínica'] },
+export type VariableGroup = 'patient' | 'appointment' | 'links' | 'billing' | 'clinic' | 'lead'
+
+export const VARIABLE_SOURCES: { value: string; label: Pair; group?: VariableGroup }[] = [
+  { value: 'first_name', label: ['First name', 'Nombre del paciente'], group: 'patient' },
+  { value: 'last_name', label: ['Last name', 'Apellidos'], group: 'patient' },
+  { value: 'email', label: ['Email', 'Email'], group: 'patient' },
+  { value: 'next_appointment', label: ['Appointment date & time', 'Fecha y hora de la cita'], group: 'appointment' },
+  { value: 'appointment_date', label: ['Appointment date', 'Fecha de la cita'], group: 'appointment' },
+  { value: 'appointment_time', label: ['Appointment time', 'Hora de la cita'], group: 'appointment' },
+  { value: 'google_review_link', label: ['Google review link', 'Enlace de reseña de Google'], group: 'links' },
+  { value: 'satisfaction_link', label: ['Satisfaction question link', 'Enlace para valorar la visita'], group: 'links' },
+  { value: 'waitlist_claim_link', label: ['Waitlist claim link', 'Enlace para reservar el hueco'], group: 'links' },
+  { value: 'waitlist_slot_datetime', label: ['Offered slot date & time', 'Fecha y hora del hueco ofrecido'], group: 'appointment' },
+  { value: 'invoice_number', label: ['Invoice number', 'Número de factura'], group: 'billing' },
+  { value: 'invoice_amount_owed', label: ['Amount owed', 'Importe pendiente'], group: 'billing' },
+  { value: 'invoice_pay_link', label: ['Payment link (card)', 'Enlace de pago (tarjeta)'], group: 'links' },
+  { value: 'booking_link', label: ['Online booking link', 'Enlace de reserva online'], group: 'links' },
+  { value: 'clinic_name', label: ['Clinic name', 'Nombre de la clínica'], group: 'clinic' },
+  { value: 'clinic_phone', label: ['Clinic phone', 'Teléfono de la clínica'], group: 'clinic' },
+  { value: 'clinic_address', label: ['Clinic address', 'Dirección de la clínica'], group: 'clinic' },
   // A recall reads better from "Léa" than from "the clinic". The clinic's
   // name when the patient has no practitioner, so Meta never gets an empty
   // parameter (it refuses the whole message over one).
-  { value: 'practitioner_first_name', label: ["Their practitioner's first name", 'Nombre de su profesional'] },
-  { value: 'last_visit_month', label: ['Month of their last visit', 'Mes de su última visita'] },
+  { value: 'practitioner_first_name', label: ["Their practitioner's first name", 'Nombre de su profesional'], group: 'patient' },
+  { value: 'last_visit_month', label: ['Month of their last visit', 'Mes de su última visita'], group: 'patient' },
   { value: 'text', label: ['Fixed text', 'Texto fijo'] },
 ]
 
@@ -664,6 +666,16 @@ export const BUTTON_PARAM_SOURCES: { value: string; label: Pair }[] = [
 
 /** Merge fields an email can use, inserted as {{key}}. */
 export const EMAIL_MERGE_FIELDS = VARIABLE_SOURCES.filter((v) => v.value !== 'text')
+
+/** The headings the variable picker sorts merge fields under, in this order. */
+export const VARIABLE_GROUPS: { key: VariableGroup; label: Pair }[] = [
+  { key: 'patient', label: ['Patient', 'Paciente'] },
+  { key: 'appointment', label: ['Appointment', 'Cita'] },
+  { key: 'links', label: ['Links', 'Enlaces'] },
+  { key: 'billing', label: ['Billing', 'Facturación'] },
+  { key: 'clinic', label: ['Clinic', 'Clínica'] },
+  { key: 'lead', label: ['Their answers', 'Sus respuestas'] },
+]
 
 // ------------------------------------------------------------------ runs
 

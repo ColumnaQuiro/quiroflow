@@ -9,7 +9,7 @@
 // placeholders. Images upload to the public "campaign-images" bucket (not
 // patient-files) -- email clients load the <img> src with no auth, so it
 // can't be a signed URL that expires.
-import { sanitizeStorageFilename } from '~/utils/storageFilename'
+import { MAX_CAMPAIGN_IMAGE_BYTES as MAX_IMAGE_BYTES } from '~/composables/useCampaignImageUpload'
 
 // `variables`: the merge fields the { } picker offers. Without it, the three
 // the settings emails use (name, surname, email); the automation builder
@@ -24,16 +24,11 @@ import type { PickerVariable } from './VariablePicker.vue'
 const props = defineProps<{ modelValue: string; variables?: PickerVariable[] }>()
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 
-const MAX_IMAGE_BYTES = 3 * 1024 * 1024
-
-const supabase = useSupabaseClient()
-const store = useAccountStore()
 const t = useT()
+const { upload, uploading, error: uploadError } = useCampaignImageUpload()
 
 const editorRef = ref<HTMLDivElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
-const uploading = ref(false)
-const uploadError = ref('')
 const dragOver = ref(false)
 
 onMounted(() => {
@@ -133,30 +128,11 @@ function onDrop(e: DragEvent) {
   if (file) uploadAndInsert(file)
 }
 async function uploadAndInsert(file: File) {
-  uploadError.value = ''
-  if (!file.type.startsWith('image/')) {
-    uploadError.value = t('Only image files can be inserted.', 'Solo se pueden insertar archivos de imagen.')
-    return
-  }
-  if (file.size > MAX_IMAGE_BYTES) {
-    uploadError.value = `${t('Image is too large', 'La imagen es demasiado grande')} (max ${(MAX_IMAGE_BYTES / (1024 * 1024)).toFixed(0)} MB).`
-    return
-  }
-  uploading.value = true
-  try {
-    const path = `${store.accountId}/${Date.now()}-${sanitizeStorageFilename(file.name)}`
-    const { error } = await supabase.storage.from('campaign-images').upload(path, file)
-    if (error) {
-      uploadError.value = error.message
-      return
-    }
-    const { data } = supabase.storage.from('campaign-images').getPublicUrl(path)
-    editorRef.value?.focus()
-    document.execCommand('insertImage', false, data.publicUrl)
-    onInput()
-  } finally {
-    uploading.value = false
-  }
+  const url = await upload(file)
+  if (!url) return
+  editorRef.value?.focus()
+  document.execCommand('insertImage', false, url)
+  onInput()
 }
 
 const fields = computed<PickerVariable[]>(

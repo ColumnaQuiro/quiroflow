@@ -5,7 +5,7 @@ import type { PatientFilterForm } from '~/utils/patientFilters'
 // made of (VIP and no booking, bono almost used up, new this month) -- in a
 // panel under the toolbar, so the toolbar keeps the everyday five. Edits the
 // page's form in place; the page reloads on any change.
-const props = defineProps<{ form: PatientFilterForm }>()
+const props = defineProps<{ form: PatientFilterForm; lists?: { id: string; name: string }[] }>()
 const t = useT()
 const store = useAccountStore()
 const supabase = useSupabaseClient()
@@ -124,6 +124,52 @@ const labelClass = 'text-[11px] font-[640] uppercase tracking-[.04em] text-ink-f
         { value: '', label: `${currentClinicName} ${t('(selected)', '(seleccionada)')}` },
         { value: 'all', label: t('All clinics', 'Todas las clínicas') },
         ...store.clinics.filter((c) => c.id !== store.currentClinicId).map((c) => ({ value: c.id, label: c.name })),
+      ]" />
+    </div>
+
+    <!-- Lists, family and consent (20261105143740): what a segment for a
+    campaign is usually made of. -->
+    <div v-if="lists?.length" class="flex flex-col items-start gap-1.5">
+      <span :class="labelClass">{{ t('Lists', 'Listas') }}</span>
+      <div class="flex flex-wrap items-center gap-1.5">
+        <PatientsFilterSelect v-model="form.list" :label="t('On the list', 'En la lista')" :options="[
+          { value: '', label: t('On any list or none', 'En cualquier lista o ninguna') },
+          ...lists.map((l) => ({ value: l.id, label: `${t('On', 'En')} ${l.name}` })),
+        ]" />
+        <PatientsFilterSelect v-model="form.notList" :label="t('Not on the list', 'No en la lista')" :options="[
+          { value: '', label: t('Not on…', 'No en…') },
+          ...lists.filter((l) => l.id !== form.list).map((l) => ({ value: l.id, label: `${t('Not on', 'No en')} ${l.name}` })),
+        ]" />
+      </div>
+    </div>
+
+    <div class="flex flex-col items-start gap-1.5">
+      <span :class="labelClass">{{ t('Family', 'Familia') }}</span>
+      <div class="flex flex-wrap items-center gap-1.5">
+        <PatientsFilterSelect v-model="form.family" :label="t('Family', 'Familia')" :options="[
+          { value: '', label: t('Any', 'Cualquiera') },
+          { value: 'linked', label: t('Has family linked', 'Con familia vinculada') },
+          { value: 'none', label: t('No family linked', 'Sin familia vinculada') },
+          { value: 'child', label: t('Has a child linked', 'Con hijos vinculados') },
+          { value: 'parent', label: t('Has a parent linked', 'Con padre/madre vinculado') },
+          { value: 'partner', label: t('Has a partner linked', 'Con pareja vinculada') },
+          { value: 'sibling', label: t('Has a sibling linked', 'Con hermanos vinculados') },
+        ]" />
+        <label class="flex items-center gap-2 text-[13px] text-ink-700">
+          <input v-model="form.familyBono" type="checkbox" data-cy="family-bono" class="h-4 w-4 accent-brand" />
+          {{ t('Shares a bono', 'Comparte bono') }}
+        </label>
+      </div>
+    </div>
+
+    <div class="flex flex-col items-start gap-1.5">
+      <span :class="labelClass">{{ t('Marketing consent', 'Consentimiento de publicidad') }}</span>
+      <PatientsFilterSelect v-model="form.marketing" :label="t('Marketing consent', 'Consentimiento de publicidad')" :options="[
+        { value: '', label: t('Any', 'Cualquiera') },
+        { value: 'any', label: t('Accepts marketing', 'Acepta publicidad') },
+        { value: 'email', label: t('By email', 'Por correo') },
+        { value: 'whatsapp', label: t('By WhatsApp', 'Por WhatsApp') },
+        { value: 'none', label: t('No consent', 'Sin consentimiento') },
       ]" />
     </div>
 

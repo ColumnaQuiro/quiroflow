@@ -1,11 +1,14 @@
 <script setup lang="ts">
-// Name a segment, new or existing, and say whether the team sees it.
-const props = defineProps<{
+// Name a segment or a list, new or existing, and say whether the team sees
+// it. The two are named and shared the same way; only what is saved differs
+// -- a segment keeps the filters on screen, a list starts empty.
+const props = withDefaults(defineProps<{
   mode: 'create' | 'rename'
+  kind?: 'segment' | 'list'
   initialName?: string
   initialShared?: boolean
   busy?: boolean
-}>()
+}>(), { kind: 'segment', initialName: '', initialShared: true, busy: false })
 const emit = defineEmits<{ save: [name: string, shared: boolean]; cancel: [] }>()
 const t = useT()
 
@@ -23,7 +26,9 @@ function save() {
 
 <template>
   <UiConfirmDialog
-    :title="mode === 'create' ? t('Save as segment', 'Guardar como segmento') : t('Rename segment', 'Renombrar segmento')"
+    :title="kind === 'list'
+      ? (mode === 'create' ? t('New list', 'Nueva lista') : t('Rename list', 'Renombrar lista'))
+      : (mode === 'create' ? t('Save as segment', 'Guardar como segmento') : t('Rename segment', 'Renombrar segmento'))"
     :confirm-label="t('Save', 'Guardar')"
     :cancel-label="t('Cancel', 'Cancelar')"
     :disabled="!valid"
@@ -31,7 +36,10 @@ function save() {
     @confirm="save"
     @cancel="emit('cancel')"
   >
-    <p v-if="mode === 'create'" class="text-[13px] text-ink-muted">
+    <p v-if="mode === 'create' && kind === 'list'" class="text-[13px] text-ink-muted">
+      {{ t('A list holds whoever you put on it: by hand, from a selection on the patient list, or from an import.', 'Una lista contiene a quien añadas: a mano, seleccionándolos en la lista de pacientes o importándolos.') }}
+    </p>
+    <p v-else-if="mode === 'create'" class="text-[13px] text-ink-muted">
       {{ t('Saves the filters on screen. Opening the segment later shows whoever matches them then.', 'Guarda los filtros actuales. Al abrir el segmento verás a quien cumpla esos filtros en ese momento.') }}
     </p>
     <label class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
@@ -41,7 +49,7 @@ function save() {
         v-model="name"
         data-cy="segment-name"
         maxlength="80"
-        :placeholder="t('e.g. Bono almost used up', 'p. ej. Bono casi gastado')"
+        :placeholder="kind === 'list' ? t('e.g. Open day contacts', 'p. ej. Contactos jornada de puertas abiertas') : t('e.g. Bono almost used up', 'p. ej. Bono casi gastado')"
         class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[14px] font-normal text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
         @keydown.enter.prevent="save"
       />

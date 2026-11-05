@@ -29,4 +29,8 @@ describe('carePlanOverdueDays', () => {
   it('is not behind on the day it is due', () => {
     expect(carePlanOverdueDays([plan], [v('2026-10-05T09:00:00Z')], now)).toBeNull()
   })
+
+  it('is never finished for a plan with no end', () => {
+    expect(carePlanOverdueDays([{ ...plan, total_visits: null }], [v('2026-09-12T09:00:00Z')], now)).toBe(23)
+  })
 })

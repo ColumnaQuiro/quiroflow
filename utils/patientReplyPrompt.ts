@@ -25,7 +25,7 @@ export interface PatientReplyFacts {
   lastVisitAt: string | null
   /** The type of that visit, which is what "otra cita" usually means. */
   lastVisitType?: string | null
-  plan: { name: string; totalVisits: number; done: number; cadence: string } | null
+  plan: { name: string; totalVisits: number | null; done: number; cadence: string } | null
   /**
    * An open package (bono) with sessions still to use. Counted in sessions,
    * not money, so a stored draft may mention it.
@@ -163,8 +163,12 @@ export function patientFactsSection(f: PatientReplyFacts, timeZone: string | nul
     }
   }
   if (f.plan) {
-    const left = Math.max(0, f.plan.totalVisits - f.plan.done)
-    lines.push(`- Care plan "${f.plan.name}": ${f.plan.done} of ${f.plan.totalVisits} visits done, ${left} left${f.plan.cadence ? `, ${f.plan.cadence}` : ''}.`)
+    if (f.plan.totalVisits === null) {
+      lines.push(`- Care plan "${f.plan.name}": ongoing, with no end; ${f.plan.done} visits done${f.plan.cadence ? `, ${f.plan.cadence}` : ''}.`)
+    } else {
+      const left = Math.max(0, f.plan.totalVisits - f.plan.done)
+      lines.push(`- Care plan "${f.plan.name}": ${f.plan.done} of ${f.plan.totalVisits} visits done, ${left} left${f.plan.cadence ? `, ${f.plan.cadence}` : ''}.`)
+    }
   }
   if (f.bono && f.bono.sessionsLeft > 0) {
     lines.push(`- Package "${promptSafeName(f.bono.name) ?? 'bono'}": ${f.bono.sessionsLeft} session${f.bono.sessionsLeft === 1 ? '' : 's'} left to use.`)

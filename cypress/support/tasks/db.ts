@@ -1141,11 +1141,24 @@ async function setPatientNif(opts: { patientId: string; nationalId: string | nul
   return null
 }
 
-async function createPackageTemplate(opts: { accountId: string; name: string; sessionCount: number; priceCents: number }) {
+async function createPackageTemplate(opts: {
+  accountId: string
+  name: string
+  sessionCount: number
+  priceCents: number
+  // Ways of paying it in plazos, each priced on its own: [{ installments: 2, installmentCents: 25000 }].
+  installmentOptions?: { installments: number; installmentCents: number }[]
+}) {
   const row = unwrap(
     await admin
       .from('packages')
-      .insert({ account_id: opts.accountId, name: opts.name, session_count: opts.sessionCount, price_cents: opts.priceCents })
+      .insert({
+        account_id: opts.accountId,
+        name: opts.name,
+        session_count: opts.sessionCount,
+        price_cents: opts.priceCents,
+        installment_options: (opts.installmentOptions ?? []).map((o) => ({ installments: o.installments, installment_cents: o.installmentCents })),
+      })
       .select('id')
       .single(),
   )
@@ -1557,8 +1570,11 @@ async function createPackagePurchase(opts: {
   // whatever was on its counter -- which is the state that used to read as a
   // second live bono.
   isClosed?: boolean
+  // Sold in plazos: how many and what each costs (priceCents must be their product).
+  installments?: number
+  installmentCents?: number
 }) {
-  const { accountId, patientId, packageName, sessionsTotal, sessionsUsed, priceCents, owedCents, isClosed } = opts
+  const { accountId, patientId, packageName, sessionsTotal, sessionsUsed, priceCents, owedCents, isClosed, installments, installmentCents } = opts
   const row = unwrap(
     await admin
       .from('package_purchases')
@@ -1572,6 +1588,7 @@ async function createPackagePurchase(opts: {
         purchased_at: new Date().toISOString(),
         ...(owedCents === undefined ? {} : { owed_cents: owedCents }),
         ...(isClosed === undefined ? {} : { is_closed: isClosed }),
+        ...(installments === undefined ? {} : { installments, installment_cents: installmentCents ?? null }),
       })
       .select('id, package_name, sessions_total, sessions_used, price_cents')
       .single(),

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { EMAIL_MERGE_FIELDS, say } from '~/utils/automationCatalog'
-import { FIELD, HINT, LABEL, NOTE } from '~/utils/automationUi'
+import { FIELD, HINT, LABEL, NOTE, SEGMENT_WRAP, segmentBtn } from '~/utils/automationUi'
 import { automationEmailHtml, emptyBodyPlaceholderHtml, DEFAULT_BOOKING_BUTTON_TEXT } from '~/utils/automationEmail'
 
 // An email step: subject and body, with the patient's details as merge fields
@@ -44,6 +44,8 @@ const SAMPLE: Record<string, string> = {
   invoice_amount_owed: '45,00 €',
   invoice_pay_link: 'https://app.quiroflow.com/api/pay/ejemplo',
   booking_link: 'https://app.quiroflow.com/book/clinica-demo',
+  practitioner_first_name: 'Ana',
+  last_visit_month: 'julio',
 }
 const esc = (v: string) => v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 const sample = (key: string) => {
@@ -65,43 +67,67 @@ const previewHtml = computed(() => {
   return `<!doctype html><html><head><meta charset="utf-8"><base target="_blank"></head><body style="margin:0">${html}</body></html>`
 })
 const fields = computed(() => [
-  ...EMAIL_MERGE_FIELDS.map((f) => ({ key: f.value, label: say(t, f.label) })),
-  ...(b.isLead.value ? b.leadQuestions.value.map((q) => ({ key: q.key, label: short(q.question) })) : []),
+  ...EMAIL_MERGE_FIELDS.map((f) => ({ key: f.value, label: say(t, f.label), group: f.group, sample: sample(f.value) })),
+  ...(b.isLead.value ? b.leadQuestions.value.map((q) => ({ key: q.key, label: short(q.question), group: 'lead' as const })) : []),
 ])
+
+// The preview at a phone's width as well, since most patients read it there.
+const device = ref<'desktop' | 'mobile'>('desktop')
 </script>
 
 <template>
   <div class="flex flex-col gap-4">
     <label :class="LABEL">
       {{ t('Subject', 'Asunto') }}
-      <input :class="FIELD" :value="config.subject ?? ''" :placeholder="t('Subject — {{first_name}} works here too', 'Asunto — {{first_name}} también funciona aquí')" data-test="email-subject" @input="set({ subject: ($event.target as HTMLInputElement).value })" />
+      <AutomationsMergeFieldInput
+        :model-value="config.subject ?? ''"
+        :variables="fields"
+        :placeholder="t('What the patient sees in their inbox', 'Lo que el paciente ve en su bandeja')"
+        test-id="email-subject"
+        @update:model-value="set({ subject: $event })"
+      />
     </label>
     <div :class="LABEL">
       {{ t('Message', 'Mensaje') }}
       <AutomationsRichTextEditor :key="stepId" :model-value="config.body ?? ''" :variables="fields" @update:model-value="set({ body: $event })" />
     </div>
-    <p :class="HINT">{{ t('Click a field to insert it where the cursor is. It is filled in for each patient when the email goes out.', 'Pulsa un campo para insertarlo donde está el cursor. Se rellena con los datos de cada paciente al enviar.') }}</p>
 
-    <div class="flex flex-col gap-2.5 rounded-ctl border border-line px-3 py-2.5" data-test="email-blocks">
-      <label class="flex items-center justify-between gap-3 text-[13px] text-ink-700">
-        <span>{{ t("Clinic logo on top", 'Logo de la clínica arriba') }}<span v-if="!logoUrl" class="block text-[11.5px] text-ink-muted">{{ t('Upload one in Settings > Clinics.', 'Súbelo en Ajustes > Clínicas.') }}</span></span>
-        <input type="checkbox" :checked="!!config.include_logo" :disabled="!logoUrl" data-test="email-include-logo" @change="set({ include_logo: ($event.target as HTMLInputElement).checked })" />
+    <div class="grid gap-2.5 sm:grid-cols-2" data-test="email-blocks">
+      <label class="flex items-start justify-between gap-3 rounded-ctl border border-line px-3 py-2.5 text-[13px] text-ink-700">
+        <span>{{ t("Clinic logo on top", 'Logo de la clínica arriba') }}<span v-if="!logoUrl" class="block text-[12px] text-ink-muted">{{ t('Upload one in Settings > Clinics.', 'Súbelo en Ajustes > Clínicas.') }}</span></span>
+        <input type="checkbox" class="mt-0.5" :checked="!!config.include_logo" :disabled="!logoUrl" data-test="email-include-logo" @change="set({ include_logo: ($event.target as HTMLInputElement).checked })" />
       </label>
-      <label class="flex items-center justify-between gap-3 text-[13px] text-ink-700">
-        <span>{{ t('Button to book online', 'Botón para reservar online') }}</span>
-        <input type="checkbox" :checked="!!config.booking_button" data-test="email-booking-button" @change="set({ booking_button: ($event.target as HTMLInputElement).checked })" />
-      </label>
-      <input v-if="config.booking_button" :class="FIELD" :value="config.booking_button_text ?? ''" :placeholder="DEFAULT_BOOKING_BUTTON_TEXT" data-test="email-booking-button-text" @input="set({ booking_button_text: ($event.target as HTMLInputElement).value })" />
+      <div class="flex flex-col gap-2 rounded-ctl border border-line px-3 py-2.5">
+        <label class="flex items-center justify-between gap-3 text-[13px] text-ink-700">
+          <span>{{ t('Button to book online', 'Botón para reservar online') }}</span>
+          <input type="checkbox" :checked="!!config.booking_button" data-test="email-booking-button" @change="set({ booking_button: ($event.target as HTMLInputElement).checked })" />
+        </label>
+        <input v-if="config.booking_button" :class="FIELD" :value="config.booking_button_text ?? ''" :placeholder="DEFAULT_BOOKING_BUTTON_TEXT" :aria-label="t('Button text', 'Texto del botón')" data-test="email-booking-button-text" @input="set({ booking_button_text: ($event.target as HTMLInputElement).value })" />
+      </div>
     </div>
 
     <div :class="LABEL">
-      {{ t('Preview', 'Vista previa') }}
-      <div class="overflow-hidden rounded-ctl border border-line" data-test="email-preview">
-        <div class="space-y-0.5 border-b border-line bg-surface-subtle px-3 py-2 text-[12px] font-normal text-ink-700">
+      <span class="flex items-center justify-between gap-3">
+        {{ t('Preview', 'Vista previa') }}
+        <span :class="SEGMENT_WRAP" role="group" :aria-label="t('Preview size', 'Tamaño de la vista previa')">
+          <button type="button" :class="segmentBtn(device === 'desktop')" :aria-pressed="device === 'desktop'" data-test="email-preview-desktop" @click="device = 'desktop'">{{ t('Desktop', 'Escritorio') }}</button>
+          <button type="button" :class="segmentBtn(device === 'mobile')" :aria-pressed="device === 'mobile'" data-test="email-preview-mobile" @click="device = 'mobile'">{{ t('Mobile', 'Móvil') }}</button>
+        </span>
+      </span>
+      <div class="overflow-hidden rounded-ctl border border-line bg-surface-subtle" data-test="email-preview">
+        <div class="space-y-0.5 border-b border-line bg-surface px-3 py-2 text-[12px] font-normal text-ink-700">
           <p><span class="text-ink-muted">{{ t('From', 'De') }}:</span> {{ clinicName }}</p>
           <p class="truncate"><span class="text-ink-muted">{{ t('Subject', 'Asunto') }}:</span> <span data-test="email-preview-subject">{{ previewSubject || '—' }}</span></p>
         </div>
-        <iframe :srcdoc="previewHtml" sandbox="allow-popups" class="h-[420px] w-full bg-surface-subtle" :title="t('Email preview', 'Vista previa del email')" />
+        <div class="flex justify-center" :class="device === 'mobile' ? 'py-4' : ''">
+          <iframe
+            :srcdoc="previewHtml"
+            sandbox="allow-popups"
+            class="block bg-surface-subtle"
+            :class="device === 'mobile' ? 'h-[560px] w-[375px] max-w-full rounded-[18px] border border-line-control' : 'h-[460px] w-full'"
+            :title="t('Email preview', 'Vista previa del email')"
+          />
+        </div>
       </div>
       <p :class="HINT">{{ t('Filled in with an example patient; each patient gets their own details.', 'Rellenada con un paciente de ejemplo; cada paciente recibe sus propios datos.') }}</p>
     </div>

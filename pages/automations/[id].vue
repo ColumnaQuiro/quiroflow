@@ -45,7 +45,7 @@ async function init() {
 }
 onMounted(async () => {
   await init()
-  // On a tablet the panel is a sheet over the canvas: start with it closed.
+  // On a tablet the panel is a drawer over the canvas: start with it closed.
   if (!wide.value && !route.query.step) b.selection.value = null
 })
 // Saving a new automation moves the URL to its id; that is the same draft.
@@ -296,17 +296,20 @@ const sheetOpen = computed(() => !wide.value && b.selection.value !== null && ta
           <div class="relative min-w-0 flex-1">
             <AutomationsFlowCanvas :popover-menu="wide" />
           </div>
-          <aside v-if="wide && b.selection.value" class="w-[400px] shrink-0 border-l border-line bg-surface" :aria-label="t('Selected step', 'Paso seleccionado')">
+          <!-- Wide enough to edit a step in (half the space, up to 600px),
+               with the flow still beside it. -->
+          <aside v-if="wide && b.selection.value" class="w-[min(600px,50%)] shrink-0 border-l border-line bg-surface shadow-drawer" :aria-label="t('Selected step', 'Paso seleccionado')">
             <AutomationsInspector @close="b.selection.value = null" />
           </aside>
+          <!-- Narrower than that, the same drawer over the canvas, closed with Done. -->
+          <div v-if="sheetOpen" class="absolute inset-0 z-10 bg-scrim/20" aria-hidden="true" @click="b.selection.value = null" />
           <div
             v-if="sheetOpen"
             role="dialog"
             :aria-label="t('Selected step', 'Paso seleccionado')"
-            class="absolute inset-x-0 bottom-0 z-20 flex max-h-[62%] flex-col rounded-t-[16px] border-t border-line bg-surface shadow-popover"
+            class="absolute inset-y-0 right-0 z-20 flex w-full max-w-[600px] flex-col border-l border-line bg-surface shadow-drawer"
             data-test="inspector-sheet"
           >
-            <span class="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-line-control" aria-hidden="true" />
             <AutomationsInspector sheet @close="b.selection.value = null" />
           </div>
         </div>

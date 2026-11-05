@@ -31,6 +31,8 @@ export interface BonoPurchaseRow {
   purchased_at: string
   invoice_id: string | null
   owed_cents: number | null
+  installments: number | null
+  installment_cents: number | null
   external_reference: string | null
   patients: { first_name: string; last_name: string | null } | null
 }
@@ -50,7 +52,7 @@ export function useBonoDebts() {
         let query = supabase
           .from('package_purchases')
           .select(
-            `id, patient_id, package_name, sessions_total, sessions_used, price_cents, purchased_at, invoice_id, owed_cents, external_reference, patients!package_purchases_patient_id_fkey(first_name, last_name), invoices!package_purchases_invoice_id_fkey(id, status, total_cents, payments!payments_invoice_id_fkey(${PAYMENT_COLUMNS}))`,
+            `id, patient_id, package_name, sessions_total, sessions_used, price_cents, purchased_at, invoice_id, owed_cents, installments, installment_cents, external_reference, patients!package_purchases_patient_id_fkey(first_name, last_name), invoices!package_purchases_invoice_id_fkey(id, status, total_cents, payments!payments_invoice_id_fkey(${PAYMENT_COLUMNS}))`,
           )
         query = order === 'newest' ? query.order('purchased_at', { ascending: false }).order('id') : query.order('id')
         return query.range(from, to) as unknown as PromiseLike<{ data: Row[] | null; error: unknown }>

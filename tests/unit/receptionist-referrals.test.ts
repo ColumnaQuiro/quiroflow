@@ -161,7 +161,15 @@ describe('Prices after the first visit', () => {
   it('lists the sessions and the bonos with their price a session', () => {
     const text = laterPricesSection({ sessions: [session], packages: [{ name: 'Bono 10 sesiones', sessions: 10, priceCents: 46000 }] })
     expect(text).toContain('- Ajuste: 55 €')
-    expect(text).toContain('- Bono 10 sesiones: 10 sessions for 460 € (46 € a session)')
+    expect(text).toContain('- Bono 10 sesiones: 10 sessions for 460 € paid at once (46 € a session)')
+  })
+
+  it('quotes each way of paying a bono in plazos at its own price', () => {
+    const text = laterPricesSection({
+      sessions: [],
+      packages: [{ name: 'Bono 10 sesiones', sessions: 10, priceCents: 50000, installments: [{ installments: 2, installmentCents: 25000 }, { installments: 3, installmentCents: 18000 }] }],
+    })
+    expect(text).toContain('- Bono 10 sesiones: 10 sessions for 500 € paid at once (50 € a session); or in 2 payments of 250 € (500 € in all), or 3 payments of 180 € (540 € in all)')
   })
 
   it('says nothing when there is nothing to price', () => {

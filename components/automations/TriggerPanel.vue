@@ -202,6 +202,27 @@ watch(
       <span :class="HINT">{{ t('Each lead enters once. Not offered: Patient and Lost, because automations stop for a lead in either. A booking moving the lead to "Booked" by itself does not count; for that, use "Wait until they book" in a New lead automation.', 'Cada lead entra una vez. No se ofrecen Paciente ni Perdido, porque las automatizaciones se detienen para un lead en cualquiera de las dos. Que una reserva lo pase sola a «Con cita» no cuenta; para eso, usa «Esperar hasta que reserve» en una automatización de Lead nuevo.') }}</span>
     </label>
 
+    <template v-if="rule.trigger_event === 'care_plan.milestone'">
+      <div :class="LABEL">
+        {{ t('When', 'Cuándo') }}
+        <span :class="SEGMENT_WRAP" role="group" :aria-label="t('Milestone', 'Hito')">
+          <button v-for="o in [{ v: '', l: t('Re-exam is next', 'Toca revisión') }, { v: 'finished', l: t('Plan finished', 'Plan terminado') }, { v: 'visit', l: t('Visit number', 'Visita número') }]" :key="o.v" type="button" :class="segmentBtn((rule.filters.trigger_milestone ?? '') === o.v)" :aria-pressed="(rule.filters.trigger_milestone ?? '') === o.v" :data-test="`trigger-milestone-${o.v || 'reexam'}`" @click="setFilters({ ...rule.filters, trigger_milestone: o.v || undefined })">{{ o.l }}</button>
+        </span>
+        <span :class="HINT">{{ (rule.filters.trigger_milestone ?? '') === '' ? t('After the visit before one the plan marks as a re-exam, so it can be booked in time.', 'Tras la visita anterior a una que el plan marca como revisión, para que dé tiempo a reservarla.') : rule.filters.trigger_milestone === 'finished' ? t("After the plan's last visit.", 'Tras la última visita del plan.') : t('After that visit of the plan, counting as the plan does: no cancelled or missed ones.', 'Tras esa visita del plan, contando como el plan: sin las canceladas ni las de no asistió.') }}</span>
+      </div>
+      <label v-if="rule.filters.trigger_milestone === 'visit'" :class="LABEL">
+        {{ t('Visit number', 'Visita número') }}
+        <input type="number" min="1" :class="FIELD_NUMBER" :value="rule.filters.trigger_visit_number ?? 6" data-test="trigger-visit-number" @input="setFilters({ ...rule.filters, trigger_visit_number: Math.max(1, Math.round(Number(($event.target as HTMLInputElement).value) || 1)) })" />
+      </label>
+    </template>
+    <div v-if="rule.trigger_event === 'bono.running_low'" :class="LABEL">
+      {{ t('Sessions left', 'Sesiones restantes') }}
+      <span :class="SEGMENT_WRAP" role="group" :aria-label="t('Sessions left', 'Sesiones restantes')">
+        <button v-for="n in [0, 1, 2, 3]" :key="n" type="button" :class="segmentBtn((rule.filters.trigger_sessions_left ?? 1) === n)" :aria-pressed="(rule.filters.trigger_sessions_left ?? 1) === n" :data-test="`trigger-sessions-left-${n}`" @click="setFilters({ ...rule.filters, trigger_sessions_left: n })">{{ n === 0 ? t('Used up', 'Agotado') : n }}</button>
+      </span>
+      <span :class="HINT">{{ t('Once per bono. Sessions brought in by an import do not count.', 'Una vez por bono. Las sesiones traídas por una importación no cuentan.') }}</span>
+    </div>
+
     <!-- A group of patients -->
     <template v-if="isSegment">
       <div :class="SEGMENT_WRAP" role="group" :aria-label="t('How often', 'Con qué frecuencia')">

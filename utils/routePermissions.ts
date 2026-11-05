@@ -85,6 +85,9 @@ const rules: Rule[] = [
   { test: (p) => p.startsWith('/dashboard'), check: (s) => scopeNotNone(s, 'dashboard_scope') },
   { test: (p) => p.startsWith('/calendar'), check: (s) => scopeNotNone(s, 'calendar_scope') },
   { test: (p) => p.startsWith('/practitioner'), check: (s) => scopeNotNone(s, 'calendar_scope') },
+  // Importing into a list creates patient records in bulk, as Settings >
+  // Import does, so it needs what that page needs besides seeing patients.
+  { test: (p) => p === '/patients/import', check: (s) => scopeNotNone(s, 'patients_scope') && can(s, 'data_admin') },
   { test: (p) => p.startsWith('/patients'), check: (s) => scopeNotNone(s, 'patients_scope') },
   // The sidebar already hides this link without inbox_access, but hiding a
   // link is not a guard: /inbox was still reachable by typing the URL, by a

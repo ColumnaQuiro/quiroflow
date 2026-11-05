@@ -6191,6 +6191,116 @@ export type Database = {
           },
         ]
       }
+      patient_list_members: {
+        Row: {
+          account_id: string
+          added_at: string
+          added_by: string | null
+          id: string
+          list_id: string
+          patient_id: string
+          source: string
+          source_detail: string | null
+        }
+        Insert: {
+          account_id: string
+          added_at?: string
+          added_by?: string | null
+          id?: string
+          list_id: string
+          patient_id: string
+          source?: string
+          source_detail?: string | null
+        }
+        Update: {
+          account_id?: string
+          added_at?: string
+          added_by?: string | null
+          id?: string
+          list_id?: string
+          patient_id?: string
+          source?: string
+          source_detail?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_list_members_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_list_members_added_by_fkey"
+            columns: ["added_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_list_members_list_id_fkey"
+            columns: ["list_id"]
+            isOneToOne: false
+            referencedRelation: "patient_lists"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_list_members_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      patient_lists: {
+        Row: {
+          account_id: string
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          name: string
+          shared: boolean
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          name: string
+          shared?: boolean
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          name?: string
+          shared?: boolean
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_lists_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_lists_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       patient_relations: {
         Row: {
           account_id: string
@@ -6246,6 +6356,55 @@ export type Database = {
             columns: ["related_patient_id"]
             isOneToOne: false
             referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      patient_segment_members: {
+        Row: {
+          account_id: string
+          entered_at: string
+          id: string
+          left_at: string | null
+          patient_id: string
+          segment_id: string
+        }
+        Insert: {
+          account_id: string
+          entered_at?: string
+          id?: string
+          left_at?: string | null
+          patient_id: string
+          segment_id: string
+        }
+        Update: {
+          account_id?: string
+          entered_at?: string
+          id?: string
+          left_at?: string | null
+          patient_id?: string
+          segment_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_segment_members_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_segment_members_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_segment_members_segment_id_fkey"
+            columns: ["segment_id"]
+            isOneToOne: false
+            referencedRelation: "patient_segments"
             referencedColumns: ["id"]
           },
         ]
@@ -10009,6 +10168,36 @@ export type Database = {
       patient_tags: {
         Args: never
         Returns: { tag: string; patient_count: number }[]
+      }
+      patient_list_counts: {
+        Args: never
+        Returns: {
+          email_count: number
+          list_id: string
+          patient_count: number
+          whatsapp_count: number
+        }[]
+      }
+      can_manage_patient_list: { Args: { p_list_id: string }; Returns: boolean }
+      add_matching_to_patient_list: {
+        Args: { p_clinic_id?: string; p_filters: Json; p_list_id: string }
+        Returns: number
+      }
+      remove_matching_from_patient_list: {
+        Args: { p_clinic_id?: string; p_filters: Json; p_list_id: string }
+        Returns: number
+      }
+      refresh_segment_members: {
+        Args: { p_segment_id?: string }
+        Returns: number
+      }
+      audience_members: {
+        Args: { p_id: string; p_kind: string }
+        Returns: { entered_at: string; patient_id: string }[]
+      }
+      audience_entries_since: {
+        Args: { p_id: string; p_kind: string; p_since: string }
+        Returns: { entered_at: string; patient_id: string }[]
       }
       patient_list_visit_summary: {
         Args: { p_patient_ids: string[] }

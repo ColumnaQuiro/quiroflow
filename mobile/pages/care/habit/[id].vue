@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { DEFAULT_PLACE_RADIUS, HABIT_KINDS, habitTimes, newHabit, type Habit, type HabitDays, type HabitKind, type HabitPlace } from '../../../../utils/habits'
+import { DEFAULT_PLACE_RADIUS, HABIT_KINDS, habitTimes, kindLabel, newHabit, type Habit, type HabitDays, type HabitKind, type HabitPlace } from '../../../../utils/habits'
 
 // Creating or changing one of "Mis hábitos": which habit, how many times a
 // day, between which hours, which days -- and optionally only while the
@@ -15,6 +15,7 @@ const route = useRoute()
 const { patient } = useIdentity()
 const patientId = computed(() => patient.value?.id ?? '')
 const { habits, places, save, reminders } = useHabits(() => patientId.value)
+const { preference: lang } = useLang()
 
 const isNew = route.params.id === 'new'
 const existing = computed(() => habits.value.find((h) => h.id === route.params.id))
@@ -23,7 +24,7 @@ const placeList = ref<HabitPlace[]>([...places.value])
 watch(existing, (h) => { if (h) Object.assign(form, { ...h, placeIds: [...h.placeIds] }) }, { immediate: true })
 watch(places, (p) => { placeList.value = [...p] })
 
-const kinds = Object.entries(HABIT_KINDS) as [HabitKind, { label: string }][]
+const kinds = Object.keys(HABIT_KINDS) as HabitKind[]
 function pickKind(k: HabitKind) {
   const fresh = newHabit(k, form.id)
   // Keep what they already chose; take the new kind's own defaults only on a new habit.
@@ -37,7 +38,7 @@ const onlyAtPlaces = ref(form.placeIds.length > 0)
 watch(() => form.placeIds.length, (n) => { if (n) onlyAtPlaces.value = true })
 const location = ref<'always' | 'whenInUse' | 'denied' | 'prompt' | null>(null)
 onMounted(async () => { location.value = (await reminders.checkPermissions()).location })
-const newPlaceName = ref('Casa')
+const newPlaceName = ref(t('Home', 'Casa'))
 const locating = ref(false)
 const placeError = ref('')
 async function saveHere() {
@@ -50,7 +51,7 @@ async function saveHere() {
     const place: HabitPlace = { id: crypto.randomUUID(), name, lat, lng, radius: DEFAULT_PLACE_RADIUS, address: '' }
     placeList.value = [...placeList.value, place]
     form.placeIds = [...form.placeIds, place.id]
-    newPlaceName.value = placeList.value.some((p) => p.name === 'Trabajo') ? '' : 'Trabajo'
+    newPlaceName.value = placeList.value.length > 1 ? '' : t('Work', 'Trabajo')
   } catch {
     placeError.value = t("Couldn't find where you are. Allow location for QuiroFlow and try again.", 'No se ha podido saber dónde estás. Permite la ubicación a QuiroFlow y vuelve a probar.')
   } finally {
@@ -98,12 +99,12 @@ const field = 'h-11 w-full rounded-ctl border border-line-control bg-surface px-
 </script>
 
 <template>
-  <PatientScreen :title="isNew ? t('New habit', 'Nuevo hábito') : HABIT_KINDS[form.kind].label">
+  <PatientScreen :title="isNew ? t('New habit', 'Nuevo hábito') : kindLabel(form.kind, lang)">
     <form class="flex flex-col gap-5" data-cy="habit-form" @submit.prevent="submit">
       <fieldset>
         <legend class="mb-2 text-[10.5px] font-[650] uppercase tracking-[.05em] text-ink-muted">{{ t('Habit', 'Hábito') }}</legend>
         <div class="flex flex-wrap gap-1.5">
-          <button v-for="[k, v] in kinds" :key="k" type="button" class="h-9 rounded-pill border px-3 text-[13px] font-semibold" :class="chip(form.kind === k)" :aria-pressed="form.kind === k" :data-cy="`habit-kind-${k}`" @click="pickKind(k)">{{ v.label }}</button>
+          <button v-for="k in kinds" :key="k" type="button" class="h-9 rounded-pill border px-3 text-[13px] font-semibold" :class="chip(form.kind === k)" :aria-pressed="form.kind === k" :data-cy="`habit-kind-${k}`" @click="pickKind(k)">{{ kindLabel(k, lang) }}</button>
         </div>
         <input v-if="form.kind === 'otro'" v-model="form.label" type="text" :placeholder="t('What is it?', '¿Qué es?')" class="mt-2 h-11 w-full rounded-ctl border border-line-control bg-surface px-3 text-[15px]" data-cy="habit-label" />
       </fieldset>

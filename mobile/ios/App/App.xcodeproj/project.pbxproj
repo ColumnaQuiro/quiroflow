@@ -24,6 +24,7 @@
 		6E6FF3072122A33AACC693C1 /* SharedSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65AFE458422773E802342B5 /* SharedSnapshot.swift */; };
 		80D95199CF98D84C8DBF8B13 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4E010E1B59B8CC0AD41DF3DA /* WidgetKit.framework */; };
 		99AE9064E1E7BE0A96D81CE6 /* HomeWidgetPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 482977D6E9A98F079A5AB690 /* HomeWidgetPlugin.swift */; };
+		5B0B9E887B1382E85F5676E4 /* HabitRemindersPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC7560E22BD8DA1319FECE0C /* HabitRemindersPlugin.swift */; };
 		A084ECDBA7D38E1E42DFC39D /* Pods_App.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */; };
 		F53BCE1DDA54FD3C7E811C86 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 9A46EA6E34CDED90F290F4DF /* GoogleService-Info.plist */; };
 /* End PBXBuildFile section */
@@ -58,6 +59,7 @@
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
 		3CB239956EC9E6FB3D38660D /* QuiroFlowWidgets.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = QuiroFlowWidgets.swift; sourceTree = "<group>"; };
 		482977D6E9A98F079A5AB690 /* HomeWidgetPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = HomeWidgetPlugin.swift; sourceTree = "<group>"; };
+		AC7560E22BD8DA1319FECE0C /* HabitRemindersPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = HabitRemindersPlugin.swift; sourceTree = "<group>"; };
 		4E010E1B59B8CC0AD41DF3DA /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
 		504EC3041FED79650016851F /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -156,6 +158,7 @@
 				9A46EA6E34CDED90F290F4DF /* GoogleService-Info.plist */,
 				B65AFE458422773E802342B5 /* SharedSnapshot.swift */,
 				482977D6E9A98F079A5AB690 /* HomeWidgetPlugin.swift */,
+				AC7560E22BD8DA1319FECE0C /* HabitRemindersPlugin.swift */,
 				E145B9F9E6BC5A9B79BAB99F /* MainViewController.swift */,
 			);
 			path = App;
@@ -334,6 +337,7 @@
 				504EC3141FED79650016852A /* SceneDelegate.swift in Sources */,
 				336BF06510081AFC910760E2 /* SharedSnapshot.swift in Sources */,
 				99AE9064E1E7BE0A96D81CE6 /* HomeWidgetPlugin.swift in Sources */,
+				5B0B9E887B1382E85F5676E4 /* HabitRemindersPlugin.swift in Sources */,
 				0B64A5C68821544CF27D8FAE /* MainViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

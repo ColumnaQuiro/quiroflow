@@ -141,14 +141,15 @@ export interface AchievementInput {
 
 export interface Achievement {
   key: string
-  title: string
+  /** [English, Spanish]. */
+  title: [string, string]
   done: boolean
   /** When it was reached, if that is known. */
   on: Day | null
-  /** Progress towards it while it is not done: [now, target]. */
+  /** Progress towards it while it is not done: [now, target] ("12 of 30"). */
   progress: [number, number] | null
-  /** A line under the title: "De 7 a 3", "12 de 30". */
-  detail: string | null
+  /** For "Dolor a la mitad": first and latest score ("From 7 to 3"). */
+  pain?: [number, number]
 }
 
 /** The longest run of consecutive days in a set, and the day it reached n. */
@@ -183,19 +184,19 @@ export function achievements(input: AchievementInput): Achievement[] {
   const habitRun = consecutive(input.fullHabitDays ?? new Set(), today, 7)
 
   const list: Achievement[] = []
-  const add = (key: string, title: string, done: boolean, on: Day | null, now: number, target: number, detail?: string | null) =>
-    list.push({ key, title, done, on: done ? on : null, progress: done ? null : [Math.min(now, target), target], detail: detail ?? (done ? null : `${Math.min(now, target)} de ${target}`) })
+  const add = (key: string, title: [string, string], done: boolean, on: Day | null, now: number, target: number) =>
+    list.push({ key, title, done, on: done ? on : null, progress: done ? null : [Math.min(now, target), target] })
 
-  add('primera_semana', 'Primera semana completa', streak.best >= 7, reachedRun(7), streak.best, 7)
-  add('treinta_dias', '30 días seguidos', streak.best >= 30, reachedRun(30), Math.max(streak.current, 0), 30)
+  add('primera_semana', ['First full week', 'Primera semana completa'], streak.best >= 7, reachedRun(7), streak.best, 7)
+  add('treinta_dias', ['30 days in a row', '30 días seguidos'], streak.best >= 30, reachedRun(30), Math.max(streak.current, 0), 30)
   if (input.painFirst !== null && input.painLatest !== null && input.painFirst >= 2) {
     const halved = input.painLatest * 2 <= input.painFirst
-    list.push({ key: 'dolor_mitad', title: 'Dolor a la mitad', done: halved, on: halved ? (input.painLatestOn ?? null) : null, progress: null, detail: `De ${input.painFirst} a ${input.painLatest}` })
+    list.push({ key: 'dolor_mitad', title: ['Pain halved', 'Dolor a la mitad'], done: halved, on: halved ? (input.painLatestOn ?? null) : null, progress: null, pain: [input.painFirst, input.painLatest] })
   }
-  add('cinco_videos', '5 vídeos vistos', input.videosWatched >= 5, null, input.videosWatched, 5)
-  add('habitos_semana', 'Una semana con todos tus hábitos', habitRun.best >= 7, habitRun.reachedOn, habitRun.current, 7, null)
-  if (input.sentTotal > 0) add('todo_leido', 'Todo lo de tu profesional, leído', input.sentRead >= input.sentTotal, null, input.sentRead, input.sentTotal)
-  add('cien_dias', '100 días cuidándote', doneDays.length >= 100, doneDays[99] ?? null, doneDays.length, 100)
-  add('un_ano', 'Un año cuidándote', sinceFirst >= 365 && active.size > 0, first ? addDays(first, 365) : null, sinceFirst, 365)
+  add('cinco_videos', ['5 videos watched', '5 vídeos vistos'], input.videosWatched >= 5, null, input.videosWatched, 5)
+  add('habitos_semana', ['A week with all your habits', 'Una semana con todos tus hábitos'], habitRun.best >= 7, habitRun.reachedOn, habitRun.current, 7)
+  if (input.sentTotal > 0) add('todo_leido', ['Everything your practitioner sent, read', 'Todo lo de tu profesional, leído'], input.sentRead >= input.sentTotal, null, input.sentRead, input.sentTotal)
+  add('cien_dias', ['100 days looking after yourself', '100 días cuidándote'], doneDays.length >= 100, doneDays[99] ?? null, doneDays.length, 100)
+  add('un_ano', ['A year looking after yourself', 'Un año cuidándote'], sinceFirst >= 365 && active.size > 0, first ? addDays(first, 365) : null, sinceFirst, 365)
   return list
 }

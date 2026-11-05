@@ -32,6 +32,7 @@ export function useHabits(patientId: () => string) {
   const supabase = useSupabaseClient()
   const user = useSupabaseUser()
   const reminders = useHabitReminders()
+  const { preference: lang } = useLang()
   const habits = useState<Habit[]>('habits', () => [])
   const places = useState<HabitPlace[]>('habit-places', () => [])
   const today = useState<Checkin[]>('habit-checkins-today', () => [])
@@ -51,7 +52,7 @@ export function useHabits(patientId: () => string) {
     places.value = nextPlaces
     write(storeKey(userId.value, 'habits'), nextHabits)
     write(storeKey(userId.value, 'habit-places'), nextPlaces)
-    await reminders.schedule(nativeHabits(nextHabits, nextPlaces), nextPlaces).catch((e) => console.error('[habits] schedule failed', e))
+    await reminders.schedule(nativeHabits(nextHabits, nextPlaces, lang.value), nextPlaces).catch((e) => console.error('[habits] schedule failed', e))
     return { ok: true }
   }
 

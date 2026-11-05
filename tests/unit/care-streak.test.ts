@@ -64,13 +64,12 @@ describe('achievements', () => {
     const month = list.find((a) => a.key === 'treinta_dias')!
     expect(month.done).toBe(false)
     expect(month.progress).toEqual([12, 30])
-    expect(month.detail).toBe('12 de 30')
   })
 
   it('says pain halved only when it has', () => {
     const halved = achievements({ ...base, active: new Set(), today: '2026-11-13', painFirst: 7, painLatest: 3, painLatestOn: '2026-11-12' }).find((a) => a.key === 'dolor_mitad')!
     expect(halved.done).toBe(true)
-    expect(halved.detail).toBe('De 7 a 3')
+    expect(halved.pain).toEqual([7, 3])
     const notYet = achievements({ ...base, active: new Set(), today: '2026-11-13', painFirst: 7, painLatest: 4 }).find((a) => a.key === 'dolor_mitad')!
     expect(notYet.done).toBe(false)
     // No pain recorded: no such achievement to chase.
@@ -99,6 +98,7 @@ describe('habit reminders', async () => {
   it('reads as one line', () => {
     expect(habitSummary({ ...newHabit('agua', 'a'), days: 'weekdays' })).toBe('5 al día · 9 a 19 h · lunes a viernes')
     expect(habitSummary({ ...newHabit('estirar', 'b'), from: '11:00', to: '17:00' })).toBe('2 al día · 11:00 y 17:00 · todos los días')
+    expect(habitSummary({ ...newHabit('agua', 'a'), days: 'weekend' }, 'en')).toBe('5 a day · 9 to 19 h · weekends')
   })
 
   it('counts the day across habits, and the team’s example fits the cap exactly', () => {

@@ -11,16 +11,19 @@ const t = useT()
 const { patient } = useIdentity()
 const patientId = computed(() => patient.value?.id ?? '')
 const { streak, today, active, achievements, loaded } = useCareProgress(() => patientId.value)
+const { preference: lang } = useLang()
 
-const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 const month = computed(() => {
   const first = `${today.value.slice(0, 7)}-01`
   const cells: { day: string | null; n: number; state: string }[] = Array.from({ length: isoWeekday(first) - 1 }, () => ({ day: null, n: 0, state: '' }))
   for (let d = first; d.slice(0, 7) === first.slice(0, 7); d = addDays(d, 1)) cells.push({ day: d, n: Number(d.slice(8)), state: dayState(d, today.value, active.value, streak.value.free) })
   const past = cells.filter((c) => c.day && c.day < today.value)
-  return { name: MONTHS[Number(first.slice(5, 7)) - 1], cells, done: cells.filter((c) => c.state === 'done').length, of: past.length + (active.value.has(today.value) ? 1 : 0) }
+  const name = new Date(`${first}T12:00:00`).toLocaleDateString(t('en-GB', 'es-ES'), { month: 'long' })
+  return { name: name.charAt(0).toUpperCase() + name.slice(1), cells, done: cells.filter((c) => c.state === 'done').length, of: past.length + (active.value.has(today.value) ? 1 : 0) }
 })
 const earned = computed(() => achievements.value.filter((a) => a.done).length)
+const detail = (a: (typeof achievements.value)[number]) =>
+  a.pain ? t(`From ${a.pain[0]} to ${a.pain[1]}`, `De ${a.pain[0]} a ${a.pain[1]}`) : a.progress ? t(`${a.progress[0]} of ${a.progress[1]}`, `${a.progress[0]} de ${a.progress[1]}`) : null
 const fmt = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString(t('en-GB', 'es-ES'), { day: 'numeric', month: 'short' })
 </script>
 
@@ -35,7 +38,7 @@ const fmt = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString(t('en-GB
       <section class="rounded-card border border-line bg-surface p-4 shadow-card">
         <div class="mb-3 flex items-baseline"><h2 class="flex-1 text-[15px] font-bold text-ink-900">{{ month.name }}</h2><span class="text-[12.5px] text-ink-muted">{{ t(`${month.done} of ${month.of} days`, `${month.done} de ${month.of} días`) }}</span></div>
         <div class="grid grid-cols-7 gap-1.5 text-center" :aria-label="month.name">
-          <span v-for="l in ['L', 'M', 'X', 'J', 'V', 'S', 'D']" :key="l" class="text-[11px] font-semibold text-ink-muted">{{ l }}</span>
+          <span v-for="(l, i) in (lang === 'en' ? 'MTWTFSS' : 'LMXJVSD').split('')" :key="i" class="text-[11px] font-semibold text-ink-muted">{{ l }}</span>
           <span
             v-for="(c, i) in month.cells"
             :key="i"
@@ -65,9 +68,9 @@ const fmt = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString(t('en-GB
             <svg v-if="a.done" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12l5 5L20 7" /></svg>
             <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="9" r="6" /><path d="M8.5 14l-1.5 8 5-3 5 3-1.5-8" /></svg>
           </span>
-          <span class="text-[13.5px] font-semibold leading-snug text-ink-900">{{ a.title }}</span>
+          <span class="text-[13.5px] font-semibold leading-snug text-ink-900">{{ lang === 'en' ? a.title[0] : a.title[1] }}</span>
           <span v-if="a.progress" class="h-1.5 overflow-hidden rounded-full bg-surface-subtle" aria-hidden="true"><span class="block h-1.5 bg-brand" :style="{ width: `${(a.progress[0] / a.progress[1]) * 100}%` }" /></span>
-          <span class="text-[12px] text-ink-muted">{{ [a.detail, a.done && a.on ? fmt(a.on) : null].filter(Boolean).join(' · ') || (a.done ? t('Done', 'Conseguido') : '') }}</span>
+          <span class="text-[12px] text-ink-muted">{{ [detail(a), a.done && a.on ? fmt(a.on) : null].filter(Boolean).join(' · ') || (a.done ? t('Done', 'Conseguido') : '') }}</span>
         </li>
       </ul>
     </div>

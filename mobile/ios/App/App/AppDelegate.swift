@@ -10,6 +10,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         FirebaseApp.configure()
+        // "Mis hábitos" reminders at a place: a region event can relaunch the app
+        // in the background with no web view, so the scheduler listens from here.
+        HabitScheduler.shared.start()
         #if DEBUG
         // Debug builds only: `-WidgetDemo clinic|staff|desk|patient` fills the
         // home-screen widget with an invented snapshot (Clínica Demo), to look

@@ -19,11 +19,11 @@ const patientId = computed(() => patient.value?.id ?? '')
 const { streak, today, active, load: reloadProgress } = useCareProgress(() => patientId.value)
 const { items: exercises, doneToday: exerciseDone, toggleToday, busyId } = usePatientExercises(() => patientId.value)
 const { habits, doneToday: habitDone, tick } = useHabits(() => patientId.value)
+const { preference: lang } = useLang()
 
-const WEEK_LETTERS = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
-const week = computed(() => thisWeek(today.value).map((d, i) => ({ day: d, letter: WEEK_LETTERS[i]!, state: dayState(d, today.value, active.value, streak.value.free) })))
+const week = computed(() => thisWeek(today.value).map((d, i) => ({ day: d, letter: (lang.value === 'en' ? 'MTWTFSS' : 'LMXJVSD')[i]!, state: dayState(d, today.value, active.value, streak.value.free) })))
 const freeThisWeek = computed(() => week.value.find((d) => d.state === 'free'))
-const dayNames = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo']
+const dayName = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString(t('en-GB', 'es-ES'), { weekday: 'long' })
 
 const todaysHabits = computed(() => habits.value.filter((h) => remindersOn(h, isoWeekday(today.value)) > 0))
 
@@ -95,7 +95,7 @@ async function tickHabit(h: (typeof habits.value)[number]) {
             {{ d.letter }}
           </li>
         </ol>
-        <p v-if="freeThisWeek" class="mt-2 text-[12.5px] text-ink-muted">{{ t('Your day off this week: it does not break the streak.', `El ${dayNames[thisWeek(today).indexOf(freeThisWeek.day)]} fue tu día libre: no rompe la racha.`) }}</p>
+        <p v-if="freeThisWeek" class="mt-2 text-[12.5px] text-ink-muted">{{ t(`${dayName(freeThisWeek.day)} was your day off: it does not break the streak.`, `El ${dayName(freeThisWeek.day)} fue tu día libre: no rompe la racha.`) }}</p>
       </NuxtLink>
 
       <h2 class="mt-2 text-[16px] font-bold text-ink-900">{{ t('Today', 'Hoy') }}</h2>
@@ -119,7 +119,7 @@ async function tickHabit(h: (typeof habits.value)[number]) {
 
       <section class="rounded-card border border-line bg-surface px-4 py-1 shadow-card" data-cy="care-habits">
         <div v-for="h in todaysHabits" :key="h.id" class="flex items-center gap-3 border-b border-line-row py-2.5" data-cy="care-habit">
-          <span class="min-w-0 flex-1 text-[14px] text-ink-900">{{ habitLabel(h) }}</span>
+          <span class="min-w-0 flex-1 text-[14px] text-ink-900">{{ habitLabel(h, lang) }}</span>
           <span class="h-1.5 w-16 overflow-hidden rounded-full bg-surface-subtle" aria-hidden="true">
             <span class="block h-1.5 bg-brand" :style="{ width: `${Math.min(100, (habitDone(h) / remindersOn(h, isoWeekday(today))) * 100)}%` }" />
           </span>

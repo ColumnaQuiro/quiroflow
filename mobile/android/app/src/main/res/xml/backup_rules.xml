@@ -4,4 +4,6 @@
      this sign-in (HomeWidgetPlugin, WidgetRefreshWorker). -->
 <full-backup-content>
     <exclude domain="sharedpref" path="quiroflow_widget.xml" />
+    <!-- "Mis hábitos": the places saved there are where someone lives. -->
+    <exclude domain="sharedpref" path="quiroflow_habits.xml" />
 </full-backup-content>

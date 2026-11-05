@@ -10,6 +10,7 @@ const t = useT()
 const { patient } = useIdentity()
 const patientId = computed(() => patient.value?.id ?? '')
 const { habits, places, save, reminders } = useHabits(() => patientId.value)
+const { preference: lang } = useLang()
 
 const perDay = computed(() => remindersPerDay(habits.value))
 const full = computed(() => perDay.value >= MAX_REMINDERS_PER_DAY)
@@ -20,7 +21,7 @@ async function toggle(id: string) {
   const r = await save(next)
   if ('error' in r) error.value = r.error
 }
-const placeNames = (ids: string[]) => ids.map((id) => places.value.find((p) => p.id === id)?.name).filter(Boolean).join(' o ')
+const placeNames = (ids: string[], or: string) => ids.map((id) => places.value.find((p) => p.id === id)?.name).filter(Boolean).join(or)
 
 const ICONS: Record<HabitKind, { path: string; tone: string }> = {
   agua: { path: 'M12 2.7s6 6.4 6 11a6 6 0 0 1-12 0c0-4.6 6-11 6-11z', tone: 'bg-info-bg text-info-text' },
@@ -41,18 +42,18 @@ const ICONS: Record<HabitKind, { path: string; tone: string }> = {
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path :d="ICONS[h.kind].path" /></svg>
         </span>
         <NuxtLink :to="`/care/habit/${h.id}`" class="min-w-0 flex-1">
-          <span class="block text-[14.5px] font-semibold text-ink-900">{{ habitLabel(h) }}</span>
-          <span class="block text-[12.5px] text-ink-muted">{{ h.enabled ? habitSummary(h) : t('Paused', 'Pausado') }}</span>
+          <span class="block text-[14.5px] font-semibold text-ink-900">{{ habitLabel(h, lang) }}</span>
+          <span class="block text-[12.5px] text-ink-muted">{{ h.enabled ? habitSummary(h, lang) : t('Paused', 'Pausado') }}</span>
           <span v-if="h.enabled && h.placeIds.length" class="flex items-center gap-1 text-[12.5px] text-brand-text">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z" /><circle cx="12" cy="9.5" r="2.5" /></svg>
-            {{ t(`Only at ${placeNames(h.placeIds)}`, `Solo en ${placeNames(h.placeIds)}`) }}
+            {{ t(`Only at ${placeNames(h.placeIds, ' or ')}`, `Solo en ${placeNames(h.placeIds, ' o ')}`) }}
           </span>
         </NuxtLink>
         <button
           type="button"
           role="switch"
           :aria-checked="h.enabled"
-          :aria-label="habitLabel(h)"
+          :aria-label="habitLabel(h, lang)"
           class="relative h-7 w-[46px] shrink-0 rounded-full transition-colors"
           :class="h.enabled ? 'bg-brand' : 'bg-line-control'"
           data-cy="habit-toggle"

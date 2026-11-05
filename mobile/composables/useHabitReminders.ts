@@ -22,6 +22,7 @@ interface HabitRemindersPlugin {
   requestLocationAlways(): Promise<{ location: LocationPermission }>
   currentPosition(): Promise<{ lat: number; lng: number }>
   takePendingCheckins(): Promise<{ checkins: PendingCheckin[] }>
+  addListener(event: 'habitOpened', cb: (data: { habitId: string }) => void): Promise<{ remove: () => Promise<void> }>
 }
 
 const HabitReminders = registerPlugin<HabitRemindersPlugin>('HabitReminders')
@@ -40,5 +41,7 @@ export function useHabitReminders() {
     requestLocationAlways: () => (available ? HabitReminders.requestLocationAlways() : Promise.resolve({ location: 'denied' as LocationPermission })),
     currentPosition: () => HabitReminders.currentPosition(),
     takePendingCheckins: async () => (available ? (await HabitReminders.takePendingCheckins()).checkins : []),
+    /** A habit notification was tapped (not its buttons). */
+    onOpened: (cb: (habitId: string) => void) => (available ? HabitReminders.addListener('habitOpened', (d) => cb(d.habitId)) : Promise.resolve({ remove: async () => {} })),
   }
 }

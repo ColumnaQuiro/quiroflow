@@ -3,7 +3,7 @@ import type { Database } from '~/types/database.types'
 import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
 import { dispatchPatientRule } from '~/server/utils/automationEngine'
 import { DEFAULT_CLINIC_TIMEZONE, localDay } from '~/utils/clinicClock'
-import { sendExerciseReminders } from '~/server/utils/exerciseReminders'
+import { applyDueExerciseSchedules, sendExerciseReminders } from '~/server/utils/exerciseReminders'
 import { sendOwnerWeeklyDigests } from '~/server/utils/weeklyDigest'
 import { deliverDueGiftVouchers } from '~/server/utils/giftVouchers'
 import { sendOpenDayReminders } from '~/server/utils/timeClock'
@@ -50,6 +50,8 @@ export default defineEventHandler(async (event) => {
   await sendStaffMorningSummaries(supabase, now)
   // Patients' daily exercise reminder rides here for the same reason.
   await sendExerciseReminders(supabase, now)
+  // And the exercises a patient's schedule gives at the visit they just reached.
+  await applyDueExerciseSchedules(supabase)
   // And the owners' Monday summary of last week (server/utils/weeklyDigest.ts).
   await sendOwnerWeeklyDigests(supabase, getRequestURL(event).origin, now)
   // And gift vouchers bought to arrive on a given day, from 09:00 Madrid on it

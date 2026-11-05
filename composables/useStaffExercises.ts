@@ -22,6 +22,8 @@ export interface AssignedExercise {
   /** No fixed sets or reps: the patient builds up as they can. */
   progressive: boolean
   created_at: string
+  /** Given by the patient's schedule by visit (ExercisesPatientSchedule), not by hand. */
+  patient_schedule_id?: string | null
   exercises: ExerciseRow | null
   patient_exercise_logs: { done_on: string }[]
 }
@@ -54,7 +56,7 @@ export function useStaffExercises(opts: { accountId: () => string | null | undef
     const [{ data, error: readError }, { data: lib }] = await Promise.all([
       supabase
         .from('patient_exercises')
-        .select('id, sets, reps, frequency, notes, progressive, created_at, exercises(id, name, instructions, media_url, media_path, starter_key), patient_exercise_logs(done_on)')
+        .select('id, sets, reps, frequency, notes, progressive, created_at, patient_schedule_id, exercises(id, name, instructions, media_url, media_path, starter_key), patient_exercise_logs(done_on)')
         .eq('patient_id', opts.patientId())
         .is('ended_at', null)
         .gte('patient_exercise_logs.done_on', weekAgo)

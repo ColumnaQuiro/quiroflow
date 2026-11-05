@@ -808,6 +808,51 @@ export type Database = {
           },
         ]
       }
+      exercise_schedules: {
+        Row: {
+          account_id: string
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          name: string
+          steps: Json
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          name: string
+          steps?: Json
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          name?: string
+          steps?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "exercise_schedules_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "exercise_schedules_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       exercises: {
         Row: {
           account_id: string
@@ -3825,6 +3870,77 @@ export type Database = {
           },
         ]
       }
+      patient_exercise_schedules: {
+        Row: {
+          account_id: string
+          counts_from: string
+          created_at: string
+          created_by: string | null
+          ended_at: string | null
+          id: string
+          name: string
+          next_from_visit: number | null
+          patient_id: string
+          schedule_id: string | null
+          steps: Json
+        }
+        Insert: {
+          account_id: string
+          counts_from: string
+          created_at?: string
+          created_by?: string | null
+          ended_at?: string | null
+          id?: string
+          name: string
+          next_from_visit?: number | null
+          patient_id: string
+          schedule_id?: string | null
+          steps: Json
+        }
+        Update: {
+          account_id?: string
+          counts_from?: string
+          created_at?: string
+          created_by?: string | null
+          ended_at?: string | null
+          id?: string
+          name?: string
+          next_from_visit?: number | null
+          patient_id?: string
+          schedule_id?: string | null
+          steps?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_exercise_schedules_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_exercise_schedules_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_exercise_schedules_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_exercise_schedules_schedule_id_fkey"
+            columns: ["schedule_id"]
+            isOneToOne: false
+            referencedRelation: "exercise_schedules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       patient_exercises: {
         Row: {
           account_id: string
@@ -3836,6 +3952,7 @@ export type Database = {
           id: string
           notes: string | null
           patient_id: string
+          patient_schedule_id: string | null
           progressive: boolean
           reps: string | null
           sets: number | null
@@ -3850,6 +3967,7 @@ export type Database = {
           id?: string
           notes?: string | null
           patient_id: string
+          patient_schedule_id?: string | null
           progressive?: boolean
           reps?: string | null
           sets?: number | null
@@ -3864,6 +3982,7 @@ export type Database = {
           id?: string
           notes?: string | null
           patient_id?: string
+          patient_schedule_id?: string | null
           progressive?: boolean
           reps?: string | null
           sets?: number | null
@@ -9651,6 +9770,33 @@ export type Database = {
           last_name: string
           notes: number
           patient_id: string
+        }[]
+      }
+      save_patient_exercise_schedule: {
+        Args: {
+          p_account_id: string
+          p_counts_from: string
+          p_id: string | null
+          p_name: string
+          p_patient_id: string
+          p_schedule_id: string | null
+          p_steps: Json
+        }
+        Returns: Json
+      }
+      apply_patient_exercise_schedule: {
+        Args: { p_id: string }
+        Returns: string[]
+      }
+      patient_exercise_schedule_visits: {
+        Args: { p_id: string }
+        Returns: number
+      }
+      apply_due_exercise_schedules: {
+        Args: never
+        Returns: {
+          added: string[]
+          patient_schedule_id: string
         }[]
       }
       save_exercise_program: {

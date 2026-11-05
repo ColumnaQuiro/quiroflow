@@ -57,12 +57,13 @@ function routeTap(data: Record<string, string> | undefined) {
   if (type.startsWith('appointment_')) return navigateTo('/visits')
   if (type === 'patient_app_message' && !data?.key) return navigateTo('/messages')
   if (type === 'clinic_announcement') return navigateTo('/')
-  // A new exercise from the clinic, or the daily "¿Has hecho tus ejercicios hoy?".
-  if (type === 'exercises') return navigateTo('/exercises')
+  // A new exercise from the clinic, or the daily "¿Has hecho tus ejercicios hoy?":
+  // Cuidarme, where they are ticked.
+  if (type === 'exercises') return navigateTo('/care')
   if (type === 'learn' && data?.sendId) return navigateTo(`/learn/${data.sendId}`)
-  // "Avisar al publicar": something new in the clinic's library, which lives
-  // under the exercises (server/api/learn/announce.post.ts).
-  if (type === 'learn_library') return navigateTo('/exercises')
+  // "Avisar al publicar": something new in the clinic's library, on Cuidarme
+  // (server/api/learn/announce.post.ts).
+  if (type === 'learn_library') return navigateTo('/care')
   // A colleague's message or a help alert (server/api/team-messages/send.post.ts):
   // its url is the web's /team-chat?thread=…, which is this app's path too.
   // Only the thread is taken from it, so a push can never send the app

@@ -39,6 +39,10 @@
 	<string>QuiroFlow uses the camera to take photos and videos for the Inbox and posture assessments, and to scan a patient's bono card.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>QuiroFlow needs access to your microphone to record voice notes and video to send in the Inbox.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>QuiroFlow uses your location only to save a place, such as home, for a habit reminder. It never leaves your phone.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>QuiroFlow reminds you of a habit only while you are at a place you chose, such as home, even with the app closed. Your location never leaves your phone.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>QuiroFlow uses Face ID to open the app instead of your password, and so the clinic team can leave reception mode.</string>
 	<key>UILaunchStoryboardName</key>

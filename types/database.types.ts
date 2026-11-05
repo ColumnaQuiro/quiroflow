@@ -58,6 +58,51 @@ export type Database = {
           },
         ]
       }
+      habit_checkins: {
+        Row: {
+          account_id: string
+          client_id: string
+          created_at: string
+          done_at: string
+          habit: string
+          id: string
+          patient_id: string
+        }
+        Insert: {
+          account_id: string
+          client_id: string
+          created_at?: string
+          done_at: string
+          habit: string
+          id?: string
+          patient_id: string
+        }
+        Update: {
+          account_id?: string
+          client_id?: string
+          created_at?: string
+          done_at?: string
+          habit?: string
+          id?: string
+          patient_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "habit_checkins_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "habit_checkins_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       platform_status: {
         Row: {
           key: string
@@ -9960,6 +10005,7 @@ export type Database = {
         Args: { p_since: string }
         Returns: Json
       }
+      my_pain_trend: { Args: never; Returns: { first_score: number | null; latest_score: number | null; latest_on: string | null }[] }
       open_library_article: { Args: { p_article_id: string }; Returns: string }
       platform_supabase_usage: {
         Args: never

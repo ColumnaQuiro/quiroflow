@@ -4781,12 +4781,14 @@ export type Database = {
       learn_articles: {
         Row: {
           account_id: string
+          announced_at: string | null
           archived_at: string | null
           body: string
           created_at: string
           created_by: string | null
           exercise_program_id: string | null
           id: string
+          media_path: string | null
           minutes: number | null
           starter_key: string | null
           summary: string | null
@@ -4794,15 +4796,18 @@ export type Database = {
           title: string
           updated_at: string
           video_url: string | null
+          visible_to_patients: boolean
         }
         Insert: {
           account_id: string
+          announced_at?: string | null
           archived_at?: string | null
           body?: string
           created_at?: string
           created_by?: string | null
           exercise_program_id?: string | null
           id?: string
+          media_path?: string | null
           minutes?: number | null
           starter_key?: string | null
           summary?: string | null
@@ -4810,15 +4815,18 @@ export type Database = {
           title: string
           updated_at?: string
           video_url?: string | null
+          visible_to_patients?: boolean
         }
         Update: {
           account_id?: string
+          announced_at?: string | null
           archived_at?: string | null
           body?: string
           created_at?: string
           created_by?: string | null
           exercise_program_id?: string | null
           id?: string
+          media_path?: string | null
           minutes?: number | null
           starter_key?: string | null
           summary?: string | null
@@ -4826,6 +4834,7 @@ export type Database = {
           title?: string
           updated_at?: string
           video_url?: string | null
+          visible_to_patients?: boolean
         }
         Relationships: [
           {
@@ -9832,6 +9841,7 @@ export type Database = {
         Args: { p_since: string }
         Returns: Json
       }
+      open_library_article: { Args: { p_article_id: string }; Returns: string }
       platform_supabase_usage: {
         Args: never
         Returns: Json

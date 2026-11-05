@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // The home exercises the clinic gave this patient (components/patient/Exercises.vue),
-// opened from the home screen.
+// opened from the home screen, and below them the clinic's "Hábitos y
+// consejos" (components/patient/LearnLibrary.vue).
 definePageMeta({ layout: 'patient' })
 
 const user = useSupabaseUser()
@@ -15,5 +16,6 @@ const patientId = computed(() => patient.value?.id ?? '')
   <PatientScreen :title="t('Exercises', 'Ejercicios')">
     <PatientExercises v-if="patientId" :patient-id="patientId" />
     <ExerciseReminderSetting v-if="patientId" class="mt-3" :patient-id="patientId" />
+    <PatientLearnLibrary class="mt-6" :link-to="(id) => `/learn/${id}`" />
   </PatientScreen>
 </template>

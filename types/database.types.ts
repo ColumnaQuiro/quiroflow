@@ -5128,6 +5128,8 @@ export type Database = {
           created_by: string | null
           external_reference: string | null
           id: string
+          installment_cents: number | null
+          installments: number | null
           invoice_id: string | null
           is_closed: boolean
           owed_cents: number | null
@@ -5144,6 +5146,8 @@ export type Database = {
           created_by?: string | null
           external_reference?: string | null
           id?: string
+          installment_cents?: number | null
+          installments?: number | null
           invoice_id?: string | null
           is_closed?: boolean
           owed_cents?: number | null
@@ -5160,6 +5164,8 @@ export type Database = {
           created_by?: string | null
           external_reference?: string | null
           id?: string
+          installment_cents?: number | null
+          installments?: number | null
           invoice_id?: string | null
           is_closed?: boolean
           owed_cents?: number | null
@@ -5321,6 +5327,7 @@ export type Database = {
           account_id: string
           created_at: string
           id: string
+          installment_options: Json
           name: string
           price_cents: number
           session_count: number
@@ -5329,6 +5336,7 @@ export type Database = {
           account_id: string
           created_at?: string
           id?: string
+          installment_options?: Json
           name: string
           price_cents?: number
           session_count: number
@@ -5337,6 +5345,7 @@ export type Database = {
           account_id?: string
           created_at?: string
           id?: string
+          installment_options?: Json
           name?: string
           price_cents?: number
           session_count?: number

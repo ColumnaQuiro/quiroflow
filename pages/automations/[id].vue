@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BUILDER_KEY, useAutomationBuilder } from '~/composables/useAutomationBuilder'
+import { BUILDER_KEY, isBroadcastRule, newBroadcastDraft, useAutomationBuilder } from '~/composables/useAutomationBuilder'
 import { OUTLETS } from '~/utils/automationCatalog'
 import { stepTitle } from '~/utils/automationDescribe'
 import { chainOf, type Problem } from '~/utils/automationTree'
@@ -37,10 +37,12 @@ function setTab(next: Tab) {
 async function init() {
   // The automation first: it is what the canvas waits on, so its requests go
   // out ahead of the lookups and the WhatsApp templates (which reach Meta).
-  const loading = idParam.value === 'new' ? b.initNew() : b.load(idParam.value)
+  // /automations/new?kind=broadcast: a one-off send, from the Sends tab.
+  const loading = idParam.value === 'new' ? b.initNew(route.query.kind === 'broadcast' ? newBroadcastDraft(t('New send', 'Nuevo envío')) : undefined) : b.load(idParam.value)
   b.loadLookups()
   b.loadTemplates()
   await loading
+  checklist.value = isBroadcastRule(b.draft.value.rule) && b.draft.value.steps.length <= 1
   if (typeof route.query.step === 'string' && b.stepsById.value.has(route.query.step)) b.selection.value = { kind: 'step', id: route.query.step }
 }
 onMounted(async () => {
@@ -53,7 +55,7 @@ watch(idParam, (id) => {
   if (id === 'new') {
     if (b.ruleId.value) b.initNew()
   } else if (id !== b.ruleId.value) {
-    b.load(id)
+    b.load(id).then(() => (checklist.value = isBroadcastRule(b.draft.value.rule) && b.draft.value.steps.length <= 1))
   }
 })
 
@@ -217,6 +219,11 @@ const outline = computed(() => {
   walk(null, null, 0)
   return rows
 })
+// A one-off send of a single message opens as a checklist; "Show as a flow"
+// swaps in the canvas for one that grows follow-up steps. Decided when the
+// page opens, not as the trigger is edited: changing an automation to "once"
+// on the canvas must not take the canvas away mid-edit.
+const checklist = ref(false)
 const sheetOpen = computed(() => !wide.value && b.selection.value !== null && tab.value === 'flow')
 </script>
 
@@ -294,7 +301,8 @@ const sheetOpen = computed(() => !wide.value && b.selection.value !== null && ta
         </div>
         <div v-else class="relative flex min-h-0 flex-1">
           <div class="relative min-w-0 flex-1">
-            <AutomationsFlowCanvas :popover-menu="wide" />
+            <AutomationsBroadcastChecklist v-if="checklist" @flow="checklist = false" />
+            <AutomationsFlowCanvas v-else :popover-menu="wide" />
           </div>
           <!-- Wide enough to edit a step in (half the space, up to 600px),
                with the flow still beside it. -->

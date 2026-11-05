@@ -6,6 +6,7 @@
 // what a valid automation is.
 
 import { asEmailDesign, emailDesignHasContent } from './emailDesign'
+import { asAudienceRef, type AudienceRef } from './automationAudience'
 import { MESSAGE_STEPS, OUTLETS, VALUELESS_OPS, conditionFieldDef, isLeadTrigger, stepDef, triggerDef, waitEventDef, type Pair } from './automationCatalog'
 
 export interface DraftStep {
@@ -28,6 +29,10 @@ export interface DraftRule {
   quiet_hours: { from: string; to: string; days?: number[] } | null
   segment: {
     filters?: Record<string, any>
+    /** A saved list or segment in place of filters; membership is the match. */
+    audience?: AudienceRef | null
+    /** Lists or segments whose members are left out. */
+    exclude?: AudienceRef[]
     schedule?: { kind: 'once' | 'daily' | 'weekly'; weekday?: number; time?: string; starts_at?: string }
     reentry_days?: number | null
     /** At most this many patients enter per clinic day; the rest wait for the next day. */
@@ -200,13 +205,16 @@ export function findProblems(rule: DraftRule, steps: DraftStep[], templates: Tem
   if (rule.trigger_event === 'invoice.overdue' && !(Number(rule.filters?.days_overdue) > 0)) {
     add(null, 'Say how many days after the invoice.', 'Indica cuántos días después de la factura.')
   }
+  if (rule.trigger_event === 'audience.entered' && !asAudienceRef(rule.filters?.trigger_audience)) {
+    add(null, 'Choose the list or segment people enter.', 'Elige la lista o el segmento al que entran.')
+  }
   if (rule.trigger_event === 'segment') {
     const schedule = rule.segment?.schedule
     if (!schedule || !['once', 'daily', 'weekly'].includes(schedule.kind)) add(null, 'Choose when the group is checked.', 'Elige cuándo se revisa el grupo.')
     else if (schedule.kind !== 'once' && !/^\d{1,2}:\d{2}$/.test(schedule.time ?? '')) add(null, 'Choose the time the group is checked.', 'Elige a qué hora se revisa el grupo.')
     const f = rule.segment?.filters ?? {}
-    if (Object.keys(f).filter((k) => f[k] !== undefined && f[k] !== null && !(Array.isArray(f[k]) && f[k].length === 0)).length === 0) {
-      add(null, 'A group needs at least one filter, or it is every patient.', 'Un grupo necesita al menos un filtro, o serían todos los pacientes.')
+    if (!asAudienceRef(rule.segment?.audience) && Object.keys(f).filter((k) => f[k] !== undefined && f[k] !== null && !(Array.isArray(f[k]) && f[k].length === 0)).length === 0) {
+      add(null, 'Choose a list or segment, or at least one filter: otherwise it is every patient.', 'Elige una lista o un segmento, o al menos un filtro: si no, serían todos los pacientes.')
     }
     const limit = rule.segment?.daily_limit
     if (limit !== undefined && limit !== null && !(Number(limit) >= 1)) {

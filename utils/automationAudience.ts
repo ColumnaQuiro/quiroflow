@@ -114,3 +114,28 @@ export function recallParked(p: RecallQueueState, lastAttendedAt: number | null,
   if (!p.recall_dismissed_at || lastAttendedAt === null) return true
   return lastAttendedAt <= new Date(p.recall_dismissed_at).getTime()
 }
+
+/**
+ * A saved audience: one of the clinic's patient lists or segments
+ * (patient_lists / patient_segments, 20261105143740). A group send names one
+ * in segment.audience, with others to leave out in segment.exclude, and the
+ * "enters a list or segment" trigger names one in filters.trigger_audience.
+ */
+export interface AudienceRef {
+  kind: 'list' | 'segment'
+  id: string
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** A stored value as an audience, or null for anything else. */
+export function asAudienceRef(v: unknown): AudienceRef | null {
+  if (!v || typeof v !== 'object') return null
+  const { kind, id } = v as { kind?: unknown; id?: unknown }
+  return (kind === 'list' || kind === 'segment') && typeof id === 'string' && UUID.test(id) ? { kind, id } : null
+}
+
+/** A stored list of audiences, keeping only the ones that read as audiences. */
+export function asAudienceRefs(v: unknown): AudienceRef[] {
+  return Array.isArray(v) ? v.map(asAudienceRef).filter((x): x is AudienceRef => !!x).slice(0, 10) : []
+}

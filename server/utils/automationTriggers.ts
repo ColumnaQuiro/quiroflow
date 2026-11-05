@@ -1,5 +1,7 @@
 import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
-import { dispatchPatientRule, startLeadSequence } from '~/server/utils/automationEngine'
+import { dispatchPatientRule, startLeadSequence, startPatientRun } from '~/server/utils/automationEngine'
+import { audienceEntriesSince, audienceMembersNow } from '~/server/utils/audienceMembers'
+import { asAudienceRef } from '~/utils/automationAudience'
 import { triggerBonoMatches, triggerCarePlanMatches, triggerDocMatches, triggerStageMatches } from '~/utils/automationTriggerMatch'
 import type { CarePlanVisitMarker } from '~/utils/carePlanVisitMarkers'
 import { LEAD_STOP_STAGES } from '~/utils/automationCatalog'
@@ -242,4 +244,85 @@ export async function enrolBonosRunningLow(service: any, origin: string): Promis
     }
   }
   return fired
+}
+
+/**
+ * The later of a cursor and an entry, keeping the database's own string: it
+ * carries microseconds, and a cursor rounded to milliseconds would sit just
+ * before the entry it came from and read it again next tick.
+ */
+function latest(max: string, e: { entered_at: string }): string {
+  return Date.parse(e.entered_at) >= Date.parse(max) ? e.entered_at : max
+}
+
+/**
+ * "Enters a list or segment": whoever came into the rule's audience since its
+ * cursor (automation_rules.segment_last_run_at, which this trigger borrows
+ * from the group send), read with audience_entries_since. A list entry is
+ * the moment someone was added; a segment's is the snapshot that first saw
+ * them match, so a segment entry can be up to 15 minutes late.
+ *
+ * The first tick after a rule is switched on only sets the cursor -- the
+ * people already in it are not news -- unless the rule says to include them
+ * (filters.include_current), when they are enrolled once, then. The cursor is
+ * claimed before anyone is enrolled, so two ticks cannot both enrol an entry.
+ * Runs are created due and walked by the same tick, as the group send does.
+ */
+export async function enrolAudienceEntries(service: any, origin: string): Promise<number> {
+  const { data: rules } = await service
+    .from('automation_rules')
+    .select('id, account_id, filters, is_marketing, segment_last_run_at')
+    .eq('trigger_event', 'audience.entered')
+    .eq('enabled', true)
+  let enrolled = 0
+  for (const rule of (rules ?? []) as { id: string; account_id: string; filters: Record<string, unknown> | null; is_marketing: boolean; segment_last_run_at: string | null }[]) {
+    try {
+      const audience = asAudienceRef(rule.filters?.trigger_audience)
+      if (!audience) continue
+      const first = !rule.segment_last_run_at
+      let entries: { patient_id: string; entered_at: string }[]
+      let cursor: string
+      if (first) {
+        // Where counting starts is the newest current member's own stamp --
+        // the database's clock, which entries are compared with -- or, for an
+        // empty audience, a minute back, so nobody added while the rule was
+        // being switched on falls between two clocks.
+        const current = await audienceMembersNow(service, audience)
+        entries = rule.filters?.include_current === true ? current : []
+        cursor = current.reduce(latest, new Date(Date.now() - 60_000).toISOString())
+      } else {
+        entries = await audienceEntriesSince(service, audience, rule.segment_last_run_at!)
+        if (!entries.length) continue
+        cursor = entries.reduce(latest, rule.segment_last_run_at!)
+      }
+
+      let claim = service.from('automation_rules').update({ segment_last_run_at: cursor }).eq('id', rule.id)
+      claim = first ? claim.is('segment_last_run_at', null) : claim.eq('segment_last_run_at', rule.segment_last_run_at)
+      const { data: claimed } = await claim.select('id').maybeSingle()
+      if (!claimed || !entries.length) continue
+
+      // The account's own patients only, through the gates every audience
+      // has: not archived, not a minor, not do-not-contact, and a marketing
+      // channel for a marketing rule. Consent per channel is checked again
+      // at every send.
+      const ids = [...new Set(entries.map((e) => e.patient_id))]
+      for (let i = 0; i < ids.length; i += 200) {
+        const { data: patients } = await service
+          .from('patients')
+          .select('id, is_minor, do_not_contact, marketing_channels')
+          .eq('account_id', rule.account_id)
+          .neq('status', 'inactive')
+          .in('id', ids.slice(i, i + 200))
+        for (const p of (patients ?? []) as { id: string; is_minor: boolean; do_not_contact: boolean; marketing_channels: string[] | null }[]) {
+          if (p.is_minor || p.do_not_contact || (rule.is_marketing && !(p.marketing_channels ?? []).length)) continue
+          if (!(await ruleFiltersMatch(service, p.id, rule.filters as AutomationFilters))) continue
+          const runId = await startPatientRun(service, { accountId: rule.account_id, ruleId: rule.id, patientId: p.id, origin, triggerBody: { triggerEvent: 'audience.entered', patientId: p.id }, advance: false })
+          if (runId) enrolled += 1
+        }
+      }
+    } catch (err) {
+      console.error(`[automations] audience.entered failed for rule ${rule.id}:`, (err as Error)?.message ?? err)
+    }
+  }
+  return enrolled
 }

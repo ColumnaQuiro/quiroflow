@@ -1,8 +1,9 @@
 import type { AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
 import { carePlanOverdueDays, type OverduePlan, type OverdueVisit } from '~/utils/carePlanOverdue'
-import { needsVisitHistory, noWhatsAppSentMatches, recallParked, respectsRecallQueue, visitHistoryMatches, type RecallQueueState } from '~/utils/automationAudience'
+import { needsVisitHistory, noWhatsAppSentMatches, recallParked, respectsRecallQueue, visitHistoryMatches, type AudienceRef, type RecallQueueState } from '~/utils/automationAudience'
 import { localParts } from '~/utils/automationTiming'
 import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
+import { audienceMemberIds } from '~/server/utils/audienceMembers'
 
 // Who a segment matches today -- the live "143 patients match today" under the
 // segment trigger, and the count in the activation dialog.
@@ -86,7 +87,13 @@ export interface SegmentAudience {
   email: number
 }
 
-export async function segmentAudience(service: any, accountId: string, filters: AutomationFilters | null | undefined, isMarketing: boolean): Promise<SegmentAudience> {
+export async function segmentAudience(
+  service: any,
+  accountId: string,
+  filters: AutomationFilters | null | undefined,
+  isMarketing: boolean,
+  saved?: { audience: AudienceRef; exclude: AudienceRef[] } | null,
+): Promise<SegmentAudience> {
   const f = filters ?? {}
   const patients = await allRows<PatientRow>((from, to) =>
     // Archived patients are not an audience: archiving says it stops
@@ -102,6 +109,14 @@ export async function segmentAudience(service: any, accountId: string, filters: 
   // The enrolment's own gate: nobody who cannot be contacted, and for a
   // marketing rule nobody with no marketing channel at all.
   let candidates = patients.filter((p) => !p.is_minor && !p.do_not_contact && (!isMarketing || (p.marketing_channels ?? []).length > 0))
+
+  // A saved list or segment, as enrolDueSegments takes it: its members within
+  // the same gates, and no filters asked.
+  if (saved) {
+    const members = await audienceMemberIds(service, saved.audience, saved.exclude)
+    candidates = candidates.filter((p) => members.has(p.id))
+    return audienceTotals(candidates)
+  }
 
   const typeIds = f.appointment_type_ids?.length ? f.appointment_type_ids : f.appointment_type_id ? [f.appointment_type_id] : null
   // A segment has no appointment in scope, so ruleFiltersMatch answers "no"
@@ -216,6 +231,10 @@ export async function segmentAudience(service: any, accountId: string, filters: 
     candidates = candidates.filter((p) => ok.has(p.id))
   }
 
+  return audienceTotals(candidates)
+}
+
+function audienceTotals(candidates: { id: string; marketing_channels: string[] | null }[]): SegmentAudience {
   return {
     ids: candidates.map((p) => p.id),
     whatsapp: candidates.filter((p) => (p.marketing_channels ?? []).includes('whatsapp')).length,

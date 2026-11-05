@@ -27,7 +27,8 @@ import { RECALL_QUEUE_COLUMNS, withoutParkedRecalls } from '~/server/utils/segme
 import { sendPushToUsers } from '~/server/utils/pushNotifications'
 import { STAGE_TITLES, isLeadStage, type LeadStage } from '~/server/utils/leads'
 import { evaluateBranch, factKey, fieldsUsed, type BranchConfig, type ConditionFacts } from '~/utils/automationConditions'
-import { respectsRecallQueue, type RecallQueueState } from '~/utils/automationAudience'
+import { asAudienceRef, asAudienceRefs, respectsRecallQueue, type RecallQueueState } from '~/utils/automationAudience'
+import { audienceMemberIds } from '~/server/utils/audienceMembers'
 import { isValidQuietHours, localParts, nextAllowedSendTime, segmentCarryOverDue, segmentDailyLimit, segmentIsDue, type QuietHours, type SegmentSchedule } from '~/utils/automationTiming'
 import { automationFieldValue, type MergeContext } from '~/utils/automationFields'
 import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
@@ -1341,6 +1342,10 @@ export async function stopPatientRuns(
 
 interface SegmentConfig {
   filters?: AutomationFilters
+  /** A saved list or segment instead of filters: membership is the match. */
+  audience?: unknown
+  /** Lists or segments whose members are left out. */
+  exclude?: unknown
   schedule?: SegmentSchedule
   reentry_days?: number
   // At most this many patients enrolled per clinic day, the most recently
@@ -1428,6 +1433,16 @@ export async function enrolDueSegments(supabase: any, origin: string, now = new 
       let candidates = patients.filter(
         (p: Candidate) => !p.is_minor && !p.do_not_contact && (!rule.is_marketing || (p.marketing_channels ?? []).length > 0),
       )
+      // Aimed at a saved list or segment: its members (less any excluded
+      // audience), within the same gates. Membership is the match, so the
+      // filters below are not asked; a deleted list has no members and the
+      // occurrence enrols nobody (the builder says so before it is on).
+      const audience = asAudienceRef(segment.audience)
+      if (audience) {
+        const members = await audienceMemberIds(supabase, audience, asAudienceRefs(segment.exclude))
+        candidates = candidates.filter((p: Candidate) => members.has(p.id))
+      }
+      const matches = (p: { id: string }) => (audience ? Promise.resolve(true) : ruleFiltersMatch(supabase, p.id, segment.filters))
       // A recall rule leaves out whoever the Recalls queue has parked --
       // Posponer, Descartar, a "Más adelante" reply -- as the live count does.
       if (candidates.length && respectsRecallQueue(segment.filters, Boolean(rule.is_marketing))) {
@@ -1459,7 +1474,7 @@ export async function enrolDueSegments(supabase: any, origin: string, now = new 
       }
 
       if (!cap) {
-        const flags = await mapWithConcurrency(candidates, 5, async (p: { id: string }) => (await ruleFiltersMatch(supabase, p.id, segment.filters)) ? enrol(p) : false)
+        const flags = await mapWithConcurrency(candidates, 5, async (p: { id: string }) => (await matches(p)) ? enrol(p) : false)
         enrolled += flags.filter(Boolean).length
         continue
       }
@@ -1480,7 +1495,7 @@ export async function enrolDueSegments(supabase: any, origin: string, now = new 
       let today = 0
       for (let i = 0; i < candidates.length && today < cap; i += 5) {
         const chunk = candidates.slice(i, i + 5)
-        const matched = await mapWithConcurrency(chunk, 5, (p: { id: string }) => ruleFiltersMatch(supabase, p.id, segment.filters))
+        const matched = await mapWithConcurrency(chunk, 5, matches)
         for (let j = 0; j < chunk.length && today < cap; j++) {
           if (matched[j] && (await enrol(chunk[j]!))) today++
         }

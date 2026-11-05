@@ -36,7 +36,7 @@ const rules: Rule[] = [
       // online-booking, reschedule-reasons and new-patient-fields were missing
       // until 30 Sep 2026 and fell through to plain settings_access, so a
       // role the menu hid them from could still open them by address.
-      ['/settings/clinics', '/settings/appointment-types', '/settings/rooms', '/settings/referral-sources', '/settings/exercises', '/settings/education', '/settings/app', '/settings/online-booking', '/settings/reschedule-reasons', '/settings/new-patient-fields', '/settings/custom-fields'].includes(p) ||
+      ['/settings/clinics', '/settings/appointment-types', '/settings/rooms', '/settings/referral-sources', '/settings/exercises', '/settings/education', '/settings/care-plans', '/settings/app', '/settings/online-booking', '/settings/reschedule-reasons', '/settings/new-patient-fields', '/settings/custom-fields'].includes(p) ||
       p.startsWith('/settings/clinics/') ||
       p.startsWith('/settings/appointment-types/'),
     check: (s) => can(s, 'settings_access') && can(s, 'clinic_config'),
@@ -85,6 +85,9 @@ const rules: Rule[] = [
   { test: (p) => p.startsWith('/dashboard'), check: (s) => scopeNotNone(s, 'dashboard_scope') },
   { test: (p) => p.startsWith('/calendar'), check: (s) => scopeNotNone(s, 'calendar_scope') },
   { test: (p) => p.startsWith('/practitioner'), check: (s) => scopeNotNone(s, 'calendar_scope') },
+  // Importing into a list creates patient records in bulk, as Settings >
+  // Import does, so it needs what that page needs besides seeing patients.
+  { test: (p) => p === '/patients/import', check: (s) => scopeNotNone(s, 'patients_scope') && can(s, 'data_admin') },
   { test: (p) => p.startsWith('/patients'), check: (s) => scopeNotNone(s, 'patients_scope') },
   // The sidebar already hides this link without inbox_access, but hiding a
   // link is not a guard: /inbox was still reachable by typing the URL, by a

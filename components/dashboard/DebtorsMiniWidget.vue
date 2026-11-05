@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { useBonoDebts } from '../../composables/useBonoOwedPayments'
 import { formatEur } from '../../utils/billing'
-import { bonoOwedCents, type BonoOwedPayment } from '../../utils/bonoOwed'
+import { bonoDueNowCents, type BonoOwedPayment } from '../../utils/bonoOwed'
+import { installmentPlanOf } from '../../utils/bonoInstallments'
 defineProps<{ dateRange?: unknown; practitionerId?: string; clinicId?: string }>()
 
 interface PurchaseRow {
@@ -9,6 +10,10 @@ interface PurchaseRow {
   price_cents: number
   invoice_id: string | null
   owed_cents: number | null
+  sessions_total: number
+  sessions_used: number
+  installments: number | null
+  installment_cents: number | null
   external_reference: string | null
   patients: { first_name: string; last_name: string | null } | null
 }
@@ -38,13 +43,14 @@ onMounted(async () => {
 // differently, and why all three used to disagree.
 function owedCentsFor(p: PurchaseRow): number {
   const inv = p.invoice_id ? invoicesById.value.get(p.invoice_id) : null
-  return bonoOwedCents({
+  return bonoDueNowCents({
     purchaseId: p.id,
     invoiceId: p.invoice_id,
     priceCents: p.price_cents,
     owedCents: p.owed_cents,
     invoice: inv ? { status: inv.status, total_cents: inv.total_cents } : null,
     payments: allPayments.value,
+    plan: installmentPlanOf(p),
   })
 }
 

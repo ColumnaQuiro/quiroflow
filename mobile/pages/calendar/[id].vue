@@ -15,6 +15,7 @@
 //     (calendar_read_only), which the database refuses anyway (0047);
 //   - booking the next visit as the patient record offers it.
 import { formatEur } from '../../../utils/billing'
+import { openEndedPlanLabel } from '../../../utils/planRenewal'
 import { listingActionLine, listingSummary, sideLettersFor, syncListingLine, type Listings } from '../../../utils/spinalListings'
 import { appointmentStage, hasArrived, isUnconfirmedStage, nextStep, STAGE_TRACK, trackIndex } from '../../../utils/appointmentStage'
 
@@ -249,7 +250,7 @@ async function undoStep() {
 // -- Care plan -----------------------------------------------------------------
 // The payment fields too: CarePlanSheet edits from here, and a plan saved
 // without them would quietly go back to per visit.
-interface Plan { name: string; total_visits: number; frequency_value: number; frequency_unit: string; visits_per_period: number | null; started_at: string; payment_kind: string | null; package_purchase_id: string | null; patient_membership_id: string | null }
+interface Plan { name: string; total_visits: number | null; frequency_value: number; frequency_unit: string; visits_per_period: number | null; started_at: string; payment_kind: string | null; package_purchase_id: string | null; patient_membership_id: string | null }
 const plan = ref<Plan | null>(null)
 const visitNumber = ref<number | null>(null)
 // Which visit of the plan THIS one is: the visits completed since the plan
@@ -856,10 +857,11 @@ watch(
             <span class="min-w-0 flex-1">
               <span class="block truncate text-[14px] font-semibold text-ink-900">{{ typeName }} · {{ timeRange }}</span>
               <span v-if="plan && visitNumber && !ownDiaryOnly" class="block truncate text-[12.5px] text-ink-muted2" data-cy="visit-plan">
-                {{ t('Care plan', 'Plan') }}: {{ t('visit', 'visita') }} {{ visitNumber }} {{ t('of', 'de') }} {{ plan.total_visits }} · {{ cadenceLabel(plan, t) }}
+                <template v-if="plan.total_visits === null">{{ t('Care plan', 'Plan') }}: {{ openEndedPlanLabel(visitNumber, plan.started_at, t) }} · {{ cadenceLabel(plan, t) }}</template>
+                <template v-else>{{ t('Care plan', 'Plan') }}: {{ t('visit', 'visita') }} {{ visitNumber }} {{ t('of', 'de') }} {{ plan.total_visits }} · {{ cadenceLabel(plan, t) }}</template>
               </span>
               <span v-else-if="plan" class="block truncate text-[12.5px] text-ink-muted2" data-cy="visit-plan">
-                {{ t('Care plan', 'Plan') }}: {{ t(`${plan.total_visits} visits`, `${plan.total_visits} visitas`) }} · {{ cadenceLabel(plan, t) }}
+                {{ t('Care plan', 'Plan') }}: {{ plan.total_visits === null ? t('no end', 'sin fin') : t(`${plan.total_visits} visits`, `${plan.total_visits} visitas`) }} · {{ cadenceLabel(plan, t) }}
               </span>
               <span v-else class="block truncate text-[12.5px] text-ink-muted2">{{ t('Patient record', 'Ficha del paciente') }} <AppChevron :size="11" /></span>
             </span>

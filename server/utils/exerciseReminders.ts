@@ -75,3 +75,25 @@ export async function notifyExerciseAssigned(service: Service, patientExerciseId
     console.error('[exercise-assigned] push failed', ids, err)
   }
 }
+
+/**
+ * Exercises by visit (the exercise_schedules migration): every patient
+ * schedule with a step whose visit has now been reached gives it, and the
+ * patient gets "Nuevos ejercicios para casa" for what it added. Rides on the
+ * same-day cron like the reminder above, so a step arrives within 15
+ * minutes of the visit being completed or checked in. Best-effort.
+ */
+export async function applyDueExerciseSchedules(service: Service): Promise<{ given: number }> {
+  let given = 0
+  try {
+    const { data, error } = await service.rpc('apply_due_exercise_schedules')
+    if (error) throw error
+    for (const row of (data as { patient_schedule_id: string; added: string[] | null }[] | null) ?? []) {
+      given++
+      if (row.added?.length) await notifyExerciseAssigned(service, row.added)
+    }
+  } catch (err) {
+    console.error('[exercise-schedules] failed', err)
+  }
+  return { given }
+}

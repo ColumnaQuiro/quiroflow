@@ -204,11 +204,14 @@ export async function payAppVisit(event: H3Event, service: Service, visit: AppVi
         currency: 'eur',
         customer: customer.stripe_customer_id,
         payment_method: customer.default_payment_method_id,
-        payment_method_types: ['card'],
+        // No payment_method_types: the saved card decides the method, and
+        // Stripe refuses the parameter outright (400) from API version
+        // 2026-08-26 on -- this would break on the next version bump in
+        // server/utils/stripe.ts with nothing else changed.
         confirm: true,
         // The patient is here and pressing Pay, so this is theirs to
         // authenticate: a bank that asks for 3-D Secure gets its page, opened
-        // in the browser from this return_url's flow.
+        // in the browser from this return_url's flow (next_action.redirect_to_url).
         return_url: `${origin}/payment-done?status=success`,
         description,
         metadata,

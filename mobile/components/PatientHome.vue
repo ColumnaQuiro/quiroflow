@@ -174,8 +174,9 @@ function eur(cents: number) {
       </NuxtLink>
       <NuxtLink v-if="carePlan && planProgress" to="/visits" class="rounded-card border border-line bg-surface p-3 shadow-card" data-cy="patient-home-plan">
         <p class="text-[10.5px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ t('Plan', 'Plan') }}</p>
-        <p class="mt-1 text-[20px] font-[640] tracking-tightTitle text-ink-900">{{ planProgress.done }}<span class="text-[13px] font-medium text-ink-muted"> {{ t('of', 'de') }} {{ carePlan.total_visits }}</span></p>
-        <div class="mt-1.5 h-1 rounded-full bg-surface-subtle"><div class="h-1 rounded-full bg-brand" :style="{ width: `${planProgress.pct}%` }" /></div>
+        <p v-if="carePlan.total_visits === null" class="mt-1 text-[20px] font-[640] tracking-tightTitle text-ink-900">{{ planProgress.done }}<span class="text-[13px] font-medium text-ink-muted"> {{ planProgress.done === 1 ? t('visit', 'visita') : t('visits', 'visitas') }}</span></p>
+        <p v-else class="mt-1 text-[20px] font-[640] tracking-tightTitle text-ink-900">{{ planProgress.done }}<span class="text-[13px] font-medium text-ink-muted"> {{ t('of', 'de') }} {{ carePlan.total_visits }}</span></p>
+        <div v-if="carePlan.total_visits !== null" class="mt-1.5 h-1 rounded-full bg-surface-subtle"><div class="h-1 rounded-full bg-brand" :style="{ width: `${planProgress.pct}%` }" /></div>
       </NuxtLink>
     </div>
 

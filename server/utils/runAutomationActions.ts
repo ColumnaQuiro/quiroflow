@@ -6,6 +6,7 @@ import { patientAttributeMergeVars } from '~/utils/patientAttributes'
 import { templateVariantForLanguage } from '~/utils/templateLanguage'
 import { phoneForUrlButton } from '~/utils/whatsappUrlButton'
 import { automationEmailHtml, unsubscribeHeaders, type UnsubscribeLinks } from '~/utils/automationEmail'
+import { asEmailDesign, emailDesignHasContent, emailDesignHtml, emailDesignTokens, type EmailTheme } from '~/utils/emailDesign'
 import { serviceSupabase } from '~/server/utils/serviceSupabase'
 import { unsubscribeLinks } from '~/server/utils/unsubscribe'
 import { contactableTutor, tutorEmailNote } from '~/server/utils/minorTutor'
@@ -371,7 +372,7 @@ async function runForRecipient(
   // wants it). A cheap extra query even when unused, same tradeoff as
   // nextAppointmentAt above, kept simple rather than conditioned on whether
   // any action actually references the token.
-  const { data: account } = await supabase.from('accounts').select('google_review_url, slug').eq('id', accountId).maybeSingle()
+  const { data: account } = await supabase.from('accounts').select('google_review_url, slug, email_branding').eq('id', accountId).maybeSingle()
   const googleReviewUrl = await trackedReviewLink(supabase, accountId, recipient, origin, account?.google_review_url ?? null, {
     appointmentId,
     // Only when this rule actually sends the link. Minting on every firing
@@ -459,6 +460,8 @@ async function runForRecipient(
     // the {{booking_link}} variable.
     clinicLogoUrl: clinic?.logo_storage_path ? supabase.storage.from('clinic-logos').getPublicUrl(clinic.logo_storage_path).data.publicUrl : undefined,
     bookingUrl: account?.slug ? `${origin}/book/${account.slug}` : undefined,
+    // The clinic's colours and typeface, for an email built from blocks.
+    emailBranding: (account?.email_branding as Partial<EmailTheme> | null) ?? undefined,
   }
 
   // Why an action did nothing, in the sender's words. Actions stay
@@ -649,7 +652,9 @@ function actionsUse(actions: ActionRow[], source: string) {
   return actions.some((action) => {
     const config = action.config ?? {}
     if (Array.isArray(config.variables) && config.variables.some((v: { source?: string }) => v?.source === source)) return true
-    return typeof config.body === 'string' && config.body.includes(`{{${source}}}`)
+    if (typeof config.body === 'string' && config.body.includes(`{{${source}}}`)) return true
+    const design = asEmailDesign(config.design)
+    return !!design && emailDesignTokens(design).has(source)
   })
 }
 
@@ -1154,8 +1159,11 @@ async function runEmailAction(
   // These used to be silent returns. Every one of them is a reason an email
   // never arrived, and the caller now turns a thrown reason into something
   // the sender can read -- see the problems list in runForRecipient.
+  // Built from blocks (utils/emailDesign.ts) when it has a design; written
+  // in the plain editor otherwise, as every email was before the blocks.
+  const design = asEmailDesign(config.design)
   if (!subject) throw new Error('The email action has no subject.')
-  if (!rawBody) throw new Error('The email action has no body.')
+  if (design ? !emailDesignHasContent(design) : !rawBody) throw new Error('The email action has no body.')
   // Skipped rather than failed: retrying cannot give a lead an address.
   if (!recipient.email) throw new ActionSkipped('No email address to send to.')
 
@@ -1180,12 +1188,25 @@ async function runEmailAction(
   // A tutor is told whose message this is: the body was written for the
   // patient and need not name them.
   const tutorNote = recipient.viaTutor ? tutorEmailNote(recipient.firstName, recipient.preferredLanguage) : ''
-  const html = automationEmailHtml(tutorNote + styleLinks(mergeHtml(rawBody)), {
-    unsubscribe,
-    clinicName: context?.clinicName,
-    logoUrl: config.include_logo ? context?.clinicLogoUrl : null,
-    button: config.booking_button && context?.bookingUrl ? { text: config.booking_button_text ?? '', url: context.bookingUrl } : null,
-  })
+  // A design is compiled with its merge fields still in, then merged whole:
+  // the same escaping as a plain body, and it covers button links and the
+  // preview text too.
+  const html = design
+    ? mergeHtml(
+        emailDesignHtml(design, {
+          unsubscribe,
+          clinicName: context?.clinicName,
+          logoUrl: context?.clinicLogoUrl,
+          branding: context?.emailBranding,
+          prefixHtml: tutorNote || undefined,
+        }),
+      )
+    : automationEmailHtml(tutorNote + styleLinks(mergeHtml(rawBody!)), {
+        unsubscribe,
+        clinicName: context?.clinicName,
+        logoUrl: config.include_logo ? context?.clinicLogoUrl : null,
+        button: config.booking_button && context?.bookingUrl ? { text: config.booking_button_text ?? '', url: context.bookingUrl } : null,
+      })
 
   // Deliberately NOT `.catch(() => null)` any more. Resend refuses sends for
   // reasons that are entirely fixable and entirely invisible from here -- an

@@ -134,6 +134,7 @@ const fieldId = useId()
           :placeholder="hasStoredKey ? '••••••••••••••••••••' : t('From PracticeHub → Developers → API Keys', 'Desde PracticeHub → Developers → API Keys')"
           class="mt-1 w-full rounded-md border border-line-control bg-surface px-3 py-2 text-sm text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
         />
+        <p class="mt-1 text-xs text-ink-muted2">{{ t('The Classic key, which every import tab uses. It does not start with phk_: that one goes in the 2.0 field below.', 'La clave Classic, la que usan todas las pestañas de importación. No empieza por phk_: esa va en el campo 2.0 de abajo.') }}</p>
       </div>
       <div>
         <label :for="`${fieldId}-v3ApiKey`" class="block text-sm font-medium text-ink-700">{{ t('PracticeHub 2.0 API key', 'Clave API de PracticeHub 2.0') }}</label>

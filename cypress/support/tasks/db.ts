@@ -1046,6 +1046,72 @@ async function setPatientContactFlags(opts: { patientId: string; isMinor?: boole
   return null
 }
 
+// -- Lists and segments (20261105143740_patient_lists_and_audiences.sql) --
+
+/** Marketing consent as stored: the channels the patient accepted. */
+async function setPatientMarketing(opts: { patientId: string; channels: string[] }) {
+  assertOk(await admin.from('patients').update({ marketing_channels: opts.channels }).eq('id', opts.patientId))
+  return null
+}
+
+async function patientMarketing(opts: { patientId: string }) {
+  const row = unwrap(await admin.from('patients').select('marketing_channels').eq('id', opts.patientId).single()) as { marketing_channels: string[] }
+  return row.marketing_channels
+}
+
+/** A family link, both directions, as the record's Family card writes it. */
+async function linkFamily(opts: { accountId: string; patientId: string; relatedPatientId: string; relation: string; inverse: string }) {
+  assertOk(
+    await admin.from('patient_relations').insert([
+      { account_id: opts.accountId, patient_id: opts.patientId, related_patient_id: opts.relatedPatientId, relation: opts.relation },
+      { account_id: opts.accountId, patient_id: opts.relatedPatientId, related_patient_id: opts.patientId, relation: opts.inverse },
+    ]),
+  )
+  return null
+}
+
+async function listByName(opts: { accountId: string; name: string }) {
+  const { data, error } = await admin.from('patient_lists').select('id, name').eq('account_id', opts.accountId).eq('name', opts.name).maybeSingle()
+  if (error) throw error
+  return data ?? null
+}
+
+async function segmentByName(opts: { accountId: string; name: string }) {
+  const { data, error } = await admin.from('patient_segments').select('id, name').eq('account_id', opts.accountId).eq('name', opts.name).maybeSingle()
+  if (error) throw error
+  return data ?? null
+}
+
+/** Who is on a list, with how they got there, by first name. */
+async function listMembers(opts: { listId: string }) {
+  const rows = unwrap(
+    await admin.from('patient_list_members').select('source, source_detail, patients(first_name, last_name)').eq('list_id', opts.listId),
+  ) as unknown as { source: string; source_detail: string | null; patients: { first_name: string; last_name: string | null } }[]
+  return rows.map((r) => ({ firstName: r.patients.first_name, lastName: r.patients.last_name, source: r.source, sourceDetail: r.source_detail })).sort((a, b) => a.firstName.localeCompare(b.firstName))
+}
+
+/**
+ * What the automation engine will read: audience_members and
+ * audience_entries_since, as the service role, first names sorted.
+ */
+async function audience(opts: { kind: 'list' | 'segment'; id: string; since?: string }) {
+  const { data, error } = opts.since
+    ? await admin.rpc('audience_entries_since', { p_kind: opts.kind, p_id: opts.id, p_since: opts.since })
+    : await admin.rpc('audience_members', { p_kind: opts.kind, p_id: opts.id })
+  if (error) throw error
+  const ids = (data ?? []).map((r: { patient_id: string }) => r.patient_id)
+  if (!ids.length) return []
+  const people = unwrap(await admin.from('patients').select('first_name').in('id', ids)) as { first_name: string }[]
+  return people.map((p) => p.first_name).sort()
+}
+
+/** The fifteen-minute refresh, run now. */
+async function refreshSegmentMembers() {
+  const { data, error } = await admin.rpc('refresh_segment_members', {})
+  if (error) throw error
+  return data
+}
+
 /** Links a minor to the tutor their messages go to. */
 async function setPatientTutor(opts: { patientId: string; tutorPatientId: string | null }) {
   const { error } = await admin.from('patients').update({ tutor_patient_id: opts.tutorPatientId }).eq('id', opts.patientId)
@@ -1075,11 +1141,24 @@ async function setPatientNif(opts: { patientId: string; nationalId: string | nul
   return null
 }
 
-async function createPackageTemplate(opts: { accountId: string; name: string; sessionCount: number; priceCents: number }) {
+async function createPackageTemplate(opts: {
+  accountId: string
+  name: string
+  sessionCount: number
+  priceCents: number
+  // Ways of paying it in plazos, each priced on its own: [{ installments: 2, installmentCents: 25000 }].
+  installmentOptions?: { installments: number; installmentCents: number }[]
+}) {
   const row = unwrap(
     await admin
       .from('packages')
-      .insert({ account_id: opts.accountId, name: opts.name, session_count: opts.sessionCount, price_cents: opts.priceCents })
+      .insert({
+        account_id: opts.accountId,
+        name: opts.name,
+        session_count: opts.sessionCount,
+        price_cents: opts.priceCents,
+        installment_options: (opts.installmentOptions ?? []).map((o) => ({ installments: o.installments, installment_cents: o.installmentCents })),
+      })
       .select('id')
       .single(),
   )
@@ -1491,8 +1570,11 @@ async function createPackagePurchase(opts: {
   // whatever was on its counter -- which is the state that used to read as a
   // second live bono.
   isClosed?: boolean
+  // Sold in plazos: how many and what each costs (priceCents must be their product).
+  installments?: number
+  installmentCents?: number
 }) {
-  const { accountId, patientId, packageName, sessionsTotal, sessionsUsed, priceCents, owedCents, isClosed } = opts
+  const { accountId, patientId, packageName, sessionsTotal, sessionsUsed, priceCents, owedCents, isClosed, installments, installmentCents } = opts
   const row = unwrap(
     await admin
       .from('package_purchases')
@@ -1506,6 +1588,7 @@ async function createPackagePurchase(opts: {
         purchased_at: new Date().toISOString(),
         ...(owedCents === undefined ? {} : { owed_cents: owedCents }),
         ...(isClosed === undefined ? {} : { is_closed: isClosed }),
+        ...(installments === undefined ? {} : { installments, installment_cents: installmentCents ?? null }),
       })
       .select('id, package_name, sessions_total, sessions_used, price_cents')
       .single(),
@@ -1685,6 +1768,11 @@ async function assignExercise(opts: { accountId: string; patientId: string; name
     assertOk(await admin.from('patient_exercise_logs').insert({ account_id: opts.accountId, patient_exercise_id: pe.id, done_on: day }))
   }
   return { exerciseId: exercise.id, patientExerciseId: pe.id }
+}
+
+/** Library exercises, assigned to nobody. */
+async function createExercises(opts: { accountId: string; names: string[] }) {
+  return unwrap(await admin.from('exercises').insert(opts.names.map((name) => ({ account_id: opts.accountId, name }))).select('id, name')) as { id: string; name: string }[]
 }
 
 /** A patient's daily exercise reminder, as set_my_exercise_reminder leaves it. */
@@ -4449,6 +4537,14 @@ export const dbTasks = {
   'db:patientInvoiceEmail': patientInvoiceEmail,
   'db:setPatientContactFlags': setPatientContactFlags,
   'db:setPatientTutor': setPatientTutor,
+  'db:setPatientMarketing': setPatientMarketing,
+  'db:patientMarketing': patientMarketing,
+  'db:linkFamily': linkFamily,
+  'db:listByName': listByName,
+  'db:segmentByName': segmentByName,
+  'db:listMembers': listMembers,
+  'db:audience': audience,
+  'db:refreshSegmentMembers': refreshSegmentMembers,
   'db:patientMergeFields': patientMergeFields,
   'db:createPatientDoc': createPatientDoc,
   'db:createDocTemplate': createDocTemplate,
@@ -4510,6 +4606,7 @@ export const dbTasks = {
   'db:setPatientAppReschedule': setPatientAppReschedule,
   'db:setTeamMemberBookingFlags': setTeamMemberBookingFlags,
   'db:assignExercise': assignExercise,
+  'db:createExercises': createExercises,
   'db:setExerciseReminder': setExerciseReminder,
   'db:exerciseReminderState': exerciseReminderState,
   'db:setTeamMemberTheme': setTeamMemberTheme,

@@ -36,6 +36,9 @@ export default defineEventHandler(async (event) => {
       throw createError({ statusCode: 400, statusMessage: 'No PracticeHub connection is saved. Set it up in Settings > Import > Connection.' })
     }
   }
+  // Checked after the saved key is read too: one saved before this check
+  // existed would otherwise keep failing as a 403 from PracticeHub.
+  assertPracticeHubClassicKey(apiKey)
   if (!baseUrl) throw createError({ statusCode: 400, statusMessage: 'baseUrl is required' })
 
   const url = new URL(`${baseUrl.replace(/\/$/, '')}/api${body.path}`)

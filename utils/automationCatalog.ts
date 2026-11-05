@@ -20,7 +20,7 @@ export interface TriggerDef {
   /** "When…" sentence in the trigger panel's picker. */
   sentence: Pair
   description: Pair
-  group: 'appointment' | 'money' | 'patient' | 'membership' | 'waitlist' | 'segment' | 'lead'
+  group: 'appointment' | 'money' | 'patient' | 'care' | 'membership' | 'waitlist' | 'segment' | 'lead'
   /** An appointment is in scope, so appointment-type / practitioner filters can apply. */
   appointmentContext: boolean
   /** Lead triggers are part of Growth. */
@@ -112,6 +112,17 @@ export const TRIGGERS: TriggerDef[] = [
     appointmentContext: true,
   },
   {
+    value: 'satisfaction.answered',
+    label: ['Satisfaction answered', 'Valoración recibida'],
+    sentence: ['A patient rates their visit', 'Un paciente valora su visita'],
+    description: [
+      'When a patient answers the satisfaction question, by score: 4-5 can get the Google review link, 1-3 a call from the team.',
+      'Cuando un paciente contesta la pregunta de satisfacción, según la nota: a un 4-5 se le puede pedir la reseña en Google, a un 1-3 que le llame el equipo.',
+    ],
+    group: 'appointment',
+    appointmentContext: true,
+  },
+  {
     value: 'invoice.overdue',
     label: ['Invoice unpaid', 'Factura sin pagar'],
     sentence: ['A set number of days after an invoice, still unpaid', 'Un número de días después de una factura, sin pagar'],
@@ -179,6 +190,55 @@ export const TRIGGERS: TriggerDef[] = [
     appointmentContext: false,
   },
   {
+    value: 'patient.tag_added',
+    label: ['Tag added', 'Etiqueta añadida'],
+    sentence: ['A tag is added to a patient', 'Se añade una etiqueta a un paciente'],
+    description: ["When someone on the team, or an automation, adds the tag to the patient's record.", 'Cuando alguien del equipo, o una automatización, añade la etiqueta a la ficha del paciente.'],
+    group: 'patient',
+    appointmentContext: false,
+  },
+  {
+    value: 'patient.tag_removed',
+    label: ['Tag removed', 'Etiqueta quitada'],
+    sentence: ['A tag is removed from a patient', 'Se quita una etiqueta a un paciente'],
+    description: ["When someone on the team, or an automation, removes the tag from the patient's record.", 'Cuando alguien del equipo, o una automatización, quita la etiqueta de la ficha del paciente.'],
+    group: 'patient',
+    appointmentContext: false,
+  },
+  {
+    value: 'doc.completed',
+    label: ['Form completed', 'Formulario completado'],
+    sentence: ['A patient completes a form', 'Un paciente completa un formulario'],
+    description: [
+      'When a form or consent is marked completed, by the patient or the team. Checked every 15 minutes.',
+      'Cuando un formulario o consentimiento queda completado, por el paciente o el equipo. Se comprueba cada 15 minutos.',
+    ],
+    group: 'patient',
+    appointmentContext: false,
+  },
+  {
+    value: 'care_plan.milestone',
+    label: ['Care plan milestone', 'Hito del plan de cuidado'],
+    sentence: ['A visit of the care plan is completed', 'Se completa una visita del plan de cuidado'],
+    description: [
+      'After a completed visit: when the next one is a re-exam on the plan, when it was the last of the plan, or on visit number N. Checked every 15 minutes.',
+      'Tras una visita completada: cuando la siguiente es una revisión del plan, cuando era la última del plan, o en la visita número N. Se comprueba cada 15 minutos.',
+    ],
+    group: 'care',
+    appointmentContext: true,
+  },
+  {
+    value: 'bono.running_low',
+    label: ['Bono running low', 'Bono a punto de acabarse'],
+    sentence: ['A bono is nearly used up', 'A un bono le quedan pocas sesiones'],
+    description: [
+      'When a session used leaves the bono with that many sessions or fewer, once per bono. Checked every 15 minutes.',
+      'Cuando una sesión usada deja el bono con esas sesiones o menos, una vez por bono. Se comprueba cada 15 minutos.',
+    ],
+    group: 'care',
+    appointmentContext: false,
+  },
+  {
     value: 'segment',
     label: ['A group of patients', 'Un segmento de pacientes'],
     sentence: ['A group of patients, once or on a schedule', 'Un grupo de pacientes, una vez o con un horario'],
@@ -195,12 +255,25 @@ export const TRIGGERS: TriggerDef[] = [
     appointmentContext: false,
     growth: true,
   },
+  {
+    value: 'lead.stage_changed',
+    label: ['Lead moved to a stage', 'Lead movido de etapa'],
+    sentence: ['Someone moves a lead to a stage', 'Alguien mueve un lead a una etapa'],
+    description: [
+      'When the team (on the board or in the lead) or an automation moves the lead. Not when booking moves it on its own.',
+      'Cuando el equipo (en el tablero o en el lead) o una automatización lo mueve. No cuando lo mueve sola una reserva.',
+    ],
+    group: 'lead',
+    appointmentContext: false,
+    growth: true,
+  },
 ]
 
 export const TRIGGER_GROUPS: { key: TriggerDef['group']; label: Pair }[] = [
   { key: 'appointment', label: ['Appointments', 'Citas'] },
   { key: 'money', label: ['Billing', 'Facturación'] },
   { key: 'patient', label: ['Patients', 'Pacientes'] },
+  { key: 'care', label: ['Care plans and bonos', 'Planes de cuidado y bonos'] },
   { key: 'membership', label: ['Memberships', 'Membresías'] },
   { key: 'waitlist', label: ['Waitlist', 'Lista de espera'] },
   { key: 'segment', label: ['Groups', 'Grupos'] },
@@ -208,7 +281,7 @@ export const TRIGGER_GROUPS: { key: TriggerDef['group']; label: Pair }[] = [
 ]
 
 export const triggerDef = (value: string) => TRIGGERS.find((tr) => tr.value === value) ?? null
-export const isLeadTrigger = (value: string) => value === 'lead.created'
+export const isLeadTrigger = (value: string) => value === 'lead.created' || value === 'lead.stage_changed'
 
 /** The trigger as the list and the canvas name it, with its number filled in. */
 export function triggerTitle(t: Translate, event: string, filters?: Record<string, unknown> | null): string {
@@ -230,6 +303,29 @@ export function triggerTitle(t: Translate, event: string, filters?: Record<strin
   if (event === 'invoice.overdue') {
     const d = Number(filters?.days_overdue) || 7
     return t(`Invoice unpaid after ${d} day${d === 1 ? '' : 's'}`, `Factura sin pagar a los ${d} día${d === 1 ? '' : 's'}`)
+  }
+  if ((event === 'patient.tag_added' || event === 'patient.tag_removed') && String(filters?.trigger_tag ?? '').trim()) {
+    const tag = String(filters!.trigger_tag).trim()
+    return event === 'patient.tag_added' ? t(`Tagged "${tag}"`, `Etiquetado «${tag}»`) : t(`"${tag}" removed`, `Quitada «${tag}»`)
+  }
+  if (event === 'satisfaction.answered' && (filters?.trigger_score === 'high' || filters?.trigger_score === 'low')) {
+    return filters.trigger_score === 'high' ? t('Rated the visit 4-5', 'Valoró la visita con 4-5') : t('Rated the visit 1-3', 'Valoró la visita con 1-3')
+  }
+  if (event === 'care_plan.milestone') {
+    if (filters?.trigger_milestone === 'finished') return t('Care plan finished', 'Plan de cuidado terminado')
+    if (filters?.trigger_milestone === 'visit') {
+      const n = Number(filters.trigger_visit_number) || 1
+      return t(`Visit ${n} of the care plan`, `Visita ${n} del plan de cuidado`)
+    }
+    return t('Re-exam is the next visit', 'La siguiente visita es la revisión')
+  }
+  if (event === 'bono.running_low') {
+    const n = Number.isInteger(Number(filters?.trigger_sessions_left)) && filters?.trigger_sessions_left !== undefined ? Number(filters.trigger_sessions_left) : 1
+    return n === 0 ? t('Bono used up', 'Bono agotado') : t(`Bono with ${n} session${n === 1 ? '' : 's'} left`, `Bono con ${n} sesi${n === 1 ? 'ón' : 'ones'} restante${n === 1 ? '' : 's'}`)
+  }
+  if (event === 'lead.stage_changed' && typeof filters?.trigger_lead_stage === 'string') {
+    const stage = LEAD_STAGE_OPTIONS.find((o) => o.value === filters.trigger_lead_stage)
+    if (stage) return t(`Lead moved to ${stage.label[0]}`, `Lead movido a ${stage.label[1]}`)
   }
   const def = triggerDef(event)
   return def ? say(t, def.label) : event
@@ -627,29 +723,31 @@ export function defaultFilterValue(key: FilterKey): Record<string, unknown> {
 
 // ------------------------------------------------------------------ WhatsApp variables
 
-export const VARIABLE_SOURCES: { value: string; label: Pair }[] = [
-  { value: 'first_name', label: ['First name', 'Nombre del paciente'] },
-  { value: 'last_name', label: ['Last name', 'Apellidos'] },
-  { value: 'email', label: ['Email', 'Email'] },
-  { value: 'next_appointment', label: ['Appointment date & time', 'Fecha y hora de la cita'] },
-  { value: 'appointment_date', label: ['Appointment date', 'Fecha de la cita'] },
-  { value: 'appointment_time', label: ['Appointment time', 'Hora de la cita'] },
-  { value: 'google_review_link', label: ['Google review link', 'Enlace de reseña de Google'] },
-  { value: 'satisfaction_link', label: ['Satisfaction question link', 'Enlace para valorar la visita'] },
-  { value: 'waitlist_claim_link', label: ['Waitlist claim link', 'Enlace para reservar el hueco'] },
-  { value: 'waitlist_slot_datetime', label: ['Offered slot date & time', 'Fecha y hora del hueco ofrecido'] },
-  { value: 'invoice_number', label: ['Invoice number', 'Número de factura'] },
-  { value: 'invoice_amount_owed', label: ['Amount owed', 'Importe pendiente'] },
-  { value: 'invoice_pay_link', label: ['Payment link (card)', 'Enlace de pago (tarjeta)'] },
-  { value: 'booking_link', label: ['Online booking link', 'Enlace de reserva online'] },
-  { value: 'clinic_name', label: ['Clinic name', 'Nombre de la clínica'] },
-  { value: 'clinic_phone', label: ['Clinic phone', 'Teléfono de la clínica'] },
-  { value: 'clinic_address', label: ['Clinic address', 'Dirección de la clínica'] },
+export type VariableGroup = 'patient' | 'appointment' | 'links' | 'billing' | 'clinic' | 'lead'
+
+export const VARIABLE_SOURCES: { value: string; label: Pair; group?: VariableGroup }[] = [
+  { value: 'first_name', label: ['First name', 'Nombre del paciente'], group: 'patient' },
+  { value: 'last_name', label: ['Last name', 'Apellidos'], group: 'patient' },
+  { value: 'email', label: ['Email', 'Email'], group: 'patient' },
+  { value: 'next_appointment', label: ['Appointment date & time', 'Fecha y hora de la cita'], group: 'appointment' },
+  { value: 'appointment_date', label: ['Appointment date', 'Fecha de la cita'], group: 'appointment' },
+  { value: 'appointment_time', label: ['Appointment time', 'Hora de la cita'], group: 'appointment' },
+  { value: 'google_review_link', label: ['Google review link', 'Enlace de reseña de Google'], group: 'links' },
+  { value: 'satisfaction_link', label: ['Satisfaction question link', 'Enlace para valorar la visita'], group: 'links' },
+  { value: 'waitlist_claim_link', label: ['Waitlist claim link', 'Enlace para reservar el hueco'], group: 'links' },
+  { value: 'waitlist_slot_datetime', label: ['Offered slot date & time', 'Fecha y hora del hueco ofrecido'], group: 'appointment' },
+  { value: 'invoice_number', label: ['Invoice number', 'Número de factura'], group: 'billing' },
+  { value: 'invoice_amount_owed', label: ['Amount owed', 'Importe pendiente'], group: 'billing' },
+  { value: 'invoice_pay_link', label: ['Payment link (card)', 'Enlace de pago (tarjeta)'], group: 'links' },
+  { value: 'booking_link', label: ['Online booking link', 'Enlace de reserva online'], group: 'links' },
+  { value: 'clinic_name', label: ['Clinic name', 'Nombre de la clínica'], group: 'clinic' },
+  { value: 'clinic_phone', label: ['Clinic phone', 'Teléfono de la clínica'], group: 'clinic' },
+  { value: 'clinic_address', label: ['Clinic address', 'Dirección de la clínica'], group: 'clinic' },
   // A recall reads better from "Léa" than from "the clinic". The clinic's
   // name when the patient has no practitioner, so Meta never gets an empty
   // parameter (it refuses the whole message over one).
-  { value: 'practitioner_first_name', label: ["Their practitioner's first name", 'Nombre de su profesional'] },
-  { value: 'last_visit_month', label: ['Month of their last visit', 'Mes de su última visita'] },
+  { value: 'practitioner_first_name', label: ["Their practitioner's first name", 'Nombre de su profesional'], group: 'patient' },
+  { value: 'last_visit_month', label: ['Month of their last visit', 'Mes de su última visita'], group: 'patient' },
   { value: 'text', label: ['Fixed text', 'Texto fijo'] },
 ]
 
@@ -664,6 +762,16 @@ export const BUTTON_PARAM_SOURCES: { value: string; label: Pair }[] = [
 
 /** Merge fields an email can use, inserted as {{key}}. */
 export const EMAIL_MERGE_FIELDS = VARIABLE_SOURCES.filter((v) => v.value !== 'text')
+
+/** The headings the variable picker sorts merge fields under, in this order. */
+export const VARIABLE_GROUPS: { key: VariableGroup; label: Pair }[] = [
+  { key: 'patient', label: ['Patient', 'Paciente'] },
+  { key: 'appointment', label: ['Appointment', 'Cita'] },
+  { key: 'links', label: ['Links', 'Enlaces'] },
+  { key: 'billing', label: ['Billing', 'Facturación'] },
+  { key: 'clinic', label: ['Clinic', 'Clínica'] },
+  { key: 'lead', label: ['Their answers', 'Sus respuestas'] },
+]
 
 // ------------------------------------------------------------------ runs
 
@@ -714,6 +822,9 @@ export const OUTCOMES: Record<string, Pair> = {
 }
 
 // ------------------------------------------------------------------ leads
+
+/** Stages a lead's automations stop at (the engine cancels its runs), so nothing can start on reaching them. */
+export const LEAD_STOP_STAGES: readonly string[] = ['converted', 'lost']
 
 export const LEAD_STAGE_OPTIONS: { value: string; label: Pair }[] = [
   { value: 'new', label: ['New', 'Nuevo'] },

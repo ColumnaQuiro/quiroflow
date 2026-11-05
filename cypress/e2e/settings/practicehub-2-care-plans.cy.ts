@@ -7,11 +7,19 @@
 const PROXY = '/api/import/practicehub-v3'
 
 describe('PracticeHub 2.0', () => {
-  it('only saves a phk_ key, and its proxy only reads one resource', () => {
+  it('only saves a phk_ key where it belongs, and its proxy only reads one resource', () => {
     cy.seedStaffAccount().then((account) => {
       cy.login(account.email, account.password)
       cy.visit('/settings/import')
       cy.request({ method: 'PUT', url: '/api/import/practicehub-connection', body: { baseUrl: 'https://clinic.neptune.practicehub.io', v3ApiKey: 'abc123' }, failOnStatusCode: false }).its('body.statusMessage').should('contain', 'starts with phk_')
+      // And the other way round: a phk_ key is refused as the Classic one,
+      // whether saved or pasted into an import tab, rather than reaching
+      // PracticeHub and coming back a bare 403.
+      cy.request({ method: 'PUT', url: '/api/import/practicehub-connection', body: { baseUrl: 'https://clinic.neptune.practicehub.io', apiKey: 'phk_abc123' }, failOnStatusCode: false }).its('body.statusMessage').should('contain', 'PracticeHub 2.0 key')
+      cy.request({ method: 'POST', url: '/api/import/practicehub-proxy', body: { baseUrl: 'https://clinic.neptune.practicehub.io', apiKey: 'phk_abc123', appDetails: 'QuiroFlow=a@b.es', path: '/patients' }, failOnStatusCode: false }).then((res) => {
+        expect(res.status).to.eq(400)
+        expect(res.body.statusMessage).to.contain('PracticeHub 2.0 key')
+      })
       for (const body of [{ path: '/../me' }, { path: 'https://evil.example/x' }, { path: '/patients', query: { 'x-api-key': 'y' } }]) {
         cy.request({ method: 'POST', url: PROXY, body, failOnStatusCode: false }).its('status').should('eq', 400)
       }

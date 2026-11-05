@@ -205,6 +205,11 @@ export function findProblems(rule: DraftRule, steps: DraftStep[], templates: Tem
   if (rule.trigger_event === 'invoice.overdue' && !(Number(rule.filters?.days_overdue) > 0)) {
     add(null, 'Say how many days after the invoice.', 'Indica cuántos días después de la factura.')
   }
+  if (rule.trigger_event === 'patient.date') {
+    if (!rule.filters?.trigger_date) add(null, 'Choose the date it counts from.', 'Elige la fecha desde la que cuenta.')
+    const days = Number(rule.filters?.trigger_days)
+    if (!Number.isInteger(days) || days < 0 || days > 3650) add(null, 'Say how many days, from 0 to 3650.', 'Indica cuántos días, de 0 a 3650.')
+  }
   if (rule.trigger_event === 'audience.entered' && !asAudienceRef(rule.filters?.trigger_audience)) {
     add(null, 'Choose the list or segment people enter.', 'Elige la lista o el segmento al que entran.')
   }

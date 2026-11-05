@@ -190,6 +190,17 @@ export const TRIGGERS: TriggerDef[] = [
     appointmentContext: false,
   },
   {
+    value: 'patient.date',
+    label: ['A date on the record', 'Una fecha de la ficha'],
+    sentence: ['Some days before or after a date on the record', 'Unos días antes o después de una fecha de la ficha'],
+    description: [
+      'The last visit, a membership or care plan starting, or a date field of your own (a due date, an operation). Checked each day from 9:00.',
+      'La última visita, el inicio de una membresía o de un plan de cuidado, o un campo de fecha propio (una fecha de parto, una operación). Se comprueba cada día desde las 9:00.',
+    ],
+    group: 'patient',
+    appointmentContext: false,
+  },
+  {
     value: 'patient.tag_added',
     label: ['Tag added', 'Etiqueta añadida'],
     sentence: ['A tag is added to a patient', 'Se añade una etiqueta a un paciente'],
@@ -291,6 +302,13 @@ export const TRIGGER_GROUPS: { key: TriggerDef['group']; label: Pair }[] = [
   { key: 'lead', label: ['Leads', 'Leads'] },
 ]
 
+/** The dates "A date on the record" can count from, named for its title; a custom field is named by its own label in the panel. */
+export const DATE_SOURCE_LABELS: Record<string, readonly [string, string]> = {
+  last_visit: ['the last visit', 'la última visita'],
+  membership_start: ['a membership starting', 'el inicio de la membresía'],
+  care_plan_start: ['the care plan starting', 'el inicio del plan de cuidado'],
+}
+
 export const triggerDef = (value: string) => TRIGGERS.find((tr) => tr.value === value) ?? null
 export const isLeadTrigger = (value: string) => value === 'lead.created' || value === 'lead.stage_changed'
 
@@ -321,6 +339,15 @@ export function triggerTitle(t: Translate, event: string, filters?: Record<strin
   }
   if (event === 'satisfaction.answered' && (filters?.trigger_score === 'high' || filters?.trigger_score === 'low')) {
     return filters.trigger_score === 'high' ? t('Rated the visit 4-5', 'Valoró la visita con 4-5') : t('Rated the visit 1-3', 'Valoró la visita con 1-3')
+  }
+  if (event === 'patient.date' && typeof filters?.trigger_date === 'string') {
+    const n = Number(filters.trigger_days) || 0
+    const what = DATE_SOURCE_LABELS[filters.trigger_date] ?? (['a date field', 'un campo de fecha'] as const)
+    if (n === 0) return t(`On ${what[0]}`, `El día de ${what[1]}`)
+    const before = filters.trigger_when === 'before' && String(filters.trigger_date).startsWith('field:')
+    return before
+      ? t(`${n} day${n === 1 ? '' : 's'} before ${what[0]}`, `${n} día${n === 1 ? '' : 's'} antes de ${what[1]}`)
+      : t(`${n} day${n === 1 ? '' : 's'} after ${what[0]}`, `${n} día${n === 1 ? '' : 's'} después de ${what[1]}`)
   }
   if (event === 'care_plan.milestone') {
     if (filters?.trigger_milestone === 'finished') return t('Care plan finished', 'Plan de cuidado terminado')

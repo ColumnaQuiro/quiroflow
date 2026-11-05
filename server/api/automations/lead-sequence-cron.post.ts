@@ -2,7 +2,7 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { RUN_COLUMNS } from '~/server/utils/leadSequences'
 import { advanceRun, enrolDueSegments } from '~/server/utils/automationEngine'
-import { enrolAudienceEntries, enrolBonosRunningLow, enrolCarePlanMilestones, enrolCompletedDocs } from '~/server/utils/automationTriggers'
+import { enrolAudienceEntries, enrolBonosRunningLow, enrolDateTriggers, enrolCarePlanMilestones, enrolCompletedDocs } from '~/server/utils/automationTriggers'
 
 // Advances every automation run that is due -- a lead's drip, and since the
 // automation engine a patient's run too: a delay that has elapsed, a
@@ -48,6 +48,7 @@ export default defineEventHandler(async (event) => {
     enrolled += await enrolCarePlanMilestones(supabase, origin)
     enrolled += await enrolBonosRunningLow(supabase, origin)
     enrolled += await enrolAudienceEntries(supabase, origin)
+    enrolled += await enrolDateTriggers(supabase, origin)
   } catch (err) {
     console.error('[lead-sequence-cron] event enrolment failed:', (err as Error)?.message ?? err)
   }

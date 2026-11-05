@@ -62,3 +62,32 @@ export function triggerBonoMatches(filters: Filters, sessionsLeft: number): bool
   const threshold = Number.isInteger(n) && n >= 0 ? n : 1
   return sessionsLeft <= threshold
 }
+
+// ------------------------------------------------------------------ patient.date
+
+/** Which date on the record "A date on the record" counts from. A custom date field is `field:<patient_attributes.id>`. */
+export type DateTriggerSource = 'last_visit' | 'membership_start' | 'care_plan_start' | `field:${string}`
+
+/** Whether a source can be counted back from: only a custom field can hold a date still to come (a due date, an operation). */
+export const dateSourceAllowsBefore = (source: string) => source.startsWith('field:')
+
+/** A YYYY-MM-DD date moved by whole days, calendar-wise (no time zone or summer time in it). */
+export function shiftDate(date: string, days: number): string {
+  const d = new Date(`${date}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
+/**
+ * The date on the record that makes the rule start today (the clinic's
+ * today): N days after it is today minus N, N days before it today plus N.
+ * Null when the rule has no usable setting.
+ */
+export function dateTriggerSourceDate(filters: Filters, today: string): string | null {
+  const source = String(filters?.trigger_date ?? '')
+  if (!source) return null
+  const days = Number(filters?.trigger_days)
+  if (!Number.isInteger(days) || days < 0 || days > 3650) return null
+  const before = filters?.trigger_when === 'before' && dateSourceAllowsBefore(source)
+  return shiftDate(today, before ? days : -days)
+}

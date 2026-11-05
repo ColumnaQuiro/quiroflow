@@ -5,6 +5,7 @@
 // same checks before it writes anything, so the two cannot disagree about
 // what a valid automation is.
 
+import { asEmailDesign, emailDesignHasContent } from './emailDesign'
 import { MESSAGE_STEPS, OUTLETS, VALUELESS_OPS, conditionFieldDef, isLeadTrigger, stepDef, triggerDef, waitEventDef, type Pair } from './automationCatalog'
 
 export interface DraftStep {
@@ -262,7 +263,10 @@ export function findProblems(rule: DraftRule, steps: DraftStep[], templates: Tem
       }
       case 'email':
         if (!String(c.subject ?? '').trim()) add(step.id, 'An email step has no subject.', 'Un email no tiene asunto.')
-        if (!String(c.body ?? '').replace(/<[^>]*>/g, '').trim() && !/<img/i.test(String(c.body ?? ''))) add(step.id, `${en} has no body.`, `${es} no tiene texto.`)
+        if (c.design !== undefined && c.design !== null) {
+          const design = asEmailDesign(c.design)
+          if (!design || !emailDesignHasContent(design)) add(step.id, `${en} has no body.`, `${es} no tiene texto.`)
+        } else if (!String(c.body ?? '').replace(/<[^>]*>/g, '').trim() && !/<img/i.test(String(c.body ?? ''))) add(step.id, `${en} has no body.`, `${es} no tiene texto.`)
         break
       case 'webhook':
         if (!/^https?:\/\/\S+$/i.test(String(c.url ?? '').trim())) add(step.id, 'A webhook step has no valid URL.', 'Un webhook no tiene una URL válida.')

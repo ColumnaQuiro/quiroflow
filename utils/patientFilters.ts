@@ -12,6 +12,11 @@
 // A key added here is a key patients_matching has to understand; unknown
 // keys are ignored there, so the two can be deployed in either order.
 // Custom patient attributes would join as one more key.
+//
+// list/notList, family, familyBono and marketing came with lists
+// (20261105143740_patient_lists_and_audiences.sql). Opening a list is this
+// same list filtered by `list`, so a list's members are paged, counted,
+// exported and narrowed exactly like any other filter.
 
 export interface PatientFilters {
   status?: 'inactive' | 'any'
@@ -33,7 +38,16 @@ export interface PatientFilters {
   missingContact?: 'email' | 'phone'
   doNotContact?: true
   minors?: true
+  list?: string
+  notList?: string
+  family?: PatientFamilyFilter
+  familyBono?: true
+  marketing?: 'email' | 'whatsapp' | 'any' | 'none'
 }
+
+/** What the family filter asks: anyone linked, nobody, or a relation the OTHER person has to them. */
+export type PatientFamilyFilter = 'linked' | 'none' | 'parent' | 'child' | 'partner' | 'sibling'
+export const FAMILY_FILTERS: readonly PatientFamilyFilter[] = ['linked', 'none', 'parent', 'child', 'partner', 'sibling']
 
 export interface PatientFilterForm {
   status: 'active' | 'inactive' | 'any'
@@ -55,6 +69,11 @@ export interface PatientFilterForm {
   missingContact: '' | 'email' | 'phone'
   doNotContact: boolean
   minors: boolean
+  list: string
+  notList: string
+  family: '' | PatientFamilyFilter
+  familyBono: boolean
+  marketing: '' | 'email' | 'whatsapp' | 'any' | 'none'
 }
 
 export function emptyFilterForm(): PatientFilterForm {
@@ -78,6 +97,11 @@ export function emptyFilterForm(): PatientFilterForm {
     missingContact: '',
     doNotContact: false,
     minors: false,
+    list: '',
+    notList: '',
+    family: '',
+    familyBono: false,
+    marketing: '',
   }
 }
 
@@ -140,6 +164,15 @@ export function normalizeFilters(input: Record<string, unknown>): PatientFilters
   if (missingContact) out.missingContact = missingContact
   if (truthy(input.doNotContact)) out.doNotContact = true
   if (truthy(input.minors)) out.minors = true
+  const list = uuid(input.list)
+  if (list) out.list = list
+  const notList = uuid(input.notList)
+  if (notList && notList !== list) out.notList = notList
+  const family = oneOf(input.family, FAMILY_FILTERS)
+  if (family) out.family = family
+  if (truthy(input.familyBono)) out.familyBono = true
+  const marketing = oneOf(input.marketing, ['email', 'whatsapp', 'any', 'none'] as const)
+  if (marketing) out.marketing = marketing
   return out
 }
 
@@ -158,6 +191,7 @@ export function filtersToForm(filters: PatientFilters): PatientFilterForm {
     birthdayThisMonth: !!f.birthdayThisMonth,
     doNotContact: !!f.doNotContact,
     minors: !!f.minors,
+    familyBono: !!f.familyBono,
   }
 }
 
@@ -200,4 +234,8 @@ export const MORE_FILTER_KEYS: (keyof PatientFilters)[] = [
   'createdTo',
   'app',
   'birthdayThisMonth',
+  'notList',
+  'family',
+  'familyBono',
+  'marketing',
 ]

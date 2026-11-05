@@ -7,7 +7,7 @@
 // is not in the app at all. Handed to the tab through its `report` slot.
 const props = defineProps<{
   root: HTMLElement | null
-  plan: { name: string; total: number; done: number } | null
+  plan: { name: string; total: number | null; done: number } | null
   patient: { first_name: string | null; last_name: string | null; clinic_id: string | null }
   disabled: boolean
 }>()
@@ -36,7 +36,11 @@ async function report() {
       title,
       lines: [
         [store.accountName, clinic?.name].filter(Boolean).join(' · '),
-        props.plan ? t(`${props.plan.name}: ${props.plan.done} of ${props.plan.total} visits`, `${props.plan.name}: ${props.plan.done} de ${props.plan.total} visitas`) : t('No care plan', 'Sin plan de cuidados'),
+        props.plan
+          ? props.plan.total === null
+            ? t(`${props.plan.name}: ${props.plan.done} visits, no end`, `${props.plan.name}: ${props.plan.done} visitas, sin fin`)
+            : t(`${props.plan.name}: ${props.plan.done} of ${props.plan.total} visits`, `${props.plan.name}: ${props.plan.done} de ${props.plan.total} visitas`)
+          : t('No care plan', 'Sin plan de cuidados'),
       ],
       generatedBy: store.teamMember?.full_name ?? '',
       logoUrl,

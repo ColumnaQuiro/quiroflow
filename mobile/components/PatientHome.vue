@@ -55,6 +55,13 @@ function payOutstanding() {
 const { progress: planProgress, plan: carePlan } = usePatientPlanSummary(() => props.patientId)
 // Home exercises: a way through to them, once the clinic has given some.
 const { items: exercises } = usePatientExercises(() => props.patientId)
+// The clinic's "Hábitos y consejos" sit on the same screen, so the way
+// through is there for them too, exercises or not.
+const libraryCount = ref(0)
+onMounted(async () => {
+  const { count } = await useSupabaseClient().from('learn_articles').select('id', { count: 'exact', head: true }).eq('visible_to_patients', true).is('archived_at', null)
+  libraryCount.value = count ?? 0
+})
 
 const next = computed(() => upcoming.value[0] ?? null)
 
@@ -176,20 +183,21 @@ function eur(cents: number) {
       </NuxtLink>
       <NuxtLink v-if="carePlan && planProgress" to="/visits" class="rounded-card border border-line bg-surface p-3 shadow-card" data-cy="patient-home-plan">
         <p class="text-[10.5px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ t('Plan', 'Plan') }}</p>
-        <p class="mt-1 text-[20px] font-[640] tracking-tightTitle text-ink-900">{{ planProgress.done }}<span class="text-[13px] font-medium text-ink-muted"> {{ t('of', 'de') }} {{ carePlan.total_visits }}</span></p>
-        <div class="mt-1.5 h-1 rounded-full bg-surface-subtle"><div class="h-1 rounded-full bg-brand" :style="{ width: `${planProgress.pct}%` }" /></div>
+        <p v-if="carePlan.total_visits === null" class="mt-1 text-[20px] font-[640] tracking-tightTitle text-ink-900">{{ planProgress.done }}<span class="text-[13px] font-medium text-ink-muted"> {{ planProgress.done === 1 ? t('visit', 'visita') : t('visits', 'visitas') }}</span></p>
+        <p v-else class="mt-1 text-[20px] font-[640] tracking-tightTitle text-ink-900">{{ planProgress.done }}<span class="text-[13px] font-medium text-ink-muted"> {{ t('of', 'de') }} {{ carePlan.total_visits }}</span></p>
+        <div v-if="carePlan.total_visits !== null" class="mt-1.5 h-1 rounded-full bg-surface-subtle"><div class="h-1 rounded-full bg-brand" :style="{ width: `${planProgress.pct}%` }" /></div>
       </NuxtLink>
     </div>
 
     <NuxtLink
-      v-if="exercises.length > 0"
+      v-if="exercises.length > 0 || libraryCount > 0"
       to="/exercises"
       class="mt-3 flex items-center justify-between rounded-card border border-line bg-surface px-4 py-3 shadow-card"
       data-cy="patient-home-exercises"
     >
       <span class="text-[13.5px] font-medium text-ink-900">
-        {{ t('Your exercises', 'Tus ejercicios') }}
-        <span class="ml-1 text-[12.5px] font-normal text-ink-faint">{{ exercises.length }}</span>
+        {{ exercises.length ? t('Your exercises', 'Tus ejercicios') : t('Habits and advice', 'Hábitos y consejos') }}
+        <span v-if="exercises.length" class="ml-1 text-[12.5px] font-normal text-ink-faint">{{ exercises.length }}</span>
       </span>
       <span class="text-ink-faint"><AppChevron /></span>
     </NuxtLink>

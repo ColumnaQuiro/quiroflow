@@ -78,7 +78,8 @@ async function copy() {
     copied.value = false
   }
 }
-const channelLabel = (c: string | null) => (c === 'app' ? t('app', 'app') : c === 'email' ? t('email', 'email') : t('link', 'enlace'))
+// 'library': nobody sent it; they opened it themselves from "Hábitos y consejos".
+const channelLabel = (c: string | null) => (c === 'app' ? t('app', 'app') : c === 'email' ? t('email', 'email') : c === 'library' ? t('found it in the library', 'la abrió en la biblioteca') : t('link', 'enlace'))
 const day = (iso: string) => new Date(iso).toLocaleDateString(t('en-GB', 'es-ES'), { day: 'numeric', month: 'short' })
 const tagLine = (a: Article) => a.tags.map((x) => LEARN_TAGS[x] ?? x).join(' · ')
 const input = 'h-10 w-full rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-900 focus:border-brand focus:outline-none'

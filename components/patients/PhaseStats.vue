@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { markerVisitNumbers, visitMarkerLabel, type CarePlanVisitMarker } from '~/utils/carePlanVisitMarkers'
+import { openEndedPlanLabel, planVisitsToBook } from '~/utils/planRenewal'
 
 const props = withDefaults(defineProps<{ patientId: string; editable?: boolean }>(), { editable: true })
 
@@ -12,7 +13,7 @@ interface CarePlan {
   payment_kind?: string | null
   package_purchase_id?: string | null
   patient_membership_id?: string | null
-  total_visits: number
+  total_visits: number | null
   started_at: string
   visit_markers?: CarePlanVisitMarker[] | null
 }
@@ -24,14 +25,18 @@ const loading = ref(true)
 const plan = ref<CarePlan | null>(null)
 const completedInPlan = ref(0)
 const scheduledInPlan = ref(0)
+const upcomingInPlan = ref(0)
 const editOpen = ref(false)
 
+// A plan with no end (total_visits null) has nothing remaining and no bar:
+// it counts visits since it started, and says so when the next isn't booked.
+const openEnded = computed(() => !!plan.value && plan.value.total_visits === null)
 const remaining = computed(() => {
-  if (!plan.value) return 0
+  if (!plan.value || plan.value.total_visits === null) return 0
   return Math.max(0, plan.value.total_visits - completedInPlan.value)
 })
 const progressPct = computed(() => {
-  if (!plan.value || plan.value.total_visits === 0) return 0
+  if (!plan.value || !plan.value.total_visits) return 0
   return Math.min(100, Math.round((completedInPlan.value / plan.value.total_visits) * 100))
 })
 const frequencyLabel = computed(() => (plan.value ? carePlanCadenceLabel(plan.value, t) : ''))
@@ -62,9 +67,12 @@ async function load() {
     const inPlan = (appts ?? []).filter((a) => a.starts_at >= startedAt)
     completedInPlan.value = inPlan.filter((a) => a.status === 'completed').length
     scheduledInPlan.value = inPlan.filter((a) => a.status === 'booked').length
+    const now = new Date().toISOString()
+    upcomingInPlan.value = inPlan.filter((a) => a.status === 'booked' && a.starts_at >= now).length
   } else {
     completedInPlan.value = 0
     scheduledInPlan.value = 0
+    upcomingInPlan.value = 0
   }
 
   loading.value = false
@@ -74,7 +82,7 @@ watch(() => props.patientId, load)
 
 // Visits the plan still needs that have no appointment yet -- what
 // "Reservar las visitas del plan" books (the calendar panel's own count).
-const toBook = computed(() => (plan.value ? Math.max(0, plan.value.total_visits - completedInPlan.value - scheduledInPlan.value) : 0))
+const toBook = computed(() => (plan.value ? planVisitsToBook(plan.value, completedInPlan.value, scheduledInPlan.value) : 0))
 // Just saved a plan: offer to book it, the step after creating one.
 const justSaved = ref(false)
 
@@ -104,16 +112,24 @@ function bookPlan() {
       </div>
 
       <template v-if="plan">
-        <p class="mt-0.5 text-[12px] text-ink-muted2" data-cy="care-plan-summary">
-          {{ completedInPlan }} {{ t('of', 'de') }} {{ plan.total_visits }} {{ t('visits', 'visitas') }} &middot; {{ frequencyLabel }}
+        <p v-if="openEnded" class="mt-0.5 text-[12px] text-ink-muted2 first-letter:uppercase" data-cy="care-plan-summary">
+          {{ openEndedPlanLabel(completedInPlan, plan.started_at, t) }} &middot; {{ frequencyLabel }}
         </p>
+        <template v-else>
+          <p class="mt-0.5 text-[12px] text-ink-muted2" data-cy="care-plan-summary">
+            {{ completedInPlan }} {{ t('of', 'de') }} {{ plan.total_visits }} {{ t('visits', 'visitas') }} &middot; {{ frequencyLabel }}
+          </p>
 
-        <div class="mt-2.5 h-[6px] w-full overflow-hidden rounded-full bg-line-faint">
-          <div class="h-full rounded-full bg-brand" :style="{ width: `${progressPct}%` }" />
-        </div>
+          <div class="mt-2.5 h-[6px] w-full overflow-hidden rounded-full bg-line-faint">
+            <div class="h-full rounded-full bg-brand" :style="{ width: `${progressPct}%` }" />
+          </div>
 
-        <p class="mt-2 text-[12px] text-ink-muted2">
-          <span class="font-medium text-ink-600">{{ completedInPlan }} {{ t('completed', 'completadas') }}</span> / {{ remaining }} {{ t('remaining', 'restantes') }}
+          <p class="mt-2 text-[12px] text-ink-muted2">
+            <span class="font-medium text-ink-600">{{ completedInPlan }} {{ t('completed', 'completadas') }}</span> / {{ remaining }} {{ t('remaining', 'restantes') }}
+          </p>
+        </template>
+        <p v-if="openEnded && upcomingInPlan === 0" class="mt-2 rounded-ctl bg-warning-bg px-2.5 py-1.5 text-[12px] font-medium text-warning-text" data-cy="care-plan-no-next">
+          {{ t('No next visit booked.', 'No tiene la próxima visita reservada.') }}
         </p>
         <p v-for="(line, i) in markerLines" :key="i" class="mt-1 flex items-center gap-1.5 text-[12px] text-ink-muted2" data-cy="care-plan-marker">
           <CalendarVisitMarkerIcon class="text-brand-text" />{{ line }}
@@ -125,7 +141,8 @@ function bookPlan() {
       <div v-if="plan && editable && toBook > 0" class="mt-2.5 rounded-ctl px-3 py-2" :class="justSaved ? 'bg-brand-tint' : 'bg-surface-subtle'" data-cy="care-plan-book">
         <p v-if="justSaved" class="text-[12.5px] font-medium text-ink-900">{{ t('Plan saved. Book its visits now?', 'Plan guardado. ¿Reservas ya sus visitas?') }}</p>
         <button type="button" class="text-[12.5px] font-semibold text-brand-text hover:underline" data-cy="care-plan-book-open" @click="bookPlan">
-          {{ toBook === 1 ? t('Book the 1 visit left →', 'Reservar la visita que falta →') : t(`Book the ${toBook} visits left →`, `Reservar las ${toBook} visitas que faltan →`) }}
+          <template v-if="openEnded">{{ toBook === 1 ? t('Book the next visit →', 'Reservar la próxima visita →') : t(`Book the next ${toBook} visits →`, `Reservar las próximas ${toBook} visitas →`) }}</template>
+          <template v-else>{{ toBook === 1 ? t('Book the 1 visit left →', 'Reservar la visita que falta →') : t(`Book the ${toBook} visits left →`, `Reservar las ${toBook} visitas que faltan →`) }}</template>
         </button>
       </div>
     </template>

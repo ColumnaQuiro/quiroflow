@@ -85,6 +85,35 @@ describe('Automation test mode', () => {
     })
   })
 
+  it('sends an email built from blocks the same way, with no plain body at all', () => {
+    // config.design and no config.body: the email builder's shape. The send
+    // used to refuse an email without a body; a design with words in it is one.
+    cy.task<{ id: string }>('db:createAutomationRule', {
+      accountId: account.accountId,
+      triggerEvent: 'lead.created',
+      isMarketing: true,
+      dryRun: true,
+      actions: [
+        {
+          type: 'email',
+          config: {
+            subject: 'Bloques para {{first_name}}',
+            design: { version: 1, blocks: [{ id: 'h', type: 'heading', text: 'Hola {{first_name}}', align: 'left' }, { id: 'b', type: 'button', text: 'Reservar', link: { kind: 'booking' }, align: 'center' }] },
+          },
+        },
+      ],
+    }).then((rule) => {
+      ingest({ full_name: 'Bloques Prueba', email: 'bloques.dryrun@example.com', external_id: 'dry-blocks' }).then((res) => {
+        cy.task<EmailRow[]>('db:leadEmailMessages', { leadId: res.body.data.id }).then((rows) => {
+          expect(rows).to.have.length(1)
+          expect(rows[0]!.subject).to.eq('Bloques para Bloques')
+          expect(rows[0]!.rule_id).to.eq(rule.id)
+          expect(rows[0]!.dry_run).to.eq(true)
+        })
+      })
+    })
+  })
+
   it('does not call the webhook', () => {
     emailAndWebhookRule(true)
     ingest({ full_name: 'Hook Prueba', email: 'hook.dryrun@example.com', external_id: 'dry-hook' }).then(() => {

@@ -2,6 +2,7 @@
 // short title on a node, the line under it. Pure, from the step's config and
 // the names the page has loaded (appointment types, team, roles…).
 
+import { asEmailDesign, emailDesignExcerpt } from './emailDesign'
 import {
   BALANCE_OPTIONS,
   KIND_LABEL,
@@ -145,8 +146,10 @@ export function stepDetail(t: Translate, step: DraftStep, lookup: NameLookup, ru
       const tpl = lookup.templates.find((x) => x.name === c.template_name && x.language === (c.template_language || 'es'))
       return tpl?.bodyText ? tpl.bodyText.replace(/\s+/g, ' ').slice(0, 110) : c.template_name ? `${c.template_language || 'es'}` : ''
     }
-    case 'email':
-      return htmlToLine(c.body ?? '').slice(0, 110)
+    case 'email': {
+      const design = asEmailDesign(c.design)
+      return (design ? emailDesignExcerpt(design) : htmlToLine(c.body ?? '')).slice(0, 110)
+    }
     case 'webhook': {
       try {
         return new URL(String(c.url)).host

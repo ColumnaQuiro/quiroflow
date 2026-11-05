@@ -1,0 +1,5 @@
+Nombre,Apellidos,Email,Teléfono,DNI,Publicidad
+Lucia,Existente,,+34 600 111 222,,sí
+Nuevo,Uno,nuevo.uno@example.com,611000001,,sí
+Nueva,Dos,nueva.dos@example.com,611000002,,no
+Dora,Coincide,,,12345678Z,sí

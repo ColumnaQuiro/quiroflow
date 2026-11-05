@@ -23,6 +23,7 @@ import type { BusinessHours } from '../../utils/businessHours'
 import type { BookingBusyRange, StaffTime, StaffTimeState } from '../../utils/bookingSlots'
 import type { AppointmentTypeOverride } from '../../utils/appointmentOverrides'
 import type { ClashCandidateAppointment, ClashCandidateBlock } from '../../utils/moveClash'
+import { planVisitsToBook } from '../../utils/planRenewal'
 
 const props = defineProps<{
   patientId: string
@@ -71,7 +72,7 @@ interface TypeRow { id: string; name: string; duration_minutes: number; sort_ord
 interface PractitionerRow { id: string; full_name: string; business_hours: BusinessHours | null }
 interface ClinicRow { id: string; timezone: string | null; business_hours: BusinessHours | null }
 interface VisitRow { starts_at: string; appointment_type_id: string | null; practitioner_id: string | null }
-interface PlanRow { frequency_value: number; frequency_unit: 'week' | 'month'; visits_per_period: number | null; total_visits: number; started_at: string }
+interface PlanRow { frequency_value: number; frequency_unit: 'week' | 'month'; visits_per_period: number | null; total_visits: number | null; started_at: string }
 interface PatientRow { first_name: string; default_practitioner_id: string | null; clinic_id: string | null; is_minor: boolean; do_not_contact: boolean }
 
 const loading = ref(true)
@@ -406,7 +407,8 @@ const bookError = ref('')
 // -- The rest of the care plan, as one series --------------------------------
 // The plan's visits with no appointment yet: total, less those completed or
 // booked since it started -- the web panel's count, so opening this twice
-// does not book the plan twice. Not offered to someone who sees only their
+// does not book the plan twice. A plan with no end books its next few
+// (planVisitsToBook), less those already booked ahead. Not offered to someone who sees only their
 // own diary: a colleague's visits would not be counted and the plan would be
 // booked over again. Capped at 26, as on the web.
 const MAX_PLAN_SERIES = 26
@@ -420,10 +422,10 @@ async function loadPlanRemaining() {
     .from('appointments')
     .select('id', { count: 'exact', head: true })
     .eq('patient_id', props.patientId)
-    .in('status', ['completed', 'booked'])
+    .in('status', p.total_visits === null ? ['booked'] : ['completed', 'booked'])
     .is('deleted_at', null)
-    .gte('starts_at', p.started_at)
-  planRemaining.value = Math.max(0, p.total_visits - (count ?? 0))
+    .gte('starts_at', p.total_visits === null ? new Date().toISOString() : p.started_at)
+  planRemaining.value = planVisitsToBook(p, 0, count ?? 0)
   seriesOn.value = !!props.followPlan && planRemaining.value > 1
 }
 const seriesAvailable = computed(() => !moving.value && planRemaining.value > 1)
@@ -790,7 +792,8 @@ async function book() {
         <div v-if="seriesAvailable" class="rounded-card border border-line bg-surface px-3.5 py-2.5" data-cy="book-plan-series">
           <label class="flex items-center justify-between gap-3 text-[13.5px] font-medium text-ink-800">
             <span>
-              {{ t(`Book the rest of the plan (${Math.min(planRemaining, MAX_PLAN_SERIES)} visits)`, `Reservar el resto del plan (${Math.min(planRemaining, MAX_PLAN_SERIES)} visitas)`) }}
+              <template v-if="plan?.total_visits === null">{{ t(`Book the next ${planRemaining} visits`, `Reservar las próximas ${planRemaining} visitas`) }}</template>
+              <template v-else>{{ t(`Book the rest of the plan (${Math.min(planRemaining, MAX_PLAN_SERIES)} visits)`, `Reservar el resto del plan (${Math.min(planRemaining, MAX_PLAN_SERIES)} visitas)`) }}</template>
               <span class="block text-[12px] font-normal text-ink-muted2">{{ plan ? cadenceLabel(plan, t) : '' }}</span>
             </span>
             <input v-model="seriesOn" type="checkbox" class="h-5 w-5 shrink-0 accent-brand" data-cy="book-plan-series-toggle" />

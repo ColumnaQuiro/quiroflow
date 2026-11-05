@@ -179,11 +179,12 @@ describe('Paying a visit from the patient app', () => {
         cy.contains('[data-cy=appt-block]', 'Lucía Prepago').click()
         cy.get('[data-cy=cancel-appointment]').click()
         cy.get('[data-cy=cancel-sheet]').within(() => {
-          cy.get('[data-cy=cancel-prepaid]').should('contain.text', 'They paid 50,00 € ahead by card')
+          // cy.contains, not contain.text: the amount carries a non-breaking space before the €.
+          cy.contains('[data-cy=cancel-prepaid]', 'They paid 50,00 € ahead by card').should('exist')
           // Back to the card is the default; keeping it is the other choice.
           cy.get('[data-cy=cancel-prepaid-refund] input').should('be.checked')
           cy.get('[data-cy=cancel-prepaid-credit]').click()
-          cy.get('[data-cy=cancel-summary]').should('contain.text', '50,00 € stays on their account')
+          cy.contains('[data-cy=cancel-summary]', '50,00 € stays on their account').should('exist')
           cy.get('[data-cy=confirm-cancel]').click()
         })
         cy.get('[data-cy=appt-sheet]').should('not.exist')

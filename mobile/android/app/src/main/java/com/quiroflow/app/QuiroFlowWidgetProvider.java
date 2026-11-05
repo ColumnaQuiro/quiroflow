@@ -109,6 +109,7 @@ public class QuiroFlowWidgetProvider extends AppWidgetProvider {
         v.setTextViewText(R.id.clinic_patients, patientsValue);
         v.setTextViewText(R.id.clinic_bonos, bonosValue);
         v.setTextViewText(R.id.clinic_patients_label, patients.optString("label"));
+        trend(context, v, R.id.clinic_money_trend, f.sameMonth ? money.optJSONObject("trend") : null);
 
         if (!medium) {
             v.setTextViewText(R.id.widget_title, s.optString("clinic", "QuiroFlow"));
@@ -131,11 +132,27 @@ public class QuiroFlowWidgetProvider extends AppWidgetProvider {
         v.setProgressBar(R.id.clinic_patients_bar, 100, f.sameDay ? Math.round(100f * patients.optInt("done") / total) : 0, false);
         v.setTextViewText(R.id.clinic_patients_note, f.sameDay ? patients.optString("note") : label(s, "noToday", "sin datos de hoy", null));
         v.setTextViewText(R.id.clinic_bonos_note, f.sameMonth ? bonos.optString("value") : "");
+        trend(context, v, R.id.clinic_bonos_trend, f.sameMonth ? bonos.optJSONObject("trend") : null);
+        String owed = f.sameMonth && !bonos.isNull("owed") ? bonos.optString("owed", "") : "";
+        v.setTextViewText(R.id.clinic_bonos_owed, owed);
+        v.setViewVisibility(R.id.clinic_bonos_owed, owed.isEmpty() ? View.GONE : View.VISIBLE);
         v.setOnClickPendingIntent(R.id.widget_root, open(context, s.optString("link", null), 1));
         v.setOnClickPendingIntent(R.id.col_money, open(context, money.optString("link", null), 2));
         v.setOnClickPendingIntent(R.id.col_patients, open(context, patients.optString("link", null), 3));
         v.setOnClickPendingIntent(R.id.col_bonos, open(context, bonos.optString("link", null), 4));
         return v;
+    }
+
+    // A figure against the same stretch of last month ("▲ 12 % vs. oct"):
+    // green when up, amber when down, hidden when there is none to show.
+    private static void trend(Context context, RemoteViews v, int id, JSONObject t) {
+        String text = t == null ? "" : t.optString("text", "");
+        v.setViewVisibility(id, text.isEmpty() ? View.GONE : View.VISIBLE);
+        if (text.isEmpty()) return;
+        String direction = t.optString("direction");
+        int color = "up".equals(direction) ? R.color.widget_done : "down".equals(direction) ? R.color.widget_warn : R.color.widget_muted;
+        v.setTextViewText(id, text);
+        v.setTextColor(id, context.getColor(color));
     }
 
     // --- A patient, or a day of visits --------------------------------------

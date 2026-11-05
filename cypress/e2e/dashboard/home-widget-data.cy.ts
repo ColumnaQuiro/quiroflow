@@ -9,8 +9,9 @@
 
 const PASSWORD = 'Test1234!'
 
-/** An instant at hh:mm today, in the clinic's (Madrid) day. */
-function madridToday(hh: number, mm = 0): string {
+/** An instant at hh:mm on a day of the clinic's (Madrid) calendar: today, or
+ * the 1st of `monthsBack` months ago. */
+function madridAt(hh: number, mm = 0, monthsBack?: number): string {
   const now = new Date()
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
@@ -19,14 +20,16 @@ function madridToday(hh: number, mm = 0): string {
   )
   const wall = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute)
   const offset = wall - Math.floor(now.getTime() / 60000) * 60000
-  return new Date(Date.UTC(+parts.year, +parts.month - 1, +parts.day, hh, mm) - offset).toISOString()
+  const day = monthsBack === undefined ? +parts.day : 1
+  return new Date(Date.UTC(+parts.year, +parts.month - 1 - (monthsBack ?? 0), day, hh, mm) - offset).toISOString()
 }
 
-/** Noon on the 1st of last month: money and bonos outside this month. */
-function lastMonth(): string {
-  const d = new Date()
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - 1, 1, 12)).toISOString()
-}
+const madridToday = (hh: number, mm = 0) => madridAt(hh, mm)
+
+/** 02:00 on the 1st of last month: outside this month, and inside the stretch
+ * of last month the widget compares against (the 1st up to this moment a
+ * month ago) on any day but the small hours of the 1st. */
+const lastMonth = () => madridAt(2, 0, 1)
 
 describe('Home-screen widget data', () => {
   it('gives the clinic figures to the owner and no money to anyone else', () => {
@@ -58,8 +61,13 @@ describe('Home-screen widget data', () => {
               cy.task('db:createPayment', { accountId: account.accountId, invoiceId: inv.id, amountCents: 3000, method: 'card' })
             })
 
-            // Two bonos sold this month, one last month.
-            cy.task('db:createPackagePurchase', { accountId: account.accountId, patientId: patient.id, priceCents: 30000 })
+            // Two bonos sold this month, one last month. The 300 EUR one has
+            // 100 EUR paid against it (money taken too), so 200 EUR is still
+            // owed; money put on account never pays a bono down.
+            cy.task<any>('db:createPackagePurchase', { accountId: account.accountId, patientId: patient.id, priceCents: 30000, owedCents: 30000 }).then((bono) => {
+              cy.task('db:createPayment', { accountId: account.accountId, patientId: patient.id, packagePurchaseId: bono.id, amountCents: 10000, method: 'card', purpose: 'bono' })
+              cy.task('db:createPayment', { accountId: account.accountId, patientId: patient.id, packagePurchaseId: bono.id, amountCents: 4000, method: 'card', purpose: 'on_account', paidAt: lastMonth() })
+            })
             cy.task('db:createPackagePurchase', { accountId: account.accountId, patientId: patient.id, priceCents: 12000 })
             cy.task<any>('db:createPackagePurchase', { accountId: account.accountId, patientId: patient.id, priceCents: 50000 }).then((old) => {
               cy.task('db:setPackagePurchasedAt', { id: old.id, purchasedAt: lastMonth() })
@@ -68,7 +76,11 @@ describe('Home-screen widget data', () => {
             cy.task<any>('db:homeWidgetAs', { email: account.email, password: account.password, accountId: account.accountId }).then(({ data, error }) => {
               expect(error).to.eq(null)
               expect(data.view).to.eq('clinic')
-              expect(data.figures).to.deep.eq({ payments_cents: 5000, visits_done: 1, visits_total: 2, no_shows: 1, bonos_count: 2, bonos_cents: 42000 })
+              expect(data.figures).to.deep.eq({
+                payments_cents: 15000, payments_prev_cents: 13900,
+                visits_done: 1, visits_total: 2, no_shows: 1,
+                bonos_count: 2, bonos_cents: 42000, bonos_prev_cents: 50000, bonos_owed_cents: 20000,
+              })
             })
 
             cy.task<any>('db:homeWidgetAs', { email: prac.email, password: PASSWORD, accountId: account.accountId }).then(({ data, error }) => {

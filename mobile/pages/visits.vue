@@ -17,6 +17,10 @@ import { formatEur } from '../../utils/billing'
 // when it lets patients (settings.rescheduleEnabled / cancelEnabled) and the
 // visit is far enough off (canChange); paying only when it takes payments
 // online (usePatientPay). Otherwise the screen says to contact the clinic.
+// Where the clinic lets patients pay their visits from the app, the next
+// visit can be paid ahead and one just had paid after, each with its price
+// (useAppPayments, PatientVisitPay). Not every later booking: a care plan's
+// dozen dates each saying "Pagar" is noise, and the next is the one asked.
 definePageMeta({ layout: 'patient' })
 
 const user = useSupabaseUser()
@@ -54,6 +58,23 @@ function onVisible() {
 }
 onMounted(() => document.addEventListener('visibilitychange', onVisible))
 onBeforeUnmount(() => document.removeEventListener('visibilitychange', onVisible))
+
+// Paying a visit itself, ahead or just after. A payment re-reads the money,
+// the invoices and the visits (one just had is finished by paying it).
+const {
+  card: payCard,
+  payingId: payingVisitId,
+  error: visitPayError,
+  visit: visitPayment,
+  payVisit,
+} = useAppPayments(
+  () => patientId.value,
+  () => {
+    reloadInvoices()
+    refreshMoney()
+    reload()
+  },
+)
 
 // "Pagar": straight to the one invoice when there is one, else the list.
 const unpaid = computed(() => invoices.value.filter((i) => i.status === 'unpaid'))
@@ -132,9 +153,11 @@ function eur(cents: number) {
           <p v-else-if="next.status === 'booked'" class="mt-3 text-[12.5px] text-ink-muted">
             {{ t('To change or cancel this visit, message or call the clinic.', 'Para cambiar o cancelar esta cita, escribe o llama a la clínica.') }}
           </p>
+          <PatientVisitPay class="mt-3" :pay="visitPayment(next.id)" :card="payCard" :busy="payingVisitId === next.id" upcoming @pay="payVisit(next.id)" />
           <PatientNextVisitActions class="mt-3" :appointment-id="next.id" :clinic-id="next.clinic_id" />
         </template>
         <p v-else class="mt-2 text-[14px] text-ink-muted">{{ t('Nothing booked yet.', 'No tienes ninguna cita reservada.') }}</p>
+        <p v-if="visitPayError" role="alert" class="mt-2 text-[12.5px] text-danger-text" data-cy="patient-visit-pay-error">{{ visitPayError }}</p>
       </section>
 
       <!-- The care plan: how far along, and its booked dates -->
@@ -213,14 +236,26 @@ function eur(cents: number) {
       <!-- What has happened -->
       <PatientCard class="mt-3" :title="past.length ? t(`History · ${past.length} visits`, `Historial · ${past.length} visitas`) : t('History', 'Historial')" flush>
         <ul v-if="past.length > 0" class="divide-y divide-line-divider" data-cy="patient-plan-history">
-          <li v-for="appt in visiblePast" :key="appt.id" class="flex items-center justify-between gap-3 px-4 py-3">
-            <div class="min-w-0">
-              <p class="text-[13px] text-ink-700">{{ formatWhen(appt) }}</p>
-              <p class="text-[12px] text-ink-faint">{{ appt.appointment_types?.name ?? t('Appointment', 'Cita') }}</p>
+          <li v-for="appt in visiblePast" :key="appt.id" class="px-4 py-3">
+            <div class="flex items-center justify-between gap-3">
+              <div class="min-w-0">
+                <p class="text-[13px] text-ink-700">{{ formatWhen(appt) }}</p>
+                <p class="text-[12px] text-ink-faint">{{ appt.appointment_types?.name ?? t('Appointment', 'Cita') }}</p>
+              </div>
+              <span class="shrink-0 rounded-pill bg-chip-bg px-2 py-0.5 text-[11.5px] font-medium text-chip-text">
+                {{ t(PATIENT_APPOINTMENT_STATUS[appt.status]?.[0] ?? appt.status, PATIENT_APPOINTMENT_STATUS[appt.status]?.[1] ?? appt.status) }}
+              </span>
             </div>
-            <span class="shrink-0 rounded-pill bg-chip-bg px-2 py-0.5 text-[11.5px] font-medium text-chip-text">
-              {{ t(PATIENT_APPOINTMENT_STATUS[appt.status]?.[0] ?? appt.status, PATIENT_APPOINTMENT_STATUS[appt.status]?.[1] ?? appt.status) }}
-            </span>
+            <!-- The visit just had, unpaid: payable here. A paid one says nothing more than the invoice already does. -->
+            <PatientVisitPay
+              v-if="visitPayment(appt.id)?.state === 'payable'"
+              class="mt-2"
+              :pay="visitPayment(appt.id)"
+              :card="payCard"
+              :busy="payingVisitId === appt.id"
+              :upcoming="false"
+              @pay="payVisit(appt.id)"
+            />
           </li>
         </ul>
         <PatientLoadError v-else-if="loadError" @retry="reload" />

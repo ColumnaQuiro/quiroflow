@@ -6,6 +6,7 @@ import { dispatchPatientRule } from '~/server/utils/automationEngine'
 import { pushPatientAction } from '~/server/utils/staffPush'
 import { formatEur } from '~/utils/billing'
 import { deliverGiftVoucher, madridToday, type GiftVoucher } from '~/server/utils/giftVouchers'
+import { recordAppVisitPayment } from '~/server/utils/appPayments'
 
 // The subscription an invoice belongs to, in either shape Stripe sends it.
 // Up to 2025-02-24.acacia it is `invoice.subscription`; from 2025-03-31.basil
@@ -41,7 +42,15 @@ export function stripeInvoicePaymentIntentId(invoice: any): string | null {
 // (webhook.post.ts). Mirrors Stripe's outcome into payment_schedules /
 // stripe_payment_events so the app's reports stay in sync -- Stripe does
 // the actual charging (Subscription Schedules) on its own.
-export async function handleStripeEvent(supabase: SupabaseClient<Database>, accountId: string, stripeEvent: Stripe.Event, origin: string) {
+export async function handleStripeEvent(
+  supabase: SupabaseClient<Database>,
+  accountId: string,
+  stripeEvent: Stripe.Event,
+  origin: string,
+  // The clinic's own Stripe, for the one branch that has to call back into it
+  // (a replaced card being detached). Both webhook routes hold one already.
+  clinicStripe?: { stripe: Stripe; options: Stripe.RequestOptions },
+) {
   // No staff session exists on a Stripe webhook call, so this can't go
   // through fire.post.ts (requireTeamMember-gated) like every client
   // trigger -- same direct-call pattern as birthday-cron.post.ts.
@@ -314,7 +323,20 @@ export async function handleStripeEvent(supabase: SupabaseClient<Database>, acco
     const customerId = typeof setupIntent.customer === 'string' ? setupIntent.customer : setupIntent.customer?.id
     const paymentMethodId = typeof setupIntent.payment_method === 'string' ? setupIntent.payment_method : setupIntent.payment_method?.id
     if (customerId && paymentMethodId) {
+      const { data: before } = await supabase.from('patient_stripe_customers').select('default_payment_method_id').eq('stripe_customer_id', customerId).maybeSingle()
       await supabase.from('patient_stripe_customers').update({ default_payment_method_id: paymentMethodId }).eq('stripe_customer_id', customerId)
+      // A patient replacing their card from the app (api/portal/card-link)
+      // adds a second one to the same customer. Let the old one go, so "the
+      // card on file" stays one card -- the one remove-card.post.ts detaches
+      // -- rather than leaving an older one attached that nothing shows.
+      const previous = before?.default_payment_method_id
+      if (clinicStripe && previous && previous !== paymentMethodId) {
+        try {
+          await clinicStripe.stripe.paymentMethods.detach(previous, {}, clinicStripe.options)
+        } catch (err) {
+          console.error('[stripe webhook] could not detach the replaced card', previous, (err as Error).message)
+        }
+      }
     }
   }
 
@@ -332,6 +354,13 @@ export async function handleStripeEvent(supabase: SupabaseClient<Database>, acco
     // (server/utils/giftVouchers.ts, redeemGiftVoucher).
     if (intent.metadata?.gift_voucher_id) {
       await giftVoucherPaid(supabase, accountId, intent, origin)
+      return
+    }
+    // A visit paid from the patient app with no receipt raised yet
+    // (server/utils/appPayments.ts): the receipt, payment and factura are
+    // written now that the money is in.
+    if (intent.metadata?.app_visit_id) {
+      await recordAppVisitPayment(supabase, accountId, intent, origin)
       return
     }
     const invoiceId = intent.metadata?.invoice_id

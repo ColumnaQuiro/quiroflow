@@ -1,6 +1,7 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
-import { pushAppointmentEvent } from '~/server/utils/staffPush'
+import { pushAppointmentEvent, pushPatientAction } from '~/server/utils/staffPush'
+import { refundVisitCardPayments } from '~/server/utils/appPayments'
 import { offerNextWaitlistEntry } from '~/server/utils/waitlistOffer'
 import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluateAutomationFilters'
 import { dispatchPatientRule } from '~/server/utils/automationEngine'
@@ -83,5 +84,24 @@ export default defineEventHandler(async (event) => {
       classSessionId: appt.class_session_id,
     })) > 0
   })
-  return { cancelled: true, offered }
+  // Paid ahead from the app: the money goes back to the card. A patient can
+  // only cancel inside the clinic's notice window (the RPC above), so there is
+  // no fee to keep. Only what was paid from the app -- an online-booking
+  // deposit stays the clinic's call, as before. If Stripe refuses, the visit
+  // is still cancelled and the clinic is told the money is owed back.
+  let refundedCents = 0
+  await after('refund', async () => {
+    try {
+      refundedCents = (await refundVisitCardPayments(event, service, appt, { reason: 'Cita cancelada desde la app', onlyAppPayments: true })).refundedCents
+    } catch (err) {
+      await pushPatientAction(service, {
+        patientId: appt.patient_id,
+        practitionerId: appt.practitioner_id,
+        title: 'Devolución pendiente',
+        body: 'Una visita pagada desde la app se ha cancelado y no se ha podido devolver el pago. Hazlo desde su ficha.',
+      })
+      throw err
+    }
+  })
+  return { cancelled: true, offered, refundedCents }
 })

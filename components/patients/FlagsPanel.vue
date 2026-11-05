@@ -1,5 +1,8 @@
 <script setup lang="ts">
-const props = defineProps<{ patientId: string }>()
+// `startEditing`: opened from somewhere that shows the flags itself (My Day's
+// patient column), so this is only the form; Done hands back with `done`.
+const props = defineProps<{ patientId: string; startEditing?: boolean }>()
+const emit = defineEmits<{ done: [] }>()
 
 const supabase = useSupabaseClient()
 const t = useT()
@@ -18,7 +21,7 @@ const yellowFlags = ref('')
 const tags = ref<string[]>([])
 const newTag = ref('')
 const loading = ref(true)
-const editing = ref(false)
+const editing = ref(!!props.startEditing)
 
 async function load() {
   loading.value = true
@@ -79,6 +82,18 @@ const flagRows = computed(() => {
   return rows
 })
 
+// Done waits for the field being left to save, so whoever shows the flags
+// reads them back with the change in.
+async function toggleEditing() {
+  if (!editing.value) {
+    editing.value = true
+    return
+  }
+  await Promise.all([saveChiefComplaint(), saveDiagnosis(), saveGoals(), saveRedFlags(), saveYellowFlags()])
+  if (props.startEditing) emit('done')
+  else editing.value = false
+}
+
 // Ties each visible <label> to the field under it (for/id), so a screen
 // reader announces the field by its name.
 const fieldId = useId()
@@ -88,7 +103,7 @@ const fieldId = useId()
   <div v-if="!loading" class="rounded-card border border-danger-border bg-danger-bg3 p-4 shadow-card">
     <div class="flex items-center justify-between gap-2">
       <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Flags', 'Alertas') }}</p>
-      <button type="button" class="text-[12px] font-medium text-brand-text hover:text-brand-hover" @click="editing = !editing">
+      <button type="button" class="text-[12px] font-medium text-brand-text hover:text-brand-hover" data-cy="flags-done" @click="toggleEditing">
         {{ editing ? t('Done', 'Listo') : t('Edit', 'Editar') }}
       </button>
     </div>

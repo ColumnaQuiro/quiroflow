@@ -229,6 +229,16 @@ describe('their exercises and the app', () => {
     expect(section).toContain('same email the clinic has for them')
   })
 
+  // 4 Nov 2026: "¿cómo se llamaba la app?" was handed over as "no tengo ese dato".
+  it('answers what the app is called and how to get it, without handing over', () => {
+    const fromWhatsApp = patientAppSection({ ...app, writingFromApp: false }, true)
+    expect(fromWhatsApp).toContain('It is called QuiroFlow')
+    expect(fromWhatsApp).toContain('never hand them over')
+    expect(fromWhatsApp).toContain('https://play.google.com/store/apps/details?id=com.quiroflow.app')
+    expect(fromWhatsApp).toContain('"clinica-demo"')
+    expect(patientAppSection(app, true)).toContain('It is called QuiroFlow.')
+  })
+
   it('hands over only when the chiropractor has put no exercises in the app', () => {
     expect(patientAppSection({ ...app, exercises: 0 }, true)).toContain('call hand_over_to_colleague asking for their exercises to be added')
     expect(patientAppSection({ ...app, exercises: 0 }, false)).toContain('ask the chiropractor to add them')

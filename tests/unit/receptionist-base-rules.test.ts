@@ -74,6 +74,15 @@ describe('Behaviour every clinic has', () => {
     expect(baseBehaviourSection()).toContain('never tell them what you will or will not do about it')
   })
 
+  // 2 and 4 Nov 2026: "os avisaré" got "avísanos", then "No os aviso yo :)"
+  // to the next reminder got nothing, and the visit stayed booked.
+  it('asks whether to cancel a visit they may not come to, rather than staying quiet', () => {
+    const section = baseBehaviourSection()
+    expect(section).toContain('"no os aviso yo"')
+    expect(section).toContain('never answer NO_REPLY and never just say "avísanos"')
+    expect(section).toContain('ask in one sentence whether you should cancel that visit')
+  })
+
   it('does not hand over a passing illness given as the reason to cancel', () => {
     expect(BASE_ESCALATIONS[0]!.action).toContain('gastroenteritis')
   })

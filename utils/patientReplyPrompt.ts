@@ -257,11 +257,14 @@ export function patientAppSection(app: PatientAppFacts, sendsItself: boolean): s
     `# Their exercises and the clinic's app
 The exercises their chiropractor gives them for home -- each with its video or photo and instructions -- are in the clinic's patient app, QuiroFlow, which also shows their visits, payments and documents. Asking for their exercises, or to be sent them again, is not a clinical question and not one to hand over: the answer is where to find them in the app, in one or two sentences. Never say a colleague will send them, and never describe or explain the exercises themselves.
 In the app they are on the home screen ("Inicio"): tap "Tus ejercicios" ("Your exercises" on a phone in English).`,
+    // "¿Cómo se llamaba la app?" was handed over with "No tengo ese dato a
+    // mano" (4 Nov 2026), and nobody at the clinic answered it.
+    `Questions about the app itself -- what it is called, where to get it, how to get in -- are yours to answer from here: never hand them over and never say you do not have that information. It is called QuiroFlow${app.writingFromApp ? '.' : `, and they get it by downloading "QuiroFlow" from ${stores}, opening it and ${code}, then creating their account with the same email the clinic has for them.`}`,
     app.writingFromApp
       ? 'They are writing to you from the app right now, so they already have it: tell them where to tap.'
       : app.hasAccount
         ? 'They already have the app: tell them where to tap.'
-        : `They do not use the app yet. Offer it, with the steps: download "QuiroFlow" from ${stores}; open it and ${code}; then create their account with the same email the clinic has for them, and their exercises appear on their own. Give each link once, and no other link.`,
+        : 'They do not use the app yet. Offer it, with the steps above; their exercises appear on their own once they are in. Give each link once, and no other link.',
   ]
   if (app.exercises === 0) {
     lines.push(`Their chiropractor has not put any exercises in the app for them yet, so "Tus ejercicios" is not there. Say so, and that you will ask the chiropractor to add them; they will find them in the app once added. This is the one case to hand over${sendsItself ? ': call hand_over_to_colleague asking for their exercises to be added to the app' : ''}.`)

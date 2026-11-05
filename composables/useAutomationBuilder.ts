@@ -420,7 +420,7 @@ export function useAutomationBuilder() {
   /** Steps that only make sense in a lead rule go when the trigger stops being one. */
   function setTrigger(event: string) {
     const wasLead = isLead.value
-    updateRule({ trigger_event: event, ...(event === 'lead.created' ? { entry_mode: 'once_ever' } : {}) })
+    updateRule({ trigger_event: event, ...(isLeadTrigger(event) ? { entry_mode: 'once_ever' } : {}) })
     if (event === 'segment' && !draft.value.rule.segment) {
       updateRule({ segment: { filters: {}, schedule: { kind: 'weekly', weekday: 1, time: '10:00' }, reentry_days: null }, entry_mode: 'once_ever' })
     }

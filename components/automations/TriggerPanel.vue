@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ENTRY_MODES, TRIGGERS, TRIGGER_GROUPS, say, triggerDef, weekdayName } from '~/utils/automationCatalog'
+import { ENTRY_MODES, LEAD_STAGE_OPTIONS, LEAD_STOP_STAGES, TRIGGERS, TRIGGER_GROUPS, say, triggerDef, weekdayName } from '~/utils/automationCatalog'
 import { FIELD, FIELD_NUMBER, HINT, LABEL, NOTE, SECTION, SEGMENT_WRAP, segmentBtn } from '~/utils/automationUi'
 import { scheduledSendLabel } from '~/utils/automationDescribe'
 import { clinicTimeLabel } from '~/utils/bookingSlots'
@@ -168,6 +168,38 @@ watch(
       {{ t('Days after the invoice, still unpaid', 'Días después de la factura, sin pagar') }}
       <input type="number" min="1" :class="FIELD_NUMBER" :value="rule.filters.days_overdue ?? 7" data-test="trigger-days-overdue" @input="setNumberFilter('days_overdue', ($event.target as HTMLInputElement).value, 7)" />
       <span :class="HINT">{{ t('Only invoices that reach this many days from now on: switching it on does not message old debts. For a second reminder, create another automation with more days.', 'Solo las facturas que cumplan estos días a partir de ahora: activarla no avisa de deudas antiguas. Para un segundo recordatorio, crea otra automatización con más días.') }}</span>
+    </label>
+
+    <label v-if="rule.trigger_event === 'patient.tag_added' || rule.trigger_event === 'patient.tag_removed'" :class="LABEL">
+      {{ t('Which tag', 'Qué etiqueta') }}
+      <input :class="FIELD" :value="rule.filters.trigger_tag ?? ''" :placeholder="t('Any tag', 'Cualquier etiqueta')" data-test="trigger-tag" @input="setFilters({ ...rule.filters, trigger_tag: ($event.target as HTMLInputElement).value })" />
+      <span :class="HINT">{{ t('Capitals do not matter. Left empty, any tag starts it.', 'Da igual mayúsculas o minúsculas. Si se deja vacía, la inicia cualquier etiqueta.') }}</span>
+    </label>
+    <div v-if="rule.trigger_event === 'satisfaction.answered'" :class="LABEL">
+      {{ t('With a score of', 'Con una nota de') }}
+      <span :class="SEGMENT_WRAP" role="group" :aria-label="t('Score', 'Nota')">
+        <button v-for="o in [{ v: '', l: t('Any', 'Cualquiera') }, { v: 'high', l: '4-5' }, { v: 'low', l: '1-3' }]" :key="o.v" type="button" :class="segmentBtn((rule.filters.trigger_score ?? '') === o.v)" :aria-pressed="(rule.filters.trigger_score ?? '') === o.v" :data-test="`trigger-score-${o.v || 'any'}`" @click="setFilters({ ...rule.filters, trigger_score: o.v || undefined })">{{ o.l }}</button>
+      </span>
+      <span :class="HINT">{{ t('Their first answer only: changing the score afterwards does not start it again.', 'Solo su primera respuesta: cambiar la nota después no la inicia otra vez.') }}</span>
+    </div>
+    <div v-if="rule.trigger_event === 'doc.completed'" :class="LABEL">
+      {{ t('Which forms', 'Qué formularios') }}
+      <AutomationsMultiPick
+        :model-value="(rule.filters.trigger_doc_template_ids as string[] | undefined) ?? []"
+        :options="b.docTemplates.value.map((d) => ({ value: d.id, label: d.title }))"
+        :placeholder="t('Any form', 'Cualquier formulario')"
+        test-id="trigger-doc-templates"
+        @update:model-value="setFilters({ ...rule.filters, trigger_doc_template_ids: $event.length ? $event : undefined })"
+      />
+      <span :class="HINT">{{ t('Forms completed before it is switched on, or more than two days ago, do not start it.', 'Los formularios completados antes de activarla, o hace más de dos días, no la inician.') }}</span>
+    </div>
+    <label v-if="rule.trigger_event === 'lead.stage_changed'" :class="LABEL">
+      {{ t('Moved to', 'Movido a') }}
+      <select :class="FIELD" :value="rule.filters.trigger_lead_stage ?? ''" data-test="trigger-lead-stage" @change="setFilters({ ...rule.filters, trigger_lead_stage: ($event.target as HTMLSelectElement).value || undefined })">
+        <option value="">{{ t('Any stage', 'Cualquier etapa') }}</option>
+        <option v-for="o in LEAD_STAGE_OPTIONS.filter((x) => !LEAD_STOP_STAGES.includes(x.value))" :key="o.value" :value="o.value">{{ say(t, o.label) }}</option>
+      </select>
+      <span :class="HINT">{{ t('Each lead enters once. Not offered: Patient and Lost, because automations stop for a lead in either. A booking moving the lead to "Booked" by itself does not count; for that, use "Wait until they book" in a New lead automation.', 'Cada lead entra una vez. No se ofrecen Paciente ni Perdido, porque las automatizaciones se detienen para un lead en cualquiera de las dos. Que una reserva lo pase sola a «Con cita» no cuenta; para eso, usa «Esperar hasta que reserve» en una automatización de Lead nuevo.') }}</span>
     </label>
 
     <!-- A group of patients -->

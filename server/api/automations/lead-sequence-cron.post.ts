@@ -2,6 +2,7 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { RUN_COLUMNS } from '~/server/utils/leadSequences'
 import { advanceRun, enrolDueSegments } from '~/server/utils/automationEngine'
+import { enrolCompletedDocs } from '~/server/utils/automationTriggers'
 
 // Advances every automation run that is due -- a lead's drip, and since the
 // automation engine a patient's run too: a delay that has elapsed, a
@@ -39,6 +40,12 @@ export default defineEventHandler(async (event) => {
     enrolled = await enrolDueSegments(supabase, origin)
   } catch (err) {
     console.error('[lead-sequence-cron] segment enrolment failed:', (err as Error)?.message ?? err)
+  }
+  // "Form completed" automations: the forms completed since the last tick.
+  try {
+    enrolled += await enrolCompletedDocs(supabase, origin)
+  } catch (err) {
+    console.error('[lead-sequence-cron] form enrolment failed:', (err as Error)?.message ?? err)
   }
 
   // Only runs of a rule that is switched on. A paused automation pauses the

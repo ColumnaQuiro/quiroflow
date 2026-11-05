@@ -1,4 +1,5 @@
-import { bonoOwedCents, type BonoOwedPayment } from './bonoOwed'
+import { bonoDueNowCents, type BonoOwedPayment } from './bonoOwed'
+import { installmentPlanOf } from './bonoInstallments'
 import { classifyPaymentForFilter, practitionerForPayment } from './incomeAttribution'
 import { isReceipt } from './paymentReceipts'
 import { LEAD_FUNNEL_STAGES, leadReach, type LeadFunnelStage } from './leadReach'
@@ -88,7 +89,7 @@ export interface PatientRow {
 }
 
 export interface BonoData {
-  purchases: { id: string; patient_id: string; package_name: string; sessions_total: number; sessions_used: number; price_cents: number; purchased_at: string; invoice_id: string | null; owed_cents: number | null; is_closed?: boolean | null }[]
+  purchases: { id: string; patient_id: string; package_name: string; sessions_total: number; sessions_used: number; price_cents: number; purchased_at: string; invoice_id: string | null; owed_cents: number | null; installments?: number | null; installment_cents?: number | null; is_closed?: boolean | null }[]
   invoicesById: Map<string, { status: string; total_cents: number }>
   schedulesByPurchase: Map<string, { status: string }>
   payments: BonoOwedPayment[]
@@ -751,13 +752,14 @@ export const METRICS: MetricDef[] = [
       const b = data.bonos
       const out: Rec[] = []
       for (const p of b.purchases) {
-        const owed = bonoOwedCents({
+        const owed = bonoDueNowCents({
           purchaseId: p.id,
           invoiceId: p.invoice_id,
           priceCents: p.price_cents,
           owedCents: p.owed_cents,
           invoice: p.invoice_id ? (b.invoicesById.get(p.invoice_id) ?? null) : null,
           payments: b.payments,
+          plan: installmentPlanOf(p),
         })
         const schedule = b.schedulesByPurchase.get(p.id)
         const debtor = schedule ? schedule.status === 'past_due' && owed > 0 : owed > 0

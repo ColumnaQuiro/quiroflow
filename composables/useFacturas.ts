@@ -26,7 +26,7 @@ export interface IssueFacturaInput {
   amountCents: number
   purpose: PaymentPurpose
   /** For 'bono': the package the money went toward. */
-  bono?: { packageName: string; priceCents: number; sessionsTotal: number }
+  bono?: { packageName: string; priceCents: number; sessionsTotal: number; installment?: { number: number; of: number } | null }
   /** For 'visit' or 'membership': what the patient was treated for, or bought. */
   serviceName?: string
 }
@@ -34,8 +34,8 @@ export interface IssueFacturaInput {
 // What the patient reads on the document.
 export function facturaDescription(input: IssueFacturaInput): string {
   if (input.purpose === 'bono' && input.bono) {
-    const { packageName, priceCents, sessionsTotal } = input.bono
-    return bonoPaymentDescription(packageName, input.amountCents, priceCents, sessionsTotal)
+    const { packageName, priceCents, sessionsTotal, installment } = input.bono
+    return bonoPaymentDescription(packageName, input.amountCents, priceCents, sessionsTotal, installment)
   }
   if ((input.purpose === 'visit' || input.purpose === 'membership') && input.serviceName) return input.serviceName
   if (input.purpose === 'visit') return 'Consulta'

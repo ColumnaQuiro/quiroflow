@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { useBonoDebts } from '~/composables/useBonoOwedPayments'
 import { formatEur } from '~/utils/billing'
-import { bonoOwedCents, type BonoOwedPayment } from '~/utils/bonoOwed'
+import { bonoDueNowCents, type BonoOwedPayment } from '~/utils/bonoOwed'
+import { installmentPlanOf } from '~/utils/bonoInstallments'
 interface PurchaseRow {
   id: string
   patient_id: string
@@ -12,6 +13,8 @@ interface PurchaseRow {
   purchased_at: string
   invoice_id: string | null
   owed_cents: number | null
+  installments: number | null
+  installment_cents: number | null
   external_reference: string | null
 }
 interface InvoiceRow { id: string; status: string; total_cents: number }
@@ -50,15 +53,18 @@ onMounted(async () => {
 //
 // utils/bonoOwed is the single answer, shared with the patient's Billing tab
 // and the dashboard widget -- all three used to compute this differently.
+// A bono sold in plazos is listed for the plazos already due, not the ones
+// still to come (utils/bonoInstallments).
 function owedCentsFor(p: PurchaseRow): number {
   const inv = p.invoice_id ? invoicesById.value.get(p.invoice_id) : null
-  return bonoOwedCents({
+  return bonoDueNowCents({
     purchaseId: p.id,
     invoiceId: p.invoice_id,
     priceCents: p.price_cents,
     owedCents: p.owed_cents,
     invoice: inv ? { status: inv.status, total_cents: inv.total_cents } : null,
     payments: allPayments.value,
+    plan: installmentPlanOf(p),
   })
 }
 

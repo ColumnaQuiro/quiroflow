@@ -21,7 +21,7 @@ export async function issueFacturaServer(
     paymentId: string
     amountCents: number
     purpose: 'visit' | 'bono' | 'membership' | 'on_account'
-    bono?: { packageName: string; priceCents: number; sessionsTotal: number }
+    bono?: { packageName: string; priceCents: number; sessionsTotal: number; installment?: { number: number; of: number } | null }
     serviceName?: string
     /**
      * Goods sold over the counter (server/api/products/sell.post.ts) carry
@@ -33,8 +33,8 @@ export async function issueFacturaServer(
 ): Promise<string | null> {
   let description: string
   if (input.purpose === 'bono' && input.bono) {
-    const { packageName, priceCents, sessionsTotal } = input.bono
-    description = bonoPaymentDescription(packageName, input.amountCents, priceCents, sessionsTotal)
+    const { packageName, priceCents, sessionsTotal, installment } = input.bono
+    description = bonoPaymentDescription(packageName, input.amountCents, priceCents, sessionsTotal, installment)
   } else if (input.serviceName) {
     description = input.serviceName
   } else if (input.purpose === 'on_account') {

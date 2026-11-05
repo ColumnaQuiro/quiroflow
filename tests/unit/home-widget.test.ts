@@ -47,7 +47,7 @@ describe('widgetSnapshotFromRpc', () => {
     clinic: 'Clínica Demo',
     today: '2026-10-20',
     time_zone: 'Europe/Madrid',
-    figures: { payments_cents: 1864000, visits_done: 14, visits_total: 22, no_shows: 1, bonos_count: 9, bonos_cents: 243000 },
+    figures: { payments_cents: 1864000, visits_done: 14, visits_total: 22, no_shows: 1, bonos_count: 9, bonos_cents: 243000, payments_prev_cents: 1664000, bonos_prev_cents: 270000, bonos_owed_cents: 94000 },
     day,
   }
 
@@ -59,6 +59,9 @@ describe('widgetSnapshotFromRpc', () => {
     expect(s.money).toMatchObject({ smallLabel: 'Cobrado · octubre', value: '18.640\u00a0€', range: '1–20 oct', link: 'quiroflow://widget/numbers?period=month' })
     expect(s.patients).toMatchObject({ done: 14, total: 22, note: '8 por atender · 1 no vino', link: 'quiroflow://widget/calendar?scope=clinic' })
     expect(s.bonos).toMatchObject({ smallLabel: 'Bonos · oct', count: 9, value: '2430\u00a0€ en ventas' })
+    expect(s.bonos.owed).toBe('940\u00a0€ por cobrar')
+    expect(s.money.trend).toEqual({ text: '▲ 12\u00a0% vs. sept', direction: 'up' })
+    expect(s.bonos.trend).toEqual({ text: '▼ 10\u00a0% vs. sept', direction: 'down' })
     expect(s.labels.minAgo).toBe('hace %d min')
     expect(s.updatedTime).toBe('10:00')
     expect(s.date).toBe('2026-10-20')
@@ -70,7 +73,36 @@ describe('widgetSnapshotFromRpc', () => {
     expect(s.money).toMatchObject({ smallLabel: 'Taken · October', value: '€••••', range: '1–20 Oct' })
     expect(s.patients.note).toBe('8 still to see · 1 no-show')
     expect(s.bonos.value).toBe('€•••• in sales')
+    expect(s.bonos.owed).toBe('€•••• owed')
+    // A percentage is not an amount: it stays in privacy mode.
+    expect(s.money.trend).toEqual({ text: '▲ 12% vs Sept', direction: 'up' })
     expect(s.list?.next.map((n) => n.name)).toEqual(['B. D.', 'C. T.'])
+  })
+
+  it('compares with last month only when last month had something, and says when a bono is paid off', () => {
+    const f = clinic.figures!
+    const nothingBefore = widgetSnapshotFromRpc({ ...clinic, figures: { ...f, payments_prev_cents: 0, bonos_prev_cents: undefined, bonos_owed_cents: 0 } }, { lang: 'es' }, NOW)
+    if (nothingBefore?.kind !== 'clinic') throw new Error('expected clinic')
+    expect(nothingBefore.money.trend).toBeNull()
+    expect(nothingBefore.bonos.trend).toBeNull()
+    expect(nothingBefore.bonos.owed).toBe('todo cobrado')
+
+    const level = widgetSnapshotFromRpc({ ...clinic, figures: { ...f, payments_prev_cents: f.payments_cents } }, { lang: 'en' }, NOW)
+    if (level?.kind !== 'clinic') throw new Error('expected clinic')
+    expect(level.money.trend).toEqual({ text: 'same as Sept', direction: 'flat' })
+
+    // January compares with December of the year before.
+    const january = widgetSnapshotFromRpc({ ...clinic, today: '2027-01-04' }, { lang: 'es' }, NOW)
+    if (january?.kind !== 'clinic') throw new Error('expected clinic')
+    expect(january.money.trend?.text).toBe('▲ 12\u00a0% vs. dic')
+
+    // No bonos sold: nothing owed to speak of. An older database: no figure at all.
+    const none = widgetSnapshotFromRpc({ ...clinic, figures: { ...f, bonos_count: 0, bonos_cents: 0 } }, { lang: 'es' }, NOW)
+    const older = widgetSnapshotFromRpc({ ...clinic, figures: { payments_cents: 1, visits_done: 0, visits_total: 0, no_shows: 0, bonos_count: 2, bonos_cents: 1 } }, { lang: 'es' }, NOW)
+    if (none?.kind !== 'clinic' || older?.kind !== 'clinic') throw new Error('expected clinic')
+    expect(none.bonos.owed).toBeNull()
+    expect(older.bonos.owed).toBeNull()
+    expect(older.money.trend).toBeNull()
   })
 
   it("gives the front desk the clinic's day, with whom each visit is, and no money", () => {

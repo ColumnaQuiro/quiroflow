@@ -54,6 +54,17 @@
         android:textStyle="bold"
         android:fontFeatureSettings="tnum" />
 
+    <TextView
+        android:id="@+id/clinic_money_trend"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:textColor="@color/widget_muted"
+        android:textSize="10.5sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="1dp"

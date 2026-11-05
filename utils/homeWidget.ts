@@ -85,6 +85,16 @@ export interface StaffWidgetSnapshot extends WidgetBase {
   next: WidgetVisit[]
 }
 
+/**
+ * A figure against the same stretch of last month: "▲ 12 % vs. oct". Null
+ * when last month had nothing to compare with -- a percentage of zero says
+ * nothing. The widget colours it by direction.
+ */
+export interface WidgetTrend {
+  text: string
+  direction: 'up' | 'down' | 'flat'
+}
+
 /** An owner's: the clinic's month and today, and their own day (or the clinic's) for the large size. */
 export interface ClinicWidgetSnapshot extends WidgetBase {
   kind: 'clinic'
@@ -92,22 +102,39 @@ export interface ClinicWidgetSnapshot extends WidgetBase {
   /** "Clínica Demo · octubre". */
   title: string
   link: string
-  money: { label: string; smallLabel: string; value: string; range: string; link: string }
+  money: { label: string; smallLabel: string; value: string; range: string; trend: WidgetTrend | null; link: string }
   patients: { label: string; done: number; total: number; note: string; link: string }
-  bonos: { label: string; smallLabel: string; count: number; value: string; link: string }
+  /**
+   * value is the bonos' full price; owed is how much of it is still to
+   * collect ("940 € por cobrar"), since a bono paid in parts counts in
+   * money only as each part comes in. Null with no bonos sold.
+   */
+  bonos: { label: string; smallLabel: string; count: number; value: string; owed: string | null; trend: WidgetTrend | null; link: string }
   list: StaffWidgetSnapshot | null
 }
 
 export type WidgetSnapshot = PatientWidgetSnapshot | StaffWidgetSnapshot | ClinicWidgetSnapshot
 
-/** What get_home_widget returns (20261020142327_home_widget.sql). */
+/** What get_home_widget returns (20261020142327_home_widget.sql, 20261105070132_home_widget_bono_owed_and_trend.sql). */
 export interface HomeWidgetRpc {
   view: 'clinic' | 'day' | 'desk' | 'none'
   who: string
   clinic?: string
   today: string
   time_zone: string
-  figures?: { payments_cents: number; visits_done: number; visits_total: number; no_shows: number; bonos_count: number; bonos_cents: number }
+  figures?: {
+    payments_cents: number
+    visits_done: number
+    visits_total: number
+    no_shows: number
+    bonos_count: number
+    bonos_cents: number
+    /** The same stretch of last month: the 1st to this moment a month ago. */
+    payments_prev_cents?: number
+    bonos_prev_cents?: number
+    /** Still to collect on this month's bonos (utils/bonoOwed.ts's arithmetic). */
+    bonos_owed_cents?: number
+  }
   day?: {
     scope: 'own' | 'clinic'
     total: number
@@ -205,6 +232,16 @@ function euros(cents: number, lang: WidgetLang, privacy: boolean) {
   return (cents / 100).toLocaleString(lang === 'es' ? 'es-ES' : 'en-IE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0, minimumFractionDigits: 0 })
 }
 
+/** This month so far against the same stretch of last month ("vs. oct"), or null when last month had nothing. */
+function trend(current: number, previous: number | undefined, lang: WidgetLang, prevMonth: string): WidgetTrend | null {
+  if (previous === undefined || previous <= 0) return null
+  const pct = Math.round(((current - previous) / previous) * 100)
+  const es = lang === 'es'
+  if (pct === 0) return { text: es ? `igual que ${prevMonth}` :`same as ${prevMonth}`, direction: 'flat' }
+  const share = (Math.abs(pct) / 100).toLocaleString(es ? 'es-ES' : 'en-GB', { style: 'percent', maximumFractionDigits: 0 })
+  return { text: `${pct > 0 ? '▲' : '▼'} ${share} ${es ? 'vs.' : 'vs'} ${prevMonth}`, direction: pct > 0 ? 'up' : 'down' }
+}
+
 /**
  * The widget's snapshot from what get_home_widget returned: an owner's clinic
  * figures, or a day of visits. Null when there is nothing to show this person
@@ -261,7 +298,11 @@ export function widgetSnapshotFromRpc(rpc: HomeWidgetRpc, opts: { lang: WidgetLa
   const monthLong = month.toLocaleDateString(locale, { timeZone: 'UTC', month: 'long' })
   const monthShort = month.toLocaleDateString(locale, { timeZone: 'UTC', month: 'short' }).replace('.', '')
   const dayOfMonth = Number(rpc.today.slice(8, 10))
+  const prevMonth = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() - 1, 15)).toLocaleDateString(locale, { timeZone: 'UTC', month: 'short' }).replace('.', '')
   const es = lang === 'es'
+  const owed = f.bonos_count === 0 || f.bonos_owed_cents === undefined
+    ? null
+    : f.bonos_owed_cents === 0 ? (es ? 'todo cobrado' : 'all paid') : `${euros(f.bonos_owed_cents, lang, privacy)} ${es ? 'por cobrar' : 'owed'}`
   const toSee = Math.max(0, f.visits_total - f.visits_done)
   const patientsNote = f.visits_total === 0
     ? (es ? 'sin citas hoy' : 'no visits today')
@@ -281,6 +322,7 @@ export function widgetSnapshotFromRpc(rpc: HomeWidgetRpc, opts: { lang: WidgetLa
       smallLabel: `${es ? 'Cobrado' : 'Taken'} · ${monthLong}`,
       value: euros(f.payments_cents, lang, privacy),
       range: dayOfMonth === 1 ? `1 ${monthShort}` : `1–${dayOfMonth} ${monthShort}`,
+      trend: trend(f.payments_cents, f.payments_prev_cents, lang, prevMonth),
       link: numbers,
     },
     patients: { label: es ? 'Pacientes hoy' : 'Patients today', done: f.visits_done, total: f.visits_total, note: patientsNote, link: link('calendar?scope=clinic') },
@@ -289,6 +331,8 @@ export function widgetSnapshotFromRpc(rpc: HomeWidgetRpc, opts: { lang: WidgetLa
       smallLabel: `Bonos · ${monthShort}`,
       count: f.bonos_count,
       value: f.bonos_count === 0 ? (es ? 'ninguno aún' : 'none yet') : `${euros(f.bonos_cents, lang, privacy)} ${es ? 'en ventas' : 'in sales'}`,
+      owed,
+      trend: trend(f.bonos_cents, f.bonos_prev_cents, lang, prevMonth),
       link: numbers,
     },
     list,

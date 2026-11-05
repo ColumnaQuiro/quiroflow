@@ -77,3 +77,54 @@ export async function issueFacturaServer(
   }
   return issued.number
 }
+
+// The server-side twin of useFacturas().issueRectificativa: the document for
+// money going back to a patient, in the R- series, carrying the tax treatment
+// of the factura it corrects (or the account's, when that is not known).
+// Same never-throws contract -- the money has already gone back by the time
+// this runs. Written for a refund made with nobody at a screen: a patient
+// cancelling a visit they paid for from the app (server/utils/appPayments.ts).
+export async function issueRectificativaServer(
+  supabase: SupabaseClient<Database>,
+  input: {
+    accountId: string
+    patientId: string
+    /** The refund's own negative payment row. */
+    paymentId: string
+    /** What is going back; the sign is applied here. */
+    amountCents: number
+    rectifiesFacturaId: string | null
+    rectifiesNumber: string | null
+    reason?: string
+  },
+): Promise<string | null> {
+  const corrects = input.rectifiesNumber ? `Rectificación de ${input.rectifiesNumber}` : 'Rectificación'
+  const [{ data: taxDefaults }, { data: original }] = await Promise.all([
+    supabase.from('accounts').select('factura_tax_rate_bp, factura_tax_exemption_code').eq('id', input.accountId).maybeSingle(),
+    input.rectifiesFacturaId
+      ? supabase.from('facturas').select('tax_rate_bp, tax_exemption_code').eq('id', input.rectifiesFacturaId).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ])
+  const amount = Math.abs(input.amountCents)
+  const tax = facturaTaxFor(amount, original ? { factura_tax_rate_bp: original.tax_rate_bp, factura_tax_exemption_code: original.tax_exemption_code } : taxDefaults)
+
+  const { data, error } = await supabase.rpc('issue_factura', {
+    p_account_id: input.accountId,
+    p_patient_id: input.patientId,
+    p_payment_id: input.paymentId,
+    p_kind: 'rectificativa',
+    p_description: input.reason?.trim() ? `${corrects} — ${input.reason.trim()}` : corrects,
+    p_amount_cents: -amount,
+    p_tax_base_cents: -tax.taxBaseCents,
+    p_tax_rate_bp: tax.taxRateBp,
+    p_tax_amount_cents: -tax.taxAmountCents,
+    p_tax_exemption_code: tax.taxExemptionCode,
+    p_rectifies_factura_id: input.rectifiesFacturaId ?? undefined,
+  })
+  const issued = Array.isArray(data) ? data[0] : data
+  if (error || !issued?.number) {
+    console.error('[facturas] could not issue a rectificativa for payment', input.paymentId, error?.message ?? 'no row returned')
+    return null
+  }
+  return issued.number
+}

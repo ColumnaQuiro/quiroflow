@@ -1317,6 +1317,7 @@ export type Database = {
           require_two_factor: boolean
           default_phone_country: string
           stripe_connect_account_id: string | null
+          stripe_app_payments_enabled: boolean
           stripe_publishable_key: string | null
           stripe_secret_key: string | null
           stripe_webhook_secret: string | null
@@ -1425,6 +1426,7 @@ export type Database = {
           verifactu_production_from?: string | null
           require_two_factor?: boolean
           stripe_connect_account_id?: string | null
+          stripe_app_payments_enabled?: boolean
           stripe_publishable_key?: string | null
           stripe_secret_key?: string | null
           stripe_webhook_secret?: string | null
@@ -1534,6 +1536,7 @@ export type Database = {
           require_two_factor?: boolean
           default_phone_country?: string
           stripe_connect_account_id?: string | null
+          stripe_app_payments_enabled?: boolean
           stripe_publishable_key?: string | null
           stripe_secret_key?: string | null
           stripe_webhook_secret?: string | null

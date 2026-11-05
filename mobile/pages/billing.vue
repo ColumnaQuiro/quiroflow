@@ -45,6 +45,9 @@ const { enabled: canPayOnline, payingId, error: payError, pay } = usePatientPay(
 // beneficiary was shown a debt for visits already paid for from the bono.
 const amountDueCents = computed(() => outstandingCents.value)
 
+// The card visits are paid with from the app, where the clinic allows it.
+const { enabled: appPayEnabled, card: payCard, addingCard, error: cardError, addCard } = useAppPayments(() => patientId.value)
+
 const showAll = ref(false)
 const PREVIEW = 8
 const visibleInvoices = computed(() => (showAll.value ? invoices.value : invoices.value.slice(0, PREVIEW)))
@@ -89,6 +92,13 @@ function eur(cents: number) {
           </p>
         </div>
         <p v-else class="text-[13px] text-ink-faint">{{ t('You have no active package.', 'No tienes ningún bono activo.') }}</p>
+      </PatientCard>
+    </div>
+
+    <div v-if="appPayEnabled" class="mt-3">
+      <PatientCard :title="t('Your card', 'Tu tarjeta')">
+        <PatientSavedCard :card="payCard" :busy="addingCard" @add="addCard" />
+        <p v-if="cardError" role="alert" class="mt-2 text-[12.5px] text-danger-text">{{ cardError }}</p>
       </PatientCard>
     </div>
 

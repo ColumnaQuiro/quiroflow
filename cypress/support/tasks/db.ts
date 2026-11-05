@@ -4307,6 +4307,44 @@ async function passwordWorks(opts: { email: string; password: string }) {
   return !error
 }
 
+/**
+ * A clinic taking visit payments from the patient app (Settings > Payments),
+ * on a legacy Stripe key so the per-account webhook route accepts events
+ * signed with `webhookSecret`. Nothing here reaches Stripe itself.
+ */
+async function enableAppPayments(opts: { accountId: string; webhookSecret: string; enabled?: boolean }) {
+  assertOk(
+    await admin
+      .from('accounts')
+      .update({ stripe_publishable_key: 'pk_test_cypress', stripe_app_payments_enabled: opts.enabled ?? true })
+      .eq('id', opts.accountId),
+  )
+  for (const [name, value] of [
+    ['stripe_secret_key', 'sk_test_cypress'],
+    ['stripe_webhook_secret', opts.webhookSecret],
+  ]) {
+    assertOk(await admin.from('account_secrets').upsert({ account_id: opts.accountId, name, value }, { onConflict: 'account_id,name' }))
+  }
+  return { ok: true }
+}
+
+/** Whether the clinic lets patients pay their visits from the app. */
+async function appPaymentsEnabled(opts: { accountId: string }) {
+  const row = unwrap(await admin.from('accounts').select('stripe_app_payments_enabled').eq('id', opts.accountId).single()) as { stripe_app_payments_enabled: boolean }
+  return row.stripe_app_payments_enabled
+}
+
+/** Every payment of a patient with the PaymentIntent behind it, oldest first. */
+async function cardPaymentsFor(opts: { patientId: string }) {
+  const { data, error } = await admin
+    .from('payments')
+    .select('id, amount_cents, method, purpose, invoice_id, stripe_payment_intent_id')
+    .eq('patient_id', opts.patientId)
+    .order('paid_at')
+  if (error) throw error
+  return data
+}
+
 export const dbTasks = {
   'db:seedReportDataset': seedReportDataset,
   'db:inboxUnreadCounts': inboxUnreadCounts,
@@ -4590,4 +4628,7 @@ export const dbTasks = {
   'db:homeWidgetTokenAs': homeWidgetTokenAs,
   'db:signOutHomeWidgetSession': signOutHomeWidgetSession,
   'db:setPackagePurchasedAt': setPackagePurchasedAt,
+  'db:enableAppPayments': enableAppPayments,
+  'db:appPaymentsEnabled': appPaymentsEnabled,
+  'db:cardPaymentsFor': cardPaymentsFor,
 }

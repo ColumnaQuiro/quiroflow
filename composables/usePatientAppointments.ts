@@ -1,3 +1,5 @@
+import { formatEur } from '../utils/billing'
+
 // A patient's own appointments, plus the two things they may do to one.
 //
 // Extracted from components/patient/AppointmentsCard.vue when the web
@@ -74,15 +76,21 @@ export function usePatientAppointments(patientId: () => string, settings: () => 
     // Through the server, which cancels as the patient (the same RPC) and
     // then tells the clinic: the practitioner's push, the clinic's
     // automations and the freed slot offered to the waitlist.
+    let refundedCents = 0
     try {
-      await authedFetch('/api/portal/appointments/cancel', { method: 'POST', body: { appointmentId: appt.id } })
+      refundedCents = (await authedFetch<{ refundedCents?: number }>('/api/portal/appointments/cancel', { method: 'POST', body: { appointmentId: appt.id } }))?.refundedCents ?? 0
     } catch (err: unknown) {
       busyId.value = null
       showToast((err as { data?: { statusMessage?: string } })?.data?.statusMessage ?? t('Could not cancel the appointment.', 'No se ha podido cancelar la cita.'), 'error')
       return
     }
     busyId.value = null
-    showToast(t('Appointment cancelled.', 'Cita cancelada.'))
+    // Paid ahead from the app: the money went back to their card with it.
+    showToast(
+      refundedCents > 0
+        ? t(`Appointment cancelled. ${formatEur(refundedCents)} is on its way back to your card; it can take a few days to show.`, `Cita cancelada. Te devolvemos ${formatEur(refundedCents)} a tu tarjeta; puede tardar unos días en aparecer.`)
+        : t('Appointment cancelled.', 'Cita cancelada.'),
+    )
     await load()
   }
 

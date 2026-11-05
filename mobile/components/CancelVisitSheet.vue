@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { prepaidCardCents } from '../../utils/prepaidVisit'
+
 // Cancelling a visit from the app: the web's cancel step
 // (components/calendar/CancelStep.vue) as a bottom sheet. That one reads the
 // account store, which the app does not have, so this is a port, not a
@@ -8,11 +10,14 @@
 //   1. Is the fee charged? Nothing, onto the balance, or the card on file
 //      (only offered when /api/stripe/card-details shows one, which it does
 //      only to staff who may see it). Hidden when the clinic charges none.
-//   2. What happens to the slot? Offered to the first fitting waitlist entry
+//   2. Paid ahead by card (from the patient app, or a booking deposit)? Back
+//      to the card, or kept as credit -- asked only of billing_access.
+//   3. What happens to the slot? Offered to the first fitting waitlist entry
 //      -- named, with the deadline they get -- or left free.
 //
 // Then status 'cancelled', appointment.cancelled fired, the fee through
-// /api/appointments/cancellation-fee, the offer through /api/waitlist/offer-next.
+// /api/appointments/cancellation-fee, the payment through
+// /api/appointments/prepaid-visit, the offer through /api/waitlist/offer-next.
 interface CancelAppointment {
   id: string
   patient_id: string
@@ -31,7 +36,7 @@ const emit = defineEmits<{ close: []; done: [message: string] }>()
 const supabase = useSupabaseClient()
 const authedFetch = useAuthedFetch()
 const t = useT()
-const { context } = usePractitionerContext()
+const { context, can } = usePractitionerContext()
 const tz = computed(() => context.value?.timeZone ?? null)
 const time = (iso: string | Date) => clinicTimeLabel(new Date(iso), tz.value)
 
@@ -58,6 +63,9 @@ const feeCents = ref(0)
 const card = ref<{ brand: string; last4: string } | null>(null)
 const matches = ref<{ id: string; name: string }[]>([])
 const fee = ref<'none' | 'balance' | 'card'>('none')
+const prepaidCents = ref(0)
+const prepaid = ref<'refund' | 'credit'>('refund')
+const prepaidText = computed(() => formatEur(prepaidCents.value))
 const offer = ref(false)
 // Settings > Waitlist (web): everyone who fits at once, the first to accept wins.
 const toAll = ref(false)
@@ -68,13 +76,15 @@ const error = ref('')
 async function load() {
   if (!context.value) return
   const clinicId = props.appointment.clinic_id ?? context.value.clinicId
-  const [{ data: account }, cardRes, { data: waiting }] = await Promise.all([
+  const [{ data: account }, cardRes, { data: waiting }, prepaidRes] = await Promise.all([
     supabase.from('accounts').select('cancellation_fee_cents, waitlist_offer_mode').eq('id', context.value.accountId).maybeSingle(),
     authedFetch<{ card: { brand: string; last4: string } | null }>('/api/stripe/card-details', { method: 'POST', body: { patientId: props.appointment.patient_id } }).catch(() => ({ card: null })),
     // The whole clinic's queue without who is on it: the slot goes to whoever
     // is first, whether or not this person may see that patient.
     supabase.rpc('waitlist_waiting_in_clinic' as never, { p_clinic_id: clinicId } as never),
+    can('billing_access') ? prepaidCardCents(supabase, props.appointment.id) : Promise.resolve(0),
   ])
+  prepaidCents.value = prepaidRes
   feeCents.value = (account as { cancellation_fee_cents: number | null } | null)?.cancellation_fee_cents ?? 0
   toAll.value = (account as { waitlist_offer_mode?: string | null } | null)?.waitlist_offer_mode === 'all_at_once'
   card.value = cardRes?.card ?? null
@@ -146,6 +156,20 @@ async function confirmCancel() {
       message = t('Cancelled, but the fee could not be recorded.', 'Cancelada, pero no se pudo registrar el cargo.')
     }
   }
+  if (prepaidCents.value > 0) {
+    try {
+      await authedFetch('/api/appointments/prepaid-visit', { method: 'POST', body: { appointmentId: props.appointment.id, action: prepaid.value } })
+      message =
+        prepaid.value === 'refund'
+          ? t(`Cancelled. ${prepaidText.value} refunded to their card.`, `Cancelada. Se han devuelto ${prepaidText.value} a su tarjeta.`)
+          : t(`Cancelled. ${prepaidText.value} kept as credit.`, `Cancelada. ${prepaidText.value} quedan como saldo a su favor.`)
+    } catch {
+      message =
+        prepaid.value === 'refund'
+          ? t('Cancelled, but the payment could not be refunded. Refund it from their billing.', 'Cancelada, pero no se ha podido devolver el pago. Devuélvelo desde su cobro.')
+          : t('Cancelled, but the payment could not be kept as credit.', 'Cancelada, pero el pago no ha podido quedar como saldo.')
+    }
+  }
   if (offer.value) {
     const res = await authedFetch<{ offered: boolean; count?: number }>('/api/waitlist/offer-next', { method: 'POST', body: { appointmentId: props.appointment.id } }).catch(() => ({ offered: false, count: 0 }))
     if (res.offered && (res.count ?? 1) > 1) message = t(`Cancelled. Slot offered to ${res.count} people on the waitlist.`, `Cancelada. Hueco ofrecido a ${res.count} personas de la lista de espera.`)
@@ -194,6 +218,23 @@ async function confirmCancel() {
             :data-cy="`cancel-fee-${o.key}`"
           >
             <input v-model="fee" type="radio" name="fee" :value="o.key" class="accent-brand" />
+            <span class="text-[14px] font-medium text-ink-900">{{ o.title }}</span>
+          </label>
+        </fieldset>
+
+        <fieldset v-if="prepaidCents > 0" class="flex flex-col gap-2" data-cy="cancel-prepaid">
+          <legend class="mb-1.5 text-[13.5px] font-semibold text-ink-900">{{ t(`They paid ${prepaidText} ahead by card`, `Pagó ${prepaidText} por adelantado con tarjeta`) }}</legend>
+          <label
+            v-for="o in [
+              { key: 'refund', title: t(`Refund ${prepaidText} to their card`, `Devolver ${prepaidText} a su tarjeta`) },
+              { key: 'credit', title: t(`Keep ${prepaidText} as credit`, `Dejar ${prepaidText} como saldo`) },
+            ]"
+            :key="o.key"
+            class="flex min-h-11 cursor-pointer items-center gap-3 rounded-card px-3.5 py-2.5"
+            :class="prepaid === o.key ? 'border-[1.5px] border-brand bg-brand-tint' : 'border border-line-control bg-surface'"
+            :data-cy="`cancel-prepaid-${o.key}`"
+          >
+            <input v-model="prepaid" type="radio" name="prepaid" :value="o.key" class="accent-brand" />
             <span class="text-[14px] font-medium text-ink-900">{{ o.title }}</span>
           </label>
         </fieldset>

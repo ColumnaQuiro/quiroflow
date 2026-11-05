@@ -178,14 +178,12 @@ const frameWidth = computed(() => (device.value === 'mobile' ? 375 : 664))
 // is shown scaled down rather than cut off.
 const scale = computed(() => Math.min(1, (stageWidth.value - 32) / frameWidth.value))
 
-function brandRgb() {
-  const v = getComputedStyle(document.documentElement).getPropertyValue('--color-brand').trim()
-  return v ? `rgb(${v.split(/\s+/).join(',')})` : 'rgb(79,70,229)'
-}
+// The app's indigo, carried into the frame as a variable, so the outline
+// around the selected block follows the app's theme.
 function editorStyle() {
-  const brand = brandRgb()
-  return `[data-block]{cursor:pointer}[data-block]:hover>td{box-shadow:inset 0 0 0 1px ${brand.replace('rgb', 'rgba').replace(')', ',.45)')}}` +
-    (selectedId.value ? `[data-block="${CSS.escape(selectedId.value)}"]>td{box-shadow:inset 0 0 0 2px ${brand}}` : '') +
+  const brand = getComputedStyle(document.documentElement).getPropertyValue('--color-brand').trim()
+  return `:root{--qf-brand:${brand}}[data-block]{cursor:pointer}[data-block]:hover>td{box-shadow:inset 0 0 0 1px rgb(var(--qf-brand) / .45)}` +
+    (selectedId.value ? `[data-block="${CSS.escape(selectedId.value)}"]>td{box-shadow:inset 0 0 0 2px rgb(var(--qf-brand))}` : '') +
     'a{cursor:pointer}'
 }
 function measure() {

@@ -2,6 +2,7 @@
 import { formatEur } from '~/utils/billing'
 import { normalizeSearchTerm } from '~/utils/searchText'
 import { BONO_PAYMENTS_EMBED, bonoOwedCents } from '~/utils/bonoOwed'
+import { bonoDueCents, installmentBeingPaid, installmentPlanOf, installmentsDue, readInstallmentOptions } from '~/utils/bonoInstallments'
 import { settleInvoiceIfCovered } from '~/utils/settleInvoice'
 import { validSpanishTaxId } from '~/utils/spanishTaxId'
 import { isReceipt } from '~/utils/paymentReceipts'
@@ -34,6 +35,10 @@ interface PackagePurchaseRow {
   // imported (0174). Null on a bono created here, where the invoice is the
   // record of what is owed.
   owed_cents: number | null
+  // Sold in plazos under one of its template's split options: how many, and
+  // what each costs. price_cents is their product. Null: paid at once.
+  installments?: number | null
+  installment_cents?: number | null
   // PracticeHub has deactivated this bono. It keeps whatever was on its
   // counter, and it is still listed here -- the visits it paid for are real
   // history -- but it is not money the patient can draw on and no session
@@ -588,6 +593,9 @@ const membershipsLoading = ref(true)
 
 const purchases = ref<PackagePurchaseRow[]>([])
 const sellPackageId = ref('')
+// How the bono is paid: 1 is at once at its price, N one of its template's
+// split options (Settings > Bonos), each priced on its own.
+const sellInstallments = ref(1)
 const sellAmountPaid = ref('')
 const sellMethod = ref<string>('cash')
 const sellingPackage = ref(false)
@@ -599,10 +607,24 @@ const activateAmountPaid = ref('')
 const activateMethod = ref<string>('cash')
 const activatingMembership = ref(false)
 
-watch(sellPackageId, (id) => {
-  const tpl = packageTemplates.value.find((p) => p.id === id)
-  sellAmountPaid.value = tpl ? (tpl.price_cents / 100).toFixed(2) : ''
+const sellTemplate = computed(() => packageTemplates.value.find((p) => p.id === sellPackageId.value) ?? null)
+const sellOptions = computed(() => (sellTemplate.value ? readInstallmentOptions(sellTemplate.value.installment_options) : []))
+// What the chosen way of paying costs in all, and what is taken now by default:
+// the whole price, or the first plazo.
+const sellTotalCents = computed(() => {
+  const option = sellOptions.value.find((o) => o.installments === sellInstallments.value)
+  return option ? option.installments * option.installmentCents : (sellTemplate.value?.price_cents ?? 0)
 })
+function prefillSaleAmount() {
+  const tpl = sellTemplate.value
+  const option = sellOptions.value.find((o) => o.installments === sellInstallments.value)
+  sellAmountPaid.value = option ? (option.installmentCents / 100).toFixed(2) : tpl ? (tpl.price_cents / 100).toFixed(2) : ''
+}
+watch(sellPackageId, () => {
+  sellInstallments.value = 1
+  prefillSaleAmount()
+})
+watch(sellInstallments, prefillSaleAmount)
 watch(activateMembershipId, (id) => {
   const tpl = membershipTemplates.value.find((m) => m.id === id)
   activateAmountPaid.value = tpl ? (tpl.price_cents / 100).toFixed(2) : ''
@@ -688,7 +710,7 @@ async function recordPackagePayment(
     amountCents: number,
     method: string,
     description: string,
-    bono?: { priceCents: number; sessionsTotal: number },
+    bono?: { priceCents: number; sessionsTotal: number; installment?: { number: number; of: number } | null },
   ): Promise<string | null> {
   if (!packagePurchaseId) return null
   // Attached to the bono, not to an invoice. Selling a bono used to raise an
@@ -731,7 +753,7 @@ async function recordPackagePayment(
       paymentId: payment.id,
       amountCents,
       purpose: 'bono',
-      bono: { packageName: description, priceCents: bono.priceCents, sessionsTotal: bono.sessionsTotal },
+      bono: { packageName: description, priceCents: bono.priceCents, sessionsTotal: bono.sessionsTotal, installment: bono.installment },
     })
   }
   if (method === 'credit') {
@@ -864,14 +886,14 @@ async function fetchPackages(): Promise<() => void> {
   // "Take payment") and purchased_at (for sort order), neither of which
   // that composable's activePackages carries.
   const [{ data: pkgPurchases }, { data: sch }, { data: shares }] = await Promise.all([
-    supabase.from('package_purchases').select(`id, package_name, sessions_total, sessions_used, price_cents, purchased_at, invoice_id, owed_cents, is_closed, ${BONO_PAYMENTS_EMBED}`).eq('patient_id', props.patientId).order('purchased_at', { ascending: false }),
+    supabase.from('package_purchases').select(`id, package_name, sessions_total, sessions_used, price_cents, purchased_at, invoice_id, owed_cents, installments, installment_cents, is_closed, ${BONO_PAYMENTS_EMBED}`).eq('patient_id', props.patientId).order('purchased_at', { ascending: false }),
     supabase
       .from('payment_schedules')
       .select('id, package_purchase_id, patient_membership_id, interval, interval_count, installments_total, installments_paid, status')
       .eq('patient_id', props.patientId),
     supabase
       .from('package_purchase_shares')
-      .select('package_purchases(id, package_name, sessions_total, sessions_used, price_cents, purchased_at, invoice_id, owed_cents, is_closed, patients(first_name, last_name))')
+      .select('package_purchases(id, package_name, sessions_total, sessions_used, price_cents, purchased_at, invoice_id, owed_cents, installments, installment_cents, is_closed, patients(first_name, last_name))')
       .eq('patient_id', props.patientId),
   ])
   // A bono shared between two people is paid by either of them, and the front
@@ -1434,6 +1456,16 @@ function openAutopayForm(id: string, period?: { billing_interval: string; billin
   autopayAlreadyPaid.value = 0
 }
 
+// A bono sold in plazos starts its autopay from its own plan: that many
+// plazos, the ones already paid skipped, so Stripe charges the plazo price.
+function openPackageAutopayForm(purchase: PackagePurchaseRow) {
+  openAutopayForm(purchase.id)
+  if (purchase.installments && purchase.installment_cents) {
+    autopayInstallments.value = purchase.installments
+    autopayAlreadyPaid.value = Math.min(purchase.installments, Math.floor((purchase.price_cents - packageOwedCents(purchase)) / purchase.installment_cents))
+  }
+}
+
 async function setUpPackageAutopay(purchase: PackagePurchaseRow) {
   autopayError.value = ''
   settingUpAutopay.value = true
@@ -1512,8 +1544,21 @@ async function sellPackage() {
   // one.
   const cached = packageTemplates.value.find((p) => p.id === sellPackageId.value)
   if (!cached) return
-  const { data: fresh } = await supabase.from('packages').select('id, name, session_count, price_cents').eq('id', cached.id).maybeSingle()
+  const { data: fresh } = await supabase.from('packages').select('id, name, session_count, price_cents, installment_options').eq('id', cached.id).maybeSingle()
   const tpl = fresh ?? cached
+  // The option is read off the same fresh row: sold at the price it has now,
+  // or not at all if someone has just removed it.
+  let option: { installments: number; installmentCents: number } | null = null
+  if (sellInstallments.value > 1) {
+    option = readInstallmentOptions(tpl.installment_options).find((o) => o.installments === sellInstallments.value) ?? null
+    if (!option) {
+      showToast(t('That way of paying is no longer offered for this bono. Choose again.', 'Esa forma de pago ya no está disponible para este bono. Elige de nuevo.'), 'error', 10000)
+      useBillingTemplates().invalidate()
+      await ensureBillingTemplatesLoaded()
+      return
+    }
+  }
+  const priceCents = option ? option.installments * option.installmentCents : tpl.price_cents
   const amountCents = Math.round((parseFloat(sellAmountPaid.value) || 0) * 100)
   // Against what is actually spendable, and against the amount being paid
   // now rather than the package's price -- part-paying a EUR 528 bono with
@@ -1536,9 +1581,11 @@ async function sellPackage() {
       package_id: tpl.id,
       package_name: tpl.name,
       sessions_total: tpl.session_count,
-      price_cents: tpl.price_cents,
+      price_cents: priceCents,
+      installments: option?.installments ?? null,
+      installment_cents: option?.installmentCents ?? null,
       invoice_id: null,
-      owed_cents: tpl.price_cents,
+      owed_cents: priceCents,
       created_by: store.teamMember?.id ?? null,
     })
     .select('id')
@@ -1547,7 +1594,11 @@ async function sellPackage() {
   // expected via the existing "Set up autopay" Stripe schedule below.
   let paymentProblem: string | null = null
   if (purchase && amountCents > 0) {
-    paymentProblem = await recordPackagePayment(purchase.id, amountCents, sellMethod.value, tpl.name, { priceCents: tpl.price_cents, sessionsTotal: tpl.session_count })
+    paymentProblem = await recordPackagePayment(purchase.id, amountCents, sellMethod.value, tpl.name, {
+      priceCents,
+      sessionsTotal: tpl.session_count,
+      installment: option ? installmentBeingPaid({ installments: option.installments, installmentCents: option.installmentCents }, 0, amountCents) : null,
+    })
   }
   sellingPackage.value = false
   // The bono is sold either way -- what it costs is owed on it -- but nothing
@@ -1557,6 +1608,7 @@ async function sellPackage() {
     showToast(paymentProblem, 'error', 10000)
   }
   sellPackageId.value = ''
+  sellInstallments.value = 1
   sellAmountPaid.value = ''
   sellMethod.value = 'cash'
   await Promise.all([loadAll(), refreshCreditSummary(), loadFacturas()])
@@ -1626,6 +1678,29 @@ function packageOwedCents(purchase: PackagePurchaseRow): number {
   })
 }
 
+// Of what is owed, how much is DUE: a bono sold in plazos owes the plazos not
+// yet due as well, but they are still to come, not a debt (utils/bonoInstallments).
+// packageOwedCents stays the whole figure -- what the patient can draw on is net
+// of it -- and this is what the card's pill and Debtors say.
+function packageDueCents(purchase: PackagePurchaseRow): number {
+  return bonoDueCents(packageOwedCents(purchase), installmentPlanOf(purchase))
+}
+
+// "Plazo 1 de 2 pagado · el siguiente (250 €) tras la sesión 5", for a bono
+// sold in plazos with one still to come; '' otherwise.
+function packageInstallmentLine(purchase: PackagePurchaseRow): string {
+  const n = purchase.installments
+  const each = purchase.installment_cents
+  if (!n || n < 2 || each === null || each === undefined) return ''
+  const paidPlazos = each > 0 ? Math.min(n, Math.floor((purchase.price_cents - packageOwedCents(purchase)) / each)) : n
+  const head = t(`${paidPlazos} of ${n} plazos paid`, `${paidPlazos} de ${n} plazos pagados`)
+  if (packageOwedCents(purchase) <= 0 || packageDueCents(purchase) > 0) return head
+  const next = installmentsDue(installmentPlanOf(purchase)) + 1
+  if (next > n) return head
+  const afterSession = Math.floor(((next - 1) * purchase.sessions_total) / n)
+  return `${head} · ${t(`next (${money(each)}) after session ${afterSession}`, `el siguiente (${money(each)}) tras la sesión ${afterSession}`)}`
+}
+
 // Collecting the rest of a bono. It used to raise an invoice for the
 // outstanding amount and send the front desk to the account-level payment
 // panel -- necessary back when a bono's debt WAS an invoice. It isn't: the
@@ -1641,7 +1716,11 @@ function collectOnPackage(purchase: PackagePurchaseRow) {
   const owed = packageOwedCents(purchase)
   if (owed <= 0) return
   collectError.value = ''
-  collectAmount.value = (owed / 100).toFixed(2)
+  // A bono in plazos is collected a plazo at a time: what is due if anything
+  // is, otherwise the next plazo, paid ahead.
+  const due = packageDueCents(purchase)
+  const prefill = purchase.installments && purchase.installment_cents ? (due > 0 ? due : Math.min(owed, purchase.installment_cents)) : owed
+  collectAmount.value = (prefill / 100).toFixed(2)
   collectMethod.value = 'cash'
   collectOnPackageId.value = collectOnPackageId.value === purchase.id ? null : purchase.id
 }
@@ -1660,6 +1739,11 @@ async function submitPackageCollection(purchase: PackagePurchaseRow) {
   const problem = await recordPackagePayment(purchase.id, amountCents, collectMethod.value, purchase.package_name, {
     priceCents: purchase.price_cents,
     sessionsTotal: purchase.sessions_total,
+    installment: installmentBeingPaid(
+      { installments: purchase.installments ?? null, installmentCents: purchase.installment_cents ?? null },
+      purchase.price_cents - packageOwedCents(purchase),
+      amountCents,
+    ),
   })
   collectingPayment.value = false
   if (problem) {
@@ -2516,7 +2600,9 @@ const fieldId = useId()
                 <p class="truncate text-[13.5px] font-semibold text-ink-800">{{ p.package_name }}</p>
                 <UiPill v-if="p.is_closed" tone="neutral">{{ t('Closed', 'Cerrado') }}</UiPill>
                 <UiPill v-else-if="p.shared" tone="info">{{ p.ownerName ? t(`Shared by ${p.ownerName}`, `Compartido por ${p.ownerName}`) : t('Shared', 'Compartido') }}</UiPill>
-                <UiPill v-else-if="packageOwedCents(p) > 0" tone="danger">{{ money(packageOwedCents(p)) }} {{ t('owed', 'pendiente') }}</UiPill>
+                <UiPill v-else-if="packageDueCents(p) > 0" tone="danger" data-cy="bono-owed">{{ money(packageDueCents(p)) }} {{ t('owed', 'pendiente') }}</UiPill>
+                <!-- Sold in plazos, the ones paid so far, the next not due yet. -->
+                <UiPill v-else-if="packageOwedCents(p) > 0" tone="info" data-cy="bono-up-to-date">{{ t('Up to date', 'Al corriente') }}</UiPill>
                 <UiPill v-else tone="success">{{ t('Paid', 'Pagado') }}</UiPill>
               </div>
               <!-- Sessions left, and what they are worth. The line under the
@@ -2552,6 +2638,10 @@ const fieldId = useId()
                 {{ money(p.price_cents - packageOwedCents(p)) }} {{ t('paid of', 'pagado de') }} {{ money(p.price_cents) }}
               </template>
               <template v-else>{{ money(p.price_cents) }} {{ t('paid in full', 'pagado en su totalidad') }}</template>
+              <template v-if="packageInstallmentLine(p)">
+                <span class="px-1 text-ink-faint3">&middot;</span>
+                <span data-cy="bono-installments">{{ packageInstallmentLine(p) }}</span>
+              </template>
             </p>
             <p v-else class="mt-2 text-[11.5px] text-ink-muted2">
               {{ p.sessions_used }} {{ t('of', 'de') }} {{ p.sessions_total }} {{ t('used', 'usadas') }}
@@ -2707,7 +2797,7 @@ const fieldId = useId()
               </UiBtn>
             </div>
             <div v-else-if="hasCard" class="mt-2.5">
-              <UiBtn v-if="autopayFormFor !== p.id" size="sm" variant="ghost" @click="openAutopayForm(p.id)">
+              <UiBtn v-if="autopayFormFor !== p.id" size="sm" variant="ghost" @click="openPackageAutopayForm(p)">
                 {{ t('Set up autopay', 'Configurar pago automático') }}
               </UiBtn>
               <form v-else class="flex flex-wrap items-end gap-1.5 rounded-ctl border border-line-divider bg-surface-subtle p-2.5" @submit.prevent="setUpPackageAutopay(p)">
@@ -2741,10 +2831,19 @@ const fieldId = useId()
           </p>
         </div>
         <form v-if="canManagePackages" class="mt-3 flex flex-wrap items-end gap-2 border-t border-line-divider pt-3" data-cy="sell-package-form" @submit.prevent="sellPackage">
-          <select v-model="sellPackageId" class="bg-surface w-full flex-1 rounded-ctl border border-line-control px-2.5 py-1.5 text-[12.5px] sm:max-w-xs">
+          <select v-model="sellPackageId" data-cy="sell-package-select" class="bg-surface w-full flex-1 rounded-ctl border border-line-control px-2.5 py-1.5 text-[12.5px] sm:max-w-xs">
             <option value="" disabled>{{ t('Sell a package…', 'Vender un bono…') }}</option>
             <option v-for="t in packageTemplates" :key="t.id" :value="t.id">{{ t.name }} ({{ t.session_count }}, {{ money(t.price_cents) }})</option>
           </select>
+          <div v-if="sellPackageId && sellOptions.length">
+            <label :for="`${fieldId}-sellInstallments`" class="block text-[11px] text-ink-muted">{{ t('Paid', 'Forma de pago') }}</label>
+            <select :id="`${fieldId}-sellInstallments`" v-model.number="sellInstallments" data-cy="sell-package-installments" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]">
+              <option :value="1">{{ t(`At once · ${money(sellTemplate!.price_cents)}`, `En un pago · ${money(sellTemplate!.price_cents)}`) }}</option>
+              <option v-for="o in sellOptions" :key="o.installments" :value="o.installments">
+                {{ t(`${o.installments} plazos of ${money(o.installmentCents)} · ${money(o.installments * o.installmentCents)}`, `${o.installments} plazos de ${money(o.installmentCents)} · ${money(o.installments * o.installmentCents)}`) }}
+              </option>
+            </select>
+          </div>
           <div v-if="sellPackageId">
             <label :for="`${fieldId}-sellAmountPaid`" class="block text-[11px] text-ink-muted">{{ t('Paid now (€)', 'Pagado ahora (€)') }}</label>
             <input :id="`${fieldId}-sellAmountPaid`" v-model="sellAmountPaid" type="number" min="0" step="0.01" class="mt-0.5 w-24 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]" />
@@ -2769,7 +2868,10 @@ const fieldId = useId()
           </div>
           <UiBtn size="sm" variant="secondary" :disabled="!sellPackageId || sellingPackage" @click="sellPackage">{{ sellingPackage ? t('Selling…', 'Vendiendo…') : t('Sell', 'Vender') }}</UiBtn>
         </form>
-        <p v-if="sellPackageId && Number(sellAmountPaid) > 0 && packageTemplates.find((t) => t.id === sellPackageId) && Number(sellAmountPaid) * 100 < packageTemplates.find((t) => t.id === sellPackageId)!.price_cents" class="mt-1.5 text-[11px] text-ink-faint">
+        <p v-if="sellPackageId && sellInstallments > 1" class="mt-1.5 text-[11px] text-ink-faint" data-cy="sell-package-installments-note">
+          {{ t('Each further plazo falls due once the sessions already paid for are used. Collect it from the bono, or put it on Stripe autopay.', 'Cada plazo siguiente vence al gastar las sesiones ya pagadas. Cóbralo desde el bono o prográmalo con el pago automático de Stripe.') }}
+        </p>
+        <p v-else-if="sellPackageId && Number(sellAmountPaid) > 0 && Number(sellAmountPaid) * 100 < sellTotalCents" class="mt-1.5 text-[11px] text-ink-faint">
           {{ t('Remaining balance can be scheduled via Stripe autopay after the sale.', 'El saldo restante se puede programar mediante el pago automático de Stripe después de la venta.') }}
         </p>
         </template>

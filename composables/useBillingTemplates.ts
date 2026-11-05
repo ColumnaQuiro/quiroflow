@@ -1,6 +1,8 @@
 import type { Tables } from '~/types/database.types'
 
-type PackageTemplate = Pick<Tables<'packages'>, 'id' | 'name' | 'session_count' | 'price_cents'>
+// installment_options as unknown, not the generated Json: Json is recursive, and
+// carried through a computed it costs TS2589. utils/bonoInstallments reads it.
+type PackageTemplate = Pick<Tables<'packages'>, 'id' | 'name' | 'session_count' | 'price_cents'> & { installment_options: unknown }
 type MembershipTemplate = Pick<Tables<'memberships'>, 'id' | 'name' | 'price_cents'>
 
 // Account-wide reference data (the package/membership templates staff sell
@@ -29,14 +31,14 @@ async function ensureLoaded() {
   if (!pending) {
     const supabase = useSupabaseClient()
     pending = Promise.all([
-      supabase.from('packages').select('id, name, session_count, price_cents').order('name'),
+      supabase.from('packages').select('id, name, session_count, price_cents, installment_options').order('name'),
       supabase.from('memberships').select('id, name, price_cents').order('name'),
     ])
       .then(([pkg, mem]) => {
         // A failed read is not cached as "none": [] is truthy, so it used to
         // stay empty until a full reload.
         if (pkg.error || mem.error) return
-        packages.value = pkg.data ?? []
+        packages.value = (pkg.data ?? []) as PackageTemplate[]
         memberships.value = mem.data ?? []
         loadedFor = accountId
         loadedAt = Date.now()

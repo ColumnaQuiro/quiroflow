@@ -30,6 +30,9 @@ describe('Form answers on My Day', () => {
         cy.visit('/practitioner')
         cy.contains('li:not([data-cy=needs-confirming-row])', 'Forma Rellena', { timeout: 20000 }).click()
 
+        // On a tab of their own; what is brought over lands in the note,
+        // which stays mounted behind it.
+        cy.get('[data-cy=myday-tab-forms]').click()
         cy.get('[data-cy=form-answers-doc]').should('have.length', 1).and('contain.text', 'First visit form')
         cy.get('[data-cy=form-answer]').should('have.length', 2)
         cy.get('[data-cy=form-answers]').should('not.contain.text', 'First name').and('not.contain.text', 'I agree')

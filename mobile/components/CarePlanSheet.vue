@@ -14,7 +14,7 @@ const props = defineProps<{
     frequency_value: number
     frequency_unit: string
     visits_per_period?: number | null
-    total_visits: number
+    total_visits: number | null
     started_at: string
     payment_kind?: string | null
     package_purchase_id?: string | null
@@ -35,6 +35,8 @@ const every = ref(props.plan?.frequency_value ?? 1)
 const perPeriod = ref(props.plan?.visits_per_period ?? 1)
 const unit = ref<'week' | 'month'>(props.plan?.frequency_unit === 'month' ? 'month' : 'week')
 const total = ref(props.plan?.total_visits ?? 10)
+// "Sin fin": a plan with no end (total_visits null), as maintenance usually is.
+const noEnd = ref(props.plan ? props.plan.total_visits === null : false)
 // As the web: an edit keeps the plan's own start unless it is changed.
 const startedAt = ref(props.plan?.started_at?.slice(0, 10) ?? props.today)
 const saving = ref(false)
@@ -97,7 +99,7 @@ async function save() {
     frequency_value: clamp(every.value, 1, 52),
     frequency_unit: unit.value,
     visits_per_period: clamp(perPeriod.value, 1, 7),
-    total_visits: clamp(total.value, 1, 200),
+    total_visits: noEnd.value ? null : clamp(total.value, 1, 200),
     started_at: startedAt.value,
     created_by: context.value.teamMemberId,
     payment_kind: paymentKind.value,
@@ -171,11 +173,15 @@ const stepBtn = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-ctl
       <div class="flex items-center justify-between gap-3">
         <span class="text-[14px] text-ink-700">{{ t('Visits in the plan', 'Visitas en el plan') }}</span>
         <div class="flex items-center gap-2">
-          <button type="button" :class="stepBtn" :disabled="total <= 1" :aria-label="t('Fewer visits', 'Menos visitas')" @click="total = clamp(total - 1, 1, 200)">−</button>
-          <input v-model.number="total" type="number" inputmode="numeric" min="1" max="200" class="h-11 w-16 rounded-ctl border border-line-control bg-surface text-center text-[16px] font-semibold tabular-nums text-ink-900" :aria-label="t('Visits in the plan', 'Visitas en el plan')" data-cy="plan-total" />
-          <button type="button" :class="stepBtn" :aria-label="t('More visits', 'Más visitas')" @click="total = clamp(total + 1, 1, 200)">+</button>
+          <button type="button" :class="stepBtn" :disabled="noEnd || total <= 1" :aria-label="t('Fewer visits', 'Menos visitas')" @click="total = clamp(total - 1, 1, 200)">−</button>
+          <input v-model.number="total" type="number" inputmode="numeric" min="1" max="200" :disabled="noEnd" class="h-11 w-16 rounded-ctl border border-line-control bg-surface text-center text-[16px] font-semibold tabular-nums text-ink-900 disabled:opacity-50" :aria-label="t('Visits in the plan', 'Visitas en el plan')" data-cy="plan-total" />
+          <button type="button" :class="stepBtn" :disabled="noEnd" :aria-label="t('More visits', 'Más visitas')" @click="total = clamp(total + 1, 1, 200)">+</button>
         </div>
       </div>
+      <label class="-mt-1 flex min-h-11 items-center gap-2.5 text-[14px] text-ink-700">
+        <input v-model="noEnd" type="checkbox" class="h-5 w-5 accent-brand" data-cy="plan-no-end" />
+        {{ t('No end · until someone closes it', 'Sin fin · sigue hasta que alguien lo cierre') }}
+      </label>
 
       <label class="flex flex-col gap-1 text-[12.5px] font-medium text-ink-muted">
         {{ t('Starts', 'Empieza') }}

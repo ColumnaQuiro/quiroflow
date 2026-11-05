@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { formatEur, formatTime } from '~/utils/billing'
+import { openEndedPlanLabel, planVisitsToBook } from '~/utils/planRenewal'
 import { patientAge } from '~/utils/patientAge'
 import { resolveVisitPayment, type VisitPayment } from '~/utils/visitPayment'
 import type { Tables } from '~/types/database.types'
@@ -221,12 +222,14 @@ const attention = computed<AttentionRow[]>(() => {
 })
 
 // -- Care plan -------------------------------------------------------------
-interface PlanRow { id: string; name: string; total_visits: number; frequency_value: number; frequency_unit: string; visits_per_period: number | null; started_at: string | null; payment_kind: string | null; package_purchase_id: string | null; patient_membership_id: string | null }
+interface PlanRow { id: string; name: string; total_visits: number | null; frequency_value: number; frequency_unit: string; visits_per_period: number | null; started_at: string | null; payment_kind: string | null; package_purchase_id: string | null; patient_membership_id: string | null }
 const plan = ref<PlanRow | null>(null)
 const planCompleted = ref(0)
 // Booked and not yet come, since the plan started: what is left to book is
 // the rest (PhaseStats counts it the same way).
 const planScheduled = ref(0)
+// Booked and still ahead: a plan with no end warns when there is none.
+const planUpcoming = ref(0)
 const planLoading = ref(true)
 
 // Visits completed SINCE THE PLAN STARTED, and not deleted -- as
@@ -244,6 +247,7 @@ async function loadPlan({ silent = false } = {}) {
   const latest = (plans?.[0] as PlanRow) ?? null
   let completed = 0
   let scheduled = 0
+  let upcoming = 0
   if (latest) {
     const counted = (status: string) => {
       let q = supabase
@@ -255,20 +259,27 @@ async function loadPlan({ silent = false } = {}) {
       if (latest.started_at) q = q.gte('starts_at', latest.started_at)
       return q
     }
-    const [done, ahead] = await Promise.all([counted('completed'), counted('booked')])
+    const [done, ahead, next] = await Promise.all([counted('completed'), counted('booked'), counted('booked').gte('starts_at', new Date().toISOString())])
     completed = done.count ?? 0
     scheduled = ahead.count ?? 0
+    upcoming = next.count ?? 0
   }
   plan.value = latest
   planCompleted.value = completed
   planScheduled.value = scheduled
+  planUpcoming.value = upcoming
   planLoading.value = false
 }
 
-const planToBook = computed(() => (plan.value ? Math.max(0, plan.value.total_visits - planCompleted.value - planScheduled.value) : 0))
+const planToBook = computed(() => (plan.value ? planVisitsToBook(plan.value, planCompleted.value, planScheduled.value) : 0))
+const planBookLabel = computed(() => {
+  const n = planToBook.value
+  if (plan.value?.total_visits === null) return n === 1 ? t('Book the next visit', 'Reservar la próxima visita') : t(`Book the next ${n} visits`, `Reservar las próximas ${n} visitas`)
+  return n === 1 ? t('Book the 1 visit left', 'Reservar la visita que falta') : t(`Book the ${n} visits left`, `Reservar las ${n} visitas que faltan`)
+})
 
 const planPercent = computed(() => {
-  if (!plan.value || plan.value.total_visits <= 0) return 0
+  if (!plan.value || !plan.value.total_visits || plan.value.total_visits <= 0) return 0
   return Math.min(100, Math.round((planCompleted.value / plan.value.total_visits) * 100))
 })
 const seesAllVisits = computed(() => store.isOwner || store.permissions.calendar_scope === 'all')
@@ -461,15 +472,24 @@ function onDetailsUpdated() {
         <UiSkeleton v-if="planLoading" class="mt-3 h-4 w-40 rounded-ctlSm" />
         <template v-else-if="plan">
           <p class="mt-2.5 text-[14px] text-ink-900">{{ plan.name }}</p>
-          <p class="text-[12.5px] text-ink-muted2">
-            {{ t('Visit', 'Visita') }} {{ Math.min(planCompleted, plan.total_visits) }} {{ t('of', 'de') }} {{ plan.total_visits }}
+          <p v-if="plan.total_visits === null" class="text-[12.5px] text-ink-muted2 first-letter:uppercase" data-cy="overview-plan-open-ended">
+            {{ plan.started_at ? openEndedPlanLabel(planCompleted, plan.started_at, t) : t(`maintenance visit ${planCompleted}`, `visita ${planCompleted} de mantenimiento`) }}
             <template v-if="planCadence"> · {{ planCadence }}</template>
-            <template v-if="plan.started_at"> · {{ t('since', 'desde') }} {{ formatLongDate(plan.started_at) }}</template>
           </p>
-          <div class="mt-2 h-[6px] w-full overflow-hidden rounded-full bg-chip-bg2">
-            <div class="h-full rounded-full bg-brand" :style="{ width: `${planPercent}%` }" />
-          </div>
-          <PatientsPlanPayment :plan="plan" :visits-left="Math.max(0, plan.total_visits - planCompleted)" />
+          <template v-else>
+            <p class="text-[12.5px] text-ink-muted2">
+              {{ t('Visit', 'Visita') }} {{ Math.min(planCompleted, plan.total_visits) }} {{ t('of', 'de') }} {{ plan.total_visits }}
+              <template v-if="planCadence"> · {{ planCadence }}</template>
+              <template v-if="plan.started_at"> · {{ t('since', 'desde') }} {{ formatLongDate(plan.started_at) }}</template>
+            </p>
+            <div class="mt-2 h-[6px] w-full overflow-hidden rounded-full bg-chip-bg2">
+              <div class="h-full rounded-full bg-brand" :style="{ width: `${planPercent}%` }" />
+            </div>
+          </template>
+          <p v-if="plan.total_visits === null && planUpcoming === 0" class="mt-2 rounded-ctl bg-warning-bg px-2.5 py-1.5 text-[12.5px] font-medium text-warning-text" data-cy="overview-plan-no-next">
+            {{ t('No next visit booked.', 'No tiene la próxima visita reservada.') }}
+          </p>
+          <PatientsPlanPayment :plan="plan" :visits-left="plan.total_visits === null ? 0 : Math.max(0, plan.total_visits - planCompleted)" />
           <!-- The plan's visits not booked yet, in one go: the calendar opens
                with "repeat as the care plan" chosen, at the plan's cadence.
                It was only on the Clinical tab. -->
@@ -479,7 +499,7 @@ function onDetailsUpdated() {
             class="mt-2.5 inline-flex h-8 items-center rounded-ctl border border-line-control px-3 text-[12.5px] font-semibold text-brand-text outline-none hover:bg-surface-subtle focus-visible:shadow-focus touch:h-10"
             data-cy="overview-plan-book"
           >
-            {{ planToBook === 1 ? t('Book the 1 visit left', 'Reservar la visita que falta') : t(`Book the ${planToBook} visits left`, `Reservar las ${planToBook} visitas que faltan`) }}
+            {{ planBookLabel }}
           </NuxtLink>
           <!-- Period by period: only for someone who sees every visit, or a
                colleague's attended visit would read as one missed. -->

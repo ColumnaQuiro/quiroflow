@@ -33,7 +33,7 @@ export interface TimelineSources {
   sent: { id: string; channel: string; kind: string; status: string | null; preview: string | null; sent_at: string }[]
   received: { id: string; channel: string; at: string; preview: string | null }[]
   calls: { id: string; action: string; note: string | null; created_at: string; created_by: string | null }[]
-  plans: { id: string; name: string; created_at: string; created_by: string | null; frequency_value: number; frequency_unit: string; visits_per_period?: number | null; total_visits: number }[]
+  plans: { id: string; name: string; created_at: string; created_by: string | null; frequency_value: number; frequency_unit: string; visits_per_period?: number | null; total_visits: number | null }[]
   exercises: { id: string; created_at: string; ended_at: string | null; assigned_by: string | null; exercises: { name: string } | null }[]
   documents: { id: string; title: string; created_at: string; completed_at: string | null; created_by: string | null }[]
   invoices: { id: string; created_at: string; invoice_number: string | null; status: string }[]
@@ -87,7 +87,8 @@ export function buildPatientTimeline(s: TimelineSources, t: T): TimelineEvent[] 
   }
 
   for (const p of s.plans) {
-    out.push({ key: `plan-${p.id}`, at: p.created_at, category: 'plan', text: t(`Care plan "${p.name}" started: ${p.total_visits} visits, ${carePlanCadenceLabel(p, t)}`, `Plan «${p.name}» iniciado: ${p.total_visits} visitas, ${carePlanCadenceLabel(p, t)}`), actor: staff(p.created_by) })
+    const length = p.total_visits === null ? t('no end', 'sin fin') : t(`${p.total_visits} visits`, `${p.total_visits} visitas`)
+    out.push({ key: `plan-${p.id}`, at: p.created_at, category: 'plan', text: t(`Care plan "${p.name}" started: ${length}, ${carePlanCadenceLabel(p, t)}`, `Plan «${p.name}» iniciado: ${length}, ${carePlanCadenceLabel(p, t)}`), actor: staff(p.created_by) })
   }
 
   for (const e of s.exercises) {

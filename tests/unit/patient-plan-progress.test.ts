@@ -36,4 +36,11 @@ describe('patientPlanProgress', () => {
     expect(p.toBook).toBe(0)
     expect(p.pct).toBe(100)
   })
+
+  it('counts a plan with no end without a total, and asks for the next visit only when none is booked', () => {
+    const open = { total_visits: null, started_at: '2026-09-01T00:00:00Z' }
+    const p = patientPlanProgress(open, [v('a', '2026-09-03T10:00:00Z', 'completed'), v('b', '2026-10-01T10:00:00Z', 'completed')], now)
+    expect(p).toMatchObject({ done: 2, left: null, toBook: 1, pct: 0 })
+    expect(patientPlanProgress(open, [v('next', '2026-11-01T10:00:00Z', 'booked')], now).toBook).toBe(0)
+  })
 })

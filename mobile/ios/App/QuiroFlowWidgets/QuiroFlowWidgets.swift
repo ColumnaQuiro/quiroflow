@@ -37,9 +37,11 @@ struct DayPart: Decodable {
     let next: [Visit]?
 }
 
-struct Money: Decodable { let label: String; let smallLabel: String; let value: String; let range: String; let link: String? }
+/// Against the same stretch of last month ("▲ 12 % vs. oct"); absent from snapshots written before it existed.
+struct Trend: Decodable { let text: String; let direction: String }
+struct Money: Decodable { let label: String; let smallLabel: String; let value: String; let range: String; let trend: Trend?; let link: String? }
 struct Patients: Decodable { let label: String; let done: Int; let total: Int; let note: String; let link: String? }
-struct Bonos: Decodable { let label: String; let smallLabel: String; let count: Int; let value: String; let link: String? }
+struct Bonos: Decodable { let label: String; let smallLabel: String; let count: Int; let value: String; let owed: String?; let trend: Trend?; let link: String? }
 
 struct Snapshot: Decodable {
     struct Next: Decodable { let at: String; let label: String; let what: String?; let who: String? }
@@ -416,6 +418,7 @@ struct ClinicView: View {
             Spacer(minLength: 0)
             Text(s.money?.smallLabel ?? "").font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
             moneyText(size: 26)
+            trendText(s.money?.trend)
             Spacer(minLength: 0)
             Divider()
             row(s.patients?.label ?? "", fresh.sameDay ? "\(s.patients?.done ?? 0)/\(s.patients?.total ?? 0)" : "—")
@@ -441,6 +444,7 @@ struct ClinicView: View {
                     label(s.money?.label)
                     Spacer(minLength: 0)
                     moneyText(size: 21)
+                    trendText(s.money?.trend)
                     note(moneyRange)
                 }
                 Divider()
@@ -461,8 +465,12 @@ struct ClinicView: View {
                 column(link: s.bonos?.link) {
                     label(s.bonos?.label)
                     Spacer(minLength: 0)
-                    Text(fresh.sameMonth ? "\(s.bonos?.count ?? 0)" : "—").font(.system(size: 21, weight: .semibold)).monospacedDigit()
+                    HStack(alignment: .firstTextBaseline, spacing: 5) {
+                        Text(fresh.sameMonth ? "\(s.bonos?.count ?? 0)" : "—").font(.system(size: 21, weight: .semibold)).monospacedDigit()
+                        trendText(s.bonos?.trend)
+                    }
                     note(fresh.sameMonth ? (s.bonos?.value ?? "") : "").privacySensitive()
+                    if fresh.sameMonth, let owed = s.bonos?.owed { note(owed).privacySensitive() }
                 }
             }
         }
@@ -489,6 +497,16 @@ struct ClinicView: View {
             .font(.system(size: size, weight: .semibold)).monospacedDigit()
             .minimumScaleFactor(0.6).lineLimit(1)
             .privacySensitive()
+    }
+
+    // Green when up, orange when down; nothing outside the snapshot's month.
+    @ViewBuilder private func trendText(_ trend: Trend?) -> some View {
+        if fresh.sameMonth, let t = trend {
+            Text(t.text)
+                .font(.system(size: 10.5, weight: .semibold)).monospacedDigit()
+                .foregroundStyle(t.direction == "up" ? AnyShapeStyle(done) : t.direction == "down" ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
+                .lineLimit(1).minimumScaleFactor(0.8)
+        }
     }
 
     private func column<Content: View>(link: String?, @ViewBuilder _ content: () -> Content) -> some View {

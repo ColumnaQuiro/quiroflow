@@ -53,13 +53,18 @@ export function refundDescription(invoiceNumber: string | null, reason: string):
  * Rounded down: a payment that covers five and a half sessions has bought
  * five, and claiming six would hand over a session that has not been paid for.
  */
+//
+// A payment that is exactly one plazo of a bono sold in plazos says which:
+// "Bono 10 sesiones — plazo 2 de 2: 250,00 € de 500,00 € (5 de 10 sesiones)".
 export function bonoPaymentDescription(
   packageName: string,
   amountCents: number,
   priceCents: number,
   sessionsTotal: number,
+  installment?: { number: number; of: number } | null,
 ): string {
   const covered = priceCents > 0 ? Math.floor((amountCents / priceCents) * sessionsTotal) : 0
   const sessions = sessionsTotal === 1 ? 'sesión' : 'sesiones'
-  return `${packageName} — ${formatEur(amountCents)} de ${formatEur(priceCents)} (${covered} de ${sessionsTotal} ${sessions})`
+  const plazo = installment ? `plazo ${installment.number} de ${installment.of}: ` : ''
+  return `${packageName} — ${plazo}${formatEur(amountCents)} de ${formatEur(priceCents)} (${covered} de ${sessionsTotal} ${sessions})`
 }

@@ -1,17 +1,23 @@
 <script setup lang="ts">
 import { formatEur } from '~/utils/billing'
 import { parseEurosToCents } from '~/utils/appointmentTypes'
+import { readInstallmentOptions, writeInstallmentOptions, type InstallmentOption } from '~/utils/bonoInstallments'
 
 // Bono templates. A sale copies the name, session count and price into
 // package_purchases, so editing or removing a template here changes what is
 // sold from now on and nothing already sold -- which is why editing is safe
 // to offer at all.
+//
+// Besides its price (paid at once), a bono can be sold in plazos, each option
+// priced on its own: 2 x 250 EUR, 3 x 180 EUR. The sale records the option, so
+// changing these changes nothing already sold either.
 
 interface PackageRow {
   id: string
   name: string
   session_count: number
   price_cents: number
+  installment_options: unknown
 }
 interface Sales {
   sold: number
@@ -28,7 +34,7 @@ const sales = ref<Record<string, Sales>>({})
 const loading = ref(true)
 
 async function load() {
-  const { data } = await supabase.from('packages').select('id, name, session_count, price_cents').order('name')
+  const { data } = await supabase.from('packages').select('id, name, session_count, price_cents, installment_options').order('name')
   packages.value = data ?? []
   loading.value = false
   // Sold is a head count; open reads only the not-closed purchases, since
@@ -55,6 +61,12 @@ onMounted(load)
 function perSession(p: { session_count: number; price_cents: number }) {
   return p.session_count > 0 ? formatEur(Math.round(p.price_cents / p.session_count)) : ''
 }
+function optionsOf(p: PackageRow): InstallmentOption[] {
+  return readInstallmentOptions(p.installment_options)
+}
+function optionLabel(o: InstallmentOption) {
+  return t(`${o.installments} × ${formatEur(o.installmentCents)}`, `${o.installments} plazos de ${formatEur(o.installmentCents)}`)
+}
 function soldLabel(id: string) {
   const s = sales.value[id]
   if (!s) return ''
@@ -74,6 +86,8 @@ const editing = ref<PackageRow | 'new' | null>(null)
 const formName = ref('')
 const formSessions = ref('10')
 const formPrice = ref('')
+// One row per split option, as typed: the number of plazos and what each costs.
+const formOptions = ref<{ installments: string; amount: string }[]>([])
 const saving = ref(false)
 const formError = ref('')
 
@@ -82,6 +96,7 @@ function openNew() {
   formName.value = ''
   formSessions.value = '10'
   formPrice.value = ''
+  formOptions.value = []
   formError.value = ''
 }
 function openEdit(p: PackageRow) {
@@ -89,23 +104,65 @@ function openEdit(p: PackageRow) {
   formName.value = p.name
   formSessions.value = String(p.session_count)
   formPrice.value = (p.price_cents / 100).toFixed(2).replace('.', ',')
+  formOptions.value = optionsOf(p).map((o) => ({ installments: String(o.installments), amount: (o.installmentCents / 100).toFixed(2).replace('.', ',') }))
   formError.value = ''
+}
+
+function addOption() {
+  const used = new Set(formOptions.value.map((o) => Number.parseInt(o.installments, 10)))
+  let next = 2
+  while (used.has(next) && next < 24) next++
+  const priceCents = parseEurosToCents(formPrice.value)
+  // Starts at the up-front price split evenly: the commonest case, and a
+  // number to change rather than a blank to work out.
+  const amount = priceCents !== null && priceCents !== undefined && priceCents > 0 ? (Math.round(priceCents / next) / 100).toFixed(2).replace('.', ',') : ''
+  formOptions.value = [...formOptions.value, { installments: String(next), amount }]
+}
+function removeOption(i: number) {
+  formOptions.value = formOptions.value.filter((_, j) => j !== i)
 }
 
 const formSessionsNum = computed(() => Number.parseInt(formSessions.value, 10))
 // Empty is not zero: a blank price is refused, a typed 0 is a free plan.
 const formPriceCents = computed(() => parseEurosToCents(formPrice.value) ?? Number.NaN)
-const formValid = computed(() => formName.value.trim() !== '' && formSessionsNum.value > 0 && Number.isFinite(formPriceCents.value) && formPriceCents.value >= 0)
+const parsedOptions = computed(() =>
+  formOptions.value.map((o) => {
+    const installments = Number(o.installments)
+    const installmentCents = parseEurosToCents(o.amount) ?? Number.NaN
+    return { installments, installmentCents }
+  }),
+)
+function optionTotal(i: number) {
+  const o = parsedOptions.value[i]
+  return o && Number.isInteger(o.installments) && Number.isFinite(o.installmentCents) ? formatEur(o.installments * o.installmentCents) : ''
+}
+// Why the split options cannot be saved, or ''.
+const optionsProblem = computed(() => {
+  const seen = new Set<number>()
+  for (const o of parsedOptions.value) {
+    if (!Number.isInteger(o.installments) || o.installments < 2 || o.installments > 24) return t('Each option is between 2 and 24 plazos.', 'Cada opción es de 2 a 24 plazos.')
+    if (!Number.isFinite(o.installmentCents) || o.installmentCents <= 0) return t('Each option needs what one plazo costs.', 'Cada opción necesita el importe de cada plazo.')
+    if (seen.has(o.installments)) return t('Two options have the same number of plazos.', 'Hay dos opciones con el mismo número de plazos.')
+    seen.add(o.installments)
+  }
+  return ''
+})
+const formValid = computed(() => formName.value.trim() !== '' && formSessionsNum.value > 0 && Number.isFinite(formPriceCents.value) && formPriceCents.value >= 0 && !optionsProblem.value)
 const formPerSession = computed(() => (formValid.value ? perSession({ session_count: formSessionsNum.value, price_cents: formPriceCents.value }) : ''))
 
 async function save() {
   formError.value = ''
   if (!formValid.value) {
-    formError.value = t('A bono needs a name, at least one session and a price.', 'Un bono necesita nombre, al menos una sesión y un precio.')
+    formError.value = optionsProblem.value || t('A bono needs a name, at least one session and a price.', 'Un bono necesita nombre, al menos una sesión y un precio.')
     return
   }
   saving.value = true
-  const values = { name: formName.value.trim(), session_count: formSessionsNum.value, price_cents: formPriceCents.value }
+  const values = {
+    name: formName.value.trim(),
+    session_count: formSessionsNum.value,
+    price_cents: formPriceCents.value,
+    installment_options: writeInstallmentOptions(parsedOptions.value),
+  }
   const { error } =
     editing.value === 'new'
       ? await supabase.from('packages').insert({ account_id: store.accountId!, ...values })
@@ -173,6 +230,12 @@ const inputClass = 'h-9 touch:h-11 w-full rounded-ctl border border-line-control
                     <span class="text-[13.5px] text-ink-500">{{ p.session_count === 1 ? t('1 session', '1 sesión') : t(`${p.session_count} sessions`, `${p.session_count} sesiones`) }}</span>
                   </div>
                   <span class="inline-flex h-6 items-center self-start rounded-pill bg-brand-tint px-2.5 text-[12px] font-bold text-brand-text">{{ t(`${perSession(p)} per session`, `${perSession(p)} por sesión`) }}</span>
+                  <ul v-if="optionsOf(p).length" class="flex flex-col gap-0.5 text-[13px] text-ink-700" data-cy="package-installment-options">
+                    <li v-for="o in optionsOf(p)" :key="o.installments" data-cy="package-installment-option">
+                      {{ t('or', 'o') }} <strong class="font-semibold text-ink-900">{{ optionLabel(o) }}</strong>
+                      <span class="text-ink-500">· {{ formatEur(o.installments * o.installmentCents) }} {{ t('in all', 'en total') }}</span>
+                    </li>
+                  </ul>
                 </div>
                 <button
                   type="button"
@@ -212,6 +275,48 @@ const inputClass = 'h-9 touch:h-11 w-full rounded-ctl border border-line-control
                   <input v-model="formPrice" data-cy="package-price-input" type="text" inputmode="decimal" placeholder="300,00" :class="[inputClass, 'text-right']" />
                 </label>
               </div>
+              <fieldset class="flex flex-col gap-2 rounded-ctl border border-line bg-surface-subtle px-3.5 py-3">
+                <legend class="px-1 text-[13px] font-semibold text-ink-700">{{ t('Paying in plazos', 'Pago fraccionado') }}</legend>
+                <p class="text-[12.5px] text-ink-500">
+                  {{ t('Optional. Each option has its own price, which can add up to more than paying at once.', 'Opcional. Cada opción tiene su propio precio, que puede sumar más que pagar de una vez.') }}
+                </p>
+                <div v-for="(o, i) in formOptions" :key="i" class="flex flex-wrap items-center gap-2 text-[13.5px] text-ink-700" data-cy="package-option-row">
+                  <input
+                    v-model="o.installments"
+                    data-cy="package-option-installments"
+                    type="number"
+                    min="2"
+                    max="24"
+                    inputmode="numeric"
+                    :aria-label="t('Number of plazos', 'Número de plazos')"
+                    :class="[inputClass, '!w-20 text-right']"
+                  />
+                  <span>{{ t('plazos of', 'plazos de') }}</span>
+                  <input
+                    v-model="o.amount"
+                    data-cy="package-option-amount"
+                    type="text"
+                    inputmode="decimal"
+                    placeholder="250,00"
+                    :aria-label="t('Each plazo (€)', 'Cada plazo (€)')"
+                    :class="[inputClass, '!w-28 text-right']"
+                  />
+                  <span>€</span>
+                  <span v-if="optionTotal(i)" class="text-ink-500" data-cy="package-option-total">= {{ optionTotal(i) }} {{ t('in all', 'en total') }}</span>
+                  <button
+                    type="button"
+                    class="ml-auto flex h-8 w-8 touch:h-11 touch:w-11 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface hover:text-danger-text"
+                    :aria-label="t('Remove this option', 'Quitar esta opción')"
+                    data-cy="package-option-remove"
+                    @click="removeOption(i)"
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+                  </button>
+                </div>
+                <UiBtn variant="ghost" size="sm" class="self-start" data-cy="package-option-add" :disabled="formOptions.length >= 12" @click="addOption">
+                  {{ t('Add a plazos option', 'Añadir opción en plazos') }}
+                </UiBtn>
+              </fieldset>
               <div class="flex flex-wrap items-center gap-2.5">
                 <UiBtn v-if="editing !== 'new'" data-cy="package-remove" class="!border-danger-border !text-danger-text" :disabled="removing" @click="remove">
                   {{ t('Remove bono', 'Eliminar bono') }}
@@ -229,7 +334,7 @@ const inputClass = 'h-9 touch:h-11 w-full rounded-ctl border border-line-control
           </div>
 
           <p class="rounded-ctl border border-line bg-surface-subtle px-3.5 py-3 text-[13.5px] leading-snug text-ink-700">
-            {{ t('Changing or removing a bono only affects future sales. Bonos already sold keep their sessions and price.', 'Cambiar o eliminar un bono solo afecta a las ventas futuras. Los bonos ya vendidos conservan sus sesiones y su precio.') }}
+            {{ t('Changing or removing a bono only affects future sales. Bonos already sold keep their sessions, price and plazos.', 'Cambiar o eliminar un bono solo afecta a las ventas futuras. Los bonos ya vendidos conservan sus sesiones, su precio y sus plazos.') }}
           </p>
         </div>
       </div>

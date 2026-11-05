@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { carePlanCadenceLabel } from '../../utils/carePlanCadence'
 import { DISCHARGE_RECALL_DAYS, renewalDue, renewalPreset, type RenewalKind } from '../../utils/planRenewal'
+import { readInstallmentOptions } from '../../utils/bonoInstallments'
+import { formatEur } from '../../utils/billing'
 
 // "Revisión": the patient's care plan is ending (utils/planRenewal.ts), so
 // the visit carries the review -- in one place, how it went (pain at the start
@@ -12,7 +14,8 @@ import { DISCHARGE_RECALL_DAYS, renewalDue, renewalPreset, type RenewalKind } fr
 //     (or today), editable.
 //   - "…and add the bono" also opens that bono for the patient, owed in full
 //     -- the desk takes the money in Dinero, with its factura, as with any
-//     bono sold there.
+//     bono sold there. A bono with split options (Settings > Bonos) is opened
+//     under the one chosen here, at that option's price.
 //   - Discharge starts no plan and brings them back into Recalls in three
 //     months (recall_snoozed_until).
 //
@@ -28,11 +31,16 @@ const done = ref(0)
 const missed = ref(0)
 const lastBooked = ref<string | null>(null)
 const pain = ref<{ first: number | null; latest: number | null }>({ first: null, latest: null })
-const packages = ref<{ id: string; name: string; price_cents: number; session_count: number }[]>([])
+const packages = ref<{ id: string; name: string; price_cents: number; session_count: number; installment_options: unknown }[]>([])
 const kind = ref<RenewalKind>('maintenance')
 const name = ref('')
 const startOn = ref('')
 const packageId = ref('')
+const installments = ref(1)
+const packageOptions = computed(() => readInstallmentOptions(packages.value.find((x) => x.id === packageId.value)?.installment_options))
+watch(packageId, () => {
+  installments.value = 1
+})
 const busy = ref(false)
 const error = ref('')
 const finished = ref('')
@@ -58,7 +66,7 @@ async function load() {
       pain.value = { first: scored[0] ?? null, latest: scored[scored.length - 1] ?? null }
     }
     if (props.canSellBono) {
-      const { data: pk } = await supabase.from('packages').select('id, name, price_cents, session_count').order('name')
+      const { data: pk } = await supabase.from('packages').select('id, name, price_cents, session_count, installment_options').order('name')
       packages.value = (pk as typeof packages.value | null) ?? []
     }
     const after = lastBooked.value ? new Date(lastBooked.value) : new Date()
@@ -106,9 +114,23 @@ async function renew(withBono: boolean) {
   let purchaseId: string | null = null
   const pkg = packages.value.find((x) => x.id === packageId.value)
   if (withBono && pkg) {
+    const option = installments.value > 1 ? (readInstallmentOptions(pkg.installment_options).find((o) => o.installments === installments.value) ?? null) : null
+    const priceCents = option ? option.installments * option.installmentCents : pkg.price_cents
     const { data: purchase, error: e } = await supabase
       .from('package_purchases')
-      .insert({ account_id: props.accountId, patient_id: props.patientId, package_id: pkg.id, package_name: pkg.name, sessions_total: pkg.session_count, price_cents: pkg.price_cents, invoice_id: null, owed_cents: pkg.price_cents, created_by: props.teamMemberId } as never)
+      .insert({
+        account_id: props.accountId,
+        patient_id: props.patientId,
+        package_id: pkg.id,
+        package_name: pkg.name,
+        sessions_total: pkg.session_count,
+        price_cents: priceCents,
+        installments: option?.installments ?? null,
+        installment_cents: option?.installmentCents ?? null,
+        invoice_id: null,
+        owed_cents: priceCents,
+        created_by: props.teamMemberId,
+      } as never)
       .select('id')
       .single()
     if (e || !purchase) {
@@ -190,6 +212,12 @@ const field = 'h-9 rounded-ctl border border-line-control bg-surface px-2.5 text
             <select v-model="packageId" :class="field" class="w-56" data-cy="plan-renewal-bono">
               <option value="">{{ t('None', 'Ninguno') }}</option>
               <option v-for="p in packages" :key="p.id" :value="p.id">{{ p.name }}</option>
+            </select>
+          </label>
+          <label v-if="canSellBono && packageId && packageOptions.length" class="flex flex-col gap-1 text-[12px] text-ink-muted">{{ t('Paid', 'Forma de pago') }}
+            <select v-model.number="installments" :class="field" class="w-56" data-cy="plan-renewal-bono-installments">
+              <option :value="1">{{ t(`At once · ${formatEur(packages.find((x) => x.id === packageId)?.price_cents ?? 0)}`, `En un pago · ${formatEur(packages.find((x) => x.id === packageId)?.price_cents ?? 0)}`) }}</option>
+              <option v-for="o in packageOptions" :key="o.installments" :value="o.installments">{{ t(`${o.installments} plazos of ${formatEur(o.installmentCents)}`, `${o.installments} plazos de ${formatEur(o.installmentCents)}`) }}</option>
             </select>
           </label>
         </div>

@@ -139,7 +139,7 @@ defineExpose({ reload: load })
 </script>
 
 <template>
-  <section v-if="loaded && (rows.length > 0 || everyone)" class="overflow-hidden rounded-card border border-line bg-surface shadow-card sm:mx-6" data-cy="needs-confirming">
+  <section v-if="loaded && (rows.length > 0 || everyone)" class="overflow-hidden rounded-card border border-line bg-surface shadow-card" data-cy="needs-confirming">
     <header class="flex flex-wrap items-center justify-between gap-2 border-b border-line-row px-4 py-2.5">
       <div class="flex items-baseline gap-2">
         <h2 class="text-[13.5px] font-semibold text-ink-900">{{ t('Needs confirming', 'Por confirmar') }}</h2>

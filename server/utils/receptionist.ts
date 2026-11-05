@@ -6,6 +6,7 @@ import { CONFIRM_BEFORE_BOOKING, audienceSection, minorsSection, newPatientDetai
 import { CARD_ANSWERS_LINE, historyMarkersSection, INFORMAL_ADDRESS_LINE, LATER_ANSWER_LINE, NO_INVENTION_LINE, NOT_CHIROPRACTIC_SYMPTOM_LINE, PART_OF_DAY_ANSWER_LINE, REPLY_DETAILS_LINE, replyLanguageLine, SENT_FILES_LINE, STATED_LIMITS_LINE, WAITLIST_SECTION } from '~/utils/receptionistHistory'
 import { leadOriginSection, type LeadOrigin } from '~/utils/receptionistLeadOrigin'
 import { NO_REPLY } from '~/utils/receptionistAutoReply'
+import { readInstallmentOptions } from '~/utils/bonoInstallments'
 import { CONFIDENTIALITY_SECTION, promptSafeName } from '~/utils/receptionistGuard'
 import type { ReceptionistPrompt } from '~/utils/receptionistPrompt'
 import {
@@ -212,12 +213,17 @@ export async function loadTeamNames(supabase: SupabaseClient<Database>, accountI
 
 /** The clinic's bonos and their prices (Settings > Bonos), for laterPricesSection. */
 export async function loadPackagePrices(supabase: SupabaseClient<Database>, accountId: string): Promise<PromptPackage[]> {
-  const { data, error } = await supabase.from('packages').select('name, session_count, price_cents').eq('account_id', accountId).order('session_count')
+  const { data, error } = await supabase.from('packages').select('name, session_count, price_cents, installment_options').eq('account_id', accountId).order('session_count')
   if (error) {
     console.error('[receptionist] could not read bonos:', error.message)
     return []
   }
-  return ((data ?? []) as { name: string; session_count: number | null; price_cents: number | null }[]).map((p) => ({ name: p.name, sessions: p.session_count ?? 0, priceCents: p.price_cents ?? 0 }))
+  return ((data ?? []) as { name: string; session_count: number | null; price_cents: number | null; installment_options: unknown }[]).map((p) => ({
+    name: p.name,
+    sessions: p.session_count ?? 0,
+    priceCents: p.price_cents ?? 0,
+    installments: readInstallmentOptions(p.installment_options),
+  }))
 }
 
 /** Every type the account has, archived included, for callers that filter. */

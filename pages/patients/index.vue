@@ -15,6 +15,9 @@ import {
   type PatientFilters,
 } from '~/utils/patientFilters'
 import { usePatientSegments, type PatientSegment } from '~/composables/usePatientSegments'
+import { listFilters as filtersOfList, usePatientLists, type PatientList } from '~/composables/usePatientLists'
+import type { AudienceView } from '~/components/patients/AudienceTabs.vue'
+import type { AudienceRow } from '~/components/patients/AudienceTable.vue'
 
 type Patient = Pick<
   Tables<'patients'>,
@@ -39,6 +42,7 @@ const logAccess = useAccessLog()
 const route = useRoute()
 const router = useRouter()
 const { showToast } = useToast()
+const { can } = usePermission()
 
 const PAGE_SIZE = 50
 
@@ -78,6 +82,36 @@ const {
 } = usePatientSegments()
 const activeSegment = computed(() => segments.value.find((s) => s.id === activeSegmentId.value) ?? null)
 const segmentModified = computed(() => !!activeSegment.value && !sameFilters(activeSegment.value.filters, currentFilters.value))
+
+// Lists (20261105143740). Opening one is this same list filtered by `list`,
+// so it needs no id of its own in the URL: the filter is the list.
+const {
+  lists,
+  counts: listCounts,
+  loaded: listsLoaded,
+  counting: listsCounting,
+  refresh: refreshLists,
+  refreshCounts: refreshListCounts,
+  canManage: canManageList,
+  create: createList,
+  update: updateList,
+  remove: removeList,
+  addPatients: addPatientsToList,
+  addMatching: addMatchingToList,
+  removePatients: removePatientsFromList,
+  removeMatching: removeMatchingFromList,
+} = usePatientLists()
+// A segment whose rules include a list is the segment, not the list.
+const activeList = computed(() => (activeSegment.value ? null : lists.value.find((l) => l.id === currentFilters.value.list) ?? null))
+
+// Which tab: the patient list (also what an open list or segment shows), or
+// the overview of lists or of segments.
+const view = ref<AudienceView>(route.query.view === 'lists' || route.query.view === 'segments' ? route.query.view : 'patients')
+watch(view, (next) => {
+  syncUrl()
+  if (next === 'lists') refreshListCounts()
+  if (next === 'segments') refreshSegmentCounts()
+})
 // Name only. Last visit, next visit and balance are assembled per page from
 // separate queries, so sorting on them would order the fifty rows already
 // fetched and silently claim to have ordered all three thousand -- which
@@ -151,6 +185,8 @@ async function loadPatients() {
   totalCount.value = count ?? 0
   // The open segment's count is this total, whatever the last count said.
   if (activeSegment.value && !segmentModified.value) segmentCounts.value = { ...segmentCounts.value, [activeSegment.value.id]: totalCount.value }
+  // A selection is of the rows on screen; another page or filter starts again.
+  selectedIds.value = new Set([...selectedIds.value].filter((id) => patients.value.some((p) => p.id === id)))
   loading.value = false
   loadedOnce.value = true
 
@@ -238,6 +274,8 @@ watch(search, () => {
 watch(
   () => JSON.stringify(currentFilters.value),
   () => {
+    selectedIds.value = new Set()
+    allMatchingSelected.value = false
     goToPage(1)
     syncUrl()
   },
@@ -250,6 +288,7 @@ watch(sortDir, () => goToPage(1))
 function syncUrl() {
   const query: Record<string, string> = filtersToQuery(currentFilters.value)
   if (activeSegmentId.value) query.segment = activeSegmentId.value
+  if (view.value !== 'patients') query.view = view.value
   router.replace({ query })
 }
 // The clinic switcher (AppSidebar.vue) can now change store.currentClinicId
@@ -288,6 +327,7 @@ function matchingPatients(columns: typeof PATIENT_COLUMNS, options?: { count: 'e
 }
 
 // -- Segments ----------------------------------------------------------------
+onMounted(refreshLists)
 onMounted(async () => {
   await refreshSegments()
   // A link that names a segment and nothing else (?segment=<id>) opens it.
@@ -298,6 +338,7 @@ onMounted(async () => {
 // was taken, and these are the moments someone is looking at them.
 function openSegment(segment: PatientSegment) {
   activeSegmentId.value = segment.id
+  view.value = 'patients'
   applyFilters(segment.filters)
   syncUrl()
   refreshSegmentCounts()
@@ -307,6 +348,19 @@ function showAllPatients() {
   clearAllFilters()
   syncUrl()
   refreshSegmentCounts()
+}
+function openList(list: PatientList) {
+  activeSegmentId.value = null
+  view.value = 'patients'
+  applyFilters(filtersOfList(list.id))
+  syncUrl()
+  refreshListCounts()
+}
+// The tabs. "All patients" from an overview goes back to whatever the list
+// was showing; pressed while a list or segment is open, it closes it.
+function onTab(next: AudienceView) {
+  if (next === 'patients' && view.value === 'patients' && (activeSegment.value || activeList.value)) showAllPatients()
+  view.value = next
 }
 function applyFilters(filters: PatientFilters) {
   Object.assign(form, filtersToForm(filters))
@@ -367,6 +421,196 @@ async function confirmDeleteSegment() {
   } finally {
     segmentBusy.value = false
   }
+}
+
+// -- Lists -------------------------------------------------------------------
+const listDialog = ref<null | { mode: 'create' | 'rename'; id?: string }>(null)
+const deletingListId = ref<string | null>(null)
+const listBusy = ref(false)
+const listBeingEdited = computed(() => lists.value.find((l) => l.id === (listDialog.value?.id ?? deletingListId.value)) ?? null)
+
+async function onListDialogSave(name: string, shared: boolean) {
+  listBusy.value = true
+  try {
+    if (listDialog.value?.mode === 'rename' && listDialog.value.id) {
+      await updateList(listDialog.value.id, { name, shared })
+    } else {
+      await createList(name, shared)
+    }
+    listDialog.value = null
+    showToast(t('List saved', 'Lista guardada'))
+  } catch {
+    showToast(t('The list could not be saved.', 'No se pudo guardar la lista.'), 'error')
+  } finally {
+    listBusy.value = false
+  }
+}
+
+async function confirmDeleteList() {
+  const id = deletingListId.value
+  if (!id) return
+  listBusy.value = true
+  try {
+    await removeList(id)
+    if (currentFilters.value.list === id) showAllPatients()
+    deletingListId.value = null
+    showToast(t('List deleted', 'Lista eliminada'))
+  } catch {
+    showToast(t('The list could not be deleted.', 'No se pudo eliminar la lista.'), 'error')
+  } finally {
+    listBusy.value = false
+  }
+}
+
+const canImport = computed(() => can('data_admin'))
+function importIntoList(id: string | null) {
+  navigateTo({ path: '/patients/import', query: id ? { list: id } : {} })
+}
+
+// -- Selection ---------------------------------------------------------------
+// Ticked rows on this page, or -- once the whole page is ticked and the
+// filters match more -- everyone they match, which is added in the database
+// from the same filters rather than as thousands of ids.
+const selectedIds = ref(new Set<string>())
+const allMatchingSelected = ref(false)
+const pageAllSelected = computed(() => patients.value.length > 0 && patients.value.every((p) => selectedIds.value.has(p.id)))
+const selectionCount = computed(() => (allMatchingSelected.value ? totalCount.value : selectedIds.value.size))
+function toggleRow(id: string) {
+  const next = new Set(selectedIds.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  selectedIds.value = next
+  allMatchingSelected.value = false
+}
+function togglePage() {
+  selectedIds.value = pageAllSelected.value ? new Set() : new Set(patients.value.map((p) => p.id))
+  allMatchingSelected.value = false
+}
+function clearSelection() {
+  selectedIds.value = new Set()
+  allMatchingSelected.value = false
+}
+// Lists the person may add to: their own, and the team's if they edit patients.
+const manageableLists = computed(() => lists.value.filter(canManageList))
+const addingToList = ref(false)
+const bulkBusy = ref(false)
+
+async function onAddToList(target: { listId: string } | { newName: string; shared: boolean }) {
+  bulkBusy.value = true
+  try {
+    const list = 'listId' in target ? lists.value.find((l) => l.id === target.listId)! : await createList(target.newName, target.shared)
+    const added = allMatchingSelected.value
+      ? await addMatchingToList(list.id, listFilters.value, store.currentClinicId ?? null)
+      : await addPatientsToList(list.id, [...selectedIds.value], 'bulk')
+    addingToList.value = false
+    clearSelection()
+    await refreshListCounts()
+    showToast(t(`${added} added to “${list.name}”`, `${added} añadidos a «${list.name}»`))
+  } catch {
+    showToast(t('They could not be added to the list.', 'No se pudieron añadir a la lista.'), 'error')
+  } finally {
+    bulkBusy.value = false
+  }
+}
+
+async function removeSelectionFromList() {
+  const list = activeList.value
+  if (!list) return
+  bulkBusy.value = true
+  try {
+    const removed = allMatchingSelected.value
+      ? await removeMatchingFromList(list.id, listFilters.value, store.currentClinicId ?? null)
+      : await removePatientsFromList(list.id, [...selectedIds.value])
+    clearSelection()
+    await Promise.all([loadPatients(), refreshListCounts()])
+    showToast(t(`${removed} removed from “${list.name}”`, `${removed} quitados de «${list.name}»`))
+  } catch {
+    showToast(t('They could not be removed from the list.', 'No se pudieron quitar de la lista.'), 'error')
+  } finally {
+    bulkBusy.value = false
+  }
+}
+
+// -- The two overview tabs -----------------------------------------------------
+function listName(id: string | undefined) {
+  return lists.value.find((l) => l.id === id)?.name ?? t('a list', 'una lista')
+}
+const FAMILY_LABELS = computed<Record<string, string>>(() => ({
+  linked: t('Has family linked', 'Con familia vinculada'),
+  none: t('No family linked', 'Sin familia vinculada'),
+  parent: t('Has a parent linked', 'Con padre/madre vinculado'),
+  child: t('Has a child linked', 'Con hijos vinculados'),
+  partner: t('Has a partner linked', 'Con pareja vinculada'),
+  sibling: t('Has a sibling linked', 'Con hermanos vinculados'),
+}))
+const MARKETING_LABELS = computed<Record<string, string>>(() => ({
+  email: t('Accepts marketing by email', 'Acepta publicidad por correo'),
+  whatsapp: t('Accepts marketing by WhatsApp', 'Acepta publicidad por WhatsApp'),
+  any: t('Accepts marketing', 'Acepta publicidad'),
+  none: t('No marketing consent', 'Sin consentimiento de publicidad'),
+}))
+/** A segment's rules in one line, for the Segments tab. */
+function filterSummary(f: PatientFilters): string {
+  const parts: string[] = []
+  if (f.q) parts.push(`"${f.q}"`)
+  if (f.status) parts.push(f.status === 'inactive' ? t('Inactive', 'Inactivo') : t('Any status', 'Cualquier estado'))
+  for (const tag of f.tags ?? []) parts.push(`#${tag}`)
+  if (f.list) parts.push(`${t('On', 'En')} ${listName(f.list)}`)
+  if (f.notList) parts.push(`${t('Not on', 'No en')} ${listName(f.notList)}`)
+  if (f.family) parts.push(FAMILY_LABELS.value[f.family]!)
+  if (f.familyBono) parts.push(t('Shares a bono', 'Comparte bono'))
+  if (f.marketing) parts.push(MARKETING_LABELS.value[f.marketing]!)
+  if (f.balance) parts.push(f.balance === 'owing' ? t('Owing', 'Con deuda') : t('In credit', 'A favor'))
+  if (f.futureAppointment) parts.push(f.futureAppointment === 'yes' ? t('Has a future appointment', 'Con cita futura') : t('No future appointment', 'Sin cita futura'))
+  if (f.bono) parts.push(f.bono === 'none' ? t('No live bono', 'Sin bono activo') : t('Has a live bono', 'Con bono activo'))
+  if (f.lastVisitFrom || f.lastVisitTo) parts.push(`${t('Last visit', 'Última visita')} ${rangeLabel(f.lastVisitFrom ?? '', f.lastVisitTo ?? '')}`)
+  if (f.createdFrom || f.createdTo) parts.push(`${t('Patient since', 'Paciente desde')} ${rangeLabel(f.createdFrom ?? '', f.createdTo ?? '')}`)
+  if (f.carePlan) parts.push(t('On a care plan', 'Con plan de cuidados'))
+  if (f.app) parts.push(f.app === 'yes' ? t('Uses the app', 'Usa la app') : t('Does not use the app', 'No usa la app'))
+  if (f.birthdayThisMonth) parts.push(t('Birthday this month', 'Cumple este mes'))
+  if (f.missingContact) parts.push(f.missingContact === 'email' ? t('Missing email', 'Sin correo') : t('Missing phone', 'Sin teléfono'))
+  if (f.doNotContact) parts.push(t('Do not contact', 'No contactar'))
+  if (f.minors) parts.push(t('Minors', 'Menores'))
+  if (f.practitioner) parts.push(teamMembers.value.find((m) => m.id === f.practitioner)?.full_name ?? t('Practitioner', 'Profesional'))
+  return parts.join(' · ') || t('Everyone active', 'Todos los activos')
+}
+const listRows = computed<AudienceRow[]>(() =>
+  lists.value.map((l) => ({
+    id: l.id,
+    name: l.name,
+    shared: l.shared,
+    detail: l.description ?? '',
+    count: listCounts.value[l.id]?.patients,
+    email: listCounts.value[l.id]?.email,
+    whatsapp: listCounts.value[l.id]?.whatsapp,
+    manageable: canManageList(l),
+  })),
+)
+const segmentRows = computed<AudienceRow[]>(() =>
+  segments.value.map((s) => ({ id: s.id, name: s.name, shared: s.shared, detail: filterSummary(s.filters), count: segmentCounts.value[s.id], manageable: canManage(s) })),
+)
+// A segment is made from the filters on screen: "New segment" goes to the
+// list, opens the panel with the rarer filters, and says what to do next.
+const segmentHint = ref(false)
+function startNewSegment() {
+  showAllPatients()
+  view.value = 'patients'
+  showMoreFilters.value = true
+  segmentHint.value = true
+}
+function segmentFromRow(id: string) {
+  const segment = segments.value.find((s) => s.id === id)
+  if (segment) openSegment(segment)
+}
+function renameSegmentRow(id: string) {
+  const segment = segments.value.find((s) => s.id === id)
+  if (!segment) return
+  activeSegmentId.value = segment.id
+  segmentDialog.value = 'rename'
+}
+function deleteSegmentRow(id: string) {
+  activeSegmentId.value = id
+  deletingSegment.value = true
 }
 
 // Export every patient matching the current filters (not just the loaded
@@ -491,7 +735,9 @@ const activeFilters = computed<ActiveFilter[]>(() => {
   for (const tag of form.tags) {
     out.push({ key: `tag:${tag}`, label: `#${tag}`, clear: () => (form.tags = form.tags.filter((x) => x !== tag)) })
   }
-  if (form.clinic) {
+  // With one clinic there is nothing to choose between; a list opens in
+  // "every clinic" and saying so would only be noise.
+  if (form.clinic && store.clinics.length > 1) {
     const label = form.clinic === 'all' ? t('All clinics', 'Todas las clínicas') : (store.clinics.find((c) => c.id === form.clinic)?.name ?? t('Clinic', 'Clínica'))
     out.push({ key: 'clinic', label, clear: () => (form.clinic = '') })
   }
@@ -521,12 +767,27 @@ const activeFilters = computed<ActiveFilter[]>(() => {
   if (form.birthdayThisMonth) {
     out.push({ key: 'birthday', label: t('Birthday this month', 'Cumple este mes'), clear: () => (form.birthdayThisMonth = false) })
   }
+  if (form.list) {
+    out.push({ key: 'list', label: `${t('List', 'Lista')}: ${listName(form.list)}`, clear: () => (form.list = '') })
+  }
+  if (form.notList) {
+    out.push({ key: 'notList', label: `${t('Not on', 'No en')} ${listName(form.notList)}`, clear: () => (form.notList = '') })
+  }
+  if (form.family) {
+    out.push({ key: 'family', label: FAMILY_LABELS.value[form.family]!, clear: () => (form.family = '') })
+  }
+  if (form.familyBono) {
+    out.push({ key: 'familyBono', label: t('Shares a bono', 'Comparte bono'), clear: () => (form.familyBono = false) })
+  }
+  if (form.marketing) {
+    out.push({ key: 'marketing', label: MARKETING_LABELS.value[form.marketing]!, clear: () => (form.marketing = '') })
+  }
   return out
 })
 // How many of the panel's filters are on, for its button.
 const moreFiltersCount = computed(() => {
   const f = currentFilters.value
-  return [f.tags, f.clinic, f.lastVisitFrom || f.lastVisitTo, f.futureAppointment, f.bono, f.createdFrom || f.createdTo, f.app, f.birthdayThisMonth].filter(Boolean).length
+  return [f.tags, store.clinics.length > 1 && f.clinic, f.lastVisitFrom || f.lastVisitTo, f.futureAppointment, f.bono, f.createdFrom || f.createdTo, f.app, f.birthdayThisMonth, f.notList, f.family, f.familyBono, f.marketing].filter(Boolean).length
 })
 
 // "1 Oct 2026 – 31 Oct 2026", "from 1 Oct 2026", "until 31 Oct 2026". Built
@@ -548,7 +809,7 @@ function rangeLabel(from: string, to: string) {
 // row is that control's, though -- otherwise opening the menu also navigated.
 function onRowClick(event: MouseEvent, patientId: string) {
   const target = event.target as HTMLElement | null
-  if (target?.closest('a, button, input, select')) return
+  if (target?.closest('a, button, input, select, label')) return
   navigateTo(`/patients/${patientId}`)
 }
 
@@ -629,6 +890,41 @@ function tagClass(tag: string) {
       @cancel="segmentDialog = null"
     />
 
+    <PatientsSegmentDialog
+      v-if="listDialog"
+      kind="list"
+      :mode="listDialog.mode"
+      :initial-name="listDialog.mode === 'rename' ? listBeingEdited?.name : ''"
+      :initial-shared="listDialog.mode === 'rename' ? listBeingEdited?.shared : true"
+      :busy="listBusy"
+      @save="onListDialogSave"
+      @cancel="listDialog = null"
+    />
+
+    <UiConfirmDialog
+      v-if="deletingListId && listBeingEdited"
+      :title="t(`Delete the list “${listBeingEdited.name}”?`, `¿Eliminar la lista «${listBeingEdited.name}»?`)"
+      :confirm-label="t('Delete', 'Eliminar')"
+      :cancel-label="t('Cancel', 'Cancelar')"
+      tone="danger"
+      :busy="listBusy"
+      @confirm="confirmDeleteList"
+      @cancel="deletingListId = null"
+    >
+      <p class="text-[13px] text-ink-muted">
+        {{ t('Only the list goes. Its patients stay as they are, and anything aimed at the list stops reaching them.', 'Solo se elimina la lista. Sus pacientes siguen igual, y lo que iba dirigido a la lista deja de llegarles.') }}
+      </p>
+    </UiConfirmDialog>
+
+    <PatientsAddToListDialog
+      v-if="addingToList"
+      :lists="manageableLists"
+      :count="selectionCount"
+      :busy="bulkBusy"
+      @add="onAddToList"
+      @cancel="addingToList = false"
+    />
+
     <UiConfirmDialog
       v-if="deletingSegment && activeSegment"
       :title="t(`Delete the segment “${activeSegment.name}”?`, `¿Eliminar el segmento «${activeSegment.name}»?`)"
@@ -647,18 +943,56 @@ function tagClass(tag: string) {
     </UiConfirmDialog>
 
     <div class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] sm:px-6">
-      <div class="flex flex-col gap-3 2xl:flex-row 2xl:items-start 2xl:gap-5">
-      <PatientsSegmentList
-        :segments="segments"
-        :counts="segmentCounts"
-        :active-id="activeSegment?.id ?? null"
-        :loaded="segmentsLoaded"
-        :counting="segmentsCounting"
-        @open="openSegment"
-        @all="showAllPatients"
+      <PatientsAudienceTabs
+        :view="view"
+        :list-count="listsLoaded ? lists.length : null"
+        :segment-count="segmentsLoaded ? segments.length : null"
+        @update:view="onTab"
       />
 
-      <div class="min-w-0 flex-1">
+      <PatientsAudienceTable
+        v-if="view === 'lists'"
+        kind="list"
+        :rows="listRows"
+        :loaded="listsLoaded"
+        :counting="listsCounting"
+        :can-import="canImport"
+        @open="(id) => openList(lists.find((l) => l.id === id)!)"
+        @create="listDialog = { mode: 'create' }"
+        @rename="(id) => (listDialog = { mode: 'rename', id })"
+        @delete="(id) => (deletingListId = id)"
+        @import="importIntoList"
+      />
+
+      <PatientsAudienceTable
+        v-else-if="view === 'segments'"
+        kind="segment"
+        :rows="segmentRows"
+        :loaded="segmentsLoaded"
+        :counting="segmentsCounting"
+        @open="segmentFromRow"
+        @create="startNewSegment"
+        @rename="renameSegmentRow"
+        @delete="deleteSegmentRow"
+      />
+
+      <div v-else class="mt-4 min-w-0">
+      <p v-if="segmentHint && !activeSegment" data-cy="segment-hint" class="mb-2.5 rounded-ctl border border-brand-tintBorder bg-brand-tint px-3 py-2 text-[12.5px] text-brand-text">
+        {{ t('Choose the filters for the segment, then press “Save as segment”. Whoever matches them later joins it by themselves.', 'Elige los filtros del segmento y pulsa «Guardar como segmento». Quien los cumpla más adelante entrará solo.') }}
+      </p>
+
+      <!-- The list open, and what can be done with it. -->
+      <div v-if="activeList" data-cy="list-header" class="mb-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <h2 class="text-[15px] font-[650] text-ink-900">{{ activeList.name }}</h2>
+        <span class="text-[12px] text-ink-muted">{{ t('List', 'Lista') }}</span>
+        <span v-if="!activeList.shared" class="rounded-pill bg-chip-bg2 px-1.5 py-0.5 text-[11px] font-[600] text-chip-text">{{ t('Private', 'Privado') }}</span>
+        <div v-if="canManageList(activeList)" class="flex items-center gap-1">
+          <UiBtn v-if="canImport" variant="ghost" size="sm" data-cy="list-header-import" @click="importIntoList(activeList.id)">{{ t('Import into this list', 'Importar a esta lista') }}</UiBtn>
+          <UiBtn variant="ghost" size="sm" data-cy="list-rename" @click="listDialog = { mode: 'rename', id: activeList.id }">{{ t('Rename', 'Renombrar') }}</UiBtn>
+          <UiBtn variant="ghost" size="sm" data-cy="list-delete" @click="deletingListId = activeList.id">{{ t('Delete', 'Eliminar') }}</UiBtn>
+        </div>
+      </div>
+
       <!-- The segment open, and what can be done with it. -->
       <div v-if="activeSegment" data-cy="segment-header" class="mb-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <h2 class="text-[15px] font-[650] text-ink-900">{{ activeSegment.name }}</h2>
@@ -766,7 +1100,7 @@ function tagClass(tag: string) {
         </button>
       </div>
 
-      <PatientsMoreFilters v-if="showMoreFilters" :form="form" />
+      <PatientsMoreFilters v-if="showMoreFilters" :form="form" :lists="lists" />
 
       <!-- What is actually being filtered on, and how to undo any one of it.
       A filtered list and an empty one otherwise look identical. -->
@@ -811,6 +1145,29 @@ function tagClass(tag: string) {
         </button>
       </div>
 
+      <!-- What is ticked, and what can be done with it. -->
+      <div v-if="selectionCount > 0" data-cy="bulk-bar" class="mt-3 flex flex-wrap items-center gap-2 rounded-ctl border border-brand-tintBorder bg-brand-tint px-3 py-2 text-[12.5px] text-brand-text">
+        <span data-cy="bulk-count" class="font-[600]">
+          {{ selectionCount === 1 ? t('1 selected', '1 seleccionado') : t(`${selectionCount} selected`, `${selectionCount} seleccionados`) }}
+        </span>
+        <button
+          v-if="pageAllSelected && !allMatchingSelected && totalCount > patients.length"
+          type="button"
+          data-cy="bulk-select-all-matching"
+          class="font-medium underline outline-none focus-visible:shadow-focus"
+          @click="allMatchingSelected = true"
+        >
+          {{ t(`Select all ${totalCount} that match`, `Seleccionar los ${totalCount} que coinciden`) }}
+        </button>
+        <div class="ml-auto flex items-center gap-1.5">
+          <UiBtn variant="secondary" size="sm" data-cy="bulk-add-to-list" :disabled="bulkBusy" @click="addingToList = true">{{ t('Add to list', 'Añadir a lista') }}</UiBtn>
+          <UiBtn v-if="activeList && canManageList(activeList)" variant="secondary" size="sm" data-cy="bulk-remove-from-list" :disabled="bulkBusy" @click="removeSelectionFromList">
+            {{ t('Remove from this list', 'Quitar de esta lista') }}
+          </UiBtn>
+          <UiBtn variant="ghost" size="sm" @click="clearSelection">{{ t('Clear', 'Deseleccionar') }}</UiBtn>
+        </div>
+      </div>
+
       <!-- A real table, so a screen reader announces the column a cell belongs
       to. min-w below keeps it scrolling horizontally as one unit on a narrow
       screen rather than squeezing every column unreadably thin. -->
@@ -820,6 +1177,18 @@ function tagClass(tag: string) {
             <caption class="sr-only">{{ t('Patients', 'Pacientes') }}</caption>
             <thead>
               <tr class="border-b border-line-row bg-surface-subtle2 text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">
+                <th scope="col" class="w-[40px] py-2.5 pl-4 pr-0 text-left">
+                  <input
+                    type="checkbox"
+                    data-cy="select-page"
+                    class="h-4 w-4 accent-brand"
+                    :checked="pageAllSelected"
+                    :indeterminate="selectedIds.size > 0 && !pageAllSelected"
+                    :disabled="patients.length === 0"
+                    :aria-label="t('Select every patient on this page', 'Seleccionar todos los pacientes de esta página')"
+                    @change="togglePage"
+                  />
+                </th>
                 <th scope="col" class="px-5 py-2.5 text-left max-md:sticky max-md:left-0 max-md:z-[1] max-md:bg-surface-subtle2 max-md:px-3" :aria-sort="sortDir === 'asc' ? 'ascending' : 'descending'">
                   <button
                     type="button"
@@ -845,6 +1214,7 @@ function tagClass(tag: string) {
 
             <tbody v-if="!loadedOnce">
               <tr v-for="row in 8" :key="row" class="border-b border-line-row last:border-b-0">
+                <td class="py-2.5 pl-4 pr-0" />
                 <td class="px-5 py-2.5">
                   <div class="flex items-center gap-2.5">
                     <UiSkeleton class="h-[26px] w-[26px] shrink-0 rounded-full" />
@@ -859,7 +1229,7 @@ function tagClass(tag: string) {
 
             <tbody v-else-if="patients.length === 0" :class="loading ? 'pointer-events-none opacity-60' : ''">
               <tr>
-                <td colspan="8" class="px-5 py-10 text-center text-[13px] text-ink-faint">
+                <td colspan="9" class="px-5 py-10 text-center text-[13px] text-ink-faint">
                   {{ activeFilters.length > 0 ? t('No patients match these filters.', 'Ningún paciente coincide con estos filtros.') : t('No patients found.', 'No se encontraron pacientes.') }}
                   <button
                     v-if="activeFilters.length > 0"
@@ -880,6 +1250,16 @@ function tagClass(tag: string) {
                 class="group cursor-pointer border-b border-line-row last:border-b-0 hover:bg-surface-subtle"
                 @click="onRowClick($event, patient.id)"
               >
+                <td class="py-2.5 pl-4 pr-0">
+                  <input
+                    type="checkbox"
+                    data-cy="select-row"
+                    class="h-4 w-4 accent-brand"
+                    :checked="allMatchingSelected || selectedIds.has(patient.id)"
+                    :aria-label="`${t('Select', 'Seleccionar')} ${patient.first_name} ${patient.last_name ?? ''}`"
+                    @change="toggleRow(patient.id)"
+                  />
+                </td>
                 <!-- Pinned on a phone, where the table scrolls sideways: the
                      columns to the right are no use without the name they
                      belong to. Capped there too, so one long name does not
@@ -1007,7 +1387,6 @@ function tagClass(tag: string) {
           :summary="`${t('Page', 'Página')} ${page} ${t('of', 'de')} ${totalPages} · ${totalCount} ${t('patients', 'pacientes')}`"
           @go-to-page="goToPage"
         />
-      </div>
       </div>
       </div>
     </div>

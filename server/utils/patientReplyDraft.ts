@@ -154,7 +154,7 @@ export async function draftPatientReply(
     // patient to a person instead of saying so (28 Oct 2026).
     supabase.from('appointments').select('starts_at, appointment_types(name)').eq('patient_id', patientId).eq('status', 'cancelled').is('deleted_at', null).gte('starts_at', todayStart).order('starts_at').limit(3),
   ])
-  const plan = (plans ?? [])[0] as { name: string; total_visits: number; started_at: string; frequency_value: number; frequency_unit: string; visits_per_period: number | null } | undefined
+  const plan = (plans ?? [])[0] as { name: string; total_visits: number | null; started_at: string; frequency_value: number; frequency_unit: string; visits_per_period: number | null } | undefined
   let done = 0
   if (plan) {
     const { count } = await supabase.from('appointments').select('id', { count: 'exact', head: true }).eq('patient_id', patientId).eq('status', 'completed').is('deleted_at', null).gte('starts_at', plan.started_at)

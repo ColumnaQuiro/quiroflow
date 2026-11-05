@@ -52,4 +52,14 @@ describe('a care plan, period by period', () => {
     expect(periodWindow(long).map((x) => x.index)).toEqual([1, 2, 3, 4, 5, 6])
     expect(periodWindow(long.slice(0, 4)).length).toBe(4)
   })
+
+  it('runs a plan with no end to the period after this one', () => {
+    const p = carePlanPeriods({ ...plan, visits_per_period: 1, frequency_unit: 'month', total_visits: null }, [{ day: '2026-10-06', status: 'completed' }], '2026-12-10')
+    expect(p.map((x) => [x.start, x.expected, x.status])).toEqual([
+      ['2026-10-05', 1, 'completed'],
+      ['2026-11-05', 1, 'behind'],
+      ['2026-12-05', 1, 'current'],
+      ['2027-01-05', 1, 'unscheduled'],
+    ])
+  })
 })

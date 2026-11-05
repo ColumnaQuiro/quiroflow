@@ -5,7 +5,7 @@ import { patientPlanProgress } from '../utils/patientPlanProgress'
 // (components/patient/CarePlanCard.vue), which stays on the Plan tab.
 export function usePatientPlanSummary(patientId: () => string) {
   const supabase = useSupabaseClient()
-  const plan = ref<{ total_visits: number; started_at: string } | null>(null)
+  const plan = ref<{ total_visits: number | null; started_at: string } | null>(null)
   const progress = ref<ReturnType<typeof patientPlanProgress> | null>(null)
   const loading = ref(true)
 
@@ -19,7 +19,7 @@ export function usePatientPlanSummary(patientId: () => string) {
       .eq('patient_id', id)
       .order('created_at', { ascending: false })
       .limit(1)
-    plan.value = (plans as { total_visits: number; started_at: string }[] | null)?.[0] ?? null
+    plan.value = (plans as { total_visits: number | null; started_at: string }[] | null)?.[0] ?? null
     if (plan.value) {
       const { data } = await supabase
         .from('appointments')

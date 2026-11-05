@@ -32,6 +32,7 @@ const allGroups = computed<NavGroup[]>(() => [
       { label: t('Referral Sources', 'Fuentes de referencia'), to: '/settings/referral-sources', perm: 'clinic_config' },
       { label: t('Exercise Library', 'Biblioteca de ejercicios'), to: '/settings/exercises', perm: 'clinic_config' },
       { label: t('Education', 'Educación'), to: '/settings/education', perm: 'clinic_config' },
+      { label: t('Care plans', 'Planes de tratamiento'), to: '/settings/care-plans', perm: 'clinic_config' },
       { label: t('New Patient Fields', 'Campos de nuevo paciente'), to: '/settings/new-patient-fields', perm: 'clinic_config' },
       { label: t('Custom Fields', 'Campos personalizados'), to: '/settings/custom-fields', perm: 'clinic_config' },
     ],

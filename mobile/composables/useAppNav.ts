@@ -43,17 +43,21 @@ export function useStaffNav() {
 // how I'm doing (Progreso), my papers, my messages. Pagos is no longer a tab
 // of its own: its bonos, balance and invoices are on Plan, and the full
 // list (/billing) opens from there and from Inicio's "pendiente" banner.
-// Ejercicios opens from Inicio. "Plan", not "Tratamiento": a chiropractor
-// in Spain may not call their care a treatment.
+// "Plan", not "Tratamiento": a chiropractor in Spain may not call their care
+// a treatment.
+// Cuidarme -- exercises, their own habits, the streak, what to read -- took
+// Documentos' place in the tab bar; Documentos stays in the iPad's side menu
+// and opens from Inicio on a phone.
 export function usePatientNav() {
   const t = useT()
   const route = useRoute()
   const items = computed<AppNavItem[]>(() => [
     { label: t('Home', 'Inicio'), to: '/', icon: 'M2.5 7L8 2.5 13.5 7v6.5h-4v-4h-3v4h-4z' },
     { label: t('Plan', 'Plan'), to: '/visits', icon: 'M2.5 3.5h11v10h-11zM2.5 6.6h11M5.6 2v2M10.4 2v2' },
+    { label: t('Self-care', 'Cuidarme'), to: '/care', icon: 'M8 13.5S2.5 10.2 2.5 6.3A2.8 2.8 0 018 4.8a2.8 2.8 0 015.5 1.5C13.5 10.2 8 13.5 8 13.5z' },
     { label: t('Progress', 'Progreso'), to: '/progress', icon: 'M2 13.5h12M3.5 11l3-3.5 2.5 2 4-5' },
-    { label: t('Documents', 'Documentos'), to: '/documents', icon: 'M4 2h5l3 3v9H4zM9 2v3.2h3' },
     { label: t('Messages', 'Mensajes'), to: '/messages', icon: 'M2 3.5h12v8h-7l-3 2.5v-2.5h-2z' },
+    { label: t('Documents', 'Documentos'), to: '/documents', inTabBar: false, icon: 'M4 2h5l3 3v9H4zM9 2v3.2h3' },
   ])
   // Home is an exact match -- every other path starts with '/', so a prefix
   // test would light it up on every tab. The full invoice list belongs to Plan.

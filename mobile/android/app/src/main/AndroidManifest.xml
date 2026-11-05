@@ -58,6 +58,19 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/quiroflow_widget_info" />
         </receiver>
+        <!-- "Mis hábitos" (HabitScheduler): the reminders' alarms and buttons,
+             arriving at or leaving a saved place, and setting it all again
+             after a restart, an update or a change of time zone. -->
+        <receiver android:name=".HabitAlarmReceiver" android:exported="false" />
+        <receiver android:name=".HabitGeofenceReceiver" android:exported="false" />
+        <receiver android:name=".HabitBootReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+            </intent-filter>
+        </receiver>
     </application>
 
     <!-- Permissions -->
@@ -67,4 +80,12 @@
          no camera still installs the app. -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <!-- "Mis hábitos": its reminders, set again after a restart, and (for a
+         habit limited to places) where the phone is, with the app closed.
+         Background location needs Google Play's declaration form. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
 </manifest>

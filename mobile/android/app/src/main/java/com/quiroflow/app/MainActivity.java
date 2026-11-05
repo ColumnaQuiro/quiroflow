@@ -8,6 +8,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         // The app's own plugins: Capacitor finds packaged ones by itself.
         registerPlugin(HomeWidgetPlugin.class);
+        registerPlugin(HabitRemindersPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

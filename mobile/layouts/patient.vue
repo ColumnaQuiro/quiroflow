@@ -15,6 +15,11 @@ const tabsVisible = usePatientTabsVisible()
 const { register: registerForPush } = usePushNotifications()
 watch(tabsVisible, (on) => { if (on) registerForPush() }, { immediate: true })
 
+// A tapped "Mis hábitos" reminder opens Cuidarme (its buttons, Hecho and
+// En 15 min, are handled natively without opening anything).
+const habitOpened = useHabitReminders().onOpened(() => navigateTo('/care'))
+onBeforeUnmount(() => habitOpened.then((h) => h.remove()))
+
 // On an iPad the sections are a side menu instead of the tab bar (CSS, by
 // width), headed by the patient's clinic.
 const { items, isActive } = usePatientNav()

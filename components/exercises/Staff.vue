@@ -322,6 +322,7 @@ const input = 'h-10 w-full rounded-ctl border border-line-control bg-surface px-
           {{ t('Home exercises', 'Ejercicios en casa') }}
           <span v-if="!loading && assigned.length" class="ml-1 font-normal text-ink-faint">{{ assigned.length }}</span>
         </h2>
+        <ExercisesCareConsistency :patient-id="patientId" />
         <slot name="app" />
       </div>
       <UiBtn v-if="!open" variant="primary" size="sm" data-cy="exercises-assign-open" @click="open = true">{{ t('Assign exercises', 'Asignar ejercicios') }}</UiBtn>

@@ -1,5 +1,7 @@
 <script setup lang="ts">
-const props = defineProps<{ patientId: string }>()
+// `startEditing`: see FlagsPanel -- the form only, handing back with `done`.
+const props = defineProps<{ patientId: string; startEditing?: boolean }>()
+const emit = defineEmits<{ done: [] }>()
 
 const supabase = useSupabaseClient()
 const t = useT()
@@ -11,7 +13,7 @@ const { can } = usePermission()
 // is where PracticeHub shows it and where the imported ones land.
 const stickyNote = ref('')
 const loading = ref(true)
-const editing = ref(false)
+const editing = ref(!!props.startEditing)
 const saving = ref(false)
 const saveError = ref('')
 
@@ -33,13 +35,24 @@ async function save() {
   if (error || !data?.length) saveError.value = error?.message ?? t('The note was not saved: your role cannot edit this patient.', 'No se ha guardado la nota: tu rol no puede editar este paciente.')
   saving.value = false
 }
+
+async function toggleEditing() {
+  if (!editing.value) {
+    editing.value = true
+    return
+  }
+  await save()
+  if (saveError.value) return
+  if (props.startEditing) emit('done')
+  else editing.value = false
+}
 </script>
 
 <template>
   <div v-if="!loading" class="rounded-card border border-warning-border bg-warning-bg2 p-4 shadow-card" data-cy="sticky-note">
     <div class="flex items-center justify-between gap-2">
       <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Patient note', 'Nota del paciente') }}</p>
-      <button v-if="can('patients_edit')" type="button" class="text-[12px] font-medium text-brand-text hover:text-brand-hover" data-cy="sticky-note-edit" @click="editing = !editing">
+      <button v-if="can('patients_edit')" type="button" class="text-[12px] font-medium text-brand-text hover:text-brand-hover" data-cy="sticky-note-edit" @click="toggleEditing">
         {{ editing ? t('Done', 'Listo') : t('Edit', 'Editar') }}
       </button>
     </div>

@@ -1239,6 +1239,7 @@ export type Database = {
           cancellation_fee_cents: number | null
           created_at: string
           clinical_retention_years: number
+          email_branding: Json | null
           email_confirmation_body: string | null
           email_confirmation_subject: string | null
           email_reminder_body: string | null
@@ -1349,6 +1350,7 @@ export type Database = {
           cancellation_fee_cents?: number | null
           created_at?: string
           clinical_retention_years?: number
+          email_branding?: Json | null
           email_confirmation_body?: string | null
           email_confirmation_subject?: string | null
           email_reminder_body?: string | null
@@ -1458,6 +1460,7 @@ export type Database = {
           cancellation_fee_cents?: number | null
           created_at?: string
           clinical_retention_years?: number
+          email_branding?: Json | null
           email_confirmation_body?: string | null
           email_confirmation_subject?: string | null
           email_reminder_body?: string | null

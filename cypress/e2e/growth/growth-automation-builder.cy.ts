@@ -204,40 +204,88 @@ describe('Automation builder: step panels', () => {
     // turned that into silence, then into "Failed to send test."; it now
     // names the cause.
     addStep('email')
-    cy.get('[data-test="email-subject"]').type('Prueba')
-    cy.get('[data-test="email-body"]').type('Hola')
-    cy.get('[data-test="send-test"]').click()
+    cy.get('[data-test="email-builder-subject"]').type('Prueba')
+    cy.get('[data-test="email-builder-send-test"]').click()
     cy.get('[data-cy="confirm-dialog-confirm"]').click()
     cy.get('[data-test="test-result"]').should('contain', 'not configured').and('not.contain', 'Failed to send')
   })
 
-  it('previews the email as it goes out, with the booking button', () => {
+  // The canvas is the real email, filled with the example patient; its body is
+  // patched in place as it changes, so it is read from the frame's document.
+  const canvas = () => cy.get('[data-test="email-builder-canvas"]').its('0.contentDocument.body').should('not.be.empty')
+
+  it('opens a new email in the block editor, already written, and previews it as it goes out', () => {
     addStep('email')
-    cy.get('[data-test="email-subject"]').type('Te echamos de menos, {{first_name}}', { parseSpecialCharSequences: false })
-    cy.get('[data-test="email-body"]').type('Hace tiempo que no vienes.')
+    cy.get('[data-test="email-builder"]').should('be.visible')
+    cy.get('[data-test="email-builder-subject"]').type('Te echamos de menos, {{first_name}}', { parseSpecialCharSequences: false })
+    canvas().should('contain', 'Hola Lucía').and('contain', 'Reserva tu próxima cita')
+    canvas().find('a').filter(':contains("Reserva tu próxima cita")').should('have.attr', 'href').and('match', /\/book\//)
+
+    // A block, from the palette: under the selected one, and selected itself.
+    cy.get('[data-test="email-add-divider"]').click()
+    cy.get('[data-test="block-settings"]').should('contain', 'Divider')
+    cy.get('[data-test="email-block-list"] li').should('have.length', 6)
+
+    // The button's words and where it goes.
+    cy.get('[data-test="email-block-button"]').click()
+    cy.get('[data-test="block-button-text"]').clear().type('Pide tu cita')
+    cy.get('[data-test="block-button-link"]').select('review')
+    canvas().find('a').filter(':contains("Pide tu cita")').should('have.attr', 'href', 'https://g.page/r/ejemplo/review')
+
+    // On a phone's width.
+    cy.get('[data-test="email-builder-mobile"]').click()
+    cy.get('[data-test="email-builder-canvas"]').should('have.css', 'width', '375px')
+
+    // Back on the flow, the drawer previews the same email, and Save stores the blocks.
+    cy.get('[data-test="email-builder-done"]').click()
+    cy.get('[data-test="email-builder"]').should('not.exist')
     cy.get('[data-test="email-preview-subject"]').should('have.text', 'Te echamos de menos, Lucía')
-    cy.get('[data-test="email-preview"] iframe').should('have.attr', 'srcdoc').and('contain', 'Hace tiempo que no vienes.').and('not.contain', 'Reserva tu próxima cita')
-    cy.get('[data-test="email-booking-button"]').check()
-    cy.get('[data-test="email-preview"] iframe').should('have.attr', 'srcdoc').and('contain', 'Reserva tu próxima cita').and('match', /href="http[^"]+\/book\/[^"]+"/)
-    cy.get('[data-test="email-booking-button-text"]').type('Pide tu cita')
-    cy.get('[data-test="email-preview"] iframe').should('have.attr', 'srcdoc').and('contain', 'Pide tu cita')
+    cy.get('[data-test="email-preview"] iframe').should('have.attr', 'srcdoc').and('contain', 'Pide tu cita').and('contain', 'role="presentation"')
   })
 
   it('inserts fields from the picker as chips, and saves them as {{key}}', () => {
     addStep('email')
-    cy.get('[data-test="email-subject"]').type('Hola')
     // Typing "{{" opens the picker filtered by what follows; Enter takes the first match.
-    cy.get('[data-test="email-subject"]').type(' {{first', { parseSpecialCharSequences: false })
+    cy.get('[data-test="email-builder-subject"]').type('Hola {{first', { parseSpecialCharSequences: false })
     cy.get('[data-test="variable-picker"]').should('contain', 'First name')
-    cy.get('[data-test="email-subject"]').type('{enter}')
-    cy.get('[data-test="email-subject"]').should('have.value', 'Hola {{first_name}}')
-    // From the toolbar, searched by name; it lands in the body as a chip.
-    cy.get('[data-test="email-body"]').type('Déjanos tu opinión: ')
-    cy.get('[data-test="email-body-fields"]').click()
+    cy.get('[data-test="email-builder-subject"]').type('{enter}')
+    cy.get('[data-test="email-builder-subject"]').should('have.value', 'Hola {{first_name}}')
+    // From the toolbar of the selected text block, searched by name; it lands as a chip.
+    cy.get('[data-test="email-block-text"]').click()
+    cy.get('[data-test="block-settings"] [data-test="email-body"]').type(' Déjanos tu opinión: ')
+    cy.get('[data-test="block-settings"] [data-test="email-body-fields"]').click()
     cy.get('[data-test="variable-search"]').type('review{enter}')
     cy.get('[data-test="variable-picker"]').should('not.exist')
-    cy.get('[data-test="email-body"] [data-var="google_review_link"]').should('contain', 'Google review link')
-    cy.get('[data-test="email-preview"] iframe').should('have.attr', 'srcdoc').and('contain', 'g.page/r/ejemplo/review')
+    cy.get('[data-test="block-settings"] [data-test="email-body"] [data-var="google_review_link"]').should('contain', 'Google review link')
+    canvas().should('contain', 'g.page/r/ejemplo/review')
+  })
+
+  it('keeps an email written in the plain editor as it is, until someone switches it to blocks', function () {
+    // Recalls written before the block editor are already sending; nothing
+    // may change them on its own.
+    cy.task<{ id: string }>('db:createAutomationRule', {
+      accountId: this.accountId,
+      triggerEvent: 'appointment.completed',
+      enabled: false,
+      actions: [{ type: 'email', config: { subject: 'Gracias', body: '<p>Gracias por venir, {{first_name}}.</p>', booking_button: true } }],
+    }).then((rule) => {
+      cy.visit(`/automations/${rule.id}`)
+      cy.contains('[data-test^="node-"]', 'Gracias').click()
+      cy.get('[data-test="email-builder"]').should('not.exist')
+      cy.get('[data-test="email-body"]').should('contain', 'Gracias por venir')
+      cy.get('[data-test="email-preview"] iframe').should('have.attr', 'srcdoc').and('contain', 'Reserva tu próxima cita').and('not.contain', 'role="presentation"')
+      // Switched: the body comes along in a text block, and the button stays a button.
+      cy.get('[data-test="email-switch-blocks"]').click()
+      cy.get('[data-test="email-block-list"] li').should('have.length', 2)
+      canvas().should('contain', 'Gracias por venir, Lucía').and('contain', 'Reserva tu próxima cita')
+      cy.get('[data-test="email-builder-done"]').click()
+      cy.get('[data-test="save"]').click()
+      cy.get('[data-test="save-bar"]').should('not.exist')
+      cy.task<{ config: Record<string, any> }[]>('auto:actionsForRule', { ruleId: rule.id }).should((rows) => {
+        expect(rows[0]!.config.design.blocks.map((x: { type: string }) => x.type)).to.deep.eq(['text', 'button'])
+        expect(rows[0]!.config.design.blocks[0].html).to.eq('<p>Gracias por venir, {{first_name}}.</p>')
+      })
+    })
   })
 
   it('offers a test mode that records instead of sending', () => {

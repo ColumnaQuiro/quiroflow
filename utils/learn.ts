@@ -5,6 +5,7 @@
 
 /** Tag key → label, in the order the library's filter shows them. */
 export const LEARN_TAGS: Record<string, string> = {
+  habitos: 'Hábitos',
   primera_visita: 'Primera visita',
   lumbar: 'Lumbar',
   cervical: 'Cervical',

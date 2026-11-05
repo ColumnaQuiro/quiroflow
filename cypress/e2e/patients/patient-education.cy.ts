@@ -109,6 +109,69 @@ describe('Patient education', () => {
     })
   })
 
+  // 20261105161338_learn_library_for_patients.sql: an article made visible
+  // to every patient is announced once, found under the exercises as
+  // "Hábitos y consejos", and opening it gives the patient a send of their
+  // own ('library'), so the record shows it was read.
+  it('makes one visible to all and announces it once; the patient finds it in the library', () => {
+    const email = `biblioteca-${Date.now()}@example.test`
+    const password = 'valencia2026'
+    type Article = { id: string; visible_to_patients: boolean; announced_at: string | null }
+    const articleOf = (id: string) => cy.task<Article[]>('db:selectRows', { table: 'learn_articles', columns: 'id, visible_to_patients, announced_at', match: { id } }).its(0)
+    cy.seedStaffAccount().then((account) => {
+      cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Iris', lastName: 'Biblioteca' }).then((patient) => {
+        cy.task('db:givePatientAppLogin', { accountId: account.accountId, patientId: patient.id, email, password })
+        cy.task<{ id: string }[]>('db:insertRows', {
+          table: 'learn_articles',
+          rows: [
+            { account_id: account.accountId, title: 'Dormir sin dolor', body: 'De lado con un cojín.\n\nNunca boca abajo.', tags: ['habitos'] },
+            { account_id: account.accountId, title: 'Solo para quien se la envíe', body: 'Texto.' },
+          ],
+        }).then(([visible]) => {
+          cy.login(account.email, account.password)
+          cy.visit('/settings/education')
+          cy.get('[data-cy=learn-library][data-ready=true]', { timeout: 20000 })
+          cy.get(`[data-cy=learn-edit-${visible!.id}]`).click()
+          cy.get('[data-cy=learn-announce]').should('not.exist')
+          cy.get('[data-cy=learn-visible-all]').check()
+          cy.get('[data-cy=learn-announce-check]').should('be.checked')
+          cy.get('[data-cy=learn-save]').click()
+          cy.get('[data-cy=learn-form]').should('not.exist')
+          cy.contains('[data-cy=learn-row]', 'Dormir sin dolor').find('[data-cy=learn-row-visible]').should('exist')
+          articleOf(visible!.id).should((a) => {
+            expect(a.visible_to_patients).to.eq(true)
+            expect(a.announced_at).to.be.a('string')
+          })
+          // Edited again, it offers no second announcement, and the server refuses one.
+          cy.get(`[data-cy=learn-edit-${visible!.id}]`).click()
+          cy.get('[data-cy=learn-visibility]').should('contain', 'Se avisó a los pacientes')
+          cy.get('[data-cy=learn-announce]').should('not.exist')
+          cy.task<string>('db:accessTokenFor', { email: account.email, password: account.password }).then((token) => {
+            cy.request({ method: 'POST', url: '/api/learn/announce', headers: { Authorization: `Bearer ${token}` }, body: { articleId: visible!.id }, failOnStatusCode: false }).its('status').should('eq', 409)
+          })
+
+          // The patient finds it under their exercises -- and not the one that was never made visible.
+          cy.login(email, password)
+          cy.visit('/portal/exercises')
+          cy.get('[data-cy=patient-learn-library]', { timeout: 20000 }).should('contain', 'Dormir sin dolor').and('not.contain', 'Solo para quien se la envíe')
+          cy.get('[data-cy=patient-learn-library-item]').should('have.length', 1).click()
+          cy.get('[data-cy=patient-learn-read][data-phase=ready]', { timeout: 20000 })
+          cy.get('[data-cy=learn-article] h1').should('have.text', 'Dormir sin dolor')
+          sendsOf(patient.id).should((sends) => {
+            expect(sends).to.have.length(1)
+            expect(sends[0]!.channel).to.eq('library')
+            expect(sends[0]!.opened_at).to.be.a('string')
+          })
+          // Opening it again reads the same send rather than adding another.
+          cy.visit('/portal/exercises')
+          cy.get('[data-cy=patient-learn-library-item]', { timeout: 20000 }).click()
+          cy.get('[data-cy=patient-learn-read][data-phase=ready]', { timeout: 20000 })
+          sendsOf(patient.id).should('have.length', 1)
+        })
+      })
+    })
+  })
+
   it('is not sent to another clinic’s patient', () => {
     cy.seedStaffAccount().then((other) => {
       cy.task<{ id: string }>('db:createPatient', { accountId: other.accountId, clinicId: other.clinicId, firstName: 'Ajena', lastName: 'Paciente' }).then((stranger) => {

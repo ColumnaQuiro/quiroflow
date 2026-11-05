@@ -77,7 +77,7 @@ El miedo a moverse puede alargar el dolor. Si una actividad te molesta, haz meno
     key: 'dormir-espalda',
     title: 'Dormir mejor con dolor de espalda',
     summary: 'Posturas y pequeños cambios que alivian la noche.',
-    tags: ['lumbar', 'general'],
+    tags: ['habitos', 'lumbar', 'general'],
     minutes: 2,
     body: `De lado: una almohada entre las rodillas mantiene la pelvis alineada y descarga la zona lumbar.
 
@@ -119,7 +119,7 @@ Consulta con un médico sin esperar si es el peor dolor de cabeza de tu vida, si
     key: 'puesto-trabajo',
     title: 'Tu puesto de trabajo en 5 pasos',
     summary: 'Silla, pantalla, teclado y pausas: lo esencial para trabajar sentado.',
-    tags: ['trabajo', 'cervical', 'lumbar'],
+    tags: ['habitos', 'trabajo', 'cervical', 'lumbar'],
     minutes: 3,
     body: `1. Silla: pies apoyados en el suelo, rodillas a la altura de la cadera o un poco más bajas, y la espalda apoyada en el respaldo.
 
@@ -135,7 +135,7 @@ Consulta con un médico sin esperar si es el peor dolor de cabeza de tu vida, si
     key: 'levantar-peso',
     title: 'Levantar peso sin cargar la espalda',
     summary: 'Cómo coger cajas, la compra o a tus hijos con menos esfuerzo.',
-    tags: ['lumbar', 'trabajo'],
+    tags: ['habitos', 'lumbar', 'trabajo'],
     minutes: 2,
     body: `Acércate al objeto: cuanto más lejos del cuerpo, más pesa para tu espalda.
 

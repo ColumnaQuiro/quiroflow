@@ -8,7 +8,10 @@ import { listingSummary, sideLettersFor, type Listings } from '../../utils/spina
 // "Bring over" into today's note. Reading only; what is brought over is
 // today's to edit. Under the same RLS as every read of notes and listings.
 type Section = 'Subjective' | 'Objective' | 'Action' | 'Plan'
-const props = defineProps<{ appointmentId: string; editable: boolean }>()
+// `collapsible`: on My Day, where it sits above today's note rather than
+// beside it -- one line (the date and the listing) that opens in
+// place. Whether it is open is remembered on this device.
+const props = defineProps<{ appointmentId: string; editable: boolean; collapsible?: boolean }>()
 const emit = defineEmits<{ bring: [section: Section | 'Note', text: string]; useListings: [listings: Listings] }>()
 
 const t = useT()
@@ -51,6 +54,24 @@ async function load() {
 }
 watch(() => props.appointmentId, load, { immediate: true })
 
+const OPEN_KEY = 'myday.previousVisitOpen'
+function readOpen() {
+  try {
+    return localStorage.getItem(OPEN_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+const open = ref(!props.collapsible || (import.meta.client && readOpen()))
+function toggle() {
+  open.value = !open.value
+  try {
+    localStorage.setItem(OPEN_KEY, open.value ? '1' : '0')
+  } catch {
+    // Private mode or blocked storage: it simply opens closed next time.
+  }
+}
+
 const SECTIONS: Section[] = ['Subjective', 'Objective', 'Action', 'Plan']
 const LABEL = computed<Record<Section | 'Note', string>>(() => ({ Subjective: t('Subjective', 'Subjetivo'), Objective: t('Objective', 'Objetivo'), Action: t('Action', 'Acción'), Plan: t('Plan', 'Plan'), Note: t('Note', 'Nota') }))
 // Its note in sections, or as one block when it was written as free text.
@@ -71,26 +92,44 @@ const heading = computed(() => {
 </script>
 
 <template>
-  <section class="rounded-card border border-line bg-surface-subtle2 p-4 shadow-card" data-cy="previous-visit">
-    <h2 class="text-[13.5px] font-semibold text-ink-900">{{ t('Last visit', 'Visita anterior') }}</h2>
-    <div v-if="loading" class="mt-2 space-y-2"><UiSkeleton class="h-3.5 w-40 rounded-ctlSm" /><UiSkeleton class="h-3 w-full rounded-ctlSm" /></div>
-    <p v-else-if="!found" class="mt-1 text-[12.5px] text-ink-muted" data-cy="previous-visit-none">{{ t('No earlier visit with a note or a listing.', 'Ninguna visita anterior con nota o listado.') }}</p>
-    <template v-else>
-      <p class="mt-0.5 text-[12px] text-ink-muted">{{ heading }}</p>
-      <div v-if="summary" class="mt-3 rounded-ctl border border-line bg-surface px-3 py-2" data-cy="previous-visit-listing">
-        <div class="flex items-center justify-between gap-2">
-          <span class="text-[11px] font-[640] uppercase tracking-[.04em] text-ink-muted">{{ t('Listing', 'Listado') }}</span>
-          <button v-if="editable" type="button" class="text-[12px] font-semibold text-brand-text" data-cy="previous-visit-use-listing" @click="emit('useListings', { ...found.listings! })">{{ t('Use today', 'Usar hoy') }}</button>
+  <section class="rounded-card border border-line bg-surface-subtle2 shadow-card" :class="collapsible ? 'px-4 py-2.5' : 'p-4'" data-cy="previous-visit" :data-open="open">
+    <button
+      v-if="collapsible"
+      type="button"
+      class="-mx-1 flex w-[calc(100%+0.5rem)] items-center gap-3 rounded-ctlSm px-1 py-0.5 text-left touch:min-h-11"
+      :aria-expanded="open"
+      data-cy="previous-visit-toggle"
+      @click="toggle"
+    >
+      <h2 class="shrink-0 text-[13px] font-semibold text-ink-900">{{ t('Last visit', 'Visita anterior') }}</h2>
+      <span class="min-w-0 flex-1 truncate text-[12.5px] text-ink-muted">
+        <template v-if="loading">…</template>
+        <template v-else-if="!found">{{ t('none with a note or a listing', 'ninguna con nota o listado') }}</template>
+        <template v-else>{{ heading }}<template v-if="summary"> · <span class="font-medium text-ink-700">{{ summary }}</span></template></template>
+      </span>
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-ink-muted transition-transform" :class="open ? 'rotate-180' : ''" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>
+    </button>
+    <h2 v-else class="text-[13.5px] font-semibold text-ink-900">{{ t('Last visit', 'Visita anterior') }}</h2>
+    <template v-if="open">
+      <div v-if="loading" class="mt-2 space-y-2"><UiSkeleton class="h-3.5 w-40 rounded-ctlSm" /><UiSkeleton class="h-3 w-full rounded-ctlSm" /></div>
+      <p v-else-if="!found" class="mt-1 text-[12.5px] text-ink-muted" data-cy="previous-visit-none">{{ t('No earlier visit with a note or a listing.', 'Ninguna visita anterior con nota o listado.') }}</p>
+      <template v-else>
+        <p v-if="!collapsible" class="mt-0.5 text-[12px] text-ink-muted">{{ heading }}</p>
+        <div v-if="summary" class="mt-3 rounded-ctl border border-line bg-surface px-3 py-2" data-cy="previous-visit-listing">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-[11px] font-[640] uppercase tracking-[.04em] text-ink-muted">{{ t('Listing', 'Listado') }}</span>
+            <button v-if="editable" type="button" class="text-[12px] font-semibold text-brand-text" data-cy="previous-visit-use-listing" @click="emit('useListings', { ...found.listings! })">{{ t('Use today', 'Usar hoy') }}</button>
+          </div>
+          <p class="mt-1 text-[13px] font-semibold text-ink-900">{{ summary }}</p>
         </div>
-        <p class="mt-1 text-[13px] font-semibold text-ink-900">{{ summary }}</p>
-      </div>
-      <div v-for="p in parts" :key="p.key" class="mt-3" data-cy="previous-visit-section">
-        <div class="flex items-center justify-between gap-2">
-          <span class="text-[11px] font-[640] uppercase tracking-[.04em] text-ink-muted">{{ LABEL[p.key] }}</span>
-          <button v-if="editable" type="button" class="text-[12px] font-semibold text-brand-text" :data-cy="`previous-visit-bring-${p.key}`" @click="emit('bring', p.key, p.text)">{{ t('Bring over', 'Traer') }}</button>
+        <div v-for="p in parts" :key="p.key" :class="collapsible ? 'mt-3 pb-1' : 'mt-3'" data-cy="previous-visit-section">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-[11px] font-[640] uppercase tracking-[.04em] text-ink-muted">{{ LABEL[p.key] }}</span>
+            <button v-if="editable" type="button" class="text-[12px] font-semibold text-brand-text" :data-cy="`previous-visit-bring-${p.key}`" @click="emit('bring', p.key, p.text)">{{ t('Bring over', 'Traer') }}</button>
+          </div>
+          <p class="mt-1 whitespace-pre-line text-[13px] leading-snug text-ink-700">{{ p.text }}</p>
         </div>
-        <p class="mt-1 whitespace-pre-line text-[13px] leading-snug text-ink-700">{{ p.text }}</p>
-      </div>
+      </template>
     </template>
   </section>
 </template>

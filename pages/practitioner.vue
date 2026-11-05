@@ -223,8 +223,54 @@ watch([viewMode, anchorDate, practitionerId], () => loadDay())
 // After an edit on this page: same day, so keep it on screen.
 const refreshDay = () => loadDay(true)
 
+// Layout, and why: once a visit is open the day's list folds to a strip of
+// times, and the patient -- flags, note, plan, money -- takes a fixed column
+// beside the note (PractitionerPatientRail). Before this the flags sat under
+// the note, the clock and the flow strip, 1600px down at 1440x900 and 2200
+// at 1024, so the one thing that must not be missed mid-treatment was the
+// one thing never on screen. With nobody open the list stays wide and the
+// space beside it shows who is next, then what the day still needs.
+// Below lg there is no room for a column: the same content becomes a bar
+// pinned over the note, and the list a row of times.
+const isLg = useMediaQuery('(min-width: 1024px)')
+const listOpen = ref(false)
+const listFolded = computed(() => !!selectedAppointment.value && !listOpen.value)
+
+function patientName(a: AppointmentRow) {
+  return `${a.patients?.first_name ?? ''} ${a.patients?.last_name ?? ''}`.trim()
+}
+function initialsOf(a: AppointmentRow) {
+  return ((a.patients?.first_name?.[0] ?? '') + (a.patients?.last_name?.[0] ?? '')).toUpperCase() || '?'
+}
+function visitLineOf(a: AppointmentRow) {
+  const parts = [formatTime(a.starts_at), a.appointment_types?.name ?? t('No type', 'Sin tipo')]
+  const room = rooms.value.find((r) => r.id === a.room_id)?.name
+  if (room) parts.push(room)
+  return parts.join(' · ')
+}
+
+// Who is next: someone already waiting, else the first visit still to come
+// (or still open, from earlier today), else nobody.
+const nextUp = computed(() => {
+  if (viewMode.value !== 'day') return null
+  const open = appointments.value.filter((a) => a.status === 'booked' && !chartedAppointmentIds.value.has(a.id))
+  const waiting = open.find((a) => a.checked_in_at && !a.flow_with_practitioner_at)
+  if (waiting) return waiting
+  const soon = Date.now() - 30 * 60_000
+  return open.find((a) => Date.parse(a.starts_at) >= soon) ?? open[0] ?? null
+})
+
+// A visit picked from the week opens on its own day, where there is room to
+// chart it beside the patient.
+function openFromWeek(a: AppointmentRow) {
+  anchorDate.value = new Date(a.starts_at)
+  viewMode.value = 'day'
+  selectAppointment(a)
+}
+
 async function selectAppointment(appointment: AppointmentRow) {
   selectedAppointment.value = appointment
+  listOpen.value = false
   // The chart beside the list is the patient's record, as much as their own
   // page is.
   if (appointment.patient_id) logAccess('record_opened', appointment.patient_id)
@@ -340,7 +386,10 @@ const flowStages = computed(() => {
   })
 })
 
-const dayLabel = computed(() => anchorDate.value.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' }))
+// In the staff member's language, not the browser's: the server renders it
+// too, and with `undefined` the two disagreed ("Thursday, Nov 5" against
+// "Thursday 5 Nov"), which Vue reported as a hydration mismatch on every load.
+const dayLabel = computed(() => anchorDate.value.toLocaleDateString(t('en-GB', 'es-ES'), { weekday: 'long', month: 'short', day: 'numeric' }))
 const headerMeta = computed(() => {
   if (viewMode.value !== 'day') return dayLabel.value
   const total = appointments.value.length
@@ -356,21 +405,42 @@ onMounted(() => warmChunks(() => [
 </script>
 
 <template>
-  <div class="flex h-full flex-col">
-    <header class="flex shrink-0 flex-col gap-2.5 border-b border-line bg-surface px-4 py-3 sm:h-14 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-0">
-      <div class="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
+  <!-- Below lg the page scrolls as one, header included, so on a phone the
+  header's wrapped rows go up and out of the way and only the patient stays
+  pinned over the note. From lg each column scrolls on its own instead. -->
+  <div class="flex h-full flex-col overflow-y-auto bg-surface-page lg:overflow-hidden">
+    <!-- One bar: the day, the clock and the filters. The clock was a card
+    above the list and the flow strip another; together they put the first
+    patient 230px down on every screen. -->
+    <header class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-line bg-surface px-4 py-2.5 sm:px-5 lg:min-h-14">
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <h1 class="text-[18px] font-[640] tracking-tightTitle text-ink-900">{{ t('My Day', 'Mi Día') }}</h1>
+        <div class="flex items-center gap-1">
+          <button type="button" class="flex h-8 w-8 items-center justify-center rounded-ctl border border-line-control text-ink-500 hover:border-line-controlHover touch:h-11 touch:w-11" :aria-label="t('Previous', 'Anterior')" @click="anchorDate = addDays(anchorDate, viewMode === 'day' ? -1 : -7)"><UiChevron dir="left" /></button>
+          <button type="button" class="flex h-8 items-center rounded-ctl border border-line-control px-2.5 text-[12.5px] font-medium text-ink-500 hover:border-line-controlHover touch:h-11" @click="anchorDate = new Date()">{{ t('Today', 'Hoy') }}</button>
+          <button type="button" class="flex h-8 w-8 items-center justify-center rounded-ctl border border-line-control text-ink-500 hover:border-line-controlHover touch:h-11 touch:w-11" :aria-label="t('Next', 'Siguiente')" @click="anchorDate = addDays(anchorDate, viewMode === 'day' ? 1 : 7)"><UiChevron dir="right" /></button>
+        </div>
         <p class="text-[12.5px] text-ink-muted2">{{ headerMeta }}</p>
       </div>
-      <div class="flex flex-wrap items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2 lg:ml-auto">
+        <!-- Registro de jornada: the viewer's own clock, whoever's day is shown. -->
+        <TimeclockClockCard
+          v-if="store.accountId && store.teamMember"
+          :account-id="store.accountId"
+          :team-member-id="store.teamMember.id"
+          :time-zone="accountTimeZone"
+          month-to="/jornada?tab=mine"
+          inline
+        />
         <div v-if="canSeeAll" class="relative">
           <select
             v-model="practitionerId"
-            class="h-8 appearance-none rounded-ctl border border-line-control bg-surface px-2.5 pr-6 text-[13px] touch:h-11 text-ink-500 hover:border-line-controlHover focus:border-brand focus:outline-none"
+            :aria-label="t('Practitioner', 'Profesional')"
+            class="h-8 appearance-none rounded-ctl border border-line-control bg-surface px-2.5 pr-6 text-[13px] text-ink-500 hover:border-line-controlHover focus:border-brand focus:outline-none touch:h-11"
           >
             <option v-for="m in teamMembers" :key="m.id" :value="m.id">{{ m.full_name }}</option>
           </select>
-          <svg width="8" height="8" viewBox="0 0 10 10" class="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-faint">
+          <svg width="8" height="8" viewBox="0 0 10 10" class="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-faint" aria-hidden="true">
             <path d="M2 4l3 3 3-3" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" />
           </svg>
         </div>
@@ -378,151 +448,190 @@ onMounted(() => warmChunks(() => [
           type="button"
           class="flex h-8 items-center gap-1.5 rounded-ctl border px-2.5 text-[13px] font-medium touch:h-11"
           :class="privacyMode ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control bg-surface text-ink-500 hover:border-line-controlHover'"
+          :aria-pressed="privacyMode"
           @click="privacyMode = !privacyMode"
         >
-          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
             <path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z" />
             <circle cx="8" cy="8" r="2" />
           </svg>
-          {{ t('Privacy mode', 'Modo privacidad') }}{{ privacyMode ? t(': On', ': activado') : '' }}
+          {{ t('Privacy', 'Privacidad') }}
         </button>
+        <div class="flex h-8 overflow-hidden rounded-ctl border border-line-control text-[12.5px] touch:h-11">
+          <button type="button" class="px-3" :class="viewMode === 'day' ? 'bg-brand font-semibold text-brand-on' : 'text-ink-500 hover:bg-surface-subtle'" :aria-pressed="viewMode === 'day'" @click="viewMode = 'day'">{{ t('Day', 'Día') }}</button>
+          <button type="button" class="border-l border-line-control px-3" :class="viewMode === 'week' ? 'bg-brand font-semibold text-brand-on' : 'text-ink-500 hover:bg-surface-subtle'" :aria-pressed="viewMode === 'week'" @click="viewMode = 'week'">{{ t('Week', 'Semana') }}</button>
+        </div>
       </div>
     </header>
 
-    <div class="flex-1 overflow-y-auto bg-surface-page">
-      <div class="flex flex-wrap items-center gap-3 border-b border-line bg-surface px-4 py-2.5 sm:px-6">
-        <button type="button" class="flex h-7 w-7 items-center justify-center rounded-ctlSm border border-line-control text-[13px] text-ink-500 hover:border-line-controlHover touch:h-10 touch:w-10" :aria-label="t('Previous', 'Anterior')" @click="anchorDate = addDays(anchorDate, viewMode === 'day' ? -1 : -7)"><UiChevron dir="left" /></button>
-        <button type="button" class="flex h-7 items-center rounded-ctlSm border border-line-control px-2.5 text-[12.5px] font-medium text-ink-500 hover:border-line-controlHover" @click="anchorDate = new Date()">{{ t('Today', 'Hoy') }}</button>
-        <button type="button" class="flex h-7 w-7 items-center justify-center rounded-ctlSm border border-line-control text-[13px] text-ink-500 hover:border-line-controlHover touch:h-10 touch:w-10" :aria-label="t('Next', 'Siguiente')" @click="anchorDate = addDays(anchorDate, viewMode === 'day' ? 1 : 7)"><UiChevron dir="right" /></button>
-        <span class="text-[13px] font-medium text-ink-700">{{ dayLabel }}</span>
-
-        <div class="ml-auto flex h-8 overflow-hidden rounded-ctl border border-line-control text-[12.5px]">
-          <button type="button" class="px-3" :class="viewMode === 'day' ? 'bg-brand font-semibold text-brand-on' : 'text-ink-500 hover:bg-surface-subtle'" @click="viewMode = 'day'">{{ t('Day', 'Día') }}</button>
-          <button type="button" class="border-l border-line-control px-3" :class="viewMode === 'week' ? 'bg-brand font-semibold text-brand-on' : 'text-ink-500 hover:bg-surface-subtle'" @click="viewMode = 'week'">{{ t('Week', 'Semana') }}</button>
-        </div>
-      </div>
-
-      <!-- Registro de jornada: the viewer's own clock, whoever's day is shown.
-      One line once they have clocked in, so the day's visits come first. -->
-      <TimeclockClockCard
-        v-if="store.accountId && store.teamMember"
-        class="mx-4 mt-4 sm:mx-6"
-        :account-id="store.accountId"
-        :team-member-id="store.teamMember.id"
-        :time-zone="accountTimeZone"
-        month-to="/jornada?tab=mine"
-        compact
-      />
-
-      <div v-if="loading" class="flex flex-col gap-4 p-4 sm:p-6">
-        <UiSkeleton class="h-16 w-full rounded-card" />
-        <div class="space-y-2">
+    <div class="flex-1 bg-surface-page lg:flex lg:min-h-0 lg:overflow-hidden">
+      <!-- The day's visits -->
+      <aside
+        v-if="viewMode === 'day'"
+        class="shrink-0 border-b border-line bg-surface-sidebar lg:overflow-y-auto lg:border-b-0 lg:border-r"
+        :class="listFolded ? 'lg:w-[76px]' : 'lg:w-[372px]'"
+        :aria-label="t(`The day's visits`, 'Visitas del día')"
+        data-cy="myday-worklist"
+        :data-folded="listFolded"
+      >
+        <div v-if="loading" class="space-y-2 p-3">
           <UiSkeleton v-for="i in 5" :key="i" class="h-12 w-full rounded-ctl" />
         </div>
-      </div>
 
-      <div v-else class="flex flex-col gap-4 p-4 sm:p-6">
-        <!-- Flow tracker: shared summary strip for both Day and Week views -->
-        <div class="w-full overflow-hidden rounded-card border border-line bg-surface-sidebar shadow-card">
-          <div class="grid grid-cols-5 px-3 py-3">
-            <div v-for="stage in flowStages" :key="stage.key" class="flex flex-col items-start gap-1.5 px-1">
-              <div class="h-1 w-full rounded-full" :class="stage.barClass" />
-              <span class="truncate text-[11px] text-ink-muted2">{{ stage.label }}</span>
-              <span class="font-mono text-[13px] font-medium text-ink-700">{{ stage.count }}</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="flex flex-col items-start gap-4 md:flex-row">
-        <!-- Day view worklist -->
-        <div v-if="viewMode === 'day'" class="w-full shrink-0 overflow-hidden rounded-card border border-line bg-surface-sidebar shadow-card md:w-[404px]">
-          <div v-if="appointments.length === 0" class="p-8 text-center text-[13px] text-ink-faint">{{ t('No appointments for this day.', 'No hay citas para este día.') }}</div>
-          <ul v-else class="flex flex-col gap-1 p-2">
-            <li v-for="a in appointments" :key="a.id" class="group relative">
-              <div
-                class="flex cursor-pointer flex-col gap-2 rounded-ctl border px-3 py-2.5"
-                :class="selectedAppointment?.id === a.id ? 'border-brand bg-brand-tint shadow-selected' : 'border-transparent hover:bg-[#FAFAFC]'"
+        <!-- Folded: a strip of times, the open visit marked, red flags dotted. -->
+        <div v-else-if="listFolded" class="flex items-center gap-1 overflow-x-auto px-2 py-2 lg:flex-col lg:overflow-x-visible lg:px-2">
+          <button
+            type="button"
+            class="flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-ctl border border-line-control bg-surface px-2.5 text-ink-500 hover:border-line-controlHover lg:h-auto lg:w-[60px] lg:flex-col lg:gap-0.5 lg:px-0 lg:py-1.5"
+            :aria-label="t('Show the whole day', 'Ver el día entero')"
+            data-cy="myday-list-open"
+            @click="listOpen = true"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M2.5 4h11M2.5 8h11M2.5 12h11" /></svg>
+            <span class="font-mono text-[11px] text-ink-muted2">{{ chartedAppointmentIds.size }}/{{ appointments.length }}</span>
+          </button>
+          <ul class="flex items-center gap-1 lg:flex-col lg:gap-0.5">
+            <li v-for="a in appointments" :key="a.id" class="relative shrink-0">
+              <button
+                type="button"
+                class="flex w-[60px] flex-col items-center gap-[3px] rounded-ctl border py-1.5"
+                :class="selectedAppointment?.id === a.id ? 'border-brand bg-brand-tint' : 'border-transparent hover:bg-surface-subtle'"
+                :aria-current="selectedAppointment?.id === a.id || undefined"
+                :aria-label="`${formatTime(a.starts_at)} ${privacyMode ? '' : patientName(a)}`"
+                data-cy="myday-strip-visit"
                 @click="selectAppointment(a)"
               >
-                <div class="flex items-center gap-2.5">
-                  <button
-                    type="button"
-                    class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full relative touch:after:absolute touch:after:-inset-3 touch:after:content-['']"
-                    :class="a.checked_in_at ? 'bg-success-accent text-success-on' : 'border border-line-control text-ink-faint3 hover:border-line-controlHover hover:text-ink-muted2'"
-                    :title="a.checked_in_at ? `${t('Arrived', 'Llegada')} ${formatTime(a.checked_in_at)}` : t('Mark as arrived', 'Marcar como llegado')"
-                    @click.stop="toggleCheckedIn(a)"
-                  >
-                    <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2.5 6.2l2.4 2.4 4.6-5.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
-                  </button>
-                  <span class="w-[42px] shrink-0 font-mono text-[12px] text-ink-muted2">{{ formatTime(a.starts_at) }}</span>
-                  <span
-                    class="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full bg-brand-tint text-[11px] font-[650] text-brand"
-                    :class="{ 'blur-sm select-none': privacyMode }"
-                  >
-                    {{ ((a.patients?.first_name?.[0] ?? '') + (a.patients?.last_name?.[0] ?? '')).toUpperCase() || '?' }}
+                <span class="font-mono text-[11px]" :class="selectedAppointment?.id === a.id ? 'font-semibold text-brand-text' : 'text-ink-faint'">{{ formatTime(a.starts_at) }}</span>
+                <span
+                  class="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-[650]"
+                  :class="[
+                    selectedAppointment?.id === a.id ? 'bg-brand text-brand-on' : a.status === 'completed' ? 'bg-success-bg text-success-text' : a.status === 'no_show' ? 'bg-danger-bg text-danger-text' : 'bg-brand-tint text-brand-text',
+                    { 'blur-sm select-none': privacyMode },
+                  ]"
+                >
+                  <svg v-if="a.status === 'completed' && selectedAppointment?.id !== a.id" width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M2.5 6.2l2.4 2.4 4.6-5.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                  <template v-else>{{ initialsOf(a) }}</template>
+                </span>
+                <span v-if="nextUp?.id === a.id && selectedAppointment?.id !== a.id" class="text-[11px] font-semibold leading-none text-brand-text">{{ t('Next', 'Sig.') }}</span>
+              </button>
+              <span
+                v-if="a.patients?.red_flags?.trim()"
+                class="pointer-events-none absolute right-[11px] top-[22px] h-2 w-2 rounded-full border-2 border-surface-sidebar bg-danger-text"
+                :title="t('Red flags on the record', 'Señales rojas en la ficha')"
+              />
+            </li>
+          </ul>
+        </div>
+
+        <template v-else>
+          <!-- Where the day stands: the five stages, counted. -->
+          <div class="grid grid-cols-5 gap-1 border-b border-line px-3 py-2.5">
+            <div v-for="stage in flowStages" :key="stage.key" class="flex min-w-0 flex-col gap-1">
+              <div class="h-1 w-full rounded-full" :class="stage.barClass" />
+              <span class="truncate text-[11px] text-ink-muted2">{{ stage.label }}</span>
+              <span class="font-mono text-[12.5px] font-medium leading-none text-ink-700">{{ stage.count }}</span>
+            </div>
+          </div>
+          <div v-if="appointments.length === 0" class="p-8 text-center text-[13px] text-ink-faint">{{ t('No appointments for this day.', 'No hay citas para este día.') }}</div>
+          <ul v-else class="flex flex-col gap-0.5 p-2">
+            <li v-for="a in appointments" :key="a.id" class="group relative">
+              <div
+                class="flex cursor-pointer gap-2.5 rounded-ctl border px-2.5 py-2"
+                :class="selectedAppointment?.id === a.id ? 'border-brand bg-brand-tint shadow-selected' : nextUp?.id === a.id ? 'border-brand-tintBorder bg-surface shadow-card' : 'border-transparent hover:bg-surface-subtle'"
+                @click="selectAppointment(a)"
+              >
+                <button
+                  type="button"
+                  class="relative mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full touch:after:absolute touch:after:-inset-3 touch:after:content-['']"
+                  :class="a.checked_in_at ? 'bg-success-accent text-success-on' : 'border border-line-control bg-surface text-ink-faint3 hover:border-line-controlHover hover:text-ink-muted2'"
+                  :title="a.checked_in_at ? `${t('Arrived', 'Llegada')} ${formatTime(a.checked_in_at)}` : t('Mark as arrived', 'Marcar como llegado')"
+                  :aria-label="a.checked_in_at ? `${t('Arrived', 'Llegada')} ${formatTime(a.checked_in_at)}` : t('Mark as arrived', 'Marcar como llegado')"
+                  @click.stop="toggleCheckedIn(a)"
+                >
+                  <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2.5 6.2l2.4 2.4 4.6-5.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                </button>
+                <span class="mt-[3px] w-[40px] shrink-0 font-mono text-[12px]" :class="nextUp?.id === a.id && selectedAppointment?.id !== a.id ? 'font-semibold text-brand-text' : 'text-ink-muted2'">{{ formatTime(a.starts_at) }}</span>
+                <span class="min-w-0 flex-1 pr-7">
+                  <!-- The name keeps the whole line: the status and the flags
+                  go on the line below, where they used to cut it to "Jor…". -->
+                  <span class="flex items-start gap-2">
+                    <span class="min-w-0 flex-1 truncate text-[13.5px] font-[560] text-ink-900" :class="{ 'blur-sm select-none': privacyMode }">{{ patientName(a) }}</span>
+                    <UiPill v-if="nextUp?.id === a.id && selectedAppointment?.id !== a.id" tone="brand">{{ t('Next', 'Siguiente') }}</UiPill>
+                    <UiPill v-else :tone="statusTone(a.status)" dot>{{ stageIndex(a) >= 3 && a.status === 'booked' ? stageName(a) : statusLabel(a.status) }}</UiPill>
                   </span>
-                  <span class="min-w-0 flex-1">
-                    <span class="block truncate text-[13.5px] font-[560] text-ink-900" :class="{ 'blur-sm select-none': privacyMode }">{{ a.patients?.first_name }} {{ a.patients?.last_name }}</span>
-                    <span class="flex items-center gap-1.5 truncate text-[11.5px] text-ink-muted2">
+                  <span class="mt-1 flex flex-wrap items-center gap-1.5 text-[11.5px] text-ink-muted2">
+                    <span class="inline-flex min-w-0 items-center gap-1.5">
                       <span class="h-[6px] w-[6px] shrink-0 rounded-full" :style="{ backgroundColor: a.appointment_types?.color ?? '#9CA3AF' }" />
-                      {{ a.appointment_types?.name ?? t('No type', 'Sin tipo') }}
+                      <span class="truncate">{{ a.appointment_types?.name ?? t('No type', 'Sin tipo') }}</span>
                     </span>
-                    <span v-if="a.listing" class="block truncate text-[11.5px] font-medium text-ink-600" data-cy="worklist-listing">{{ a.listing }}</span>
+                    <!-- Red flags on the record; the text on hover for clinical
+                         roles only, as on the calendar. -->
+                    <span
+                      v-if="a.patients?.red_flags?.trim()"
+                      class="inline-flex h-5 items-center gap-1 rounded-pill bg-danger-bg px-1.5 text-[11px] font-semibold text-danger-text"
+                      :title="can('visit_notes_access') ? `${t('Red flags', 'Señales rojas')}: ${a.patients.red_flags.trim()}` : t('Red flags on the record', 'Señales rojas en la ficha')"
+                      data-cy="worklist-red-flags"
+                    >
+                      <CalendarRedFlagIcon :label="t('Red flags', 'Señales rojas')" />{{ t('Red flag', 'Alerta roja') }}
+                    </span>
+                    <span v-if="renewalPatients.has(a.patient_id)" class="inline-flex h-5 items-center rounded-pill bg-warning-bg px-2 text-[11px] font-semibold text-warning-text" data-cy="worklist-renewal">{{ t('Review', 'Revisión') }}</span>
+                    <span
+                      v-if="formsPending(a) > 0"
+                      class="inline-flex h-5 w-5 items-center justify-center rounded-pill bg-warning-bg text-warning-text"
+                      :title="pendingFormsLabel(formsPending(a), t)"
+                      data-cy="worklist-forms"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" :aria-label="pendingFormsLabel(formsPending(a), t)"><path d="M9 4h6v3H9z" /><path d="M9 5.5H6v15h12v-15h-3" /><path d="M12 11v3.5M12 17.5h.01" /></svg>
+                    </span>
+                    <PractitionerNoShowRiskPill v-if="a.status === 'booked' && !a.checked_in_at" :risk="riskByPatient.get(a.patient_id)" />
                   </span>
-                  <span v-if="renewalPatients.has(a.patient_id)" class="inline-flex h-5 shrink-0 items-center rounded-pill bg-warning-bg px-2 text-[11px] font-semibold text-warning-text" data-cy="worklist-renewal">{{ t('Review', 'Revisión') }}</span>
-                  <!-- Red flags on the record; the text on hover for clinical
-                       roles only, as on the calendar. -->
-                  <span
-                    v-if="a.patients?.red_flags?.trim()"
-                    class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-pill bg-danger-bg text-danger-text"
-                    :title="can('visit_notes_access') ? `${t('Red flags', 'Señales rojas')}: ${a.patients.red_flags.trim()}` : t('Red flags on the record', 'Señales rojas en la ficha')"
-                    data-cy="worklist-red-flags"
-                  >
-                    <CalendarRedFlagIcon :label="t('Red flags', 'Señales rojas')" />
-                  </span>
-                  <!-- An icon, not a worded pill: beside the risk and status
-                       pills a third label cut the patient's name to "Ana ...". -->
-                  <span
-                    v-if="formsPending(a) > 0"
-                    class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-pill bg-warning-bg text-warning-text"
-                    :title="pendingFormsLabel(formsPending(a), t)"
-                    data-cy="worklist-forms"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" :aria-label="pendingFormsLabel(formsPending(a), t)"><path d="M9 4h6v3H9z" /><path d="M9 5.5H6v15h12v-15h-3" /><path d="M12 11v3.5M12 17.5h.01" /></svg>
-                  </span>
-                  <PractitionerNoShowRiskPill v-if="a.status === 'booked' && !a.checked_in_at" :risk="riskByPatient.get(a.patient_id)" />
-                  <UiPill :tone="statusTone(a.status)" dot>{{ statusLabel(a.status) }}</UiPill>
-                </div>
-                <div class="flex items-center gap-2">
-                  <div class="flex flex-1 gap-1">
-                    <span v-for="i in 5" :key="i" class="h-[5px] flex-1 rounded-full" :class="i <= stageIndex(a) + 1 ? 'bg-brand' : 'bg-toggle-off'" />
-                  </div>
-                  <span class="shrink-0 text-[11px] font-medium text-ink-muted2">{{ stageName(a) }}</span>
-                </div>
+                  <span v-if="a.listing" class="mt-0.5 block truncate text-[11.5px] font-medium text-ink-600" data-cy="worklist-listing">{{ a.listing }}</span>
+                </span>
               </div>
               <button
                 type="button"
                 data-cy="practitioner-open-appointment"
-                class="pointer-events-none absolute right-1 top-1 flex h-8 w-8 items-center justify-center rounded-ctlSm opacity-0 focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100 [@media(pointer:coarse)]:pointer-events-auto [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11 [@media(pointer:coarse)]:opacity-100 touch:h-10 touch:w-10"
+                class="pointer-events-none absolute bottom-1 right-1 flex h-8 w-8 items-center justify-center rounded-ctlSm opacity-0 focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100 [@media(pointer:coarse)]:pointer-events-auto [@media(pointer:coarse)]:opacity-100 touch:h-10 touch:w-10"
                 :class="{ 'pointer-events-auto animate-pulse opacity-100': openingPanelId === a.id }"
                 :aria-busy="openingPanelId === a.id || undefined"
                 :title="t('Appointment details', 'Detalles de la cita')"
                 :aria-label="t('Appointment details', 'Detalles de la cita')"
                 @click.stop="openEditModal(a)"
               >
-                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" class="text-ink-faint hover:text-ink-600">
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" class="text-ink-faint hover:text-ink-600" aria-hidden="true">
                   <path d="M11 2.5l2.5 2.5-8 8-3 .5.5-3 8-8z" stroke-linecap="round" stroke-linejoin="round" />
                 </svg>
               </button>
             </li>
           </ul>
-        </div>
+        </template>
+      </aside>
 
+      <!-- The patient, in a column of its own beside the note (from lg). -->
+      <div
+        v-if="viewMode === 'day' && selectedAppointment && isLg"
+        class="w-[288px] shrink-0 overflow-y-auto border-r border-line bg-surface xl:w-[304px]"
+        data-cy="myday-rail"
+      >
+        <PractitionerPatientRail
+          :key="selectedAppointment.id"
+          :patient-id="selectedAppointment.patient_id"
+          :appointment-id="selectedAppointment.id"
+          :starts-at="selectedAppointment.starts_at"
+          :status="selectedAppointment.status"
+          :visit-line="visitLineOf(selectedAppointment)"
+        />
+      </div>
+
+      <main class="min-w-0 flex-1 lg:overflow-y-auto">
         <!-- Week view. 7 columns need more room than a phone has, so this
         scrolls horizontally as a unit rather than squeezing each day
         illegibly thin -- same trade-off as the Patients table. -->
-        <div v-else class="min-w-0 w-full flex-1 overflow-x-auto">
-          <div class="grid min-w-[840px] grid-cols-7 gap-3">
+        <div v-if="viewMode === 'week'" class="overflow-x-auto p-4 sm:p-5">
+          <div v-if="loading" class="grid min-w-[840px] grid-cols-7 gap-3">
+            <UiSkeleton v-for="i in 7" :key="i" class="h-40 rounded-card" />
+          </div>
+          <div v-else class="grid min-w-[840px] grid-cols-7 gap-3">
             <div v-for="day in weekDays" :key="toDateKey(day)" class="overflow-hidden rounded-card border border-line bg-surface shadow-card">
               <div class="border-b border-line-row bg-surface-subtle2 px-2 py-1.5">
                 <span class="text-[12px] font-medium text-ink-700">{{ day.toLocaleDateString(t('en-GB', 'es-ES'), { weekday: 'short', day: 'numeric' }) }}</span>
@@ -534,7 +643,7 @@ onMounted(() => warmChunks(() => [
                   type="button"
                   class="block w-full rounded-ctlSm border-l-[3px] px-1.5 py-1 text-left text-[11.5px]"
                   :class="a.status === 'completed' ? 'border-success-accent bg-success-bg2' : 'border-warning-accent bg-warning-bg2'"
-                  @click="selectAppointment(a)"
+                  @click="openFromWeek(a)"
                 >
                   <p class="truncate font-medium text-ink-700" :class="{ 'blur-sm select-none': privacyMode }">
                     {{ formatTime(a.starts_at) }} {{ a.patients?.first_name }}
@@ -547,44 +656,67 @@ onMounted(() => warmChunks(() => [
           </div>
         </div>
 
-        <!-- My Day patient view -->
-        <div v-if="selectedAppointment" class="min-w-0 w-full flex-1">
-          <!-- :key forces a full teardown/recreate on every patient switch --
-          without it, Vue patches the same instance (and everything it
-          mounts: ExamAutofill, FilesTab, VisitNotesTab, NotesPanel) with new
-          props instead of remounting, leaving stale component-local state
-          (a previous patient's noteId, an in-flight upload's captured
-          patientId) to silently attach the next patient's write to the
-          last one's record. See ExamAutofill.vue and FilesTab.vue for the
-          matching defense-in-depth fixes; this key is what makes those the
-          belt to this component's suspenders, not the only guard. -->
-          <PractitionerMyDayPatientView :key="selectedAppointment.id" :appointment="selectedAppointment" :rooms="rooms" @charted="refreshDay" />
-        </div>
-        <div v-else class="flex min-w-0 w-full flex-1 items-center justify-center rounded-card border border-dashed border-line-control p-10 text-[13px] text-ink-faint">
-          {{ t('Select a patient to chart their visit.', 'Selecciona un paciente para registrar su visita.') }}
-        </div>
-        </div>
-      </div>
-
-      <!-- Below the day, not above it. A practitioner opens My Day between
-      visits to see who is next; with these on top the first visit sat 2.5
-      screens down at 1440 and 3.4 on a phone. All three stay outside the
-      loading switch, so changing day does not reload them. -->
-      <div class="flex flex-col gap-4 pb-4 sm:pb-6">
-        <!-- Who has not confirmed between now and tomorrow night, riskiest
-        first. Not about the day shown. -->
-        <PractitionerNeedsConfirming
-          class="mx-4 sm:mx-6"
-          :clinic-id="store.currentClinicId"
-          :practitioner-id="practitionerId || null"
-          :can-see-all="canSeeAll"
-          :privacy-mode="privacyMode"
-          @message="(id) => navigateTo(`/inbox?open=${encodeURIComponent(id)}`)"
+        <!-- A visit open: the note, with the patient pinned over it below lg.
+        :key forces a full teardown/recreate on every patient switch --
+        without it, Vue patches the same instance (and everything it
+        mounts: ExamAutofill, FilesTab, VisitNotesTab, NotesPanel) with new
+        props instead of remounting, leaving stale component-local state
+        (a previous patient's noteId, an in-flight upload's captured
+        patientId) to silently attach the next patient's write to the
+        last one's record. See ExamAutofill.vue and FilesTab.vue for the
+        matching defense-in-depth fixes; this key is what makes those the
+        belt to this component's suspenders, not the only guard. -->
+        <PractitionerMyDayPatientView
+          v-else-if="selectedAppointment"
+          :key="selectedAppointment.id"
+          :appointment="selectedAppointment"
+          :rooms="rooms"
+          :visit-line="visitLineOf(selectedAppointment)"
+          :pinned-patient="!isLg"
+          @charted="refreshDay"
         />
-        <!-- What automations asked this person (or their role) to do. -->
-        <PractitionerMyDayTasks class="mx-4 sm:mx-6" :privacy-mode="privacyMode" />
-        <PractitionerLowStock v-if="store.isOwner" class="mx-4 sm:mx-6" to="/settings/products" />
-      </div>
+
+        <!-- Nobody open: who is next, then what the day still needs. All
+        three lists stay outside the loading switch, so changing day does
+        not reload them. -->
+        <div v-else class="flex flex-col gap-4 p-4 sm:p-5">
+          <section v-if="nextUp && !loading" class="rounded-card border border-line bg-surface p-4 shadow-card sm:p-5" data-cy="myday-next-up">
+            <p class="mb-3 text-[12px] text-ink-muted2">
+              {{ t('Next', 'Siguiente') }} · <span class="font-mono text-ink-700">{{ formatTime(nextUp.starts_at) }}</span>
+              <template v-if="nextUp.checked_in_at"> · {{ t('waiting since', 'en sala de espera desde las') }} <span class="font-mono text-ink-700">{{ formatTime(nextUp.checked_in_at) }}</span></template>
+            </p>
+            <PractitionerPatientRail
+              :key="nextUp.id"
+              :class="{ 'blur-sm select-none': privacyMode }"
+              :patient-id="nextUp.patient_id"
+              :appointment-id="nextUp.id"
+              :starts-at="nextUp.starts_at"
+              :status="nextUp.status"
+              :visit-line="visitLineOf(nextUp)"
+              variant="wide"
+            >
+              <template #actions>
+                <UiBtn variant="primary" :size="isLg ? 'md' : 'lg'" data-cy="myday-start-visit" @click="selectAppointment(nextUp)">{{ t('Start visit', 'Empezar visita') }}</UiBtn>
+              </template>
+            </PractitionerPatientRail>
+          </section>
+          <div v-else-if="!loading && viewMode === 'day' && appointments.length > 0" class="rounded-card border border-dashed border-line-control p-8 text-center text-[13px] text-ink-faint">
+            {{ t('Everyone on today\'s list has been seen. Pick a visit to open its note.', 'Ya has visto a todos los de hoy. Elige una visita para abrir su nota.') }}
+          </div>
+          <!-- Who has not confirmed between now and tomorrow night, riskiest
+          first. Not about the day shown. -->
+          <PractitionerNeedsConfirming
+            :clinic-id="store.currentClinicId"
+            :practitioner-id="practitionerId || null"
+            :can-see-all="canSeeAll"
+            :privacy-mode="privacyMode"
+            @message="(id) => navigateTo(`/inbox?open=${encodeURIComponent(id)}`)"
+          />
+          <!-- What automations asked this person (or their role) to do. -->
+          <PractitionerMyDayTasks :privacy-mode="privacyMode" />
+          <PractitionerLowStock v-if="store.isOwner" to="/settings/products" />
+        </div>
+      </main>
     </div>
 
     <LazyCalendarAppointmentPanel

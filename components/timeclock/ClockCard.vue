@@ -14,7 +14,10 @@ import { clinicDateOf } from '../../utils/clinicClock'
 // a full card of "0 h 00" stood above the schedule all day. Before the first
 // clock-in, or with an earlier day left open, it stays the full card: then
 // the clock is the thing to deal with.
-const props = defineProps<{ accountId: string; teamMemberId: string; timeZone: string; monthTo: string; compact?: boolean }>()
+// `inline`: the web My Day's page header. The clock is still one tap away, but
+// it no longer takes a band of the screen above the patient -- in the middle
+// of a day the practitioner opens My Day for the visit, not for the clock.
+const props = defineProps<{ accountId: string; teamMemberId: string; timeZone: string; monthTo: string; compact?: boolean; inline?: boolean }>()
 const t = useT()
 const supabase = useSupabaseClient()
 
@@ -83,7 +86,42 @@ async function clock(kind: 'in' | 'break_start' | 'break_end' | 'out') {
 
 <template>
   <section
-    v-if="exempt === false && asBar"
+    v-if="exempt === false && inline"
+    class="flex flex-wrap items-center gap-1.5"
+    data-cy="clock-card"
+    :data-state="state"
+  >
+    <span
+      v-if="leftOpen"
+      class="inline-flex h-8 items-center rounded-ctl border border-warning-border bg-warning-bg px-2.5 text-[12.5px] font-medium text-warning-text touch:h-11"
+      data-cy="clock-left-open"
+    >{{ t('A day was left open', 'Un día quedó sin salida') }}</span>
+    <template v-else>
+      <span
+        v-if="day"
+        class="inline-flex h-8 items-center gap-1.5 rounded-ctl border px-2.5 text-[12.5px] font-medium touch:h-11"
+        :class="state === 'working' ? 'border-success-border bg-success-bg text-success-text' : state === 'on_break' ? 'border-warning-border bg-warning-bg text-warning-text' : 'border-line-control bg-surface text-ink-500'"
+        :title="detail"
+      >
+        <span v-if="state !== 'off'" class="h-1.5 w-1.5 rounded-full" :class="state === 'working' ? 'bg-success-accent' : 'bg-warning-accent'" aria-hidden="true" />
+        {{ state === 'working' ? t('Working', 'En jornada') : state === 'on_break' ? t('On a break', 'En pausa') : t('Clocked out', 'Salida') }}
+        <span class="font-mono" data-cy="clock-worked">{{ formatWorked(day.workedMinutes) }}</span>
+      </span>
+      <span class="sr-only" data-cy="clock-detail">{{ detail }}</span>
+      <UiBtn v-if="state === 'off'" variant="secondary" size="sm" :disabled="busy" data-cy="clock-in" @click="clock('in')">
+        {{ day ? t('Clock in again', 'Volver a fichar') : t('Clock in', 'Fichar entrada') }}
+      </UiBtn>
+      <template v-else>
+        <UiBtn v-if="state === 'working'" variant="secondary" size="sm" :disabled="busy" data-cy="clock-break" @click="clock('break_start')">{{ t('Break', 'Pausa') }}</UiBtn>
+        <UiBtn v-else variant="secondary" size="sm" :disabled="busy" data-cy="clock-back" @click="clock('break_end')">{{ t('Back', 'Vuelta') }}</UiBtn>
+        <UiBtn variant="secondary" size="sm" class="!text-danger-text" :disabled="busy" data-cy="clock-out" @click="clock('out')">{{ t('Clock out', 'Salida') }}</UiBtn>
+      </template>
+    </template>
+    <NuxtLink :to="monthTo" class="px-1 text-[12.5px] font-semibold text-brand-text hover:text-brand-hover" data-cy="clock-month">{{ t('My month', 'Mi mes') }}</NuxtLink>
+    <p v-if="error" role="alert" class="w-full text-[12px] text-danger-text">{{ error }}</p>
+  </section>
+  <section
+    v-else-if="exempt === false && asBar"
     class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-card border border-line bg-surface px-4 py-2"
     data-cy="clock-card"
     :data-state="state"

@@ -11,37 +11,19 @@ interface Appointment {
   appointment_types: { name: string; color: string } | null
 }
 
-const props = defineProps<{ appointment: Appointment; rooms?: RoomOption[] }>()
+// The visit being charted, on My Day. Who the patient is -- flags, note, plan,
+// money -- is PractitionerPatientRail, a column of its own beside this from
+// lg; below lg there is no room for one, so `pinnedPatient` puts the same
+// rail, as a bar, at the top of this view where it stays while the note
+// scrolls. What used to sit under the note (attendance, the plan card, the
+// flags, the notes history and the files) is now either in that rail or on a
+// tab, so the note is what fills the screen.
+const props = defineProps<{ appointment: Appointment; rooms?: RoomOption[]; visitLine?: string; pinnedPatient?: boolean }>()
 const emit = defineEmits<{ charted: [] }>()
 
 const supabase = useSupabaseClient()
 const t = useT()
-const visitNumber = ref<number | null>(null)
 const signing = ref(false)
-
-// Same completed/cancelled/no_show/show-rate computation as
-// PatientsAppointmentsTab's stat strip -- kept local here (not in
-// PatientsPhaseStats) since the patient-detail rail's Care plan card has a
-// fixed shape per its own design spec, but a practitioner charting mid-visit
-// still benefits from "has this patient been missing visits?" at a glance.
-const attendanceLoading = ref(true)
-const attendance = ref({ completed: 0, cancelled: 0, no_show: 0 })
-const showRate = computed(() => {
-  const denom = attendance.value.completed + attendance.value.no_show
-  if (denom === 0) return null
-  return Math.round((attendance.value.completed / denom) * 100)
-})
-async function loadAttendance() {
-  attendanceLoading.value = true
-  const { data } = await supabase.from('appointments').select('status').eq('patient_id', props.appointment.patient_id).is('deleted_at', null)
-  const next = { completed: 0, cancelled: 0, no_show: 0 }
-  for (const a of data ?? []) {
-    if (a.status in next) (next as Record<string, number>)[a.status]++
-  }
-  attendance.value = next
-  attendanceLoading.value = false
-}
-watch(() => props.appointment.patient_id, loadAttendance, { immediate: true })
 
 // PatientsExamAutofill owns the SOAP fields and the visit_notes save --
 // this view just drives it (save on "Sign & complete", populate on "Copy
@@ -63,11 +45,41 @@ function onListingsChange(l: Listings) {
   examRef.value?.setListingLine(listingActionLine(listingSummary(l, (x) => x, sideLettersFor(t)), t))
 }
 
-// Laid out by the width this pane actually has, not the window's: the day's
-// worklist takes 404px beside it, so at a 1280-1500px window a viewport
-// breakpoint put three columns into ~550-780px and left the note a sliver.
-// Wide: note | listing | last visit. Medium: note | listing, last visit
-// below. Narrow: one column, the listing in its own two-column grid.
+// Tabs. The note stays mounted under the others -- v-show, not v-if -- so a
+// form answer brought over from Forms lands in a note that is still there,
+// and nothing typed is lost by looking at the history. The others mount the
+// first time they are opened, so a visit nobody reads the files of does not
+// load them.
+type Tab = 'note' | 'history' | 'files' | 'forms'
+const tab = ref<Tab>('note')
+const opened = ref<Set<Tab>>(new Set(['note']))
+function openTab(next: Tab) {
+  tab.value = next
+  opened.value.add(next)
+}
+const TABS = computed<{ key: Tab; label: string }[]>(() => [
+  { key: 'note', label: t("Today's note", 'Nota de hoy') },
+  { key: 'history', label: t('History', 'Historial') },
+  { key: 'files', label: t('Files', 'Archivos') },
+  { key: 'forms', label: t('Forms', 'Formularios') },
+])
+// Roving focus across the tabs: one tab stop, arrows to move.
+function onTabKeydown(e: KeyboardEvent) {
+  const keys = TABS.value.map((x) => x.key)
+  const i = keys.indexOf(tab.value)
+  const next = e.key === 'ArrowRight' ? keys[(i + 1) % keys.length] : e.key === 'ArrowLeft' ? keys[(i - 1 + keys.length) % keys.length] : e.key === 'Home' ? keys[0] : e.key === 'End' ? keys[keys.length - 1] : null
+  if (!next) return
+  e.preventDefault()
+  openTab(next)
+  nextTick(() => (document.querySelector(`[data-cy="myday-tab-${next}"]`) as HTMLElement | null)?.focus())
+}
+
+// Laid out by the width this pane actually has, not the window's: the
+// patient's column and the folded list sit beside it, so a viewport
+// breakpoint would put the note into a sliver.
+// Wide: note | listing, last visit open beside them. Medium: note | listing,
+// last visit a line above. Narrow: one column, the listing in its own
+// two-column grid.
 const bodyEl = ref<HTMLElement | null>(null)
 const bodyWidth = ref(0)
 let resizeObserver: ResizeObserver | null = null
@@ -78,35 +90,6 @@ onMounted(() => {
 })
 onBeforeUnmount(() => resizeObserver?.disconnect())
 const layout = computed<'wide' | 'medium' | 'narrow'>(() => (bodyWidth.value >= 1040 ? 'wide' : bodyWidth.value >= 600 || !bodyWidth.value ? 'medium' : 'narrow'))
-
-async function loadVisitNumber() {
-  const { count } = await supabase
-    .from('appointments')
-    .select('id', { count: 'exact', head: true })
-    .eq('patient_id', props.appointment.patient_id)
-    .neq('status', 'cancelled')
-    .is('deleted_at', null)
-    .lte('starts_at', props.appointment.starts_at)
-  visitNumber.value = count ?? null
-}
-watch(() => props.appointment.id, loadVisitNumber, { immediate: true })
-
-const initials = computed(() => {
-  const f = props.appointment.patients?.first_name?.[0] ?? ''
-  const l = props.appointment.patients?.last_name?.[0] ?? ''
-  return (f + l).toUpperCase() || '?'
-})
-const patientName = computed(() => `${props.appointment.patients?.first_name ?? ''} ${props.appointment.patients?.last_name ?? ''}`.trim())
-const roomName = computed(() => props.rooms?.find((r) => r.id === props.appointment.room_id)?.name ?? null)
-const visitLine = computed(() => {
-  const parts = [
-    new Date(props.appointment.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    props.appointment.appointment_types?.name ?? t('No type', 'Sin tipo'),
-  ]
-  if (roomName.value) parts.push(roomName.value)
-  const prefix = visitNumber.value ? `${t('Visit', 'Visita')} #${visitNumber.value} · ` : ''
-  return prefix + parts.join(' · ')
-})
 
 async function copyLastNote() {
   await examRef.value?.copyLastNote()
@@ -125,133 +108,138 @@ async function signAndComplete() {
   signing.value = false
   emit('charted')
 }
+
+function bring(section: 'Subjective' | 'Objective' | 'Action' | 'Plan' | 'Note', text: string) {
+  examRef.value?.bringSection(section, text)
+}
 </script>
 
 <template>
-  <div class="flex flex-col gap-4">
-    <!-- The visit: today's note with its listing beside it, and the last
-    visit beside that. The bar with Sign & complete stays in view while the
-    rest scrolls (no overflow-hidden on the card: it would stop the sticky bar). -->
-    <!-- The plan is ending: the review, and what comes next. Nothing otherwise. -->
-    <AppointmentsPlanRenewal
-      v-if="store.accountId"
-      :patient-id="appointment.patient_id"
-      :account-id="store.accountId"
-      :team-member-id="store.teamMember?.id ?? null"
-      :editable="can('patients_edit')"
-      :can-sell-bono="can('billing_access')"
-      :report-to="`/patients/${appointment.patient_id}?tab=progress`"
-    />
-    <div class="rounded-card border border-line bg-surface shadow-card">
-      <div class="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-t-card border-b border-line bg-surface px-5 py-4">
-        <div class="flex min-w-0 items-center gap-3">
-          <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[13px] font-[650] text-brand">
-            {{ initials }}
-          </span>
-          <div class="min-w-0">
-            <p class="truncate text-[15px] font-[600] text-ink-900">{{ patientName }}</p>
-            <p class="truncate text-[12.5px] text-ink-muted2">{{ visitLine }}</p>
-          </div>
+  <div class="flex min-h-full flex-col">
+    <!-- Stays in view while the note scrolls: the patient below lg, the
+    tabs, and Sign & complete. -->
+    <div class="sticky top-0 z-10 border-b border-line bg-surface">
+      <PractitionerPatientRail
+        v-if="pinnedPatient"
+        :patient-id="appointment.patient_id"
+        :appointment-id="appointment.id"
+        :starts-at="appointment.starts_at"
+        :status="appointment.status"
+        :visit-line="visitLine"
+        variant="bar"
+        class="border-b border-line-divider"
+      />
+      <!-- The actions drop to a line of their own when the pane is too narrow
+      for both, rather than squeezing the tabs out of sight behind them. -->
+      <div class="flex flex-wrap items-center gap-x-2 pr-3 sm:pr-4">
+        <div role="tablist" :aria-label="t('Visit', 'Visita')" class="flex min-w-0 flex-[1_1_23rem] overflow-x-auto px-1.5 sm:px-2.5" @keydown="onTabKeydown">
+          <button
+            v-for="x in TABS"
+            :key="x.key"
+            type="button"
+            role="tab"
+            :aria-selected="tab === x.key"
+            :tabindex="tab === x.key ? 0 : -1"
+            :aria-controls="`myday-panel-${x.key}`"
+            class="-mb-px flex h-12 shrink-0 items-center border-b-2 px-3 text-[13.5px] font-semibold"
+            :class="tab === x.key ? 'border-brand text-ink-900' : 'border-transparent text-ink-muted hover:text-ink-700'"
+            :data-cy="`myday-tab-${x.key}`"
+            @click="openTab(x.key)"
+          >
+            {{ x.label }}
+          </button>
         </div>
-        <div class="flex shrink-0 items-center gap-3">
-          <NuxtLink :to="`/patients/${appointment.patient_id}`" target="_blank" class="text-[12.5px] font-medium text-brand-text hover:text-brand-hover">
-            {{ t('View profile →', 'Ver perfil →') }}
-          </NuxtLink>
+        <div class="ml-auto hidden shrink-0 items-center gap-2 py-2 pl-3 sm:flex">
           <UiBtn variant="secondary" size="sm" @click="copyLastNote">{{ t('Copy last note', 'Copiar última nota') }}</UiBtn>
           <UiBtn variant="primary" size="sm" :disabled="signing" data-cy="myday-sign" @click="signAndComplete">{{ signing ? t('Signing…', 'Firmando…') : t('Sign & complete', 'Firmar y completar') }}</UiBtn>
         </div>
       </div>
+    </div>
 
-      <div ref="bodyEl" class="grid gap-4 p-4" :class="layout === 'wide' ? 'grid-cols-[minmax(0,1fr)_300px]' : 'grid-cols-1'" :data-layout="layout">
-        <section class="min-w-0" data-cy="myday-today">
-          <h2 class="px-1 text-[13.5px] font-semibold text-ink-900">{{ t('Today', 'Hoy') }}</h2>
-          <div class="mt-2 grid gap-4" :class="layout === 'narrow' ? 'grid-cols-1' : 'grid-cols-[minmax(0,1fr)_236px]'">
-            <div class="min-w-0 rounded-ctl border border-line-row">
-              <AppointmentsPainScore
+    <div ref="bodyEl" class="flex-1 p-3 sm:p-4" :data-layout="layout">
+      <!-- Today's note -->
+      <div v-show="tab === 'note'" id="myday-panel-note" role="tabpanel" class="flex flex-col gap-3">
+        <!-- The plan is ending: the review, and what comes next. Nothing otherwise. -->
+        <AppointmentsPlanRenewal
+          v-if="store.accountId"
+          :patient-id="appointment.patient_id"
+          :account-id="store.accountId"
+          :team-member-id="store.teamMember?.id ?? null"
+          :editable="can('patients_edit')"
+          :can-sell-bono="can('billing_access')"
+          :report-to="`/patients/${appointment.patient_id}?tab=progress`"
+        />
+        <AppointmentsPreviousVisit
+          v-if="layout !== 'wide'"
+          :appointment-id="appointment.id"
+          :editable="canEditNotes"
+          collapsible
+          @bring="bring"
+          @use-listings="(l) => listingsRef?.setAll(l)"
+        />
+        <div class="grid gap-3" :class="layout === 'wide' ? 'grid-cols-[minmax(0,1fr)_300px]' : 'grid-cols-1'">
+          <section class="min-w-0" data-cy="myday-today">
+            <div class="grid gap-3" :class="layout === 'narrow' ? 'grid-cols-1' : 'grid-cols-[minmax(0,1fr)_236px]'">
+              <div class="min-w-0 rounded-card border border-line bg-surface shadow-card">
+                <AppointmentsPainScore
+                  v-if="store.accountId"
+                  class="border-b border-line-row px-5 py-3"
+                  :appointment-id="appointment.id"
+                  :account-id="store.accountId"
+                  :team-member-id="store.teamMember?.id ?? null"
+                  :editable="canEditNotes"
+                />
+                <PatientsExamAutofill ref="examRef" :appointment-id="appointment.id" :patient-id="appointment.patient_id" @saved="emit('charted')" />
+              </div>
+              <AppointmentsSpinalListings
                 v-if="store.accountId"
-                class="border-b border-line-row px-5 py-3"
+                ref="listingsRef"
+                class="self-start"
                 :appointment-id="appointment.id"
                 :account-id="store.accountId"
                 :team-member-id="store.teamMember?.id ?? null"
                 :editable="canEditNotes"
+                default-open
+                :narrow="layout !== 'narrow'"
+                @change="onListingsChange"
               />
-              <PatientsExamAutofill ref="examRef" :appointment-id="appointment.id" :patient-id="appointment.patient_id" @saved="emit('charted')" />
             </div>
-            <AppointmentsSpinalListings
-              v-if="store.accountId"
-              ref="listingsRef"
-              :appointment-id="appointment.id"
-              :account-id="store.accountId"
-              :team-member-id="store.teamMember?.id ?? null"
-              :editable="canEditNotes"
-              default-open
-              :narrow="layout !== 'narrow'"
-              @change="onListingsChange"
-            />
-          </div>
-        </section>
-        <div class="flex min-w-0 flex-col gap-4 self-start">
+          </section>
           <AppointmentsPreviousVisit
+            v-if="layout === 'wide'"
+            class="self-start"
             :appointment-id="appointment.id"
             :editable="canEditNotes"
-            @bring="(section, text) => examRef?.bringSection(section, text)"
+            @bring="bring"
             @use-listings="(l) => listingsRef?.setAll(l)"
           />
-          <!-- The intake and other completed forms, to read beside the note
-               and bring into Subjective instead of retyping. -->
-          <AppointmentsFormAnswers :patient-id="appointment.patient_id" :editable="canEditNotes" @bring="(section, text) => examRef?.bringSection(section, text)" />
         </div>
+        <section class="rounded-card border border-line bg-surface p-4 shadow-card">
+          <h3 class="text-[13.5px] font-semibold text-ink-700">{{ t('Quick Note', 'Nota rápida') }}</h3>
+          <div class="mt-2.5">
+            <AppointmentsNotesPanel :appointment-id="appointment.id" :listings="false" />
+          </div>
+        </section>
       </div>
-    </div>
 
-    <!-- At-a-glance context sits across the top as a row rather than down a
-    third-width rail. These three are small and fixed-height; the sections
-    below (notes, visit history, the file grid) are the ones that actually
-    need width -- the file grid in particular was laying four thumbnails
-    into two thirds of the pane. -->
-    <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-      <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-        <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Attendance', 'Asistencia') }}</p>
-        <div class="mt-2.5 grid grid-cols-2 gap-2.5">
-          <div>
-            <p class="text-[11px] text-ink-muted2">{{ t('Completed', 'Completadas') }}</p>
-            <p class="mt-0.5 font-mono text-[16px] font-semibold text-success-text">{{ attendanceLoading ? '—' : attendance.completed }}</p>
-          </div>
-          <div>
-            <p class="text-[11px] text-ink-muted2">{{ t('Missed', 'No asistidas') }}</p>
-            <p class="mt-0.5 font-mono text-[16px] font-semibold text-danger-text">{{ attendanceLoading ? '—' : attendance.no_show }}</p>
-          </div>
-          <div>
-            <p class="text-[11px] text-ink-muted2">{{ t('Cancelled', 'Canceladas') }}</p>
-            <p class="mt-0.5 font-mono text-[16px] font-semibold text-warning-accent">{{ attendanceLoading ? '—' : attendance.cancelled }}</p>
-          </div>
-          <div>
-            <p class="text-[11px] text-ink-muted2">{{ t('Show rate', 'Tasa de asistencia') }}</p>
-            <p class="mt-0.5 font-mono text-[16px] font-semibold text-ink-900">{{ attendanceLoading || showRate === null ? '—' : `${showRate}%` }}</p>
-          </div>
-        </div>
-      </div>
-      <PatientsPhaseStats :patient-id="appointment.patient_id" />
-      <PatientsFlagsPanel :patient-id="appointment.patient_id" />
-    </div>
-
-    <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-      <h3 class="text-[13.5px] font-semibold text-ink-700">{{ t('Quick Note', 'Nota rápida') }}</h3>
-      <div class="mt-2.5">
-        <AppointmentsNotesPanel :appointment-id="appointment.id" :listings="false" />
-      </div>
-    </div>
-    <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-      <h3 class="text-[13.5px] font-semibold text-ink-700">{{ t('Notes History', 'Historial de notas') }}</h3>
-      <div class="mt-2.5">
+      <div v-if="opened.has('history')" v-show="tab === 'history'" id="myday-panel-history" role="tabpanel" class="rounded-card border border-line bg-surface p-4 shadow-card">
         <PatientsVisitNotesTab :patient-id="appointment.patient_id" />
       </div>
-    </div>
-    <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-      <h3 class="text-[13.5px] font-semibold text-ink-700">{{ t('Files & Documents', 'Archivos y documentos') }}</h3>
-      <div class="mt-2.5">
+      <div v-if="opened.has('files')" v-show="tab === 'files'" id="myday-panel-files" role="tabpanel" class="rounded-card border border-line bg-surface p-4 shadow-card">
         <PatientsFilesTab :patient-id="appointment.patient_id" />
       </div>
+      <!-- The intake and other completed forms, to bring into Subjective
+           instead of retyping. -->
+      <div v-if="opened.has('forms')" v-show="tab === 'forms'" id="myday-panel-forms" role="tabpanel">
+        <AppointmentsFormAnswers :patient-id="appointment.patient_id" :editable="canEditNotes" show-empty @bring="bring" />
+      </div>
+    </div>
+
+    <!-- On a phone the actions leave the tab row for the bottom of the
+    screen, where a thumb reaches them. -->
+    <div class="sticky bottom-0 z-10 flex gap-2 border-t border-line bg-surface p-3 sm:hidden">
+      <UiBtn variant="secondary" size="lg" @click="copyLastNote">{{ t('Copy last', 'Copiar última') }}</UiBtn>
+      <UiBtn variant="primary" size="lg" class="flex-1" :disabled="signing" data-cy="myday-sign-phone" @click="signAndComplete">{{ signing ? t('Signing…', 'Firmando…') : t('Sign & complete', 'Firmar y completar') }}</UiBtn>
     </div>
   </div>
 </template>

@@ -64,8 +64,10 @@ describe('Bonos priced by plazos', () => {
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}?tab=billing`)
 
-        cy.get('[data-cy="sell-package-select"]').should('exist').select('Bono 10 (10, 500,00 €)')
-        cy.get('[data-cy="sell-package-installments"]').select('3 plazos of 180,00 € · 540,00 €')
+        // Amounts are formatted with a non-breaking space before the euro sign,
+        // which select() and should('contain') match literally.
+        cy.get('[data-cy="sell-package-select"]').should('exist').select('Bono 10 (10, 500,00\u00a0€)')
+        cy.get('[data-cy="sell-package-installments"]').select('3 plazos of 180,00\u00a0€ · 540,00\u00a0€')
         // What is taken now is the first plazo, not the whole price.
         cy.contains('label', 'Paid now (€)').parent().find('input').should('have.value', '180.00')
         cy.contains('button', /^Sell$/).click()
@@ -115,7 +117,7 @@ describe('Bonos priced by plazos', () => {
           cy.visit(`/patients/${patient.id}?tab=billing`)
 
           cy.contains('[data-cy="bono-card"]', 'Bono 10').within(() => {
-            cy.get('[data-cy="bono-owed"]').should('contain', '250,00 €')
+            cy.get('[data-cy="bono-owed"]').should('contain', '250,00\u00a0€')
             cy.contains('button', 'Take payment').click()
             cy.get('input[type="number"]').should('have.value', '250.00')
             cy.contains('button', 'Record payment').click()
@@ -156,7 +158,7 @@ describe('Bonos priced by plazos', () => {
           cy.login(account.email, account.password)
           cy.visit('/reports/debtors')
 
-          cy.contains('tr', 'Ya Vence').should('contain', '250,00 €')
+          cy.contains('tr', 'Ya Vence').should('contain', '250,00\u00a0€')
           cy.contains('tr', 'Aun Novence').should('not.exist')
           cy.contains('Total outstanding across 1 purchase(s)').should('exist')
         })

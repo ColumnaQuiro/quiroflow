@@ -86,3 +86,29 @@ describe('achievements', () => {
     expect(seven.on).toBe('2026-11-13')
   })
 })
+
+describe('habit reminders', async () => {
+  const { habitTimes, habitSummary, newHabit, remindersPerDay, nativeHabits } = await import('../../utils/habits')
+
+  it('spreads the reminders evenly across the window', () => {
+    expect(habitTimes({ timesPerDay: 5, from: '09:00', to: '19:00' })).toEqual(['09:00', '11:30', '14:00', '16:30', '19:00'])
+    expect(habitTimes({ timesPerDay: 1, from: '08:15', to: '20:00' })).toEqual(['08:15'])
+    expect(habitTimes({ timesPerDay: 5, from: '09:00', to: '21:00' })).toEqual(['09:00', '12:00', '15:00', '18:00', '21:00'])
+  })
+
+  it('reads as one line', () => {
+    expect(habitSummary({ ...newHabit('agua', 'a'), days: 'weekdays' })).toBe('5 al día · 9 a 19 h · lunes a viernes')
+    expect(habitSummary({ ...newHabit('estirar', 'b'), from: '11:00', to: '17:00' })).toBe('2 al día · 11:00 y 17:00 · todos los días')
+  })
+
+  it('counts the day across habits, and the team’s example fits the cap exactly', () => {
+    const habits = [newHabit('agua', 'a'), { ...newHabit('estirar', 'b') }, newHabit('respirar', 'c'), { ...newHabit('postura', 'd'), enabled: false }]
+    expect(remindersPerDay(habits)).toBe(12)
+  })
+
+  it('drops places that no longer exist when handing the habits to the phone', () => {
+    const [h] = nativeHabits([{ ...newHabit('agua', 'a'), placeIds: ['casa', 'gone'] }], [{ id: 'casa', name: 'Casa', lat: 40, lng: -3, radius: 150, address: '' }])
+    expect(h!.placeIds).toEqual(['casa'])
+    expect(h!.weekdays).toEqual([1, 2, 3, 4, 5, 6, 7])
+  })
+})

@@ -53,15 +53,6 @@ function payOutstanding() {
 }
 // The care plan as one tile; the plan itself is on the Plan tab.
 const { progress: planProgress, plan: carePlan } = usePatientPlanSummary(() => props.patientId)
-// Home exercises: a way through to them, once the clinic has given some.
-const { items: exercises } = usePatientExercises(() => props.patientId)
-// The clinic's "Hábitos y consejos" sit on the same screen, so the way
-// through is there for them too, exercises or not.
-const libraryCount = ref(0)
-onMounted(async () => {
-  const { count } = await useSupabaseClient().from('learn_articles').select('id', { count: 'exact', head: true }).eq('visible_to_patients', true).is('archived_at', null)
-  libraryCount.value = count ?? 0
-})
 
 const next = computed(() => upcoming.value[0] ?? null)
 
@@ -188,16 +179,14 @@ function eur(cents: number) {
       </NuxtLink>
     </div>
 
+    <!-- Exercises live on Cuidarme now; Documentos left the tab bar for it,
+         so on a phone it opens from here (useAppNav.ts). -->
     <NuxtLink
-      v-if="exercises.length > 0 || libraryCount > 0"
-      to="/exercises"
-      class="mt-3 flex items-center justify-between rounded-card border border-line bg-surface px-4 py-3 shadow-card"
-      data-cy="patient-home-exercises"
+      to="/documents"
+      class="mt-3 flex items-center justify-between rounded-card border border-line bg-surface px-4 py-3 shadow-card md:hidden"
+      data-cy="patient-home-documents"
     >
-      <span class="text-[13.5px] font-medium text-ink-900">
-        {{ exercises.length ? t('Your exercises', 'Tus ejercicios') : t('Habits and advice', 'Hábitos y consejos') }}
-        <span v-if="exercises.length" class="ml-1 text-[12.5px] font-normal text-ink-faint">{{ exercises.length }}</span>
-      </span>
+      <span class="text-[13.5px] font-medium text-ink-900">{{ t('Your documents', 'Tus documentos') }}</span>
       <span class="text-ink-faint"><AppChevron /></span>
     </NuxtLink>
 

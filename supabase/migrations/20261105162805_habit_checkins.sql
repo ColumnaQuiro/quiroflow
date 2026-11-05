@@ -84,6 +84,34 @@ create trigger patients_drop_habit_checkins_on_anonymize
   after update of anonymized_at on public.patients
   for each row execute function public.patients_drop_habit_checkins_on_anonymize();
 
+-- "Dolor a la mitad" among Cuidarme's achievements: the patient's first
+-- and latest pain score (coalesce(practitioner, patient), as every reader
+-- of visit_pain_scores takes it). Patients cannot read that table; this
+-- hands them the two numbers about themselves and nothing else.
+create or replace function public.my_pain_trend()
+returns table (first_score smallint, latest_score smallint, latest_on date)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  with s as (
+    select coalesce(v.practitioner_score, v.patient_score) as score, a.starts_at
+    from visit_pain_scores v
+    join appointments a on a.id = v.appointment_id
+    join patients p on p.id = a.patient_id
+    where p.user_id = auth.uid()
+      and a.deleted_at is null
+      and coalesce(v.practitioner_score, v.patient_score) is not null
+  )
+  select (select score from s order by starts_at asc limit 1),
+         (select score from s order by starts_at desc limit 1),
+         (select starts_at::date from s order by starts_at desc limit 1)
+  where public.mfa_satisfied() and exists (select 1 from s)
+$$;
+revoke all on function public.my_pain_trend() from public, anon;
+grant execute on function public.my_pain_trend() to authenticated;
+
 -- ---------------------------------------------------------------------
 -- merge_patients moves them (CLAUDE.md)
 -- ---------------------------------------------------------------------

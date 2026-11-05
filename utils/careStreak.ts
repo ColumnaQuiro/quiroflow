@@ -196,6 +196,6 @@ export function achievements(input: AchievementInput): Achievement[] {
   add('habitos_semana', 'Una semana con todos tus hábitos', habitRun.best >= 7, habitRun.reachedOn, habitRun.current, 7, null)
   if (input.sentTotal > 0) add('todo_leido', 'Todo lo de tu profesional, leído', input.sentRead >= input.sentTotal, null, input.sentRead, input.sentTotal)
   add('cien_dias', '100 días cuidándote', doneDays.length >= 100, doneDays[99] ?? null, doneDays.length, 100)
-  add('un_ano', 'Un año cuidándote', sinceFirst >= 365 && active.size > 0, first ? addDays(first, 365) : null, sinceFirst, 365, first && sinceFirst < 365 ? `Desde ${first}` : null)
+  add('un_ano', 'Un año cuidándote', sinceFirst >= 365 && active.size > 0, first ? addDays(first, 365) : null, sinceFirst, 365)
   return list
 }

@@ -5,7 +5,9 @@
 // who uses both finds the same things in the same order.
 // The list itself lives in composables/useAppNav.ts, shared with the iPad
 // side menu; this bar is the phone's, hidden from md up by the layout.
-const { items: tabs, isActive } = usePatientNav()
+const { items, isActive } = usePatientNav()
+// Five fit; the rest (Documentos) is in the iPad's side menu only.
+const tabs = computed(() => items.value.filter((x) => x.inTabBar !== false))
 </script>
 
 <template>

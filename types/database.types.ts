@@ -9640,6 +9640,7 @@ export type Database = {
         Args: { p_since: string }
         Returns: Json
       }
+      my_pain_trend: { Args: never; Returns: { first_score: number | null; latest_score: number | null; latest_on: string | null }[] }
       open_library_article: { Args: { p_article_id: string }; Returns: string }
       platform_supabase_usage: {
         Args: never

@@ -117,7 +117,7 @@ function rowLabel(block: EmailBlock) {
 
 const clinicBranding = ref<Partial<EmailTheme> | null>(null)
 const { can } = usePermission()
-const canEditBranding = computed(() => can('communication_config'))
+const canManageEmail = computed(() => can('communication_config'))
 onMounted(async () => {
   const { data } = await supabase.from('accounts').select('email_branding').eq('id', store.accountId!).maybeSingle()
   clinicBranding.value = (data?.email_branding as Partial<EmailTheme> | null) ?? null
@@ -156,7 +156,7 @@ const COLOR_FIELDS: { key: Exclude<keyof EmailTheme, 'font'>; label: readonly [s
 // ---- the canvas: the real email, in a frame
 
 const device = ref<'desktop' | 'mobile'>('desktop')
-const railTab = ref<'blocks' | 'brand'>('blocks')
+const railTab = ref<'blocks' | 'templates' | 'brand'>('blocks')
 const frame = ref<HTMLIFrameElement | null>(null)
 const stage = ref<HTMLElement | null>(null)
 const frameHeight = ref(600)
@@ -240,6 +240,50 @@ useFocusTrap(panel, () => {
   if (!document.querySelector('[data-test="variable-picker"]')) emit('close')
 })
 const sendTestOpen = ref(false)
+
+// ---- the clinic's saved templates
+
+const { templates, loaded: templatesLoaded, error: templatesError, load: loadTemplates, save: saveTemplate, remove: removeTemplate } = useEmailTemplates()
+watch(railTab, (tab) => {
+  if (tab === 'templates' && !templatesLoaded.value) loadTemplates()
+})
+function applyTemplate(next: EmailDesign, subject: string) {
+  setDesign(next)
+  // The template's subject only when this email has none yet: one already
+  // written is the sender's, not the template's.
+  if (!String(config.value.subject ?? '').trim() && subject) b.updateStepConfig(props.stepId, { subject })
+  selectedId.value = next.blocks.find((x) => x.type === 'text')?.id ?? null
+  railTab.value = 'blocks'
+}
+const saveOpen = ref(false)
+const savedNote = ref('')
+const savingTemplate = ref(false)
+const saveError = ref('')
+async function onSaveTemplate(name: string, replaceId: string | null) {
+  savingTemplate.value = true
+  saveError.value = ''
+  // The clinic's branding is not copied in: a template follows the clinic's
+  // current branding, like any email, unless this email changed it.
+  const err = await saveTemplate({ name, subject: config.value.subject ?? '', design: design.value }, replaceId)
+  savingTemplate.value = false
+  if (err) {
+    saveError.value = err
+    return
+  }
+  saveOpen.value = false
+  // Said beside the button, not in a toast: a toast sits over this header.
+  savedNote.value = t(`Saved as "${name.trim()}"`, `Guardada como «${name.trim()}»`)
+  setTimeout(() => (savedNote.value = ''), 4000)
+}
+async function onRemoveTemplate(id: string) {
+  const err = await removeTemplate(id)
+  if (err) savedNote.value = err
+}
+async function openSave() {
+  saveError.value = ''
+  if (!templatesLoaded.value) await loadTemplates()
+  saveOpen.value = true
+}
 </script>
 
 <template>
@@ -253,6 +297,8 @@ const sendTestOpen = ref(false)
           <button type="button" class="h-8 rounded-ctlSm px-3 text-[12.5px] font-semibold touch:h-10" :class="device === 'desktop' ? 'bg-brand-tint text-brand-text' : 'text-ink-muted hover:text-ink-700'" :aria-pressed="device === 'desktop'" data-test="email-builder-desktop" @click="device = 'desktop'">{{ t('Desktop', 'Escritorio') }}</button>
           <button type="button" class="h-8 rounded-ctlSm px-3 text-[12.5px] font-semibold touch:h-10" :class="device === 'mobile' ? 'bg-brand-tint text-brand-text' : 'text-ink-muted hover:text-ink-700'" :aria-pressed="device === 'mobile'" data-test="email-builder-mobile" @click="device = 'mobile'">{{ t('Mobile', 'Móvil') }}</button>
         </span>
+        <span v-if="savedNote" class="text-[12.5px] text-ink-muted" role="status" data-test="email-template-saved">{{ savedNote }}</span>
+        <UiBtn v-if="canManageEmail" data-test="email-builder-save-template" @click="openSave">{{ t('Save as template', 'Guardar como plantilla') }}</UiBtn>
         <UiBtn data-test="email-builder-send-test" @click="sendTestOpen = true">{{ t('Send test', 'Enviar prueba') }}</UiBtn>
         <UiBtn variant="primary" data-test="email-builder-done" @click="emit('close')">{{ t('Done', 'Hecho') }}</UiBtn>
       </header>
@@ -272,7 +318,7 @@ const sendTestOpen = ref(false)
         <!-- left: blocks and branding -->
         <aside class="flex min-h-0 flex-col border-r border-line bg-surface">
           <nav role="tablist" class="flex shrink-0 gap-1 border-b border-line px-3">
-            <button v-for="x in [{ key: 'blocks', label: t('Blocks', 'Bloques') }, { key: 'brand', label: t('Branding', 'Marca') }]" :key="x.key" type="button" role="tab" :aria-selected="railTab === x.key" class="-mb-px h-10 border-b-2 px-2 text-[13px] font-semibold touch:h-11" :class="railTab === x.key ? 'border-brand text-ink-900' : 'border-transparent text-ink-muted hover:text-ink-700'" :data-test="`email-tab-${x.key}`" @click="railTab = x.key as 'blocks'">{{ x.label }}</button>
+            <button v-for="x in [{ key: 'blocks', label: t('Blocks', 'Bloques') }, { key: 'templates', label: t('Templates', 'Plantillas') }, { key: 'brand', label: t('Branding', 'Marca') }]" :key="x.key" type="button" role="tab" :aria-selected="railTab === x.key" class="-mb-px h-10 border-b-2 px-2 text-[13px] font-semibold touch:h-11" :class="railTab === x.key ? 'border-brand text-ink-900' : 'border-transparent text-ink-muted hover:text-ink-700'" :data-test="`email-tab-${x.key}`" @click="railTab = x.key as 'blocks'">{{ x.label }}</button>
           </nav>
           <div v-if="railTab === 'blocks'" class="min-h-0 flex-1 overflow-y-auto p-3">
             <p class="mb-2 text-[11px] font-bold uppercase tracking-[.06em] text-ink-faint">{{ t('Add', 'Añadir') }}</p>
@@ -304,6 +350,9 @@ const sendTestOpen = ref(false)
             </ol>
             <p v-if="!design.blocks.length" :class="HINT">{{ t('Empty. Add a block above.', 'Vacío. Añade un bloque arriba.') }}</p>
           </div>
+          <div v-else-if="railTab === 'templates'" class="min-h-0 flex-1 overflow-y-auto p-3">
+            <AutomationsEmailTemplatesPanel :current="design" :templates="templates" :loaded="templatesLoaded" :load-error="templatesError" :can-manage="canManageEmail" @apply="applyTemplate" @remove="onRemoveTemplate" />
+          </div>
           <div v-else class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3" data-test="email-branding">
             <p :class="HINT">{{ t("This email follows the clinic's branding. A change here is for this email only, unless you save it for all of them.", 'Este email sigue la marca de la clínica. Lo que cambies aquí es solo para este email, salvo que lo guardes para todos.') }}</p>
             <label v-for="f in COLOR_FIELDS" :key="f.key" class="flex items-center justify-between gap-2 text-[12.5px] font-semibold text-ink-700">
@@ -321,7 +370,7 @@ const sendTestOpen = ref(false)
             </label>
             <p :class="HINT">{{ t('Fonts every mail client has, so the email looks the same everywhere.', 'Tipos que tienen todos los programas de correo, para que se vea igual en todas partes.') }}</p>
             <div v-if="Object.keys(ownTheme).length" class="flex flex-col gap-2 border-t border-line-divider pt-3">
-              <UiBtn v-if="canEditBranding" :disabled="savingBranding" data-test="email-branding-save" @click="saveAsClinicBranding">{{ savingBranding ? t('Saving…', 'Guardando…') : t("Use for all the clinic's emails", 'Usar en todos los emails de la clínica') }}</UiBtn>
+              <UiBtn v-if="canManageEmail" :disabled="savingBranding" data-test="email-branding-save" @click="saveAsClinicBranding">{{ savingBranding ? t('Saving…', 'Guardando…') : t("Use for all the clinic's emails", 'Usar en todos los emails de la clínica') }}</UiBtn>
               <UiBtn variant="ghost" @click="setDesign({ ...design, theme: undefined })">{{ t("Back to the clinic's branding", 'Volver a la marca de la clínica') }}</UiBtn>
             </div>
             <p v-if="brandingMessage" class="text-[12px] text-ink-muted" role="status">{{ brandingMessage }}</p>
@@ -368,6 +417,15 @@ const sendTestOpen = ref(false)
       </div>
 
       <AutomationsSendTestDialog v-if="sendTestOpen" @close="sendTestOpen = false" />
+      <AutomationsEmailSaveTemplateDialog
+        v-if="saveOpen"
+        :suggested-name="b.draft.value.rule.name"
+        :templates="templates"
+        :busy="savingTemplate"
+        :error="saveError"
+        @save="onSaveTemplate"
+        @cancel="saveOpen = false"
+      />
     </div>
   </Teleport>
 </template>

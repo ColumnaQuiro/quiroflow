@@ -9,7 +9,9 @@ import { answerLine, formAnswers, type FormAnswer } from '~/utils/formAnswers'
 // The most recent completed forms first, three at most; each folds open.
 // Read through the practitioner's own session, so a role that may not see
 // the patient's documents simply sees nothing here.
-const props = defineProps<{ patientId: string; editable: boolean }>()
+// `showEmpty`: on a tab of its own (My Day), an empty tab says so rather than
+// looking like one that did not load.
+const props = defineProps<{ patientId: string; editable: boolean; showEmpty?: boolean }>()
 const emit = defineEmits<{ bring: [section: 'Subjective', text: string] }>()
 
 const supabase = useSupabaseClient()
@@ -55,9 +57,10 @@ function bringAll(d: DocAnswers) {
 </script>
 
 <template>
-  <section v-if="loading || docs.length" class="rounded-card border border-line bg-surface-subtle2 p-4 shadow-card" data-cy="form-answers">
+  <section v-if="loading || docs.length || showEmpty" class="rounded-card border border-line bg-surface-subtle2 p-4 shadow-card" data-cy="form-answers">
     <h2 class="text-[13.5px] font-semibold text-ink-900">{{ t('Forms', 'Formularios') }}</h2>
     <div v-if="loading" class="mt-2 space-y-2"><UiSkeleton class="h-3.5 w-40 rounded-ctlSm" /><UiSkeleton class="h-3 w-full rounded-ctlSm" /></div>
+    <p v-else-if="!docs.length" class="mt-1 text-[12.5px] text-ink-muted" data-cy="form-answers-none">{{ t('No completed forms yet. Sent forms show here once the patient fills them in.', 'Aún no hay formularios completados. Los enviados aparecen aquí cuando el paciente los rellena.') }}</p>
     <div v-for="d in docs" v-else :key="d.id" class="mt-3 rounded-ctl border border-line bg-surface" data-cy="form-answers-doc">
       <button type="button" class="flex w-full items-center justify-between gap-2 px-3 py-2 text-left" :aria-expanded="open === d.id" @click="open = open === d.id ? null : d.id">
         <span class="min-w-0">

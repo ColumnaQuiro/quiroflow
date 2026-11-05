@@ -24,6 +24,8 @@ describe('My Day visit notes', () => {
           cy.visit('/practitioner')
           cy.contains('li:not([data-cy=needs-confirming-row])', 'Iris Molina', { timeout: 20000 }).click()
 
+          // One line above today's note, opening in place.
+          cy.get('[data-cy=previous-visit-toggle]').should('contain', 'L5 L/R · Sacrum R').click()
           cy.get('[data-cy=previous-visit-listing]').should('contain', 'L5 L/R · Sacrum R')
           cy.get('[data-cy=previous-visit-section]').should('have.length', 4)
 

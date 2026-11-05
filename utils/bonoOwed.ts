@@ -34,6 +34,12 @@
 // 292 where they had 177. It buys bono sessions when somebody actually spends it,
 // through Collect with method 'credit', which draws the credit row down and
 // writes a payment with purpose 'bono'.
+//
+// A bono sold in plazos (utils/bonoInstallments) owes all of this, but only
+// the plazos already due are a DEBT. bonoOwedCents stays the first figure --
+// what the patient can draw on is net of it -- and bonoDueNowCents is the
+// second, which is what Debtors and its widget list.
+import { bonoDueCents, type BonoInstallmentPlan } from './bonoInstallments'
 
 export interface BonoOwedPayment {
   amount_cents: number
@@ -103,4 +109,9 @@ export function bonoOwedCents(input: BonoOwedInput): number {
   // the price overstated the debt by 18,647 EUR across 84 bonos.
   const chargedCents = invoiceIsValid && input.invoice ? input.invoice.total_cents : input.priceCents
   return Math.max(0, chargedCents - paidCents)
+}
+
+/** What is owed on a bono and already due: bonoOwedCents less any plazos still to come. */
+export function bonoDueNowCents(input: BonoOwedInput & { plan: BonoInstallmentPlan | null }): number {
+  return bonoDueCents(bonoOwedCents(input), input.plan)
 }

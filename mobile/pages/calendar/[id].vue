@@ -295,6 +295,30 @@ const alerts = computed(() => {
   return rows
 })
 
+// Pinned once the patient's card has scrolled away: by the time the note is
+// being written the card is off the top of the screen, and with it the red
+// flags -- the web's My Day had the same problem, two screens down. The strip
+// shows the most serious alert and how many others there are; tapping it goes
+// back to the card. Nothing to pin, nothing shown.
+const headerCard = ref<HTMLElement | null>(null)
+const scroller = ref<HTMLElement | null>(null)
+const headerOut = ref(false)
+let headerObserver: IntersectionObserver | null = null
+watch([headerCard, scroller], ([card, root]) => {
+  headerObserver?.disconnect()
+  headerObserver = null
+  headerOut.value = false
+  if (!card || !root || typeof IntersectionObserver === 'undefined') return
+  headerObserver = new IntersectionObserver(([entry]) => (headerOut.value = !entry?.isIntersecting), { root, threshold: 0 })
+  headerObserver.observe(card)
+})
+onBeforeUnmount(() => headerObserver?.disconnect())
+const pinnedAlert = computed(() => alerts.value.find((a) => a.key !== 'note') ?? null)
+const pinnedMore = computed(() => alerts.value.length - 1)
+function backToHeader() {
+  headerCard.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
 // -- Charging (unchanged: composables/useVisitCharging.ts) -----------------------
 // Charging the visit is the web's own implementation, which the calendar's
 // Billing tab uses too. Who is charging comes from usePractitionerContext,
@@ -808,12 +832,24 @@ watch(
            notes, charging and the visit's own actions on the right. The
            wrappers are display:contents below that, so the phone keeps its one
            column in the same order. -->
-      <div class="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-3.5 py-3 md:px-[max(1.5rem,calc((100%_-_44rem)/2))] lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] lg:content-start lg:items-start lg:gap-4 lg:px-6" :style="keyboardHeight ? { paddingBottom: `${keyboardHeight + 16}px` } : undefined">
+      <button
+        v-if="headerOut && pinnedAlert"
+        type="button"
+        class="flex shrink-0 items-start gap-2 border-b px-3.5 py-2 text-left md:px-5"
+        :class="pinnedAlert.key === 'red' ? 'border-danger-border bg-danger-bg' : 'border-warning-border bg-warning-bg'"
+        data-cy="visit-pinned-alerts"
+        @click="backToHeader"
+      >
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" class="mt-0.5 shrink-0" :class="pinnedAlert.key === 'red' ? 'text-danger-text' : 'text-warning-text'" aria-hidden="true"><path d="M8 2l6.2 11H1.8z" stroke-linejoin="round" /><path d="M8 6.5v3M8 11.5v.1" stroke-linecap="round" /></svg>
+        <span class="line-clamp-2 min-w-0 flex-1 text-[13px] font-medium leading-snug text-ink-900">{{ pinnedAlert.text }}</span>
+        <span v-if="pinnedMore > 0" class="mt-px shrink-0 text-[12px] font-semibold" :class="pinnedAlert.key === 'red' ? 'text-danger-text' : 'text-warning-text'">+{{ pinnedMore }}</span>
+      </button>
+      <div ref="scroller" class="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto px-3.5 py-3 md:px-[max(1.5rem,calc((100%_-_44rem)/2))] lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] lg:content-start lg:items-start lg:gap-4 lg:px-6" :style="keyboardHeight ? { paddingBottom: `${keyboardHeight + 16}px` } : undefined">
         <div class="contents lg:flex lg:min-w-0 lg:flex-col lg:gap-2.5">
         <p v-if="bookedNotice" class="rounded-card border border-success-border bg-success-bg px-3 py-2 text-[13px] font-medium text-success-text" role="status" data-cy="visit-booked-notice">{{ bookedNotice }}</p>
 
         <!-- Who, what, the plan, what to watch for -->
-        <section class="rounded-card border border-line bg-surface shadow-card px-3.5 py-3" data-cy="visit-header">
+        <section ref="headerCard" class="scroll-mt-3 rounded-card border border-line bg-surface shadow-card px-3.5 py-3" data-cy="visit-header">
           <div class="flex items-center gap-2">
           <NuxtLink :to="`/patients/${appointment.patient_id}`" class="flex min-w-0 flex-1 items-center gap-2.5">
             <span class="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full bg-brand-tint text-[12.5px] font-bold text-brand-text">{{ initials }}</span>

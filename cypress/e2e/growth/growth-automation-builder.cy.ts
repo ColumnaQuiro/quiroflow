@@ -223,6 +223,23 @@ describe('Automation builder: step panels', () => {
     cy.get('[data-test="email-preview"] iframe').should('have.attr', 'srcdoc').and('contain', 'Pide tu cita')
   })
 
+  it('inserts fields from the picker as chips, and saves them as {{key}}', () => {
+    addStep('email')
+    cy.get('[data-test="email-subject"]').type('Hola')
+    // Typing "{{" opens the picker filtered by what follows; Enter takes the first match.
+    cy.get('[data-test="email-subject"]').type(' {{first', { parseSpecialCharSequences: false })
+    cy.get('[data-test="variable-picker"]').should('contain', 'First name')
+    cy.get('[data-test="email-subject"]').type('{enter}')
+    cy.get('[data-test="email-subject"]').should('have.value', 'Hola {{first_name}}')
+    // From the toolbar, searched by name; it lands in the body as a chip.
+    cy.get('[data-test="email-body"]').type('Déjanos tu opinión: ')
+    cy.get('[data-test="email-body-fields"]').click()
+    cy.get('[data-test="variable-search"]').type('review{enter}')
+    cy.get('[data-test="variable-picker"]').should('not.exist')
+    cy.get('[data-test="email-body"] [data-var="google_review_link"]').should('contain', 'Google review link')
+    cy.get('[data-test="email-preview"] iframe').should('have.attr', 'srcdoc').and('contain', 'g.page/r/ejemplo/review')
+  })
+
   it('offers a test mode that records instead of sending', () => {
     cy.get('[data-test="tab-settings"]').click()
     cy.get('[data-test="dry-run-toggle"]').should('have.attr', 'aria-checked', 'false').click()

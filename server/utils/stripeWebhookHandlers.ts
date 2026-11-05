@@ -5,6 +5,7 @@ import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluat
 import { dispatchPatientRule } from '~/server/utils/automationEngine'
 import { pushPatientAction } from '~/server/utils/staffPush'
 import { formatEur } from '~/utils/billing'
+import { installmentBeingPaid } from '~/utils/bonoInstallments'
 import { deliverGiftVoucher, madridToday, type GiftVoucher } from '~/server/utils/giftVouchers'
 import { recordAppVisitPayment } from '~/server/utils/appPayments'
 
@@ -197,7 +198,7 @@ export async function handleStripeEvent(
   async function recordPackageCharge(patientId: string, packagePurchaseId: string, amountCents: number, paymentIntentId: string | null) {
     const { data: pkg } = await supabase
       .from('package_purchases')
-      .select('package_name, price_cents, sessions_total')
+      .select('package_name, price_cents, sessions_total, installments, installment_cents')
       .eq('id', packagePurchaseId)
       .maybeSingle()
 
@@ -221,6 +222,21 @@ export async function handleStripeEvent(
       return
     }
 
+    // A bono sold in plazos names the plazo this one is, as the desk does:
+    // counted from the money already on the bono, not from the schedule,
+    // which knows nothing of a plazo paid in cash before it started.
+    let installment: { number: number; of: number } | null = null
+    if (pkg?.installments) {
+      const { data: earlier } = await supabase
+        .from('payments')
+        .select('amount_cents')
+        .eq('package_purchase_id', packagePurchaseId)
+        .neq('id', payment.id)
+        .or('purpose.is.null,purpose.neq.on_account')
+      const paidBeforeCents = (earlier ?? []).reduce((sum, p) => sum + p.amount_cents, 0)
+      installment = installmentBeingPaid({ installments: pkg.installments, installmentCents: pkg.installment_cents }, paidBeforeCents, amountCents)
+    }
+
     // An autopay instalment describes the share of the bono it buys, exactly
     // as one taken at the desk does.
     await issueFacturaServer(supabase, {
@@ -229,7 +245,7 @@ export async function handleStripeEvent(
       paymentId: payment.id,
       amountCents,
       purpose: 'bono',
-      bono: pkg ? { packageName: pkg.package_name, priceCents: pkg.price_cents, sessionsTotal: pkg.sessions_total } : undefined,
+      bono: pkg ? { packageName: pkg.package_name, priceCents: pkg.price_cents, sessionsTotal: pkg.sessions_total, installment } : undefined,
       serviceName: pkg?.package_name ?? 'Package',
     })
   }

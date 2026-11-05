@@ -88,7 +88,10 @@ function amountOf(type: PromptType): string {
 export interface PromptPackage {
   name: string
   sessions: number
+  /** Paid at once. */
   priceCents: number
+  /** Paying it in plazos instead, each option priced by the clinic (Settings > Bonos). */
+  installments?: { installments: number; installmentCents: number }[]
 }
 
 /** The visits after the first: what a session costs, for someone asking what comes after their first visit. */
@@ -110,12 +113,20 @@ export function laterPricesSection(opts: { sessions: PromptType[]; packages: Pro
   const sessions = opts.sessions.map((type) => `- ${type.name}: ${typePrice(type)}`)
   const packages = opts.packages
     .filter((p) => p.sessions > 0 && p.priceCents > 0)
-    .map((p) => `- ${p.name}: ${p.sessions} sessions for ${euros(p.priceCents)} (${euros(Math.round(p.priceCents / p.sessions))} a session)`)
+    .map((p) => {
+      // Each option is its own price, not the up-front one divided: a split
+      // may cost more in all, and quoting "2 x 250" off a 500 price would be
+      // wrong the day the clinic charges 2 x 260.
+      const split = (p.installments ?? [])
+        .filter((o) => o.installments > 1 && o.installmentCents > 0)
+        .map((o) => `${o.installments} payments of ${euros(o.installmentCents)} (${euros(o.installments * o.installmentCents)} in all)`)
+      return `- ${p.name}: ${p.sessions} sessions for ${euros(p.priceCents)} paid at once (${euros(Math.round(p.priceCents / p.sessions))} a session)${split.length ? `; or in ${split.join(', or ')}` : ''}`
+    })
   if (!sessions.length && !packages.length) return ''
   return [
     `# Prices of the visits after the first, and bonos`,
     sessions.length ? `Visits:\n${sessions.join('\n')}` : '',
-    packages.length ? `Bonos (packages of sessions, paid up front):\n${packages.join('\n')}` : '',
+    packages.length ? `Bonos (packages of sessions, paid up front or, where listed, in instalments ("plazos") at the price given for that number of payments):\n${packages.join('\n')}` : '',
     `Give these only when they ask, and only what applies to them as said above. They win over any price for these in the clinic knowledge.`,
   ].filter(Boolean).join('\n')
 }

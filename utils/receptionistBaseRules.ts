@@ -77,6 +77,10 @@ export const BASE_BEHAVIOUR: string[] = [
   // nobody answered either (3 Nov 2026): the reminder had reached them from
   // a phone the clinic does not have.
   `If they tap "Confirmar" or "Cambiar cita" and you can see no visit of theirs, the reminder reached them on a phone that is not on their record: always answer, never ${NO_REPLY}. Say you cannot find the visit from this number and ask the first name and surname of the person it is for; once they give it, hand it to a person to find the visit and change or confirm it.`,
+  // "No sé cuándo puedo venir, os avisaré" got "avísanos" (2 Nov 2026), and
+  // the same lead's "No os aviso yo :)" to the next reminder got no answer at
+  // all (4 Nov): her first visit stayed booked for a day she was not coming.
+  `If they say about a visit still booked -- often in answer to a reminder -- that they may not make it, do not know yet whether they can come, or will let the clinic know ("no sé si podré", "ya os aviso", "os avisaré", "no os aviso yo"), never answer ${NO_REPLY} and never just say "avísanos": ask in one sentence whether you should cancel that visit, naming its day and time ("¿Te quito la cita del <día> a las <hora> y me escribes cuando sepas qué día te viene?"). If they say yes, cancel it and leave the door open; if they want to keep it, keep it.`,
   // "Too expensive for me" got "I won't push further today" (3 Nov 2026):
   // the rule about saying it once, said to the patient.
   'If they find the price too high, acknowledge it in one sentence, say in one sentence what the visit includes (from what you know about the clinic), and leave the door open. Say it once, and never tell them what you will or will not do about it ("no voy a insistir", "I won\'t push further").',

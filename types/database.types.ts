@@ -1284,6 +1284,7 @@ export type Database = {
           cancellation_fee_cents: number | null
           created_at: string
           clinical_retention_years: number
+          email_branding: Json | null
           email_confirmation_body: string | null
           email_confirmation_subject: string | null
           email_reminder_body: string | null
@@ -1380,6 +1381,15 @@ export type Database = {
           webchat_enabled: boolean
           webchat_greeting: string | null
           recall_assignee_default: string
+          maintenance_discharge_recall_months: number
+          maintenance_frequency_unit: string
+          maintenance_frequency_value: number
+          maintenance_habits_article_ids: string[]
+          maintenance_habits_on_discharge: boolean
+          maintenance_habits_on_start: boolean
+          maintenance_membership_id: string | null
+          maintenance_total_visits: number | null
+          maintenance_visits_per_period: number
           recall_assignee_member_id: string | null
         }
         Insert: {
@@ -1394,6 +1404,7 @@ export type Database = {
           cancellation_fee_cents?: number | null
           created_at?: string
           clinical_retention_years?: number
+          email_branding?: Json | null
           email_confirmation_body?: string | null
           email_confirmation_subject?: string | null
           email_reminder_body?: string | null
@@ -1489,6 +1500,15 @@ export type Database = {
           webchat_enabled?: boolean
           webchat_greeting?: string | null
           recall_assignee_default?: string
+          maintenance_discharge_recall_months?: number
+          maintenance_frequency_unit?: string
+          maintenance_frequency_value?: number
+          maintenance_habits_article_ids?: string[]
+          maintenance_habits_on_discharge?: boolean
+          maintenance_habits_on_start?: boolean
+          maintenance_membership_id?: string | null
+          maintenance_total_visits?: number | null
+          maintenance_visits_per_period?: number
           recall_assignee_member_id?: string | null
         }
         Update: {
@@ -1503,6 +1523,7 @@ export type Database = {
           cancellation_fee_cents?: number | null
           created_at?: string
           clinical_retention_years?: number
+          email_branding?: Json | null
           email_confirmation_body?: string | null
           email_confirmation_subject?: string | null
           email_reminder_body?: string | null
@@ -1599,6 +1620,15 @@ export type Database = {
           webchat_enabled?: boolean
           webchat_greeting?: string | null
           recall_assignee_default?: string
+          maintenance_discharge_recall_months?: number
+          maintenance_frequency_unit?: string
+          maintenance_frequency_value?: number
+          maintenance_habits_article_ids?: string[]
+          maintenance_habits_on_discharge?: boolean
+          maintenance_habits_on_start?: boolean
+          maintenance_membership_id?: string | null
+          maintenance_total_visits?: number | null
+          maintenance_visits_per_period?: number
           recall_assignee_member_id?: string | null
         }
         Relationships: [
@@ -2907,7 +2937,7 @@ export type Database = {
           payment_kind: string
           patient_id: string
           started_at: string
-          total_visits: number
+          total_visits: number | null
           visit_markers: Json
           visits_per_period: number
         }
@@ -2924,7 +2954,7 @@ export type Database = {
           payment_kind?: string
           patient_id: string
           started_at?: string
-          total_visits: number
+          total_visits?: number | null
           visit_markers?: Json
           visits_per_period?: number
         }
@@ -2941,7 +2971,7 @@ export type Database = {
           payment_kind?: string
           patient_id?: string
           started_at?: string
-          total_visits?: number
+          total_visits?: number | null
           visit_markers?: Json
           visits_per_period?: number
         }
@@ -3722,6 +3752,54 @@ export type Database = {
             columns: ["lead_id"]
             isOneToOne: false
             referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      email_templates: {
+        Row: {
+          id: string
+          account_id: string
+          name: string
+          subject: string
+          design: Json
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          account_id: string
+          name: string
+          subject?: string
+          design: Json
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          account_id?: string
+          name?: string
+          subject?: string
+          design?: Json
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_templates_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_templates_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
             referencedColumns: ["id"]
           },
         ]
@@ -4822,12 +4900,14 @@ export type Database = {
       learn_articles: {
         Row: {
           account_id: string
+          announced_at: string | null
           archived_at: string | null
           body: string
           created_at: string
           created_by: string | null
           exercise_program_id: string | null
           id: string
+          media_path: string | null
           minutes: number | null
           starter_key: string | null
           summary: string | null
@@ -4835,15 +4915,18 @@ export type Database = {
           title: string
           updated_at: string
           video_url: string | null
+          visible_to_patients: boolean
         }
         Insert: {
           account_id: string
+          announced_at?: string | null
           archived_at?: string | null
           body?: string
           created_at?: string
           created_by?: string | null
           exercise_program_id?: string | null
           id?: string
+          media_path?: string | null
           minutes?: number | null
           starter_key?: string | null
           summary?: string | null
@@ -4851,15 +4934,18 @@ export type Database = {
           title: string
           updated_at?: string
           video_url?: string | null
+          visible_to_patients?: boolean
         }
         Update: {
           account_id?: string
+          announced_at?: string | null
           archived_at?: string | null
           body?: string
           created_at?: string
           created_by?: string | null
           exercise_program_id?: string | null
           id?: string
+          media_path?: string | null
           minutes?: number | null
           starter_key?: string | null
           summary?: string | null
@@ -4867,6 +4953,7 @@ export type Database = {
           title?: string
           updated_at?: string
           video_url?: string | null
+          visible_to_patients?: boolean
         }
         Relationships: [
           {
@@ -6232,6 +6319,116 @@ export type Database = {
           },
         ]
       }
+      patient_list_members: {
+        Row: {
+          account_id: string
+          added_at: string
+          added_by: string | null
+          id: string
+          list_id: string
+          patient_id: string
+          source: string
+          source_detail: string | null
+        }
+        Insert: {
+          account_id: string
+          added_at?: string
+          added_by?: string | null
+          id?: string
+          list_id: string
+          patient_id: string
+          source?: string
+          source_detail?: string | null
+        }
+        Update: {
+          account_id?: string
+          added_at?: string
+          added_by?: string | null
+          id?: string
+          list_id?: string
+          patient_id?: string
+          source?: string
+          source_detail?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_list_members_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_list_members_added_by_fkey"
+            columns: ["added_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_list_members_list_id_fkey"
+            columns: ["list_id"]
+            isOneToOne: false
+            referencedRelation: "patient_lists"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_list_members_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      patient_lists: {
+        Row: {
+          account_id: string
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          name: string
+          shared: boolean
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          name: string
+          shared?: boolean
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          name?: string
+          shared?: boolean
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_lists_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_lists_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       patient_relations: {
         Row: {
           account_id: string
@@ -6287,6 +6484,55 @@ export type Database = {
             columns: ["related_patient_id"]
             isOneToOne: false
             referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      patient_segment_members: {
+        Row: {
+          account_id: string
+          entered_at: string
+          id: string
+          left_at: string | null
+          patient_id: string
+          segment_id: string
+        }
+        Insert: {
+          account_id: string
+          entered_at?: string
+          id?: string
+          left_at?: string | null
+          patient_id: string
+          segment_id: string
+        }
+        Update: {
+          account_id?: string
+          entered_at?: string
+          id?: string
+          left_at?: string | null
+          patient_id?: string
+          segment_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_segment_members_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_segment_members_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_segment_members_segment_id_fkey"
+            columns: ["segment_id"]
+            isOneToOne: false
+            referencedRelation: "patient_segments"
             referencedColumns: ["id"]
           },
         ]
@@ -9714,6 +9960,7 @@ export type Database = {
         Args: { p_since: string }
         Returns: Json
       }
+      open_library_article: { Args: { p_article_id: string }; Returns: string }
       platform_supabase_usage: {
         Args: never
         Returns: Json
@@ -10077,6 +10324,36 @@ export type Database = {
       patient_tags: {
         Args: never
         Returns: { tag: string; patient_count: number }[]
+      }
+      patient_list_counts: {
+        Args: never
+        Returns: {
+          email_count: number
+          list_id: string
+          patient_count: number
+          whatsapp_count: number
+        }[]
+      }
+      can_manage_patient_list: { Args: { p_list_id: string }; Returns: boolean }
+      add_matching_to_patient_list: {
+        Args: { p_clinic_id?: string; p_filters: Json; p_list_id: string }
+        Returns: number
+      }
+      remove_matching_from_patient_list: {
+        Args: { p_clinic_id?: string; p_filters: Json; p_list_id: string }
+        Returns: number
+      }
+      refresh_segment_members: {
+        Args: { p_segment_id?: string }
+        Returns: number
+      }
+      audience_members: {
+        Args: { p_id: string; p_kind: string }
+        Returns: { entered_at: string; patient_id: string }[]
+      }
+      audience_entries_since: {
+        Args: { p_id: string; p_kind: string; p_since: string }
+        Returns: { entered_at: string; patient_id: string }[]
       }
       patient_list_visit_summary: {
         Args: { p_patient_ids: string[] }

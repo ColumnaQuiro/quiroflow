@@ -12,6 +12,23 @@ import type { TablesInsert, TablesUpdate } from '~/types/database.types'
 // after that (dedupe by external_reference/email, diff-based update on
 // re-run, chunked insert) follows the same convention as
 // PracticeHubPatientsImporter.vue.
+//
+// It also feeds a list (patient_lists, 20261105143740): every row, new or
+// matched to someone already here, can be put on an existing list or a new
+// one -- a list of marketing contacts from elsewhere is the usual case. Rows
+// are matched rather than duplicated by record ID, DNI/NIE, email, and then
+// phone, the last only when one patient alone has that number and the first
+// name agrees (a family shares a phone far more often than an email).
+//
+// Marketing consent is set only on patients this import CREATES, and only
+// when the person importing declares it. A patient already here keeps their
+// own: a withdrawn channel is stored as its absence (20260930141326), so
+// "fill in the blanks" would be re-subscribing whoever unsubscribed.
+
+const props = withDefaults(defineProps<{
+  /** A list to add every imported row to, chosen beforehand (Patients > Lists). */
+  initialListId?: string | null
+}>(), { initialListId: null })
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
@@ -42,6 +59,12 @@ const TARGET_FIELDS: TargetField[] = [
   { key: 'country', label: t('Country', 'País'), required: false, guesses: ['country', 'pais', 'país'] },
   { key: 'national_id', label: t('National ID', 'DNI/NIE'), required: false, guesses: ['dni', 'nie', 'national id', 'passport'] },
   { key: 'tags', label: t('Tags', 'Etiquetas'), required: false, guesses: ['tags', 'etiquetas'] },
+  {
+    key: 'marketing',
+    label: t('Marketing consent (yes/no, or email / WhatsApp)', 'Consentimiento de publicidad (sí/no, o correo / WhatsApp)'),
+    required: false,
+    guesses: ['consent', 'consentimiento', 'marketing', 'publicidad', 'newsletter', 'rgpd', 'gdpr'],
+  },
   {
     key: 'external_id',
     label: t('Record ID (optional — enables safe re-import)', 'ID de registro (opcional — permite reimportar sin duplicar)'),
@@ -80,23 +103,73 @@ function guessMapping() {
   mapping.value = guessed
 }
 
+// An Excel cell as the text a CSV would have had: dates as YYYY-MM-DD (read
+// from the UTC parts, which is how the library hands a date cell over), whole
+// numbers without a trailing ".0" -- a phone typed as a number stays a phone.
+function cellText(value: unknown): string {
+  if (value === null || value === undefined) return ''
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return ''
+    return `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(2, '0')}-${String(value.getUTCDate()).padStart(2, '0')}`
+  }
+  if (typeof value === 'number') return Number.isInteger(value) ? String(value) : String(value)
+  return String(value).trim()
+}
+
+/** The first sheet of an .xlsx as header-keyed rows, the shape Papa gives a CSV. */
+async function readExcel(file: File): Promise<{ rows: CsvRow[]; fields: string[] }> {
+  // Loaded only when someone picks a spreadsheet, not with the page.
+  const { readSheet } = await import('read-excel-file/browser')
+  const sheet = (await readSheet(file)) as unknown[][]
+  const [head, ...body] = sheet
+  const fields = (head ?? []).map((h, i) => cellText(h) || `${t('Column', 'Columna')} ${i + 1}`)
+  const rows: CsvRow[] = []
+  for (const line of body) {
+    const row: CsvRow = {}
+    let any = false
+    fields.forEach((field, i) => {
+      const text = cellText(line[i])
+      row[field] = text
+      if (text) any = true
+    })
+    if (any) rows.push(row)
+  }
+  return { rows, fields }
+}
+
 async function handleFile(file: File) {
   fileError.value = ''
   fileName.value = file.name
 
-  const text = await file.text()
-  const parsed = Papa.parse<CsvRow>(text, { header: true, skipEmptyLines: true })
-  if (parsed.errors.length > 0) {
-    fileError.value = t(`Could not parse this file: ${parsed.errors[0].message}`, `No se pudo procesar este archivo: ${parsed.errors[0].message}`)
+  let rows: CsvRow[]
+  let fields: string[]
+  if (/\.xlsx$/i.test(file.name)) {
+    try {
+      ;({ rows, fields } = await readExcel(file))
+    } catch (err) {
+      fileError.value = t(`Could not read this spreadsheet: ${(err as Error).message}`, `No se pudo leer esta hoja de cálculo: ${(err as Error).message}`)
+      return
+    }
+  } else if (/\.xls$/i.test(file.name)) {
+    fileError.value = t('Old .xls files cannot be read. Save it as .xlsx or CSV and try again.', 'Los archivos .xls antiguos no se pueden leer. Guárdalo como .xlsx o CSV y vuelve a intentarlo.')
     return
+  } else {
+    const text = await file.text()
+    const parsed = Papa.parse<CsvRow>(text, { header: true, skipEmptyLines: true })
+    if (parsed.errors.length > 0) {
+      fileError.value = t(`Could not parse this file: ${parsed.errors[0].message}`, `No se pudo procesar este archivo: ${parsed.errors[0].message}`)
+      return
+    }
+    rows = parsed.data
+    fields = parsed.meta.fields ?? Object.keys(parsed.data[0] ?? {})
   }
-  if (parsed.data.length === 0) {
+  if (rows.length === 0) {
     fileError.value = t('This file has no rows.', 'Este archivo no tiene filas.')
     return
   }
 
-  rawRows.value = parsed.data
-  headers.value = parsed.meta.fields ?? Object.keys(parsed.data[0])
+  rawRows.value = rows
+  headers.value = fields
   guessMapping()
   stage.value = 'mapping'
 }
@@ -122,6 +195,41 @@ watch(
   { immediate: true },
 )
 
+// -- The list every row goes on, if any ---------------------------------------
+const { lists, refresh: refreshLists, canManage: canManageList, create: createList, addPatients: addPatientsToList } = usePatientLists()
+const NEW_LIST = '__new__'
+const listChoice = ref<string>(props.initialListId ?? '')
+const newListName = ref('')
+onMounted(async () => {
+  await refreshLists()
+  if (props.initialListId && !lists.value.some((l) => l.id === props.initialListId)) listChoice.value = ''
+})
+const manageableLists = computed(() => lists.value.filter(canManageList))
+const listChoiceValid = computed(() => listChoice.value !== NEW_LIST || (newListName.value.trim().length > 0 && newListName.value.trim().length <= 80))
+const targetListName = computed(() =>
+  listChoice.value === NEW_LIST ? newListName.value.trim() : (lists.value.find((l) => l.id === listChoice.value)?.name ?? ''),
+)
+const listedId = ref<string | null>(null)
+const listedCount = ref(0)
+
+// -- Marketing consent, for patients this import creates -----------------------
+// Declared by whoever imports, per channel. With a consent column mapped, it
+// narrows to the rows that say yes (and to the channel a row names, if it
+// names one); without one, it applies to every new patient in the file.
+const consentEmail = ref(false)
+const consentWhatsapp = ref(false)
+const YES = /^(s[ií]|si|yes|y|true|1|x|ok|acepta|accepted|opt[- ]?in)$/i
+function rowConsent(row: CsvRow): string[] {
+  const declared = [consentEmail.value ? 'email' : null, consentWhatsapp.value ? 'whatsapp' : null].filter((c): c is string => !!c)
+  if (declared.length === 0) return []
+  if (!mapping.value.marketing) return declared
+  const raw = normalizeHeader(mappedValue(row, 'marketing'))
+  if (!raw) return []
+  const named = [/mail|correo/.test(raw) ? 'email' : null, /whats|wa\b|movil|sms/.test(raw) ? 'whatsapp' : null].filter((c): c is string => !!c)
+  if (named.length) return declared.filter((c) => named.includes(c))
+  return YES.test(raw) ? declared : []
+}
+
 interface MappedPatient { patient: TablesInsert<'patients'>; numbers: ContactNumber[]; sourceRow: number }
 interface FieldDiff { field: string; from: string; to: string }
 interface MappedUpdate { id: string; label: string; updates: TablesUpdate<'patients'>; diff: FieldDiff[]; numbers: ContactNumber[]; sourceRow: number }
@@ -137,6 +245,7 @@ interface ExistingPatient {
   city: string | null
   country: string | null
   national_id: string | null
+  marketing_channels: string[] | null
 }
 // Update-on-rematch fields -- tags are deliberately excluded (insert-only),
 // same choice PracticeHubPatientsImporter.vue makes, so a re-import never
@@ -145,6 +254,12 @@ const OVERWRITE_FIELDS = ['first_name', 'last_name', 'email', 'date_of_birth', '
 
 const toImport = ref<MappedPatient[]>([])
 const toUpdate = ref<MappedUpdate[]>([])
+// Everyone the file matched to a patient already here, changed or not: they
+// go on the list too.
+const matchedExistingIds = ref<string[]>([])
+// Of those, how many have no marketing consent of their own -- shown, since
+// the import will not give them any.
+const matchedWithoutConsent = ref(0)
 const skippedDuplicate = ref(0)
 const skippedNoName = ref(0)
 const totalRows = ref(0)
@@ -158,13 +273,17 @@ function formatValue(value: unknown): string {
   if (value === null || value === undefined || value === '') return '(blank)'
   return String(value)
 }
-function buildPatientUpdate(existing: ExistingPatient, incoming: TablesInsert<'patients'>, externalRef: string) {
+// fillOnly: a match made by phone is a good guess, not an identity -- the
+// file's spelling of a name ("Lucia") must not replace the record's
+// ("Lucía"), so only fields the record has empty are filled in.
+function buildPatientUpdate(existing: ExistingPatient, incoming: TablesInsert<'patients'>, externalRef: string, fillOnly = false) {
   const updates: TablesUpdate<'patients'> = {}
   const diff: FieldDiff[] = []
   for (const field of OVERWRITE_FIELDS) {
     const value = (incoming as Record<string, unknown>)[field]
     if (value === null || value === undefined || value === '') continue
     const existingValue = (existing as unknown as Record<string, unknown>)[field]
+    if (fillOnly && existingValue !== null && existingValue !== undefined && existingValue !== '') continue
     if (value !== existingValue) {
       ;(updates as Record<string, unknown>)[field] = value
       diff.push({ field, from: formatValue(existingValue), to: formatValue(value) })
@@ -183,18 +302,50 @@ async function computeDiff() {
 
   const byRef = new Map<string, ExistingPatient>()
   const byEmail = new Map<string, ExistingPatient>()
+  const byNationalId = new Map<string, ExistingPatient>()
+  const byId = new Map<string, ExistingPatient>()
   const PAGE_SIZE = 1000
   for (let page = 0; ; page++) {
-    const { data: existing } = await supabase
+    const { data: existing, error } = await supabase
       .from('patients')
-      .select('id, external_reference, email, first_name, last_name, date_of_birth, address, postal_code, city, country, national_id')
+      .select('id, external_reference, email, first_name, last_name, date_of_birth, address, postal_code, city, country, national_id, marketing_channels')
       .order('id').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+    if (error) throw error
     for (const p of existing ?? []) {
       const row = p as ExistingPatient
+      byId.set(row.id, row)
       if (row.external_reference) byRef.set(row.external_reference, row)
       if (row.email) byEmail.set(row.email.toLowerCase(), row)
+      const nid = normalizeNationalId(row.national_id)
+      if (nid) byNationalId.set(nid, row)
     }
     if (!existing || existing.length < PAGE_SIZE) break
+  }
+  // Phones, only when the file has a phone column: the last nine digits, so
+  // "+34 600 11 22 33" and "600112233" are one number. A number two patients
+  // share matches nobody.
+  const byPhone = new Map<string, ExistingPatient | null>()
+  if (mapping.value.phone) {
+    for (let page = 0; ; page++) {
+      const { data: numbers, error } = await supabase
+        .from('patient_contact_numbers')
+        .select('id, patient_id, number')
+        .order('id').range(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE - 1)
+      if (error) throw error
+      for (const n of numbers ?? []) {
+        const key = phoneKey(n.number)
+        const patient = byId.get(n.patient_id)
+        if (!key || !patient) continue
+        const seen = byPhone.get(key)
+        byPhone.set(key, seen === undefined || seen?.id === patient.id ? patient : null)
+      }
+      if (!numbers || numbers.length < PAGE_SIZE) break
+    }
+  }
+  const findByPhone = (phone: string, firstName: string) => {
+    const key = phoneKey(phone)
+    const patient = key ? byPhone.get(key) : null
+    return patient && firstWord(patient.first_name) === firstWord(firstName) ? patient : undefined
   }
 
   skippedDuplicate.value = 0
@@ -202,6 +353,7 @@ async function computeDiff() {
   const mapped: MappedPatient[] = []
   const updates: MappedUpdate[] = []
   const matchedIds: string[] = []
+  const matchedSet = new Set<string>()
 
   rows.forEach((row, index) => {
     const firstName = mappedValue(row, 'first_name')
@@ -211,10 +363,17 @@ async function computeDiff() {
     }
     const email = mappedValue(row, 'email')
     const externalRef = mappedValue(row, 'external_id')
-    const existing = (externalRef && byRef.get(externalRef)) || (email && byEmail.get(email.toLowerCase())) || undefined
-
+    const nationalId = normalizeNationalId(mappedValue(row, 'national_id'))
     const phone = mappedValue(row, 'phone')
-    const numbers: ContactNumber[] = phone ? [{ country_code: store.defaultPhoneCountry, number: phone, is_whatsapp: false }] : []
+    const strongMatch =
+      (externalRef && byRef.get(externalRef))
+      || (nationalId && byNationalId.get(nationalId))
+      || (email && byEmail.get(email.toLowerCase()))
+      || undefined
+    const existing = strongMatch || (phone ? findByPhone(phone, firstName) : undefined)
+
+    const consent = existing ? [] : rowConsent(row)
+    const numbers: ContactNumber[] = phone ? [{ country_code: store.defaultPhoneCountry, number: phone, is_whatsapp: consent.includes('whatsapp') }] : []
 
     const tagsRaw = mappedValue(row, 'tags')
     const patient: TablesInsert<'patients'> = {
@@ -231,14 +390,21 @@ async function computeDiff() {
       national_id: mappedValue(row, 'national_id') || null,
       tags: tagsRaw ? tagsRaw.split(',').map((s) => s.trim()).filter(Boolean) : [],
       external_reference: externalRef || null,
+      marketing_channels: consent,
     }
 
     if (!existing) {
       mapped.push({ sourceRow: index + 2, patient, numbers })
       return
     }
+    if (matchedSet.has(existing.id)) {
+      // Two rows of the file are the same person: the first one stands.
+      skippedDuplicate.value++
+      return
+    }
     matchedIds.push(existing.id)
-    const { updates: fieldUpdates, diff } = buildPatientUpdate(existing, patient, externalRef)
+    matchedSet.add(existing.id)
+    const { updates: fieldUpdates, diff } = buildPatientUpdate(existing, patient, externalRef, !strongMatch)
     if (Object.keys(fieldUpdates).length === 0) {
       skippedDuplicate.value++
       return
@@ -268,6 +434,20 @@ async function computeDiff() {
 
   toImport.value = mapped
   toUpdate.value = updates
+  matchedExistingIds.value = matchedIds
+  matchedWithoutConsent.value = matchedIds.filter((id) => !(byId.get(id)?.marketing_channels ?? []).length).length
+}
+
+/** DNI/NIE/passport as typed in two different systems: no spaces, dashes or dots, upper case. */
+function normalizeNationalId(value: string | null | undefined): string {
+  return (value ?? '').replace(/[\s.-]/g, '').toUpperCase()
+}
+function phoneKey(value: string | null | undefined): string {
+  const digits = (value ?? '').replace(/\D/g, '')
+  return digits.length >= 9 ? digits.slice(-9) : ''
+}
+function firstWord(value: string | null | undefined): string {
+  return normalizeHeader(value ?? '').split(/\s+/)[0] ?? ''
 }
 
 async function confirmMapping() {
@@ -305,6 +485,9 @@ async function runImport() {
   importedCount.value = 0
   updatedCount.value = 0
   importErrors.value = []
+  listedId.value = null
+  listedCount.value = 0
+  const listedPatientIds: string[] = [...matchedExistingIds.value]
 
   try {
     const CHUNK_SIZE = 100
@@ -316,6 +499,7 @@ async function runImport() {
         continue
       }
       importedCount.value += inserted.length
+      listedPatientIds.push(...inserted.map((r) => r.id))
       const numberRows = chunk.flatMap((c, idx) =>
         c.numbers.map((n) => ({ account_id: store.accountId!, patient_id: inserted[idx].id, country_code: n.country_code, number: n.number, is_whatsapp: n.is_whatsapp })),
       )
@@ -338,6 +522,16 @@ async function runImport() {
         updatedCount.value++
         await insertContactNumbers(row.id, row.numbers, row.sourceRow)
       })
+    }
+
+    if (listChoice.value && listedPatientIds.length > 0) {
+      try {
+        const listId = listChoice.value === NEW_LIST ? (await createList(newListName.value.trim(), true)).id : listChoice.value
+        listedCount.value = await addPatientsToList(listId, listedPatientIds, 'import', fileName.value.slice(0, 200))
+        listedId.value = listId
+      } catch (err) {
+        importErrors.value.push(`${t('Adding them to the list', 'Al añadirlos a la lista')}: ${(err as Error).message}`)
+      }
     }
 
     importing.value = false
@@ -372,6 +566,9 @@ function reset() {
   mapping.value = {}
   toImport.value = []
   toUpdate.value = []
+  matchedExistingIds.value = []
+  listedId.value = null
+  listedCount.value = 0
   importedCount.value = 0
   updatedCount.value = 0
   importErrors.value = []
@@ -385,7 +582,7 @@ const fieldId = useId()
 <template>
   <div>
     <p class="text-sm text-ink-muted2">
-      {{ t('Export your patients as a CSV from your current system, then drop it here — column names don\'t need to match, you\'ll map them next.', 'Exporta tus pacientes como CSV desde tu sistema actual y suéltalo aquí — los nombres de columna no tienen que coincidir, los mapearás a continuación.') }}
+      {{ t('Export your patients as a CSV or Excel file from your current system, then drop it here — column names don\'t need to match, you\'ll map them next.', 'Exporta tus pacientes como CSV o Excel desde tu sistema actual y suéltalo aquí — los nombres de columna no tienen que coincidir, los mapearás a continuación.') }}
     </p>
 
     <div v-if="stage === 'pick'" class="mt-4">
@@ -396,10 +593,10 @@ const fieldId = useId()
         @dragleave.prevent="dragOver = false"
         @drop.prevent="onDrop"
       >
-        <p class="text-sm text-ink-600">{{ t('Drag and drop a CSV file here, or', 'Arrastra y suelta un archivo CSV aquí, o') }}</p>
+        <p class="text-sm text-ink-600">{{ t('Drag and drop a CSV or Excel (.xlsx) file here, or', 'Arrastra y suelta un archivo CSV o Excel (.xlsx) aquí, o') }}</p>
         <label class="mt-2 cursor-pointer text-sm font-medium text-brand-text hover:text-brand-text">
           {{ t('browse for a file', 'busca un archivo') }}
-          <input type="file" accept=".csv" class="hidden" @change="onFileInput" />
+          <input type="file" accept=".csv,.xlsx,.xls" data-cy="import-file" class="hidden" @change="onFileInput" />
         </label>
       </div>
       <p v-if="fileError" class="mt-2 text-sm text-danger-text">{{ fileError }}</p>
@@ -452,10 +649,46 @@ const fieldId = useId()
         </select>
       </div>
 
+      <div>
+        <label :for="`${fieldId}-list`" class="block text-sm font-medium text-ink-700">{{ t('Add everyone in the file to a list', 'Añadir a todos los del archivo a una lista') }}</label>
+        <select :id="`${fieldId}-list`"
+          v-model="listChoice"
+          data-cy="import-list"
+          class="mt-1 w-full max-w-xs rounded-md border border-line-control bg-surface px-3 py-2 text-sm text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+        >
+          <option value="">{{ t('No list', 'Ninguna lista') }}</option>
+          <option v-for="l in manageableLists" :key="l.id" :value="l.id">{{ l.name }}</option>
+          <option :value="NEW_LIST">{{ t('New list…', 'Nueva lista…') }}</option>
+        </select>
+        <input
+          v-if="listChoice === NEW_LIST"
+          v-model="newListName"
+          data-cy="import-new-list-name"
+          maxlength="80"
+          :aria-label="t('Name of the new list', 'Nombre de la nueva lista')"
+          :placeholder="t('Name of the new list', 'Nombre de la nueva lista')"
+          class="mt-2 w-full max-w-xs rounded-md border border-line-control bg-surface px-3 py-2 text-sm text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+        />
+        <p class="mt-1 text-xs text-ink-muted2">{{ t('Patients already here are matched, not duplicated, and go on the list too.', 'Los pacientes que ya existen se reconocen, no se duplican, y también entran en la lista.') }}</p>
+      </div>
+
+      <fieldset class="rounded-lg border border-line bg-surface p-4">
+        <legend class="px-1 text-sm font-medium text-ink-700">{{ t('Marketing consent', 'Consentimiento de publicidad') }}</legend>
+        <p class="text-sm text-ink-muted2">
+          {{ t('Tick only if the people in this file agreed to receive marketing from the clinic. It applies to the patients this import creates; anyone already here keeps their own choice.', 'Márcalo solo si las personas de este archivo aceptaron recibir publicidad de la clínica. Se aplica a los pacientes que cree esta importación; quien ya exista conserva su propia elección.') }}
+          <template v-if="mapping.marketing">{{ t('Only rows whose consent column says yes get it.', 'Solo lo reciben las filas cuya columna de consentimiento diga sí.') }}</template>
+        </p>
+        <div class="mt-2 flex flex-wrap gap-4 text-sm text-ink-700">
+          <label class="flex items-center gap-2"><input v-model="consentEmail" type="checkbox" data-cy="import-consent-email" class="h-4 w-4 accent-brand" />{{ t('They accepted marketing by email', 'Aceptaron publicidad por correo') }}</label>
+          <label class="flex items-center gap-2"><input v-model="consentWhatsapp" type="checkbox" data-cy="import-consent-whatsapp" class="h-4 w-4 accent-brand" />{{ t('They accepted marketing by WhatsApp', 'Aceptaron publicidad por WhatsApp') }}</label>
+        </div>
+      </fieldset>
+
       <div class="flex gap-3">
         <button
           type="button"
-          :disabled="!mappingComplete"
+          data-cy="import-continue"
+          :disabled="!mappingComplete || !listChoiceValid"
           class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50"
           @click="confirmMapping"
         >
@@ -476,6 +709,12 @@ const fieldId = useId()
           <div><dt class="text-ink-muted2">{{ t('Will update', 'Se actualizarán') }}</dt><dd class="font-medium text-brand-text">{{ toUpdate.length }}</dd></div>
           <div><dt class="text-ink-muted2">{{ t('No changes / no name', 'Sin cambios / sin nombre') }}</dt><dd class="font-medium text-ink-900">{{ skippedDuplicate + skippedNoName }}</dd></div>
         </dl>
+        <p v-if="listChoice" data-cy="import-list-summary" class="mt-3 text-sm text-ink-700">
+          {{ t(`${toImport.length + matchedExistingIds.length} will be on the list “${targetListName}”: ${toImport.length} new and ${matchedExistingIds.length} already here.`, `${toImport.length + matchedExistingIds.length} estarán en la lista «${targetListName}»: ${toImport.length} nuevos y ${matchedExistingIds.length} que ya existían.`) }}
+        </p>
+        <p v-if="matchedWithoutConsent > 0 && (consentEmail || consentWhatsapp)" data-cy="import-consent-kept" class="mt-1 text-sm text-warning-text">
+          {{ t(`${matchedWithoutConsent} of those already here have no marketing consent and keep it that way: campaigns will not reach them.`, `${matchedWithoutConsent} de los que ya existían no tienen consentimiento de publicidad y así siguen: las campañas no les llegarán.`) }}
+        </p>
       </div>
 
       <div class="overflow-hidden rounded-lg border border-line bg-surface">
@@ -534,7 +773,8 @@ const fieldId = useId()
       <div class="flex gap-3">
         <button
           type="button"
-          :disabled="toImport.length === 0 && toUpdate.length === 0"
+          data-cy="import-run"
+          :disabled="toImport.length === 0 && toUpdate.length === 0 && !(listChoice && matchedExistingIds.length)"
           class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50"
           @click="runImport"
         >
@@ -572,8 +812,14 @@ const fieldId = useId()
           <li v-for="(e, i) in importErrors" :key="i">{{ e }}</li>
         </ul>
       </div>
+      <p v-if="listedId" data-cy="import-listed" class="text-sm text-ink-700">
+        {{ t(`${listedCount} added to the list “${targetListName}” (anyone already on it stays as they were).`, `${listedCount} añadidos a la lista «${targetListName}» (quien ya estaba sigue igual).`) }}
+      </p>
       <div class="flex gap-3">
-        <NuxtLink to="/patients" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover">
+        <NuxtLink v-if="listedId" :to="{ path: '/patients', query: { list: listedId, clinic: 'all' } }" data-cy="import-open-list" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover">
+          {{ t('Open the list', 'Abrir la lista') }}
+        </NuxtLink>
+        <NuxtLink v-else to="/patients" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover">
           {{ t('View Patients', 'Ver pacientes') }}
         </NuxtLink>
         <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-ink-600 hover:bg-surface-subtle" @click="reset">

@@ -4,11 +4,13 @@ import { articleParagraphs, videoEmbedUrl } from '../../utils/learn'
 // One education article as a patient reads it -- in the app, the portal and
 // the no-login link (pages/aprende). The text is shown as text, paragraph by
 // paragraph, never as HTML; a video is framed only when it is YouTube or
-// Vimeo (utils/learn.ts), anything else is a plain link.
+// Vimeo (utils/learn.ts), anything else is a plain link. The clinic's own
+// uploaded video comes as `mediaSrc`, a signed URL, and plays in place.
 const props = defineProps<{
   title: string
   summary?: string | null
   body: string
+  mediaSrc?: string | null
   videoUrl?: string | null
   minutes?: number | null
   clinicName?: string | null
@@ -27,6 +29,7 @@ const embed = computed(() => videoEmbedUrl(props.videoUrl))
       <h1 class="text-[22px] font-bold leading-tight text-ink-900">{{ title }}</h1>
       <p v-if="summary" class="text-[15px] text-ink-500">{{ summary }}</p>
     </div>
+    <video v-if="mediaSrc" :src="mediaSrc" controls playsinline preload="metadata" class="max-h-[70vh] w-full rounded-card bg-black object-contain" data-cy="learn-media" />
     <div v-if="embed" class="relative w-full overflow-hidden rounded-card bg-ink-900" style="padding-top: 56.25%">
       <iframe :src="embed" :title="title" class="absolute inset-0 h-full w-full" allow="encrypted-media; picture-in-picture; fullscreen" allowfullscreen loading="lazy" referrerpolicy="strict-origin-when-cross-origin" data-cy="learn-video" />
     </div>

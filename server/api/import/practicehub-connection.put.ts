@@ -11,6 +11,7 @@ export default defineEventHandler(async (event) => {
   const baseUrl = (body?.baseUrl ?? '').trim().replace(/\/$/, '')
   const contactEmail = (body?.contactEmail ?? '').trim()
   const apiKey = (body?.apiKey ?? '').trim()
+  if (apiKey) assertPracticeHubClassicKey(apiKey)
   // PracticeHub 2.0's API takes its own `phk_` key; a Classic key there is
   // refused with a bare 401, so say so here instead.
   const v3ApiKey = (body?.v3ApiKey ?? '').trim()

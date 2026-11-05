@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ENTRY_MODES, TRIGGERS, TRIGGER_GROUPS, say, triggerDef, weekdayName } from '~/utils/automationCatalog'
+import { ENTRY_MODES, LEAD_STAGE_OPTIONS, LEAD_STOP_STAGES, TRIGGERS, TRIGGER_GROUPS, say, triggerDef, weekdayName } from '~/utils/automationCatalog'
 import { FIELD, FIELD_NUMBER, HINT, LABEL, NOTE, SECTION, SEGMENT_WRAP, segmentBtn } from '~/utils/automationUi'
 import { scheduledSendLabel } from '~/utils/automationDescribe'
 import { clinicTimeLabel } from '~/utils/bookingSlots'
@@ -169,6 +169,59 @@ watch(
       <input type="number" min="1" :class="FIELD_NUMBER" :value="rule.filters.days_overdue ?? 7" data-test="trigger-days-overdue" @input="setNumberFilter('days_overdue', ($event.target as HTMLInputElement).value, 7)" />
       <span :class="HINT">{{ t('Only invoices that reach this many days from now on: switching it on does not message old debts. For a second reminder, create another automation with more days.', 'Solo las facturas que cumplan estos días a partir de ahora: activarla no avisa de deudas antiguas. Para un segundo recordatorio, crea otra automatización con más días.') }}</span>
     </label>
+
+    <label v-if="rule.trigger_event === 'patient.tag_added' || rule.trigger_event === 'patient.tag_removed'" :class="LABEL">
+      {{ t('Which tag', 'Qué etiqueta') }}
+      <input :class="FIELD" :value="rule.filters.trigger_tag ?? ''" :placeholder="t('Any tag', 'Cualquier etiqueta')" data-test="trigger-tag" @input="setFilters({ ...rule.filters, trigger_tag: ($event.target as HTMLInputElement).value })" />
+      <span :class="HINT">{{ t('Capitals do not matter. Left empty, any tag starts it.', 'Da igual mayúsculas o minúsculas. Si se deja vacía, la inicia cualquier etiqueta.') }}</span>
+    </label>
+    <div v-if="rule.trigger_event === 'satisfaction.answered'" :class="LABEL">
+      {{ t('With a score of', 'Con una nota de') }}
+      <span :class="SEGMENT_WRAP" role="group" :aria-label="t('Score', 'Nota')">
+        <button v-for="o in [{ v: '', l: t('Any', 'Cualquiera') }, { v: 'high', l: '4-5' }, { v: 'low', l: '1-3' }]" :key="o.v" type="button" :class="segmentBtn((rule.filters.trigger_score ?? '') === o.v)" :aria-pressed="(rule.filters.trigger_score ?? '') === o.v" :data-test="`trigger-score-${o.v || 'any'}`" @click="setFilters({ ...rule.filters, trigger_score: o.v || undefined })">{{ o.l }}</button>
+      </span>
+      <span :class="HINT">{{ t('Their first answer only: changing the score afterwards does not start it again.', 'Solo su primera respuesta: cambiar la nota después no la inicia otra vez.') }}</span>
+    </div>
+    <div v-if="rule.trigger_event === 'doc.completed'" :class="LABEL">
+      {{ t('Which forms', 'Qué formularios') }}
+      <AutomationsMultiPick
+        :model-value="(rule.filters.trigger_doc_template_ids as string[] | undefined) ?? []"
+        :options="b.docTemplates.value.map((d) => ({ value: d.id, label: d.title }))"
+        :placeholder="t('Any form', 'Cualquier formulario')"
+        test-id="trigger-doc-templates"
+        @update:model-value="setFilters({ ...rule.filters, trigger_doc_template_ids: $event.length ? $event : undefined })"
+      />
+      <span :class="HINT">{{ t('Forms completed before it is switched on, or more than two days ago, do not start it.', 'Los formularios completados antes de activarla, o hace más de dos días, no la inician.') }}</span>
+    </div>
+    <label v-if="rule.trigger_event === 'lead.stage_changed'" :class="LABEL">
+      {{ t('Moved to', 'Movido a') }}
+      <select :class="FIELD" :value="rule.filters.trigger_lead_stage ?? ''" data-test="trigger-lead-stage" @change="setFilters({ ...rule.filters, trigger_lead_stage: ($event.target as HTMLSelectElement).value || undefined })">
+        <option value="">{{ t('Any stage', 'Cualquier etapa') }}</option>
+        <option v-for="o in LEAD_STAGE_OPTIONS.filter((x) => !LEAD_STOP_STAGES.includes(x.value))" :key="o.value" :value="o.value">{{ say(t, o.label) }}</option>
+      </select>
+      <span :class="HINT">{{ t('Each lead enters once. Not offered: Patient and Lost, because automations stop for a lead in either. A booking moving the lead to "Booked" by itself does not count; for that, use "Wait until they book" in a New lead automation.', 'Cada lead entra una vez. No se ofrecen Paciente ni Perdido, porque las automatizaciones se detienen para un lead en cualquiera de las dos. Que una reserva lo pase sola a «Con cita» no cuenta; para eso, usa «Esperar hasta que reserve» en una automatización de Lead nuevo.') }}</span>
+    </label>
+
+    <template v-if="rule.trigger_event === 'care_plan.milestone'">
+      <div :class="LABEL">
+        {{ t('When', 'Cuándo') }}
+        <span :class="SEGMENT_WRAP" role="group" :aria-label="t('Milestone', 'Hito')">
+          <button v-for="o in [{ v: '', l: t('Re-exam is next', 'Toca revisión') }, { v: 'finished', l: t('Plan finished', 'Plan terminado') }, { v: 'visit', l: t('Visit number', 'Visita número') }]" :key="o.v" type="button" :class="segmentBtn((rule.filters.trigger_milestone ?? '') === o.v)" :aria-pressed="(rule.filters.trigger_milestone ?? '') === o.v" :data-test="`trigger-milestone-${o.v || 'reexam'}`" @click="setFilters({ ...rule.filters, trigger_milestone: o.v || undefined })">{{ o.l }}</button>
+        </span>
+        <span :class="HINT">{{ (rule.filters.trigger_milestone ?? '') === '' ? t('After the visit before one the plan marks as a re-exam, so it can be booked in time.', 'Tras la visita anterior a una que el plan marca como revisión, para que dé tiempo a reservarla.') : rule.filters.trigger_milestone === 'finished' ? t("After the plan's last visit.", 'Tras la última visita del plan.') : t('After that visit of the plan, counting as the plan does: no cancelled or missed ones.', 'Tras esa visita del plan, contando como el plan: sin las canceladas ni las de no asistió.') }}</span>
+      </div>
+      <label v-if="rule.filters.trigger_milestone === 'visit'" :class="LABEL">
+        {{ t('Visit number', 'Visita número') }}
+        <input type="number" min="1" :class="FIELD_NUMBER" :value="rule.filters.trigger_visit_number ?? 6" data-test="trigger-visit-number" @input="setFilters({ ...rule.filters, trigger_visit_number: Math.max(1, Math.round(Number(($event.target as HTMLInputElement).value) || 1)) })" />
+      </label>
+    </template>
+    <div v-if="rule.trigger_event === 'bono.running_low'" :class="LABEL">
+      {{ t('Sessions left', 'Sesiones restantes') }}
+      <span :class="SEGMENT_WRAP" role="group" :aria-label="t('Sessions left', 'Sesiones restantes')">
+        <button v-for="n in [0, 1, 2, 3]" :key="n" type="button" :class="segmentBtn((rule.filters.trigger_sessions_left ?? 1) === n)" :aria-pressed="(rule.filters.trigger_sessions_left ?? 1) === n" :data-test="`trigger-sessions-left-${n}`" @click="setFilters({ ...rule.filters, trigger_sessions_left: n })">{{ n === 0 ? t('Used up', 'Agotado') : n }}</button>
+      </span>
+      <span :class="HINT">{{ t('Once per bono. Sessions brought in by an import do not count.', 'Una vez por bono. Las sesiones traídas por una importación no cuentan.') }}</span>
+    </div>
 
     <!-- A group of patients -->
     <template v-if="isSegment">

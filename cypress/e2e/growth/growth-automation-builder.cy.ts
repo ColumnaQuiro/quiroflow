@@ -288,6 +288,35 @@ describe('Automation builder: step panels', () => {
     })
   })
 
+  it('saves an email as a template, and starts the next email from it', () => {
+    addStep('email')
+    cy.get('[data-test="email-builder-subject"]').type('Toca revisión')
+    cy.get('[data-test="email-block-heading"]').click()
+    cy.get('[data-test="block-heading"]').clear().type('Ya te toca la revisión')
+    cy.get('[data-test="email-builder-save-template"]').click()
+    cy.get('[data-test="email-template-name"]').clear().type('Revisión anual')
+    cy.get('[data-cy="confirm-dialog-confirm"]').click()
+    cy.get('[data-test="email-template-saved"]').should('contain', 'Revisión anual')
+    cy.get('[data-test="email-builder-done"]').click()
+
+    // A second email: it starts as the default one, so picking the template asks first.
+    addStep('email', 'insert-root-root-1')
+    cy.get('[data-test="email-tab-templates"]').click()
+    cy.contains('[data-test="email-templates"] button', 'Revisión anual').click()
+    cy.get('[data-test="email-template-confirm"]').should('contain', 'Revisión anual')
+    cy.get('[data-test="email-template-confirm-yes"]').click()
+    canvas().should('contain', 'Ya te toca la revisión')
+    // An email with no subject yet takes the template's.
+    cy.get('[data-test="email-builder-subject"]').should('have.value', 'Toca revisión')
+
+    // QuiroFlow's own, the same way.
+    cy.get('[data-test="email-tab-templates"]').click()
+    cy.get('[data-test="email-starter-newsletter"]').click()
+    cy.get('[data-test="email-template-confirm-yes"]').click()
+    cy.get('[data-test="email-block-list"] li').should('have.length', 7)
+    canvas().should('contain', 'Este mes en la clínica')
+  })
+
   it('offers a test mode that records instead of sending', () => {
     cy.get('[data-test="tab-settings"]').click()
     cy.get('[data-test="dry-run-toggle"]').should('have.attr', 'aria-checked', 'false').click()

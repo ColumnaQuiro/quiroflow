@@ -145,7 +145,7 @@ describe('Patient education', () => {
           })
           // Edited again, it offers no second announcement, and the server refuses one.
           cy.get(`[data-cy=learn-edit-${visible!.id}]`).click()
-          cy.get('[data-cy=learn-visibility]').should('contain', 'Se avisó a los pacientes')
+          cy.get('[data-cy=learn-announced]').should('be.visible')
           cy.get('[data-cy=learn-announce]').should('not.exist')
           cy.task<string>('db:accessTokenFor', { email: account.email, password: account.password }).then((token) => {
             cy.request({ method: 'POST', url: '/api/learn/announce', headers: { Authorization: `Bearer ${token}` }, body: { articleId: visible!.id }, failOnStatusCode: false }).its('status').should('eq', 409)

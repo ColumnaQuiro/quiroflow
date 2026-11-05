@@ -290,7 +290,7 @@ const inputClass = 'h-10 w-full rounded-ctl border border-line-control bg-surfac
                   <span class="text-[12.5px] text-ink-muted">{{ t('One notification, now. Editing it later never sends another.', 'Un solo aviso, ahora. Si la editas después, no se repite.') }}</span>
                 </span>
               </label>
-              <p v-else-if="form.visible_to_patients && announcedAt" class="text-[12.5px] text-ink-muted">{{ t(`Patients were told on ${new Date(announcedAt).toLocaleDateString('en-GB')}.`, `Se avisó a los pacientes el ${new Date(announcedAt).toLocaleDateString('es-ES')}.`) }}</p>
+              <p v-else-if="form.visible_to_patients && announcedAt" class="text-[12.5px] text-ink-muted" data-cy="learn-announced">{{ t(`Patients were told on ${new Date(announcedAt).toLocaleDateString('en-GB')}.`, `Se avisó a los pacientes el ${new Date(announcedAt).toLocaleDateString('es-ES')}.`) }}</p>
             </fieldset>
             <p v-if="formError" role="alert" class="text-[12.5px] font-semibold text-danger-text">{{ formError }}</p>
             <div class="flex gap-2">

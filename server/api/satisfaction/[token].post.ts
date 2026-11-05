@@ -1,6 +1,8 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { alertOwners, reviewLinkFor, surveyByToken, surveyLocked } from '~/server/utils/satisfactionSurvey'
+import { firePatientTrigger } from '~/server/utils/automationTriggers'
+import { triggerScoreMatches } from '~/utils/automationTriggerMatch'
 
 // The patient answering: a score from 1 to 5 (saved the moment it is
 // tapped), then, for a 1-3, what to improve. Either can change for
@@ -36,6 +38,16 @@ export default defineEventHandler(async (event) => {
 
   const wasLow = row.score !== null && row.score <= 3
   if (score !== undefined && score <= 3 && !wasLow) await alertOwners(supabase, row, score)
+
+  // "Satisfaction answered" automations, on the first score only: changing it
+  // in the next hours is a correction, not a second answer to act on.
+  const patientId = (row.appointments as { patient_id?: string } | null)?.patient_id
+  if (score !== undefined && row.score === null && patientId) {
+    await firePatientTrigger(supabase, row.account_id, patientId, 'satisfaction.answered', getRequestURL(event).origin, {
+      appointmentId: row.appointment_id ?? undefined,
+      matches: (filters) => triggerScoreMatches(filters, score),
+    })
+  }
 
   const reviewUrl = next >= 4 ? await reviewLinkFor(supabase, row, getRequestURL(event).origin) : null
   return { score: next, reviewUrl }

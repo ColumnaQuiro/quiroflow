@@ -8,7 +8,7 @@
 // (check-in, completing a visit, taking a payment) was silently swallowed
 // by the catch below with nothing ever actually firing.
 export function useAutomations() {
-  function fire(triggerEvent: string, params: { patientId: string; appointmentId?: string; invoiceId?: string; membershipId?: string }) {
+  function fire(triggerEvent: string, params: { patientId: string; appointmentId?: string; invoiceId?: string; membershipId?: string; tag?: string }) {
     useStaffFetch('/api/automations/fire', { method: 'POST', body: { triggerEvent, ...params } }).catch(() => {})
   }
   return { fire }

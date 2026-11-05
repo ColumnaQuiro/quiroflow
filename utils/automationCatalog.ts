@@ -112,6 +112,17 @@ export const TRIGGERS: TriggerDef[] = [
     appointmentContext: true,
   },
   {
+    value: 'satisfaction.answered',
+    label: ['Satisfaction answered', 'Valoración recibida'],
+    sentence: ['A patient rates their visit', 'Un paciente valora su visita'],
+    description: [
+      'When a patient answers the satisfaction question, by score: 4-5 can get the Google review link, 1-3 a call from the team.',
+      'Cuando un paciente contesta la pregunta de satisfacción, según la nota: a un 4-5 se le puede pedir la reseña en Google, a un 1-3 que le llame el equipo.',
+    ],
+    group: 'appointment',
+    appointmentContext: true,
+  },
+  {
     value: 'invoice.overdue',
     label: ['Invoice unpaid', 'Factura sin pagar'],
     sentence: ['A set number of days after an invoice, still unpaid', 'Un número de días después de una factura, sin pagar'],
@@ -179,6 +190,33 @@ export const TRIGGERS: TriggerDef[] = [
     appointmentContext: false,
   },
   {
+    value: 'patient.tag_added',
+    label: ['Tag added', 'Etiqueta añadida'],
+    sentence: ['A tag is added to a patient', 'Se añade una etiqueta a un paciente'],
+    description: ["When someone on the team, or an automation, adds the tag to the patient's record.", 'Cuando alguien del equipo, o una automatización, añade la etiqueta a la ficha del paciente.'],
+    group: 'patient',
+    appointmentContext: false,
+  },
+  {
+    value: 'patient.tag_removed',
+    label: ['Tag removed', 'Etiqueta quitada'],
+    sentence: ['A tag is removed from a patient', 'Se quita una etiqueta a un paciente'],
+    description: ["When someone on the team, or an automation, removes the tag from the patient's record.", 'Cuando alguien del equipo, o una automatización, quita la etiqueta de la ficha del paciente.'],
+    group: 'patient',
+    appointmentContext: false,
+  },
+  {
+    value: 'doc.completed',
+    label: ['Form completed', 'Formulario completado'],
+    sentence: ['A patient completes a form', 'Un paciente completa un formulario'],
+    description: [
+      'When a form or consent is marked completed, by the patient or the team. Checked every 15 minutes.',
+      'Cuando un formulario o consentimiento queda completado, por el paciente o el equipo. Se comprueba cada 15 minutos.',
+    ],
+    group: 'patient',
+    appointmentContext: false,
+  },
+  {
     value: 'segment',
     label: ['A group of patients', 'Un segmento de pacientes'],
     sentence: ['A group of patients, once or on a schedule', 'Un grupo de pacientes, una vez o con un horario'],
@@ -191,6 +229,18 @@ export const TRIGGERS: TriggerDef[] = [
     label: ['New lead', 'Lead nuevo'],
     sentence: ['A new lead arrives', 'Llega un lead nuevo'],
     description: ['From Meta Ads, the web form or the public API.', 'De Meta Ads, del formulario web o de la API pública.'],
+    group: 'lead',
+    appointmentContext: false,
+    growth: true,
+  },
+  {
+    value: 'lead.stage_changed',
+    label: ['Lead moved to a stage', 'Lead movido de etapa'],
+    sentence: ['Someone moves a lead to a stage', 'Alguien mueve un lead a una etapa'],
+    description: [
+      'When the team (on the board or in the lead) or an automation moves the lead. Not when booking moves it on its own.',
+      'Cuando el equipo (en el tablero o en el lead) o una automatización lo mueve. No cuando lo mueve sola una reserva.',
+    ],
     group: 'lead',
     appointmentContext: false,
     growth: true,
@@ -208,7 +258,7 @@ export const TRIGGER_GROUPS: { key: TriggerDef['group']; label: Pair }[] = [
 ]
 
 export const triggerDef = (value: string) => TRIGGERS.find((tr) => tr.value === value) ?? null
-export const isLeadTrigger = (value: string) => value === 'lead.created'
+export const isLeadTrigger = (value: string) => value === 'lead.created' || value === 'lead.stage_changed'
 
 /** The trigger as the list and the canvas name it, with its number filled in. */
 export function triggerTitle(t: Translate, event: string, filters?: Record<string, unknown> | null): string {
@@ -230,6 +280,17 @@ export function triggerTitle(t: Translate, event: string, filters?: Record<strin
   if (event === 'invoice.overdue') {
     const d = Number(filters?.days_overdue) || 7
     return t(`Invoice unpaid after ${d} day${d === 1 ? '' : 's'}`, `Factura sin pagar a los ${d} día${d === 1 ? '' : 's'}`)
+  }
+  if ((event === 'patient.tag_added' || event === 'patient.tag_removed') && String(filters?.trigger_tag ?? '').trim()) {
+    const tag = String(filters!.trigger_tag).trim()
+    return event === 'patient.tag_added' ? t(`Tagged "${tag}"`, `Etiquetado «${tag}»`) : t(`"${tag}" removed`, `Quitada «${tag}»`)
+  }
+  if (event === 'satisfaction.answered' && (filters?.trigger_score === 'high' || filters?.trigger_score === 'low')) {
+    return filters.trigger_score === 'high' ? t('Rated the visit 4-5', 'Valoró la visita con 4-5') : t('Rated the visit 1-3', 'Valoró la visita con 1-3')
+  }
+  if (event === 'lead.stage_changed' && typeof filters?.trigger_lead_stage === 'string') {
+    const stage = LEAD_STAGE_OPTIONS.find((o) => o.value === filters.trigger_lead_stage)
+    if (stage) return t(`Lead moved to ${stage.label[0]}`, `Lead movido a ${stage.label[1]}`)
   }
   const def = triggerDef(event)
   return def ? say(t, def.label) : event
@@ -726,6 +787,9 @@ export const OUTCOMES: Record<string, Pair> = {
 }
 
 // ------------------------------------------------------------------ leads
+
+/** Stages a lead's automations stop at (the engine cancels its runs), so nothing can start on reaching them. */
+export const LEAD_STOP_STAGES: readonly string[] = ['converted', 'lost']
 
 export const LEAD_STAGE_OPTIONS: { value: string; label: Pair }[] = [
   { value: 'new', label: ['New', 'Nuevo'] },

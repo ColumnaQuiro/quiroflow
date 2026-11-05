@@ -1,3 +1,5 @@
+import { fireLeadStageTrigger, firePatientTrigger } from '~/server/utils/automationTriggers'
+import { triggerTagMatches } from '~/utils/automationTriggerMatch'
 import {
   MAX_STEP_ATTEMPTS,
   RUN_COLUMNS,
@@ -568,7 +570,7 @@ async function walkRun(supabase: any, run: SequenceRun, origin: string, opts: { 
       }
     }
 
-    const result = isMessage(action) ? await sendStep(supabase, run, subject, action, origin) : await applyStep(supabase, run, rule, subject, action)
+    const result = isMessage(action) ? await sendStep(supabase, run, subject, action, origin) : await applyStep(supabase, run, rule, subject, action, origin)
 
     if (result.status === 'failed') {
       attempts += 1
@@ -913,7 +915,7 @@ async function sendStep(supabase: any, run: SequenceRun, subject: Subject, actio
 }
 
 /** The steps that do something inside QuiroFlow rather than send. */
-async function applyStep(supabase: any, run: SequenceRun, rule: EngineRule, subject: Subject, action: EngineAction): Promise<StepResult> {
+async function applyStep(supabase: any, run: SequenceRun, rule: EngineRule, subject: Subject, action: EngineAction, origin: string): Promise<StepResult> {
   const config = action.config ?? {}
   // Test mode changes nothing, on every kind of step -- the same promise the
   // message steps keep by recording instead of sending.
@@ -934,6 +936,8 @@ async function applyStep(supabase: any, run: SequenceRun, rule: EngineRule, subj
         const nextTags = remove ? tags.filter((t) => t.toLowerCase() !== tag.toLowerCase()) : [...tags, tag]
         const { error } = await supabase.from('patients').update({ tags: nextTags }).eq('id', subject.patient.id)
         if (error) return { status: 'failed', detail: `Could not change tags: ${error.message}` }
+        // Other automations that start on this tag; never this one again.
+        await firePatientTrigger(supabase, run.account_id, subject.patient.id, remove ? 'patient.tag_removed' : 'patient.tag_added', origin, { matches: (f) => triggerTagMatches(f, tag), skipRuleId: rule.id })
         return { status: 'applied', detail: remove ? `Removed the tag "${tag}".` : `Added the tag "${tag}".` }
       }
 
@@ -993,6 +997,7 @@ async function applyStep(supabase: any, run: SequenceRun, rule: EngineRule, subj
             title: `Moved to ${STAGE_TITLES[stage as LeadStage]}`,
             detail: `From ${STAGE_TITLES[before as LeadStage] ?? before} (automation: ${rule.name})`,
           })
+          await fireLeadStageTrigger(supabase, run.account_id, subject.lead.id, stage, origin, { skipRuleId: rule.id })
           return { status: 'applied', detail: `Moved to ${STAGE_TITLES[stage as LeadStage]}.` }
         }
 

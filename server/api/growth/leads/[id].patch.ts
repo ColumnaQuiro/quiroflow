@@ -2,6 +2,7 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database, TablesUpdate  } from '~/types/database.types'
 import { requireGrowth } from '~/server/utils/requireGrowth'
 import { automationEvent } from '~/server/utils/automationEngine'
+import { fireLeadStageTrigger } from '~/server/utils/automationTriggers'
 import { STAGE_TITLES, isLeadStage, type LeadStage } from '~/server/utils/leads'
 
 interface Body {
@@ -86,6 +87,7 @@ export default defineEventHandler(async (event) => {
       title: `Moved to ${STAGE_TITLES[patch.stage as LeadStage]}`,
       detail: `From ${STAGE_TITLES[before.stage as LeadStage] ?? before.stage}`,
     })
+    await fireLeadStageTrigger(serverSupabaseServiceRole<Database>(event), teamMember.account_id, id, patch.stage, getRequestURL(event).origin)
   }
 
   if (patch.stage === 'converted' && before.stage !== 'converted') {

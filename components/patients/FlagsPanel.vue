@@ -6,6 +6,7 @@ const emit = defineEmits<{ done: [] }>()
 
 const supabase = useSupabaseClient()
 const t = useT()
+const { fire } = useAutomations()
 const { can } = usePermission()
 // patients_tags_remove: taking any tag off a patient. Adding one only needs
 // patients_edit. The database enforces the same (patient_tag_removal_needs_permission).
@@ -64,12 +65,14 @@ async function addTag() {
   }
   tags.value = [...tags.value, tag]
   newTag.value = ''
-  await supabase.from('patients').update({ tags: tags.value }).eq('id', props.patientId)
+  const { error } = await supabase.from('patients').update({ tags: tags.value }).eq('id', props.patientId)
+  if (!error) fire('patient.tag_added', { patientId: props.patientId, tag })
 }
 async function removeTag(tag: string) {
   if (!canRemoveTag(tag)) return
   tags.value = tags.value.filter((t) => t !== tag)
-  await supabase.from('patients').update({ tags: tags.value }).eq('id', props.patientId)
+  const { error } = await supabase.from('patients').update({ tags: tags.value }).eq('id', props.patientId)
+  if (!error) fire('patient.tag_removed', { patientId: props.patientId, tag })
 }
 
 const flagRows = computed(() => {

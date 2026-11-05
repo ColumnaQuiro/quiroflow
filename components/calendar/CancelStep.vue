@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { formatEur, formatTime } from '~/utils/billing'
 import { offerExpiresAt, waitlistEntryMatches } from '~/utils/waitlistOffer'
+import { prepaidCardCents } from '~/utils/prepaidVisit'
 
 // Cancelling a visit, as a step inside the appointment panel rather than a
 // value in a Status dropdown. It asks the two questions a cancellation
@@ -8,7 +9,10 @@ import { offerExpiresAt, waitlistEntryMatches } from '~/utils/waitlistOffer'
 //
 //   1. Is the fee charged? Nothing, onto the balance, or the card on file.
 //      Hidden when the clinic has no cancellation fee.
-//   2. What happens to the slot? Offer it to the first matching waitlist
+//   2. Paid ahead by card (from the patient app, or a booking deposit)? The
+//      money goes back to the card or stays as credit. Only asked of someone
+//      who may move money (billing_access).
+//   3. What happens to the slot? Offer it to the first matching waitlist
 //      entry -- named, with the deadline they will be given -- or leave it
 //      free. Cancelling used to call offer-next silently every time.
 //
@@ -73,6 +77,10 @@ interface WaitingRow {
 const matches = ref<WaitingEntry[]>([])
 
 const fee = ref<'none' | 'balance' | 'card'>('none')
+const { can } = usePermission()
+const prepaidCents = ref(0)
+const prepaid = ref<'refund' | 'credit'>('refund')
+const prepaidText = computed(() => formatEur(prepaidCents.value))
 const offer = ref(false)
 // Settings > Waitlist: everyone who fits at once, the first to accept wins.
 const toAll = ref(false)
@@ -81,7 +89,7 @@ const busy = ref(false)
 const error = ref('')
 
 onMounted(async () => {
-  const [{ data: account }, cardRes, { data: waiting }] = await Promise.all([
+  const [{ data: account }, cardRes, { data: waiting }, prepaidRes] = await Promise.all([
     supabase.from('accounts').select('cancellation_fee_cents, waitlist_offer_mode').eq('id', store.accountId!).maybeSingle(),
     // Which card, if any. Only shown to staff who may see it (billing_config);
     // anyone else simply gets no card option.
@@ -91,7 +99,9 @@ onMounted(async () => {
     // patients' waitlist rows, but the slot goes to whoever is first in line
     // all the same, so the match has to be made against everyone.
     supabase.rpc('waitlist_waiting_in_clinic', { p_clinic_id: store.currentClinicId! }),
+    can('billing_access') ? prepaidCardCents(supabase, props.appointment.id) : Promise.resolve(0),
   ])
+  prepaidCents.value = prepaidRes
   feeCents.value = account?.cancellation_fee_cents ?? 0
   toAll.value = account?.waitlist_offer_mode === 'all_at_once'
   card.value = cardRes?.card ?? null
@@ -167,7 +177,13 @@ const summary = computed(() => {
     : toAll.value && offeredCount.value > 1
       ? t(` and ${offeredCount.value} people on the waitlist get the offer now.`, ` y ${offeredCount.value} personas de la lista de espera reciben la oferta ahora.`)
       : t(` and ${first} gets the offer now.`, ` y ${first} recibe la oferta ahora.`)
-  return t(`The appointment is kept as cancelled in their history${feePart}${slotPart}`, `La cita queda como cancelada en su historial${feePart}${slotPart}`)
+  const prepaidPart =
+    prepaidCents.value > 0
+      ? prepaid.value === 'refund'
+        ? t(`, ${prepaidText.value} goes back to their card`, `, se le devuelven ${prepaidText.value} a la tarjeta`)
+        : t(`, ${prepaidText.value} stays on their account`, `, ${prepaidText.value} quedan como saldo a su favor`)
+      : ''
+  return t(`The appointment is kept as cancelled in their history${feePart}${prepaidPart}${slotPart}`, `La cita queda como cancelada en su historial${feePart}${prepaidPart}${slotPart}`)
 })
 
 async function confirmCancel() {
@@ -205,6 +221,20 @@ async function confirmCancel() {
       }
     } catch {
       showToast(t('Cancelled, but the fee could not be recorded.', 'Cancelada, pero no se pudo registrar el cargo.'), 'error', 7000)
+    }
+  }
+
+  if (prepaidCents.value > 0) {
+    try {
+      await useStaffFetch('/api/appointments/prepaid-visit', { method: 'POST', body: { appointmentId: props.appointment.id, action: prepaid.value } })
+    } catch {
+      showToast(
+        prepaid.value === 'refund'
+          ? t('Cancelled, but the payment could not be refunded. Refund it from their Billing tab.', 'Cancelada, pero no se ha podido devolver el pago. Devuélvelo desde su pestaña de Cobro.')
+          : t('Cancelled, but the payment could not be kept as credit.', 'Cancelada, pero el pago no ha podido quedar como saldo.'),
+        'error',
+        8000,
+      )
     }
   }
 
@@ -268,7 +298,28 @@ async function confirmCancel() {
           </label>
         </fieldset>
 
-        <!-- 2. The slot. -->
+        <!-- 2. Money paid ahead. Not there when nothing was. -->
+        <fieldset v-if="prepaidCents > 0" class="mt-5 flex flex-col gap-2" data-cy="cancel-prepaid">
+          <legend class="mb-2 text-[13.5px] font-bold text-ink-900">{{ t(`They paid ${prepaidText} ahead by card. What happens to it?`, `Pagó ${prepaidText} por adelantado con tarjeta. ¿Qué se hace con el pago?`) }}</legend>
+          <label
+            v-for="o in [
+              { key: 'refund', title: t(`Refund ${prepaidText} to their card`, `Devolver ${prepaidText} a su tarjeta`), sub: t('Refunded through Stripe now, with its rectifying factura.', 'Se devuelve ahora por Stripe, con su factura rectificativa.') },
+              { key: 'credit', title: t(`Keep ${prepaidText} as credit`, `Dejar ${prepaidText} como saldo`), sub: t('Stays on their account for the next visit.', 'Queda a su favor para la próxima visita.') },
+            ]"
+            :key="o.key"
+            class="flex min-h-9 touch:min-h-11 cursor-pointer items-start gap-3 rounded-[12px] px-3.5 py-3"
+            :class="prepaid === o.key ? 'border-[1.5px] border-brand bg-brand-tint' : 'border border-line-control bg-surface'"
+            :data-cy="`cancel-prepaid-${o.key}`"
+          >
+            <input v-model="prepaid" type="radio" name="prepaid" :value="o.key" class="mt-1 accent-brand" />
+            <span class="flex flex-col gap-0.5">
+              <span class="text-[14px] font-semibold text-ink-900">{{ o.title }}</span>
+              <span class="text-[12.5px] text-ink-muted">{{ o.sub }}</span>
+            </span>
+          </label>
+        </fieldset>
+
+        <!-- 3. The slot. -->
         <fieldset class="mt-5 flex flex-col gap-2" data-cy="cancel-slot">
           <legend class="mb-2 text-[13.5px] font-bold text-ink-900">{{ t(`The ${formatTime(appointment.starts_at)} slot`, `El hueco de las ${formatTime(appointment.starts_at)}`) }}</legend>
           <div v-if="matches.length" class="overflow-hidden rounded-card border border-line" data-cy="cancel-waitlist">

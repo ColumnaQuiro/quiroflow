@@ -18,6 +18,9 @@ const hasStoredSecretKey = ref(false)
 const webhookSecret = ref('')
 const hasStoredWebhookSecret = ref(false)
 const showLegacyForm = ref(false)
+// Patients paying their visits from the app (server/utils/appPayments.ts).
+const appPayments = ref(false)
+const savingAppPayments = ref(false)
 
 const { showToast } = useToast()
 const loading = ref(true)
@@ -44,10 +47,11 @@ async function load() {
   loading.value = true
   const { data } = await supabase
     .from('accounts')
-    .select('stripe_connect_account_id, stripe_publishable_key')
+    .select('stripe_connect_account_id, stripe_publishable_key, stripe_app_payments_enabled')
     .eq('id', store.accountId!)
     .maybeSingle()
   connectAccountId.value = data?.stripe_connect_account_id ?? null
+  appPayments.value = data?.stripe_app_payments_enabled ?? false
   publishableKey.value = data?.stripe_publishable_key ?? ''
   // The secrets are not selectable from here any more -- account_secrets
   // grants nothing to the browser. This endpoint reports only whether each is
@@ -99,6 +103,17 @@ async function save() {
   if (webhookSecret.value.trim()) hasStoredWebhookSecret.value = true
   secretKey.value = ''
   webhookSecret.value = ''
+}
+
+async function toggleAppPayments(on: boolean) {
+  savingAppPayments.value = true
+  const { error: updateError } = await supabase.from('accounts').update({ stripe_app_payments_enabled: on }).eq('id', store.accountId!)
+  savingAppPayments.value = false
+  if (updateError) {
+    showToast(updateError.message, 'error')
+    return
+  }
+  appPayments.value = on
 }
 
 async function testConnection() {
@@ -380,6 +395,32 @@ const GENERIC_ICON = 'M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6'
                 <a href="/api/stripe/connect/start" data-cy="stripe-connect" class="inline-flex h-9 touch:h-11 items-center rounded-ctl border border-brand bg-brand px-3.5 text-[13px] font-semibold text-brand-on hover:bg-brand-hover">
                   {{ t('Connect with Stripe', 'Conectar con Stripe') }}
                 </a>
+              </div>
+
+              <!-- Only once Stripe can take the money. -->
+              <div v-if="connectAccountId || hasStoredSecretKey" class="flex items-center gap-3.5 border-t border-line-row px-[18px] py-3.5" data-cy="stripe-app-payments">
+                <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <strong class="text-[14px] text-ink-900">{{ t('Patients pay their visits from the app', 'Los pacientes pagan sus visitas desde la app') }}</strong>
+                  <span class="text-[12.5px] leading-snug text-ink-muted">
+                    {{ t(
+                      'With the card they save there: ahead of a booked visit, or for the one they have just had, at the visit’s own price. Each payment is recorded with its factura, as one taken at the desk. A visit they cancel is refunded to the card. Not offered to patients holding a bono.',
+                      'Con la tarjeta que guardan allí: por adelantado para una cita reservada, o la visita que acaban de tener, al precio de la visita. Cada pago queda registrado con su factura, como uno cobrado en recepción. Si cancelan la cita, se les devuelve a la tarjeta. No se ofrece a quien tiene un bono.',
+                    ) }}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  data-cy="stripe-app-payments-toggle"
+                  :aria-checked="appPayments"
+                  :aria-label="t('Patients pay their visits from the app', 'Los pacientes pagan sus visitas desde la app')"
+                  :disabled="savingAppPayments"
+                  class="relative h-[26px] w-11 shrink-0 rounded-full disabled:opacity-60"
+                  :class="appPayments ? 'bg-brand' : 'bg-line-control'"
+                  @click="toggleAppPayments(!appPayments)"
+                >
+                  <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card left-[3px] transition-transform" :class="appPayments ? 'translate-x-[18px]' : 'translate-x-0'" />
+                </button>
               </div>
 
               <div class="border-t border-line">

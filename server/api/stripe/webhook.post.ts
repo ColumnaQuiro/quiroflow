@@ -44,7 +44,7 @@ export default defineEventHandler(async (event) => {
     return { received: true }
   }
 
-  await handleStripeEvent(supabase, account.id, stripeEvent, getRequestURL(event).origin)
+  await handleStripeEvent(supabase, account.id, stripeEvent, getRequestURL(event).origin, { stripe: platform, options: { stripeAccount: stripeEvent.account } })
 
   return { received: true }
 })

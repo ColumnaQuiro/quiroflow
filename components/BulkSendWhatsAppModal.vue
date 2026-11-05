@@ -39,8 +39,13 @@ function templateKey(t: Pick<Template, 'name' | 'language'>) {
 }
 const selectedTemplate = computed(() => templates.value.find((t) => templateKey(t) === selectedTemplateKey.value) ?? null)
 const isLocationTemplate = computed(() => selectedTemplate.value?.mediaHeaderFormat === 'LOCATION')
+// A file header is chosen from one patient's own files, so a batch has
+// nothing to put in it -- and WhatsApp refuses the template without one.
+const needsAttachment = computed(() => !!selectedTemplate.value?.mediaHeaderFormat && !isLocationTemplate.value)
 const canSend = computed(() => {
   if (!selectedTemplate.value) return false
+  if (needsAttachment.value) return false
+  if (sharedVariables.value.some((v) => !v.trim())) return false
   if (isLocationTemplate.value) return locationLatitude.value !== '' && locationLongitude.value !== ''
   return true
 })
@@ -150,6 +155,10 @@ const fieldId = useId()
                 />
               </div>
             </div>
+
+            <p v-if="needsAttachment" class="mt-3 text-[13px] text-danger-text" data-cy="bulk-whatsapp-needs-attachment">
+              {{ t('This template needs an attachment, which can only be sent to one patient at a time.', 'Esta plantilla necesita un adjunto, que solo se puede enviar a un paciente cada vez.') }}
+            </p>
 
             <div v-if="isLocationTemplate" class="mt-3 space-y-2">
               <label class="block text-xs font-medium text-ink-muted">{{ t('Location', 'Ubicación') }} {{ t('(required by template)', '(requerido por la plantilla)') }}</label>

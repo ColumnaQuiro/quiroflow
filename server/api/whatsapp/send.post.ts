@@ -143,6 +143,20 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  // Meta refuses a template with an empty slot or a missing media header as
+  // "(#131008) Required parameter is missing" -- after the patient lookup,
+  // as a 502 that names neither. Say which, before asking Meta at all.
+  const emptySlot = (body.variables ?? []).findIndex((v) => !String(v ?? '').trim())
+  if (emptySlot !== -1) {
+    throw createError({ statusCode: 400, statusMessage: `Fill in {{${emptySlot + 1}}} before sending: WhatsApp refuses a template with an empty variable.` })
+  }
+  if (body.headerFormat === 'LOCATION' && !body.location) {
+    throw createError({ statusCode: 400, statusMessage: 'This template needs a location.' })
+  }
+  if (body.headerFormat && body.headerFormat !== 'LOCATION' && !components.some((c) => c.type === 'header')) {
+    throw createError({ statusCode: 400, statusMessage: `This template needs a ${body.headerFormat.toLowerCase()} attached.` })
+  }
+
   if (body.variables?.length) {
     components.push({ type: 'body', parameters: body.variables.map((v) => ({ type: 'text', text: v })) })
   }
@@ -164,8 +178,14 @@ export default defineEventHandler(async (event) => {
     // status or a reply (via the webhook) back to this specific send.
     wamid = response?.messages?.[0]?.id ?? null
   } catch (err: any) {
+    // error_data.details is where Meta says WHICH parameter; the message
+    // alone is a category ("Required parameter is missing").
     const metaMessage = err?.data?.error?.message
-    throw createError({ statusCode: 502, statusMessage: metaMessage ?? 'WhatsApp send failed' })
+    const metaDetails = err?.data?.error?.error_data?.details
+    throw createError({
+      statusCode: 502,
+      statusMessage: metaMessage ? (metaDetails ? `${metaMessage}: ${metaDetails}` : metaMessage) : 'WhatsApp send failed',
+    })
   }
 
   const purpose =

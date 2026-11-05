@@ -117,7 +117,11 @@ function selectTemplate(key: string) {
 const isLocationTemplate = computed(() => selectedTemplate.value?.mediaHeaderFormat === 'LOCATION')
 const canSend = computed(() => {
   if (!selectedTemplate.value) return false
+  // WhatsApp refuses an empty {{n}} or a media header with nothing in it
+  // ("(#131008) Required parameter is missing"), so neither can be sent.
+  if (variables.value.some((v) => !v.trim())) return false
   if (isLocationTemplate.value) return locationLatitude.value !== '' && locationLongitude.value !== ''
+  if (selectedTemplate.value.mediaHeaderFormat) return attachmentFileId.value !== ''
   return true
 })
 

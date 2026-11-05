@@ -125,7 +125,8 @@ describe('Patient education', () => {
           table: 'learn_articles',
           rows: [
             { account_id: account.accountId, title: 'Dormir sin dolor', body: 'De lado con un cojín.\n\nNunca boca abajo.', tags: ['habitos'] },
-            { account_id: account.accountId, title: 'Solo para quien se la envíe', body: 'Texto.' },
+            // Every row names every column: a bulk insert writes null, not the default, for one left out.
+            { account_id: account.accountId, title: 'Solo para quien se la envíe', body: 'Texto.', tags: [] },
           ],
         }).then(([visible]) => {
           cy.login(account.email, account.password)

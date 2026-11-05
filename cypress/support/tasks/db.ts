@@ -1770,6 +1770,11 @@ async function assignExercise(opts: { accountId: string; patientId: string; name
   return { exerciseId: exercise.id, patientExerciseId: pe.id }
 }
 
+/** Library exercises, assigned to nobody. */
+async function createExercises(opts: { accountId: string; names: string[] }) {
+  return unwrap(await admin.from('exercises').insert(opts.names.map((name) => ({ account_id: opts.accountId, name }))).select('id, name')) as { id: string; name: string }[]
+}
+
 /** A patient's daily exercise reminder, as set_my_exercise_reminder leaves it. */
 async function setExerciseReminder(opts: { patientId: string; hour: number | null; remindedOn?: string | null }) {
   assertOk(await admin.from('patients').update({ exercise_reminder_hour: opts.hour, exercise_reminded_on: opts.remindedOn ?? null }).eq('id', opts.patientId))
@@ -4601,6 +4606,7 @@ export const dbTasks = {
   'db:setPatientAppReschedule': setPatientAppReschedule,
   'db:setTeamMemberBookingFlags': setTeamMemberBookingFlags,
   'db:assignExercise': assignExercise,
+  'db:createExercises': createExercises,
   'db:setExerciseReminder': setExerciseReminder,
   'db:exerciseReminderState': exerciseReminderState,
   'db:setTeamMemberTheme': setTeamMemberTheme,

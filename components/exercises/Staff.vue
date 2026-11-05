@@ -20,6 +20,9 @@ import type { AssignedExercise } from '../../composables/useStaffExercises'
 // patient builds up as they can. The #app slot is for whatever tells the
 // clinician whether the patient will see it (the web record puts the app
 // status there; patients without the app never see their exercises).
+//
+// Below the list, ExercisesPatientSchedule plans them by visit: steps that
+// reach the patient by themselves as they attend each visit of their care.
 const props = defineProps<{ accountId: string; patientId: string; teamMemberId: string | null }>()
 
 const t = useT()
@@ -342,7 +345,9 @@ const input = 'h-10 w-full rounded-ctl border border-line-control bg-surface px-
             <p class="min-w-0 text-[13.5px] font-medium leading-snug text-ink-900">{{ pe.exercises?.name }}</p>
             <button type="button" class="shrink-0 text-[12px] font-medium text-ink-muted hover:text-ink-700" :data-cy="`exercise-end-${pe.id}`" @click="end(pe.id)">{{ t('Remove', 'Quitar') }}</button>
           </div>
-          <p v-if="dose(pe)" class="text-[12.5px] text-ink-muted" data-cy="exercise-row-dose">{{ dose(pe) }}</p>
+          <p v-if="dose(pe) || pe.patient_schedule_id" class="text-[12.5px] text-ink-muted" data-cy="exercise-row-dose">
+            {{ dose(pe) }}<span v-if="pe.patient_schedule_id" class="ml-1 rounded-full bg-brand-tint px-1.5 py-px text-[11px] font-medium text-brand-text" data-cy="exercise-row-scheduled">{{ t('By visit', 'Por visitas') }}</span>
+          </p>
           <div class="mt-1.5 flex items-center gap-1" :aria-label="t('Last seven days', 'Últimos siete días')">
             <span v-for="d in daysDone(pe)" :key="d.date" class="flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-semibold" :class="d.done ? 'bg-success-accent text-success-on' : 'bg-chip-bg text-ink-faint'" :title="d.date">{{ d.initial }}</span>
             <span class="ml-1.5 text-[11.5px] text-ink-muted2" data-cy="exercise-adherence">{{ t(`${daysDone(pe).filter((d) => d.done).length} of 7 days`, `${daysDone(pe).filter((d) => d.done).length} de 7 días`) }}</span>
@@ -351,6 +356,18 @@ const input = 'h-10 w-full rounded-ctl border border-line-control bg-surface px-
       </li>
     </ul>
     <p v-else-if="!open" class="mt-1.5 text-[13px] text-ink-faint">{{ t('None assigned yet.', 'Aún no tiene ninguno.') }}</p>
+
+    <!-- Kept mounted across the list's reloads, so what it just said stays on screen. -->
+    <ExercisesPatientSchedule
+      v-if="!loadError"
+      v-show="!open"
+      :account-id="accountId"
+      :patient-id="patientId"
+      :team-member-id="teamMemberId"
+      :library="library.map((e) => ({ id: e.id, name: e.name }))"
+      :programs="programs"
+      @changed="load"
+    />
 
     <p v-if="notice" class="mt-1.5 text-[12.5px] text-success-text" data-cy="exercises-notice">{{ notice }}</p>
     <div v-if="!loading && !open && assigned.length >= 2" class="mt-1">

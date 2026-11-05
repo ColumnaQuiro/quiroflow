@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { readSteps } from '~/utils/exerciseSchedule'
 // The clinic's library of home exercises: what a practitioner picks from
 // when assigning one on a patient's record (components/exercises/Staff.vue),
 // which is also where most of them are first created.
@@ -48,24 +49,42 @@ const loading = ref(true)
 async function load() {
   // Two embedded counts of the same relation: patients doing it now (not
   // ended) and ever, which is what decides whether delete is safe.
+  // The relationship is named because patient_exercises has more than one
+  // foreign key now (patient_schedule_id too).
   const { data, error } = await supabase
     .from('exercises')
-    .select('id, name, instructions, media_url, media_path, starter_key, archived_at, current:patient_exercises(count), ever:patient_exercises(count), in_programs:exercise_program_items(count)')
+    .select('id, name, instructions, media_url, media_path, starter_key, archived_at, current:patient_exercises!patient_exercises_exercise_id_fkey(count), ever:patient_exercises!patient_exercises_exercise_id_fkey(count), in_programs:exercise_program_items(count)')
     .is('current.ended_at', null)
     .order('name')
   if (error) showToast(error.message, 'error')
   exercises.value = (data as unknown as LibraryExercise[] | null) ?? []
   loading.value = false
-  // A renamed or archived exercise shows in the programmes too.
+  // A renamed or archived exercise shows in the programmes and schedules too.
   programsSection.value?.reload()
+  schedulesSection.value?.reload()
+  loadScheduled()
   catalogSection.value?.reload()
 }
 onMounted(load)
 
 const nowCount = (e: LibraryExercise) => e.current?.[0]?.count ?? 0
 const everCount = (e: LibraryExercise) => e.ever?.[0]?.count ?? 0
-const deletable = (e: LibraryExercise) => everCount(e) === 0 && (e.in_programs?.[0]?.count ?? 0) === 0
+// Schedules hold exercises by id inside their steps, which no foreign key
+// sees: one a template or a patient's schedule still names is archived
+// rather than deleted, so the step does not silently lose it.
+const inSchedules = ref(new Set<string>())
+async function loadScheduled() {
+  const [{ data: templates }, { data: patients }] = await Promise.all([
+    supabase.from('exercise_schedules').select('steps'),
+    supabase.from('patient_exercise_schedules').select('steps').is('ended_at', null),
+  ])
+  inSchedules.value = new Set(
+    [...((templates as { steps: unknown }[] | null) ?? []), ...((patients as { steps: unknown }[] | null) ?? [])].flatMap((r) => readSteps(r.steps).flatMap((st) => st.items.map((i) => i.exercise_id))),
+  )
+}
+const deletable = (e: LibraryExercise) => everCount(e) === 0 && (e.in_programs?.[0]?.count ?? 0) === 0 && !inSchedules.value.has(e.id)
 const programsSection = ref<{ reload: () => Promise<void> } | null>(null)
+const schedulesSection = ref<{ reload: () => Promise<void> } | null>(null)
 const active = computed(() => exercises.value.filter((e) => !e.archived_at))
 const archived = computed(() => exercises.value.filter((e) => e.archived_at))
 
@@ -258,6 +277,14 @@ const iconBtn = 'flex h-9 w-9 touch:h-11 touch:w-11 shrink-0 items-center justif
           </section>
 
           <ExercisesPrograms v-if="store.accountId" ref="programsSection" :account-id="store.accountId" :exercises="active.map((e) => ({ id: e.id, name: e.name }))" @changed="load" />
+          <ExercisesSchedules
+            v-if="store.accountId"
+            ref="schedulesSection"
+            :account-id="store.accountId"
+            :team-member-id="store.teamMember?.id ?? null"
+            :exercises="active.map((e) => ({ id: e.id, name: e.name }))"
+            :names="Object.fromEntries(exercises.map((e) => [e.id, e.name]))"
+          />
 
           <ExercisesCatalog
             v-if="store.accountId"

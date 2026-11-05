@@ -30,12 +30,12 @@ describe('Settings > Care plans', () => {
         }).then(([breathe, desk]) => {
           cy.login(account.email, account.password)
           cy.visit('/settings')
-          cy.contains('nav a', 'Care plans').click()
+          cy.get('a[href="/settings/care-plans"]').first().click()
           cy.location('pathname').should('eq', '/settings/care-plans')
           cy.get('[data-cy=care-plan-settings][data-ready=true]', { timeout: 20000 })
 
           // The defaults.
-          cy.get('[data-cy=maintenance-visits]').should('have.value', '1')
+          cy.get('[data-cy=maintenance-per-period]').should('have.value', '1')
           cy.get('[data-cy=maintenance-every]').should('have.value', '1')
           cy.get('[data-cy=maintenance-unit]').should('have.value', 'month')
           cy.get('[data-cy=maintenance-no-end]').should('be.checked')

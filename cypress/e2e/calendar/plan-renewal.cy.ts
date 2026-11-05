@@ -104,7 +104,7 @@ describe('Plan renewal at the review', () => {
           // Back to the two a week they had, keeping the eight visits.
           cy.get('[data-cy=plan-renewal-previous]').should('contain', '2× a week')
           cy.get('[data-cy=plan-renewal-use-previous]').click()
-          cy.get('[data-cy=plan-renewal-visits]').should('have.value', '2')
+          cy.get('[data-cy=plan-renewal-per-period]').should('have.value', '2')
           cy.get('[data-cy=plan-renewal-every]').should('have.value', '1')
           cy.get('[data-cy=plan-renewal-total]').should('have.value', '8')
           cy.get('[data-cy=plan-renewal-name]').should('have.value', 'Plan lumbar')

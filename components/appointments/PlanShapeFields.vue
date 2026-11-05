@@ -38,7 +38,7 @@ const field = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-surface 
         :disabled="disabled"
         :aria-label="t('Visits', 'Visitas')"
         :class="[field, 'w-16 text-center font-mono']"
-        :data-cy="`${cyPrefix}-visits`"
+        :data-cy="`${cyPrefix}-per-period`"
         @change="set('visits_per_period', clampInt(($event.target as HTMLInputElement).value, 1, 7))"
       />
       <span>{{ model.visits_per_period === 1 ? t('visit every', 'visita cada') : t('visits every', 'visitas cada') }}</span>

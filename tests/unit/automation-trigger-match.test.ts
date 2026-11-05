@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { triggerDocMatches, triggerScoreMatches, triggerStageMatches, triggerTagMatches } from '../../utils/automationTriggerMatch'
+import { triggerBonoMatches, triggerCarePlanMatches, triggerDocMatches, triggerScoreMatches, triggerStageMatches, triggerTagMatches } from '../../utils/automationTriggerMatch'
 import { TRIGGERS, isLeadTrigger, triggerTitle } from '../../utils/automationCatalog'
 
 // A rule's own setting for the trigger that starts it: an empty one takes
@@ -46,5 +46,21 @@ describe('the new triggers in the catalog', () => {
     expect(triggerTitle(t, 'satisfaction.answered', { trigger_score: 'low' })).toBe('Rated the visit 1-3')
     expect(triggerTitle(t, 'lead.stage_changed', { trigger_lead_stage: 'lost' })).toBe('Lead moved to Lost')
     expect(triggerTitle(t, 'doc.completed', {})).toBe('Form completed')
+  })
+})
+
+describe('care plan and bono settings', () => {
+  const plan = { total_visits: 12, markers: [{ at: 6, every: 6 }] }
+  it('is due the visit before a marked re-exam, by default', () => {
+    expect([4, 5, 6, 11].filter((k) => triggerCarePlanMatches({}, k, plan))).toEqual([5, 11])
+  })
+  it('knows the last visit, and a numbered one', () => {
+    expect(triggerCarePlanMatches({ trigger_milestone: 'finished' }, 12, plan)).toBe(true)
+    expect(triggerCarePlanMatches({ trigger_milestone: 'finished' }, 11, plan)).toBe(false)
+    expect(triggerCarePlanMatches({ trigger_milestone: 'visit', trigger_visit_number: 3 }, 3, plan)).toBe(true)
+  })
+  it('counts sessions left, one by default', () => {
+    expect([0, 1, 2].filter((n) => triggerBonoMatches({}, n))).toEqual([0, 1])
+    expect([0, 1, 2].filter((n) => triggerBonoMatches({ trigger_sessions_left: 0 }, n))).toEqual([0])
   })
 })

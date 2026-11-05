@@ -20,7 +20,7 @@ export interface TriggerDef {
   /** "When…" sentence in the trigger panel's picker. */
   sentence: Pair
   description: Pair
-  group: 'appointment' | 'money' | 'patient' | 'membership' | 'waitlist' | 'segment' | 'lead'
+  group: 'appointment' | 'money' | 'patient' | 'care' | 'membership' | 'waitlist' | 'segment' | 'lead'
   /** An appointment is in scope, so appointment-type / practitioner filters can apply. */
   appointmentContext: boolean
   /** Lead triggers are part of Growth. */
@@ -217,6 +217,28 @@ export const TRIGGERS: TriggerDef[] = [
     appointmentContext: false,
   },
   {
+    value: 'care_plan.milestone',
+    label: ['Care plan milestone', 'Hito del plan de cuidado'],
+    sentence: ['A visit of the care plan is completed', 'Se completa una visita del plan de cuidado'],
+    description: [
+      'After a completed visit: when the next one is a re-exam on the plan, when it was the last of the plan, or on visit number N. Checked every 15 minutes.',
+      'Tras una visita completada: cuando la siguiente es una revisión del plan, cuando era la última del plan, o en la visita número N. Se comprueba cada 15 minutos.',
+    ],
+    group: 'care',
+    appointmentContext: true,
+  },
+  {
+    value: 'bono.running_low',
+    label: ['Bono running low', 'Bono a punto de acabarse'],
+    sentence: ['A bono is nearly used up', 'A un bono le quedan pocas sesiones'],
+    description: [
+      'When a session used leaves the bono with that many sessions or fewer, once per bono. Checked every 15 minutes.',
+      'Cuando una sesión usada deja el bono con esas sesiones o menos, una vez por bono. Se comprueba cada 15 minutos.',
+    ],
+    group: 'care',
+    appointmentContext: false,
+  },
+  {
     value: 'segment',
     label: ['A group of patients', 'Un segmento de pacientes'],
     sentence: ['A group of patients, once or on a schedule', 'Un grupo de pacientes, una vez o con un horario'],
@@ -251,6 +273,7 @@ export const TRIGGER_GROUPS: { key: TriggerDef['group']; label: Pair }[] = [
   { key: 'appointment', label: ['Appointments', 'Citas'] },
   { key: 'money', label: ['Billing', 'Facturación'] },
   { key: 'patient', label: ['Patients', 'Pacientes'] },
+  { key: 'care', label: ['Care plans and bonos', 'Planes de cuidado y bonos'] },
   { key: 'membership', label: ['Memberships', 'Membresías'] },
   { key: 'waitlist', label: ['Waitlist', 'Lista de espera'] },
   { key: 'segment', label: ['Groups', 'Grupos'] },
@@ -287,6 +310,18 @@ export function triggerTitle(t: Translate, event: string, filters?: Record<strin
   }
   if (event === 'satisfaction.answered' && (filters?.trigger_score === 'high' || filters?.trigger_score === 'low')) {
     return filters.trigger_score === 'high' ? t('Rated the visit 4-5', 'Valoró la visita con 4-5') : t('Rated the visit 1-3', 'Valoró la visita con 1-3')
+  }
+  if (event === 'care_plan.milestone') {
+    if (filters?.trigger_milestone === 'finished') return t('Care plan finished', 'Plan de cuidado terminado')
+    if (filters?.trigger_milestone === 'visit') {
+      const n = Number(filters.trigger_visit_number) || 1
+      return t(`Visit ${n} of the care plan`, `Visita ${n} del plan de cuidado`)
+    }
+    return t('Re-exam is the next visit', 'La siguiente visita es la revisión')
+  }
+  if (event === 'bono.running_low') {
+    const n = Number.isInteger(Number(filters?.trigger_sessions_left)) && filters?.trigger_sessions_left !== undefined ? Number(filters.trigger_sessions_left) : 1
+    return n === 0 ? t('Bono used up', 'Bono agotado') : t(`Bono with ${n} session${n === 1 ? '' : 's'} left`, `Bono con ${n} sesi${n === 1 ? 'ón' : 'ones'} restante${n === 1 ? '' : 's'}`)
   }
   if (event === 'lead.stage_changed' && typeof filters?.trigger_lead_stage === 'string') {
     const stage = LEAD_STAGE_OPTIONS.find((o) => o.value === filters.trigger_lead_stage)

@@ -1,6 +1,6 @@
-// Four triggers raised where their event already happens, not by the
-// calendar: a satisfaction answer, a tag added or removed, a form completed,
-// a lead moved to a stage. Each rule is in test mode with one email step, so
+// Triggers raised where their event already happens, not by the calendar: a
+// satisfaction answer, a tag added or removed, a form completed, a care plan
+// milestone, a bono running low, a lead moved to a stage. Each rule is in test mode with one email step, so
 // a start is visible as the email it records -- and its absence as none.
 
 interface SeededAccount {
@@ -94,6 +94,40 @@ describe('Automations started by events', () => {
       tick()
       emailsFor(p.id).should((rows) => {
         expect(rows.map((r) => r.subject)).to.deep.eq(['Formulario recibido'])
+      })
+    })
+  })
+
+  const tick = () => cy.request({ method: 'POST', url: '/api/automations/lead-sequence-cron', headers: { 'x-cron-secret': Cypress.env('CRON_SECRET') ?? '' } })
+  const ago = (ms: number) => new Date(Date.now() - ms).toISOString()
+
+  it('starts after the visit before a re-exam on the care plan, once', () => {
+    rule('care_plan.milestone', {}, 'Toca revisión')
+    patient().then((p) => {
+      const today = new Date().toISOString().slice(0, 10)
+      cy.task('db:insertRows', { table: 'care_plans', rows: [{ account_id: account.accountId, patient_id: p.id, total_visits: 12, started_at: today, visit_markers: [{ at: 3 }] }] })
+      // Visit 1 and visit 2 of the plan, today; a cancelled one between them does not count.
+      const visit = (startsAt: string, status: string) => cy.task<{ id: string }>('db:createAppointment', { accountId: account.accountId, clinicId: account.clinicId, patientId: p.id, startsAt, status })
+      visit(ago(40 * 1000), 'completed')
+      visit(ago(30 * 1000), 'cancelled')
+      visit(ago(20 * 1000), 'completed').then(() => {
+        tick()
+        tick()
+        // Visit 1 is not before a re-exam; visit 2 is (visit 3 is marked).
+        emailsFor(p.id).should((rows) => expect(rows.map((r) => r.subject)).to.deep.eq(['Toca revisión']))
+      })
+    })
+  })
+
+  it('starts when a session leaves a bono with one left, once per bono', () => {
+    rule('bono.running_low', { trigger_sessions_left: 1 }, 'Te queda una sesión')
+    patient().then((p) => {
+      cy.task<{ id: string }[]>('db:insertRows', { table: 'package_purchases', rows: [{ account_id: account.accountId, patient_id: p.id, package_name: 'Bono 5', sessions_total: 5, sessions_used: 4, price_cents: 20000 }] }).then((rows) => {
+        const purchaseId = (rows as unknown as { id: string }[])[0]!.id
+        cy.task('db:insertRows', { table: 'package_sessions', rows: [{ account_id: account.accountId, patient_id: p.id, package_purchase_id: purchaseId, amount_cents: 4000, used_at: new Date().toISOString() }] })
+        tick()
+        tick()
+        emailsFor(p.id).should((rows) => expect(rows.map((r) => r.subject)).to.deep.eq(['Te queda una sesión']))
       })
     })
   })

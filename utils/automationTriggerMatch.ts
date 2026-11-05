@@ -7,6 +7,8 @@
 // An empty setting takes every event of its kind. Pure, so the server and the
 // unit tests ask the same question.
 
+import { markerForVisit, type CarePlanVisitMarker } from './carePlanVisitMarkers'
+
 type Filters = Record<string, unknown> | null | undefined
 
 const norm = (s: unknown) => String(s ?? '').trim().toLowerCase()
@@ -34,4 +36,29 @@ export function triggerDocMatches(filters: Filters, templateId: string | null): 
 export function triggerStageMatches(filters: Filters, stage: string): boolean {
   const want = filters?.trigger_lead_stage
   return typeof want !== 'string' || !want || want === stage
+}
+
+/**
+ * care_plan.milestone, for the visit just completed, the kth of its plan:
+ *  - 'reexam_next' (the default): the plan marks the next visit, k+1, as a
+ *    re-exam (utils/carePlanVisitMarkers.ts), so it is time to book it;
+ *  - 'finished': it was the plan's last visit;
+ *  - 'visit': it was visit number trigger_visit_number.
+ */
+export function triggerCarePlanMatches(
+  filters: Filters,
+  k: number,
+  plan: { total_visits: number | null; markers: CarePlanVisitMarker[] },
+): boolean {
+  const kind = filters?.trigger_milestone
+  if (kind === 'finished') return !!plan.total_visits && k === plan.total_visits
+  if (kind === 'visit') return k === Number(filters?.trigger_visit_number)
+  return !!markerForVisit(plan.markers, k + 1)
+}
+
+/** bono.running_low: the sessions left after the one just used, at most trigger_sessions_left (1 by default; 0 is used up). */
+export function triggerBonoMatches(filters: Filters, sessionsLeft: number): boolean {
+  const n = Number(filters?.trigger_sessions_left)
+  const threshold = Number.isInteger(n) && n >= 0 ? n : 1
+  return sessionsLeft <= threshold
 }

@@ -30,7 +30,7 @@ interface PlanAlert {
   first_name: string | null
   last_name: string | null
   care_plan_name: string | null
-  total_visits: number
+  total_visits: number | null
   completed_in_plan: number
   last_appointment_at: string | null
   days_overdue: number
@@ -314,7 +314,7 @@ const td = 'px-3 py-2 font-mono text-[13px] text-ink-800'
                 <td class="px-3 py-2" data-pdf-skip><input type="checkbox" class="h-4 w-4 accent-brand" :checked="picked.has(p.patient_id)" :aria-label="t('Select', 'Seleccionar')" data-cy="retention-plan-pick" @change="togglePick(p.patient_id)" /></td>
                 <td class="px-3 py-2 text-[13px]"><NuxtLink :to="`/patients/${p.patient_id}`" class="font-medium text-ink-900 hover:text-brand-text">{{ `${p.first_name ?? ''} ${p.last_name ?? ''}`.trim() }}</NuxtLink></td>
                 <td class="px-3 py-2 text-[13px] text-ink-700">{{ p.care_plan_name }}</td>
-                <td :class="td">{{ p.completed_in_plan }} / {{ p.total_visits }}</td>
+                <td :class="td">{{ p.total_visits === null ? t(`${p.completed_in_plan} · no end`, `${p.completed_in_plan} · sin fin`) : `${p.completed_in_plan} / ${p.total_visits}` }}</td>
                 <td class="px-3 py-2 text-[13px] text-ink-muted">{{ when(p.last_appointment_at) }}</td>
                 <td class="px-3 py-2 text-[13px]" :class="p.days_overdue > 30 ? 'font-semibold text-danger-text' : 'text-warning-text'">{{ t(`${p.days_overdue} days`, `${p.days_overdue} días`) }}</td>
               </tr>

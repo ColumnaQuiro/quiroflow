@@ -18,6 +18,7 @@
 // Each section loads on its own, in parallel, with its own skeleton and its
 // own error, so a slow or failing one does not hold up or blank the rest.
 import { formatEur } from '../../../utils/billing'
+import { openEndedPlanLabel, planVisitsToBook } from '../../../utils/planRenewal'
 import { formatPhoneDisplay, toE164 } from '../../../utils/phone'
 
 definePageMeta({ layout: 'practitioner' })
@@ -147,7 +148,7 @@ function telHref(n: ContactNumber) {
 }
 
 // -- Care plan and the next visit -------------------------------------------
-interface Plan { id: string; name: string; total_visits: number; frequency_value: number; frequency_unit: string; visits_per_period: number | null; started_at: string; payment_kind: string | null; package_purchase_id: string | null; patient_membership_id: string | null }
+interface Plan { id: string; name: string; total_visits: number | null; frequency_value: number; frequency_unit: string; visits_per_period: number | null; started_at: string; payment_kind: string | null; package_purchase_id: string | null; patient_membership_id: string | null }
 interface NextAppt { id: string; starts_at: string; appointment_types: { name: string } | null }
 const plan = ref<Plan | null>(null)
 const completedInPlan = ref(0)
@@ -201,7 +202,7 @@ function onPlanSaved() {
   planLoading.value = true
   loadPlan()
 }
-const planPercent = computed(() => (plan.value && plan.value.total_visits > 0 ? Math.min(100, Math.round((completedInPlan.value / plan.value.total_visits) * 100)) : 0))
+const planPercent = computed(() => (plan.value && plan.value.total_visits && plan.value.total_visits > 0 ? Math.min(100, Math.round((completedInPlan.value / plan.value.total_visits) * 100)) : 0))
 function apptWhen(iso: string) {
   const d = new Date(iso)
   return `${shortDayLabel(d, locale.value, timeZone.value)} ${clinicTimeLabel(d, timeZone.value)}`
@@ -306,7 +307,7 @@ function openBookPlan() {
 }
 // Visits the plan has with nothing booked yet, roughly -- the sheet counts
 // them properly; this only decides whether to offer it.
-const planUnbooked = computed(() => (plan.value ? plan.value.total_visits - completedInPlan.value - upcomingVisits.value.filter((a) => a.starts_at >= plan.value!.started_at).length : 0))
+const planUnbooked = computed(() => (plan.value ? planVisitsToBook(plan.value, completedInPlan.value, upcomingVisits.value.filter((a) => a.starts_at >= plan.value!.started_at).length) : 0))
 const bookedNotice = ref('')
 let noticeTimer: ReturnType<typeof setTimeout> | undefined
 function onBooked(e: { startsAt: string; count?: number }) {
@@ -504,9 +505,13 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
                    12" on a plan half done. The plan's length instead, as the
                    visit screen does. -->
               <p v-if="plan && ownDiaryOnly" class="mt-1 text-[14px] font-semibold text-ink-900" data-cy="patient-plan-progress">
-                {{ t(`${plan.total_visits} visits`, `${plan.total_visits} visitas`) }}
+                {{ plan.total_visits === null ? t('No end', 'Sin fin') : t(`${plan.total_visits} visits`, `${plan.total_visits} visitas`) }}
               </p>
-              <template v-else-if="plan">
+              <template v-else-if="plan && plan.total_visits === null">
+                <p class="mt-1 text-[14px] font-semibold text-ink-900 first-letter:uppercase" data-cy="patient-plan-progress">{{ openEndedPlanLabel(completedInPlan, plan.started_at, t) }}</p>
+                <PatientsPlanPeriods v-if="plan.started_at" :patient-id="patient!.id" :plan="plan" :time-zone="timeZone" />
+              </template>
+              <template v-else-if="plan && plan.total_visits !== null">
                 <p class="mt-1 text-[14px] font-semibold text-ink-900" data-cy="patient-plan-progress">
                   {{ t('Visit', 'Visita') }} {{ Math.min(completedInPlan, plan.total_visits) }} {{ t('of', 'de') }} {{ plan.total_visits }}
                 </p>
@@ -517,7 +522,7 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
               </template>
               <!-- How it is paid (the web's line on the plan card). Without the
                    whole diary the visits left are unknown, so no coverage then. -->
-              <PatientsPlanPayment v-if="plan" :plan="plan" :visits-left="ownDiaryOnly ? 0 : Math.max(0, plan.total_visits - completedInPlan)" />
+              <PatientsPlanPayment v-if="plan" :plan="plan" :visits-left="ownDiaryOnly || plan.total_visits === null ? 0 : Math.max(0, plan.total_visits - completedInPlan)" />
               <p class="mt-1.5 text-[12.5px]" :class="nextAppt ? 'text-ink-muted2' : 'text-warning-text'">
                 <template v-if="nextAppt">{{ t('Next', 'Próxima') }}: {{ apptWhen(nextAppt.starts_at) }}<template v-if="nextAppt.appointment_types?.name"> · {{ nextAppt.appointment_types.name }}</template></template>
                 <template v-else-if="ownDiaryOnly">{{ t('Nothing booked with you.', 'Nada reservado contigo.') }}</template>
@@ -538,7 +543,7 @@ onBeforeUnmount(() => clearTimeout(noticeTimer))
                 </ul>
               </template>
               <button v-if="plan && canBook && !ownDiaryOnly && planUnbooked > 1" type="button" class="mt-2 flex h-10 w-full items-center justify-center rounded-ctl border border-brand bg-brand-tint text-[13px] font-semibold text-brand-text" data-cy="patient-book-plan" @click="openBookPlan">
-                {{ t(`Book the plan's visits (${planUnbooked} left)`, `Reservar las visitas del plan (quedan ${planUnbooked})`) }}
+                {{ plan.total_visits === null ? t(`Book the next ${planUnbooked} visits`, `Reservar las próximas ${planUnbooked} visitas`) : t(`Book the plan's visits (${planUnbooked} left)`, `Reservar las visitas del plan (quedan ${planUnbooked})`) }}
               </button>
             </template>
           </section>

@@ -9,6 +9,8 @@
 //   current      this period, still open, nothing missing yet
 //   unscheduled  ahead, and nothing booked in it
 //
+// A plan with no end (total_visits null) runs to the period after today's.
+//
 // Pure (tests/unit/care-plan-periods.test.ts). Dates are clinic days,
 // "YYYY-MM-DD", so the caller decides the zone; visits carry their own day.
 import { planVisitsPerPeriod, type PlanCadence } from './carePlanCadence'
@@ -29,7 +31,7 @@ export interface PlanPeriod {
 
 export interface PeriodPlan extends PlanCadence {
   started_at: string
-  total_visits: number
+  total_visits: number | null
 }
 
 function addDays(day: string, n: number): string {
@@ -45,14 +47,21 @@ function addMonths(day: string, n: number): string {
 export function carePlanPeriods(plan: PeriodPlan, visits: { day: string; status: string }[], today: string): PlanPeriod[] {
   const perPeriod = planVisitsPerPeriod(plan)
   const every = Math.max(1, plan.frequency_value)
-  const count = Math.max(1, Math.ceil(plan.total_visits / perPeriod))
   const startOf = (i: number) => (plan.frequency_unit === 'month' ? addMonths(plan.started_at, i * every) : addDays(plan.started_at, i * 7 * every))
+  let count: number
+  if (plan.total_visits === null) {
+    let current = 0
+    while (startOf(current + 1) <= today && current < 1000) current++
+    count = current + 2
+  } else {
+    count = Math.max(1, Math.ceil(plan.total_visits / perPeriod))
+  }
   const out: PlanPeriod[] = []
   for (let i = 0; i < count; i++) {
     const start = startOf(i)
     const end = addDays(startOf(i + 1), -1)
     // The last period may hold fewer than a full period's visits.
-    const expected = i === count - 1 ? plan.total_visits - perPeriod * (count - 1) : perPeriod
+    const expected = plan.total_visits !== null && i === count - 1 ? plan.total_visits - perPeriod * (count - 1) : perPeriod
     const inside = visits.filter((v) => v.day >= start && v.day <= end)
     const completed = inside.filter((v) => v.status === 'completed').length
     const booked = inside.filter((v) => v.status === 'booked' && v.day >= today).length

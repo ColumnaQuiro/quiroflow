@@ -24,8 +24,10 @@ interface Alert {
   frequency_value: number
   visits_per_period: number | null
   frequency_unit: string
-  total_visits: number
-  visits_remaining: number
+  /** null: a plan with no end, so nothing remaining either. */
+  total_visits: number | null
+  visits_remaining: number | null
+  completed_in_plan: number
   last_appointment_at: string
   due_date: string
   days_overdue: number
@@ -65,7 +67,7 @@ async function load(silent = false) {
   loadError.value = ''
   let q = supabase
     .from('care_plan_continuity_alerts')
-    .select('patient_id, first_name, last_name, preferred_language, care_plan_name, frequency_value, frequency_unit, visits_per_period, total_visits, visits_remaining, last_appointment_at, due_date, days_overdue, default_practitioner_id')
+    .select('patient_id, first_name, last_name, preferred_language, care_plan_name, frequency_value, frequency_unit, visits_per_period, total_visits, visits_remaining, completed_in_plan, last_appointment_at, due_date, days_overdue, default_practitioner_id')
     .order('days_overdue', { ascending: false })
   let eq = supabase
     .from('exercise_adherence_alerts')
@@ -143,7 +145,7 @@ function onSent() {
                 <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[12px] font-bold text-brand-text">{{ initialsOf(r) }}</span>
                 <span class="min-w-0">
                   <span class="block truncate text-[15px] font-semibold text-ink-900">{{ nameOf(r) }}</span>
-                  <span class="block truncate text-[12.5px] text-ink-muted">{{ r.care_plan_name ?? t('Care plan', 'Plan') }} · {{ cadence(r) }} · {{ r.total_visits - r.visits_remaining }}/{{ r.total_visits }}</span>
+                  <span class="block truncate text-[12.5px] text-ink-muted">{{ r.care_plan_name ?? t('Care plan', 'Plan') }} · {{ cadence(r) }} · {{ r.total_visits === null ? t(`${r.completed_in_plan} · no end`, `${r.completed_in_plan} · sin fin`) : `${r.completed_in_plan}/${r.total_visits}` }}</span>
                   <span class="block truncate text-[12.5px] text-ink-muted">{{ t('Last visit', 'Última visita') }} {{ shortDate(r.last_appointment_at) }} · {{ t('due', 'tocaba el') }} {{ shortDate(r.due_date) }}</span>
                 </span>
               </NuxtLink>

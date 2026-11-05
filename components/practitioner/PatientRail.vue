@@ -5,6 +5,7 @@ import { patientAge } from '../../utils/patientAge'
 import { pregnancyProgress, pregnancyWeeksLabel } from '../../utils/pregnancy'
 import { clinicDateOf, DEFAULT_CLINIC_TIMEZONE } from '../../utils/clinicClock'
 import { formatEur } from '../../utils/billing'
+import { openEndedPlanLabel } from '../../utils/planRenewal'
 
 // The patient beside the visit, on My Day: what a practitioner must not miss
 // while treating, kept in view instead of under the note. PracticeHub's
@@ -58,7 +59,7 @@ interface PatientRow {
 }
 interface Plan {
   name: string
-  total_visits: number
+  total_visits: number | null
   started_at: string
   frequency_value: number
   frequency_unit: 'week' | 'month'
@@ -150,7 +151,9 @@ const nextVisit = computed(() => ahead.value[0] ?? null)
 // (care_plan_marked_visits): every visit since it started that was not
 // cancelled or missed, this one included.
 const planVisit = computed(() => (plan.value ? visits.value.filter((v) => attended(v) && v.starts_at >= plan.value!.started_at && v.starts_at <= props.startsAt).length : 0))
-const planLeft = computed(() => (plan.value ? Math.max(0, plan.value.total_visits - planVisit.value) : 0))
+// A plan with no end is never "done": its next visit is always due.
+const openEnded = computed(() => !!plan.value && plan.value.total_visits === null)
+const planLeft = computed(() => (!plan.value ? 0 : plan.value.total_visits === null ? 1 : Math.max(0, plan.value.total_visits - planVisit.value)))
 const planPct = computed(() => (plan.value?.total_visits ? Math.min(100, Math.round((planVisit.value / plan.value.total_visits) * 100)) : 0))
 
 function markerName(m: CarePlanVisitMarker) {
@@ -316,9 +319,10 @@ const CHIP_TONE = { danger: 'bg-danger-bg text-danger-text', warning: 'bg-warnin
           <template v-if="plan">
             <div class="flex items-baseline justify-between gap-2">
               <span class="truncate text-[13px] font-semibold text-ink-900">{{ plan.name }}</span>
-              <span class="shrink-0 text-[12.5px] text-ink-muted2" data-cy="rail-plan-position"><span class="font-mono font-semibold text-ink-900">{{ planVisit }}</span> {{ t('of', 'de') }} <span class="font-mono">{{ plan.total_visits }}</span></span>
+              <span v-if="!openEnded" class="shrink-0 text-[12.5px] text-ink-muted2" data-cy="rail-plan-position"><span class="font-mono font-semibold text-ink-900">{{ planVisit }}</span> {{ t('of', 'de') }} <span class="font-mono">{{ plan.total_visits }}</span></span>
             </div>
-            <div class="relative h-[6px] rounded-full bg-line-faint">
+            <p v-if="openEnded" class="text-[12.5px] text-ink-muted2 first-letter:uppercase" data-cy="rail-plan-position">{{ openEndedPlanLabel(planVisit, plan.started_at, t) }}</p>
+            <div v-else class="relative h-[6px] rounded-full bg-line-faint">
               <div class="absolute inset-y-0 left-0 rounded-full bg-brand" :style="{ width: `${planPct}%` }" />
               <div v-if="markerPct !== null" class="absolute -top-[3px] h-3 w-[3px] rounded-sm bg-warning-accent" :style="{ left: `${markerPct}%` }" aria-hidden="true" />
             </div>
@@ -343,7 +347,7 @@ const CHIP_TONE = { danger: 'bg-danger-bg text-danger-text', warning: 'bg-warnin
               <span v-else class="text-ink-faint">—</span>
             </dd>
             <dt class="text-ink-muted2">{{ t('Booked ahead', 'Reservadas') }}</dt>
-            <dd class="text-right text-ink-700" data-cy="rail-booked"><span class="font-mono">{{ ahead.length }}</span><template v-if="plan && planLeft > 0"> <span class="text-ink-muted2">{{ t(`of ${planLeft} left`, `de ${planLeft} que faltan`) }}</span></template></dd>
+            <dd class="text-right text-ink-700" data-cy="rail-booked"><span class="font-mono">{{ ahead.length }}</span><template v-if="plan && !openEnded && planLeft > 0"> <span class="text-ink-muted2">{{ t(`of ${planLeft} left`, `de ${planLeft} que faltan`) }}</span></template></dd>
             <dt class="text-ink-muted2">{{ t('Attendance', 'Asistencia') }}</dt>
             <dd class="text-right text-ink-700" data-cy="rail-attendance"><span class="font-mono">{{ completed }}</span> {{ t('done', 'hechas') }}<template v-if="missed"> · <span class="font-mono text-danger-text">{{ missed }}</span> {{ missed === 1 ? t('missed', 'falta') : t('missed', 'faltas') }}</template></dd>
           </dl>

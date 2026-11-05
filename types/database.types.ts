@@ -58,6 +58,51 @@ export type Database = {
           },
         ]
       }
+      habit_checkins: {
+        Row: {
+          account_id: string
+          client_id: string
+          created_at: string
+          done_at: string
+          habit: string
+          id: string
+          patient_id: string
+        }
+        Insert: {
+          account_id: string
+          client_id: string
+          created_at?: string
+          done_at: string
+          habit: string
+          id?: string
+          patient_id: string
+        }
+        Update: {
+          account_id?: string
+          client_id?: string
+          created_at?: string
+          done_at?: string
+          habit?: string
+          id?: string
+          patient_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "habit_checkins_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "habit_checkins_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       platform_status: {
         Row: {
           key: string

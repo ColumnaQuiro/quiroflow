@@ -6,6 +6,8 @@
 // Appointment dates and times are written in the clinic's own time zone
 // (clinics.timezone), and the clinic's name, phone and address are fields of
 // their own, so a clinic's template can say how to reach that location.
+import type { EmailTheme } from './emailDesign'
+
 export const DEFAULT_TIMEZONE = 'Europe/Madrid'
 
 export interface MergeRecipient {
@@ -33,6 +35,8 @@ export interface MergeContext {
   clinicLogoUrl?: string
   /** The account's online booking page, for an email step's booking button. */
   bookingUrl?: string
+  /** accounts.email_branding: an email built from blocks takes its colours and typeface from it. */
+  emailBranding?: Partial<EmailTheme>
   /** The patient's default practitioner's first name; {{practitioner_first_name}} falls back to clinicName. */
   practitionerFirstName?: string
   /** When the patient's last completed visit started, for {{last_visit_month}}. */

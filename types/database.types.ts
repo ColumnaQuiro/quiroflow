@@ -1239,6 +1239,7 @@ export type Database = {
           cancellation_fee_cents: number | null
           created_at: string
           clinical_retention_years: number
+          email_branding: Json | null
           email_confirmation_body: string | null
           email_confirmation_subject: string | null
           email_reminder_body: string | null
@@ -1358,6 +1359,7 @@ export type Database = {
           cancellation_fee_cents?: number | null
           created_at?: string
           clinical_retention_years?: number
+          email_branding?: Json | null
           email_confirmation_body?: string | null
           email_confirmation_subject?: string | null
           email_reminder_body?: string | null
@@ -1476,6 +1478,7 @@ export type Database = {
           cancellation_fee_cents?: number | null
           created_at?: string
           clinical_retention_years?: number
+          email_branding?: Json | null
           email_confirmation_body?: string | null
           email_confirmation_subject?: string | null
           email_reminder_body?: string | null
@@ -3704,6 +3707,54 @@ export type Database = {
             columns: ["lead_id"]
             isOneToOne: false
             referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      email_templates: {
+        Row: {
+          id: string
+          account_id: string
+          name: string
+          subject: string
+          design: Json
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          account_id: string
+          name: string
+          subject?: string
+          design: Json
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          account_id?: string
+          name?: string
+          subject?: string
+          design?: Json
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_templates_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_templates_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
             referencedColumns: ["id"]
           },
         ]

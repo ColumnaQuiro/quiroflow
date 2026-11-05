@@ -43,6 +43,8 @@ create policy "staff view habit_checkins" on public.habit_checkins for select
   using (public.is_account_member(account_id) and public.can_access_patient(account_id, patient_id));
 
 select public.require_two_factor_on('public.habit_checkins');
+-- New tables are no longer granted to the Data API by default (30 Oct 2026).
+select public.grant_data_api('public.habit_checkins');
 
 -- Audited like the rest of a patient's data. Adds 'habit_checkin' to
 -- whatever the constraint allows when this runs (the read-and-append block

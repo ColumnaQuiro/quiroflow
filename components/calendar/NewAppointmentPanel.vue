@@ -9,6 +9,7 @@ import { formatEur, formatTime } from '~/utils/billing'
 import { findFreeSlots, firstClash, type Busy } from '~/utils/freeSlots'
 import { seriesProblems, seriesStarts, type RepeatRule, type SeriesProblem } from '~/utils/repeatSeries'
 import { visitMarkerLabel } from '~/utils/carePlanVisitMarkers'
+import { planVisitsToBook } from '~/utils/planRenewal'
 
 // A new appointment, from a slot or from "+ Nueva cita". Laid out in the
 // order the desk answers the questions on the phone -- the canvas's Create
@@ -395,7 +396,7 @@ function startNewPatient() {
 // (0056_care_plans.sql is explicit about that -- progress is inferred from
 // real appointments, not a stored schedule), so this is the one place that
 // actually creates the plan's future sessions in bulk.
-interface CarePlan { id: string; name: string; frequency_value: number; frequency_unit: 'week' | 'month'; visits_per_period: number | null; total_visits: number; started_at: string }
+interface CarePlan { id: string; name: string; frequency_value: number; frequency_unit: 'week' | 'month'; visits_per_period: number | null; total_visits: number | null; started_at: string }
 const carePlan = ref<CarePlan | null>(null)
 // Visits with no appointment at all yet -- stricter than the "remaining" on
 // the patient profile, which still counts a booked visit as remaining.
@@ -418,11 +419,17 @@ async function loadCarePlan(patientId: string) {
   const completed = inPlan.filter((a) => a.status === 'completed').length
   const scheduled = inPlan.filter((a) => a.status === 'booked').length
   carePlan.value = plan
-  carePlanRemaining.value = Math.max(0, plan.total_visits - completed - scheduled)
+  carePlanRemaining.value = planVisitsToBook(plan, completed, scheduled)
   if (repeat.value === 'care_plan' && carePlanRemaining.value === 0) repeat.value = 'none'
   if (props.prefillFollowPlan && patientId === props.prefillPatientId && carePlanRemaining.value > 0 && repeat.value === 'none') repeat.value = 'care_plan'
 }
 const carePlanFrequencyLabel = computed(() => (carePlan.value ? carePlanCadenceLabel(carePlan.value, t) : ''))
+// A plan with no end books its next few (OPEN_ENDED_BOOK_AHEAD); one with an end, what is left of it.
+const carePlanOptionLabel = computed(() =>
+  carePlan.value?.total_visits === null
+    ? t(`Follow care plan — next ${carePlanRemaining.value} sessions, ${carePlanFrequencyLabel.value}`, `Seguir plan de cuidados — próximas ${carePlanRemaining.value} sesiones, ${carePlanFrequencyLabel.value}`)
+    : t(`Follow care plan — ${carePlanRemaining.value} sessions left, ${carePlanFrequencyLabel.value}`, `Seguir plan de cuidados — ${carePlanRemaining.value} sesiones restantes, ${carePlanFrequencyLabel.value}`),
+)
 
 // -- Re-exam visits -----------------------------------------------------
 // Which of the dates being booked land on one of the plan's re-exam visits
@@ -1014,7 +1021,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
                 <option value="weekly">{{ t('Weekly (8 occurrences)', 'Semanalmente (8 repeticiones)') }}</option>
                 <option value="monthly">{{ t('Monthly (8 occurrences)', 'Mensualmente (8 repeticiones)') }}</option>
                 <option v-if="carePlan && carePlanRemaining > 0" value="care_plan">
-                  {{ t(`Follow care plan — ${carePlanRemaining} sessions left, ${carePlanFrequencyLabel}`, `Seguir plan de cuidados — ${carePlanRemaining} sesiones restantes, ${carePlanFrequencyLabel}`) }}
+                  {{ carePlanOptionLabel }}
                 </option>
               </select>
             </label>

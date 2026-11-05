@@ -25,7 +25,7 @@ const supabase = useSupabaseClient()
 
 interface Row { id: string; startsAt: string; type: string | null; practitioner: string | null; score: number | null; byPatient: boolean; listing: string }
 const rows = ref<Row[]>([])
-const plan = ref<{ name: string; total: number; done: number } | null>(null)
+const plan = ref<{ name: string; total: number | null; done: number } | null>(null)
 const loading = ref(true)
 const root = ref<HTMLElement | null>(null)
 
@@ -59,7 +59,7 @@ async function load() {
   })
 
   const { data: cp } = await supabase.from('care_plans').select('name, total_visits, started_at').eq('patient_id', props.patientId).order('started_at', { ascending: false }).limit(1).maybeSingle()
-  const c = cp as { name: string; total_visits: number; started_at: string } | null
+  const c = cp as { name: string; total_visits: number | null; started_at: string } | null
   const now = new Date().toISOString()
   plan.value = c ? { name: c.name, total: c.total_visits, done: list.filter((a) => a.starts_at >= c.started_at && a.starts_at <= now).length } : null
   loading.value = false
@@ -96,7 +96,7 @@ const labelEvery = computed(() => Math.max(1, Math.ceil(points.value.length / (c
   <div ref="root" class="flex flex-col gap-4" data-cy="progress-tab" :data-ready="loading ? undefined : 'true'" :aria-busy="loading">
     <div class="flex flex-wrap items-center gap-3" data-pdf-skip>
       <p v-if="plan" class="text-[13px] text-ink-700" data-cy="progress-plan">
-        <span class="font-semibold text-ink-900">{{ plan.name }}</span> · {{ t(`${plan.done} of ${plan.total} visits`, `${plan.done} de ${plan.total} visitas`) }}
+        <span class="font-semibold text-ink-900">{{ plan.name }}</span> · {{ plan.total === null ? t(`${plan.done} visits, no end`, `${plan.done} visitas, sin fin`) : t(`${plan.done} of ${plan.total} visits`, `${plan.done} de ${plan.total} visitas`) }}
       </p>
       <span class="flex-1" />
       <!-- The web's "Informe de revisión" (ProgressReportButton.vue) -->

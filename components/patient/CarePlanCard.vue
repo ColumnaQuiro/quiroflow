@@ -35,7 +35,7 @@ interface Plan {
   frequency_value: number
   frequency_unit: 'week' | 'month'
   visits_per_period: number | null
-  total_visits: number
+  total_visits: number | null
   started_at: string
 }
 interface Visit {
@@ -99,7 +99,9 @@ function changeTime(v: Visit) {
 }
 function askToBook() {
   const n = progress.value?.toBook ?? 0
-  draft.value = n === 1
+  draft.value = plan.value?.total_visits === null
+    ? t('Hello, I would like to book my next visit. ', 'Hola, me gustaría reservar mi próxima visita. ')
+    : n === 1
     ? t('Hello, I would like to book the visit left in my plan. ', 'Hola, me gustaría reservar la visita que me queda del plan. ')
     : t(`Hello, I would like to book the ${n} visits left in my plan. `, `Hola, me gustaría reservar las ${n} visitas que me quedan del plan. `)
   return navigateTo(props.messagesTo)
@@ -118,14 +120,19 @@ function askToBook() {
         <p class="min-w-0 truncate text-[15px] font-[640] text-ink-900">{{ plan.name }}</p>
         <p class="shrink-0 text-[13px] text-ink-muted" data-cy="patient-plan-count">
           <span class="text-[15px] font-[640] text-ink-900">{{ progress.done }}</span>
-          {{ t(`of ${plan.total_visits}`, `de ${plan.total_visits}`) }}
+          <template v-if="plan.total_visits === null">{{ progress.done === 1 ? t('visit', 'visita') : t('visits', 'visitas') }}</template>
+          <template v-else>{{ t(`of ${plan.total_visits}`, `de ${plan.total_visits}`) }}</template>
         </p>
       </div>
-      <div class="mt-2 h-1.5 overflow-hidden rounded-pill bg-surface-subtle">
+      <div v-if="plan.total_visits !== null" class="mt-2 h-1.5 overflow-hidden rounded-pill bg-surface-subtle">
         <div class="h-full rounded-pill bg-brand transition-all" :style="{ width: `${progress.pct}%` }" />
       </div>
       <p class="mt-1.5 text-[12.5px] text-ink-muted">
-        <template v-if="progress.left === 0">{{ t('Plan complete. Well done!', '¡Plan completado! Buen trabajo.') }}</template>
+        <template v-if="progress.left === null">
+          {{ t('Maintenance, with no end', 'Mantenimiento, sin fin') }}
+          <template v-if="cadence"> &middot; {{ cadence }}</template>
+        </template>
+        <template v-else-if="progress.left === 0">{{ t('Plan complete. Well done!', '¡Plan completado! Buen trabajo.') }}</template>
         <template v-else>
           {{ progress.left === 1 ? t('1 visit left', 'Te queda 1 visita') : t(`${progress.left} visits left`, `Te quedan ${progress.left} visitas`) }}
           <template v-if="cadence"> &middot; {{ cadence }}</template>
@@ -147,7 +154,8 @@ function askToBook() {
 
       <div v-if="progress.toBook > 0" class="mt-3 flex items-center justify-between gap-3 rounded-ctl bg-surface-subtle px-3 py-2.5" data-cy="patient-plan-to-book">
         <p class="text-[12.5px] text-ink-700">
-          {{ progress.toBook === 1 ? t('1 visit still has no date', '1 visita aún sin fecha') : t(`${progress.toBook} visits still have no date`, `${progress.toBook} visitas aún sin fecha`) }}
+          <template v-if="progress.left === null">{{ t('Your next visit has no date yet', 'Tu próxima visita aún no tiene fecha') }}</template>
+          <template v-else>{{ progress.toBook === 1 ? t('1 visit still has no date', '1 visita aún sin fecha') : t(`${progress.toBook} visits still have no date`, `${progress.toBook} visitas aún sin fecha`) }}</template>
         </p>
         <NuxtLink v-if="bookTo" :to="bookTo" class="shrink-0 text-[12.5px] font-semibold text-brand-text">{{ t('Book', 'Reservar') }}</NuxtLink>
         <button v-else type="button" class="shrink-0 text-[12.5px] font-semibold text-brand-text" data-cy="patient-plan-ask-book" @click="askToBook">{{ t('Ask the clinic', 'Pedir a la clínica') }}</button>

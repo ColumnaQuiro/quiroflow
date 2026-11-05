@@ -43,7 +43,7 @@ const { showToast } = useToast()
 const PAGE_SIZE = 50
 
 interface TeamMemberOption { id: string; full_name: string }
-interface CarePlanInfo { name: string; totalVisits: number; completed: number }
+interface CarePlanInfo { name: string; totalVisits: number | null; completed: number }
 
 // Every filter lives in one form (utils/patientFilters.ts) so that the URL, a
 // saved segment and the database call all read the same object. The search
@@ -958,13 +958,13 @@ function tagClass(tag: string) {
                     <div class="flex items-center justify-between gap-2">
                       <p class="min-w-0 truncate text-[12.5px] text-ink-700">{{ carePlanByPatient[patient.id].name }}</p>
                       <p class="shrink-0 font-mono text-[11px] text-ink-muted2">
-                        {{ carePlanByPatient[patient.id].completed }}/{{ carePlanByPatient[patient.id].totalVisits }}
+                        {{ carePlanByPatient[patient.id].completed }}/{{ carePlanByPatient[patient.id].totalVisits ?? '∞' }}
                       </p>
                     </div>
-                    <div class="mt-1 h-[3px] w-full overflow-hidden rounded-full bg-chip-bg2">
+                    <div v-if="carePlanByPatient[patient.id].totalVisits" class="mt-1 h-[3px] w-full overflow-hidden rounded-full bg-chip-bg2">
                       <div
                         class="h-full rounded-full bg-brand"
-                        :style="{ width: `${Math.min(100, (carePlanByPatient[patient.id].completed / carePlanByPatient[patient.id].totalVisits) * 100)}%` }"
+                        :style="{ width: `${Math.min(100, (carePlanByPatient[patient.id].completed / carePlanByPatient[patient.id].totalVisits!) * 100)}%` }"
                       />
                     </div>
                   </template>

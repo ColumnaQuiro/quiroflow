@@ -24,8 +24,10 @@ interface AlertRow {
   frequency_value: number
   frequency_unit: 'week' | 'month'
   visits_per_period: number | null
-  total_visits: number
-  visits_remaining: number
+  /** null: a plan with no end, so nothing remaining either. */
+  total_visits: number | null
+  visits_remaining: number | null
+  completed_in_plan: number
   last_appointment_at: string
   due_date: string
   days_overdue: number
@@ -197,7 +199,7 @@ const messagingRow = computed(() => [...rows.value, ...exerciseRows.value].find(
                 <NuxtLink :to="`/patients/${row.patient_id}`" class="font-medium text-ink-900 hover:text-brand-text">{{ patientName(row) }}</NuxtLink>
               </td>
               <td class="px-3 py-2 text-ink-muted2">{{ row.care_plan_name }} · {{ cadenceLabel(row) }}</td>
-              <td class="px-3 py-2 text-ink-muted2">{{ row.total_visits - row.visits_remaining }} / {{ row.total_visits }}</td>
+              <td class="px-3 py-2 text-ink-muted2">{{ row.total_visits === null ? t(`${row.completed_in_plan} · no end`, `${row.completed_in_plan} · sin fin`) : `${row.completed_in_plan} / ${row.total_visits}` }}</td>
               <td class="px-3 py-2 text-ink-muted2">{{ formatDate(row.last_appointment_at) }}</td>
               <td class="px-3 py-2 text-ink-muted2">{{ formatDate(row.due_date) }}</td>
               <td class="px-3 py-2">

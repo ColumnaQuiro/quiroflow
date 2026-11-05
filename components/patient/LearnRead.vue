@@ -8,16 +8,20 @@ const t = useT()
 const supabase = useSupabaseClient()
 const authedFetch = useAuthedFetch()
 
-interface Send { id: string; opened_at: string | null; accounts: { name: string } | null; learn_articles: { title: string; summary: string | null; body: string; video_url: string | null; minutes: number | null; exercise_program_id: string | null } | null }
+interface Send { id: string; opened_at: string | null; accounts: { name: string } | null; learn_articles: { title: string; summary: string | null; body: string; video_url: string | null; media_path: string | null; minutes: number | null; exercise_program_id: string | null } | null }
 const send = ref<Send | null>(null)
+const mediaSrc = ref<string | null>(null)
 const phase = ref<'loading' | 'missing' | 'ready'>('loading')
+const learnMedia = useLearnMedia()
 onMounted(async () => {
   const { data } = await supabase
     .from('learn_sends')
-    .select('id, opened_at, accounts(name), learn_articles(title, summary, body, video_url, minutes, exercise_program_id)')
+    .select('id, opened_at, accounts(name), learn_articles(title, summary, body, video_url, media_path, minutes, exercise_program_id)')
     .eq('id', props.sendId)
     .maybeSingle()
   send.value = data as unknown as Send | null
+  const path = send.value?.learn_articles?.media_path
+  if (path) mediaSrc.value = await learnMedia.signedUrl(path)
   phase.value = send.value?.learn_articles ? 'ready' : 'missing'
   if (send.value && !send.value.opened_at) authedFetch('/api/learn/open', { method: 'POST', body: { sendId: props.sendId } }).catch(() => {})
 })
@@ -32,6 +36,7 @@ onMounted(async () => {
       :title="send.learn_articles.title"
       :summary="send.learn_articles.summary"
       :body="send.learn_articles.body"
+      :media-src="mediaSrc"
       :video-url="send.learn_articles.video_url"
       :minutes="send.learn_articles.minutes"
       :clinic-name="send.accounts?.name"

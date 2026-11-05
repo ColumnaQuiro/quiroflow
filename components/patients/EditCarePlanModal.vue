@@ -8,7 +8,7 @@ interface CarePlan {
   frequency_value: number
   frequency_unit: 'week' | 'month'
   visits_per_period?: number | null
-  total_visits: number
+  total_visits: number | null
   started_at: string
   payment_kind?: string | null
   package_purchase_id?: string | null
@@ -36,6 +36,8 @@ const visitsPerPeriod = ref(props.plan?.visits_per_period ?? 1)
 const frequencyValue = ref(props.plan?.frequency_value ?? 1)
 const frequencyUnit = ref<'week' | 'month'>(props.plan?.frequency_unit ?? 'week')
 const totalVisits = ref(props.plan?.total_visits ?? 10)
+// "Sin fin": a plan with no end (total_visits null), as maintenance usually is.
+const noEnd = ref(props.plan ? props.plan.total_visits === null : false)
 const startedAt = ref(props.plan?.started_at ?? new Date().toISOString().slice(0, 10))
 const saving = ref(false)
 const error = ref('')
@@ -111,7 +113,7 @@ async function save() {
     frequency_value: Math.max(1, Math.round(frequencyValue.value || 1)),
     frequency_unit: frequencyUnit.value,
     visits_per_period: Math.min(7, Math.max(1, Math.round(visitsPerPeriod.value || 1))),
-    total_visits: totalVisits.value,
+    total_visits: noEnd.value ? null : Math.max(1, Math.round(totalVisits.value || 1)),
     started_at: startedAt.value,
     payment_kind: paymentKind.value,
     package_purchase_id: paymentKind.value === 'bono' ? bonoId.value : null,
@@ -164,7 +166,11 @@ const fieldId = useId()
         </div>
         <div>
           <label :for="`${fieldId}-totalVisits`" class="block text-sm font-medium text-ink-700">{{ t('Total visits in plan', 'Visitas totales en el plan') }}</label>
-          <input :id="`${fieldId}-totalVisits`" v-model.number="totalVisits" type="number" min="1" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand bg-surface text-ink-900" />
+          <input :id="`${fieldId}-totalVisits`" v-model.number="totalVisits" type="number" min="1" :disabled="noEnd" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand bg-surface text-ink-900 disabled:opacity-50" data-cy="plan-total-visits" />
+          <label class="mt-1.5 flex items-center gap-2 text-[13px] text-ink-700">
+            <input v-model="noEnd" type="checkbox" class="h-4 w-4 accent-brand" data-cy="plan-no-end" />
+            {{ t('No end · until someone closes it', 'Sin fin · sigue hasta que alguien lo cierre') }}
+          </label>
         </div>
         <div>
           <label :for="`${fieldId}-startedAt`" class="block text-sm font-medium text-ink-700">{{ t('Start date', 'Fecha de inicio') }}</label>

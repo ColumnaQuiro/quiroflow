@@ -23,6 +23,18 @@ export interface PracticeHubV3Connection {
   apiKey: string
 }
 
+/**
+ * A 400 when a 2.0 `phk_` key is about to be used as the Classic one. Both
+ * come from the same Developers > API Keys page, and the Classic API answers
+ * a `phk_` key with a bare 403, which every import tab then shows as "the key
+ * does not work" -- a clinic did exactly that on 5 Nov 2026.
+ */
+export function assertPracticeHubClassicKey(apiKey: string | undefined) {
+  if (apiKey?.startsWith('phk_')) {
+    throw createError({ statusCode: 400, statusMessage: 'That is a PracticeHub 2.0 key (phk_...), which goes in the "PracticeHub 2.0 API key" field. The API Key field takes the Classic key, from the same Developers > API Keys page, which does not start with phk_.' })
+  }
+}
+
 /** The saved address and 2.0 key, or a 400 naming what is missing. */
 export async function practicehubV3Connection(admin: Service, accountId: string): Promise<PracticeHubV3Connection> {
   const [{ data }, apiKey] = await Promise.all([

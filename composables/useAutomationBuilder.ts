@@ -1,3 +1,4 @@
+import { starterEmailDesign } from '~/utils/emailDesign'
 import type { DocField } from '~/utils/docFields'
 import type { InjectionKey } from 'vue'
 import { OUTLETS, isLeadTrigger } from '~/utils/automationCatalog'
@@ -74,7 +75,8 @@ export function defaultConfig(type: string): Record<string, any> {
     case 'whatsapp_template':
       return { template_name: '', template_language: 'es', variables: [], doc_template_ids: [], match_patient_language: true }
     case 'email':
-      return { subject: '', body: '' }
+      // New emails are built from blocks; `body` stays for the plain editor's emails.
+      return { subject: '', body: '', design: starterEmailDesign('es') }
     case 'webhook':
       return { url: '', secret: null }
     case 'delay':

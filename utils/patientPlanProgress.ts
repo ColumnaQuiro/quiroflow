@@ -13,19 +13,22 @@ export interface PlanVisit {
 
 export interface PlanProgress<V extends PlanVisit> {
   done: number
-  left: number
+  /** Visits still to come; null for a plan with no end. */
+  left: number | null
   /** Booked visits still ahead, soonest first. */
   booked: V[]
-  /** Visits the plan still needs that have no date yet. */
+  /** Visits the plan still needs that have no date yet; for a plan with no end, 1 while nothing is booked. */
   toBook: number
+  /** How far through; 0 for a plan with no end. */
   pct: number
 }
 
-export function patientPlanProgress<V extends PlanVisit>(plan: { total_visits: number; started_at: string }, visits: V[], now: Date): PlanProgress<V> {
+export function patientPlanProgress<V extends PlanVisit>(plan: { total_visits: number | null; started_at: string }, visits: V[], now: Date): PlanProgress<V> {
   const inPlan = visits.filter((v) => v.starts_at >= plan.started_at)
   const done = inPlan.filter((v) => v.status === 'completed').length
   const nowIso = now.toISOString()
   const booked = inPlan.filter((v) => v.status === 'booked' && v.starts_at >= nowIso).sort((a, b) => a.starts_at.localeCompare(b.starts_at))
+  if (plan.total_visits === null) return { done, left: null, booked, toBook: booked.length ? 0 : 1, pct: 0 }
   const left = Math.max(0, plan.total_visits - done)
   return {
     done,

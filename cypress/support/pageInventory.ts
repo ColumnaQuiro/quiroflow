@@ -24,6 +24,7 @@ export const SETTINGS_PAGES = [
   '/settings/docs',
   '/settings/exercises',
   '/settings/education',
+  '/settings/care-plans',
   '/settings/files',
   '/settings/gift-vouchers',
   '/settings/verifactu',

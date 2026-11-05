@@ -8,7 +8,8 @@ import { carePlanGapDays } from './carePlanCadence'
 // returns nothing at all.
 //
 //   * their LATEST plan (by created_at);
-//   * visits completed since it started: at least one, and fewer than its total;
+//   * visits completed since it started: at least one, and fewer than its total
+//     (a plan with no end, total_visits null, is never complete);
 //   * nothing ahead that is not cancelled;
 //   * due = the last completed visit's date + the plan's gap (carePlanGapDays);
 //   * overdue = today - due, in days, when positive.
@@ -17,7 +18,7 @@ import { carePlanGapDays } from './carePlanCadence'
 export interface OverduePlan {
   created_at: string
   started_at: string
-  total_visits: number
+  total_visits: number | null
   frequency_value: number
   frequency_unit: string
   visits_per_period: number | null
@@ -41,7 +42,7 @@ export function carePlanOverdueDays(plans: OverduePlan[], visits: OverdueVisit[]
       if (last === null || at > last) last = at
     }
   }
-  if (last === null || completed >= plan.total_visits) return null
+  if (last === null || (plan.total_visits !== null && completed >= plan.total_visits)) return null
   const due = dayNumber(new Date(last)) + carePlanGapDays(plan)
   const overdue = dayNumber(now) - due
   return overdue > 0 ? overdue : null

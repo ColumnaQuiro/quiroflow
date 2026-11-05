@@ -1239,6 +1239,7 @@ export type Database = {
           cancellation_fee_cents: number | null
           created_at: string
           clinical_retention_years: number
+          email_branding: Json | null
           email_confirmation_body: string | null
           email_confirmation_subject: string | null
           email_reminder_body: string | null
@@ -1335,6 +1336,15 @@ export type Database = {
           webchat_enabled: boolean
           webchat_greeting: string | null
           recall_assignee_default: string
+          maintenance_discharge_recall_months: number
+          maintenance_frequency_unit: string
+          maintenance_frequency_value: number
+          maintenance_habits_article_ids: string[]
+          maintenance_habits_on_discharge: boolean
+          maintenance_habits_on_start: boolean
+          maintenance_membership_id: string | null
+          maintenance_total_visits: number | null
+          maintenance_visits_per_period: number
           recall_assignee_member_id: string | null
         }
         Insert: {
@@ -1349,6 +1359,7 @@ export type Database = {
           cancellation_fee_cents?: number | null
           created_at?: string
           clinical_retention_years?: number
+          email_branding?: Json | null
           email_confirmation_body?: string | null
           email_confirmation_subject?: string | null
           email_reminder_body?: string | null
@@ -1444,6 +1455,15 @@ export type Database = {
           webchat_enabled?: boolean
           webchat_greeting?: string | null
           recall_assignee_default?: string
+          maintenance_discharge_recall_months?: number
+          maintenance_frequency_unit?: string
+          maintenance_frequency_value?: number
+          maintenance_habits_article_ids?: string[]
+          maintenance_habits_on_discharge?: boolean
+          maintenance_habits_on_start?: boolean
+          maintenance_membership_id?: string | null
+          maintenance_total_visits?: number | null
+          maintenance_visits_per_period?: number
           recall_assignee_member_id?: string | null
         }
         Update: {
@@ -1458,6 +1478,7 @@ export type Database = {
           cancellation_fee_cents?: number | null
           created_at?: string
           clinical_retention_years?: number
+          email_branding?: Json | null
           email_confirmation_body?: string | null
           email_confirmation_subject?: string | null
           email_reminder_body?: string | null
@@ -1554,6 +1575,15 @@ export type Database = {
           webchat_enabled?: boolean
           webchat_greeting?: string | null
           recall_assignee_default?: string
+          maintenance_discharge_recall_months?: number
+          maintenance_frequency_unit?: string
+          maintenance_frequency_value?: number
+          maintenance_habits_article_ids?: string[]
+          maintenance_habits_on_discharge?: boolean
+          maintenance_habits_on_start?: boolean
+          maintenance_membership_id?: string | null
+          maintenance_total_visits?: number | null
+          maintenance_visits_per_period?: number
           recall_assignee_member_id?: string | null
         }
         Relationships: [
@@ -2862,7 +2892,7 @@ export type Database = {
           payment_kind: string
           patient_id: string
           started_at: string
-          total_visits: number
+          total_visits: number | null
           visit_markers: Json
           visits_per_period: number
         }
@@ -2879,7 +2909,7 @@ export type Database = {
           payment_kind?: string
           patient_id: string
           started_at?: string
-          total_visits: number
+          total_visits?: number | null
           visit_markers?: Json
           visits_per_period?: number
         }
@@ -2896,7 +2926,7 @@ export type Database = {
           payment_kind?: string
           patient_id?: string
           started_at?: string
-          total_visits?: number
+          total_visits?: number | null
           visit_markers?: Json
           visits_per_period?: number
         }
@@ -3677,6 +3707,54 @@ export type Database = {
             columns: ["lead_id"]
             isOneToOne: false
             referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      email_templates: {
+        Row: {
+          id: string
+          account_id: string
+          name: string
+          subject: string
+          design: Json
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          account_id: string
+          name: string
+          subject?: string
+          design: Json
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          account_id?: string
+          name?: string
+          subject?: string
+          design?: Json
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_templates_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_templates_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
             referencedColumns: ["id"]
           },
         ]

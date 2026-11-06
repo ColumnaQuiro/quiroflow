@@ -8,7 +8,7 @@ import { validSpanishTaxId } from '~/utils/spanishTaxId'
 import { isReceipt } from '~/utils/paymentReceipts'
 import { onAccountShareCents, paymentRefundableCents } from '~/utils/paymentRefund'
 import { chargeBonoVisit } from '~/utils/bonoVisitInvoice'
-import { loadUnloggedVisits, localDateStr, type LogSessionChoice, type UnloggedVisit } from '~/utils/unloggedVisits'
+import { loadUnloggedVisits, localDateStr, type CoveredVisit, type LogSessionChoice, type UnloggedVisit } from '~/utils/unloggedVisits'
 
 const props = defineProps<{ patientId: string; openPaymentTrigger?: boolean; refundInvoiceId?: string | null; contactBlocked?: boolean }>()
 const emit = defineEmits<{ paymentTriggerConsumed: [] }>()
@@ -1863,6 +1863,9 @@ const loggingSessionFor = ref<string | null>(null)
 // the next time anyone opens the patient rather than only when they happen
 // to look for it. See utils/unloggedVisits.ts.
 const unloggedVisits = ref<UnloggedVisit[]>([])
+// And the ones something already paid for, so the dialog can say so before
+// "not on the calendar" invents a second visit on the same day.
+const coveredVisits = ref<CoveredVisit[]>([])
 // The ones nothing has paid for at all -- what the bono card warns about. A
 // visit paid at the walk-in price is offered by Log session too, but is not
 // missing anything.
@@ -1871,7 +1874,9 @@ const loadingUnlogged = ref(false)
 async function loadUnlogged() {
   loadingUnlogged.value = true
   try {
-    unloggedVisits.value = await loadUnloggedVisits(supabase, props.patientId)
+    const found = await loadUnloggedVisits(supabase, props.patientId)
+    unloggedVisits.value = found.unlogged
+    coveredVisits.value = found.covered
   } finally {
     loadingUnlogged.value = false
   }
@@ -3268,6 +3273,7 @@ const fieldId = useId()
       :sessions-total="logDialogFor.sessions_total"
       :per-session-cents="Math.round(logDialogFor.price_cents / logDialogFor.sessions_total)"
       :visits="unloggedVisits"
+      :covered-visits="coveredVisits"
       :loading="loadingUnlogged"
       :busy="loggingSessionFor !== null"
       @confirm="onLogSessionConfirm"

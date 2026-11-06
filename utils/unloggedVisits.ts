@@ -36,6 +36,29 @@ export interface UnloggedVisit {
   paidInvoice: { id: string; invoice_number: string | null; total_cents: number; paidCents: number } | null
 }
 
+// A visit in the same window that something has already paid for: a bono
+// session, or a receipt paid at the walk-in price that cannot move onto a bono.
+// Not offered by Log session -- it is what makes "a visit that is not on the
+// calendar" on that day a second visit. On 4 Nov 2026 one patient's visit took
+// the last session of their old bono at checkout; a new bono was sold a minute
+// later and a session logged on it straight away. The visit was no longer
+// unlogged, so the dialog had nothing to offer but "not on the calendar",
+// picked already, with today's date: one click invented a second, typeless
+// visit and charged it from the new bono.
+export interface CoveredVisit {
+  id: string
+  starts_at: string
+  typeName: string | null
+  // What paid for it, as reception knows it: the bono's name or the receipt's
+  // number. Null when RLS hides it (a session drawn from a relative's bono).
+  paidBy: string | null
+}
+
+export interface VisitsForLogging {
+  unlogged: UnloggedVisit[]
+  covered: CoveredVisit[]
+}
+
 interface VisitReceipt {
   id: string
   invoice_number: string | null
@@ -79,7 +102,7 @@ export function paidVisitToMove(receipts: VisitReceipt[], refundedIds: ReadonlyS
 // session while the patient is still in the room (one patient's was logged
 // 62 seconds before they were checked out). A booking nobody has arrived for is
 // left out, which is what stops a session being spent in advance.
-export async function loadUnloggedVisits(supabase: SupabaseClient, patientId: string): Promise<UnloggedVisit[]> {
+export async function loadUnloggedVisits(supabase: SupabaseClient, patientId: string): Promise<VisitsForLogging> {
   const since = new Date()
   since.setHours(0, 0, 0, 0)
   since.setDate(since.getDate() - UNLOGGED_VISIT_LOOKBACK_DAYS)
@@ -94,11 +117,11 @@ export async function loadUnloggedVisits(supabase: SupabaseClient, patientId: st
     .gte('starts_at', since.toISOString())
     .lte('starts_at', new Date().toISOString())
     .order('starts_at', { ascending: false })
-  if (!appts || appts.length === 0) return []
+  if (!appts || appts.length === 0) return { unlogged: [], covered: [] }
 
   const ids = appts.map((a) => a.id)
   const [{ data: sessions }, { data: invoices }] = await Promise.all([
-    supabase.from('package_sessions').select('appointment_id').in('appointment_id', ids),
+    supabase.from('package_sessions').select('appointment_id, package_purchases(package_name)').in('appointment_id', ids),
     supabase
       .from('invoices')
       .select(
@@ -108,7 +131,9 @@ export async function loadUnloggedVisits(supabase: SupabaseClient, patientId: st
       .neq('status', 'void'),
   ])
   const rows = (invoices ?? []) as unknown as (VisitReceipt & { appointment_id: string })[]
-  const covered = new Set((sessions ?? []).map((s) => s.appointment_id))
+  const bonoFor = new Map(
+    (sessions ?? []).map((s) => [s.appointment_id as string, (s.package_purchases as unknown as { package_name: string } | null)?.package_name ?? null]),
+  )
 
   // Refunds name the receipt they correct, and are not on the visit.
   const paidIds = rows.filter((i) => i.status === 'paid' && !i.is_refund).map((i) => i.id)
@@ -117,16 +142,28 @@ export async function loadUnloggedVisits(supabase: SupabaseClient, patientId: st
     : { data: [] as { refunds_invoice_id: string }[] }
   const refunded = new Set((refunds ?? []).map((r) => r.refunds_invoice_id as string))
 
-  return appts
-    .filter((a) => !covered.has(a.id))
-    .map((a) => {
-      const own = rows.filter((i) => i.appointment_id === a.id)
-      const isPaid = own.some((i) => i.status === 'paid' && !i.is_refund)
-      const movable = isPaid ? paidVisitToMove(own, refunded) : null
-      return { a, own, isPaid, movable }
-    })
+  const typeNameOf = (a: (typeof appts)[number]) => (a.appointment_types as unknown as { name: string } | null)?.name ?? null
+
+  const classified = appts.map((a) => {
+    const own = rows.filter((i) => i.appointment_id === a.id)
+    const paidReceipt = own.find((i) => i.status === 'paid' && !i.is_refund) ?? null
+    const movable = paidReceipt ? paidVisitToMove(own, refunded) : null
+    return { a, own, paidReceipt, movable, hasSession: bonoFor.has(a.id) }
+  })
+
+  const covered: CoveredVisit[] = classified
+    .filter(({ hasSession, paidReceipt, movable }) => hasSession || (paidReceipt && !movable))
+    .map(({ a, paidReceipt, hasSession }) => ({
+      id: a.id,
+      starts_at: a.starts_at,
+      typeName: typeNameOf(a),
+      paidBy: hasSession ? bonoFor.get(a.id) ?? null : paidReceipt?.invoice_number ?? null,
+    }))
+
+  const unlogged = classified
+    .filter(({ hasSession }) => !hasSession)
     // A paid visit stays off the list unless its payment can move to the bono.
-    .filter(({ isPaid, movable }) => !isPaid || movable)
+    .filter(({ paidReceipt, movable }) => !paidReceipt || movable)
     .map(({ a, own, movable }) => {
       const unpaid = own.find((i) => i.status === 'unpaid' && !i.is_refund) ?? null
       return {
@@ -134,7 +171,7 @@ export async function loadUnloggedVisits(supabase: SupabaseClient, patientId: st
         starts_at: a.starts_at,
         practitionerId: a.practitioner_id ?? null,
         practitionerName: (a.practitioner as unknown as { full_name: string } | null)?.full_name ?? null,
-        typeName: (a.appointment_types as unknown as { name: string } | null)?.name ?? null,
+        typeName: typeNameOf(a),
         unpaidInvoice: unpaid ? { id: unpaid.id, invoice_number: unpaid.invoice_number, total_cents: unpaid.total_cents } : null,
         paidInvoice: movable
           ? {
@@ -146,6 +183,8 @@ export async function loadUnloggedVisits(supabase: SupabaseClient, patientId: st
           : null,
       }
     })
+
+  return { unlogged, covered }
 }
 
 // What the Log session dialog hands back: a visit from the list, or a day for

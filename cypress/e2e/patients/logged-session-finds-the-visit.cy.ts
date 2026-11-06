@@ -120,6 +120,68 @@ describe('Logging a bono session', () => {
     })
   })
 
+  it('warns before inventing a second visit on a day already paid for', () => {
+    // Today's visit took the last session of the patient's old bono at
+    // checkout; a new bono was sold a minute later and a session logged on it.
+    // The visit was no longer unlogged, so the dialog opened on "not on the
+    // calendar", already picked, for today -- one click charged the same
+    // visit twice. It must now say so, and not make it the default.
+    cy.seedStaffAccount().then((account) => {
+      cy.task('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Dos', lastName: 'Bonos' }).then((patient: any) => {
+        cy.task('db:createPackagePurchase', {
+          accountId: account.accountId,
+          patientId: patient.id,
+          packageName: 'Bono viejo',
+          sessionsTotal: 12,
+          sessionsUsed: 11,
+          priceCents: 52800,
+        }).then((oldBono: any) => {
+          cy.task('db:createPackagePurchase', {
+            accountId: account.accountId,
+            patientId: patient.id,
+            packageName: 'Bono nuevo',
+            sessionsTotal: 12,
+            sessionsUsed: 0,
+            priceCents: 48000,
+          }).then((newBono: any) => {
+            cy.task('db:createAppointment', {
+              accountId: account.accountId,
+              clinicId: account.clinicId,
+              patientId: patient.id,
+              practitionerId: account.teamMemberId,
+              startsAt: new Date(Date.now() - 60_000).toISOString(),
+              status: 'completed',
+            }).then((appt: any) => {
+              cy.task('db:usePackageSession', {
+                accountId: account.accountId,
+                patientId: patient.id,
+                packagePurchaseId: oldBono.id,
+                appointmentId: appt.id,
+                amountCents: 4400,
+              })
+              cy.login(account.email, account.password)
+              cy.visit(`/patients/${patient.id}?tab=billing`)
+
+              // The old bono is used up, so the only live button is the new one's.
+              cy.get('[data-cy="log-session-open"]:not([disabled])').should('have.length', 1).click()
+              cy.get('[data-cy="log-session-day-already-paid"]').should('be.visible').and('contain', 'Bono viejo')
+              cy.get('[data-cy="log-session-new"] input[type="radio"]').should('not.be.checked')
+              cy.get('[data-cy="confirm-dialog-confirm"]').should('be.disabled')
+
+              // Still possible on purpose -- a second visit the same day is rare, not wrong.
+              cy.get('[data-cy="log-session-new"]').click()
+              cy.get('[data-cy="log-session-day-already-paid"]').should('be.visible')
+              cy.get('[data-cy="confirm-dialog-confirm"]').should('not.be.disabled')
+              cy.task<any>('db:packageSessionEffects', { patientId: patient.id, packagePurchaseId: newBono.id }).then((effects) => {
+                expect(effects.sessions.filter((s: any) => s.package_purchase_id === newBono.id).length, 'nothing drawn from the new bono').to.eq(0)
+              })
+            })
+          })
+        })
+      })
+    })
+  })
+
   it('uses no session when the visit it needs cannot be recorded', () => {
     // The visit insert's error used to be discarded: the session was then
     // recorded against no visit and the bono was one session down, with

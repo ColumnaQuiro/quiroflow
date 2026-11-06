@@ -26,6 +26,8 @@ interface Message {
   created_at: string
   /** Sent by the AI receptionist on its own -- labelled for the team, never the patient. */
   sent_by_ai?: boolean
+  /** In-app message a family member wrote for this patient (family accounts): their name. */
+  sent_by_name?: string | null
   /** The patient's WhatsApp reaction to this message, drawn on it (ReactionBadge). */
   contact_reaction?: string | null
   pending?: boolean
@@ -381,15 +383,24 @@ async function loadThreadFor(key: string) {
     q,
     c.patientId
       ? (since
-          ? supabase.from('patient_app_messages').select('id, patient_id, direction, body, created_at, sent_by_ai').eq('patient_id', c.patientId).gt('created_at', since).order('created_at', { ascending: false }).limit(200)
-          : supabase.from('patient_app_messages').select('id, patient_id, direction, body, created_at, sent_by_ai').eq('patient_id', c.patientId).order('created_at', { ascending: false }).limit(200))
+          ? supabase.from('patient_app_messages').select('id, patient_id, direction, body, created_at, sent_by_ai, sent_by_patient_id').eq('patient_id', c.patientId).gt('created_at', since).order('created_at', { ascending: false }).limit(200)
+          : supabase.from('patient_app_messages').select('id, patient_id, direction, body, created_at, sent_by_ai, sent_by_patient_id').eq('patient_id', c.patientId).order('created_at', { ascending: false }).limit(200))
       : Promise.resolve({ data: [] as { id: string; patient_id: string; direction: string; body: string; created_at: string; sent_by_ai: boolean }[], error: null }),
   ])
   // A failed read keeps what is there, and is tried again on the next refresh.
   if (wa === null || app === null) return
+  // Written by a family member for this patient: whose name to show on it.
+  const appRows = (app ?? []) as { id: string; patient_id: string; direction: string; body: string; created_at: string; sent_by_ai: boolean; sent_by_patient_id?: string | null }[]
+  const senderIds = [...new Set(appRows.map((m) => m.sent_by_patient_id).filter((id): id is string => !!id))]
+  const senders = new Map<string, string>()
+  if (senderIds.length) {
+    const { data: people } = await supabase.from('patients').select('id, first_name, last_name').in('id', senderIds)
+    for (const p of people ?? []) senders.set(p.id, `${p.first_name} ${p.last_name ?? ''}`.trim())
+  }
   const fetched: Message[] = [
     ...((wa ?? []) as Message[]),
-    ...((app ?? []) as { id: string; patient_id: string; direction: string; body: string; created_at: string; sent_by_ai: boolean }[]).map((m) => ({
+    ...appRows.map((m) => ({
+      sent_by_name: m.sent_by_patient_id ? (senders.get(m.sent_by_patient_id) ?? t('A family member', 'Un familiar')) : null,
       id: m.id, sent_by_ai: m.sent_by_ai, patient_id: m.patient_id, phone_number: null, external_contact_id: null, lead_id: null, direction: m.direction, status: 'sent', body_preview: m.body,
       template_name: null, media_type: null, media_storage_path: null, media_mime_type: null, media_filename: null, channel: 'in_app', created_at: m.created_at,
     })),
@@ -2108,6 +2119,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
             <!-- The receptionist answered on its own: said, for the team
             only -- the patient got the message alone. -->
             <p v-if="m.sent_by_ai" class="mb-0.5 text-[10.5px] font-semibold uppercase tracking-[.04em] opacity-75" data-testid="message-ai">{{ t('AI receptionist', 'Recepcionista IA') }}</p>
+            <p v-else-if="m.sent_by_name" class="mb-0.5 text-[10.5px] font-semibold opacity-75">{{ t(`Sent by ${m.sent_by_name}`, `Enviado por ${m.sent_by_name}`) }}</p>
             <img
               v-if="m.media_type === 'image' && m.media_storage_path && mediaUrls[m.media_storage_path]"
               :src="mediaUrls[m.media_storage_path]"

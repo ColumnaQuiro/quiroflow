@@ -135,6 +135,14 @@ export default defineNuxtRouteMiddleware(async (to) => {
       const { error } = await supabase.rpc('accept_invite', { p_token: token })
       if (error) return navigateTo('/join')
       localStorage.removeItem('pending_invite_token')
+      // The rest of the imported appointments the invite brings (accept_invite
+      // links only the first batch). Not awaited: it can take a while for a
+      // name with years of history, and they are in the clinic already. Each
+      // batch commits on its own; whatever a closed tab leaves behind shows
+      // under Settings -> Team -> imported names. See pages/join.vue.
+      void linkInvitedAppointments(supabase).then((linkError) => {
+        if (linkError) console.error('Linking invited appointments:', linkError)
+      })
       store.reset()
       await store.load()
       hasAccount = !!store.teamMember

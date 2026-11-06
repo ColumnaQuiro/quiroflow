@@ -2798,6 +2798,7 @@ function avatarInitials(name: string) {
       :patient-id="selected.patientId ?? undefined"
       :phone-number="selected.patientId ? undefined : (selected.phoneNumber ?? undefined)"
       :patient-first-name="selected.patientId ? selected.name.split(' ')[0] : undefined"
+      personal
       @close="templateModalOpen = false"
       @sent="onTemplateSent"
     />

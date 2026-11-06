@@ -97,7 +97,10 @@ describe('The patient conversation', () => {
     })
   })
 
-  it('offers no way to send to a do-not-contact patient', () => {
+  // "Do not contact" stops campaigns and automatic messages, not a person at
+  // the clinic writing to them -- it used to hide this button, so a patient
+  // who had only asked to stop the reminders could not be written to at all.
+  it('lets a person write to a do-not-contact patient, and says what the flag stops', () => {
     cy.seedStaffAccount().then((account) => {
       cy.task('db:createPatient', {
         accountId: account.accountId,
@@ -110,10 +113,8 @@ describe('The patient conversation', () => {
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}?tab=communications`)
 
-        // Removed, not disabled -- and the thread itself stays readable,
-        // because what was already said is still a record.
-        cy.contains('do not contact').should('be.visible')
-        cy.contains('button', 'New message').should('not.exist')
+        cy.get('[data-cy=comms-do-not-contact]').should('contain', 'do not contact').and('contain', 'automatic messages')
+        cy.contains('button', 'New message').should('be.visible')
       })
     })
   })

@@ -27,6 +27,9 @@ const props = withDefaults(
     title?: string
     /** Said instead of "set a default in Settings" when a fixed template does not exist. */
     missingTemplateMessage?: string
+    /** A person writing to this one patient (their record, the Inbox), not a
+     *  recall or a list: lets it reach someone marked "do not contact". */
+    personal?: boolean
   }>(),
   { allowTemplateOverride: true },
 )
@@ -134,6 +137,7 @@ async function send() {
       method: 'POST',
       body: {
         patientId: props.patientId,
+        personal: props.personal || undefined,
         phoneNumber: props.patientId || props.leadId ? undefined : props.phoneNumber,
         leadId: props.patientId ? undefined : props.leadId,
         templateName: selectedTemplate.value.name,

@@ -18,8 +18,8 @@ import type { Tables } from '~/types/database.types'
 // Failure is the exception and stays spelled out, because "it did not
 // arrive" is not something to encode in a glyph someone has to learn.
 const props = withDefaults(
-  defineProps<{ patientId: string; firstName?: string; preferredLanguage?: string; canContact?: boolean }>(),
-  { canContact: true },
+  defineProps<{ patientId: string; firstName?: string; preferredLanguage?: string; canContact?: boolean; doNotContact?: boolean }>(),
+  { canContact: true, doNotContact: false },
 )
 
 interface MessageRow {
@@ -224,7 +224,10 @@ onMounted(loadTemplates)
         </div>
 
         <p v-if="!canContact" class="border-b border-line-divider bg-danger-bg px-4 py-2 text-[12px] text-danger-text">
-          {{ t('This patient is marked "do not contact": no automatic messages, and the clinic cannot start a conversation. When they write in, you can still reply from the Inbox.', 'Este paciente está marcado como "no contactar": no recibe mensajes automáticos y la clínica no puede iniciar una conversación. Si escribe, puedes responderle desde el Inbox.') }}
+          {{ t('This patient cannot be messaged — new messages are disabled.', 'A este paciente no se le pueden enviar mensajes: los nuevos mensajes están deshabilitados.') }}
+        </p>
+        <p v-else-if="doNotContact" class="border-b border-line-divider bg-warning-bg px-4 py-2 text-[12px] text-warning-text" data-cy="comms-do-not-contact">
+          {{ t('Marked "do not contact": no campaigns, recalls, reminders or automatic messages. You can still write to them yourself.', 'Marcado como "no contactar": no recibe campañas, recalls, recordatorios ni mensajes automáticos. Puedes escribirle tú.') }}
         </p>
 
         <!-- Delivery states are drawn, so the change is also announced. -->
@@ -367,6 +370,7 @@ onMounted(loadTemplates)
 
     <SendWhatsAppModal
       v-if="newMessageOpen"
+      personal
       :patient-id="patientId"
       :patient-first-name="firstName"
       :patient-preferred-language="preferredLanguage"

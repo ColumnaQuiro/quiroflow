@@ -1,5 +1,6 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
+import { logFamilyAccess } from '~/server/utils/familyAccess'
 
 // A patient fetching one of their own facturas, as a link they can open.
 //
@@ -57,5 +58,6 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 502, statusMessage: 'Could not prepare the factura' })
   }
 
+  await logFamilyAccess(supabase as never, factura.patient_id, 'invoice_pdf', { factura_id: factura.id })
   return { url: signed.signedUrl, fileName }
 })

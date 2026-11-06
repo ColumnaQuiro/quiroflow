@@ -46,7 +46,7 @@ const { enabled: canPayOnline, payingId, error: payError, pay } = usePatientPay(
 const amountDueCents = computed(() => outstandingCents.value)
 
 // The card visits are paid with from the app, where the clinic allows it.
-const { enabled: appPayEnabled, card: payCard, addingCard, error: cardError, addCard } = useAppPayments(() => patientId.value)
+const { enabled: appPayEnabled, card: payCard, cardOwner, addingCard, error: cardError, addCard } = useAppPayments(() => patientId.value)
 
 const showAll = ref(false)
 const PREVIEW = 8
@@ -97,7 +97,7 @@ function eur(cents: number) {
 
     <div v-if="appPayEnabled" class="mt-3">
       <PatientCard :title="t('Your card', 'Tu tarjeta')">
-        <PatientSavedCard :card="payCard" :busy="addingCard" @add="addCard" />
+        <PatientSavedCard :card="payCard" :busy="addingCard" :yours="cardOwner === 'payer'" @add="addCard" />
         <p v-if="cardError" role="alert" class="mt-2 text-[12.5px] text-danger-text">{{ cardError }}</p>
       </PatientCard>
     </div>

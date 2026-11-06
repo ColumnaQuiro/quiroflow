@@ -10,6 +10,8 @@ import { remeasure, TREND_METRICS, trendLayout, trendSeries, trendSummary, type 
 // imports are relative.
 const t = useT()
 const authedFetch = useAuthedFetch()
+// Whose: the family switcher's person (composables/useFamily.ts).
+const { active } = useFamily()
 const lang = computed(() => t('en', 'es') as 'en' | 'es')
 
 interface View { url: string | null; width: number; height: number; points: Points; facing: 'right' | 'left' | null }
@@ -21,7 +23,7 @@ async function load() {
   loading.value = true
   loadError.value = false
   try {
-    list.value = (await authedFetch<{ assessments: Assessment[] }>('/api/portal/posture')).assessments
+    list.value = (await authedFetch<{ assessments: Assessment[] }>('/api/portal/posture', { query: active.value ? { patientId: active.value.patientId } : {} })).assessments
   } catch {
     loadError.value = true
   } finally {

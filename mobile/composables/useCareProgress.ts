@@ -25,7 +25,7 @@ export function useCareProgress(patientId: () => string) {
       supabase.from('patient_exercise_logs').select('done_on, patient_exercises!inner(patient_id)').eq('patient_exercises.patient_id', id).gte('done_on', since.toISOString().slice(0, 10)),
       supabase.from('habit_checkins').select('habit, done_at').eq('patient_id', id).gte('done_at', since.toISOString()),
       supabase.from('learn_sends').select('opened_at, channel, learn_articles(video_url, media_path)').eq('patient_id', id),
-      supabase.rpc('my_pain_trend'),
+      supabase.rpc('my_pain_trend', { p_patient_id: id }),
     ])
     const days = new Set<Day>()
     for (const r of (ex.data as { done_on: string }[] | null) ?? []) days.add(r.done_on)

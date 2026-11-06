@@ -70,6 +70,11 @@ interface RescheduleTarget {
 }
 
 const supabase = useSupabaseClient()
+// Family accounts: who the visit is for -- the person the app is showing,
+// changed here with "¿Para quién es la cita?" (composables/useFamily.ts).
+// create_patient_booking checks the login may book for them.
+const family = useFamily()
+const forPatient = () => (family.active.value ? { p_patient_id: family.active.value.patientId } : {})
 const t = useT()
 const locale = computed(() => t('en-GB', 'es-ES'))
 
@@ -144,7 +149,8 @@ const webBookingUrl = computed(() => {
 })
 
 onMounted(async () => {
-  const { data, error } = await supabase.rpc('get_patient_booking_info')
+  await family.load()
+  const { data, error } = await supabase.rpc('get_patient_booking_info', forPatient())
   if (error || !data) {
     phase.value = 'not_available'
     return
@@ -381,6 +387,7 @@ async function submitBooking() {
     p_appointment_type_id: appointmentTypeId.value,
     p_starts_at: selectedSlot.value.toISOString(),
     p_note: note.value,
+    ...forPatient(),
   })
   submitting.value = false
   if (error) {
@@ -405,6 +412,23 @@ async function submitBooking() {
     </div>
 
     <div v-else-if="phase === 'select'" class="space-y-4">
+      <fieldset v-if="family.hasFamily.value" data-cy="book-for-whom">
+        <legend class="block text-[12.5px] font-medium text-ink-700">{{ t('Who is it for?', '¿Para quién es la cita?') }}</legend>
+        <div class="mt-1.5 flex flex-wrap gap-2">
+          <button
+            v-for="p in family.people.value"
+            :key="p.patientId"
+            type="button"
+            class="h-10 rounded-pill px-4 text-[13.5px] font-medium"
+            :class="family.active.value?.patientId === p.patientId ? 'border-[1.5px] border-brand bg-brand-tint text-brand-text' : 'border border-line-control bg-surface text-ink-700'"
+            :aria-pressed="family.active.value?.patientId === p.patientId"
+            :data-cy="`book-for-${p.firstName}`"
+            @click="family.switchTo(p.patientId)"
+          >
+            {{ p.isSelf ? t('Me', 'Para mí') : p.firstName }}
+          </button>
+        </div>
+      </fieldset>
       <div v-if="info!.clinics.length > 1">
         <label class="block text-[12.5px] font-medium text-ink-700">{{ t('Clinic', 'Clínica') }}</label>
         <select v-model="clinicId" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-[13.5px]" @change="onClinicChange">
@@ -527,6 +551,7 @@ async function submitBooking() {
 
     <div v-else-if="phase === 'success'" class="flex flex-1 flex-col items-center justify-center gap-3 text-center">
       <p class="text-[15px] font-semibold text-ink-900">{{ rescheduleId ? t('Appointment changed', 'Cita cambiada') : t('Appointment booked', 'Cita reservada') }}</p>
+      <p v-if="family.actingForOther.value" class="text-[13px] text-ink-700">{{ t(`For ${family.active.value?.firstName}`, `Para ${family.active.value?.firstName}`) }}</p>
       <p class="text-[13px] text-ink-muted first-letter:uppercase">{{ confirmation && new Date(confirmation.starts_at).toLocaleString(locale, { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: clinicTimeZone }) }}</p>
       <NuxtLink to="/" class="mt-2 text-[13px] font-medium text-brand-text">{{ t('Back to home', 'Volver al inicio') }}</NuxtLink>
     </div>

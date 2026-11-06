@@ -34,6 +34,10 @@ export const pendingConversationKey = ref<string | null>(null)
 // times; attaching only after the token POST meant an offline launch left
 // taps doing nothing for the whole session.
 let listenersAttached = false
+// Family accounts: a push about somebody this login manages carries
+// forPatientId (server/utils/pushNotifications.ts); tapping it shows that
+// person. Set from the setup of usePushNotifications, where useFamily works.
+let showFamilyMember: ((patientId: string) => void) | null = null
 
 // Where a tapped notification goes. Staff pushes (server/utils/staffPush.ts)
 // carry { type: 'appointment', appointmentId }, { type: 'my_day' }, { type: 'weekly_digest' } or
@@ -46,6 +50,7 @@ let listenersAttached = false
 // clinic_announcement -- and open their side of the app.
 function routeTap(data: Record<string, string> | undefined) {
   const type = data?.type ?? ''
+  if (data?.forPatientId) showFamilyMember?.(data.forPatientId)
   if (type === 'appointment' && data?.appointmentId) return navigateTo(`/calendar/${data.appointmentId}`)
   if (type === 'my_day') return navigateTo('/my-day')
   // A leave request to decide, or the answer to one (server/api/staff-absences).
@@ -80,6 +85,8 @@ function routeTap(data: Record<string, string> | undefined) {
 export function usePushNotifications() {
   const authedFetch = useAuthedFetch()
   const { gate } = useTwoFactor()
+  const family = useFamily()
+  showFamilyMember = (id) => family.preferActive(id)
 
   async function send(token: string) {
     await authedFetch('/api/mobile/register-push-token', { method: 'POST', body: { token, platform: Capacitor.getPlatform() } })

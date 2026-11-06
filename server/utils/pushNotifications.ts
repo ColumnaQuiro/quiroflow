@@ -4,6 +4,7 @@ import type { Database } from '~/types/database.types'
 import { inboxRecipients } from '~/utils/inboxRecipients'
 import type { BusinessHours } from '~/utils/businessHours'
 import { wantingPush } from './staffPush'
+import { familyPushReach, familyPushTitle, guardianLinkStands } from '~/utils/familyPush'
 
 // Push notification for a new inbound message (WhatsApp or in-app), to
 // every team member who can see the Inbox -- the owner (bypasses all
@@ -239,6 +240,15 @@ export async function sendPushToPatients(
   const { data: recipients } = await query
   const userIds = [...new Set((recipients ?? []).map((r) => r.user_id as string))]
   const result = await sendPushToUsers(supabase, userIds, notification)
+  // Family accounts: the people who manage these patients in the app hear
+  // about their visits too (and, on a full link, the clinic's replies and
+  // exercises), titled with whose it is, and a tap switches to that person.
+  // Never broadcasts or announcements.
+  if (patientIds !== null) {
+    const family = await pushToFamilyManagers(supabase, accountId, patientIds, notification)
+    result.attempted += family.attempted
+    result.delivered += family.delivered
+  }
   // Reports > Communications: one row per patient it went to. A broadcast
   // (patientIds null) is recorded once, in patient_push_broadcasts, by its
   // caller. Best-effort: the push has already gone either way.
@@ -257,4 +267,43 @@ export async function sendPushToPatients(
     if (error) console.error('[push] could not log the send', error.message)
   }
   return { ...result, recipients: userIds.length }
+}
+
+async function pushToFamilyManagers(
+  supabase: ReturnType<typeof serverSupabaseServiceRole<Database>>,
+  accountId: string,
+  patientIds: string[],
+  notification: { title: string; body: string; data?: Record<string, string> },
+): Promise<PushSendResult> {
+  const reach = familyPushReach(notification.data?.type)
+  if (!reach || patientIds.length === 0) return { attempted: 0, delivered: 0 }
+  const { data: links } = await supabase
+    .from('patient_managers')
+    .select('patient_id, manager_patient_id, basis, access')
+    .eq('account_id', accountId)
+    .in('patient_id', patientIds)
+  const usable = (links ?? []).filter((l) => reach === 'any' || l.access === 'full')
+  if (usable.length === 0) return { attempted: 0, delivered: 0 }
+  const ids = [...new Set(usable.flatMap((l) => [l.patient_id, l.manager_patient_id]))]
+  const { data: people } = await supabase
+    .from('patients')
+    .select('id, first_name, user_id, date_of_birth, is_minor, do_not_contact, app_push_opted_out, anonymized_at')
+    .in('id', ids)
+  const byId = new Map((people ?? []).map((p) => [p.id, p]))
+  const total: PushSendResult = { attempted: 0, delivered: 0 }
+  for (const link of usable) {
+    const patient = byId.get(link.patient_id)
+    const manager = byId.get(link.manager_patient_id)
+    if (!patient || !manager?.user_id || patient.anonymized_at || manager.anonymized_at) continue
+    if (manager.do_not_contact || manager.app_push_opted_out) continue
+    if (link.basis === 'guardian' && !guardianLinkStands(patient.date_of_birth, patient.is_minor)) continue
+    const sent = await sendPushToUsers(supabase, [manager.user_id], {
+      title: familyPushTitle(patient.first_name ?? '', notification.title),
+      body: notification.body,
+      data: { ...(notification.data ?? {}), forPatientId: patient.id },
+    })
+    total.attempted += sent.attempted
+    total.delivered += sent.delivered
+  }
+  return total
 }

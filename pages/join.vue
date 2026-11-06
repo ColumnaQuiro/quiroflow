@@ -6,7 +6,9 @@ const user = useSupabaseUser()
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 
-const state = ref<'checking' | 'need-auth' | 'accepting' | 'error' | 'already-member'>('checking')
+const state = ref<'checking' | 'need-auth' | 'accepting' | 'linking' | 'error' | 'already-member'>('checking')
+const linkedSoFar = ref(0)
+const linkRemaining = ref(0)
 const errorMessage = ref('')
 
 async function tryAccept(token: string) {
@@ -26,6 +28,17 @@ async function tryAccept(token: string) {
     return
   }
   localStorage.removeItem('pending_invite_token')
+  // An invite tied to an imported name brings that name's appointments, and
+  // accept_invite only took the first batch of them. The rest are linked here,
+  // in batches, before the calendar is opened; with none to link this is one
+  // quick call. A failure does not hold them up: they have joined, and what is
+  // left shows under Settings -> Team -> imported names.
+  state.value = 'linking'
+  const linkError = await linkInvitedAppointments(supabase, (step) => {
+    linkedSoFar.value = step.linked
+    linkRemaining.value = step.remaining
+  })
+  if (linkError) console.error('Linking invited appointments:', linkError)
   store.reset()
   await store.load()
   await navigateTo('/dashboard')
@@ -73,6 +86,13 @@ watch(user, async (value) => {
     <div class="w-full max-w-sm rounded-card border border-line bg-surface p-8 text-center">
       <template v-if="state === 'checking' || state === 'accepting'">
         <p class="text-sm text-ink-500">{{ state === 'accepting' ? 'Joining the practice…' : 'Checking your invite…' }}</p>
+      </template>
+
+      <template v-else-if="state === 'linking'">
+        <p class="text-sm text-ink-500">Bringing over your imported appointments…</p>
+        <p v-if="linkRemaining > 0" class="mt-2 font-mono text-[13px] text-ink-700" data-cy="join-link-progress">
+          {{ linkedSoFar }} / {{ linkedSoFar + linkRemaining }}
+        </p>
       </template>
 
       <template v-else-if="state === 'need-auth'">

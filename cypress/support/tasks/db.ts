@@ -146,7 +146,7 @@ async function createLoneUser(opts: { email: string; password: string }) {
 }
 
 /** An invite to a practice, as Settings > Team writes one; returns its token. */
-async function createInvite(opts: { accountId: string; email: string; roleName?: string }) {
+async function createInvite(opts: { accountId: string; email: string; roleName?: string; linkPractitionerName?: string }) {
   const roleName = opts.roleName ?? 'Practitioner'
   const role = unwrap(
     await admin.from('account_roles').select('id').eq('account_id', opts.accountId).eq('name', roleName).single(),
@@ -159,6 +159,7 @@ async function createInvite(opts: { accountId: string; email: string; roleName?:
         email: opts.email,
         role: roleName === 'Front Desk' ? 'front_desk' : 'practitioner',
         role_id: role.id,
+        link_practitioner_name: opts.linkPractitionerName ?? null,
       })
       .select('token')
       .single(),
@@ -4037,14 +4038,29 @@ async function createImportedAppointments(opts: { accountId: string; clinicId: s
       status: 'completed',
     }
   })
-  assertOk(await admin.from('appointments').insert(rows))
+  // In chunks: thousands of rows in one insert, each firing the appointment
+  // triggers, can outlast the local statement timeout on a busy machine.
+  for (let i = 0; i < rows.length; i += 500) assertOk(await admin.from('appointments').insert(rows.slice(i, i + 500)))
   return { created: opts.count }
 }
 
 /** How many appointments under an imported name are linked, and to whom. */
 async function importedAppointmentsLinks(opts: { accountId: string; practitionerName: string }) {
-  const rows = unwrap(await admin.from('appointments').select('practitioner_id').eq('account_id', opts.accountId).eq('practitioner_name', opts.practitionerName))
-  return (rows as { practitioner_id: string | null }[]).map((r) => r.practitioner_id)
+  // Paged: a read stops at 1,000 rows, and the batch specs seed thousands.
+  const out: (string | null)[] = []
+  for (let from = 0; ; from += 1000) {
+    const rows = unwrap(
+      await admin
+        .from('appointments')
+        .select('practitioner_id')
+        .eq('account_id', opts.accountId)
+        .eq('practitioner_name', opts.practitionerName)
+        .order('id')
+        .range(from, from + 999),
+    ) as { practitioner_id: string | null }[]
+    out.push(...rows.map((r) => r.practitioner_id))
+    if (rows.length < 1000) return out
+  }
 }
 
 /** The newest invite on an account, as Settings > Team wrote it. */

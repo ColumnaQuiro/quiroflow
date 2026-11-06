@@ -1183,6 +1183,7 @@ export type Database = {
       account_invites: {
         Row: {
           accepted_at: string | null
+          accepted_team_member_id: string | null
           account_id: string
           created_at: string
           email: string | null
@@ -1198,6 +1199,7 @@ export type Database = {
         }
         Insert: {
           accepted_at?: string | null
+          accepted_team_member_id?: string | null
           account_id: string
           created_at?: string
           email?: string | null
@@ -1213,6 +1215,7 @@ export type Database = {
         }
         Update: {
           accepted_at?: string | null
+          accepted_team_member_id?: string | null
           account_id?: string
           created_at?: string
           email?: string | null
@@ -10147,6 +10150,10 @@ export type Database = {
       delete_account_role: {
         Args: { p_move_to_role_id?: string; p_role_id: string }
         Returns: number
+      }
+      link_my_invited_appointments: {
+        Args: { p_limit?: number }
+        Returns: Json
       }
       link_inbox_conversation: {
         Args: { p_phone_number: string; p_patient_id: string }

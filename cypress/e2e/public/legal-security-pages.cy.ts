@@ -41,6 +41,8 @@ describe('Security and privacy pages', () => {
     cy.contains('Columnaquiro S.L., NIF B16365504').should('be.visible')
     cy.get('section').invoke('text').should('not.match', /\[[^\]]*\]/)
     cy.get('[data-cy=subprocessors] li').should('have.length.at.least', 8)
+    // Play rejects an app that reads location when the policy does not say so.
+    cy.get('[data-cy=privacy-location]').should('contain', 'background').and('contain', 'only on the phone')
 
     cy.visit('/legal/privacy', inSpanish)
     cy.contains('h1', 'Política de privacidad').should('be.visible')

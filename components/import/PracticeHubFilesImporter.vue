@@ -314,21 +314,84 @@ async function compress(fileId: string) {
   await useStaffFetch('/api/patients/files/compress', { method: 'POST', body: { fileId } }).catch(() => {})
 }
 
+// The download links PracticeHub hands out are pre-signed and short-lived, and
+// they are all signed at the moment the list is read. A clinic with thousands
+// of files outlasts them: at one clinic every file after a point failed with
+// 410 -- 3,937 of them -- because the run was still going when the links it
+// had read at the start ran out. Nothing was wrong with those files; their
+// links were simply old.
+//
+// So a 410 re-reads the list for fresh links and the files that hit it are
+// tried once more. Every link in the queue is replaced, not only the failed
+// ones, because they were all signed together and expire together.
+function isExpiredLink(reason: any): boolean {
+  return (reason?.statusCode ?? reason?.response?.status) === 410
+}
+const refreshingLinks = ref(false)
+async function refreshLinks() {
+  if (!connection.value) return
+  refreshingLinks.value = true
+  try {
+    const phFiles = await usePracticeHubApi(connection.value).fetchAll<PHFile>('/files')
+    const urlById = new Map(phFiles.map((f) => [f.id, f.url]))
+    for (const item of queue.value) {
+      const url = urlById.get(item.ph.id)
+      if (url) item.ph.url = url
+    }
+  } finally {
+    refreshingLinks.value = false
+  }
+}
+
+function failureText(item: { ph: PHFile }, reason: any): string {
+  const name = item.ph.file_name ?? `#${item.ph.id}`
+  // responseType 'blob' leaves an error's body as a Blob, so the server's
+  // statusMessage never reaches data; the status on the error does.
+  const status = reason?.statusCode ?? reason?.response?.status
+  const message = reason?.data?.statusMessage ?? reason?.statusMessage ?? reason?.message ?? String(reason)
+  return status && !String(message).includes(String(status)) ? `${name}: ${message} (${status})` : `${name}: ${message}`
+}
+
 async function run() {
   phase.value = 'working'
   stopRequested.value = false
+  error.value = ''
 
   for (let i = done.value; i < queue.value.length; i += BATCH_SIZE) {
     if (stopRequested.value) break
     const batch = queue.value.slice(i, i + BATCH_SIZE)
     // Concurrent within a batch, serial between them: the clinic's connection
     // is the limit, and a whole file list at once would swamp it.
-    const results = await Promise.allSettled(batch.map((item) => importOne(item)))
-    results.forEach((r, n) => {
-      if (r.status === 'rejected') {
-        const name = batch[n].ph.file_name ?? `#${batch[n].ph.id}`
-        failed.value.push(`${name}: ${r.reason?.data?.statusMessage ?? r.reason?.message ?? r.reason}`)
+    let results = await Promise.allSettled(batch.map((item) => importOne(item)))
+
+    if (results.some((r) => r.status === 'rejected' && isExpiredLink(r.reason))) {
+      try {
+        await refreshLinks()
+        results = await Promise.all(
+          results.map((r, n) =>
+            r.status === 'rejected' && isExpiredLink(r.reason)
+              ? importOne(batch[n]).then(
+                  (value): PromiseSettledResult<void> => ({ status: 'fulfilled', value }),
+                  (reason): PromiseSettledResult<void> => ({ status: 'rejected', reason }),
+                )
+              : r,
+          ),
+        )
+      } catch (err: any) {
+        // Could not re-read the list: stop here rather than burn through the
+        // rest of the queue on links that are known to be dead. Continue picks
+        // up from this batch.
+        error.value = t(
+          `The download links expired and PracticeHub could not be read again for new ones: ${err?.data?.statusMessage ?? err?.message ?? err}. Continue to retry.`,
+          `Los enlaces de descarga caducaron y no se pudo volver a leer PracticeHub para obtener otros: ${err?.data?.statusMessage ?? err?.message ?? err}. Pulsa Continuar para reintentar.`,
+        )
+        phase.value = 'ready'
+        return
       }
+    }
+
+    results.forEach((r, n) => {
+      if (r.status === 'rejected') failed.value.push(failureText(batch[n], r.reason))
     })
     done.value = Math.min(i + BATCH_SIZE, queue.value.length)
   }
@@ -422,6 +485,9 @@ async function run() {
           <div class="mt-2 h-2 overflow-hidden rounded-full bg-line">
             <div class="h-full rounded-full bg-brand transition-all" :style="{ width: `${progressPct}%` }" />
           </div>
+          <p v-if="refreshingLinks" class="mt-2 text-[12.5px] text-ink-muted2">
+            {{ t('The download links expired — getting fresh ones from PracticeHub…', 'Los enlaces de descarga caducaron: pidiendo otros nuevos a PracticeHub…') }}
+          </p>
         </div>
 
         <div class="flex flex-wrap gap-2">

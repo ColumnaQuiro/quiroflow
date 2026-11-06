@@ -27,7 +27,7 @@ useHead({ title: () => t('Privacy policy — QuiroFlow', 'Política de privacida
       </div>
 
       <h1 class="mt-8 text-2xl font-semibold text-ink-900">{{ t('Privacy policy', 'Política de privacidad') }}</h1>
-      <p class="mt-1 text-[13px] text-ink-faint">{{ t('Last updated: 29 October 2026', 'Última actualización: 29 de octubre de 2026') }}</p>
+      <p class="mt-1 text-[13px] text-ink-faint">{{ t('Last updated: 6 November 2026', 'Última actualización: 6 de noviembre de 2026') }}</p>
 
       <div class="mt-8 rounded-card border border-line bg-surface p-5 text-[13.5px] leading-relaxed text-ink-700">
         <p class="font-medium text-ink-900">{{ t('Who this policy covers, and who it doesn\'t', 'A quién se aplica esta política, y a quién no') }}</p>
@@ -61,6 +61,15 @@ useHead({ title: () => t('Privacy policy — QuiroFlow', 'Política de privacida
             <li>
               <strong>{{ t('Device and usage data', 'Datos del dispositivo y de uso') }}</strong>
               {{ t('(app opens, push-notification tokens): to operate and improve the mobile app.', '(aperturas de la app, identificadores de notificaciones): para hacer funcionar y mejorar la app móvil.') }}
+            </li>
+            <li data-cy="privacy-location">
+              <strong>{{ t('Location, in the patient app', 'Ubicación, en la app del paciente') }}</strong>
+              {{
+                t(
+                  '(precise and approximate location, including in the background): only if the patient uses place-based habit reminders (Cuidarme › Mis hábitos). The patient saves a place, such as home, and the app checks whether they are there, even when the app is closed or not in use, so that a habit reminds them only at that place. The app asks before using location, and the patient can decline and keep reminders by time. Saved places and location readings are kept and processed only on the phone: they are not sent to QuiroFlow, to the clinic or to anyone else, are not used for advertising, and are erased when the patient deletes the place or uninstalls the app. Legal basis: the patient\'s consent (GDPR Art. 6(1)(a)), which they can withdraw at any time in the phone\'s settings.',
+                  '(ubicación precisa y aproximada, también en segundo plano): solo si el paciente usa los recordatorios de hábitos por lugar (Cuidarme › Mis hábitos). El paciente guarda un lugar, como su casa, y la app comprueba si está allí, incluso con la app cerrada o sin usar, para que un hábito le avise solo en ese lugar. La app pide permiso antes de usar la ubicación, y el paciente puede negarlo y seguir con recordatorios por horas. Los lugares guardados y las lecturas de ubicación se guardan y se tratan solo en el teléfono: no se envían a QuiroFlow, a la clínica ni a nadie más, no se usan para publicidad y se borran cuando el paciente elimina el lugar o desinstala la app. Base jurídica: el consentimiento del paciente (art. 6.1.a RGPD), que puede retirar en cualquier momento desde los ajustes del teléfono.',
+                )
+              }}
             </li>
             <li>
               <strong>{{ t('Security and audit logs', 'Registros de seguridad y auditoría') }}</strong>

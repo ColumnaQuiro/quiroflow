@@ -22,9 +22,12 @@ export function usePatientWaitlist() {
   const loading = ref(true)
   const busy = ref(false)
   const error = ref('')
+  // Whose place on the list: the family switcher's person.
+  const { active } = useFamily()
+  const forPatient = () => (active.value ? { p_patient_id: active.value.patientId } : {})
 
   async function load() {
-    const { data, error: readError } = await supabase.rpc('get_my_waitlist' as never)
+    const { data, error: readError } = await supabase.rpc('get_my_waitlist' as never, forPatient() as never)
     loading.value = false
     if (readError) return
     entries.value = (data as PatientWaitlistEntry[] | null) ?? []
@@ -38,7 +41,7 @@ export function usePatientWaitlist() {
     error.value = ''
     let failed = false
     try {
-      await authedFetch('/api/portal/waitlist/join', { method: 'POST', body: { clinicId } })
+      await authedFetch('/api/portal/waitlist/join', { method: 'POST', body: { clinicId, patientId: active.value?.patientId } })
     } catch {
       failed = true
     }

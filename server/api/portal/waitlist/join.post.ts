@@ -11,15 +11,17 @@ import { pushPatientAction } from '~/server/utils/staffPush'
 // Only a new entry tells anyone: joining twice returns the one already there,
 // and the front desk does not need hearing about it again.
 export default defineEventHandler(async (event) => {
-  const body = await readBody<{ clinicId?: string }>(event)
+  const body = await readBody<{ clinicId?: string; patientId?: string }>(event)
+  // Who joins: a family member when named (family accounts), else the login's own record.
+  const forPatient = body?.patientId ? { p_patient_id: body.patientId } : {}
   if (!body?.clinicId) throw createError({ statusCode: 400, statusMessage: 'clinicId is required' })
 
   const { supabase } = await requireAuthedUser(event)
-  const { data: before } = await supabase.rpc('get_my_waitlist' as never)
+  const { data: before } = await supabase.rpc('get_my_waitlist' as never, forPatient as never)
   const already = ((before as { id: string; clinic_id: string }[] | null) ?? []).find((e) => e.clinic_id === body.clinicId)
   if (already) return { entryId: already.id, created: false }
 
-  const { data: entryId, error } = await supabase.rpc('join_my_waitlist' as never, { p_clinic_id: body.clinicId } as never)
+  const { data: entryId, error } = await supabase.rpc('join_my_waitlist' as never, { p_clinic_id: body.clinicId, ...forPatient } as never)
   if (error || !entryId) throw createError({ statusCode: 400, statusMessage: error?.message ?? 'Could not join the waitlist' })
 
   const service = serverSupabaseServiceRole<Database>(event)

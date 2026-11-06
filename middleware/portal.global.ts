@@ -31,7 +31,11 @@ export default defineNuxtRouteMiddleware(async (to) => {
     // email matches at more than one clinic -- the case the code is for.
     if (error && slug) ({ error } = await supabase.rpc('claim_patient_profile'))
     if (error) {
-      return navigateTo('/portal/not-found')
+      // Several records at the clinic share this email -- a family's, often
+      // (claim_patient_profile, 20261106053857). Which one is theirs is the
+      // clinic's to say, so the page says to ask rather than "not found".
+      const shared = /share this email/.test(error.message)
+      return navigateTo(shared ? { path: '/portal/not-found', query: { why: 'shared' } } : '/portal/not-found')
     }
   }
 })

@@ -26,7 +26,7 @@ async function choose(next: number | null) {
   hour.value = next
   saving.value = true
   error.value = ''
-  const { data, error: e } = await supabase.rpc('set_my_exercise_reminder' as never, { p_hour: next } as never)
+  const { data, error: e } = await supabase.rpc('set_my_exercise_reminder' as never, { p_hour: next, p_patient_id: props.patientId } as never)
   saving.value = false
   if (e || data !== true) {
     hour.value = before

@@ -29,6 +29,8 @@ interface Message {
   body_preview: string | null
   /** Sent by the AI receptionist on its own, not a person (receptionistSend.ts). */
   sent_by_ai?: boolean
+  /** In-app message a family member wrote for this patient (family accounts): their name. */
+  sent_by_name?: string | null
   template_name: string | null
   media_type: string | null
   media_storage_path: string | null
@@ -967,13 +969,20 @@ async function fetchThreadUncached(c: Conversation, since?: string): Promise<Mes
     wa.order('created_at', { ascending: false }).limit(300),
     c.patientId
       ? (since
-          ? supabase.from('patient_app_messages').select('id, patient_id, direction, body, created_at, sent_by_ai').eq('patient_id', c.patientId).gt('created_at', since).order('created_at', { ascending: false }).limit(300)
-          : supabase.from('patient_app_messages').select('id, patient_id, direction, body, created_at, sent_by_ai').eq('patient_id', c.patientId).order('created_at', { ascending: false }).limit(300))
-      : Promise.resolve({ data: [] as { id: string; patient_id: string; direction: string; body: string; created_at: string; sent_by_ai: boolean }[], error: null }),
+          ? supabase.from('patient_app_messages').select('id, patient_id, direction, body, created_at, sent_by_ai, sent_by_patient_id').eq('patient_id', c.patientId).gt('created_at', since).order('created_at', { ascending: false }).limit(300)
+          : supabase.from('patient_app_messages').select('id, patient_id, direction, body, created_at, sent_by_ai, sent_by_patient_id').eq('patient_id', c.patientId).order('created_at', { ascending: false }).limit(300))
+      : Promise.resolve({ data: [] as { id: string; patient_id: string; direction: string; body: string; created_at: string; sent_by_ai: boolean; sent_by_patient_id: string | null }[], error: null }),
   ])
   // A failed read keeps whatever is on screen rather than emptying the
   // conversation -- an empty thread is what offers to start it with a template.
   if (error || app.error) return null
+  // Written by a family member for this patient: whose name to show on it.
+  const senderIds = [...new Set((app.data ?? []).map((m) => m.sent_by_patient_id).filter((id): id is string => !!id))]
+  const senders = new Map<string, string>()
+  if (senderIds.length) {
+    const { data: people } = await supabase.from('patients').select('id, first_name, last_name').in('id', senderIds)
+    for (const p of people ?? []) senders.set(p.id, `${p.first_name} ${p.last_name ?? ''}`.trim())
+  }
   // In-app messages are normalized into the same Message shape so the thread
   // (ticks, media, retry) doesn't need to know two tables exist.
   const appMessages: Message[] = (app.data ?? []).map((m) => ({
@@ -992,6 +1001,7 @@ async function fetchThreadUncached(c: Conversation, since?: string): Promise<Mes
     channel: 'in_app',
     created_at: m.created_at,
     sent_by_ai: m.sent_by_ai,
+    sent_by_name: m.sent_by_patient_id ? (senders.get(m.sent_by_patient_id) ?? t('A family member', 'Un familiar')) : null,
   }))
   return [...((waData ?? []) as Message[]), ...appMessages].sort((a, b) => a.created_at.localeCompare(b.created_at))
 }
@@ -2638,6 +2648,8 @@ function avatarInitials(name: string) {
                 <!-- The receptionist answered on its own: said, so nobody
                 reads it as a colleague's reply. -->
                 <p v-if="m.sent_by_ai" class="mb-0.5 text-[11px] font-semibold uppercase tracking-[.04em] opacity-75" data-cy="thread-message-ai">{{ t('AI receptionist', 'Recepcionista IA') }}</p>
+                <!-- A parent writing for their child from the app. -->
+                <p v-else-if="m.sent_by_name" class="mb-0.5 text-[11px] font-semibold opacity-75" data-cy="thread-message-family">{{ t(`Sent by ${m.sent_by_name}`, `Enviado por ${m.sent_by_name}`) }}</p>
                 <img
                   v-if="m.media_type === 'image' && m.media_storage_path && mediaUrls[m.media_storage_path]"
                   :src="mediaUrls[m.media_storage_path]"

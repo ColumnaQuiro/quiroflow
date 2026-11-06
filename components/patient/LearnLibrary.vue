@@ -11,6 +11,9 @@ const props = defineProps<{ linkTo: (sendId: string) => string }>()
 
 const t = useT()
 const supabase = useSupabaseClient()
+// Whose library: the family switcher's person (composables/useFamily.ts).
+const { active } = useFamily()
+const activeId = computed(() => active.value?.patientId ?? null)
 
 interface Item { id: string; title: string; summary: string | null; tags: string[]; minutes: number | null; video_url: string | null; media_path: string | null; created_at: string }
 const items = ref<Item[]>([])
@@ -23,7 +26,9 @@ async function load() {
       .eq('visible_to_patients', true)
       .is('archived_at', null)
       .order('created_at', { ascending: false }),
-    supabase.from('learn_sends').select('article_id').not('opened_at', 'is', null),
+    activeId.value
+      ? supabase.from('learn_sends').select('article_id').eq('patient_id', activeId.value).not('opened_at', 'is', null)
+      : supabase.from('learn_sends').select('article_id').not('opened_at', 'is', null),
   ])
   items.value = (a.data as Item[] | null) ?? []
   openedIds.value = new Set(((s.data as { article_id: string }[] | null) ?? []).map((r) => r.article_id))
@@ -44,7 +49,7 @@ async function open(i: Item) {
   if (openingId.value) return
   error.value = ''
   openingId.value = i.id
-  const { data, error: e } = await supabase.rpc('open_library_article', { p_article_id: i.id })
+  const { data, error: e } = await supabase.rpc('open_library_article', { p_article_id: i.id, ...(activeId.value ? { p_patient_id: activeId.value } : {}) })
   openingId.value = null
   if (e || !data) {
     error.value = t("Couldn't open it. Try again.", 'No se ha podido abrir. Inténtalo de nuevo.')

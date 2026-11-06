@@ -22,7 +22,16 @@ export function useIdentity() {
   const supabase = useSupabaseClient()
   const user = useSupabaseUser()
 
-  const patient = ref<IdentityPatient | null>(null)
+  // The login's own patient record. `patient` below is whoever the family
+  // switcher is showing (composables/useFamily.ts) -- this record unless they
+  // chose somebody they manage -- and is what every patient screen reads.
+  const me = ref<IdentityPatient | null>(null)
+  const family = useFamily()
+  const patient = computed<IdentityPatient | null>(() => {
+    if (!me.value) return null
+    const a = family.active.value
+    return a ? { id: a.patientId, first_name: a.firstName, last_name: a.lastName } : me.value
+  })
   const teamMember = ref<IdentityTeamMember | null>(null)
   // Not 'ok' while this login still owes an authenticator code -- see
   // useTwoFactor. Callers show the code prompt (or the set-up) instead of
@@ -41,7 +50,7 @@ export function useIdentity() {
 
   async function load() {
     if (!user.value) {
-      patient.value = null
+      me.value = null
       teamMember.value = null
       loading.value = false
       return
@@ -54,7 +63,7 @@ export function useIdentity() {
     // because their second factor was pending.
     twoFactor.value = await gate()
     if (twoFactor.value !== 'ok') {
-      patient.value = null
+      me.value = null
       teamMember.value = null
       loading.value = false
       return
@@ -92,12 +101,13 @@ export function useIdentity() {
       const { error } = await supabase.rpc('claim_patient_profile', { p_account_slug: accountSlug })
       if (!error) ({ p, tm } = await queryIdentity(user.value.sub))
     }
-    patient.value = p
+    if (p) await family.load()
+    me.value = p
     teamMember.value = tm
     loading.value = false
   }
 
   watch(user, load, { immediate: true })
 
-  return { patient, teamMember, twoFactor, loading, reload: load }
+  return { patient, me, teamMember, twoFactor, loading, actingForOther: family.actingForOther, canSeeClinical: family.canSeeClinical, reload: load }
 }

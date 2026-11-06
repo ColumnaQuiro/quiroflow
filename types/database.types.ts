@@ -5664,6 +5664,7 @@ export type Database = {
           id: string
           patient_id: string
           sent_by_ai: boolean
+          sent_by_patient_id: string | null
         }
         Insert: {
           account_id: string
@@ -5673,6 +5674,7 @@ export type Database = {
           id?: string
           patient_id: string
           sent_by_ai?: boolean
+          sent_by_patient_id?: string | null
         }
         Update: {
           account_id?: string
@@ -5682,6 +5684,7 @@ export type Database = {
           id?: string
           patient_id?: string
           sent_by_ai?: boolean
+          sent_by_patient_id?: string | null
         }
         Relationships: [
           {
@@ -6473,6 +6476,45 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      patient_managers: {
+        Row: {
+          access: string
+          account_id: string
+          basis: string
+          created_at: string
+          granted_by: string | null
+          id: string
+          manager_patient_id: string
+          note: string | null
+          patient_id: string
+          updated_at: string
+        }
+        Insert: {
+          access?: string
+          account_id: string
+          basis: string
+          created_at?: string
+          granted_by?: string | null
+          id?: string
+          manager_patient_id: string
+          note?: string | null
+          patient_id: string
+          updated_at?: string
+        }
+        Update: {
+          access?: string
+          account_id?: string
+          basis?: string
+          created_at?: string
+          granted_by?: string | null
+          id?: string
+          manager_patient_id?: string
+          note?: string | null
+          patient_id?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       patient_relations: {
         Row: {
@@ -10005,8 +10047,8 @@ export type Database = {
         Args: { p_since: string }
         Returns: Json
       }
-      my_pain_trend: { Args: never; Returns: { first_score: number | null; latest_score: number | null; latest_on: string | null }[] }
-      open_library_article: { Args: { p_article_id: string }; Returns: string }
+      my_pain_trend: { Args: { p_patient_id?: string }; Returns: { first_score: number | null; latest_score: number | null; latest_on: string | null }[] }
+      open_library_article: { Args: { p_article_id: string; p_patient_id?: string }; Returns: string }
       platform_supabase_usage: {
         Args: never
         Returns: Json
@@ -10296,6 +10338,7 @@ export type Database = {
           p_appointment_type_id: string
           p_clinic_id: string
           p_note: string
+          p_patient_id?: string
           p_starts_at: string
           p_team_member_id: string
         }
@@ -10414,7 +10457,30 @@ export type Database = {
         Returns: { team_member_id: string; enrolled: boolean }[]
       }
       get_my_permissions: { Args: { target_account_id: string }; Returns: Json }
-      get_patient_booking_info: { Args: never; Returns: Json }
+      get_patient_booking_info: { Args: { p_patient_id?: string }; Returns: Json }
+      get_my_family: {
+        Args: never
+        Returns: {
+          patient_id: string
+          account_id: string
+          clinic_name: string
+          first_name: string
+          last_name: string | null
+          gender: string | null
+          is_self: boolean
+          access: string
+          basis: string | null
+          relation: string | null
+          link_id: string | null
+        }[]
+      }
+      get_my_managers: {
+        Args: never
+        Returns: { link_id: string; manager_first_name: string; manager_last_name: string | null; basis: string; access: string; created_at: string }[]
+      }
+      withdraw_patient_manager: { Args: { p_link_id: string }; Returns: boolean }
+      log_family_access: { Args: { p_patient_id: string; p_kind: string; p_detail?: Json }; Returns: undefined }
+      acting_patient: { Args: { p_patient_id: string | null; p_clinical?: boolean }; Returns: { id: string; account_id: string }[] }
       get_appointment_type_usage: { Args: { p_account_id: string }; Returns: Json }
       reorder_appointment_types: { Args: { p_ids: string[] }; Returns: undefined }
       cancel_patient_appointment: { Args: { p_appointment_id: string }; Returns: Json }

@@ -4,7 +4,9 @@ import type { AppPaymentsCard } from '../../composables/useAppPayments'
 // The card a patient pays their visits with from the app, and the way to add
 // or replace it: Stripe's own page, opened in the browser, so the card number
 // never passes through the app (server/api/portal/card-link.post.ts).
-defineProps<{ card: AppPaymentsCard | null; busy: boolean }>()
+// `yours`: the card shown is the signed-in person's own, paying for a family
+// member who has none saved (composables/useAppPayments.ts).
+defineProps<{ card: AppPaymentsCard | null; busy: boolean; yours?: boolean }>()
 const emit = defineEmits<{ add: [] }>()
 const t = useT()
 const BRAND: Record<string, string> = { visa: 'Visa', mastercard: 'Mastercard', amex: 'American Express', discover: 'Discover', diners: 'Diners', jcb: 'JCB', unionpay: 'UnionPay' }
@@ -18,6 +20,7 @@ const BRAND: Record<string, string> = { visa: 'Visa', mastercard: 'Mastercard', 
     <div class="min-w-0 flex-1">
       <template v-if="card">
         <p class="text-[14px] font-semibold text-ink-900">{{ BRAND[card.brand] ?? card.brand }} ···· {{ card.last4 }}</p>
+        <p v-if="yours" class="text-[12px] text-ink-muted">{{ t('Your own card', 'Tu propia tarjeta') }}</p>
         <p class="text-[12px] text-ink-muted">{{ t(`Expires ${String(card.expMonth).padStart(2, '0')}/${String(card.expYear).slice(-2)}`, `Caduca ${String(card.expMonth).padStart(2, '0')}/${String(card.expYear).slice(-2)}`) }}</p>
       </template>
       <template v-else>

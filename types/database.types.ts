@@ -10721,7 +10721,10 @@ export type Database = {
         Args: { target_account_id: string }
         Returns: string
       }
-      settle_imported_invoices: { Args: { p_account_id: string }; Returns: number }
+      settle_imported_invoices: {
+        Args: { p_account_id: string; p_limit?: number }
+        Returns: number
+      }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
       slugify: { Args: { input: string }; Returns: string }

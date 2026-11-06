@@ -70,6 +70,9 @@ const allocatedInvoices = ref(0)
 const importErrors = ref<string[]>([])
 
 const CHUNK = 200
+// ~0.6 ms an invoice measured in production, so a batch is ~1-2 s, well
+// inside the 8 s statement timeout however large the clinic.
+const SETTLE_BATCH = 2000
 
 const introLead = t(
   'Copies PracticeHub’s own invoices and payments across, exactly as it holds them.',
@@ -340,9 +343,29 @@ async function runImport() {
     phase.value = t('Settling what the payments cover…', 'Saldando lo que cubren los pagos…')
     // Sets invoice status only -- no payment is allocated, split or otherwise
     // touched. See the migration for why the pairing is deliberately not made.
-    const { data: allocated, error: allocError } = await supabase.rpc('settle_imported_invoices', { p_account_id: store.accountId! })
-    if (allocError) importErrors.value.push(t(`Allocation: ${allocError.message}`, `Asignación: ${allocError.message}`))
-    else allocatedInvoices.value = allocated ?? 0
+    //
+    // In batches: every changed invoice writes an audit row, and a clinic's
+    // whole history in one call outran the 8 s a signed-in request is allowed
+    // (10,251 invoices did). Each call changes at most SETTLE_BATCH and the
+    // rest are left for the next, so a call changing fewer means it is done.
+    // The cap on calls is only a guard against looping forever.
+    progress.value = { done: 0, total: 0 }
+    for (let call = 0; call < 200; call++) {
+      const { data: settled, error: allocError } = await supabase.rpc('settle_imported_invoices', {
+        p_account_id: store.accountId!,
+        p_limit: SETTLE_BATCH,
+      })
+      if (allocError) {
+        importErrors.value.push(t(`Allocation: ${allocError.message}`, `Asignación: ${allocError.message}`))
+        break
+      }
+      allocatedInvoices.value += settled ?? 0
+      phase.value = t(
+        `Settling what the payments cover… ${allocatedInvoices.value} so far`,
+        `Saldando lo que cubren los pagos… ${allocatedInvoices.value} hasta ahora`,
+      )
+      if ((settled ?? 0) < SETTLE_BATCH) break
+    }
 
     stage.value = 'done'
   } catch (err) {

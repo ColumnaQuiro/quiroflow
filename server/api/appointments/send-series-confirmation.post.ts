@@ -23,7 +23,7 @@ export default defineEventHandler(async (event) => {
   const result = await sendSeriesConfirmation(serverSupabaseServiceRole<Database>(event), teamMember.account_id, ids, async (patientId, text) => {
     // The Inbox's own send: the 24h window, the number they last wrote from,
     // and the message row the Inbox and Communications read.
-    await sendInboxMessage(event, access, { patientId, text })
+    await sendInboxMessage(event, access, { patientId, text, notification: true })
   })
   return { success: true, ...result }
 })

@@ -28,13 +28,16 @@ export default defineEventHandler(async (event) => {
 
   const { data: patient } = await supabase
     .from('patients')
-    .select('id, first_name, email, is_minor, do_not_contact')
+    .select('id, first_name, email, is_minor')
     .eq('id', patientId)
     .maybeSingle()
   if (!patient) {
     throw createError({ statusCode: 404, statusMessage: 'Patient not found' })
   }
-  if (patient.is_minor || patient.do_not_contact) {
+  // Only a minor. This is the email a person writes to this one patient from
+  // their Communications tab (its only caller); "do not contact" stops
+  // automatic messages and campaigns, not that.
+  if (patient.is_minor) {
     throw createError({ statusCode: 400, statusMessage: 'This patient must not be contacted directly' })
   }
   if (!patient.email) {

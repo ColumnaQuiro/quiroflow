@@ -7,8 +7,8 @@
 // prefilled with the patient's first name and every variable editable, an
 // attachment from the patient's files when the template has a media header,
 // coordinates when it has a location one -- and the send through
-// /api/whatsapp/send, which also refuses a minor or a do-not-contact patient
-// and records the message in the thread.
+// /api/whatsapp/send, which also refuses a minor (and a do-not-contact
+// patient, unless `personal`) and records the message in the thread.
 //
 // useStaffFetch, not a plain $fetch: the app has no server behind its own
 // origin, so the URL has to be made absolute against apiBase and carry the
@@ -33,6 +33,8 @@ const props = defineProps<{
   /** Chosen on opening when approved (Recordatorios: the account's recall template), in the patient's language if there is that variant. */
   defaultTemplateName?: string | null
   patientPreferredLanguage?: string | null
+  /** A person writing to this one patient from their thread, not a recall list: reaches "do not contact" too. */
+  personal?: boolean
 }>()
 const emit = defineEmits<{ close: []; sent: [] }>()
 
@@ -112,6 +114,7 @@ async function send() {
       method: 'POST',
       body: {
         patientId: props.patientId ?? undefined,
+        personal: props.personal || undefined,
         phoneNumber: props.patientId || props.leadId ? undefined : (props.phoneNumber ?? undefined),
         leadId: props.patientId ? undefined : (props.leadId ?? undefined),
         templateName: tpl.name,

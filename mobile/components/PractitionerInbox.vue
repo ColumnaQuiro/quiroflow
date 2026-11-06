@@ -1285,8 +1285,10 @@ watch(
   async (patientId) => {
     contactBlocked.value = false
     if (!patientId) return
-    const { data } = await supabase.from('patients').select('is_minor, do_not_contact').eq('id', patientId).maybeSingle()
-    if (selected.value?.patientId === patientId) contactBlocked.value = !!(data?.is_minor || data?.do_not_contact)
+    // Only a minor: "do not contact" stops automatic messages and campaigns,
+    // not a person writing to them from their own thread.
+    const { data } = await supabase.from('patients').select('is_minor').eq('id', patientId).maybeSingle()
+    if (selected.value?.patientId === patientId) contactBlocked.value = !!data?.is_minor
   },
   { immediate: true },
 )
@@ -2240,7 +2242,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
                     )
             }}
             <template v-if="templateTarget && contactBlocked">
-              {{ t('This patient cannot be contacted (under age or marked do not contact).', 'A este paciente no se le puede contactar (menor de edad o marcado como no contactar).') }}
+              {{ t('This patient is under age: write to their tutor.', 'Este paciente es menor de edad: escribe a su tutor.') }}
             </template>
             <template v-else-if="templateTarget && !templateAllowed">
               {{ t("Your role can't send templates.", 'Tu rol no puede enviar plantillas.') }}
@@ -2445,6 +2447,7 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
       :phone-number="selected.patientId ? null : selected.phoneNumber"
       :lead-id="selected.patientId ? null : selected.leadId"
       :patient-first-name="selected.patientId || selected.leadId ? selected.name.split(' ')[0] : undefined"
+      personal
       @close="templateSheetOpen = false"
       @sent="onTemplateSent"
     />

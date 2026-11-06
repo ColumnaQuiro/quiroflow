@@ -691,7 +691,7 @@ const fieldId = useId()
           </div>
           <label class="mt-3 flex items-center gap-1.5 text-[13px] text-ink-600">
             <input v-model="doNotContact" type="checkbox" class="rounded border-line-control text-brand focus:ring-brand" />
-            {{ t('Do not contact (blocks all communications and recalls)', 'No contactar (bloquea todas las comunicaciones y recordatorios)') }}
+            {{ t('Do not contact (no campaigns, recalls, reminders or automatic messages; the clinic can still write to them)', 'No contactar (sin campañas, recalls, recordatorios ni mensajes automáticos; la clínica puede seguir escribiéndole)') }}
           </label>
         </div>
 

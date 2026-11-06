@@ -1370,7 +1370,7 @@ function tagClass(tag: string) {
                   <PatientsRowActions
                     :patient-id="patient.id"
                     :patient-name="`${patient.first_name} ${patient.last_name}`"
-                    :can-contact="!patient.is_minor && !patient.do_not_contact"
+                    :can-contact="!patient.is_minor"
                   />
                 </td>
               </tr>

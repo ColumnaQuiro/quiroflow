@@ -96,7 +96,9 @@ describe('What the patient record can still do', () => {
     })
   })
 
-  it('hides every send affordance for a patient marked do-not-contact', () => {
+  // "Do not contact" stops campaigns and automatic messages; a person at the
+  // clinic can still write to them, so Message stays.
+  it('keeps Message for a patient marked do-not-contact', () => {
     cy.seedStaffAccount().then((account) => {
       cy.task('db:createPatient', {
         accountId: account.accountId,
@@ -109,10 +111,8 @@ describe('What the patient record can still do', () => {
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}`)
 
-        // Removed, not disabled: a greyed-out Message button still invites
-        // the click that must not happen.
         cy.contains('Do not contact').should('be.visible')
-        cy.contains('button', 'Message').should('not.exist')
+        cy.contains('button', 'Message').should('be.visible')
         cy.contains('button', 'Book visit').should('be.visible')
       })
     })

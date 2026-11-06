@@ -115,6 +115,10 @@ const isVip = computed(() => !!patient.value?.tags.some((tag) => tag.toUpperCase
 // are hidden rather than merely disabled, matching how do-not-contact
 // already blocks sends server-side.
 const canContact = computed(() => !patient.value?.is_minor && !patient.value?.do_not_contact)
+// A person writing to them -- Message, Call, the Communications tab. "Do not
+// contact" stops automatic messages, campaigns and documents (canContact),
+// not someone at the clinic talking to them; a minor, still nobody.
+const canMessage = computed(() => !!patient.value && !patient.value.is_minor)
 
 const tabs = computed(() => [
   { key: 'overview', label: t('Overview', 'Resumen') },
@@ -321,6 +325,7 @@ function onTabKeydown(event: KeyboardEvent) {
         :clinic-name="clinicName"
         :practitioner-name="practitionerName"
         :can-contact="canContact"
+        :can-message="canMessage"
         :can-edit="can('patients_edit')"
         :can-manage-record="can('patients_delete_merge')"
         :can-export="store.isOwner"
@@ -423,7 +428,8 @@ function onTabKeydown(event: KeyboardEvent) {
             :patient-id="patientId"
             :first-name="patient.first_name"
             :preferred-language="patient.preferred_language"
-            :can-contact="canContact"
+            :can-contact="canMessage"
+            :do-not-contact="patient.do_not_contact"
           />
 
           <LazyPatientsAttachmentsTab v-else-if="activeTab === 'attachments'" :patient-id="patientId" />
@@ -436,6 +442,7 @@ function onTabKeydown(event: KeyboardEvent) {
       :patient-id="patient.id"
       :patient-first-name="patient.first_name"
       :patient-preferred-language="patient.preferred_language"
+      personal
       @close="whatsAppOpen = false"
       @sent="whatsAppOpen = false"
     />

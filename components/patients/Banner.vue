@@ -22,6 +22,8 @@ const props = defineProps<{
   clinicName: string | null
   practitionerName: string | null
   canContact: boolean
+  /** Message and Call: a person talking to them, which "do not contact" allows. Defaults to canContact. */
+  canMessage?: boolean
   canEdit: boolean
   canManageRecord: boolean
   /** "Export their data (GDPR)": owners only, as the endpoint is. */
@@ -40,6 +42,8 @@ defineEmits<{ message: []; sendApp: []; cancelFuture: []; book: []; charge: []; 
 
 const t = useT()
 const { formatLongDate } = useDates()
+
+const messageable = computed(() => props.canMessage ?? props.canContact)
 
 // "Embarazada · 24+3 sem" beside the name, on every tab (PregnancyCard has the rest).
 const pregnancy = computed(() => (props.patient.pregnancy_due_date ? pregnancyProgress(props.patient.pregnancy_due_date, clinicDateOf(new Date(), DEFAULT_CLINIC_TIMEZONE)) : null))
@@ -165,7 +169,7 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
            what half this clinic's front desk actually uses. -->
       <div ref="menuRoot" class="relative flex shrink-0 items-center gap-2">
         <button
-          v-if="canContact"
+          v-if="messageable"
           type="button"
           class="hidden h-9 touch:h-11 items-center rounded-ctl border border-line-control bg-surface px-3.5 text-[13.5px] font-semibold text-ink-700 outline-none hover:border-line-controlHover focus-visible:shadow-focus lg:flex"
           @click="$emit('message')"
@@ -338,14 +342,14 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
     <!-- Phone: the three things a thumb reaches for, at 46px. -->
     <div class="mt-3 flex gap-2 border-t border-line-divider pt-3 lg:hidden">
       <a
-        v-if="canContact && phone"
+        v-if="messageable && phone"
         :href="telHref!"
         class="flex h-[46px] flex-1 items-center justify-center rounded-ctl border border-line-control text-[14px] font-semibold text-ink-700"
       >
         {{ t('Call', 'Llamar') }}
       </a>
       <button
-        v-if="canContact"
+        v-if="messageable"
         type="button"
         class="flex h-[46px] flex-1 items-center justify-center rounded-ctl border border-line-control text-[14px] font-semibold text-ink-700"
         @click="$emit('message')"

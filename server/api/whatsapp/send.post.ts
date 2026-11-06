@@ -23,6 +23,9 @@ export default defineEventHandler(async (event) => {
     attachmentFileId?: string
     location?: { latitude: number; longitude: number; name: string; address: string }
     appointmentId?: string
+    /** A person writing to this one patient (their record, their Inbox
+     *  thread), not a recall or a list: reaches "do not contact" too. */
+    personal?: boolean
   }>(event)
 
   if ((!body?.patientId && !body?.phoneNumber && !body?.leadId) || !body?.templateName || !body?.templateLanguage) {
@@ -60,7 +63,13 @@ export default defineEventHandler(async (event) => {
     if (!patient) {
       throw createError({ statusCode: 404, statusMessage: 'Patient not found' })
     }
-    if (patient.is_minor || patient.do_not_contact) {
+    // "Do not contact" stops what goes out without a person choosing this
+    // patient -- recalls, lists, bulk sends, which call this route one
+    // patient at a time and so cannot be told apart from a single send by
+    // anything but the flag. A person writing to them from their record or
+    // their thread says `personal`. Opt-in rather than opt-out: a new bulk
+    // caller that forgets the flag still respects the patient's wish.
+    if (patient.is_minor || (patient.do_not_contact && !body.personal)) {
       throw createError({ statusCode: 400, statusMessage: 'This patient cannot be contacted (under age or marked do not contact).' })
     }
 

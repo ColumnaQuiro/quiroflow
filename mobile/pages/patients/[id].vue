@@ -287,7 +287,9 @@ const canBook = computed(() => {
   if (!context.value || restricted('calendar_read_only')) return false
   return context.value.isOwner || context.value.permissions.calendar_scope !== 'none'
 })
-const canWhatsApp = computed(() => canContact.value && can('inbox_access') && !!whatsappNumber.value)
+// Not canContact: "do not contact" stops automatic messages and campaigns,
+// not a person opening their thread to write to them. A minor, still not.
+const canWhatsApp = computed(() => !!patient.value && !patient.value.is_minor && can('inbox_access') && !!whatsappNumber.value)
 
 // The app's own Inbox thread with this patient, which sends through the same
 // route as the web Inbox and holds the same 24-hour rule.

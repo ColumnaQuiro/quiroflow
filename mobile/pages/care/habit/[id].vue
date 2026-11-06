@@ -66,6 +66,24 @@ function forgetPlace(id: string) {
   form.placeIds = form.placeIds.filter((x) => x !== id)
 }
 
+// Said in the app, right before the phone asks for location "Always", and
+// only asked once they agree: Google Play's "prominent disclosure" for
+// background location, which names it as collected even with the app closed
+// or not in use, and Apple's purpose string says the same. Not agreeing
+// keeps the habit, reminding by time only (the note above says so).
+const { ask } = useAppConfirm()
+function discloseBackgroundLocation() {
+  return ask({
+    title: t('Location, also with the app closed', 'Ubicación, también con la app cerrada'),
+    body: t(
+      'QuiroFlow collects location data to remind you of this habit when you are at a place you saved, such as home, even when the app is closed or not in use.\n\nYour location stays on this phone: it is not sent to your clinic or to QuiroFlow.',
+      'QuiroFlow recoge datos de ubicación para recordarte este hábito cuando estás en un lugar que guardaste, como tu casa, incluso cuando la app está cerrada o no se está usando.\n\nTu ubicación se queda en este teléfono: no se envía a tu clínica ni a QuiroFlow.',
+    ),
+    confirmLabel: t('Continue', 'Continuar'),
+    cancelLabel: t('Not now', 'Ahora no'),
+  })
+}
+
 const saving = ref(false)
 const error = ref('')
 async function submit() {
@@ -83,7 +101,7 @@ async function submit() {
     return (error.value = r.error)
   }
   if ((await reminders.checkPermissions()).notifications !== 'granted') await reminders.requestNotifications()
-  if (habit.placeIds.length && location.value !== 'always') location.value = (await reminders.requestLocationAlways()).location
+  if (habit.placeIds.length && location.value !== 'always' && (await discloseBackgroundLocation())) location.value = (await reminders.requestLocationAlways()).location
   saving.value = false
   await navigateTo('/care/habits')
 }

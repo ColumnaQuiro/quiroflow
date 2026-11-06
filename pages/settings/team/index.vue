@@ -217,26 +217,70 @@ function askLink(n: { name: string; count: number }) {
   linkFor.value = { ...n, memberId }
 }
 const linking = ref(false)
+const linkedSoFar = ref(0)
+// In batches, not one UPDATE. Every appointment row fires its own triggers --
+// the audit trail, webhooks, the patient's practitioner, class places -- and a
+// signed-in user's statement is cut off at 8 s. One statement for a
+// practitioner with years of history (8,143 appointments at the clinic where
+// this was found) never finished: "canceling statement due to statement
+// timeout", and nothing was linked at all, since the whole statement rolled
+// back. A batch commits on its own, so a stop part-way keeps what was done and
+// pressing Link again carries on from there.
+const LINK_BATCH = 200
 async function link() {
   const l = linkFor.value
   if (!l || !store.accountId) return
   linking.value = true
-  const { data, error } = await supabase
-    .from('appointments')
-    .update({ practitioner_id: l.memberId })
-    .eq('account_id', store.accountId)
-    .eq('practitioner_name', l.name)
-    .is('practitioner_id', null)
-    .select('id')
+  linkedSoFar.value = 0
+  let failure = ''
+  for (;;) {
+    // Linked rows leave this filter, so the next read is always the next batch
+    // without an offset.
+    const { data: page, error: readError } = await supabase
+      .from('appointments')
+      .select('id')
+      .eq('account_id', store.accountId)
+      .eq('practitioner_name', l.name)
+      .is('practitioner_id', null)
+      .order('id')
+      .limit(LINK_BATCH)
+    if (readError) {
+      failure = readError.message
+      break
+    }
+    const ids = (page ?? []).map((a) => a.id)
+    if (ids.length === 0) break
+    const { data, error } = await supabase
+      .from('appointments')
+      .update({ practitioner_id: l.memberId })
+      .in('id', ids)
+      .is('practitioner_id', null)
+      .select('id')
+    if (error) {
+      failure = error.message
+      break
+    }
+    // An update RLS does not allow comes back empty rather than as an error.
+    // Those rows would still match the read above, so stop rather than ask for
+    // them forever.
+    const moved = data?.length ?? 0
+    linkedSoFar.value += moved
+    if (moved < ids.length || ids.length < LINK_BATCH) break
+  }
+  const moved = linkedSoFar.value
   linking.value = false
   linkFor.value = null
-  if (error) {
-    showToast(error.message, 'error')
+  if (failure) {
+    showToast(
+      moved > 0
+        ? t(`${moved} appointments linked, then: ${failure}. Link again to carry on.`, `${moved} citas vinculadas y después: ${failure}. Vuelve a vincular para continuar.`)
+        : failure,
+      'error',
+      8000,
+    )
+    if (moved > 0) await loadImportedNames()
     return
   }
-  // An update RLS does not allow comes back empty rather than as an error, so
-  // the count is what says whether it happened.
-  const moved = data?.length ?? 0
   if (moved === 0) {
     showToast(t('Nothing was linked -- you may not have access to those appointments.', 'No se vinculó nada: puede que no tengas acceso a esas citas.'), 'error', 8000)
     return
@@ -461,6 +505,7 @@ onMounted(() => {
       @cancel="linkFor = null"
     >
       <p class="text-[14px] text-ink-500">{{ t(`The imported appointments under "${linkFor.name}" become theirs: in their calendar, reports and My Day. The imported name is kept on each appointment.`, `Las citas importadas a nombre de «${linkFor.name}» pasan a ser suyas: aparecerán en su calendario, sus informes y su Mi día. El nombre importado se conserva en cada cita.`) }}</p>
+      <p v-if="linking" class="mt-2 font-mono text-[13px] text-ink-700" data-cy="link-progress">{{ linkedSoFar }} / {{ linkFor.count }}</p>
     </UiConfirmDialog>
     <UiConfirmDialog
       v-if="requireConfirmOpen"

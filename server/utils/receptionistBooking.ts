@@ -380,7 +380,10 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
     // A relative already has a record of their own: nothing to make.
     const tutor = relative ? { patientId: relative.id } : await ensurePatient(ctx, writer, chosen.practitionerId, { ...newPatientDetails(value.full_name, value.email), phone: value.phone })
     if ('error' in tutor) return { content: tutor.error, isError: true }
-    let patient = tutor
+    // The confirmation goes to them (as themselves, or as the child's tutor),
+    // and the flag means it will not.
+    const quiet = 'doNotContact' in tutor && !!tutor.doNotContact
+    let patient: { patientId: string } = tutor
     if (child) {
       const childId = child.existing?.id ?? await createChild(writer, ctx, tutor.patientId, child.name, chosen)
       if (!childId) return { content: "The child's record could not be made. Call hand_over_to_colleague saying who it is for and the day and time they accepted; do not say it is booked.", isError: true }
@@ -473,7 +476,7 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
     const address = moving ? null : await firstVisitAddress(ctx.service, patient.patientId, chosen.clinicId)
     return {
       content: [
-        `${moving ? 'Moved' : 'Booked'}: ${type.name}${child ? ` for ${child.name}, in the child's name with them as tutor` : relative ? ` for ${relative.firstName}, in their own name` : brought ? ` for ${brought.firstName}, in their own name, referred by the person writing` : ''}, ${whenEn}${practitionerName ? `, with ${practitionerName}` : ''}. ${moving ? 'Their old time is free again.' : relative || brought ? `${(relative ?? brought)!.firstName} will get the clinic's usual confirmation themselves${brought ? ', on their own phone' : ''}.` : `They will also get the clinic's usual confirmation${child ? ', as the tutor' : ''}.`} Tell them, with the day and time in words.`,
+        `${moving ? 'Moved' : 'Booked'}: ${type.name}${child ? ` for ${child.name}, in the child's name with them as tutor` : relative ? ` for ${relative.firstName}, in their own name` : brought ? ` for ${brought.firstName}, in their own name, referred by the person writing` : ''}, ${whenEn}${practitionerName ? `, with ${practitionerName}` : ''}. ${moving ? 'Their old time is free again.' : relative || brought ? `${(relative ?? brought)!.firstName} will get the clinic's usual confirmation themselves${brought ? ', on their own phone' : ''}.` : quiet ? 'They asked not to get automatic messages, so no confirmation or reminder will be sent: do not promise one.' : `They will also get the clinic's usual confirmation${child ? ', as the tutor' : ''}.`} Tell them, with the day and time in words.`,
         near.length ? `They also have ${near.length === 1 ? 'a visit' : 'visits'} on ${near.join(' and ')}: mention ${near.length === 1 ? 'it' : 'them'}, and ask whether they want to keep ${near.length === 1 ? 'it' : 'them'}.` : '',
         address ? `It is their first visit: give them the clinic's address, ${address}.` : '',
       ].filter(Boolean).join(' '),
@@ -927,7 +930,7 @@ async function ensurePatient(
   writer: Supa,
   practitionerId: string | null,
   given: { fullName: string | null; email: string | null; phone?: unknown },
-): Promise<{ patientId: string } | { error: string }> {
+): Promise<{ patientId: string; doNotContact?: boolean } | { error: string }> {
   let patientId: string | null = ctx.person.patientId
   if (!patientId && ctx.person.kind === 'lead') {
     const { data: lead } = await ctx.service
@@ -977,8 +980,12 @@ async function ensurePatient(
   const { data: patient } = await ctx.service.from('patients').select('do_not_contact, is_minor').eq('id', patientId).maybeSingle()
   const p = patient as { do_not_contact: boolean | null; is_minor: boolean | null } | null
   if (!p) return { error: 'The patient could not be found. Call hand_over_to_colleague.' }
-  if (p.do_not_contact || p.is_minor) {
+  if (p.is_minor) {
     return { error: 'This patient has to be booked by a colleague. Call hand_over_to_colleague saying the day, time and type they accepted; do not say it is booked.' }
   }
-  return { patientId }
+  // "Do not contact" stops what the clinic sends on its own -- confirmations,
+  // reminders, campaigns -- not a booking the patient is asking for in this
+  // conversation. It used to hand every one of them over, so a patient who
+  // had only asked to stop the reminders could not book by writing in.
+  return { patientId, doNotContact: !!p.do_not_contact }
 }

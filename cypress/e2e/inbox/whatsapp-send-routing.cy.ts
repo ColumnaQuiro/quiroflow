@@ -111,6 +111,44 @@ describe('WhatsApp sends from the Inbox', () => {
     })
   })
 
+  // "Do not contact" is about what the clinic sends unprompted. A patient who
+  // asked to stop the reminders and then wrote in asking for a time got no
+  // answer at all: every reply -- a person's and the receptionist's -- was
+  // refused as "cannot be contacted". Starting a conversation (a template)
+  // stays refused, and so does anything to a minor.
+  it('answers a do-not-contact patient who wrote in, but starts nothing with them', () => {
+    const phone = localNumber()
+    cy.task('db:startMetaGraphStub', {})
+    cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName: 'Sin', lastName: 'Avisos', phone }).then((patient) => {
+      cy.task('db:setPatientContactFlags', { patientId: patient.id, doNotContact: true })
+      cy.task('db:createWhatsappMessage', { accountId: account.accountId, patientId: patient.id, phoneNumber: `34${phone}`, direction: 'inbound', createdAt: minutesAgo(10) })
+
+      cy.login(account.email, account.password)
+      cy.visit('/dashboard')
+      inboxSend({ patientId: patient.id, text: 'El miércoles tengo las 9:45 o las 12:30' }).then((res) => {
+        expect(res.status, JSON.stringify(res.body)).to.eq(200)
+      })
+      cy.request({
+        method: 'POST',
+        url: '/api/whatsapp/send',
+        failOnStatusCode: false,
+        body: { patientId: patient.id, templateName: 'seguimiento', templateLanguage: 'es', variables: [] },
+      }).then((res) => {
+        expect(res.status).to.eq(400)
+        expect(JSON.stringify(res.body)).to.contain('cannot be contacted')
+      })
+      cy.task<any[]>('db:metaGraphStubSends').then((sends) => {
+        expect(sends.map((s) => [s?.to, s?.type])).to.deep.equal([[`34${phone}`, 'text']])
+      })
+
+      cy.task('db:setPatientContactFlags', { patientId: patient.id, doNotContact: false, isMinor: true })
+      inboxSend({ patientId: patient.id, text: 'Hola' }).then((res) => {
+        expect(res.status).to.eq(400)
+        expect(JSON.stringify(res.body)).to.contain('cannot be contacted')
+      })
+    })
+  })
+
   it('keeps a failure Meta reported before the message was stored', () => {
     const from = `34${localNumber()}`
     const wamidPrefix = `wamid.early.${Date.now()}.`

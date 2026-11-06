@@ -11,8 +11,9 @@ import { sendMessengerToLead } from '~/server/utils/messengerSend'
 //
 // A WhatsApp reply goes through sendInboxMessage, the Inbox composer's own
 // send, so it is held to everything a person's reply is: the 24-hour window,
-// "do not contact", the number they last wrote from, the message row on the
-// right thread. Only the row says sent_by_ai. An app reply is the
+// the minor check, the number they last wrote from, the message row on the
+// right thread. ("Do not contact" does not stop a reply to someone who wrote
+// in, for a person or for the receptionist: see inboxSend.ts.) Only the row says sent_by_ai. An app reply is the
 // patient_app_messages row plus the push to their phone that
 // /api/patient-messages/send gives a person's reply.
 

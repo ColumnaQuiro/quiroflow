@@ -224,7 +224,7 @@ onMounted(loadTemplates)
         </div>
 
         <p v-if="!canContact" class="border-b border-line-divider bg-danger-bg px-4 py-2 text-[12px] text-danger-text">
-          {{ t('This patient is marked "do not contact" — new messages are disabled.', 'Este paciente está marcado como "no contactar": los nuevos mensajes están deshabilitados.') }}
+          {{ t('This patient is marked "do not contact": no automatic messages, and the clinic cannot start a conversation. When they write in, you can still reply from the Inbox.', 'Este paciente está marcado como "no contactar": no recibe mensajes automáticos y la clínica no puede iniciar una conversación. Si escribe, puedes responderle desde el Inbox.') }}
         </p>
 
         <!-- Delivery states are drawn, so the change is also announced. -->

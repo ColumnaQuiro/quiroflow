@@ -31,6 +31,8 @@ export interface InboxSendParams {
   caption?: string
   /** Sent by the AI receptionist on its own (receptionistSend.ts), not a person. */
   sentByAi?: boolean
+  /** Sent unprompted by the clinic (a booking confirmation), not a reply: refused for "do not contact". */
+  notification?: boolean
 }
 
 type Access = Pick<Awaited<ReturnType<typeof requirePermission>>, 'supabase' | 'teamMember'>
@@ -96,7 +98,18 @@ export async function sendInboxMessage(event: H3Event, { supabase, teamMember }:
   if (params.patientId) {
     const { data: patient } = await supabase.from('patients').select('id, is_minor, do_not_contact').eq('id', params.patientId).maybeSingle()
     if (!patient) throw createError({ statusCode: 404, statusMessage: 'Patient not found' })
-    if (patient.is_minor || patient.do_not_contact) {
+    if (patient.is_minor) {
+      throw createError({ statusCode: 400, statusMessage: 'This patient cannot be contacted (under age or marked do not contact).' })
+    }
+    // "Do not contact" is about what the clinic sends on its own initiative
+    // -- campaigns, recalls, reminders, automations -- not about answering a
+    // person who has just written in. A reply only ever goes out inside the
+    // 24h window below, so the patient opened this conversation themselves.
+    // Refusing it left a patient who asked to stop the reminders unable to
+    // get an answer to "what times do you have on Wednesday?", from a person
+    // or from the receptionist. A notification the clinic sends unprompted
+    // (a booking confirmation) still respects the flag.
+    if (patient.do_not_contact && params.notification) {
       throw createError({ statusCode: 400, statusMessage: 'This patient cannot be contacted (under age or marked do not contact).' })
     }
     // A reply goes back to the number they wrote from. It used to go to

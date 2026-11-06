@@ -1,7 +1,7 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { stripeClientFor } from '~/server/utils/stripe'
-import { APP_PAY_PAST_DAYS, APP_VISIT_COLUMNS, appPaymentsAccount, appVisitCharge, hasLiveBono } from '~/server/utils/appPayments'
+import { APP_PAY_PAST_DAYS, APP_VISIT_COLUMNS, appPaymentsAccount, appVisitCharge, hasLiveBono, payerCard } from '~/server/utils/appPayments'
 
 // What the patient app needs to offer payments for one patient: whether the
 // clinic lets them pay visits from the app, the card on file (brand and last
@@ -16,16 +16,17 @@ export default defineEventHandler(async (event) => {
   const patientId = getQuery(event).patientId
   if (typeof patientId !== 'string' || !patientId) throw createError({ statusCode: 400, statusMessage: 'patientId is required' })
 
-  const { supabase } = await requireAuthedUser(event)
+  const { supabase, user } = await requireAuthedUser(event)
   const { data: patient } = await supabase.from('patients').select('id, account_id').eq('id', patientId).maybeSingle()
   if (!patient) throw createError({ statusCode: 404, statusMessage: 'Patient not found' })
 
   const service = serverSupabaseServiceRole<Database>(event)
   const account = await appPaymentsAccount(service, patient.account_id)
   const enabled = !!account?.stripe_publishable_key && !!account.stripe_app_payments_enabled
-  if (!account || !enabled) return { enabled: false, card: null, visits: [] }
+  if (!account || !enabled) return { enabled: false, card: null, cardOwner: 'self' as const, visits: [] }
 
-  const { data: customer } = await service.from('patient_stripe_customers').select('default_payment_method_id').eq('patient_id', patient.id).maybeSingle()
+  // Theirs, or -- for a family member with none -- the caller's own card.
+  const { customer, owner: cardOwner } = await payerCard(service, patient.id, user.id, account.id)
   let card: { brand: string; last4: string; expMonth: number; expYear: number } | null = null
   if (customer?.default_payment_method_id) {
     try {
@@ -53,6 +54,7 @@ export default defineEventHandler(async (event) => {
   return {
     enabled: true,
     card,
+    cardOwner,
     visits: charges
       .filter((c) => c.charge.state !== 'none')
       .map((c) => ({ appointmentId: c.id, state: c.charge.state as 'payable' | 'paid', amountCents: (c.charge as { amountCents: number }).amountCents })),

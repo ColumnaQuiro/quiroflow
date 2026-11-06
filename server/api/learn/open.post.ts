@@ -7,10 +7,13 @@ import type { Database } from '~/types/database.types'
 export default defineEventHandler(async (event) => {
   const body = await readBody<{ sendId?: string }>(event)
   if (!body?.sendId) throw createError({ statusCode: 400, statusMessage: 'sendId is required' })
-  const { supabase, user } = await requireAuthedUser(event)
-  const { data: send } = await supabase.from('learn_sends').select('id, opened_at, patients(user_id)').eq('id', body.sendId).maybeSingle()
-  const owner = (send as unknown as { patients: { user_id: string | null } | null } | null)?.patients?.user_id
-  if (!send || owner !== user.id) throw createError({ statusCode: 404, statusMessage: 'Not found' })
+  const { supabase } = await requireAuthedUser(event)
+  const { data: send } = await supabase.from('learn_sends').select('id, opened_at, patient_id').eq('id', body.sendId).maybeSingle()
+  // Theirs, or a family member's they may see clinically (family accounts):
+  // acting_patient answers for the caller. Staff, who can read sends too,
+  // get nothing back and do not mark it read.
+  const { data: acting } = send ? await supabase.rpc('acting_patient', { p_patient_id: send.patient_id, p_clinical: true }) : { data: null }
+  if (!send || !acting?.length) throw createError({ statusCode: 404, statusMessage: 'Not found' })
   if (!send.opened_at) {
     await serverSupabaseServiceRole<Database>(event).from('learn_sends').update({ opened_at: new Date().toISOString() }).eq('id', send.id).is('opened_at', null)
   }

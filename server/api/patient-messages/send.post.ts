@@ -26,15 +26,30 @@ export default defineEventHandler(async (event) => {
   // insert policies (0085_patient_app_messages.sql) independently enforce
   // the same rule -- this just has to derive the same answer, or the
   // insert below fails on its own.
-  const direction = patient.user_id === user.id ? 'inbound' : 'outbound'
+  //
+  // Family accounts: a parent writing for a child they manage is inbound too.
+  // Anybody who is not staff at this clinic writing to a patient they can
+  // read is writing as that patient's family -- the insert policy checks they
+  // may (patients_i_can_see_clinically_for), and a trigger stamps who wrote it.
+  const serviceSupabase = serverSupabaseServiceRole<Database>(event)
+  let direction: 'inbound' | 'outbound' = 'inbound'
+  let writer: { first_name: string; last_name: string | null } | null = null
+  if (patient.user_id !== user.id) {
+    const { data: staff } = await serviceSupabase.from('team_members').select('id').eq('account_id', patient.account_id).eq('user_id', user.id).is('deleted_at', null).maybeSingle()
+    if (staff) direction = 'outbound'
+    else {
+      const { data: me } = await serviceSupabase.from('patients').select('first_name, last_name').eq('account_id', patient.account_id).eq('user_id', user.id).order('created_at').limit(1).maybeSingle()
+      writer = me
+    }
+  }
 
   const text = body.text.trim().slice(0, 4000)
   const { error } = await supabase.from('patient_app_messages').insert({ account_id: patient.account_id, patient_id: patient.id, direction, body: text } as never)
   if (error) throw createError({ statusCode: 403, statusMessage: 'Not authorized to message this patient' })
 
-  const serviceSupabase = serverSupabaseServiceRole<Database>(event)
   if (direction === 'inbound') {
-    const senderName = `${patient.first_name} ${patient.last_name ?? ''}`.trim()
+    const patientName = `${patient.first_name} ${patient.last_name ?? ''}`.trim()
+    const senderName = writer ? `${`${writer.first_name} ${writer.last_name ?? ''}`.trim()} (por ${patientName})` : patientName
     await notifyInboxTeamMembers(serviceSupabase, patient.account_id, senderName, text, { type: 'patient_app_message', key: patient.id })
   } else {
     // The other half of the conversation. Without this a clinic could reply

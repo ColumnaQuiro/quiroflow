@@ -1271,7 +1271,8 @@ returns table (
   is_self boolean,
   access text,
   basis text,
-  relation text
+  relation text,
+  link_id uuid
 )
 language sql
 stable
@@ -1286,7 +1287,8 @@ as $$
          case when p.id in (select id from mine) then 'self' else m.access end,
          m.basis,
          (select r.relation from public.patient_relations r
-           where r.patient_id = m.manager_patient_id and r.related_patient_id = p.id)
+           where r.patient_id = m.manager_patient_id and r.related_patient_id = p.id),
+         m.id
   from public.patients p
   join public.accounts a on a.id = p.account_id
   left join public.patient_managers m

@@ -10,7 +10,7 @@ definePageMeta({ layout: 'portal' })
 
 const t = useT()
 const { settings, zoneOf } = usePatientAppInfo()
-const { patient, loading: patientLoading, loadError } = usePortalPatient()
+const { patient, loading: patientLoading, loadError, actingForOther, canSeeClinical } = usePortalPatient()
 
 const patientId = computed(() => patient.value?.id ?? '')
 const { upcoming, loading: apptLoading, confirmAttendance, confirmingId } = usePatientAppointments(
@@ -50,7 +50,7 @@ function eur(cents: number) {
     <p v-else-if="!patient" class="text-sm text-ink-faint">{{ t('No patient record found.', 'No se encontró tu ficha de paciente.') }}</p>
 
     <template v-else>
-      <PatientPageHead :title="t(`Hi, ${patient.first_name}`, `Hola, ${patient.first_name}`)" />
+      <PatientPageHead :title="actingForOther ? t(`${patient.first_name}'s account`, `Cuenta de ${patient.first_name}`) : t(`Hi, ${patient.first_name}`, `Hola, ${patient.first_name}`)" />
 
       <!-- The next visit is the headline, not a row in a list. -->
       <section class="rounded-card border border-line bg-surface p-5 shadow-card">
@@ -72,7 +72,9 @@ function eur(cents: number) {
         </template>
         <template v-else>
           <p class="mt-1.5 text-[15px] text-ink-muted">{{ t('Nothing booked yet.', 'No tienes ninguna cita reservada.') }}</p>
-          <NuxtLink v-if="settings.bookingEnabled && settings.bookingSlug" :to="`/book/${settings.bookingSlug}`" class="mt-3 inline-block text-[12.5px] font-medium text-brand-text hover:text-brand-hover" data-cy="portal-book">
+          <!-- The public booking page books whoever fills it in; for a family
+               member the app's booking (which knows who it is for) or the clinic. -->
+          <NuxtLink v-if="settings.bookingEnabled && settings.bookingSlug && !actingForOther" :to="`/book/${settings.bookingSlug}`" class="mt-3 inline-block text-[12.5px] font-medium text-brand-text hover:text-brand-hover" data-cy="portal-book">
             {{ t('Book a visit', 'Reservar cita') }} &rarr;
           </NuxtLink>
           <p v-else class="mt-1 text-[13px] text-ink-faint">{{ t('Contact the clinic to book your next visit.', 'Contacta con la clínica para reservar tu próxima cita.') }}</p>
@@ -82,13 +84,14 @@ function eur(cents: number) {
       <!-- No "Change time" here: moving a visit needs the app's slot
            picker, so the portal's card asks the clinic instead. -->
       <PatientCarePlanCard
+        v-if="canSeeClinical"
         class="mt-4"
         :patient-id="patient.id"
         messages-to="/portal/messages"
         :book-to="settings.bookingEnabled && settings.bookingSlug ? `/book/${settings.bookingSlug}` : null"
       />
 
-      <PatientLearnCard class="mt-4" :patient-id="patient.id" :link-to="(id) => `/portal/learn/${id}`" />
+      <PatientLearnCard v-if="canSeeClinical" class="mt-4" :patient-id="patient.id" :link-to="(id) => `/portal/learn/${id}`" />
 
       <PatientWaitlistCard v-if="settings.bookingEnabled && !apptLoading" class="mt-4" :clinic-id="waitlistClinicId" :has-next-visit="!!next" />
 
@@ -112,7 +115,7 @@ function eur(cents: number) {
         </NuxtLink>
       </div>
 
-      <div class="mt-4 grid gap-3 sm:grid-cols-2">
+      <div v-if="canSeeClinical" class="mt-4 grid gap-3 sm:grid-cols-2">
         <NuxtLink
           to="/portal/messages"
           class="flex items-center justify-between rounded-card border border-line bg-surface px-4 py-3.5 shadow-card hover:border-line-controlHover"
@@ -133,7 +136,9 @@ function eur(cents: number) {
       </div>
 
       <!-- Their referral link, when the clinic has the programme on -->
-      <PatientReferralCard class="mt-4" :patient-id="patient.id" />
+      <PatientReferralCard v-if="!actingForOther" class="mt-4" :patient-id="patient.id" />
+
+      <PatientFamilyAccessCard v-if="!actingForOther" class="mt-4" />
 
       <PatientClinicCards class="mt-4" messages-to="/portal/messages" />
 

@@ -72,6 +72,10 @@ function seedFamily(): Cypress.Chainable<Family> {
   })
 }
 
+// The name at the foot of the sidebar only becomes the switcher once the
+// family has loaded (it is plain text for somebody with no family).
+const openSwitcher = () => cy.get('button[data-cy=family-switcher-toggle]').click()
+
 const namesOf = (rows: { first_name?: string }[]) => rows.map((r) => r.first_name).sort()
 
 describe('Family accounts', () => {
@@ -140,7 +144,7 @@ describe('Family accounts', () => {
       cy.get('[data-cy=acting-banner]').should('not.exist')
 
       // Lucas: his visit, his documents, said on every page.
-      cy.get('[data-cy=family-switcher-toggle]').click()
+      openSwitcher()
       cy.get('[data-cy=family-switcher] [data-cy=family-person-Lucas]').click()
       cy.get('[data-cy=acting-banner]').should('contain', "You are viewing Lucas's account")
       cy.contains('h1', "Lucas's account").should('be.visible')
@@ -151,7 +155,7 @@ describe('Family accounts', () => {
 
       // Andrés: visits and payments only -- no Documents, and the page itself
       // sends them home.
-      cy.get('[data-cy=family-switcher-toggle]').click()
+      openSwitcher()
       cy.get('[data-cy=family-switcher] [data-cy=family-person-Andrés]').click()
       cy.location('pathname').should('eq', '/portal')
       cy.get('[data-cy=acting-banner]').should('contain', "You are viewing Andrés's account").and('contain', 'Visits, bookings and payments')
@@ -174,7 +178,7 @@ describe('Family accounts', () => {
     seedFamily().then((f) => {
       cy.login(f.rosaLogin.email, f.rosaLogin.password)
       cy.visit('/portal')
-      cy.get('[data-cy=family-switcher-toggle]').click()
+      openSwitcher()
       cy.get('[data-cy=family-switcher] [data-cy=family-person-Lucas]').click()
       cy.get('[data-cy=acting-banner]').should('be.visible')
       cy.get('aside').contains('a', 'Messages').click()

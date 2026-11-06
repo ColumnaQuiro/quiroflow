@@ -33,6 +33,7 @@ export interface RuleTotals {
   failedRuns: number
   entered: number
   converted: number
+  booked: number
   whatsapp: RuleStepStats['whatsapp']
   email: RuleStepStats['email']
 }
@@ -99,6 +100,23 @@ export function defaultConfig(type: string): Record<string, any> {
 }
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v))
+
+/**
+ * A new one-off send (an "envío"): a group checked once, aimed at whoever the
+ * clinic chooses, with one email ready to write. Marketing by default -- a
+ * newsletter or an offer is, and a send that is not can say so -- so it only
+ * reaches patients who accepted it until someone decides otherwise.
+ */
+export function newBroadcastDraft(name: string): { rule: DraftRule; steps: DraftStep[] } {
+  return {
+    rule: { ...blankRule(), name, trigger_event: 'segment', is_marketing: true, entry_mode: 'once_ever', segment: { filters: {}, audience: null, exclude: [], schedule: { kind: 'once' }, reentry_days: null } },
+    steps: [{ id: crypto.randomUUID(), action_type: 'email', position: 0, parent_id: null, branch: null, config: defaultConfig('email') }],
+  }
+}
+
+/** Whether a rule is a one-off send: a group, checked once. */
+export const isBroadcastRule = (rule: { trigger_event: string; segment?: { schedule?: { kind?: string } | null } | null }) =>
+  rule.trigger_event === 'segment' && rule.segment?.schedule?.kind === 'once'
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export function useAutomationBuilder() {

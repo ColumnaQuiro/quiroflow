@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { isLeadTrigger, triggerTitle } from '~/utils/automationCatalog'
+import { isBroadcastRule } from '~/composables/useAutomationBuilder'
 import { emptyLookup, filtersText, triggerDetail, type NameLookup } from '~/utils/automationDescribe'
 import type { Problem } from '~/utils/automationTree'
 import { serverMessage } from '~/utils/serverMessage'
@@ -38,6 +39,7 @@ interface Stats {
   failedRuns: number
   entered: number
   converted: number
+  booked: number
   whatsapp: { sent: number; delivered: number; read: number; failed: number; recorded: number }
   email: { sent: number; delivered: number; opened: number; clicked: number; bounced: number; failed: number; recorded: number }
 }
@@ -121,17 +123,30 @@ onMounted(async () => {
   if (cached.value?.accountId === accountId) cached.value = { ...cached.value, lookup: lookup.value }
 })
 
+// ---- one-off sends and ongoing automations: two tabs of the same list
+type View = 'automations' | 'sends'
+const view = computed<View>(() => (route.query.view === 'sends' ? 'sends' : 'automations'))
+function setView(next: View) {
+  router.replace({ query: { ...route.query, view: next === 'sends' ? 'sends' : undefined } })
+}
+const inView = (r: Row) => isBroadcastRule(r) === (view.value === 'sends')
+const viewCounts = computed(() => ({ sends: rules.value.filter((r) => isBroadcastRule(r)).length, automations: rules.value.filter((r) => !isBroadcastRule(r)).length }))
+
 // ---- filters
 type Filter = 'all' | 'active' | 'paused' | 'patients' | 'leads' | 'failed'
 const filter = ref<Filter>('all')
 const search = ref('')
 const lockedLead = (r: Row) => isLeadTrigger(r.trigger_event) && !hasGrowth.value
 const isActive = (r: Row) => r.enabled && !lockedLead(r)
-const counts = computed(() => ({
-  active: rules.value.filter(isActive).length,
-  paused: rules.value.filter((r) => !isActive(r)).length,
-  failed: rules.value.filter((r) => (stats.value[r.id]?.failedRuns ?? 0) > 0).length,
-}))
+// Counted within the open tab, as the list below is.
+const counts = computed(() => {
+  const here = rules.value.filter(inView)
+  return {
+    active: here.filter(isActive).length,
+    paused: here.filter((r) => !isActive(r)).length,
+    failed: here.filter((r) => (stats.value[r.id]?.failedRuns ?? 0) > 0).length,
+  }
+})
 const FILTERS = computed<{ key: Filter; label: string }[]>(() => [
   { key: 'all', label: t('All', 'Todas') },
   { key: 'active', label: `${t('Active', 'Activas')} · ${counts.value.active}` },
@@ -143,6 +158,7 @@ const FILTERS = computed<{ key: Filter; label: string }[]>(() => [
 const visible = computed(() => {
   const q = normalizeSearchTerm(search.value.trim())
   return rules.value.filter((r) => {
+    if (!inView(r)) return false
     if (filter.value === 'active' && !isActive(r)) return false
     if (filter.value === 'paused' && isActive(r)) return false
     if (filter.value === 'patients' && isLeadTrigger(r.trigger_event)) return false
@@ -177,6 +193,8 @@ function third(r: Row): { value: string; label: string } {
   const s = stats.value[r.id]
   if (r.dry_run) return { value: String((s?.whatsapp.recorded ?? 0) + (s?.email.recorded ?? 0)), label: t('recorded (test)', 'registrados (prueba)') }
   if (isLeadTrigger(r.trigger_event)) return { value: String(s?.converted ?? 0), label: t('became patients', 'reservaron') }
+  // A send's goal: who booked within two weeks of receiving it.
+  if (isBroadcastRule(r) && s?.entered) return { value: `${s.booked} / ${s.entered}`, label: t('booked', 'reservaron') }
   if (canReadWhatsApp.value && s?.whatsapp.sent) return { value: pct(s.whatsapp.read, s.whatsapp.sent), label: t('read', 'leídos') }
   if (s?.email.sent) return { value: pct(s.email.opened, s.email.delivered), label: t('emails opened', 'emails abiertos') }
   const sent = (s?.whatsapp.sent ?? 0) + (s?.email.sent ?? 0)
@@ -265,9 +283,26 @@ function hideBanner() {
       </div>
       <div class="flex shrink-0 items-center gap-2">
         <UiBtn data-test="open-templates" @click="templatesOpen = true">{{ t('Templates', 'Plantillas') }}</UiBtn>
-        <NuxtLink to="/automations/new" class="inline-flex h-9 items-center rounded-ctl bg-brand px-3.5 text-[13px] font-semibold text-surface hover:bg-brand-hover touch:h-11" data-test="new-automation">{{ t('New automation', 'Nueva automatización') }}</NuxtLink>
+        <NuxtLink v-if="view === 'sends'" to="/automations/new?kind=broadcast" class="inline-flex h-9 items-center rounded-ctl bg-brand px-3.5 text-[13px] font-semibold text-brand-on hover:bg-brand-hover touch:h-11" data-test="new-send">{{ t('New send', 'Nuevo envío') }}</NuxtLink>
+        <NuxtLink v-else to="/automations/new" class="inline-flex h-9 items-center rounded-ctl bg-brand px-3.5 text-[13px] font-semibold text-surface hover:bg-brand-hover touch:h-11" data-test="new-automation">{{ t('New automation', 'Nueva automatización') }}</NuxtLink>
       </div>
     </header>
+    <nav role="tablist" class="flex shrink-0 gap-1 border-b border-line bg-surface px-4 sm:px-6">
+      <button
+        v-for="x in [
+          { key: 'automations', label: t('Automations', 'Automatizaciones'), n: viewCounts.automations },
+          { key: 'sends', label: t('One-off sends', 'Envíos'), n: viewCounts.sends },
+        ]"
+        :key="x.key"
+        type="button"
+        role="tab"
+        :aria-selected="view === x.key"
+        class="-mb-px h-10 border-b-2 px-3 text-[13px] font-semibold touch:h-11"
+        :class="view === x.key ? 'border-brand text-ink-900' : 'border-transparent text-ink-muted hover:text-ink-700'"
+        :data-test="`view-${x.key}`"
+        @click="setView(x.key as View)"
+      >{{ x.label }} <span class="font-mono text-[11.5px] font-normal text-ink-muted">{{ x.n }}</span></button>
+    </nav>
 
     <div class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-4 sm:px-6">
       <div class="mx-auto flex max-w-[1160px] flex-col gap-4">
@@ -291,7 +326,7 @@ function hideBanner() {
 
         <section aria-labelledby="h-list" class="overflow-hidden rounded-card border border-line bg-surface shadow-card">
           <div class="flex flex-wrap items-center gap-2 border-b border-line-divider px-4 py-3">
-            <h2 id="h-list" class="mr-2 text-[15px] font-bold text-ink-900">{{ t(`${rules.length} automation${rules.length === 1 ? '' : 's'}`, `${rules.length} automatizaci${rules.length === 1 ? 'ón' : 'ones'}`) }}</h2>
+            <h2 id="h-list" class="mr-2 text-[15px] font-bold text-ink-900">{{ view === 'sends' ? t(`${viewCounts.sends} send${viewCounts.sends === 1 ? '' : 's'}`, `${viewCounts.sends} envío${viewCounts.sends === 1 ? '' : 's'}`) : t(`${viewCounts.automations} automation${viewCounts.automations === 1 ? '' : 's'}`, `${viewCounts.automations} automatizaci${viewCounts.automations === 1 ? 'ón' : 'ones'}`) }}</h2>
             <button
               v-for="f in FILTERS"
               :key="f.key"
@@ -312,10 +347,15 @@ function hideBanner() {
           <div v-else-if="loading" class="flex animate-pulse flex-col" aria-hidden="true">
             <div v-for="i in 4" :key="i" class="h-[72px] border-b border-line-row bg-surface-subtle last:border-0" />
           </div>
-          <div v-else-if="rules.length === 0" class="flex flex-col items-center gap-3 px-4 py-12 text-center" data-test="empty">
+          <div v-else-if="rules.length === 0 && view === 'automations'" class="flex flex-col items-center gap-3 px-4 py-12 text-center" data-test="empty">
             <p class="text-[14px] font-semibold text-ink-900">{{ t('No automations yet', 'Aún no hay automatizaciones') }}</p>
             <p class="max-w-md text-[13px] text-ink-muted">{{ t('Start from a template -- a reminder, a win-back, a birthday -- or build one from scratch.', 'Empieza desde una plantilla -- un recordatorio, recuperar pacientes, un cumpleaños -- o créala desde cero.') }}</p>
             <UiBtn variant="primary" data-test="empty-templates" @click="templatesOpen = true">{{ t('Start from a template', 'Empezar desde una plantilla') }}</UiBtn>
+          </div>
+          <div v-else-if="view === 'sends' && viewCounts.sends === 0" class="flex flex-col items-center gap-3 px-4 py-12 text-center" data-test="empty-sends">
+            <p class="text-[14px] font-semibold text-ink-900">{{ t('No one-off sends yet', 'Aún no hay envíos') }}</p>
+            <p class="max-w-md text-[13px] text-ink-muted">{{ t('One message to a list or segment, at a time you choose: the new opening hours, a workshop, an offer.', 'Un mensaje a una lista o un segmento, cuando elijas: el horario nuevo, un taller, una oferta.') }}</p>
+            <NuxtLink to="/automations/new?kind=broadcast" class="inline-flex h-9 items-center rounded-ctl bg-brand px-3.5 text-[13px] font-semibold text-brand-on hover:bg-brand-hover touch:h-11" data-test="empty-new-send">{{ t('New send', 'Nuevo envío') }}</NuxtLink>
           </div>
           <p v-else-if="visible.length === 0" class="px-4 py-8 text-center text-[13px] text-ink-muted">{{ t('No automation matches.', 'Ninguna automatización coincide.') }}</p>
 

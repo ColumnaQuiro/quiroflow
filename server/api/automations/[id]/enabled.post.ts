@@ -27,6 +27,13 @@ export default defineEventHandler(async (event) => {
     if (!loaded.rule.enabled && loaded.rule.trigger_event === 'segment' && loaded.rule.segment?.schedule?.kind !== 'once') {
       update.segment_last_run_at = new Date().toISOString()
     }
+    // "Enters a list or segment" switched back on starts from now: who came
+    // in while it was paused is not enrolled late. Switched on for the first
+    // time its cursor is still empty, and the first tick sets it
+    // (enrolAudienceEntries), taking in the current members only if asked.
+    if (!loaded.rule.enabled && loaded.rule.trigger_event === 'audience.entered' && loaded.rule.segment_last_run_at) {
+      update.segment_last_run_at = new Date().toISOString()
+    }
   }
 
   const { error } = await supabase.from('automation_rules').update(update).eq('id', ruleId).eq('account_id', teamMember.account_id)

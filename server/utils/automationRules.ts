@@ -3,6 +3,8 @@ import { fetchAllRows } from '~/composables/useFetchAllRows'
 import { hasGrowth } from '~/server/utils/requireGrowth'
 import { tryFetchWhatsAppTemplates } from '~/server/utils/whatsappTemplates'
 import { EXIT_EVENTS, isLeadTrigger, triggerDef } from '~/utils/automationCatalog'
+import { asAudienceRef, asAudienceRefs, type AudienceRef } from '~/utils/automationAudience'
+import { audienceExists } from '~/server/utils/audienceMembers'
 import {
   chainOf,
   findProblems,
@@ -79,6 +81,9 @@ export function sanitizeRule(body: any): DraftRule {
     const schedule = plainObject(raw.schedule) ? raw.schedule : { kind: 'weekly', weekday: 1, time: '10:00' }
     segment = {
       filters: plainObject(raw.filters) ? raw.filters : {},
+      // A saved list or segment in place of filters (server/utils/audienceMembers.ts).
+      audience: asAudienceRef(raw.audience),
+      exclude: asAudienceRefs(raw.exclude),
       schedule: {
         kind: ['once', 'daily', 'weekly'].includes(schedule.kind) ? schedule.kind : 'weekly',
         ...(Number.isInteger(schedule.weekday) ? { weekday: schedule.weekday } : {}),
@@ -138,6 +143,16 @@ export async function ruleProblems(supabase: any, accountId: string, rule: Draft
     const { data: subscription } = await supabase.from('subscriptions').select('plan_id, growth_addon, status, comped').eq('account_id', accountId).maybeSingle()
     if (!hasGrowth(subscription)) {
       problems.unshift({ stepId: null, message: ['Lead automations are part of Growth, which is not on this subscription.', 'Las automatizaciones de leads son de Growth, que no está en esta suscripción.'] })
+    }
+  }
+  // A list or segment deleted since it was chosen: say so, rather than run
+  // an audience of nobody. Read with the caller's client, so it is the
+  // caller's own list too.
+  const named = [asAudienceRef(rule.segment?.audience), asAudienceRef(rule.filters?.trigger_audience), ...asAudienceRefs(rule.segment?.exclude)].filter((x): x is AudienceRef => !!x)
+  for (const ref of named) {
+    if (!(await audienceExists(supabase, ref))) {
+      problems.unshift({ stepId: null, message: ['A list or segment this automation names no longer exists. Choose another.', 'Una lista o un segmento que usa esta automatización ya no existe. Elige otro.'] })
+      break
     }
   }
   return problems
@@ -282,10 +297,16 @@ export async function saveRuleTree(opts: {
   // activation dialog promises. A one-off segment runs at the next tick.
   const turningOnRecurringSegment =
     enabled && !existingRule?.enabled && opts.rule.trigger_event === 'segment' && opts.rule.segment?.schedule?.kind !== 'once'
+  // "Enters a list or segment": back on after a pause, or aimed at another
+  // audience, it starts counting entries from now (see enabled.post.ts).
+  const audienceChanged =
+    opts.rule.trigger_event === 'audience.entered' &&
+    !!existingRule?.segment_last_run_at &&
+    ((enabled && !existingRule.enabled) || JSON.stringify(asAudienceRef(existingRule.filters?.trigger_audience)) !== JSON.stringify(asAudienceRef(opts.rule.filters?.trigger_audience)))
   const ruleWrite = opts.ruleId
     ? await supabase
         .from('automation_rules')
-        .update({ ...payload, ...(turningOnRecurringSegment ? { segment_last_run_at: new Date().toISOString() } : {}) })
+        .update({ ...payload, ...(turningOnRecurringSegment || audienceChanged ? { segment_last_run_at: new Date().toISOString() } : {}) })
         .eq('id', opts.ruleId)
         .eq('account_id', accountId)
         .select('id')

@@ -247,6 +247,17 @@ export const TRIGGERS: TriggerDef[] = [
     appointmentContext: false,
   },
   {
+    value: 'audience.entered',
+    label: ['Enters a list or segment', 'Entra en una lista o segmento'],
+    sentence: ['A patient enters a list or segment', 'Un paciente entra en una lista o un segmento'],
+    description: [
+      'When someone is added to the list, or starts matching the segment (checked every 15 minutes). The people already in it only if you say so.',
+      'Cuando alguien se añade a la lista, o empieza a cumplir el segmento (se comprueba cada 15 minutos). Los que ya están, solo si lo indicas.',
+    ],
+    group: 'segment',
+    appointmentContext: false,
+  },
+  {
     value: 'lead.created',
     label: ['New lead', 'Lead nuevo'],
     sentence: ['A new lead arrives', 'Llega un lead nuevo'],

@@ -48,6 +48,8 @@ export interface RuleStats {
   entered: number
   /** Lead rules: runs that ended because the lead became a patient. */
   converted: number
+  /** Patients who booked an appointment within BOOKED_WITHIN_DAYS of entering: a send's goal. */
+  booked: number
   whatsapp: MessageStats
   email: EmailStats
 }
@@ -67,7 +69,35 @@ export interface StepStats {
 
 const blankMessages = (): MessageStats => ({ sent: 0, delivered: 0, read: 0, failed: 0, recorded: 0 })
 const blankEmail = (): EmailStats => ({ sent: 0, delivered: 0, opened: 0, clicked: 0, bounced: 0, failed: 0, recorded: 0 })
-const blankRule = (): RuleStats => ({ inside: 0, failedRuns: 0, entered: 0, converted: 0, whatsapp: blankMessages(), email: blankEmail() })
+const blankRule = (): RuleStats => ({ inside: 0, failedRuns: 0, entered: 0, converted: 0, booked: 0, whatsapp: blankMessages(), email: blankEmail() })
+
+/** How long after entering a booking still counts towards a send's goal. */
+export const BOOKED_WITHIN_DAYS = 14
+
+/**
+ * Of these runs, how many were followed by an appointment the patient booked
+ * (created, whoever made it) within BOOKED_WITHIN_DAYS of the run starting.
+ * Counted per run, so someone who entered twice and booked once counts once.
+ */
+async function bookedAfter(service: any, accountId: string, since: string, runs: { rule_id: string; patient_id: string | null; started_at: string }[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>()
+  const patientIds = [...new Set(runs.map((r) => r.patient_id).filter((x): x is string => !!x))]
+  if (!patientIds.length) return out
+  const created = new Map<string, number[]>()
+  for (let i = 0; i < patientIds.length; i += 200) {
+    const rows = await allRows<{ patient_id: string; created_at: string }>((from, to) =>
+      service.from('appointments').select('patient_id, created_at').eq('account_id', accountId).in('patient_id', patientIds.slice(i, i + 200)).gte('created_at', since).order('id').range(from, to),
+    )
+    for (const a of rows) created.set(a.patient_id, [...(created.get(a.patient_id) ?? []), new Date(a.created_at).getTime()])
+  }
+  for (const r of runs) {
+    if (!r.patient_id) continue
+    const start = new Date(r.started_at).getTime()
+    const end = start + BOOKED_WITHIN_DAYS * DAY
+    if ((created.get(r.patient_id) ?? []).some((at) => at >= start && at <= end)) out.set(r.rule_id, (out.get(r.rule_id) ?? 0) + 1)
+  }
+  return out
+}
 export const blankStep = (): StepStats => ({ here: 0, failedHere: 0, applied: 0, yes: 0, no: 0, met: 0, timedOut: 0, failed: 0, whatsapp: blankMessages(), email: blankEmail() })
 
 /** Every row of a query, past PostgREST's 1000-row page. */
@@ -182,8 +212,8 @@ export async function statsByRule(supabase: any, service: any, accountId: string
     allRows<{ rule_id: string; status: string }>((from, to) =>
       service.from('automation_sequence_runs').select('rule_id, status').eq('account_id', accountId).in('status', ['running', 'failed']).range(from, to),
     ),
-    allRows<{ rule_id: string; stopped_reason: string | null }>((from, to) =>
-      service.from('automation_sequence_runs').select('rule_id, stopped_reason').eq('account_id', accountId).gte('started_at', since).range(from, to),
+    allRows<{ rule_id: string; stopped_reason: string | null; patient_id: string | null; started_at: string }>((from, to) =>
+      service.from('automation_sequence_runs').select('rule_id, stopped_reason, patient_id, started_at').eq('account_id', accountId).gte('started_at', since).range(from, to),
     ),
     allRows<{ rule_id: string; automation_rules: { account_id: string } }>((from, to) =>
       service.from('automation_rule_sends').select('rule_id, automation_rules!inner(account_id)').eq('automation_rules.account_id', accountId).gte('sent_at', since).range(from, to),
@@ -219,6 +249,7 @@ export async function statsByRule(supabase: any, service: any, accountId: string
   const sendsByRule = new Map<string, number>()
   for (const s of sends) sendsByRule.set(s.rule_id, (sendsByRule.get(s.rule_id) ?? 0) + 1)
 
+  for (const [id, n] of await bookedAfter(service, accountId, since, recent)) of(id).booked = n
   for (const id of new Set([...Object.keys(stats), ...runsStarted.keys(), ...sendsByRule.keys()])) {
     const runs = runsStarted.get(id) ?? 0
     of(id).entered = runs > 0 ? runs : Math.max(immediateEntries(waByRule.get(id) ?? [], emailByRule.get(id) ?? []), sendsByRule.get(id) ?? 0)
@@ -275,5 +306,11 @@ export async function statsForRule(supabase: any, service: any, accountId: strin
   }
   const runs = runsRecent.count ?? 0
   rule.entered = runs > 0 ? runs : Math.max(immediateEntries(wa, email), sends.count ?? 0)
+  if (runs > 0) {
+    const started = await allRows<{ rule_id: string; patient_id: string | null; started_at: string }>((from, to) =>
+      service.from('automation_sequence_runs').select('rule_id, patient_id, started_at').eq('rule_id', ruleId).gte('started_at', since).order('id').range(from, to),
+    )
+    rule.booked = (await bookedAfter(service, accountId, since, started)).get(ruleId) ?? 0
+  }
   return { rule, steps }
 }

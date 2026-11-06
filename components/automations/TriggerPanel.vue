@@ -3,6 +3,7 @@ import { ENTRY_MODES, LEAD_STAGE_OPTIONS, LEAD_STOP_STAGES, TRIGGERS, TRIGGER_GR
 import { FIELD, FIELD_NUMBER, HINT, LABEL, NOTE, SECTION, SEGMENT_WRAP, segmentBtn } from '~/utils/automationUi'
 import { scheduledSendLabel } from '~/utils/automationDescribe'
 import { clinicTimeLabel } from '~/utils/bookingSlots'
+import type { AudienceRef } from '~/utils/automationAudience'
 import { DEFAULT_CLINIC_TIMEZONE, clinicDateOf, wallClockToUtc } from '~/utils/clinicClock'
 
 // The trigger: what starts the automation, "only if" filters, and who can
@@ -38,6 +39,17 @@ function setSchedule(patch: Record<string, any>) {
   setSegment({ schedule: { ...segment.value.schedule, ...patch } })
 }
 const recurring = computed(() => segment.value.schedule?.kind !== 'once')
+
+// A group aimed at a saved list or segment, with others left out; the
+// picker shows the choice before a list is chosen, so it has its own flag.
+const savedAudienceMode = ref(false)
+watch(() => rule.value.trigger_event, () => (savedAudienceMode.value = false))
+function setExclude(i: number, ref: AudienceRef | null) {
+  const next = [...(segment.value.exclude ?? [])]
+  if (ref) next[i] = ref
+  else next.splice(i, 1)
+  setSegment({ exclude: next.filter(Boolean) })
+}
 
 // A one-off group send goes at the next check after it is switched on, or at
 // a date and time chosen here: schedule.starts_at, which the engine already
@@ -83,7 +95,7 @@ async function refreshPreview() {
   try {
     preview.value = await useStaffFetch('/api/automations/segment-preview', {
       method: 'POST',
-      body: { filters: segment.value.filters ?? {}, isMarketing: rule.value.is_marketing, ruleId: b.ruleId.value, entryMode: rule.value.entry_mode },
+      body: { filters: segment.value.filters ?? {}, audience: segment.value.audience ?? null, exclude: segment.value.exclude ?? [], isMarketing: rule.value.is_marketing, ruleId: b.ruleId.value, entryMode: rule.value.entry_mode },
     })
   } catch {
     preview.value = null
@@ -92,7 +104,7 @@ async function refreshPreview() {
   }
 }
 watch(
-  () => [isSegment.value, JSON.stringify(segment.value.filters), rule.value.is_marketing],
+  () => [isSegment.value, JSON.stringify(segment.value.filters), JSON.stringify(segment.value.audience ?? null), JSON.stringify(segment.value.exclude ?? []), rule.value.is_marketing],
   () => {
     clearTimeout(previewTimer)
     previewTimer = setTimeout(refreshPreview, 400)
@@ -202,6 +214,19 @@ watch(
       <span :class="HINT">{{ t('Each lead enters once. Not offered: Patient and Lost, because automations stop for a lead in either. A booking moving the lead to "Booked" by itself does not count; for that, use "Wait until they book" in a New lead automation.', 'Cada lead entra una vez. No se ofrecen Paciente ni Perdido, porque las automatizaciones se detienen para un lead en cualquiera de las dos. Que una reserva lo pase sola a «Con cita» no cuenta; para eso, usa «Esperar hasta que reserve» en una automatización de Lead nuevo.') }}</span>
     </label>
 
+    <template v-if="rule.trigger_event === 'audience.entered'">
+      <div :class="LABEL">
+        {{ t('The list or segment', 'La lista o el segmento') }}
+        <AutomationsAudiencePicker :model-value="(rule.filters.trigger_audience as AudienceRef | undefined) ?? null" test-id="trigger-audience" @update:model-value="setFilters({ ...rule.filters, trigger_audience: $event ?? undefined })" />
+      </div>
+      <label class="flex cursor-pointer items-start gap-2 text-[13px] text-ink-700 touch:min-h-11">
+        <input type="checkbox" class="mt-0.5 h-4 w-4 accent-brand" :checked="rule.filters.include_current === true" data-test="trigger-include-current" @change="setFilters({ ...rule.filters, include_current: ($event.target as HTMLInputElement).checked || undefined })" />
+        <span>
+          {{ t('Also the people already in it, when it is switched on', 'También quienes ya están, al activarla') }}
+          <span :class="['block', HINT]">{{ t('Otherwise only those who enter from then on. Paused and switched back on, it carries on from that moment: whoever entered meanwhile is not enrolled late.', 'Si no, solo los que entren desde entonces. Si se pausa y se vuelve a activar, sigue desde ese momento: quienes entraron mientras tanto no se inscriben tarde.') }}</span>
+        </span>
+      </label>
+    </template>
     <template v-if="rule.trigger_event === 'care_plan.milestone'">
       <div :class="LABEL">
         {{ t('When', 'Cuándo') }}
@@ -282,8 +307,29 @@ watch(
         <span :class="HINT">{{ t('Patients who enter each day, the most recently seen first; the rest wait for the next day. Keeps a long list from going out in one morning (failed sends count against the WhatsApp number) and the Inbox answerable.', 'Pacientes que entran cada día, primero los vistos más recientemente; el resto espera al día siguiente. Evita que una lista larga salga en una mañana (los envíos fallidos cuentan contra el número de WhatsApp) y que el Inbox se desborde.') }}</span>
       </label>
 
-      <div class="flex flex-col gap-2">
-        <span :class="SECTION">{{ t('Patients who', 'Pacientes que') }}</span>
+      <div class="flex flex-col gap-2" data-test="segment-who">
+        <span :class="SECTION">{{ t('Who', 'Quiénes') }}</span>
+        <span :class="SEGMENT_WRAP" role="group" :aria-label="t('Who', 'Quiénes')">
+          <button type="button" :class="segmentBtn(!segment.audience)" :aria-pressed="!segment.audience" data-test="segment-who-filters" @click="setSegment({ audience: null, exclude: [] })">{{ t('Patients who…', 'Pacientes que…') }}</button>
+          <button type="button" :class="segmentBtn(!!segment.audience)" :aria-pressed="!!segment.audience" data-test="segment-who-saved" @click="savedAudienceMode = true">{{ t('A list or segment', 'Una lista o un segmento') }}</button>
+        </span>
+      </div>
+      <div v-if="segment.audience || savedAudienceMode" class="flex flex-col gap-2.5">
+        <AutomationsAudiencePicker :model-value="segment.audience ?? null" test-id="segment-audience" @update:model-value="setSegment({ audience: $event })" />
+        <div :class="LABEL">
+          {{ t('Leave out whoever is in', 'Excepto quienes estén en') }}
+          <AutomationsAudiencePicker
+            v-for="(ex, i) in [...(segment.exclude ?? []), null]"
+            :key="ex ? `${ex.kind}:${ex.id}` : `new-${(segment.exclude ?? []).length}`"
+            :model-value="ex"
+            :placeholder="ex ? undefined : t('Nobody left out', 'Sin excluir a nadie')"
+            :test-id="`segment-exclude-${i}`"
+            @update:model-value="setExclude(i, $event)"
+          />
+        </div>
+        <span :class="HINT">{{ t("Whoever is in it when the send goes out: the list, or the segment's own filters, decide who that is.", 'Quienes estén en ella cuando salga el envío: lo deciden la lista, o los filtros del propio segmento.') }}</span>
+      </div>
+      <div v-if="!segment.audience && !savedAudienceMode" class="flex flex-col gap-2">
         <AutomationsFilterEditor
           :model-value="segment.filters ?? {}"
           mode="segment"

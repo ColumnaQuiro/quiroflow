@@ -1,9 +1,10 @@
-// Saved audiences (patient lists and segments, from Patients) in automations:
-// a one-off send aimed at a list, less another; and "Enters a list or
-// segment", which counts only who comes in after it is switched on unless it
-// is told to take the current members too. Both are enrolled by the
-// 15-minute tick; every rule is in test mode with one email step, so a start
-// is visible as the email it records.
+// Saved audiences (patient lists and segments, from Patients) and dates on
+// the record in automations: a one-off send aimed at a list, less another;
+// "Enters a list or segment", which counts only who comes in after it is
+// switched on unless told to take the current members too; and "A date on
+// the record", before a date field or after the last visit. All are enrolled
+// by the 15-minute tick; every rule is in test mode with one email step, so a
+// start is visible as the email it records.
 
 interface SeededAccount {
   email: string
@@ -103,6 +104,61 @@ describe('Automations aimed at lists and segments', () => {
         tick()
         tick()
         emailsFor(p.id).should((rows) => expect(rows.map((r) => r.subject)).to.deep.eq(['Ejercicios para el embarazo']))
+      })
+    })
+  })
+
+  // "A date on the record" starts from 9:00 clinic time. A fixed-offset zone
+  // where it is about midday now keeps the spec meaningful whenever it runs;
+  // "today" below is that zone's date.
+  function clinicAtMidday() {
+    const offset = Math.max(-12, Math.min(14, 12 - new Date().getUTCHours()))
+    const zone = offset === 0 ? 'Etc/GMT' : `Etc/GMT${offset > 0 ? '-' : '+'}${Math.abs(offset)}`
+    const today = new Date(Date.now() + offset * 3600 * 1000).toISOString().slice(0, 10)
+    return cy.task('auto:setClinicTimezone', { clinicId: account.clinicId, timezone: zone }).then(() => ({ zone, today, offset }))
+  }
+  const shift = (date: string, days: number) => {
+    const d = new Date(`${date}T00:00:00Z`)
+    d.setUTCDate(d.getUTCDate() + days)
+    return d.toISOString().slice(0, 10)
+  }
+
+  it('starts some days before a date field of the clinic\'s own, once that day', () => {
+    clinicAtMidday().then(({ today }) => {
+      cy.task<{ id: string }[]>('db:insertRows', { table: 'patient_attributes', rows: [{ account_id: account.accountId, label: 'Fecha prevista de parto', key: `parto_${stamp().slice(-6)}`, section: 'clinical', kind: 'date' }] }).its('0').then((field) => {
+        patient('Ana').then((due) => {
+          patient('Bea').then((later) => {
+            cy.task('db:insertRows', { table: 'patient_attribute_values', rows: [
+              { account_id: account.accountId, patient_id: due.id, attribute_id: field.id, value: shift(today, 7) },
+              { account_id: account.accountId, patient_id: later.id, attribute_id: field.id, value: shift(today, 8) },
+            ] })
+            rule('patient.date', { filters: { trigger_date: `field:${field.id}`, trigger_days: 7, trigger_when: 'before' } }, 'Una semana para el parto')
+            tick()
+            tick()
+            emailsFor(due.id).should((rows) => expect(rows.map((r) => r.subject)).to.deep.eq(['Una semana para el parto']))
+            emailsFor(later.id).should('have.length', 0)
+          })
+        })
+      })
+    })
+  })
+
+  it('starts some days after the last visit, only for whoever has not been back', () => {
+    clinicAtMidday().then(({ today, offset }) => {
+      // Midday clinic time, that many days ago, as UTC.
+      const middayOn = (date: string) => new Date(Date.parse(`${date}T12:00:00Z`) - offset * 3600 * 1000).toISOString()
+      const visit = (patientId: string, date: string) => cy.task('db:createAppointment', { accountId: account.accountId, clinicId: account.clinicId, patientId, startsAt: middayOn(date), status: 'completed' })
+      patient('Ana').then((gone) => {
+        patient('Bea').then((back) => {
+          visit(gone.id, shift(today, -10))
+          visit(back.id, shift(today, -10))
+          visit(back.id, shift(today, -3))
+          rule('patient.date', { filters: { trigger_date: 'last_visit', trigger_days: 10 } }, 'Hace tiempo que no te vemos')
+          tick()
+          tick()
+          emailsFor(gone.id).should((rows) => expect(rows.map((r) => r.subject)).to.deep.eq(['Hace tiempo que no te vemos']))
+          emailsFor(back.id).should('have.length', 0)
+        })
       })
     })
   })

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { triggerBonoMatches, triggerCarePlanMatches, triggerDocMatches, triggerScoreMatches, triggerStageMatches, triggerTagMatches } from '../../utils/automationTriggerMatch'
+import { dateTriggerSourceDate, shiftDate, triggerBonoMatches, triggerCarePlanMatches, triggerDocMatches, triggerScoreMatches, triggerStageMatches, triggerTagMatches } from '../../utils/automationTriggerMatch'
 import { TRIGGERS, isLeadTrigger, triggerTitle } from '../../utils/automationCatalog'
 
 // A rule's own setting for the trigger that starts it: an empty one takes
@@ -62,5 +62,24 @@ describe('care plan and bono settings', () => {
   it('counts sessions left, one by default', () => {
     expect([0, 1, 2].filter((n) => triggerBonoMatches({}, n))).toEqual([0, 1])
     expect([0, 1, 2].filter((n) => triggerBonoMatches({ trigger_sessions_left: 0 }, n))).toEqual([0])
+  })
+})
+
+describe('a date on the record', () => {
+  it('moves dates by calendar days, across months and leap years', () => {
+    expect(shiftDate('2026-12-30', 3)).toBe('2027-01-02')
+    expect(shiftDate('2028-03-01', -1)).toBe('2028-02-29')
+  })
+  it('finds the date that makes it start today', () => {
+    expect(dateTriggerSourceDate({ trigger_date: 'last_visit', trigger_days: 10 }, '2026-11-20')).toBe('2026-11-10')
+    expect(dateTriggerSourceDate({ trigger_date: 'field:x', trigger_days: 7, trigger_when: 'before' }, '2026-11-20')).toBe('2026-11-27')
+    expect(dateTriggerSourceDate({ trigger_date: 'field:x', trigger_days: 0 }, '2026-11-20')).toBe('2026-11-20')
+  })
+  it('counts only forward from a date that is always past', () => {
+    expect(dateTriggerSourceDate({ trigger_date: 'last_visit', trigger_days: 10, trigger_when: 'before' }, '2026-11-20')).toBe('2026-11-10')
+  })
+  it('has nothing to find without a usable setting', () => {
+    expect(dateTriggerSourceDate({ trigger_days: 3 }, '2026-11-20')).toBeNull()
+    expect(dateTriggerSourceDate({ trigger_date: 'last_visit', trigger_days: -1 }, '2026-11-20')).toBeNull()
   })
 })

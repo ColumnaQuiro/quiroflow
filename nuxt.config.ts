@@ -280,6 +280,11 @@ export default defineNuxtConfig({
         // Where Stripe Checkout returns after a patient pays from the app: the
         // phone's browser, with no QuiroFlow session.
         '/payment-done',
+        // Where Stripe's card page returns after a patient saves a card --
+        // from the app, a staff "Card link" or online booking. Same browser,
+        // same lack of a session: it sent them to the clinic's login page,
+        // with the card saved and nothing to say so.
+        '/card-saved',
         // The waitlist claim link and the photo-upload QR: opened on a
         // patient's phone with no QuiroFlow login, gated by their own token.
         // Not a '*' glob: the module turns each pattern into a regex by

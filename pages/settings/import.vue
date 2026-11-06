@@ -215,12 +215,47 @@ function statusOf(step: Step): { text: string; done: boolean } | null {
   const n = counts.value[step.key] ?? 0
   return n ? { text: t(`${nf.format(n)} imported`, `${nf.format(n)} importados`), done: true } : { text: t('Not run yet', 'Aún sin ejecutar'), done: false }
 }
+// Every importer shows a long preview -- counts, sample tables, sometimes
+// every row held back -- with its Apply button at the bottom, and then swaps
+// all of it for a short progress box. The page kept its scroll position, so
+// the clinic was left looking at blank space below the panel and had to
+// scroll back up to see the import running. When the open step's content
+// shrinks while its top is out of sight, bring the top back into view. Done
+// here, once, rather than in each importer's stage change: it covers every
+// step, including ones added later, and a step switched from low in the step
+// list opens at its start for the same reason.
+const scroller = ref<HTMLElement | null>(null)
+const panel = ref<HTMLElement | null>(null)
+let panelObserver: ResizeObserver | null = null
+let lastPanelHeight = 0
+// A watch rather than onMounted: the panel is not necessarily rendered yet
+// when the page mounts.
+watch(panel, (el) => {
+  panelObserver?.disconnect()
+  panelObserver = null
+  if (!el || typeof ResizeObserver === 'undefined') return
+  lastPanelHeight = el.offsetHeight
+  panelObserver = new ResizeObserver(() => {
+    const node = panel.value
+    const box = scroller.value
+    if (!node || !box) return
+    const height = node.offsetHeight
+    const shrank = height < lastPanelHeight - 120
+    lastPanelHeight = height
+    if (!shrank) return
+    if (node.getBoundingClientRect().top < box.getBoundingClientRect().top) {
+      node.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    }
+  })
+  panelObserver.observe(el)
+}, { flush: 'post' })
+onBeforeUnmount(() => panelObserver?.disconnect())
 </script>
 
 <template>
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Import', 'Importar')" />
-    <div class="flex-1 overflow-y-auto">
+    <div ref="scroller" class="flex-1 overflow-y-auto">
       <div class="flex gap-8 p-4 pb-24 sm:px-6 sm:pt-6 lg:pb-6">
         <SettingsNav />
         <div class="flex min-w-0 max-w-[1040px] flex-1 flex-col gap-4" data-cy="import-settings" :data-ready="countsLoaded ? 'true' : undefined">
@@ -286,7 +321,7 @@ function statusOf(step: Step): { text: string; done: boolean } | null {
             </nav>
 
             <!-- The open step -->
-            <div class="flex min-w-0 flex-1 flex-col gap-4 p-5" data-cy="import-panel">
+            <div ref="panel" class="flex min-w-0 flex-1 scroll-mt-4 flex-col gap-4 p-5" data-cy="import-panel">
               <!-- Each importer opens with its own explanation; the hint is the step button's tooltip. -->
               <h2 class="text-[16px] font-bold text-ink-900">{{ activeStep.label }}</h2>
               <template v-if="sourceKey === 'practicehub'">

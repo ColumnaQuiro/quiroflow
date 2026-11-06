@@ -16,6 +16,10 @@ export function useAppPayments(patientId: () => string, onReturn: () => void = (
   const authedFetch = useAuthedFetch()
   const enabled = ref(false)
   const card = ref<AppPaymentsCard | null>(null)
+  // 'payer': a family member's visits, paid with the signed-in person's own
+  // card because the person has none (payerCard, server/utils/appPayments.ts).
+  const cardOwner = ref<'self' | 'payer'>('self')
+  const family = useFamily()
   const visits = ref<AppPaymentsVisit[]>([])
   const loading = ref(true)
   const payingId = ref<string | null>(null)
@@ -26,9 +30,10 @@ export function useAppPayments(patientId: () => string, onReturn: () => void = (
   async function load() {
     if (!patientId()) return
     try {
-      const res = await authedFetch<{ enabled: boolean; card: AppPaymentsCard | null; visits: AppPaymentsVisit[] }>('/api/portal/payments', { query: { patientId: patientId() } })
+      const res = await authedFetch<{ enabled: boolean; card: AppPaymentsCard | null; cardOwner?: 'self' | 'payer'; visits: AppPaymentsVisit[] }>('/api/portal/payments', { query: { patientId: patientId() } })
       enabled.value = res.enabled
       card.value = res.card
+      cardOwner.value = res.cardOwner ?? 'self'
       visits.value = res.visits
     } catch {
       enabled.value = false
@@ -88,11 +93,15 @@ export function useAppPayments(patientId: () => string, onReturn: () => void = (
     return paid
   }
 
+  // A card is always saved to the signed-in person's own record: paying for a
+  // child they manage uses it, and it stays theirs.
+  const cardHolderId = () => (family.actingForOther.value && family.me.value ? family.me.value.patientId : patientId())
+
   async function addCard() {
     addingCard.value = true
     error.value = ''
     try {
-      await openWhenReady(async () => (await authedFetch<{ url: string }>('/api/portal/card-link', { method: 'POST', body: { patientId: patientId() } })).url)
+      await openWhenReady(async () => (await authedFetch<{ url: string }>('/api/portal/card-link', { method: 'POST', body: { patientId: cardHolderId() } })).url)
       opened = true
     } catch {
       error.value = t("Couldn't open the card page. Try again.", 'No se ha podido abrir la página de la tarjeta. Inténtalo de nuevo.')
@@ -101,5 +110,5 @@ export function useAppPayments(patientId: () => string, onReturn: () => void = (
     }
   }
 
-  return { enabled, card, visits, loading, payingId, addingCard, error, visit, payVisit, addCard, reload: load }
+  return { enabled, card, cardOwner, visits, loading, payingId, addingCard, error, visit, payVisit, addCard, reload: load }
 }

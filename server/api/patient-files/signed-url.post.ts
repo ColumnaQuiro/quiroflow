@@ -1,5 +1,6 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
+import { logFamilyAccess } from '~/server/utils/familyAccess'
 
 // A patient downloading a file the clinic shared with them.
 //
@@ -23,7 +24,7 @@ export default defineEventHandler(async (event) => {
 
   const { supabase } = await requireAuthedUser(event)
 
-  const { data: file } = await supabase.from('patient_files').select('id, file_name, storage_path').eq('id', body.fileId).maybeSingle()
+  const { data: file } = await supabase.from('patient_files').select('id, patient_id, file_name, storage_path').eq('id', body.fileId).maybeSingle()
   if (!file?.storage_path) {
     throw createError({ statusCode: 404, statusMessage: 'File not found' })
   }
@@ -42,5 +43,6 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 502, statusMessage: 'Could not prepare the download' })
   }
 
+  await logFamilyAccess(supabase as never, file.patient_id, 'file_viewed', { file_id: file.id, file_name: file.file_name })
   return { url: signed.signedUrl, fileName: file.file_name }
 })

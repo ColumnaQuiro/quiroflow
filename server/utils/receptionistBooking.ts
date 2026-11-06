@@ -122,7 +122,7 @@ export const ADD_TO_WAITLIST: Anthropic.Tool = {
 export const CANCEL_APPOINTMENT: Anthropic.Tool = {
   name: 'cancel_appointment',
   description:
-    'Cancels a visit they already have, from the list under "Moving a visit they already have". Call it only when there is no doubt which visit, and that they want it cancelled rather than moved: they asked to cancel it, or said they will not come to it and do not want another time now. If they have several visits and did not say which, ask first. Only after it confirms may you tell them it is cancelled. Stopping or pausing their treatment, or cancelling a package, is not this: hand those over to a colleague.',
+    'Cancels a visit they already have, from the list under "Moving a visit they already have". Call it only when there is no doubt which visit, and that they want it cancelled rather than moved: they asked to cancel it, or said they will not come to it and do not want another time now. If they have several visits and did not say which, ask first. It cancels one visit: to cancel several, call it once for each, and tell them cancelled only the ones it confirmed. Only after it confirms may you tell them it is cancelled. Stopping or pausing their treatment, or cancelling a package, is not this: hand those over to a colleague.',
   input_schema: {
     type: 'object',
     properties: {

@@ -139,6 +139,22 @@ describe('A reply that states a booking nothing made', () => {
     expect(unbookedClaim('Te confirmo que tu cita del jueves a las 15:00 sigue en pie.', none, new Set(['15:00']))).toBeNull()
   })
 
+  // 5 Nov 2026: two visits said to be cancelled, one cancelled; the other was
+  // a visit she had, so the standing exemption let it through.
+  it('catches a visit they have said to be cancelled or moved when nothing did it', () => {
+    const text = 'Quedan canceladas tus citas del lunes 9 de noviembre a las 19:30 y del miércoles 11 de noviembre a las 16:00. Escríbenos cuando quieras reagendar.'
+    const standing = new Set(['19:30', '16:00'])
+    expect(unbookedClaim(text, new Set(['19:30']), standing)).toContain('16:00')
+    expect(unbookedClaim(text, new Set(['19:30', '16:00']), standing)).toBeNull()
+    expect(unbookedClaim('Te he movido la cita del martes a las 18:00 al jueves a las 15:30.', new Set(['15:30']), new Set(['18:00']))).toContain('18:00')
+    expect(unbookedClaim('Tu cita del jueves a las 15:00 queda cancelada.', none, new Set(['15:00']))).not.toBeNull()
+  })
+
+  it('still lets a visit they have be restated', () => {
+    expect(unbookedClaim('Por ahora no tengo hueco a las 15:00, así que mantenemos tu cita a las 16:00 como está.', none, new Set(['16:00']))).toBeNull()
+    expect(unbookedClaim('Tu cita queda el jueves a las 16:00 con Ana, como estaba.', none, new Set(['16:00']))).toBeNull()
+  })
+
   it('catches an untimed booking only when nothing was done', () => {
     expect(unbookedClaim('Listo, te he reservado la cita.', none, none)).not.toBeNull()
     expect(unbookedClaim('Listo, te he reservado la cita.', new Set(['10:00']), none)).toBeNull()

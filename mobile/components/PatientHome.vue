@@ -17,6 +17,10 @@ import { formatEur } from '../../utils/billing'
 const props = defineProps<{ patientId: string; patientFirstName: string }>()
 
 const t = useT()
+// Family accounts: the avatar opens whose app this is; with nobody to
+// switch to it is the way to Account, as before.
+const family = useFamily()
+const familyOpen = ref(false)
 const locale = computed(() => t('en-GB', 'es-ES'))
 const { settings } = usePatientAppInfo()
 
@@ -78,6 +82,8 @@ const waitlistClinicId = computed(() => next.value?.clinic_id ?? (clinics.value.
 const homeWidget = useHomeWidget()
 watch([next, activePackages, apptLoading, moneyLoading], () => {
   if (apptLoading.value || moneyLoading.value) return
+  // The widget is the phone owner's own next visit, not whoever they last viewed.
+  if (family.actingForOther.value) return
   homeWidget.publish(patientWidgetSnapshot({ next: next.value, packages: activePackages.value, clinic: clinics.value.find((c) => c.id === next.value?.clinic_id)?.name ?? clinics.value[0]?.name ?? null, timeZone: zoneOf(next.value?.clinic_id ?? null) }))
 })
 
@@ -91,8 +97,21 @@ function eur(cents: number) {
   <div class="p-4 md:px-[max(1.5rem,calc((100%_-_44rem)/2))]">
     <div class="mb-4 flex items-start justify-between gap-3">
       <h1 class="text-[19px] font-[640] tracking-tightTitle text-ink-900">
-        {{ t(`Hi, ${patientFirstName}`, `Hola, ${patientFirstName}`) }}
+        {{ family.actingForOther.value ? t(`${patientFirstName}'s account`, `Cuenta de ${patientFirstName}`) : t(`Hi, ${patientFirstName}`, `Hola, ${patientFirstName}`) }}
       </h1>
+      <button
+        v-if="family.hasFamily.value"
+        type="button"
+        class="flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-line pl-1 pr-3 text-[13px] font-medium text-ink-700"
+        data-cy="family-switcher-toggle"
+        @click="familyOpen = true"
+      >
+        <span
+          class="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-semibold"
+          :class="family.actingForOther.value ? 'bg-info-bg text-info-text' : 'bg-surface-subtle text-ink-600'"
+        >{{ personInitials(family.active.value) }}</span>
+        {{ t('Family', 'Familia') }}
+      </button>
       <!-- Account, sign out and account deletion moved off the home header
            into their own screen: two of those three are destructive and
            they were sitting in the top bar of every visit to the app. -->
@@ -183,6 +202,7 @@ function eur(cents: number) {
     <!-- Exercises live on Cuidarme now; Documentos left the tab bar for it,
          so on a phone it opens from here (useAppNav.ts). -->
     <NuxtLink
+      v-if="family.canSeeClinical.value"
       to="/documents"
       class="mt-3 flex items-center justify-between rounded-card border border-line bg-surface px-4 py-3 shadow-card md:hidden"
       data-cy="patient-home-documents"
@@ -192,12 +212,13 @@ function eur(cents: number) {
     </NuxtLink>
 
     <!-- What the clinic sent them to read or watch -->
-    <PatientLearnCard class="mt-3" :patient-id="props.patientId" :link-to="(id) => `/learn/${id}`" />
+    <PatientLearnCard v-if="family.canSeeClinical.value" class="mt-3" :patient-id="props.patientId" :link-to="(id) => `/learn/${id}`" />
 
     <!-- Their referral link, when the clinic has the programme on -->
-    <PatientReferralCard class="mt-3" :patient-id="props.patientId" />
+    <PatientReferralCard v-if="!family.actingForOther.value" class="mt-3" :patient-id="props.patientId" />
 
     <!-- The clinic: where it is and how to reach it -->
     <PatientClinicCards class="mt-3" messages-to="/messages" />
+    <FamilySheet v-if="familyOpen" @close="familyOpen = false" />
   </div>
 </template>

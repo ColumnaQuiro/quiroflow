@@ -18,7 +18,8 @@ const { unregister: unregisterPush } = usePushNotifications()
 const { ask, notify } = useAppConfirm()
 const authedFetch = useAuthedFetch()
 const { settings } = usePatientAppInfo()
-const { patient, teamMember } = useIdentity()
+// The login itself, not whoever the family switcher is showing.
+const { me: patient, teamMember } = useIdentity()
 
 const fullName = computed(() => [patient.value?.first_name, patient.value?.last_name].filter(Boolean).join(' '))
 const initials = computed(() =>
@@ -92,6 +93,9 @@ async function deleteAccount() {
       <span class="text-[13.5px] font-medium text-ink-900">{{ t('Switch to practitioner view', 'Cambiar a vista de profesional') }}</span>
       <span class="text-ink-faint"><AppChevron /></span>
     </NuxtLink>
+
+    <!-- Family accounts: whom they manage, and who manages them -->
+    <PatientFamilyAccessCard class="mt-3" />
 
     <LanguageSetting class="mt-3" />
     <ThemeSetting class="mt-3" />

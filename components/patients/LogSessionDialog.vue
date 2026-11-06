@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { formatEur, formatTime } from '~/utils/billing'
-import { localDateStr, type LogSessionChoice, type UnloggedVisit } from '~/utils/unloggedVisits'
+import { localDateStr, type CoveredVisit, type LogSessionChoice, type UnloggedVisit } from '~/utils/unloggedVisits'
 
 // Logging a bono session: which visit it pays for, and what that does to the
 // bono, before anything is written.
@@ -16,6 +16,10 @@ import { localDateStr, type LogSessionChoice, type UnloggedVisit } from '~/utils
 // already, so the everyday case is still open + confirm. When there are older
 // ones and nothing today, nothing is picked: guessing a day here is exactly
 // how a session ends up on the wrong visit.
+//
+// Nor is "not on the calendar" picked when today already has a visit that
+// something paid for (coveredVisits): logging a session then is a second
+// visit, and the dialog says so instead of making it the one-click default.
 
 const props = defineProps<{
   bonoName: string
@@ -23,6 +27,7 @@ const props = defineProps<{
   sessionsTotal: number
   perSessionCents: number
   visits: UnloggedVisit[]
+  coveredVisits: CoveredVisit[]
   loading: boolean
   busy: boolean
 }>()
@@ -42,6 +47,10 @@ const unpaidCount = computed(() => props.visits.filter((v) => !v.paidInvoice).le
 const selected = ref<string | null>(null)
 const newDate = ref(today)
 
+// Visits already paid for on the day "not on the calendar" would record one.
+const coveredOnNewDate = computed(() => props.coveredVisits.filter((v) => localDateStr(new Date(v.starts_at)) === newDate.value))
+const coveredToday = computed(() => props.coveredVisits.some((v) => localDateStr(new Date(v.starts_at)) === today))
+
 // Re-evaluated once the list arrives, not only on mount: the parent opens the
 // dialog straight away and loads the visits into it.
 watch(
@@ -49,7 +58,7 @@ watch(
   ([loading]) => {
     if (loading || selected.value !== null) return
     if (todaysVisit.value) selected.value = todaysVisit.value.id
-    else if (props.visits.length === 0) selected.value = NEW
+    else if (props.visits.length === 0 && !coveredToday.value) selected.value = NEW
   },
   { immediate: true },
 )
@@ -61,6 +70,11 @@ const leftAfter = computed(() => props.sessionsTotal - props.sessionsUsed - 1)
 
 function visitLabel(v: UnloggedVisit) {
   return [formatWeekdayDate(v.starts_at), formatTime(v.starts_at), v.typeName, v.practitionerName].filter(Boolean).join(' · ')
+}
+
+function coveredLabel(v: CoveredVisit) {
+  const when = [formatTime(v.starts_at), v.typeName].filter(Boolean).join(' · ')
+  return v.paidBy ? `${when} (${v.paidBy})` : when
 }
 
 function confirm() {
@@ -132,6 +146,18 @@ function confirm() {
             <span class="block font-medium text-ink-900">{{ t('A visit that is not on the calendar', 'Una visita que no está en el calendario') }}</span>
             <span class="mt-0.5 block text-[12px] text-ink-muted2">
               {{ t('A visit is recorded on this day for the patient’s practitioner.', 'Se registra una visita en este día con el profesional del paciente.') }}
+            </span>
+            <span
+              v-if="coveredOnNewDate.length"
+              data-cy="log-session-day-already-paid"
+              class="mt-2 block rounded-ctl bg-warning-bg px-3 py-2 text-[12px] text-warning-text"
+            >
+              {{
+                t(
+                  `This day already has a visit paid for: ${coveredOnNewDate.map(coveredLabel).join(', ')}. Logging this records a second visit and uses another session for it.`,
+                  `Este día ya tiene una visita pagada: ${coveredOnNewDate.map(coveredLabel).join(', ')}. Si la registras, se crea una segunda visita y se consume otra sesión.`,
+                )
+              }}
             </span>
             <input
               v-if="selected === NEW"

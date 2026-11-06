@@ -13,7 +13,7 @@ export default defineEventHandler(async (event) => {
   const body = await readBody<{ appointmentId?: string }>(event)
   if (!body?.appointmentId) throw createError({ statusCode: 400, statusMessage: 'appointmentId is required' })
 
-  const { supabase } = await requireAuthedUser(event)
+  const { supabase, user } = await requireAuthedUser(event)
   const { data: own } = await supabase.from('appointments').select('id').eq('id', body.appointmentId).maybeSingle()
   if (!own) throw createError({ statusCode: 404, statusMessage: 'Appointment not found' })
 
@@ -21,5 +21,7 @@ export default defineEventHandler(async (event) => {
   const { data: visit } = await service.from('appointments').select(APP_VISIT_COLUMNS).eq('id', own.id).maybeSingle()
   if (!visit) throw createError({ statusCode: 404, statusMessage: 'Appointment not found' })
 
-  return payAppVisit(event, service, visit)
+  // A family member's visit (RLS let the caller read it) may be paid with
+  // the caller's own saved card: payerCard in appPayments.ts.
+  return payAppVisit(event, service, visit, { payerUserId: user.id })
 })

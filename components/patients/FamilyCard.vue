@@ -9,11 +9,16 @@ import { normalizeSearchTerm } from '~/utils/searchText'
 // here, saved at once, both ways (utils/familyRelations.ts). The tutor of a
 // minor stays where it was (Datos del paciente): that one decides who hears
 // about the visits, this one only says who is who.
+//
+// Under each link, "Acceso en la app" (FamilyAppAccess.vue): whether one of
+// the two manages the other's account from their own login. Separate from the
+// link on purpose -- being someone's sibling gives no access to their record.
 
-interface Person { id: string; first_name: string; last_name: string | null; gender: string | null; date_of_birth: string | null }
+interface Person { id: string; first_name: string; last_name: string | null; gender: string | null; date_of_birth: string | null; is_minor?: boolean | null; user_id?: string | null }
+interface ManagerLink { id: string; manager_patient_id: string; patient_id: string; basis: 'guardian' | 'consent'; access: 'full' | 'admin'; note: string | null }
 interface Link { id: string; related_patient_id: string; relation: FamilyRelation; related: Person | null }
 
-const props = defineProps<{ patient: { id: string; account_id: string; first_name: string } }>()
+const props = defineProps<{ patient: { id: string; account_id: string; first_name: string; last_name?: string | null; date_of_birth?: string | null; is_minor?: boolean | null; user_id?: string | null; tutor_patient_id?: string | null } }>()
 
 const supabase = useSupabaseClient()
 const store = useAccountStore()
@@ -22,16 +27,33 @@ const { can } = usePermission()
 const { showToast } = useToast()
 
 const links = ref<Link[]>([])
+const managerLinks = ref<ManagerLink[]>([])
 const loading = ref(true)
 async function load() {
-  const { data } = await supabase
-    .from('patient_relations')
-    .select('id, related_patient_id, relation, related:patients!patient_relations_related_patient_id_fkey(id, first_name, last_name, gender, date_of_birth)')
-    .eq('patient_id', props.patient.id)
-    .order('created_at')
+  const [{ data }, { data: managed }] = await Promise.all([
+    supabase
+      .from('patient_relations')
+      .select('id, related_patient_id, relation, related:patients!patient_relations_related_patient_id_fkey(id, first_name, last_name, gender, date_of_birth, is_minor, user_id)')
+      .eq('patient_id', props.patient.id)
+      .order('created_at'),
+    supabase
+      .from('patient_managers')
+      .select('id, manager_patient_id, patient_id, basis, access, note')
+      .or(`patient_id.eq.${props.patient.id},manager_patient_id.eq.${props.patient.id}`),
+  ])
   links.value = (data as unknown as Link[] | null) ?? []
+  managerLinks.value = (managed as ManagerLink[] | null) ?? []
   loading.value = false
 }
+const self = computed<Person>(() => ({
+  id: props.patient.id,
+  first_name: props.patient.first_name,
+  last_name: props.patient.last_name ?? null,
+  gender: null,
+  date_of_birth: props.patient.date_of_birth ?? null,
+  is_minor: props.patient.is_minor ?? null,
+  user_id: props.patient.user_id ?? null,
+}))
 onMounted(load)
 watch(() => props.patient.id, load)
 
@@ -109,7 +131,8 @@ async function remove(link: Link) {
 
     <UiSkeleton v-if="loading" class="mt-3 h-4 w-40 rounded-ctlSm" />
     <ul v-else-if="links.length" class="mt-2.5 space-y-1.5">
-      <li v-for="l in links" :key="l.id" class="flex items-center gap-2 text-[13.5px]" data-cy="family-link">
+      <li v-for="l in links" :key="l.id" data-cy="family-link">
+       <div class="flex items-center gap-2 text-[13.5px]">
         <span class="w-24 shrink-0 text-[12px] text-ink-muted2">{{ relationLabel(l.relation, l.related?.gender, t) }}</span>
         <NuxtLink :to="`/patients/${l.related_patient_id}`" class="min-w-0 flex-1 truncate text-brand-text hover:underline">{{ nameOf(l.related) }}</NuxtLink>
         <span v-if="patientAge(l.related?.date_of_birth) !== null" class="shrink-0 text-[12px] text-ink-muted">{{ t(`${patientAge(l.related?.date_of_birth)} y`, `${patientAge(l.related?.date_of_birth)} años`) }}</span>
@@ -123,9 +146,28 @@ async function remove(link: Link) {
         >
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
         </button>
+       </div>
+        <PatientsFamilyAppAccess
+          v-if="l.related"
+          :account-id="patient.account_id"
+          :self="self"
+          :related="l.related"
+          :relation="l.relation"
+          :links="managerLinks"
+          @changed="load"
+        />
       </li>
     </ul>
     <p v-else-if="!adding" class="mt-2.5 text-[13px] text-ink-faint">{{ t('No family members linked.', 'Ningún familiar vinculado.') }}</p>
+    <!-- The tutor named in Datos gets nothing in the app by being named
+         there; linking them here is where app access is given. -->
+    <p
+      v-if="!loading && patient.tutor_patient_id && !links.some((l) => l.related_patient_id === patient.tutor_patient_id)"
+      class="mt-2 text-[12px] text-ink-muted"
+      data-cy="family-tutor-hint"
+    >
+      {{ t('Their tutor is not in the family yet: add them to give them access from their own app.', 'Su tutor/a aún no está en Familia: añádelo para darle acceso desde su propia app.') }}
+    </p>
 
     <form v-if="adding" class="mt-3 space-y-2 border-t border-line-divider pt-3" data-cy="family-form" @submit.prevent="add">
       <div v-if="picked" class="flex items-center gap-2 text-[13.5px]">

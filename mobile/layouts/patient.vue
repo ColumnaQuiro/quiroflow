@@ -25,6 +25,16 @@ onBeforeUnmount(() => habitOpened.then((h) => h.remove()))
 const { items, isActive } = usePatientNav()
 const { settings } = usePatientAppInfo()
 const t = useT()
+// Family accounts (composables/useFamily.ts): whose record every patient
+// screen shows. The banner says it on each one; the screens re-mount per
+// person, so nothing of the last person's stays on screen.
+const family = useFamily()
+const personKey = computed(() => family.active.value?.patientId ?? 'me')
+// The sections an admin-only link does not reach, wherever they are opened
+// from (an old notification, a link in a message): said, not shown empty.
+const route = useRoute()
+const CLINICAL = ['/care', '/progress', '/messages', '/documents', '/exercises', '/learn']
+const locked = computed(() => !family.canSeeClinical.value && CLINICAL.some((p) => route.path === p || route.path.startsWith(`${p}/`)))
 </script>
 
 <template>
@@ -38,7 +48,11 @@ const t = useT()
       :subtitle="t('Patient', 'Paciente')"
     />
     <div class="min-h-0 min-w-0 flex-1 overflow-y-auto">
-      <slot />
+      <PatientActingBanner v-if="tabsVisible" />
+      <div v-if="locked" class="p-4"><PatientClinicalLocked /></div>
+      <div v-else :key="personKey">
+        <slot />
+      </div>
     </div>
     <PatientTabBar v-if="tabsVisible && keyboardHeight === 0" class="md:hidden" />
   </div>

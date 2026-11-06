@@ -2,7 +2,9 @@ import { ruleFiltersMatch, type AutomationFilters } from '~/server/utils/evaluat
 import { dispatchPatientRule, startLeadSequence, startPatientRun } from '~/server/utils/automationEngine'
 import { audienceEntriesSince, audienceMembersNow } from '~/server/utils/audienceMembers'
 import { asAudienceRef } from '~/utils/automationAudience'
-import { triggerBonoMatches, triggerCarePlanMatches, triggerDocMatches, triggerStageMatches } from '~/utils/automationTriggerMatch'
+import { dateTriggerSourceDate, shiftDate, triggerBonoMatches, triggerCarePlanMatches, triggerDocMatches, triggerStageMatches } from '~/utils/automationTriggerMatch'
+import { DEFAULT_CLINIC_TIMEZONE, startOfLocalDate } from '~/utils/clinicClock'
+import { localParts } from '~/utils/automationTiming'
 import type { CarePlanVisitMarker } from '~/utils/carePlanVisitMarkers'
 import { LEAD_STOP_STAGES } from '~/utils/automationCatalog'
 
@@ -325,4 +327,83 @@ export async function enrolAudienceEntries(service: any, origin: string): Promis
     }
   }
   return enrolled
+}
+
+/** "A date on the record" starts no earlier than this, clinic time: nobody gets a message at midnight. */
+const DATE_TRIGGER_FROM_HOUR = 9
+
+/**
+ * "A date on the record": each clinic day, from 09:00, the patients whose
+ * date -- their last visit, a membership's start, a care plan's start, or a
+ * custom date field -- is the rule's N days before or after today.
+ *
+ * automation_date_sends claims each (rule, source row, date) once: the source
+ * is the visit, membership, care plan or field answer the date came from, so
+ * the table holds no patient and merging or anonymising one needs nothing
+ * from it. A date edited to another day can start the rule again for it.
+ */
+export async function enrolDateTriggers(service: any, origin: string, now = new Date()): Promise<number> {
+  const { data: rules } = await service.from('automation_rules').select('id, account_id, filters, is_marketing').eq('trigger_event', 'patient.date').eq('enabled', true)
+  let fired = 0
+  for (const rule of (rules ?? []) as { id: string; account_id: string; filters: Record<string, unknown> | null; is_marketing: boolean }[]) {
+    try {
+      const { data: clinic } = await service.from('clinics').select('timezone').eq('account_id', rule.account_id).is('archived_at', null).order('created_at').limit(1).maybeSingle()
+      const tz = clinic?.timezone || DEFAULT_CLINIC_TIMEZONE
+      const local = localParts(now, tz)
+      if (local.minutes < DATE_TRIGGER_FROM_HOUR * 60) continue
+      const today = local.date
+      const day = dateTriggerSourceDate(rule.filters, today)
+      if (!day) continue
+      const source = String(rule.filters?.trigger_date)
+      const hits = await dateSourceRows(service, rule.account_id, source, day, tz)
+      if (!hits.length) continue
+      const { data: done } = await service.from('automation_date_sends').select('source_id').eq('rule_id', rule.id).eq('on_date', today).in('source_id', hits.map((h) => h.sourceId))
+      const seen = new Set(((done ?? []) as { source_id: string }[]).map((d) => d.source_id))
+      for (const hit of hits) {
+        if (seen.has(hit.sourceId)) continue
+        const { error: claimError } = await service.from('automation_date_sends').insert({ rule_id: rule.id, source_id: hit.sourceId, on_date: today, account_id: rule.account_id })
+        if (claimError) continue
+        const { data: patient } = await service.from('patients').select(`${PATIENT_FOR_RULE_COLUMNS}, status`).eq('id', hit.patientId).eq('account_id', rule.account_id).maybeSingle()
+        if (!patient || patient.status === 'inactive') continue
+        if (!(await ruleFiltersMatch(service, patient.id, rule.filters as AutomationFilters))) continue
+        await dispatchPatientRule(service, service, rule.account_id, rule.id, patient, origin, hit.appointmentId, { triggerEvent: 'patient.date', patientId: patient.id, ...(hit.appointmentId ? { appointmentId: hit.appointmentId } : {}) })
+        fired += 1
+      }
+    } catch (err) {
+      console.error(`[automations] patient.date failed for rule ${rule.id}:`, (err as Error)?.message ?? err)
+    }
+  }
+  return fired
+}
+
+/** The rows whose date is `day` (YYYY-MM-DD, clinic time), each with the patient it belongs to. */
+async function dateSourceRows(service: any, accountId: string, source: string, day: string, tz: string): Promise<{ sourceId: string; patientId: string; appointmentId?: string }[]> {
+  const from = startOfLocalDate(day, tz).toISOString()
+  const to = startOfLocalDate(shiftDate(day, 1), tz).toISOString()
+  if (source === 'last_visit') {
+    // Visits completed that day that are still the patient's last: nobody
+    // who has been back since.
+    const { data: visits } = await service.from('appointments').select('id, patient_id, starts_at').eq('account_id', accountId).eq('status', 'completed').is('deleted_at', null).gte('starts_at', from).lt('starts_at', to).limit(DOCS_PER_TICK)
+    const list = (visits ?? []) as { id: string; patient_id: string }[]
+    if (!list.length) return []
+    const { data: later } = await service.from('appointments').select('patient_id').eq('account_id', accountId).eq('status', 'completed').is('deleted_at', null).gte('starts_at', to).in('patient_id', [...new Set(list.map((v) => v.patient_id))])
+    const back = new Set(((later ?? []) as { patient_id: string }[]).map((a) => a.patient_id))
+    const lastOfDay = new Map<string, string>()
+    for (const v of list) if (!back.has(v.patient_id)) lastOfDay.set(v.patient_id, v.id)
+    return [...lastOfDay].map(([patientId, id]) => ({ sourceId: id, patientId, appointmentId: id }))
+  }
+  if (source === 'membership_start') {
+    const { data } = await service.from('patient_memberships').select('id, patient_id').eq('account_id', accountId).eq('status', 'active').gte('started_at', from).lt('started_at', to).limit(DOCS_PER_TICK)
+    return ((data ?? []) as { id: string; patient_id: string }[]).map((m) => ({ sourceId: m.id, patientId: m.patient_id }))
+  }
+  if (source === 'care_plan_start') {
+    const { data } = await service.from('care_plans').select('id, patient_id').eq('account_id', accountId).eq('started_at', day).limit(DOCS_PER_TICK)
+    return ((data ?? []) as { id: string; patient_id: string }[]).map((c) => ({ sourceId: c.id, patientId: c.patient_id }))
+  }
+  if (source.startsWith('field:')) {
+    // A date field's answer is stored as written, YYYY-MM-DD.
+    const { data } = await service.from('patient_attribute_values').select('id, patient_id').eq('account_id', accountId).eq('attribute_id', source.slice(6)).eq('value', day).limit(DOCS_PER_TICK)
+    return ((data ?? []) as { id: string; patient_id: string }[]).map((v) => ({ sourceId: v.id, patientId: v.patient_id }))
+  }
+  return []
 }

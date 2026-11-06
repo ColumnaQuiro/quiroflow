@@ -218,3 +218,27 @@ describe('Paying a visit from the patient app', () => {
     })
   })
 })
+
+// The pages Stripe sends the patient back to open in the phone's browser,
+// with no QuiroFlow session. Found replaying the flows against Stripe's test
+// mode: saving a card landed on the clinic's login page, and a payment whose
+// 3-D Secure check FAILED was announced as "Pago recibido".
+describe('Coming back from Stripe in the phone’s browser', () => {
+  it('shows "card saved", not the clinic login, to someone signed out', () => {
+    cy.visit('/card-saved?status=success&app=1')
+    cy.location('pathname').should('eq', '/card-saved')
+    cy.get('[data-cy=card-saved]').should('contain.text', 'Card saved').and('contain.text', 'Go back to the app')
+  })
+
+  it('never says a 3-D Secure payment went through without asking Stripe', () => {
+    // A return it cannot confirm: an account with no such payment.
+    cy.visit('/payment-done?status=check&account=00000000-0000-0000-0000-000000000000&payment_intent=pi_cypress&payment_intent_client_secret=pi_cypress_secret_x')
+    cy.get('[data-cy=payment-done]').should('have.attr', 'data-status', 'unknown').and('contain.text', 'Payment pending confirmation').and('not.contain.text', 'Payment received')
+  })
+
+  it('tells the status of a payment only to whoever holds its client secret', () => {
+    const status = (qs: string) => cy.request({ url: `/api/pay/intent-status?${qs}`, failOnStatusCode: false }).its('status')
+    status('account=00000000-0000-0000-0000-000000000000').should('eq', 400)
+    status('account=00000000-0000-0000-0000-000000000000&payment_intent=pi_cypress&payment_intent_client_secret=pi_cypress_secret_x').should('eq', 404)
+  })
+})

@@ -154,7 +154,41 @@ export type AppVisitPayResult = { status: 'paid' | 'processing' } | { status: 'r
  * Stripe-hosted Checkout page. The amount is always appVisitCharge's, never
  * the caller's.
  */
-export async function payAppVisit(event: H3Event, service: Service, visit: AppVisit): Promise<AppVisitPayResult> {
+/**
+ * The card that pays for a visit from the app. The visit's own patient's,
+ * when they have one; otherwise -- family accounts, a parent paying for a
+ * child they manage -- the card on the signed-in person's own record at the
+ * same clinic. Whose card it is changes nothing about whose visit it is: the
+ * payment, the receipt and the factura stay on the visit's patient
+ * (bill_to_tutor already addresses a minor's facturas to the tutor).
+ */
+export async function payerCard(service: Service, visitPatientId: string, payerUserId: string | null, accountId: string) {
+  const { data: own } = await service
+    .from('patient_stripe_customers')
+    .select('stripe_customer_id, default_payment_method_id')
+    .eq('patient_id', visitPatientId)
+    .maybeSingle()
+  if (own?.default_payment_method_id || !payerUserId) return { customer: own, payerPatientId: visitPatientId, owner: 'self' as const }
+  const { data: payer } = await service
+    .from('patients')
+    .select('id')
+    .eq('user_id', payerUserId)
+    .eq('account_id', accountId)
+    .neq('id', visitPatientId)
+    .order('created_at')
+    .limit(1)
+    .maybeSingle()
+  if (!payer) return { customer: own, payerPatientId: visitPatientId, owner: 'self' as const }
+  const { data: theirs } = await service
+    .from('patient_stripe_customers')
+    .select('stripe_customer_id, default_payment_method_id')
+    .eq('patient_id', payer.id)
+    .maybeSingle()
+  if (!theirs?.default_payment_method_id) return { customer: own, payerPatientId: visitPatientId, owner: 'self' as const }
+  return { customer: theirs, payerPatientId: payer.id, owner: 'payer' as const }
+}
+
+export async function payAppVisit(event: H3Event, service: Service, visit: AppVisit, opts: { payerUserId?: string } = {}): Promise<AppVisitPayResult> {
   const account = await appPaymentsAccount(service, visit.account_id)
   if (!account?.stripe_publishable_key || !account.stripe_app_payments_enabled) {
     throw createError({ statusCode: 400, statusMessage: 'Online payment is not configured for this clinic.' })
@@ -166,18 +200,15 @@ export async function payAppVisit(event: H3Event, service: Service, visit: AppVi
   // A receipt the desk already raised is paid exactly as "Pagar" pays it --
   // the existing invoice branch of the webhook records it. Otherwise the
   // visit itself, and recordAppVisitPayment raises the receipt.
+  const { customer, payerPatientId } = await payerCard(service, visit.patient_id, opts.payerUserId ?? null, account.id)
   const metadata: Record<string, string> = charge.invoiceId
     ? { invoice_id: charge.invoiceId, account_id: account.id, source: 'patient_pay' }
     : { app_visit_id: visit.id, account_id: account.id, source: 'patient_pay' }
+  if (payerPatientId !== visit.patient_id) metadata.payer_patient_id = payerPatientId
   const description = `${account.name} · ${charge.typeName}`
 
   const { stripe, options } = await stripeClientFor(event, account.id, account)
   const origin = getRequestURL(event).origin
-  const { data: customer } = await service
-    .from('patient_stripe_customers')
-    .select('stripe_customer_id, default_payment_method_id')
-    .eq('patient_id', visit.patient_id)
-    .maybeSingle()
 
   if (!customer?.default_payment_method_id) {
     const session = await stripe.checkout.sessions.create(
@@ -212,7 +243,10 @@ export async function payAppVisit(event: H3Event, service: Service, visit: AppVi
         // The patient is here and pressing Pay, so this is theirs to
         // authenticate: a bank that asks for 3-D Secure gets its page, opened
         // in the browser from this return_url's flow (next_action.redirect_to_url).
-        return_url: `${origin}/payment-done?status=success`,
+        // The patient comes back here having passed the check OR failed it,
+        // and Stripe says which nowhere in the URL, so the page asks
+        // (api/pay/intent-status) rather than announcing success.
+        return_url: `${origin}/payment-done?status=check&account=${account.id}`,
         description,
         metadata,
       },

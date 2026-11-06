@@ -38,10 +38,13 @@ export function usePatientAppInfo() {
   // a patient sees are shown at their clinic's hour, not the phone's.
   const clinicZones = ref<Record<string, string>>({})
 
+  // The clinic of whoever the family switcher is showing.
+  const { active } = useFamily()
+
   async function load() {
     loading.value = true
     const [{ data, error }, { data: allZones, error: zonesError }] = await Promise.all([
-      supabase.rpc('get_patient_booking_info'),
+      supabase.rpc('get_patient_booking_info', active.value ? { p_patient_id: active.value.patientId } : {}),
       // Every clinic of the account, not only those taking online bookings --
       // a visit at any of them is shown at its own hour.
       supabase.rpc('get_my_clinic_timezones' as never),

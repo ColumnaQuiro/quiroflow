@@ -21,43 +21,50 @@ export interface PortalPatient {
 }
 
 export function usePortalPatient() {
-  const supabase = useSupabaseClient()
   const user = useSupabaseUser()
-  const patient = useState<PortalPatient | null>('portal-patient', () => null)
+  const family = useFamily()
   const loading = useState('portal-patient-loading', () => true)
   const loadError = useState('portal-patient-error', () => '')
-  const loadedFor = useState<string | null>('portal-patient-for', () => null)
 
+  // Family accounts (composables/useFamily.ts): the person shown is whoever
+  // is chosen in the switcher, my own record unless I picked somebody else.
+  // get_my_family() is the one read; it returns my own row first.
   async function load(force = false) {
-    const userId = user.value?.sub ?? null
-    if (!userId) {
-      patient.value = null
-      loadedFor.value = null
+    if (!user.value?.sub) {
       loading.value = false
       return
     }
-    if (!force && loadedFor.value === userId) return
-    // Someone else's row is never shown while this one loads.
-    if (loadedFor.value !== userId) patient.value = null
-    loading.value = true
+    loading.value = !family.people.value.length || force
     loadError.value = ''
-    const { data, error } = await supabase
-      .from('patients')
-      .select('id, first_name, last_name')
-      .eq('user_id', userId)
-      .maybeSingle()
-    if (error) loadError.value = error.message
-    patient.value = data
-    loadedFor.value = data ? userId : null
+    await family.load(force)
+    loadError.value = family.loadError.value
     loading.value = false
   }
 
   watch(user, () => load(), { immediate: true })
 
+  const patient = computed<PortalPatient | null>(() => {
+    const a = family.active.value
+    return a ? { id: a.patientId, first_name: a.firstName, last_name: a.lastName } : null
+  })
+  const me = computed<PortalPatient | null>(() => {
+    const m = family.me.value
+    return m ? { id: m.patientId, first_name: m.firstName, last_name: m.lastName } : null
+  })
   const fullName = computed(() => [patient.value?.first_name, patient.value?.last_name].filter(Boolean).join(' '))
   const initials = computed(() =>
     [patient.value?.first_name?.[0], patient.value?.last_name?.[0]].filter(Boolean).join('').toUpperCase(),
   )
 
-  return { patient, fullName, initials, loading, loadError, reload: () => load(true) }
+  return {
+    patient,
+    me,
+    fullName,
+    initials,
+    loading,
+    loadError,
+    actingForOther: family.actingForOther,
+    canSeeClinical: family.canSeeClinical,
+    reload: () => load(true),
+  }
 }

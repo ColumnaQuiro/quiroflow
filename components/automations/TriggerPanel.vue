@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ENTRY_MODES, LEAD_STAGE_OPTIONS, LEAD_STOP_STAGES, TRIGGERS, TRIGGER_GROUPS, say, triggerDef, weekdayName } from '~/utils/automationCatalog'
+import { DATE_SOURCE_LABELS, ENTRY_MODES, LEAD_STAGE_OPTIONS, LEAD_STOP_STAGES, TRIGGERS, TRIGGER_GROUPS, say, triggerDef, weekdayName } from '~/utils/automationCatalog'
 import { FIELD, FIELD_NUMBER, HINT, LABEL, NOTE, SECTION, SEGMENT_WRAP, segmentBtn } from '~/utils/automationUi'
 import { scheduledSendLabel } from '~/utils/automationDescribe'
 import { clinicTimeLabel } from '~/utils/bookingSlots'
@@ -39,6 +39,25 @@ function setSchedule(patch: Record<string, any>) {
   setSegment({ schedule: { ...segment.value.schedule, ...patch } })
 }
 const recurring = computed(() => segment.value.schedule?.kind !== 'once')
+
+// "A date on the record": which date, and the clinic's own date fields
+// (Settings > Patient fields) as further choices.
+const supabase = useSupabaseClient()
+const dateFields = ref<{ id: string; label: string }[]>([])
+watch(
+  () => rule.value.trigger_event,
+  async (event) => {
+    if (event !== 'patient.date' || dateFields.value.length) return
+    const { data } = await supabase.from('patient_attributes').select('id, label').eq('kind', 'date').is('archived_at', null).order('position')
+    dateFields.value = (data ?? []) as { id: string; label: string }[]
+  },
+  { immediate: true },
+)
+function setDateSource(source: string) {
+  // "Before" only for a date field; anything else counts forward.
+  setFilters({ ...rule.value.filters, trigger_date: source, trigger_days: rule.value.filters.trigger_days ?? 7, ...(source.startsWith('field:') ? {} : { trigger_when: undefined }) })
+}
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 // A group aimed at a saved list or segment, with others left out; the
 // picker shows the choice before a list is chosen, so it has its own flag.
@@ -214,6 +233,29 @@ watch(
       <span :class="HINT">{{ t('Each lead enters once. Not offered: Patient and Lost, because automations stop for a lead in either. A booking moving the lead to "Booked" by itself does not count; for that, use "Wait until they book" in a New lead automation.', 'Cada lead entra una vez. No se ofrecen Paciente ni Perdido, porque las automatizaciones se detienen para un lead en cualquiera de las dos. Que una reserva lo pase sola a «Con cita» no cuenta; para eso, usa «Esperar hasta que reserve» en una automatización de Lead nuevo.') }}</span>
     </label>
 
+    <template v-if="rule.trigger_event === 'patient.date'">
+      <label :class="LABEL">
+        {{ t('Counting from', 'Contando desde') }}
+        <select :class="FIELD" :value="rule.filters.trigger_date ?? ''" data-test="trigger-date-source" @change="setDateSource(($event.target as HTMLSelectElement).value)">
+          <option value="" disabled>{{ t('Choose a date', 'Elige una fecha') }}</option>
+          <option v-for="(label, key) in DATE_SOURCE_LABELS" :key="key" :value="key">{{ capitalize(say(t, label)) }}</option>
+          <optgroup v-if="dateFields.length" :label="t('Your date fields', 'Tus campos de fecha')">
+            <option v-for="f in dateFields" :key="f.id" :value="`field:${f.id}`">{{ f.label }}</option>
+          </optgroup>
+        </select>
+      </label>
+      <div class="flex flex-wrap items-end gap-2.5">
+        <label :class="LABEL">
+          {{ t('Days', 'Días') }}
+          <input type="number" min="0" max="3650" :class="FIELD_NUMBER" :value="rule.filters.trigger_days ?? 7" data-test="trigger-date-days" @input="setFilters({ ...rule.filters, trigger_days: Math.max(0, Math.min(3650, Math.round(Number(($event.target as HTMLInputElement).value) || 0))) })" />
+        </label>
+        <span :class="SEGMENT_WRAP" role="group" :aria-label="t('Before or after', 'Antes o después')">
+          <button type="button" :class="segmentBtn(rule.filters.trigger_when !== 'before')" :aria-pressed="rule.filters.trigger_when !== 'before'" data-test="trigger-date-after" @click="setFilters({ ...rule.filters, trigger_when: undefined })">{{ t('after', 'después') }}</button>
+          <button type="button" :class="segmentBtn(rule.filters.trigger_when === 'before')" :aria-pressed="rule.filters.trigger_when === 'before'" :disabled="!String(rule.filters.trigger_date ?? '').startsWith('field:')" class="disabled:cursor-not-allowed disabled:opacity-50" data-test="trigger-date-before" @click="setFilters({ ...rule.filters, trigger_when: 'before' })">{{ t('before', 'antes') }}</button>
+        </span>
+      </div>
+      <span :class="HINT">{{ t('Each day from 9:00, clinic time. "Before" is for a date field of your own, which can hold a date still to come. After the last visit: only for whoever has not been back since.', 'Cada día desde las 9:00, hora de la clínica. «Antes» es para un campo de fecha propio, que puede tener una fecha por venir. Tras la última visita: solo para quien no ha vuelto desde entonces.') }}</span>
+    </template>
     <template v-if="rule.trigger_event === 'audience.entered'">
       <div :class="LABEL">
         {{ t('The list or segment', 'La lista o el segmento') }}

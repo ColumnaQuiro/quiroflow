@@ -47,8 +47,9 @@ export default defineNuxtRouteMiddleware(async (to) => {
   if (to.path.startsWith('/aprende/')) return
   // A clinic's gift voucher page (pages/regalo), public like its booking page.
   if (to.path.startsWith('/regalo/')) return
-  // Stripe Checkout's return page for a patient paying from the app.
-  if (to.path === '/payment-done') return
+  // Stripe Checkout's return page for a patient paying from the app, and its
+  // card page's return page for one saving a card.
+  if (to.path === '/payment-done' || to.path === '/card-saved') return
   // A waitlist claim link and the photo-upload QR, both token-gated. A token
   // is required, so /waitlist and /waitlist/ (the staff page) still go
   // through the checks below. Without these, a phone that happens to be

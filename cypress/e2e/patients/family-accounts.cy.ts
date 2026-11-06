@@ -229,4 +229,36 @@ describe('Family accounts', () => {
       )
     })
   })
+
+  it('signing up never lands on a child’s record, nor guesses between two adults sharing an email', () => {
+    cy.seedStaffAccount().then((account) => {
+      const stamp = Date.now()
+      const shared = `familia-${stamp}@example.test`
+      const kidOnly = `solo-nino-${stamp}@example.test`
+      const mk = (firstName: string, dateOfBirth: string, email: string) =>
+        cy.task<{ id: string }>('db:createPatient', { accountId: account.accountId, clinicId: account.clinicId, firstName, lastName: 'Soler', dateOfBirth, email })
+      mk('Pilar', years(45), shared)
+      mk('Jorge', years(47), shared)
+      mk('Iker', years(8), shared)
+      mk('Ane', years(6), kidOnly)
+      // Two adults on the family email: nobody is picked.
+      cy.task('db:createLoneUser', { email: shared, password: 'valencia2026' })
+      cy.task<{ error: string | null }>('db:callRpcAs', { email: shared, password: 'valencia2026', fn: 'claim_patient_profile' })
+        .its('error')
+        .should('match', /share this email/)
+      // Only a child's record on it: not hers to sign in to.
+      cy.task('db:createLoneUser', { email: kidOnly, password: 'valencia2026' })
+      cy.task<{ error: string | null }>('db:callRpcAs', { email: kidOnly, password: 'valencia2026', fn: 'claim_patient_profile' })
+        .its('error')
+        .should('equal', 'No matching patient record found')
+      cy.task<{ user_id: string | null }[]>('db:selectRows', { table: 'patients', columns: 'user_id', match: { account_id: account.accountId } }).then((rows) =>
+        expect(rows.every((r) => r.user_id === null)).to.equal(true),
+      )
+      // The portal says to ask the clinic, not "not found".
+      cy.login(shared, 'valencia2026')
+      cy.visit('/portal')
+      cy.location('pathname').should('eq', '/portal/not-found')
+      cy.get('[data-cy=portal-shared-email]').should('contain', 'More than one person at your clinic has this email')
+    })
+  })
 })

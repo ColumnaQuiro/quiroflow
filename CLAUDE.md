@@ -234,6 +234,36 @@ admin) is recovered with the service role: delete the owner's row from
 `auth.mfa_factors`, or `update accounts set require_two_factor = false`.
 The guard trigger lets both through when there is no `auth.uid()`.
 
+## Patient-side access goes through `patients_i_can_act_for()`
+
+A patient login can act for family members the desk has linked to it
+(Ficha › Familia › "Acceso en la app"; `patient_managers`,
+`20261106053857_family_accounts.sql`). So "the patient's own rows" is no
+longer `patients.user_id = auth.uid()`. It is one of two sets:
+
+- `patients_i_can_act_for()`: visits, booking, money, and the person's details.
+- `patients_i_can_see_clinically_for()`: documents, exercises, posture, care
+  plan, learn content, habits, pain and messages. An "admin" link (visits and
+  payments only) does not reach these.
+
+**A new patient-side policy or RPC uses one of these, never `user_id = auth.uid()`.**
+If it uses `user_id = auth.uid()`, it silently excludes every managed family
+member. An RPC that resolves "me" takes `p_patient_id uuid default null` and
+calls `acting_patient(p_patient_id, p_clinical)`. Null means the login's own
+record, which is what older app releases send.
+
+Because the policies now return more than one person's rows, **a patient-side
+query must filter by the patient it is showing**. Use `.eq('patient_id', id)`,
+where the id is `useFamily().active` (or `useIdentity().patient` /
+`usePortalPatient().patient`, which already return the active person).
+Without the filter, a parent's screen mixes their children's rows into
+their own.
+
+A guardian link lapses at 16 by date of birth, checked at query time; nothing
+is stored when it does. Reads done for someone else go to
+`patient_access_log` through `log_family_access`
+(`server/utils/familyAccess.ts` on the server).
+
 ## A new table has to grant itself to the Data API
 
 Until 30 Oct 2026 Supabase gave every new table in `public` to `anon`,

@@ -23,7 +23,7 @@ export default defineEventHandler(async (event) => {
   const service = serverSupabaseServiceRole<Database>(event)
   const account = await appPaymentsAccount(service, patient.account_id)
   const enabled = !!account?.stripe_publishable_key && !!account.stripe_app_payments_enabled
-  if (!account || !enabled) return { enabled: false, card: null, cardOwner: 'self' as const, visits: [] }
+  if (!account || !enabled) return { enabled: false, card: null, visits: [] }
 
   // Theirs, or -- for a family member with none -- the caller's own card.
   const { customer, owner: cardOwner } = await payerCard(service, patient.id, user.id, account.id)

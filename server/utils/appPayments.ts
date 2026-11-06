@@ -243,7 +243,10 @@ export async function payAppVisit(event: H3Event, service: Service, visit: AppVi
         // The patient is here and pressing Pay, so this is theirs to
         // authenticate: a bank that asks for 3-D Secure gets its page, opened
         // in the browser from this return_url's flow (next_action.redirect_to_url).
-        return_url: `${origin}/payment-done?status=success`,
+        // The patient comes back here having passed the check OR failed it,
+        // and Stripe says which nowhere in the URL, so the page asks
+        // (api/pay/intent-status) rather than announcing success.
+        return_url: `${origin}/payment-done?status=check&account=${account.id}`,
         description,
         metadata,
       },

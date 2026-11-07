@@ -233,7 +233,10 @@ async function buildList() {
 
     phase.value = 'ready'
   } catch (err: any) {
-    error.value = err?.data?.statusMessage ?? err?.message ?? String(err)
+    error.value = t(
+      `Could not read the file list from PracticeHub. Nothing was written; Check PracticeHub again to retry. (${err?.data?.statusMessage ?? err?.message ?? String(err)})`,
+      `No se pudo leer la lista de archivos de PracticeHub. No se escribió nada; pulsa de nuevo Comprobar PracticeHub para reintentar. (${err?.data?.statusMessage ?? err?.message ?? String(err)})`,
+    )
     phase.value = 'idle'
   }
 }
@@ -410,7 +413,7 @@ async function run() {
           {{ t('Reads every file from PracticeHub and stores it against the right patient here.', 'Lee todos los archivos de PracticeHub y los guarda en el paciente correspondiente aquí.') }}
         </p>
         <p class="mt-1 text-[12.5px] text-ink-muted2">
-          {{ t('Safe to run more than once — anything already stored is skipped.', 'Se puede ejecutar varias veces: se omite lo que ya esté guardado.') }}
+          {{ t('Safe to run more than once: anything already stored is skipped.', 'Se puede ejecutar varias veces: se omite lo que ya esté guardado.') }}
         </p>
         <UiBtn class="mt-3" variant="primary" @click="buildList">{{ t('Check PracticeHub', 'Comprobar PracticeHub') }}</UiBtn>
       </div>
@@ -443,18 +446,18 @@ async function run() {
               <dd class="mt-0.5 font-mono text-[15px] text-ink-700">{{ alreadyHere }}</dd>
             </div>
             <div>
-              <dt class="text-ink-faint">{{ t('Patient not here', 'Paciente no está') }}</dt>
+              <dt class="text-ink-faint">{{ t('No patient here', 'Sin paciente aquí') }}</dt>
               <dd class="mt-0.5 font-mono text-[15px]" :class="noPatientMatch > 0 ? 'text-warning-text' : 'text-ink-700'">{{ noPatientMatch }}</dd>
             </div>
           </dl>
           <p v-if="notPatientFiles > 0" class="mt-2 text-[12px] text-ink-faint">
-            {{ t(`${notPatientFiles} file(s) in PracticeHub are attached to something other than a patient — reports and data exports — and are left alone.`, `${notPatientFiles} archivo(s) de PracticeHub están asociados a algo que no es un paciente (informes y exportaciones) y se dejan como están.`) }}
+            {{ t(`${notPatientFiles} ${notPatientFiles === 1 ? 'file' : 'files'} in PracticeHub belong to something other than a patient (reports and data exports) and are left alone.`, `${notPatientFiles} ${notPatientFiles === 1 ? 'archivo' : 'archivos'} de PracticeHub no son de un paciente (informes y exportaciones) y se dejan como están.`) }}
           </p>
           <p v-if="patientDeletedInPh > 0" class="mt-1 text-[12px] text-ink-faint">
-            {{ t(`${patientDeletedInPh} file(s) belong to patients deleted in PracticeHub, so there is no patient to attach them to. They are left alone.`, `${patientDeletedInPh} archivo(s) son de pacientes eliminados en PracticeHub, así que no hay paciente al que asociarlos. Se dejan como están.`) }}
+            {{ t(`${patientDeletedInPh} ${patientDeletedInPh === 1 ? 'file belongs' : 'files belong'} to patients deleted in PracticeHub, so there is no patient to attach them to. They are left alone.`, `${patientDeletedInPh} ${patientDeletedInPh === 1 ? 'archivo es' : 'archivos son'} de pacientes eliminados en PracticeHub, así que no hay paciente al que asociarlos. Se dejan como están.`) }}
           </p>
           <p v-if="noDownloadUrl > 0" class="mt-1 text-[12px] text-warning-text">
-            {{ t(`${noDownloadUrl} file(s) have a patient here but PracticeHub gave no download link, so there is nothing to fetch.`, `${noDownloadUrl} archivo(s) tienen paciente aquí pero PracticeHub no dio enlace de descarga, así que no hay nada que traer.`) }}
+            {{ t(`${noDownloadUrl} ${noDownloadUrl === 1 ? 'file has' : 'files have'} a patient here but no download link from PracticeHub, so there is nothing to fetch.`, `${noDownloadUrl} ${noDownloadUrl === 1 ? 'archivo tiene' : 'archivos tienen'} paciente aquí pero PracticeHub no dio enlace de descarga, así que no hay nada que traer.`) }}
           </p>
           <!--
             Says what was not found instead of asserting why. The first version
@@ -465,10 +468,10 @@ async function run() {
           -->
           <div v-if="noPatientMatch > 0" class="mt-1 text-[12px] text-warning-text">
             <p>
-              {{ t(`${noPatientMatch} file(s) name a PracticeHub patient that is not in QuiroFlow.`, `${noPatientMatch} archivo(s) indican un paciente de PracticeHub que no está en QuiroFlow.`) }}
+              {{ t(`${noPatientMatch} ${noPatientMatch === 1 ? 'file names' : 'files name'} a PracticeHub patient who is not in QuiroFlow.`, `${noPatientMatch} ${noPatientMatch === 1 ? 'archivo indica' : 'archivos indican'} un paciente de PracticeHub que no está en QuiroFlow.`) }}
             </p>
             <p class="mt-0.5 text-ink-muted2">
-              {{ t('Usually a patient added to PracticeHub since the last Patients import, or one removed here. Run the Patients import and re-check; anything still listed is worth opening in PracticeHub.', 'Normalmente es un paciente añadido en PracticeHub desde la última importación de Pacientes, o uno eliminado aquí. Ejecuta la importación de Pacientes y vuelve a comprobar; lo que siga apareciendo conviene abrirlo en PracticeHub.') }}
+              {{ t('Usually a patient added to PracticeHub since Patients last ran, or one deleted here. Run Patients and check again; anything still listed is worth opening in PracticeHub.', 'Normalmente es un paciente añadido en PracticeHub desde la última vez que se ejecutó Pacientes, o uno eliminado aquí. Ejecuta Pacientes y vuelve a comprobar; lo que siga apareciendo conviene abrirlo en PracticeHub.') }}
             </p>
             <p v-if="unmatchedPhPatients.length > 0" class="mt-0.5 font-mono text-[11.5px] text-ink-muted2">
               {{ t('PracticeHub patient ids:', 'Ids de paciente en PracticeHub:') }}
@@ -486,7 +489,7 @@ async function run() {
             <div class="h-full rounded-full bg-brand transition-all" :style="{ width: `${progressPct}%` }" />
           </div>
           <p v-if="refreshingLinks" class="mt-2 text-[12.5px] text-ink-muted2">
-            {{ t('The download links expired — getting fresh ones from PracticeHub…', 'Los enlaces de descarga caducaron: pidiendo otros nuevos a PracticeHub…') }}
+            {{ t('The download links expired. Getting new ones from PracticeHub…', 'Los enlaces de descarga caducaron. Pidiendo otros nuevos a PracticeHub…') }}
           </p>
         </div>
 
@@ -497,19 +500,19 @@ async function run() {
           <UiBtn v-if="phase === 'working'" variant="secondary" @click="stopRequested = true">
             {{ t('Stop after this batch', 'Parar tras este lote') }}
           </UiBtn>
-          <UiBtn v-if="phase !== 'working'" variant="secondary" @click="buildList">{{ t('Re-check', 'Volver a comprobar') }}</UiBtn>
+          <UiBtn v-if="phase !== 'working'" variant="secondary" @click="buildList">{{ t('Check again', 'Volver a comprobar') }}</UiBtn>
         </div>
 
         <div v-if="phase === 'done'" class="rounded-ctl border border-line bg-surface-subtle p-3 text-[12.5px] text-ink-muted2">
-          {{ t('Finished. Run it again any time — files already stored are skipped.', 'Terminado. Puedes ejecutarlo cuando quieras: se omiten los archivos ya guardados.') }}
+          {{ t('Finished. Run it again any time: files already stored are skipped.', 'Terminado. Puedes ejecutarlo cuando quieras: se omiten los archivos ya guardados.') }}
         </div>
 
         <div v-if="failed.length > 0" class="rounded-ctl border border-danger-border bg-danger-bg p-3 text-[12.5px] text-danger-text">
-          <p class="font-medium">{{ t(`${failed.length} file(s) failed:`, `${failed.length} archivo(s) fallaron:`) }}</p>
+          <p class="font-medium">{{ t(`${failed.length} ${failed.length === 1 ? 'file was' : 'files were'} not copied:`, `${failed.length} ${failed.length === 1 ? 'archivo no se copió' : 'archivos no se copiaron'}:`) }}</p>
           <ul class="mt-1 max-h-40 list-disc overflow-y-auto pl-5">
             <li v-for="(f, i) in failed" :key="i">{{ f }}</li>
           </ul>
-          <p class="mt-1">{{ t('Re-check and continue to retry them.', 'Vuelve a comprobar y continúa para reintentarlos.') }}</p>
+          <p class="mt-1">{{ t('Check again, then continue, to retry them.', 'Vuelve a comprobar y continúa para reintentarlos.') }}</p>
         </div>
       </div>
     </template>

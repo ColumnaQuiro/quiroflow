@@ -51,7 +51,7 @@ describe('Importing from PracticeHub without exporting anything', () => {
         cy.visit('/settings/import?source=practicehub&step=patients&type=patients')
         cy.get('[data-cy=ph-patients-from-api]').should('not.be.disabled').click()
         cy.contains('button', /^(Import 1, update 0|Importar 1, actualizar 0)$/).click()
-        cy.contains('a', /View Patients|Ver pacientes/).should('exist')
+        cy.contains('a', /View patients|Ver pacientes/).should('exist')
 
         cy.task<{ external_reference: string; created_at: string; marketing_channels: string[] }[]>('db:selectRows', {
           table: 'patients',
@@ -67,7 +67,7 @@ describe('Importing from PracticeHub without exporting anything', () => {
         cy.get('[data-cy=ph-appointments-from-api]').should('not.be.disabled').click()
         cy.contains('button', /^(Continue|Continuar)$/).click()
         cy.contains('button', /^(Import 1, update 0|Importar 1, actualizar 0)$/).click()
-        cy.contains('a', /View Calendar|Ver calendario/).should('exist')
+        cy.contains('a', /View calendar|Ver calendario/).should('exist')
 
         cy.task<{ starts_at: string; practitioner_name: string; status: string }[]>('db:selectRows', {
           table: 'appointments',

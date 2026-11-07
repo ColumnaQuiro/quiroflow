@@ -140,7 +140,7 @@ const showAll = ref(false)
     <div v-if="loading" class="space-y-3"><UiSkeleton class="h-64 w-full rounded-card" /></div>
     <PatientLoadError v-else-if="loadError" @retry="load" />
     <p v-else-if="!list.length" class="rounded-card border border-dashed border-line-control bg-surface p-6 text-center text-[13.5px] text-ink-muted" data-cy="patient-posture-empty">
-      {{ t('When your chiropractor shares a posture assessment with you, you will see it here, and how it changes over time.', 'Cuando tu quiropráctico comparta contigo una valoración de postura, la verás aquí, y cómo cambia con el tiempo.') }}
+      {{ t('When your clinic shares a posture assessment with you, you will see it here, and how it changes over time.', 'Cuando tu clínica comparta contigo una valoración de postura, la verás aquí, y cómo cambia con el tiempo.') }}
     </p>
     <template v-else>
       <p class="text-[13px] text-ink-muted">

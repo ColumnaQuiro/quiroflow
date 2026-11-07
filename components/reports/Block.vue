@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { Bar, Doughnut, Line } from 'vue-chartjs'
-import '~/utils/chartSetup'
-import { computePresetRange, rangeBounds, type DateRange } from '~/composables/useDateRangePresets'
-import { REPORT_DATA_KEY } from '~/composables/useReportData'
-import type { Compare, OwnPeriod, ReportBlock } from '~/utils/reportBlocks'
-import { comparisonRange, computeMetric, computePivot, formatDelta, formatMetric, METRIC_BY_KEY, SPLIT_LABELS, TIME_SPLITS, type Ctx, type MetricResult, type PivotResult } from '~/utils/reportMetrics'
+// Relative, not ~/: the app (mobile/) renders this component too, and there
+// ~ is mobile/.
+import '../../utils/chartSetup'
+import { computePresetRange, rangeBounds, type DateRange } from '../../composables/useDateRangePresets'
+import { REPORT_DATA_KEY } from '../../composables/useReportData'
+import type { Compare, OwnPeriod, ReportBlock } from '../../utils/reportBlocks'
+import { comparisonRange, computeMetric, computePivot, formatDelta, formatMetric, METRIC_BY_KEY, SPLIT_LABELS, TIME_SPLITS, type Ctx, type MetricResult, type PivotResult } from '../../utils/reportMetrics'
+import { REPORT_VIEWER_KEY, type ReportViewer } from '../../utils/reportViewer'
 
 // One block of a report page: a metric, split some way, drawn some way, for
 // the page's period (or its own). Its data comes from the page's shared
@@ -23,7 +26,9 @@ const props = defineProps<{
 const emit = defineEmits<{ edit: []; remove: []; duplicate: []; resize: [span: ReportBlock['span']]; move: [by: -1 | 1] }>()
 
 const t = useT()
-const store = useAccountStore()
+// The account store on the web; on the app, which has no store, the viewer
+// its report page provides (utils/reportViewer.ts).
+const store: ReportViewer = inject(REPORT_VIEWER_KEY, null) ?? useAccountStore()
 const hub = inject(REPORT_DATA_KEY)!
 const def = computed(() => METRIC_BY_KEY.get(props.block.config.metric) ?? null)
 const menuOpen = ref(false)

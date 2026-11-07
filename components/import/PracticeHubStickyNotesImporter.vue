@@ -109,7 +109,7 @@ async function apply() {
       await runWithConcurrency(chunk, CONCURRENCY, async (row) => {
         const { error } = await supabase.from('patients').update({ sticky_note: row.next }).eq('id', row.patientId)
         if (error) {
-          importErrors.value.push(`${row.label} (${row.patientNumber}): ${error.message}`)
+          importErrors.value.push(t(`${row.label} (${row.patientNumber}): the note was not saved. ${error.message}`, `${row.label} (${row.patientNumber}): la nota no se guardó. ${error.message}`))
           return
         }
         updatedCount.value++
@@ -129,8 +129,8 @@ async function apply() {
   stage.value = 'done'
   showToast(
     t(
-      `Imported ${updatedCount.value} sticky note(s).`,
-      `Se importaron ${updatedCount.value} nota(s) adhesiva(s).`,
+      `Imported ${updatedCount.value} sticky ${updatedCount.value === 1 ? 'note' : 'notes'}.`,
+      `Se ${updatedCount.value === 1 ? 'importó' : 'importaron'} ${updatedCount.value} ${updatedCount.value === 1 ? 'nota adhesiva' : 'notas adhesivas'}.`,
     ),
     importErrors.value.length > 0 ? 'error' : 'success',
   )
@@ -152,10 +152,10 @@ function truncate(value: string | null): string {
   if (!value) return t('(blank)', '(vacío)')
   return value.length > 80 ? `${value.slice(0, 80)}…` : value
 }
-const introLead = computed(() => t("Brings each patient's sticky note across from PracticeHub's API — the one that shows on the calendar when you hover an appointment.", 'Trae la nota adhesiva de cada paciente desde la API de PracticeHub: la que aparece en el calendario al pasar el ratón por una cita.'))
+const introLead = computed(() => t("Brings each patient's sticky note across from PracticeHub's API: the one that shows on the calendar when you hover an appointment.", 'Trae la nota adhesiva de cada paciente desde la API de PracticeHub: la que aparece en el calendario al pasar el ratón por una cita.'))
 const introNotes = computed(() => [
         { title: t('Only patients already here.', 'Solo pacientes que ya están aquí.'), body: t('It updates existing patients and never creates one, so run Patients first.', 'Actualiza pacientes existentes y nunca crea ninguno, así que ejecuta Pacientes primero.') },
-        { title: t('Nothing is written until you press Apply.', 'No se escribe nada hasta que pulses Aplicar.'), body: t('The preview lists every note it will set so you can check it first.', 'La vista previa muestra cada nota que va a escribir para que la compruebes antes.') },
+        { title: t('Nothing is written until you confirm.', 'No se escribe nada hasta que lo confirmes.'), body: t('The preview lists every note it will set so you can check it first.', 'La vista previa muestra cada nota que va a escribir para que la compruebes antes.') },
         { title: t('Safe to run again.', 'Se puede volver a ejecutar.'), body: t('Notes that already match are skipped.', 'Las notas que ya coinciden se omiten.') },
 ])
 </script>
@@ -180,8 +180,8 @@ const introNotes = computed(() => [
           <p class="mt-1">
             {{
               t(
-                "PracticeHub's patient records came back without any field whose name looks like a sticky note, so there's nothing to import. The full list of fields they returned is below — if one of these is the sticky note under a different name, say which and it can be mapped.",
-                'Los registros de pacientes de PracticeHub no incluyen ningún campo cuyo nombre parezca una nota adhesiva, así que no hay nada que importar. Abajo está la lista completa de campos que devolvieron: si alguno es la nota adhesiva con otro nombre, indícalo y se puede mapear.',
+                "PracticeHub's patient records came back without any field whose name looks like a sticky note, so there is nothing to import. The fields they did return are listed below. If one of them is the sticky note under another name, contact QuiroFlow with its name so it can be read.",
+                'Los registros de pacientes de PracticeHub no incluyen ningún campo cuyo nombre parezca una nota adhesiva, así que no hay nada que importar. Abajo están los campos que sí devolvieron. Si alguno es la nota adhesiva con otro nombre, contacta con QuiroFlow indicando cuál para que se pueda leer.',
               )
             }}
           </p>
@@ -263,7 +263,7 @@ const introNotes = computed(() => [
             class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50"
             @click="apply"
           >
-            {{ t(`Import ${candidates.length} sticky note(s)`, `Importar ${candidates.length} nota(s) adhesiva(s)`) }}
+            {{ t(`Import ${candidates.length} sticky ${candidates.length === 1 ? 'note' : 'notes'}`, `Importar ${candidates.length} ${candidates.length === 1 ? 'nota adhesiva' : 'notas adhesivas'}`) }}
           </button>
           <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-ink-600 hover:bg-surface-subtle" @click="reset">
             {{ t('Cancel', 'Cancelar') }}
@@ -274,8 +274,9 @@ const introNotes = computed(() => [
 
     <div v-else-if="stage === 'error'" class="mt-4 space-y-4">
       <div class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
-        <p class="font-medium">{{ t('Import failed:', 'Error al importar:') }}</p>
-        <p class="mt-1">{{ runError }}</p>
+        <p class="font-medium">{{ t('The import stopped before it finished.', 'La importación se detuvo antes de terminar.') }}</p>
+        <p class="mt-1">{{ t('Anything already written is kept. Retry reads PracticeHub again and skips it.', 'Lo ya escrito se conserva. Reintentar vuelve a leer PracticeHub y lo omite.') }}</p>
+        <p class="mt-1 text-[12.5px] opacity-80">{{ runError }}</p>
       </div>
       <button type="button" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover" @click="retryRun">
         {{ t('Retry', 'Reintentar') }}
@@ -284,14 +285,14 @@ const introNotes = computed(() => [
 
     <div v-else-if="stage === 'done'" class="mt-4 space-y-4">
       <div v-if="importErrors.length > 0" class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
-        <p class="font-medium">{{ t('Some patients failed:', 'Algunos pacientes fallaron:') }}</p>
+        <p class="font-medium">{{ t('Some notes were not saved:', 'Algunas notas no se guardaron:') }}</p>
         <ul class="mt-1 list-disc pl-5">
           <li v-for="(e, i) in importErrors" :key="i">{{ e }}</li>
         </ul>
       </div>
       <div class="flex gap-3">
         <NuxtLink to="/patients" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover">
-          {{ t('View Patients', 'Ver pacientes') }}
+          {{ t('View patients', 'Ver pacientes') }}
         </NuxtLink>
         <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-ink-600 hover:bg-surface-subtle" @click="reset">
           {{ t('Run again', 'Ejecutar de nuevo') }}

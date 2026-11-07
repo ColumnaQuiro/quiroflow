@@ -157,7 +157,8 @@ describe('Gift vouchers', () => {
         selectBookableDayWithSlots()
         cy.contains('button', /^\d{2}:\d{2}$/).first().click()
         cy.contains('Introduzca sus datos').should('be.visible')
-        cy.get('[data-cy=booking-gift-ok]').should('contain', '50,00 € de saldo')
+        // The page's price format: a non-breaking space before the euro sign.
+        cy.get('[data-cy=booking-gift-ok]').invoke('text').should('match', /50,00\s€ de saldo/)
         cy.contains('label', 'Nombre *').parent().find('input').type('Nora')
         cy.contains('label', 'Correo electrónico *').parent().find('input').type(`nora.regalo.${stamp()}@example.test`)
         cy.contains('label', 'Número de móvil *').parent().find('input[type="tel"]').type('600111003')

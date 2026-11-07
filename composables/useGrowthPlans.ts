@@ -21,6 +21,14 @@ import { PLANS_INCLUDING_GROWTH } from '~/utils/growthPlans'
 type T = (en: string, es: string) => string
 type Pair = [en: string, es: string]
 
+export interface CataloguePrice {
+  id: string
+  name: string
+  monthly_price_cents: number
+  annual_price_cents: number
+  included_clinics: number | null
+}
+
 /** What a plan's cell says on a row: it has it, Growth brings it, or not. */
 export type PlanCell = 'included' | 'new' | 'none'
 

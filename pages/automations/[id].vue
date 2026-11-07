@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { BUILDER_KEY, isBroadcastRule, newBroadcastDraft, useAutomationBuilder } from '~/composables/useAutomationBuilder'
 import { OUTLETS } from '~/utils/automationCatalog'
-import { stepTitle } from '~/utils/automationDescribe'
+import { outletLabel, stepTitle } from '~/utils/automationDescribe'
 import { chainOf, type Problem } from '~/utils/automationTree'
 
 // One automation: the canvas (Flow), who is in it (People), what it did
@@ -209,9 +209,11 @@ const inside = computed(() => b.stats.value.rule?.inside ?? 0)
 // A phone gets the steps as a list to read, not a canvas to edit.
 const outline = computed(() => {
   const rows: { id: string; depth: number; label: string; branch: string | null }[] = []
+  // The branch is named as the canvas names it ("Sí", "Reservó", "No reservó en 7 días"),
+  // not with ✓ and ⏱, which said nothing about which event or how long.
   const walk = (parentId: string | null, branch: string | null, depth: number) => {
     for (const s of chainOf(b.draft.value.steps, parentId, branch)) {
-      rows.push({ id: s.id, depth, label: stepTitle(t, s, b.lookup.value), branch: s.position === 0 ? branch : null })
+      rows.push({ id: s.id, depth, label: stepTitle(t, s, b.lookup.value), branch: s.position === 0 && parentId && branch ? outletLabel(t, b.stepsById.value.get(parentId), branch) : null })
       const outlets = OUTLETS[s.action_type]
       if (outlets) for (const o of outlets) walk(s.id, o, depth + 1)
     }
@@ -229,18 +231,34 @@ const sheetOpen = computed(() => !wide.value && b.selection.value !== null && ta
 
 <template>
   <div class="relative flex h-full min-h-0 flex-col bg-surface-page">
-    <p v-if="b.missing.value" class="p-6 text-[14px] text-ink-muted" data-test="automation-missing">
-      {{ t('This automation does not exist, or is not yours.', 'Esta automatización no existe o no es tuya.') }}
-      <NuxtLink to="/automations" class="text-brand-text hover:underline">{{ t('Back to automations', 'Volver a automatizaciones') }}</NuxtLink>
-    </p>
-    <p v-else-if="b.loadError.value" class="p-6 text-[14px] text-danger-text">{{ b.loadError.value }}</p>
+    <!-- The shared empty state, so a missing automation or a failed load
+    reads as an answer with a way out, not a page that did not render. -->
+    <UiEmptyState
+      v-if="b.missing.value"
+      :title="t('This automation does not exist, or is not yours.', 'Esta automatización no existe o no es tuya.')"
+      data-test="automation-missing"
+    >
+      <template #actions>
+        <UiBtn @click="navigateTo('/automations')">{{ t('Back to automations', 'Volver a automatizaciones') }}</UiBtn>
+      </template>
+    </UiEmptyState>
+    <UiEmptyState
+      v-else-if="b.loadError.value"
+      :title="t('This automation could not be loaded', 'No se ha podido cargar la automatización')"
+      :description="b.loadError.value"
+      role="alert"
+    >
+      <template #actions>
+        <UiBtn @click="init()">{{ t('Try again', 'Reintentar') }}</UiBtn>
+      </template>
+    </UiEmptyState>
 
     <template v-else>
       <header class="flex shrink-0 flex-wrap items-center gap-2.5 border-b border-line bg-surface px-4 py-2.5 sm:px-5">
         <NuxtLink to="/automations" class="flex h-9 w-9 items-center justify-center rounded-ctl border border-line-control text-ink-700 hover:bg-surface-subtle touch:h-11 touch:w-11" :aria-label="t('Back to automations', 'Volver a Automatizaciones')" data-test="back"><UiChevron dir="left" /></NuxtLink>
         <input
           :value="b.draft.value.rule.name"
-          class="h-9 min-w-0 flex-1 rounded-ctl border border-transparent bg-transparent px-2 text-[16px] font-bold text-ink-900 hover:border-line-control focus:border-brand focus:outline-none sm:max-w-[420px] touch:h-11"
+          class="h-9 min-w-[12rem] flex-1 rounded-ctl border border-transparent bg-transparent px-2 text-[16px] font-semibold tracking-tightTitle text-ink-900 hover:border-line-control focus:border-brand focus:outline-none sm:max-w-[420px] touch:h-11"
           :aria-label="t('Automation name', 'Nombre de la automatización')"
           data-test="automation-name"
           @input="b.updateRule({ name: ($event.target as HTMLInputElement).value })"
@@ -262,14 +280,16 @@ const sheetOpen = computed(() => !wide.value && b.selection.value !== null && ta
         <UiPill v-if="b.draft.value.rule.dry_run" tone="info">{{ t('Test mode', 'Modo prueba') }}</UiPill>
         <span class="ml-auto hidden text-[12px] text-ink-muted md:inline" data-test="saved-at">{{ b.dirty.value ? t('Unsaved changes', 'Cambios sin guardar') : savedText }}</span>
         <UiBtn class="hidden sm:inline-flex" data-test="send-test" @click="sendTestOpen = true">{{ t('Send test', 'Enviar prueba') }}</UiBtn>
-        <UiBtn variant="primary" :disabled="(!b.dirty.value && !b.isNew.value) || b.saving.value" data-test="save" @click="saveWith()">{{ b.saving.value ? t('Saving…', 'Guardando…') : t('Save changes', 'Guardar cambios') }}</UiBtn>
+        <!-- The name keeps a floor (min-w above) so on a phone the status and
+        Save wrap under it: squeezed onto one row the name read "Rec". -->
+        <UiBtn variant="primary" class="max-md:ml-auto" :disabled="(!b.dirty.value && !b.isNew.value) || b.saving.value" data-test="save" @click="saveWith()">{{ b.saving.value ? t('Saving…', 'Guardando…') : t('Save changes', 'Guardar cambios') }}</UiBtn>
       </header>
 
       <nav role="tablist" class="flex shrink-0 gap-1 border-b border-line bg-surface px-4 sm:px-5">
         <button
           v-for="x in [
             { key: 'flow', label: t('Flow', 'Flujo') },
-            { key: 'people', label: inside ? `${t('People', 'Personas')} · ${inside}` : t('People', 'Personas') },
+            { key: 'people', label: t('People', 'Personas'), count: inside || null },
             { key: 'history', label: t('History', 'Historial') },
             { key: 'settings', label: t('Settings', 'Ajustes') },
           ]"
@@ -282,10 +302,16 @@ const sheetOpen = computed(() => !wide.value && b.selection.value !== null && ta
           :class="tab === x.key ? 'border-brand text-ink-900' : 'border-transparent text-ink-muted hover:text-ink-700'"
           :data-test="`tab-${x.key}`"
           @click="setTab(x.key as 'flow')"
-        >{{ x.label }}</button>
+        >{{ x.label }} <span v-if="'count' in x && x.count" class="font-mono text-[11px] font-medium text-ink-muted">{{ x.count }}</span></button>
       </nav>
 
-      <div v-if="!b.loaded.value" class="flex-1 animate-pulse bg-surface-page" aria-hidden="true" />
+      <!-- The trigger and the first steps, in place. This was the page colour
+      pulsing over the page colour, which showed nothing at all. -->
+      <div v-if="!b.loaded.value" class="flex flex-1 flex-col items-center gap-6 p-10" aria-busy="true" data-test="automation-loading">
+        <UiSkeleton class="h-[86px] w-[260px] rounded-card" />
+        <UiSkeleton class="h-[74px] w-[260px] rounded-card" />
+        <UiSkeleton class="h-[74px] w-[260px] rounded-card" />
+      </div>
 
       <template v-else-if="tab === 'flow'">
         <p v-if="b.delayNowWaits.value" class="shrink-0 border-b border-warning-border bg-warning-bg px-5 py-2 text-[12.5px] text-warning-text" data-test="delay-note">
@@ -295,7 +321,7 @@ const sheetOpen = computed(() => !wide.value && b.selection.value !== null && ta
           <p class="mb-3 text-[12.5px] text-ink-muted">{{ t('On a phone, automations are shown as a list of steps. Edit them on a tablet or computer.', 'En el móvil las automatizaciones se ven como lista de pasos. Edítalas en una tablet o un ordenador.') }}</p>
           <ol class="flex flex-col gap-1.5">
             <li v-for="row in outline" :key="row.id" class="rounded-ctl border border-line bg-surface px-3 py-2 text-[13px] text-ink-900" :style="{ marginLeft: `${row.depth * 16}px` }">
-              <span v-if="row.branch" class="mr-1 text-[11px] font-semibold text-ink-muted">{{ row.branch === 'yes' ? t('Yes', 'Sí') : row.branch === 'no' ? 'No' : row.branch === 'met' ? '✓' : '⏱' }} ·</span>{{ row.label }}
+              <UiPill v-if="row.branch" class="mr-1.5">{{ row.branch }}</UiPill>{{ row.label }}
             </li>
           </ol>
         </div>
@@ -343,7 +369,7 @@ const sheetOpen = computed(() => !wide.value && b.selection.value !== null && ta
       >
         <span class="flex-1 text-[13.5px] font-semibold">{{ t('Unsaved changes', 'Cambios sin guardar') }}</span>
         <button type="button" class="h-9 rounded-ctl border border-surface-page/30 px-3.5 text-[13px] font-semibold touch:h-11" data-test="discard" @click="b.discard()">{{ t('Discard', 'Descartar') }}</button>
-        <button type="button" :disabled="b.saving.value" class="h-9 rounded-ctl bg-brand px-4 text-[13px] font-bold text-surface disabled:opacity-70 touch:h-11" data-test="save-bar-save" @click="saveWith()">
+        <button type="button" :disabled="b.saving.value" class="h-9 rounded-ctl bg-brand px-4 text-[13px] font-semibold text-brand-on hover:bg-brand-hover disabled:opacity-70 touch:h-11" data-test="save-bar-save" @click="saveWith()">
           {{ b.saving.value ? t('Saving…', 'Guardando…') : t('Save changes', 'Guardar cambios') }}
         </button>
       </div>

@@ -276,14 +276,15 @@ const rows = computed<LedgerRow[]>(() => {
     // other outgoing entry -- a plain Credit column can't show a negative
     // value at all (see the row.creditCents > 0 guard below), which is what
     // made this row render with no amount before this handled the sign.
-    description: p.amount_cents < 0 ? `${t('Refund payment', 'Pago de reembolso')} — ${p.method}` : `${t('Payment', 'Pago')} — ${p.method}`,
+    // The method's name, not its key: rows used to read "Payment — write_off".
+    description: p.amount_cents < 0 ? `${t('Refund payment', 'Pago de reembolso')} — ${methodLabel(p.method)}` : `${t('Payment', 'Pago')} — ${methodLabel(p.method)}`,
     debitCents: p.amount_cents < 0 ? -p.amount_cents : 0,
     creditCents: p.amount_cents > 0 ? p.amount_cents : 0,
     balanceText: '—',
     balanceTone: 'neutral' as const,
     voided: false,
     detail: [
-      { label: t('Method', 'Método'), value: p.method },
+      { label: t('Method', 'Método'), value: methodLabel(p.method) },
       { label: t('Applied to', 'Aplicado a'), value: invoiceRefFor(p.invoice_id) ?? '—' },
       // Shown for every payment, including the ones with no author, because
       // "Automatic" and "not recorded" are different answers and a row that
@@ -299,13 +300,13 @@ const rows = computed<LedgerRow[]>(() => {
     date: ps.used_at,
     description: ps.package_name
       ? `${t('Visit from', 'Visita del bono')} ${ps.package_name}`
-      : t('Visit from package', 'Visita de un bono'),
+      : t('Visit from a bono', 'Visita de un bono'),
     // Zero on both sides on purpose: this is a record of consumption, not a
     // charge. Showing it as a debit would bill the patient twice for a visit
     // their package already covered.
     debitCents: 0,
     creditCents: 0,
-    balanceText: `${money(ps.amount_cents)} ${t('from package', 'del bono')}`,
+    balanceText: `${money(ps.amount_cents)} ${t('from bono', 'del bono')}`,
     balanceTone: 'neutral' as const,
     voided: false,
     // Em dashes rather than blanks in Debit and Credit, plus a note: this
@@ -314,10 +315,10 @@ const rows = computed<LedgerRow[]>(() => {
     noMoneyMoved: true,
     note: t('Paid when the bono was bought.', 'Pagado al comprar el bono.'),
     detail: [
-      { label: t('Package', 'Bono'), value: ps.package_name ?? '—' },
+      { label: t('Bono', 'Bono'), value: ps.package_name ?? '—' },
       { label: t('Value used', 'Valor consumido'), value: money(ps.amount_cents) },
       // "Cobrado" is collected; this row is what was billed, which is facturado.
-      { label: t('Charged', 'Facturado'), value: t('Nothing -- already covered by the package', 'Nada -- ya cubierto por el bono') },
+      { label: t('Charged', 'Facturado'), value: t('Nothing. The bono already covered it.', 'Nada: ya lo cubría el bono.') },
     ],
   }))
 
@@ -335,11 +336,11 @@ const rows = computed<LedgerRow[]>(() => {
       description: c.reason ?? t('Account credit', 'Crédito en cuenta'),
       debitCents: c.amount_cents < 0 ? -c.amount_cents : 0,
       creditCents: c.amount_cents > 0 ? c.amount_cents : 0,
-      balanceText: `${money(creditRunning)} ${t('ledger bal.', 'saldo cta.')}`,
+      balanceText: `${money(creditRunning)} ${t('in credit', 'de crédito')}`,
       balanceTone: creditRunning < 0 ? ('danger' as const) : ('neutral' as const),
       voided: false,
       detail: [
-        ...(c.method ? [{ label: t('Method', 'Método'), value: c.method }] : []),
+        ...(c.method ? [{ label: t('Method', 'Método'), value: methodLabel(c.method) }] : []),
         ...(c.invoice_id ? [{ label: t('Linked receipt', 'Recibo vinculado'), value: invoiceRefFor(c.invoice_id) ?? '—' }] : []),
       ],
     }
@@ -399,7 +400,7 @@ const refundMaxCents = ref(0)
 // (both read only from `payments`, which a refund never touched), which is
 // also what let a refunded, fully-paid invoice leave a phantom credit on the
 // patient's balance -- see createRefund's matching payments insert.
-const { methods: paymentMethods, ensureLoaded: ensurePaymentMethodsLoaded, defaultMethod } = usePaymentMethods()
+const { methods: paymentMethods, ensureLoaded: ensurePaymentMethodsLoaded, defaultMethod, labelFor: methodLabel } = usePaymentMethods()
 // Which method the money physically went back through -- the account's own
 // list, same as taking one. It used to offer card/cash/"Other (e.g. bank
 // transfer)" and was the ONLY screen that mentioned bank transfer at all.
@@ -572,7 +573,10 @@ async function submitTransferCredit() {
   if (!transferTarget.value) return
   const amountCents = Math.round((parseFloat(transferAmount.value) || 0) * 100)
   if (amountCents <= 0 || amountCents > props.spendableCreditCents) {
-    transferError.value = t('Amount must be positive and not exceed available credit.', 'El importe debe ser positivo y no superar el crédito disponible.')
+    transferError.value = t(
+      `Enter an amount above 0, up to the ${formatEur(props.spendableCreditCents)} available.`,
+      `Escribe un importe mayor que 0 y de hasta ${formatEur(props.spendableCreditCents)}, lo disponible.`,
+    )
     return
   }
   transferring.value = true
@@ -644,7 +648,7 @@ const fieldId = useId()
 <template>
   <div class="rounded-card border border-line bg-surface shadow-card">
     <div class="flex items-center justify-between border-b border-line-divider px-4 py-3">
-      <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Account Ledger', 'Libro de cuenta') }}</p>
+      <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Account ledger', 'Libro de cuenta') }}</p>
       <div class="flex items-center gap-2">
         <!-- The ledger stays here, on the record, because "what does this
              person owe" is a patient-context question asked with the patient
@@ -664,13 +668,13 @@ const fieldId = useId()
           </button>
           <div v-if="menuOpen" class="absolute right-0 z-10 mt-1 w-44 rounded-ctl border border-line bg-surface py-1 shadow-popover">
             <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="newInvoice">{{ t('New receipt', 'Nuevo recibo') }}</button>
-            <button v-if="canTakePayments" type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="takePayment">{{ t('New Payment', 'Nuevo pago') }}</button>
-            <button v-if="canTakePayments" type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="addCredit">{{ t('Add Credit', 'Añadir crédito') }}</button>
+            <button v-if="canTakePayments" type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="takePayment">{{ t('New payment', 'Nuevo pago') }}</button>
+            <button v-if="canTakePayments" type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="addCredit">{{ t('Add credit', 'Añadir crédito') }}</button>
             <button v-if="spendableCreditCents > 0" type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="openTransferCredit">
-              {{ t('Transfer Credit', 'Transferir crédito') }}
+              {{ t('Transfer credit', 'Transferir crédito') }}
             </button>
             <div class="my-1 border-t border-line-divider"></div>
-            <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="downloadStatement">{{ t('Download Statement', 'Descargar extracto') }}</button>
+            <button type="button" class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle" @click="downloadStatement">{{ t('Download statement', 'Descargar extracto') }}</button>
             <button
               type="button"
               class="block w-full px-3 py-1.5 text-left text-[12.5px] text-ink-700 hover:bg-surface-subtle disabled:opacity-50"
@@ -679,14 +683,14 @@ const fieldId = useId()
               :title="contactBlocked ? t('Not sent to a patient who is under age or marked do not contact', 'No se envía a un paciente menor de edad o marcado como no contactar') : undefined"
               @click="sendStatement"
             >
-              {{ statementSending ? t('Sending…', 'Enviando…') : t('Send Statement', 'Enviar extracto') }}
+              {{ statementSending ? t('Sending…', 'Enviando…') : t('Send statement', 'Enviar extracto') }}
             </button>
           </div>
         </div>
       </div>
     </div>
 
-    <div v-if="rows.length === 0" class="p-8 text-center text-[13px] text-ink-faint">{{ t('No transactions yet.', 'Aún no hay transacciones.') }}</div>
+    <div v-if="rows.length === 0" class="p-8 text-center text-[13px] text-ink-faint">{{ t('Nothing on this account yet.', 'Aún no hay movimientos en esta cuenta.') }}</div>
     <div v-else class="max-h-[420px] overflow-y-auto">
       <table class="w-full text-[13px]">
         <thead class="sticky top-0 border-b border-line-divider bg-surface text-left text-[11px] font-medium uppercase tracking-wide text-ink-faint">
@@ -766,7 +770,7 @@ const fieldId = useId()
                     >
                       {{ t('Remove payment', 'Eliminar pago') }}
                     </button>
-                    <span class="text-ink-faint2">{{ t('Reopens the receipt so it can be billed again', 'Reabre el recibo para poder facturarlo de nuevo') }}</span>
+                    <span class="text-ink-faint2">{{ t('Refunds nothing. The receipt reopens if it is no longer fully paid.', 'No reembolsa nada. El recibo se reabre si deja de estar pagado.') }}</span>
                   </template>
                   <!-- Refunds THIS payment: capped at what came in on it and
                        pre-set to the method it came in on. Removing a payment
@@ -793,7 +797,7 @@ const fieldId = useId()
                   >
                     {{ sendingInvoiceId === row.invoiceId ? t('Sending…', 'Enviando…') : t('Email receipt', 'Enviar recibo por correo') }}
                   </button>
-                  <UiIconBtn v-if="canDeleteInvoices" icon="trash" tone="danger" :label="t('Delete', 'Eliminar')" @click="emit('deleteInvoice', row.invoiceId)" />
+                  <UiIconBtn v-if="canDeleteInvoices" icon="trash" tone="danger" :label="t('Delete receipt', 'Eliminar recibo')" @click="emit('deleteInvoice', row.invoiceId)" />
                   <button
                     v-if="canWriteOff && !row.voided && (row.invoiceOpenCents ?? 0) > 0"
                     type="button"
@@ -822,7 +826,7 @@ const fieldId = useId()
       says what is on screen versus what is owed. -->
       <div class="flex flex-wrap items-center justify-between gap-2 border-t border-line-divider px-2 py-2.5">
         <p class="text-[11.5px] text-ink-faint">
-          {{ rows.length }} {{ rows.length === 1 ? t('movement', 'movimiento') : t('movements', 'movimientos') }}
+          {{ rows.length }} {{ rows.length === 1 ? t('entry', 'movimiento') : t('entries', 'movimientos') }}
           <template v-if="hasNoMoneyRows">
             · {{ t('A bono visit shows — in both columns: the money moved when the bono was bought.', 'Una visita de bono muestra — en ambas columnas: el dinero se movió al comprar el bono.') }}
           </template>
@@ -926,7 +930,7 @@ const fieldId = useId()
       </p>
 
       <div class="mt-3">
-        <label :for="`${fieldId}-refundAmount`" class="block text-[11px] text-ink-muted">{{ t('Amount (€)', 'Importe (€)') }} -- {{ t('up to', 'hasta') }} {{ money(refundMaxCents) }}</label>
+        <label :for="`${fieldId}-refundAmount`" class="block text-[11px] text-ink-muted">{{ t(`Amount (€), up to ${money(refundMaxCents)}`, `Importe (€), hasta ${money(refundMaxCents)}`) }}</label>
         <input :id="`${fieldId}-refundAmount`" v-model="refundAmount" type="number" min="0" :max="refundMaxCents / 100" step="0.01" class="mt-0.5 w-32 rounded-ctlSm border border-line-control px-2 py-1.5 text-[13px]" />
       </div>
       <div class="mt-3">
@@ -952,7 +956,7 @@ const fieldId = useId()
           v-model="refundReason"
           type="text"
           class="mt-0.5 w-full rounded-ctlSm border border-line-control px-2 py-1.5 text-[13px]"
-          :placeholder="t('e.g. patient cancelled package', 'p. ej. el paciente canceló el bono')"
+          :placeholder="t('e.g. patient cancelled the bono', 'p. ej. el paciente canceló el bono')"
         />
       </div>
 
@@ -964,7 +968,7 @@ const fieldId = useId()
           :disabled="!refundAmount || Math.round((parseFloat(refundAmount) || 0) * 100) <= 0 || Math.round((parseFloat(refundAmount) || 0) * 100) > refundMaxCents"
           @click="submitRefund"
         >
-          {{ t('Refund', 'Reembolso') }}
+          {{ t('Refund', 'Reembolsar') }}
         </UiBtn>
       </div>
     </div>

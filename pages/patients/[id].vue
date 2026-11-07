@@ -31,6 +31,12 @@ const patientId = route.params.id as string
 const patient = ref<Tables<'patients'> | null>(null)
 const notFound = ref(false)
 const loading = ref(true)
+// The first read failed (offline, a timeout, PostgREST down). Kept apart from
+// notFound, because "this patient does not exist" is the wrong thing to tell a
+// receptionist with that patient at the counter, and apart from loading, which
+// left the skeleton shimmering forever with nothing to press.
+const loadError = ref(false)
+const retrying = ref(false)
 const practitionerName = ref<string | null>(null)
 
 // A minor's messages go to their tutor, and until now the record said so by
@@ -42,7 +48,14 @@ const tutor = ref<{ id: string; first_name: string; last_name: string | null } |
 // and a merge all call this again, and blanking the page for those threw away
 // the banner and remounted the open tab -- losing its scroll and whatever it
 // had loaded -- to show one changed field.
+// Overview's save, a new photo and the details dialog can each call this while
+// an earlier call is still in flight; only the newest answer is applied, or a
+// slow first response could land last and put the old values back on screen.
+let patientRun = 0
+// Once per visit to the record, including when it opened only on a retry.
+let accessLogged = false
 async function loadPatient() {
+  const run = ++patientRun
   // The practitioner's name and the tutor ride along as embeds, rather than
   // two more round trips once the patient has landed. The tutor is named by
   // its column: patients references itself, and the constraint-name hint does
@@ -52,10 +65,19 @@ async function loadPatient() {
     .select('*, practitioner:team_members!patients_default_practitioner_id_fkey(full_name), tutor:tutor_patient_id(id, first_name, last_name)')
     .eq('id', patientId)
     .maybeSingle()
-  // A failed read is not "patient not found": thrown, the record stays as it
-  // was (or on its skeleton), utils/supabaseFailures.ts reports the query
-  // and the layout says so.
-  if (error) throw error
+  if (run !== patientRun) return
+  // A failed read is not "patient not found". Once the record is on screen it
+  // stays as it was (utils/supabaseFailures.ts reports the query and the
+  // layout's toast says so); before that, the page says the load failed and
+  // offers to try again, rather than a skeleton that never resolves.
+  if (error) {
+    if (loading.value) {
+      loadError.value = true
+      loading.value = false
+    }
+    return
+  }
+  loadError.value = false
   if (data) {
     // Stripped rather than carried on the patient: the edit form and the
     // merge modal both work from this object, and an unknown key in an
@@ -70,10 +92,25 @@ async function loadPatient() {
     tutor.value = null
   }
   notFound.value = !data
-  if (data && loading.value) logAccess('record_opened', patientId)
+  if (data && !accessLogged) {
+    accessLogged = true
+    logAccess('record_opened', patientId)
+  }
   loading.value = false
 }
 onMounted(loadPatient)
+
+async function retryLoad() {
+  if (retrying.value) return
+  retrying.value = true
+  try {
+    loading.value = true
+    loadError.value = false
+    await Promise.all([loadPatient(), loadBannerDetail().catch(() => {})])
+  } finally {
+    retrying.value = false
+  }
+}
 
 // The banner shows the number, so the number is loaded here rather than by
 // whichever tab happens to be open.
@@ -85,7 +122,9 @@ async function loadBannerDetail() {
     .eq('patient_id', patientId)
     .order('created_at')
     .limit(1)
-  if (error) throw error
+  // Not thrown: nothing awaits this on mount, and the layout's toast already
+  // reports the failure. The banner just goes without the number.
+  if (error) return
   primaryNumber.value = data?.[0] ?? null
 }
 onMounted(loadBannerDetail)
@@ -210,9 +249,14 @@ async function toggleArchived() {
   archiving.value = true
   try {
     const nextStatus = patient.value.status === 'active' ? 'inactive' : 'active'
-    const { error } = await supabase.from('patients').update({ status: nextStatus }).eq('id', patientId)
-    if (error) {
-      showToast(error.message, 'error')
+    // Selected back, because an update RLS refuses is not an error: it
+    // matches no rows and answers success. Without the row, a role that can
+    // read this patient but not change them saw "Patient archived" while the
+    // record stayed exactly as it was.
+    const { data, error } = await supabase.from('patients').update({ status: nextStatus }).eq('id', patientId).select('id')
+    if (error || !data?.length) {
+      const what = nextStatus === 'inactive' ? t("Couldn't archive the patient", 'No se ha podido archivar al paciente') : t("Couldn't unarchive the patient", 'No se ha podido desarchivar al paciente')
+      showToast(error ? `${what}: ${error.message}` : `${what}. ${t("You don't have permission to change this record.", 'No tienes permiso para cambiar esta ficha.')}`, 'error')
       return
     }
     patient.value.status = nextStatus
@@ -310,7 +354,40 @@ function onTabKeydown(event: KeyboardEvent) {
       </div>
     </div>
   </div>
-  <div v-else-if="notFound" class="flex h-full items-center justify-center text-[13px] text-ink-faint">{{ t('Patient not found.', 'Paciente no encontrado.') }}</div>
+  <!-- The first read failed. Not "not found": the patient is very likely
+  there, and the next try will probably reach them. -->
+  <div v-else-if="loadError" class="h-full overflow-y-auto bg-surface-page" data-cy="patient-load-error">
+    <UiEmptyState
+      :title="t(`Couldn't open this record`, 'No se ha podido abrir la ficha')"
+      :description="t('The connection dropped or the server took too long to answer. Nothing has been changed.', 'Se ha cortado la conexión o el servidor ha tardado demasiado en responder. No se ha cambiado nada.')"
+    >
+      <template #icon>
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <path d="M10 6.5v4.2M10 13.4v.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+          <circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.4" />
+        </svg>
+      </template>
+      <template #actions>
+        <UiBtn variant="primary" :disabled="retrying" data-cy="patient-load-retry" @click="retryLoad">
+          {{ retrying ? t('Trying again…', 'Reintentando…') : t('Try again', 'Reintentar') }}
+        </UiBtn>
+        <UiBtn @click="navigateTo('/patients')">{{ t('Back to patients', 'Volver a pacientes') }}</UiBtn>
+      </template>
+    </UiEmptyState>
+  </div>
+  <!-- RLS answers a record you may not see exactly as one that is not there,
+  so the sentence covers both; "not found" alone sent people looking for a
+  deleted patient who was only outside their scope. -->
+  <div v-else-if="notFound" class="h-full overflow-y-auto bg-surface-page" data-cy="patient-not-found">
+    <UiEmptyState
+      :title="t('Patient not found', 'Paciente no encontrado')"
+      :description="t(`This record was deleted or merged into another, or it isn't one you have access to. Search for the patient by name to find their current record.`, 'Esta ficha se ha eliminado o fusionado con otra, o no tienes acceso a ella. Busca al paciente por su nombre para encontrar su ficha actual.')"
+    >
+      <template #actions>
+        <UiBtn variant="primary" @click="navigateTo('/patients')">{{ t('Back to patients', 'Volver a pacientes') }}</UiBtn>
+      </template>
+    </UiEmptyState>
+  </div>
   <!-- Below lg the banner scrolls away with the record instead of staying
   pinned: on a phone it is the call/message/book card, about half an iPhone
   screen, and pinned it left the open tab a strip to scroll in. The tab bar

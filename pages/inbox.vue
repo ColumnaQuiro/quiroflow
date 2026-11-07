@@ -485,9 +485,13 @@ const sourceFilter = ref<'all' | 'leads' | 'patients'>('all')
 
 // --- The filter row ---------------------------------------------------------
 // Compact chips (the site's 32px tier, 44px on touch), one style for all.
-const chip = 'flex h-8 touch:h-11 items-center gap-1 rounded-pill border px-3 text-[13px] font-semibold'
+const chip = 'flex h-8 touch:h-11 items-center gap-1.5 rounded-pill border px-3 text-[13px] font-semibold'
 const chipOn = 'border-brand-tintBorder bg-brand-tint text-brand-text'
 const chipOff = 'border-line-control text-ink-700 hover:bg-surface-subtle'
+// A count in a chip reads as the tabs' does ("Todas 8"): the number after
+// the label, lighter. " · 1" spent a dot and a space on each of seven chips
+// and pushed the Spanish row onto a third line at 1440 wide.
+const chipCount = (on: boolean) => (on ? 'font-medium' : 'font-medium text-ink-muted')
 const menuRow = 'flex min-h-9 touch:min-h-11 w-full items-center gap-2 rounded-ctlSm px-2.5 text-left text-[13.5px] text-ink-700 hover:bg-surface-subtle'
 const moreFiltersOpen = ref(false)
 const moreFiltersEl = ref<HTMLElement>()
@@ -522,6 +526,18 @@ const filtersSummary = computed(() => {
   const on = activeFilterNames.value
   if (on.length === 1) return on[0]!
   return on.length ? `${t('Filters', 'Filtros')} · ${on.length}` : t('Filters', 'Filtros')
+})
+// What the empty list says, in the same order of precedence it always had.
+const emptyList = computed<{ title: string; description?: string; showAll?: boolean }>(() => {
+  const searching = Boolean(search.value.trim())
+  if (view.value === 'archived') return { title: t('No archived conversations', 'No hay conversaciones archivadas') }
+  if (view.value === 'snoozed') return { title: t('Nothing snoozed', 'Nada pospuesto'), description: t('Snooze a conversation from its header to have it come back later.', 'Pospón una conversación desde su cabecera para que vuelva más tarde.') }
+  if (counts.value.all + leadConversations.value.length === 0 && !searching) return { title: t('No conversations yet', 'Aún no hay conversaciones') }
+  if (replyFilter.value === 'needs_reply' && !searching && tab.value === 'all' && !unreadOnly.value && !expiringOnly.value && !labelFilter.value) {
+    return { title: t('Nobody is waiting for a reply', 'Nadie espera respuesta'), showAll: true }
+  }
+  if (searching || tab.value !== 'all' || unreadOnly.value || expiringOnly.value || replyFilter.value !== 'all' || labelFilter.value) return { title: t('Nothing matches these filters', 'Nada coincide con estos filtros') }
+  return { title: t('No conversations yet', 'Aún no hay conversaciones') }
 })
 function onMoreFiltersDocClick(e: MouseEvent) {
   if (moreFiltersOpen.value && moreFiltersEl.value && !moreFiltersEl.value.contains(e.target as Node)) moreFiltersOpen.value = false
@@ -754,16 +770,6 @@ function patientWindowPill(c: Conversation) {
 function leadWindowPill(c: (typeof leadConversations.value)[number]) {
   if (!c.lastDirection) return null
   return replyWindowPill({ direction: c.lastDirection, channel: c.channel, at: c.lastMessageAt, body: c.preview, mediaType: c.lastMediaType }, now.value)
-}
-const windowPillClass = (urgent: boolean) =>
-  urgent ? 'border-danger-border bg-danger-bg text-danger-text' : 'border-warning-border bg-warning-bg text-warning-text'
-
-// Today shows a clock, anything older shows a date -- the same shorthand the
-// patient rows beside these use.
-function leadRowTime(at: string) {
-  const when = new Date(at)
-  const today = new Date().toDateString() === when.toDateString()
-  return when.toLocaleString('en-GB', today ? { hour: '2-digit', minute: '2-digit' } : { day: 'numeric', month: 'short' })
 }
 
 
@@ -1712,7 +1718,10 @@ function listTime(iso: string) {
   if (diffDays === 0) return shortTime(iso)
   if (diffDays === 1) return t('Yesterday', 'Ayer')
   if (diffDays > 1 && diffDays < 7) return d.toLocaleDateString([], { weekday: 'long' })
-  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
+  const dayMonth = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`
+  // The year only when it is not this one: in a 390px column "/2026" on
+  // every row was noise, and its absence is what marks last year's threads.
+  return d.getFullYear() === now.getFullYear() ? dayMonth : `${dayMonth}/${d.getFullYear()}`
 }
 function relativeDay(iso: string) {
   const d = new Date(iso)
@@ -1870,6 +1879,32 @@ function avatarInitials(name: string) {
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Inbox', 'Bandeja de entrada')">
       <InboxTeamSwitch current="patients" />
+      <!-- The page's one primary action sits in the header, as New patient
+      does on Patients. Beside the search it left the search box ~100px at
+      1440 wide, too narrow to show its own placeholder. -->
+      <div v-if="view === 'active'" ref="composeEl" class="relative shrink-0">
+        <UiBtn variant="primary" data-cy="inbox-new" :aria-expanded="composeOpen" aria-haspopup="dialog" @click="composeOpen = !composeOpen">
+          {{ t('New conversation', 'Nueva conversación') }}
+        </UiBtn>
+        <div v-if="composeOpen" class="absolute right-0 top-[calc(100%+4px)] z-30 w-72 rounded-card border border-line bg-surface p-2 shadow-popover">
+          <input
+            v-model="composeQuery"
+            type="text"
+            autofocus
+            :aria-label="t('Search patients', 'Buscar pacientes')"
+            :placeholder="t('Search patients…', 'Buscar pacientes…')"
+            class="h-9 touch:h-11 w-full rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none"
+          />
+          <ul class="mt-1 max-h-64 overflow-y-auto">
+            <li v-for="p in filteredComposePatients" :key="p.id">
+              <button type="button" class="flex min-h-9 touch:min-h-11 w-full items-center rounded-ctlSm px-2.5 text-left text-[14px] text-ink-700 hover:bg-surface-subtle" @click="startConversationWith(p)">
+                {{ p.first_name }} {{ p.last_name ?? '' }}
+              </button>
+            </li>
+            <li v-if="filteredComposePatients.length === 0" class="px-2.5 py-2 text-[13px] text-ink-faint">{{ t('No matches', 'Sin coincidencias') }}</li>
+          </ul>
+        </div>
+      </div>
     </PageHeader>
     <div v-if="webPush.supported.value && webPush.permission.value === 'default' && !pushBannerDismissed" data-cy="push-banner" class="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-line bg-brand-tint px-4 py-2">
       <p class="text-[12.5px] text-brand-text">{{ t('Get notified here when a patient messages you, even with the tab in the background.', 'Recibe avisos aquí cuando un paciente te escriba, incluso con la pestaña en segundo plano.') }}</p>
@@ -1894,15 +1929,15 @@ function avatarInitials(name: string) {
       >
         <div class="flex flex-col gap-2.5 border-b border-line-divider p-3">
           <template v-if="!selectionMode">
-            <div class="flex items-center gap-2">
-              <label class="flex h-9 touch:h-11 min-w-0 flex-1 items-center gap-2 rounded-ctl border border-line-control bg-surface px-3 text-ink-muted focus-within:border-brand">
+            <div class="flex items-center gap-1.5">
+              <label class="flex h-9 touch:h-11 min-w-0 flex-1 items-center gap-1.5 rounded-ctl border border-line-control bg-surface px-2.5 text-ink-muted focus-within:border-brand">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
                 <input
                   v-model="search"
                   type="search"
                   data-cy="inbox-search"
                   :aria-label="t('Search conversations', 'Buscar conversaciones')"
-                  :placeholder="t('Search name, number, messages…', 'Buscar nombre, número, mensajes…')"
+                  :placeholder="t('Name, number or message', 'Nombre, número o mensaje')"
                   class="min-w-0 flex-1 bg-transparent text-[14px] text-ink-900 placeholder:text-ink-faint focus:outline-none"
                 />
               </label>
@@ -1954,28 +1989,6 @@ function avatarInitials(name: string) {
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8" /><path d="M12 9v4l2.5 2.5M5 3L2 6M19 3l3 3" /></svg>
               </button>
-              <div v-if="view === 'active'" ref="composeEl" class="relative shrink-0">
-                <button type="button" data-cy="inbox-new" class="h-9 touch:h-11 rounded-ctl bg-brand px-3.5 text-[14px] font-bold text-surface hover:bg-brand-hover" @click="composeOpen = !composeOpen">
-                  {{ t('New', 'Nueva') }}
-                </button>
-                <div v-if="composeOpen" class="absolute right-0 top-[calc(100%+4px)] z-20 w-72 rounded-card border border-line bg-surface p-2 shadow-popover">
-                  <input
-                    v-model="composeQuery"
-                    type="text"
-                    autofocus
-                    :placeholder="t('Search patients…', 'Buscar pacientes…')"
-                    class="h-9 touch:h-11 w-full rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none"
-                  />
-                  <ul class="mt-1 max-h-64 overflow-y-auto">
-                    <li v-for="p in filteredComposePatients" :key="p.id">
-                      <button type="button" class="flex min-h-9 touch:min-h-11 w-full items-center rounded-ctlSm px-2.5 text-left text-[14px] text-ink-700 hover:bg-surface-subtle" @click="startConversationWith(p)">
-                        {{ p.first_name }} {{ p.last_name ?? '' }}
-                      </button>
-                    </li>
-                    <li v-if="filteredComposePatients.length === 0" class="px-2.5 py-2 text-[13px] text-ink-faint">{{ t('No matches', 'Sin coincidencias') }}</li>
-                  </ul>
-                </div>
-              </div>
             </div>
             <div id="inbox-filter-rows" class="contents" :class="filtersOpen ? '' : 'short:max-md:hidden'" data-cy="inbox-filter-rows">
               <!-- Segments sized to their text (flex-auto), not equal thirds: in the
@@ -2027,7 +2040,7 @@ function avatarInitials(name: string) {
                     data-test="filter-patients-only"
                     @click="sourceFilter = sourceFilter === 'patients' ? 'all' : 'patients'"
                   >
-                    {{ t('Patients', 'Pacientes') }}<span v-if="patientUnreadCount > 0"> · {{ patientUnreadCount }}</span>
+                    {{ t('Patients', 'Pacientes') }} <span v-if="patientUnreadCount > 0" :class="chipCount(sourceFilter === 'patients')">{{ patientUnreadCount }}</span>
                   </button>
                   <button
                     type="button"
@@ -2036,7 +2049,7 @@ function avatarInitials(name: string) {
                     data-test="filter-leads-only"
                     @click="sourceFilter = sourceFilter === 'leads' ? 'all' : 'leads'"
                   >
-                    {{ t('Leads', 'Leads') }}<span v-if="leadUnreadCount > 0"> · {{ leadUnreadCount }}</span>
+                    {{ t('Leads', 'Leads') }} <span v-if="leadUnreadCount > 0" :class="chipCount(sourceFilter === 'leads')">{{ leadUnreadCount }}</span>
                   </button>
                 </template>
                 <button
@@ -2046,7 +2059,7 @@ function avatarInitials(name: string) {
                   :class="[chip, unreadOnly ? chipOn : chipOff]"
                   @click="unreadOnly = !unreadOnly"
                 >
-                  {{ t('Unread', 'No leídas') }}<span v-if="counts.unread > 0"> · {{ counts.unread }}</span>
+                  {{ t('Unread', 'No leídas') }} <span v-if="counts.unread > 0" :class="chipCount(unreadOnly)">{{ counts.unread }}</span>
                 </button>
                 <button
                   v-if="view === 'active'"
@@ -2057,7 +2070,7 @@ function avatarInitials(name: string) {
                   :title="t('They wrote last and the 24-hour window to reply freely shuts soon.', 'Escribió el último y se cierran pronto las 24 horas para responder libremente.')"
                   @click="expiringOnly = !expiringOnly"
                 >
-                  {{ t('Expiring', 'Por caducar') }}<span v-if="expiringCount > 0" class="text-warning-text"> · {{ expiringCount }}</span>
+                  {{ t('Expiring', 'Por caducar') }} <span v-if="expiringCount > 0" class="font-medium text-warning-text">{{ expiringCount }}</span>
                 </button>
                 <InboxLabelFilterPicker v-model="labelFilter" :labels="labels" />
                 <!-- Only when there is one. A chip reading "· 0" every day
@@ -2071,7 +2084,7 @@ function avatarInitials(name: string) {
                   data-test="filter-draft-ready"
                   @click="aiFilter = aiFilter === 'draft_ready' ? 'all' : 'draft_ready'"
                 >
-                  {{ t('Draft ready', 'Borrador listo') }} · {{ draftReadyCount }}
+                  {{ t('Draft ready', 'Borrador listo') }} <span :class="chipCount(aiFilter === 'draft_ready')">{{ draftReadyCount }}</span>
                 </button>
                 <!-- Same rule: the one that means a conversation is waiting on
                 a person, shown only while there is one. -->
@@ -2083,7 +2096,7 @@ function avatarInitials(name: string) {
                   data-test="filter-needs-human-chip"
                   @click="aiFilter = aiFilter === 'needs_human' ? 'all' : 'needs_human'"
                 >
-                  {{ t('Needs human', 'Requiere persona') }} · {{ needsHumanCount }}
+                  {{ t('Needs human', 'Requiere persona') }} <span :class="chipCount(aiFilter === 'needs_human')">{{ needsHumanCount }}</span>
                 </button>
                 <div ref="moreFiltersEl" class="relative">
                   <button
@@ -2094,11 +2107,11 @@ function avatarInitials(name: string) {
                     :class="[chip, moreFiltersActive > 0 ? chipOn : chipOff]"
                     @click="moreFiltersOpen = !moreFiltersOpen"
                   >
-                    {{ t('More filters', 'Más filtros') }}<span v-if="moreFiltersActive > 0"> · {{ moreFiltersActive }}</span>
+                    {{ t('More filters', 'Más filtros') }} <span v-if="moreFiltersActive > 0" :class="chipCount(true)">{{ moreFiltersActive }}</span>
                     <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 6l4 4 4-4" stroke-linecap="round" stroke-linejoin="round" /></svg>
                   </button>
                   <div v-if="moreFiltersOpen" role="menu" class="absolute left-0 top-[calc(100%+4px)] z-20 w-64 rounded-card border border-line bg-surface p-1.5 shadow-popover" data-cy="inbox-more-filters-menu">
-                    <p class="px-2.5 pb-1 pt-1.5 text-[11.5px] font-semibold uppercase tracking-wide text-ink-faint">{{ t('Who replies next', 'Quién responde') }}</p>
+                    <p class="px-2.5 pb-1 pt-1.5 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Who replies next', 'Quién responde') }}</p>
                     <button
                       v-for="f in [{ key: 'awaiting_patient', label: t('Awaiting patient', 'Esperan al paciente') }]"
                       :key="f.key"
@@ -2114,7 +2127,7 @@ function avatarInitials(name: string) {
                     <!-- Growth only. Without the tier there are no AI-handled
                     conversations, so these would filter a list of nothing. -->
                     <template v-if="hasGrowth">
-                      <p class="mt-1 border-t border-line-divider px-2.5 pb-1 pt-2.5 text-[11.5px] font-semibold uppercase tracking-wide text-ink-faint">{{ t('Receptionist', 'Recepcionista IA') }}</p>
+                      <p class="mt-1 border-t border-line-divider px-2.5 pb-1 pt-2.5 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Receptionist', 'Recepcionista IA') }}</p>
                       <button
                         v-for="f in [
                           { key: 'ai_handling', label: t('AI handling', 'IA gestionando'), count: aiHandlingCount, test: 'filter-ai-handling' },
@@ -2128,7 +2141,8 @@ function avatarInitials(name: string) {
                         :class="menuRow"
                         @click="aiFilter = aiFilter === f.key ? 'all' : (f.key as 'ai_handling' | 'needs_human')"
                       >
-                        <span class="flex-1">{{ f.label }} · {{ f.count }}</span>
+                        <span class="flex-1">{{ f.label }}</span>
+                        <span class="font-mono text-[11px] text-ink-muted">{{ f.count }}</span>
                         <svg v-if="aiFilter === f.key" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" class="text-brand-text" aria-hidden="true"><path d="M3 8.5l3 3 7-7" stroke-linecap="round" stroke-linejoin="round" /></svg>
                       </button>
                     </template>
@@ -2153,15 +2167,16 @@ function avatarInitials(name: string) {
             </div>
             <div class="flex flex-wrap items-center gap-1.5">
               <div class="relative" data-assign-menu>
-                <button
-                  type="button"
+                <UiBtn
+                  variant="primary"
                   data-cy="inbox-bulk-assign"
-                  class="h-9 touch:h-11 rounded-ctl bg-brand px-3 text-[13.5px] font-bold text-surface disabled:opacity-50"
+                  aria-haspopup="menu"
+                  :aria-expanded="assignMenuFor === 'bulk'"
                   :disabled="selectedKeys.size === 0"
                   @click.stop="assignMenuFor = assignMenuFor === 'bulk' ? null : 'bulk'"
                 >
                   {{ t('Assign to…', 'Asignar a…') }}
-                </button>
+                </UiBtn>
                 <div v-if="assignMenuFor === 'bulk'" role="menu" class="absolute left-0 top-[calc(100%+4px)] z-20 w-64 rounded-card border border-line bg-surface p-1.5 shadow-popover">
                   <button v-for="m in team" :key="m.id" type="button" role="menuitem" class="flex min-h-9 touch:min-h-11 w-full items-center rounded-ctlSm px-2.5 text-left text-[14px] text-ink-900 hover:bg-surface-subtle" @click="assign([...selectedKeys], m.id); exitSelectionMode()">
                     {{ m.id === myId ? t(`${m.full_name} (you)`, `${m.full_name} (tú)`) : m.full_name }}
@@ -2213,17 +2228,23 @@ function avatarInitials(name: string) {
               </div>
             </div>
           </div>
-          <p v-else-if="filteredConversations.length === 0 && visibleLeadConversations.length === 0" class="p-6 text-center text-[14px] text-ink-faint" data-cy="inbox-empty">
-            <template v-if="view === 'archived'">{{ t('No archived conversations.', 'No hay conversaciones archivadas.') }}</template>
-            <template v-else-if="view === 'snoozed'">{{ t('Nothing snoozed. Snooze a conversation from its header to have it come back later.', 'Nada pospuesto. Pospón una conversación desde su cabecera para que vuelva más tarde.') }}</template>
-            <template v-else-if="counts.all + leadConversations.length === 0 && !search.trim()">{{ t('No conversations yet.', 'Aún no hay conversaciones.') }}</template>
-            <template v-else-if="replyFilter === 'needs_reply' && !search.trim() && tab === 'all' && !unreadOnly && !expiringOnly && !labelFilter">
-              {{ t('Nobody is waiting for a reply.', 'Nadie espera respuesta.') }}
-              <button type="button" class="ml-1 font-semibold text-brand-text hover:underline" data-cy="inbox-show-all" @click="replyFilter = 'all'">{{ t('Show all conversations', 'Ver todas las conversaciones') }}</button>
+          <!-- The shared empty state, so an empty list never reads as one
+          that failed to load. "Nobody is waiting" is most days' end state,
+          not an error, and gets the way out as a real button. -->
+          <UiEmptyState
+            v-else-if="filteredConversations.length === 0 && visibleLeadConversations.length === 0"
+            :title="emptyList.title"
+            :description="emptyList.description"
+            class="!px-3 !py-6"
+            data-cy="inbox-empty"
+          >
+            <template #icon>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z" /></svg>
             </template>
-            <template v-else-if="search.trim() || tab !== 'all' || unreadOnly || expiringOnly || replyFilter !== 'all' || labelFilter">{{ t('Nothing matches these filters.', 'Nada coincide con estos filtros.') }}</template>
-            <template v-else>{{ t('No conversations yet.', 'Aún no hay conversaciones.') }}</template>
-          </p>
+            <template v-if="emptyList.showAll" #actions>
+              <UiBtn data-cy="inbox-show-all" @click="replyFilter = 'all'">{{ t('Show all conversations', 'Ver todas las conversaciones') }}</UiBtn>
+            </template>
+          </UiEmptyState>
           <!-- Lead conversations share the patient threads' list, in date
           order, not a section of their own: one person, one thread is the
           whole argument for merging these inboxes rather than shipping a
@@ -2236,6 +2257,7 @@ function avatarInitials(name: string) {
               :class="selectedKey === row.c.key && !selectionMode ? 'border-l-brand bg-brand-tint' : 'border-l-transparent'"
               data-test="lead-row"
               :data-key="row.c.key"
+              :aria-current="selectedKey === row.c.key && !selectionMode ? 'true' : undefined"
               @click="selectLeadConversation(row.c)"
               @mouseenter="prefetchLeadThread(row.c)"
               @mouseleave="cancelLeadPrefetch"
@@ -2246,7 +2268,7 @@ function avatarInitials(name: string) {
               <div class="min-w-0 flex-1">
                 <div class="flex items-baseline justify-between gap-2">
                   <span class="truncate text-[15px] text-ink-900" :class="row.c.unread ? 'font-bold' : 'font-medium'">{{ row.c.name }}</span>
-                  <span class="shrink-0 text-[12.5px] text-ink-muted">{{ leadRowTime(row.c.lastMessageAt) }}</span>
+                  <span class="shrink-0 text-[12.5px] text-ink-muted">{{ listTime(row.c.lastMessageAt) }}</span>
                 </div>
                 <p class="truncate text-[13.5px]" :class="row.c.unread ? 'text-ink-900' : 'text-ink-500'">
                   <!-- Said before the message, not after: the row is truncated,
@@ -2257,22 +2279,21 @@ function avatarInitials(name: string) {
                   <!-- Leftmost, because the row truncates from the right and
                   this is the one badge that says what kind of row it is. The
                   channel beside it is "how they wrote in"; this is "who". -->
-                  <span class="rounded-pill border border-info-border bg-info-bg px-2 py-px text-[11.5px] font-bold text-info-text" data-test="lead-badge">{{ t('Lead', 'Lead') }}</span>
-                  <span
+                  <UiPill tone="info" data-test="lead-badge">{{ t('Lead', 'Lead') }}</UiPill>
+                  <UiPill
                     v-if="leadWindowPill(row.c)"
-                    class="rounded-pill border px-2 py-px text-[11.5px] font-bold"
-                    :class="windowPillClass(leadWindowPill(row.c)!.urgent)"
+                    :tone="leadWindowPill(row.c)!.urgent ? 'danger' : 'warning'"
                     :title="t('They wrote last. A free reply is only possible within 24 hours of their message.', 'Escribió el último. Solo se puede responder libremente durante las 24 horas siguientes a su mensaje.')"
                     data-cy="inbox-row-window"
-                  >{{ t('Expires in', 'Caduca en') }} {{ leadWindowPill(row.c)!.left }}</span>
-                  <span v-if="leadSnoozeState(row.c) === 'follow_up'" class="rounded-pill border border-warning-border bg-warning-bg px-2 py-px text-[11.5px] font-bold text-warning-text">{{ t('Follow up', 'Seguimiento') }}</span>
-                  <span v-else-if="view === 'snoozed' && leadSnoozes[row.c.key]" class="rounded-pill border border-chip-border bg-chip-bg px-2 py-px text-[11.5px] text-ink-muted">{{ t('Back', 'Vuelve') }} {{ snoozeWhen(leadSnoozes[row.c.key]!.snoozed_until) }}</span>
-                  <span class="rounded-pill border border-chip-border bg-chip-bg px-2 py-px text-[11.5px] text-ink-muted">{{ CHANNEL_LABEL[row.c.channel] }}</span>
-                  <span v-if="row.c.hasDraft" class="rounded-pill border border-brand-tintBorder bg-brand-tint px-2 py-px text-[11.5px] font-bold text-brand-text" data-test="draft-ready-badge">{{ t('Draft ready', 'Borrador listo') }}</span>
-                  <span v-if="row.c.aiState === 'handling'" class="rounded-pill bg-brand px-2 py-px text-[11.5px] font-bold text-surface">{{ t('AI handling', 'IA gestionando') }}</span>
-                  <span v-else-if="row.c.aiState === 'paused'" class="rounded-pill border border-chip-border bg-chip-bg px-2 py-px text-[11.5px] text-ink-muted">{{ t('AI paused', 'IA en pausa') }}</span>
-                  <span v-else-if="row.c.aiState === 'needs_human'" class="rounded-pill border border-warning-border bg-warning-bg px-2 py-px text-[11.5px] font-medium text-warning-text">{{ t('Needs human', 'Requiere persona') }}</span>
-                  <span v-else-if="row.c.aiState === 'blocked'" class="rounded-pill border border-danger-border bg-danger-bg px-2 py-px text-[11.5px] font-medium text-danger-text">{{ t('Blocked', 'Bloqueado') }}</span>
+                  >{{ t('Expires in', 'Caduca en') }} {{ leadWindowPill(row.c)!.left }}</UiPill>
+                  <UiPill v-if="leadSnoozeState(row.c) === 'follow_up'" tone="warning">{{ t('Follow up', 'Seguimiento') }}</UiPill>
+                  <UiPill v-else-if="view === 'snoozed' && leadSnoozes[row.c.key]">{{ t('Back', 'Vuelve') }} {{ snoozeWhen(leadSnoozes[row.c.key]!.snoozed_until) }}</UiPill>
+                  <UiPill>{{ CHANNEL_LABEL[row.c.channel] }}</UiPill>
+                  <UiPill v-if="row.c.hasDraft" tone="brand" data-test="draft-ready-badge">{{ t('Draft ready', 'Borrador listo') }}</UiPill>
+                  <UiPill v-if="row.c.aiState === 'handling'" tone="brand" dot>{{ t('AI handling', 'IA gestionando') }}</UiPill>
+                  <UiPill v-else-if="row.c.aiState === 'paused'">{{ t('AI paused', 'IA en pausa') }}</UiPill>
+                  <UiPill v-else-if="row.c.aiState === 'needs_human'" tone="warning">{{ t('Needs human', 'Requiere persona') }}</UiPill>
+                  <UiPill v-else-if="row.c.aiState === 'blocked'" tone="danger">{{ t('Blocked', 'Bloqueado') }}</UiPill>
                   <span class="flex-1" />
                   <span
                     v-if="leadOwners[row.c.key]"
@@ -2298,7 +2319,7 @@ function avatarInitials(name: string) {
               <span
                 v-if="selectionMode"
                 class="mt-2.5 flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[6px] border"
-                :class="selectedKeys.has(row.c.key) ? 'border-brand bg-brand text-surface' : 'border-line-control bg-surface'"
+                :class="selectedKeys.has(row.c.key) ? 'border-brand bg-brand text-brand-on' : 'border-line-control bg-surface'"
                 aria-hidden="true"
               >
                 <svg v-if="selectedKeys.has(row.c.key)" viewBox="0 0 16 16" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -2322,27 +2343,26 @@ function avatarInitials(name: string) {
                   <p class="min-w-0 flex-1 truncate text-[13.5px]" :class="row.c.unread ? 'text-ink-900' : 'text-ink-500'">
                     {{ row.c.lastMessage!.direction === 'outbound' ? t('You: ', 'Tú: ') : '' }}{{ previewText(row.c.lastMessage!) }}
                   </p>
-                  <span v-if="row.c.unread" class="h-2.5 w-2.5 shrink-0 rounded-full bg-brand" :aria-label="t('Unread', 'No leída')" data-cy="inbox-row-unread" />
+                  <span v-if="row.c.unread" role="img" class="h-2.5 w-2.5 shrink-0 rounded-full bg-brand" :aria-label="t('Unread', 'No leída')" data-cy="inbox-row-unread" />
                 </div>
                 <div v-if="row.c.labelIds?.length || row.c.assignedTo || row.c.followUp || row.c.snoozedUntil || patientWindowPill(row.c) || (row.c.patientId && (patientAiStates[row.c.patientId] || patientDrafts.has(row.c.patientId)))" class="mt-1 flex flex-wrap items-center gap-1">
                   <!-- First: the row truncates from the right, and this is the
                   one with a deadline on it. -->
-                  <span
+                  <UiPill
                     v-if="patientWindowPill(row.c)"
-                    class="rounded-pill border px-2 py-px text-[11.5px] font-bold"
-                    :class="windowPillClass(patientWindowPill(row.c)!.urgent)"
+                    :tone="patientWindowPill(row.c)!.urgent ? 'danger' : 'warning'"
                     :title="t('They wrote last. A free reply is only possible within 24 hours of their message.', 'Escribió el último. Solo se puede responder libremente durante las 24 horas siguientes a su mensaje.')"
                     data-cy="inbox-row-window"
-                  >{{ t('Expires in', 'Caduca en') }} {{ patientWindowPill(row.c)!.left }}</span>
-                  <span v-if="row.c.followUp" class="rounded-pill border border-warning-border bg-warning-bg px-2 py-px text-[11.5px] font-bold text-warning-text" data-cy="inbox-row-follow-up">{{ t('Follow up', 'Seguimiento') }}</span>
-                  <span v-else-if="row.c.snoozedUntil" class="rounded-pill border border-chip-border bg-chip-bg px-2 py-px text-[11.5px] text-ink-muted" data-cy="inbox-row-snoozed">{{ t('Back', 'Vuelve') }} {{ snoozeWhen(row.c.snoozedUntil) }}</span>
-                  <span v-if="row.c.patientId && patientDrafts.has(row.c.patientId)" class="rounded-pill border border-brand-tintBorder bg-brand-tint px-2 py-px text-[11.5px] font-bold text-brand-text" data-test="draft-ready-badge">{{ t('Draft ready', 'Borrador listo') }}</span>
-                  <span v-if="row.c.patientId && patientAiStates[row.c.patientId] === 'handling'" class="rounded-pill bg-brand px-2 py-px text-[11.5px] font-bold text-surface" data-cy="inbox-row-ai-handling">{{ t('AI handling', 'IA gestionando') }}</span>
-                  <span v-else-if="row.c.patientId && patientAiStates[row.c.patientId] === 'needs_human'" class="rounded-pill border border-warning-border bg-warning-bg px-2 py-px text-[11.5px] font-medium text-warning-text" data-cy="inbox-row-needs-human">{{ t('Needs human', 'Requiere persona') }}</span>
+                  >{{ t('Expires in', 'Caduca en') }} {{ patientWindowPill(row.c)!.left }}</UiPill>
+                  <UiPill v-if="row.c.followUp" tone="warning" data-cy="inbox-row-follow-up">{{ t('Follow up', 'Seguimiento') }}</UiPill>
+                  <UiPill v-else-if="row.c.snoozedUntil" data-cy="inbox-row-snoozed">{{ t('Back', 'Vuelve') }} {{ snoozeWhen(row.c.snoozedUntil) }}</UiPill>
+                  <UiPill v-if="row.c.patientId && patientDrafts.has(row.c.patientId)" tone="brand" data-test="draft-ready-badge">{{ t('Draft ready', 'Borrador listo') }}</UiPill>
+                  <UiPill v-if="row.c.patientId && patientAiStates[row.c.patientId] === 'handling'" tone="brand" dot data-cy="inbox-row-ai-handling">{{ t('AI handling', 'IA gestionando') }}</UiPill>
+                  <UiPill v-else-if="row.c.patientId && patientAiStates[row.c.patientId] === 'needs_human'" tone="warning" data-cy="inbox-row-needs-human">{{ t('Needs human', 'Requiere persona') }}</UiPill>
                   <span
                     v-for="lid in row.c.labelIds"
                     :key="lid"
-                    class="rounded-pill px-2 py-px text-[11.5px] font-semibold text-surface"
+                    class="rounded-pill px-2 py-0.5 text-[11px] font-semibold text-surface"
                     :style="{ backgroundColor: labels.find((l) => l.id === lid)?.color }"
                   >
                     {{ labels.find((l) => l.id === lid)?.name }}
@@ -2415,7 +2435,7 @@ function avatarInitials(name: string) {
               v-slot="{ converting }"
               :lead-id="leadThread.id"
               :lead-name="leadThread.name"
-              class="flex h-9 touch:h-11 shrink-0 items-center rounded-ctl bg-brand px-3 text-[14px] font-bold text-surface hover:bg-brand-hover disabled:opacity-60"
+              class="flex h-9 touch:h-11 shrink-0 items-center rounded-ctl bg-brand px-3.5 text-[13px] font-semibold text-brand-on hover:bg-brand-hover disabled:opacity-60"
               data-test="lead-thread-convert"
             >
               {{ converting ? t('Converting…', 'Convirtiendo…') : t('Convert to patient', 'Convertir en paciente') }}
@@ -2488,10 +2508,11 @@ function avatarInitials(name: string) {
           <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[13px] font-bold" :class="selected.patientId ? 'bg-brand-tint text-brand-text' : 'bg-chip-bg text-ink-700'">
             {{ avatarInitials(selected.name) }}
           </span>
-          <!-- min-w on a phone so the controls after it wrap onto a second
-          row; flex-1 alone shrank the name to its first letter. -->
-          <div class="min-w-[11rem] flex-1 md:min-w-0">
-            <p class="truncate text-[16px] font-bold text-ink-900" data-cy="thread-name">{{ selected.name }}</p>
+          <!-- A floor under the name at every width, so the controls after it
+          wrap onto a second row rather than squeezing it: beside the patient
+          panel at 1440 it read "Hugo Castillo ..." with the number cut off. -->
+          <div class="min-w-[12rem] flex-1">
+            <p class="truncate text-[16px] font-semibold tracking-tightTitle text-ink-900" data-cy="thread-name">{{ selected.name }}</p>
             <p class="flex items-center gap-1.5 truncate text-[13px] text-ink-muted">
               <!-- Named from the channel itself: anything that was not
               WhatsApp used to be labelled "In-app", Instagram included. -->
@@ -2508,6 +2529,9 @@ function avatarInitials(name: string) {
               </span>
             </p>
           </div>
+          <!-- One group, so when it wraps it moves as a row, aligned right,
+          instead of breaking between two controls. -->
+          <div class="ml-auto flex flex-wrap items-center justify-end gap-2">
           <button
             v-if="selected.patientId || selected.phoneNumber"
             type="button"
@@ -2599,6 +2623,7 @@ function avatarInitials(name: string) {
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h11M4 12h8M4 18h11" /><circle cx="19" cy="7" r="3" fill="currentColor" /></svg>
           </button>
+          </div>
         </div>
 
         <!-- Who is answering, as a lead's thread says it: the receptionist
@@ -2617,9 +2642,9 @@ function avatarInitials(name: string) {
           <!-- Nothing of this conversation's to show yet: a placeholder, never
                the previous conversation's messages. -->
           <div v-if="!threadReady && thread.length === 0 && !threadError" data-cy="thread-loading" class="flex flex-col gap-3" aria-busy="true">
-            <div class="h-10 w-2/5 animate-pulse self-start rounded-[12px] bg-surface-subtle" />
-            <div class="h-14 w-3/5 animate-pulse self-start rounded-[12px] bg-surface-subtle" />
-            <div class="h-10 w-1/3 animate-pulse self-end rounded-[12px] bg-surface-subtle" />
+            <UiSkeleton class="h-10 w-2/5 self-start rounded-card" />
+            <UiSkeleton class="h-14 w-3/5 self-start rounded-card" />
+            <UiSkeleton class="h-10 w-1/3 self-end rounded-card" />
           </div>
           <div v-else-if="threadError && !threadReady" role="alert" class="flex flex-col items-center gap-2 py-10 text-center text-[13.5px] text-ink-muted">
             {{ t('This conversation could not be loaded.', 'No se ha podido cargar la conversación.') }}
@@ -2667,7 +2692,7 @@ function avatarInitials(name: string) {
                   :href="mediaUrls[m.media_storage_path]"
                   target="_blank"
                   class="flex items-center gap-2 text-[13px] underline"
-                  :class="m.direction === 'outbound' ? 'text-white' : 'text-brand-text'"
+                  :class="m.direction === 'outbound' ? 'text-brand-on' : 'text-brand-text'"
                 >
                   <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" class="shrink-0" aria-hidden="true">
                     <path d="M4 1.5h5.5L12.5 4.5V14.5H4z" stroke-linejoin="round" />
@@ -2691,14 +2716,14 @@ function avatarInitials(name: string) {
                   {{ bubbleText(m) }}
                   <span
                     class="ml-1.5 inline-flex translate-y-[2px] items-center gap-1 whitespace-nowrap text-[11px]"
-                    :class="m.direction === 'outbound' ? 'text-white/70' : 'text-ink-faint'"
+                    :class="m.direction === 'outbound' ? 'text-brand-on/75' : 'text-ink-faint'"
                   >
                     <span v-if="m.status === 'failed'" class="underline">{{ t('Tap to retry', 'Toca para reintentar') }}</span>
                     <span v-else>{{ shortTime(m.created_at) }}</span>
                     <InboxMessageStatus v-if="m.direction === 'outbound'" :status="m.status" />
                   </span>
                 </p>
-                <p v-else class="mt-1 flex items-center justify-end gap-1.5 text-right text-[11px]" :class="m.direction === 'outbound' ? 'text-white/70' : 'text-ink-faint'">
+                <p v-else class="mt-1 flex items-center justify-end gap-1.5 text-right text-[11px]" :class="m.direction === 'outbound' ? 'text-brand-on/75' : 'text-ink-faint'">
                   <span v-if="m.status === 'failed'" class="underline">{{ t('Tap to retry', 'Toca para reintentar') }}</span>
                   <span v-else>{{ shortTime(m.created_at) }}</span>
                   <InboxMessageStatus v-if="m.direction === 'outbound'" :status="m.status" />
@@ -2714,6 +2739,7 @@ function avatarInitials(name: string) {
             v-if="showJumpToLatest"
             type="button"
             class="absolute bottom-4 right-4 flex h-9 w-9 items-center justify-center rounded-full border border-line bg-surface text-ink-600 shadow-popover hover:bg-surface-subtle"
+            :aria-label="t('Jump to latest', 'Ir al último')"
             :title="t('Jump to latest', 'Ir al último')"
             @click="jumpToLatest"
           >

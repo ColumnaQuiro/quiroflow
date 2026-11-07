@@ -73,23 +73,17 @@ function pick(type: string) {
   <div class="flex h-full min-h-0 flex-col" data-test="inspector">
     <div class="flex items-start justify-between gap-3 border-b border-line-divider px-6 py-4">
       <div class="flex min-w-0 flex-col gap-0.5">
-        <span class="truncate text-[11px] font-bold uppercase tracking-[.06em] text-ink-faint">{{ eyebrow }}</span>
+        <span class="truncate text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ eyebrow }}</span>
         <strong class="truncate text-[16px] font-semibold tracking-[-.012em] text-ink-900" data-test="inspector-title">{{ title }}</strong>
       </div>
-      <button
-        v-if="sheet"
-        type="button"
-        class="h-9 shrink-0 rounded-ctl bg-brand px-4 text-[13px] font-semibold text-surface hover:bg-brand-hover touch:h-11"
-        data-test="inspector-done"
-        @click="emit('close')"
-      >{{ t('Done', 'Hecho') }}</button>
+      <UiBtn v-if="sheet" variant="primary" class="shrink-0" data-test="inspector-done" @click="emit('close')">{{ t('Done', 'Hecho') }}</UiBtn>
       <button
         v-else
         type="button"
         class="flex h-8 w-8 shrink-0 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle touch:h-11 touch:w-11"
         :aria-label="t('Close', 'Cerrar')"
         @click="emit('close')"
-      >✕</button>
+      ><UiCloseIcon /></button>
     </div>
 
     <div class="min-h-0 flex-1 overflow-y-auto px-6 py-5">

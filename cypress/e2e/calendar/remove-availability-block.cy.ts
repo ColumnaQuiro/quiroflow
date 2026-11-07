@@ -33,7 +33,7 @@ describe('Removing an availability block', () => {
 
       cy.contains('button', 'Block time').click()
       cy.get('.fixed.inset-0.z-50').within(() => {
-        cy.contains('h2', 'Block Time').should('be.visible')
+        cy.contains('h2', 'Block time').should('be.visible')
         // Practitioner and Room keep their defaults (all practitioners,
         // whole clinic), which is what makes the block render in every day
         // column rather than only under one room tab.
@@ -55,7 +55,7 @@ describe('Removing an availability block', () => {
       // New Appointment panel -- so this asserted on the wrong heading and
       // the block stayed put.
       cy.contains('Blocked').first().click()
-      cy.contains('h2', 'Edit Block').should('be.visible')
+      cy.contains('h2', 'Edit block').should('be.visible')
 
       // Cypress auto-accepts the window.confirm in remove().
       cy.contains('button', 'Remove block').click()

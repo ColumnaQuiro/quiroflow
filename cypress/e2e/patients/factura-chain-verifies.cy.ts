@@ -18,7 +18,7 @@ describe('Verifying the registro de facturación', () => {
   // default 4s is enough on an idle machine and not enough on a busy one --
   // which is a flake in the test, not a slow page.
   const sellBono = (name: string, label: string) => {
-    cy.contains('select', 'Sell a package', { timeout: 30000 }).should('exist').select(label)
+    cy.contains('select', 'Sell a bono', { timeout: 30000 }).should('exist').select(label)
     cy.contains('button', /^Sell$/).click()
     cy.contains('button', 'Selling…', { timeout: 30000 }).should('not.exist')
     return cy.wrap(name, { log: false })

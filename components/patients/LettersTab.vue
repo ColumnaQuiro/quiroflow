@@ -117,7 +117,7 @@ async function save() {
       })
   saving.value = false
   if (error) {
-    showToast(error.message, 'error')
+    showToast(`${t('The letter was not saved.', 'No se ha guardado la carta.')} (${error.message})`, 'error')
     return
   }
   showToast(t('Letter saved', 'Carta guardada'))
@@ -179,7 +179,7 @@ async function confirmDelete() {
   if (!letter) return
   const { error } = await supabase.from('patient_letters').delete().eq('id', letter.id)
   if (error) {
-    showToast(error.message, 'error')
+    showToast(`${t('The letter was not deleted.', 'No se ha eliminado la carta.')} (${error.message})`, 'error')
     return
   }
   deleting.value = null
@@ -225,7 +225,7 @@ function metaFor(letter: Letter) {
         </div>
       </div>
       <div v-else-if="letters.length === 0" class="p-8 text-center text-[13px] text-ink-faint">
-        {{ t('No letters yet — e.g. a report for their GP or a certificate of treatment.', 'Aún no hay cartas — p. ej. un informe para su médico o un certificado de tratamiento.') }}
+        {{ t('No letters yet. A letter is, for example, a report for their GP or a certificate of treatment.', 'Aún no hay cartas. Una carta es, por ejemplo, un informe para su médico o un certificado de tratamiento.') }}
       </div>
       <ul v-else class="divide-y divide-line-row">
         <li v-for="letter in letters" :key="letter.id" data-cy="letter-row" class="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 sm:flex-nowrap">

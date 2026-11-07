@@ -58,7 +58,7 @@ const failedPayments = computed(() => payments.value.filter((p) => p.status === 
   </div>
   <ul v-else class="divide-y divide-line-row2 text-[13px]">
     <li class="flex items-center justify-between py-1.5">
-      <span class="text-ink-700">{{ t('Active memberships', 'Suscripciones activas') }}</span>
+      <span class="text-ink-700">{{ t('Active memberships', 'Membresías activas') }}</span>
       <span class="font-mono text-[12.5px] text-ink-900">{{ active.length }}</span>
     </li>
     <li class="flex items-center justify-between py-1.5">
@@ -66,7 +66,9 @@ const failedPayments = computed(() => payments.value.filter((p) => p.status === 
       <span class="font-mono text-[12.5px] text-ink-900">{{ formatEur(monthlyRevenue) }}</span>
     </li>
     <li class="flex items-center justify-between py-1.5">
-      <span class="text-ink-700">{{ t('Failed payments', 'Pagos fallidos') }}</span>
+      <!-- Every failed charge on record, not this month's: nothing filters
+           failedPayments by period. -->
+      <span class="text-ink-700">{{ t('Failed payments (all time)', 'Pagos fallidos (histórico)') }}</span>
       <span class="font-mono text-[12.5px]" :class="failedPayments.length > 0 ? 'text-danger-text' : 'text-ink-900'">{{ failedPayments.length }}</span>
     </li>
   </ul>

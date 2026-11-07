@@ -46,8 +46,9 @@ function eur(cents: number) {
       <UiSkeleton class="h-28 w-full rounded-card" />
       <UiSkeleton class="h-24 w-full rounded-card" />
     </div>
-    <p v-else-if="loadError" class="text-sm text-danger-text">{{ loadError }}</p>
-    <p v-else-if="!patient" class="text-sm text-ink-faint">{{ t('No patient record found.', 'No se encontró tu ficha de paciente.') }}</p>
+    <!-- loadError is the database's own message (useFamily): not for a patient to read. -->
+    <p v-else-if="loadError" role="alert" class="text-sm text-danger-text">{{ t("Couldn't load your account. Check your connection and reload the page.", 'No se ha podido cargar tu cuenta. Revisa tu conexión y vuelve a cargar la página.') }}</p>
+    <p v-else-if="!patient" class="text-sm text-ink-faint">{{ t("We couldn't find your patient record. Contact the clinic.", 'No encontramos tu ficha de paciente. Contacta con la clínica.') }}</p>
 
     <template v-else>
       <PatientPageHead :title="actingForOther ? t(`${patient.first_name}'s account`, `Cuenta de ${patient.first_name}`) : t(`Hi, ${patient.first_name}`, `Hola, ${patient.first_name}`)" />
@@ -106,7 +107,7 @@ function eur(cents: number) {
         </NuxtLink>
         <NuxtLink to="/portal/billing" class="rounded-card border border-line bg-surface p-4 shadow-card hover:border-line-controlHover">
           <p class="text-[11.5px] font-[640] uppercase tracking-[.05em] text-ink-faint">
-            {{ amountDueCents > 0 ? t('You owe', 'Pendiente') : t('Your credit', 'Tu saldo') }}
+            {{ amountDueCents > 0 ? t('You owe', 'Pendiente de pago') : t('Your credit', 'Saldo a favor') }}
           </p>
           <p v-if="moneyLoading" class="mt-2"><UiSkeleton class="h-7 w-20 rounded-ctlSm" /></p>
           <p v-else class="mt-1 text-[24px] font-[640] tracking-tightTitle" :class="amountDueCents > 0 ? 'text-danger-text' : 'text-ink-900'">

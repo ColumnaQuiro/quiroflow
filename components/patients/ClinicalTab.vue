@@ -137,7 +137,7 @@ function visitType(note: NoteRow) {
 const SECTION_LABELS = computed<Record<string, string>>(() => ({
   Subjective: t('Subjective', 'Subjetivo'),
   Objective: t('Objective', 'Objetivo'),
-  Action: t('Action', 'Actuación'),
+  Action: t('Action', 'Acción'),
   Plan: t('Plan', 'Plan'),
 }))
 
@@ -261,7 +261,7 @@ function closeNotes() {
         </div>
 
         <p v-else-if="notes.length === 0" class="px-4 py-8 text-center text-[13px] text-ink-faint">
-          {{ t('No visit notes yet — these are written against an appointment.', 'Aún no hay notas — se escriben sobre una cita.') }}
+          {{ t('No visit notes yet. Each note belongs to a visit and is written from its appointment.', 'Aún no hay notas de visita. Cada nota pertenece a una cita y se escribe desde ella.') }}
         </p>
 
         <ul v-else class="divide-y divide-line-row">

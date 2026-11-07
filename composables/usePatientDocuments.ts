@@ -58,8 +58,13 @@ export function usePatientDocuments(patientId: () => string) {
         return url
       })
     } catch (err: unknown) {
-      const message = (err as { data?: { statusMessage?: string } })?.data?.statusMessage
-      showToast(message ?? t('Could not open that file.', 'No se pudo abrir el archivo.'), 'error')
+      // The route's statusMessage is English and meant for logs ("File not found").
+      showToast(
+        (err as { statusCode?: number })?.statusCode === 404
+          ? t('This document is no longer available. Ask the clinic.', 'Este documento ya no está disponible. Pregunta en la clínica.')
+          : t("Couldn't open the document. Try again.", 'No se ha podido abrir el documento. Inténtalo de nuevo.'),
+        'error',
+      )
     } finally {
       busyId.value = null
     }

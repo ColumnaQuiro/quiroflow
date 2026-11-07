@@ -112,7 +112,7 @@ describe('The patient Overview', () => {
         cy.visit(`/patients/${patient.id}`)
         cy.contains('Next appointment').should('be.visible')
 
-        for (const gone of ['Visits, 12 mo', 'Attendance', 'Show rate', 'Lifetime value']) {
+        for (const gone of ['Visits, last 12 months', 'Attendance', 'Show rate', 'Lifetime value']) {
           cy.contains(gone).should('not.exist')
         }
       })

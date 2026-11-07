@@ -25,11 +25,12 @@ describe('CSV patient import (PracticeHub)', () => {
       cy.contains('td', 'TestTwo').scrollIntoView().should('be.visible')
 
       cy.contains('button', /Import \d+, update \d+/).click()
-      // Exact count, not just /Imported \d+ patients\./ -- that regex is
-      // satisfied just as well by "Imported 0 patients." if every row
+      // Exact count, not just /\d+ new patients imported/ -- that regex is
+      // satisfied just as well by "0 new patients imported" if every row
       // silently failed to insert, which would otherwise pass this
       // assertion and only surface as a confusing failure two steps later.
-      cy.contains('Imported 2 patients.', { timeout: 15000 }).scrollIntoView().should('be.visible')
+      // \b keeps "12 new patients" from passing for 2.
+      cy.contains(/\b2 new patients imported/, { timeout: 15000 }).scrollIntoView().should('be.visible')
 
       cy.visit('/patients')
       cy.contains('Import TestOne').should('be.visible')

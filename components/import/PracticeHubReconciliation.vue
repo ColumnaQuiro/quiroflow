@@ -249,7 +249,7 @@ const allClear = computed(() => rows.value.length > 0 && rows.value.every((r) =>
 const introLead = computed(() => t('Compares what PracticeHub holds right now against what was imported here, and names anything that does not line up.', 'Compara lo que PracticeHub tiene ahora mismo con lo que se importó aquí, y señala todo lo que no cuadra.'))
 const introNotes = computed(() => [
   { title: t('Read-only.', 'Solo lectura.'), body: t('It writes nothing and changes nothing.', 'No escribe ni cambia nada.') },
-  { title: t('Run it after every import.', 'Ejecútalo después de cada importación.'), body: t('It is the only place that tells you whether the copy is actually complete, in both directions -- missing here, or here but gone from PracticeHub.', 'Es el único sitio que dice si la copia está realmente completa, en los dos sentidos: lo que falta aquí, o lo que está aquí pero ya no en PracticeHub.') },
+  { title: t('Run it after every import.', 'Ejecútalo después de cada importación.'), body: t('It is the only place that tells you whether the copy is actually complete, in both directions: missing here, or here but gone from PracticeHub.', 'Es el único sitio que dice si la copia está realmente completa, en los dos sentidos: lo que falta aquí, o lo que está aquí pero ya no en PracticeHub.') },
 ])
 </script>
 
@@ -268,8 +268,9 @@ const introNotes = computed(() => [
 
     <div v-else-if="stage === 'error'" class="mt-4 space-y-4">
       <div class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
-        <p class="font-medium">{{ t('Reconciliation failed:', 'Falló la comprobación:') }}</p>
-        <p class="mt-1">{{ runError }}</p>
+        <p class="font-medium">{{ t('The check could not finish.', 'La comprobación no pudo terminar.') }}</p>
+        <p class="mt-1">{{ t('It writes nothing, so it is safe to retry.', 'No escribe nada, así que se puede reintentar sin riesgo.') }}</p>
+        <p class="mt-1 text-[12.5px] opacity-80">{{ runError }}</p>
       </div>
       <button type="button" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover" @click="retryRun">
         {{ t('Retry', 'Reintentar') }}
@@ -281,8 +282,8 @@ const introNotes = computed(() => [
         <p class="font-medium">
           {{
             t(
-              `${misreferenced.length} patient(s) are stored under the wrong reference.`,
-              `${misreferenced.length} paciente(s) están guardados con la referencia equivocada.`,
+              `${misreferenced.length} ${misreferenced.length === 1 ? 'patient is' : 'patients are'} stored under the wrong reference.`,
+              `${misreferenced.length} ${misreferenced.length === 1 ? 'paciente está guardado' : 'pacientes están guardados'} con la referencia equivocada.`,
             )
           }}
         </p>

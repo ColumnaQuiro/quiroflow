@@ -71,7 +71,7 @@ async function run() {
       return { planId: p.id, patientNumber: number, ourPatient: number ? ourByNumber.get(number) ?? null : null, phName: p.name, outcome: carePlanOutcome(p), status: p.status }
     })
   } catch (e: any) {
-    error.value = e?.data?.statusMessage ?? e?.message ?? t('Could not read PracticeHub 2.0.', 'No se pudo leer PracticeHub 2.0.')
+    error.value = importErrorText(e, t, { en: 'Could not read PracticeHub 2.0.', es: 'No se pudo leer PracticeHub 2.0.' })
   } finally {
     running.value = false
     progress.value = ''
@@ -123,7 +123,7 @@ function becomes(o: CarePlanOutcome): string {
 
     <template v-if="rows">
       <p v-if="rows.length === 0" class="text-sm text-ink-muted" data-cy="ph20-none">
-        {{ t('No 2.0 care plans yet. A clinic still on Classic has its bonos as packages: use the Packages / Bonos step.', 'Todavía no hay planes 2.0. Una clínica que sigue en Classic tiene sus bonos como paquetes: usa el paso Bonos.') }}
+        {{ t('No 2.0 care plans yet. A clinic still on Classic has its bonos as packages: use the Packages / bonos step.', 'Todavía no hay planes 2.0. Una clínica que sigue en Classic tiene sus bonos como paquetes: usa el paso Bonos.') }}
       </p>
       <template v-else>
         <p class="text-sm text-ink-700" data-cy="ph20-summary">

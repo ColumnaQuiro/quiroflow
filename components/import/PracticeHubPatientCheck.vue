@@ -219,7 +219,7 @@ function select(p: PHPatient) {
 // The headline: PracticeHub and QuiroFlow disagreeing on how many bonos this
 // patient has is the shape every problem in this migration took.
 const bonoCountsDiffer = computed(() => ours.value !== null && phImportable.value !== ours.value.bonos.length)
-const introLead = computed(() => t('Opens one patient side by side: what PracticeHub holds for them against what QuiroFlow holds -- bonos, credit, visits and the ledger totals.', 'Abre un paciente en paralelo: lo que tiene PracticeHub frente a lo que tiene QuiroFlow: bonos, saldo, visitas y totales del libro mayor.'))
+const introLead = computed(() => t('Opens one patient side by side: what PracticeHub holds for them against what QuiroFlow holds, for bonos, credit, visits and the ledger totals.', 'Abre un paciente en paralelo: lo que tiene PracticeHub frente a lo que tiene QuiroFlow, en bonos, saldo, visitas y totales del libro mayor.'))
 const introNotes = computed(() => [
   { title: t('Read-only.', 'Solo lectura.'), body: t('Nothing here changes any record.', 'Aquí no se modifica ningún registro.') },
   { title: t('Use it whenever a number looks wrong.', 'Úsalo cuando un número parezca incorrecto.'), body: t('It answers in one click what otherwise means logging into PracticeHub and comparing by eye.', 'Responde en un clic lo que si no obliga a entrar en PracticeHub y comparar a ojo.') },
@@ -244,8 +244,8 @@ const fieldId = useId()
     </div>
 
     <div v-else-if="stage === 'error'" class="mt-4 rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
-      <p class="font-medium">{{ t('Could not load from PracticeHub:', 'No se pudo cargar desde PracticeHub:') }}</p>
-      <p class="mt-1">{{ runError }}</p>
+      <p class="font-medium">{{ t('Could not read PracticeHub. Nothing was changed.', 'No se pudo leer PracticeHub. No se cambió nada.') }}</p>
+      <p class="mt-1 text-[12.5px] opacity-80">{{ runError }}</p>
     </div>
 
     <div v-else class="mt-4 space-y-4">
@@ -274,8 +274,8 @@ const fieldId = useId()
         >
           {{
             t(
-              `PracticeHub has ${phImportable} bono(s) to import for this patient, QuiroFlow has ${ours?.bonos.length}.`,
-              `PracticeHub tiene ${phImportable} bono(s) que importar para este paciente, QuiroFlow tiene ${ours?.bonos.length}.`,
+              `PracticeHub has ${phImportable} ${phImportable === 1 ? 'bono' : 'bonos'} to import for this patient; QuiroFlow has ${ours?.bonos.length}.`,
+              `PracticeHub tiene ${phImportable} ${phImportable === 1 ? 'bono' : 'bonos'} que importar para este paciente; QuiroFlow tiene ${ours?.bonos.length}.`,
             )
           }}
         </div>
@@ -318,8 +318,7 @@ const fieldId = useId()
             </table>
             <p v-else class="px-3 py-4 text-sm text-ink-muted2">{{ t('No bonos in PracticeHub.', 'Sin bonos en PracticeHub.') }}</p>
             <p class="border-t border-line-divider px-3 py-2 text-xs text-ink-faint">
-              {{ phLedger.invoices }} {{ t('invoices', 'facturas') }} {{ eur(phLedger.invoiceTotal) }} &middot;
-              {{ phLedger.payments }} {{ t('payments', 'pagos') }} {{ eur(phLedger.paymentTotal) }}
+              {{ t(`${phLedger.invoices} invoices ${eur(phLedger.invoiceTotal)} · ${phLedger.payments} payments ${eur(phLedger.paymentTotal)}`, `${phLedger.invoices} facturas ${eur(phLedger.invoiceTotal)} · ${phLedger.payments} pagos ${eur(phLedger.paymentTotal)}`) }}
             </p>
           </div>
 
@@ -354,8 +353,7 @@ const fieldId = useId()
               </table>
               <p v-else class="px-3 py-4 text-sm text-ink-muted2">{{ t('No bonos here.', 'Sin bonos aquí.') }}</p>
               <p class="border-t border-line-divider px-3 py-2 text-xs text-ink-faint">
-                {{ t('Credit on account', 'Saldo a favor') }} {{ eurCents(ours.creditCents) }} &middot;
-                {{ ours.visitCount }} {{ t('bono visit(s) recorded', 'visita(s) de bono registradas') }}
+                {{ t(`Credit on account ${eurCents(ours.creditCents)} · ${ours.visitCount} bono ${ours.visitCount === 1 ? 'visit' : 'visits'} recorded`, `Saldo a favor ${eurCents(ours.creditCents)} · ${ours.visitCount} ${ours.visitCount === 1 ? 'visita de bono registrada' : 'visitas de bono registradas'}`) }}
               </p>
             </template>
           </div>

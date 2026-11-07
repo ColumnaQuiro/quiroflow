@@ -61,7 +61,31 @@ interface MappedUpdate {
 }
 
 function formatValue(value: unknown): string {
-  return value === null || value === undefined || value === '' ? '(blank)' : String(value)
+  return value === null || value === undefined || value === '' ? t('(blank)', '(vacío)') : String(value)
+}
+
+// The preview of changes names each field and value the way the calendar
+// does, not by its database column and id ("appointment_type_id", a uuid).
+function fieldLabel(field: string): string {
+  switch (field) {
+    case 'starts_at': return t('Start', 'Inicio')
+    case 'ends_at': return t('End', 'Fin')
+    case 'status': return t('Status', 'Estado')
+    case 'practitioner_id': return t('Team member', 'Miembro del equipo')
+    case 'practitioner_name': return t('Practitioner', 'Profesional')
+    case 'appointment_type_id': return t('Appointment type', 'Tipo de cita')
+    case 'external_reference': return t('PracticeHub reference', 'Referencia de PracticeHub')
+    default: return field
+  }
+}
+
+function shownValue(field: string, value: unknown): string {
+  if (value === null || value === undefined || value === '') return formatValue(value)
+  if (DATE_FIELDS.has(field)) return new Date(value as string).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })
+  if (field === 'status') return statusLabel(String(value))
+  if (field === 'practitioner_id') return teamMembers.value.find((m) => m.id === value)?.full_name ?? formatValue(value)
+  if (field === 'appointment_type_id') return appointmentTypes.value.find((ty) => ty.id === value)?.name ?? formatValue(value)
+  return formatValue(value)
 }
 
 const DATE_FIELDS = new Set(['starts_at', 'ends_at'])
@@ -86,7 +110,7 @@ function buildAppointmentUpdate(existing: ExistingAppointment, incoming: Appoint
     const existingValue = existing[field]
     if (valuesDiffer(field, value, existingValue)) {
       ;(updates as Record<string, unknown>)[field] = value
-      diff.push({ field, from: formatValue(existingValue), to: formatValue(value) })
+      diff.push({ field, from: shownValue(field, existingValue), to: shownValue(field, value) })
     }
   }
   return { updates, diff }
@@ -151,7 +175,7 @@ async function loadFromPracticeHub() {
     fileName.value = t('PracticeHub, read just now', 'PracticeHub, leído ahora mismo')
     useRows(practiceHubAppointmentRows(appointments, { patients, practitioners, appointmentTypes: types }))
   } catch (e: any) {
-    fileError.value = e?.data?.statusMessage ?? e?.message ?? t('Could not read PracticeHub.', 'No se pudo leer PracticeHub.')
+    fileError.value = importErrorText(e, t, { en: 'Could not read PracticeHub. Nothing was written; try again.', es: 'No se pudo leer PracticeHub. No se escribió nada; vuelve a intentarlo.' })
   } finally {
     loadingFromApi.value = false
     apiProgress.value = ''
@@ -485,7 +509,7 @@ async function runWithConcurrency<T>(items: T[], limit: number, fn: (item: T) =>
 async function insertVisitNote(appointmentId: string, note: string | null, sourceRow: number) {
   if (!note) return
   const { error } = await supabase.from('visit_notes').insert({ account_id: store.accountId!, appointment_id: appointmentId, body: note })
-  if (error) importErrors.value.push(`Note for row ${sourceRow}: ${error.message}`)
+  if (error) importErrors.value.push(t(`The visit note for row ${sourceRow} was not saved: ${error.message}`, `No se guardó la nota de visita de la fila ${sourceRow}: ${error.message}`))
 }
 
 async function runImport() {
@@ -508,8 +532,8 @@ async function runImport() {
       if (error) {
         importErrors.value.push(
           t(
-            `Rows ${chunk[0].sourceRow}-${chunk[chunk.length - 1].sourceRow}: ${error.message}`,
-            `Filas ${chunk[0].sourceRow}-${chunk[chunk.length - 1].sourceRow}: ${error.message}`,
+            `Rows ${chunk[0].sourceRow}-${chunk[chunk.length - 1].sourceRow} were not imported: ${error.message}`,
+            `Las filas ${chunk[0].sourceRow}-${chunk[chunk.length - 1].sourceRow} no se importaron: ${error.message}`,
           ),
         )
         continue
@@ -526,8 +550,8 @@ async function runImport() {
         if (noteError)
           importErrors.value.push(
             t(
-              `Notes for rows near ${chunk[0].sourceRow}: ${noteError.message}`,
-              `Notas de filas cerca de ${chunk[0].sourceRow}: ${noteError.message}`,
+              `Visit notes for rows ${chunk[0].sourceRow}-${chunk[chunk.length - 1].sourceRow} were not saved: ${noteError.message}`,
+              `No se guardaron las notas de visita de las filas ${chunk[0].sourceRow}-${chunk[chunk.length - 1].sourceRow}: ${noteError.message}`,
             ),
           )
       }
@@ -540,7 +564,7 @@ async function runImport() {
       await runWithConcurrency(chunk, CONCURRENCY, async (row) => {
         const { error } = await supabase.from('appointments').update(row.updates).eq('id', row.id)
         if (error) {
-          importErrors.value.push(`Row ${row.sourceRow}: ${error.message}`)
+          importErrors.value.push(t(`Row ${row.sourceRow} was not updated: ${error.message}`, `La fila ${row.sourceRow} no se actualizó: ${error.message}`))
           return
         }
         updatedCount.value++
@@ -552,8 +576,8 @@ async function runImport() {
     stage.value = 'done'
     showToast(
       t(
-        `Imported ${importedCount.value} appointments. Updated ${updatedCount.value} existing appointments.`,
-        `Se importaron ${importedCount.value} citas. Se actualizaron ${updatedCount.value} citas existentes.`,
+        `${importedCount.value} new appointments imported, ${updatedCount.value} existing appointments updated.`,
+        `${importedCount.value} citas nuevas importadas, ${updatedCount.value} citas existentes actualizadas.`,
       ),
       importErrors.value.length > 0 ? 'error' : 'success',
     )
@@ -593,7 +617,7 @@ function reset() {
 const introLead = computed(() => t('Brings past and upcoming visits across from PracticeHub, matched to the patient each one belongs to.', 'Trae las visitas pasadas y futuras desde PracticeHub, emparejadas con el paciente al que pertenecen.'))
 const introNotes = computed(() => [
         { title: t('Run Patients first.', 'Ejecuta Pacientes primero.'), body: t('A visit whose patient has no PracticeHub reference here cannot be matched and is skipped.', 'Una visita cuyo paciente no tenga referencia de PracticeHub aquí no se puede emparejar y se omite.') },
-        { title: t('Read straight from PracticeHub.', 'Leído directamente de PracticeHub.'), body: t('With the connection saved, nothing needs exporting. A CSV export from Settings -> Data Exports still works.', 'Con la conexión guardada, no hace falta exportar nada. Una exportación CSV desde Settings -> Data Exports sigue sirviendo.') },
+        { title: t('Read straight from PracticeHub.', 'Leído directamente de PracticeHub.'), body: t('With the connection saved, nothing needs exporting. A CSV export from PracticeHub’s Settings → Data Exports works too.', 'Con la conexión guardada, no hace falta exportar nada. También sirve una exportación CSV desde Settings → Data Exports de PracticeHub.') },
         { title: t('Safe to run again.', 'Se puede volver a ejecutar.'), body: t('A re-run updates a visit that changed in PracticeHub rather than adding a second one.', 'Volver a ejecutarlo actualiza una visita que cambió en PracticeHub en lugar de añadir otra.') },
         { title: t('QuiroFlow wins once you use it.', 'QuiroFlow manda en cuanto lo usas.'), body: t('A visit moved in QuiroFlow, or already checked in, completed, missed or cancelled here, keeps its QuiroFlow version. The preview lists what PracticeHub has for it instead of changing it.', 'Una visita movida en QuiroFlow, o ya registrada, completada, no presentada o cancelada aquí, conserva su versión de QuiroFlow. La vista previa muestra lo que tiene PracticeHub en lugar de cambiarla.') },
         { title: t('Re-created in PracticeHub.', 'Recreadas en PracticeHub.'), body: t('An appointment deleted and re-created in PracticeHub gets a new id. When the patient has one visit here that day, that visit takes the new id instead of a second one arriving; when that is not certain, the row is held back and listed for you to check.', 'Una cita borrada y recreada en PracticeHub recibe un id nuevo. Si el paciente tiene una visita aquí ese día, esa visita toma el id nuevo en lugar de llegar una segunda; si no es seguro, la fila se aparta y se lista para que la revises.') },
@@ -695,16 +719,16 @@ const fieldId = useId()
         <p class="mt-1 text-xs text-ink-muted2">
           {{
             t(
-              'Match each imported practitioner name to a real team member, or keep it as a label only (no login yet, so you can still see who saw the patient — invite them properly from Settings → Team later).',
-              'Empareja cada nombre de profesional importado con un miembro real del equipo, o déjalo solo como etiqueta (sin acceso todavía, para que puedas seguir viendo quién atendió al paciente; invítalo correctamente desde Ajustes → Equipo más adelante).',
+              'Link each PracticeHub practitioner to their team member, so their visits are theirs in QuiroFlow. A name that matches a team member exactly is linked already. Someone not on the team yet can stay as a name only: their visits still show who saw the patient. Add them under Settings → Team and run this step again to link them.',
+              'Enlaza cada profesional de PracticeHub con su miembro del equipo, para que sus visitas sean suyas en QuiroFlow. Un nombre que coincide exactamente con alguien del equipo ya está enlazado. Quien aún no esté en el equipo puede quedarse solo como nombre: sus visitas siguen mostrando quién atendió al paciente. Añádelo en Ajustes → Equipo y vuelve a ejecutar este paso para enlazarlo.',
             )
           }}
         </p>
         <div class="mt-3 space-y-2">
           <div v-for="name in distinctPractitioners" :key="name" class="flex items-center justify-between gap-3">
             <span class="text-sm text-ink-700">{{ name }}</span>
-            <select v-model="practitionerMap[name]" class="w-56 rounded-md border border-line-control bg-surface px-2 py-1.5 text-sm text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand">
-              <option value="">{{ t('Keep as label only', 'Dejar solo como etiqueta') }}</option>
+            <select v-model="practitionerMap[name]" :aria-label="t(`Team member for ${name}`, `Miembro del equipo para ${name}`)" class="w-56 rounded-md border border-line-control bg-surface px-2 py-1.5 text-sm text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand">
+              <option value="">{{ t('Name only, not linked', 'Solo el nombre, sin enlazar') }}</option>
               <option v-for="m in teamMembers" :key="m.id" :value="m.id">{{ m.full_name }}</option>
             </select>
           </div>
@@ -716,7 +740,7 @@ const fieldId = useId()
         <div class="mt-3 space-y-2">
           <div v-for="name in distinctTypes" :key="name" class="flex items-center justify-between gap-3">
             <span class="text-sm text-ink-700">{{ name }}</span>
-            <select v-model="typeMap[name]" class="w-56 rounded-md border border-line-control bg-surface px-2 py-1.5 text-sm text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand">
+            <select v-model="typeMap[name]" :aria-label="t(`Appointment type for ${name}`, `Tipo de cita para ${name}`)" class="w-56 rounded-md border border-line-control bg-surface px-2 py-1.5 text-sm text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand">
               <option value="">{{ t('No type', 'Sin tipo') }}</option>
               <option value="__create__">{{ t(`+ Create "${name}"`, `+ Crear "${name}"`) }}</option>
               <option v-for="t in appointmentTypes" :key="t.id" :value="t.id">{{ t.name }}</option>
@@ -750,7 +774,7 @@ const fieldId = useId()
           <div><dt class="text-ink-muted2">{{ t('QuiroFlow version kept', 'Se conserva la versión de QuiroFlow') }}</dt><dd class="font-medium text-ink-900">{{ kept.length }}</dd></div>
           <div><dt class="text-ink-muted2">{{ t('Held for review', 'Apartadas para revisar') }}</dt><dd class="font-medium" :class="held.length > 0 ? 'text-danger-text' : 'text-ink-900'">{{ held.length }}</dd></div>
           <div><dt class="text-ink-muted2">{{ t('No matching patient', 'Sin paciente coincidente') }}</dt><dd class="font-medium text-ink-900">{{ skippedNoPatient }}</dd></div>
-          <div><dt class="text-ink-muted2">{{ t('No changes / bad dates', 'Sin cambios / fechas incorrectas') }}</dt><dd class="font-medium text-ink-900">{{ skippedDuplicate + skippedInvalidDate }}</dd></div>
+          <div><dt class="text-ink-muted2">{{ t('Unchanged or unreadable date', 'Sin cambios o fecha ilegible') }}</dt><dd class="font-medium text-ink-900">{{ skippedDuplicate + skippedInvalidDate }}</dd></div>
         </dl>
       </div>
 
@@ -765,9 +789,9 @@ const fieldId = useId()
           </thead>
           <tbody class="divide-y divide-line-divider">
             <tr v-for="(row, i) in toImport.slice(0, 10)" :key="i">
-              <td class="px-3 py-2 text-ink-900">{{ new Date(row.appointment.starts_at).toLocaleString() }}</td>
+              <td class="px-3 py-2 text-ink-900">{{ new Date(row.appointment.starts_at).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' }) }}</td>
               <td class="px-3 py-2 text-ink-muted2">{{ row.appointment.practitioner_name ?? t('N/A', 'N/D') }}</td>
-              <td class="px-3 py-2 text-ink-muted2">{{ row.appointment.status }}</td>
+              <td class="px-3 py-2 text-ink-muted2">{{ statusLabel(row.appointment.status ?? 'booked') }}</td>
             </tr>
           </tbody>
         </table>
@@ -778,22 +802,22 @@ const fieldId = useId()
 
       <div v-if="toUpdate.length > 0" class="overflow-hidden rounded-lg border border-line bg-surface">
         <div class="border-b border-line-divider px-3 py-2 text-xs font-medium uppercase tracking-wide text-ink-muted2">
-          Sample of changes to existing appointments
+          {{ t('Sample of changes to existing appointments', 'Muestra de cambios en citas existentes') }}
         </div>
         <table class="w-full text-sm">
           <thead class="border-b border-line bg-surface-subtle text-left text-xs font-medium uppercase tracking-wide text-ink-muted2">
             <tr>
-              <th class="px-3 py-2">Appointment</th>
-              <th class="px-3 py-2">Field</th>
-              <th class="px-3 py-2">Current</th>
-              <th class="px-3 py-2">New</th>
+              <th class="px-3 py-2">{{ t('Appointment', 'Cita') }}</th>
+              <th class="px-3 py-2">{{ t('Field', 'Campo') }}</th>
+              <th class="px-3 py-2">{{ t('Now', 'Ahora') }}</th>
+              <th class="px-3 py-2">{{ t('After import', 'Tras importar') }}</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-line-divider">
             <template v-for="(row, i) in toUpdate.slice(0, 5)" :key="i">
               <tr v-for="(d, j) in row.diff" :key="j">
                 <td class="px-3 py-2 text-ink-900">{{ j === 0 ? row.label : '' }}</td>
-                <td class="px-3 py-2 text-ink-muted2">{{ d.field }}</td>
+                <td class="px-3 py-2 text-ink-muted2">{{ fieldLabel(d.field) }}</td>
                 <td class="px-3 py-2 text-ink-muted2">{{ d.from }}</td>
                 <td class="px-3 py-2 text-ink-900">{{ d.to }}</td>
               </tr>
@@ -801,13 +825,13 @@ const fieldId = useId()
           </tbody>
         </table>
         <p v-if="toUpdate.length > 5" class="border-t border-line-divider px-3 py-2 text-xs text-ink-faint">
-          + {{ toUpdate.length - 5 }} more appointments to update
+          + {{ toUpdate.length - 5 }} {{ t('more appointments to update', 'citas más por actualizar') }}
         </p>
       </div>
 
       <div v-if="kept.length > 0" class="overflow-hidden rounded-lg border border-line bg-surface">
         <div class="border-b border-line-divider px-3 py-2 text-xs font-medium uppercase tracking-wide text-ink-muted2">
-          {{ t('QuiroFlow version kept -- PracticeHub differs, nothing is changed', 'Se conserva la versión de QuiroFlow: PracticeHub difiere, no se cambia nada') }}
+          {{ t('QuiroFlow version kept: PracticeHub differs, nothing is changed', 'Se conserva la versión de QuiroFlow: PracticeHub difiere, no se cambia nada') }}
         </div>
         <div class="overflow-x-auto">
           <table class="w-full text-sm">
@@ -833,7 +857,7 @@ const fieldId = useId()
 
       <div v-if="held.length > 0" class="overflow-hidden rounded-lg border border-line bg-surface">
         <div class="border-b border-line-divider px-3 py-2 text-xs font-medium uppercase tracking-wide text-ink-muted2">
-          {{ t('Held for review -- not imported and not changed', 'Apartadas para revisar: ni se importan ni se cambian') }}
+          {{ t('Held for review: not imported and not changed', 'Apartadas para revisar: ni se importan ni se cambian') }}
         </div>
         <table class="w-full text-sm">
           <thead class="border-b border-line bg-surface-subtle text-left text-xs font-medium uppercase tracking-wide text-ink-muted2">
@@ -883,8 +907,9 @@ const fieldId = useId()
 
     <div v-else-if="stage === 'error'" class="mt-4 space-y-4">
       <div class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
-        <p class="font-medium">{{ t('Import failed:', 'Error al importar:') }}</p>
-        <p class="mt-1">{{ runError }}</p>
+        <p class="font-medium">{{ t('The import stopped before it finished.', 'La importación se detuvo antes de terminar.') }}</p>
+        <p class="mt-1">{{ t('Appointments written before it stopped are kept. Retry compares again and carries on without duplicating them.', 'Las citas escritas antes de detenerse se conservan. Reintentar vuelve a comparar y sigue sin duplicarlas.') }}</p>
+        <p class="mt-1 text-[12.5px] opacity-80">{{ runError }}</p>
       </div>
       <button type="button" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover" @click="retryImport">
         {{ t('Retry', 'Reintentar') }}
@@ -893,17 +918,17 @@ const fieldId = useId()
 
     <div v-else-if="stage === 'done'" class="mt-4 space-y-4">
       <div v-if="importErrors.length > 0" class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
-        <p class="font-medium">{{ t('Some rows failed:', 'Algunas filas fallaron:') }}</p>
+        <p class="font-medium">{{ t('Some rows were not saved:', 'Algunas filas no se guardaron:') }}</p>
         <ul class="mt-1 list-disc pl-5">
           <li v-for="(e, i) in importErrors" :key="i">{{ e }}</li>
         </ul>
       </div>
       <div class="flex gap-3">
         <NuxtLink to="/calendar" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover">
-          {{ t('View Calendar', 'Ver calendario') }}
+          {{ t('View calendar', 'Ver calendario') }}
         </NuxtLink>
         <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-ink-600 hover:bg-surface-subtle" @click="reset">
-          {{ t('Import another file', 'Importar otro archivo') }}
+          {{ t('Start again', 'Empezar de nuevo') }}
         </button>
       </div>
     </div>

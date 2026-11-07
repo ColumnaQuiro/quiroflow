@@ -82,14 +82,14 @@ const introNotes = [
   {
     title: t('One invoice per visit, not one per payment.', 'Una factura por visita, no una por pago.'),
     body: t(
-      'This is how PracticeHub keeps it, and it is the difference that made the earlier migration hard to reconcile: the Payments importer raised an invoice for every payment instead.',
-      'Así lo guarda PracticeHub, y es la diferencia que dificultó la conciliación anterior: el importador de Pagos creaba una factura por cada pago.',
+      'That is how PracticeHub keeps them, however many payments a visit took, so the totals here can be checked against PracticeHub’s.',
+      'Así las guarda PracticeHub, con independencia de cuántos pagos tuviera la visita, para que los totales de aquí se puedan comparar con los de PracticeHub.',
     ),
   },
   {
     title: t('Payments arrive unallocated, because PracticeHub records no allocation.', 'Los pagos llegan sin asignar, porque PracticeHub no registra ninguna asignación.'),
     body: t(
-      'A payment is money from the patient. Invoice statuses are then derived by covering each patient’s visits oldest-first from what they paid — no payment is attached, split or altered.',
+      'A payment is money from the patient. Each invoice’s status is then worked out by covering the patient’s visits oldest first with what they paid. No payment is attached to an invoice, split or changed.',
       'Un pago es dinero del paciente. El estado de las facturas se deduce cubriendo las visitas más antiguas primero con lo pagado; ningún pago se asigna, divide ni modifica.',
     ),
   },
@@ -100,8 +100,8 @@ const introNotes = [
   {
     title: t('Safe to run again, and it deletes nothing.', 'Se puede volver a ejecutar y no elimina nada.'),
     body: t(
-      'Rows are keyed by their PracticeHub id, so a second run imports nothing. What is already in QuiroFlow stays untouched, so both pictures can be compared before anything is removed.',
-      'Las filas se identifican por su id de PracticeHub, así que una segunda ejecución no importa nada. Lo que ya está en QuiroFlow permanece intacto, para poder comparar ambas imágenes antes de eliminar nada.',
+      'Each invoice and payment is recognised by its PracticeHub id, so running it again adds only what is new. Invoices and payments entered in QuiroFlow are not touched.',
+      'Cada factura y pago se reconoce por su id de PracticeHub, así que al repetir solo se añade lo nuevo. Las facturas y pagos registrados en QuiroFlow no se tocan.',
     ),
   },
 ]
@@ -301,7 +301,7 @@ async function runImport() {
           })),
         )
         .select('id')
-      if (error) importErrors.value.push(t(`Invoices near ${chunk[0]?.ref}: ${error.message}`, `Facturas cerca de ${chunk[0]?.ref}: ${error.message}`))
+      if (error) importErrors.value.push(t(`Invoices from PracticeHub reference ${chunk[0]?.ref} on were not created: ${error.message}`, `No se crearon las facturas desde la referencia de PracticeHub ${chunk[0]?.ref}: ${error.message}`))
       else importedInvoices.value += data?.length ?? 0
       progress.value = { ...progress.value, done: progress.value.done + chunk.length }
     }
@@ -311,7 +311,7 @@ async function runImport() {
       // Only where it is still unlinked, so a link someone made by hand since
       // the preview is never overwritten.
       const { error } = await supabase.from('invoices').update({ appointment_id: link.appointmentId }).eq('id', link.id).is('appointment_id', null)
-      if (error) importErrors.value.push(t(`Linking an invoice: ${error.message}`, `Vinculando una factura: ${error.message}`))
+      if (error) importErrors.value.push(t(`An invoice was not linked to its visit: ${error.message}`, `Una factura no se vinculó a su visita: ${error.message}`))
       else linkedInvoices.value++
     }
 
@@ -335,7 +335,7 @@ async function runImport() {
           })),
         )
         .select('id')
-      if (error) importErrors.value.push(t(`Payments near ${chunk[0]?.ref}: ${error.message}`, `Pagos cerca de ${chunk[0]?.ref}: ${error.message}`))
+      if (error) importErrors.value.push(t(`Payments from PracticeHub reference ${chunk[0]?.ref} on were not created: ${error.message}`, `No se crearon los pagos desde la referencia de PracticeHub ${chunk[0]?.ref}: ${error.message}`))
       else importedPayments.value += data?.length ?? 0
       progress.value = { ...progress.value, done: progress.value.done + chunk.length }
     }
@@ -356,7 +356,7 @@ async function runImport() {
         p_limit: SETTLE_BATCH,
       })
       if (allocError) {
-        importErrors.value.push(t(`Allocation: ${allocError.message}`, `Asignación: ${allocError.message}`))
+        importErrors.value.push(t(`Some invoice statuses were not updated from the payments: ${allocError.message}`, `Algunos estados de factura no se actualizaron con los pagos: ${allocError.message}`))
         break
       }
       allocatedInvoices.value += settled ?? 0
@@ -411,36 +411,31 @@ const money = (cents: number) => `${formatEur(cents)}`
           <p class="text-[12px] uppercase tracking-wide text-ink-faint">{{ t('Patients affected', 'Pacientes afectados') }}</p>
           <p class="mt-0.5 text-[20px] font-semibold text-ink-900">{{ previewPatients }}</p>
           <p class="text-[12.5px] text-ink-muted2">
-            {{ t('net', 'neto') }} {{ money(previewPaidCents - previewInvoicedCents) }}
+            {{ t(`Paid minus invoiced: ${money(previewPaidCents - previewInvoicedCents)}`, `Pagado menos facturado: ${money(previewPaidCents - previewInvoicedCents)}`) }}
           </p>
         </div>
       </div>
 
       <div class="rounded-ctl border border-line-divider bg-surface-subtle p-3 text-[12.5px] text-ink-muted2">
         <p>
-          {{ t('PracticeHub holds', 'PracticeHub tiene') }} {{ money(phTotals.invoicedCents) }} {{ t('invoiced and', 'facturado y') }}
-          {{ money(phTotals.paidCents) }} {{ t('paid', 'pagado') }}.
+          {{ t(`PracticeHub holds ${money(phTotals.invoicedCents)} invoiced and ${money(phTotals.paidCents)} paid.`, `PracticeHub tiene ${money(phTotals.invoicedCents)} facturado y ${money(phTotals.paidCents)} pagado.`) }}
         </p>
         <p v-if="skipped.invoicesAlready || skipped.paymentsAlready" class="mt-1">
-          {{ t('Already imported:', 'Ya importado:') }} {{ skipped.invoicesAlready }} {{ t('invoices', 'facturas') }},
-          {{ skipped.paymentsAlready }} {{ t('payments', 'pagos') }}.
+          {{ t(`Already imported, so skipped: ${skipped.invoicesAlready} invoices, ${skipped.paymentsAlready} payments.`, `Ya importados, se omiten: ${skipped.invoicesAlready} facturas, ${skipped.paymentsAlready} pagos.`) }}
         </p>
         <p v-if="invoicesToLink.length" class="mt-1" data-cy="ledger-invoices-to-link">
-          {{ t('Already imported without their visit, and linked to it on this run:', 'Ya importadas sin su visita, y vinculadas a ella en esta ejecución:') }}
-          {{ invoicesToLink.length }} {{ t('invoices', 'facturas') }}.
+          {{ t(`${invoicesToLink.length} invoices already imported without their visit will be linked to it now.`, `${invoicesToLink.length} facturas ya importadas sin su visita se vincularán ahora a ella.`) }}
         </p>
         <p v-if="skipped.invoicesUnmatched || skipped.paymentsUnmatched" class="mt-1">
-          {{ t('No matching patient here:', 'Sin paciente correspondiente aquí:') }} {{ skipped.invoicesUnmatched }}
-          {{ t('invoices', 'facturas') }}, {{ skipped.paymentsUnmatched }} {{ t('payments', 'pagos') }}.
-          {{ t('Run the Patients import first.', 'Ejecuta antes la importación de Pacientes.') }}
+          {{ t(`Skipped because their patient is not here yet: ${skipped.invoicesUnmatched} invoices, ${skipped.paymentsUnmatched} payments. Run Patients first.`, `Se omiten porque su paciente aún no está aquí: ${skipped.invoicesUnmatched} facturas, ${skipped.paymentsUnmatched} pagos. Ejecuta antes Pacientes.`) }}
         </p>
       </div>
 
       <p class="text-[12.5px] text-ink-muted2">
         {{
           t(
-            'Nothing is deleted. The invoices and payments already here stay exactly as they are, so both pictures can be compared before anything is removed.',
-            'No se elimina nada. Las facturas y pagos ya existentes permanecen igual, para poder comparar ambas imágenes antes de eliminar nada.',
+            'Nothing is deleted. Invoices and payments already here stay exactly as they are.',
+            'No se elimina nada. Las facturas y pagos que ya están aquí se quedan tal cual.',
           )
         }}
       </p>
@@ -454,14 +449,14 @@ const money = (cents: number) => `${formatEur(cents)}`
       <div class="rounded-ctl border border-line bg-surface p-4">
         <p class="text-[15px] font-semibold text-ink-900">{{ t('Imported', 'Importado') }}</p>
         <ul class="mt-1 space-y-0.5 text-[13px] text-ink-muted2">
-          <li>{{ importedInvoices }} {{ t('invoices', 'facturas') }}</li>
-          <li v-if="linkedInvoices">{{ linkedInvoices }} {{ t('earlier invoices linked to their visit', 'facturas anteriores vinculadas a su visita') }}</li>
-          <li>{{ importedPayments }} {{ t('payments', 'pagos') }}</li>
-          <li>{{ allocatedInvoices }} {{ t('invoices settled from those payments', 'facturas saldadas con esos pagos') }}</li>
+          <li>{{ t(`${importedInvoices} invoices`, `${importedInvoices} facturas`) }}</li>
+          <li v-if="linkedInvoices">{{ t(`${linkedInvoices} earlier invoices linked to their visit`, `${linkedInvoices} facturas anteriores vinculadas a su visita`) }}</li>
+          <li>{{ t(`${importedPayments} payments`, `${importedPayments} pagos`) }}</li>
+          <li>{{ t(`${allocatedInvoices} invoices set to paid or unpaid from those payments`, `${allocatedInvoices} facturas marcadas como pagadas o pendientes según esos pagos`) }}</li>
         </ul>
       </div>
       <div v-if="importErrors.length > 0" class="rounded-ctl border border-danger-border bg-danger-bg p-3">
-        <p class="text-[13px] font-medium text-danger-text">{{ t('Some rows failed', 'Algunas filas fallaron') }}</p>
+        <p class="text-[13px] font-medium text-danger-text">{{ t('Some rows were not saved', 'Algunas filas no se guardaron') }}</p>
         <ul class="mt-1 space-y-0.5 text-[12.5px] text-danger-text">
           <li v-for="(e, i) in importErrors" :key="i">{{ e }}</li>
         </ul>
@@ -469,7 +464,8 @@ const money = (cents: number) => `${formatEur(cents)}`
     </div>
 
     <div v-else-if="stage === 'error'" class="mt-4 rounded-ctl border border-danger-border bg-danger-bg p-4">
-      <p class="text-[13px] font-medium text-danger-text">{{ runError }}</p>
+      <p class="text-[13px] font-medium text-danger-text">{{ t('The ledger import stopped before it finished. What was written is kept; Retry reads PracticeHub again and adds only what is missing.', 'La importación del libro mayor se detuvo antes de terminar. Lo escrito se conserva; Reintentar vuelve a leer PracticeHub y solo añade lo que falta.') }}</p>
+      <p class="mt-1 text-[12.5px] text-danger-text opacity-80">{{ runError }}</p>
       <UiBtn class="mt-2" size="sm" @click="retry">{{ t('Retry', 'Reintentar') }}</UiBtn>
     </div>
   </div>

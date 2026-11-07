@@ -13,7 +13,7 @@ describe('The portal sign-in clinic code', () => {
       cy.get('#email').type('someone@example.test')
       cy.get('#password').type('whatever123')
       cy.contains('button', 'Sign in').click()
-      cy.contains('Clinic code not found').should('be.visible')
+      cy.contains("We couldn't find that clinic code").should('be.visible')
       cy.location('pathname').should('eq', '/portal/login')
 
       // Right code: the clinic's own name confirms it before any password

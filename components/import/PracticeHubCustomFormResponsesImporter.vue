@@ -243,7 +243,7 @@ async function apply() {
         .select('id')
         .single()
       if (error) {
-        importErrors.value.push(`Template "${tpl.formName}": ${error.message}`)
+        importErrors.value.push(t(`The template "${tpl.formName}" was not created: ${error.message}`, `No se creó la plantilla "${tpl.formName}": ${error.message}`))
         continue
       }
       templatesCreated.value++
@@ -265,7 +265,7 @@ async function apply() {
       }))
 
       const { error } = await supabase.from('patient_docs').insert(rows)
-      if (error) importErrors.value.push(`Forms near row ${i}: ${error.message}`)
+      if (error) importErrors.value.push(t(`Forms ${i + 1}-${i + rows.length} were not saved: ${error.message}`, `No se guardaron los formularios ${i + 1}-${i + rows.length}: ${error.message}`))
       else importedCount.value += rows.length
 
       progress.value = { done: Math.min(i + CHUNK_SIZE, candidates.value.length), total: candidates.value.length }
@@ -282,8 +282,8 @@ async function apply() {
   stage.value = 'done'
   showToast(
     t(
-      `Imported ${importedCount.value} forms (${templatesCreated.value} new templates). Skipped ${skippedDuplicate.value} already-imported, ${skippedUnmatched.value} with no matching patient.`,
-      `Se importaron ${importedCount.value} formularios (${templatesCreated.value} plantillas nuevas). Se omitieron ${skippedDuplicate.value} ya importados, ${skippedUnmatched.value} sin paciente coincidente.`,
+      `Imported ${importedCount.value} forms (${templatesCreated.value} new templates). Skipped ${skippedDuplicate.value} already imported and ${skippedUnmatched.value} with no matching patient.`,
+      `Se importaron ${importedCount.value} formularios (${templatesCreated.value} plantillas nuevas). Se omitieron ${skippedDuplicate.value} ya importados y ${skippedUnmatched.value} sin paciente coincidente.`,
     ),
     importErrors.value.length > 0 ? 'error' : 'success',
   )
@@ -305,10 +305,10 @@ function reset() {
   importErrors.value = []
   progress.value = { done: 0, total: 0 }
 }
-const introLead = computed(() => t("Brings submitted forms across from PracticeHub's API -- consent forms, health questionnaires, signed documents -- into each patient's Docs tab here.", 'Trae los formularios enviados desde la API de PracticeHub (consentimientos, cuestionarios de salud, documentos firmados) a la pestaña de documentos de cada paciente.'))
+const introLead = computed(() => t("Brings submitted forms across from PracticeHub's API (consent forms, health questionnaires, signed documents) into each patient's Docs tab here. Run Patients first: a form whose patient is not here yet is skipped.", 'Trae los formularios enviados desde la API de PracticeHub (consentimientos, cuestionarios de salud, documentos firmados) a la pestaña de documentos de cada paciente. Ejecuta antes Pacientes: un formulario cuyo paciente aún no está aquí se omite.'))
 const introNotes = computed(() => [
-  { title: t('It also creates a reusable template.', 'También crea una plantilla reutilizable.'), body: t('The first time it sees each distinct form it adds one under Settings > Docs, so the form can be sent to new patients too, not just kept as history.', 'La primera vez que ve cada formulario distinto añade una en Ajustes > Documentos, para poder enviarlo también a pacientes nuevos, no solo guardarlo como historial.') },
-  { title: t('Nothing is written until you press Apply.', 'No se escribe nada hasta que pulses Aplicar.'), body: t('The preview lists every form and template it will add so you can check it first.', 'La vista previa muestra cada formulario y plantilla que añadirá para que lo compruebes antes.') },
+  { title: t('It also creates a reusable template.', 'También crea una plantilla reutilizable.'), body: t('The first time it sees each distinct form it adds one under Settings → Docs, so the form can be sent to new patients too, not just kept as history.', 'La primera vez que ve cada formulario distinto añade una en Ajustes → Documentos, para poder enviarlo también a pacientes nuevos, no solo guardarlo como historial.') },
+  { title: t('Nothing is written until you confirm.', 'No se escribe nada hasta que lo confirmes.'), body: t('The preview lists every form and template it will add so you can check it first.', 'La vista previa muestra cada formulario y plantilla que añadirá para que lo compruebes antes.') },
   { title: t('Safe to run again.', 'Se puede volver a ejecutar.'), body: t('Forms and templates already imported are skipped.', 'Los formularios y plantillas ya importados se omiten.') },
 ])
 </script>
@@ -333,7 +333,7 @@ const introNotes = computed(() => [
       :columns="previewColumns"
       :rows="previewRows"
       :allow-empty-apply="newTemplates.length > 0"
-      :apply-label="t(`Import ${candidates.length} form(s)`, `Importar ${candidates.length} formulario(s)`)"
+      :apply-label="t(`Import ${candidates.length} ${candidates.length === 1 ? 'form' : 'forms'}`, `Importar ${candidates.length} ${candidates.length === 1 ? 'formulario' : 'formularios'}`)"
       :more-label="t('more forms', 'formularios más')"
       @apply="apply"
       @cancel="reset"
@@ -341,7 +341,7 @@ const introNotes = computed(() => [
       <template v-if="newTemplates.length > 0" #summary-footer>
         <div class="mt-3 border-t border-line-divider pt-2">
           <p class="text-xs font-medium uppercase tracking-wide text-ink-muted2">
-            {{ t('Templates that will be created in Settings > Docs', 'Plantillas que se crearán en Ajustes > Documentos') }}
+            {{ t('Templates that will be created in Settings → Docs', 'Plantillas que se crearán en Ajustes → Documentos') }}
           </p>
           <div class="mt-2 flex flex-wrap gap-1.5">
             <span v-for="tpl in newTemplates" :key="tpl.formId" class="rounded-pill bg-surface-subtle px-2 py-0.5 text-[11px] text-ink-700">
@@ -354,8 +354,9 @@ const introNotes = computed(() => [
 
     <div v-else-if="stage === 'error'" class="mt-4 space-y-4">
       <div class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
-        <p class="font-medium">{{ t('Import failed:', 'Error al importar:') }}</p>
-        <p class="mt-1">{{ runError }}</p>
+        <p class="font-medium">{{ t('The import stopped before it finished.', 'La importación se detuvo antes de terminar.') }}</p>
+        <p class="mt-1">{{ t('Anything already written is kept. Retry reads PracticeHub again and skips it.', 'Lo ya escrito se conserva. Reintentar vuelve a leer PracticeHub y lo omite.') }}</p>
+        <p class="mt-1 text-[12.5px] opacity-80">{{ runError }}</p>
       </div>
       <button type="button" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover" @click="retryRun">
         {{ t('Retry', 'Reintentar') }}
@@ -364,14 +365,14 @@ const introNotes = computed(() => [
 
     <div v-else-if="stage === 'done'" class="mt-4 space-y-4">
       <div v-if="importErrors.length > 0" class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
-        <p class="font-medium">{{ t('Some rows failed:', 'Algunas filas fallaron:') }}</p>
+        <p class="font-medium">{{ t('Some rows were not saved:', 'Algunas filas no se guardaron:') }}</p>
         <ul class="mt-1 list-disc pl-5">
           <li v-for="(e, i) in importErrors" :key="i">{{ e }}</li>
         </ul>
       </div>
       <div class="flex gap-3">
         <NuxtLink to="/patients" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover">
-          {{ t('View Patients', 'Ver pacientes') }}
+          {{ t('View patients', 'Ver pacientes') }}
         </NuxtLink>
         <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-ink-600 hover:bg-surface-subtle" @click="reset">
           {{ t('Run again', 'Ejecutar de nuevo') }}

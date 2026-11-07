@@ -401,9 +401,9 @@ const fieldId = useId()
 
           <div class="mt-2 grid grid-cols-4 gap-1 text-[11px]">
             <button type="button" class="rounded-ctlSm border border-line-control py-1.5 font-medium text-ink-500 hover:border-line-controlHover" @click="insertDatestamp">{{ t('Datestamp', 'Marca de fecha') }}</button>
-            <button type="button" class="rounded-ctlSm border border-line-control py-1.5 font-medium text-ink-500 hover:border-line-controlHover" @click="clearAll">{{ t('Clear All', 'Borrar todo') }}</button>
-            <button type="button" class="rounded-ctlSm border border-line-control py-1.5 font-medium text-ink-500 hover:border-line-controlHover" @click="newLine">{{ t('New Line', 'Nueva línea') }}</button>
-            <button type="button" class="rounded-ctlSm border border-line-control py-1.5 font-medium text-ink-500 hover:border-line-controlHover" @click="undoLast">{{ t('Undo Last', 'Deshacer último') }}</button>
+            <button type="button" class="rounded-ctlSm border border-line-control py-1.5 font-medium text-ink-500 hover:border-line-controlHover" @click="clearAll">{{ t('Clear all', 'Borrar todo') }}</button>
+            <button type="button" class="rounded-ctlSm border border-line-control py-1.5 font-medium text-ink-500 hover:border-line-controlHover" @click="newLine">{{ t('New line', 'Nueva línea') }}</button>
+            <button type="button" class="rounded-ctlSm border border-line-control py-1.5 font-medium text-ink-500 hover:border-line-controlHover" @click="undoLast">{{ t('Undo last', 'Deshacer último') }}</button>
           </div>
 
           <div class="mt-1 grid grid-cols-6 gap-1 text-[11px]">

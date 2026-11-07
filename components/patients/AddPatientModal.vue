@@ -135,7 +135,7 @@ async function onSubmit() {
 
   if (insertError) {
     saving.value = false
-    error.value = insertError.message
+    error.value = `${t('The patient was not created. Nothing was saved, so you can try again.', 'No se ha creado el paciente. No se ha guardado nada, así que puedes volver a intentarlo.')} (${insertError.message})`
     return
   }
 
@@ -154,7 +154,7 @@ async function onSubmit() {
     // (a second Add would create them twice) -- but a number that silently
     // failed to save is one nobody will ever message.
     if (numberError) {
-      showToast(t(`Patient created, but the phone number was not saved: ${numberError.message}`, `Paciente creado, pero el teléfono no se ha guardado: ${numberError.message}`), 'error', 8000)
+      showToast(`${t('Patient created, but the phone number was not saved. Add it from their details.', 'Paciente creado, pero el teléfono no se ha guardado. Añádelo desde sus datos.')} (${numberError.message})`, 'error', 8000)
     }
   }
 
@@ -167,7 +167,7 @@ async function onSubmit() {
   if (answers.length > 0) {
     const { error: answersError } = await supabase.from('patient_attribute_values').insert(answers)
     if (answersError) {
-      showToast(t(`Patient created, but some fields were not saved: ${answersError.message}`, `Paciente creado, pero algunos campos no se han guardado: ${answersError.message}`), 'error', 8000)
+      showToast(`${t('Patient created, but the clinic fields were not saved. Fill them in from their record.', 'Paciente creado, pero los campos de la clínica no se han guardado. Rellénalos desde su ficha.')} (${answersError.message})`, 'error', 8000)
     }
   }
 
@@ -180,7 +180,7 @@ async function onSubmit() {
   <div class="fixed inset-0 z-50 flex justify-end bg-scrim/30" @click.self="emit('close')">
     <div ref="dialogPanel" role="dialog" aria-modal="true" :aria-labelledby="dialogTitleId" class="flex h-full w-full max-w-lg flex-col overflow-y-auto border-l border-line bg-surface p-4 shadow-popover sm:p-6">
       <div class="flex items-center justify-between">
-        <h2 :id="dialogTitleId" class="text-[16px] font-[640] text-ink-900">{{ t('Add Patient', 'Añadir paciente') }}</h2>
+        <h2 :id="dialogTitleId" class="text-[16px] font-[640] text-ink-900">{{ t('Add patient', 'Añadir paciente') }}</h2>
         <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="emit('close')">✕</button>
       </div>
 
@@ -274,7 +274,7 @@ async function onSubmit() {
             </select>
           </div>
           <div>
-            <label class="block text-sm font-medium text-ink-700" for="referral-source">{{ t('Referral source', 'Origen de la referencia') }}</label>
+            <label class="block text-sm font-medium text-ink-700" for="referral-source">{{ t('Referral source', 'Fuente de referencia') }}</label>
             <select
               id="referral-source"
               v-model="referralSource"
@@ -298,7 +298,7 @@ async function onSubmit() {
             />
           </div>
           <div v-if="isVisible('preferred_language')">
-            <label class="block text-sm font-medium text-ink-700" for="preferred-language">{{ t('Preferred Language', 'Idioma preferido') }}</label>
+            <label class="block text-sm font-medium text-ink-700" for="preferred-language">{{ t('Preferred language', 'Idioma preferido') }}</label>
             <select
               id="preferred-language"
               v-model="preferredLanguage"
@@ -355,7 +355,7 @@ async function onSubmit() {
         </div>
 
         <div v-if="isVisible('notes')">
-          <label class="block text-sm font-medium text-ink-700" for="patient-note">{{ t('Patient Note', 'Nota del paciente') }}</label>
+          <label class="block text-sm font-medium text-ink-700" for="patient-note">{{ t('Patient note', 'Nota del paciente') }}</label>
           <textarea
             id="patient-note"
             v-model="notes"
@@ -395,11 +395,11 @@ async function onSubmit() {
           />
         </div>
 
-        <p v-if="error" class="text-sm text-danger-text">{{ error }}</p>
+        <p v-if="error" role="alert" class="text-sm text-danger-text">{{ error }}</p>
 
         <div class="flex gap-3">
           <UiBtn type="submit" variant="primary" :disabled="saving">
-            {{ saving ? t('Saving…', 'Guardando…') : t('Add Patient', 'Añadir paciente') }}
+            {{ saving ? t('Saving…', 'Guardando…') : t('Add patient', 'Añadir paciente') }}
           </UiBtn>
           <button type="button" class="rounded-ctl px-4 py-2 text-sm font-medium text-ink-muted hover:bg-surface-subtle" @click="emit('close')">
             {{ t('Cancel', 'Cancelar') }}

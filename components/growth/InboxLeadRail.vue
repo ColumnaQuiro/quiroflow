@@ -4,6 +4,21 @@ import type { LeadThread } from '~/composables/useGrowthLeadThread'
 defineProps<{ thread: LeadThread }>()
 
 const t = useT()
+
+// leads.stage is a key ('qualified'); named as Settings › Leads names it.
+const STAGE_NAMES: Record<string, [string, string]> = {
+  new: ['New', 'Nuevo'],
+  contacted: ['Contacted', 'Contactado'],
+  qualified: ['Qualified', 'Cualificado'],
+  booked: ['Booked', 'Reservado'],
+  showed: ['Showed', 'Asistió'],
+  converted: ['Converted', 'Convertido'],
+  lost: ['Lost', 'Perdido'],
+}
+function stageName(stage: string) {
+  const pair = STAGE_NAMES[stage]
+  return pair ? t(pair[0], pair[1]) : stage
+}
 </script>
 
 <template>
@@ -14,7 +29,7 @@ const t = useT()
     <div class="flex flex-col gap-1.5">
       <span class="text-[12.5px] font-semibold text-ink-900">{{ thread.name }}</span>
       <span class="text-[11px] text-ink-muted">
-        {{ t('Lead', 'Contacto') }} · {{ thread.stage }}<template v-if="thread.source"> · {{ thread.source }}</template>
+        {{ t('Lead', 'Contacto') }} · {{ stageName(thread.stage) }}<template v-if="thread.source"> · {{ thread.source }}</template>
       </span>
       <span v-if="thread.phone" class="text-[11.5px] text-ink-700">{{ thread.phone }}</span>
       <span v-if="thread.email" class="break-words text-[11.5px] text-ink-700">{{ thread.email }}</span>

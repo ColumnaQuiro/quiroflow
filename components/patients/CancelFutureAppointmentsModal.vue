@@ -92,7 +92,7 @@ async function confirm() {
     .select('id, starts_at')
   busy.value = false
   if (e) {
-    error.value = e.message
+    error.value = `${t('No appointment was cancelled.', 'No se ha anulado ninguna cita.')} (${e.message})`
     return
   }
   const done = ((changed as { id: string; starts_at: string }[] | null) ?? []).sort((a, b) => a.starts_at.localeCompare(b.starts_at))
@@ -148,7 +148,7 @@ async function confirm() {
           <input v-model="notify" type="checkbox" class="mt-0.5 rounded border-line-control text-brand focus:ring-brand" data-cy="cancel-future-notify" />
           <span>
             {{ t('Let the patient know', 'Avisar al paciente') }}
-            <span class="block text-[12px] text-ink-muted">{{ t('Your “appointment cancelled” automation runs once, for the soonest visit — one message, not one per visit.', 'Tu automatización de «cita cancelada» se ejecuta una vez, sobre la cita más próxima: un mensaje, no uno por cita.') }}</span>
+            <span class="block text-[12px] text-ink-muted">{{ t('Your “appointment cancelled” automation runs once, for the soonest visit: one message, not one per visit.', 'Tu automatización de «cita cancelada» se ejecuta una vez, sobre la cita más próxima: un mensaje, no uno por cita.') }}</span>
           </span>
         </label>
       </template>

@@ -22,7 +22,7 @@ function selectBookableDayWithSlots(attempt = 0) {
   cy.get('.grid.grid-cols-7 button:not([disabled])').eq(attempt).click()
   cy.contains('Cargando horarios').should('not.exist')
   cy.get('body').then(($body) => {
-    if ($body.text().includes('No hay horas disponibles')) {
+    if ($body.text().includes('Ya no quedan horas libres')) {
       if (attempt > 15) throw new Error('No bookable day within the visible range had available slots')
       selectBookableDayWithSlots(attempt + 1)
     }

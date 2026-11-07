@@ -47,7 +47,7 @@ describe('The booking page in the patient\'s language', () => {
       cy.contains('Elija su fecha y hora').should('not.exist')
       cy.get('[data-cy=booking-language-en]').should('have.attr', 'aria-pressed', 'true')
 
-      selectBookableDayWithSlots('No times available that day.', 'Loading times')
+      selectBookableDayWithSlots('There are no free times left that day.', 'Loading times')
       cy.contains('button', /^\d{2}:\d{2}$/).first().click()
       cy.contains('Enter your details').should('be.visible')
       cy.contains('label', 'First name *').parent().find('input').type('Ana')

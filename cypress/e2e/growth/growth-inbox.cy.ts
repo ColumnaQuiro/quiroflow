@@ -61,7 +61,7 @@ describe('Growth in the shared Inbox', () => {
     cy.clickUntil('[data-cy=inbox-more-filters]', '[data-cy=inbox-more-filters-menu]')
     cy.get('[data-cy=inbox-more-filters-menu]').within(() => {
       cy.contains('button', 'Awaiting patient').should('be.visible')
-      cy.contains('Receptionist').should('not.exist')
+      cy.contains('AI receptionist').should('not.exist')
     })
   })
 
@@ -180,7 +180,7 @@ describe('Growth in the shared Inbox', () => {
 
       cy.get('[data-test="lead-thread"]').within(() => {
         cy.contains('AI is handling this conversation').should('be.visible')
-        cy.contains('Composer locked while the AI is replying').should('be.visible')
+        cy.contains('The AI is answering this conversation').should('be.visible')
       })
       cy.get('[data-test="lead-composer"]').should('not.exist')
 
@@ -226,7 +226,7 @@ describe('Growth in the shared Inbox', () => {
 
       // Still the AI's thread -- a draft is not a takeover.
       cy.get('[data-test="lead-composer"]').should('not.exist')
-      cy.contains('Composer locked while the AI is replying').should('be.visible')
+      cy.contains('The AI is answering this conversation').should('be.visible')
     })
   })
 
@@ -759,7 +759,7 @@ describe('Handovers and the receptionist in the Inbox', () => {
     seedConversation(account, 'Handed Over Lead', 'needs_human').then((leadId) => {
       cy.task('db:createReceptionistNote', { accountId: account.accountId, conversationKey: `lead:${leadId}`, body: 'He pasado esta conversación a una persona. Motivo: Quiere hablar con el quiropráctico.' })
       cy.reload()
-      cy.contains('[data-test="lead-row"]', 'Handed Over Lead').should('contain', 'Needs human').click()
+      cy.contains('[data-test="lead-row"]', 'Handed Over Lead').should('contain', 'Needs a person').click()
 
       cy.get('[data-test="ai-banner"][data-state="needs_human"]').should('be.visible')
       cy.get('[data-test="ai-banner-reason"]').should('contain', 'Quiere hablar con el quiropráctico').and('not.contain', 'He pasado')
@@ -775,14 +775,14 @@ describe('Handovers and the receptionist in the Inbox', () => {
     })
   })
 
-  it('clears "Needs human" once a person marks a lead handled', () => {
+  it('clears "Needs a person" once a person marks a lead handled', () => {
     cy.visit('/inbox?growth=1')
     seedConversation(account, 'Dealt With Lead', 'needs_human').then((leadId) => {
       cy.reload()
       cy.contains('[data-test="lead-row"]', 'Dealt With Lead').click()
       cy.get('[data-test="ai-banner"] [data-test="mark-handled"]').click()
       cy.get('[data-test="ai-banner"]').should('not.exist')
-      cy.contains('[data-test="lead-row"]', 'Dealt With Lead').should('not.contain', 'Needs human')
+      cy.contains('[data-test="lead-row"]', 'Dealt With Lead').should('not.contain', 'Needs a person')
       cy.task('db:leadAiState', { id: leadId }).should((row) => {
         expect((row as { ai_state: string }).ai_state).to.eq('none')
       })
@@ -811,7 +811,7 @@ describe('Handovers and the receptionist in the Inbox', () => {
     cy.task('db:setAccountWhatsappToken', { accountId: account.accountId, token: 'wa-test-token' })
   }
 
-  it('clears "Needs human" when a person replies to the lead, without handing it back to the AI', () => {
+  it('clears "Needs a person" when a person replies to the lead, without handing it back to the AI', () => {
     // The reply is the resolution: patients already worked this way, and a
     // second click after answering is bookkeeping nobody does. Sent through
     // the real route against the local Graph stub, so the route's own update

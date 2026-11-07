@@ -42,7 +42,7 @@ async function uploadFile(file: File) {
   const path = `${useAccountStore().accountId}/${patientId}/${Date.now()}-${sanitizeStorageFilename(file.name)}`
   const { error: uploadError } = await supabase.storage.from('patient-photos').upload(path, file)
   if (uploadError) {
-    error.value = uploadError.message
+    error.value = `${t('The photo was not uploaded.', 'No se ha subido la foto.')} (${uploadError.message})`
     uploading.value = false
     return
   }
@@ -129,7 +129,7 @@ useFocusTrap(qrPanel, closeQr, () => qrOpen.value)
     <div v-if="qrOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/30 p-4" @click.self="closeQr">
       <div ref="qrPanel" role="dialog" aria-modal="true" :aria-labelledby="qrTitleId" class="max-h-full w-full overflow-y-auto max-w-xs rounded-card border border-line bg-surface p-6 text-center shadow-popover">
         <p :id="qrTitleId" class="text-[13.5px] font-[620] text-ink-900">{{ t('Scan with your phone', 'Escanea con tu móvil') }}</p>
-        <p class="mt-1 text-[12px] text-ink-muted2">{{ t("Take a photo -- it'll appear here automatically.", 'Haz una foto: aparecerá aquí automáticamente.') }}</p>
+        <p class="mt-1 text-[12px] text-ink-muted2">{{ t("Take a photo. It'll appear here by itself.", 'Haz una foto. Aparecerá aquí sola.') }}</p>
         <img :src="qrDataUrl" class="mx-auto mt-4 h-[220px] w-[220px]" :alt="t('QR code', 'Código QR')" />
         <UiBtn variant="secondary" class="mt-4 w-full justify-center" @click="closeQr">{{ t('Cancel', 'Cancelar') }}</UiBtn>
       </div>

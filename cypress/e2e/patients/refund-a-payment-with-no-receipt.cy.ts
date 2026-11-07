@@ -17,7 +17,7 @@ describe('Refunding a payment with no receipt', () => {
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}?tab=billing`)
 
-        cy.contains('tr', 'Payment — card').click()
+        cy.contains('tr', 'Payment — Card').click()
         cy.contains('button', 'Refund…').click()
         cy.contains('up to 204,00 €').should('exist')
         cy.get('.fixed').find('select').should('have.value', 'card')
@@ -44,7 +44,7 @@ describe('Refunding a payment with no receipt', () => {
         // opened above starts closed and the click opens it rather than
         // folding it away.
         cy.reload()
-        cy.contains('tr', 'Payment — card').click()
+        cy.contains('tr', 'Payment — Card').click()
         cy.contains('button', 'Refund…').click()
         cy.contains('up to 165,00 €').should('exist')
       })
@@ -60,7 +60,7 @@ describe('Refunding a payment with no receipt', () => {
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}?tab=billing`)
 
-        cy.contains('tr', 'Payment — cash').click()
+        cy.contains('tr', 'Payment — Cash').click()
         cy.contains('button', 'Refund…').click()
         cy.contains('up to 100,00 €').should('exist')
         cy.get('.fixed').find('input[type="number"]').clear().type('40')
@@ -81,7 +81,7 @@ describe('Refunding a payment with no receipt', () => {
         // 60 left on the payment, counted from what was paid out rather than
         // from the refund invoice's total.
         cy.reload()
-        cy.contains('tr', 'Payment — cash').click()
+        cy.contains('tr', 'Payment — Cash').click()
         cy.contains('button', 'Refund…').click()
         cy.contains('up to 60,00 €').should('exist')
       })
@@ -96,7 +96,7 @@ describe('Refunding a payment with no receipt', () => {
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}?tab=billing`)
 
-        cy.contains('tr', 'Payment — cash').click()
+        cy.contains('tr', 'Payment — Cash').click()
         cy.contains('button', 'Refund…').should('not.exist')
       })
     })

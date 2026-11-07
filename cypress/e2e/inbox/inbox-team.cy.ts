@@ -261,7 +261,7 @@ describe('Inbox, as a team', () => {
         cy.visit('/inbox?growth=1')
         cy.get('[data-cy=inbox-list]').should('have.attr', 'data-ready', 'true')
         cy.contains('[data-test="lead-row"]', 'Lola Lead').should('exist')
-        cy.get('[data-test="filter-leads-only"]').should('not.contain.text', '· 1')
+        cy.get('[data-test="filter-leads-only"]').should('not.contain.text', '1')
         cy.get('[data-cy=inbox-tab-mine]').click()
         cy.contains('[data-test="lead-row"]', 'Lola Lead').should('exist')
       })

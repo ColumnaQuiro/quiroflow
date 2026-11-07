@@ -69,4 +69,23 @@ describe('Signup form states', () => {
     cy.contains('button', 'Hide').click()
     cy.get('#password').should('have.attr', 'type', 'password').and('have.value', 'valencia2026')
   })
+
+  // The form is novalidate. Left to GoTrue, an empty address came back as
+  // "Anonymous sign-ins are disabled" -- true, and meaningless to a clinic.
+  it('says what is missing before anything is sent', () => {
+    cy.intercept('POST', SIGNUP, cy.spy().as('signupSent'))
+    cy.visit('/signup')
+
+    cy.contains('button', 'Create account').click()
+    cy.get('#email-error').should('contain', 'Enter your email address')
+    cy.get('#email').should('have.focus').and('have.attr', 'aria-invalid', 'true')
+    cy.get('#password-error').should('contain', 'Choose a password')
+
+    cy.get('#email').type('owner@example')
+    cy.get('#password').type('valencia2026')
+    cy.contains('button', 'Create account').click()
+    cy.get('#email-error').should('contain', 'doesn’t look like an email address')
+    cy.get('#password-error').should('not.exist')
+    cy.get('@signupSent').should('not.have.been.called')
+  })
 })

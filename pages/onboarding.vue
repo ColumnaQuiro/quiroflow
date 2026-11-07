@@ -12,6 +12,8 @@ const { preference: themePreference, setPreference: setThemePreference } = useTh
 const { preference: langPreference, setPreference: setLangPreference } = useLang()
 
 const ownerName = ref('')
+const ownerNameError = ref('')
+const nameInput = ref<{ focus: () => void } | null>(null)
 // A number QuiroFlow can reach the person signing up on. Stored on the
 // account (accounts.owner_phone) and sent in the new-account email; patients
 // never see it.
@@ -25,7 +27,11 @@ const phoneInput = ref<{ focus: () => void } | null>(null)
 // practitioner they invite.
 const ownerIsPractitioner = ref(true)
 const accountName = ref('')
+const accountNameError = ref('')
+const accountInput = ref<{ focus: () => void } | null>(null)
 const clinicName = ref('')
+const clinicNameError = ref('')
+const clinicInput = ref<{ focus: () => void } | null>(null)
 // The country the first clinic is in (clinics.country). It also becomes the
 // account's default dial code -- the manual "add a number" field, the
 // new-patient forms, the public booking page and an import's fallback all
@@ -195,23 +201,50 @@ async function updatePractice() {
   return null
 }
 
+// What the database said, kept for support but shown under a sentence a
+// clinic owner can act on -- not as the message itself.
+const errorDetail = ref('')
+
 async function onSubmit() {
   if (loading.value) return
   error.value = ''
+  errorDetail.value = ''
+  ownerNameError.value = ''
   ownerPhoneError.value = ''
-  // The one field checked here: everything else has a fallback in the RPC,
-  // and a number nobody can dial is worse than none, because it looks like
-  // we have one.
+  accountNameError.value = ''
+  clinicNameError.value = ''
+  // The form is novalidate, so an empty name used to go through: the RPC
+  // falls back to the email for the owner, but a practice called "" gets a
+  // booking address built from nothing and an "all set" screen that reads
+  // " is ready, with  (Spain)". A number nobody can dial is worse than none,
+  // because it looks like we have one.
+  if (!ownerName.value.trim()) ownerNameError.value = t('Enter your name.', 'Escribe tu nombre.')
   if (!looksLikePhoneNumber(ownerPhone.value.trim(), country.value)) {
     ownerPhoneError.value = t('Enter a phone number we can reach you on.', 'Escribe un teléfono en el que podamos localizarte.')
-    phoneInput.value?.focus()
+  }
+  if (!accountName.value.trim()) accountNameError.value = t('Name your practice.', 'Ponle nombre a tu consulta.')
+  if (!clinicName.value.trim()) clinicNameError.value = t('Name the clinic, or the town it is in.', 'Pon nombre a la clínica, o el pueblo o ciudad donde está.')
+  const firstInvalid = ownerNameError.value
+    ? nameInput
+    : ownerPhoneError.value
+      ? phoneInput
+      : accountNameError.value
+        ? accountInput
+        : clinicNameError.value
+          ? clinicInput
+          : null
+  if (firstInvalid) {
+    firstInvalid.value?.focus()
     return
   }
   loading.value = true
   const message = alreadyCreated.value ? await updatePractice() : await createPractice()
   loading.value = false
   if (message) {
-    error.value = message
+    error.value = alreadyCreated.value
+      ? t('Your changes weren’t saved. Try again.', 'No se han guardado los cambios. Inténtalo de nuevo.')
+      : t('The practice wasn’t created. Try again.', 'No se ha creado la consulta. Inténtalo de nuevo.')
+    errorDetail.value = message
     return
   }
   step.value = 'preferences'
@@ -247,7 +280,6 @@ const countryName = computed(() => {
     return countryByCode(country.value).name
   }
 })
-const languageName = computed(() => (langPreference.value === 'es' ? t('Spanish', 'español') : t('English', 'inglés')))
 
 const importing = computed(() => !!importSource.value && importSource.value !== 'none')
 const importSourceName = computed(() =>
@@ -257,12 +289,12 @@ const importSourceName = computed(() =>
 const launchSummary = computed(() =>
   importing.value
     ? t(
-        `${accountName.value} is live in ${clinicName.value}, ${countryName.value}, in ${languageName.value}. Next, bring your records across from ${importSourceName.value}.`,
-        `${accountName.value} ya está en marcha en ${clinicName.value}, ${countryName.value}, en ${languageName.value}. Ahora, trae tus datos desde ${importSourceName.value}.`,
+        `${accountName.value} is ready, with ${clinicName.value} (${countryName.value}) as its first clinic. Next, bring your records across from ${importSourceName.value}.`,
+        `${accountName.value} ya está en marcha, con ${clinicName.value} (${countryName.value}) como primera clínica. Ahora, trae tus datos desde ${importSourceName.value}.`,
       )
     : t(
-        `${accountName.value} is live in ${clinicName.value}, ${countryName.value}, in ${languageName.value}. This is what is waiting inside.`,
-        `${accountName.value} ya está en marcha en ${clinicName.value}, ${countryName.value}, en ${languageName.value}. Esto es lo que te espera dentro.`,
+        `${accountName.value} is ready, with ${clinicName.value} (${countryName.value}) as its first clinic. Here is what is waiting inside.`,
+        `${accountName.value} ya está en marcha, con ${clinicName.value} (${countryName.value}) como primera clínica. Esto es lo que te espera dentro.`,
       ),
 )
 
@@ -279,8 +311,8 @@ const LAUNCH_CARDS = computed(() => [
     key: 'reminders',
     title: t('WhatsApp & email reminders', 'Recordatorios por WhatsApp y email'),
     body: t(
-      'Sent 24 hours ahead. When a patient replies CONFIRMAR, the calendar updates itself.',
-      'Se envían 24 horas antes. Cuando el paciente responde CONFIRMAR, la agenda se actualiza sola.',
+      'Sent 24 hours ahead, unless you choose otherwise. When a patient taps Confirmar, the calendar marks the visit confirmed.',
+      'Se envían 24 horas antes, salvo que elijas otro plazo. Cuando el paciente pulsa Confirmar, la agenda marca la cita como confirmada.',
     ),
   },
   {
@@ -308,8 +340,8 @@ const LAUNCH_CARDS = computed(() => [
       <p class="mt-2 text-[14.5px] leading-[1.55] text-ink-muted lg:mt-[11px] lg:text-[15px]">
         {{
           t(
-            'Name the practice and add the clinic you work from today. Madrid, Alicante and the rest can come later.',
-            'Pon nombre a tu consulta y añade la clínica en la que trabajas hoy. Madrid, Alicante y las demás pueden esperar.',
+            'The practice is your business; a clinic is a place where you see patients. Add the one you work from today, and any others later.',
+            'La consulta es tu negocio; una clínica, cada sitio donde atiendes. Añade la clínica en la que trabajas hoy, y las demás más adelante.',
           )
         }}
       </p>
@@ -322,8 +354,8 @@ const LAUNCH_CARDS = computed(() => [
       <p class="mt-2 text-[14.5px] leading-[1.55] text-ink-muted lg:mt-[11px] lg:text-[15px]">
         {{
           t(
-            'Two quick choices. Language also sets what your patients read in reminders.',
-            'Dos decisiones rápidas. El idioma también define lo que leen tus pacientes en los recordatorios.',
+            'Two quick choices about how QuiroFlow looks to you. Everyone on your team picks their own.',
+            'Dos decisiones rápidas sobre cómo ves QuiroFlow. Cada persona de tu equipo elige las suyas.',
           )
         }}
       </p>
@@ -361,8 +393,18 @@ const LAUNCH_CARDS = computed(() => [
       <!-- Step 2 -->
       <form v-if="step === 'form'" class="mt-5 flex flex-col gap-4 lg:mt-7" novalidate @submit.prevent="onSubmit">
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-3">
-          <OnboardingFormField id="owner-name" :label="t('Your name', 'Tu nombre')">
-            <OnboardingTextInput id="owner-name" v-model="ownerName" autocomplete="name" required :readonly="loading" placeholder="Alba Esteve" />
+          <OnboardingFormField id="owner-name" :label="t('Your name', 'Tu nombre')" :error="ownerNameError">
+            <OnboardingTextInput
+              id="owner-name"
+              ref="nameInput"
+              v-model="ownerName"
+              autocomplete="name"
+              required
+              :readonly="loading"
+              :invalid="!!ownerNameError"
+              :described-by="ownerNameError ? 'owner-name-error' : undefined"
+              placeholder="Alba Esteve"
+            />
           </OnboardingFormField>
           <OnboardingFormField id="owner-phone" :label="t('Your phone', 'Tu teléfono')" :error="ownerPhoneError">
             <OnboardingTextInput
@@ -380,6 +422,9 @@ const LAUNCH_CARDS = computed(() => [
             />
           </OnboardingFormField>
         </div>
+        <p class="-mt-2 text-[12.5px] leading-[1.45] text-ink-muted">
+          {{ t('Only QuiroFlow uses your phone, to help you get set up. Patients never see it.', 'Tu teléfono solo lo usa QuiroFlow, para ayudarte a empezar. Tus pacientes no lo ven.') }}
+        </p>
 
         <div>
           <p class="mb-1.5 text-[14px] font-medium text-ink-700">
@@ -407,13 +452,36 @@ const LAUNCH_CARDS = computed(() => [
           </OnboardingTileGroup>
         </div>
 
-        <OnboardingFormField id="account-name" :label="t('Practice name', 'Nombre de la consulta')">
-          <OnboardingTextInput id="account-name" v-model="accountName" required :readonly="loading" :placeholder="t('Your practice name', 'Nombre de tu consulta')" />
+        <OnboardingFormField
+          id="account-name"
+          :label="t('Practice name', 'Nombre de la consulta')"
+          :description="t('It also becomes the address of your booking page.', 'También será la dirección de tu página de reservas.')"
+          :error="accountNameError"
+        >
+          <OnboardingTextInput
+            id="account-name"
+            ref="accountInput"
+            v-model="accountName"
+            required
+            :readonly="loading"
+            :invalid="!!accountNameError"
+            :described-by="[accountNameError && 'account-name-error', 'account-name-description'].filter(Boolean).join(' ')"
+            :placeholder="t('Your practice name', 'Nombre de tu consulta')"
+          />
         </OnboardingFormField>
 
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-3">
-          <OnboardingFormField id="clinic-name" :label="t('First clinic location', 'Primera clínica')">
-            <OnboardingTextInput id="clinic-name" v-model="clinicName" required :readonly="loading" placeholder="Valencia" />
+          <OnboardingFormField id="clinic-name" :label="t('First clinic', 'Primera clínica')" :error="clinicNameError">
+            <OnboardingTextInput
+              id="clinic-name"
+              ref="clinicInput"
+              v-model="clinicName"
+              required
+              :readonly="loading"
+              :invalid="!!clinicNameError"
+              :described-by="clinicNameError ? 'clinic-name-error' : undefined"
+              placeholder="Valencia"
+            />
           </OnboardingFormField>
           <OnboardingFormField id="clinic-country" :label="t('Country', 'País')">
             <OnboardingCountrySelect id="clinic-country" v-model="country" :dial="false" data-test="clinic-country" />
@@ -425,12 +493,18 @@ const LAUNCH_CARDS = computed(() => [
         <div class="rounded-ctl border border-brand-tintBorder bg-brand-tint px-3 py-2.5 lg:hidden">
           <p class="text-[11.5px] font-semibold text-brand-text">{{ t('Your booking page', 'Tu página de reservas') }}</p>
           <p class="mt-1 truncate text-[13px] leading-[1.4] text-ink-700">
-            quiroflow.app/<strong class="font-semibold">{{ previewSlug(accountName) || t('practice', 'consulta') }}</strong
-            >/<strong class="font-semibold">{{ previewSlug(clinicName) || t('clinic', 'clinica') }}</strong>
+            <strong class="font-semibold">{{ previewSlug(accountName) || t('your-practice', 'tu-consulta') }}</strong>.app.quiroflow.com
           </p>
         </div>
 
-        <p v-if="error" role="alert" class="text-[12.5px] text-danger-text">{{ error }}</p>
+        <div v-if="error" role="alert" class="text-[12.5px] leading-[1.45] text-danger-text">
+          <p>
+            {{ error }}
+            {{ t('If it keeps happening, write to', 'Si vuelve a pasar, escríbenos a') }}
+            <a href="mailto:hola@quiroflow.com" class="font-semibold underline">hola@quiroflow.com</a>.
+          </p>
+          <p v-if="errorDetail" class="mt-1 text-ink-muted">{{ t('Details:', 'Detalle:') }} {{ errorDetail }}</p>
+        </div>
 
         <div class="mt-1.5 flex gap-2.5">
           <OnboardingSecondaryButton :disabled="loading" @click="backToSignup">
@@ -480,7 +554,7 @@ const LAUNCH_CARDS = computed(() => [
               <span class="min-w-0 flex-1">
                 <span class="block text-[13.5px] font-semibold text-ink-700">{{ opt === 'en' ? 'English' : 'Español' }}</span>
                 <span class="mt-0.5 block text-[12px] text-ink-muted">
-                  {{ opt === 'en' ? 'Interface and patient messages' : 'Interfaz y mensajes a pacientes' }}
+                  {{ opt === 'en' ? 'Your menus and screens' : 'Tus menús y pantallas' }}
                 </span>
               </span>
               <OnboardingTileCheck :selected="langPreference === opt" />
@@ -489,7 +563,12 @@ const LAUNCH_CARDS = computed(() => [
         </div>
 
         <p class="text-[12.5px] leading-[1.5] text-ink-muted">
-          {{ t('You can always change these later from Account.', 'Siempre puedes cambiarlo luego desde Cuenta.') }}
+          {{
+            t(
+              'Change either one later in Account Settings, in the menu under your name. Patients get messages in their own language, set on their record.',
+              'Puedes cambiarlas luego en Ajustes de la cuenta, en el menú con tu nombre. Los pacientes reciben los mensajes en su propio idioma, el de su ficha.',
+            )
+          }}
         </p>
 
         <div class="flex gap-2.5">
@@ -524,8 +603,8 @@ const LAUNCH_CARDS = computed(() => [
         <p class="text-[12.5px] leading-[1.5] text-ink-muted">
           {{
             t(
-              'The import runs inside, from Settings → Import, whenever you are ready. Afterwards you link each practitioner it brings to someone on your team, so their visits land in their own column.',
-              'La importación se hace dentro, desde Ajustes → Importar, cuando quieras. Después vinculas cada profesional que traiga con alguien de tu equipo, para que sus visitas caigan en su propia columna.',
+              'Nothing is imported yet. When you are ready, run it from Settings → Import. Then match each practitioner it brings in to someone on your team, so their visits land in the right calendar column.',
+              'Todavía no se importa nada. Cuando quieras, hazlo desde Ajustes → Importar. Después asigna cada profesional importado a alguien de tu equipo, para que sus visitas caigan en su columna de la agenda.',
             )
           }}
         </p>
@@ -581,8 +660,10 @@ const LAUNCH_CARDS = computed(() => [
             {{ t(`Import from ${importSourceName}`, `Importar desde ${importSourceName}`) }}
           </OnboardingPrimaryButton>
           <p class="mt-2.5 text-center text-[12.5px] text-ink-muted">
-            <NuxtLink to="/dashboard" class="font-semibold text-brand-text hover:text-brand-hover">{{ t('Go to the dashboard instead', 'Ir al panel') }}</NuxtLink>
-            · {{ t('the import waits for you in its first steps.', 'la importación te espera en sus primeros pasos.') }}
+            {{ t('Or', 'O') }}
+            <NuxtLink to="/dashboard" class="font-semibold text-brand-text hover:text-brand-hover">{{ t('go to the dashboard first', 've antes al panel') }}</NuxtLink>{{
+              t(': importing stays on your list of first steps there.', ': la importación seguirá en tu lista de primeros pasos.')
+            }}
           </p>
         </template>
         <template v-else>

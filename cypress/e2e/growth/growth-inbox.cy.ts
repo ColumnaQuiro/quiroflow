@@ -599,7 +599,7 @@ describe('Growth in the shared Inbox', () => {
     cy.get('[data-cy=inbox-more-filters]').click()
     cy.get('[data-test="filter-ai-handling"]').click()
     // The chip says a filter behind it is on.
-    cy.get('[data-cy=inbox-more-filters]').should('contain', '· 1')
+    cy.get('[data-cy=inbox-more-filters]').should('contain', 'More filters 1')
     cy.contains('[data-test="lead-row"]', 'Handled By Ai').should('be.visible')
     cy.contains('[data-test="lead-row"]', 'Taken Over').should('not.exist')
   })

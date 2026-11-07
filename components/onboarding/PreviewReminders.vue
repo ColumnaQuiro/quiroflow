@@ -6,7 +6,9 @@ import { PREVIEW_THREAD } from './previewFixtures'
 // It is built from theme tokens rather than fixed colours, so picking Dark on
 // the left turns this panel dark too -- the preference applies to the whole
 // app the moment it is chosen, and this is the proof of that. The language
-// choice swaps the thread's copy the same way.
+// choice swaps the thread's copy the same way -- but only as a sample: what a
+// patient actually receives follows patients.preferred_language, never the
+// staff member's own pick, and the copy around it says so.
 const props = defineProps<{ practice: string; theme: 'light' | 'dark' | 'system'; language: 'en' | 'es' }>()
 
 const t = useT()
@@ -35,11 +37,11 @@ const outboundParts = computed(() => {
 <template>
   <OnboardingPreview
     :eyebrow="t('Previewing your choices', 'Vista previa de tus elecciones')"
-    :title="t(`${themeWord} interface, reminders in ${languageWord}`, `Interfaz ${themeWord.toLowerCase()}, recordatorios en ${languageWord}`)"
+    :title="t(`${themeWord} interface, in ${languageWord}`, `Interfaz ${themeWord.toLowerCase()}, en ${languageWord}`)"
     :body="
       t(
-        'Patients get the reminder in your practice language; replies land back in the appointment.',
-        'Los pacientes reciben el recordatorio en el idioma de tu consulta; las respuestas vuelven a la cita.',
+        'Each patient gets reminders in their own language, set on their record. Replies land back on the appointment.',
+        'Cada paciente recibe los recordatorios en su propio idioma, el de su ficha. Las respuestas vuelven a la cita.',
       )
     "
   >

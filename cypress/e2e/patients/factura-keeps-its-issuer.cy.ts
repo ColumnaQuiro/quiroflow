@@ -37,7 +37,7 @@ describe('A factura keeps its issuer', () => {
         // real path and not only on a seeded insert.
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}?tab=billing`)
-        cy.contains('select', 'Sell a package').should('exist').select('Bono 5 (5, 220,00\u00a0€)')
+        cy.contains('select', 'Sell a bono').should('exist').select('Bono 5 (5, 220,00\u00a0€)')
         cy.contains('button', /^Sell$/).click()
         cy.contains('button', 'Selling…').should('not.exist')
 

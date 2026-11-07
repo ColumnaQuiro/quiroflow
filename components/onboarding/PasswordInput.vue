@@ -3,6 +3,7 @@ const props = withDefaults(
   defineProps<{
     id: string
     describedBy?: string
+    invalid?: boolean
     readonly?: boolean
     /**
      * 'new' sets a password: strength meter, the minimum, and the hint.
@@ -13,10 +14,14 @@ const props = withDefaults(
     /** The minimum a 'new' password is held to (and the hint states). */
     minLength?: number
   }>(),
-  { describedBy: undefined, readonly: false, mode: 'new', minLength: 6 },
+  { describedBy: undefined, invalid: false, readonly: false, mode: 'new', minLength: 6 },
 )
 
 const model = defineModel<string>({ required: true })
+
+// Same handle TextInput gives the page, so an error can put focus back here.
+const el = ref<HTMLInputElement | null>(null)
+defineExpose({ focus: () => el.value?.focus() })
 
 const t = useT()
 const visible = ref(false)
@@ -52,18 +57,22 @@ const tone = computed(() => TONES[Math.max(0, score.value - 1)])
     <div class="relative">
       <input
         :id="id"
+        ref="el"
         v-model="model"
         :type="visible ? 'text' : 'password'"
         :autocomplete="props.mode === 'current' ? 'current-password' : 'new-password'"
         required
         :minlength="props.mode === 'current' ? undefined : props.minLength"
         :readonly="readonly"
+        :aria-invalid="invalid || undefined"
         :aria-describedby="[describedBy, props.mode === 'new' && `${id}-strength`].filter(Boolean).join(' ') || undefined"
         class="h-9 touch:h-11 w-full rounded-ctl border bg-surface pl-3 pr-[74px] text-[15px] text-ink-900 outline-none transition-shadow lg:h-[38px] lg:text-[14px]"
         :class="
           readonly
             ? 'border-line bg-surface-subtle text-ink-muted'
-            : 'border-line-control focus:border-brand focus:shadow-focus'
+            : invalid
+              ? 'border-danger-text shadow-focusDanger focus:shadow-focusDanger'
+              : 'border-line-control focus:border-brand focus:shadow-focus'
         "
       />
       <button

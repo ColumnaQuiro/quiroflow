@@ -10,7 +10,7 @@ function selectBookableDayWithSlots(attempt = 0) {
   cy.get('.grid.grid-cols-7 button:not([disabled])').eq(attempt).click()
   cy.contains('Cargando horarios').should('not.exist')
   cy.get('body').then(($body) => {
-    if ($body.text().includes('No hay horas disponibles')) {
+    if ($body.text().includes('Ya no quedan horas libres')) {
       if (attempt > 15) throw new Error('No bookable day within the visible range had available slots')
       selectBookableDayWithSlots(attempt + 1)
     }
@@ -36,13 +36,13 @@ describe('Booking fees and a card on file', () => {
         cy.get('[data-cy=booking-policy]')
           .should('contain.text', 'Cancelar con menos de 24 h de antelación: 15,00')
           .and('contain.text', 'No presentarse a la cita: 25,00')
-          .and('contain.text', 'te pediremos una tarjeta')
+          .and('contain.text', 'le pediremos una tarjeta')
         cy.contains('label', 'Nombre *').parent().find('input').type('Nora')
         cy.contains('label', 'Correo electrónico *').parent().find('input').type('nora.tarjeta@example.test')
         cy.contains('label', 'Número de móvil *').parent().find('input[type="tel"]').type('600111002')
         cy.contains('button', 'Reservar cita').click()
         cy.wait('@book')
-        cy.get('[data-cy=booking-card-step]').should('contain.text', 'Tu cita está reservada').and('contain.text', 'No se cobra nada ahora')
+        cy.get('[data-cy=booking-card-step]').should('contain.text', 'Su cita está reservada').and('contain.text', 'Ahora no se cobra nada')
         cy.get('[data-cy=booking-add-card]').should('be.visible')
         // Without one, the booking stands.
         cy.get('[data-cy=booking-skip-card]').click()

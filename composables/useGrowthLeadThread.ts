@@ -235,7 +235,7 @@ export function useGrowthLeadThread() {
       return true
     } catch (e) {
       if (pendingId) patchStatus(leadId, pendingId, 'failed')
-      showToast(serverMessage(e) ?? t('Could not send that reply.', 'No se ha podido enviar la respuesta.'), 'error')
+      showToast(withServerDetail(t("Couldn't send the reply.", 'No se ha podido enviar la respuesta.'), e, t('Details:', 'Detalle:')), 'error')
       return false
     } finally {
       sending.value = false
@@ -261,7 +261,7 @@ export function useGrowthLeadThread() {
       return true
     } catch (e) {
       patchStatus(leadId, pendingId, 'failed')
-      showToast(serverMessage(e) ?? t('Could not send that file.', 'No se ha podido enviar el archivo.'), 'error')
+      showToast(withServerDetail(t("Couldn't send the file.", 'No se ha podido enviar el archivo.'), e, t('Details:', 'Detalle:')), 'error')
       return false
     } finally {
       sending.value = false
@@ -277,19 +277,19 @@ export function useGrowthLeadThread() {
         { method: 'POST' },
       )
       if (!result.available) {
-        showToast(t('The AI receptionist is not configured on this deployment.', 'La recepcionista IA no está configurada en este despliegue.'), 'error')
+        showToast(t("Reply drafts aren't available right now. Reply yourself.", 'Los borradores de respuesta no están disponibles ahora mismo. Responde tú.'), 'error')
         return false
       }
       if (result.refused || !result.draft) {
         // The model declining to write this is an answer, not a failure --
         // said plainly rather than shown as a broken request.
-        showToast(t('The receptionist did not want to answer this one -- reply yourself.', 'La recepcionista no ha querido responder a este -- respóndele tú.'))
+        showToast(t("The receptionist didn't write a draft for this message. Reply yourself.", 'La recepcionista no ha redactado nada para este mensaje. Responde tú.'))
         return false
       }
       await load(leadId, { silent: true })
       return true
     } catch (e) {
-      showToast(serverMessage(e) ?? t('Could not draft a reply.', 'No se ha podido redactar una respuesta.'), 'error')
+      showToast(withServerDetail(t("Couldn't draft a reply.", 'No se ha podido redactar una respuesta.'), e, t('Details:', 'Detalle:')), 'error')
       return false
     } finally {
       drafting.value = false

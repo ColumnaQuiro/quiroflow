@@ -114,7 +114,7 @@ describe('Custom patient fields', () => {
       cy.get('#first-name').type('Iker')
       cy.get('#last-name').type('Nuevo')
       cy.get('[data-cy=new-patient-custom-field][data-key=lateralidad] select').select('Zurdo')
-      cy.contains('button', 'Add Patient').click()
+      cy.contains('button', 'Add patient').click()
       cy.location('pathname', { timeout: 15000 }).should('match', /^\/patients\/[0-9a-f-]+$/)
       cy.location('pathname').then((path) => {
         cy.task<any[]>('db:selectRows', { table: 'patient_attribute_values', columns: 'value', match: { patient_id: path.split('/').pop() } }).then((rows) => {

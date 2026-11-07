@@ -19,7 +19,7 @@ describe('Changing a payment method', () => {
           cy.get('@form').contains('button', 'Record payment').click()
           cy.contains('button', 'Recording…').should('not.exist')
 
-          cy.contains('tr', 'Payment — cash').click()
+          cy.contains('tr', 'Payment — Cash').click()
           cy.get('[data-cy=payment-change-method]').click()
           cy.get('[data-cy=payment-method-modal]').within(() => {
             // Saving the method it already has is not a change.
@@ -28,8 +28,8 @@ describe('Changing a payment method', () => {
             cy.get('[data-cy=payment-method-save]').click()
           })
 
-          cy.contains('tr', 'Payment — card').should('exist')
-          cy.contains('tr', 'Payment — cash').should('not.exist')
+          cy.contains('tr', 'Payment — Card').should('exist')
+          cy.contains('tr', 'Payment — Cash').should('not.exist')
 
           cy.task('db:paymentsFor', { patientId: patient.id }).then((payments: any) => {
             expect(payments, 'still one payment, not a removal and a new one').to.have.length(1)
@@ -75,7 +75,7 @@ describe('Changing a payment method', () => {
 
           cy.login(account.email, account.password)
           cy.visit(`/patients/${patient.id}?tab=billing`)
-          cy.contains('tr', 'Payment — card').click()
+          cy.contains('tr', 'Payment — Card').click()
           cy.contains('Automatic (card on file)').should('be.visible')
           cy.get('[data-cy=payment-change-method]').should('not.exist')
         })

@@ -29,7 +29,7 @@ const dialogPanel = ref<HTMLElement | null>(null)
 const dialogTitleId = useId()
 useFocusTrap(dialogPanel, () => emit('close'))
 
-const name = ref(props.plan?.name ?? t('Care Plan', 'Plan de cuidados'))
+const name = ref(props.plan?.name ?? t('Care plan', 'Plan de cuidados'))
 // "N visits every M weeks": frequency_value is the interval M (what the
 // calendar series and Care Plan Alerts read), visits_per_period is N.
 const visitsPerPeriod = ref(props.plan?.visits_per_period ?? 1)
@@ -109,7 +109,7 @@ async function save() {
   const { error: insertError } = await supabase.from('care_plans').insert({
     account_id: store.accountId!,
     patient_id: props.patientId,
-    name: name.value.trim() || t('Care Plan', 'Plan de cuidados'),
+    name: name.value.trim() || t('Care plan', 'Plan de cuidados'),
     frequency_value: Math.max(1, Math.round(frequencyValue.value || 1)),
     frequency_unit: frequencyUnit.value,
     visits_per_period: Math.min(7, Math.max(1, Math.round(visitsPerPeriod.value || 1))),
@@ -125,7 +125,7 @@ async function save() {
   })
   saving.value = false
   if (insertError) {
-    error.value = insertError.message
+    error.value = `${t('The plan was not saved.', 'No se ha guardado el plan.')} (${insertError.message})`
     return
   }
   emit('saved')
@@ -140,7 +140,7 @@ const fieldId = useId()
   <div class="fixed inset-0 z-20 flex items-center justify-center bg-scrim/40 p-4" @click.self="emit('close')">
     <div ref="dialogPanel" role="dialog" aria-modal="true" :aria-labelledby="dialogTitleId" class="max-h-full w-full overflow-y-auto max-w-sm rounded-card bg-surface p-6 shadow-popover">
       <div class="flex items-center justify-between">
-        <h2 :id="dialogTitleId" class="text-lg font-semibold text-ink-900">{{ plan ? t('Edit Plan', 'Editar plan') : t('New Care Plan', 'Nuevo plan de cuidados') }}</h2>
+        <h2 :id="dialogTitleId" class="text-lg font-semibold text-ink-900">{{ plan ? t('Edit plan', 'Editar plan') : t('New care plan', 'Nuevo plan de cuidados') }}</h2>
         <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="emit('close')">✕</button>
       </div>
 
@@ -169,7 +169,7 @@ const fieldId = useId()
           <input :id="`${fieldId}-totalVisits`" v-model.number="totalVisits" type="number" min="1" :disabled="noEnd" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand bg-surface text-ink-900 disabled:opacity-50" data-cy="plan-total-visits" />
           <label class="mt-1.5 flex items-center gap-2 text-[13px] text-ink-700">
             <input v-model="noEnd" type="checkbox" class="h-4 w-4 accent-brand" data-cy="plan-no-end" />
-            {{ t('No end · until someone closes it', 'Sin fin · sigue hasta que alguien lo cierre') }}
+            {{ t('No end · runs until a new plan replaces it', 'Sin fin · sigue hasta que lo sustituya un plan nuevo') }}
           </label>
         </div>
         <div>
@@ -223,11 +223,11 @@ const fieldId = useId()
             </button>
           </div>
           <select v-if="paymentKind === 'bono'" v-model="bonoId" class="mt-2 w-full rounded-ctl border border-line-control px-3 py-2 text-sm bg-surface text-ink-900" data-cy="plan-pay-bono-select">
-            <option value="" disabled>{{ bonos.length ? t('Choose a bono…', 'Elige un bono…') : t('No open bono — sell one in Money', 'Sin bono abierto — véndelo en Dinero') }}</option>
+            <option value="" disabled>{{ bonos.length ? t('Choose a bono…', 'Elige un bono…') : t('No open bono: sell one in Money', 'Sin bono abierto: véndelo en Dinero') }}</option>
             <option v-for="b in bonos" :key="b.id" :value="b.id">{{ b.label }}</option>
           </select>
           <select v-if="paymentKind === 'membership'" v-model="membershipId" class="mt-2 w-full rounded-ctl border border-line-control px-3 py-2 text-sm bg-surface text-ink-900" data-cy="plan-pay-membership-select">
-            <option value="" disabled>{{ memberships.length ? t('Choose a membership…', 'Elige una membresía…') : t('No active membership — start one in Money', 'Sin membresía activa — empiézala en Dinero') }}</option>
+            <option value="" disabled>{{ memberships.length ? t('Choose a membership…', 'Elige una membresía…') : t('No active membership: start one in Money', 'Sin membresía activa: empiézala en Dinero') }}</option>
             <option v-for="m in memberships" :key="m.id" :value="m.id">{{ m.label }}</option>
           </select>
           <p v-if="paymentKind === 'per_visit'" class="mt-1.5 text-[12px] text-ink-muted">{{ t('Each visit is charged at its normal price.', 'Cada visita se cobra a su precio habitual.') }}</p>

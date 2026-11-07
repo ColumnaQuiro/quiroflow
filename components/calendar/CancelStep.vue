@@ -145,7 +145,7 @@ const feeOptions = computed(() => {
     {
       key: 'balance',
       title: t(`Add ${feeText.value} to their balance`, `Añadir ${feeText.value} a su saldo`),
-      sub: t('The clinic’s cancellation fee. Collected at the next visit or from Billing.', 'Tarifa de cancelación de la clínica. Se cobra en la próxima visita o desde Cobro.'),
+      sub: t('The clinic’s cancellation fee. Collected at the next visit or from their Money tab.', 'Tarifa de cancelación de la clínica. Se cobra en la próxima visita o desde su pestaña Dinero.'),
     },
   ]
   if (card.value) {
@@ -230,7 +230,7 @@ async function confirmCancel() {
     } catch {
       showToast(
         prepaid.value === 'refund'
-          ? t('Cancelled, but the payment could not be refunded. Refund it from their Billing tab.', 'Cancelada, pero no se ha podido devolver el pago. Devuélvelo desde su pestaña de Cobro.')
+          ? t('Cancelled, but the payment could not be refunded. Refund it from their Money tab.', 'Cancelada, pero no se ha podido devolver el pago. Devuélvelo desde su pestaña Dinero.')
           : t('Cancelled, but the payment could not be kept as credit.', 'Cancelada, pero el pago no ha podido quedar como saldo.'),
         'error',
         8000,
@@ -325,7 +325,7 @@ async function confirmCancel() {
           <div v-if="matches.length" class="overflow-hidden rounded-card border border-line" data-cy="cancel-waitlist">
             <div class="border-b border-line-divider bg-surface-subtle px-3.5 py-2.5 text-[12.5px] text-ink-700">
               <strong>{{ t(`${matches.length} ${matches.length === 1 ? 'person' : 'people'}`, `${matches.length} ${matches.length === 1 ? 'persona' : 'personas'}`) }}</strong>
-              {{ t(`on the waitlist fit (${appointment.appointment_types?.name ?? 'any type'}, with ${practitionerFirst || 'anyone'} or with anyone)`, `en la lista de espera encajan (${appointment.appointment_types?.name ?? 'cualquier tipo'}, con ${practitionerFirst || 'cualquiera'} o con cualquiera)`) }}
+              {{ practitionerFirst ? t(`on the waitlist fit (${appointment.appointment_types?.name ?? 'any type'}, with ${practitionerFirst} or with anyone)`, `en la lista de espera encajan (${appointment.appointment_types?.name ?? 'cualquier tipo'}, con ${practitionerFirst} o con cualquiera)`) : t(`on the waitlist fit (${appointment.appointment_types?.name ?? 'any type'}, with anyone)`, `en la lista de espera encajan (${appointment.appointment_types?.name ?? 'cualquier tipo'}, con cualquiera)`) }}
             </div>
             <div v-for="(w, i) in matches.slice(0, 3)" :key="w.id" class="flex items-center gap-3 border-t border-line-divider px-3.5 py-2.5 first:border-t-0" data-cy="cancel-waitlist-entry">
               <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-chip-bg text-[12px] font-bold text-ink-500">{{ i + 1 }}</span>

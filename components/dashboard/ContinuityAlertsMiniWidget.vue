@@ -37,7 +37,16 @@ watch(() => props.practitionerId, load)
   <div v-else>
     <p class="font-mono text-[27px] leading-none text-ink-900">{{ count }}</p>
     <p class="mt-1.5 text-[12px] text-ink-muted2">
-      {{ avgDays !== null ? t(`Avg ${avgDays} days behind plan`, `Media de ${avgDays} días de retraso`) : t('No care plans behind schedule', 'Ningún plan de cuidados retrasado') }}
+      <!-- On the count, not on the average: a plan behind schedule with no
+           days_overdue left avgDays null, and the tile then said "no care
+           plans behind schedule" under a number that was not zero. -->
+      {{
+        count === 0
+          ? t('No care plans behind schedule', 'Ningún plan de cuidados retrasado')
+          : avgDays !== null
+            ? t(`On average ${avgDays} days behind their plan`, `De media, ${avgDays} días de retraso sobre su plan`)
+            : t('Behind their plan', 'Con retraso sobre su plan')
+      }}
     </p>
     <NuxtLink to="/care-plan-alerts" class="mt-1.5 inline-block text-[12px] font-medium text-brand-text hover:text-brand-hover">{{ t('View alerts →', 'Ver alertas →') }}</NuxtLink>
   </div>

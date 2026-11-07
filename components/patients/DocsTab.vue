@@ -166,7 +166,7 @@ async function save() {
   saving.value = false
   // The error was previously dropped on the floor: a failed save left the
   // page looking unchanged and said nothing at all.
-  showToast(error ? error.message : t('Saved', 'Guardado'), error ? 'error' : 'success')
+  showToast(error ? `${t('The form was not saved.', 'No se ha guardado el formulario.')} (${error.message})` : t('Saved', 'Guardado'), error ? 'error' : 'success')
 }
 
 async function toggleComplete() {
@@ -189,7 +189,7 @@ async function removeDoc(doc: Doc) {
   deleteError.value = ''
   const { data: gone, error } = await supabase.from('patient_docs').delete().eq('id', doc.id).select('id')
   if (error || !gone?.length) {
-    deleteError.value = error?.message ?? t('This form was not deleted: your role cannot delete it.', 'No se ha eliminado el formulario: tu rol no puede eliminarlo.')
+    deleteError.value = error ? `${t('The form was not deleted.', 'No se ha eliminado el formulario.')} (${error.message})` : t('This form was not deleted: your role cannot delete it.', 'No se ha eliminado el formulario: tu rol no puede eliminarlo.')
     return
   }
   docs.value = docs.value.filter((d) => d.id !== doc.id)
@@ -263,7 +263,7 @@ function metaFor(doc: Doc) {
         </div>
       </div>
       <div v-else-if="docs.length === 0" class="p-8 text-center text-[13px] text-ink-faint">
-        {{ t('No docs yet — e.g. a data protection consent record for this patient.', 'Aún no hay documentos — p. ej. un registro de consentimiento de protección de datos para este paciente.') }}
+        {{ t('No forms sent yet. Send one with Send a form, for example a data protection consent.', 'Aún no se ha enviado ningún formulario. Envía uno con Enviar un formulario, por ejemplo un consentimiento de protección de datos.') }}
       </div>
       <ul v-else class="divide-y divide-line-row">
         <!-- On a phone the status and the four actions take a line of their
@@ -330,7 +330,7 @@ function metaFor(doc: Doc) {
 
     <template v-else>
       <div class="flex items-center justify-between border-b border-line-divider px-4 py-3">
-        <button type="button" class="text-[13px] text-ink-muted hover:text-ink-700" @click="backToList">&larr; {{ t('Docs', 'Documentos') }}</button>
+        <button type="button" class="text-[13px] text-ink-muted hover:text-ink-700" @click="backToList">&larr; {{ t('Documents', 'Documentos') }}</button>
         <div class="flex items-center gap-3">
           <UiBtn :variant="activeDoc?.completed_at ? 'primary' : 'secondary'" size="sm" @click="toggleComplete">
             {{ activeDoc?.completed_at ? t('✓ Completed', '✓ Completado') : t('Mark as completed', 'Marcar como completado') }}

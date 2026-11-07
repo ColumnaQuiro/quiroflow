@@ -153,7 +153,7 @@ export function useGrowthReceptionist() {
       showToast(
         stale
           ? t('Someone changed these settings after you opened this page. Reload it to see their changes, then save yours again.', 'Alguien ha cambiado estos ajustes después de que abrieras la página. Recárgala para ver sus cambios y vuelve a guardar los tuyos.')
-          : (serverMessage(e) ? `${t('Could not save.', 'No se ha podido guardar.')} (${serverMessage(e)})` : t('Could not save.', 'No se ha podido guardar.')),
+          : withServerDetail(t('Could not save.', 'No se ha podido guardar.'), e, t('Details:', 'Detalle:')),
         'error',
       )
       return false

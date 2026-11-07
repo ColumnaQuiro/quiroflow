@@ -244,7 +244,7 @@ const isMarketingTemplate = computed(() => current.value?.category === 'MARKETIN
           data-test="answer-fallback"
           @input="setVariable(i, { fallback: ($event.target as HTMLInputElement).value })"
         />
-        <button v-if="!current" type="button" :class="REMOVE_BTN" :aria-label="t('Remove variable', 'Quitar variable')" @click="removeVariable(i)">✕</button>
+        <button v-if="!current" type="button" :class="REMOVE_BTN" :aria-label="t('Remove variable', 'Quitar variable')" @click="removeVariable(i)"><UiCloseIcon /></button>
       </div>
       <!-- An empty slot is not left empty: the sender fills it with the first
       name so Meta does not refuse the message (runAutomationActions.ts). Say

@@ -78,8 +78,7 @@ export function useGrowthReputation() {
   // Google said, as the detail. Those come back in English ("Google refused
   // the reply: ..."), and on their own they were the whole message.
   function failed(plain: string, e: unknown) {
-    const detail = serverMessage(e)
-    return detail ? `${plain} (${detail})` : plain
+    return withServerDetail(plain, e, t('Details:', 'Detalle:'))
   }
 
   async function draftReply(reviewId: string) {

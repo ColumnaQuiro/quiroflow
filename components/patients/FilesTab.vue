@@ -162,7 +162,7 @@ async function uploadFiles(fileList: FileList) {
     const path = `${store.accountId}/${patientId}/${Date.now()}-${sanitizeStorageFilename(file.name)}`
     const { error: uploadError } = await supabase.storage.from('patient-files').upload(path, file)
     if (uploadError) {
-      error.value = uploadError.message
+      error.value = `${t(`${file.name} was not uploaded.`, `No se ha subido ${file.name}.`)} (${uploadError.message})`
       continue
     }
     const { data: inserted } = await supabase
@@ -299,7 +299,7 @@ async function confirmRemove() {
   deleting.value = null
   const { data: gone, error: deleteError } = await supabase.from('patient_files').delete().eq('id', file.id).select('id')
   if (deleteError || !gone?.length) {
-    error.value = deleteError?.message ?? t('This file was not deleted: your role cannot delete it.', 'No se ha eliminado el archivo: tu rol no puede eliminarlo.')
+    error.value = deleteError ? `${t('The file was not deleted.', 'No se ha eliminado el archivo.')} (${deleteError.message})` : t('This file was not deleted: your role cannot delete it.', 'No se ha eliminado el archivo: tu rol no puede eliminarlo.')
     return
   }
   if (file.storage_path) await supabase.storage.from('patient-files').remove([file.storage_path])
@@ -373,8 +373,12 @@ async function confirmRemove() {
           >
             PDF
           </span>
-          <span v-if="!file.storage_path" class="absolute right-1.5 top-1.5 rounded-pill bg-warning-bg px-1.5 py-0.5 text-[11px] font-medium text-warning-text">
-            {{ t('Not migrated', 'No migrado') }}
+          <span
+            v-if="!file.storage_path"
+            class="absolute right-1.5 top-1.5 rounded-pill bg-warning-bg px-1.5 py-0.5 text-[11px] font-medium text-warning-text"
+            :title="t('Only the name came across in the import. The file itself was never copied, so it cannot be opened.', 'En la importación solo llegó el nombre. El archivo en sí no se copió, así que no se puede abrir.')"
+          >
+            {{ t('Name only', 'Solo el nombre') }}
           </span>
         </div>
         <div class="p-2.5">
@@ -402,11 +406,12 @@ async function confirmRemove() {
             <select
               v-model="file.visibility"
               class="min-w-0 rounded border border-line-control px-1 py-0.5 text-[11px] text-ink-muted focus:border-brand focus:outline-none touch:min-h-10"
-              :title="t('Whether this file will show to the patient in the mobile app', 'Si este archivo se mostrará al paciente en la aplicación móvil')"
+              :aria-label="t('Who can see this file', 'Quién puede ver este archivo')"
+              :title="t('A shared file shows in the patient app. Until then only the clinic sees it.', 'Un archivo compartido aparece en la app del paciente. Hasta entonces solo lo ve la clínica.')"
               @change="updateVisibility(file)"
             >
-              <option value="generic">{{ t('Generic', 'Genérico') }}</option>
-              <option value="custom">{{ t('Custom', 'Personalizado') }}</option>
+              <option value="generic">{{ t('Clinic only', 'Solo la clínica') }}</option>
+              <option value="custom">{{ t('Shared with the patient', 'Compartido con el paciente') }}</option>
             </select>
             <div class="flex shrink-0 items-center gap-2">
               <button v-if="file.storage_path" type="button" class="text-[11px] font-medium text-brand-text outline-none hover:text-brand-hover focus-visible:shadow-focus touch:min-h-10 touch:px-1" @click="view(file)">{{ t('Preview', 'Vista previa') }}</button>

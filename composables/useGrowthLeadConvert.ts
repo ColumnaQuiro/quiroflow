@@ -56,11 +56,7 @@ export function useGrowthLeadConvert() {
         candidates.value = found.data.data.candidates
         return null
       }
-      // The plain sentence first; the server's own words, which are
-      // English, only as the detail.
-      const detail = serverMessage(e)
-      const plain = t('Could not convert that lead.', 'No se ha podido convertir el lead.')
-      showToast(detail ? `${plain} (${detail})` : plain, 'error')
+      showToast(withServerDetail(t("Couldn't convert the lead.", 'No se ha podido convertir el lead.'), e, t('Details:', 'Detalle:')), 'error')
       return null
     } finally {
       converting.value = false

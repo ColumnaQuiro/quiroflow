@@ -4,7 +4,7 @@ function selectBookableDayWithSlots(attempt = 0) {
   cy.get('.grid.grid-cols-7 button:not([disabled])').eq(attempt).click()
   cy.contains('Cargando horarios').should('not.exist')
   cy.get('body').then(($body) => {
-    if ($body.text().includes('No hay horas disponibles')) {
+    if ($body.text().includes('Ya no quedan horas libres')) {
       if (attempt > 15) throw new Error('No bookable day within the visible range had available slots')
       selectBookableDayWithSlots(attempt + 1)
     }
@@ -49,12 +49,12 @@ describe('Public online booking', () => {
         cy.contains('button', 'Reservar cita').click()
 
         cy.contains('¡Cita reservada!', { timeout: 15000 }).should('be.visible')
-        cy.contains('Le hemos enviado los detalles a maria.garcia@example.test.').should('be.visible')
+        cy.contains('Recibirá los detalles de la cita en maria.garcia@example.test.').should('be.visible')
 
         // The install prompt rides on the confirmation. Spanish whatever the
         // viewer's language preference says, because this page is read by the
         // patient and never by the staff member that preference belongs to.
-        cy.contains('Descarga la app de QuiroFlow').should('be.visible')
+        cy.contains('Descargue la app de QuiroFlow').should('be.visible')
         cy.get('a[href*="play.google.com"]').should('have.attr', 'href', playStoreUrl())
 
         // Asserted against the constant rather than a hard-coded state, so

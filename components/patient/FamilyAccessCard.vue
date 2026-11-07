@@ -38,7 +38,7 @@ async function withdraw(linkId: string) {
   const { data, error: e } = await supabase.rpc('withdraw_patient_manager', { p_link_id: linkId })
   busy.value = null
   if (e || !data) {
-    error.value = t('Could not remove it. Try again.', 'No se ha podido quitar. Inténtalo de nuevo.')
+    error.value = t("Couldn't remove the access. Try again.", 'No se ha podido quitar el acceso. Inténtalo de nuevo.')
     return
   }
   await Promise.all([loadManagers(), reloadFamily()])
@@ -54,7 +54,7 @@ const name = (first: string, last: string | null) => [first, last].filter(Boolea
       <ul class="mt-1.5 space-y-1">
         <li v-for="p in others" :key="p.patientId" class="flex items-center justify-between gap-3">
           <span class="min-w-0 truncate text-[13.5px] text-ink-900">
-            {{ personName(p) }}<span class="text-ink-muted"> · {{ p.access === 'admin' ? t('visits and payments', 'citas y pagos') : t('everything', 'todo') }}</span>
+            {{ personName(p) }}<span class="text-ink-muted"> · {{ p.access === 'admin' ? t('visits and payments', 'citas y pagos') : t('full access', 'acceso completo') }}</span>
           </span>
           <button
             v-if="p.linkId"
@@ -64,7 +64,7 @@ const name = (first: string, last: string | null) => [first, last].filter(Boolea
             :data-cy="`family-stop-${p.firstName}`"
             @click="withdraw(p.linkId)"
           >
-            {{ busy === p.linkId ? t('Removing…', 'Quitando…') : confirming === p.linkId ? t('Sure? Stop', '¿Seguro? Dejar') : t('Stop managing', 'Dejar de gestionar') }}
+            {{ busy === p.linkId ? t('Removing…', 'Quitando…') : confirming === p.linkId ? t('Yes, stop managing', 'Sí, dejar de gestionar') : t('Stop managing', 'Dejar de gestionar') }}
           </button>
         </li>
       </ul>
@@ -74,7 +74,7 @@ const name = (first: string, last: string | null) => [first, last].filter(Boolea
       <ul class="mt-1.5 space-y-1.5">
         <li v-for="m in managers" :key="m.link_id" class="flex items-center justify-between gap-3">
           <span class="min-w-0 truncate text-[13.5px] text-ink-900">
-            {{ name(m.manager_first_name, m.manager_last_name) }}<span class="text-ink-muted"> · {{ m.access === 'admin' ? t('visits and payments', 'citas y pagos') : t('everything', 'todo') }}</span>
+            {{ name(m.manager_first_name, m.manager_last_name) }}<span class="text-ink-muted"> · {{ m.access === 'admin' ? t('visits and payments', 'citas y pagos') : t('full access', 'acceso completo') }}</span>
           </span>
           <button
             type="button"
@@ -83,11 +83,13 @@ const name = (first: string, last: string | null) => [first, last].filter(Boolea
             :data-cy="`family-withdraw-${m.manager_first_name}`"
             @click="withdraw(m.link_id)"
           >
-            {{ busy === m.link_id ? t('Removing…', 'Quitando…') : confirming === m.link_id ? t('Sure? Remove', '¿Seguro? Quitar') : t('Remove', 'Quitar') }}
+            {{ busy === m.link_id ? t('Removing…', 'Quitando…') : confirming === m.link_id ? t('Yes, remove access', 'Sí, quitar acceso') : t('Remove access', 'Quitar acceso') }}
           </button>
         </li>
       </ul>
     </div>
+    <!-- withdraw(): only the clinic can link the two records again. -->
+    <p v-if="confirming" class="mt-2 text-[12px] text-ink-muted" role="status">{{ t('Only the clinic can link the accounts again.', 'Solo la clínica puede volver a vincular las cuentas.') }}</p>
     <p v-if="error" role="alert" class="mt-2 text-[12.5px] text-danger-text">{{ error }}</p>
   </PatientCard>
 </template>

@@ -79,10 +79,10 @@ describe('Blocks at the other clinic, room blocks, and "Cambiar"', () => {
             expectStart(appointmentId, 10)
 
             drag(block('Mover Norte'), px)
-            cy.contains('h2', 'Rescheduling Appointment').should('be.visible')
+            cy.contains('h2', 'Reschedule appointment').should('be.visible')
             clash().should('not.exist')
-            cy.contains('button', 'Confirm').click()
-            cy.contains('h2', 'Rescheduling Appointment').should('not.exist')
+            cy.contains('button', 'Move appointment').click()
+            cy.contains('h2', 'Reschedule appointment').should('not.exist')
             expectStart(appointmentId, 11)
           })
         })

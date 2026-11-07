@@ -1881,9 +1881,13 @@ function avatarInitials(name: string) {
     <div class="flex flex-1 overflow-hidden">
       <!-- Conversation list. Full-width on mobile (there's no room for a
       list alongside a thread), swapped for the thread panel once a
-      conversation is selected instead of splitting the screen between them. -->
+      conversation is selected instead of splitting the screen between them.
+      From xl the patient panel takes 300-340px on the right as well, so the
+      list grows with the window rather than in fixed steps: ~345px on a
+      1280px screen (where the thread still needs room), ~390px at 1440 and
+      440px from about 1630 up. -->
       <div
-        class="w-full flex-col border-r border-line bg-surface md:flex md:w-[340px] md:shrink-0 xl:w-[320px] 2xl:w-[380px]"
+        class="w-full flex-col border-r border-line bg-surface md:flex md:w-[340px] md:shrink-0 lg:w-[370px] xl:w-[clamp(340px,27vw,440px)]"
         :class="selected || selectedLead ? 'hidden md:flex' : 'flex'"
         data-cy="inbox-list"
         :data-ready="ready ? 'true' : undefined"

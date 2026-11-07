@@ -22,6 +22,12 @@ const { context, loading, can } = usePractitionerContext()
     </p>
     <!-- Keyed by who is reading: kept alive, a switch of account would
          otherwise keep showing the last one's conversations. -->
-    <PractitionerInbox v-else :key="`${context.accountId}:${context.teamMemberId}`" :account-id="context.accountId" :team-member-id="context.teamMemberId" :open-conversation-key="pendingConversationKey" />
+    <PractitionerInbox v-else :key="`${context.accountId}:${context.teamMemberId}`" :account-id="context.accountId" :team-member-id="context.teamMemberId" :open-conversation-key="pendingConversationKey">
+      <template #list-top>
+        <div class="flex h-14 shrink-0 items-center border-b border-line bg-surface px-3">
+          <InboxTeamSwitch current="inbox" />
+        </div>
+      </template>
+    </PractitionerInbox>
   </div>
 </template>

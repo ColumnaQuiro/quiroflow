@@ -49,7 +49,7 @@ async function read(again = false) {
   try {
     await readQuirocitas(store.accountId, { again, onProgress: (p) => { progress.value = p }, shouldStop: () => stopping.value })
   } catch (e: any) {
-    error.value = e?.data?.statusMessage ?? e?.message ?? t('The read stopped.', 'La lectura se detuvo.')
+    error.value = importErrorText(e, t, { en: 'The read stopped. What was read is kept; press the button again to carry on.', es: 'La lectura se detuvo. Lo leído se conserva; vuelve a pulsar el botón para seguir.' })
   } finally {
     running.value = false
   }
@@ -73,7 +73,7 @@ const percent = computed(() => {
 <template>
   <div class="space-y-4" data-cy="qc-read">
     <ImportIntro
-      :lead="t('Reads every patient, their history, bonos and invoices, then the cash ledger, from Quirocitas into this browser. The steps after it import from that copy. It takes about ten minutes for 2,000 patients.', 'Lee de Quirocitas cada paciente, su historial, bonos y facturas, y después la caja, a una copia en este navegador. Los pasos siguientes importan desde esa copia. Tarda unos diez minutos por cada 2.000 pacientes.')"
+      :lead="t('Reads every patient, their history, bonos and invoices, then the cash ledger, from Quirocitas into this browser. The steps after it import from that copy. It takes about ten minutes for 2000 patients.', 'Lee de Quirocitas cada paciente, su historial, bonos y facturas, y después la caja, a una copia en este navegador. Los pasos siguientes importan desde esa copia. Tarda unos diez minutos por cada 2000 pacientes.')"
       :notes="[
         { title: t('Nothing is written yet.', 'Aún no se escribe nada.'), body: t('Reading changes nothing in Quirocitas or in QuiroFlow.', 'Leer no cambia nada en Quirocitas ni en QuiroFlow.') },
         { title: t('Stop and carry on.', 'Para y sigue.'), body: t('Stopping keeps what has been read; reading again picks up where it stopped. The copy stays in this browser only.', 'Al parar se guarda lo leído; al volver a leer sigue donde se quedó. La copia solo queda en este navegador.') },

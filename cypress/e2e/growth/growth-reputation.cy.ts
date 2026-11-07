@@ -237,7 +237,7 @@ describe('Growth reputation', () => {
 
     cy.visit('/growth/reputation?growth=1')
     cy.get('[data-test="draft-reply"]').click()
-    cy.contains('needs an Anthropic API key').should('be.visible')
+    cy.contains('Drafting replies is not available right now').should('be.visible')
   })
 
   it('counts sent and opened exactly, and refuses to guess the rest', () => {

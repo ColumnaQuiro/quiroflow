@@ -250,7 +250,7 @@ describe('Inbox, as a team', () => {
         cy.login(account.email, account.password)
         cy.visit('/inbox?growth=1')
         cy.get('[data-cy=inbox-list]').should('have.attr', 'data-ready', 'true')
-        cy.get('[data-test="filter-leads-only"]').should('contain.text', 'Leads · 1')
+        cy.get('[data-test="filter-leads-only"]').should('contain.text', 'Leads 1')
         cy.contains('[data-test="lead-row"]', 'Lola Lead').click()
         cy.get('[data-cy=lead-assign]').click()
         cy.get('[data-cy=lead-assign-menu]').contains('button', '(you)').click()

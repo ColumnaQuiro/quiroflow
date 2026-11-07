@@ -4,6 +4,7 @@ import { notifyInboxTeamMembers } from '~/server/utils/pushNotifications'
 import { clinicOpenAt } from '~/utils/receptionistAutoReply'
 import { handoverReminderBody, handoverReminderDecision } from '~/utils/handoverReminder'
 import type { BusinessHours } from '~/utils/businessHours'
+import { handOverUnansweredCancelQuestions } from '~/server/utils/receptionistPendingCancel'
 
 // One more push for a handover nobody has answered.
 //
@@ -38,6 +39,13 @@ export default defineEventHandler(async (event) => {
   const supabase = serverSupabaseServiceRole<Database>(event)
   const now = new Date()
 
+  // "¿Te quito la cita?" left unanswered with the visit within a day: to a
+  // person, before the time is lost (receptionistPendingCancel.ts).
+  const cancelQuestions = await handOverUnansweredCancelQuestions(supabase, now).catch((err) => {
+    console.error('[handover-reminder-cron] could not check unanswered cancel questions:', (err as Error)?.message ?? err)
+    return [] as string[]
+  })
+
   const { data: tasks, error } = await supabase
     .from('staff_tasks')
     .select('id, account_id, patient_id, lead_id, title, created_at, due_at')
@@ -53,7 +61,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 500, statusMessage: 'Could not read handover tasks' })
   }
   const rows = tasks ?? []
-  if (rows.length === 0) return { reminded: [] as string[], answered: [] as string[] }
+  if (rows.length === 0) return { reminded: [] as string[], answered: [] as string[], cancelQuestions }
 
   const accountIds = [...new Set(rows.map((t) => t.account_id))]
   const since = rows.reduce((min, t) => (t.created_at < min ? t.created_at : min), rows[0]!.created_at)
@@ -95,7 +103,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // The ids, not just counts: a background job nobody watches.
-  return { reminded, answered }
+  return { reminded, answered, cancelQuestions }
 })
 
 /**

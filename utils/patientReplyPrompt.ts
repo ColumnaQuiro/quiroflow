@@ -5,7 +5,7 @@ import { DEFAULT_CLINIC_TIMEZONE } from './clinicClock'
 import { CONFIDENTIALITY_SECTION, promptSafeName } from './receptionistGuard'
 import { NO_REPLY } from './receptionistAutoReply'
 import { clinicDetailsSection, teamSection, type PromptClinic } from './receptionistClinic'
-import { audienceSection, CONFIRM_BEFORE_BOOKING, familySection, laterPricesSection, minorsSection, offeredTypesSection, rescheduleSection, someoneTheyBringSection, type PromptPackage, type BookedVisit, type PromptChild, type PromptRelative, type PromptType, type ReceptionistAudience } from './receptionistTypes'
+import { audienceSection, CONFIRM_BEFORE_BOOKING, familySection, phoneSharersSection, type PhoneSharer, laterPricesSection, minorsSection, offeredTypesSection, rescheduleSection, someoneTheyBringSection, type PromptPackage, type BookedVisit, type PromptChild, type PromptRelative, type PromptType, type ReceptionistAudience } from './receptionistTypes'
 import { receptionistBookingSection, receptionistClockSection, type ReceptionistAvailability } from './receptionistSlots'
 import { CARD_ANSWERS_LINE, historyMarkersSection, INFORMAL_ADDRESS_LINE, LATER_ANSWER_LINE, NO_INVENTION_LINE, NOT_CHIROPRACTIC_SYMPTOM_LINE, PART_OF_DAY_ANSWER_LINE, REPLY_DETAILS_LINE, replyLanguageLine, SENT_FILES_LINE, STATED_LIMITS_LINE, WAITLIST_SECTION } from './receptionistHistory'
 import type { ReceptionistPrompt } from './receptionistPrompt'
@@ -342,6 +342,8 @@ export function buildPatientReplyPrompt(
     team?: string[]
     /** What the patient app holds for them (patientAppSection); absent, nothing is said about it. */
     app?: PatientAppFacts
+    /** Other patients on the same mobile, with their next visits (phoneSharersSection). */
+    phoneSharers?: PhoneSharer[]
   },
 ): ReceptionistPrompt {
   const knowledge = config.knowledge
@@ -401,6 +403,7 @@ export function buildPatientReplyPrompt(
     opts.laterPrices ? laterPricesSection(opts.laterPrices) : '',
     opts.minors ? minorsSection({ ...opts.minors, canBook: !!opts.canBook, sendsItself: !!opts.sendsItself, bringsSomeone: Boolean(opts.bringsSomeone) }) : '',
     opts.family ? familySection({ ...opts.family, canBook: !!opts.canBook, sendsItself: !!opts.sendsItself, bringsSomeone: Boolean(opts.bringsSomeone) }) : '',
+    phoneSharersSection(opts.phoneSharers ?? [], opts.calendar.timeZone || DEFAULT_CLINIC_TIMEZONE, { sendsItself: Boolean(opts.sendsItself) }),
     opts.bringsSomeone ? someoneTheyBringSection({ types: opts.bringsSomeone.types, referred: opts.bringsSomeone.referred, canGive: opts.bringsSomeone.canGive, canBook: !!opts.canBook, sendsItself: !!opts.sendsItself }) : '',
     // A returning patient asking for "otra cita" means another of what they
     // have been having -- their adjustment, their maintenance visit -- and

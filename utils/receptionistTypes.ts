@@ -362,6 +362,32 @@ export function familySection(opts: { forNew: PromptType[]; forReturning: Prompt
   ].filter(Boolean).join('\n')
 }
 
+/** Another patient on the same mobile as the person writing, with their next visits. */
+export interface PhoneSharer {
+  firstName: string
+  lastName: string | null
+  upcoming: { startsAt: string; typeName: string | null; practitionerName: string | null }[]
+}
+
+/**
+ * The people who share the phone of the person writing (loadPhoneSharers):
+ * their reminders reach this phone already, so their visits are no secret
+ * here -- and a time that is already theirs must never be called "not free".
+ */
+export function phoneSharersSection(sharers: PhoneSharer[], timeZone: string, opts: { sendsItself: boolean }): string {
+  if (!sharers.length) return ''
+  const when = (iso: string) => new Date(iso).toLocaleString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone })
+  const lines = sharers.map((p) => {
+    const name = [p.firstName, p.lastName].filter(Boolean).join(' ')
+    const visits = p.upcoming.map((v) => `${when(v.startsAt)}${v.typeName || v.practitionerName ? ` (${[v.typeName, v.practitionerName && `with ${v.practitionerName}`].filter(Boolean).join(' ')})` : ''}`)
+    return `- ${name}: ${visits.length ? `next visits ${visits.join('; ')}` : 'no visit booked'}`
+  })
+  return [
+    `# Others on this same phone\nThese patients have the same mobile number on their record as the person writing, so their confirmations and reminders reach this phone too:\n${lines.join('\n')}`,
+    `When the person writing asks about one of them by name ("¿y Pablo a las 18?"), answer from these visits: a time that is already that person's visit is theirs -- say so, and never say it is not free. You may tell the person writing the day, time and chiropractor of these visits, since they reach this phone anyway: this is the one exception to never telling them about another person's visits. Nothing else about them (history, package, payments). Moving or cancelling one of their visits is your colleague's: ${opts.sendsItself ? 'call hand_over_to_colleague saying which visit and what they want' : 'say your colleague will take care of it'}.`,
+  ].join('\n')
+}
+
 const fold = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
 
 /**
@@ -477,7 +503,7 @@ export function checkBookableIds(value: unknown, types: Pick<OfferableType, 'id'
  * "vale" to several, a day or time that was not offered.
  */
 export const CONFIRM_BEFORE_BOOKING =
-  'Book or move only when there is no doubt which exact day and time they want: they named both themselves ("el miércoles 21 a las 16:00") and it is free, or their answer can only be one of the times you just offered -- offered "martes 20 a las 10:00 o miércoles 21 a las 16:00", "miércoles 21" means 16:00 and you book it without asking again. If it could be more than one time (you offered two times that day, they said "vale" to several options, or a day or time you did not offer), ask "¿Te lo confirmo el miércoles 21 de octubre a las 16:00 con Jordana?" first and do not book yet.'
+  'Book or move only when there is no doubt which exact day and time they want: they named both themselves ("el miércoles 21 a las 16:00") and it is free, or their answer can only be one of the times you just offered -- offered "martes 20 a las 10:00 o miércoles 21 a las 16:00", "miércoles 21", "el 21" or "perdón, sí, el 21" mean 16:00 and you book it without asking again. A correction of an earlier answer counts the same way: what they choose last is their answer. If it could be more than one time (you offered two times that day, they said "vale" to several options, or a day or time you did not offer), ask "¿Te lo confirmo el miércoles 21 de octubre a las 16:00 con Jordana?" first and do not book yet.'
 
 /** A visit the person already has booked, as the reschedule section names it. */
 export interface BookedVisit {

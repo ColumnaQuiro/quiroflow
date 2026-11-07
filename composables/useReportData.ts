@@ -1,7 +1,10 @@
 import type { InjectionKey } from 'vue'
-import { fetchAllRows } from '~/composables/useFetchAllRows'
-import { leadReach } from '~/utils/leadReach'
-import type { Appt, BonoData, LeadRow, MembershipRow, Money, MoneyLine, Names, Need, PatientRow, RecallRow, ReportData, SpendRow, WhatsappRow } from '~/utils/reportMetrics'
+// Relative, not ~/: the app (mobile/) loads report pages with this too, and
+// there ~ is mobile/.
+import { fetchAllRows } from './useFetchAllRows'
+import { leadReach } from '../utils/leadReach'
+import type { Appt, BonoData, LeadRow, MembershipRow, Money, MoneyLine, Names, Need, PatientRow, RecallRow, ReportData, SpendRow, WhatsappRow } from '../utils/reportMetrics'
+import type { ReportViewer } from '../utils/reportViewer'
 
 // The data behind a report page, loaded once for the whole page and shared by
 // every block on it: ten blocks reading income are one set of requests, not
@@ -29,9 +32,13 @@ export interface ReportDataHub {
 
 export const REPORT_DATA_KEY: InjectionKey<ReportDataHub> = Symbol('report-data')
 
-export function useReportDataHub(): ReportDataHub {
+/**
+ * `viewer` is for the app, which has no account store (utils/reportViewer.ts);
+ * the web passes nothing and reads the store, as it always has.
+ */
+export function useReportDataHub(viewer?: ReportViewer): ReportDataHub {
   const supabase = useSupabaseClient()
-  const store = useAccountStore()
+  const store: Pick<ReportViewer, 'accountId'> = viewer ?? useAccountStore()
   const { labelFor, ensureLoaded: ensureMethods } = usePaymentMethods()
   const version = ref(0)
   const generation = ref(0)

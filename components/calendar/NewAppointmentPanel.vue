@@ -9,6 +9,7 @@ import { formatEur, formatTime } from '~/utils/billing'
 import { findFreeSlots, firstClash, type Busy } from '~/utils/freeSlots'
 import { seriesProblems, seriesStarts, type RepeatRule, type SeriesProblem } from '~/utils/repeatSeries'
 import { visitMarkerLabel } from '~/utils/carePlanVisitMarkers'
+import { raiseInvoice } from '~/utils/raiseInvoice'
 import { planVisitsToBook } from '~/utils/planRenewal'
 
 // A new appointment, from a slot or from "+ Nueva cita". Laid out in the
@@ -747,43 +748,41 @@ async function book(requested: Date[]) {
 
   if (collectPayment.value && firstAppointmentId) {
     const amountCents = Math.round((parseFloat(paymentAmount.value) || 0) * 100)
-    // Only draw a number when there is something to invoice --
-    // next_invoice_number() consumes one on every call, by design.
-    const { data: invoiceNumber } = amountCents > 0 ? await supabase.rpc('next_invoice_number', { p_account_id: store.accountId! }) : { data: null }
-    if (invoiceNumber) {
-      const { data: invoice } = await supabase
-        .from('invoices')
-        .insert({ account_id: store.accountId!, patient_id: patientId, appointment_id: firstAppointmentId, invoice_number: invoiceNumber, status: 'paid', total_cents: amountCents })
-        .select('id')
-        .single()
-      if (invoice) {
-        await supabase.from('invoice_line_items').insert({
-          account_id: store.accountId!,
-          invoice_id: invoice.id,
-          description: selectedAppointmentType.value?.name ?? 'Appointment',
-          quantity: 1,
-          price_cents: amountCents,
-        })
-        if (paymentMethod.value === 'credit') {
-          await supabase.from('payments').insert({ account_id: store.accountId!, patient_id: patientId, invoice_id: invoice.id, amount_cents: amountCents, method: 'credit' })
-          await supabase.from('account_credits').insert({
-            account_id: store.accountId!,
-            patient_id: patientId,
-            amount_cents: -amountCents,
-            reason: `Applied to invoice ${invoiceNumber}`,
-            invoice_id: invoice.id,
-            created_by: store.teamMember?.id ?? null,
-          })
-        } else {
-          const { data: payment } = await supabase
-            .from('payments')
-            .insert({ account_id: store.accountId!, patient_id: patientId, invoice_id: invoice.id, amount_cents: amountCents, method: paymentMethod.value, purpose: 'visit' })
-            .select('id')
-            .single()
-          if (payment) {
-            await issueFactura({ accountId: store.accountId!, patientId, paymentId: payment.id, amountCents, purpose: 'visit', serviceName: selectedAppointmentType.value?.name })
-          }
-        }
+    // The receipt, its line and the payment (with the credit entry, for
+    // credit) in one transaction -- raise_invoice(). These were four separate
+    // inserts, the receipt written as PAID first and no error read after it,
+    // so a refused payment left a visit marked paid with nothing paying it,
+    // and the panel closed as if it had been. Nothing is written for a zero
+    // amount: there is nothing to invoice, and a number would be spent.
+    if (amountCents > 0) {
+      const serviceName = selectedAppointmentType.value?.name
+      const { invoice, error: chargeError } = await raiseInvoice(supabase, {
+        patientId,
+        appointmentId: firstAppointmentId,
+        description: serviceName ?? 'Appointment',
+        amountCents,
+        paymentMethod: paymentMethod.value,
+      })
+      if (!invoice) {
+        // The booking stands -- it is in, and the confirmation may already
+        // be on its way -- so the panel still closes; retrying from here
+        // would book the visit a second time. What did NOT happen has to be
+        // said where it cannot be mistaken for success, and long enough to
+        // read.
+        console.error('[calendar] payment at booking was not recorded', chargeError)
+        useToast().showToast(
+          t(
+            `The appointment is booked, but the payment was NOT recorded (${chargeError}). Take it from the patient's Money tab.`,
+            `La cita está reservada, pero el pago NO se ha registrado (${chargeError}). Cóbralo desde la pestaña Dinero del paciente.`,
+          ),
+          'error',
+          20000,
+        )
+      } else if (invoice.paymentId && paymentMethod.value !== 'credit') {
+        // Once, for the payment just recorded. Credit gets none: that money
+        // was documented when it was paid in. A factura that cannot be issued
+        // does not undo the payment -- issueFactura says so itself.
+        await issueFactura({ accountId: store.accountId!, patientId, paymentId: invoice.paymentId, amountCents, purpose: 'visit', serviceName })
       }
     }
   }
@@ -1051,14 +1050,14 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
             </p>
             <div class="flex items-center justify-between">
               <span class="text-[12.5px] font-medium text-ink-600">{{ t('Collect payment now', 'Cobrar ahora') }}</span>
-              <button type="button" role="switch" :aria-checked="collectPayment" :aria-label="t('Collect payment now', 'Cobrar ahora')" class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors" :class="collectPayment ? 'bg-brand' : 'bg-toggle-off'" @click="collectPayment = !collectPayment">
+              <button type="button" role="switch" :aria-checked="collectPayment" :aria-label="t('Collect payment now', 'Cobrar ahora')" data-cy="create-collect-payment" class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors" :class="collectPayment ? 'bg-brand' : 'bg-toggle-off'" @click="collectPayment = !collectPayment">
                 <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform" :class="collectPayment ? 'translate-x-[18px]' : 'translate-x-0.5'" />
               </button>
             </div>
             <div v-if="collectPayment" class="grid grid-cols-2 gap-3">
               <label class="flex flex-col gap-1 text-[12.5px] font-medium text-ink-600">{{ t('Amount (€)', 'Importe (€)') }}<input v-model="paymentAmount" type="number" min="0" step="0.01" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700" /></label>
               <label class="flex flex-col gap-1 text-[12.5px] font-medium text-ink-600">{{ t('Method', 'Método') }}
-                <select v-model="paymentMethod" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700">
+                <select v-model="paymentMethod" data-cy="create-payment-method" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700">
                   <option value="cash">{{ t('Cash', 'Efectivo') }}</option>
                   <option value="card">{{ t('Card', 'Tarjeta') }}</option>
                   <option value="credit">{{ t('Credit on account', 'Crédito en cuenta') }}</option>

@@ -62,7 +62,8 @@ const PLATFORM: Record<string, string> = { ios: 'iPhone', android: 'Android', we
 const label = computed(() => {
   if (state.value === 'app' && device.value) {
     const when = formatRelativeDays(device.value.last_seen_at, preference.value === 'es' ? 'es' : 'en')
-    return `${t('App', 'App')} · ${PLATFORM[device.value.platform] ?? device.value.platform} · ${t('opened', 'abierta')} ${when}`
+    const platform = PLATFORM[device.value.platform] ?? device.value.platform
+    return t(`App · ${platform} · opened ${when}`, `App · ${platform} · abierta ${when}`)
   }
   if (state.value === 'account') return t('Has an app account', 'Tiene cuenta en la app')
   return t('No app', 'Sin app')
@@ -82,7 +83,7 @@ async function copyInvite() {
     setTimeout(() => (copied.value = false), 1800)
   } catch {
     // Clipboard blocked: nothing on screen to select instead, so say so.
-    useToast().showToast(t('Could not copy. Settings > App has the links and the code.', 'No se pudo copiar. En Ajustes > App están los enlaces y el código.'), 'error')
+    useToast().showToast(t('Could not copy. Settings › Mobile App has the links and the clinic code.', 'No se pudo copiar. En Ajustes › App móvil están los enlaces y el código de la clínica.'), 'error')
   }
 }
 </script>

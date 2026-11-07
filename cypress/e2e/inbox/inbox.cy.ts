@@ -12,7 +12,7 @@ describe('WhatsApp Inbox', () => {
         cy.contains('li', 'Nadia Novak').click()
 
         cy.contains('WhatsApp').should('be.visible')
-        cy.contains("Nadia Novak hasn't messaged you before — start with an approved template.").should('be.visible')
+        cy.contains("Nadia Novak hasn't written to you on WhatsApp yet, so the first message has to be an approved template.").should('be.visible')
         cy.contains('button', 'Send template').should('be.visible')
 
         // No free-text composer for a conversation with no inbound history yet --

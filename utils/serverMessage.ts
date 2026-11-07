@@ -24,3 +24,17 @@ export function serverMessage(err: unknown): string | null {
   const message = data?.statusMessage ?? data?.message
   return message && message.trim() ? message : null
 }
+
+/**
+ * A plain sentence the person can read, with what the server said after it
+ * as a detail: "Couldn't send the message. Detalle: text is required".
+ *
+ * Server routes answer in English, often in a developer's words, so leading
+ * with their message gave a Spanish front desk "Instagram refused the
+ * message: (#10) ..." as the whole explanation. It stays, second, because it
+ * is what support needs to see.
+ */
+export function withServerDetail(sentence: string, err: unknown, detailLabel: string): string {
+  const detail = serverMessage(err)
+  return detail ? `${sentence} ${detailLabel} ${detail}` : sentence
+}

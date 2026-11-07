@@ -69,7 +69,7 @@ describe('An appointment covered by a bono', () => {
           cy.contains('Not charged yet').should('be.visible')
           cy.contains('button', 'Use Bono mantenimiento — 40,00 €').should('be.visible')
           cy.contains('button', 'Charge 55,00 € instead').should('be.visible')
-          cy.contains('Or use a package session').should('not.exist')
+          cy.contains('Or use a bono session').should('not.exist')
         })
       })
     })

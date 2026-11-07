@@ -140,8 +140,8 @@ export function useSetupChecklist() {
       skippable: false,
       title: t('Your clinic’s address and phone', 'Dirección y teléfono de la clínica'),
       body: t(
-        'They go into every confirmation and reminder, and on your booking page.',
-        'Salen en cada confirmación y recordatorio, y en tu página de reservas.',
+        'Your booking page shows them, and confirmation and reminder messages can include them.',
+        'Salen en tu página de reservas, y los mensajes de confirmación y recordatorio pueden incluirlos.',
       ),
       action: { label: t('Open Clinics', 'Abrir Clínicas'), to: '/settings/clinics' },
     },
@@ -175,9 +175,11 @@ export function useSetupChecklist() {
       done: facts.imported,
       skippable: true,
       title: t('Bring your patients over', 'Trae tus pacientes'),
+      // Quirocitas is a source too, and the third source (pages/settings/import.vue)
+      // reads a CSV or .xlsx file and brings patients only.
       body: t(
-        'Patients, past and upcoming visits, bonos, payments and files from PracticeHub, or patients from a spreadsheet.',
-        'Pacientes, visitas pasadas y futuras, bonos, pagos y archivos desde PracticeHub, o pacientes desde una hoja de cálculo.',
+        'Patients, past and upcoming visits, bonos, payments and files from PracticeHub or Quirocitas, or patients alone from a CSV or Excel file.',
+        'Pacientes, visitas pasadas y futuras, bonos, pagos y archivos desde PracticeHub o Quirocitas, o solo pacientes desde un archivo CSV o Excel.',
       ),
       action: { label: t('Import', 'Importar'), to: '/settings/import' },
       alternative: { label: t('Add one by hand', 'Añadir uno a mano'), to: '/patients?new=1' },
@@ -250,12 +252,16 @@ export function useSetupChecklist() {
       skippable: false,
       title: t('Choose your plan', 'Elige tu plan'),
       body:
-        store.trialDaysLeft !== null
-          ? t(
-              `Add a card before your trial ends in ${store.trialDaysLeft} days. Nothing is charged until then.`,
-              `Añade una tarjeta antes de que acabe tu prueba, en ${store.trialDaysLeft} días. No se cobra nada hasta entonces.`,
-            )
-          : t('Add a card so the clinic keeps running.', 'Añade una tarjeta para que la clínica siga funcionando.'),
+        store.trialDaysLeft === 0
+          ? t('Your trial ends today. Add a card so the clinic keeps running.', 'Tu prueba termina hoy. Añade una tarjeta para que la clínica siga funcionando.')
+          : store.trialDaysLeft === 1
+            ? t('Add a card before your trial ends in 1 day. Nothing is charged until then.', 'Añade una tarjeta antes de que acabe tu prueba, en 1 día. No se cobra nada hasta entonces.')
+            : store.trialDaysLeft !== null
+              ? t(
+                  `Add a card before your trial ends in ${store.trialDaysLeft} days. Nothing is charged until then.`,
+                  `Añade una tarjeta antes de que acabe tu prueba, en ${store.trialDaysLeft} días. No se cobra nada hasta entonces.`,
+                )
+              : t('Add a card so the clinic keeps running.', 'Añade una tarjeta para que la clínica siga funcionando.'),
       action: { label: t('Subscription', 'Suscripción'), to: '/subscription' },
     },
     {
@@ -277,8 +283,8 @@ export function useSetupChecklist() {
       skippable: false,
       title: t('Book your first visit', 'Reserva tu primera visita'),
       body: t(
-        'Pick a slot in the calendar. With WhatsApp connected, the reminder goes out on its own.',
-        'Elige un hueco en la agenda. Con WhatsApp conectado, el recordatorio sale solo.',
+        'Pick a slot in the calendar. Once WhatsApp and the reminder message above are set up, the reminder goes out on its own.',
+        'Elige un hueco en la agenda. Cuando WhatsApp y el mensaje de recordatorio de arriba estén listos, el recordatorio sale solo.',
       ),
       action: { label: t('Open the calendar', 'Abrir la agenda'), to: '/calendar' },
     },

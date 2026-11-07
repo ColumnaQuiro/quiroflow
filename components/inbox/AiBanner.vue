@@ -79,8 +79,8 @@ const quietText = computed(() => {
       escalated thread is the failure this control exists to prevent, and the
       second one needs to see who already has it. -->
       <span class="text-[12px] text-ink-muted">
-        {{ t('AI paused', 'IA en pausa') }}<template v-if="takenOverBy"> · {{ takenOverBy }}</template>
-        {{ t('took over. The AI will not reply until you hand it back.', 'ha tomado el control. La IA no responderá hasta que se lo devuelvas.') }}
+        <template v-if="takenOverBy">{{ t(`AI paused: ${takenOverBy} took over. It won't reply until someone hands it back.`, `IA en pausa: ${takenOverBy} ha tomado el control. No responderá hasta que alguien se la devuelva.`) }}</template>
+        <template v-else>{{ t("AI paused: a person took over. It won't reply until someone hands it back.", 'IA en pausa: una persona ha tomado el control. No responderá hasta que alguien se la devuelva.') }}</template>
       </span>
     </div>
     <button type="button" class="shrink-0 text-[11.5px] font-semibold text-brand-text hover:underline" data-test="hand-back" @click="$emit('handBack')">

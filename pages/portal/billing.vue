@@ -38,7 +38,7 @@ function eur(cents: number) {
   <div>
     <PatientPageHead
       :title="t('Billing', 'Facturación')"
-      :lead="t('Your packages, your balance, your facturas and every receipt.', 'Tus bonos, tu saldo, tus facturas y todos tus recibos.')"
+      :lead="t('Your bonos, what you owe, your facturas and every charge.', 'Tus bonos, lo que tienes pendiente, tus facturas y todos tus cargos.')"
     />
 
     <div class="grid grid-cols-2 gap-3">
@@ -48,7 +48,7 @@ function eur(cents: number) {
         <p v-else class="mt-1 text-[24px] font-[640] tracking-tightTitle text-ink-900">{{ eur(creditLedgerCents) }}</p>
       </div>
       <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-        <p class="text-[11.5px] font-[640] uppercase tracking-[.05em] text-ink-faint">{{ t('Outstanding', 'Pendiente') }}</p>
+        <p class="text-[11.5px] font-[640] uppercase tracking-[.05em] text-ink-faint">{{ t('Still to pay', 'Pendiente de pago') }}</p>
         <p v-if="moneyLoading" class="mt-2"><UiSkeleton class="h-7 w-20 rounded-ctlSm" /></p>
         <p v-else class="mt-1 text-[24px] font-[640] tracking-tightTitle" :class="amountDueCents > 0 ? 'text-danger-text' : 'text-ink-900'">
           {{ eur(amountDueCents) }}
@@ -57,7 +57,7 @@ function eur(cents: number) {
     </div>
 
     <div class="mt-4">
-      <PatientCard :title="t('Your packages', 'Tus bonos')">
+      <PatientCard :title="t('Your bonos', 'Tus bonos')">
         <div v-if="moneyLoading" class="space-y-4">
           <UiSkeleton class="h-9 touch:h-11 w-full rounded-ctl" />
         </div>
@@ -75,7 +75,7 @@ function eur(cents: number) {
             {{ t(`${activeMembership.membership_name} membership active`, `Membresía ${activeMembership.membership_name} activa`) }}
           </p>
         </div>
-        <p v-else class="text-[13px] text-ink-faint">{{ t('You have no active package.', 'No tienes ningún bono activo.') }}</p>
+        <p v-else class="text-[13px] text-ink-faint">{{ t('You have no active bono.', 'No tienes ningún bono activo.') }}</p>
       </PatientCard>
     </div>
 
@@ -92,12 +92,13 @@ function eur(cents: number) {
                 <span v-if="f.annulled_at" class="ml-1 rounded-ctlSm bg-chip-bg px-1.5 py-0.5 text-[11px] font-normal text-chip-text">{{ t('annulled', 'anulada') }}</span>
               </p>
               <p class="truncate text-[12px] text-ink-muted">{{ f.description }}</p>
-              <p class="text-[12px] text-ink-faint">{{ new Date(f.issued_at).toLocaleDateString() }} &middot; {{ f.number }}</p>
+              <p class="text-[12px] text-ink-faint">{{ new Date(f.issued_at).toLocaleDateString(t('en-GB', 'es-ES')) }} &middot; {{ f.number }}</p>
             </div>
             <button
               type="button"
               class="shrink-0 rounded-ctlSm border border-line-control px-2 py-1 text-[12px] font-medium text-ink-600 hover:border-line-controlHover hover:text-ink-900 disabled:opacity-50"
               :disabled="facturaBusyId === f.id"
+              :aria-label="t(`Download factura ${f.number} (PDF)`, `Descargar la factura ${f.number} (PDF)`)"
               @click="downloadFactura(f)"
             >
               {{ facturaBusyId === f.id ? t('…', '…') : t('PDF', 'PDF') }}
@@ -120,7 +121,7 @@ function eur(cents: number) {
             <div class="min-w-0 flex-1">
               <p class="text-[13.5px] font-medium text-ink-900">{{ eur(inv.total_cents) }}</p>
               <p class="text-[12px] text-ink-faint">
-                {{ new Date(inv.created_at).toLocaleDateString() }}
+                {{ new Date(inv.created_at).toLocaleDateString(t('en-GB', 'es-ES')) }}
                 <template v-if="inv.invoice_number"> &middot; {{ inv.invoice_number }}</template>
               </p>
             </div>
@@ -144,6 +145,7 @@ function eur(cents: number) {
               type="button"
               class="shrink-0 rounded-ctlSm border border-line-control px-2 py-1 text-[12px] font-medium text-ink-600 hover:border-line-controlHover hover:text-ink-900 disabled:opacity-50"
               :disabled="busyId === inv.id"
+              :aria-label="t('Download this charge (PDF)', 'Descargar este cargo (PDF)')"
               @click="download(inv)"
             >
               {{ busyId === inv.id ? t('…', '…') : t('PDF', 'PDF') }}
@@ -155,7 +157,7 @@ function eur(cents: number) {
         <p v-if="payError" role="alert" class="border-t border-line-divider px-4 py-2.5 text-[12.5px] text-danger-text">{{ payError }}</p>
         <div v-if="!showAll && invoices.length > PREVIEW" class="border-t border-line-divider px-4 py-2.5">
           <button type="button" class="text-[12.5px] font-medium text-ink-muted hover:text-ink-700" @click="showAll = true">
-            {{ t(`Show all ${invoices.length}`, `Ver las ${invoices.length}`) }}
+            {{ t(`Show all ${invoices.length} charges`, `Ver los ${invoices.length} cargos`) }}
           </button>
         </div>
       </PatientCard>

@@ -73,7 +73,7 @@ async function remove() {
   const { error: deleteError } = await supabase.from('patients').delete().eq('id', props.patientId)
   deleting.value = false
   if (deleteError) {
-    error.value = deleteError.message
+    error.value = `${t('The patient was not deleted. Nothing was removed.', 'No se ha eliminado el paciente. No se ha borrado nada.')} (${deleteError.message})`
     return
   }
   showToast(t('Patient deleted', 'Paciente eliminado'))
@@ -120,7 +120,7 @@ const lines = computed(() =>
         <p v-else class="mt-2.5 text-[13.5px] leading-[1.6] text-ink-700">
           {{
             t(
-              `${patientName} has ${counts.facturas} issued factura${counts.facturas === 1 ? '' : 's'}. Facturas are fiscal records, chain-signed under VeriFactu — removing one would break the chain for every record issued after it, so they cannot be deleted and neither can the patient they belong to.`,
+              `${patientName} has ${counts.facturas} issued factura${counts.facturas === 1 ? '' : 's'}. Facturas are fiscal records, chain-signed under VeriFactu: removing one would break the chain for every record issued after it, so they cannot be deleted, and neither can the patient they belong to.`,
               `${patientName} tiene ${counts.facturas} factura${counts.facturas === 1 ? '' : 's'} emitida${counts.facturas === 1 ? '' : 's'}. Las facturas son registros fiscales firmados en cadena conforme a VeriFactu: eliminar una rompería la cadena de todas las posteriores, así que no se pueden borrar, ni tampoco el paciente al que pertenecen.`,
             )
           }}
@@ -128,8 +128,8 @@ const lines = computed(() =>
         <p class="mt-2.5 text-[13px] leading-[1.6] text-ink-muted">
           {{
             t(
-              'Archiving hides the patient from the active list and stops reminders, while keeping the record intact.',
-              'Archivar oculta al paciente de la lista activa y detiene los recordatorios, conservando la ficha intacta.',
+              'Archiving takes them off the active patient list and out of recalls and campaigns, and keeps the whole record. Visits already booked keep their reminders.',
+              'Archivar lo quita de la lista de pacientes activos, de las recuperaciones y de las campañas, y conserva toda la ficha. Las citas ya reservadas mantienen sus recordatorios.',
             )
           }}
         </p>
@@ -171,8 +171,8 @@ const lines = computed(() =>
         <p v-if="lines.length" class="mt-2 text-[12.5px] leading-[1.55] text-ink-muted">
           {{
             t(
-              'Clinical notes and messages go with the appointments they belong to.',
-              'Las notas clínicas y los mensajes se eliminan junto con las citas a las que pertenecen.',
+              'Visit notes go with their appointments, and payments, bonos, care plans, posture assessments, forms and letters go too. WhatsApp and email messages are kept, no longer linked to anyone.',
+              'Las notas de visita se eliminan con sus citas, y también los pagos, bonos, planes de cuidados, análisis posturales, formularios y cartas. Los mensajes de WhatsApp y correo se conservan, sin vincular a nadie.',
             )
           }}
         </p>

@@ -320,12 +320,12 @@ const OVERRIDABLE_STRINGS = [
   { key: 'heading', default: 'Reservar una cita' },
   { key: 'select_heading', default: 'Elija un profesional' },
   { key: 'any_practitioner_label', default: 'Cualquier profesional' },
-  { key: 'any_practitioner_description', default: 'Esta opción le permite reservar una cita con cualquier profesional disponible en la especialidad y horario seleccionados.' },
+  { key: 'any_practitioner_description', default: 'Reserve con el profesional que tenga libre la hora que elija.' },
   { key: 'choose_datetime', default: 'Elija su fecha y hora' },
   { key: 'enter_details', default: 'Introduzca sus datos' },
   { key: 'confirm_button', default: 'Reservar cita' },
   { key: 'success_heading', default: '¡Cita reservada!' },
-  { key: 'app_promo_heading', default: 'Descarga la app de QuiroFlow' },
+  { key: 'app_promo_heading', default: 'Descargue la app de QuiroFlow' },
 ]
 
 function setOverride(key: string, value: string) {

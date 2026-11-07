@@ -378,8 +378,8 @@ async function save() {
 
   saving.value = false
   if (updateError) {
-    error.value = updateError.message
-    showToast(updateError.message, 'error')
+    error.value = `${t('The changes were not saved.', 'No se han guardado los cambios.')} (${updateError.message})`
+    showToast(error.value, 'error')
     return
   }
   showToast(t('Patient saved', 'Paciente guardado'))
@@ -449,17 +449,17 @@ const fieldId = useId()
             <template v-if="patient.date_of_birth">
               {{ formatLongDate(patient.date_of_birth) }}<template v-if="patientAge(patient.date_of_birth) !== null"> · {{ ageText(patientAge(patient.date_of_birth)!) }}</template>
             </template>
-            <template v-else>{{ t('N/A', 'N/D') }}</template>
+            <template v-else>{{ t('Not recorded', 'Sin registrar') }}</template>
           </dd>
         </div>
         <div>
           <dt class="text-[11.5px] text-ink-muted2">{{ t('Email', 'Correo electrónico') }}</dt>
-          <dd class="mt-0.5 truncate text-[13.5px] text-ink-700">{{ patient.email ?? t('N/A', 'N/D') }}</dd>
+          <dd class="mt-0.5 truncate text-[13.5px] text-ink-700">{{ patient.email ?? t('Not recorded', 'Sin registrar') }}</dd>
         </div>
         <div>
           <dt class="text-[11.5px] text-ink-muted2">{{ t('Address', 'Dirección') }}</dt>
           <dd class="mt-0.5 text-[13.5px] text-ink-700">
-            <p class="truncate">{{ patient.address ?? t('N/A', 'N/D') }}</p>
+            <p class="truncate">{{ patient.address ?? t('Not recorded', 'Sin registrar') }}</p>
             <p v-if="patient.city || patient.postal_code || patient.country" class="truncate text-ink-muted">
               {{ [patient.postal_code, patient.city].filter(Boolean).join(' ') }}{{ patient.country ? (patient.city || patient.postal_code ? ', ' : '') + patient.country : '' }}
             </p>
@@ -467,20 +467,20 @@ const fieldId = useId()
         </div>
         <div>
           <dt class="text-[11.5px] text-ink-muted2">{{ t('National ID', 'DNI/NIE') }}</dt>
-          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.national_id ?? t('N/A', 'N/D') }}</dd>
+          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.national_id ?? t('Not recorded', 'Sin registrar') }}</dd>
         </div>
         <div>
           <dt class="text-[11.5px] text-ink-muted2">{{ t('Occupation', 'Profesión') }}</dt>
-          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.occupation ?? t('N/A', 'N/D') }}</dd>
+          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.occupation ?? t('Not recorded', 'Sin registrar') }}</dd>
         </div>
         <div>
           <dt class="text-[11.5px] text-ink-muted2">{{ t('Emergency contact', 'Contacto de emergencia') }}</dt>
-          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.emergency_contact ?? t('N/A', 'N/D') }}</dd>
+          <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.emergency_contact ?? t('Not recorded', 'Sin registrar') }}</dd>
         </div>
         <div>
-          <dt class="text-[11.5px] text-ink-muted2">{{ t('Referral source', 'Origen de la referencia') }}</dt>
+          <dt class="text-[11.5px] text-ink-muted2">{{ t('Referral source', 'Fuente de referencia') }}</dt>
           <dd class="mt-0.5 text-[13.5px] text-ink-700">
-            {{ patient.referral_source ?? t('N/A', 'N/D') }}
+            {{ patient.referral_source ?? t('Not recorded', 'Sin registrar') }}
             <template v-if="isPatientReferralSource(patient.referral_source)">
               &middot;
               <NuxtLink v-if="patient.referred_by_patient_id" :to="`/patients/${patient.referred_by_patient_id}`" class="text-brand-text hover:underline">
@@ -513,7 +513,7 @@ const fieldId = useId()
         </div>
         <div>
           <dt class="text-[11.5px] text-ink-muted2">{{ t('Status', 'Estado') }}</dt>
-          <dd class="mt-0.5"><UiPill :tone="patient.status === 'active' ? 'success' : 'neutral'">{{ patient.status === 'active' ? t('Active', 'Activo') : t('Inactive', 'Inactivo') }}</UiPill></dd>
+          <dd class="mt-0.5"><UiPill :tone="patient.status === 'active' ? 'success' : 'neutral'">{{ patient.status === 'active' ? t('Active', 'Activo') : t('Archived', 'Archivado') }}</UiPill></dd>
         </div>
         <div v-if="patient.is_minor">
           <dt class="text-[11.5px] text-ink-muted2">{{ t('Tutor', 'Tutor') }}</dt>
@@ -534,7 +534,7 @@ const fieldId = useId()
         <div>
           <dt class="text-[11.5px] text-ink-muted2">{{ t('Communication flags', 'Alertas de comunicación') }}</dt>
           <dd class="mt-0.5 flex flex-wrap gap-1">
-            <UiPill v-if="patient.is_minor" tone="brand">{{ t('Under age — no communications', 'Menor de edad — sin comunicaciones') }}</UiPill>
+            <UiPill v-if="patient.is_minor" tone="brand">{{ patient.tutor_patient_id ? t('Under age: messages go to the tutor', 'Menor de edad: los mensajes van al tutor') : t('Under age: no tutor to message', 'Menor de edad: sin tutor al que escribir') }}</UiPill>
             <UiPill v-if="patient.do_not_contact" tone="danger">{{ t('Do not contact', 'No contactar') }}</UiPill>
             <span v-if="!patient.is_minor && !patient.do_not_contact" class="text-[13.5px] text-ink-700">{{ t('None', 'Ninguna') }}</span>
           </dd>
@@ -592,7 +592,7 @@ const fieldId = useId()
             <input :id="`${fieldId}-emergencyContact`" v-model="emergencyContact" type="text" :class="inputClass" />
           </div>
           <div>
-            <label :for="`${fieldId}-referralSource`" :class="labelClass">{{ t('Referral source', 'Origen de la referencia') }}</label>
+            <label :for="`${fieldId}-referralSource`" :class="labelClass">{{ t('Referral source', 'Fuente de referencia') }}</label>
             <select :id="`${fieldId}-referralSource`" v-model="referralSource" :class="inputClass" data-cy="referral-source-select">
               <option value="">{{ t('Not set', 'Sin especificar') }}</option>
               <option v-for="s in referralSources" :key="s.id" :value="s.name">{{ s.name }}</option>
@@ -645,7 +645,7 @@ const fieldId = useId()
             <label :for="`${fieldId}-status`" :class="labelClass">{{ t('Status', 'Estado') }}</label>
             <select :id="`${fieldId}-status`" v-model="status" :class="inputClass">
               <option value="active">{{ t('Active', 'Activo') }}</option>
-              <option value="inactive">{{ t('Inactive', 'Inactivo') }}</option>
+              <option value="inactive">{{ t('Archived', 'Archivado') }}</option>
             </select>
           </div>
         </div>
@@ -687,11 +687,11 @@ const fieldId = useId()
                 <span class="block text-[11px] text-ink-muted2">{{ t('From now on: their name, address and NIF. Facturas already issued keep the patient’s.', 'A partir de ahora: su nombre, dirección y NIF. Las facturas ya emitidas siguen a nombre del paciente.') }}</span>
               </span>
             </label>
-            <p class="mt-1 text-[11px] text-ink-muted2">{{ t('While marked under age, no WhatsApp or email communications will be sent to this patient.', 'Mientras esté marcado como menor de edad, no se enviarán comunicaciones por WhatsApp o correo electrónico a este paciente.') }}</p>
+            <p class="mt-1 text-[11px] text-ink-muted2">{{ t('Nothing is sent to the patient themselves, and no marketing goes out for them. Confirmations, reminders and other messages about their visits go to the tutor, once one is linked above.', 'No se envía nada al propio paciente, ni publicidad en su nombre. Las confirmaciones, los recordatorios y los demás mensajes sobre sus citas van al tutor, en cuanto se vincule uno arriba.') }}</p>
           </div>
           <label class="mt-3 flex items-center gap-1.5 text-[13px] text-ink-600">
             <input v-model="doNotContact" type="checkbox" class="rounded border-line-control text-brand focus:ring-brand" />
-            {{ t('Do not contact (no campaigns, recalls, reminders or automatic messages; the clinic can still write to them)', 'No contactar (sin campañas, recalls, recordatorios ni mensajes automáticos; la clínica puede seguir escribiéndole)') }}
+            {{ t('Do not contact (no campaigns, recalls, reminders or automatic messages; the clinic can still write to them)', 'No contactar (sin campañas, recuperaciones, recordatorios ni mensajes automáticos; la clínica puede seguir escribiéndole)') }}
           </label>
         </div>
 

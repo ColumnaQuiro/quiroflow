@@ -47,7 +47,7 @@ const fieldId = useId()
     </p>
     <div class="flex flex-wrap items-center gap-3">
       <button type="button" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover" data-cy="ph-use-saved-connection" @click="useSaved">
-        {{ t('Start', 'Empezar') }}
+        {{ t('Read from PracticeHub', 'Leer de PracticeHub') }}
       </button>
       <button type="button" class="text-sm font-medium text-ink-600 hover:underline" @click="useAnotherKey = true">
         {{ t('Use another key', 'Usar otra clave') }}
@@ -66,7 +66,7 @@ const fieldId = useId()
       />
     </div>
     <div>
-      <label :for="`${fieldId}-apiKey`" class="block text-sm font-medium text-ink-700">{{ t('API Key', 'Clave API') }}</label>
+      <label :for="`${fieldId}-apiKey`" class="block text-sm font-medium text-ink-700">{{ t('API key', 'Clave API') }}</label>
       <input :id="`${fieldId}-apiKey`"
         v-model="apiKey"
         type="password"
@@ -75,7 +75,7 @@ const fieldId = useId()
         :placeholder="t('From PracticeHub → Developers → API Keys', 'Desde PracticeHub → Developers → API Keys')"
         class="mt-1 w-full rounded-md border border-line-control bg-surface px-3 py-2 text-sm text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
       />
-      <p class="mt-1 text-xs text-ink-muted2">{{ t('Not stored — used only for this import.', 'No se almacena; se usa solo para esta importación.') }}</p>
+      <p class="mt-1 text-xs text-ink-muted2">{{ t('Not saved: kept only until the page is reloaded. To save it for every step, use the Connection step.', 'No se guarda: se conserva solo hasta que se recargue la página. Para guardarla para todos los pasos, usa el paso Conexión.') }}</p>
     </div>
     <div>
       <label :for="`${fieldId}-email`" class="block text-sm font-medium text-ink-700">{{ t('Your email', 'Tu correo electrónico') }}</label>

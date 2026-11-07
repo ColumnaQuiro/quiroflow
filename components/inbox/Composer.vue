@@ -153,7 +153,7 @@ async function toggleRecording() {
   try {
     await startRecording()
   } catch {
-    emit('error', t('Could not access the microphone -- check your browser permissions.', 'No se pudo acceder al micrófono; comprueba los permisos del navegador.'))
+    emit('error', t("Couldn't use the microphone. Allow it in your browser's permissions for this site.", 'No se ha podido usar el micrófono. Permítelo en los permisos del navegador para este sitio.'))
   }
 }
 

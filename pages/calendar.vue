@@ -846,7 +846,7 @@ const glanceRows = computed(() => [
   { key: 'seen', label: t('Seen', 'Atendidas'), value: `${todayGlance.value.seen} (${glancePct(todayGlance.value.seen)})`, tone: 'text-success-text' },
   { key: 'rescheduled', label: t('Rescheduled', 'Reprogramadas'), value: `${todayGlance.value.rescheduled} (${glancePct(todayGlance.value.rescheduled)})`, tone: 'text-warning-text' },
   { key: 'cancelled', label: t('Cancelled', 'Canceladas'), value: `${todayGlance.value.cancelled} (${glancePct(todayGlance.value.cancelled)})`, tone: 'text-danger-text' },
-  { key: 'missed', label: t('Missed', 'Perdidas'), value: `${todayGlance.value.missed} (${glancePct(todayGlance.value.missed)})`, tone: 'text-ink-muted2' },
+  { key: 'missed', label: t('No-shows', 'No vinieron'), value: `${todayGlance.value.missed} (${glancePct(todayGlance.value.missed)})`, tone: 'text-ink-muted2' },
 ])
 
 const flowRows = computed<FlowRow[]>(() =>
@@ -2455,7 +2455,7 @@ function movedMarkerName(m: AppointmentRow) {
 function movedMarkerLabel(m: AppointmentRow) {
   const to = new Date(m._movedTo!)
   const sameDay = toDateKey(to) === toDateKey(new Date(m.starts_at))
-  const day = to.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
+  const day = to.toLocaleDateString(t('en-GB', 'es-ES'), { weekday: 'short', day: 'numeric', month: 'short' })
   const when = sameDay ? formatTime(m._movedTo!) : `${day} ${formatTime(m._movedTo!)}`
   return t(`Moved to ${when}`, `Movida al ${when}`)
 }
@@ -2602,7 +2602,7 @@ function showNowLineOn(day: Date) {
             {{ t('Cash shift', 'Turno de caja') }}
           </button>
           <button type="button" role="menuitem" class="flex h-10 w-full items-center px-3.5 text-left text-[14px] text-ink-900 active:bg-surface-subtle" @click="phoneMenu(() => (mobileInfoOpen = true))">
-            {{ t("Today's info", 'Información del día') }}
+            {{ t('Calendar info', 'Info del calendario') }}
           </button>
         </div>
       </template>
@@ -2644,7 +2644,7 @@ function showNowLineOn(day: Date) {
           <UiBtn variant="secondary" size="sm" @click="openBlockCreateModal()">{{ t('Block time', 'Bloquear horario') }}</UiBtn>
           <UiBtn variant="secondary" size="sm" data-cy="absence-open" @click="absenceOpen = true">{{ t('Unplanned absence', 'Ausencia imprevista') }}</UiBtn>
           <UiBtn variant="secondary" size="sm" data-cy="new-class-open" @click="newClassOpen = true">{{ t('New class', 'Nueva clase') }}</UiBtn>
-          <UiBtn variant="primary" size="sm" data-cy="new-appointment" @click="openCreateModal()">{{ t('+ New Appointment', '+ Nueva Cita') }}</UiBtn>
+          <UiBtn variant="primary" size="sm" data-cy="new-appointment" @click="openCreateModal()">{{ t('+ New appointment', '+ Nueva cita') }}</UiBtn>
         </template>
         <span v-else class="inline-flex h-8 items-center rounded-pill bg-chip-bg px-3 text-[12.5px] font-semibold text-chip-text" data-cy="calendar-read-only">{{ t('Read-only', 'Solo lectura') }}</span>
         <!-- The mini-calendar/display panel is a fixed 238px column at lg+
@@ -2704,7 +2704,7 @@ function showNowLineOn(day: Date) {
       </button>
     </div>
     <div v-else-if="!showAgenda" class="flex h-9 shrink-0 items-center border-b border-line bg-surface px-6 text-[12.5px] text-ink-faint">
-      No practitioners are assigned to this clinic yet.
+      {{ t('Nobody on the team works at this clinic yet. Add them to it in Settings › Team.', 'Todavía nadie del equipo trabaja en esta clínica. Añádelos a ella en Ajustes › Equipo.') }}
     </div>
 
     <div v-if="reschedulingAppointment" class="flex h-10 shrink-0 items-center justify-between gap-3 border-b border-line bg-brand-tint px-6">
@@ -2822,7 +2822,7 @@ function showNowLineOn(day: Date) {
         <div data-cy="today-glance" class="mx-3 mb-3 rounded-card border border-line bg-surface p-3">
           <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-faint">{{ t('Today at a glance', 'Hoy de un vistazo') }}</p>
           <!-- Money first, as a shift is closed: what came in, and what was charged. -->
-          <NuxtLink v-if="takingsRows.length" to="/reports/daily-transactions" class="mt-2 grid grid-cols-2 gap-2" data-cy="glance-takings" :title="t('Open the day sheet', 'Abrir las transacciones del día')">
+          <NuxtLink v-if="takingsRows.length" to="/reports/daily-transactions" class="mt-2 grid grid-cols-2 gap-2" data-cy="glance-takings" :title="t('Open Daily transactions', 'Abrir Transacciones del día')">
             <span v-for="row in takingsRows" :key="row.key" class="rounded-ctl bg-surface-subtle px-2.5 py-2" :data-cy="`glance-${row.key}`">
               <span class="block text-[11px] text-ink-muted">{{ row.label }}</span>
               <UiSkeleton v-if="!takings.loaded.value" class="mt-1 h-4 w-14 rounded-ctlSm" />
@@ -3044,7 +3044,7 @@ function showNowLineOn(day: Date) {
                     <div
                       v-if="isOverflowBlock(appt)"
                       class="absolute flex items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[11px] font-medium text-ink-muted2 shadow-card"
-                      :title="`${appt.count} ${appt.count === 1 ? t('more appointment', 'cita más') : t('more appointments', 'citas más')} ${t('at this time', 'a esta hora')}`"
+                      :title="appt.count === 1 ? t('1 more appointment at this time', '1 cita más a esta hora') : t(`${appt.count} more appointments at this time`, `${appt.count} citas más a esta hora`)"
                       :style="columnStyle(appt, timeToPx(appt.starts_at, DAY_HOUR_PX), OVERFLOW_CHIP_PX)"
                     >
                       +{{ appt.count }} {{ t('more', 'más') }}
@@ -3060,7 +3060,7 @@ function showNowLineOn(day: Date) {
                     >
                       <strong class="truncate font-semibold">{{ appt.appointment_types?.name }}</strong>
                       <span class="font-mono" data-cy="class-block-places">{{ appt._class.taken }}/{{ appt._class.capacity }}</span>
-                      <span class="truncate opacity-85">{{ appt._class.capacity - appt._class.taken > 0 ? t(`${appt._class.capacity - appt._class.taken} places left`, `${appt._class.capacity - appt._class.taken} plazas libres`) : t('Full', 'Completa') }}</span>
+                      <span class="truncate opacity-85">{{ appt._class.capacity - appt._class.taken > 1 ? t(`${appt._class.capacity - appt._class.taken} places left`, `${appt._class.capacity - appt._class.taken} plazas libres`) : appt._class.capacity - appt._class.taken === 1 ? t('1 place left', '1 plaza libre') : t('Full', 'Completa') }}</span>
                     </button>
                     <div
                       v-else-if="appt._movedFrom"
@@ -3264,7 +3264,7 @@ function showNowLineOn(day: Date) {
                         v-if="isOverflowBlock(appt)"
                         type="button"
                         class="absolute flex items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[11px] font-medium text-ink-muted2 shadow-card hover:border-line-controlHover"
-                        :title="`${appt.count} ${appt.count === 1 ? t('more appointment', 'cita más') : t('more appointments', 'citas más')} ${t('at this time -- click to see them all in Day view', 'a esta hora -- haz clic para verlas todas en la vista Día')}`"
+                        :title="appt.count === 1 ? t('1 more appointment at this time. Click to see it in Day view.', '1 cita más a esta hora. Haz clic para verla en la vista Día.') : t(`${appt.count} more appointments at this time. Click to see them all in Day view.`, `${appt.count} citas más a esta hora. Haz clic para verlas todas en la vista Día.`)"
                         :style="columnStyle(appt, timeToPx(appt.starts_at, WEEK_HOUR_PX), OVERFLOW_CHIP_PX)"
                         @click.stop="showOverflowDay(day)"
                       >

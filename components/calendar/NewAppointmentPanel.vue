@@ -9,6 +9,7 @@ import { formatEur, formatTime } from '~/utils/billing'
 import { findFreeSlots, firstClash, type Busy } from '~/utils/freeSlots'
 import { seriesProblems, seriesStarts, type RepeatRule, type SeriesProblem } from '~/utils/repeatSeries'
 import { visitMarkerLabel } from '~/utils/carePlanVisitMarkers'
+import { raiseInvoice } from '~/utils/raiseInvoice'
 import { planVisitsToBook } from '~/utils/planRenewal'
 
 // A new appointment, from a slot or from "+ Nueva cita". Laid out in the
@@ -572,6 +573,8 @@ const cta = computed(() => {
 // to be inserted first and the out-of-hours confirm() asked after, so
 // answering "no" -- or an appointment insert failing -- left a patient behind,
 // and the retry created them again.
+const { showToast } = useToast()
+
 async function save() {
   error.value = ''
   pendingSeries.value = null
@@ -664,16 +667,31 @@ async function bookingPatientId(): Promise<string | null> {
     // A dial prefix typed into the number itself wins over the dropdown, so
     // "+44 7700 900123" is not filed as Spanish (or vice versa).
     const { countryCode, number } = splitDialPrefix(newPatientPhone.value, newPatientPhoneCountry.value)
-    await supabase.from('patient_contact_numbers').insert({ account_id: store.accountId!, patient_id: newPatient.id, country_code: countryCode, number })
+    const { error: phoneError } = await supabase.from('patient_contact_numbers').insert({ account_id: store.accountId!, patient_id: newPatient.id, country_code: countryCode, number })
+    // The patient exists and the booking goes ahead; the number is what is
+    // missing, and nothing else on screen would say so -- the panel closes on
+    // success, and a patient with no number gets no confirmation or reminder.
+    if (phoneError) showToast(t(`${firstName}'s phone number wasn't saved. Add it on their record.`, `No se ha guardado el teléfono de ${firstName}. Añádelo en su ficha.`), 'error')
   }
   selectedPatient.value = { id: newPatient.id, first_name: firstName, last_name: lastName, sub: t('New patient', 'Paciente nuevo'), flags: [] }
   patientMode.value = 'existing'
   return newPatient.id
 }
 
-async function book(starts: Date[]) {
+// Dates already booked from this panel, by patient: a series that failed
+// part-way said "Booked 3 of 8", and pressing Book again booked all eight --
+// the first three twice. A retry now books only what is still missing.
+const bookedHere = new Map<string, string>()
+const bookedKey = (patientId: string, at: Date) => `${patientId}|${at.getTime()}`
+
+async function book(requested: Date[]) {
   const patientId = await bookingPatientId()
   if (!patientId) return
+  const starts = requested.filter((at) => !bookedHere.has(bookedKey(patientId, at)))
+  if (!starts.length) {
+    emit('saved')
+    return
+  }
 
   let firstAppointmentId: string | null = null
   const createdIds: string[] = []
@@ -715,6 +733,7 @@ async function book(starts: Date[]) {
     }
     if (i === 0) firstAppointmentId = created.id
     createdIds.push(created.id)
+    bookedHere.set(bookedKey(patientId, occStart), created.id)
     fire('appointment.booked', { patientId, appointmentId: created.id })
   }
   // One booking, one confirmation. A series -- a care plan's visits -- is one
@@ -723,46 +742,47 @@ async function book(starts: Date[]) {
   if (sendConfirmation.value && createdIds.length === 1) useStaffFetch('/api/appointments/send-confirmation', { method: 'POST', body: { appointmentId: createdIds[0] } }).catch(() => {})
   if (sendConfirmation.value && createdIds.length > 1) useStaffFetch('/api/appointments/send-series-confirmation', { method: 'POST', body: { appointmentIds: createdIds } }).catch(() => {})
   if (failed) return
+  // The payment belongs to the first visit asked for, even when a retry is
+  // only booking the dates after it.
+  firstAppointmentId = bookedHere.get(bookedKey(patientId, requested[0])) ?? firstAppointmentId
 
   if (collectPayment.value && firstAppointmentId) {
     const amountCents = Math.round((parseFloat(paymentAmount.value) || 0) * 100)
-    // Only draw a number when there is something to invoice --
-    // next_invoice_number() consumes one on every call, by design.
-    const { data: invoiceNumber } = amountCents > 0 ? await supabase.rpc('next_invoice_number', { p_account_id: store.accountId! }) : { data: null }
-    if (invoiceNumber) {
-      const { data: invoice } = await supabase
-        .from('invoices')
-        .insert({ account_id: store.accountId!, patient_id: patientId, appointment_id: firstAppointmentId, invoice_number: invoiceNumber, status: 'paid', total_cents: amountCents })
-        .select('id')
-        .single()
-      if (invoice) {
-        await supabase.from('invoice_line_items').insert({
-          account_id: store.accountId!,
-          invoice_id: invoice.id,
-          description: selectedAppointmentType.value?.name ?? 'Appointment',
-          quantity: 1,
-          price_cents: amountCents,
-        })
-        if (paymentMethod.value === 'credit') {
-          await supabase.from('payments').insert({ account_id: store.accountId!, patient_id: patientId, invoice_id: invoice.id, amount_cents: amountCents, method: 'credit' })
-          await supabase.from('account_credits').insert({
-            account_id: store.accountId!,
-            patient_id: patientId,
-            amount_cents: -amountCents,
-            reason: `Applied to invoice ${invoiceNumber}`,
-            invoice_id: invoice.id,
-            created_by: store.teamMember?.id ?? null,
-          })
-        } else {
-          const { data: payment } = await supabase
-            .from('payments')
-            .insert({ account_id: store.accountId!, patient_id: patientId, invoice_id: invoice.id, amount_cents: amountCents, method: paymentMethod.value, purpose: 'visit' })
-            .select('id')
-            .single()
-          if (payment) {
-            await issueFactura({ accountId: store.accountId!, patientId, paymentId: payment.id, amountCents, purpose: 'visit', serviceName: selectedAppointmentType.value?.name })
-          }
-        }
+    // The receipt, its line and the payment (with the credit entry, for
+    // credit) in one transaction -- raise_invoice(). These were four separate
+    // inserts, the receipt written as PAID first and no error read after it,
+    // so a refused payment left a visit marked paid with nothing paying it,
+    // and the panel closed as if it had been. Nothing is written for a zero
+    // amount: there is nothing to invoice, and a number would be spent.
+    if (amountCents > 0) {
+      const serviceName = selectedAppointmentType.value?.name
+      const { invoice, error: chargeError } = await raiseInvoice(supabase, {
+        patientId,
+        appointmentId: firstAppointmentId,
+        description: serviceName ?? 'Appointment',
+        amountCents,
+        paymentMethod: paymentMethod.value,
+      })
+      if (!invoice) {
+        // The booking stands -- it is in, and the confirmation may already
+        // be on its way -- so the panel still closes; retrying from here
+        // would book the visit a second time. What did NOT happen has to be
+        // said where it cannot be mistaken for success, and long enough to
+        // read.
+        console.error('[calendar] payment at booking was not recorded', chargeError)
+        useToast().showToast(
+          t(
+            `The appointment is booked, but the payment was NOT recorded (${chargeError}). Take it from the patient's Money tab.`,
+            `La cita está reservada, pero el pago NO se ha registrado (${chargeError}). Cóbralo desde la pestaña Dinero del paciente.`,
+          ),
+          'error',
+          20000,
+        )
+      } else if (invoice.paymentId && paymentMethod.value !== 'credit') {
+        // Once, for the payment just recorded. Credit gets none: that money
+        // was documented when it was paid in. A factura that cannot be issued
+        // does not undo the payment -- issueFactura says so itself.
+        await issueFactura({ accountId: store.accountId!, patientId, paymentId: invoice.paymentId, amountCents, purpose: 'visit', serviceName })
       }
     }
   }
@@ -998,7 +1018,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
           </div>
 
           <template v-if="alternatives.length">
-            <span class="mt-3 block text-[12px] text-ink-muted">{{ t(`Other free times for ${selectedAppointmentType?.name ?? 'this'} with ${practitionerFirst}`, `Otros huecos para ${selectedAppointmentType?.name ?? 'esta cita'} con ${practitionerFirst}`) }}</span>
+            <span class="mt-3 block text-[12px] text-ink-muted">{{ t(`Other free times for ${selectedAppointmentType?.name ?? 'this appointment'} with ${practitionerFirst}`, `Otros huecos para ${selectedAppointmentType?.name ?? 'esta cita'} con ${practitionerFirst}`) }}</span>
             <div class="mt-1.5 grid grid-cols-3 gap-2" data-cy="create-alternatives">
               <button v-for="a in alternatives" :key="a.getTime()" type="button" class="flex min-h-9 touch:min-h-11 flex-col items-start justify-center rounded-ctl border border-line-control bg-surface px-2.5 py-1 text-left hover:border-brand" @click="pickAlternative(a)">
                 <span class="text-[11.5px] text-ink-muted">{{ altDayLabel(a) }}</span>
@@ -1026,18 +1046,18 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
               </select>
             </label>
             <p v-if="repeat === 'care_plan' && carePlan" class="text-[12px] text-ink-muted2">
-              {{ t(`Books ${Math.min(carePlanRemaining, 26)} appointments from "${carePlan.name}", ${carePlanFrequencyLabel}, starting at the date/time above.`, `Reserva ${Math.min(carePlanRemaining, 26)} citas de "${carePlan.name}", ${carePlanFrequencyLabel}, empezando en la fecha/hora indicada arriba.`) }}
+              {{ t(`Books ${Math.min(carePlanRemaining, 26)} appointments from “${carePlan.name}”, ${carePlanFrequencyLabel}, starting at the date and time above.`, `Reserva ${Math.min(carePlanRemaining, 26)} citas de «${carePlan.name}», ${carePlanFrequencyLabel}, empezando en la fecha y hora de arriba.`) }}
             </p>
             <div class="flex items-center justify-between">
               <span class="text-[12.5px] font-medium text-ink-600">{{ t('Collect payment now', 'Cobrar ahora') }}</span>
-              <button type="button" role="switch" :aria-checked="collectPayment" :aria-label="t('Collect payment now', 'Cobrar ahora')" class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors" :class="collectPayment ? 'bg-brand' : 'bg-toggle-off'" @click="collectPayment = !collectPayment">
+              <button type="button" role="switch" :aria-checked="collectPayment" :aria-label="t('Collect payment now', 'Cobrar ahora')" data-cy="create-collect-payment" class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors" :class="collectPayment ? 'bg-brand' : 'bg-toggle-off'" @click="collectPayment = !collectPayment">
                 <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform" :class="collectPayment ? 'translate-x-[18px]' : 'translate-x-0.5'" />
               </button>
             </div>
             <div v-if="collectPayment" class="grid grid-cols-2 gap-3">
               <label class="flex flex-col gap-1 text-[12.5px] font-medium text-ink-600">{{ t('Amount (€)', 'Importe (€)') }}<input v-model="paymentAmount" type="number" min="0" step="0.01" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700" /></label>
               <label class="flex flex-col gap-1 text-[12.5px] font-medium text-ink-600">{{ t('Method', 'Método') }}
-                <select v-model="paymentMethod" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700">
+                <select v-model="paymentMethod" data-cy="create-payment-method" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700">
                   <option value="cash">{{ t('Cash', 'Efectivo') }}</option>
                   <option value="card">{{ t('Card', 'Tarjeta') }}</option>
                   <option value="credit">{{ t('Credit on account', 'Crédito en cuenta') }}</option>

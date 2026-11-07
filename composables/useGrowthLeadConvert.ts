@@ -56,11 +56,7 @@ export function useGrowthLeadConvert() {
         candidates.value = found.data.data.candidates
         return null
       }
-      showToast(
-        serverMessage(e)
-          ?? t('Could not convert that lead.', 'No se ha podido convertir el contacto.'),
-        'error',
-      )
+      showToast(withServerDetail(t("Couldn't convert the lead.", 'No se ha podido convertir el contacto.'), e, t('Details:', 'Detalle:')), 'error')
       return null
     } finally {
       converting.value = false

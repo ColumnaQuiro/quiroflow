@@ -36,10 +36,11 @@ function pick(r: SavedReply) {
       type="button"
       class="flex shrink-0 items-center justify-center rounded-ctl border border-line-control text-ink-500 hover:bg-surface-subtle"
       :class="size === 'lg' ? 'h-11 w-11' : 'h-9 w-9 touch:h-11 touch:w-11'"
+      :aria-label="t('Saved replies', 'Respuestas guardadas')"
       :title="t('Saved replies', 'Respuestas guardadas')"
       @click="toggle"
     >
-      <svg class="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75">
+      <svg class="h-[18px] w-[18px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
         <path
           stroke-linecap="round"
           stroke-linejoin="round"
@@ -49,7 +50,7 @@ function pick(r: SavedReply) {
     </button>
 
     <div v-if="open" class="absolute bottom-full left-0 z-10 mb-1 w-72 rounded-ctl border border-line bg-surface py-1 shadow-popover">
-      <p v-if="replies.length === 0" class="px-3 py-2 text-[12.5px] text-ink-faint">{{ t('No saved replies yet — add some in Settings → Saved Replies.', 'Aún no hay respuestas guardadas — añade algunas en Ajustes → Respuestas guardadas.') }}</p>
+      <p v-if="replies.length === 0" class="px-3 py-2 text-[12.5px] text-ink-faint">{{ t('No saved replies yet. Add them in Settings → Saved Replies.', 'Aún no hay respuestas guardadas. Añádelas en Ajustes → Respuestas guardadas.') }}</p>
       <button
         v-for="r in replies"
         :key="r.id"

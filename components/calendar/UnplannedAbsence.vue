@@ -201,7 +201,7 @@ const field = 'mt-1 w-full rounded-ctl border border-line-control bg-surface px-
         <template v-if="visits">
           <p v-if="!visits.length" class="mt-4 text-[13px] text-ink-muted" data-cy="absence-none">{{ t('No booked visits in those days. Their calendar can still be blocked from "Block time".', 'No tiene citas reservadas esos días. Su agenda se puede bloquear igualmente desde «Bloquear horario».') }}</p>
           <template v-else>
-            <p class="mt-4 text-[12.5px] font-semibold text-ink-700">{{ t(`${visits.length} visits`, `${visits.length} citas`) }}</p>
+            <p class="mt-4 text-[12.5px] font-semibold text-ink-700">{{ visits.length === 1 ? t('1 visit', '1 cita') : t(`${visits.length} visits`, `${visits.length} citas`) }}</p>
             <ul class="mt-1.5 max-h-56 divide-y divide-line-divider overflow-y-auto rounded-ctl border border-line-row">
               <li v-for="v in visits" :key="v.id" class="flex items-center gap-2.5 px-3 py-2 text-[13px]" data-cy="absence-visit">
                 <input type="checkbox" class="h-4 w-4 accent-brand" :checked="picked.has(v.id)" :aria-label="name(v)" @change="toggle(v.id, ($event.target as HTMLInputElement).checked)" />

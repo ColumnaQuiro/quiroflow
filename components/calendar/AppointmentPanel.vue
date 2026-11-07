@@ -113,6 +113,37 @@ const step = ref<'main' | 'cancel'>('main')
 const busy = ref(false)
 const error = ref('')
 
+// After a write the panel waits for the calendar to hand it the row back
+// (emit('changed') -> the grid reloads -> a new `appointment`). Until then the
+// stage buttons still offer the step just taken: on a slow connection a second
+// tap on "Check in" wrote a later arrival time over the first and fired the
+// check-in automation twice. So busy holds until the fresh row arrives, or for
+// a few seconds if that reload never lands.
+let holdTimer: ReturnType<typeof setTimeout> | undefined
+function holdUntilRefreshed() {
+  busy.value = true
+  clearTimeout(holdTimer)
+  holdTimer = setTimeout(() => (busy.value = false), 4000)
+}
+watch(
+  () => props.appointment,
+  () => {
+    if (holdTimer === undefined) return
+    clearTimeout(holdTimer)
+    holdTimer = undefined
+    busy.value = false
+  },
+)
+onBeforeUnmount(() => clearTimeout(holdTimer))
+
+// An update RLS refuses is not an error: it matches no rows and answers
+// success. Every write here reads its row back and says so when there is none.
+const NOT_CHANGED = () =>
+  t(
+    "Nothing was changed. You don't have permission to change this appointment, or it was deleted meanwhile.",
+    'No se ha cambiado nada. No tienes permiso para cambiar esta cita, o se ha eliminado mientras tanto.',
+  )
+
 const stage = computed(() => props.view.stage)
 const roomName = computed(() => props.rooms.find((r) => r.id === props.appointment.room_id)?.name ?? t('No room', 'Sin sala'))
 const initials = computed(() => {
@@ -201,7 +232,7 @@ async function commitEdit() {
   // not -- the patient is still expected when they were told.
   const timeChanged = new Date(props.appointment.starts_at).getTime() !== startsAt.getTime()
   busy.value = true
-  const { error: e } = await supabase
+  const { data: changedRows, error: e } = await supabase
     .from('appointments')
     .update({
       starts_at: startsAt.toISOString(),
@@ -212,9 +243,10 @@ async function commitEdit() {
       ...(timeChanged ? { rescheduled: true } : {}),
     })
     .eq('id', props.appointment.id)
+    .select('id')
   busy.value = false
-  if (e) {
-    error.value = e.message
+  if (e || !changedRows?.length) {
+    error.value = e ? e.message : NOT_CHANGED()
     return
   }
   if (timeChanged) {
@@ -280,14 +312,18 @@ const undoable = computed(() => {
 })
 
 async function update(values: AppointmentUpdate) {
+  // The buttons are disabled while busy; this covers the shortcut and any
+  // path that reaches here between a click and the re-render.
+  if (busy.value) return false
   busy.value = true
   error.value = ''
-  const { error: e } = await supabase.from('appointments').update(values).eq('id', props.appointment.id)
-  busy.value = false
-  if (e) {
-    error.value = e.message
+  const { data, error: e } = await supabase.from('appointments').update(values).eq('id', props.appointment.id).select('id')
+  if (e || !data?.length) {
+    busy.value = false
+    error.value = e ? e.message : NOT_CHANGED()
     return false
   }
+  holdUntilRefreshed()
   emit('changed')
   return true
 }
@@ -418,15 +454,30 @@ watch(
   },
 )
 const savedNote = ref<'sticky' | 'visit' | null>(null)
+// Both notes save on blur and used to say "saved" whatever the database
+// answered -- a dropped connection or a role that cannot edit patients lost
+// the note while the panel reported it kept. The text stays in the box on a
+// failure, so leaving the field again is the retry.
+const unsavedNote = ref<'sticky' | 'visit' | null>(null)
 async function saveSticky() {
   if ((props.appointment.patients?.sticky_note ?? '') === stickyNote.value) return
-  await supabase.from('patients').update({ sticky_note: stickyNote.value.trim() || null }).eq('id', props.appointment.patient_id)
+  const { data, error: e } = await supabase.from('patients').update({ sticky_note: stickyNote.value.trim() || null }).eq('id', props.appointment.patient_id).select('id')
+  if (e || !data?.length) {
+    unsavedNote.value = 'sticky'
+    return
+  }
+  unsavedNote.value = null
   savedNote.value = 'sticky'
   emit('changed')
 }
 async function saveVisitNote() {
   if ((props.appointment.note ?? '') === visitNote.value) return
-  await supabase.from('appointments').update({ note: visitNote.value.trim() || null }).eq('id', props.appointment.id)
+  const { data, error: e } = await supabase.from('appointments').update({ note: visitNote.value.trim() || null }).eq('id', props.appointment.id).select('id')
+  if (e || !data?.length) {
+    unsavedNote.value = 'visit'
+    return
+  }
+  unsavedNote.value = null
   savedNote.value = 'visit'
   emit('changed')
 }
@@ -481,7 +532,22 @@ function statusChangeText(from: string, to: string) {
     case 'booked':
       return from === 'completed' ? t('Visit undone', 'Visita deshecha') : t('Restored', 'Reactivada')
     default:
-      return t(`Status: ${from} → ${to}`, `Estado: ${from} → ${to}`)
+      return t(`Status: ${statusName(from)} → ${statusName(to)}`, `Estado: ${statusName(from)} → ${statusName(to)}`)
+  }
+}
+// The stored status, in words; anything unrecognised keeps its raw value.
+function statusName(status: string) {
+  switch (status) {
+    case 'booked':
+      return t('booked', 'reservada')
+    case 'completed':
+      return t('done', 'hecha')
+    case 'cancelled':
+      return t('cancelled', 'cancelada')
+    case 'no_show':
+      return t('no-show', 'no vino')
+    default:
+      return status
   }
 }
 function activityText(change: ActivityChange): string {
@@ -749,7 +815,7 @@ async function useExpectedType() {
       <div v-if="tab === 'summary'" class="flex flex-col gap-6">
         <!-- Where it stands: status + confirmation + flow, one track. -->
         <section>
-          <h3 class="mb-2.5 text-[11px] font-bold uppercase tracking-[.06em] text-ink-muted">{{ t('Where it stands', 'Dónde está') }}</h3>
+          <h3 class="mb-2.5 text-[11px] font-bold uppercase tracking-[.06em] text-ink-muted">{{ t('Where it stands', 'En qué punto está') }}</h3>
           <ol v-if="onTrack" class="grid grid-cols-5 gap-1.5" :aria-label="t('Appointment stage', 'Estado de la cita')" data-cy="stage-track">
             <li v-for="s in trackSteps" :key="s.key" class="flex min-w-0 flex-col gap-1" :data-state="s.state" :aria-current="s.state === 'current' ? 'step' : undefined">
               <span class="h-1.5 rounded-[3px]" :class="s.state === 'done' || s.state === 'current' ? 'bg-success-accent' : s.state === 'waiting' ? 'bg-warning-accent' : 'bg-line'" />
@@ -844,11 +910,11 @@ async function useExpectedType() {
         <section class="flex flex-col gap-3">
           <h3 class="text-[11px] font-bold uppercase tracking-[.06em] text-ink-muted">{{ t('Notes', 'Notas') }}</h3>
           <label class="flex flex-col gap-1.5 text-[12.5px] font-medium text-ink-600">
-            <span>{{ t('Patient note · shows on every appointment', 'Nota del paciente · se ve en todas sus citas') }} <span v-if="savedNote === 'sticky'" class="font-normal text-success-text">· {{ t('saved', 'guardada') }}</span></span>
+            <span>{{ t('Patient note · shows on every appointment', 'Nota del paciente · se ve en todas sus citas') }} <span v-if="unsavedNote === 'sticky'" class="font-normal text-danger-text" role="alert" data-cy="sticky-note-unsaved">· {{ t('not saved; click outside to try again', 'sin guardar; pulsa fuera para reintentar') }}</span><span v-else-if="savedNote === 'sticky'" class="font-normal text-success-text">· {{ t('saved', 'guardada') }}</span></span>
             <textarea v-model="stickyNote" rows="2" data-cy="sticky-note" class="rounded-ctl border border-warning-border bg-warning-bg px-3 py-2 text-[13.5px] text-ink-700 focus:border-brand focus:outline-none" @blur="saveSticky" @input="savedNote = null" />
           </label>
           <label class="flex flex-col gap-1.5 text-[12.5px] font-medium text-ink-600">
-            <span>{{ t('Note for this visit', 'Nota de esta visita') }} <span v-if="savedNote === 'visit'" class="font-normal text-success-text">· {{ t('saved', 'guardada') }}</span></span>
+            <span>{{ t('Note for this visit', 'Nota de esta visita') }} <span v-if="unsavedNote === 'visit'" class="font-normal text-danger-text" role="alert" data-cy="visit-note-unsaved">· {{ t('not saved; click outside to try again', 'sin guardar; pulsa fuera para reintentar') }}</span><span v-else-if="savedNote === 'visit'" class="font-normal text-success-text">· {{ t('saved', 'guardada') }}</span></span>
             <textarea v-model="visitNote" rows="2" data-cy="visit-note" :readonly="readOnly" :placeholder="t('Quick note for this visit…', 'Nota rápida para esta visita…')" class="rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13.5px] text-ink-700 focus:border-brand focus:outline-none" @blur="saveVisitNote" @input="savedNote = null" />
           </label>
         </section>
@@ -952,7 +1018,7 @@ async function useExpectedType() {
     @confirm="remove"
     @cancel="deleteOpen = false"
   >
-    <p class="text-[14px] leading-relaxed text-ink-500">{{ t('It disappears from the calendar. To keep a record that the patient did not come, cancel it instead.', 'Desaparece del calendario. Para dejar constancia de que el paciente no vino, cancélala en su lugar.') }}</p>
+    <p class="text-[14px] leading-relaxed text-ink-500">{{ t('It disappears from the calendar. To keep a record of it, cancel it or mark it as a no-show instead.', 'Desaparece del calendario. Para que quede constancia, cancélala o márcala como «No vino».') }}</p>
   </UiConfirmDialog>
 
   <UiConfirmDialog

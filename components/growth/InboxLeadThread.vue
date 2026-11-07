@@ -308,6 +308,7 @@ watch(
         v-model="draft"
         :sending="sending"
         :media="isWhatsApp"
+        :channel="thread.channel"
         @send="submit"
         @media="(media) => emit('sendMedia', media)"
         @error="(message) => showToast(message, 'error')"

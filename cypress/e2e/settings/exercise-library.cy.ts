@@ -41,17 +41,42 @@ describe('Exercise library', () => {
       cy.get('[data-cy="library-form"]').should('contain', 'https://')
       cy.get('[data-cy="library-link"]').clear().type('https://example.com/plancha')
       cy.get('[data-cy="library-save"]').click()
-      cy.contains('[data-cy="library-row"]', 'Plancha lateral').should('contain', 'Never assigned').and('contain', 'https://example.com/plancha')
+      cy.get('[data-cy="library-form"]').should('not.exist')
+      cy.contains('[data-cy="library-row"]', 'Plancha lateral').should('contain', 'Never assigned')
+        .find('[data-cy="library-row-link"]').should('have.attr', 'href', 'https://example.com/plancha')
+
+      // Found by search, accent-blind, and by who is doing it.
+      cy.get('[data-cy="library-search"]').type('rotacion')
+      cy.get('[data-cy="library-row"]').should('have.length', 1).and('contain', 'Rotación torácica')
+      cy.get('[data-cy="library-search"]').clear().type('nada parecido')
+      cy.get('[data-cy="library-no-match"]').contains('button', 'Show all').click()
+      cy.get('[data-cy="library-search"]').should('have.value', '')
+      cy.get('[data-cy="library-filter-now"]').click()
+      cy.get('[data-cy="library-row"]').should('have.length', 1).and('contain', 'Puente de glúteo')
+      cy.get('[data-cy="library-filter-never"]').click()
+      cy.get('[data-cy="library-row"]').should('have.length', 1).and('contain', 'Plancha lateral')
+      cy.get('[data-cy="library-filter-all"]').click()
+      cy.get('[data-cy="library-row"]').should('have.length', 3)
 
       // Edit one: the change is on the library row every patient points at.
+      // It opens as a panel over the list and says who the change reaches.
+      cy.contains('[data-cy="library-row"]', 'Puente de glúteo').find('[data-cy="library-edit"]').click()
+      cy.get('[data-cy="library-form-reach"]').should('contain', '1 patient is doing it now')
+      cy.get('[data-cy="library-name"]').should('have.focus')
+      // A click beside an untouched panel closes it; once typed in, it stays.
+      cy.get('[data-cy="library-form-backdrop"]').click('left')
+      cy.get('[data-cy="library-form"]').should('not.exist')
       cy.contains('[data-cy="library-row"]', 'Puente de glúteo').find('[data-cy="library-edit"]').click()
       cy.get('[data-cy="library-instructions"]').type('Sube la cadera y aguanta 3 segundos.')
+      cy.get('[data-cy="library-form-backdrop"]').click('left')
+      cy.get('[data-cy="library-form"]').should('exist')
       cy.get('[data-cy="library-save"]').click()
       cy.contains('[data-cy="library-row"]', 'Puente de glúteo').should('contain', 'Sube la cadera')
 
       // Archive both unused and once-used: only the never-assigned one can be deleted.
       cy.contains('[data-cy="library-row"]', 'Plancha lateral').find('[data-cy="library-archive"]').click()
       cy.contains('[data-cy="library-row"]', 'Rotación torácica').find('[data-cy="library-archive"]').click()
+      cy.get('[data-cy="exercises-tab-archived"]').should('contain', '2').click()
       cy.contains('[data-cy="library-archived-row"]', 'Rotación torácica').find('[data-cy="library-delete"]').should('not.exist')
       cy.contains('[data-cy="library-archived-row"]', 'Plancha lateral').find('[data-cy="library-delete"]').click()
       cy.contains('[data-cy="library-archived-row"]', 'Plancha lateral').should('not.exist')

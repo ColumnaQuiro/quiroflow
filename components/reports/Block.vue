@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Bar, Doughnut, Line } from 'vue-chartjs'
-import '~/utils/chartSetup'
+import { chartColor } from '~/utils/chartSetup'
 import { computePresetRange, rangeBounds, type DateRange } from '~/composables/useDateRangePresets'
 import { REPORT_DATA_KEY } from '~/composables/useReportData'
 import type { Compare, OwnPeriod, ReportBlock } from '~/utils/reportBlocks'
@@ -144,8 +144,8 @@ const chartData = computed(() => ({
     {
       label: props.block.title,
       data: rows.value.map((r) => scale(r.value)),
-      backgroundColor: chart.value === 'donut' ? rows.value.map((_, i) => PALETTE[i % PALETTE.length]) : '#4f46e5',
-      borderColor: chart.value === 'donut' ? '#ffffff' : '#4f46e5',
+      backgroundColor: chart.value === 'donut' ? rows.value.map((_, i) => PALETTE[i % PALETTE.length]) : chartColor('brand'),
+      borderColor: chart.value === 'donut' ? chartColor('surface') : chartColor('brand'),
       tension: 0.3,
       spanGaps: true,
     },
@@ -154,7 +154,7 @@ const chartData = computed(() => ({
 // A doughnut has no gaps: an empty slice is zero.
 const donutData = computed(() => ({
   labels: rows.value.map((r) => r.label),
-  datasets: [{ data: rows.value.map((r) => scale(r.value) ?? 0), backgroundColor: rows.value.map((_, i) => PALETTE[i % PALETTE.length]!), borderColor: '#ffffff' }],
+  datasets: [{ data: rows.value.map((r) => scale(r.value) ?? 0), backgroundColor: rows.value.map((_, i) => PALETTE[i % PALETTE.length]!), borderColor: chartColor('surface') }],
 }))
 const tooltip = { callbacks: { label: (c: { raw: unknown }) => fmt(unit.value === 'eur' ? Number(c.raw) * 100 : Number(c.raw)) } }
 const horizontal = computed(() => chart.value === 'bar' && !isTime.value)
@@ -208,7 +208,14 @@ function closeMenuSoon() {
       <svg v-if="editing" class="mt-0.5 h-4 w-4 shrink-0 cursor-grab text-ink-faint2" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" data-pdf-skip>
         <circle cx="9" cy="6" r="1.6" /><circle cx="15" cy="6" r="1.6" /><circle cx="9" cy="12" r="1.6" /><circle cx="15" cy="12" r="1.6" /><circle cx="9" cy="18" r="1.6" /><circle cx="15" cy="18" r="1.6" />
       </svg>
-      <h3 class="min-w-0 flex-1 text-[13.5px] font-semibold leading-snug text-ink-800" :class="chart === 'number' && 'text-[11px] font-medium uppercase tracking-wide text-ink-muted2'" data-pdf-label>
+      <!-- One set of type classes or the other, never both: stacked, the
+      13.5px title and the 11px label fought, and which won depended on the
+      order Tailwind happened to emit them in. -->
+      <h3
+        class="min-w-0 flex-1 leading-snug"
+        :class="chart === 'number' ? 'text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2' : 'text-[13.5px] font-semibold text-ink-800'"
+        data-pdf-label
+      >
         {{ block.title }}
       </h3>
       <span v-if="periodTag" class="shrink-0 rounded-ctlSm bg-warning-bg px-1.5 py-0.5 text-[11px] font-semibold text-warning-text">{{ periodTag }}</span>
@@ -219,7 +226,7 @@ function closeMenuSoon() {
         </button>
         <div v-if="menuOpen" class="absolute right-0 z-20 mt-1 w-52 rounded-ctl border border-line bg-surface p-1 text-[13px] shadow-popover">
           <button type="button" class="block w-full rounded-ctlSm px-2.5 py-1.5 text-left hover:bg-surface-subtle" data-cy="report-block-edit" @mousedown.prevent="emit('edit'); menuOpen = false">{{ t('Edit…', 'Editar…') }}</button>
-          <div class="px-2.5 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wide text-ink-faint2">{{ t('Width', 'Ancho') }}</div>
+          <div class="px-2.5 pb-1 pt-2 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint2">{{ t('Width', 'Ancho') }}</div>
           <div class="flex gap-1 px-2 pb-1.5">
             <button
               v-for="s in ([3, 4, 6, 8, 12] as const)"
@@ -252,7 +259,7 @@ function closeMenuSoon() {
       <p class="font-mono text-[26px] font-semibold leading-none tracking-tight text-ink-900" data-cy="report-block-value" data-pdf-value>{{ fmt(result.value) }}</p>
       <p class="text-[12px] text-ink-muted2" data-pdf-note>
         <template v-if="delta">
-          <b :class="delta.up ? 'text-success-text' : 'text-danger-text'" class="font-semibold"><span aria-hidden="true" data-pdf-skip>{{ delta.up ? '▲' : '▼' }} </span>{{ delta.text }}</b>
+          <b :class="delta.up ? 'text-success-text' : 'text-danger-text'" class="font-semibold"><span data-pdf-skip><ReportsTrendArrow :up="delta.up" /> </span>{{ delta.text }}</b>
           {{ compareLabel }}
         </template>
         <template v-if="wholeClinicDespiteFilter">{{ t('Whole clinic', 'Toda la clínica') }}</template>
@@ -288,7 +295,7 @@ function closeMenuSoon() {
     </div>
     <div v-else-if="pivot" class="-mx-4 -mb-4 overflow-x-auto" data-cy="report-block-pivot">
       <table class="w-full text-[13px]">
-        <thead class="border-b border-line text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2">
+        <thead class="border-b border-line text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">
           <tr>
             <th class="whitespace-nowrap px-4 py-1.5">{{ t(...SPLIT_LABELS[block.config.split]) }}</th>
             <th v-for="c in pivot.columns" :key="c.key" class="whitespace-nowrap px-3 py-1.5 text-right">{{ c.label }}</th>
@@ -311,7 +318,7 @@ function closeMenuSoon() {
     </div>
     <div v-else class="-mx-4 -mb-4 overflow-x-auto">
       <table class="w-full text-[13px]">
-        <thead class="border-b border-line text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2">
+        <thead class="border-b border-line text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">
           <tr>
             <th class="px-4 py-1.5">{{ t(...SPLIT_LABELS[block.config.split]) }}</th>
             <th class="px-4 py-1.5 text-right">{{ def ? t(...def.label) : '' }}</th>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Bar } from 'vue-chartjs'
-import '~/utils/chartSetup'
+import { chartColor } from '~/utils/chartSetup'
 
 const supabase = useSupabaseClient()
 const t = useT()
@@ -88,8 +88,8 @@ const byDay = computed(() => {
 const dayChartData = computed(() => ({
   labels: byDay.value.labels,
   datasets: [
-    { label: t('Kept', 'Mantenidas'), data: byDay.value.scheduled, backgroundColor: '#4F46E5' },
-    { label: t('Cancelled / No-show', 'Canceladas / No presentado'), data: byDay.value.cancelledNoShow, backgroundColor: '#F6C7CE' },
+    { label: t('Kept', 'Mantenidas'), data: byDay.value.scheduled, backgroundColor: chartColor('brand') },
+    { label: t('Cancelled / No-show', 'Canceladas / No presentado'), data: byDay.value.cancelledNoShow, backgroundColor: chartColor('chart-cancelled') },
   ],
 }))
 const dayChartOptions = {
@@ -119,7 +119,7 @@ const byWeekday = computed(() => {
 })
 const weekdayChartData = computed(() => ({
   labels: WEEKDAY_LABELS.value,
-  datasets: [{ label: t('Appointments', 'Citas'), data: byWeekday.value, backgroundColor: '#4F46E5' }],
+  datasets: [{ label: t('Appointments', 'Citas'), data: byWeekday.value, backgroundColor: chartColor('brand') }],
 }))
 const weekdayChartOptions = {
   responsive: true,
@@ -137,7 +137,7 @@ const pdfRoot = ref<HTMLElement | null>(null)
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Upcoming Visits', 'Próximas visitas')" :meta="t('Appointment distribution across the month', 'Distribución de citas a lo largo del mes')">
       <div class="flex items-center gap-3">
-        <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
+        <ReportsBackLink />
         <ReportsPdfButton :target="pdfRoot" :title="t('Upcoming Visits', 'Próximas visitas')" :extra="[monthLabel]" />
       </div>
     </PageHeader>
@@ -147,11 +147,13 @@ const pdfRoot = ref<HTMLElement | null>(null)
         {{ t('Use it to gauge ad spend, spot maintenance-retention gaps, and predict how the month will close.', 'Úsalo para calibrar el gasto en publicidad, detectar huecos de retención de mantenimiento y predecir cómo cerrará el mes.') }}
       </p>
 
-      <div class="mt-4 flex items-center gap-3">
-        <button type="button" class="flex h-8 items-center rounded-ctl border border-line-control px-2.5 text-[13px] text-ink-600 hover:border-line-controlHover" :aria-label="t('Previous month', 'Mes anterior')" @click="monthOffset--"><UiChevron dir="left" /></button>
-        <span class="text-[13px] font-medium text-ink-700">{{ monthLabel }}</span>
-        <button type="button" class="flex h-8 items-center rounded-ctl border border-line-control px-2.5 text-[13px] text-ink-600 hover:border-line-controlHover" :aria-label="t('Next month', 'Mes siguiente')" @click="monthOffset++"><UiChevron dir="right" /></button>
-        <button v-if="monthOffset !== 0" type="button" class="text-[13px] text-brand-text hover:text-brand-hover" @click="monthOffset = 0">{{ t('Today', 'Hoy') }}</button>
+      <div class="mt-4 flex items-center gap-2">
+        <UiBtn size="sm" class="touch:h-11 touch:w-11" :aria-label="t('Previous month', 'Mes anterior')" @click="monthOffset--"><UiChevron dir="left" /></UiBtn>
+        <!-- A floor on the width, so the arrows stay put while the month's
+        name changes length under them. -->
+        <span class="min-w-[8.5rem] text-center text-[13px] font-medium capitalize text-ink-700">{{ monthLabel }}</span>
+        <UiBtn size="sm" class="touch:h-11 touch:w-11" :aria-label="t('Next month', 'Mes siguiente')" @click="monthOffset++"><UiChevron dir="right" /></UiBtn>
+        <UiBtn v-if="monthOffset !== 0" variant="ghost" size="sm" class="touch:h-11" @click="monthOffset = 0">{{ t('Today', 'Hoy') }}</UiBtn>
       </div>
 
       <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -159,7 +161,7 @@ const pdfRoot = ref<HTMLElement | null>(null)
           <p class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ totalCount }}</p>
         </ReportsStat>
         <ReportsStat :label="t('vs. previous month', 'vs. mes anterior')" :loading="loading">
-          <p class="mt-1.5 font-mono text-[23px] font-semibold" :class="changePct !== null && changePct < 0 ? 'text-danger-text' : 'text-success-text'">
+          <p class="mt-1.5 font-mono text-[23px] font-semibold" :class="!changePct ? 'text-ink-900' : changePct < 0 ? 'text-danger-text' : 'text-success-text'">
             {{ changePct === null ? '—' : `${changePct > 0 ? '+' : ''}${changePct}%` }}
           </p>
         </ReportsStat>

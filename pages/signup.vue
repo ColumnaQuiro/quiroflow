@@ -8,10 +8,21 @@ const t = useT()
 
 const email = ref('')
 const password = ref('')
-const emailError = ref('')
+// 'taken' renders with a link out (the #error slot); the other two are plain.
+const emailError = ref<'' | 'missing' | 'invalid' | 'taken'>('')
+const passwordError = ref('')
 const formError = ref('')
 const loading = ref(false)
 const emailField = ref<{ focus: () => void } | null>(null)
+const passwordField = ref<{ focus: () => void } | null>(null)
+
+const emailErrorText = computed(() =>
+  emailError.value === 'missing'
+    ? t('Enter your email address.', 'Escribe tu correo electrónico.')
+    : emailError.value === 'invalid'
+      ? t('That doesn’t look like an email address. Check it for typos.', 'Eso no parece un correo electrónico. Revisa que esté bien escrito.')
+      : undefined,
+)
 
 // Carries a "Refer Your Friends!" link's ?ref=<account slug> through the
 // two-step signup -> onboarding flow (the account referring row doesn't
@@ -48,7 +59,21 @@ function isAlreadyRegistered(message: string) {
 async function onSubmit() {
   if (loading.value) return
   emailError.value = ''
+  passwordError.value = ''
   formError.value = ''
+  // Checked here because the form is novalidate: left to Supabase, an empty
+  // address comes back as "Anonymous sign-ins are disabled", in English.
+  const typed = email.value.trim()
+  if (!typed) emailError.value = 'missing'
+  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(typed)) emailError.value = 'invalid'
+  if (!password.value) passwordError.value = t('Choose a password.', 'Elige una contraseña.')
+  if (emailError.value || passwordError.value) {
+    await nextTick()
+    if (emailError.value) emailField.value?.focus()
+    else passwordField.value?.focus()
+    return
+  }
+  email.value = typed
   loading.value = true
   localStorage.setItem('signup_intent', 'staff')
   const { data, error: signUpError } = await supabase.auth.signUp({
@@ -116,7 +141,7 @@ async function onSubmit() {
 
     <template #form>
       <form class="mt-5 flex flex-col gap-[18px] lg:mt-[30px]" novalidate @submit.prevent="onSubmit">
-        <OnboardingFormField id="email" :label="t('Email', 'Correo electrónico')" :invalid="!!emailError">
+        <OnboardingFormField id="email" :label="t('Email', 'Correo electrónico')" :error="emailErrorText" :invalid="emailError === 'taken'">
           <OnboardingTextInput
             id="email"
             ref="emailField"
@@ -128,15 +153,22 @@ async function onSubmit() {
             :invalid="!!emailError"
             :described-by="emailError ? 'email-error' : undefined"
           />
-          <template #error>
+          <template v-if="emailError === 'taken'" #error>
             {{ t('That email already has a QuiroFlow account.', 'Ese correo ya tiene una cuenta de QuiroFlow.') }}
             <NuxtLink to="/login" class="font-semibold text-danger-text underline">{{ t('Sign in', 'Inicia sesión') }}</NuxtLink>
             {{ t('instead, or use a different address.', 'o usa otra dirección.') }}
           </template>
         </OnboardingFormField>
 
-        <OnboardingFormField id="password" :label="t('Password', 'Contraseña')">
-          <OnboardingPasswordInput id="password" v-model="password" :readonly="loading" />
+        <OnboardingFormField id="password" :label="t('Password', 'Contraseña')" :error="passwordError">
+          <OnboardingPasswordInput
+            id="password"
+            ref="passwordField"
+            v-model="password"
+            :readonly="loading"
+            :invalid="!!passwordError"
+            :described-by="passwordError ? 'password-error' : undefined"
+          />
         </OnboardingFormField>
 
         <p v-if="formError" role="alert" class="text-[12.5px] text-danger-text">{{ formError }}</p>
@@ -154,7 +186,7 @@ async function onSubmit() {
             <rect x="3.4" y="7" width="9.2" height="6.4" rx="1.8" stroke="currentColor" stroke-width="1.4" />
             <path d="M5.6 7V5.3a2.4 2.4 0 0 1 4.8 0V7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
           </svg>
-          <span>{{ t('Setting up your encrypted practice workspace in the EU…', 'Preparando tu espacio de trabajo cifrado en la UE…') }}</span>
+          <span>{{ t('Your data is stored encrypted, on servers in the EU.', 'Tus datos se guardan cifrados, en servidores de la UE.') }}</span>
         </p>
 
         <p v-else class="text-center text-[13.5px] text-ink-muted">

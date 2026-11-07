@@ -1,4 +1,5 @@
 import { stripeClientFor } from '~/server/utils/stripe'
+import { raiseInvoice } from '~/utils/raiseInvoice'
 
 // The cancellation fee, as the cancel step asks for it, or the missed-
 // appointment fee for a no-show (kind: 'missed'): added to the patient's
@@ -46,22 +47,13 @@ export default defineEventHandler(async (event) => {
   if (!account || feeCents <= 0) throw createError({ statusCode: 400, statusMessage: missed ? 'No missed-appointment fee is configured' : 'No cancellation fee is configured' })
   const description = missed ? 'Missed appointment fee' : 'Cancellation fee'
 
-  // No number, no invoice: an unnumbered fee is worse than an uncharged one.
-  const { data: invoiceNumber } = await supabase.rpc('next_invoice_number', { p_account_id: teamMember.account_id })
-  if (!invoiceNumber) throw createError({ statusCode: 500, statusMessage: 'Could not number the invoice' })
-  const { data: invoice, error: invoiceError } = await supabase
-    .from('invoices')
-    .insert({ account_id: teamMember.account_id, patient_id: appt.patient_id, invoice_number: invoiceNumber, status: 'unpaid', total_cents: feeCents })
-    .select('id')
-    .single()
-  if (invoiceError || !invoice) throw createError({ statusCode: 500, statusMessage: invoiceError?.message ?? 'Could not raise the invoice' })
-  await supabase.from('invoice_line_items').insert({
-    account_id: teamMember.account_id,
-    invoice_id: invoice.id,
-    description,
-    quantity: 1,
-    price_cents: feeCents,
-  })
+  // Numbered, raised and given its line in one transaction (raise_invoice):
+  // the line used to be a second insert whose error nobody read, so a refused
+  // one left a receipt with a total and nothing on it. No number, no invoice:
+  // an unnumbered fee is worse than an uncharged one.
+  const { invoice: raised, error: raiseError } = await raiseInvoice(supabase, { patientId: appt.patient_id, description, amountCents: feeCents })
+  if (!raised) throw createError({ statusCode: 500, statusMessage: raiseError ?? 'Could not raise the invoice' })
+  const invoice = { id: raised.invoiceId }
 
   if (body.charge === 'balance') return { invoiceId: invoice.id, charged: false }
 

@@ -36,7 +36,7 @@ describe('A payment with no invoice', () => {
         // matches a payment to its invoice by invoice_id, and this one has
         // none.
         cy.visit(`/patients/${patient.id}?tab=billing`)
-        cy.contains('Payment — cash').scrollIntoView().should('be.visible')
+        cy.contains('Payment — Cash').scrollIntoView().should('be.visible')
       })
     })
   })

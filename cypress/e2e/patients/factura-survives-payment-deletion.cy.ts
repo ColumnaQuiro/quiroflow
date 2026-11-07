@@ -33,10 +33,10 @@ describe('A factura outlives the payment it documents', () => {
 
           // Now remove the payment, the way reception does when money was
           // taken that should have come from a bono.
-          cy.contains('tr', 'Payment — cash').click()
+          cy.contains('tr', 'Payment — Cash').click()
           cy.contains('button', 'Remove payment').click()
           // No spinner on this action -- wait for the row itself to go.
-          cy.contains('tr', 'Payment — cash').should('not.exist')
+          cy.contains('tr', 'Payment — Cash').should('not.exist')
 
           cy.task('db:facturasFor', { patientId: patient.id }).then((after: any) => {
             // The number is still on the series. Before this change it was gone.

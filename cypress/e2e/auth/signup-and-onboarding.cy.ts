@@ -20,9 +20,9 @@ describe('Signup and onboarding', () => {
     cy.get('#account-name').type(accountName)
     cy.get('#clinic-name').type(clinicName)
 
-    // The right panel mirrors the two fields that build the booking URL, so a
+    // The right panel mirrors the field that builds the booking address, so a
     // clinic can see what it is about to be called before committing to it.
-    cy.contains(`quiroflow.app/`).should('exist')
+    cy.contains('.app.quiroflow.com').should('exist')
     cy.contains(accountName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')).should('exist')
 
     // The clinic's country is asked here rather than assumed: it is stored on
@@ -122,11 +122,21 @@ describe('Signup and onboarding', () => {
     cy.get('[data-test="owner-treats-yes"]').should('have.attr', 'aria-checked', 'true')
     cy.get('[data-test="owner-treats-no"]').click().should('have.attr', 'aria-checked', 'true')
 
+    // Nothing typed: every empty field says so, and focus goes to the first.
+    cy.contains('button', 'Create practice').click()
+    cy.get('#owner-name').should('have.focus').and('have.attr', 'aria-invalid', 'true')
+    cy.get('#owner-name-error').should('contain', 'Enter your name')
+    cy.get('#account-name-error').should('contain', 'Name your practice')
+    cy.get('#clinic-name-error').should('contain', 'Name the clinic')
+    cy.contains('h1', 'Set up your practice').should('be.visible')
+
     cy.get('#owner-name').type(faker.person.fullName())
     cy.get('#account-name').type(`${faker.company.name()} Clinic`)
     cy.get('#clinic-name').type(faker.location.city())
 
-    // The owner's phone is the one field checked before the account exists.
+    // The fields are checked before the account exists: the phone because a
+    // number nobody can dial looks like one we have, the names because the
+    // RPC would otherwise take a practice called "".
     cy.contains('button', 'Create practice').click()
     cy.get('#owner-phone').should('have.attr', 'aria-invalid', 'true').and('have.focus')
     cy.contains('[role="alert"]', 'Enter a phone number we can reach you on').should('be.visible')

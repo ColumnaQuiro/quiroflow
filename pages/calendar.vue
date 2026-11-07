@@ -7,6 +7,7 @@ import { appointmentStage, matchesFilter, needsNextBookingFlag, pendingFormsFlag
 import { shortPatientName } from '~/utils/appointmentBlock'
 import { bonoForVisit, type VisitPayment } from '~/utils/visitPayment'
 import { visitMarkerLabel } from '~/utils/carePlanVisitMarkers'
+import { raiseInvoice } from '~/utils/raiseInvoice'
 import { effectivePriceCents } from '~/utils/appointmentOverrides'
 import { orderTypes } from '~/utils/appointmentTypes'
 import type { MoveClash } from '~/utils/moveClash'
@@ -1931,23 +1932,26 @@ async function confirmReschedule(payload: { reasonId: string | null; note: strin
   useStaffFetch('/api/waitlist/offer-next', { method: 'POST', body: { appointmentId: pending.appointmentId, movedFrom: pending.origStartsAt } }).catch(() => {})
 
   if (payload.applyFee && store.schedulingPolicyFeeCents) {
-    // No number, no invoice: an unnumbered fee is worse than an uncharged one.
-    const { data: invoiceNumber } = await supabase.rpc('next_invoice_number', { p_account_id: store.accountId! })
-    if (invoiceNumber) {
-      const { data: feeInvoice } = await supabase
-        .from('invoices')
-        .insert({ account_id: store.accountId!, patient_id: pending.patientId, invoice_number: invoiceNumber, status: 'unpaid', total_cents: store.schedulingPolicyFeeCents })
-        .select('id')
-        .single()
-      if (feeInvoice) {
-        await supabase.from('invoice_line_items').insert({
-          account_id: store.accountId!,
-          invoice_id: feeInvoice.id,
-          description: 'Scheduling policy fee',
-          quantity: 1,
-          price_cents: store.schedulingPolicyFeeCents,
-        })
-      }
+    // The fee's receipt and its line in one transaction (raise_invoice):
+    // written as two inserts, a refused line left a receipt with a total and
+    // nothing on it. Unpaid -- it goes on the patient's balance.
+    const { invoice: feeInvoice, error: feeError } = await raiseInvoice(supabase, {
+      patientId: pending.patientId,
+      description: 'Scheduling policy fee',
+      amountCents: store.schedulingPolicyFeeCents,
+    })
+    // The move itself stands; it is the fee that is missing, and nothing else
+    // on screen would say so.
+    if (!feeInvoice) {
+      console.error('[calendar] scheduling policy fee was not raised', feeError)
+      useToast().showToast(
+        t(
+          `The appointment was moved, but the fee was NOT added (${feeError}). Add it from the patient's Money tab.`,
+          `La cita se ha movido, pero el cargo NO se ha añadido (${feeError}). Añádelo desde la pestaña Dinero del paciente.`,
+        ),
+        'error',
+        20000,
+      )
     }
   }
 

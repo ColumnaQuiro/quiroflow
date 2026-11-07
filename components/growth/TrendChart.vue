@@ -28,10 +28,10 @@ const scaled = computed(() => {
   <section class="rounded-card border border-line bg-surface p-4 shadow-card sm:px-[18px]">
     <div class="mb-1.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
       <h2 class="text-[13.5px] font-semibold tracking-tightTitle text-ink-900">
-        {{ t('Leads vs booked · last 90 days', 'Contactos vs reservas · últimos 90 días') }}
+        {{ t('Leads and bookings · last 90 days', 'Leads y reservas · últimos 90 días') }}
       </h2>
       <div class="flex gap-3.5 text-[11px] text-ink-muted">
-        <span class="flex items-center gap-[5px]"><span class="h-0.5 w-[9px] bg-brand" />{{ t('Leads', 'Contactos') }}</span>
+        <span class="flex items-center gap-[5px]"><span class="h-0.5 w-[9px] bg-brand" />{{ t('Leads', 'Leads') }}</span>
         <span class="flex items-center gap-[5px]"><span class="h-0.5 w-[9px] bg-ink-faint" />{{ t('Booked', 'Reservas') }}</span>
       </div>
     </div>
@@ -41,7 +41,7 @@ const scaled = computed(() => {
       preserveAspectRatio="none"
       class="block h-[186px] w-full"
       role="img"
-      :aria-label="t('Leads versus booked appointments over the last 90 days', 'Contactos frente a citas reservadas en los últimos 90 días')"
+      :aria-label="t('New leads and booked appointments, week by week, over the last 90 days', 'Leads nuevos y citas reservadas, semana a semana, en los últimos 90 días')"
     >
       <line v-for="y in [20, 70, 120]" :key="y" x1="0" :y1="y" :x2="VIEW_W" :y2="y" class="stroke-line-divider" stroke-width="1" />
       <line x1="0" :y1="BOTTOM" :x2="VIEW_W" :y2="BOTTOM" class="stroke-line" stroke-width="1" />

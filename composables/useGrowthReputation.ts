@@ -74,6 +74,14 @@ export function useGrowthReputation() {
   }
   onMounted(load)
 
+  // A failure in the reader's language first, then whatever the server or
+  // Google said, as the detail. Those come back in English ("Google refused
+  // the reply: ..."), and on their own they were the whole message.
+  function failed(plain: string, e: unknown) {
+    const detail = serverMessage(e)
+    return detail ? `${plain} (${detail})` : plain
+  }
+
   async function draftReply(reviewId: string) {
     busyId.value = reviewId
     try {
@@ -82,7 +90,7 @@ export function useGrowthReputation() {
         { method: 'POST' },
       )
       if (!result.available) {
-        showToast(t('Drafting needs an Anthropic API key on the server.', 'Redactar necesita una clave de API de Anthropic en el servidor.'), 'error')
+        showToast(t('Drafting replies is not available right now: the AI service it uses is not set up on QuiroFlow’s side.', 'Redactar respuestas no está disponible ahora mismo: el servicio de IA que usa no está configurado en QuiroFlow.'), 'error')
         return
       }
       if (result.refused) {
@@ -91,7 +99,7 @@ export function useGrowthReputation() {
       }
       await load()
     } catch (e) {
-      showToast(serverMessage(e) ?? t('Could not draft a reply.', 'No se ha podido redactar la respuesta.'), 'error')
+      showToast(failed(t('Could not draft a reply.', 'No se ha podido redactar la respuesta.'), e), 'error')
     } finally {
       busyId.value = null
     }
@@ -103,10 +111,10 @@ export function useGrowthReputation() {
       const result = await useStaffFetch<{ postedToPlatform: boolean }>(`/api/growth/reputation/${reviewId}/reply`, { method: 'POST', body: { body } })
       // "Published" only when Google said yes. Anything else is saved here
       // and nowhere else, and the toast must not be the thing that says otherwise.
-      showToast(result.postedToPlatform ? t('Reply published on Google.', 'Respuesta publicada en Google.') : t('Reply approved and saved.', 'Respuesta aprobada y guardada.'))
+      showToast(result.postedToPlatform ? t('Reply published on Google.', 'Respuesta publicada en Google.') : t('Reply approved and saved. It was not posted on the review site, so paste it there yourself.', 'Respuesta aprobada y guardada. No se ha publicado en la web de la reseña, así que pégala allí tú.'))
       await load()
     } catch (e) {
-      showToast(serverMessage(e) ?? t('Could not save that reply.', 'No se ha podido guardar la respuesta.'), 'error')
+      showToast(failed(t('Could not save that reply.', 'No se ha podido guardar la respuesta.'), e), 'error')
     } finally {
       busyId.value = null
     }
@@ -136,7 +144,7 @@ export function useGrowthReputation() {
       const { url } = await useStaffFetch<{ url: string }>('/api/google-business/connect')
       window.location.href = url
     } catch (e) {
-      showToast(serverMessage(e) ?? t('Could not start connecting Google.', 'No se ha podido empezar a conectar Google.'), 'error')
+      showToast(failed(t('Could not start connecting Google.', 'No se ha podido empezar a conectar Google.'), e), 'error')
       googleBusy.value = false
     }
   }
@@ -146,7 +154,7 @@ export function useGrowthReputation() {
     try {
       googleLocations.value = (await useStaffFetch<{ locations: NonNullable<typeof googleLocations.value> }>('/api/google-business/locations')).locations
     } catch (e) {
-      showToast(serverMessage(e) ?? t('Could not read your Google listings.', 'No se han podido leer tus fichas de Google.'), 'error')
+      showToast(failed(t('Could not read your Google listings.', 'No se han podido leer tus fichas de Google.'), e), 'error')
     } finally {
       googleBusy.value = false
     }
@@ -157,11 +165,11 @@ export function useGrowthReputation() {
     try {
       const result = await useStaffFetch<{ title: string; imported: number; syncError?: string }>('/api/google-business/location', { method: 'POST', body: { location } })
       googleLocations.value = null
-      if (result.syncError) showToast(result.syncError, 'error')
+      if (result.syncError) showToast(t(`Connected to ${result.title}, but its reviews could not be read yet. Press Refresh to try again. (${result.syncError})`, `Conectado a ${result.title}, pero aún no se han podido leer sus reseñas. Pulsa Actualizar para reintentarlo. (${result.syncError})`), 'error')
       else showToast(t(`Connected to ${result.title}: ${result.imported} reviews imported.`, `Conectado a ${result.title}: ${result.imported} reseñas importadas.`), 'success')
       await load()
     } catch (e) {
-      showToast(serverMessage(e) ?? t('Could not choose that listing.', 'No se ha podido elegir esa ficha.'), 'error')
+      showToast(failed(t('Could not choose that listing.', 'No se ha podido elegir esa ficha.'), e), 'error')
     } finally {
       googleBusy.value = false
     }
@@ -175,7 +183,7 @@ export function useGrowthReputation() {
       if (result.synced) await load()
       if (force) showToast(t('Google reviews are up to date.', 'Las reseñas de Google están al día.'), 'success')
     } catch (e) {
-      if (force) showToast(serverMessage(e) ?? t('Could not read your Google reviews.', 'No se han podido leer tus reseñas de Google.'), 'error')
+      if (force) showToast(failed(t('Could not read your Google reviews.', 'No se han podido leer tus reseñas de Google.'), e), 'error')
     } finally {
       googleBusy.value = false
     }
@@ -187,6 +195,10 @@ export function useGrowthReputation() {
       await useStaffFetch('/api/google-business/disconnect', { method: 'POST' })
       googleLocations.value = null
       await load()
+    } catch (e) {
+      // It had no catch: a failed disconnect left the button enabled again and
+      // said nothing, so it looked as if the click had not registered.
+      showToast(failed(t('Could not disconnect Google. Try again.', 'No se ha podido desconectar Google. Inténtalo de nuevo.'), e), 'error')
     } finally {
       googleBusy.value = false
     }

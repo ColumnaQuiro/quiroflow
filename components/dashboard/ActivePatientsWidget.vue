@@ -56,6 +56,7 @@ const pct = computed(() => (total.value === 0 ? 0 : Math.round((active.value / t
     <p class="font-mono text-[27px] leading-none text-ink-900">
       {{ active }} <span class="font-sans text-[14px] font-medium text-ink-muted2">({{ pct }}%)</span>
     </p>
-    <p class="mt-1.5 text-[12px] text-ink-muted2">{{ t(`Seen in the last ${ACTIVE_WINDOW_DAYS} days`, `Atendidos en los últimos ${ACTIVE_WINDOW_DAYS} días`) }}</p>
+    <!-- Says what the percentage is of; on its own "(34%)" left that to guess. -->
+    <p class="mt-1.5 text-[12px] text-ink-muted2">{{ t(`Seen in the last ${ACTIVE_WINDOW_DAYS} days, out of ${total} patients`, `Atendidos en los últimos ${ACTIVE_WINDOW_DAYS} días, de ${total} pacientes en total`) }}</p>
   </div>
 </template>

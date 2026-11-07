@@ -572,6 +572,8 @@ const cta = computed(() => {
 // to be inserted first and the out-of-hours confirm() asked after, so
 // answering "no" -- or an appointment insert failing -- left a patient behind,
 // and the retry created them again.
+const { showToast } = useToast()
+
 async function save() {
   error.value = ''
   pendingSeries.value = null
@@ -664,16 +666,31 @@ async function bookingPatientId(): Promise<string | null> {
     // A dial prefix typed into the number itself wins over the dropdown, so
     // "+44 7700 900123" is not filed as Spanish (or vice versa).
     const { countryCode, number } = splitDialPrefix(newPatientPhone.value, newPatientPhoneCountry.value)
-    await supabase.from('patient_contact_numbers').insert({ account_id: store.accountId!, patient_id: newPatient.id, country_code: countryCode, number })
+    const { error: phoneError } = await supabase.from('patient_contact_numbers').insert({ account_id: store.accountId!, patient_id: newPatient.id, country_code: countryCode, number })
+    // The patient exists and the booking goes ahead; the number is what is
+    // missing, and nothing else on screen would say so -- the panel closes on
+    // success, and a patient with no number gets no confirmation or reminder.
+    if (phoneError) showToast(t(`${firstName}'s phone number wasn't saved. Add it on their record.`, `No se ha guardado el teléfono de ${firstName}. Añádelo en su ficha.`), 'error')
   }
   selectedPatient.value = { id: newPatient.id, first_name: firstName, last_name: lastName, sub: t('New patient', 'Paciente nuevo'), flags: [] }
   patientMode.value = 'existing'
   return newPatient.id
 }
 
-async function book(starts: Date[]) {
+// Dates already booked from this panel, by patient: a series that failed
+// part-way said "Booked 3 of 8", and pressing Book again booked all eight --
+// the first three twice. A retry now books only what is still missing.
+const bookedHere = new Map<string, string>()
+const bookedKey = (patientId: string, at: Date) => `${patientId}|${at.getTime()}`
+
+async function book(requested: Date[]) {
   const patientId = await bookingPatientId()
   if (!patientId) return
+  const starts = requested.filter((at) => !bookedHere.has(bookedKey(patientId, at)))
+  if (!starts.length) {
+    emit('saved')
+    return
+  }
 
   let firstAppointmentId: string | null = null
   const createdIds: string[] = []
@@ -715,6 +732,7 @@ async function book(starts: Date[]) {
     }
     if (i === 0) firstAppointmentId = created.id
     createdIds.push(created.id)
+    bookedHere.set(bookedKey(patientId, occStart), created.id)
     fire('appointment.booked', { patientId, appointmentId: created.id })
   }
   // One booking, one confirmation. A series -- a care plan's visits -- is one
@@ -723,6 +741,9 @@ async function book(starts: Date[]) {
   if (sendConfirmation.value && createdIds.length === 1) useStaffFetch('/api/appointments/send-confirmation', { method: 'POST', body: { appointmentId: createdIds[0] } }).catch(() => {})
   if (sendConfirmation.value && createdIds.length > 1) useStaffFetch('/api/appointments/send-series-confirmation', { method: 'POST', body: { appointmentIds: createdIds } }).catch(() => {})
   if (failed) return
+  // The payment belongs to the first visit asked for, even when a retry is
+  // only booking the dates after it.
+  firstAppointmentId = bookedHere.get(bookedKey(patientId, requested[0])) ?? firstAppointmentId
 
   if (collectPayment.value && firstAppointmentId) {
     const amountCents = Math.round((parseFloat(paymentAmount.value) || 0) * 100)

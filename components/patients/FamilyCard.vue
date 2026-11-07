@@ -135,7 +135,7 @@ async function remove(link: Link) {
        <div class="flex items-center gap-2 text-[13.5px]">
         <span class="w-24 shrink-0 text-[12px] text-ink-muted2">{{ relationLabel(l.relation, l.related?.gender, t) }}</span>
         <NuxtLink :to="`/patients/${l.related_patient_id}`" class="min-w-0 flex-1 truncate text-brand-text hover:underline">{{ nameOf(l.related) }}</NuxtLink>
-        <span v-if="patientAge(l.related?.date_of_birth) !== null" class="shrink-0 text-[12px] text-ink-muted">{{ t(`${patientAge(l.related?.date_of_birth)} y`, `${patientAge(l.related?.date_of_birth)} años`) }}</span>
+        <span v-if="patientAge(l.related?.date_of_birth) !== null" class="shrink-0 text-[12px] text-ink-muted">{{ t(`${patientAge(l.related?.date_of_birth)} years`, `${patientAge(l.related?.date_of_birth)} años`) }}</span>
         <button
           v-if="can('patients_edit')"
           type="button"

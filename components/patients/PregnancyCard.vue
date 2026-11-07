@@ -44,7 +44,7 @@ async function write(values: { pregnancy_due_date: string | null; pregnancy_mult
   const { error } = await supabase.from('patients').update(values).eq('id', props.patient.id).select('id').single()
   saving.value = false
   if (error) {
-    showToast(error.message, 'error')
+    showToast(`${t('The pregnancy was not saved.', 'No se ha guardado el embarazo.')} (${error.message})`, 'error')
     return
   }
   editing.value = false

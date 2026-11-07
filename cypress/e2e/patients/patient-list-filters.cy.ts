@@ -159,7 +159,7 @@ describe('Exporting the patient list', () => {
         // nothing, and nothing on screen said why.
         cy.get('input[type="search"]').type('Inactiva')
         cy.contains('Inés Inactiva').should('be.visible')
-        cy.contains('Inactive').should('be.visible')
+        cy.contains('Archived').should('be.visible')
         cy.contains('Alba Activa').should('not.exist')
       })
     })

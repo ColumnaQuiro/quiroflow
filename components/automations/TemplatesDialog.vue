@@ -46,7 +46,7 @@ useFocusTrap(panel, () => emit('close'))
   <div class="fixed inset-0 z-50 flex items-end justify-center bg-scrim/40 p-4 sm:items-center" @click.self="emit('close')">
     <div ref="panel" role="dialog" aria-modal="true" aria-labelledby="tpl-title" class="flex max-h-[90vh] w-full max-w-[920px] flex-col rounded-card border border-line bg-surface shadow-popover" data-test="templates-dialog">
       <div class="flex flex-col gap-1 px-6 pb-3 pt-6">
-        <h2 id="tpl-title" class="text-[18px] font-bold text-ink-900">{{ t('Start from a template', 'Empezar desde una plantilla') }}</h2>
+        <h2 id="tpl-title" class="text-[18px] font-[640] tracking-tightTitle text-ink-900">{{ t('Start from a template', 'Empezar desde una plantilla') }}</h2>
         <p class="text-[13.5px] text-ink-500">{{ t("Created paused, with your clinic's details. Change them before switching them on.", 'Se crean pausadas y con los datos de tu clínica. Las cambias antes de activarlas.') }}</p>
       </div>
       <div class="min-h-0 flex-1 overflow-y-auto px-6 pb-2">
@@ -71,7 +71,7 @@ useFocusTrap(panel, () => emit('close'))
           </button>
         </div>
 
-        <h3 class="mt-5 text-[11px] font-bold uppercase tracking-[.06em] text-ink-faint">{{ t('Patient emails', 'Emails para pacientes') }}</h3>
+        <h3 class="mt-5 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Patient emails', 'Emails para pacientes') }}</h3>
         <p class="mt-1 text-[12.5px] text-ink-muted">{{ t('Written for a chiropractic clinic. None is narrowed to an appointment type -- add that yourself if you want one after a specific visit only.', 'Escritos para una clínica quiropráctica. Ninguno está limitado a un tipo de cita: añádelo tú si quieres que salga solo tras una visita concreta.') }}</p>
         <ul class="mt-2 grid gap-2 sm:grid-cols-2">
           <li v-for="tpl in EMAIL_TEMPLATES" :key="tpl.key">
@@ -95,7 +95,7 @@ useFocusTrap(panel, () => emit('close'))
       </div>
       <div class="flex flex-wrap justify-end gap-2 border-t border-line-divider px-6 py-4">
         <UiBtn @click="emit('close')">{{ t('Cancel', 'Cancelar') }}</UiBtn>
-        <NuxtLink to="/automations/new" class="inline-flex h-9 items-center rounded-ctl bg-brand px-3.5 text-[13px] font-semibold text-surface hover:bg-brand-hover touch:h-11" data-test="template-blank">{{ t('Start blank', 'Empezar en blanco') }}</NuxtLink>
+        <NuxtLink to="/automations/new" class="inline-flex h-9 items-center rounded-ctl bg-brand px-3.5 text-[13px] font-semibold text-brand-on hover:bg-brand-hover touch:h-11" data-test="template-blank">{{ t('Start blank', 'Empezar en blanco') }}</NuxtLink>
       </div>
     </div>
   </div>

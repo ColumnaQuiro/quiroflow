@@ -137,7 +137,7 @@ watch(
     <div v-if="lockedLead" class="flex flex-col gap-2 rounded-card border border-line bg-surface-subtle p-3.5" data-test="no-growth">
       <strong class="text-[13.5px] text-ink-900">{{ t('Lead automations are part of Growth.', 'Las automatizaciones de leads son de Growth.') }}</strong>
       <span class="text-[12.5px] leading-snug text-ink-500">{{ t('With Growth, every lead from your ads or your website enters here within minutes and is followed up until they book.', 'Con Growth, cada lead de tus anuncios o de la web entra aquí en minutos y recibe un seguimiento hasta que reserva.') }}</span>
-      <NuxtLink to="/growth" class="inline-flex h-9 items-center self-start rounded-ctl bg-brand px-3.5 text-[13px] font-semibold text-surface hover:bg-brand-hover touch:h-11">{{ t('See Growth', 'Ver Growth') }}</NuxtLink>
+      <NuxtLink to="/growth" class="inline-flex h-9 items-center self-start rounded-ctl bg-brand px-3.5 text-[13px] font-semibold text-brand-on hover:bg-brand-hover touch:h-11">{{ t('See Growth', 'Ver Growth') }}</NuxtLink>
       <p :class="HINT">{{ t('This automation is paused and kept exactly as it is. It works again as soon as Growth is on.', 'Esta automatización está pausada y guardada tal cual. Vuelve a funcionar al activar Growth.') }}</p>
     </div>
 

@@ -139,7 +139,7 @@ describe('A reply that is sent as it is', () => {
     const visits = [{ startsAt: '2026-10-20T08:00:00Z', typeName: 'Ajuste' }]
     const prompt = receptionistPromptText(buildPatientReplyPrompt(config, { ...base, bookedVisits: visits, sendsItself: true, canBook: true }))
     expect(prompt).toContain('Book or move only when there is no doubt which exact day and time they want')
-    expect(prompt).toContain('"miércoles 21" means 16:00 and you book it without asking again')
+    expect(prompt).toContain('"miércoles 21", "el 21" or "perdón, sí, el 21" mean 16:00 and you book it without asking again')
     expect(prompt).toContain('If it could be more than one time')
     // Both where it books and where it moves.
     expect(prompt.split('Book or move only when there is no doubt which exact day and time they want').length - 1).toBe(2)

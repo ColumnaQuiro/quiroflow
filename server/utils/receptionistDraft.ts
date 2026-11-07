@@ -11,6 +11,7 @@ import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptioni
 import { cameFromAd } from '~/utils/receptionistLeadOrigin'
 import { leadNameIsTheirs, typesForAudience, typesAfterFirstVisit, typesForMinor, typesForReferral, typesForSomeoneTheyBring, type ReceptionistAudience } from '~/utils/receptionistTypes'
 import { internalNotes } from '~/utils/receptionistGuard'
+import { chosenOfferedTime, chosenTimeNote, isVoiceNote, sendFailedReason, VOICE_NOTE_REASON, VOICE_NOTE_REPLY } from '~/utils/receptionistFollowThrough'
 
 // Writing a receptionist reply for one lead.
 //
@@ -246,6 +247,26 @@ export async function draftLeadReply(
       new Date(),
     ) === null
 
+  // A voice note since the clinic last wrote: always a person's, decided
+  // here rather than by the model (utils/receptionistFollowThrough.ts).
+  if (ordered.slice(lastOutbound + 1).some((m: { direction: string; media_type?: string | null }) => m.direction === 'inbound' && isVoiceNote(m.media_type))) {
+    await supabase.from('leads').update({ ai_draft_body: VOICE_NOTE_REPLY, ai_draft_created_at: new Date().toISOString(), ...(newestInboundAt ? { ai_drafted_through_at: newestInboundAt } : {}) }).eq('id', leadId).eq('account_id', accountId)
+    if (!sends || !opts.send) return { status: 'drafted', draft: VOICE_NOTE_REPLY }
+    const target = { kind: 'lead' as const, leadId, channel: replyChannel }
+    const name = lead.full_name ?? 'Lead'
+    await handToPerson(supabase, accountId, leadId)
+    try {
+      await sendAsReceptionist(opts.send.event, supabase, accountId, target, VOICE_NOTE_REPLY)
+    } catch (err) {
+      console.error(`[receptionist] could not send to lead ${leadId}:`, (err as Error)?.message ?? err)
+      await announceHandover(supabase, accountId, target, name, `${VOICE_NOTE_REASON} ${sendFailedReason(err)}`)
+      return { status: 'drafted', draft: VOICE_NOTE_REPLY }
+    }
+    await supabase.from('leads').update({ ai_draft_body: null }).eq('id', leadId).eq('account_id', accountId)
+    await announceHandover(supabase, accountId, target, name, VOICE_NOTE_REASON)
+    return { status: 'sent', text: VOICE_NOTE_REPLY, handedOver: true }
+  }
+
   // Booking on its own only when it is also answering on its own, and from a
   // calendar it could read: never behind a draft nobody has read yet.
   const actions: BookingContext | null =
@@ -273,6 +294,12 @@ export async function draftLeadReply(
   // What they sent since the clinic last wrote, pictures included.
   const images = await recentImages(calendarClient, ordered.slice(lastOutbound + 1))
 
+  // Their answer can only be one of the times it just offered: said so in the
+  // prompt, so it books rather than asking "¿te confirmo?" again (5 Nov 2026).
+  const offer = ours && ours.direction === 'outbound' && ours.sent_by_ai === true && !ourLast?.automated ? ours.body_preview ?? '' : ''
+  const chosen = offer ? chosenOfferedTime(offer, ordered.slice(lastOutbound + 1).filter((m: { direction: string }) => m.direction === 'inbound').map((m: { body_preview: string | null }) => m.body_preview ?? '').join(' ')) : null
+  const withChosenTime = <P extends { conversation: string }>(prompt: P): P => (chosen ? { ...prompt, conversation: `${prompt.conversation}\n\n${chosenTimeNote(chosen, Boolean(book))}` } : prompt)
+
   // The clinic's monthly ceiling, if it set one: checked before the model is
   // asked, because the model call is what the ceiling is there to stop.
   if (await overMonthlyLimit(supabase, accountId, config.monthlyReplyLimit)) return { status: 'limit_reached' }
@@ -280,7 +307,7 @@ export async function draftLeadReply(
   const { text: draft, refused, handedOver, toolUses } = await runReceptionistModel(await createAnthropicClient(apiKey, { feature: 'receptionist_lead', accountId }), {
     model: MODEL,
     maxTokens: MAX_TOKENS,
-    system: buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience, calendar, leadOrigin, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, draft: { personName: lead.full_name ?? null }, knownDetails: { name: leadNameIsTheirs(lead.channel) && Boolean(lead.full_name?.trim()), email: Boolean(lead.email?.trim()), phone: !(NUMBERLESS_CHANNELS.includes(lead.channel) && !lead.phone) }, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, referral, laterPrices, clinicDetails, team }),
+    system: withChosenTime(buildSystemPrompt(config, { testMode: false, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience, calendar, leadOrigin, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, draft: { personName: lead.full_name ?? null }, knownDetails: { name: leadNameIsTheirs(lead.channel) && Boolean(lead.full_name?.trim()), email: Boolean(lead.email?.trim()), phone: !(NUMBERLESS_CHANNELS.includes(lead.channel) && !lead.phone) }, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, referral, laterPrices, clinicDetails, team })),
     messages: withImages(history, images),
     findFreeTimes,
     handOver: sends,
@@ -342,6 +369,9 @@ export async function draftLeadReply(
       // Refused by WhatsApp (the window closed, a bad number): it stays a
       // draft, so a person still sees what it would have said.
       console.error(`[receptionist] could not send to lead ${leadId}:`, (err as Error)?.message ?? err)
+      // And a person is told, rather than finding the draft by chance.
+      await handToPerson(supabase, accountId, leadId)
+      await announceHandover(supabase, accountId, target, name, sendFailedReason(err))
       return { status: 'drafted', draft }
     }
     // Sent: no draft waiting any more.

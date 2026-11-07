@@ -78,6 +78,7 @@ export const BOOK_APPOINTMENT: Anthropic.Tool = {
       other_person_phone: { type: 'string', description: 'With other_person_name: that person\'s own mobile number, as given.' },
       other_person_relation: { type: 'string', enum: [...BROUGHT_RELATIONS], description: 'With other_person_name, if they said it: what that person is to them.' },
       referred_by: { type: 'string', description: 'When booking someone new as referred by a patient (see "Referred by a patient"): the first name and surname of the patient who referred them, exactly as they gave it.' },
+      any_chiropractor: { type: 'boolean', description: 'true when the time is one find_free_times gave with any_chiropractor: a new visit for the person writing with whoever of the team is free, because they are in a hurry and their own chiropractor has nothing. Never to move a visit.' },
     },
     required: ['date', 'time'],
     additionalProperties: false,
@@ -216,7 +217,7 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/
 export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<ToolResult> {
   const used = new Set<string>()
   return async (input) => {
-    const value = (input ?? {}) as { appointment_type?: unknown; date?: unknown; time?: unknown; move_visit_on?: unknown; full_name?: unknown; email?: unknown; phone?: unknown; child_name?: unknown; child_age?: unknown; family_member_name?: unknown; other_person_name?: unknown; other_person_phone?: unknown; other_person_relation?: unknown; referred_by?: unknown }
+    const value = (input ?? {}) as { appointment_type?: unknown; date?: unknown; time?: unknown; move_visit_on?: unknown; full_name?: unknown; email?: unknown; phone?: unknown; child_name?: unknown; child_age?: unknown; family_member_name?: unknown; other_person_name?: unknown; other_person_phone?: unknown; other_person_relation?: unknown; referred_by?: unknown; any_chiropractor?: unknown }
     const date = typeof value.date === 'string' ? value.date.trim() : ''
     // A time listed as "10:00*" (next to a visit, receptionistSlots.ts) is 10:00.
     const time = typeof value.time === 'string' ? value.time.trim().replace(/\*+$/, '') : ''
@@ -355,6 +356,9 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
     // A move stays with the visit's own practitioner, on another day if need
     // be: falling through to whoever was free moved a first visit offered
     // "con Natacha" to Jordana (1 Nov).
+    // In a hurry, a new visit of their own may be with anyone free: the time
+    // came from find_free_times with any_chiropractor.
+    if (value.any_chiropractor === true && !moving && !relative && !child && !brought) own = null
     if (moving?.practitionerId) own = [moving.practitionerId]
     for (const practitionerId of await candidatePractitioners(ctx, moving, own)) {
       const calendar = await loadReceptionistCalendar(ctx.service, ctx.accountId, ctx.config, [type], new Date(), { from: dayStart, days: 1, maxTimesPerList: 1000 }, [practitionerId])

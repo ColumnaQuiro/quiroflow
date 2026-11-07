@@ -18,7 +18,7 @@ describe('Buying a bono', () => {
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}?tab=billing`)
 
-        cy.contains('select', 'Sell a package').should('exist').select('Bono 12 (12, 528,00 €)')
+        cy.contains('select', 'Sell a bono').should('exist').select('Bono 12 (12, 528,00 €)')
         cy.get('input[type="number"]').last().clear().type('264')
         cy.contains('button', /^Sell$/).click()
         cy.contains('button', 'Selling…').should('not.exist')

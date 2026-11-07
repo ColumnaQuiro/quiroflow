@@ -39,6 +39,10 @@ const FIND_FREE_TIMES: Anthropic.Tool = {
         type: 'string',
         description: "When the visit is for one of their children, or an adult in their family listed in your instructions, rather than for them: that person's name. Their times are then with that person's own practitioner. Leave out for the person writing.",
       },
+      any_chiropractor: {
+        type: 'boolean',
+        description: 'true to look at the whole team instead of their own chiropractor -- only when they are in a hurry and their own has nothing in the days they asked for. Leave out otherwise.',
+      },
     },
     required: ['from_date'],
     additionalProperties: false,
@@ -84,7 +88,10 @@ export function freeTimesLookup(
     if ('error' in query) return { content: query.error, isError: true }
 
     const forName = typeof (input as { for_name?: unknown } | null)?.for_name === 'string' ? ((input as { for_name: string }).for_name).replace(/\s+/g, ' ').trim().slice(0, 120) : ''
-    let whose = { practitionerIds, types }
+    // Their own chiropractor's diary, unless they are in a hurry and the
+    // whole team's is asked for (BASE_BEHAVIOUR, 6 Nov 2026).
+    const anyone = (input as { any_chiropractor?: unknown } | null)?.any_chiropractor === true
+    let whose = { practitionerIds: anyone ? null : practitionerIds, types }
     if (forName) {
       const found = forWhom ? forWhom(forName) : { error: 'You cannot look up times for someone else here. Ask which days suit them and say your colleague will confirm.' }
       if ('error' in found) return { content: found.error, isError: true }

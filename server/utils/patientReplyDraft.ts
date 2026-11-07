@@ -6,11 +6,12 @@ import { bookingTool, cancelTool, giveVisitTool, stopFollowUpsTool, waitlistTool
 import { recentImages, withImages, type StoredImage } from '~/server/utils/receptionistImages'
 import { historyLine, standingClockTimes } from '~/utils/receptionistHistory'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personRepliedSince, replyActed } from '~/utils/receptionistAutoReply'
-import { loadBookedVisits, loadClinicDetails, loadFamilyAdults, loadOfferedTypes, loadTeamNames, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, toneWording, uniqueTypes, clinicTodayStart } from '~/server/utils/receptionist'
+import { loadBookedVisits, loadClinicDetails, loadFamilyAdults, loadPhoneSharers, loadOfferedTypes, loadTeamNames, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, toneWording, uniqueTypes, clinicTodayStart } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel, type FreeTimesForWhom } from '~/server/utils/receptionistModel'
 import { matchChild, patientAudience, typesAfterFirstVisit, typesForAudience, typesForMinor, typesForSomeoneTheyBring } from '~/utils/receptionistTypes'
 import { internalNotes } from '~/utils/receptionistGuard'
 import { carePlanCadenceLabel } from '~/utils/carePlanCadence'
+import { chosenOfferedTime, chosenTimeNote, isVoiceNote, sendFailedReason, VOICE_NOTE_REASON, VOICE_NOTE_REPLY } from '~/utils/receptionistFollowThrough'
 import { buildPatientReplyPrompt, type PatientAppFacts, openBono, summariseVisitHistory, type PastVisit, type PatientReplyFacts } from '~/utils/patientReplyPrompt'
 
 // A reply to a PATIENT's message in the Inbox, drafted by the receptionist
@@ -229,6 +230,8 @@ export async function draftPatientReply(
     supabase.from('accounts').select('slug').eq('id', accountId).maybeSingle(),
   ])
   const family = { forNew: bringsSomeone.types, forReturning: returning, members: await loadFamilyAdults(service, accountId, patientId) }
+  // Who else is on this mobile, and their next visits (phoneSharersSection).
+  const phoneSharers = await loadPhoneSharers(service, accountId, patientId)
   // Back after a long break with no bono: the clinic's own visit for that
   // (returningPatientSection), when it is one it offers.
   const reactivationType = returning.find((type) => type.id === config.reactivationAppointmentTypeId)?.name ?? null
@@ -273,6 +276,26 @@ export async function draftPatientReply(
   }
   const sends = Boolean(opts.send) && channel !== null && !handoverOpen && autoReplyHeldBack(asTurns, new Date()) === null
 
+  // A voice note since the clinic last wrote: always a person's, decided
+  // here rather than by the model (utils/receptionistFollowThrough.ts).
+  if (turns.slice(lastOutbound + 1).some((m) => m.direction === 'inbound' && isVoiceNote(m.media_type)) && newestInboundAt && (opts.store || opts.send)) {
+    const now = new Date().toISOString()
+    await service.from('inbox_reply_drafts').upsert({ account_id: accountId, conversation_key: patientId, body: VOICE_NOTE_REPLY, drafted_through_at: newestInboundAt, dismissed_at: null, handed_over_at: sends ? now : null, created_at: now })
+    if (!sends || !opts.send || !channel) return { status: 'drafted', draft: VOICE_NOTE_REPLY }
+    const target = { kind: 'patient' as const, patientId, channel }
+    const name = patient.first_name ?? 'Paciente'
+    try {
+      await sendAsReceptionist(opts.send.event, service, accountId, target, VOICE_NOTE_REPLY)
+    } catch (err) {
+      console.error(`[receptionist] could not send to patient ${patientId}:`, (err as Error)?.message ?? err)
+      await announceHandover(service, accountId, target, name, `${VOICE_NOTE_REASON} ${sendFailedReason(err)}`)
+      return { status: 'drafted', draft: VOICE_NOTE_REPLY }
+    }
+    await service.from('inbox_reply_drafts').update({ dismissed_at: new Date().toISOString() }).eq('account_id', accountId).eq('conversation_key', patientId)
+    await announceHandover(service, accountId, target, name, VOICE_NOTE_REASON)
+    return { status: 'sent', text: VOICE_NOTE_REPLY, handedOver: true }
+  }
+
   // Booking on its own only when it is also answering on its own, and from a
   // calendar it could read: never behind a draft nobody has read yet.
   const actions: BookingContext | null =
@@ -303,6 +326,12 @@ export async function draftPatientReply(
   // What they sent since the clinic last wrote, pictures included.
   const images = await recentImages(service, turns.slice(lastOutbound + 1))
 
+  // Their answer can only be one of the times it just offered: said so in the
+  // prompt, so it books rather than asking "¿te confirmo?" again (5 Nov 2026).
+  const offer = ours && ours.direction === 'outbound' && ours.sent_by_ai === true && !ours.automated ? ours.body : ''
+  const chosen = offer ? chosenOfferedTime(offer, turns.slice(lastOutbound + 1).filter((m) => m.direction === 'inbound').map((m) => m.body).join(' ')) : null
+  const withChosenTime = <P extends { conversation: string }>(prompt: P): P => (chosen ? { ...prompt, conversation: `${prompt.conversation}\n\n${chosenTimeNote(chosen, Boolean(book))}` } : prompt)
+
   // The clinic's monthly ceiling, if it set one: checked before the model is
   // asked, because the model call is what the ceiling is there to stop.
   if (await overMonthlyLimit(service, accountId, config.monthlyReplyLimit)) return { status: 'limit_reached' }
@@ -310,7 +339,7 @@ export async function draftPatientReply(
   const { text: draft, refused, handedOver, toolUses } = await runReceptionistModel(await createAnthropicClient(apiKey, { feature: 'receptionist_patient', accountId }), {
     model: MODEL,
     maxTokens: MAX_TOKENS,
-    system: buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, family: { forNew: family.forNew, forReturning: family.forReturning, members: family.members }, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, laterPrices, clinicDetails, team, app: patientApp, reactivationType, canStopFollowUps: Boolean(stopFollowUps) }),
+    system: withChosenTime(buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, family: { forNew: family.forNew, forReturning: family.forReturning, members: family.members }, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, laterPrices, clinicDetails, team, app: patientApp, reactivationType, canStopFollowUps: Boolean(stopFollowUps), phoneSharers })),
     messages: withImages(history, images),
     findFreeTimes,
     handOver: sends,
@@ -375,8 +404,12 @@ export async function draftPatientReply(
       await sendAsReceptionist(opts.send.event, service, accountId, target, draft)
     } catch (err) {
       // Refused (the window closed, "do not contact"...): it stays a waiting
-      // draft, so a person still sees what it would have said.
+      // draft, so a person still sees what it would have said -- and is told
+      // so. A draft nobody was told about left a patient waiting nine hours
+      // for a reply already written (6 Nov 2026).
       console.error(`[receptionist] could not send to patient ${patientId}:`, (err as Error)?.message ?? err)
+      await service.from('inbox_reply_drafts').update({ handed_over_at: new Date().toISOString() }).eq('account_id', accountId).eq('conversation_key', patientId)
+      await announceHandover(service, accountId, target, name, sendFailedReason(err))
       return { status: 'drafted', draft }
     }
     // Sent: dealt with, so it no longer shows as a draft.

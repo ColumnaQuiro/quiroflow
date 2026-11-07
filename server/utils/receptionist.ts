@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { baseBehaviourSection, escalationSection } from '~/utils/receptionistBaseRules'
 import type { Database } from '~/types/database.types'
 import { clinicDetailsSection, teamSection, type PromptClinic } from '~/utils/receptionistClinic'
-import { CONFIRM_BEFORE_BOOKING, audienceSection, minorsSection, newPatientDetailsSection, offeredAppointmentTypes, laterPricesSection, offeredTypesSection, referralSection, rescheduleSection, someoneTheyBringSection, type PromptPackage, type BookedVisit, type PromptChild, type PromptType, type ReceptionistAudience } from '~/utils/receptionistTypes'
+import { CONFIRM_BEFORE_BOOKING, type PhoneSharer, audienceSection, minorsSection, newPatientDetailsSection, offeredAppointmentTypes, laterPricesSection, offeredTypesSection, referralSection, rescheduleSection, someoneTheyBringSection, type PromptPackage, type BookedVisit, type PromptChild, type PromptType, type ReceptionistAudience } from '~/utils/receptionistTypes'
 import { CARD_ANSWERS_LINE, historyMarkersSection, INFORMAL_ADDRESS_LINE, LATER_ANSWER_LINE, NO_INVENTION_LINE, NOT_CHIROPRACTIC_SYMPTOM_LINE, PART_OF_DAY_ANSWER_LINE, REPLY_DETAILS_LINE, replyLanguageLine, SENT_FILES_LINE, STATED_LIMITS_LINE, WAITLIST_SECTION } from '~/utils/receptionistHistory'
 import { leadOriginSection, type LeadOrigin } from '~/utils/receptionistLeadOrigin'
 import { NO_REPLY } from '~/utils/receptionistAutoReply'
@@ -407,6 +407,47 @@ export async function loadFamilyAdults(supabase: SupabaseClient<Database>, accou
       practitionerIds: hasBeenBefore ? await loadPatientPractitioners(supabase, accountId, p.id, []) : null,
     }
   }))
+}
+
+/**
+ * The other patients on file with one of this patient's numbers
+ * (patient_contact_numbers), and their next booked visits: a couple or a
+ * family on one mobile, whose reminders all reach the phone writing now.
+ *
+ * Asked "¿y él a las 18 no?" about her partner's visit -- booked, on her
+ * number -- the receptionist answered that 18:00 was not free, because the
+ * visit taking it was his (2 Nov 2026). It could not see it.
+ */
+export async function loadPhoneSharers(supabase: SupabaseClient<Database>, accountId: string, patientId: string | null): Promise<PhoneSharer[]> {
+  if (!patientId) return []
+  const { data: own } = await supabase.from('patient_contact_numbers').select('number').eq('account_id', accountId).eq('patient_id', patientId)
+  const numbers = [...new Set(((own ?? []) as { number: string | null }[]).map((n) => n.number).filter((n): n is string => Boolean(n)))]
+  if (!numbers.length) return []
+  const { data: same } = await supabase.from('patient_contact_numbers').select('patient_id').eq('account_id', accountId).in('number', numbers).neq('patient_id', patientId).limit(10)
+  const ids = [...new Set(((same ?? []) as { patient_id: string }[]).map((n) => n.patient_id))].slice(0, 5)
+  if (!ids.length) return []
+  const todayStart = await clinicTodayStart(supabase, accountId)
+  const [{ data: people }, { data: visits }] = await Promise.all([
+    supabase.from('patients').select('id, first_name, last_name, anonymized_at').eq('account_id', accountId).in('id', ids),
+    supabase
+      .from('appointments')
+      .select('patient_id, starts_at, appointment_types(name), team_members(full_name)')
+      .eq('account_id', accountId)
+      .in('patient_id', ids)
+      .eq('status', 'booked')
+      .is('deleted_at', null)
+      .gte('starts_at', todayStart)
+      .order('starts_at')
+      .limit(15),
+  ])
+  const rows = (visits ?? []) as unknown as { patient_id: string; starts_at: string; appointment_types: { name: string } | null; team_members: { full_name: string | null } | null }[]
+  return ((people ?? []) as { id: string; first_name: string; last_name: string | null; anonymized_at: string | null }[])
+    .filter((p) => !p.anonymized_at)
+    .map((p) => ({
+      firstName: p.first_name,
+      lastName: p.last_name,
+      upcoming: rows.filter((v) => v.patient_id === p.id).slice(0, 3).map((v) => ({ startsAt: v.starts_at, typeName: v.appointment_types?.name ?? null, practitionerName: v.team_members?.full_name ?? null })),
+    }))
 }
 
 export async function loadBookedVisits(

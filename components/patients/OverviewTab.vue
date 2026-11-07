@@ -46,6 +46,13 @@ const nextAppt = ref<ApptRow | null>(null)
 const lastVisit = ref<ApptRow | null>(null)
 const lastVisitPayment = ref<VisitPayment | null>(null)
 const apptLoading = ref(true)
+// Each card answers a question ("anything booked?", "anything owed?"), and a
+// failed read must not answer it. supabase-js hands back { data: null, error }
+// rather than throwing, and `data ?? []` turned a dropped connection into
+// "Nothing booked." in amber, an absent "Needs attention" and "No plan set up"
+// -- three confident statements about a patient, all false. The layout's toast
+// says a query failed; these say which card cannot be trusted.
+const apptFailed = ref(false)
 // The payment walk behind the footnote is up to three more rounds, and none
 // of it is needed to say when the next appointment is. The card shows as soon
 // as its own two rows are in; only the footnote waits for this.
@@ -61,7 +68,7 @@ async function loadAppointments({ silent = false } = {}) {
     apptLoading.value = true
     footnoteLoading.value = true
   }
-  const [{ data: upcoming }, { data: past }] = await Promise.all([
+  const [{ data: upcoming, error: upcomingError }, { data: past, error: pastError }] = await Promise.all([
     supabase
       .from('appointments')
       .select(APPT_COLS)
@@ -81,6 +88,12 @@ async function loadAppointments({ silent = false } = {}) {
       .limit(1),
   ])
   if (run !== apptRun) return
+  apptFailed.value = !!(upcomingError || pastError)
+  if (apptFailed.value) {
+    apptLoading.value = false
+    footnoteLoading.value = false
+    return
+  }
   nextAppt.value = (upcoming?.[0] as unknown as ApptRow) ?? null
   const visit = (past?.[0] as unknown as ApptRow) ?? null
   lastVisit.value = visit
@@ -169,10 +182,13 @@ interface AttentionRow {
 const unpaid = ref<{ invoice_number: string; total_cents: number; created_at: string }[]>([])
 const awaitingForms = ref<{ id: string; title: string; created_at: string }[]>([])
 const attentionLoading = ref(true)
+const attentionFailed = ref(false)
 
+let attentionRun = 0
 async function loadAttention({ silent = false } = {}) {
+  const run = ++attentionRun
   if (!silent) attentionLoading.value = true
-  const [{ data: invoices }, { data: docs }] = await Promise.all([
+  const [{ data: invoices, error: invoicesError }, { data: docs, error: docsError }] = await Promise.all([
     supabase
       .from('invoices')
       .select('invoice_number, total_cents, created_at')
@@ -186,8 +202,12 @@ async function loadAttention({ silent = false } = {}) {
       .is('completed_at', null)
       .order('created_at'),
   ])
-  unpaid.value = invoices ?? []
-  awaitingForms.value = docs ?? []
+  if (run !== attentionRun) return
+  attentionFailed.value = !!(invoicesError || docsError)
+  // Kept as they were on a failure: a silent reload after an edit should not
+  // wipe an unpaid charge off the screen because one request dropped.
+  if (!invoicesError) unpaid.value = invoices ?? []
+  if (!docsError) awaitingForms.value = docs ?? []
   attentionLoading.value = false
 }
 
@@ -231,19 +251,28 @@ const planScheduled = ref(0)
 // Booked and still ahead: a plan with no end warns when there is none.
 const planUpcoming = ref(0)
 const planLoading = ref(true)
+const planFailed = ref(false)
 
 // Visits completed SINCE THE PLAN STARTED, and not deleted -- as
 // care_plan_continuity_alerts (0131), the Clinical tab's PhaseStats and the
 // app count them. Every completed visit ever put a returning patient's new
 // plan half done on day one.
+let planRun = 0
 async function loadPlan({ silent = false } = {}) {
+  const run = ++planRun
   if (!silent) planLoading.value = true
-  const { data: plans } = await supabase
+  const { data: plans, error: plansError } = await supabase
     .from('care_plans')
     .select('id, name, total_visits, frequency_value, frequency_unit, visits_per_period, started_at, payment_kind, package_purchase_id, patient_membership_id')
     .eq('patient_id', props.patient.id)
     .order('created_at', { ascending: false })
     .limit(1)
+  if (run !== planRun) return
+  if (plansError) {
+    planFailed.value = true
+    planLoading.value = false
+    return
+  }
   const latest = (plans?.[0] as PlanRow) ?? null
   let completed = 0
   let scheduled = 0
@@ -260,10 +289,19 @@ async function loadPlan({ silent = false } = {}) {
       return q
     }
     const [done, ahead, next] = await Promise.all([counted('completed'), counted('booked'), counted('booked').gte('starts_at', new Date().toISOString())])
+    if (run !== planRun) return
+    // A failed count would read as "visit 0 of 12" and a full row of visits
+    // left to book.
+    if (done.error || ahead.error || next.error) {
+      planFailed.value = true
+      planLoading.value = false
+      return
+    }
     completed = done.count ?? 0
     scheduled = ahead.count ?? 0
     upcoming = next.count ?? 0
   }
+  planFailed.value = false
   plan.value = latest
   planCompleted.value = completed
   planScheduled.value = scheduled
@@ -292,6 +330,7 @@ const goalChips = computed(() =>
     .split(/[\n;,]+/)
     .map((g) => g.trim())
     .filter(Boolean)
+    .filter((goal, i, all) => all.findIndex((g) => g.toLowerCase() === goal.toLowerCase()) === i)
     .slice(0, 6),
 )
 
@@ -354,6 +393,21 @@ onMounted(() => {
 })
 watch(() => props.patient.id, () => loadAll({ timeline: false }))
 
+const retryingCards = ref(false)
+async function retryCards() {
+  if (retryingCards.value) return
+  retryingCards.value = true
+  try {
+    await Promise.all([
+      apptFailed.value ? loadAppointments() : null,
+      attentionFailed.value ? loadAttention() : null,
+      planFailed.value ? loadPlan() : null,
+    ])
+  } finally {
+    retryingCards.value = false
+  }
+}
+
 function onDetailsUpdated() {
   emit('updated')
   loadAll({ silent: true })
@@ -366,11 +420,19 @@ function onDetailsUpdated() {
          has happened. In that order, because that is the order the question
          gets asked in. -->
     <div class="flex min-w-0 flex-1 flex-col gap-4">
-      <!-- 1. Needs attention. Absent, not empty, when there is nothing. -->
-      <section v-if="attention.length > 0" aria-labelledby="ov-attention" class="rounded-card border border-line bg-surface shadow-card">
+      <!-- 1. Needs attention. Absent, not empty, when there is nothing --
+           but present when it could not be checked, because absent is read
+           as "nothing owed". -->
+      <section v-if="attention.length > 0 || attentionFailed" aria-labelledby="ov-attention" class="rounded-card border border-line bg-surface shadow-card">
         <h2 id="ov-attention" class="border-b border-line-divider px-4 py-3 text-[13.5px] font-semibold text-ink-700">
           {{ t('Needs attention', 'Requiere atención') }}
         </h2>
+        <div v-if="attentionFailed" class="flex flex-col gap-2.5 px-4 py-3 sm:flex-row sm:items-center sm:gap-3" :class="attention.length > 0 ? 'border-b border-line-row' : ''" data-cy="overview-attention-failed">
+          <p class="min-w-0 flex-1 text-[13px] text-danger-text">
+            {{ t("Couldn't check for unpaid charges or forms not returned.", 'No se ha podido comprobar si hay cargos sin pagar o formularios sin devolver.') }}
+          </p>
+          <UiBtn size="sm" :disabled="retryingCards" @click="retryCards">{{ t('Try again', 'Reintentar') }}</UiBtn>
+        </div>
         <ul class="divide-y divide-line-row">
           <li v-for="row in attention" :key="row.key" class="flex flex-col gap-2.5 px-4 py-3 sm:flex-row sm:items-center sm:gap-3">
             <span
@@ -387,10 +449,10 @@ function onDetailsUpdated() {
                 <path d="M9 2v3h3M6 9h4M6 11.5h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
               </svg>
             </span>
-            <p class="min-w-0 flex-1 text-[13.5px] text-ink-700">{{ row.sentence }}</p>
+            <p class="min-w-0 flex-1 break-words text-[13.5px] text-ink-700">{{ row.sentence }}</p>
             <button
               type="button"
-              class="flex h-9 shrink-0 items-center justify-center rounded-ctl border border-line-control px-3 text-[13px] font-semibold text-ink-700 outline-none hover:border-line-controlHover focus-visible:shadow-focus"
+              class="flex h-9 shrink-0 items-center justify-center rounded-ctl border border-line-control px-3 text-[13px] font-semibold text-ink-700 outline-none hover:border-line-controlHover focus-visible:shadow-focus touch:h-11"
               @click="row.go()"
             >
               {{ row.action }}
@@ -408,6 +470,11 @@ function onDetailsUpdated() {
           <UiSkeleton class="h-4 w-48 rounded-ctlSm" />
         </div>
 
+        <div v-else-if="apptFailed" class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2" data-cy="overview-next-failed">
+          <p class="text-[13px] text-danger-text">{{ t("Couldn't load their appointments.", 'No se han podido cargar sus citas.') }}</p>
+          <UiBtn size="sm" :disabled="retryingCards" @click="retryCards">{{ t('Try again', 'Reintentar') }}</UiBtn>
+        </div>
+
         <template v-else-if="nextAppt">
           <div class="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
             <div class="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-ctl border border-line bg-surface-subtle2">
@@ -415,11 +482,11 @@ function onDetailsUpdated() {
               <span class="mt-0.5 text-[11px] uppercase leading-none text-ink-muted2">{{ dateBlock(nextAppt.starts_at).month }}</span>
             </div>
             <div class="min-w-0 flex-1">
-              <p class="text-[15px] text-ink-900">
+              <p class="break-words text-[15px] text-ink-900">
                 <span class="font-mono">{{ formatTime(nextAppt.starts_at) }}</span>
                 <span v-if="nextAppt.appointment_types?.name"> · {{ nextAppt.appointment_types.name }}</span>
               </p>
-              <p v-if="whereLine(nextAppt)" class="text-[12.5px] text-ink-muted2">{{ whereLine(nextAppt) }}</p>
+              <p v-if="whereLine(nextAppt)" class="break-words text-[12.5px] text-ink-muted2">{{ whereLine(nextAppt) }}</p>
             </div>
             <UiPill :tone="nextAppt.confirmation_status === 'confirmed' ? 'success' : 'neutral'">
               {{ nextAppt.confirmation_status === 'confirmed' ? t('Confirmed', 'Confirmada') : t('Not confirmed', 'Sin confirmar') }}
@@ -429,14 +496,14 @@ function onDetailsUpdated() {
           <div class="mt-3 flex flex-wrap gap-2">
             <button
               type="button"
-              class="flex h-9 items-center rounded-ctl border border-line-control px-3 text-[13px] font-semibold text-ink-700 outline-none hover:border-line-controlHover focus-visible:shadow-focus"
+              class="flex h-9 items-center rounded-ctl border border-line-control px-3 text-[13px] font-semibold text-ink-700 outline-none hover:border-line-controlHover focus-visible:shadow-focus touch:h-11"
               @click="navigateTo('/calendar')"
             >
               {{ t('Reschedule', 'Reprogramar') }}
             </button>
             <button
               type="button"
-              class="flex h-9 items-center rounded-ctl border border-line-control px-3 text-[13px] font-semibold text-ink-700 outline-none hover:border-line-controlHover focus-visible:shadow-focus"
+              class="flex h-9 items-center rounded-ctl border border-line-control px-3 text-[13px] font-semibold text-ink-700 outline-none hover:border-line-controlHover focus-visible:shadow-focus touch:h-11"
               @click="navigateTo(`/patients/${patient.id}?tab=appointments`)"
             >
               {{ t('Send confirmation', 'Enviar confirmación') }}
@@ -447,7 +514,7 @@ function onDetailsUpdated() {
         <p v-else class="mt-3 text-[13px] text-warning-text">{{ t('Nothing booked.', 'Nada reservado.') }}</p>
 
         <!-- The footnote §4 asks for: the last visit, and how it was paid. -->
-        <template v-if="!apptLoading && lastVisit">
+        <template v-if="!apptLoading && !apptFailed && lastVisit">
           <div v-if="footnoteLoading" class="mt-3 border-t border-line-divider pt-2.5">
             <UiSkeleton class="h-3 w-64 max-w-full rounded-ctlSm" />
           </div>
@@ -470,8 +537,12 @@ function onDetailsUpdated() {
         </div>
 
         <UiSkeleton v-if="planLoading" class="mt-3 h-4 w-40 rounded-ctlSm" />
+        <div v-else-if="planFailed" class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2" data-cy="overview-plan-failed">
+          <p class="text-[13px] text-danger-text">{{ t("Couldn't load their care plan.", 'No se ha podido cargar su plan de cuidados.') }}</p>
+          <UiBtn size="sm" :disabled="retryingCards" @click="retryCards">{{ t('Try again', 'Reintentar') }}</UiBtn>
+        </div>
         <template v-else-if="plan">
-          <p class="mt-2.5 text-[14px] text-ink-900">{{ plan.name }}</p>
+          <p class="mt-2.5 break-words text-[14px] text-ink-900">{{ plan.name }}</p>
           <p v-if="plan.total_visits === null" class="text-[12.5px] text-ink-muted2 first-letter:uppercase" data-cy="overview-plan-open-ended">
             {{ plan.started_at ? openEndedPlanLabel(planCompleted, plan.started_at, t) : t(`maintenance visit ${planCompleted}`, `visita ${planCompleted} de mantenimiento`) }}
             <template v-if="planCadence"> · {{ planCadence }}</template>
@@ -505,7 +576,7 @@ function onDetailsUpdated() {
                colleague's attended visit would read as one missed. -->
           <PatientsPlanPeriods v-if="plan.started_at && seesAllVisits" :patient-id="patient.id" :plan="{ ...plan, started_at: plan.started_at }" />
           <div v-if="goalChips.length > 0" class="mt-3 flex flex-wrap gap-1.5">
-            <span v-for="goal in goalChips" :key="goal" class="rounded-pill bg-chip-bg px-2 py-0.5 text-[11.5px] text-chip-text">{{ goal }}</span>
+            <span v-for="goal in goalChips" :key="goal" class="max-w-full truncate rounded-pill bg-chip-bg px-2 py-0.5 text-[11.5px] text-chip-text" :title="goal">{{ goal }}</span>
           </div>
         </template>
         <p v-else class="mt-3 text-[13px] text-ink-faint">{{ t('No plan set up for this patient yet.', 'Aún no hay plan para este paciente.') }}</p>
@@ -531,11 +602,11 @@ function onDetailsUpdated() {
         <dl class="mt-3 space-y-2.5">
           <div>
             <dt class="text-[11.5px] text-ink-muted2">{{ t('Chief complaint', 'Motivo de consulta') }}</dt>
-            <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.chief_complaint || t('Not recorded', 'Sin registrar') }}</dd>
+            <dd class="mt-0.5 line-clamp-4 whitespace-pre-line break-words text-[13.5px] text-ink-700">{{ patient.chief_complaint?.trim() || t('Not recorded', 'Sin registrar') }}</dd>
           </div>
           <div>
             <dt class="text-[11.5px] text-ink-muted2">{{ t('Working diagnosis', 'Diagnóstico de trabajo') }}</dt>
-            <dd class="mt-0.5 text-[13.5px] text-ink-700">{{ patient.diagnosis || t('Not recorded', 'Sin registrar') }}</dd>
+            <dd class="mt-0.5 line-clamp-4 whitespace-pre-line break-words text-[13.5px] text-ink-700">{{ patient.diagnosis?.trim() || t('Not recorded', 'Sin registrar') }}</dd>
           </div>
         </dl>
 
@@ -555,7 +626,7 @@ function onDetailsUpdated() {
 
       <!-- After the bookings have loaded: the card leaves itself out for a
            patient with one coming (CareStopCard). -->
-      <PatientsCareStopCard v-if="!apptLoading" :patient="patient" :booked="!!nextAppt" />
+      <PatientsCareStopCard v-if="!apptLoading && !apptFailed" :patient="patient" :booked="!!nextAppt" />
 
       <section aria-labelledby="ov-details" class="rounded-card border border-line bg-surface p-4 shadow-card">
         <h2 id="ov-details" class="text-[13.5px] font-semibold text-ink-700">{{ t('Patient details', 'Datos del paciente') }}</h2>
@@ -563,7 +634,7 @@ function onDetailsUpdated() {
           <div v-for="field in glanceFields" :key="field.key">
             <dt class="text-[11.5px] text-ink-muted2">{{ field.label }}</dt>
             <dd v-if="field.pending" class="mt-1"><UiSkeleton class="h-3.5 w-32 rounded-ctlSm" /></dd>
-            <dd v-else class="mt-0.5 truncate text-[13.5px] text-ink-700" :class="field.mono ? 'font-mono text-[12.5px]' : ''">
+            <dd v-else class="mt-0.5 truncate text-[13.5px] text-ink-700" :class="field.mono ? 'font-mono text-[12.5px]' : ''" :title="field.value || undefined">
               {{ field.value || t('Not recorded', 'Sin registrar') }}
             </dd>
           </div>
@@ -571,7 +642,7 @@ function onDetailsUpdated() {
         <button
           v-if="can('patients_edit')"
           type="button"
-          class="mt-3 flex h-9 w-full items-center justify-center rounded-ctl border border-line-control text-[13px] font-semibold text-ink-700 outline-none hover:border-line-controlHover focus-visible:shadow-focus"
+          class="mt-3 flex h-9 w-full items-center justify-center rounded-ctl border border-line-control text-[13px] font-semibold text-ink-700 outline-none hover:border-line-controlHover focus-visible:shadow-focus touch:h-11"
           @click="detailsOpen = true"
         >
           {{ t('Edit all details', 'Editar todos los datos') }}
@@ -579,7 +650,7 @@ function onDetailsUpdated() {
         <button
           v-else
           type="button"
-          class="mt-3 flex h-9 w-full items-center justify-center rounded-ctl border border-line-control text-[13px] font-semibold text-ink-700 outline-none hover:border-line-controlHover focus-visible:shadow-focus"
+          class="mt-3 flex h-9 w-full items-center justify-center rounded-ctl border border-line-control text-[13px] font-semibold text-ink-700 outline-none hover:border-line-controlHover focus-visible:shadow-focus touch:h-11"
           @click="detailsOpen = true"
         >
           {{ t('View all details', 'Ver todos los datos') }}

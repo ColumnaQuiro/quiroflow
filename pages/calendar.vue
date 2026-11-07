@@ -7,6 +7,7 @@ import { appointmentStage, matchesFilter, needsNextBookingFlag, pendingFormsFlag
 import { shortPatientName } from '~/utils/appointmentBlock'
 import { bonoForVisit, type VisitPayment } from '~/utils/visitPayment'
 import { visitMarkerLabel } from '~/utils/carePlanVisitMarkers'
+import { raiseInvoice } from '~/utils/raiseInvoice'
 import { effectivePriceCents } from '~/utils/appointmentOverrides'
 import { orderTypes } from '~/utils/appointmentTypes'
 import type { MoveClash } from '~/utils/moveClash'
@@ -224,6 +225,22 @@ const classPanelId = ref<string | null>(null)
 const newClassOpen = ref(false)
 const availabilityBlocks = ref<AvailabilityBlock[]>([])
 const loading = ref(true)
+// The range in view could not be read. `loading` stays true with it, so the
+// grid keeps its placeholders and its columns stay unclickable: an empty week
+// drawn over a failed read invites booking on top of visits that are there.
+// What used to say so was nothing -- the skeleton simply never resolved.
+const rangeFailed = ref(false)
+const retryingRange = ref(false)
+async function retryRange() {
+  if (retryingRange.value) return
+  retryingRange.value = true
+  try {
+    await loadRange()
+  } finally {
+    retryingRange.value = false
+  }
+}
+const { showToast } = useToast()
 
 const modalOpen = ref(false)
 const modalMode = ref<'create' | 'edit'>('create')
@@ -513,6 +530,7 @@ const APPOINTMENT_SELECT =
 async function loadAppointments(silent = false) {
   if (!store.currentClinicId) {
     appointments.value = []
+    rangeFailed.value = false
     loading.value = false // or "No clinic selected" sits behind the skeleton
     loadToday() // clears today's panels too
     return
@@ -541,10 +559,22 @@ async function loadAppointments(silent = false) {
     .lt('starts_at', rangeEnd.toISOString())
   if (practitionerFilter.value === UNASSIGNED_PRACTITIONER) classQuery = classQuery.is('practitioner_id', null)
   else if (practitionerFilter.value && practitionerFilter.value !== ALL_PRACTITIONERS) classQuery = classQuery.eq('practitioner_id', practitionerFilter.value)
-  // A failed read throws rather than drawing an empty week over the one on
-  // screen (utils/supabaseFailures.ts reports it and the layout says so).
-  const [data, sessions] = await Promise.all([query.then(dataOrThrow), classQuery.then(dataOrThrow)])
+  // A failed read never draws an empty week over the one on screen
+  // (utils/supabaseFailures.ts reports it and the layout's toast says so).
+  // A reload after a write leaves the grid as it was; a range being opened
+  // stays on its placeholders and says it failed, with a retry (rangeFailed).
+  let data: unknown
+  let sessions: unknown
+  try {
+    ;[data, sessions] = await Promise.all([query.then(dataOrThrow), classQuery.then(dataOrThrow)])
+  } catch (e) {
+    if (token !== loadToken) return
+    if (!silent) rangeFailed.value = true
+    console.error('calendar: appointments failed', e)
+    return
+  }
   if (token !== loadToken) return
+  rangeFailed.value = false
 
   classSessions.value = (sessions as unknown as ClassSessionRow[] | null) ?? []
   appointments.value = (data as unknown as AppointmentRow[]) ?? []
@@ -1622,6 +1652,12 @@ function columnAtPoint(x: number, y: number) {
 
 function startAppointmentDrag(appt: AppointmentRow, mode: 'move' | 'resize', e: PointerEvent) {
   if (appt.status !== 'booked' || readOnly.value) return
+  // A right or middle click is not a drag, and a second finger landing while
+  // one block is being dragged does not take the drag over: it used to
+  // replace the drag state mid-move, leaving the first block drawn wherever
+  // it had got to, neither saved nor put back.
+  if (e.pointerType === 'mouse' && e.button !== 0) return
+  if (dragState.value) return
   // A slot click while reschedule-mode is active (see startReschedule below)
   // is what moves the appointment now -- starting an unrelated drag on some
   // other block mid-pick would just be confusing.
@@ -1641,7 +1677,45 @@ function startAppointmentDrag(appt: AppointmentRow, mode: 'move' | 'resize', e: 
   captureColumnRects()
   window.addEventListener('pointermove', onAppointmentDragMove)
   window.addEventListener('pointerup', onAppointmentDragEnd)
+  window.addEventListener('pointercancel', onAppointmentDragCancel)
+  window.addEventListener('blur', abortAppointmentDrag)
+  window.addEventListener('keydown', onAppointmentDragKeydown)
 }
+
+function stopListeningForDrag() {
+  window.removeEventListener('pointermove', onAppointmentDragMove)
+  window.removeEventListener('pointerup', onAppointmentDragEnd)
+  window.removeEventListener('pointercancel', onAppointmentDragCancel)
+  window.removeEventListener('blur', abortAppointmentDrag)
+  window.removeEventListener('keydown', onAppointmentDragKeydown)
+}
+
+// A drag that ends any way other than a release on the grid puts the block
+// back where it was. On the iPad the browser takes a finger that starts on a
+// block and moves as a scroll, and says so with pointercancel, never
+// pointerup: the block stayed drawn a slot or two away from its real time
+// until the next reload, and the stale "moved" flag swallowed the next tap
+// on any block. Switching apps mid-drag (blur) and Escape end it the same way.
+function abortAppointmentDrag() {
+  const s = dragState.value
+  stopListeningForDrag()
+  if (!s) return
+  dragState.value = null
+  const appt = appointments.value.find((a) => a.id === s.apptId)
+  if (appt) {
+    appt.starts_at = s.origStartsAt
+    appt.ends_at = s.origEndsAt
+    appt.room_id = s.origRoomId
+  }
+  dragMoved.value = false
+}
+function onAppointmentDragCancel(e: PointerEvent) {
+  if (dragState.value && e.pointerId === dragState.value.pointerId) abortAppointmentDrag()
+}
+function onAppointmentDragKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') abortAppointmentDrag()
+}
+onBeforeUnmount(stopListeningForDrag)
 
 function onAppointmentDragMove(e: PointerEvent) {
   const s = dragState.value
@@ -1710,11 +1784,22 @@ function onMoveClashCancel() {
 // another room -- is not a reschedule: the patient comes when they were told
 // to. It saves as it is, with no reason to give, no "moved" flag, no
 // appointment_reschedules row and no "your appointment has moved" message.
+// An update RLS refuses is not an error: it matches no rows and answers
+// success, so both saves read the row back and treat "none" as refused.
+function moveFailed(error: { message: string } | null) {
+  showToast(
+    error
+      ? t(`The appointment wasn't moved: ${error.message}`, `La cita no se ha movido: ${error.message}`)
+      : t("The appointment wasn't moved. You don't have permission to change it, or it was deleted meanwhile.", 'La cita no se ha movido. No tienes permiso para cambiarla, o se ha eliminado mientras tanto.'),
+    'error',
+  )
+}
+
 async function saveInPlace(appointmentId: string, values: { ends_at: string; room_id: string | null }, revert: () => void) {
-  const { error } = await supabase.from('appointments').update(values).eq('id', appointmentId)
-  if (error) {
+  const { data, error } = await supabase.from('appointments').update(values).eq('id', appointmentId).select('id')
+  if (error || !data?.length) {
     revert()
-    alert(error.message)
+    moveFailed(error)
     return
   }
   await reloadAfterChange()
@@ -1836,9 +1921,11 @@ function placeRescheduled(src: ReschedulingAppointment, newStartsAt: Date, newEn
 
 async function onAppointmentDragEnd(e: PointerEvent) {
   const s = dragState.value
-  window.removeEventListener('pointermove', onAppointmentDragMove)
-  window.removeEventListener('pointerup', onAppointmentDragEnd)
-  if (!s || e.pointerId !== s.pointerId) return
+  // Another finger lifting is not the end of this drag. The listeners used to
+  // come off first, so it ended the drag without saving or reverting it.
+  if (s && e.pointerId !== s.pointerId) return
+  stopListeningForDrag()
+  if (!s) return
   dragState.value = null
   if (!dragMoved.value) return
 
@@ -1905,13 +1992,14 @@ async function confirmReschedule(payload: { reasonId: string | null; note: strin
   const pending = pendingReschedule.value
   if (!pending) return
 
-  const { error } = await supabase
+  const { data: moved, error } = await supabase
     .from('appointments')
     .update({ starts_at: pending.newStartsAt, ends_at: pending.newEndsAt, room_id: pending.newRoomId, rescheduled: true })
     .eq('id', pending.appointmentId)
-  if (error) {
+    .select('id')
+  if (error || !moved?.length) {
     pending.revert()
-    alert(error.message)
+    moveFailed(error)
     pendingReschedule.value = null
     return
   }
@@ -1931,23 +2019,26 @@ async function confirmReschedule(payload: { reasonId: string | null; note: strin
   useStaffFetch('/api/waitlist/offer-next', { method: 'POST', body: { appointmentId: pending.appointmentId, movedFrom: pending.origStartsAt } }).catch(() => {})
 
   if (payload.applyFee && store.schedulingPolicyFeeCents) {
-    // No number, no invoice: an unnumbered fee is worse than an uncharged one.
-    const { data: invoiceNumber } = await supabase.rpc('next_invoice_number', { p_account_id: store.accountId! })
-    if (invoiceNumber) {
-      const { data: feeInvoice } = await supabase
-        .from('invoices')
-        .insert({ account_id: store.accountId!, patient_id: pending.patientId, invoice_number: invoiceNumber, status: 'unpaid', total_cents: store.schedulingPolicyFeeCents })
-        .select('id')
-        .single()
-      if (feeInvoice) {
-        await supabase.from('invoice_line_items').insert({
-          account_id: store.accountId!,
-          invoice_id: feeInvoice.id,
-          description: 'Scheduling policy fee',
-          quantity: 1,
-          price_cents: store.schedulingPolicyFeeCents,
-        })
-      }
+    // The fee's receipt and its line in one transaction (raise_invoice):
+    // written as two inserts, a refused line left a receipt with a total and
+    // nothing on it. Unpaid -- it goes on the patient's balance.
+    const { invoice: feeInvoice, error: feeError } = await raiseInvoice(supabase, {
+      patientId: pending.patientId,
+      description: 'Scheduling policy fee',
+      amountCents: store.schedulingPolicyFeeCents,
+    })
+    // The move itself stands; it is the fee that is missing, and nothing else
+    // on screen would say so.
+    if (!feeInvoice) {
+      console.error('[calendar] scheduling policy fee was not raised', feeError)
+      useToast().showToast(
+        t(
+          `The appointment was moved, but the fee was NOT added (${feeError}). Add it from the patient's Money tab.`,
+          `La cita se ha movido, pero el cargo NO se ha añadido (${feeError}). Añádelo desde la pestaña Dinero del paciente.`,
+        ),
+        'error',
+        20000,
+      )
     }
   }
 
@@ -2627,6 +2718,22 @@ function showNowLineOn(day: Date) {
       </button>
     </div>
 
+    <!-- The range could not be read. Above the grid and the phone agenda
+         alike, because both stay on their placeholders until it is. -->
+    <div
+      v-if="store.currentClinicId && rangeFailed && viewMode !== 'month'"
+      role="alert"
+      class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-danger-border bg-danger-bg px-4 py-2 lg:px-6"
+      data-cy="calendar-range-failed"
+    >
+      <p class="min-w-0 flex-1 text-[13px] text-danger-text">
+        <span class="font-semibold">{{ viewMode === 'day' ? t(`Couldn't load this day's appointments.`, 'No se han podido cargar las citas de este día.') : t(`Couldn't load this week's appointments.`, 'No se han podido cargar las citas de esta semana.') }}</span>
+        {{ t('Booking here is paused until they load, so nothing gets booked on top of a visit.', 'Reservar aquí queda en pausa hasta que carguen, para no reservar encima de otra visita.') }}
+      </p>
+      <UiBtn size="sm" :disabled="retryingRange" data-cy="calendar-range-retry" @click="retryRange">
+        {{ retryingRange ? t('Trying again…', 'Reintentando…') : t('Try again', 'Reintentar') }}
+      </UiBtn>
+    </div>
     <!-- The day, counted. Each chip is a filter: it dims every block that
          does not match, so the day keeps its shape while one kind stands out.
          This is what "Today at a glance" used to be, moved to where the eye

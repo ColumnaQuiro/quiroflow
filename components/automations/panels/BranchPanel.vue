@@ -216,7 +216,7 @@ function setBalance(i: number, value: string) {
           </div>
         </template>
       </div>
-      <button type="button" :class="REMOVE_BTN" :aria-label="t('Remove condition', 'Quitar condición')" @click="remove(i)">✕</button>
+      <button type="button" :class="REMOVE_BTN" :aria-label="t('Remove condition', 'Quitar condición')" @click="remove(i)"><UiCloseIcon /></button>
     </div>
     <button type="button" :class="LINK_BTN" data-test="condition-add" @click="add">+ {{ t('Add condition', 'Añadir condición') }}</button>
 

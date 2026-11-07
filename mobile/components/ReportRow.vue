@@ -5,13 +5,13 @@
 // or three things a row is about and puts the rest in `subtitle`.
 // `to` makes the row a link (a patient, an invoice); `tone` colours the value.
 defineProps<{ title: string; subtitle?: string | null; value?: string | null; valueNote?: string | null; to?: string; tone?: 'default' | 'danger' | 'warning' | 'success' | 'muted' }>()
-// Resolved here, not inside the template: Nuxt rewrites a resolveComponent()
-// call in <script> to the component itself, but one written in a template
-// expression stays a runtime lookup, and NuxtLink is not registered globally
-// -- so the row rendered as an inert <nuxtlink> element and no tap went
-// anywhere.
+// Resolved here, in the script, as AppButton does: Nuxt turns this call into
+// a direct import at build time. Written inside the template it was wrapped
+// by the auto-import first, escaped that rewrite, and resolved at runtime to
+// the bare string 'NuxtLink' (nothing is registered globally here), so every
+// row rendered as an inert <nuxtlink> element and no report opened.
 const NuxtLink = resolveComponent('NuxtLink')
-const TONES = { default: 'text-ink-900', danger: 'text-danger-text', warning: 'text-warning-text', success: 'text-success-text', muted: 'text-ink-muted' } as const
+const TONES ={ default: 'text-ink-900', danger: 'text-danger-text', warning: 'text-warning-text', success: 'text-success-text', muted: 'text-ink-muted' } as const
 </script>
 
 <template>

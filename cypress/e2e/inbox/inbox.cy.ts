@@ -5,7 +5,7 @@ describe('WhatsApp Inbox', () => {
         cy.login(account.email, account.password)
         cy.visit('/inbox')
 
-        cy.contains('No conversations yet.').should('be.visible')
+        cy.contains('No conversations yet').should('be.visible')
 
         cy.clickUntil('[data-cy=inbox-new]', 'input[placeholder="Search patients…"]')
         cy.get('input[placeholder="Search patients…"]').type('Nadia')

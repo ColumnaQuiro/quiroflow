@@ -64,11 +64,15 @@ const identityLine = computed(() => {
 })
 
 const copied = ref<'phone' | 'email' | null>(null)
+// One timer for both: copying the phone and then the email within 1.8s let
+// the phone's timer clear the email's "Copied" early.
+let copiedTimer: ReturnType<typeof setTimeout> | undefined
 async function copy(value: string, which: 'phone' | 'email') {
   try {
     await navigator.clipboard.writeText(value)
     copied.value = which
-    setTimeout(() => (copied.value = null), 1800)
+    clearTimeout(copiedTimer)
+    copiedTimer = setTimeout(() => (copied.value = null), 1800)
   } catch {
     // Clipboard blocked; the value is selectable on screen either way.
   }
@@ -94,6 +98,7 @@ onMounted(() => {
   document.addEventListener('keydown', onKeydown)
 })
 onBeforeUnmount(() => {
+  clearTimeout(copiedTimer)
   document.removeEventListener('pointerdown', onPointerDown)
   document.removeEventListener('keydown', onKeydown)
 })
@@ -133,7 +138,11 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
 
       <div class="min-w-0 flex-1">
         <div class="flex flex-wrap items-center gap-2">
-          <h1 class="truncate text-[17px] font-semibold tracking-tightTitle text-ink-900 lg:text-[19px]">{{ fullName }}</h1>
+          <!-- Wraps rather than truncates: two-surname names with particles
+               run past 60 characters, and the end of a name is the part that
+               tells two patients apart. min-w-0 and max-w-full keep a long
+               one inside the card instead of pushing the row off a phone. -->
+          <h1 class="min-w-0 max-w-full text-[17px] font-semibold tracking-tightTitle text-ink-900 [overflow-wrap:anywhere] lg:text-[19px]">{{ fullName || t('Unnamed patient', 'Paciente sin nombre') }}</h1>
           <!-- Pills are alerts, not readouts: each one is something a
                receptionist has to act differently because of. -->
           <UiPill v-if="isVip" tone="brand">{{ t('VIP', 'VIP') }}</UiPill>
@@ -147,7 +156,7 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
           <NuxtLink
             v-if="patient.is_minor && tutor"
             :to="`/patients/${tutor.id}`"
-            class="text-[12px] font-medium text-brand-text outline-none hover:underline focus-visible:shadow-focus"
+            class="max-w-full break-words text-[12px] font-medium text-brand-text outline-none hover:underline focus-visible:shadow-focus"
           >
             {{ t('Messages go to', 'Los mensajes van a') }} {{ [tutor.first_name, tutor.last_name].filter(Boolean).join(' ') }} ↗
           </NuxtLink>
@@ -159,7 +168,7 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
           <UiPill v-if="patient.status !== 'active'" tone="neutral">{{ t('Archived', 'Archivado') }}</UiPill>
           <UiPill v-if="!canEdit" tone="neutral">{{ t('View only', 'Solo lectura') }}</UiPill>
         </div>
-        <p class="mt-1 text-[12.5px] text-ink-muted">{{ identityLine }}</p>
+        <p class="mt-1 break-words text-[12.5px] text-ink-muted">{{ identityLine }}</p>
       </div>
 
       <!-- Message and Book visit are desktop-only here, because the phone
@@ -297,12 +306,12 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
 
       <span v-if="phone && patient.email" aria-hidden="true" class="hidden h-3 w-px bg-line lg:block" />
 
-      <span v-if="patient.email" class="inline-flex min-w-0 items-center gap-1.5">
+      <span v-if="patient.email" class="inline-flex min-w-0 max-w-full items-center gap-1.5">
         <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" class="h-3.5 w-3.5 shrink-0 text-ink-faint">
           <rect x="2" y="3.8" width="12" height="8.4" rx="1.6" stroke="currentColor" stroke-width="1.3" />
           <path d="m2.4 4.6 5.6 3.8 5.6-3.8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
         </svg>
-        <span class="truncate text-[12.5px] text-ink-500">{{ patient.email }}</span>
+        <span class="truncate text-[12.5px] text-ink-500" :title="patient.email">{{ patient.email }}</span>
         <button
           type="button"
           :aria-label="t('Copy email address', 'Copiar correo')"
@@ -319,11 +328,11 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
 
       <template v-if="clinicName">
         <span aria-hidden="true" class="hidden h-3 w-px bg-line lg:block" />
-        <span class="text-[12.5px] text-ink-500">{{ clinicName }}</span>
+        <span class="min-w-0 max-w-full break-words text-[12.5px] text-ink-500">{{ clinicName }}</span>
       </template>
       <template v-if="practitionerName">
         <span aria-hidden="true" class="hidden h-3 w-px bg-line lg:block" />
-        <span class="text-[12.5px] text-ink-500">{{ practitionerName }}</span>
+        <span class="min-w-0 max-w-full break-words text-[12.5px] text-ink-500">{{ practitionerName }}</span>
       </template>
       <!-- A minor's messages go to their tutor, so the tutor is who gets the
            app; their own state would only ever read "No app". -->

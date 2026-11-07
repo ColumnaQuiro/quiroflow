@@ -1018,7 +1018,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
           </div>
 
           <template v-if="alternatives.length">
-            <span class="mt-3 block text-[12px] text-ink-muted">{{ t(`Other free times for ${selectedAppointmentType?.name ?? 'this'} with ${practitionerFirst}`, `Otros huecos para ${selectedAppointmentType?.name ?? 'esta cita'} con ${practitionerFirst}`) }}</span>
+            <span class="mt-3 block text-[12px] text-ink-muted">{{ t(`Other free times for ${selectedAppointmentType?.name ?? 'this appointment'} with ${practitionerFirst}`, `Otros huecos para ${selectedAppointmentType?.name ?? 'esta cita'} con ${practitionerFirst}`) }}</span>
             <div class="mt-1.5 grid grid-cols-3 gap-2" data-cy="create-alternatives">
               <button v-for="a in alternatives" :key="a.getTime()" type="button" class="flex min-h-9 touch:min-h-11 flex-col items-start justify-center rounded-ctl border border-line-control bg-surface px-2.5 py-1 text-left hover:border-brand" @click="pickAlternative(a)">
                 <span class="text-[11.5px] text-ink-muted">{{ altDayLabel(a) }}</span>
@@ -1046,7 +1046,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
               </select>
             </label>
             <p v-if="repeat === 'care_plan' && carePlan" class="text-[12px] text-ink-muted2">
-              {{ t(`Books ${Math.min(carePlanRemaining, 26)} appointments from "${carePlan.name}", ${carePlanFrequencyLabel}, starting at the date/time above.`, `Reserva ${Math.min(carePlanRemaining, 26)} citas de "${carePlan.name}", ${carePlanFrequencyLabel}, empezando en la fecha/hora indicada arriba.`) }}
+              {{ t(`Books ${Math.min(carePlanRemaining, 26)} appointments from “${carePlan.name}”, ${carePlanFrequencyLabel}, starting at the date and time above.`, `Reserva ${Math.min(carePlanRemaining, 26)} citas de «${carePlan.name}», ${carePlanFrequencyLabel}, empezando en la fecha y hora de arriba.`) }}
             </p>
             <div class="flex items-center justify-between">
               <span class="text-[12.5px] font-medium text-ink-600">{{ t('Collect payment now', 'Cobrar ahora') }}</span>

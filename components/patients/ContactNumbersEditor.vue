@@ -76,7 +76,7 @@ async function updateNumber(n: Tables<'patient_contact_numbers'>, patch: Partial
   // make those rows uneditable rather than fixable.
   if (patch.number !== undefined && patch.number !== n.number) {
     const problem = !patch.number.trim()
-      ? t('use ✕ to remove a number.', 'usa ✕ para eliminar un número.')
+      ? t('to remove a number, use ✕.', 'para eliminar un número, usa ✕.')
       : phoneProblem(patch.number, patch.country_code ?? n.country_code)
     if (problem) {
       // Deliberately without the Object.assign below: the input keeps what
@@ -84,7 +84,7 @@ async function updateNumber(n: Tables<'patient_contact_numbers'>, patch: Partial
       // says which of the two is in the database. Assigning first -- which
       // is what the blank case used to do before returning -- showed the
       // typed value as though it had been saved when it had not.
-      rowError.value = { ...rowError.value, [n.id]: t('Not saved', 'No guardado') + ' — ' + problem }
+      rowError.value = { ...rowError.value, [n.id]: t(`Not saved: ${problem}`, `No guardado: ${problem}`) }
       return
     }
   }
@@ -126,7 +126,7 @@ async function updateNumber(n: Tables<'patient_contact_numbers'>, patch: Partial
             />
             WhatsApp
           </label>
-          <button type="button" class="shrink-0 text-ink-faint hover:text-danger-text" @click="removeNumber(n.id)">
+          <button type="button" :aria-label="t('Remove this number', 'Eliminar este número')" :title="t('Remove this number', 'Eliminar este número')" class="shrink-0 text-ink-faint hover:text-danger-text" @click="removeNumber(n.id)">
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
               <path d="M4 4l8 8M12 4l-8 8" stroke-linecap="round" />
             </svg>

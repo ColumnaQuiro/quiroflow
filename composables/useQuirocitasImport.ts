@@ -61,6 +61,11 @@ export function useQuirocitasImport() {
   const store = useAccountStore()
   const t = useT()
   const nf = new Intl.NumberFormat('es-ES')
+  // Previews name statuses and payment methods in words, not by their keys.
+  const statusName = (status: string) =>
+    status === 'completed' ? t('Completed', 'Completada') : status === 'cancelled' ? t('Cancelled', 'Cancelada') : status === 'no_show' ? t('Missed', 'No presentado') : t('Booked', 'Reservada')
+  const methodName = (method: string) =>
+    method === 'cash' ? t('Cash', 'Efectivo') : method === 'card' ? t('Card', 'Tarjeta') : method === 'transfer' ? t('Transfer', 'Transferencia') : method
   const eur = (c: number) => `${(c / 100).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
 
   // PostgREST stops at 1,000 rows per request without saying so.
@@ -154,8 +159,8 @@ export function useQuirocitasImport() {
     unchanged += updates.length - changed.length
 
     const warnings = [...unmatched].map(([name, n]) => t(
-      `${name} is ${nf.format(n)} patients' chiropractor in Quirocitas and is not on this clinic's team yet: add them under Team and prepare again to link them.`,
-      `${name} es el quiropráctico de ${nf.format(n)} pacientes en Quirocitas y aún no está en el equipo: añádelo en Equipo y vuelve a preparar para enlazarlos.`,
+      `${name} is ${nf.format(n)} patients' chiropractor in Quirocitas and is not on this clinic's team yet: add them under Settings → Team with the same name, then prepare the preview again to link them.`,
+      `${name} es el quiropráctico de ${nf.format(n)} pacientes en Quirocitas y aún no está en el equipo: añádelo en Ajustes → Equipo con el mismo nombre y vuelve a preparar la vista previa para enlazarlos.`,
     ))
     if (Object.keys(s.failed).length) warnings.push(t(`${nf.format(Object.keys(s.failed).length)} patients could not be read from Quirocitas and are not included. Read again to retry them.`, `${nf.format(Object.keys(s.failed).length)} pacientes no se pudieron leer de Quirocitas y no se incluyen. Vuelve a leer para reintentarlo.`))
 
@@ -234,15 +239,15 @@ export function useQuirocitasImport() {
         { label: t('Kept as QuiroFlow has them', 'Se mantienen como en QuiroFlow'), value: nf.format(kept) },
       ],
       columns: [{ key: 'when', label: t('When', 'Cuándo') }, { key: 'type', label: t('Type', 'Tipo') }, { key: 'status', label: t('Status', 'Estado') }, { key: 'note', label: t('Note', 'Nota'), wrap: true }],
-      rows: inserts.map((a) => ({ when: new Date(a.startsAt).toLocaleString('es-ES', { timeZone: zone, dateStyle: 'short', timeStyle: 'short' }), type: a.type ?? '—', status: a.status + (a.rescheduled ? ' (cambio)' : ''), note: a.note ?? '' })),
+      rows: inserts.map((a) => ({ when: new Date(a.startsAt).toLocaleString('es-ES', { timeZone: zone, dateStyle: 'short', timeStyle: 'short' }), type: a.type ?? '—', status: statusName(a.status) + (a.rescheduled ? ` (${t('moved', 'cambiada')})` : ''), note: a.note ?? '' })),
       warnings: [
-        ...(noClinic ? [t('Choose the clinic these appointments belong to (top of the page) before applying.', 'Elige la clínica de estas citas (arriba de la página) antes de aplicar.')] : []),
+        ...(noClinic ? [t('Choose the clinic these appointments belong to, in the clinic switcher in the sidebar, before applying.', 'Elige la clínica de estas citas en el selector de clínica de la barra lateral antes de aplicar.')] : []),
         ...(waiting.length ? [t(`${nf.format(waiting.length)} appointments belong to patients not imported yet: run Patients first.`, `${nf.format(waiting.length)} citas son de pacientes aún no importados: ejecuta Pacientes antes.`)] : []),
-        ...(newTypes.length ? [t(`Creates ${newTypes.length} appointment types (${newTypes.join(', ')}) at 15 minutes; adjust their length and price under Settings afterwards.`, `Crea ${newTypes.length} tipos de cita (${newTypes.join(', ')}) de 15 minutos; ajusta su duración y precio en Configuración después.`)] : []),
+        ...(newTypes.length ? [t(`Creates ${newTypes.length} appointment types (${newTypes.join(', ')}) of 15 minutes; adjust their length and price under Settings → Appointment types afterwards.`, `Crea ${newTypes.length} tipos de cita (${newTypes.join(', ')}) de 15 minutos; ajusta su duración y precio en Ajustes → Tipos de cita después.`)] : []),
       ],
       total: inserts.length + updates.length,
       async apply(progress, shouldStop) {
-        if (noClinic) return { written: 0, errors: [t('No clinic chosen.', 'No hay clínica elegida.')] }
+        if (noClinic) return { written: 0, errors: [t('Nothing was written: no clinic is chosen (see above).', 'No se escribió nada: no hay clínica elegida (ver arriba).')] }
         const errors: string[] = []
         for (const name of newTypes) {
           const { data, error } = await supabase.from('appointment_types').insert({ account_id: store.accountId!, name, duration_minutes: 15 }).select('id, name, duration_minutes').single()
@@ -435,22 +440,22 @@ export function useQuirocitasImport() {
       columns: [{ key: 'when', label: t('Date', 'Fecha') }, { key: 'what', label: t('What', 'Qué') }, { key: 'amount', label: t('Amount', 'Importe') }],
       rows: [
         ...charges.filter((c) => c.invoice).map((c) => ({ when: c.at.slice(0, 10), what: `${t('Invoice', 'Factura')} ${c.number}`, amount: eur(c.totalCents) })),
-        ...payments.map((p) => ({ when: p.paidAt.slice(0, 10), what: `${t('Payment', 'Pago')} · ${p.method}${p.bonoRef ? ' · bono' : ''}`, amount: eur(p.amountCents) })),
+        ...payments.map((p) => ({ when: p.paidAt.slice(0, 10), what: `${t('Payment', 'Pago')} · ${methodName(p.method)}${p.bonoRef ? ' · bono' : ''}`, amount: eur(p.amountCents) })),
       ],
       warnings: [
         t(
-          `Afterwards ${nf.format(credit.length)} patients hold ${eur(credit.reduce((a, v) => a + v, 0))} paid ahead (mostly bono sessions not used yet) and ${nf.format(owing.length)} show ${eur(-owing.reduce((a, v) => a + v, 0))} more charged than paid -- largely family members whose visits came off a relative's bono, which QuiroFlow pools when it settles a visit. Every imported charge is marked paid, so nobody is chased for it.`,
-          `Después, ${nf.format(credit.length)} pacientes tienen ${eur(credit.reduce((a, v) => a + v, 0))} pagados por adelantado (sobre todo sesiones de bono sin usar) y ${nf.format(owing.length)} muestran ${eur(-owing.reduce((a, v) => a + v, 0))} más cargado que pagado: en su mayoría familiares cuyas visitas salieron del bono de un pariente, que QuiroFlow suma al saldar una visita. Todo cargo importado queda pagado, así que no se reclama a nadie.`,
+          `Afterwards ${nf.format(credit.length)} patients hold ${eur(credit.reduce((a, v) => a + v, 0))} paid ahead (mostly bono sessions not used yet) and ${nf.format(owing.length)} show ${eur(-owing.reduce((a, v) => a + v, 0))} more charged than paid: largely family members whose visits came off a relative's bono, which QuiroFlow pools when it settles a visit. Only charges Quirocitas still shows as owed come in unpaid; every other one is marked paid, so nobody is chased for it.`,
+          `Después, ${nf.format(credit.length)} pacientes tienen ${eur(credit.reduce((a, v) => a + v, 0))} pagados por adelantado (sobre todo sesiones de bono sin usar) y ${nf.format(owing.length)} muestran ${eur(-owing.reduce((a, v) => a + v, 0))} más cargado que pagado: en su mayoría familiares cuyas visitas salieron del bono de un pariente, que QuiroFlow suma al saldar una visita. Solo llegan pendientes los cargos que Quirocitas aún muestra como debidos; el resto queda pagado, así que no se reclama a nadie por ellos.`,
         ),
         t('Invoices Quirocitas issued for a bono sale come in as a note on the patient with all their details: QuiroFlow charges a bono by its visits, so an invoice for the sale itself would bill the patient twice.', 'Las facturas que Quirocitas emitió por la venta de un bono llegan como nota en el paciente con todos sus datos: QuiroFlow cobra el bono visita a visita, y una factura por la venta lo cobraría dos veces.'),
         ...(mismatched.length ? [t(`${mismatched.length} months of the cash ledger do not add up to the totals Quirocitas printed (${mismatched.map((m) => m.month).join(', ')}). Read again before applying.`, `${mismatched.length} meses de la caja no suman lo que Quirocitas imprime (${mismatched.map((m) => m.month).join(', ')}). Vuelve a leer antes de aplicar.`)] : []),
         ...(chargesWaiting || paymentsWaiting ? [t(`${nf.format(chargesWaiting + paymentsWaiting)} entries wait for their patient or appointment: run Patients and Appointments first.`, `${nf.format(chargesWaiting + paymentsWaiting)} entradas esperan a su paciente o cita: ejecuta Pacientes y Citas antes.`)] : []),
         ...(bonosMissing ? [t(`${nf.format(bonosMissing)} bono payments will not be linked to their bono: run Bonos first.`, `${nf.format(bonosMissing)} pagos de bono no quedarán enlazados a su bono: ejecuta Bonos antes.`)] : []),
-        ...(missingMethods.length ? [t(`This clinic has no payment method "${missingMethods.join('", "')}": add it under Settings › Payment methods first.`, `Esta clínica no tiene el método de pago "${missingMethods.join('", "')}": añádelo en Configuración › Métodos de pago antes.`)] : []),
+        ...(missingMethods.length ? [t(`This clinic has no payment method for ${missingMethods.map(methodName).join(', ')}: add it under Settings → Payments → Payment methods first.`, `Esta clínica no tiene método de pago para ${missingMethods.map(methodName).join(', ')}: añádelo antes en Ajustes → Pagos → Métodos de pago.`)] : []),
       ],
       total: charges.length + payments.length + invoiceNotes.length,
       async apply(progress, shouldStop) {
-        if (missingMethods.length) return { written: 0, errors: [t('Payment methods missing.', 'Faltan métodos de pago.')] }
+        if (missingMethods.length) return { written: 0, errors: [t('Nothing was written: a payment method is missing (see above).', 'No se escribió nada: falta un método de pago (ver arriba).')] }
         const errors: string[] = []
         let written = 0
         await inChunks(charges, CHUNK, async (chunk) => {

@@ -286,7 +286,7 @@ describe('Instagram DMs in the Inbox', () => {
     // there. The plain message thread exists too; this is the one a person
     // opens.
     cy.contains('Instagram user').click()
-    cy.contains('More than 24h since').should('not.exist')
+    cy.contains('in the last 24 hours').should('not.exist')
 
     // And the reply goes to Instagram's own route. Lead replies all posted to
     // whatsapp/inbox-send, which addresses by phone number -- an Instagram

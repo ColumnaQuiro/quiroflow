@@ -64,14 +64,14 @@ const timeOnly = (a: Visit) => fmt(a, { hour: '2-digit', minute: '2-digit' })
                   :disabled="busyId === appt.id"
                   @click="cancel(appt, formatWhen(appt))"
                 >
-                  {{ busyId === appt.id ? t('Cancelling…', 'Cancelando…') : t('Cancel', 'Cancelar') }}
+                  {{ busyId === appt.id ? t('Cancelling…', 'Cancelando…') : t('Cancel appointment', 'Cancelar cita') }}
                 </button>
                 <span v-if="settings.rescheduleEnabled" class="text-[12px] text-ink-faint">
                   {{ t('To move it, use the app or call the clinic.', 'Para cambiarla, usa la app o llama a la clínica.') }}
                 </span>
               </template>
               <p v-else-if="appt.status === 'booked'" class="text-[12px] text-ink-faint">
-                {{ t('Contact the clinic to change this one.', 'Contacta con la clínica para cambiarla.') }}
+                {{ t(`It's less than ${settings.changeNoticeHours} h away. To change it, contact the clinic.`, `Faltan menos de ${settings.changeNoticeHours} h. Para cambiarla, contacta con la clínica.`) }}
               </p>
             </div>
           </div>
@@ -95,7 +95,7 @@ const timeOnly = (a: Visit) => fmt(a, { hour: '2-digit', minute: '2-digit' })
           </li>
         </ul>
         <PatientLoadError v-else-if="loadError" @retry="reload" />
-        <PatientEmpty v-else :text="t('Nothing here yet.', 'Todavía no hay nada aquí.')" />
+        <PatientEmpty v-else :text="t('No past visits yet.', 'Todavía no tienes visitas anteriores.')" />
       </PatientCard>
     </div>
   </div>

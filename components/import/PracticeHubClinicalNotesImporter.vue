@@ -69,7 +69,7 @@ function truncate(value: string): string {
 const previewColumns = computed(() => [
   { key: 'date', label: t('Date', 'Fecha') },
   { key: 'patient', label: t('Patient', 'Paciente') },
-  { key: 'type', label: t('Type', 'Tipo') },
+  { key: 'type', label: t('Type in PracticeHub', 'Tipo en PracticeHub') },
   { key: 'note', label: t('Note', 'Nota'), wrap: true },
 ])
 
@@ -180,7 +180,7 @@ async function apply() {
     for (let i = 0; i < candidates.value.length; i += CHUNK_SIZE) {
       const rows = candidates.value.slice(i, i + CHUNK_SIZE).map((c) => c.row)
       const { error } = await supabase.from('contact_log').insert(rows)
-      if (error) importErrors.value.push(`Notes near row ${i}: ${error.message}`)
+      if (error) importErrors.value.push(t(`Notes ${i + 1}-${i + rows.length} were not saved: ${error.message}`, `No se guardaron las notas ${i + 1}-${i + rows.length}: ${error.message}`))
       else importedCount.value += rows.length
       progress.value = { done: Math.min(i + CHUNK_SIZE, candidates.value.length), total: candidates.value.length }
     }
@@ -195,8 +195,8 @@ async function apply() {
   stage.value = 'done'
   showToast(
     t(
-      `Imported ${importedCount.value} clinical notes. Skipped ${skippedDuplicate.value} already-imported, ${skippedUnmatched.value} with no matching patient.`,
-      `Se importaron ${importedCount.value} notas clínicas. Se omitieron ${skippedDuplicate.value} ya importadas, ${skippedUnmatched.value} sin paciente coincidente.`,
+      `Imported ${importedCount.value} treatment notes. Skipped ${skippedDuplicate.value} already imported and ${skippedUnmatched.value} with no matching patient.`,
+      `Se importaron ${importedCount.value} notas de tratamiento. Se omitieron ${skippedDuplicate.value} ya importadas y ${skippedUnmatched.value} sin paciente coincidente.`,
     ),
     importErrors.value.length > 0 ? 'error' : 'success',
   )
@@ -215,10 +215,10 @@ function reset() {
   importErrors.value = []
   progress.value = { done: 0, total: 0 }
 }
-const introLead = computed(() => t("Brings the notes written at each visit across from PracticeHub's API onto the matching appointment here.", 'Trae las notas escritas en cada visita desde la API de PracticeHub a la cita correspondiente de aquí.'))
+const introLead = computed(() => t("Brings the notes written at each visit across from PracticeHub's API into the patient's contact history here, dated when they were written.", 'Trae las notas escritas en cada visita desde la API de PracticeHub al historial de contacto del paciente, con la fecha en que se escribieron.'))
 const introNotes = computed(() => [
-        { title: t('Run Patients and Appointments first.', 'Ejecuta Pacientes y Citas primero.'), body: t('A note is attached to its visit, so the visit has to exist here already.', 'La nota se adjunta a su visita, así que la visita ya tiene que existir aquí.') },
-        { title: t('Nothing is written until you press Apply.', 'No se escribe nada hasta que pulses Aplicar.'), body: t('The preview lists every note it will add so you can check it first.', 'La vista previa muestra cada nota que añadirá para que la compruebes antes.') },
+        { title: t('Run Patients first.', 'Ejecuta Pacientes primero.'), body: t('Each note is matched to its patient by their PracticeHub reference; a note whose patient is not here yet is skipped.', 'Cada nota se empareja con su paciente por su referencia de PracticeHub; una nota cuyo paciente aún no está aquí se omite.') },
+        { title: t('Nothing is written until you confirm.', 'No se escribe nada hasta que lo confirmes.'), body: t('The preview lists every note it will add so you can check it first.', 'La vista previa muestra cada nota que añadirá para que la compruebes antes.') },
         { title: t('Safe to run again.', 'Se puede volver a ejecutar.'), body: t('Notes already imported are skipped.', 'Las notas ya importadas se omiten.') },
 ])
 </script>
@@ -242,7 +242,7 @@ const introNotes = computed(() => [
       :stats="previewStats"
       :columns="previewColumns"
       :rows="previewRows"
-      :apply-label="t(`Import ${candidates.length} note(s)`, `Importar ${candidates.length} nota(s)`)"
+      :apply-label="t(`Import ${candidates.length} ${candidates.length === 1 ? 'note' : 'notes'}`, `Importar ${candidates.length} ${candidates.length === 1 ? 'nota' : 'notas'}`)"
       :more-label="t('more notes', 'notas más')"
       @apply="apply"
       @cancel="reset"
@@ -250,8 +250,9 @@ const introNotes = computed(() => [
 
     <div v-else-if="stage === 'error'" class="mt-4 space-y-4">
       <div class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
-        <p class="font-medium">{{ t('Import failed:', 'Error al importar:') }}</p>
-        <p class="mt-1">{{ runError }}</p>
+        <p class="font-medium">{{ t('The import stopped before it finished.', 'La importación se detuvo antes de terminar.') }}</p>
+        <p class="mt-1">{{ t('Anything already written is kept. Retry reads PracticeHub again and skips it.', 'Lo ya escrito se conserva. Reintentar vuelve a leer PracticeHub y lo omite.') }}</p>
+        <p class="mt-1 text-[12.5px] opacity-80">{{ runError }}</p>
       </div>
       <button type="button" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover" @click="retryRun">
         {{ t('Retry', 'Reintentar') }}
@@ -260,14 +261,14 @@ const introNotes = computed(() => [
 
     <div v-else-if="stage === 'done'" class="mt-4 space-y-4">
       <div v-if="importErrors.length > 0" class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
-        <p class="font-medium">{{ t('Some rows failed:', 'Algunas filas fallaron:') }}</p>
+        <p class="font-medium">{{ t('Some rows were not saved:', 'Algunas filas no se guardaron:') }}</p>
         <ul class="mt-1 list-disc pl-5">
           <li v-for="(e, i) in importErrors" :key="i">{{ e }}</li>
         </ul>
       </div>
       <div class="flex gap-3">
         <NuxtLink to="/patients" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover">
-          {{ t('View Patients', 'Ver pacientes') }}
+          {{ t('View patients', 'Ver pacientes') }}
         </NuxtLink>
         <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-ink-600 hover:bg-surface-subtle" @click="reset">
           {{ t('Run again', 'Ejecutar de nuevo') }}

@@ -122,7 +122,7 @@ async function deleteNote(note: VisitNoteRow) {
       </div>
     </div>
     <div v-else-if="notes.length === 0" class="rounded-card border border-line bg-surface p-8 text-center text-[13px] text-ink-faint shadow-card">
-      {{ t('No visit notes yet — these get added from an appointment.', 'Aún no hay notas de la visita — se añaden desde una cita.') }}
+      {{ t('No visit notes yet. Each note belongs to a visit and is written from its appointment.', 'Aún no hay notas de visita. Cada nota pertenece a una cita y se escribe desde ella.') }}
     </div>
     <div v-for="note in notes" :key="note.id" class="group relative rounded-card border border-line bg-surface p-4 shadow-card">
       <div class="flex items-baseline justify-between gap-2">

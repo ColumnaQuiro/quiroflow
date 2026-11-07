@@ -16,7 +16,7 @@ const { active, me, actingForOther, switchTo } = useFamily()
     <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface text-[11px] font-semibold text-info-text">{{ personInitials(active) }}</span>
     <p class="min-w-0 flex-1 text-[13px] leading-snug text-info-text">
       {{ t(`You are viewing ${active.firstName}'s account`, `Estás viendo la cuenta de ${active.firstName}`) }}
-      <span v-if="active.access === 'admin'" class="block text-[12px] opacity-80">{{ t('Visits, bookings and payments', 'Citas, reservas y pagos') }}</span>
+      <span v-if="active.access === 'admin'" class="block text-[12px] opacity-80">{{ t('Only visits, bookings and payments', 'Solo citas, reservas y pagos') }}</span>
     </p>
     <button
       v-if="me"

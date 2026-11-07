@@ -65,7 +65,7 @@ function lostHeightPx(i: number) {
   <div v-else>
     <div class="flex items-center gap-4 text-[11.5px] text-ink-muted2">
       <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-[2px] bg-brand" />{{ t('Visits', 'Visitas') }}</span>
-      <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-[2px] bg-chart-cancelled" />{{ t('Cancelled / no-show', 'Canceladas / no presentado') }}</span>
+      <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-[2px] bg-chart-cancelled" />{{ t('Cancelled or no-show', 'Cancelaciones o ausencias') }}</span>
     </div>
     <div class="mt-2 border-t border-line-row2" />
     <div class="mt-3 flex items-end" :style="{ height: `${CHART_HEIGHT_PX}px`, gap: '10px' }">

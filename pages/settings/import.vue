@@ -73,7 +73,10 @@ const sources = computed<Source[]>(() => [
       {
         key: 'money',
         label: t('2 · Money', '2 · Dinero'),
-        note: t('Payments first, so a bono knows what is still owed on it.', 'Primero los pagos, para que el bono sepa lo que queda pendiente.'),
+        // The Ledger marks a visit paid by pooling each family's payments
+        // through their shared bonos (settle_imported_invoices), so a visit
+        // paid from a relative's bono stays unpaid until Bonos has run.
+        note: t('A visit paid from a family member’s shared bono is only marked paid once that bono is here: run Bonos before the Ledger, or the Ledger again after Bonos.', 'Una visita pagada con el bono compartido de un familiar solo queda pagada cuando ese bono ya está aquí: ejecuta Bonos antes del Libro mayor, o el Libro mayor otra vez después de Bonos.'),
         steps: [
           { key: 'ledger', label: t('Ledger', 'Libro mayor'), hint: t('PracticeHub’s own invoices and payments, as it holds them. Needs Patients and Appointments first.', 'Las facturas y pagos propios de PracticeHub, tal y como los tiene. Requiere Pacientes y Citas antes.'), count: counted('payments', 'phpay-') },
           { key: 'patient_packages', label: t('Packages / bonos', 'Bonos'), hint: t('Sessions, price, family sharing and autopay.', 'Sesiones, precio, bonos compartidos y cobro automático.'), count: counted('package_purchases', 'PH-package-') },
@@ -148,12 +151,12 @@ const sources = computed<Source[]>(() => [
   {
     key: 'other',
     label: t('Another system', 'Otro sistema'),
-    sub: t('Patients from a CSV file', 'Pacientes desde un archivo CSV'),
+    sub: t('Patients from a CSV or Excel file', 'Pacientes desde un archivo CSV o Excel'),
     groups: [
       {
         key: 'records',
         label: t('Records', 'Registros'),
-        steps: [{ key: 'patients', label: t('Patients', 'Pacientes'), hint: t('From a CSV file.', 'Desde un archivo CSV.') }],
+        steps: [{ key: 'patients', label: t('Patients', 'Pacientes'), hint: t('From a CSV or Excel file.', 'Desde un archivo CSV o Excel.') }],
       },
     ],
   },
@@ -208,12 +211,12 @@ function statusOf(step: Step): { text: string; done: boolean } | null {
   }
   if (step.key === 'read') {
     const s = quirocitasCopy.value
-    return s?.ledgerMonths.length ? { text: t(`Read ${new Date(s.readAt).toLocaleDateString('es-ES')}`, `Leído el ${new Date(s.readAt).toLocaleDateString('es-ES')}`), done: true } : { text: s ? t('Part read', 'Leído en parte') : t('Not read yet', 'Aún sin leer'), done: false }
+    return s?.ledgerMonths.length ? { text: t(`Read ${new Date(s.readAt).toLocaleDateString('es-ES')}`, `Leído el ${new Date(s.readAt).toLocaleDateString('es-ES')}`), done: true } : { text: s ? t('Partly read', 'Leído en parte') : t('Not read yet', 'Aún sin leer'), done: false }
   }
   if (!step.count) return null
   if (!countsLoaded.value) return { text: '…', done: false }
   const n = counts.value[step.key] ?? 0
-  return n ? { text: t(`${nf.format(n)} imported`, `${nf.format(n)} importados`), done: true } : { text: t('Not run yet', 'Aún sin ejecutar'), done: false }
+  return n ? { text: t(`${nf.format(n)} imported`, `${nf.format(n)} importados`), done: true } : { text: t('Nothing imported yet', 'Nada importado aún'), done: false }
 }
 // Every importer shows a long preview -- counts, sample tables, sometimes
 // every row held back -- with its Apply button at the bottom, and then swaps
@@ -260,7 +263,7 @@ onBeforeUnmount(() => panelObserver?.disconnect())
         <SettingsNav />
         <div class="flex min-w-0 max-w-[1040px] flex-1 flex-col gap-4" data-cy="import-settings" :data-ready="countsLoaded ? 'true' : undefined">
           <p class="text-[13.5px] text-ink-muted">
-            {{ t('Bring records across from the system the clinic is moving off. Every step shows a preview first; nothing is written until you confirm it.', 'Trae los registros del sistema del que se está mudando la clínica. Cada paso muestra primero una vista previa: no se escribe nada hasta que lo confirmes.') }}
+            {{ t('Bring the clinic’s records across from the system it is leaving. Choose that system, then work through its steps: each group says what has to run first. Every step that writes shows a preview first, and nothing is written until you confirm it.', 'Trae los registros de la clínica desde el sistema que deja. Elige ese sistema y sigue sus pasos: cada grupo indica qué tiene que ir antes. Cada paso que escribe muestra antes una vista previa, y no se escribe nada hasta que lo confirmes.') }}
           </p>
 
           <div role="radiogroup" :aria-label="t('Import from', 'Importar desde')" class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">

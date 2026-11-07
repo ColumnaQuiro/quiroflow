@@ -46,13 +46,13 @@ describe('A ledger that could not load says so', () => {
 
         // The ledger sits below the fold on this viewport, inside a scroll
         // container -- scrolled to rather than asserted visible where it sits.
-        cy.contains("Couldn't load this patient's transactions.").scrollIntoView().should('be.visible')
+        cy.contains("This patient's account didn't load.").scrollIntoView().should('be.visible')
         cy.contains('column invoices.refunds_payment_id does not exist').should('exist')
 
         // Not an empty ledger, and not a partial one either: the EUR 30 that
         // did load must not be presented as this patient's whole history.
-        cy.contains('No transactions yet').should('not.exist')
-        cy.contains('tr', 'Payment — cash').should('not.exist')
+        cy.contains('Nothing on this account yet').should('not.exist')
+        cy.contains('tr', 'Payment — Cash').should('not.exist')
       })
     })
   })

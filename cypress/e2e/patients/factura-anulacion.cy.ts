@@ -20,9 +20,9 @@ describe('Annulling a factura issued in error', () => {
         cy.contains('button', 'Record payment').parents('form').as('form')
         cy.get('@form').contains('button', 'Record payment').click()
         cy.contains('button', 'Recording…').should('not.exist')
-        cy.contains('tr', 'Payment — cash').click()
+        cy.contains('tr', 'Payment — Cash').click()
         cy.contains('button', 'Remove payment').click()
-        cy.contains('tr', 'Payment — cash').should('not.exist')
+        cy.contains('tr', 'Payment — Cash').should('not.exist')
 
         cy.contains('button', 'Facturas & receipts').click()
         cy.contains('payment removed').should('be.visible')

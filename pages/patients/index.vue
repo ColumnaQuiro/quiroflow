@@ -553,10 +553,10 @@ const MARKETING_LABELS = computed<Record<string, string>>(() => ({
 function filterSummary(f: PatientFilters): string {
   const parts: string[] = []
   if (f.q) parts.push(`"${f.q}"`)
-  if (f.status) parts.push(f.status === 'inactive' ? t('Inactive', 'Inactivo') : t('Any status', 'Cualquier estado'))
+  if (f.status) parts.push(f.status === 'inactive' ? t('Archived', 'Archivado') : t('Any status', 'Cualquier estado'))
   for (const tag of f.tags ?? []) parts.push(`#${tag}`)
-  if (f.list) parts.push(`${t('On', 'En')} ${listName(f.list)}`)
-  if (f.notList) parts.push(`${t('Not on', 'No en')} ${listName(f.notList)}`)
+  if (f.list) parts.push(t(`On ${listName(f.list)}`, `En ${listName(f.list)}`))
+  if (f.notList) parts.push(t(`Not on ${listName(f.notList)}`, `No en ${listName(f.notList)}`))
   if (f.family) parts.push(FAMILY_LABELS.value[f.family]!)
   if (f.familyBono) parts.push(t('Shares a bono', 'Comparte bono'))
   if (f.marketing) parts.push(MARKETING_LABELS.value[f.marketing]!)
@@ -708,7 +708,7 @@ const activeFilters = computed<ActiveFilter[]>(() => {
     out.push({ key: 'search', label: `"${search.value.trim()}"`, clear: () => (search.value = '') })
   }
   if (form.status !== 'active') {
-    const label = form.status === 'inactive' ? t('Inactive', 'Inactivo') : t('Any status', 'Cualquier estado')
+    const label = form.status === 'inactive' ? t('Archived', 'Archivado') : t('Any status', 'Cualquier estado')
     out.push({ key: 'status', label, clear: () => (form.status = 'active') })
   }
   if (form.balance) {
@@ -753,7 +753,7 @@ const activeFilters = computed<ActiveFilter[]>(() => {
     const max = currentFilters.value.bonoSessionsMax
     const label = form.bono === 'none'
       ? t('No live bono', 'Sin bono activo')
-      : max === undefined ? t('Has a live bono', 'Con bono activo') : t(`Bono with ≤ ${max} sessions left`, `Bono con ≤ ${max} sesiones`)
+      : max === undefined ? t('Has a live bono', 'Con bono activo') : t(`Bono with ≤ ${max} sessions left`, `Bono con ≤ ${max} sesiones restantes`)
     out.push({ key: 'bono', label, clear: () => { form.bono = ''; form.bonoSessionsMax = '' } })
   }
   const created = rangeLabel(form.createdFrom, form.createdTo)
@@ -771,7 +771,7 @@ const activeFilters = computed<ActiveFilter[]>(() => {
     out.push({ key: 'list', label: `${t('List', 'Lista')}: ${listName(form.list)}`, clear: () => (form.list = '') })
   }
   if (form.notList) {
-    out.push({ key: 'notList', label: `${t('Not on', 'No en')} ${listName(form.notList)}`, clear: () => (form.notList = '') })
+    out.push({ key: 'notList', label: t(`Not on ${listName(form.notList)}`, `No en ${listName(form.notList)}`), clear: () => (form.notList = '') })
   }
   if (form.family) {
     out.push({ key: 'family', label: FAMILY_LABELS.value[form.family]!, clear: () => (form.family = '') })
@@ -842,7 +842,7 @@ function nextVisitInfo(patientId: string) {
   const diffDays = Math.round((startOfDay(visitDate).getTime() - startOfDay(new Date()).getTime()) / 86400000)
   if (diffDays === 0) return { date: `${dateText} · ${timeText}`, relative: t('Today', 'Hoy'), colorClass: 'text-brand' }
   if (diffDays === 1) return { date: `${dateText} · ${timeText}`, relative: t('Tomorrow', 'Mañana'), colorClass: 'text-ink-faint' }
-  if (diffDays > 1 && diffDays < 7) return { date: `${dateText} · ${timeText}`, relative: `${t('In', 'En')} ${diffDays} ${t('days', 'días')}`, colorClass: 'text-ink-faint' }
+  if (diffDays > 1 && diffDays < 7) return { date: `${dateText} · ${timeText}`, relative: t(`In ${diffDays} days`, `En ${diffDays} días`), colorClass: 'text-ink-faint' }
   return { date: `${dateText} · ${timeText}`, relative: visitDate.toLocaleDateString(undefined, { weekday: 'long' }), colorClass: 'text-ink-faint' }
 }
 
@@ -867,7 +867,7 @@ function tagClass(tag: string) {
   <div class="flex h-full flex-col">
     <PageHeader
       :title="t('Patients', 'Pacientes')"
-      :meta="loadedOnce ? `${totalCount} ${t('patients', 'pacientes')} · ${patients.length} ${t('shown', 'mostrados')}` : undefined"
+      :meta="loadedOnce ? (totalCount === 1 ? t('1 patient', '1 paciente') : t(`${totalCount} patients · ${patients.length} shown`, `${totalCount} pacientes · ${patients.length} en pantalla`)) : undefined"
     >
       <UiBtn variant="secondary" :disabled="exporting" @click="exportCsv">{{ exporting ? t('Exporting…', 'Exportando…') : t('Export', 'Exportar') }}</UiBtn>
       <UiBtn variant="secondary" @click="navigateTo('/settings/import')">{{ t('Import', 'Importar') }}</UiBtn>
@@ -1026,7 +1026,7 @@ function tagClass(tag: string) {
 
         <PatientsFilterSelect v-model="form.status" :label="t('Status', 'Estado')" :options="[
           { value: 'active', label: t('Active', 'Activo') },
-          { value: 'inactive', label: t('Inactive', 'Inactivo') },
+          { value: 'inactive', label: t('Archived', 'Archivado') },
           { value: 'any', label: t('Any status', 'Cualquier estado') },
         ]" />
 
@@ -1230,7 +1230,7 @@ function tagClass(tag: string) {
             <tbody v-else-if="patients.length === 0" :class="loading ? 'pointer-events-none opacity-60' : ''">
               <tr>
                 <td colspan="9" class="px-5 py-10 text-center text-[13px] text-ink-faint">
-                  {{ activeFilters.length > 0 ? t('No patients match these filters.', 'Ningún paciente coincide con estos filtros.') : t('No patients found.', 'No se encontraron pacientes.') }}
+                  {{ activeFilters.length > 0 ? t('No patients match these filters.', 'Ningún paciente coincide con estos filtros.') : t('No active patients yet. Add one with New patient, or bring your list in with Import.', 'Aún no hay pacientes activos. Añade uno con Nuevo paciente o trae tu lista con Importar.') }}
                   <button
                     v-if="activeFilters.length > 0"
                     type="button"
@@ -1276,7 +1276,7 @@ function tagClass(tag: string) {
                         <NuxtLink :to="`/patients/${patient.id}`" class="truncate outline-none hover:underline focus-visible:shadow-focus">
                           {{ patient.first_name }} {{ patient.last_name }}
                         </NuxtLink>
-                        <span v-if="patient.status === 'inactive'" class="shrink-0 rounded-pill bg-chip-bg2 px-1.5 py-0.5 text-[11px] font-[600] text-chip-text">{{ t('Inactive', 'Inactivo') }}</span>
+                        <span v-if="patient.status === 'inactive'" class="shrink-0 rounded-pill bg-chip-bg2 px-1.5 py-0.5 text-[11px] font-[600] text-chip-text">{{ t('Archived', 'Archivado') }}</span>
                         <span v-if="patient.is_minor" class="shrink-0 rounded-pill bg-brand-tint px-1.5 py-0.5 text-[11px] font-[600] text-brand-text2">{{ t('Minor', 'Menor') }}</span>
                         <span v-if="patient.do_not_contact" class="shrink-0 rounded-pill bg-danger-bg px-1.5 py-0.5 text-[11px] font-[600] text-danger-text">{{ t('Do not contact', 'No contactar') }}</span>
                       </p>
@@ -1298,7 +1298,7 @@ function tagClass(tag: string) {
                     <span
                       v-if="whatsappConsentByPatient[patient.id]"
                       class="rounded-pill bg-success-bg px-1.5 py-0.5 text-[11px] font-[600] text-success-text"
-                      :title="t('WhatsApp', 'WhatsApp')"
+                      :title="t('This number has WhatsApp', 'Este número tiene WhatsApp')"
                     >WA</span>
                   </span>
                   <span v-else class="inline-flex items-center gap-1 text-[12.5px] text-warning-text">
@@ -1312,7 +1312,7 @@ function tagClass(tag: string) {
                   <span
                     v-if="patient.invoice_email_enabled"
                     class="rounded-pill bg-brand-tint px-1.5 py-0.5 text-[11px] font-[600] text-brand-text2"
-                    :title="t('Invoices are emailed to this patient', 'Las facturas se envían por correo')"
+                    :title="t('Receipts are emailed to this patient', 'A este paciente se le envían los recibos por correo')"
                   >{{ t('Email', 'Correo') }}</span>
                   </div>
                 </td>
@@ -1384,7 +1384,7 @@ function tagClass(tag: string) {
           :visible-pages="visiblePages"
           :has-prev="page > 1"
           :has-next="page < totalPages"
-          :summary="`${t('Page', 'Página')} ${page} ${t('of', 'de')} ${totalPages} · ${totalCount} ${t('patients', 'pacientes')}`"
+          :summary="t(`Page ${page} of ${totalPages} · ${totalCount} patients`, `Página ${page} de ${totalPages} · ${totalCount} pacientes`)"
           @go-to-page="goToPage"
         />
       </div>

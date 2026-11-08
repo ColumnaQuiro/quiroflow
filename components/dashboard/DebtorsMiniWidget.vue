@@ -81,7 +81,7 @@ function euros(cents: number) {
     </div>
   </div>
   <div v-else>
-    <p v-if="debtors.length === 0" class="text-[13px] text-ink-faint">{{ t('No outstanding balances.', 'No hay saldos pendientes.') }}</p>
+    <p v-if="debtors.length === 0" class="text-[13px] text-ink-faint">{{ t('No unpaid bonos.', 'No hay bonos sin pagar.') }}</p>
     <template v-else>
       <ul class="divide-y divide-line-row2">
         <li v-for="p in debtors.slice(0, 5)" :key="p.id" class="flex items-center gap-2 py-1.5 text-[13px] first:pt-0">

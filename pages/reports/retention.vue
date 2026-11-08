@@ -173,7 +173,7 @@ const monthLabel = (m: string) => {
 const practitionerName = (id: string | null) => practitioners.value.find((p) => p.id === id)?.name ?? t('No practitioner', 'Sin profesional')
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString(t('en-GB', 'es-ES'), { day: 'numeric', month: 'short', year: 'numeric' }) : '–')
 const pdfRoot = ref<HTMLElement | null>(null)
-const th = 'px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2'
+const th = 'px-3 py-2 text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2'
 const td = 'px-3 py-2 font-mono text-[13px] text-ink-800'
 </script>
 
@@ -181,7 +181,7 @@ const td = 'px-3 py-2 font-mono text-[13px] text-ink-800'
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Retention', 'Retención')" :meta="t('Who comes back, and who finishes their plan', 'Quién vuelve y quién termina su plan')">
       <div class="flex items-center gap-3">
-        <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
+        <ReportsBackLink />
         <ReportsPdfButton :target="pdfRoot" :title="t('Retention', 'Retención')" :range="range" :practitioner-id="practitionerFilter || null" :clinic-id="clinicFilter || null" />
       </div>
     </PageHeader>
@@ -291,11 +291,11 @@ const td = 'px-3 py-2 font-mono text-[13px] text-ink-800'
         <p v-else class="mt-2 text-[13px] text-ink-muted" data-cy="retention-plans-empty">{{ t('No plan is behind schedule.', 'Ningún plan va atrasado.') }}</p>
         <div v-if="picked.size > 0" class="mt-2 flex flex-wrap items-center gap-2 rounded-ctl border border-brand-tintBorder bg-brand-tint px-3 py-2" data-pdf-skip data-cy="retention-plans-bulk">
           <strong class="text-[13.5px] text-brand-text">{{ t(`${picked.size} selected`, `${picked.size} seleccionados`) }}</strong>
-          <button type="button" class="h-9 rounded-ctl bg-brand px-3 text-[13px] font-bold text-surface disabled:opacity-50 touch:h-11" :disabled="reachable.length === 0" data-cy="retention-plans-whatsapp" @click="bulkOpen = true">
+          <UiBtn variant="primary" :disabled="reachable.length === 0" data-cy="retention-plans-whatsapp" @click="bulkOpen = true">
             {{ t(`WhatsApp ${reachable.length}`, `WhatsApp a ${reachable.length}`) }}
-          </button>
+          </UiBtn>
           <span v-if="pickedPlans.length > reachable.length" class="text-[12.5px] text-ink-500">{{ t(`${pickedPlans.length - reachable.length} without a phone, skipped`, `${pickedPlans.length - reachable.length} sin teléfono, se salta`) }}</span>
-          <button type="button" class="ml-auto h-9 px-2 text-[13px] text-ink-muted" @click="picked = new Set()">{{ t('Clear', 'Quitar')}}</button>
+          <UiBtn variant="ghost" class="ml-auto" @click="picked = new Set()">{{ t('Clear', 'Quitar') }}</UiBtn>
         </div>
         <div v-if="visiblePlans.length" class="mt-2 overflow-x-auto">
           <table class="w-full min-w-[560px]">
@@ -316,7 +316,7 @@ const td = 'px-3 py-2 font-mono text-[13px] text-ink-800'
                 <td class="px-3 py-2 text-[13px] text-ink-700">{{ p.care_plan_name }}</td>
                 <td :class="td">{{ p.total_visits === null ? t(`${p.completed_in_plan} · no end`, `${p.completed_in_plan} · sin fin`) : `${p.completed_in_plan} / ${p.total_visits}` }}</td>
                 <td class="px-3 py-2 text-[13px] text-ink-muted">{{ when(p.last_appointment_at) }}</td>
-                <td class="px-3 py-2 text-[13px]" :class="p.days_overdue > 30 ? 'font-semibold text-danger-text' : 'text-warning-text'">{{ t(`${p.days_overdue} days`, `${p.days_overdue} días`) }}</td>
+                <td class="whitespace-nowrap px-3 py-2 font-mono text-[13px]" :class="p.days_overdue > 30 ? 'font-semibold text-danger-text' : 'text-warning-text'">{{ t(`${p.days_overdue} days`, `${p.days_overdue} días`) }}</td>
               </tr>
             </tbody>
           </table>

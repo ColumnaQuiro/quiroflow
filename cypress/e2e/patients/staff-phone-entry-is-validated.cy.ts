@@ -140,7 +140,7 @@ describe('A phone number typed by staff', { scrollBehavior: 'center' }, () => {
       cy.get('#first-name').type('Telefono')
       cy.get('#last-name').type('Malo')
       cy.get('input[type="tel"]').type('6')
-      cy.contains('button', 'Add Patient').click()
+      cy.contains('button', 'Add patient').click()
 
       cy.contains('A Spanish number has 9 digits.').should('be.visible')
       // Still on the list: a successful Add navigates to the new record, so
@@ -148,7 +148,7 @@ describe('A phone number typed by staff', { scrollBehavior: 'center' }, () => {
       cy.location('pathname').should('eq', '/patients')
 
       cy.get('input[type="tel"]').clear().type('600123456')
-      cy.contains('button', 'Add Patient').click()
+      cy.contains('button', 'Add patient').click()
       cy.location('pathname', { timeout: 15000 }).should('match', /^\/patients\/[0-9a-f-]+$/)
     })
   })

@@ -292,7 +292,23 @@ function formatDate(iso: string) {
   const d = new Date(iso)
   return d.toLocaleDateString(t('en-GB', 'es-ES'), { day: 'numeric', month: 'short', ...(d.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}) })
 }
-const STATUS_LABEL = computed<Record<string, string>>(() => ({ paid: t('paid', 'pagado'), unpaid: t('unpaid', 'impagado'), void: t('void', 'anulado') }))
+// The receipt page's words ("Pendiente", capitalised), so a receipt does not
+// read "impagado" in the list and "Pendiente" once opened.
+function statusLabel(status: string) {
+  const label = PATIENT_INVOICE_STATUS[status]?.label
+  return label ? t(label[0], label[1]) : status
+}
+
+// Says which filter emptied the list. "No receipts yet." under Unpaid, on a
+// clinic with 552 paid ones, claimed the clinic had never issued any.
+const emptyState = computed(() => {
+  if (appliedSearch.value) return { title: t('No receipts match this search.', 'Ningún recibo coincide con la búsqueda.'), description: t('Try a patient name or a receipt number.', 'Prueba con el nombre de un paciente o un número de recibo.') }
+  if (patientId.value) return { title: t('No receipts for this patient.', 'Este paciente no tiene recibos.'), description: '' }
+  if (statusFilter.value === 'unpaid') return { title: t('No unpaid receipts.', 'No hay recibos impagados.'), description: t('Receipts still waiting for payment will show here.', 'Aquí aparecerán los recibos pendientes de cobro.') }
+  if (statusFilter.value === 'paid') return { title: t('No paid receipts.', 'No hay recibos pagados.'), description: '' }
+  if (statusFilter.value === 'void') return { title: t('No void receipts.', 'No hay recibos anulados.'), description: '' }
+  return { title: t('No receipts yet.', 'Todavía no hay recibos.'), description: '' }
+})
 </script>
 
 <template>
@@ -332,7 +348,7 @@ const STATUS_LABEL = computed<Record<string, string>>(() => ({ paid: t('paid', '
             v-for="f in FILTERS"
             :key="f.value"
             type="button"
-            class="flex h-7 items-center gap-1.5 rounded-pill border px-3 text-[12.5px] font-medium transition-colors"
+            class="flex h-8 items-center gap-1.5 rounded-pill border px-3 text-[12.5px] font-medium transition-colors touch:h-11"
             :class="
               statusFilter === f.value
                 ? 'border-brand-tintBorder bg-brand-tint text-brand-text'
@@ -368,10 +384,21 @@ const STATUS_LABEL = computed<Record<string, string>>(() => ({ paid: t('paid', '
           </label>
         </div>
 
-        <div class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">
+        <UiEmptyState v-if="!loading && invoices.length === 0" class="mt-4 !px-0 !py-0" :title="emptyState.title" :description="emptyState.description || undefined" data-cy="billing-empty">
+          <template #icon>
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <path d="M5 2.75h10v14.5l-2.5-1.5-2.5 1.5-2.5-1.5L5 17.25V2.75z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+              <path d="M7.5 7h5M7.5 10h5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+            </svg>
+          </template>
+          <template v-if="!appliedSearch && !patientId && statusFilter === 'all'" #actions>
+            <UiBtn variant="primary" @click="navigateTo('/billing/new')">{{ t('Quick receipt', 'Recibo rápido') }}</UiBtn>
+          </template>
+        </UiEmptyState>
+        <div v-else class="mt-4 overflow-hidden rounded-card border border-line bg-surface shadow-card">
           <!-- Selecting unpaid receipts to remind their patients (openRemind). -->
           <div v-if="canRemind && !loading && invoices.length" class="flex min-h-11 items-center gap-3 border-b border-line-row px-4 py-2" data-cy="billing-select-bar">
-            <input type="checkbox" class="h-4 w-4 accent-brand" :checked="allOnPageSelected" :aria-label="t('Select every receipt on this page', 'Seleccionar todos los recibos de esta página')" data-cy="billing-select-page" @change="toggleAllOnPage" />
+            <input type="checkbox" class="h-4 w-4 accent-brand touch:h-5 touch:w-5" :checked="allOnPageSelected" :aria-label="t('Select every receipt on this page', 'Seleccionar todos los recibos de esta página')" data-cy="billing-select-page" @change="toggleAllOnPage" />
             <span class="flex-1 text-[12.5px] text-ink-muted">
               {{ selected.size ? t(`${selected.size} selected`, `${selected.size} seleccionados`) : t('Select receipts to remind their patients', 'Selecciona recibos para recordárselo a sus pacientes') }}
             </span>
@@ -391,14 +418,11 @@ const STATUS_LABEL = computed<Record<string, string>>(() => ({ paid: t('paid', '
               <UiSkeleton class="h-3.5 w-16 rounded-ctlSm" />
             </div>
           </div>
-          <div v-else-if="invoices.length === 0" class="px-4 py-10 text-center text-[13px] text-ink-muted2" data-cy="billing-empty">
-            {{ appliedSearch ? t('No receipts match this search.', 'Ningún recibo coincide con la búsqueda.') : patientId ? t('No receipts for this patient.', 'Este paciente no tiene recibos.') : t('No receipts yet.', 'Todavía no hay recibos.') }}
-          </div>
           <ul v-else class="divide-y divide-line-row">
             <li
               v-for="invoice in invoices"
               :key="invoice.id"
-              class="flex cursor-pointer items-center justify-between gap-3 px-4 py-3"
+              class="relative flex cursor-pointer items-center justify-between gap-3 px-4 py-3 focus-within:bg-surface-subtle"
               :class="
                 invoice.id === highlightId
                   ? 'bg-brand-tintDeep shadow-[inset_3px_0_0_theme(colors.brand.DEFAULT)]'
@@ -411,7 +435,7 @@ const STATUS_LABEL = computed<Record<string, string>>(() => ({ paid: t('paid', '
                 <input
                   v-if="canRemind"
                   type="checkbox"
-                  class="h-4 w-4 shrink-0 accent-brand"
+                  class="relative z-10 h-4 w-4 shrink-0 accent-brand touch:h-5 touch:w-5"
                   :checked="selected.has(invoice.id)"
                   :aria-label="t(`Select receipt ${invoice.invoice_number}`, `Seleccionar recibo ${invoice.invoice_number}`)"
                   data-cy="billing-row-select"
@@ -422,9 +446,9 @@ const STATUS_LABEL = computed<Record<string, string>>(() => ({ paid: t('paid', '
                   {{ initials(invoice) }}
                 </span>
                 <div class="min-w-0">
-                  <p class="truncate text-[13.5px] font-[560] text-ink-800">
+                  <NuxtLink :to="`/billing/${invoice.id}`" class="block truncate text-[13.5px] font-[560] text-ink-800 after:absolute after:inset-0 focus-visible:outline-none" @click.stop>
                     {{ invoice.patients?.first_name }} {{ invoice.patients?.last_name }}
-                  </p>
+                  </NuxtLink>
                   <p class="mt-0.5 truncate font-mono text-[11.5px] text-ink-muted2">
                     {{ invoice.invoice_number }} &middot; {{ formatDate(invoice.created_at) }}
                   </p>
@@ -432,7 +456,7 @@ const STATUS_LABEL = computed<Record<string, string>>(() => ({ paid: t('paid', '
               </div>
               <div class="flex shrink-0 flex-col items-end gap-1">
                 <span class="font-mono text-[13px] font-semibold text-ink-900">{{ formatEur(invoice.total_cents) }}</span>
-                <UiPill :tone="STATUS_TONE[invoice.status] ?? 'neutral'">{{ STATUS_LABEL[invoice.status] ?? invoice.status }}</UiPill>
+                <UiPill :tone="STATUS_TONE[invoice.status] ?? 'neutral'">{{ statusLabel(invoice.status) }}</UiPill>
               </div>
             </li>
           </ul>

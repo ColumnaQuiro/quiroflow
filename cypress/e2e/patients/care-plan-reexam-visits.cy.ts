@@ -141,7 +141,7 @@ describe('Care plan re-exam visits', () => {
           cy.visit(`/calendar?patient=${patient.id}&repeat=plan`)
           cy.get('[data-cy=booking-for]').should('contain.text', 'Nora Plan')
           cy.get('[data-testid="practitioner-tabs"]').contains('button', 'Test Owner').should('be.visible')
-          cy.clickUntil('button:contains("New Appointment")', '[data-cy=create-sheet]')
+          cy.clickUntil('[data-cy=new-appointment]', '[data-cy=create-sheet]')
           const first = nextWeekday(1, 10)
           cy.get('[data-cy=create-sheet]').within(() => {
             cy.contains('[data-cy=create-type]', 'Ajuste').click()

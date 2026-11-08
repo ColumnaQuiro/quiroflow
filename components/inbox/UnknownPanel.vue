@@ -76,7 +76,7 @@ async function link(patientId: string) {
   const { error } = await supabase.rpc('link_inbox_conversation', { p_phone_number: props.phoneNumber, p_patient_id: patientId })
   if (error) {
     busy.value = false
-    showToast(error.message, 'error')
+    showToast(`${t("Couldn't link the conversation to this patient.", 'No se ha podido vincular la conversación a este paciente.')} ${t('Details:', 'Detalle:')} ${error.message}`, 'error')
     return
   }
   const remembered = await rememberNumberOn(patientId)
@@ -86,8 +86,8 @@ async function link(patientId: string) {
   } else {
     showToast(
       t(
-        'Linked, but the number could not be added to the patient -- add it on their record so their next message finds them.',
-        'Vinculado, pero no se pudo añadir el número al paciente: añádelo en su ficha para que su próximo mensaje le encuentre.',
+        "Linked, but the number couldn't be saved on the patient. Add it on their record, or their next message will arrive from an unknown number again.",
+        'Vinculado, pero no se ha podido guardar el número en el paciente. Añádelo en su ficha o su próximo mensaje volverá a llegar como un número desconocido.',
       ),
       'error',
     )
@@ -118,7 +118,7 @@ async function createAndLink() {
     })
   if (error) {
     busy.value = false
-    showToast(error?.message ?? t('Could not create the patient.', 'No se pudo crear el paciente.'), 'error')
+    showToast(`${t("Couldn't create the patient.", 'No se ha podido crear el paciente.')} ${t('Details:', 'Detalle:')} ${error.message}`, 'error')
     return
   }
   // link() stores the number on the new patient, the same as on an existing one.

@@ -119,7 +119,7 @@ const DELIVERY_LABELS = computed<Record<string, string>>(() => ({
   read: t('Read', 'Leído'),
   failed: t('Failed', 'Fallido'),
   received: t('Received', 'Recibido'),
-  would_send: t('Not sent — test mode', 'No enviado — modo prueba'),
+  would_send: t('Not sent: test mode', 'No enviado: modo de prueba'),
 }))
 function deliveryLabel(m: MessageRow) {
   return DELIVERY_LABELS.value[m.status] ?? m.status
@@ -224,10 +224,10 @@ onMounted(loadTemplates)
         </div>
 
         <p v-if="!canContact" class="border-b border-line-divider bg-danger-bg px-4 py-2 text-[12px] text-danger-text">
-          {{ t('This patient cannot be messaged — new messages are disabled.', 'A este paciente no se le pueden enviar mensajes: los nuevos mensajes están deshabilitados.') }}
+          {{ t('Under age: nobody writes to them directly. Messages about their visits go to their tutor.', 'Menor de edad: nadie le escribe directamente. Los mensajes sobre sus citas van a su tutor.') }}
         </p>
         <p v-else-if="doNotContact" class="border-b border-line-divider bg-warning-bg px-4 py-2 text-[12px] text-warning-text" data-cy="comms-do-not-contact">
-          {{ t('Marked "do not contact": no campaigns, recalls, reminders or automatic messages. You can still write to them yourself.', 'Marcado como "no contactar": no recibe campañas, recalls, recordatorios ni mensajes automáticos. Puedes escribirle tú.') }}
+          {{ t('Marked "do not contact": no campaigns, recalls, reminders or automatic messages. You can still write to them yourself.', 'Marcado como "no contactar": no recibe campañas, recuperaciones, recordatorios ni mensajes automáticos. Puedes escribirle tú.') }}
         </p>
 
         <!-- Delivery states are drawn, so the change is also announced. -->

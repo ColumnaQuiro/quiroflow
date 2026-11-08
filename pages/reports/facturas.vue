@@ -140,7 +140,7 @@ function downloadCsv() {
 }
 
 const pdfRoot = ref<HTMLElement | null>(null)
-const th = 'px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[.04em] text-ink-muted'
+const th = 'px-3 py-2 text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted'
 const td = 'px-3 py-2 text-[13px] text-ink-700 whitespace-nowrap'
 const KINDS = ['full', 'simplified', 'rectificativa'] as const
 </script>
@@ -149,7 +149,7 @@ const KINDS = ['full', 'simplified', 'rectificativa'] as const
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Issued facturas', 'Facturas emitidas')" :meta="t('Every factura issued in the period, with its IVA', 'Todas las facturas emitidas en el periodo, con su IVA')">
       <div class="flex items-center gap-3">
-        <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
+        <ReportsBackLink />
         <ReportsPdfButton :target="pdfRoot" :title="t('Issued facturas', 'Facturas emitidas')" :range="range" :practitioner-id="null" :clinic-id="null" />
       </div>
     </PageHeader>
@@ -211,7 +211,7 @@ const KINDS = ['full', 'simplified', 'rectificativa'] as const
         <div class="mt-2 flex flex-wrap items-center gap-1.5" data-pdf-skip>
           <button
             type="button"
-            class="h-8 rounded-pill border px-3 text-[12.5px] font-semibold touch:h-10"
+            class="h-8 rounded-pill border px-3 text-[12.5px] font-semibold touch:h-11"
             :class="!kind ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control bg-surface text-ink-500'"
             :aria-pressed="!kind"
             @click="kind = ''"
@@ -222,7 +222,7 @@ const KINDS = ['full', 'simplified', 'rectificativa'] as const
             <button
               v-if="kindCount(k)"
               type="button"
-              class="h-8 rounded-pill border px-3 text-[12.5px] font-semibold touch:h-10"
+              class="h-8 rounded-pill border px-3 text-[12.5px] font-semibold touch:h-11"
               :class="kind === k ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control bg-surface text-ink-500'"
               :aria-pressed="kind === k"
               :data-cy="`facturas-kind-${k}`"
@@ -235,7 +235,7 @@ const KINDS = ['full', 'simplified', 'rectificativa'] as const
             v-model="search"
             type="search"
             :placeholder="t('Number, name, NIF…', 'Número, nombre, NIF…')"
-            class="ml-auto h-8 w-56 rounded-ctl border border-line-control bg-surface px-2.5 text-[13px] text-ink-700 focus:border-brand focus:outline-none touch:h-10"
+            class="h-8 w-full rounded-ctl border border-line-control bg-surface px-2.5 text-[13px] text-ink-700 focus:border-brand focus:outline-none touch:h-11 sm:ml-auto sm:w-56"
             data-cy="facturas-search"
           />
         </div>
@@ -259,15 +259,17 @@ const KINDS = ['full', 'simplified', 'rectificativa'] as const
             <tbody class="divide-y divide-line-divider">
               <tr v-for="r in filtered" :key="r.id" data-cy="facturas-row" :data-kind="r.kind">
                 <td :class="td" class="font-mono">{{ r.number }}</td>
-                <td :class="td">{{ dateOf(r.issued_at) }}</td>
+                <td :class="td" class="font-mono text-[12.5px]">{{ dateOf(r.issued_at) }}</td>
                 <td :class="td">
                   {{ KIND_LABEL[r.kind] ?? KIND_ES[r.kind] ?? r.kind }}
-                  <span v-if="r.rectifies_factura_id && numberById.get(r.rectifies_factura_id)" class="text-ink-muted"> · {{ numberById.get(r.rectifies_factura_id) }}</span>
+                  <span v-if="r.rectifies_factura_id && numberById.get(r.rectifies_factura_id)" class="font-mono text-[12.5px] text-ink-muted"> · {{ numberById.get(r.rectifies_factura_id) }}</span>
                   <!-- Annulled with a registro de anulación: on the series, in no total. -->
-                  <span v-if="r.annulled_at" data-cy="facturas-row-annulled" class="ml-1 rounded-ctlSm bg-chip-bg px-1.5 py-0.5 text-[11px] text-chip-text">{{ t('annulled', 'anulada') }}</span>
+                  <UiPill v-if="r.annulled_at" data-cy="facturas-row-annulled" class="ml-1">{{ t('annulled', 'anulada') }}</UiPill>
                 </td>
-                <td :class="td" class="max-w-[220px] truncate">
-                  <NuxtLink :to="`/patients/${r.patient_id}?tab=billing`" class="hover:underline">{{ recipientOf(r) || '—' }}</NuxtLink>
+                <td :class="td">
+                  <!-- The ellipsis on the link, not the cell: a table cell ignores
+                  max-width, so the name was clipped mid-letter instead. -->
+                  <NuxtLink :to="`/patients/${r.patient_id}?tab=billing`" class="block max-w-[220px] truncate hover:underline" :title="recipientOf(r) || undefined">{{ recipientOf(r) || '—' }}</NuxtLink>
                 </td>
                 <td :class="td" class="font-mono">{{ nifOf(r) }}</td>
                 <td :class="[td, r.annulled_at && 'line-through text-ink-faint']" class="font-mono">{{ formatEur(r.tax_base_cents ?? r.amount_cents) }}</td>

@@ -36,7 +36,7 @@ function line(c: MoveClash) {
           <span class="shrink-0 font-mono text-ink-700">{{ line(c).when }}</span>
         </li>
       </ul>
-      <p>{{ t('Two at once is possible, but only on purpose.', 'Dos a la vez es posible, pero solo a propósito.') }}</p>
+      <p>{{ t('Moving it anyway keeps both at the same time. Nothing else is moved or cancelled.', 'Si la mueves igualmente, quedan las dos a la vez. No se mueve ni se cancela nada más.') }}</p>
     </div>
   </UiConfirmDialog>
 </template>

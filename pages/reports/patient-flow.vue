@@ -103,7 +103,7 @@ const pdfRoot = ref<HTMLElement | null>(null)
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Patient Flow', 'Flujo de pacientes')" :meta="t('Waiting, delays and session times', 'Esperas, retrasos y tiempos de consulta')">
       <div class="flex items-center gap-3">
-        <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
+        <ReportsBackLink />
         <ReportsPdfButton :target="pdfRoot" :title="t('Patient Flow', 'Flujo de pacientes')" :range="range" :practitioner-id="practitionerFilter || null" :clinic-id="clinicFilter || null" />
       </div>
     </PageHeader>
@@ -181,7 +181,7 @@ const pdfRoot = ref<HTMLElement | null>(null)
       <ReportsModule v-if="!reportsPractitionerId" class="mt-4" :title="t('By practitioner', 'Por profesional')" :loading="loading" skeleton="list">
         <div class="mt-2 overflow-x-auto">
           <table class="w-full min-w-[520px] text-[13px]" data-cy="flow-by-practitioner">
-            <thead class="text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2">
+            <thead class="text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">
               <tr>
                 <th class="py-2 pr-3">{{ t('Practitioner', 'Profesional') }}</th>
                 <th class="py-2 pr-3 text-right">{{ t('Visits', 'Visitas') }}</th>

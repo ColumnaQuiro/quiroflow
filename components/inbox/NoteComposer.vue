@@ -48,7 +48,7 @@ const tall = computed(() => (props.size === 'lg' ? 'min-h-11' : 'min-h-9 touch:m
   <div class="relative rounded-ctl border border-warning-border bg-warning-bg p-2" data-cy="note-composer">
     <p class="mb-1.5 flex items-center gap-1.5 px-1 text-[12px] font-semibold text-warning-text">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 018 0v4" /></svg>
-      {{ t('Internal note — only the team sees it. Type @ to mention someone.', 'Nota interna — solo la ve el equipo. Escribe @ para mencionar.') }}
+      {{ t('Internal note. Only the team sees it. Type @ to mention someone.', 'Nota interna. Solo la ve el equipo. Escribe @ para mencionar a alguien.') }}
     </p>
     <div v-if="suggestions.length" class="absolute bottom-[calc(100%+4px)] left-2 z-30 w-64 rounded-card border border-line bg-surface p-1 shadow-popover" role="listbox" data-cy="note-mention-list">
       <button v-for="m in suggestions" :key="m.id" type="button" role="option" class="flex min-h-10 w-full items-center rounded-ctlSm px-2.5 text-left text-[14px] text-ink-900 hover:bg-surface-subtle" data-cy="note-mention-option" @mousedown.prevent="pick(m)">

@@ -62,7 +62,7 @@ describe('Data and developer settings', () => {
       // An address naming no step opens the first one rather than a blank panel.
       cy.get('[data-cy="import-panel"] h2').should('have.text', 'Connection')
       cy.get('[data-step="patients"] [data-cy="import-step-status"]').should('have.text', '2 imported')
-      cy.get('[data-step="appointments"] [data-cy="import-step-status"]').should('have.text', 'Not run yet')
+      cy.get('[data-step="appointments"] [data-cy="import-step-status"]').should('have.text', 'Nothing imported yet')
       cy.get('[data-step="reconciliation"] [data-cy="import-step-status"]').should('not.exist')
 
       cy.get('[data-cy="import-source-other"]').click()

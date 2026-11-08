@@ -38,7 +38,7 @@ const steps = computed(() => [
       },
   { key: 'knowledge', done: props.config.knowledge.length > 0, label: t('Tell it what is not in the settings: what you treat, what the first visit includes', 'Cuéntale lo que no está en Ajustes: qué tratáis, qué incluye la primera visita'), tab: 'knowledge' as const },
   { key: 'try', done: props.tried, label: t('Try it as a patient would', 'Pruébala como lo haría un paciente'), tab: 'try' as const },
-  { key: 'channel', done: props.liveChannelCount > 0, label: t('Connect WhatsApp or Instagram', 'Conecta WhatsApp o Instagram'), link: '/settings/whatsapp' },
+  { key: 'channel', done: props.liveChannelCount > 0, label: t('Connect a channel: WhatsApp, Instagram, Messenger or web chat', 'Conecta un canal: WhatsApp, Instagram, Messenger o el chat web'), link: '/settings/whatsapp' },
   { key: 'on', done: props.config.enabled, label: t('Turn it on', 'Actívala') },
 ])
 const doneCount = computed(() => steps.value.filter((s) => s.done).length)

@@ -74,7 +74,7 @@ async function save() {
   saving.value = false
   const error = upserted?.error ?? deleted?.error
   if (error) {
-    showToast(error.message, 'error')
+    showToast(`${t('The fields were not saved.', 'No se han guardado los campos.')} (${error.message})`, 'error')
     return
   }
   editing.value = false

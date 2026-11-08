@@ -62,7 +62,9 @@ function patientName(r: ApptRow) {
   <ul v-else class="divide-y divide-line-row2">
     <li v-for="r in rows" :key="r.id" class="flex items-center gap-2 py-1.5 text-[13px] first:pt-0 last:pb-0">
       <span class="min-w-0 flex-1 truncate text-ink-700">{{ patientName(r) }}</span>
-      <span class="shrink-0 truncate text-ink-muted2">{{ r.practitioner_name ?? '' }}</span>
+      <!-- Shrinks too, capped, so a long practitioner name cannot squeeze the
+           patient's to nothing on a phone. -->
+      <span class="min-w-0 max-w-[40%] truncate text-ink-muted2">{{ r.practitioner_name ?? '' }}</span>
       <span class="shrink-0 font-mono text-[12.5px] text-ink-600">{{ timeLabel(r.starts_at) }}</span>
     </li>
   </ul>

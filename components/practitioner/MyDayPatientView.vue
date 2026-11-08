@@ -24,6 +24,7 @@ const emit = defineEmits<{ charted: [] }>()
 const supabase = useSupabaseClient()
 const t = useT()
 const signing = ref(false)
+const { showToast } = useToast()
 
 // PatientsExamAutofill owns the SOAP fields and the visit_notes save --
 // this view just drives it (save on "Sign & complete", populate on "Copy
@@ -103,10 +104,18 @@ async function signAndComplete() {
   // that save would race it -- the reload can win and land before the
   // update commits, showing "Booked" until the next refresh. Flipping the
   // order means any reload the save triggers already sees "completed".
-  await supabase.from('appointments').update({ status: 'completed' }).eq('id', props.appointment.id)
-  await examRef.value?.save()
-  signing.value = false
-  emit('charted')
+  //
+  // Selected back: an update RLS refuses changes no row and reports no error,
+  // and the button used to finish as if it had worked, the visit still
+  // "Booked" and nothing on screen to say so. The note is saved either way.
+  try {
+    const { data: changed, error } = await supabase.from('appointments').update({ status: 'completed' }).eq('id', props.appointment.id).select('id')
+    await examRef.value?.save()
+    if (error || !changed?.length) showToast(t("The note is saved, but the visit couldn't be marked complete. Try again.", 'La nota está guardada, pero no se ha podido completar la visita. Inténtalo de nuevo.'), 'error', 6000)
+  } finally {
+    signing.value = false
+    emit('charted')
+  }
 }
 
 function bring(section: 'Subjective' | 'Objective' | 'Action' | 'Plan' | 'Note', text: string) {

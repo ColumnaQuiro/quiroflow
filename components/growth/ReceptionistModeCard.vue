@@ -57,10 +57,10 @@ const MODES: { key: Mode; label: string; detail: string; test: string }[] = [
   },
 ]
 
-const CHANNEL_CLASS: Record<string, string> = {
-  connected: 'border-success-border bg-success-bg text-success-text',
-  not_set_up: 'border-warning-border bg-warning-bg text-warning-text',
-  not_built: 'border-chip-border bg-chip-bg text-ink-faint',
+const CHANNEL_TONE: Record<string, 'success' | 'warning' | 'neutral'> = {
+  connected: 'success',
+  not_set_up: 'warning',
+  not_built: 'neutral',
 }
 // Where a channel is set up. Instagram is connected from the WhatsApp page
 // too (the same Meta app); the two that are not built have nowhere to go.
@@ -100,8 +100,8 @@ const noLiveChannel = computed(() => props.config.enabled && !props.channels.som
     for the choice above so the hours are read as part of it; the switches
     themselves are the two columns the tick reads. -->
     <div v-if="mode === 'auto'" class="flex flex-col gap-2 border-t border-line-divider pt-3" data-test="auto-reply">
-      <span class="text-[11px] font-semibold uppercase tracking-[.06em] text-ink-faint">{{ t('When it sends on its own', 'Cuándo envía sola') }}</span>
-      <label class="flex items-start gap-2 text-[11.5px] text-ink-700">
+      <span class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('When it sends on its own', 'Cuándo envía sola') }}</span>
+      <label class="flex items-start gap-2 text-[11.5px] text-ink-700 touch:min-h-11 touch:items-center">
         <input
           type="checkbox"
           class="mt-0.5 h-3.5 w-3.5 accent-brand"
@@ -112,7 +112,7 @@ const noLiveChannel = computed(() => props.config.enabled && !props.channels.som
         >
         <span>{{ t('Outside clinic hours (nights, weekends)', 'Fuera del horario de la clínica (noches, fines de semana)') }}</span>
       </label>
-      <label class="flex items-start gap-2 text-[11.5px] text-ink-700">
+      <label class="flex items-start gap-2 text-[11.5px] text-ink-700 touch:min-h-11 touch:items-center">
         <input
           type="checkbox"
           class="mt-0.5 h-3.5 w-3.5 accent-brand"
@@ -132,7 +132,7 @@ const noLiveChannel = computed(() => props.config.enabled && !props.channels.som
     </div>
 
     <div class="flex flex-col gap-1.5 border-t border-line-divider pt-3">
-      <span class="text-[11px] font-semibold uppercase tracking-[.06em] text-ink-faint">{{ t('Channels', 'Canales') }}</span>
+      <span class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Channels', 'Canales') }}</span>
       <div v-for="channel in channels" :key="channel.key" :data-test="`channel-${channel.key}`" class="flex items-center justify-between gap-3">
         <span class="text-[11.5px] text-ink-700">{{ channel.key === 'web-chat' ? t('Web chat', 'Chat web') : channel.name }}</span>
         <span class="flex shrink-0 items-center gap-2">
@@ -142,9 +142,7 @@ const noLiveChannel = computed(() => props.config.enabled && !props.channels.som
             class="text-[11px] font-medium text-brand-text hover:underline"
             :data-test="`channel-${channel.key}-setup`"
           >{{ t('Set up', 'Configurar') }} →</NuxtLink>
-          <span class="rounded-pill border px-2 py-0.5 text-[11px] font-medium" :class="CHANNEL_CLASS[channel.status]">
-            {{ statusLabel(channel) }}
-          </span>
+          <UiPill :tone="CHANNEL_TONE[channel.status]" :dot="channel.status === 'connected'">{{ statusLabel(channel) }}</UiPill>
         </span>
       </div>
       <!-- "On" with nothing connected is on paper only: said here, beside

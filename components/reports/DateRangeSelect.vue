@@ -58,44 +58,40 @@ onUnmounted(() => document.removeEventListener('click', onClickOutside))
   <div ref="rootEl" class="relative inline-block">
     <button
       type="button"
-      class="flex h-8 items-center gap-2 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-500 hover:border-line-controlHover"
+      :aria-expanded="open"
+      class="flex h-8 items-center gap-2 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-500 hover:border-line-controlHover touch:h-11"
       @click="open = !open"
     >
-      <svg class="h-4 w-4 text-ink-faint" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+      <svg class="h-4 w-4 text-ink-faint" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
         <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
       </svg>
       {{ buttonLabel }}
-      <svg class="h-4 w-4 text-ink-faint" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+      <svg class="h-4 w-4 text-ink-faint" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
         <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
       </svg>
     </button>
 
-    <div v-if="open" class="absolute left-0 z-30 mt-1 w-80 rounded-ctl border border-line bg-surface p-2 shadow-popover">
+    <div v-if="open" class="absolute left-0 z-30 mt-1 w-80 max-w-[calc(100vw-2rem)] rounded-ctl border border-line bg-surface p-2 shadow-popover">
       <button
         v-for="p in presets"
         :key="p.label"
         type="button"
-        class="block w-full rounded-ctlSm px-2 py-1.5 text-left text-[13px] hover:bg-surface-subtle"
+        class="block w-full rounded-ctlSm px-2 py-1.5 text-left text-[13px] hover:bg-surface-subtle touch:py-2.5"
         :class="matchedPresetLabel === presetLabel(p) ? 'font-medium text-brand-text' : 'text-ink-600'"
         @click="selectPreset(p)"
       >
         {{ presetLabel(p) }}
       </button>
       <div class="mt-1 border-t border-line-divider pt-2">
-        <p class="px-2 text-[11px] font-medium uppercase tracking-wide text-ink-faint2">{{ t('Custom range', 'Rango personalizado') }}</p>
+        <p class="px-2 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint2">{{ t('Custom range', 'Rango personalizado') }}</p>
         <div class="mt-1 flex items-center gap-1.5 px-2">
-          <input v-model="customFrom" type="date" :max="customTo" class="min-w-0 flex-1 rounded-ctlSm border border-line-control px-1.5 py-1 text-xs text-ink-600" />
+          <input v-model="customFrom" type="date" :max="customTo" class="h-8 min-w-0 flex-1 rounded-ctlSm border border-line-control bg-surface px-1.5 font-mono text-[12px] text-ink-600 touch:h-11" />
           <span class="shrink-0 text-ink-faint2">–</span>
-          <input v-model="customTo" type="date" :min="customFrom" class="min-w-0 flex-1 rounded-ctlSm border border-line-control px-1.5 py-1 text-xs text-ink-600" />
+          <input v-model="customTo" type="date" :min="customFrom" class="h-8 min-w-0 flex-1 rounded-ctlSm border border-line-control bg-surface px-1.5 font-mono text-[12px] text-ink-600 touch:h-11" />
         </div>
-        <button
-          type="button"
-          :disabled="!customFrom || !customTo"
-          class="mt-2 w-full rounded-ctl border border-brand bg-brand px-2 py-1.5 text-xs font-semibold text-brand-on hover:bg-brand-hover disabled:opacity-50"
-          @click="applyCustom"
-        >
+        <UiBtn variant="primary" size="sm" class="mt-2 w-full" :disabled="!customFrom || !customTo || customFrom > customTo" @click="applyCustom">
           {{ t('Apply', 'Aplicar') }}
-        </button>
+        </UiBtn>
       </div>
     </div>
   </div>

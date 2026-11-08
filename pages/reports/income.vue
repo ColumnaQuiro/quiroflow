@@ -3,7 +3,7 @@ import { formatEur } from '~/utils/billing'
 import { classifyPaymentForFilter, practitionerForPayment } from '~/utils/incomeAttribution'
 import { isReceipt } from '~/utils/paymentReceipts'
 import { Line, Bar } from 'vue-chartjs'
-import '~/utils/chartSetup'
+import { chartColor } from '~/utils/chartSetup'
 import { computePresetRange, monthKeysInRange, rangeBounds } from '~/composables/useDateRangePresets'
 import { fetchAllRows } from '~/composables/useFetchAllRows'
 
@@ -300,7 +300,7 @@ const revenueByMonth = computed(() => {
 })
 const revenueChartData = computed(() => ({
   labels: monthKeys.value.map(monthLabel),
-  datasets: [{ label: t('Revenue (€)', 'Ingresos (€)'), data: revenueByMonth.value, borderColor: '#4f46e5', backgroundColor: '#4f46e5', tension: 0.3 }],
+  datasets: [{ label: t('Revenue (€)', 'Ingresos (€)'), data: revenueByMonth.value, borderColor: chartColor('brand'), backgroundColor: chartColor('brand'), tension: 0.3 }],
 }))
 const lineChartOptions = { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } }, plugins: { legend: { display: false } } }
 
@@ -316,7 +316,7 @@ const methodChartData = computed(() => ({
   // "card, cash, other" whatever a clinic had named them, and a clinic with
   // 'transfer' and 'bizum' would have read those raw too.
   labels: byMethod.value.map((m) => labelForMethod(m.method)),
-  datasets: [{ label: t('Revenue (€)', 'Ingresos (€)'), data: byMethod.value.map((m) => m.cents / 100), backgroundColor: '#4f46e5' }],
+  datasets: [{ label: t('Revenue (€)', 'Ingresos (€)'), data: byMethod.value.map((m) => m.cents / 100), backgroundColor: chartColor('brand') }],
 }))
 const barChartOptions = { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } }, plugins: { legend: { display: false } } }
 
@@ -421,7 +421,7 @@ const pdfRoot = ref<HTMLElement | null>(null)
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Income & Payments', 'Ingresos y pagos')" :meta="t('Revenue over time, by method, practitioner, and service', 'Ingresos a lo largo del tiempo, por método, profesional y servicio')">
       <div class="flex items-center gap-3">
-        <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
+        <ReportsBackLink />
         <ReportsPdfButton :target="pdfRoot" :title="t('Income & Payments', 'Ingresos y pagos')" :range="range" :practitioner-id="practitionerFilter || null" :clinic-id="clinicFilter || null" />
       </div>
     </PageHeader>
@@ -465,9 +465,17 @@ const pdfRoot = ref<HTMLElement | null>(null)
         </p>
       </template>
 
-      <div v-if="!totalsLoading && filteredPayments.length === 0" class="mt-4 rounded-card border border-dashed border-line-control bg-surface p-6 text-center text-[13px] text-ink-faint2" data-pdf-block="image">
-        {{ t('No payments recorded yet in this range — charts will fill in as receipts get paid.', 'Todavía no hay pagos registrados en este periodo — los gráficos se completarán a medida que se paguen recibos.') }}
-      </div>
+      <UiEmptyState
+        v-if="!totalsLoading && filteredPayments.length === 0"
+        class="mt-4"
+        :title="t('No payments recorded yet in this range', 'Todavía no hay pagos registrados en este periodo')"
+        :description="t('The charts fill in as receipts get paid.', 'Los gráficos se completarán a medida que se paguen recibos.')"
+        data-pdf-block="image"
+      >
+        <template #icon>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" /></svg>
+        </template>
+      </UiEmptyState>
 
       <template v-else>
         <ReportsModule class="mt-4" :title="t('Revenue by month', 'Ingresos por mes')" :loading="totalsLoading">

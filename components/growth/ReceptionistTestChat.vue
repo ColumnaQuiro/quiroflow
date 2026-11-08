@@ -64,9 +64,7 @@ watch(() => turns.value.length + (thinking.value ? 1 : 0), () => {
           <span class="text-[11px] text-ink-muted">{{ t('Nothing is sent and nothing is booked', 'No se envía ni se reserva nada') }}</span>
         </div>
       </div>
-      <span class="shrink-0 rounded-pill border border-warning-border bg-warning-bg px-2 py-0.5 text-[11px] font-semibold text-warning-text">
-        {{ t('Test mode', 'Modo de prueba') }}
-      </span>
+      <UiPill tone="warning" class="shrink-0">{{ t('Test mode', 'Modo de prueba') }}</UiPill>
     </header>
 
     <div v-if="usable" class="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-line-divider px-3 py-2" data-test="test-chat-scenarios">
@@ -75,7 +73,7 @@ watch(() => turns.value.length + (thinking.value ? 1 : 0), () => {
         v-for="s in SCENARIOS"
         :key="s.key"
         type="button"
-        class="rounded-pill border px-2 py-0.5 text-[11px]"
+        class="rounded-pill border px-2 py-0.5 text-[11px] touch:py-2"
         :class="scenario === s.key ? 'border-brand-tintBorder bg-brand-tint font-medium text-brand-text' : 'border-chip-border bg-chip-bg text-ink-muted hover:text-ink-700'"
         :aria-pressed="scenario === s.key"
         :disabled="thinking"
@@ -98,8 +96,8 @@ watch(() => turns.value.length + (thinking.value ? 1 : 0), () => {
       act on. -->
       <p v-if="!usable" class="rounded-ctl border border-line bg-surface-subtle px-3 py-2.5 text-[11.5px] leading-[1.5] text-ink-muted" data-test="test-chat-unavailable">
         {{ t(
-          'Test mode needs an Anthropic API key on the server. Everything else on this page still saves without it.',
-          'El modo de prueba necesita una clave de API de Anthropic en el servidor. Todo lo demás de esta página se guarda igualmente.',
+          'Test mode is not available right now: the AI service it uses is not set up on QuiroFlow’s side. Everything else on this page still saves.',
+          'El modo de prueba no está disponible ahora mismo: el servicio de IA que usa no está configurado en QuiroFlow. Todo lo demás de esta página se guarda igualmente.',
         ) }}
       </p>
 
@@ -148,7 +146,7 @@ watch(() => turns.value.length + (thinking.value ? 1 : 0), () => {
       <input
         v-model="draft"
         type="text"
-        class="h-8 min-w-0 flex-1 rounded-ctl border border-line-control bg-surface px-2.5 text-[12px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none"
+        class="h-8 touch:h-11 min-w-0 flex-1 rounded-ctl border border-line-control bg-surface px-2.5 text-[12px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none"
         :placeholder="t('Write as a patient…', 'Escribe como paciente…')"
         data-test="test-chat-input"
         @keydown.enter.prevent="submit"

@@ -12,16 +12,16 @@ const label = computed(() => {
   return r.level === 'high' ? t('No-show risk', 'Riesgo de ausencia') : t('Missed one', 'Faltó una vez')
 })
 // A first visit is not a mark against anyone: brand, not a warning colour.
-const tone = computed(() => (props.risk?.level === 'high' ? 'bg-danger-bg text-danger-text' : props.risk?.level === 'new' ? 'bg-brand-tint text-brand-text' : 'bg-warning-bg text-warning-text'))
+const tone = computed(() => (props.risk?.level === 'high' ? 'danger' : props.risk?.level === 'new' ? 'brand' : 'warning'))
 </script>
 
 <template>
-  <span
+  <UiPill
     v-if="label"
-    class="inline-flex h-5 shrink-0 items-center rounded-pill px-1.5 text-[11px] font-medium"
-    :class="tone"
+    :tone="tone"
+    class="shrink-0 whitespace-nowrap"
     :title="risk ? noShowRiskReason(risk, t) : ''"
     data-cy="no-show-risk"
     :data-level="risk?.level"
-  >{{ label }}</span>
+  >{{ label }}</UiPill>
 </template>

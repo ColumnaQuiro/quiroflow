@@ -87,9 +87,9 @@ const label = 'flex flex-wrap items-center justify-between gap-2 text-[13.5px] t
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4" @click.self="emit('close')">
-    <div class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-card border border-line bg-surface p-5 shadow-popover" data-cy="pay-plan-editor" ref="dialogPanel" role="dialog" aria-modal="true" :aria-label="t(`Pay for ${name}`, `Retribución de ${name}`)">
-      <h2 class="text-[17px] font-[640] text-ink-900">{{ t(`Pay for ${name}`, `Retribución de ${name}`) }}</h2>
+  <div class="fixed inset-0 z-50 flex items-end justify-center bg-scrim/40 sm:items-center sm:p-4" @click.self="emit('close')">
+    <div class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-card border border-line bg-surface p-5 shadow-popover sm:rounded-card" data-cy="pay-plan-editor" ref="dialogPanel" role="dialog" aria-modal="true" :aria-label="t(`Pay for ${name}`, `Retribución de ${name}`)">
+      <h2 class="text-[18px] font-[640] tracking-tightTitle text-ink-900">{{ t(`Pay for ${name}`, `Retribución de ${name}`) }}</h2>
       <p class="mt-1 text-[12.5px] text-ink-muted">{{ t('Fill in the parts you use; anything left empty does not count.', 'Rellena las partes que uses; lo que dejes vacío no cuenta.') }}</p>
 
       <div class="mt-4 flex flex-col gap-3">
@@ -102,13 +102,13 @@ const label = 'flex flex-wrap items-center justify-between gap-2 text-[13.5px] t
         <div class="rounded-ctl border border-line-row p-3">
           <label :class="label">{{ t('Per attended visit (€)', 'Por visita realizada (€)') }}<input v-model="visit" inputmode="decimal" :class="field" data-cy="pay-visit" /></label>
           <p class="mt-3 text-[12.5px] font-semibold text-ink-700">{{ t('Tiers by visits in the month', 'Tramos por visitas del mes') }}</p>
-          <div v-for="(tier, i) in tiers" :key="i" class="mt-2 flex items-center gap-2 text-[13px] text-ink-700" data-cy="pay-tier">
+          <div v-for="(tier, i) in tiers" :key="i" class="mt-2 flex flex-wrap items-center gap-2 text-[13px] text-ink-700" data-cy="pay-tier">
             <span>{{ t('From', 'Desde') }}</span>
-            <input v-model="tier.from" inputmode="numeric" class="h-9 w-16 rounded-ctl border border-line-control bg-surface px-2 text-[14px] touch:h-11" :aria-label="t('From visits', 'Desde visitas')" data-cy="pay-tier-from" />
+            <input v-model="tier.from" inputmode="numeric" class="h-9 w-16 rounded-ctl border border-line-control bg-surface px-2 font-mono text-[14px] touch:h-11" :aria-label="t('From visits', 'Desde visitas')" data-cy="pay-tier-from" />
             <span>{{ t('visits:', 'visitas:') }}</span>
-            <input v-model="tier.amount" inputmode="decimal" class="h-9 w-24 rounded-ctl border border-line-control bg-surface px-2 text-[14px] touch:h-11" :aria-label="t('Amount (€)', 'Importe (€)')" data-cy="pay-tier-amount" />
+            <input v-model="tier.amount" inputmode="decimal" class="h-9 w-24 rounded-ctl border border-line-control bg-surface px-2 font-mono text-[14px] touch:h-11" :aria-label="t('Amount (€)', 'Importe (€)')" data-cy="pay-tier-amount" />
             <span>€</span>
-            <button type="button" class="ml-auto px-2 text-[12.5px] text-ink-muted hover:text-danger-text" @click="tiers.splice(i, 1)">{{ t('Remove', 'Quitar') }}</button>
+            <UiBtn variant="ghost" size="sm" class="ml-auto hover:text-danger-text" @click="tiers.splice(i, 1)">{{ t('Remove', 'Quitar') }}</UiBtn>
           </div>
           <button type="button" class="mt-2 text-[12.5px] font-medium text-brand-text" data-cy="pay-tier-add" @click="tiers.push({ from: '', amount: '' })">{{ t('+ Add a tier', '+ Añadir tramo') }}</button>
           <div v-if="tiers.length" class="mt-3 flex flex-col gap-1.5">

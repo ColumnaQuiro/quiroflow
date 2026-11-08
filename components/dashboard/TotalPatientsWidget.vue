@@ -11,12 +11,14 @@ async function load() {
   const isStale = latest.start()
   loading.value = true
   // Shared with "Active patients", which shows the same count beside its own.
-  const { count } = await sharedFetch(`patients-count:${props.practitionerId ?? ''}`, () => {
+  const { count, error } = await sharedFetch(`patients-count:${props.practitionerId ?? ''}`, () => {
     let query = supabase.from('patients').select('id', { count: 'exact', head: true })
     if (props.practitionerId) query = query.eq('default_practitioner_id', props.practitionerId)
     return query
   })
   if (isStale()) return
+  // A failed count is not zero patients; WidgetFrame shows the failure.
+  if (error) throw error
   total.value = count ?? 0
   loading.value = false
 }
@@ -25,6 +27,6 @@ watch(() => props.practitionerId, load)
 </script>
 
 <template>
-  <UiSkeleton v-if="loading" class="h-[27px] w-16 rounded-ctlSm" />
-  <p v-else class="font-mono text-[27px] leading-none text-ink-900">{{ total }}</p>
+  <UiSkeleton v-if="loading" class="h-[23px] w-16 rounded-ctlSm" />
+  <p v-else class="font-mono text-[23px] font-semibold leading-none text-ink-900">{{ total }}</p>
 </template>

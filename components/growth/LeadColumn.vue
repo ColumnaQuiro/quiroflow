@@ -37,8 +37,8 @@ function onDragOver(e: DragEvent) {
   >
     <header class="flex items-baseline justify-between gap-2 px-0.5">
       <div class="flex items-center gap-1.5">
-        <h2 class="text-[11.5px] font-semibold tracking-tightTitle text-ink-900">{{ column.title }}</h2>
-        <span data-test="lead-count" class="rounded-pill border border-chip-border bg-chip-bg px-1.5 py-px text-[11px] font-medium text-ink-muted">{{ column.count }}</span>
+        <h2 class="text-[12px] font-semibold tracking-tightTitle text-ink-900">{{ column.title }}</h2>
+        <UiPill data-test="lead-count" class="font-mono">{{ column.count }}</UiPill>
       </div>
       <span class="font-mono text-[11px] text-ink-faint">{{ column.value }}</span>
     </header>

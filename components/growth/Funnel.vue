@@ -44,8 +44,9 @@ const RATE_TONE: Record<GrowthFunnelStep['tone'], string> = {
         {{ t('Acquisition funnel', 'Embudo de captación') }}
       </h2>
       <p class="text-right text-[11px] text-ink-faint">
-        {{ t('Stranger to care plan', 'De desconocido a plan de cuidados') }} · {{ endToEndRate }}
-        {{ t('end to end', 'de principio a fin') }}
+        <!-- The last stage is Converted (a patient record), not a care plan
+        sold, so it says that. It read "Stranger to care plan". -->
+        {{ t(`New lead to converted · ${endToEndRate}`, `De lead nuevo a convertido · ${endToEndRate}`) }}
       </p>
     </div>
 
@@ -55,20 +56,14 @@ const RATE_TONE: Record<GrowthFunnelStep['tone'], string> = {
       <div class="flex min-w-[620px] items-stretch">
         <template v-for="(stage, i) in stages" :key="stage.key">
           <div v-if="i > 0" class="flex w-[52px] shrink-0 flex-col items-center justify-center gap-1 pt-[18px] lg:w-[92px]">
-            <span class="text-[12px] font-semibold" :class="RATE_TONE[steps[i - 1]!.tone]">{{ steps[i - 1]!.pct }}%</span>
-            <span
-              class="whitespace-nowrap text-[11px]"
-              :class="
-                steps[i - 1]!.emphasis
-                  ? 'rounded-pill border border-danger-border bg-danger-bg px-1.5 py-px text-danger-text'
-                  : 'text-ink-faint'
-              "
-            >{{ steps[i - 1]!.delta }}</span>
+            <span class="font-mono text-[12px] font-semibold" :class="RATE_TONE[steps[i - 1]!.tone]">{{ steps[i - 1]!.pct }}%</span>
+            <UiPill v-if="steps[i - 1]!.emphasis" tone="danger" class="whitespace-nowrap">{{ steps[i - 1]!.delta }}</UiPill>
+            <span v-else class="whitespace-nowrap text-[11px] text-ink-faint">{{ steps[i - 1]!.delta }}</span>
           </div>
 
           <div class="flex flex-1 flex-col gap-2" :data-test="`funnel-stage-${stage.key}`">
             <span class="text-[11px] text-ink-muted">{{ stage.label }}</span>
-            <span class="text-[22px] font-semibold leading-none tracking-tightTitle text-ink-900">{{ stage.count }}</span>
+            <span class="font-mono text-[22px] font-semibold leading-none text-ink-900">{{ stage.count }}</span>
             <div class="rounded-ctl" :class="SHADE[i]" :style="{ height: `${bars[i]}px` }" />
             <span v-if="stage.caption" class="text-[11px] text-ink-faint">{{ stage.caption }}</span>
           </div>

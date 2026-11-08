@@ -49,7 +49,10 @@ async function add() {
     const { url } = await authedFetch<{ url: string }>(`/api/wallet/bono/${props.purchaseId}/link`, { method: 'POST', body: { wallet: kind.value } })
     window.location.href = url
   } catch (e: any) {
-    error.value = e?.data?.statusMessage ?? t("Couldn't prepare it.", 'No se ha podido preparar.')
+    // The route's statusMessage is English and meant for logs ("Bono not found").
+    error.value = e?.statusCode === 404
+      ? t("We couldn't find this bono. Ask the clinic.", 'No encontramos este bono. Pregunta en la clínica.')
+      : t("Couldn't add the bono. Try again in a moment.", 'No se ha podido añadir el bono. Inténtalo de nuevo en un momento.')
   } finally {
     busy.value = false
   }

@@ -49,14 +49,11 @@ const complete = computed(() => doneCount.value === steps.value.length)
   <section v-if="!complete" class="flex flex-col gap-2.5 rounded-card border border-brand-tintBorder bg-brand-tint p-4" data-test="receptionist-checklist">
     <div class="flex items-baseline justify-between gap-3">
       <h2 class="text-[12.5px] font-semibold tracking-tightTitle text-brand-text">{{ t('Getting it ready', 'Para ponerla en marcha') }}</h2>
-      <span class="text-[11px] font-semibold uppercase tracking-[.06em] text-ink-faint">{{ doneCount }} {{ t('of', 'de') }} {{ steps.length }}</span>
+      <span class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ doneCount }} {{ t('of', 'de') }} {{ steps.length }}</span>
     </div>
     <ul class="flex flex-col gap-1.5">
       <li v-for="step in steps" :key="step.key" class="flex items-center gap-2 text-[12px]" :data-test="`checklist-${step.key}`" :data-done="step.done">
-        <span
-          class="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[11px]"
-          :class="step.done ? 'bg-success-bg text-success-text' : 'border border-line-control bg-surface text-ink-faint'"
-        >{{ step.done ? '✓' : '' }}</span>
+        <GrowthCheckDot :done="step.done" />
         <span v-if="step.done" class="text-ink-muted line-through">{{ step.label }}</span>
         <NuxtLink v-else-if="'link' in step && step.link" :to="step.link" class="text-ink-700 hover:text-brand-text hover:underline">{{ step.label }} →</NuxtLink>
         <button v-else-if="'tab' in step && step.tab" type="button" class="text-left text-ink-700 hover:text-brand-text hover:underline" @click="emit('go', step.tab)">{{ step.label }} →</button>

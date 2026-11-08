@@ -23,6 +23,6 @@ const line = computed(() => low.value.map((p) => (p.units === 0 ? `${p.name} (${
   <div v-if="low.length" class="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-card border border-warning-border bg-warning-bg2 px-4 py-2.5" data-cy="low-stock">
     <span class="text-[13px] font-semibold text-warning-text">{{ t(`${low.length} ${low.length === 1 ? 'product' : 'products'} low on stock`, `${low.length} ${low.length === 1 ? 'producto' : 'productos'} con stock bajo`) }}</span>
     <span class="min-w-0 flex-1 text-[12.5px] text-ink-700">{{ line }}</span>
-    <NuxtLink v-if="props.to" :to="props.to" class="text-[12.5px] font-semibold text-brand-text">{{ t('Receive a delivery', 'Recibir mercancía') }} →</NuxtLink>
+    <NuxtLink v-if="props.to" :to="props.to" class="inline-flex items-center gap-0.5 text-[12.5px] font-semibold text-brand-text hover:underline">{{ t('Receive a delivery', 'Recibir mercancía') }}<UiChevron dir="right" class="!h-3.5 !w-3.5" /></NuxtLink>
   </div>
 </template>

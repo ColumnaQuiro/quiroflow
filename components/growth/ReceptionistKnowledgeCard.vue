@@ -123,7 +123,7 @@ const areaClass = 'resize-none rounded-ctl border border-line-control bg-surface
           v-for="template in templates"
           :key="template.title"
           type="button"
-          class="rounded-pill border border-line-control bg-surface px-2.5 py-0.5 text-[11px] font-medium text-ink-700 hover:border-brand hover:text-brand-text"
+          class="rounded-pill border border-line-control bg-surface px-2.5 py-0.5 text-[11px] font-medium text-ink-700 hover:border-brand hover:text-brand-text touch:py-2"
           :data-test="`card-template-${template.title}`"
           @click="useTemplate(template)"
         >

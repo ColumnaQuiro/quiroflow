@@ -57,8 +57,9 @@ async function sendText() {
     })
     composerText.value = ''
     await load()
-  } catch (err: unknown) {
-    sendError.value = (err as { data?: { statusMessage?: string } })?.data?.statusMessage ?? t('Failed to send', 'No se pudo enviar')
+  } catch {
+    // The route's statusMessage is English and meant for logs. What is typed stays in the box.
+    sendError.value = t("Your message wasn't sent. Check your connection and try again.", 'No se ha enviado el mensaje. Revisa tu conexión e inténtalo de nuevo.')
   } finally {
     sending.value = false
   }
@@ -113,7 +114,7 @@ onUnmounted(() => {
     </div>
 
     <div class="shrink-0 border-t border-line bg-surface p-3">
-      <p v-if="sendError" class="mb-2 text-[12.5px] text-danger-text">{{ sendError }}</p>
+      <p v-if="sendError" role="alert" class="mb-2 text-[12.5px] text-danger-text">{{ sendError }}</p>
       <!-- Centred, not bottom-aligned: the textarea never grows (rows=1,
            fixed height, it scrolls internally), so "align to the bottom"
            only ever meant Send sat below the middle of the field. Send
@@ -124,6 +125,7 @@ onUnmounted(() => {
           v-model="composerText"
           rows="1"
           :placeholder="t('Type a message…', 'Escribe un mensaje…')"
+          :aria-label="t('Message to the clinic', 'Mensaje para la clínica')"
           class="max-h-24 min-h-9 touch:min-h-11 flex-1 resize-none rounded-ctl border border-line-control bg-surface px-3 py-2.5 text-[14px] text-ink-700 focus:border-brand focus:outline-none"
           @keydown.enter.exact.prevent="sendText"
         />

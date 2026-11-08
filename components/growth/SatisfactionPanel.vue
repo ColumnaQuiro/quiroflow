@@ -115,7 +115,7 @@ async function resolve(s: Survey) {
         <div class="rounded-ctl border border-line-row p-3">
           <p class="text-[11px] font-[640] uppercase tracking-[.04em] text-ink-muted">{{ t('Answered', 'Responden') }}</p>
           <p class="mt-1 font-mono text-[22px] font-semibold text-ink-900" data-cy="satisfaction-answered">{{ responseShare === null ? '—' : `${responseShare} %` }}</p>
-          <p class="text-[12px] text-ink-muted">{{ t(`${answered.length} of ${recent.length} asked`, `${answered.length} de ${recent.length} preguntas`) }}</p>
+          <p class="text-[12px] text-ink-muted">{{ t(`${answered.length} of ${recent.length} asked`, `${answered.length} de ${recent.length} enviadas`) }}</p>
         </div>
         <div class="rounded-ctl border border-line-row p-3">
           <p class="text-[11px] font-[640] uppercase tracking-[.04em] text-ink-muted">{{ t('Spread', 'Reparto') }}</p>
@@ -143,7 +143,7 @@ async function resolve(s: Survey) {
               <p class="mt-0.5 text-[13px] leading-snug" :class="s.comment ? 'text-ink-700' : 'italic text-ink-faint'" data-cy="satisfaction-alert-comment">{{ s.comment ? `«${s.comment}»` : t('No comment', 'Sin comentario') }}</p>
             </div>
             <div class="flex shrink-0 gap-1.5">
-              <a v-if="s.appointments?.patient_id && phones.get(s.appointments.patient_id)" :href="telHref(phones.get(s.appointments.patient_id)!)" class="flex h-8 items-center rounded-ctl border border-line-control px-2.5 text-[12.5px] font-medium text-ink-700 hover:bg-surface-subtle">{{ t('Call', 'Llamar') }}</a>
+              <a v-if="s.appointments?.patient_id && phones.get(s.appointments.patient_id)" :href="telHref(phones.get(s.appointments.patient_id)!)" class="flex h-8 touch:h-11 items-center rounded-ctl border border-line-control px-2.5 text-[12.5px] font-medium text-ink-700 hover:bg-surface-subtle">{{ t('Call', 'Llamar') }}</a>
               <UiBtn size="sm" variant="primary" :disabled="savingId === s.id" data-cy="satisfaction-resolve" @click="resolve(s)">{{ t('Mark resolved', 'Marcar resuelto') }}</UiBtn>
             </div>
           </li>

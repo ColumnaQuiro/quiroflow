@@ -134,7 +134,7 @@ const ruleName = (id: string) => rules.value.find((r) => r.id === id)?.name ?? '
 const pct = (n: number, of: number) => (of ? `${Math.round((n / of) * 100)}%` : '–')
 const when = (iso: string) => new Date(iso).toLocaleDateString(t('en-GB', 'es-ES'), { day: 'numeric', month: 'short' })
 const pdfRoot = ref<HTMLElement | null>(null)
-const th = 'px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2'
+const th = 'px-3 py-2 text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2'
 const td = 'px-3 py-2 font-mono text-[13px] text-ink-800'
 </script>
 
@@ -142,7 +142,7 @@ const td = 'px-3 py-2 font-mono text-[13px] text-ink-800'
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Recalls', 'Recuperaciones')" :meta="t('What the recall automations brought back', 'Lo que han recuperado las automatizaciones')">
       <div class="flex items-center gap-3">
-        <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
+        <ReportsBackLink />
         <ReportsPdfButton :target="pdfRoot" :title="t('Recalls', 'Recuperaciones')" :range="range" :practitioner-id="null" :clinic-id="null" />
       </div>
     </PageHeader>
@@ -163,7 +163,7 @@ const td = 'px-3 py-2 font-mono text-[13px] text-ink-800'
           v-for="r in ruleOptions"
           :key="r.id"
           type="button"
-          class="h-8 rounded-pill border px-3 text-[12.5px] font-semibold touch:h-10"
+          class="h-8 rounded-pill border px-3 text-[12.5px] font-semibold touch:h-11"
           :class="chosen.has(r.id) ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control bg-surface text-ink-500'"
           :aria-pressed="chosen.has(r.id)"
           data-cy="recalls-rule"
@@ -224,14 +224,14 @@ const td = 'px-3 py-2 font-mono text-[13px] text-ink-800'
 
       <ReportsModule class="mt-4" :title="t('Patients', 'Pacientes')" :description="t('Everyone a recall reached. Call whoever replied and did not book.', 'Todos a los que llegó un recall. Llama a quien respondió y no reservó.')" :loading="loading" skeleton="list" :rows="6">
         <div class="mt-2 flex flex-wrap gap-1.5" role="group" :aria-label="t('Status', 'Estado')" data-pdf-skip>
-          <button type="button" class="h-8 rounded-pill border px-3 text-[12.5px] font-semibold touch:h-10" :class="!statusFilter ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control bg-surface text-ink-500'" :aria-pressed="!statusFilter" @click="statusFilter = ''">
+          <button type="button" class="h-8 rounded-pill border px-3 text-[12.5px] font-semibold touch:h-11" :class="!statusFilter ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control bg-surface text-ink-500'" :aria-pressed="!statusFilter" @click="statusFilter = ''">
             {{ t(`All · ${report.rows.length}`, `Todos · ${report.rows.length}`) }}
           </button>
           <button
             v-for="(s, key) in STATUS"
             :key="key"
             type="button"
-            class="h-8 rounded-pill border px-3 text-[12.5px] font-semibold touch:h-10"
+            class="h-8 rounded-pill border px-3 text-[12.5px] font-semibold touch:h-11"
             :class="statusFilter === key ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control bg-surface text-ink-500'"
             :aria-pressed="statusFilter === key"
             :data-cy="`recalls-filter-${key}`"

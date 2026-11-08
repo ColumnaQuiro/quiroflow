@@ -2,7 +2,7 @@
 const t = useT()
 const { can } = usePermission()
 const { hasGrowth, resolved } = useGrowthTier()
-const { data, loading, error, busyId, draftReply, approve, discard, googleLocations, googleBusy, connectGoogle, loadGoogleLocations, chooseGoogleLocation, syncGoogle, disconnectGoogle } = useGrowthReputation()
+const { data, loading, error, reload, busyId, draftReply, approve, discard, googleLocations, googleBusy, connectGoogle, loadGoogleLocations, chooseGoogleLocation, syncGoogle, disconnectGoogle } = useGrowthReputation()
 const route = useRoute()
 const { showToast } = useToast()
 
@@ -74,8 +74,22 @@ const PAGE = 20
 const visibleCount = ref(PAGE)
 const shownReviews = computed(() => (data.value?.reviews ?? []).slice(0, visibleCount.value))
 
+// Dates in the reader's language. Both were en-GB whatever the language, so
+// a Spanish screen read "7 Nov 2026" and "Nov 26" under the trend.
+const locale = computed(() => t('en-GB', 'es-ES'))
 function when(iso: string) {
-  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+  return new Date(iso).toLocaleDateString(locale.value, { day: 'numeric', month: 'short', year: 'numeric' })
+}
+function monthLabel(month: string, fallback: string) {
+  const d = new Date(`${month}-01T12:00:00Z`)
+  return Number.isNaN(d.getTime()) ? fallback : d.toLocaleDateString(locale.value, { month: 'short', year: '2-digit', timeZone: 'UTC' })
+}
+
+// The platform as a name: the column holds 'google', 'doctoralia',
+// 'facebook' or 'other', and "other" was shown capitalised as "Other".
+function platformName(platform: string) {
+  const names: Record<string, string> = { google: 'Google', doctoralia: 'Doctoralia', facebook: 'Facebook', other: t('Other', 'Otra') }
+  return names[platform] ?? platform
 }
 </script>
 
@@ -87,18 +101,11 @@ function when(iso: string) {
 
   <div class="flex-1 overflow-y-auto">
     <div class="p-4 sm:p-6">
-      <div v-if="!allowed" class="mx-auto max-w-sm py-16 text-center">
-        <p class="text-[13px] text-ink-muted">{{ t("You don't have access to Growth.", 'No tienes acceso a Crecimiento.') }}</p>
-      </div>
+      <GrowthPageNotice v-if="!allowed" kind="no-access" />
 
-      <div v-else-if="resolved && !hasGrowth" class="mx-auto max-w-sm py-16 text-center">
-        <p class="text-[13px] text-ink-muted">{{ t('Reputation is part of the Growth tier.', 'Reputación forma parte del plan Growth.') }}</p>
-        <NuxtLink to="/growth" class="mt-3 inline-flex h-9 items-center rounded-ctl bg-brand px-4 text-[12.5px] font-semibold text-brand-on hover:bg-brand-hover">
-          {{ t('See what Growth adds', 'Ver qué añade Growth') }}
-        </NuxtLink>
-      </div>
+      <GrowthPageNotice v-else-if="resolved && !hasGrowth" kind="not-in-tier" :title="t('Reputation is part of Growth.', 'Reputación forma parte de Growth.')" />
 
-      <p v-else-if="error" class="py-16 text-center text-[13px] text-danger-text" data-test="reputation-error">{{ error }}</p>
+      <GrowthPageNotice v-else-if="error" kind="error" :title="error" data-test="reputation-error" @retry="reload" />
 
       <div v-else-if="loading || !data" class="grid animate-pulse gap-4 xl:grid-cols-[minmax(0,1fr)_300px]" aria-hidden="true">
         <div class="h-[500px] rounded-card border border-line bg-surface shadow-card" />
@@ -160,8 +167,8 @@ function when(iso: string) {
             tone="soon"
             :title="t('Ratings and reviews', 'Valoraciones y reseñas')"
             :description="t(
-              'Your Google rating and recent reviews will appear here, with a reply drafted for you to approve. The review request funnel below is already running.',
-              'Tu valoración de Google y las reseñas recientes aparecerán aquí, con una respuesta redactada para que la apruebes. El embudo de solicitudes de abajo ya está funcionando.',
+              'Your Google rating and recent reviews will appear here, with a reply drafted for you to approve. Review requests your automations send are already counted under Review requests.',
+              'Tu valoración de Google y las reseñas recientes aparecerán aquí, con una respuesta redactada para que la apruebes. Las solicitudes de reseña que envían tus automatizaciones ya se cuentan en Solicitudes de reseña.',
             )"
           >
             <template #icon>
@@ -175,7 +182,7 @@ function when(iso: string) {
             <div class="flex flex-col gap-1">
               <span class="text-[11px] text-ink-muted">{{ t('Average rating', 'Valoración media') }}</span>
               <div class="flex items-baseline gap-1">
-                <span class="text-[32px] font-semibold leading-none tracking-tightTitle text-ink-900" data-test="rating">{{ data.rating }}</span>
+                <span class="font-mono text-[30px] font-semibold leading-none text-ink-900" data-test="rating">{{ data.rating }}</span>
                 <span class="text-[13px] text-ink-muted">/ 5</span>
               </div>
               <GrowthStarRating v-if="data.rating" :rating="data.rating" :size="13" />
@@ -200,7 +207,7 @@ function when(iso: string) {
                     v-for="range in TREND_RANGES"
                     :key="range.key"
                     type="button"
-                    class="rounded-pill px-2 py-0.5 text-[11px] font-medium"
+                    class="rounded-pill px-2 py-0.5 text-[11px] font-medium touch:py-2"
                     :class="trendRange === range.key ? 'bg-brand-tint text-brand-text' : 'text-ink-muted hover:bg-surface-subtle'"
                     :aria-pressed="trendRange === range.key"
                     :data-test="`trend-range-${range.key}`"
@@ -215,8 +222,8 @@ function when(iso: string) {
                   <polyline :points="trendPath" fill="none" class="stroke-brand" stroke-width="2" vector-effect="non-scaling-stroke" />
                 </svg>
                 <div class="flex justify-between text-[11px] text-ink-faint">
-                  <span>{{ visibleTrend[0]!.label }}</span>
-                  <span>{{ visibleTrend[visibleTrend.length - 1]!.label }}</span>
+                  <span>{{ monthLabel(visibleTrend[0]!.month, visibleTrend[0]!.label) }}</span>
+                  <span>{{ monthLabel(visibleTrend[visibleTrend.length - 1]!.month, visibleTrend[visibleTrend.length - 1]!.label) }}</span>
                 </div>
               </template>
               <p v-else class="py-4 text-[11.5px] text-ink-muted">{{ t('Not enough reviews in this period to draw a trend.', 'No hay reseñas suficientes en este periodo para dibujar una tendencia.') }}</p>
@@ -226,9 +233,7 @@ function when(iso: string) {
           <section v-if="data.hasReviews" class="flex flex-col gap-3">
             <div class="flex flex-wrap items-center justify-between gap-2">
               <h2 class="text-[13.5px] font-semibold tracking-tightTitle text-ink-900">{{ t('Reviews', 'Reseñas') }}</h2>
-              <span v-if="data.pendingCount" class="rounded-pill border border-warning-border bg-warning-bg px-2 py-0.5 text-[11px] font-medium text-warning-text">
-                {{ t('Needs approval', 'Requiere aprobación') }} · {{ data.pendingCount }}
-              </span>
+              <UiPill v-if="data.pendingCount" tone="warning" dot>{{ t('Needs approval', 'Requiere aprobación') }} · {{ data.pendingCount }}</UiPill>
             </div>
 
             <article
@@ -242,15 +247,15 @@ function when(iso: string) {
                 <div class="flex flex-wrap items-center gap-2">
                   <GrowthStarRating :rating="review.rating" />
                   <span class="text-[12.5px] font-semibold text-ink-900">{{ review.author }}</span>
-                  <span class="text-[11px] capitalize text-ink-muted">
-                    {{ review.platform }}<template v-if="review.location"> · {{ review.location }}</template>
+                  <span class="text-[11px] text-ink-muted">
+                    {{ platformName(review.platform) }}<template v-if="review.location"> · {{ review.location }}</template>
                   </span>
                   <span class="ml-auto text-[11px] text-ink-faint">{{ when(review.postedAt) }}</span>
                 </div>
                 <p v-if="review.body" class="text-[12.5px] leading-[1.5] text-ink-700">{{ review.body }}</p>
 
                 <div v-if="review.repliedAt" class="mt-1 rounded-ctl border border-line bg-surface-subtle px-3 py-2">
-                  <span class="text-[11px] font-semibold uppercase tracking-[.06em] text-ink-faint">
+                  <span class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">
                     {{ review.replyWasAiDrafted ? t('Replied · AI drafted, approved', 'Respondido · redactado por IA, aprobado') : t('Replied', 'Respondido') }}
                   </span>
                   <p class="mt-1 text-[12px] leading-[1.5] text-ink-700">{{ review.replyBody }}</p>
@@ -292,7 +297,7 @@ function when(iso: string) {
             <div class="flex flex-col gap-1">
               <div class="flex items-baseline justify-between gap-2">
                 <span class="text-[11.5px] text-ink-muted">{{ t('Sent', 'Enviadas') }}</span>
-                <span class="text-[12px] font-semibold text-ink-900">{{ data.funnel.sent }}</span>
+                <span class="font-mono text-[12px] font-semibold text-ink-900">{{ data.funnel.sent }}</span>
               </div>
               <span class="h-1.5 overflow-hidden rounded-pill bg-line-divider"><span class="block h-full rounded-pill bg-brand" style="width: 100%" /></span>
             </div>
@@ -300,7 +305,7 @@ function when(iso: string) {
             <div class="flex flex-col gap-1">
               <div class="flex items-baseline justify-between gap-2">
                 <span class="text-[11.5px] text-ink-muted">{{ t('Opened the link', 'Abrieron el enlace') }}</span>
-                <span class="text-[12px] font-semibold text-ink-900">
+                <span class="font-mono text-[12px] font-semibold text-ink-900">
                   {{ data.funnel.opened }}<span v-if="data.funnel.openedShare !== null" class="ml-1 text-[11px] font-normal text-ink-muted">{{ data.funnel.openedShare }}%</span>
                 </span>
               </div>
@@ -312,7 +317,7 @@ function when(iso: string) {
             <div class="flex flex-col gap-1">
               <div class="flex items-baseline justify-between gap-2">
                 <span class="text-[11.5px] text-ink-muted">{{ t('Left a review', 'Dejaron reseña') }}</span>
-                <span class="text-[12px] font-semibold" :class="data.funnel.convertedShare === null ? 'text-ink-faint' : 'text-ink-900'">
+                <span class="font-mono text-[12px] font-semibold" :class="data.funnel.convertedShare === null ? 'text-ink-faint' : 'text-ink-900'">
                   {{ data.funnel.convertedShare === null ? '—' : data.funnel.converted
                   }}<span v-if="data.funnel.convertedShare !== null" class="ml-1 text-[11px] font-normal text-ink-muted">{{ data.funnel.convertedShare }}%</span>
                 </span>
@@ -324,11 +329,14 @@ function when(iso: string) {
           </div>
 
           <!-- The honest gap in the funnel, named. We can see the link open
-          because it goes through us; nobody can watch someone type on Google. -->
+          because it goes through us; nobody can watch someone type on Google.
+          It said the third row would fill in "once a platform is connected",
+          but nothing sets review_requests.review_id, Google connected or not,
+          so the row is empty for every clinic. -->
           <p class="border-t border-line-divider pt-3 text-[11px] leading-[1.5] text-ink-muted" data-test="funnel-caveat">
             {{ t(
-              'Sent and opened are counted here, because the link goes through QuiroFlow. Whether someone then left a review is only known once a platform is connected.',
-              'Enviadas y abiertas se cuentan aquí, porque el enlace pasa por QuiroFlow. Si luego dejaron reseña solo se sabe al conectar una plataforma.',
+              'Sent and opened are counted because the link goes through QuiroFlow. QuiroFlow does not yet match new reviews to the requests that asked for them, so “Left a review” stays empty.',
+              'Enviadas y abiertas se cuentan porque el enlace pasa por QuiroFlow. QuiroFlow aún no relaciona las reseñas nuevas con las solicitudes que las pidieron, así que «Dejaron reseña» queda vacío.',
             ) }}
           </p>
         </section>

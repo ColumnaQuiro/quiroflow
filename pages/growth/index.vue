@@ -8,7 +8,7 @@ const { hasGrowth, resolved } = useGrowthTier()
 // Decided once the tier has resolved against a loaded account; before that a
 // "no" may only mean the bootstrap has not landed yet.
 const decided = computed(() => resolved.value && store.loaded)
-const { data, loading, error, saveChannelSpend } = useGrowthDashboard(() => (decided.value ? hasGrowth.value : null))
+const { data, loading, error, saveChannelSpend, reload } = useGrowthDashboard(() => (decided.value ? hasGrowth.value : null))
 const sample = useGrowthDashboardView(() => SAMPLE_GROWTH_DASHBOARD)
 
 // What the figures cover, said once in the header. It used to read
@@ -38,16 +38,12 @@ const allowed = computed(() => can('communication_config'))
 
   <div class="flex-1 overflow-y-auto">
     <div class="p-4 sm:p-6">
-      <div v-if="!allowed" class="mx-auto max-w-sm py-16 text-center">
-        <p class="text-[13px] text-ink-muted">
-          {{ t("You don't have access to Growth.", 'No tienes acceso a Crecimiento.') }}
-        </p>
-      </div>
+      <GrowthPageNotice v-if="!allowed" kind="no-access" />
 
       <GrowthDashboardSkeleton v-else-if="!decided" />
 
       <template v-else-if="hasGrowth">
-        <p v-if="error" class="py-16 text-center text-[13px] text-danger-text" data-test="dashboard-error">{{ error }}</p>
+        <GrowthPageNotice v-if="error" kind="error" :title="error" data-test="dashboard-error" @retry="reload" />
         <GrowthDashboardSkeleton v-else-if="loading || !data" />
         <GrowthDashboardBody v-else :data="data" @save-spend="saveChannelSpend" />
       </template>

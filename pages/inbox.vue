@@ -124,6 +124,13 @@ function settlePending(tempId: string, server: Message[]) {
 const rows = ref<InboxRow[]>([])
 const hasMore = ref(false)
 const loadingMore = ref(false)
+// The list could not be read. Without this a failed first load fell through
+// to the empty state -- "Nobody is waiting for a reply" -- which is the one
+// sentence the front desk acts on by doing nothing. A failed "load older" is
+// said under the list instead, with the rows already shown left alone.
+const listFailed = ref(false)
+const loadMoreFailed = ref(false)
+const { showToast } = useToast()
 const patients = ref<PatientOption[]>([])
 const loading = ref(true)
 const ready = ref(false)
@@ -375,10 +382,16 @@ async function loadList(opts: { silent?: boolean; append?: boolean } = {}) {
   const result = await fetchInboxPage({ limit: size + 1, offset: from, withCounts: !opts.append, withExpiring: !opts.append, searchKeys, term: term || undefined })
   if (token !== listToken) return
   if (!result) {
+    // A silent refresh that fails keeps what is on screen; the layout's toast
+    // has already said a request failed.
+    if (opts.append) loadMoreFailed.value = true
+    else if (!opts.silent) listFailed.value = true
     loading.value = false
     loadingMore.value = false
     return
   }
+  if (!opts.append) listFailed.value = false
+  loadMoreFailed.value = false
   applyInboxCounts(result)
   const page = result.rows ?? []
   hasMore.value = page.length > size
@@ -1224,15 +1237,19 @@ async function conversationKeyForLead(leadId: string): Promise<string | null> {
 // --- Archive, unread, assign (single and bulk) ------------------------------------
 async function setArchived(keys: string[], archive: boolean) {
   if (keys.length === 0 || !store.teamMember || !store.accountId) return
+  const before = notKept.value
   const next = new Set(notKept.value)
   for (const k of keys) archive ? next.add(k) : next.delete(k)
   notKept.value = next
-  if (archive) {
-    await supabase
-      .from('whatsapp_conversation_archives')
-      .upsert(keys.map((k) => ({ account_id: store.accountId!, team_member_id: store.teamMember!.id, conversation_key: k })) as never)
-  } else {
-    await supabase.from('whatsapp_conversation_archives').delete().eq('team_member_id', store.teamMember.id).in('conversation_key', keys)
+  const { error } = archive
+    ? await supabase
+        .from('whatsapp_conversation_archives')
+        .upsert(keys.map((k) => ({ account_id: store.accountId!, team_member_id: store.teamMember!.id, conversation_key: k })) as never)
+    : await supabase.from('whatsapp_conversation_archives').delete().eq('team_member_id', store.teamMember.id).in('conversation_key', keys)
+  // Shown as done before the write, so a refused one is put back and said.
+  if (error) {
+    notKept.value = before
+    showToast(archive ? t("Couldn't archive it. Try again.", 'No se ha podido archivar. Inténtalo de nuevo.') : t("Couldn't bring it back. Try again.", 'No se ha podido recuperar. Inténtalo de nuevo.'), 'error')
   }
   // It leaves the view it was in, so the list is re-read rather than patched.
   await loadList({ silent: true })
@@ -1292,6 +1309,9 @@ watch(selectedKey, () => (panelOpen.value = false))
 async function assign(keys: string[], memberId: string | null) {
   assignMenuFor.value = null
   if (keys.length === 0 || !store.accountId) return
+  const rowsBefore = rows.value
+  const ownersBefore = leadOwners.value
+  const openedBefore = openedRow.value
   rows.value = rows.value.map((r) => (keys.includes(r.conversation_key) ? { ...r, assigned_to: memberId } : r))
   const owners = { ...leadOwners.value }
   for (const k of keys.filter((k) => k.startsWith('lead:'))) {
@@ -1300,12 +1320,20 @@ async function assign(keys: string[], memberId: string | null) {
   }
   leadOwners.value = owners
   if (openedRow.value && keys.includes(openedRow.value.conversation_key)) openedRow.value = { ...openedRow.value, assigned_to: memberId }
-  if (memberId) {
-    await supabase
-      .from('inbox_assignments')
-      .upsert(keys.map((k) => ({ account_id: store.accountId!, conversation_key: k, team_member_id: memberId, assigned_by: myId.value, assigned_at: new Date().toISOString() })) as never)
-  } else {
-    await supabase.from('inbox_assignments').delete().eq('account_id', store.accountId).in('conversation_key', keys)
+  const { error } = memberId
+    ? await supabase
+        .from('inbox_assignments')
+        .upsert(keys.map((k) => ({ account_id: store.accountId!, conversation_key: k, team_member_id: memberId, assigned_by: myId.value, assigned_at: new Date().toISOString() })) as never)
+    : await supabase.from('inbox_assignments').delete().eq('account_id', store.accountId).in('conversation_key', keys)
+  // Drawn as assigned before the write. Left that way after a refusal, a
+  // conversation looked like someone's while nobody had it -- the one way a
+  // patient's message goes unanswered with the screen saying it is in hand.
+  if (error) {
+    rows.value = rowsBefore
+    leadOwners.value = ownersBefore
+    openedRow.value = openedBefore
+    showToast(memberId ? t("Couldn't assign it. Nobody has it yet.", 'No se ha podido asignar. Todavía no la tiene nadie.') : t("Couldn't unassign it.", 'No se ha podido quitar la asignación.'), 'error')
+    return
   }
   // "Mine" and "Unassigned" are lists of exactly this, so re-read them; a
   // silent load brings the counts with it.
@@ -1342,25 +1370,36 @@ async function toggleLabelForKeys(labelId: string, keys: string[]) {
   // matches the checkbox convention used elsewhere (e.g. patient tag lists)
   // where a partially-applied state fills in rather than clearing first.
   const allApplied = keys.every((k) => myLabelsByKey.value[k]?.includes(labelId))
+  const before: Record<string, string[]> = Object.fromEntries(keys.map((k) => [k, myLabelsByKey.value[k] ?? []]))
   const nextByKey: Record<string, string[]> = { ...myLabelsByKey.value }
+  let error: { message: string } | null
   if (allApplied) {
     for (const k of keys) nextByKey[k] = (nextByKey[k] ?? []).filter((id) => id !== labelId)
     applyLabels(nextByKey)
-    await supabase.from('whatsapp_conversation_labels').delete().eq('team_member_id', store.teamMember.id).eq('label_id', labelId).in('conversation_key', keys)
+    ;({ error } = await supabase.from('whatsapp_conversation_labels').delete().eq('team_member_id', store.teamMember.id).eq('label_id', labelId).in('conversation_key', keys))
   } else {
     const toAdd = keys.filter((k) => !myLabelsByKey.value[k]?.includes(labelId))
     for (const k of toAdd) nextByKey[k] = [...(nextByKey[k] ?? []), labelId]
     applyLabels(nextByKey)
-    await supabase
+    ;({ error } = await supabase
       .from('whatsapp_conversation_labels')
-      .upsert(toAdd.map((k) => ({ account_id: store.accountId!, team_member_id: store.teamMember!.id, conversation_key: k, label_id: labelId })) as never)
+      .upsert(toAdd.map((k) => ({ account_id: store.accountId!, team_member_id: store.teamMember!.id, conversation_key: k, label_id: labelId })) as never))
+  }
+  if (error) {
+    applyLabels(before)
+    showToast(t("Couldn't change the label. Try again.", 'No se ha podido cambiar la etiqueta. Inténtalo de nuevo.'), 'error')
   }
 }
 
 async function createLabel(name: string, color: string, applyToKeys: string[]) {
   if (!store.accountId) return
-  const { data } = await supabase.from('whatsapp_labels').insert({ account_id: store.accountId, name, color, created_by: store.teamMember?.id ?? null }).select('id, name, color').single()
-  if (!data) return
+  const { data, error } = await supabase.from('whatsapp_labels').insert({ account_id: store.accountId, name, color, created_by: store.teamMember?.id ?? null }).select('id, name, color').single()
+  if (error || !data) {
+    // 23505: a label of that name already exists (the picker filters, but
+    // two people can create the same one at once).
+    showToast(error?.code === '23505' ? t(`There is already a label called "${name}".`, `Ya hay una etiqueta llamada «${name}».`) : t("Couldn't create the label.", 'No se ha podido crear la etiqueta.'), 'error')
+    return
+  }
   labels.value = [...labels.value, data].sort((a, b) => a.name.localeCompare(b.name))
   if (applyToKeys.length > 0) await toggleLabelForKeys(data.id, applyToKeys)
 }
@@ -2219,6 +2258,18 @@ function avatarInitials(name: string) {
               <path d="M17.5 3v5h-5M6.5 21v-5h5" />
             </svg>
           </div>
+          <!-- Failed, with rows still on screen: leads from their own
+          endpoint, or the rows of the filter before this one. Said above
+          them, or they read as this view's answer. -->
+          <div
+            v-if="!loading && listFailed && (filteredConversations.length > 0 || visibleLeadConversations.length > 0)"
+            role="alert"
+            class="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-danger-border bg-danger-bg px-3.5 py-2"
+            data-cy="inbox-list-stale"
+          >
+            <p class="min-w-0 flex-1 text-[12.5px] text-danger-text">{{ t(`Couldn't refresh this list, so some conversations may be missing or out of date.`, 'No se ha podido actualizar la lista: puede que falten conversaciones o que no estén al día.') }}</p>
+            <UiBtn size="sm" @click="loadList()">{{ t('Try again', 'Reintentar') }}</UiBtn>
+          </div>
           <div v-if="loading">
             <div v-for="i in 5" :key="i" class="flex items-center gap-3 border-b border-line-row px-3.5 py-3">
               <UiSkeleton class="h-10 w-10 shrink-0 rounded-full" />
@@ -2228,6 +2279,23 @@ function avatarInitials(name: string) {
               </div>
             </div>
           </div>
+          <UiEmptyState
+            v-else-if="listFailed && filteredConversations.length === 0 && visibleLeadConversations.length === 0"
+            :title="t(`Couldn't load your conversations`, 'No se han podido cargar tus conversaciones')"
+            :description="t(`This doesn't mean nobody is waiting: the list couldn't be read. Messages still arrive and nothing has been lost.`, 'No significa que nadie esté esperando: la lista no se ha podido leer. Los mensajes siguen llegando y no se ha perdido nada.')"
+            class="!px-3 !py-6"
+            data-cy="inbox-list-failed"
+          >
+            <template #icon>
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <path d="M10 6.5v4.2M10 13.4v.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                <circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.4" />
+              </svg>
+            </template>
+            <template #actions>
+              <UiBtn variant="primary" data-cy="inbox-list-retry" @click="loadList()">{{ t('Try again', 'Reintentar') }}</UiBtn>
+            </template>
+          </UiEmptyState>
           <!-- The shared empty state, so an empty list never reads as one
           that failed to load. "Nobody is waiting" is most days' end state,
           not an error, and gets the way out as a real button. -->
@@ -2380,7 +2448,7 @@ function avatarInitials(name: string) {
           </template>
           <div v-if="hasMore && !loading" class="p-3">
             <button type="button" data-cy="inbox-load-more" class="h-9 touch:h-11 w-full rounded-ctl border border-line-control bg-surface text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:opacity-60" :disabled="loadingMore" @click="loadList({ append: true })">
-              {{ loadingMore ? t('Loading…', 'Cargando…') : t('Load older conversations', 'Cargar conversaciones anteriores') }}
+              {{ loadingMore ? t('Loading…', 'Cargando…') : loadMoreFailed ? t(`Couldn't load them. Try again`, 'No se han podido cargar. Reintentar') : t('Load older conversations', 'Cargar conversaciones anteriores') }}
             </button>
           </div>
         </div>
@@ -2670,9 +2738,14 @@ function avatarInitials(name: string) {
                 class="relative min-w-0 max-w-[70%] rounded-card px-[8px] py-[6px] shadow-card [overflow-wrap:anywhere]"
                 :class="[
                   m.direction === 'outbound' ? 'bg-brand text-brand-on' : 'border border-line bg-surface text-ink-900',
-                  m.status === 'failed' && 'cursor-pointer',
+                  m.status === 'failed' && 'cursor-pointer outline-none focus-visible:shadow-focus',
                 ]"
+                :role="m.status === 'failed' ? 'button' : undefined"
+                :tabindex="m.status === 'failed' ? 0 : undefined"
+                :aria-label="m.status === 'failed' ? t('Not sent. Send it again', 'No enviado. Volver a enviarlo') : undefined"
                 @click="m.status === 'failed' && retryMessage(m)"
+                @keydown.enter.prevent="m.status === 'failed' && retryMessage(m)"
+                @keydown.space.prevent="m.status === 'failed' && retryMessage(m)"
               >
                 <!-- The receptionist answered on its own: said, so nobody
                 reads it as a colleague's reply. -->
@@ -2792,6 +2865,7 @@ function avatarInitials(name: string) {
             :sending="sending"
             :disabled="!threadReady"
             :media="!ID_CHANNELS.has(replyChannel)"
+            :channel="replyChannel"
             @send="sendText"
             @media="(m) => sendMedia(m.base64, m.mimeType, m.filename, m.kind)"
             @error="(message) => (sendError = message)"

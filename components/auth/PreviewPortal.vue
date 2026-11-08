@@ -19,8 +19,8 @@ const invoices = [
     :title="t('Everything about your care, in one place', 'Todo lo de tus cuidados, a mano')"
     :body="
       t(
-        'See and change your appointments, download your invoices, sign your documents and write to the clinic.',
-        'Consulta y cambia tus citas, descarga tus facturas, firma tus documentos y escribe a la clínica.',
+        'See your appointments, download your facturas and documents, and write to the clinic.',
+        'Consulta tus citas, descarga tus facturas y documentos, y escribe a la clínica.',
       )
     "
   >
@@ -30,7 +30,7 @@ const invoices = [
         <p class="mt-1.5 text-[19px] font-semibold tracking-tightTitle text-ink-900">{{ t('Thursday 9 Oct · 17:30', 'Jueves 9 oct · 17:30') }}</p>
         <p class="mt-0.5 text-[13.5px] text-ink-muted">{{ t('Adjustment with Marta Ruiz', 'Ajuste con Marta Ruiz') }}</p>
         <div class="mt-3.5 flex gap-2">
-          <span class="rounded-ctl border border-line-control px-3 py-1.5 text-[12.5px] font-medium text-ink-700">{{ t('Change', 'Cambiar') }}</span>
+          <span class="rounded-ctl border border-line-control px-3 py-1.5 text-[12.5px] font-medium text-ink-700">{{ t('Directions', 'Cómo llegar') }}</span>
           <span class="rounded-ctl border border-line-control px-3 py-1.5 text-[12.5px] font-medium text-ink-700">{{ t('Add to calendar', 'Añadir al calendario') }}</span>
         </div>
       </div>
@@ -40,13 +40,13 @@ const invoices = [
       <div class="grid grid-cols-2 divide-x divide-line-divider">
         <div class="px-5 py-4">
           <p class="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">Bono 10</p>
-          <p class="mt-1.5 text-[18px] font-semibold text-ink-900">{{ t('3 sessions left', '3 sesiones') }}</p>
-          <p class="text-[12.5px] text-ink-muted">{{ t('remaining', 'te quedan') }}</p>
+          <p class="mt-1.5 text-[18px] font-semibold text-ink-900">{{ t('3 sessions', '3 sesiones') }}</p>
+          <p class="text-[12.5px] text-ink-muted">{{ t('left', 'te quedan') }}</p>
         </div>
         <div class="px-5 py-4">
           <p class="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted">{{ t('Documents', 'Documentos') }}</p>
-          <p class="mt-1.5 text-[18px] font-semibold text-ink-900">{{ t('1 to sign', '1 por firmar') }}</p>
-          <p class="text-[12.5px] text-brand-text">{{ t('Data protection', 'Protección de datos') }} ›</p>
+          <p class="mt-1.5 text-[18px] font-semibold text-ink-900">{{ t('1 new', '1 nuevo') }}</p>
+          <p class="text-[12.5px] text-brand-text">{{ t('Assessment report', 'Informe de valoración') }} ›</p>
         </div>
       </div>
     </OnboardingPreviewFragment>

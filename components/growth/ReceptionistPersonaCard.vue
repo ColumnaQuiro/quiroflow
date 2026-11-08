@@ -37,23 +37,24 @@ function toggleLanguage(code: string) {
   <GrowthSettingCard :title="t('Persona', 'Personalidad')">
     <div class="grid gap-3 sm:grid-cols-2">
       <label class="flex flex-col gap-1">
-        <span class="text-[11px] uppercase tracking-[.06em] text-ink-faint">{{ t('Name it answers with', 'Nombre con el que responde') }}</span>
+        <span class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Name it answers with', 'Nombre con el que responde') }}</span>
         <input
           :value="config.personaName"
           type="text"
-          class="h-8 rounded-ctl border border-line-control bg-surface px-2.5 text-[12.5px] text-ink-700 focus:border-brand focus:outline-none"
+          class="h-8 touch:h-11 rounded-ctl border border-line-control bg-surface px-2.5 text-[12.5px] text-ink-700 focus:border-brand focus:outline-none"
           data-test="persona-name"
           @change="save({ personaName: ($event.target as HTMLInputElement).value })"
         >
       </label>
       <div class="flex flex-col gap-1.5">
-        <span class="text-[11px] uppercase tracking-[.06em] text-ink-faint">{{ t('Tone', 'Tono') }}</span>
+        <span class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Tone', 'Tono') }}</span>
         <div class="flex flex-wrap gap-1.5">
           <button
             v-for="tone in TONES"
             :key="tone.value"
             type="button"
-            class="rounded-pill border px-2.5 py-0.5 text-[11.5px]"
+            class="rounded-pill border px-2.5 py-0.5 text-[11.5px] touch:py-2"
+            :aria-pressed="config.tone === tone.value"
             :class="config.tone === tone.value ? 'border-brand-tintBorder bg-brand-tint font-medium text-brand-text' : 'border-chip-border bg-chip-bg text-ink-muted hover:text-ink-700'"
             :disabled="saving"
             :data-test="`tone-${tone.value}`"
@@ -64,13 +65,13 @@ function toggleLanguage(code: string) {
     </div>
 
     <div class="flex flex-col gap-1.5">
-      <span class="text-[11px] uppercase tracking-[.06em] text-ink-faint">{{ t('Languages it answers in', 'Idiomas en los que responde') }}</span>
+      <span class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Languages it answers in', 'Idiomas en los que responde') }}</span>
       <div class="flex flex-wrap gap-1.5" data-test="languages">
         <button
           v-for="lang in languages"
           :key="lang.code"
           type="button"
-          class="rounded-pill border px-2.5 py-0.5 text-[11.5px]"
+          class="rounded-pill border px-2.5 py-0.5 text-[11.5px] touch:py-2"
           :class="config.languages.includes(lang.code) ? 'border-brand-tintBorder bg-brand-tint font-medium text-brand-text' : 'border-chip-border bg-chip-bg text-ink-muted hover:text-ink-700'"
           :aria-pressed="config.languages.includes(lang.code)"
           :disabled="saving"
@@ -84,7 +85,7 @@ function toggleLanguage(code: string) {
     </div>
 
     <label class="flex flex-col gap-1">
-      <span class="text-[11px] uppercase tracking-[.06em] text-ink-faint">{{ t('Never says', 'Nunca dice') }}</span>
+      <span class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Never says', 'Nunca dice') }}</span>
       <textarea
         :value="config.neverSays"
         rows="3"

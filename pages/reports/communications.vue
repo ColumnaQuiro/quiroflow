@@ -116,13 +116,13 @@ const when = (iso: string) => new Date(iso).toLocaleString(t('en-GB', 'es-ES'), 
 const shownFrom = computed(() => (total.value ? page.value * PAGE + 1 : 0))
 const shownTo = computed(() => Math.min(total.value, page.value * PAGE + rows.value.length))
 
-const select = 'h-9 rounded-ctl border border-line-control bg-surface px-2.5 text-[13px] text-ink-900 focus:border-brand focus:outline-none'
+const select = 'h-9 rounded-ctl border border-line-control bg-surface px-2.5 text-[13px] text-ink-900 focus:border-brand focus:outline-none touch:h-11'
 </script>
 
 <template>
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Communications', 'Comunicaciones')" :meta="t('Every message sent to patients and leads', 'Todos los mensajes enviados a pacientes y leads')">
-      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
+      <ReportsBackLink />
     </PageHeader>
 
     <div class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] sm:px-6" data-cy="communications-log" :data-ready="loading ? undefined : 'true'">
@@ -152,7 +152,7 @@ const select = 'h-9 rounded-ctl border border-line-control bg-surface px-2.5 tex
         </div>
         <div class="overflow-x-auto">
           <table class="w-full min-w-[860px] text-[13px]">
-            <thead class="border-y border-line bg-surface-subtle text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2">
+            <thead class="border-y border-line bg-surface-subtle text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">
               <tr>
                 <th class="px-4 py-2">{{ t('Patient / lead', 'Paciente / lead') }}</th>
                 <th class="px-3 py-2">{{ t('Type', 'Tipo') }}</th>

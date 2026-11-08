@@ -19,7 +19,7 @@ watch(user, (u) => { if (!u) navigateTo('/login') }, { immediate: true })
 const t = useT()
 const route = useRoute()
 const router = useRouter()
-const { context, loading: contextLoading } = usePractitionerContext()
+const { context, loading: contextLoading, can } = usePractitionerContext()
 const chat = useStaffTeamChat()
 const { members, me, unread, loaded } = chat
 const { keyboardHeight } = useKeyboardInset()
@@ -140,7 +140,13 @@ function bubbleTime(iso: string) {
 
 <template>
   <div class="relative flex h-full min-h-0 flex-col bg-surface-page">
-    <AppPageHeader :title="t('Team', 'Equipo')">
+    <!-- With the Inbox, Team is one side of its tab and this bar switches
+         between them; without it, this page is the tab itself. -->
+    <div v-if="context && can('inbox_access')" class="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-surface px-3 md:px-5">
+      <InboxTeamSwitch current="team" />
+      <StaffHelpButton />
+    </div>
+    <AppPageHeader v-else :title="t('Team', 'Equipo')">
       <StaffHelpButton v-if="context" />
     </AppPageHeader>
 

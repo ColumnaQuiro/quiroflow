@@ -90,42 +90,50 @@ const fieldId = useId()
 </script>
 
 <template>
-  <div class="space-y-4 text-sm">
+  <div class="space-y-4 text-[13px]">
     <div class="rounded-card border border-line bg-surface-subtle p-3">
-      <div v-if="summaryLoading" class="text-ink-faint">{{ t('Loading patient summary…', 'Cargando resumen del paciente…') }}</div>
+      <div v-if="summaryLoading" class="space-y-2" aria-busy="true" :aria-label="t('Loading patient summary…', 'Cargando resumen del paciente…')">
+        <UiSkeleton class="h-4 w-40 rounded-ctlSm" />
+        <UiSkeleton class="h-4 w-56 rounded-ctlSm" />
+      </div>
       <div v-else class="space-y-1.5">
         <p class="flex items-center gap-1.5">
           <span class="text-ink-muted2">{{ t('Balance:', 'Saldo:') }}</span>
           <UiBalancePill :available-cents="availableCents" :outstanding-cents="outstandingCents" />
-          <span v-if="balanceCents === 0" class="font-medium text-ink-700">€0.00</span>
+          <span v-if="balanceCents === 0" class="font-mono font-medium text-ink-700">{{ formatEur(0) }}</span>
         </p>
         <p v-if="activeMembership">
           <span class="text-ink-muted2">{{ t('Membership:', 'Membresía:') }}</span>
           <span class="ml-1 font-medium text-ink-900">{{ activeMembership.membership_name }}</span>
-          <span class="ml-1 rounded-ctlSm bg-success-bg px-1.5 py-0.5 text-xs font-medium text-success-text">{{ t('active', 'activa') }}</span>
+          <UiPill tone="success" class="ml-1">{{ t('active', 'activa') }}</UiPill>
         </p>
         <p v-else class="text-ink-faint">{{ t('No active membership', 'Sin membresía activa') }}</p>
         <div v-if="activePackages.length > 0" class="flex flex-wrap items-center gap-1">
           <span class="text-ink-muted2">{{ t('Packages:', 'Bonos:') }}</span>
-          <span
+          <UiPill
             v-for="p in activePackages"
             :key="p.id"
-            class="inline-flex items-center gap-1.5 rounded-ctlSm bg-brand-tint px-1.5 py-0.5 text-xs font-medium text-brand-text"
+            tone="brand"
           >
             {{ p.package_name }}: {{ p.sessions_total - p.sessions_used }} {{ t('left', 'restantes') }}
-            <span
+            <UiPill
               v-if="p.shared"
-              class="rounded-ctlSm bg-info-bg px-1 py-0.5 text-[11px] font-semibold text-info-text"
+              tone="info"
+              class="-my-0.5 -mr-1.5 border border-info-border"
               :title="p.ownerName ? t(`Shared by ${p.ownerName}`, `Compartido por ${p.ownerName}`) : t('Shared', 'Compartido')"
             >
               {{ t('Shared', 'Compartido') }}
-            </span>
-          </span>
+            </UiPill>
+          </UiPill>
         </div>
       </div>
     </div>
 
-    <div v-if="loadingInvoice" class="text-ink-faint">{{ t('Loading receipt…', 'Cargando recibo…') }}</div>
+    <div v-if="loadingInvoice" class="space-y-2 rounded-card border border-line bg-surface p-3" aria-busy="true" :aria-label="t('Loading receipt…', 'Cargando recibo…')">
+      <UiSkeleton class="h-4 w-28 rounded-ctlSm" />
+      <UiSkeleton class="h-4 w-full rounded-ctlSm" />
+      <UiSkeleton class="ml-auto h-4 w-36 rounded-ctlSm" />
+    </div>
     <p v-else-if="!invoice && appointmentIsUpcoming" class="text-ink-faint">
       {{ t("This appointment hasn't happened yet — no receipt until it does.", 'Esta cita todavía no ha ocurrido: no habrá recibo hasta entonces.') }}
     </p>
@@ -158,34 +166,29 @@ const fieldId = useId()
       rate it will charge -- the bono's -- so the two can be compared before
       either is pressed. -->
       <div v-if="activePackages.length > 0" class="mt-2 flex flex-wrap items-center gap-2">
-        <button
+        <UiBtn
           v-for="p in activePackages"
           :key="p.id"
-          type="button"
+          variant="primary"
+          class="!h-auto min-h-9 !whitespace-normal py-1.5 text-left touch:min-h-11"
           :disabled="savingPayment"
-          class="rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50"
           @click="usePackageSession(p)"
         >
           {{ savingPayment ? t('Working…', 'Procesando…') : `${t('Use', 'Usar')} ${p.package_name} — ${perSessionLabel(p)}` }}
           <span class="font-normal opacity-80">({{ p.sessions_total - p.sessions_used }} {{ t('left', 'restantes') }})</span>
-          <span v-if="p.shared" class="ml-1 rounded-ctlSm bg-info-bg px-1 py-0.5 text-[11px] font-semibold text-info-text">
+          <UiPill v-if="p.shared" tone="info" class="ml-1">
             {{ p.ownerName ? t(`Shared by ${p.ownerName}`, `Compartido por ${p.ownerName}`) : t('Shared', 'Compartido') }}
-          </span>
-        </button>
+          </UiPill>
+        </UiBtn>
       </div>
       <div class="mt-2 flex flex-wrap items-center gap-2" :class="activePackages.length > 0 ? 'border-t border-line-divider pt-2' : ''">
-        <button
-          type="button"
+        <UiBtn
+          :variant="activePackages.length > 0 ? 'secondary' : 'primary'"
           :disabled="savingPayment"
-          :class="
-            activePackages.length > 0
-              ? 'rounded-ctl border border-line-control px-3 py-1.5 text-sm font-medium text-ink-700 hover:border-line-controlHover hover:text-ink-900 disabled:opacity-50'
-              : 'rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50'
-          "
           @click="chargeVisit"
         >
           {{ savingPayment ? t('Working…', 'Procesando…') : activePackages.length > 0 ? `${chargeLabel} ${t('instead', 'en su lugar')}` : chargeLabel }}
-        </button>
+        </UiBtn>
       </div>
     </div>
     <div v-else-if="invoice" class="rounded-card border border-line bg-surface p-3">
@@ -197,17 +200,14 @@ const fieldId = useId()
       <div class="flex items-center justify-between">
         <NuxtLink :to="`/billing/${invoice.id}`" class="font-medium text-brand-text hover:text-brand-hover">{{ invoice.invoice_number }}</NuxtLink>
         <div class="flex items-center gap-2">
-          <span
-            class="rounded-ctlSm px-1.5 py-0.5 text-xs font-medium"
-            :class="invoice.status === 'paid' ? 'bg-success-bg text-success-text' : 'bg-danger-bg text-danger-text'"
-          >
-            {{ invoice.status }}
-          </span>
-          <span v-if="sendResult" class="text-xs text-ink-faint">{{ sendResult }}</span>
+          <UiPill :tone="invoice.status === 'paid' ? 'success' : invoice.status === 'void' ? 'neutral' : 'danger'" data-cy="appt-receipt-status">
+            {{ invoice.status === 'paid' ? t('Paid', 'Pagado') : invoice.status === 'void' ? t('Void', 'Anulado') : t('Unpaid', 'Sin pagar') }}
+          </UiPill>
+          <span v-if="sendResult" class="text-[12px] text-ink-muted">{{ sendResult }}</span>
           <button
             v-else-if="can('billing_access')"
             type="button"
-            class="text-xs font-medium text-brand-text hover:text-brand-hover disabled:opacity-50"
+            class="-my-1 flex h-8 items-center rounded-ctlSm px-2 text-[12.5px] font-medium text-brand-text hover:bg-brand-tint disabled:opacity-50 touch:h-11"
             :disabled="sendingInvoice"
             @click="sendInvoiceEmail"
           >
@@ -218,15 +218,17 @@ const fieldId = useId()
       <ul class="mt-2 space-y-1">
         <li v-for="line in lineItems" :key="line.id" class="flex items-center justify-between text-ink-700">
           <span>{{ line.description }} &times;{{ line.quantity }}</span>
-          <span class="flex items-center gap-2">
-            {{ formatEur((line.price_cents * line.quantity)) }}
+          <span class="flex items-center gap-1">
+            <span class="font-mono">{{ formatEur((line.price_cents * line.quantity)) }}</span>
             <button
               v-if="can('billing_access') && invoice.status !== 'paid'"
               type="button"
-              class="text-ink-faint hover:text-danger-text"
+              :aria-label="t(`Remove ${line.description}`, `Quitar ${line.description}`)"
+              :title="t('Remove', 'Quitar')"
+              class="-my-1 -mr-1.5 flex h-7 w-7 items-center justify-center rounded-ctlSm text-ink-faint hover:bg-danger-bg hover:text-danger-text touch:h-11 touch:w-11"
               @click="removeLineItem(line)"
             >
-              ✕
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true" class="h-3.5 w-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
           </span>
         </li>
@@ -235,7 +237,7 @@ const fieldId = useId()
       <select
         v-if="can('billing_access') && invoice.status !== 'paid'"
         v-model="addServiceId"
-        class="mt-2 w-full rounded-ctl border border-line-control bg-surface px-2 py-1.5 text-sm text-ink-700 focus:border-brand focus:outline-none"
+        class="mt-2 h-9 w-full rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none touch:h-11"
         @change="addLineItem"
       >
         <option value="" disabled>{{ t('-- Add Service/Product --', '-- Añadir servicio/producto --') }}</option>
@@ -243,9 +245,9 @@ const fieldId = useId()
       </select>
 
       <div class="mt-2 space-y-0.5 border-t border-line-divider pt-2 text-right">
-        <p class="text-ink-muted2">{{ t('Total:', 'Total:') }} {{ formatEur(invoice.total_cents) }}</p>
-        <p class="text-ink-muted2">{{ t('Paid:', 'Pagado:') }} {{ formatEur(paidCents) }}</p>
-        <p class="font-semibold text-ink-900">{{ t('Balance due:', 'Saldo pendiente:') }} {{ formatEur(balanceDueCents) }}</p>
+        <p class="text-ink-muted2">{{ t('Total:', 'Total:') }} <span class="font-mono">{{ formatEur(invoice.total_cents) }}</span></p>
+        <p class="text-ink-muted2">{{ t('Paid:', 'Pagado:') }} <span class="font-mono">{{ formatEur(paidCents) }}</span></p>
+        <p class="font-semibold text-ink-900">{{ t('Balance due:', 'Saldo pendiente:') }} <span class="font-mono">{{ formatEur(balanceDueCents) }}</span></p>
       </div>
 
       <form
@@ -255,54 +257,54 @@ const fieldId = useId()
       >
         <div v-for="(row, i) in paymentRows" :key="i" class="flex items-end gap-2">
           <div>
-            <label :for="`${fieldId}-amount-${i}`" class="block text-xs font-medium text-ink-700">{{ t('Amount (€)', 'Importe (€)') }}</label>
-            <input :id="`${fieldId}-amount-${i}`" v-model="row.amount" type="number" step="0.01" min="0" class="mt-1 w-24 rounded-ctl border border-line-control bg-surface px-2 py-1.5 text-sm text-ink-700 focus:border-brand focus:outline-none" />
+            <label :for="`${fieldId}-amount-${i}`" class="block text-[12px] font-medium text-ink-600">{{ t('Amount (€)', 'Importe (€)') }}</label>
+            <input :id="`${fieldId}-amount-${i}`" v-model="row.amount" type="number" step="0.01" min="0" class="mt-1 h-9 w-24 rounded-ctl border border-line-control bg-surface px-2 font-mono text-[13px] text-ink-700 focus:border-brand focus:outline-none touch:h-11" />
           </div>
           <div>
-            <label :for="`${fieldId}-method-${i}`" class="block text-xs font-medium text-ink-700">{{ t('Method', 'Método') }}</label>
-            <select :id="`${fieldId}-method-${i}`" v-model="row.method" class="mt-1 rounded-ctl border border-line-control bg-surface px-2 py-1.5 text-sm text-ink-700 focus:border-brand focus:outline-none">
+            <label :for="`${fieldId}-method-${i}`" class="block text-[12px] font-medium text-ink-600">{{ t('Method', 'Método') }}</label>
+            <select :id="`${fieldId}-method-${i}`" v-model="row.method" class="mt-1 h-9 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none touch:h-11">
               <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
               <option v-if="creditLedgerCents > 0" value="credit">{{ t('Credit on account', 'Crédito en cuenta') }} ({{ formatEur(creditLedgerCents) }} {{ t('available', 'disponible') }})</option>
             </select>
           </div>
-          <button v-if="paymentRows.length > 1" type="button" class="mb-2 text-xs text-ink-faint hover:text-danger-text" @click="removePaymentRow(i)">
+          <button v-if="paymentRows.length > 1" type="button" class="flex h-9 items-center rounded-ctlSm px-2 text-[12.5px] text-ink-muted hover:bg-danger-bg hover:text-danger-text touch:h-11" @click="removePaymentRow(i)">
             {{ t('Remove', 'Quitar') }}
           </button>
         </div>
         <div class="flex flex-wrap items-center gap-3">
-          <button type="button" class="text-xs font-medium text-ink-muted hover:text-brand-text" @click="addPaymentRow">
+          <button type="button" class="-ml-2 flex h-9 items-center rounded-ctlSm px-2 text-[12.5px] font-medium text-ink-muted hover:bg-brand-tint hover:text-brand-text touch:h-11" @click="addPaymentRow">
             + {{ t('Split into another method', 'Dividir en otro método') }}
           </button>
-          <span v-if="paymentRows.length > 1" class="text-xs text-ink-faint">{{ t('Total:', 'Total:') }} {{ formatEur(paymentTotalCents) }}</span>
-          <button type="submit" :disabled="savingPayment || paymentTotalCents <= 0" class="rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50">
+          <span v-if="paymentRows.length > 1" class="text-[12px] text-ink-muted">{{ t('Total:', 'Total:') }} <span class="font-mono">{{ formatEur(paymentTotalCents) }}</span></span>
+          <UiBtn type="submit" variant="primary" :disabled="savingPayment || paymentTotalCents <= 0">
             {{ savingPayment ? t('Processing…', 'Procesando…') : t('Process', 'Procesar') }}
-          </button>
+          </UiBtn>
         </div>
       </form>
       <div
         v-if="can('billing_access') && invoice.status !== 'paid' && activePackages.length > 0"
         class="mt-2 flex flex-wrap items-center gap-2 border-t border-line-divider pt-2"
       >
-        <span class="text-xs text-ink-muted2">{{ t('Or use a package session:', 'O usar una sesión de bono:') }}</span>
+        <span class="text-[12px] text-ink-muted2">{{ t('Or use a package session:', 'O usar una sesión de bono:') }}</span>
         <button
           v-for="p in activePackages"
           :key="p.id"
           type="button"
-          class="rounded-ctl border border-brand-tintBorder bg-brand-tint px-2 py-1 text-xs font-medium text-brand-text hover:brightness-95"
+          class="flex min-h-8 items-center rounded-ctl border border-brand-tintBorder bg-brand-tint px-2.5 py-1 text-[12.5px] font-medium text-brand-text hover:border-brand touch:min-h-11"
           @click="usePackageSession(p)"
         >
           {{ p.package_name }} ({{ p.sessions_total - p.sessions_used }} {{ t('left', 'restantes') }})
-          <span v-if="p.shared" class="ml-1 rounded-ctlSm bg-info-bg px-1 py-0.5 text-[11px] font-semibold text-info-text">
+          <UiPill v-if="p.shared" tone="info" class="ml-1.5">
             {{ p.ownerName ? t(`Shared by ${p.ownerName}`, `Compartido por ${p.ownerName}`) : t('Shared', 'Compartido') }}
-          </span>
+          </UiPill>
         </button>
       </div>
-      <ul v-if="payments.length > 0" class="mt-2 space-y-0.5 text-xs text-ink-muted2">
+      <ul v-if="payments.length > 0" class="mt-2 space-y-0.5 text-[12px] text-ink-muted2">
         <li v-for="p in payments" :key="p.id">{{ new Date(p.paid_at).toLocaleDateString() }} &middot; {{ p.method }} &middot; {{ formatEur(p.amount_cents) }}</li>
       </ul>
       <!-- More than one receipt on this visit -- the extras on one, a bono
       session's charge on another. Named, so neither is invisible. -->
-      <p v-if="otherReceipts.length > 0" data-cy="appt-other-receipts" class="mt-2 border-t border-line-divider pt-2 text-xs text-ink-muted2">
+      <p v-if="otherReceipts.length > 0" data-cy="appt-other-receipts" class="mt-2 border-t border-line-divider pt-2 text-[12px] text-ink-muted2">
         {{ t('Also on this visit:', 'También en esta visita:') }}
         <template v-for="(r, i) in otherReceipts" :key="r.id">
           <span v-if="i > 0">, </span>
@@ -324,6 +326,6 @@ const fieldId = useId()
       :can-start="!appointmentIsUpcoming && !packageCoverage"
       @changed="afterThirdPartyChange"
     />
-    <p v-if="error" class="text-danger-text">{{ error }}</p>
+    <p v-if="error" role="alert" class="rounded-ctl bg-danger-bg px-3 py-2 text-danger-text">{{ error }}</p>
   </div>
 </template>

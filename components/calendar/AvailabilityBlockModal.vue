@@ -147,7 +147,7 @@ const fieldId = useId()
     <div ref="dialogPanel" role="dialog" aria-modal="true" :aria-labelledby="dialogTitleId" class="max-h-full w-full overflow-y-auto max-w-sm rounded-card border border-line bg-surface p-6 shadow-popover">
       <div class="flex items-center justify-between">
         <h2 :id="dialogTitleId" class="text-[16px] font-[640] text-ink-900">{{ block ? t('Edit Block', 'Editar bloqueo') : t('Block Time', 'Bloquear horario') }}</h2>
-        <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="emit('close')">✕</button>
+        <button type="button" :aria-label="t('Close', 'Cerrar')" class="flex items-center justify-center rounded-ctlSm text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="emit('close')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true" class="h-4 w-4"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
       </div>
 
       <form class="mt-4 space-y-4" @submit.prevent="save">

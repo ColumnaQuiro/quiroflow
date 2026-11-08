@@ -179,7 +179,7 @@ describe('A visit billed to a third party', () => {
                 cy.contains('Fisioterapia · a cargo de Mutua Laboral').should('be.visible')
                 cy.get('[data-cy=tp-visit-charge-amount]').should(amount('28,00 €'))
                 // Nothing for the patient to pay, so the receipt settles itself.
-                cy.contains('a', 'INV-').parent().find('span').first().invoke('text').should((s) => expect(s.trim()).to.eq('paid'))
+                cy.get('[data-cy=appt-receipt-status]').invoke('text').should((s) => expect(s.trim()).to.eq('Paid'))
               })
 
               cy.task<{ status: string; total_cents: number }[]>('db:invoicesForAppointment', { appointmentId: appt.id }).should((rows) => {

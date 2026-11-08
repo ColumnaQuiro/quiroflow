@@ -2566,7 +2566,7 @@ function showNowLineOn(day: Date) {
       <div v-if="bookingFor || readOnly" class="mt-2 flex">
         <span v-if="bookingFor && !readOnly" class="inline-flex h-8 max-w-full items-center gap-1.5 rounded-pill bg-brand-tint pl-3 pr-1.5 text-[12.5px] font-semibold text-brand-text">
           <span class="truncate">{{ t(`Booking for ${bookingFor.name} · pick a time`, `Reservando para ${bookingFor.name} · elige una hora`) }}</span>
-          <button type="button" class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-pill hover:bg-surface relative touch:after:absolute touch:after:-inset-3 touch:after:content-['']" :aria-label="t('Stop booking for this patient', 'Dejar de reservar para este paciente')" @click="stopBookingFor">&times;</button>
+          <button type="button" class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-pill hover:bg-surface relative touch:after:absolute touch:after:-inset-3 touch:after:content-['']" :aria-label="t('Stop booking for this patient', 'Dejar de reservar para este paciente')" @click="stopBookingFor"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true" class="h-3.5 w-3.5 shrink-0"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
         </span>
         <span v-else-if="readOnly" class="inline-flex h-7 items-center rounded-pill bg-chip-bg px-3 text-[12.5px] font-semibold text-chip-text">{{ t('Read-only', 'Solo lectura') }}</span>
       </div>
@@ -2574,7 +2574,7 @@ function showNowLineOn(day: Date) {
       <template v-if="phoneMenuOpen">
         <div class="fixed inset-0 z-30" @click="phoneMenuOpen = false" />
         <div class="absolute right-3 top-[calc(100%-4px)] z-40 w-60 overflow-hidden rounded-card border border-line bg-surface py-1 shadow-popover" role="menu" data-cy="calendar-phone-menu">
-          <p class="px-3.5 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-[.05em] text-ink-faint">{{ t('View', 'Vista') }}</p>
+          <p class="px-3.5 pb-1 pt-2 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('View', 'Vista') }}</p>
           <button
             v-for="v in ([['day', t('Day', 'Día')], ['workweek', t('Work week', 'Semana laboral')], ['week', t('Week', 'Semana')], ['month', t('Month', 'Mes')]] as const)"
             :key="v[0]"
@@ -2617,6 +2617,19 @@ function showNowLineOn(day: Date) {
           </button>
         </div>
         <span class="text-[13.5px] font-[560] text-ink-700">{{ rangeLabel }}</span>
+        <!-- The mini-calendar/display panel is a fixed 238px column at lg+
+        (below), but that plus the optional flow-tracker column would eat
+        most of a phone's width -- so below lg it's an off-canvas drawer
+        instead, reached from here. On this row rather than at the end of the
+        actions, where on a tablet it wrapped onto a 44px row of its own. -->
+        <button
+          type="button"
+          class="ml-auto flex h-8 touch:h-11 items-center gap-1 rounded-ctlSm border border-line-control px-2.5 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover hover:bg-surface-subtle lg:hidden [@media(pointer:coarse)]:h-11"
+          @click="mobileInfoOpen = true"
+        >
+          <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="7" cy="7" r="5.3" /><path d="M7 6.3v3.4M7 4.3v.15" stroke-linecap="round" /></svg>
+          {{ t('Info', 'Info') }}
+        </button>
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <select v-model="viewMode" :aria-label="t('View', 'Vista')" class="h-8 touch:h-11 rounded-ctlSm border border-line-control bg-surface px-2 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover focus:border-brand focus:outline-none [@media(pointer:coarse)]:h-11">
@@ -2635,7 +2648,7 @@ function showNowLineOn(day: Date) {
               :aria-label="t('Stop booking for this patient', 'Dejar de reservar para este paciente')"
               data-cy="booking-for-clear"
               @click="stopBookingFor"
-            >&times;</button>
+            ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true" class="h-3.5 w-3.5 shrink-0"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
           </span>
           <UiBtn variant="secondary" size="sm" @click="openBlockCreateModal()">{{ t('Block time', 'Bloquear horario') }}</UiBtn>
           <UiBtn variant="secondary" size="sm" data-cy="absence-open" @click="absenceOpen = true">{{ t('Unplanned absence', 'Ausencia imprevista') }}</UiBtn>
@@ -2643,18 +2656,6 @@ function showNowLineOn(day: Date) {
           <UiBtn variant="primary" size="sm" data-cy="new-appointment" @click="openCreateModal()">{{ t('+ New Appointment', '+ Nueva Cita') }}</UiBtn>
         </template>
         <span v-else class="inline-flex h-8 items-center rounded-pill bg-chip-bg px-3 text-[12.5px] font-semibold text-chip-text" data-cy="calendar-read-only">{{ t('Read-only', 'Solo lectura') }}</span>
-        <!-- The mini-calendar/display panel is a fixed 238px column at lg+
-        (below), but that plus the optional flow-tracker column would eat
-        most of a phone's width -- so below lg it's an off-canvas drawer
-        instead, reached from here. -->
-        <button
-          type="button"
-          class="flex h-8 touch:h-11 items-center gap-1 rounded-ctlSm border border-line-control px-2.5 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover hover:bg-surface-subtle lg:hidden [@media(pointer:coarse)]:h-11"
-          @click="mobileInfoOpen = true"
-        >
-          <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="7" cy="7" r="5.3" /><path d="M7 6.3v3.4M7 4.3v.15" stroke-linecap="round" /></svg>
-          {{ t('Info', 'Info') }}
-        </button>
       </div>
     </header>
 
@@ -2700,7 +2701,7 @@ function showNowLineOn(day: Date) {
       </button>
     </div>
     <div v-else-if="!showAgenda" class="flex h-9 shrink-0 items-center border-b border-line bg-surface px-6 text-[12.5px] text-ink-faint">
-      No practitioners are assigned to this clinic yet.
+      {{ t('No practitioners are assigned to this clinic yet.', 'Todavía no hay profesionales asignados a esta clínica.') }}
     </div>
 
     <div v-if="reschedulingAppointment" class="flex h-10 shrink-0 items-center justify-between gap-3 border-b border-line bg-brand-tint px-6">
@@ -2766,7 +2767,7 @@ function showNowLineOn(day: Date) {
     </div>
 
     <div class="flex flex-1 overflow-hidden">
-      <div v-if="mobileInfoOpen" class="fixed inset-0 z-30 bg-black/40 lg:hidden" @click="mobileInfoOpen = false" />
+      <div v-if="mobileInfoOpen" class="fixed inset-0 z-30 bg-scrim/40 lg:hidden" @click="mobileInfoOpen = false" />
 
       <!-- Left panel: mini month, display toggles, stage key. Off-canvas
       below lg (see the Info button above); a permanent column at lg+. -->
@@ -2816,7 +2817,7 @@ function showNowLineOn(day: Date) {
         </div>
 
         <div data-cy="today-glance" class="mx-3 mb-3 rounded-card border border-line bg-surface p-3">
-          <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-faint">{{ t('Today at a glance', 'Hoy de un vistazo') }}</p>
+          <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Today at a glance', 'Hoy de un vistazo') }}</p>
           <!-- Money first, as a shift is closed: what came in, and what was charged. -->
           <NuxtLink v-if="takingsRows.length" to="/reports/daily-transactions" class="mt-2 grid grid-cols-2 gap-2" data-cy="glance-takings" :title="t('Open the day sheet', 'Abrir las transacciones del día')">
             <span v-for="row in takingsRows" :key="row.key" class="rounded-ctl bg-surface-subtle px-2.5 py-2" :data-cy="`glance-${row.key}`">
@@ -2835,7 +2836,7 @@ function showNowLineOn(day: Date) {
         </div>
 
         <div class="mx-3 rounded-card border border-line bg-surface p-3">
-          <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-faint">{{ t('Display', 'Visualización') }}</p>
+          <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Display', 'Visualización') }}</p>
           <div class="mt-2 space-y-2.5">
             <div v-for="toggle in displayToggles" :key="toggle.key" class="flex items-center justify-between gap-2">
               <span class="text-[12.5px] text-ink-600">{{ toggle.label }}</span>
@@ -2845,7 +2846,7 @@ function showNowLineOn(day: Date) {
                 :aria-checked="settings[toggle.key]"
                 :aria-label="toggle.label"
                 :data-cy="`display-${toggle.key}`"
-                class="relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors"
+                class="relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors touch:after:absolute touch:after:-inset-3 touch:after:content-['']"
                 :class="settings[toggle.key] ? 'bg-brand' : 'bg-toggle-off'"
                 @click="settings[toggle.key] = !settings[toggle.key]"
               >
@@ -2856,7 +2857,7 @@ function showNowLineOn(day: Date) {
         </div>
 
         <div class="m-3 rounded-card border border-line bg-surface p-3">
-          <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-faint">{{ t('Stage key', 'Leyenda de estados') }}</p>
+          <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Stage key', 'Leyenda de estados') }}</p>
           <p class="mt-1 text-[11.5px] leading-snug text-ink-muted">{{ t('Dashed border: not confirmed yet. Red: money owed.', 'Borde discontinuo: sin confirmar. Rojo: dinero pendiente.') }}</p>
           <div class="mt-2 space-y-1.5">
             <div v-for="stage in STAGE_KEY" :key="stage" class="flex items-center gap-2 text-[12.5px] text-ink-600">
@@ -2967,7 +2968,7 @@ function showNowLineOn(day: Date) {
               <div class="relative flex" :style="{ height: `${dayGridHeight}px` }">
                 <div class="sticky left-0 z-[25] w-[58px] shrink-0 border-r border-line bg-surface">
                   <!-- In the gutter, which stays put when the rooms scroll sideways. -->
-                  <span v-if="showNowLine" class="pointer-events-none absolute left-1 z-10 -translate-y-1/2 rounded-full bg-danger-text px-1.5 py-px font-mono text-[11px] font-semibold leading-4 text-surface" data-cy="now-label" :style="{ top: `${nowLinePx}px` }">{{ formatTime(now) }}</span>
+                  <span v-if="showNowLine" class="pointer-events-none absolute left-1 z-10 -translate-y-1/2 rounded-full bg-danger-text px-1.5 py-px font-mono text-[11px] font-semibold leading-4 text-danger-on" data-cy="now-label" :style="{ top: `${nowLinePx}px` }">{{ formatTime(now) }}</span>
                   <span
                     v-for="h in hourMarks"
                     :key="h"
@@ -3116,7 +3117,7 @@ function showNowLineOn(day: Date) {
                     <div
                       v-if="g"
                       data-cy="create-ghost"
-                      class="pointer-events-none absolute left-1 right-1 z-[15] flex items-center rounded-ctl bg-brand px-2.5 text-[13px] font-semibold text-surface shadow-[0_0_0_3px_rgb(var(--color-brand-tint))]"
+                      class="pointer-events-none absolute left-1 right-1 z-[15] flex items-center rounded-ctl bg-brand px-2.5 text-[13px] font-semibold text-brand-on shadow-[0_0_0_3px_rgb(var(--color-brand-tint))]"
                       :style="{ top: `${(g.min / 60) * DAY_HOUR_PX + 1}px`, height: `${(SLOT_MIN / 60) * DAY_HOUR_PX - 3}px` }"
                     >
                       {{ t(`New appointment · ${g.label}`, `Nueva cita · ${g.label}`) }}
@@ -3142,7 +3143,7 @@ function showNowLineOn(day: Date) {
               <div class="sticky left-0 z-[25] w-[58px] shrink-0 bg-surface">
                 <div class="sticky top-0 z-30 border-b border-r border-line bg-surface" :style="{ height: `${WEEK_HEADER_PX}px` }"></div>
                 <div class="relative border-r border-line" :style="{ height: `${weekGridHeight}px` }">
-                  <span v-if="showWeekNowLabel" class="pointer-events-none absolute left-1 z-20 -translate-y-1/2 rounded-full bg-danger-text px-1.5 py-px font-mono text-[11px] font-semibold leading-4 text-surface" data-cy="now-label" :style="{ top: `${nowLineWeekPx}px` }">{{ formatTime(now) }}</span>
+                  <span v-if="showWeekNowLabel" class="pointer-events-none absolute left-1 z-20 -translate-y-1/2 rounded-full bg-danger-text px-1.5 py-px font-mono text-[11px] font-semibold leading-4 text-danger-on" data-cy="now-label" :style="{ top: `${nowLineWeekPx}px` }">{{ formatTime(now) }}</span>
                   <span
                     v-for="h in hourMarks"
                     :key="h"
@@ -3170,7 +3171,7 @@ function showNowLineOn(day: Date) {
                   >
                     <span class="text-[11px] font-semibold uppercase tracking-[.04em] text-ink-muted2">{{ formatWeekdayDate(day).split(' ')[0] }}</span>
                     <span class="text-[12.5px] font-medium" :class="isSameDate(day, new Date()) ? 'text-brand-text' : 'text-ink-900'">{{ day.getDate() }}</span>
-                    <button v-if="!readOnly" type="button" :aria-label="t('New appointment on this day', 'Nueva cita este día')" class="absolute right-1 top-0.5 text-[11px] text-ink-faint hover:text-brand-text" @click.stop="openCreateModalForDay(day)">+</button>
+                    <button v-if="!readOnly" type="button" :aria-label="t('New appointment on this day', 'Nueva cita este día')" :title="t('New appointment on this day', 'Nueva cita este día')" class="absolute right-0.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-ctlSm text-ink-faint hover:bg-surface-subtle hover:text-brand-text touch:after:absolute touch:after:-inset-2.5 touch:after:content-['']" @click.stop="openCreateModalForDay(day)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" class="h-3 w-3"><path stroke-linecap="round" d="M12 5v14M5 12h14" /></svg></button>
                   </div>
                   <!-- Per-day counts: the two that need someone to act. -->
                   <div class="flex h-[18px] items-center justify-center gap-2 border-b border-line text-[11px] text-ink-muted" data-cy="day-header-counts" :class="isSameDate(day, new Date()) ? 'bg-brand-tintDeep' : ''">
@@ -3336,7 +3337,7 @@ function showNowLineOn(day: Date) {
                       <div
                         v-if="g"
                         data-cy="create-ghost"
-                        class="pointer-events-none absolute left-0.5 right-0.5 z-[15] flex items-center overflow-hidden whitespace-nowrap rounded-[6px] bg-brand px-1 text-[11px] font-semibold text-surface"
+                        class="pointer-events-none absolute left-0.5 right-0.5 z-[15] flex items-center overflow-hidden whitespace-nowrap rounded-[6px] bg-brand px-1 text-[11px] font-semibold text-brand-on"
                         :style="{ top: `${(g.min / 60) * WEEK_HOUR_PX}px`, height: `${(SLOT_MIN / 60) * WEEK_HOUR_PX - 2}px` }"
                       >
                         {{ g.label }}

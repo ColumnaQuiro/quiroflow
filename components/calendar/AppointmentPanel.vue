@@ -700,7 +700,7 @@ async function useExpectedType() {
     <!-- Header: the hover card's facts, in the same order. -->
     <div class="shrink-0 border-b border-line px-5 pt-3 sm:px-6">
       <div class="flex items-center justify-between">
-        <span class="text-[11px] font-bold uppercase tracking-[.06em] text-ink-muted">{{ t('Appointment', 'Cita') }}</span>
+        <span class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted">{{ t('Appointment', 'Cita') }}</span>
         <button type="button" :aria-label="t('Close', 'Cerrar')" class="-mr-2.5 flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle" @click="emit('close')">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
         </button>
@@ -708,7 +708,7 @@ async function useExpectedType() {
       <div class="flex items-center gap-3">
         <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[15px] font-bold text-brand-text">{{ initials }}</span>
         <div class="flex min-w-0 flex-1 flex-col">
-          <h2 id="appt-name" class="truncate text-[20px] font-bold text-ink-900">{{ view.name }}</h2>
+          <h2 id="appt-name" class="truncate text-[18px] font-[640] tracking-tightTitle text-ink-900">{{ view.name }}</h2>
           <span class="truncate text-[12.5px] text-ink-muted" data-cy="appt-sheet-facts">{{ headerSub }}</span>
         </div>
         <NuxtLink :to="`/patients/${appointment.patient_id}`" class="flex h-9 touch:h-11 shrink-0 items-center gap-1 rounded-ctl px-3 text-[13px] font-semibold text-brand-text hover:bg-brand-tint">
@@ -789,7 +789,7 @@ async function useExpectedType() {
         >
           {{ k === 'summary' ? t('Summary', 'Resumen') : k === 'billing' ? t('Billing', 'Cobro') : t('History', 'Historial') }}
           <span v-if="k === 'billing' && (payment.kind === 'unpaid' || view.owesCents > 0)" class="h-1.5 w-1.5 rounded-full bg-danger-text" aria-hidden="true" />
-          <span v-if="k === 'history'" class="rounded-full bg-chip-bg px-1.5 text-[11px] text-chip-text">{{ history.length }}</span>
+          <UiPill v-if="k === 'history'" class="font-mono">{{ history.length }}</UiPill>
         </button>
       </div>
     </div>
@@ -800,7 +800,7 @@ async function useExpectedType() {
       <div v-if="tab === 'summary'" class="flex flex-col gap-6">
         <!-- Where it stands: status + confirmation + flow, one track. -->
         <section>
-          <h3 class="mb-2.5 text-[11px] font-bold uppercase tracking-[.06em] text-ink-muted">{{ t('Where it stands', 'Dónde está') }}</h3>
+          <h3 class="mb-2.5 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted">{{ t('Where it stands', 'Dónde está') }}</h3>
           <ol v-if="onTrack" class="grid grid-cols-5 gap-1.5" :aria-label="t('Appointment stage', 'Estado de la cita')" data-cy="stage-track">
             <li v-for="s in trackSteps" :key="s.key" class="flex min-w-0 flex-col gap-1" :data-state="s.state" :aria-current="s.state === 'current' ? 'step' : undefined">
               <span class="h-1.5 rounded-[3px]" :class="s.state === 'done' || s.state === 'current' ? 'bg-success-accent' : s.state === 'waiting' ? 'bg-warning-accent' : 'bg-line'" />
@@ -812,7 +812,7 @@ async function useExpectedType() {
           <p v-if="onTrack && stageLine(appointment, stage).sub" class="mt-2 text-[12.5px] text-ink-muted">{{ stageLine(appointment, stage).title }} · {{ stageLine(appointment, stage).sub }}</p>
 
           <div v-if="!readOnly && (next || undoable || canUndoVisit || isUnconfirmedStage(stage))" class="mt-3 flex flex-wrap items-center gap-2">
-            <button v-if="next && !isPhone" type="button" data-cy="advance-stage" :data-next="next" :disabled="busy" class="flex h-9 touch:h-11 items-center gap-2 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface hover:bg-brand-hover disabled:opacity-60" @click="advance">
+            <button v-if="next && !isPhone" type="button" data-cy="advance-stage" :data-next="next" :disabled="busy" class="flex h-9 touch:h-11 items-center gap-2 rounded-ctl bg-brand px-4 text-[14px] font-bold text-brand-on hover:bg-brand-hover disabled:opacity-60" @click="advance">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
               {{ nextLabel }}
               <kbd class="ml-0.5 rounded border border-current px-1 font-mono text-[11px] font-semibold leading-4 opacity-70 [@media(pointer:coarse)]:hidden" aria-hidden="true">A</kbd>
@@ -860,7 +860,7 @@ async function useExpectedType() {
 
         <!-- Money: this visit, and the patient's balance beside it. -->
         <section>
-          <h3 class="mb-2.5 text-[11px] font-bold uppercase tracking-[.06em] text-ink-muted">{{ t('Money', 'Dinero') }}</h3>
+          <h3 class="mb-2.5 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted">{{ t('Money', 'Dinero') }}</h3>
           <div class="overflow-hidden rounded-card border border-line">
             <div class="flex items-center gap-3 px-3.5 py-3" data-cy="visit-money">
               <div class="flex min-w-0 flex-1 flex-col">
@@ -884,7 +884,7 @@ async function useExpectedType() {
                 <span v-else-if="view.owesCents <= 0" class="text-[14px] font-semibold text-ink-700">{{ t('Nothing owed', 'Sin saldo pendiente') }}</span>
                 <span v-if="view.owesCents > 0 && unpaidList" class="truncate text-[12px] text-ink-500">{{ t(`${unpaidList}, unpaid`, `${unpaidList}, sin cobrar`) }}</span>
               </div>
-              <NuxtLink v-if="view.owesCents > 0" :to="`/patients/${appointment.patient_id}?tab=money`" data-cy="collect-balance" class="flex h-9 touch:h-11 shrink-0 items-center rounded-ctl bg-danger-text px-3.5 text-[13.5px] font-bold text-surface hover:opacity-90">
+              <NuxtLink v-if="view.owesCents > 0" :to="`/patients/${appointment.patient_id}?tab=money`" data-cy="collect-balance" class="flex h-9 touch:h-11 shrink-0 items-center rounded-ctl bg-danger-text px-3.5 text-[13.5px] font-bold text-danger-on hover:opacity-90">
                 {{ t(`Collect ${formatEur(view.owesCents)}`, `Cobrar ${formatEur(view.owesCents)}`) }}
               </NuxtLink>
             </div>
@@ -893,7 +893,7 @@ async function useExpectedType() {
 
         <!-- Notes: editing lives here, not in the hover card. -->
         <section class="flex flex-col gap-3">
-          <h3 class="text-[11px] font-bold uppercase tracking-[.06em] text-ink-muted">{{ t('Notes', 'Notas') }}</h3>
+          <h3 class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted">{{ t('Notes', 'Notas') }}</h3>
           <label class="flex flex-col gap-1.5 text-[12.5px] font-medium text-ink-600">
             <span>{{ t('Patient note · shows on every appointment', 'Nota del paciente · se ve en todas sus citas') }} <span v-if="unsavedNote === 'sticky'" class="font-normal text-danger-text" role="alert" data-cy="sticky-note-unsaved">· {{ t('not saved; click outside to try again', 'sin guardar; pulsa fuera para reintentar') }}</span><span v-else-if="savedNote === 'sticky'" class="font-normal text-success-text">· {{ t('saved', 'guardada') }}</span></span>
             <textarea v-model="stickyNote" rows="2" data-cy="sticky-note" class="rounded-ctl border border-warning-border bg-warning-bg px-3 py-2 text-[13.5px] text-ink-700 focus:border-brand focus:outline-none" @blur="saveSticky" @input="savedNote = null" />
@@ -906,7 +906,7 @@ async function useExpectedType() {
 
         <!-- Messages: facts the row already has. -->
         <section>
-          <h3 class="mb-2.5 text-[11px] font-bold uppercase tracking-[.06em] text-ink-muted">{{ t('Messages sent', 'Avisos enviados') }}</h3>
+          <h3 class="mb-2.5 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted">{{ t('Messages sent', 'Avisos enviados') }}</h3>
           <div v-if="messages.length" class="flex flex-wrap gap-2" data-cy="messages-sent">
             <span v-for="m in messages" :key="m.label" class="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface-subtle px-3 py-1.5 text-[12.5px] text-ink-700">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" class="text-success-accent" aria-hidden="true"><path d="M5 12l5 5 9-10" /></svg>
@@ -920,7 +920,7 @@ async function useExpectedType() {
              they were here. Only once they have arrived: the server refuses
              a visit that did not take place. -->
         <section v-if="hasArrived(stage)">
-          <h3 class="mb-2.5 text-[11px] font-bold uppercase tracking-[.06em] text-ink-muted">{{ t('Documents', 'Documentos') }}</h3>
+          <h3 class="mb-2.5 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted">{{ t('Documents', 'Documentos') }}</h3>
           <button type="button" data-cy="attendance-certificate" :disabled="certificateBusy" class="flex h-9 touch:h-11 items-center gap-2 rounded-ctl border border-line-control px-3.5 text-[13px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:opacity-60" @click="downloadCertificate">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6M9 14l2 2 4-4" /></svg>
             {{ certificateBusy ? t('Preparing…', 'Preparando…') : t('Certificate of attendance', 'Justificante de asistencia') }}
@@ -956,7 +956,7 @@ async function useExpectedType() {
       <template v-if="missedFee">
         <p class="text-[13.5px] font-semibold text-ink-900">{{ t(`Missed-appointment fee: ${formatEur(missedFee.cents)}`, `Cargo por no presentarse: ${formatEur(missedFee.cents)}`) }}</p>
         <div class="mt-2 flex flex-wrap gap-2">
-          <button v-if="missedFee.card" type="button" class="h-9 touch:h-11 rounded-ctl bg-brand px-3 text-[13px] font-semibold text-surface disabled:opacity-60" :disabled="missedFeeBusy" data-cy="missed-fee-card" @click="applyMissedFee('card')">{{ t(`Charge ${missedFee.card.brand} ·${missedFee.card.last4}`, `Cobrar a ${missedFee.card.brand} ·${missedFee.card.last4}`) }}</button>
+          <button v-if="missedFee.card" type="button" class="h-9 touch:h-11 rounded-ctl bg-brand px-3 text-[13px] font-semibold text-brand-on hover:bg-brand-hover disabled:opacity-60" :disabled="missedFeeBusy" data-cy="missed-fee-card" @click="applyMissedFee('card')">{{ t(`Charge ${missedFee.card.brand} ·${missedFee.card.last4}`, `Cobrar a ${missedFee.card.brand} ·${missedFee.card.last4}`) }}</button>
           <button type="button" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[13px] font-semibold text-ink-700 disabled:opacity-60" :disabled="missedFeeBusy" data-cy="missed-fee-balance" @click="applyMissedFee('balance')">{{ t('Add to balance', 'Añadir al saldo') }}</button>
           <button type="button" class="h-9 touch:h-11 px-2 text-[13px] text-ink-muted" :disabled="missedFeeBusy" data-cy="missed-fee-none" @click="missedFee = null">{{ t('No fee', 'Sin cargo') }}</button>
         </div>
@@ -966,7 +966,7 @@ async function useExpectedType() {
 
     <!-- Footer: the consequential actions, each its own button. -->
     <div class="appt-panel-footer flex shrink-0 flex-wrap items-center gap-2 border-t border-line bg-surface px-5 py-3 sm:px-6">
-      <button v-if="next && isPhone && !readOnly" type="button" data-cy="advance-stage" :data-next="next" :disabled="busy" class="flex h-12 w-full items-center justify-center gap-2 rounded-ctl bg-brand text-[15px] font-bold text-surface disabled:opacity-60" @click="advance">
+      <button v-if="next && isPhone && !readOnly" type="button" data-cy="advance-stage" :data-next="next" :disabled="busy" class="flex h-12 w-full items-center justify-center gap-2 rounded-ctl bg-brand text-[15px] font-bold text-brand-on hover:bg-brand-hover disabled:opacity-60" @click="advance">
         {{ nextLabel }}
       </button>
       <template v-if="canAct">

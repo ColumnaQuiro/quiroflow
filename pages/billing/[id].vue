@@ -243,8 +243,16 @@ async function voidInvoice() {
     )
     return
   }
-  if (!confirm(t('Void this receipt?', '¿Anular este recibo?'))) return
+  confirmingVoid.value = true
+}
+// window.confirm() could not be translated, styled or put in dark mode.
+const confirmingVoid = ref(false)
+const voiding = ref(false)
+async function confirmVoid() {
+  voiding.value = true
   await supabase.from('invoices').update({ status: 'void' }).eq('id', invoiceId)
+  voiding.value = false
+  confirmingVoid.value = false
   await load()
 }
 
@@ -311,7 +319,7 @@ const fieldId = useId()
           <UiBtn v-if="showRefund" variant="ghost" size="sm" @click="goToRefund">
             {{ t('Refund…', 'Reembolsar…') }}
           </UiBtn>
-          <UiBtn variant="secondary" @click="backToBilling">&larr; {{ t('Back to billing', 'Volver a facturación') }}</UiBtn>
+          <UiBtn variant="secondary" @click="backToBilling"><UiChevron />{{ t('Back to billing', 'Volver a facturación') }}</UiBtn>
         </template>
       </PageHeader>
     </div>
@@ -324,11 +332,18 @@ const fieldId = useId()
           <UiSkeleton class="h-3 w-32 rounded-ctlSm" />
         </div>
       </div>
-      <div v-else-if="notFound" class="text-center text-[13px] text-ink-muted2">{{ t('Receipt not found.', 'Recibo no encontrado.') }}</div>
+      <UiEmptyState
+        v-else-if="notFound"
+        :title="t('Receipt not found.', 'Recibo no encontrado.')"
+      >
+        <template #actions>
+          <UiBtn variant="secondary" @click="navigateTo('/billing')"><UiChevron />{{ t('Back to billing', 'Volver a facturación') }}</UiBtn>
+        </template>
+      </UiEmptyState>
 
       <div v-else-if="invoice" class="mx-auto max-w-[720px] space-y-4">
         <div class="overflow-hidden rounded-card border border-line bg-surface shadow-card">
-          <div v-if="invoiceClinic" class="flex items-start gap-3 border-b border-line-divider px-6 py-4">
+          <div v-if="invoiceClinic" class="flex items-start gap-3 border-b border-line-divider px-4 py-4 sm:px-6">
             <img v-if="invoiceClinicLogoUrl" :src="invoiceClinicLogoUrl" class="h-12 w-12 shrink-0 rounded-ctlSm object-contain" alt="" />
             <div>
               <p class="text-[13.5px] font-[620] text-ink-900">{{ invoiceClinic.name }}</p>
@@ -338,8 +353,8 @@ const fieldId = useId()
             </div>
           </div>
 
-          <div class="flex items-start justify-between p-6">
-            <div>
+          <div class="flex flex-wrap items-start justify-between gap-x-6 gap-y-3 p-4 sm:p-6">
+            <div class="min-w-0">
               <p class="font-mono text-[13px] text-ink-muted2">{{ invoice.invoice_number }}</p>
               <p class="mt-1 text-[17px] font-[620] text-ink-900">
                 {{ invoice.patients?.first_name }} {{ invoice.patients?.last_name }}
@@ -356,28 +371,30 @@ const fieldId = useId()
             </div>
           </div>
 
-          <div class="px-6">
+          <div class="px-4 sm:px-6">
+            <!-- The figure columns keep a gutter and never break: with none, a
+                 four-digit price ran straight into the total ("1274,00 €1274,00 €"). -->
             <table class="w-full text-[13px]">
               <thead>
-                <tr class="text-left text-[11px] font-semibold uppercase tracking-wide text-ink-faint2">
+                <tr class="text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint2">
                   <th class="py-[11px]">{{ t('Item', 'Concepto') }}</th>
-                  <th class="py-[11px] text-right">{{ t('Qty', 'Cant.') }}</th>
-                  <th class="py-[11px] text-right">{{ t('Price', 'Precio') }}</th>
-                  <th class="py-[11px] text-right">{{ t('Total', 'Total') }}</th>
+                  <th class="py-[11px] pl-2 text-right sm:pl-4">{{ t('Qty', 'Cant.') }}</th>
+                  <th class="py-[11px] pl-2 text-right sm:pl-4">{{ t('Price', 'Precio') }}</th>
+                  <th class="py-[11px] pl-2 text-right sm:pl-4">{{ t('Total', 'Total') }}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-line-row2 border-t border-line-row2">
                 <tr v-for="line in lineItems" :key="line.id">
-                  <td class="py-[11px] text-ink-800">{{ line.description }}</td>
-                  <td class="py-[11px] text-right text-ink-muted">{{ line.quantity }}</td>
-                  <td class="py-[11px] text-right font-mono text-ink-muted">{{ formatEur(line.price_cents) }}</td>
-                  <td class="py-[11px] text-right font-mono text-ink-900">{{ formatEur((line.price_cents * line.quantity)) }}</td>
+                  <td class="break-words py-[11px] text-ink-800">{{ line.description }}</td>
+                  <td class="whitespace-nowrap py-[11px] pl-2 text-right font-mono text-ink-muted sm:pl-4">{{ line.quantity }}</td>
+                  <td class="whitespace-nowrap py-[11px] pl-2 text-right font-mono text-ink-muted sm:pl-4">{{ formatEur(line.price_cents) }}</td>
+                  <td class="whitespace-nowrap py-[11px] pl-2 text-right font-mono text-ink-900 sm:pl-4">{{ formatEur((line.price_cents * line.quantity)) }}</td>
                 </tr>
               </tbody>
             </table>
           </div>
 
-          <div class="flex justify-end px-6 pb-6 pt-2">
+          <div class="flex justify-end px-4 pb-6 pt-2 sm:px-6">
             <div class="w-48 space-y-1.5 text-[12.5px]">
               <div class="flex justify-between text-ink-muted">
                 <span>{{ t('Subtotal', 'Subtotal') }}</span>
@@ -394,12 +411,12 @@ const fieldId = useId()
             </div>
           </div>
 
-          <div class="border-t border-line-divider px-6 py-4">
+          <div class="border-t border-line-divider px-4 py-4 sm:px-6">
             <p v-if="invoiceClinic?.invoice_footer_text" class="whitespace-pre-line text-[12px] text-ink-faint2">{{ invoiceClinic.invoice_footer_text }}</p>
             <p v-if="!hideNextVisit" class="mt-1.5 text-[12px] text-ink-faint2">{{ t('Your next visit:', 'Tu próxima visita:') }} {{ nextAppointmentDate ? formatDate(nextAppointmentDate) : '—' }}</p>
           </div>
 
-          <div class="flex items-center justify-between gap-3 border-t border-line bg-surface-subtle2 px-6 py-4 print:hidden">
+          <div class="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-surface-subtle2 px-4 py-4 sm:px-6 print:hidden">
             <div class="flex flex-wrap items-center gap-2">
               <UiBtn variant="secondary" :disabled="sending || !invoice.patients?.email" @click="sendEmail">
                 {{ sending ? t('Sending…', 'Enviando…') : t('Send by email', 'Enviar por correo') }}
@@ -421,17 +438,17 @@ const fieldId = useId()
           {{ t('Add an email address to this patient to enable sending.', 'Añade una dirección de correo a este paciente para poder enviarla.') }}
         </p>
 
-        <div class="rounded-card border border-line bg-surface p-6 shadow-card print:hidden">
-          <h2 class="text-[13px] font-semibold text-ink-900">{{ t('Payments', 'Pagos') }}</h2>
+        <div class="rounded-card border border-line bg-surface p-4 shadow-card sm:p-6 print:hidden">
+          <h2 class="text-[14px] font-semibold tracking-tightTitle text-ink-900">{{ t('Payments', 'Pagos') }}</h2>
           <ul v-if="payments.length > 0" class="mt-3 space-y-1.5 text-[13px]">
-            <li v-for="p in payments" :key="p.id" class="flex justify-between">
+            <li v-for="p in payments" :key="p.id" class="flex justify-between gap-3">
               <span class="text-ink-muted">{{ formatDateTime(p.paid_at) }} &middot; {{ paymentMethodLabel(p.method) }}</span>
-              <span class="font-mono text-ink-900">{{ formatEur(p.amount_cents) }}</span>
+              <span class="shrink-0 whitespace-nowrap font-mono text-ink-900">{{ formatEur(p.amount_cents) }}</span>
             </li>
           </ul>
           <p v-else class="mt-2 text-[13px] text-ink-muted2">{{ t('No payments recorded.', 'No hay pagos registrados.') }}</p>
 
-          <form v-if="canTakePayments && invoice.status !== 'void' && balanceDueCents > 0" class="mt-4 flex items-end gap-2" @submit.prevent="recordPayment">
+          <form v-if="canTakePayments && invoice.status !== 'void' && balanceDueCents > 0" class="mt-4 flex flex-wrap items-end gap-2" @submit.prevent="recordPayment">
             <div>
               <label :for="`${fieldId}-paymentAmount`" class="block text-[12.5px] font-medium text-ink-500">{{ t('Amount (€)', 'Importe (€)') }}</label>
               <input :id="`${fieldId}-paymentAmount`"
@@ -439,27 +456,36 @@ const fieldId = useId()
                 type="number"
                 step="0.01"
                 min="0"
-                class="mt-1 w-28 rounded-ctl border border-line-control px-3 py-1.5 font-mono text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                class="mt-1 h-9 w-28 rounded-ctl border border-line-control bg-surface px-3 text-right font-mono text-[13px] text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand touch:h-11"
               />
             </div>
-            <div>
+            <div class="min-w-0 max-w-full">
               <label :for="`${fieldId}-paymentMethod`" class="block text-[12.5px] font-medium text-ink-500">{{ t('Method', 'Método') }}</label>
-              <select :id="`${fieldId}-paymentMethod`" v-model="paymentMethod" class="mt-1 rounded-ctl border border-line-control px-3 py-1.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand">
+              <select :id="`${fieldId}-paymentMethod`" v-model="paymentMethod" class="mt-1 h-9 max-w-full rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand touch:h-11">
                 <option v-for="m in paymentMethods" :key="m.key" :value="m.key">{{ m.name }}</option>
                 <option v-if="creditLedgerCents > 0" value="credit">{{ t('Credit on account', 'Crédito en cuenta') }} ({{ formatEur(creditLedgerCents) }} {{ t('available', 'disponible') }})</option>
               </select>
             </div>
-            <button
-              type="submit"
-              :disabled="savingPayment"
-              class="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-ctl border border-brand bg-brand px-3.5 text-[13px] font-semibold text-brand-on hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-50"
-            >
+            <UiBtn type="submit" variant="primary" :disabled="savingPayment">
               {{ savingPayment ? t('Recording…', 'Registrando…') : t('Record payment', 'Registrar pago') }}
-            </button>
+            </UiBtn>
           </form>
-          <p v-if="error" class="mt-2 text-[12.5px] text-danger-text">{{ error }}</p>
+          <p v-if="error" role="alert" class="mt-2 text-[12.5px] text-danger-text">{{ error }}</p>
         </div>
       </div>
     </div>
+
+    <UiConfirmDialog
+      v-if="confirmingVoid"
+      tone="danger"
+      :title="t('Void this receipt?', '¿Anular este recibo?')"
+      :confirm-label="t('Void receipt', 'Anular recibo')"
+      :cancel-label="t('Cancel', 'Cancelar')"
+      :busy="voiding"
+      @confirm="confirmVoid"
+      @cancel="confirmingVoid = false"
+    >
+      <p class="text-[13px] text-ink-muted">{{ t('It stays in the list as void and no longer counts as owed.', 'Seguirá en la lista como anulado y dejará de contar como pendiente.') }}</p>
+    </UiConfirmDialog>
   </div>
 </template>

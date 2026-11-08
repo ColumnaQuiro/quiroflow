@@ -90,7 +90,7 @@ const iconBtn = 'flex h-6 w-6 items-center justify-center rounded-ctlSm text-[11
         v-model="draft"
         type="text"
         :placeholder="t('e.g. How long have you had it?', 'p. ej. ¿Desde cuándo lo tienes?')"
-        class="h-8 rounded-ctl border border-line-control bg-surface px-2.5 text-[12px] text-ink-700 focus:border-brand focus:outline-none"
+        class="h-8 touch:h-11 rounded-ctl border border-line-control bg-surface px-2.5 text-[12px] text-ink-700 focus:border-brand focus:outline-none"
         data-test="question-text"
         @keyup.enter="add"
       />

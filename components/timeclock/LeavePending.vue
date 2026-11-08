@@ -65,7 +65,7 @@ async function decide(p: Pending, approve: boolean) {
     <p v-if="error" role="alert" class="mt-1 text-[12.5px] text-danger-text">{{ error }}</p>
     <div v-for="p in pending" :key="p.id" class="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-2" data-cy="leave-pending-row" :data-name="p.team_members?.full_name">
       <span class="text-[13.5px] font-semibold text-ink-900">{{ p.team_members?.full_name }}</span>
-      <span class="min-w-0 flex-1 text-[12.5px] text-ink-muted">
+      <span class="min-w-[14rem] flex-1 text-[12.5px] text-ink-muted">
         {{ absenceKindLabel(p.kind, t) }} · {{ dates(p) }} ·
         {{ leaveWorkingDays(p.starts_on, p.ends_on, p.half_day) }} {{ t('working days', 'días laborables') }}
         <template v-if="p.kind === 'vacation'"> · {{ t(`${remaining.get(p.team_member_id) ?? DEFAULT_LEAVE_DAYS} left`, `le quedan ${remaining.get(p.team_member_id) ?? DEFAULT_LEAVE_DAYS}`) }}</template>

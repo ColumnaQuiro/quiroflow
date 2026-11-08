@@ -13,7 +13,7 @@
 // nothing retries it -- supabase-js and @nuxtjs/supabase between them retry
 // a dropped connection a dozen times over about eight seconds.
 describe('The dashboard statistics widget', () => {
-  it('hands a failed read to Vue instead of leaving it unhandled', () => {
+  it('hands a failed read to Vue instead of leaving it unhandled, and shows it failed', () => {
     cy.seedStaffAccount().then((account) => {
       cy.task('db:updateRows', {
         table: 'team_members',
@@ -34,6 +34,9 @@ describe('The dashboard statistics widget', () => {
       // the fix, the test fails here as an uncaught exception.
       cy.wait(500)
       cy.contains('Visit value & retention').should('be.visible')
+      // And says so, rather than drawing its skeleton for good: WidgetFrame
+      // catches the failure and offers to load it again.
+      cy.get('[data-cy=widget-error]').should('contain', "Couldn't load this widget.").and('contain', 'Try again')
     })
   })
 })

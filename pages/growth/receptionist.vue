@@ -95,12 +95,12 @@ const includedLabel = computed(() => (includedBy.value ? t(INCLUDED[includedBy.v
     :title="t('AI receptionist', 'Recepcionista IA')"
     :meta="t('Answers enquiries, qualifies them, and offers appointment times', 'Responde consultas, las cualifica y ofrece horarios de cita')"
   >
-    <NuxtLink v-if="includedLabel" to="/subscription" class="flex h-8 items-center rounded-ctl border border-line-control bg-surface px-2.5 text-[12px] font-medium text-ink-muted hover:border-line-controlHover" data-test="receptionist-included-by">
+    <NuxtLink v-if="includedLabel" to="/subscription" class="flex h-8 touch:h-11 items-center rounded-ctl border border-line-control bg-surface px-2.5 text-[12px] font-medium text-ink-muted hover:border-line-controlHover" data-test="receptionist-included-by">
       {{ includedLabel }}
     </NuxtLink>
     <span
       v-if="config"
-      class="flex h-8 items-center gap-1.5 rounded-ctl border px-2.5 text-[12px] font-medium"
+      class="flex h-8 touch:h-11 items-center gap-1.5 rounded-ctl border px-2.5 text-[12px] font-medium"
       :class="config.enabled ? 'border-success-border bg-success-bg text-success-text' : 'border-chip-border bg-chip-bg text-ink-muted'"
       data-test="receptionist-status"
     >
@@ -111,13 +111,11 @@ const includedLabel = computed(() => (includedBy.value ? t(INCLUDED[includedBy.v
 
   <div class="flex-1 overflow-y-auto">
     <div class="p-4 sm:p-6">
-      <div v-if="!allowed" class="mx-auto max-w-sm py-16 text-center">
-        <p class="text-[13px] text-ink-muted">{{ t("You don't have access to Growth.", 'No tienes acceso a Crecimiento.') }}</p>
-      </div>
+      <GrowthPageNotice v-if="!allowed" kind="no-access" />
 
       <GrowthReceptionistLocked v-else-if="(resolved && !hasReceptionist) || notIncluded" :trialing="trialing" />
 
-      <p v-else-if="error" class="py-16 text-center text-[13px] text-danger-text" data-test="receptionist-error">{{ error }}</p>
+      <GrowthPageNotice v-else-if="error" kind="error" :title="error" data-test="receptionist-error" @retry="reload" />
 
       <div v-else-if="loading || !config" class="grid animate-pulse gap-4 lg:grid-cols-[minmax(0,1fr)_340px]" aria-hidden="true">
         <div class="h-[520px] rounded-card border border-line bg-surface shadow-card" />
@@ -147,7 +145,7 @@ const includedLabel = computed(() => (includedBy.value ? t(INCLUDED[includedBy.v
           it has done, and what the month costs. -->
           <template v-if="tab === 'overview'">
             <p class="flex flex-wrap items-baseline gap-x-2 text-[13px] text-ink-700" data-test="receptionist-mode-sentence">
-              <span class="text-[11px] font-semibold uppercase tracking-[.06em] text-ink-faint">{{ t('Right now', 'Ahora mismo') }}</span>
+              <span class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Right now', 'Ahora mismo') }}</span>
               <span class="font-semibold text-ink-900">{{ modeSentence }}</span>
             </p>
             <GrowthReceptionistChecklist :config="config" :offered-types="offeredTypes" :live-channel-count="liveChannelCount" :tried="tried" @go="show" />

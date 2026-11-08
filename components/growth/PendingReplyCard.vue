@@ -41,13 +41,13 @@ function startEditing() {
       <button
         v-if="!editing"
         type="button"
-        class="flex h-8 items-center rounded-ctl border border-line-control bg-surface px-3 text-[12px] font-medium text-ink-700 hover:bg-surface-subtle"
+        class="flex h-8 touch:h-11 items-center rounded-ctl border border-line-control bg-surface px-3 text-[12px] font-medium text-ink-700 hover:bg-surface-subtle"
         data-test="edit-reply-start"
         @click="startEditing"
       >{{ t('Edit', 'Editar') }}</button>
       <button
         type="button"
-        class="flex h-8 items-center rounded-ctl border border-line-control bg-surface px-3 text-[12px] font-medium text-ink-700 hover:bg-surface-subtle"
+        class="flex h-8 touch:h-11 items-center rounded-ctl border border-line-control bg-surface px-3 text-[12px] font-medium text-ink-700 hover:bg-surface-subtle"
         :disabled="busy"
         data-test="discard-reply"
         @click="emit('discard')"

@@ -148,7 +148,9 @@ const retentionRate = computed(() => {
       <span class="font-mono text-[12.5px] text-ink-900">{{ incomePerVisit !== null ? formatEurFromAmount(incomePerVisit) : '—' }}</span>
     </li>
     <li class="flex items-center justify-between py-1.5">
-      <span class="text-ink-700">{{ t('Retention', 'Retención') }}</span>
+      <!-- What retentionRate measures: of the patients seen in the period,
+           the share who had a completed visit before it. -->
+      <span class="text-ink-700">{{ t('Returning patients', 'Pacientes que repiten') }}</span>
       <span class="font-mono text-[12.5px] text-ink-900">{{ retentionRate !== null ? `${retentionRate}%` : '—' }}</span>
     </li>
   </ul>

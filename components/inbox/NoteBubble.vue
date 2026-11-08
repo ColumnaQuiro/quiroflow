@@ -30,8 +30,8 @@ const confirming = ref(false)
         <template v-if="mine">
           <button v-if="!confirming" type="button" class="text-[11.5px] font-medium text-warning-text underline-offset-2 hover:underline" data-cy="thread-note-delete" @click="confirming = true">{{ t('Delete', 'Borrar') }}</button>
           <template v-else>
-            <button type="button" class="text-[11.5px] font-semibold text-danger-text" data-cy="thread-note-delete-confirm" @click="emit('delete')">{{ t('Delete it', 'Borrarla') }}</button>
-            <button type="button" class="ml-2 text-[11.5px] text-ink-muted" @click="confirming = false">{{ t('Keep', 'Dejar') }}</button>
+            <button type="button" class="text-[11.5px] font-semibold text-danger-text" data-cy="thread-note-delete-confirm" @click="emit('delete')">{{ t('Delete note', 'Borrar nota') }}</button>
+            <button type="button" class="ml-2 text-[11.5px] text-ink-muted" @click="confirming = false">{{ t('Keep note', 'Conservar') }}</button>
           </template>
         </template>
       </p>

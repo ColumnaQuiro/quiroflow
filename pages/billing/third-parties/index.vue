@@ -62,21 +62,32 @@ const totals = computed<AgedTotals>(() => agedOutstanding(charges.value, today))
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Third parties', 'Terceros')" :meta="t('What insurers, mutuas and companies owe', 'Lo que deben aseguradoras, mutuas y empresas')">
       <div class="flex items-center gap-3">
-        <NuxtLink to="/billing" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Billing', 'Facturación') }}</NuxtLink>
+        <NuxtLink to="/billing" class="inline-flex h-9 items-center gap-1 text-[13px] text-ink-muted2 hover:text-ink-600 touch:h-11"><UiChevron />{{ t('Billing', 'Facturación') }}</NuxtLink>
         <UiBtn @click="navigateTo('/settings/third-parties')">{{ t('Manage', 'Gestionar') }}</UiBtn>
       </div>
     </PageHeader>
 
     <div class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] sm:px-6" data-cy="tp-aged" :data-ready="loading ? undefined : 'true'">
-      <p v-if="loadError" class="text-[13px] text-danger-text">{{ loadError }}</p>
+      <p v-if="loadError" role="alert" class="mb-4 rounded-card border border-danger-border bg-danger-bg px-4 py-3 text-[13px] text-danger-text">{{ loadError }}</p>
       <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-        <p class="font-mono text-[23px] font-semibold text-ink-900" data-cy="tp-aged-total">{{ loading ? '—' : formatEur(totals.total) }}</p>
-        <p class="text-[12px] text-ink-muted2">{{ t('Owed by third parties, not by patients', 'Pendiente de terceros, no de pacientes') }}</p>
+        <UiSkeleton v-if="loading" class="my-1.5 h-6 w-32 rounded-ctlSm" />
+        <p v-else class="font-mono text-[23px] font-semibold text-ink-900" data-cy="tp-aged-total">{{ formatEur(totals.total) }}</p>
+        <p class="mt-0.5 text-[12px] text-ink-muted2">{{ t('Owed by third parties, not by patients', 'Pendiente de terceros, no de pacientes') }}</p>
       </div>
 
-      <div class="mt-4 overflow-x-auto rounded-card border border-line bg-surface shadow-card">
+      <UiEmptyState
+        v-if="!loading && !loadError && rows.length === 0"
+        class="mt-4 !px-0"
+        :title="t('No third parties yet', 'Aún no hay terceros')"
+        :description="t('Add them under Settings → Third parties.', 'Añádelos en Ajustes → Terceros.')"
+      >
+        <template #actions>
+          <UiBtn variant="primary" @click="navigateTo('/settings/third-parties')">{{ t('Add third parties', 'Añadir terceros') }}</UiBtn>
+        </template>
+      </UiEmptyState>
+      <div v-else class="mt-4 overflow-x-auto rounded-card border border-line bg-surface shadow-card">
         <table class="w-full min-w-[640px] text-[13px]">
-          <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2">
+          <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">
             <tr>
               <th class="px-4 py-2">{{ t('Third party', 'Tercero') }}</th>
               <th v-for="b in AGE_BUCKETS" :key="b" class="px-4 py-2 text-right">{{ ageBucketLabel(b, t) }}</th>
@@ -85,18 +96,13 @@ const totals = computed<AgedTotals>(() => agedOutstanding(charges.value, today))
           </thead>
           <tbody class="divide-y divide-line-row">
             <ReportsTableSkeletonRows v-if="loading" :cols="6" />
-            <tr v-else-if="rows.length === 0">
-              <td colspan="6" class="px-4 py-6 text-center text-ink-faint2">
-                {{ t('No third parties yet. Add them under Settings → Third parties.', 'Aún no hay terceros. Añádelos en Ajustes → Terceros.') }}
-              </td>
-            </tr>
             <tr v-for="r in loading ? [] : rows" :key="r.id" data-cy="tp-aged-row">
               <td class="px-4 py-2.5">
                 <NuxtLink :to="`/billing/third-parties/${r.id}`" class="font-medium text-ink-900 hover:text-brand-text" data-cy="tp-aged-name">{{ r.name }}</NuxtLink>
-                <span class="ml-1.5 text-[11.5px] text-ink-muted2">{{ thirdPartyKindLabel(r.kind, t) }}</span>
+                <span class="block text-[11.5px] text-ink-muted2">{{ thirdPartyKindLabel(r.kind, t) }}</span>
               </td>
-              <td v-for="b in AGE_BUCKETS" :key="b" class="px-4 py-2.5 text-right font-mono" :class="r.aged[b] ? 'text-ink-900' : 'text-ink-faint2'">{{ formatEur(r.aged[b]) }}</td>
-              <td class="px-4 py-2.5 text-right font-mono font-semibold text-ink-900" data-cy="tp-aged-row-total">{{ formatEur(r.aged.total) }}</td>
+              <td v-for="b in AGE_BUCKETS" :key="b" class="whitespace-nowrap px-4 py-2.5 text-right font-mono" :class="r.aged[b] ? 'text-ink-900' : 'text-ink-faint2'">{{ formatEur(r.aged[b]) }}</td>
+              <td class="whitespace-nowrap px-4 py-2.5 text-right font-mono font-semibold text-ink-900" data-cy="tp-aged-row-total">{{ formatEur(r.aged.total) }}</td>
             </tr>
           </tbody>
         </table>

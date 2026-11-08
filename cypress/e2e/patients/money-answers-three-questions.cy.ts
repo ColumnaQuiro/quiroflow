@@ -82,7 +82,7 @@ describe('The Money tab', () => {
         cy.contains('On account').should('be.visible')
         // "In bonos" and its amount, not a session count. The card used to
         // list each bono -- name, sessions left, progress bar -- and that
-        // duplicated the Packages / bonos card now sitting directly below it.
+        // duplicated the Bonos card now sitting directly below it.
         // What belongs in a money summary is the money; "9 of 10" is the
         // other card's answer and is asserted there.
         cy.contains('In bonos').should('be.visible')
@@ -116,13 +116,13 @@ describe('The Money tab', () => {
         // And the footer states the rule once, for whoever meets an em-dash
         // row without having read the note.
         // Singular or plural -- the footer counts, and one row says
-        // "1 movement".
+        // "1 entry".
         //
         // Scrolled to first: the ledger sits below the bonos and memberships
         // now, so its footer is off-screen on a 900px viewport. be.visible
         // without this asserts where the page happens to be scrolled to, not
         // whether the footer is there.
-        cy.contains(/\d+ movements?/).scrollIntoView().should('be.visible')
+        cy.contains(/\d+ entr(y|ies)/).scrollIntoView().should('be.visible')
         cy.contains('the money moved when the bono was bought').scrollIntoView().should('be.visible')
         cy.contains('Outstanding').scrollIntoView().should('be.visible')
       })
@@ -149,12 +149,12 @@ describe('The Money tab', () => {
 
         // Bonos are reachable without touching the sub-nav at all, on
         // either of its two tabs.
-        cy.contains('Packages / bonos').scrollIntoView().should('be.visible')
+        cy.contains('p', /^Bonos$/).scrollIntoView().should('be.visible')
         cy.contains('Memberships').scrollIntoView().should('be.visible')
 
         cy.contains('button', 'Account ledger').click()
         cy.contains('Visit from Bono 10').should('be.visible')
-        cy.contains('Packages / bonos').scrollIntoView().should('be.visible')
+        cy.contains('p', /^Bonos$/).scrollIntoView().should('be.visible')
       })
     })
   })

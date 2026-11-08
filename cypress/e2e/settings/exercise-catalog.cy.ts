@@ -18,6 +18,7 @@ describe('Exercise catalogue', () => {
         cy.get('[data-cy="settings-list"][data-ready="true"]')
 
         // One exercise, with its demonstration.
+        cy.get('[data-cy="exercises-tab-catalog"]').click()
         cy.get('[data-cy="catalog-region-back"]').click()
         cy.contains('[data-cy="catalog-exercise"]', 'Glute bridge').find('[data-cy="catalog-exercise-add"]').click()
         cy.contains('[data-cy="library-row"]', 'Glute bridge').find('[data-cy="library-row-catalog-video"]').should('exist')
@@ -31,8 +32,10 @@ describe('Exercise catalogue', () => {
         cy.get('[data-cy="library-row"]').should('have.length', 5)
 
         // Archived and added again: the same row comes back.
+        cy.get('[data-cy="exercises-tab-exercises"]').click()
         cy.contains('[data-cy="library-row"]', 'Cat-camel').find('[data-cy="library-archive"]').click()
         cy.contains('[data-cy="library-archived-row"]', 'Cat-camel').should('exist')
+        cy.get('[data-cy="exercises-tab-catalog"]').click()
         cy.get('[data-cy="catalog-region-back"]').click()
         cy.contains('[data-cy="catalog-exercise"]', 'Cat-camel').find('[data-cy="catalog-exercise-add"]').click()
         cy.contains('[data-cy="library-row"]', 'Cat-camel').should('exist')

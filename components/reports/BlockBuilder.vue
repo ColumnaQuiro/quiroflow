@@ -126,20 +126,20 @@ const optionClass = (on: boolean) =>
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4" @click.self="emit('cancel')">
-    <div ref="dialog" role="dialog" aria-modal="true" :aria-label="initial ? t('Edit block', 'Editar bloque') : t('New report', 'Nuevo informe')" class="flex max-h-[92vh] w-full max-w-[1100px] flex-col overflow-hidden rounded-card bg-surface shadow-popover" data-cy="report-builder">
+  <div class="fixed inset-0 z-50 flex items-end justify-center bg-scrim/40 sm:items-center sm:p-4" @click.self="emit('cancel')">
+    <div ref="dialog" role="dialog" aria-modal="true" :aria-label="initial ? t('Edit block', 'Editar bloque') : t('New report', 'Nuevo informe')" class="flex max-h-[92vh] w-full max-w-[1100px] flex-col overflow-hidden rounded-t-card bg-surface shadow-popover sm:rounded-card" data-cy="report-builder">
       <div class="flex h-14 shrink-0 items-center justify-between border-b border-line px-5">
         <h2 class="text-[16px] font-semibold text-ink-900">{{ initial ? t('Edit block', 'Editar bloque') : t('New report', 'Nuevo informe') }}</h2>
-        <button type="button" class="flex h-8 w-8 items-center justify-center rounded-ctlSm text-[18px] text-ink-muted2 hover:bg-surface-subtle touch:h-10 touch:w-10" :aria-label="t('Close', 'Cerrar')" @click="emit('cancel')">×</button>
+        <button type="button" class="flex h-8 w-8 items-center justify-center rounded-ctlSm text-ink-muted2 hover:bg-surface-subtle touch:h-11 touch:w-11" :aria-label="t('Close', 'Cerrar')" @click="emit('cancel')"><UiCloseIcon /></button>
       </div>
 
       <div class="flex min-h-0 flex-1 flex-col lg:flex-row">
         <div class="space-y-5 overflow-y-auto border-line p-5 lg:w-[460px] lg:shrink-0 lg:border-r">
           <div class="space-y-2">
-            <p class="text-[11px] font-semibold uppercase tracking-wide text-ink-muted2">1 · {{ t('What to measure', 'Qué medir') }}</p>
-            <input v-model="search" type="search" data-cy="report-builder-search" :placeholder="t(`Search ${METRICS.length} metrics…`, `Buscar entre ${METRICS.length} métricas…`)" class="h-9 w-full rounded-ctl border border-line-control px-3 text-[13px] focus:border-brand focus:outline-none" />
+            <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">1 · {{ t('What to measure', 'Qué medir') }}</p>
+            <input v-model="search" type="search" data-cy="report-builder-search" :placeholder="t(`Search ${METRICS.length} metrics…`, `Buscar entre ${METRICS.length} métricas…`)" class="h-9 w-full rounded-ctl border border-line-control bg-surface px-3 text-[13px] focus:border-brand focus:outline-none touch:h-11" />
             <div v-if="!search" class="flex flex-wrap gap-1.5">
-              <button v-for="a in AREAS" :key="a.key" type="button" class="h-8 rounded-ctl border px-2.5 text-[12.5px]" :class="optionClass(area === a.key)" @click="area = a.key">{{ t(...a.label) }}</button>
+              <button v-for="a in AREAS" :key="a.key" type="button" class="h-8 rounded-ctl border px-2.5 text-[12.5px] touch:h-11" :class="optionClass(area === a.key)" @click="area = a.key">{{ t(...a.label) }}</button>
             </div>
             <div class="max-h-56 overflow-y-auto rounded-ctl border border-line p-1">
               <button
@@ -159,22 +159,22 @@ const optionClass = (on: boolean) =>
           </div>
 
           <div v-if="def.splits.length > 1" class="space-y-2">
-            <p class="text-[11px] font-semibold uppercase tracking-wide text-ink-muted2">2 · {{ t('Split by', 'Dividir por') }}</p>
+            <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">2 · {{ t('Split by', 'Dividir por') }}</p>
             <div class="flex flex-wrap gap-1.5">
-              <button v-for="s in def.splits" :key="s" type="button" class="h-8 rounded-ctl border px-2.5 text-[12.5px]" :class="optionClass(split === s)" :data-cy="`report-split-${s}`" @click="split = s">
+              <button v-for="s in def.splits" :key="s" type="button" class="h-8 rounded-ctl border px-2.5 text-[12.5px] touch:h-11" :class="optionClass(split === s)" :data-cy="`report-split-${s}`" @click="split = s">
                 {{ t(...SPLIT_LABELS[s]) }}
               </button>
             </div>
           </div>
 
           <div class="space-y-2">
-            <p class="text-[11px] font-semibold uppercase tracking-wide text-ink-muted2">3 · {{ t('Show as', 'Mostrar como') }}</p>
+            <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">3 · {{ t('Show as', 'Mostrar como') }}</p>
             <div class="flex flex-wrap gap-1.5">
-              <button v-for="c in charts" :key="c.key" type="button" class="h-8 rounded-ctl border px-2.5 text-[12.5px]" :class="optionClass(chart === c.key)" :data-cy="`report-chart-${c.key}`" @click="chart = c.key">{{ c.label }}</button>
+              <button v-for="c in charts" :key="c.key" type="button" class="h-8 rounded-ctl border px-2.5 text-[12.5px] touch:h-11" :class="optionClass(chart === c.key)" :data-cy="`report-chart-${c.key}`" @click="chart = c.key">{{ c.label }}</button>
             </div>
             <label v-if="columnChoices.length" class="flex flex-wrap items-center gap-2 pt-1 text-[13px] text-ink-700">
               {{ t('Columns', 'Columnas') }}
-              <select v-model="columns" class="h-8 rounded-ctl border border-line-control bg-surface px-2.5 text-[12.5px]" data-cy="report-builder-columns">
+              <select v-model="columns" class="h-8 rounded-ctl border border-line-control bg-surface px-2.5 text-[12.5px] touch:h-11" data-cy="report-builder-columns">
                 <option value="">{{ t('None: one figure per row', 'Ninguna: una cifra por fila') }}</option>
                 <option v-for="c in columnChoices" :key="c" :value="c">{{ t(...SPLIT_LABELS[c]) }}</option>
               </select>
@@ -182,17 +182,17 @@ const optionClass = (on: boolean) =>
           </div>
 
           <div v-if="!def.clinicWide" class="space-y-2">
-            <p class="text-[11px] font-semibold uppercase tracking-wide text-ink-muted2">4 · {{ t('Only include', 'Incluir solo') }}</p>
+            <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">4 · {{ t('Only include', 'Incluir solo') }}</p>
             <div class="flex flex-wrap gap-2">
-              <select v-if="!ownOnly" v-model="practitionerFilter" class="h-8 rounded-ctl border border-line-control bg-surface px-2.5 text-[12.5px]" :aria-label="t('Practitioner', 'Profesional')">
+              <select v-if="!ownOnly" v-model="practitionerFilter" class="h-8 rounded-ctl border border-line-control bg-surface px-2.5 text-[12.5px] touch:h-11" :aria-label="t('Practitioner', 'Profesional')">
                 <option value="">{{ t('Every practitioner on the page', 'Todos los profesionales de la página') }}</option>
                 <option v-for="p in practitioners" :key="p.id" :value="p.id">{{ p.name }}</option>
               </select>
-              <select v-if="clinics.length > 1" v-model="clinicFilter" class="h-8 rounded-ctl border border-line-control bg-surface px-2.5 text-[12.5px]" :aria-label="t('Clinic', 'Clínica')">
+              <select v-if="clinics.length > 1" v-model="clinicFilter" class="h-8 rounded-ctl border border-line-control bg-surface px-2.5 text-[12.5px] touch:h-11" :aria-label="t('Clinic', 'Clínica')">
                 <option value="">{{ t('Every clinic on the page', 'Todas las clínicas de la página') }}</option>
                 <option v-for="c in clinics" :key="c.id" :value="c.id">{{ c.name }}</option>
               </select>
-              <select v-if="def.area === 'money'" v-model="methodFilter" class="h-8 rounded-ctl border border-line-control bg-surface px-2.5 text-[12.5px]" :aria-label="t('Payment method', 'Método de pago')">
+              <select v-if="def.area === 'money'" v-model="methodFilter" class="h-8 rounded-ctl border border-line-control bg-surface px-2.5 text-[12.5px] touch:h-11" :aria-label="t('Payment method', 'Método de pago')">
                 <option value="">{{ t('Every payment method', 'Todos los métodos de pago') }}</option>
                 <option v-for="m in methods" :key="m.key" :value="m.key">{{ m.name }}</option>
               </select>
@@ -201,11 +201,11 @@ const optionClass = (on: boolean) =>
           </div>
 
           <div v-if="!def.snapshot" class="space-y-2">
-            <p class="text-[11px] font-semibold uppercase tracking-wide text-ink-muted2">5 · {{ t('Period', 'Periodo') }}</p>
+            <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">5 · {{ t('Period', 'Periodo') }}</p>
             <label class="flex items-center gap-2 text-[13px] text-ink-700"><input v-model="periodMode" type="radio" value="page" class="accent-brand" /> {{ t("Follow the page", 'Seguir la página') }}</label>
             <label class="flex items-center gap-2 text-[13px] text-ink-700">
               <input v-model="periodMode" type="radio" value="own" class="accent-brand" data-cy="report-period-own" /> {{ t('Its own:', 'El suyo:') }}
-              <select v-model="ownPreset" class="h-8 rounded-ctl border border-line-control bg-surface px-2.5 text-[12.5px]" :disabled="periodMode !== 'own'" data-cy="report-period-preset">
+              <select v-model="ownPreset" class="h-8 rounded-ctl border border-line-control bg-surface px-2.5 text-[12.5px] touch:h-11" :disabled="periodMode !== 'own'" data-cy="report-period-preset">
                 <option v-for="p in OWN_PERIODS" :key="p.key" :value="p.key">{{ p.label }}</option>
               </select>
             </label>
@@ -213,7 +213,7 @@ const optionClass = (on: boolean) =>
         </div>
 
         <div class="min-h-[280px] flex-1 space-y-3 overflow-y-auto bg-surface-page p-5">
-          <p class="text-[11px] font-semibold uppercase tracking-wide text-ink-muted2">{{ t('Preview', 'Vista previa') }}</p>
+          <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">{{ t('Preview', 'Vista previa') }}</p>
           <ReportsBlock :block="draft" :range="range" :compare="compare" :practitioner-id="practitionerId" :clinic-id="clinicId" :own-only="ownOnly" />
           <p class="text-[12px] text-ink-faint2">{{ t("The preview uses this page's filters, so this is what the block will show.", 'La vista previa usa los filtros de esta página: es lo que mostrará el bloque.') }}</p>
         </div>
@@ -225,7 +225,7 @@ const optionClass = (on: boolean) =>
           type="text"
           maxlength="120"
           data-cy="report-builder-title"
-          class="h-9 w-72 rounded-ctl border border-line-control px-3 text-[13px] focus:border-brand focus:outline-none"
+          class="h-9 w-full rounded-ctl border border-line-control bg-surface px-3 text-[13px] focus:border-brand focus:outline-none touch:h-11 sm:w-72"
           :aria-label="t('Title', 'Título')"
           @input="titleTouched = true"
         />

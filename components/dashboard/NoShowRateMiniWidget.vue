@@ -59,8 +59,16 @@ watch(() => [props.practitionerId, props.clinicId], load)
   <div v-else>
     <p class="font-mono text-[23px] font-semibold leading-none text-ink-900">{{ rate === null ? '—' : `${rate}%` }}</p>
     <p v-if="deltaPts !== null" class="mt-1.5 text-[12px] font-medium" :class="deltaPts > 0 ? 'text-danger-text' : 'text-success-text'">
-      {{ t(`${deltaPts > 0 ? '+' : ''}${deltaPts} pts vs last week`, `${deltaPts > 0 ? '+' : ''}${deltaPts} pts frente a la semana pasada`) }}
+      {{
+        Math.abs(deltaPts) === 1
+          ? t(`${deltaPts > 0 ? '+' : ''}${deltaPts} point vs last week`, `${deltaPts > 0 ? '+' : ''}${deltaPts} punto frente a la semana pasada`)
+          : t(`${deltaPts > 0 ? '+' : ''}${deltaPts} points vs last week`, `${deltaPts > 0 ? '+' : ''}${deltaPts} puntos frente a la semana pasada`)
+      }}
     </p>
-    <p v-else class="mt-1.5 text-[12px] text-ink-muted2">{{ t('No finished visits last week', 'Ninguna visita finalizada la semana pasada') }}</p>
+    <!-- No delta has two causes, and the line used to blame last week for
+         both: a Monday morning with nothing finished yet said "no finished
+         visits last week" about a full one. -->
+    <p v-else-if="rate === null" class="mt-1.5 text-[12px] text-ink-muted2">{{ t('No visits finished yet this week', 'Aún no ha terminado ninguna visita esta semana') }}</p>
+    <p v-else class="mt-1.5 text-[12px] text-ink-muted2">{{ t('No finished visits last week to compare', 'Sin visitas terminadas la semana pasada para comparar') }}</p>
   </div>
 </template>

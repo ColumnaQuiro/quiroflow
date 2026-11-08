@@ -61,21 +61,21 @@ describe('Moving a visit onto a taken time', () => {
         hourPx().then((px) => {
           drag(block('Mover Encima'), px)
           clash().should('be.visible').and('contain.text', 'Ocupa Hueco').and('contain.text', '11:00')
-          cy.contains('h2', 'Rescheduling Appointment').should('not.exist')
+          cy.contains('h2', 'Reschedule appointment').should('not.exist')
 
           // Back out: nothing is written and the block goes back where it was.
           cy.get('[data-cy=confirm-dialog-cancel]').click()
           clash().should('not.exist')
-          cy.contains('h2', 'Rescheduling Appointment').should('not.exist')
+          cy.contains('h2', 'Reschedule appointment').should('not.exist')
           expectStart(appointmentId, 10)
 
           // On purpose this time: the usual reschedule confirmation follows.
           drag(block('Mover Encima'), px)
           clash().should('be.visible')
           cy.get('[data-cy=confirm-dialog-confirm]').click()
-          cy.contains('h2', 'Rescheduling Appointment').should('be.visible')
-          cy.contains('button', 'Confirm').click()
-          cy.contains('h2', 'Rescheduling Appointment').should('not.exist')
+          cy.contains('h2', 'Reschedule appointment').should('be.visible')
+          cy.contains('button', 'Move appointment').click()
+          cy.contains('h2', 'Reschedule appointment').should('not.exist')
           expectStart(appointmentId, 11)
         })
       })
@@ -96,10 +96,10 @@ describe('Moving a visit onto a taken time', () => {
 
           // 11:00 is free: straight to the reschedule confirmation.
           drag(block('Mover Bloqueo'), px)
-          cy.contains('h2', 'Rescheduling Appointment').should('be.visible')
+          cy.contains('h2', 'Reschedule appointment').should('be.visible')
           clash().should('not.exist')
-          cy.contains('button', 'Confirm').click()
-          cy.contains('h2', 'Rescheduling Appointment').should('not.exist')
+          cy.contains('button', 'Move appointment').click()
+          cy.contains('h2', 'Reschedule appointment').should('not.exist')
           expectStart(appointmentId, 11)
         })
       })
@@ -120,7 +120,7 @@ describe('Moving a visit onto a taken time', () => {
             clash().should('be.visible').and('contain.text', 'Siguiente Cita')
             cy.get('[data-cy=confirm-dialog-confirm]').click()
             cy.wait('@save')
-            cy.contains('h2', 'Rescheduling Appointment').should('not.exist')
+            cy.contains('h2', 'Reschedule appointment').should('not.exist')
             cy.task<{ starts_at: string; ends_at: string; rescheduled: boolean }>('db:appointmentById', { appointmentId: stretched }).then((a) => {
               expect(new Date(a.starts_at).getTime(), 'start unchanged').to.eq(new Date(todayAt(14, 0)).getTime())
               expect(new Date(a.ends_at).getTime() - new Date(a.starts_at).getTime(), 'ninety minutes').to.eq(90 * MIN)
@@ -132,7 +132,7 @@ describe('Moving a visit onto a taken time', () => {
             drag(block('Estirar Libre').find('.cursor-ns-resize'), px / 2)
             cy.wait('@save')
             clash().should('not.exist')
-            cy.contains('h2', 'Rescheduling Appointment').should('not.exist')
+            cy.contains('h2', 'Reschedule appointment').should('not.exist')
             cy.task<{ starts_at: string; ends_at: string; rescheduled: boolean }>('db:appointmentById', { appointmentId: free }).then((a) => {
               expect(new Date(a.ends_at).getTime(), 'half an hour longer').to.eq(new Date(todayAt(18, 0)).getTime())
               expect(a.rescheduled).to.eq(false)
@@ -186,9 +186,9 @@ describe('Moving a visit onto a taken time', () => {
 
             cy.get('[data-cal-col]').first().click(30, px * 1.5 + 5)
             cy.get('[data-cy=confirm-dialog-confirm]').click()
-            cy.contains('h2', 'Rescheduling Appointment').should('be.visible')
-            cy.contains('button', 'Confirm').click()
-            cy.contains('h2', 'Rescheduling Appointment').should('not.exist')
+            cy.contains('h2', 'Reschedule appointment').should('be.visible')
+            cy.contains('button', 'Move appointment').click()
+            cy.contains('h2', 'Reschedule appointment').should('not.exist')
             expectStart(moved, 9, 30)
           })
         })

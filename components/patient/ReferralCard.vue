@@ -32,7 +32,7 @@ const canShare = computed(() => import.meta.client && typeof navigator !== 'unde
 
 async function share() {
   try {
-    await navigator.share({ title: t('Book a visit', 'Reserva tu cita'), text: t('This is where I go -- book your first visit here:', 'Yo voy aquí, reserva tu primera visita:'), url: link.value })
+    await navigator.share({ title: t('Book a visit', 'Reserva tu cita'), text: t('This is where I go. Book your first visit here:', 'Yo voy aquí. Reserva tu primera visita:'), url: link.value })
   } catch {
     // Closing the share sheet is not an error worth showing.
   }

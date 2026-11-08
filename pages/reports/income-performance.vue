@@ -196,7 +196,7 @@ const pdfRoot = ref<HTMLElement | null>(null)
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Income Performance', 'Rendimiento de ingresos')" :meta="t('Compare practitioners month over month', 'Compara profesionales mes a mes')">
       <div class="flex items-center gap-3">
-        <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
+        <ReportsBackLink />
         <ReportsPdfButton :target="pdfRoot" :title="t('Income Performance', 'Rendimiento de ingresos')" :range="range" :practitioner-id="practitionerFilter || null" :clinic-id="clinicFilter || null" />
       </div>
     </PageHeader>
@@ -207,9 +207,16 @@ const pdfRoot = ref<HTMLElement | null>(null)
         <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" :locked-to="reportsPractitionerId" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
       </div>
 
-      <div v-if="!loading && filteredPayments.length === 0" class="mt-6 rounded-card border border-dashed border-line-control bg-surface p-6 text-center text-[13px] text-ink-faint2">
-        {{ t('No payments recorded yet — this fills in once receipts are being paid.', 'Todavía no hay pagos registrados — esto se completará en cuanto se paguen recibos.') }}
-      </div>
+      <UiEmptyState
+        v-if="!loading && filteredPayments.length === 0"
+        class="mt-4"
+        :title="t('No payments recorded yet', 'Todavía no hay pagos registrados')"
+        :description="t('This fills in once receipts are being paid.', 'Esto se completará en cuanto se paguen recibos.')"
+      >
+        <template #icon>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" /></svg>
+        </template>
+      </UiEmptyState>
       <template v-else>
         <ReportsModule class="mt-4" :title="t('Revenue by practitioner, by month', 'Ingresos por profesional, por mes')" :loading="loading" chart-height="h-80">
           <div class="mt-3 h-80"><Line :data="chartData" :options="chartOptions" /></div>

@@ -133,19 +133,19 @@ function euros(cents: number) {
   <div v-else>
     <ul class="divide-y divide-line-row2 text-[13px]">
       <li class="flex items-center justify-between py-1.5">
-        <span class="text-ink-700">{{ t('Remaining visits', 'Visitas restantes') }}</span>
+        <span class="text-ink-700">{{ t('Visits still to come', 'Visitas por venir') }}</span>
         <span class="font-mono text-[12.5px] text-ink-900">{{ remaining }}</span>
       </li>
       <li class="flex items-center justify-between py-1.5">
-        <span class="text-ink-700">{{ t('Estimated visits', 'Visitas estimadas') }}</span>
+        <span class="text-ink-700">{{ t('Visits booked or done', 'Visitas reservadas o hechas') }}</span>
         <span class="font-mono text-[12.5px] text-ink-900">{{ estimated }}</span>
       </li>
       <li class="flex items-center justify-between py-1.5">
-        <span class="text-ink-700">{{ t('Payments this week', 'Pagos esta semana') }}</span>
+        <span class="text-ink-700">{{ t('Collected', 'Cobrado') }}</span>
         <span class="font-mono text-[12.5px] text-ink-900">{{ euros(paymentsCents) }}</span>
       </li>
       <li class="flex items-center justify-between py-1.5">
-        <span class="text-ink-700">{{ t('Service generated', 'Servicio generado') }}</span>
+        <span class="text-ink-700">{{ t('Services invoiced', 'Servicios facturados') }}</span>
         <span class="font-mono text-[12.5px] text-ink-900">{{ euros(serviceCents) }}</span>
       </li>
       <li class="flex items-center justify-between py-1.5">

@@ -27,7 +27,7 @@ describe('Selling a package from account credit', () => {
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}?tab=billing`)
 
-        cy.contains('select', 'Sell a package').should('exist').select('Bono 12 (12, 528,00 €)')
+        cy.contains('select', 'Sell a bono').should('exist').select('Bono 12 (12, 528,00 €)')
 
         // Part-paying is the normal case: EUR 100 of credit against a EUR 528
         // bono, the rest taken later or put on autopay. The guard compares
@@ -67,7 +67,7 @@ describe('Selling a package from account credit', () => {
         // exactly why the dropdown has to disagree.
         cy.contains('Available').parent().should('contain.text', '528,00 €')
 
-        cy.contains('select', 'Sell a package').should('exist').select('Bono 12 (12, 528,00 €)')
+        cy.contains('select', 'Sell a bono').should('exist').select('Bono 12 (12, 528,00 €)')
         cy.contains('label', 'Method').parent().find('select').as('method')
         // Shown, so it is clear the feature exists, but not selectable.
         cy.get('@method').find('option[value="credit"]').should('be.disabled').should('contain.text', 'none available')

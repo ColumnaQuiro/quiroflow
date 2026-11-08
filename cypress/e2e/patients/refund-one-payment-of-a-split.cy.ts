@@ -44,7 +44,7 @@ describe('Refunding one payment of a split', () => {
 
         // The card half only. The cash half sits in the same ledger and must
         // be left alone by all of this.
-        cy.contains('tr', 'Payment — card').click()
+        cy.contains('tr', 'Payment — Card').click()
         cy.contains('button', 'Refund…').click()
 
         // Capped at the €20 that arrived on the card, NOT the €50 the receipt
@@ -101,7 +101,7 @@ describe('Refunding one payment of a split', () => {
           cy.login(account.email, account.password)
           cy.visit(`/patients/${patient.id}?tab=billing`)
 
-          cy.contains('tr', 'Payment — card').click()
+          cy.contains('tr', 'Payment — Card').click()
           cy.contains('button', 'Refund…').click()
 
           // Asking for the receipt's full €50 against a €20 payment: the
@@ -129,7 +129,7 @@ describe('Refunding one payment of a split', () => {
           // own remaining room drops with it, which is what stops the same
           // €20 going back a second time by the other route.
           cy.reload()
-          cy.contains('tr', 'Payment — card').click()
+          cy.contains('tr', 'Payment — Card').click()
           cy.get('body').then(($b) => {
             expect($b.text(), 'no refund left on this payment').to.not.contain('Refund… 20,00 €')
           })

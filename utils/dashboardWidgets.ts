@@ -24,7 +24,9 @@ export interface WidgetDef {
 // widgets fill row two, and the three "sm" KPIs fill row three.
 export const WIDGET_REGISTRY: WidgetDef[] = [
   { type: 'weekly_visits', label: 'Visits this week', labelEs: 'Visitas esta semana', defaultSize: 'md', component: 'DashboardWeeklyVisitsWidget' },
-  { type: 'income_mini', label: 'Income', labelEs: 'Ingresos', defaultSize: 'sm', component: 'DashboardIncomeMiniWidget' },
+  // Not "this month": it follows the dashboard's date range, which the header
+  // shows beside it. The big figure is money collected, so the title says so.
+  { type: 'income_mini', label: 'Income collected', labelEs: 'Ingresos cobrados', defaultSize: 'sm', component: 'DashboardIncomeMiniWidget' },
   { type: 'visit_summary', label: 'Visit summary', labelEs: 'Resumen de visitas', defaultSize: 'sm', component: 'DashboardVisitSummaryWidget' },
   { type: 'debtors_mini', label: 'Debtors', labelEs: 'Deudores', defaultSize: 'sm', component: 'DashboardDebtorsMiniWidget' },
   { type: 'next_up_today', label: 'Next up today', labelEs: 'Próximas citas de hoy', defaultSize: 'sm', component: 'DashboardNextUpTodayMiniWidget' },

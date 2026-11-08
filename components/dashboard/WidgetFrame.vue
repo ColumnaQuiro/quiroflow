@@ -29,11 +29,8 @@ function retry() {
   attempt.value++
 }
 
-const SIZE_LABEL: Record<WidgetSize, [string, string]> = {
-  sm: ['Narrow', 'Estrecho'],
-  md: ['Wide', 'Ancho'],
-  lg: ['Full width', 'Completo'],
-}
+// The width chip used to print the size key itself ("sm", "md", "lg").
+const sizeLabel = computed(() => ({ sm: t('Narrow', 'Estrecho'), md: t('Wide', 'Ancho'), lg: t('Full width', 'Ancho completo') })[props.size])
 </script>
 
 <template>
@@ -65,7 +62,7 @@ const SIZE_LABEL: Record<WidgetSize, [string, string]> = {
           <button
             type="button"
             class="inline-flex h-7 w-7 items-center justify-center rounded-ctlSm text-ink-faint hover:bg-surface-subtle hover:text-ink-700 disabled:cursor-not-allowed disabled:opacity-40 touch:h-10 touch:w-10"
-            :aria-label="t('Move earlier', 'Mover antes')"
+            :aria-label="t(`Move ${title} earlier`, `Mover ${title} antes`)"
             :title="t('Move earlier', 'Mover antes')"
             :disabled="isFirst"
             data-cy="widget-move-earlier"
@@ -76,7 +73,7 @@ const SIZE_LABEL: Record<WidgetSize, [string, string]> = {
           <button
             type="button"
             class="inline-flex h-7 w-7 items-center justify-center rounded-ctlSm text-ink-faint hover:bg-surface-subtle hover:text-ink-700 disabled:cursor-not-allowed disabled:opacity-40 touch:h-10 touch:w-10"
-            :aria-label="t('Move later', 'Mover después')"
+            :aria-label="t(`Move ${title} later`, `Mover ${title} después`)"
             :title="t('Move later', 'Mover después')"
             :disabled="isLast"
             data-cy="widget-move-later"
@@ -87,17 +84,18 @@ const SIZE_LABEL: Record<WidgetSize, [string, string]> = {
           <button
             type="button"
             class="inline-flex h-7 items-center rounded-ctlSm border border-line-control px-2 text-[11.5px] font-medium text-ink-muted2 hover:border-line-controlHover hover:text-ink-600 touch:h-10"
-            :title="t('Change the widget width', 'Cambiar el ancho del widget')"
+            :title="t('Change width', 'Cambiar el ancho')"
+            :aria-label="t(`Width: ${sizeLabel}. Change width of ${title}`, `Ancho: ${sizeLabel}. Cambiar el ancho de ${title}`)"
             data-cy="widget-cycle-size"
             @click="emit('cycleSize')"
           >
-            {{ t(...SIZE_LABEL[size]) }}
+            {{ sizeLabel }}
           </button>
           <button
             type="button"
             class="inline-flex h-7 w-7 items-center justify-center rounded-ctlSm text-ink-faint hover:bg-danger-bg hover:text-danger-text touch:h-10 touch:w-10"
-            :aria-label="t('Remove widget', 'Eliminar widget')"
-            :title="t('Remove widget', 'Eliminar widget')"
+            :title="t('Remove from dashboard', 'Quitar del panel')"
+            :aria-label="t(`Remove ${title} from dashboard`, `Quitar ${title} del panel`)"
             data-cy="widget-remove"
             @click="emit('remove')"
           >

@@ -147,7 +147,7 @@ function paymentLine(appt: AppointmentRow): { text: string; tone: 'muted' | 'dan
   if (!payment || payment.kind === 'none') return null
   if (payment.kind === 'bono') {
     return {
-      text: `${payment.packageName} · ${payment.remaining} ${t('of', 'de')} ${payment.total} ${t('left', 'restantes')}`,
+      text: `${payment.packageName} · ${t(`${payment.remaining} of ${payment.total} left`, `quedan ${payment.remaining} de ${payment.total}`)}`,
       tone: 'success',
       mono: payment.reference ?? undefined,
     }
@@ -207,7 +207,7 @@ const confirmationAutofill = computed<Record<string, string>>(() => {
 })
 
 const stats = computed(() => [
-  { key: 'visits', label: t('Visits, 12 mo', 'Visitas, 12 m'), value: String(counts.value.visits12mo), tone: 'text-ink-900' },
+  { key: 'visits', label: t('Visits, last 12 months', 'Visitas, últimos 12 meses'), value: String(counts.value.visits12mo), tone: 'text-ink-900' },
   {
     key: 'attendance',
     label: t('Attendance', 'Asistencia'),

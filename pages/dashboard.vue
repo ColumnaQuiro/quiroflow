@@ -40,13 +40,13 @@ const WIDGET_COMPONENTS: Record<string, unknown> = {
   DashboardMonthlyGoalsWidget,
 }
 
-// Widgets scoped to "this week" or "this month" (rather than the period
-// filter below) get a fixed header meta; period-filtered widgets get the
-// formatted date range. The volume trend counts the calendar month whatever
-// the filter says, so it must not wear the filter's dates; nor do memberships,
-// which read this month's revenue and every failed payment.
+// Widgets scoped to "this week" (rather than the period filter below) get a
+// fixed header meta; period-filtered widgets get the formatted date range.
+// Only widgets that actually read the dateRange prop belong in the second
+// set: memberships_mini and upcoming_visits_mini count the calendar month
+// (and their rows say so), so a date range above them was a claim about
+// figures it did not describe.
 const THIS_WEEK_TYPES = new Set(['weekly_visits', 'visit_summary', 'no_show_rate'])
-const THIS_MONTH_TYPES = new Set(['upcoming_visits_mini'])
 const PERIOD_SCOPED_TYPES = new Set(['income_mini', 'appointment_distribution_mini', 'statistics_mini'])
 
 const store = useAccountStore()
@@ -187,7 +187,6 @@ function formatShort(iso: string) {
 }
 function widgetMeta(type: string): string | undefined {
   if (THIS_WEEK_TYPES.has(type)) return t('This week', 'Esta semana')
-  if (THIS_MONTH_TYPES.has(type)) return t('This month', 'Este mes')
   if (PERIOD_SCOPED_TYPES.has(type)) return `${formatShort(range.value.from)} – ${formatShort(range.value.to)}`
   return undefined
 }
@@ -199,7 +198,7 @@ function widgetMeta(type: string): string | undefined {
   <div class="flex h-full flex-col max-sm:overflow-y-auto">
     <header class="flex shrink-0 flex-col gap-2.5 border-b border-line bg-surface px-4 py-3 sm:h-14 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-0">
       <div>
-        <h1 class="text-[18px] font-[640] tracking-tightTitle text-ink-900">{{ greeting }}, {{ firstName }}</h1>
+        <h1 class="text-[18px] font-[640] tracking-tightTitle text-ink-900">{{ firstName ? `${greeting}, ${firstName}` : greeting }}</h1>
         <p class="text-[12.5px] text-ink-muted2">{{ store.accountName }} · {{ todayLabel }}</p>
       </div>
       <div v-if="dashboardMode !== 'none'" class="flex flex-wrap items-center gap-2">

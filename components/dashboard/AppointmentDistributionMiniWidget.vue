@@ -28,10 +28,13 @@ async function load() {
 onMounted(load)
 watch(() => [props.dateRange, props.practitionerId, props.clinicId], load, { deep: true })
 
+// The hours, not just a word: "Noche" for a 16:00 visit read as wrong to a
+// Spanish clinic, where the afternoon runs into the evening. Same cut-offs
+// as Reports > Appointment distribution.
 const SHIFTS = computed(() => [
-  { key: 'morning', label: t('Morning', 'Mañana'), test: (h: number) => h < 12 },
-  { key: 'afternoon', label: t('Afternoon', 'Tarde'), test: (h: number) => h >= 12 && h < 16 },
-  { key: 'evening', label: t('Evening', 'Noche'), test: (h: number) => h >= 16 },
+  { key: 'morning', label: t('Before 12pm', 'Antes de las 12h'), test: (h: number) => h < 12 },
+  { key: 'afternoon', label: t('12–4pm', '12–16h'), test: (h: number) => h >= 12 && h < 16 },
+  { key: 'evening', label: t('From 4pm', 'Desde las 16h'), test: (h: number) => h >= 16 },
 ])
 
 const shiftStats = computed(() =>
@@ -52,13 +55,18 @@ const shiftStats = computed(() =>
       <UiSkeleton class="h-3 w-8 rounded-ctlSm" />
     </div>
   </div>
-  <ul v-else class="divide-y divide-line-row2 text-[13px]">
-    <!-- A grid, not justify-between: spaced out, the middle column sat at a
-         different x on every row depending on how wide its neighbours were. -->
-    <li v-for="s in shiftStats" :key="s.key" class="grid grid-cols-[minmax(0,1fr)_auto_3rem] items-center gap-3 py-1.5">
-      <span class="truncate text-ink-700">{{ s.label }}</span>
-      <span class="text-right text-ink-muted2">{{ t(`${s.total} visits`, `${s.total} visitas`) }}</span>
-      <span class="text-right font-mono text-[12.5px] text-ink-900">{{ s.showRate === null ? '—' : `${s.showRate}%` }}</span>
-    </li>
-  </ul>
+  <div v-else>
+    <ul class="divide-y divide-line-row2 text-[13px]">
+      <!-- A grid, not justify-between: spaced out, the middle column sat at a
+           different x on every row depending on how wide its neighbours were. -->
+      <li v-for="s in shiftStats" :key="s.key" class="grid grid-cols-[minmax(0,1fr)_auto_3rem] items-center gap-3 py-1.5">
+        <span class="truncate text-ink-700">{{ s.label }}</span>
+        <span class="text-right text-ink-muted2">{{ s.total === 1 ? t('1 visit', '1 visita') : t(`${s.total} visits`, `${s.total} visitas`) }}</span>
+        <span class="text-right font-mono text-[12.5px] text-ink-900">{{ s.showRate === null ? '—' : `${s.showRate}%` }}</span>
+      </li>
+    </ul>
+    <p class="mt-1.5 border-t border-line-row2 pt-1.5 text-[11.5px] text-ink-muted2">
+      {{ t('% is the show-up rate: visits attended out of attended plus no-shows.', '% es la tasa de asistencia: visitas atendidas sobre atendidas más ausencias.') }}
+    </p>
+  </div>
 </template>

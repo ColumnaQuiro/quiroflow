@@ -25,6 +25,11 @@ export interface PractitionerContext {
    * and chips ask this, as the web's useGrowthTier does.
    */
   hasReceptionist: boolean
+  /**
+   * Whether the account has Growth: the web store's hasGrowthAddon, which
+   * report pages ask before showing a Growth figure.
+   */
+  hasGrowth: boolean
 }
 
 type BootstrapSubscription = { plan_id?: string | null; growth_addon?: boolean | null; receptionist_addon?: boolean | null; status?: string | null; comped?: boolean | null }
@@ -39,6 +44,15 @@ function receptionistFrom(subscription: BootstrapSubscription | null | undefined
   if (subscription.comped) return true
   if (subscription.status === 'locked' || subscription.status === 'canceled') return false
   return !!(subscription.growth_addon || planIncludesGrowth(subscription.plan_id) || subscription.receptionist_addon)
+}
+// stores/account.ts's hasGrowthAddon (server/utils/requireGrowth.ts's rule):
+// comped, trialing, or the add-on or a plan that includes it while not
+// locked or cancelled. Unlike the receptionist, the trial gives it.
+function growthFrom(subscription: BootstrapSubscription | null | undefined): boolean {
+  if (!subscription) return false
+  if (subscription.comped || subscription.status === 'trialing') return true
+  if (subscription.status === 'locked' || subscription.status === 'canceled') return false
+  return !!(subscription.growth_addon || planIncludesGrowth(subscription.plan_id))
 }
 
 const context = ref<PractitionerContext | null>(null)
@@ -127,6 +141,7 @@ export function usePractitionerContext() {
       photoStoragePath: teamMember.photo_storage_path,
       permissions: ((boot as { permissions?: Record<string, unknown> } | null)?.permissions ?? {}) as Record<string, unknown>,
       hasReceptionist: receptionistFrom((boot as { subscription?: BootstrapSubscription | null } | null)?.subscription),
+      hasGrowth: growthFrom((boot as { subscription?: BootstrapSubscription | null } | null)?.subscription),
     }
     loading.value = false
   }

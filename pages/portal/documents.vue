@@ -28,7 +28,7 @@ const { documents, loading, loadError, reload, busyId, open } = usePatientDocume
           <div class="min-w-0 flex-1">
             <p class="truncate text-[13.5px] font-medium text-ink-900">{{ file.file_name }}</p>
             <p class="text-[12px] text-ink-faint">
-              {{ new Date(file.created_at).toLocaleDateString() }}
+              {{ new Date(file.created_at).toLocaleDateString(t('en-GB', 'es-ES')) }}
               <template v-if="fileSizeLabel(file.size_bytes)"> &middot; {{ fileSizeLabel(file.size_bytes) }}</template>
             </p>
           </div>

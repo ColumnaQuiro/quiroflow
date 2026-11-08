@@ -278,7 +278,7 @@ const fieldId = useId()
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Data Exports', 'Exportaciones de datos')" :meta="t('Export patient data, or find gaps in patient records worth chasing down', 'Exporta datos de pacientes o encuentra huecos en los registros que merezca la pena resolver')">
       <div class="flex items-center gap-3">
-        <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
+        <ReportsBackLink />
         <ReportsPdfButton :target="pdfRoot" :title="t('Data Exports', 'Exportaciones de datos')" />
       </div>
     </PageHeader>
@@ -297,7 +297,7 @@ const fieldId = useId()
 
           <div class="mt-4">
             <label :for="`${fieldId}-dataType`" class="block text-[12.5px] font-medium text-ink-600">{{ t('Data Type', 'Tipo de datos') }}</label>
-            <select :id="`${fieldId}-dataType`" v-model="dataType" class="mt-1 h-9 w-full max-w-xs rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-900 focus:border-brand focus:outline-none">
+            <select :id="`${fieldId}-dataType`" v-model="dataType" class="mt-1 h-9 w-full max-w-xs rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-900 focus:border-brand focus:outline-none touch:h-11">
               <option v-for="dt in DATA_TYPES" :key="dt.value" :value="dt.value">{{ dt.label }}</option>
             </select>
             <p v-if="dataType !== 'patients'" class="mt-1 text-[12px] text-warning-text">{{ t("This data type isn't available to export yet.", 'Este tipo de datos todavía no se puede exportar.') }}</p>
@@ -308,7 +308,7 @@ const fieldId = useId()
             <p class="mt-0.5 text-[11.5px] text-ink-faint2">{{ t('Filters by the created date of each patient', 'Filtra por la fecha de creación de cada paciente') }}</p>
             <button
               type="button"
-              class="mt-1 flex h-9 w-full items-center justify-between rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 hover:border-line-controlHover"
+              class="mt-1 flex h-9 w-full items-center justify-between rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-700 hover:border-line-controlHover touch:h-11"
               @click="dateRangeOpen = !dateRangeOpen"
             >
               <span class="flex items-center gap-2">
@@ -321,41 +321,36 @@ const fieldId = useId()
               <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" class="shrink-0 text-ink-faint"><path d="M4 6l4 4 4-4" stroke-linecap="round" stroke-linejoin="round" /></svg>
             </button>
 
-            <div v-if="dateRangeOpen" class="absolute left-0 z-30 mt-1 w-72 rounded-ctl border border-line bg-surface p-2 shadow-popover">
+            <div v-if="dateRangeOpen" class="absolute left-0 z-30 mt-1 w-72 max-w-[calc(100vw-2rem)] rounded-ctl border border-line bg-surface p-2 shadow-popover">
               <button
                 v-for="p in STANDARD_PRESETS"
                 :key="p.label"
                 type="button"
-                class="block w-full rounded-ctlSm px-2 py-1.5 text-left text-[13px] text-ink-600 hover:bg-surface-subtle"
+                class="block w-full rounded-ctlSm px-2 py-1.5 text-left text-[13px] text-ink-600 hover:bg-surface-subtle touch:py-2.5"
                 @click="selectPreset(p)"
               >
                 {{ t(p.label ?? '', p.labelEs ?? p.label ?? '') }}
               </button>
               <div class="mt-1 border-t border-line-divider pt-2">
-                <p class="px-2 text-[11px] font-medium uppercase tracking-wide text-ink-faint2">{{ t('Custom range', 'Periodo personalizado') }}</p>
+                <p class="px-2 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint2">{{ t('Custom range', 'Periodo personalizado') }}</p>
                 <div class="mt-1 flex items-center gap-1.5 px-2">
-                  <input v-model="customFrom" type="date" :max="customTo || undefined" class="min-w-0 flex-1 rounded-ctlSm border border-line-control px-1.5 py-1 text-xs text-ink-600" />
+                  <input v-model="customFrom" type="date" :max="customTo || undefined" class="h-8 min-w-0 flex-1 rounded-ctlSm border border-line-control bg-surface px-1.5 font-mono text-[12px] text-ink-600 touch:h-11" />
                   <span class="shrink-0 text-ink-faint2">–</span>
-                  <input v-model="customTo" type="date" :min="customFrom || undefined" class="min-w-0 flex-1 rounded-ctlSm border border-line-control px-1.5 py-1 text-xs text-ink-600" />
+                  <input v-model="customTo" type="date" :min="customFrom || undefined" class="h-8 min-w-0 flex-1 rounded-ctlSm border border-line-control bg-surface px-1.5 font-mono text-[12px] text-ink-600 touch:h-11" />
                 </div>
-                <button
-                  type="button"
-                  :disabled="!customFrom || !customTo"
-                  class="mt-2 w-full rounded-ctl border border-brand bg-brand px-2 py-1.5 text-xs font-semibold text-brand-on hover:bg-brand-hover disabled:opacity-50"
-                  @click="applyCustomRange"
-                >
+                <UiBtn variant="primary" size="sm" class="mt-2 w-full" :disabled="!customFrom || !customTo" @click="applyCustomRange">
                   {{ t('Apply', 'Aplicar') }}
-                </button>
-                <button type="button" class="mt-1 w-full rounded-ctl px-2 py-1.5 text-xs font-medium text-ink-muted2 hover:bg-surface-subtle" @click="clearDateRange">
+                </UiBtn>
+                <UiBtn variant="ghost" size="sm" class="mt-1 w-full" @click="clearDateRange">
                   {{ t('Clear (all time)', 'Borrar (todo el tiempo)') }}
-                </button>
+                </UiBtn>
               </div>
             </div>
           </div>
 
           <div class="mt-5 border-t border-line-divider pt-4">
             <p class="text-[12.5px] font-medium text-ink-600">{{ t('Filters', 'Filtros') }}</p>
-            <div class="mt-2 grid grid-cols-2 gap-x-4 gap-y-2">
+            <div class="mt-2 grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-2">
               <label class="flex items-center gap-2 text-[13px] text-ink-700">
                 <input v-model="filterMissingEmail" type="checkbox" class="h-4 w-4 rounded border-line-control text-brand focus:ring-brand" />
                 {{ t('Missing email', 'Sin correo') }}
@@ -384,27 +379,32 @@ const fieldId = useId()
             </div>
             <div class="mt-3 flex items-center gap-2">
               <label :for="`${fieldId}-filterAgeMin`" class="text-[13px] text-ink-700">{{ t('Age', 'Edad') }}</label>
-              <input :id="`${fieldId}-filterAgeMin`" v-model="filterAgeMin" type="number" min="0" :placeholder="t('Min', 'Mín.')" class="h-8 w-20 rounded-ctlSm border border-line-control px-2 text-[13px] text-ink-700" />
+              <input :id="`${fieldId}-filterAgeMin`" v-model="filterAgeMin" type="number" min="0" :placeholder="t('Min', 'Mín.')" class="h-8 w-20 rounded-ctlSm border border-line-control bg-surface px-2 font-mono text-[13px] text-ink-700 touch:h-11" />
               <span class="text-ink-faint2">–</span>
-              <input v-model="filterAgeMax" type="number" min="0" :placeholder="t('Max', 'Máx.')" class="h-8 w-20 rounded-ctlSm border border-line-control px-2 text-[13px] text-ink-700" />
+              <input v-model="filterAgeMax" type="number" min="0" :placeholder="t('Max', 'Máx.')" class="h-8 w-20 rounded-ctlSm border border-line-control bg-surface px-2 font-mono text-[13px] text-ink-700 touch:h-11" />
             </div>
           </div>
 
-          <div class="mt-5 flex items-center justify-between border-t border-line-divider pt-4">
+          <div class="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line-divider pt-4">
             <p class="text-[12.5px] text-ink-muted2">{{ t(`${matchingPatients.length} patient${matchingPatients.length === 1 ? '' : 's'} match${matchingPatients.length === 1 ? 'es' : ''} right now`, `${matchingPatients.length} paciente${matchingPatients.length === 1 ? '' : 's'} coincide${matchingPatients.length === 1 ? '' : 'n'} ahora mismo`) }}</p>
             <UiBtn variant="primary" :disabled="dataType !== 'patients' || generating" @click="generateExport">{{ generating ? t('Generating…', 'Generando…') : t('Generate Export', 'Generar exportación') }}</UiBtn>
           </div>
         </div>
 
-        <div v-if="generatedExports.length === 0" class="flex flex-col items-center gap-2 rounded-card border border-line bg-surface p-10 text-center shadow-card">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" class="text-ink-faint2">
-            <ellipse cx="12" cy="5" rx="8" ry="3" />
-            <path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5" />
-            <path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3" />
-          </svg>
-          <p class="text-[13.5px] font-semibold text-ink-800">{{ t('No exports generated', 'No se han generado exportaciones') }}</p>
-          <p class="text-[12.5px] text-ink-muted2">{{ t('To generate a data export, choose from the options above.', 'Para generar una exportación de datos, elige entre las opciones anteriores.') }}</p>
-        </div>
+        <UiEmptyState
+          v-if="generatedExports.length === 0"
+          class="!py-0"
+          :title="t('No exports generated', 'No se han generado exportaciones')"
+          :description="t('To generate a data export, choose from the options above.', 'Para generar una exportación de datos, elige entre las opciones anteriores.')"
+        >
+          <template #icon>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+              <ellipse cx="12" cy="5" rx="8" ry="3" />
+              <path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5" />
+              <path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3" />
+            </svg>
+          </template>
+        </UiEmptyState>
 
         <div v-else class="rounded-card border border-line bg-surface shadow-card" data-pdf-block="image">
           <p class="border-b border-line-divider px-4 py-2.5 text-[12.5px] font-medium text-ink-600">{{ t('Generated this session', 'Generado en esta sesión') }}</p>

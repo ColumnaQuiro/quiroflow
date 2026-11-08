@@ -68,9 +68,14 @@ const appointmentsToRelink = computed(() => candidates.value.reduce((sum, c) => 
 const previewColumns = computed(() => [
   { key: 'name', label: t('Appointment type', 'Tipo de cita') },
   { key: 'status', label: t('Status', 'Estado') },
-  { key: 'funnelStage', label: t('Funnel stage', 'Etapa del embudo') },
+  { key: 'funnelStage', label: t('Stage', 'Etapa') },
   { key: 'appointments', label: t('Appointments', 'Citas') },
 ])
+
+function stageLabel(stage: string | null): string {
+  const known = TYPE_STAGES.find((s) => s.value === stage)
+  return known ? t(known.en, known.es) : '—'
+}
 
 const previewRows = computed(() =>
   [...candidates.value]
@@ -78,7 +83,8 @@ const previewRows = computed(() =>
     .map((c) => ({
       name: c.name,
       status: c.ourTypeId ? t('Already here', 'Ya existe') : t('Will be created', 'Se creará'),
-      funnelStage: c.funnelStage ?? t('—', '—'),
+      // The stage's name as Settings › Appointment types shows it, not its key.
+      funnelStage: stageLabel(c.funnelStage),
       appointments: String(c.inPracticeHub),
     })),
 )
@@ -202,7 +208,7 @@ async function apply() {
         .select('id')
         .single()
       if (error || !created) {
-        importErrors.value.push(t(`Creating type "${c.name}": ${error?.message}`, `Creando tipo "${c.name}": ${error?.message}`))
+        importErrors.value.push(t(`The type "${c.name}" was not created: ${error?.message}`, `No se creó el tipo "${c.name}": ${error?.message}`))
         continue
       }
       ourTypeIdByPhTypeId.set(c.phTypeId, created.id)
@@ -223,7 +229,7 @@ async function apply() {
         const { error, count } = await supabase.from('appointments').update({ appointment_type_id: ourTypeId }, { count: 'exact' }).in('external_reference', chunk)
         if (error)
           importErrors.value.push(
-            t(`Updating batch near ref ${chunk[0]}: ${error.message}`, `Actualizando lote cerca de la referencia ${chunk[0]}: ${error.message}`),
+            t(`Some visits from PracticeHub reference ${chunk[0]} on were not relinked: ${error.message}`, `Algunas visitas desde la referencia de PracticeHub ${chunk[0]} no se revincularon: ${error.message}`),
           )
         else appointmentsUpdated.value += count ?? 0
         done += chunk.length
@@ -241,8 +247,8 @@ async function apply() {
   stage.value = 'done'
   showToast(
     t(
-      `Created ${typesCreated.value} new appointment type(s), updated ${appointmentsUpdated.value} appointments. Skipped ${skippedNoMatch.value} with no type in PracticeHub.`,
-      `Se crearon ${typesCreated.value} tipo(s) de cita nuevos, se actualizaron ${appointmentsUpdated.value} citas. Se omitieron ${skippedNoMatch.value} sin tipo en PracticeHub.`,
+      `Created ${typesCreated.value} new appointment ${typesCreated.value === 1 ? 'type' : 'types'}, updated ${appointmentsUpdated.value} appointments. Skipped ${skippedNoMatch.value} with no type in PracticeHub.`,
+      `Se crearon ${typesCreated.value} ${typesCreated.value === 1 ? 'tipo de cita nuevo' : 'tipos de cita nuevos'}, se actualizaron ${appointmentsUpdated.value} citas. Se omitieron ${skippedNoMatch.value} sin tipo en PracticeHub.`,
     ),
     importErrors.value.length > 0 ? 'error' : 'success',
   )
@@ -263,8 +269,8 @@ function reset() {
 }
 const introLead = computed(() => t('Brings PracticeHub’s appointment types across, with their length and colour, and points every visit already here at the type PracticeHub says it was. Run it before Appointments, so their types match by name.', 'Trae los tipos de cita de PracticeHub, con su duración y color, y asocia cada visita que ya esté aquí al tipo que dice PracticeHub. Ejecútalo antes de Citas, para que sus tipos coincidan por nombre.'))
 const introNotes = computed(() => [
-        { title: t('Nothing is written until you press Apply.', 'No se escribe nada hasta que pulses Aplicar.'), body: t('The preview lists every visit it will re-point so you can check it first.', 'La vista previa muestra cada visita que reasignará para que la compruebes antes.') },
-        { title: t('Safe to run again.', 'Se puede volver a ejecutar.'), body: t('Visits already on the right type are skipped.', 'Las visitas que ya tienen el tipo correcto se omiten.') },
+        { title: t('Nothing is written until you confirm.', 'No se escribe nada hasta que lo confirmes.'), body: t('The preview lists every type it will create and how many visits it will relink, so you can check them first.', 'La vista previa muestra cada tipo que creará y cuántas visitas revinculará, para que lo compruebes antes.') },
+        { title: t('Safe to run again.', 'Se puede volver a ejecutar.'), body: t('Types are matched by name, so none is created twice. Every visit is set to PracticeHub’s type again, which changes nothing for one already on it.', 'Los tipos se emparejan por nombre, así que ninguno se crea dos veces. Cada visita vuelve a tomar el tipo de PracticeHub, lo que no cambia nada si ya lo tenía.') },
 ])
 </script>
 
@@ -290,8 +296,8 @@ const introNotes = computed(() => [
       :sample-limit="20"
       :apply-label="
         t(
-          `Create ${newTypeCount} type(s) and relink ${appointmentsToRelink} appointment(s)`,
-          `Crear ${newTypeCount} tipo(s) y revincular ${appointmentsToRelink} cita(s)`,
+          `Create ${newTypeCount} ${newTypeCount === 1 ? 'type' : 'types'} and relink ${appointmentsToRelink} ${appointmentsToRelink === 1 ? 'appointment' : 'appointments'}`,
+          `Crear ${newTypeCount} ${newTypeCount === 1 ? 'tipo' : 'tipos'} y revincular ${appointmentsToRelink} ${appointmentsToRelink === 1 ? 'cita' : 'citas'}`,
         )
       "
       :more-label="t('more types', 'tipos más')"
@@ -302,8 +308,8 @@ const introNotes = computed(() => [
         <p class="text-xs text-ink-faint">
           {{
             t(
-              'Types already here are matched by name and reused — only the ones marked "Will be created" are new. Relinking overwrites whatever type an appointment currently has here, treating PracticeHub as the source of truth.',
-              'Los tipos que ya existen aquí se emparejan por nombre y se reutilizan: solo son nuevos los marcados como «Se creará». La revinculación sobrescribe el tipo que la cita tenga ahora aquí, tratando a PracticeHub como fuente de verdad.',
+              'Types already here are matched by name and reused; only the ones marked "Will be created" are new. Relinking replaces the type a visit has here with the one PracticeHub gives it, even if someone changed it in QuiroFlow.',
+              'Los tipos que ya existen aquí se emparejan por nombre y se reutilizan; solo son nuevos los marcados como «Se creará». Al revincular, el tipo que tiene la visita aquí se sustituye por el que le da PracticeHub, aunque alguien lo cambiara en QuiroFlow.',
             )
           }}
         </p>
@@ -312,8 +318,9 @@ const introNotes = computed(() => [
 
     <div v-else-if="stage === 'error'" class="mt-4 space-y-4">
       <div class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
-        <p class="font-medium">{{ t('Import failed:', 'Error al importar:') }}</p>
-        <p class="mt-1">{{ runError }}</p>
+        <p class="font-medium">{{ t('The import stopped before it finished.', 'La importación se detuvo antes de terminar.') }}</p>
+        <p class="mt-1">{{ t('Types and visits changed before it stopped are kept. Retry reads PracticeHub again and carries on.', 'Los tipos y visitas cambiados antes de detenerse se conservan. Reintentar vuelve a leer PracticeHub y sigue.') }}</p>
+        <p class="mt-1 text-[12.5px] opacity-80">{{ runError }}</p>
       </div>
       <button type="button" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover" @click="retryRun">
         {{ t('Retry', 'Reintentar') }}
@@ -322,14 +329,14 @@ const introNotes = computed(() => [
 
     <div v-else-if="stage === 'done'" class="mt-4 space-y-4">
       <div v-if="importErrors.length > 0" class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
-        <p class="font-medium">{{ t('Some rows failed:', 'Algunas filas fallaron:') }}</p>
+        <p class="font-medium">{{ t('Some changes were not saved:', 'Algunos cambios no se guardaron:') }}</p>
         <ul class="mt-1 list-disc pl-5">
           <li v-for="(e, i) in importErrors" :key="i">{{ e }}</li>
         </ul>
       </div>
       <div class="flex gap-3">
         <NuxtLink to="/settings/appointment-types" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover">
-          {{ t('Review Appointment Types', 'Revisar tipos de cita') }}
+          {{ t('Review appointment types', 'Revisar tipos de cita') }}
         </NuxtLink>
         <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-ink-600 hover:bg-surface-subtle" @click="reset">
           {{ t('Run again', 'Ejecutar de nuevo') }}

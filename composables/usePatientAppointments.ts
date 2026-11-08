@@ -71,7 +71,7 @@ export function usePatientAppointments(patientId: () => string, settings: () => 
   }
 
   async function cancel(appt: PatientAppointmentRow, whenLabel: string) {
-    if (!confirm(t(`Cancel your appointment on ${whenLabel}?`, `¿Cancelar tu cita del ${whenLabel}?`))) return
+    if (!confirm(t(`Cancel your appointment on ${whenLabel}? If you change your mind, you'll need to book again.`, `¿Cancelar tu cita del ${whenLabel}? Si cambias de idea, tendrás que reservarla de nuevo.`))) return
     busyId.value = appt.id
     // Through the server, which cancels as the patient (the same RPC) and
     // then tells the clinic: the practitioner's push, the clinic's
@@ -81,7 +81,7 @@ export function usePatientAppointments(patientId: () => string, settings: () => 
       refundedCents = (await authedFetch<{ refundedCents?: number }>('/api/portal/appointments/cancel', { method: 'POST', body: { appointmentId: appt.id } }))?.refundedCents ?? 0
     } catch (err: unknown) {
       busyId.value = null
-      showToast((err as { data?: { statusMessage?: string } })?.data?.statusMessage ?? t('Could not cancel the appointment.', 'No se ha podido cancelar la cita.'), 'error')
+      showToast(cancelFailure((err as { data?: { statusMessage?: string } })?.data?.statusMessage), 'error')
       return
     }
     busyId.value = null
@@ -92,6 +92,22 @@ export function usePatientAppointments(patientId: () => string, settings: () => 
         : t('Appointment cancelled.', 'Cita cancelada.'),
     )
     await load()
+  }
+
+  // cancel_patient_appointment raises in English, for logs
+  // (20261106053857_family_accounts.sql); the patient gets a sentence in their
+  // own language that says what to do instead.
+  function cancelFailure(raw: string | undefined): string {
+    if (raw?.startsWith('Too close to the appointment')) {
+      return t('It is too late to cancel this one online. Call or message the clinic.', 'Ya no se puede cancelar desde aquí. Llama o escribe a la clínica.')
+    }
+    if (raw === 'Cancelling from the app is not enabled for this clinic') {
+      return t("Your clinic doesn't take cancellations online. Call or message them.", 'Tu clínica no acepta cancelaciones en línea. Llama o escríbeles.')
+    }
+    if (raw === 'This appointment can no longer be changed') {
+      return t('This appointment can no longer be cancelled online. Call or message the clinic.', 'Esta cita ya no se puede cancelar desde aquí. Llama o escribe a la clínica.')
+    }
+    return t("Couldn't cancel the appointment. Try again, or call the clinic.", 'No se ha podido cancelar la cita. Inténtalo de nuevo o llama a la clínica.')
   }
 
   watch(patientId, load, { immediate: true })

@@ -90,9 +90,9 @@ async function onLeadChanged() {
 
 <template>
   <PageHeader
-    :title="t('Leads', 'Contactos')"
+    :title="t('Leads', 'Leads')"
     :meta="summary && !showEmpty && !showLoading
-      ? `${summary.openLeads} ${t('open leads', 'contactos abiertos')} · ${summary.estimatedValue} ${t('estimated value', 'de valor estimado')}`
+      ? `${summary.openLeads} ${t('open leads', 'leads abiertos')} · ${summary.estimatedValue} ${t('estimated value', 'de valor estimado')}`
       : undefined"
   >
     <div v-if="!showEmpty" class="flex h-8 items-center rounded-ctl border border-line-control bg-surface p-0.5">
@@ -108,7 +108,7 @@ async function onLeadChanged() {
     <button
       type="button"
       class="flex h-8 items-center rounded-ctl bg-brand px-3.5 text-[12.5px] font-semibold text-brand-on hover:bg-brand-hover"
-    >{{ t('Add lead', 'Añadir contacto') }}</button>
+    >{{ t('Add lead', 'Añadir lead') }}</button>
   </PageHeader>
 
   <div class="flex flex-1 flex-col overflow-hidden">
@@ -119,7 +119,7 @@ async function onLeadChanged() {
     <!-- Without the tier there is no pipeline to show, so this points at the
     upgrade screen rather than repeating it. -->
     <div v-else-if="resolved && !hasGrowth" class="mx-auto max-w-sm py-16 text-center">
-      <p class="text-[13px] text-ink-muted">{{ t('Leads are part of the Growth tier.', 'Los contactos forman parte del plan Growth.') }}</p>
+      <p class="text-[13px] text-ink-muted">{{ t('Leads are part of Growth.', 'Los leads forman parte de Growth.') }}</p>
       <NuxtLink to="/growth" class="mt-3 inline-flex h-9 items-center rounded-ctl bg-brand px-4 text-[12.5px] font-semibold text-brand-on hover:bg-brand-hover">
         {{ t('See what Growth adds', 'Ver qué añade Growth') }}
       </NuxtLink>
@@ -130,7 +130,7 @@ async function onLeadChanged() {
     <template v-else>
       <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-surface px-4 py-2.5 sm:px-6">
         <label class="relative flex h-8 min-w-[210px] flex-1 items-center sm:max-w-[280px] sm:flex-none">
-          <span class="sr-only">{{ t('Search leads', 'Buscar contactos') }}</span>
+          <span class="sr-only">{{ t('Search leads', 'Buscar leads') }}</span>
           <!-- Disabled until the board is real. The filter bar is server-
           rendered, so without this there is a window where the box accepts
           typing that goes nowhere: v-model is not bound yet, hydration then
@@ -145,29 +145,21 @@ async function onLeadChanged() {
           >
         </label>
 
-        <!-- Presentational until the API lands: rendered as text, not as
-        buttons or selects, so nothing here invites a click that does
-        nothing. They become real filters alongside the leads endpoint. -->
-        <span class="rounded-pill border border-brand-tintBorder bg-brand-tint px-2.5 py-1 text-[11px] text-brand-text">
-          {{ t('Source', 'Origen') }}: Meta Ads, Google Ads
-        </span>
-        <span class="rounded-pill border border-chip-border bg-chip-bg px-2.5 py-1 text-[11px] text-ink-muted">
-          {{ t('Owner', 'Responsable') }}: {{ t('All', 'Todos') }}
-        </span>
-        <span class="rounded-pill border border-chip-border bg-chip-bg px-2.5 py-1 text-[11px] text-ink-muted">
-          {{ t('Created', 'Creado') }}: {{ t('Last 30 days', 'Últimos 30 días') }}
-        </span>
+        <!-- Source, owner and date filters go here once the endpoint takes
+        them. Until then nothing is shown: three chips reading "Source: Meta
+        Ads, Google Ads", "Owner: All" and "Created: Last 30 days" sat here as
+        text, and the board beside them showed every source and every date. -->
 
         <span v-if="summary" class="ml-auto flex items-center gap-1.5 text-[11px] text-ink-muted">
           <span class="h-1.5 w-1.5 rounded-full bg-brand" />
-          {{ summary.handledByAi }} {{ t('handled by AI right now', 'gestionados por la IA ahora mismo') }}
+          {{ summary.handledByAi }} {{ t('handled by the AI right now', 'gestionados por la IA ahora mismo') }}
         </span>
       </div>
 
       <p v-if="error" class="px-4 py-10 text-center text-[13px] text-danger-text sm:px-6" data-test="leads-error">{{ error }}</p>
 
       <p v-else-if="nothingFound" class="px-4 py-10 text-center text-[13px] text-ink-muted sm:px-6" data-test="leads-no-match">
-        {{ t('No lead matches that name, phone or email.', 'Ningún contacto coincide con ese nombre, teléfono o email.') }}
+        {{ t('No lead matches that name, phone or email.', 'Ningún lead coincide con ese nombre, teléfono o email.') }}
       </p>
 
       <GrowthLeadsBoardSkeleton v-else-if="showLoading" class="pt-4" />

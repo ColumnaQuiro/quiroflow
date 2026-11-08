@@ -47,10 +47,15 @@ const locked = computed(() => !family.canSeeClinical.value && CLINICAL.some((p) 
       :title="settings.clinicName ?? t('Your clinic', 'Tu clínica')"
       :subtitle="t('Patient', 'Paciente')"
     />
-    <div class="min-h-0 min-w-0 flex-1 overflow-y-auto">
+    <!-- A flex column, and the keyed wrapper fills what the banner leaves:
+         full-height screens (Messages, with its composer at the bottom) size
+         themselves with h-full, which a plain block wrapper has no height
+         for -- the composer then sat right under the last message. Taller
+         screens still overflow the wrapper and scroll here as before. -->
+    <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
       <PatientActingBanner v-if="tabsVisible" />
       <div v-if="locked" class="p-4"><PatientClinicalLocked /></div>
-      <div v-else :key="personKey">
+      <div v-else :key="personKey" class="flex min-h-0 flex-1 flex-col">
         <slot />
       </div>
     </div>

@@ -115,7 +115,7 @@ async function resolve(s: Survey) {
         <div class="rounded-ctl border border-line-row p-3">
           <p class="text-[11px] font-[640] uppercase tracking-[.04em] text-ink-muted">{{ t('Answered', 'Responden') }}</p>
           <p class="mt-1 font-mono text-[22px] font-semibold text-ink-900" data-cy="satisfaction-answered">{{ responseShare === null ? '—' : `${responseShare} %` }}</p>
-          <p class="text-[12px] text-ink-muted">{{ t(`${answered.length} of ${recent.length} asked`, `${answered.length} de ${recent.length} preguntas`) }}</p>
+          <p class="text-[12px] text-ink-muted">{{ t(`${answered.length} of ${recent.length} asked`, `${answered.length} de ${recent.length} enviadas`) }}</p>
         </div>
         <div class="rounded-ctl border border-line-row p-3">
           <p class="text-[11px] font-[640] uppercase tracking-[.04em] text-ink-muted">{{ t('Spread', 'Reparto') }}</p>

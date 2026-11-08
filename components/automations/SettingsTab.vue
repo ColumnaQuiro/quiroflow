@@ -38,7 +38,7 @@ const CARD = 'flex scroll-mt-4 flex-col rounded-card border border-line bg-surfa
   <div class="min-h-0 flex-1 overflow-y-auto p-4 pb-32 sm:p-6 sm:pb-32" data-test="settings">
     <div class="mx-auto flex max-w-[720px] flex-col gap-5">
       <section id="salida" aria-labelledby="h-salida" :class="CARD">
-        <h2 id="h-salida" class="text-[16px] font-bold text-ink-900">{{ t('Leave before the end', 'Salir antes de terminar') }}</h2>
+        <h2 id="h-salida" class="text-[16px] font-semibold tracking-tightTitle text-ink-900">{{ t('Leave before the end', 'Salir antes de terminar') }}</h2>
         <p class="mb-2 mt-0.5 text-[13px] text-ink-500">{{ t('The person leaves the automation as soon as any of these happens, whatever step they are on.', 'La persona deja la automatización en cuanto pase algo de esto, esté en el paso que esté.') }}</p>
         <SettingsSwitchRow
           v-for="e in exits"
@@ -52,7 +52,7 @@ const CARD = 'flex scroll-mt-4 flex-col rounded-card border border-line bg-surfa
       </section>
 
       <section id="horario" aria-labelledby="h-horario" :class="CARD">
-        <h2 id="h-horario" class="text-[16px] font-bold text-ink-900">{{ t('When it sends', 'Cuándo se envía') }}</h2>
+        <h2 id="h-horario" class="text-[16px] font-semibold tracking-tightTitle text-ink-900">{{ t('When it sends', 'Cuándo se envía') }}</h2>
         <p class="mb-2 mt-0.5 text-[13px] text-ink-500">{{ t('Messages never go out at night.', 'Los mensajes nunca salen de noche.') }}</p>
         <SettingsSwitchRow
           :model-value="!!quiet"
@@ -87,7 +87,7 @@ const CARD = 'flex scroll-mt-4 flex-col rounded-card border border-line bg-surfa
       </section>
 
       <section id="marketing" aria-labelledby="h-marketing" :class="CARD">
-        <h2 id="h-marketing" class="text-[16px] font-bold text-ink-900">{{ t('Marketing', 'Marketing') }}</h2>
+        <h2 id="h-marketing" class="text-[16px] font-semibold tracking-tightTitle text-ink-900">{{ t('Marketing', 'Marketing') }}</h2>
         <p class="mb-2 mt-0.5 text-[13px] text-ink-500">{{ t('Decides who receives the messages.', 'Afecta a quién recibe los mensajes.') }}</p>
         <SettingsSwitchRow
           :model-value="rule.is_marketing"
@@ -99,7 +99,7 @@ const CARD = 'flex scroll-mt-4 flex-col rounded-card border border-line bg-surfa
       </section>
 
       <section id="prueba" aria-labelledby="h-prueba" :class="CARD">
-        <h2 id="h-prueba" class="text-[16px] font-bold text-ink-900">{{ t('Test mode', 'Modo prueba') }}</h2>
+        <h2 id="h-prueba" class="text-[16px] font-semibold tracking-tightTitle text-ink-900">{{ t('Test mode', 'Modo prueba') }}</h2>
         <p class="mb-2 mt-0.5 text-[13px] text-ink-500">{{ t('To try it with real patients without sending them anything.', 'Para probarla con pacientes reales sin enviarles nada.') }}</p>
         <SettingsSwitchRow
           :model-value="rule.dry_run"
@@ -118,7 +118,7 @@ const CARD = 'flex scroll-mt-4 flex-col rounded-card border border-line bg-surfa
       </section>
 
       <section v-if="b.ruleId.value" id="peligro" aria-labelledby="h-peligro" :class="CARD">
-        <h2 id="h-peligro" class="text-[16px] font-bold text-ink-900">{{ t('Pause or delete', 'Pausar o eliminar') }}</h2>
+        <h2 id="h-peligro" class="text-[16px] font-semibold tracking-tightTitle text-ink-900">{{ t('Pause or delete', 'Pausar o eliminar') }}</h2>
         <p class="mb-3 mt-0.5 text-[13px] text-ink-500">{{ t('Paused: nobody new enters, and people already inside wait at their current step until you resume it.', 'En pausa: no entra nadie nuevo y quienes ya están dentro esperan en su paso actual hasta que la reanudes.') }}</p>
         <div class="flex flex-wrap gap-2 pb-3">
           <UiBtn data-test="settings-toggle-enabled" @click="emit('toggleEnabled')">{{ b.draft.value.enabled ? t('Pause', 'Pausar') : t('Switch on', 'Activar') }}</UiBtn>

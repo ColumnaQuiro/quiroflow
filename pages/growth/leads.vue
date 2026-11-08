@@ -90,9 +90,9 @@ async function onLeadChanged() {
 
 <template>
   <PageHeader
-    :title="t('Leads', 'Contactos')"
+    :title="t('Leads', 'Leads')"
     :meta="summary && !showEmpty && !showLoading
-      ? `${summary.openLeads} ${t('open leads', 'contactos abiertos')} · ${summary.estimatedValue} ${t('estimated value', 'de valor estimado')}`
+      ? `${summary.openLeads} ${t('open leads', 'leads abiertos')} · ${summary.estimatedValue} ${t('estimated value', 'de valor estimado')}`
       : undefined"
   >
     <div v-if="!showEmpty" class="flex h-8 touch:h-10 items-center rounded-ctl border border-line-control bg-surface p-0.5">
@@ -106,7 +106,7 @@ async function onLeadChanged() {
         @click="view = opt"
       >{{ opt === 'board' ? t('Board', 'Tablero') : t('Table', 'Tabla') }}</button>
     </div>
-    <UiBtn variant="primary" size="sm">{{ t('Add lead', 'Añadir contacto') }}</UiBtn>
+    <UiBtn variant="primary" size="sm">{{ t('Add lead', 'Añadir lead') }}</UiBtn>
   </PageHeader>
 
   <div class="flex flex-1 flex-col overflow-hidden">
@@ -114,14 +114,14 @@ async function onLeadChanged() {
 
     <!-- Without the tier there is no pipeline to show, so this points at the
     upgrade screen rather than repeating it. -->
-    <GrowthPageNotice v-else-if="resolved && !hasGrowth" kind="not-in-tier" :title="t('Leads are part of the Growth tier.', 'Los contactos forman parte del plan Growth.')" />
+    <GrowthPageNotice v-else-if="resolved && !hasGrowth" kind="not-in-tier" :title="t('Leads are part of Growth.', 'Los leads forman parte de Growth.')" />
 
     <GrowthLeadsEmptyState v-else-if="showEmpty" />
 
     <template v-else>
       <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-surface px-4 py-2.5 sm:px-6">
         <label class="relative flex h-8 min-w-[210px] touch:h-11 flex-1 items-center sm:max-w-[280px] sm:flex-none">
-          <span class="sr-only">{{ t('Search leads', 'Buscar contactos') }}</span>
+          <span class="sr-only">{{ t('Search leads', 'Buscar leads') }}</span>
           <!-- Disabled until the board is real. The filter bar is server-
           rendered, so without this there is a window where the box accepts
           typing that goes nowhere: v-model is not bound yet, hydration then
@@ -136,16 +136,14 @@ async function onLeadChanged() {
           >
         </label>
 
-        <!-- Presentational until the API lands: rendered as text, not as
-        buttons or selects, so nothing here invites a click that does
-        nothing. They become real filters alongside the leads endpoint. -->
-        <UiPill tone="brand">{{ t('Source', 'Origen') }}: Meta Ads, Google Ads</UiPill>
-        <UiPill>{{ t('Owner', 'Responsable') }}: {{ t('All', 'Todos') }}</UiPill>
-        <UiPill>{{ t('Created', 'Creado') }}: {{ t('Last 30 days', 'Últimos 30 días') }}</UiPill>
+        <!-- Source, owner and date filters go here once the endpoint takes
+        them. Until then nothing is shown: three chips reading "Source: Meta
+        Ads, Google Ads", "Owner: All" and "Created: Last 30 days" sat here as
+        text, and the board beside them showed every source and every date. -->
 
         <span v-if="summary" class="ml-auto flex items-center gap-1.5 text-[11px] text-ink-muted">
           <span class="h-1.5 w-1.5 rounded-full bg-brand" />
-          {{ summary.handledByAi }} {{ t('handled by AI right now', 'gestionados por la IA ahora mismo') }}
+          {{ summary.handledByAi }} {{ t('handled by the AI right now', 'gestionados por la IA ahora mismo') }}
         </span>
       </div>
 
@@ -154,7 +152,7 @@ async function onLeadChanged() {
       </div>
 
       <div v-else-if="nothingFound" class="flex-1 overflow-y-auto">
-        <UiEmptyState :title="t('No lead matches that name, phone or email.', 'Ningún contacto coincide con ese nombre, teléfono o email.')" data-test="leads-no-match">
+        <UiEmptyState :title="t('No lead matches that name, phone or email.', 'Ningún lead coincide con ese nombre, teléfono o email.')" data-test="leads-no-match">
           <template #icon>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
               <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.2-5.2M10.5 17a6.5 6.5 0 100-13 6.5 6.5 0 000 13z" />

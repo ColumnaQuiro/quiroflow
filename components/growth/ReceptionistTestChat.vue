@@ -96,8 +96,8 @@ watch(() => turns.value.length + (thinking.value ? 1 : 0), () => {
       act on. -->
       <p v-if="!usable" class="rounded-ctl border border-line bg-surface-subtle px-3 py-2.5 text-[11.5px] leading-[1.5] text-ink-muted" data-test="test-chat-unavailable">
         {{ t(
-          'Test mode needs an Anthropic API key on the server. Everything else on this page still saves without it.',
-          'El modo de prueba necesita una clave de API de Anthropic en el servidor. Todo lo demás de esta página se guarda igualmente.',
+          'Test mode is not available right now: the AI service it uses is not set up on QuiroFlow’s side. Everything else on this page still saves.',
+          'El modo de prueba no está disponible ahora mismo: el servicio de IA que usa no está configurado en QuiroFlow. Todo lo demás de esta página se guarda igualmente.',
         ) }}
       </p>
 

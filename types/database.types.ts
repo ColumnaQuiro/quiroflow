@@ -10601,6 +10601,10 @@ export type Database = {
         Args: { p_account_id: string; p_prefix?: string }
         Returns: string
       }
+      raise_invoice: {
+        Args: { p_patient_id: string; p_description: string; p_amount_cents: number; p_appointment_id?: string | null; p_payment_method?: string | null }
+        Returns: Json
+      }
       reschedule_patient_appointment: { Args: { p_appointment_id: string; p_starts_at: string }; Returns: Json }
       get_public_booking_info: { Args: { p_slug: string }; Returns: Json }
       get_clinic_by_code: { Args: { p_slug: string }; Returns: Json }

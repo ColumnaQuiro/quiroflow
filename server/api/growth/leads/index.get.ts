@@ -92,9 +92,13 @@ export default defineEventHandler(async (event) => {
       key: stage,
       title: STAGE_TITLES[stage],
       count: all.length,
-      // "€7,035 care plans" on Converted, "€6,030 est." everywhere else --
-      // the money means something different once the plan is actually sold.
-      value: `${formatEuros(valueCents) ?? '€0'}${stage === 'converted' ? ' care plans' : ' est.'}`,
+      // "est." on every stage, Converted included. It said "care plans" there,
+      // but the figure is the same estimated value as everywhere else -- a
+      // converted lead is a patient record, not a care plan sold.
+      value: `${formatEuros(valueCents) ?? '0 €'} est.`,
+      // The figure alone, so the browser words it in the reader's language.
+      // `value` is kept for anything still reading the older shape.
+      amount: formatEuros(valueCents) ?? '0 €',
       more: found.length > shown.length ? `+${found.length - shown.length} more` : undefined,
       hidden: found.length - shown.length,
       found: found.length,
@@ -105,6 +109,9 @@ export default defineEventHandler(async (event) => {
         source: lead.source ?? 'Direct',
         aiHandling: lead.ai_handling,
         timeInStage: timeInStage(lead.stage_changed_at, now),
+        // When it entered the stage, for the browser to word as "2 d in stage"
+        // in the reader's language.
+        stageChangedAt: lead.stage_changed_at,
         value: formatEuros(valueOf(lead)) ?? '—',
       })),
     }
@@ -117,7 +124,7 @@ export default defineEventHandler(async (event) => {
     columns,
     summary: {
       openLeads: open.length,
-      estimatedValue: formatEuros(openValue) ?? '€0',
+      estimatedValue: formatEuros(openValue) ?? '0 €',
       handledByAi: (rows ?? []).filter((lead) => lead.ai_handling).length,
     },
   }

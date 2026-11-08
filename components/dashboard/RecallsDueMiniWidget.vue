@@ -47,8 +47,10 @@ watch(() => props.practitionerId, load)
   <div v-else>
     <p class="font-mono text-[27px] leading-none text-ink-900">{{ count }}</p>
     <p class="mt-1.5 text-[12px] text-ink-muted2">
-      {{ avgDays !== null ? t(`3+ weeks since their last visit · avg ${avgDays} days`, `3+ semanas desde su última visita · media ${avgDays} días`) : t('No patients overdue for recall', 'Ningún paciente pendiente de recuerdo') }}
+      {{ avgDays !== null ? t(`3+ weeks since their last visit · ${avgDays} days on average`, `3+ semanas desde su última visita · ${avgDays} días de media`) : t('No patients due for a recall', 'Ningún paciente pendiente de recordatorio') }}
     </p>
-    <NuxtLink to="/recalls" class="mt-1.5 inline-block text-[12px] font-medium text-brand-text hover:text-brand-hover">{{ t('View recalls →', 'Ver recuerdos →') }}</NuxtLink>
+    <!-- "Recordatorios", the name the sidebar and the page itself use; this
+         link alone said "recuerdos". -->
+    <NuxtLink to="/recalls" class="mt-1.5 inline-block text-[12px] font-medium text-brand-text hover:text-brand-hover">{{ t('View recalls →', 'Ver recordatorios →') }}</NuxtLink>
   </div>
 </template>

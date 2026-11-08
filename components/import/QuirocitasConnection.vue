@@ -38,13 +38,13 @@ async function save() {
     await useStaffFetch('/api/import/quirocitas-connection', { method: 'PUT', body: { baseUrl: baseUrl.value.trim(), username: username.value.trim(), password: password.value } })
   } catch (e: any) {
     saving.value = false
-    showToast(e?.data?.statusMessage ?? e?.message ?? t('Could not save.', 'No se pudo guardar.'), 'error')
+    showToast(importErrorText(e, t, { en: 'The connection was not saved.', es: 'No se guardó la conexión.' }), 'error')
     return
   }
   password.value = ''
   await load()
   saving.value = false
-  showToast(t('Saved', 'Guardado'))
+  showToast(t('Connection saved', 'Conexión guardada'))
   await check()
 }
 
@@ -58,7 +58,7 @@ async function check() {
     const { patients } = await quirocitasCall<{ patients: number }>({ op: 'check' })
     checkResult.value = patients
   } catch (e: any) {
-    checkError.value = e?.data?.statusMessage ?? e?.message ?? t('Could not connect.', 'No se pudo conectar.')
+    checkError.value = importErrorText(e, t, { en: 'Could not sign in to Quirocitas with this login.', es: 'No se pudo iniciar sesión en Quirocitas con este usuario.' })
   } finally {
     checking.value = false
   }
@@ -98,7 +98,7 @@ async function disconnect() {
         <label :for="`${fieldId}-url`" class="block text-sm font-medium text-ink-700">{{ t('Quirocitas address', 'Dirección de Quirocitas') }}</label>
         <input :id="`${fieldId}-url`" v-model="baseUrl" type="text" placeholder="https://quirocitas-yourclinic.es/chiro" data-cy="qc-url"
           class="mt-1 w-full rounded-md border border-line-control bg-surface px-3 py-2 text-sm text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
-        <p class="mt-1 text-xs text-ink-muted2">{{ t('Paste the address of any Quirocitas page; it is trimmed to the right one.', 'Pega la dirección de cualquier página de Quirocitas; se recorta a la correcta.') }}</p>
+        <p class="mt-1 text-xs text-ink-muted2">{{ t('Paste the address of any Quirocitas page you are signed in to; it is cut back to the part that is needed.', 'Pega la dirección de cualquier página de Quirocitas en la que hayas iniciado sesión; se recorta a la parte necesaria.') }}</p>
       </div>
       <div>
         <label :for="`${fieldId}-user`" class="block text-sm font-medium text-ink-700">{{ t('Username', 'Usuario') }}</label>

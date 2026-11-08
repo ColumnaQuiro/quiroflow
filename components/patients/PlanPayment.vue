@@ -37,7 +37,7 @@ const interval = computed(() => {
 
 <template>
   <p class="mt-1.5 text-[12.5px] text-ink-muted2" data-cy="plan-payment-line">
-    <span class="font-medium text-ink-600">{{ t('Paid', 'Pago') }}:</span>{{ ' ' }}
+    <span class="font-medium text-ink-600">{{ t('Payment', 'Pago') }}:</span>{{ ' ' }}
     <template v-if="plan.payment_kind === 'bono'">
       <template v-if="bono">
         {{ t('bono', 'bono') }} «{{ bono.package_name }}» · {{ t(`${bonoLeft} left`, `quedan ${bonoLeft}`) }}

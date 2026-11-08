@@ -50,7 +50,9 @@ const MODES: { key: Mode; label: string; detail: string; test: string }[] = [
   {
     key: 'auto',
     label: t('Answers on its own', 'Contesta sola'),
-    detail: t('It sends its replies itself in the hours you choose below, and books or moves visits when a patient accepts a time. In the other hours it drafts.', 'Envía sus respuestas ella misma en las horas que elijas abajo, y reserva o mueve citas cuando el paciente acepta una hora. En las demás horas, redacta.'),
+    // Instagram is left out of sending on its own (AUTO_SEND_CHANNELS in
+    // server/utils/receptionistDraft.ts), so the sentence says so.
+    detail: t('It sends its replies itself in the hours you choose below, and books or moves visits when a patient accepts a time. In the other hours it drafts, and on Instagram it always drafts for now.', 'Envía sus respuestas ella misma en las horas que elijas abajo, y reserva o mueve citas cuando el paciente acepta una hora. En las demás horas redacta, y en Instagram por ahora siempre redacta.'),
     test: 'mode-auto',
   },
 ]
@@ -63,6 +65,15 @@ const CHANNEL_TONE: Record<string, 'success' | 'warning' | 'neutral'> = {
 // Where a channel is set up. Instagram is connected from the WhatsApp page
 // too (the same Meta app); the two that are not built have nowhere to go.
 const CHANNEL_LINK: Record<string, string> = { whatsapp: '/settings/whatsapp', instagram: '/settings/whatsapp', messenger: '/settings/whatsapp', 'web-chat': '/settings/whatsapp' }
+
+// The server sends statusLabel in English; the status is what the pill says,
+// so it is worded here in the reader's language.
+function statusLabel(channel: ReceptionistChannel) {
+  if (channel.status === 'connected') return t('Connected', 'Conectado')
+  if (channel.status === 'not_set_up') return t('Not set up', 'Sin configurar')
+  if (channel.status === 'not_built') return t('Not available yet', 'Aún no disponible')
+  return channel.statusLabel
+}
 
 const noLiveChannel = computed(() => props.config.enabled && !props.channels.some((c) => c.status === 'connected'))
 </script>
@@ -123,7 +134,7 @@ const noLiveChannel = computed(() => props.config.enabled && !props.channels.som
     <div class="flex flex-col gap-1.5 border-t border-line-divider pt-3">
       <span class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Channels', 'Canales') }}</span>
       <div v-for="channel in channels" :key="channel.key" :data-test="`channel-${channel.key}`" class="flex items-center justify-between gap-3">
-        <span class="text-[11.5px] text-ink-700">{{ channel.name }}</span>
+        <span class="text-[11.5px] text-ink-700">{{ channel.key === 'web-chat' ? t('Web chat', 'Chat web') : channel.name }}</span>
         <span class="flex shrink-0 items-center gap-2">
           <NuxtLink
             v-if="channel.status === 'not_set_up' && CHANNEL_LINK[channel.key]"
@@ -131,13 +142,13 @@ const noLiveChannel = computed(() => props.config.enabled && !props.channels.som
             class="text-[11px] font-medium text-brand-text hover:underline"
             :data-test="`channel-${channel.key}-setup`"
           >{{ t('Set up', 'Configurar') }} →</NuxtLink>
-          <UiPill :tone="CHANNEL_TONE[channel.status]" :dot="channel.status === 'connected'">{{ channel.statusLabel }}</UiPill>
+          <UiPill :tone="CHANNEL_TONE[channel.status]" :dot="channel.status === 'connected'">{{ statusLabel(channel) }}</UiPill>
         </span>
       </div>
       <!-- "On" with nothing connected is on paper only: said here, beside
       the channels, rather than left for the owner to infer. -->
       <p v-if="noLiveChannel" class="mt-1 rounded-ctl border border-warning-border bg-warning-bg px-2.5 py-1.5 text-[11.5px] leading-[1.5] text-warning-text" data-test="no-channel-warning">
-        {{ t('No channel is connected, so no message reaches it yet. Connect WhatsApp or Instagram and it starts with the next one.', 'No hay ningún canal conectado, así que todavía no le llega ningún mensaje. Conecta WhatsApp o Instagram y empezará con el siguiente.') }}
+        {{ t('No channel is connected, so no message reaches it yet. Connect one of the channels above and it starts with the next message.', 'No hay ningún canal conectado, así que todavía no le llega ningún mensaje. Conecta uno de los canales de arriba y empezará con el siguiente mensaje.') }}
       </p>
     </div>
   </GrowthSettingCard>

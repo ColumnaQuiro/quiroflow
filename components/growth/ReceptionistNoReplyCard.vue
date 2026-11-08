@@ -36,11 +36,9 @@ function remove(index: number) {
       >
         {{ phrase }}
         <!-- Drawn, not the × character, which sat on the text baseline at
-        11px and was a 6px target. Same cross as UiCloseIcon, which is not on main yet. -->
+        11px and was a 6px target. -->
         <button type="button" class="-my-0.5 -mr-1 flex h-5 w-5 items-center justify-center rounded-full text-ink-muted hover:bg-danger-bg hover:text-danger-text touch:h-7 touch:w-7" :disabled="saving" :aria-label="t(`Remove ${phrase}`, `Quitar ${phrase}`)" @click="remove(i)">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true" class="h-3 w-3 shrink-0">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-          </svg>
+          <UiCloseIcon class="!h-3 !w-3" />
         </button>
       </span>
     </div>

@@ -48,7 +48,7 @@ async function report() {
     })
     lastResult.value = JSON.stringify(result)
   } catch (e) {
-    toast.showToast(t('The PDF could not be made: ', 'No se ha podido generar el PDF: ') + (e instanceof Error ? e.message : String(e)), 'error')
+    toast.showToast(`${t('The progress report PDF could not be made.', 'No se ha podido generar el PDF del informe.')} (${e instanceof Error ? e.message : String(e)})`, 'error')
   } finally {
     busy.value = false
   }

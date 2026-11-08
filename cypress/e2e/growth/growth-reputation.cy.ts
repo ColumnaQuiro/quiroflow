@@ -58,7 +58,7 @@ describe('Growth reputation', () => {
     // And no rating invented to fill the space.
     cy.get('[data-test="rating"]').should('not.exist')
     // The half that does work is named, so the screen is not all promises.
-    cy.get('[data-test="reviews-coming-soon"]').should('contain', 'review request funnel below is already running')
+    cy.get('[data-test="reviews-coming-soon"]').should('contain', 'already counted under Review requests')
     cy.get('[data-test="sync-google"]').should('not.exist')
     // And the route behind it is gone, not merely hidden -- a clinic being
     // sold this must not find a half-built import by poking at the API.
@@ -237,7 +237,7 @@ describe('Growth reputation', () => {
 
     cy.visit('/growth/reputation?growth=1')
     cy.get('[data-test="draft-reply"]').click()
-    cy.contains('needs an Anthropic API key').should('be.visible')
+    cy.contains('Drafting replies is not available right now').should('be.visible')
   })
 
   it('counts sent and opened exactly, and refuses to guess the rest', () => {
@@ -285,7 +285,7 @@ describe('Growth reputation', () => {
   it('points an account without the tier at the upgrade screen', () => {
     cy.visit('/growth/reputation?growth=0')
 
-    cy.contains('Reputation is part of the Growth tier.').should('be.visible')
+    cy.contains('Reputation is part of Growth.').should('be.visible')
     cy.get('[data-test="review-card"]').should('not.exist')
   })
 

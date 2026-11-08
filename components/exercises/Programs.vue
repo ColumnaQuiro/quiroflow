@@ -97,7 +97,8 @@ async function confirmDelete() {
 
 const dose = (i: ProgramItem) => exerciseDoseLabel(i, t)
 
-defineExpose({ reload: load })
+// The count is for the page's tab label.
+defineExpose({ reload: load, count: computed(() => programs.value.length) })
 
 const input = 'h-9 touch:h-11 w-full rounded-ctl border border-line-control bg-surface px-2.5 text-[14px] text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand'
 const iconBtn = 'flex h-9 w-9 touch:h-11 touch:w-11 shrink-0 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle hover:text-ink-700'

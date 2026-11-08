@@ -55,11 +55,11 @@ const RUN_BORDER: Record<string, string> = {
   unreached: 'border-line opacity-50',
 }
 const RUN_BADGE: Record<string, { tone: string; path: string }> = {
-  ok: { tone: 'bg-success-accent text-surface', path: 'M4 8.5l2.5 2.5L12 5.5' },
-  failed: { tone: 'bg-danger-text text-surface', path: 'M5 5l6 6M11 5l-6 6' },
-  retrying: { tone: 'bg-warning-accent text-surface', path: 'M12 6a4.5 4.5 0 1 0 .5 4M12 3v3h-3' },
-  waiting: { tone: 'bg-warning-accent text-surface', path: 'M8 4.5V8l2 1.3' },
-  current: { tone: 'bg-brand text-surface', path: 'M6 4.5l4 3.5-4 3.5' },
+  ok: { tone: 'bg-success-accent text-success-on', path: 'M4 8.5l2.5 2.5L12 5.5' },
+  failed: { tone: 'bg-danger-text text-danger-on', path: 'M5 5l6 6M11 5l-6 6' },
+  retrying: { tone: 'bg-warning-accent text-warning-on', path: 'M12 6a4.5 4.5 0 1 0 .5 4M12 3v3h-3' },
+  waiting: { tone: 'bg-warning-accent text-warning-on', path: 'M8 4.5V8l2 1.3' },
+  current: { tone: 'bg-brand text-brand-on', path: 'M6 4.5l4 3.5-4 3.5' },
   skipped: { tone: 'bg-chip-bg text-chip-text', path: 'M4 8h8' },
 }
 const runNoteTone = computed(() => (props.runState === 'failed' ? 'text-danger-text' : props.runState === 'waiting' || props.runState === 'retrying' ? 'text-warning-text' : props.runState === 'ok' ? 'text-success-text' : 'text-ink-muted'))
@@ -98,7 +98,7 @@ const runNoteTone = computed(() => (props.runState === 'failed' ? 'text-danger-t
           <path :d="ICON_PATH[kind]" />
         </svg>
       </span>
-      <span class="truncate text-[11px] font-bold uppercase tracking-[.06em] text-ink-muted2">{{ eyebrow }}</span>
+      <span class="truncate text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">{{ eyebrow }}</span>
       <span v-if="growth" class="ml-auto shrink-0 rounded-pill bg-brand-tint px-1.5 py-px text-[11px] font-bold tracking-[.04em] text-brand-text">GROWTH</span>
       <span
         v-if="problem"

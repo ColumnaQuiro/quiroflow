@@ -40,9 +40,9 @@ describe('Dragging a block', () => {
           hourPx().then((px) => {
             // Move: the whole block, one hour down.
             drag(cy.contains('[data-cy=appt-block]', 'Mover Arrastrado'), px)
-            cy.contains('h2', 'Rescheduling Appointment').should('be.visible')
-            cy.contains('button', 'Confirm').click()
-            cy.contains('h2', 'Rescheduling Appointment').should('not.exist')
+            cy.contains('h2', 'Reschedule appointment').should('be.visible')
+            cy.contains('button', 'Move appointment').click()
+            cy.contains('h2', 'Reschedule appointment').should('not.exist')
             cy.task<{ starts_at: string; ends_at: string; rescheduled: boolean }>('db:appointmentById', { appointmentId: moved }).then((a) => {
               expect(new Date(a.starts_at).getTime(), 'an hour later').to.eq(new Date(todayAt(11, 0)).getTime())
               expect(new Date(a.ends_at).getTime() - new Date(a.starts_at).getTime(), 'same length').to.eq(HOUR / 2)
@@ -54,7 +54,7 @@ describe('Dragging a block', () => {
             cy.intercept('PATCH', '**/rest/v1/appointments*').as('resize')
             drag(cy.contains('[data-cy=appt-block]', 'Alargar Estirada').find('.cursor-ns-resize'), px / 2)
             cy.wait('@resize')
-            cy.contains('h2', 'Rescheduling Appointment').should('not.exist')
+            cy.contains('h2', 'Reschedule appointment').should('not.exist')
             cy.task<{ starts_at: string; ends_at: string; rescheduled: boolean }>('db:appointmentById', { appointmentId: stretched }).then((a) => {
               expect(new Date(a.starts_at).getTime(), 'start unchanged').to.eq(new Date(todayAt(14, 0)).getTime())
               expect(new Date(a.ends_at).getTime(), 'half an hour longer').to.eq(new Date(todayAt(15, 0)).getTime())
@@ -68,7 +68,7 @@ describe('Dragging a block', () => {
           // Only a booked visit moves: a finished one stays where it happened.
           cy.contains('[data-cy=appt-block]', 'Hecha Quieta').should('not.have.class', 'cursor-grab')
           hourPx().then((px) => drag(cy.contains('[data-cy=appt-block]', 'Hecha Quieta'), px))
-          cy.contains('h2', 'Rescheduling Appointment').should('not.exist')
+          cy.contains('h2', 'Reschedule appointment').should('not.exist')
         })
       })
     })

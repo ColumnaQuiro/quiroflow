@@ -5,6 +5,7 @@ defineProps<{ rows: GrowthChannelRow[]; totals: GrowthChannelRow }>()
 const emit = defineEmits<{ saveSpend: [channel: string, amountCents: number | null] }>()
 
 const t = useT()
+const { showToast } = useToast()
 
 // Spend is the one column on this table the clinic owns rather than reads.
 // Nothing in QuiroFlow can know what was paid inside Google Ads or Meta, so
@@ -30,7 +31,11 @@ async function commit(channel: string) {
   // and "we have not said" are different answers, and only the second should
   // leave the cost columns blank.
   const amountCents = raw === '' ? null : Math.round(Number(raw) * 100)
-  if (amountCents !== null && (!Number.isFinite(amountCents) || amountCents < 0)) return
+  if (amountCents !== null && (!Number.isFinite(amountCents) || amountCents < 0)) {
+    // Said, rather than the box closing as if it had saved.
+    showToast(t('Enter an amount in euros, such as 250 or 250,50. Leave it empty to clear it.', 'Escribe un importe en euros, como 250 o 250,50. Déjalo vacío para borrarlo.'), 'error')
+    return
+  }
 
   saving.value = channel
   try {
@@ -71,9 +76,9 @@ function percent(value: number | null) {
           <tr class="border-b border-line-divider text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">
             <th class="px-4 pb-[7px] text-left font-[640] sm:pl-[18px]">{{ t('Channel', 'Canal') }}</th>
             <th class="px-2 pb-[7px] text-right font-[640]">{{ t('Spend', 'Gasto') }}</th>
-            <th class="px-2 pb-[7px] text-right font-[640]">{{ t('Leads', 'Contactos') }}</th>
+            <th class="px-2 pb-[7px] text-right font-[640]">{{ t('Leads', 'Leads') }}</th>
             <th class="px-2 pb-[7px] text-right font-[640]">{{ t('Booked', 'Reservas') }}</th>
-            <th class="px-2 pb-[7px] text-right font-[640]">{{ t('Show', 'Asist.') }}</th>
+            <th class="px-2 pb-[7px] text-right font-[640]">{{ t('Show rate', 'Asistencia') }}</th>
             <th class="px-4 pb-[7px] text-right font-[640] sm:pr-[18px]" :title="t('Cost per new patient', 'Coste por paciente nuevo')">CPNP</th>
           </tr>
         </thead>
@@ -105,7 +110,8 @@ function percent(value: number | null) {
                 :class="row.spend === null ? 'text-ink-faint' : ''"
                 :disabled="saving === row.channel"
                 :data-test="`spend-cell-${row.channel}`"
-                :title="t('Click to record what you spent', 'Haz clic para registrar lo que gastaste')"
+                :title="t('Record what you spent on this channel this month', 'Registra lo que has gastado en este canal este mes')"
+                :aria-label="t(`Spend on ${row.label} this month`, `Gasto en ${row.label} este mes`)"
                 @click="startEditing(row)"
               >{{ money(row.spend) }}</button>
             </td>

@@ -106,7 +106,7 @@ async function loadFromPracticeHub() {
     await computeDiff()
     stage.value = 'preview'
   } catch (e: any) {
-    fileError.value = e?.data?.statusMessage ?? e?.message ?? t('Could not read PracticeHub.', 'No se pudo leer PracticeHub.')
+    fileError.value = importErrorText(e, t, { en: 'Could not read PracticeHub. Nothing was written; try again.', es: 'No se pudo leer PracticeHub. No se escribió nada; vuelve a intentarlo.' })
   } finally {
     loadingFromApi.value = false
     apiProgress.value = ''
@@ -280,9 +280,44 @@ function buildNotes(row: CsvRow): string | null {
 }
 
 function formatValue(value: unknown): string {
-  if (value === null || value === undefined || value === '') return '(blank)'
-  if (Array.isArray(value)) return value.length ? value.join(', ') : '(blank)'
+  if (value === null || value === undefined || value === '') return t('(blank)', '(vacío)')
+  if (Array.isArray(value)) return value.length ? value.join(', ') : t('(blank)', '(vacío)')
   return String(value)
+}
+
+// The preview of changes to existing patients names each field the way the
+// patient record does, not by its database column ("default_practitioner_id"),
+// and shows the value a person would recognise: the practitioner's name, not
+// their id; euros, not cents; the language, not its code.
+function fieldLabel(field: string): string {
+  switch (field) {
+    case 'first_name': return t('First name', 'Nombre')
+    case 'last_name': return t('Last name', 'Apellidos')
+    case 'email': return t('Email', 'Correo electrónico')
+    case 'date_of_birth': return t('Date of birth', 'Fecha de nacimiento')
+    case 'referral_source': return t('Referral source', 'Fuente de referencia')
+    case 'preferred_language': return t('Language', 'Idioma')
+    case 'marketing_channels': return t('Marketing consent', 'Consentimiento de marketing')
+    case 'default_practitioner_id': return t('Usual practitioner', 'Profesional habitual')
+    case 'balance_cents': return t('Balance', 'Saldo')
+    case 'created_at': return t('Patient since', 'Paciente desde')
+    case 'external_reference': return t('PracticeHub reference', 'Referencia de PracticeHub')
+    case 'phone': return t('Phone', 'Teléfono')
+    default: return field
+  }
+}
+
+function languageLabel(code: string | null | undefined): string {
+  return LANGUAGES.find((l) => l.code === code)?.label ?? code ?? ''
+}
+
+function shownValue(field: string, value: unknown): string {
+  if (value === null || value === undefined || value === '') return formatValue(value)
+  if (field === 'default_practitioner_id') return teamMembers.value.find((m) => m.id === value)?.full_name ?? formatValue(value)
+  if (field === 'balance_cents' && typeof value === 'number') return formatEur(value)
+  if (field === 'preferred_language' && typeof value === 'string') return languageLabel(value)
+  if (field === 'created_at' && typeof value === 'string' && !Number.isNaN(Date.parse(value))) return new Date(value).toLocaleDateString('es-ES')
+  return formatValue(value)
 }
 
 function valuesDiffer(a: unknown, b: unknown): boolean {
@@ -312,7 +347,7 @@ function buildPatientUpdate(
     const existingValue = existing[field]
     if (valuesDiffer(value, existingValue)) {
       ;(updates as Record<string, unknown>)[field] = value
-      diff.push({ field, from: formatValue(existingValue), to: formatValue(value) })
+      diff.push({ field, from: shownValue(field, existingValue), to: shownValue(field, value) })
     }
   }
 
@@ -320,7 +355,7 @@ function buildPatientUpdate(
   // is "…Z", so a string comparison flagged every patient on every re-run.
   if (realCreatedAt && new Date(realCreatedAt).getTime() !== new Date(existing.created_at).getTime()) {
     updates.created_at = realCreatedAt
-    diff.push({ field: 'created_at', from: formatValue(existing.created_at), to: formatValue(realCreatedAt) })
+    diff.push({ field: 'created_at', from: shownValue('created_at', existing.created_at), to: shownValue('created_at', realCreatedAt) })
   }
 
   // A patient matched by email only (e.g. created directly in QuiroFlow)
@@ -503,7 +538,7 @@ async function computeDiff() {
     for (const u of updates) {
       const existingSet = existingNumbersByPatient.get(u.id) ?? new Set<string>()
       u.numbers = u.numbers.filter((n) => !existingSet.has(n.number.replace(/\D/g, '')))
-      for (const n of u.numbers) u.diff.push({ field: 'phone', from: '(new)', to: n.number })
+      for (const n of u.numbers) u.diff.push({ field: 'phone', from: t('(new)', '(nuevo)'), to: n.number })
     }
   }
   const changed = updates.filter((u) => Object.keys(u.updates).length > 0 || u.numbers.length > 0)
@@ -546,7 +581,7 @@ async function insertContactNumbers(patientId: string, numbers: ContactNumber[],
       is_whatsapp: n.is_whatsapp,
     })),
   )
-  if (error) importErrors.value.push(`Contact numbers for row ${sourceRow}: ${error.message}`)
+  if (error) importErrors.value.push(t(`Phone numbers for row ${sourceRow} were not saved: ${error.message}`, `No se guardaron los teléfonos de la fila ${sourceRow}: ${error.message}`))
 }
 
 async function runImport() {
@@ -569,8 +604,8 @@ async function runImport() {
       if (error) {
         importErrors.value.push(
           t(
-            `Rows ${chunk[0].sourceRow}-${chunk[chunk.length - 1].sourceRow}: ${error.message}`,
-            `Filas ${chunk[0].sourceRow}-${chunk[chunk.length - 1].sourceRow}: ${error.message}`,
+            `Rows ${chunk[0].sourceRow}-${chunk[chunk.length - 1].sourceRow} were not imported: ${error.message}`,
+            `Las filas ${chunk[0].sourceRow}-${chunk[chunk.length - 1].sourceRow} no se importaron: ${error.message}`,
           ),
         )
         continue
@@ -592,8 +627,8 @@ async function runImport() {
         if (numbersError)
           importErrors.value.push(
             t(
-              `Contact numbers for rows near ${chunk[0].sourceRow}: ${numbersError.message}`,
-              `Números de contacto de filas cerca de ${chunk[0].sourceRow}: ${numbersError.message}`,
+              `Phone numbers for rows ${chunk[0].sourceRow}-${chunk[chunk.length - 1].sourceRow} were not saved: ${numbersError.message}`,
+              `No se guardaron los teléfonos de las filas ${chunk[0].sourceRow}-${chunk[chunk.length - 1].sourceRow}: ${numbersError.message}`,
             ),
           )
       }
@@ -608,7 +643,7 @@ async function runImport() {
         const { error } = Object.keys(row.updates).length > 0 ? await supabase.from('patients').update(row.updates).eq('id', row.id) : { error: null }
         if (error) {
           importErrors.value.push(
-            t(`Row ${row.sourceRow} (${row.label}): ${error.message}`, `Fila ${row.sourceRow} (${row.label}): ${error.message}`),
+            t(`Row ${row.sourceRow} (${row.label}) was not updated: ${error.message}`, `La fila ${row.sourceRow} (${row.label}) no se actualizó: ${error.message}`),
           )
           return
         }
@@ -621,8 +656,8 @@ async function runImport() {
     stage.value = 'done'
     showToast(
       t(
-        `Imported ${importedCount.value} patients. Updated ${updatedCount.value} existing patients.`,
-        `Se importaron ${importedCount.value} pacientes. Se actualizaron ${updatedCount.value} pacientes existentes.`,
+        `${importedCount.value} new patients imported, ${updatedCount.value} existing patients updated.`,
+        `${importedCount.value} pacientes nuevos importados, ${updatedCount.value} pacientes existentes actualizados.`,
       ),
       importErrors.value.length > 0 ? 'error' : 'success',
     )
@@ -659,9 +694,9 @@ function reset() {
 }
 const introLead = computed(() => t('Brings patients across from PracticeHub. Every other step matches its records to a patient by the reference stored here, so this one has to run first.', 'Trae los pacientes desde PracticeHub. Todos los demás pasos emparejan sus registros con un paciente por la referencia que se guarda aquí, así que este debe ir primero.'))
 const introNotes = computed(() => [
-        { title: t('Read straight from PracticeHub.', 'Leído directamente de PracticeHub.'), body: t('With the connection saved, nothing needs exporting. A CSV export from Settings -> Data Exports still works.', 'Con la conexión guardada, no hace falta exportar nada. Una exportación CSV desde Settings -> Data Exports sigue sirviendo.') },
-        { title: t('Nothing is written until you press Apply.', 'No se escribe nada hasta que pulses Aplicar.'), body: t('The preview lists what will be created or updated so you can check it first.', 'La vista previa muestra qué se creará o actualizará para que lo compruebes antes.') },
-        { title: t('Safe to run again.', 'Se puede volver a ejecutar.'), body: t('A patient already carrying their PracticeHub reference is matched and updated, never duplicated.', 'Un paciente que ya tiene su referencia de PracticeHub se empareja y se actualiza, nunca se duplica.') },
+        { title: t('Read straight from PracticeHub.', 'Leído directamente de PracticeHub.'), body: t('With the connection saved, nothing needs exporting. A CSV export from PracticeHub’s Settings → Data Exports works too.', 'Con la conexión guardada, no hace falta exportar nada. También sirve una exportación CSV desde Settings → Data Exports de PracticeHub.') },
+        { title: t('Nothing is written until you confirm.', 'No se escribe nada hasta que lo confirmes.'), body: t('The preview lists what will be created or updated, so you can check it before pressing Import.', 'La vista previa muestra qué se creará o actualizará, para que lo compruebes antes de pulsar Importar.') },
+        { title: t('Safe to run again.', 'Se puede volver a ejecutar.'), body: t('A patient already here, found by their PracticeHub reference or their email, is updated, never duplicated.', 'Un paciente que ya está aquí, encontrado por su referencia de PracticeHub o su correo, se actualiza, nunca se duplica.') },
 ])
 
 // Ties each visible <label> to the field under it (for/id), so a screen
@@ -717,21 +752,21 @@ const fieldId = useId()
           <div><dt class="text-ink-muted2">{{ t('Will import', 'Se importarán') }}</dt><dd class="font-medium text-success-text">{{ toImport.length }}</dd></div>
           <div><dt class="text-ink-muted2">{{ t('Will update', 'Se actualizarán') }}</dt><dd class="font-medium text-brand-text">{{ toUpdate.length }}</dd></div>
           <div><dt class="text-ink-muted2">{{ t('No changes', 'Sin cambios') }}</dt><dd class="font-medium text-ink-900">{{ skippedDuplicate }}</dd></div>
-          <div><dt class="text-ink-muted2">{{ t('Deleted/no-name skipped', 'Eliminados/sin nombre omitidos') }}</dt><dd class="font-medium text-ink-900">{{ skippedDeleted + skippedNoName }}</dd></div>
+          <div><dt class="text-ink-muted2">{{ t('Skipped (deleted or no name)', 'Omitidos (borrados o sin nombre)') }}</dt><dd class="font-medium text-ink-900">{{ skippedDeleted + skippedNoName }}</dd></div>
         </dl>
         <!-- The CSV has no country for a phone number; PracticeHub's API
              does. Say which of the two answered, because the fallback makes
              every number Spanish and that is exactly the bug this replaced. -->
         <p v-if="countryLookupState === 'ready'" class="mt-3 text-[12.5px] text-ink-muted2">
           {{ t(
-            `Phone countries read from PracticeHub · ${foreignNumberCount} number(s) outside ${defaultCountryName}`,
-            `Países de los teléfonos leídos de PracticeHub · ${foreignNumberCount} número(s) fuera de ${defaultCountryName}`,
+            `Phone countries read from PracticeHub · ${foreignNumberCount} ${foreignNumberCount === 1 ? 'number' : 'numbers'} outside ${defaultCountryName}`,
+            `Países de los teléfonos leídos de PracticeHub · ${foreignNumberCount} ${foreignNumberCount === 1 ? 'número' : 'números'} fuera de ${defaultCountryName}`,
           ) }}
         </p>
         <p v-else-if="countryLookupState === 'unavailable'" class="mt-3 text-[12.5px] text-warning-text">
           {{ t(
-            `No PracticeHub connection, so every phone number will be saved as ${defaultCountryName}. Connect PracticeHub under Settings → Import → PracticeHub → General and re-run this to get each number's real country.`,
-            `Sin conexión con PracticeHub, todos los teléfonos se guardarán como ${defaultCountryName}. Conecta PracticeHub en Ajustes → Importar → PracticeHub → General y vuelve a ejecutarlo para obtener el país real de cada número.`,
+            `No PracticeHub connection, so every phone number will be saved as ${defaultCountryName}. Save the connection under Connection, then load this file again to get each number's real country.`,
+            `Sin conexión con PracticeHub, todos los teléfonos se guardarán como de ${defaultCountryName}. Guarda la conexión en Conexión y vuelve a cargar este archivo para obtener el país real de cada número.`,
           ) }}
         </p>
         <p v-if="tagsUnavailable" class="mt-1 text-[12.5px] text-warning-text" data-cy="ph-patients-no-tags">
@@ -776,7 +811,7 @@ const fieldId = useId()
               <td class="px-3 py-2 text-ink-900">{{ row.patient.first_name }} {{ row.patient.last_name }}</td>
               <td class="px-3 py-2 text-ink-muted2">{{ row.patient.email ?? t('N/A', 'N/D') }}</td>
               <td class="px-3 py-2 text-ink-muted2">{{ formatEur((row.patient.balance_cents ?? 0)) }}</td>
-              <td class="px-3 py-2 text-ink-muted2">{{ row.patient.preferred_language }}</td>
+              <td class="px-3 py-2 text-ink-muted2">{{ languageLabel(row.patient.preferred_language) }}</td>
               <td class="px-3 py-2 text-ink-muted2">{{ (row.patient.tags ?? []).join(', ') || t('N/A', 'N/D') }}</td>
             </tr>
           </tbody>
@@ -788,22 +823,22 @@ const fieldId = useId()
 
       <div v-if="toUpdate.length > 0" class="overflow-hidden rounded-lg border border-line bg-surface">
         <div class="border-b border-line-divider px-3 py-2 text-xs font-medium uppercase tracking-wide text-ink-muted2">
-          Sample of changes to existing patients
+          {{ t('Sample of changes to existing patients', 'Muestra de cambios en pacientes existentes') }}
         </div>
         <table class="w-full text-sm">
           <thead class="border-b border-line bg-surface-subtle text-left text-xs font-medium uppercase tracking-wide text-ink-muted2">
             <tr>
-              <th class="px-3 py-2">Patient</th>
-              <th class="px-3 py-2">Field</th>
-              <th class="px-3 py-2">Current</th>
-              <th class="px-3 py-2">New</th>
+              <th class="px-3 py-2">{{ t('Patient', 'Paciente') }}</th>
+              <th class="px-3 py-2">{{ t('Field', 'Campo') }}</th>
+              <th class="px-3 py-2">{{ t('Now', 'Ahora') }}</th>
+              <th class="px-3 py-2">{{ t('After import', 'Tras importar') }}</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-line-divider">
             <template v-for="(row, i) in toUpdate.slice(0, 5)" :key="i">
               <tr v-for="(d, j) in row.diff" :key="j">
                 <td class="px-3 py-2 text-ink-900">{{ j === 0 ? row.label : '' }}</td>
-                <td class="px-3 py-2 text-ink-muted2">{{ d.field }}</td>
+                <td class="px-3 py-2 text-ink-muted2">{{ fieldLabel(d.field) }}</td>
                 <td class="px-3 py-2 text-ink-muted2">{{ d.from }}</td>
                 <td class="px-3 py-2 text-ink-900">{{ d.to }}</td>
               </tr>
@@ -811,7 +846,7 @@ const fieldId = useId()
           </tbody>
         </table>
         <p v-if="toUpdate.length > 5" class="border-t border-line-divider px-3 py-2 text-xs text-ink-faint">
-          + {{ toUpdate.length - 5 }} more patients to update
+          + {{ toUpdate.length - 5 }} {{ t('more patients to update', 'pacientes más por actualizar') }}
         </p>
       </div>
 
@@ -843,8 +878,9 @@ const fieldId = useId()
 
     <div v-else-if="stage === 'error'" class="mt-4 space-y-4">
       <div class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
-        <p class="font-medium">{{ t('Import failed:', 'Error al importar:') }}</p>
-        <p class="mt-1">{{ runError }}</p>
+        <p class="font-medium">{{ t('The import stopped before it finished.', 'La importación se detuvo antes de terminar.') }}</p>
+        <p class="mt-1">{{ t('Patients written before it stopped are kept. Retry compares again and carries on without duplicating them.', 'Los pacientes escritos antes de detenerse se conservan. Reintentar vuelve a comparar y sigue sin duplicarlos.') }}</p>
+        <p class="mt-1 text-[12.5px] opacity-80">{{ runError }}</p>
       </div>
       <button type="button" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover" @click="retryImport">
         {{ t('Retry', 'Reintentar') }}
@@ -853,17 +889,17 @@ const fieldId = useId()
 
     <div v-else-if="stage === 'done'" class="mt-4 space-y-4">
       <div v-if="importErrors.length > 0" class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
-        <p class="font-medium">{{ t('Some rows failed:', 'Algunas filas fallaron:') }}</p>
+        <p class="font-medium">{{ t('Some rows were not saved:', 'Algunas filas no se guardaron:') }}</p>
         <ul class="mt-1 list-disc pl-5">
           <li v-for="(e, i) in importErrors" :key="i">{{ e }}</li>
         </ul>
       </div>
       <div class="flex gap-3">
         <NuxtLink to="/patients" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover">
-          {{ t('View Patients', 'Ver pacientes') }}
+          {{ t('View patients', 'Ver pacientes') }}
         </NuxtLink>
         <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-ink-600 hover:bg-surface-subtle" @click="reset">
-          {{ t('Import another file', 'Importar otro archivo') }}
+          {{ t('Start again', 'Empezar de nuevo') }}
         </button>
       </div>
     </div>

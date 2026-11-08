@@ -74,8 +74,22 @@ const PAGE = 20
 const visibleCount = ref(PAGE)
 const shownReviews = computed(() => (data.value?.reviews ?? []).slice(0, visibleCount.value))
 
+// Dates in the reader's language. Both were en-GB whatever the language, so
+// a Spanish screen read "7 Nov 2026" and "Nov 26" under the trend.
+const locale = computed(() => t('en-GB', 'es-ES'))
 function when(iso: string) {
-  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+  return new Date(iso).toLocaleDateString(locale.value, { day: 'numeric', month: 'short', year: 'numeric' })
+}
+function monthLabel(month: string, fallback: string) {
+  const d = new Date(`${month}-01T12:00:00Z`)
+  return Number.isNaN(d.getTime()) ? fallback : d.toLocaleDateString(locale.value, { month: 'short', year: '2-digit', timeZone: 'UTC' })
+}
+
+// The platform as a name: the column holds 'google', 'doctoralia',
+// 'facebook' or 'other', and "other" was shown capitalised as "Other".
+function platformName(platform: string) {
+  const names: Record<string, string> = { google: 'Google', doctoralia: 'Doctoralia', facebook: 'Facebook', other: t('Other', 'Otra') }
+  return names[platform] ?? platform
 }
 </script>
 
@@ -89,7 +103,7 @@ function when(iso: string) {
     <div class="p-4 sm:p-6">
       <GrowthPageNotice v-if="!allowed" kind="no-access" />
 
-      <GrowthPageNotice v-else-if="resolved && !hasGrowth" kind="not-in-tier" :title="t('Reputation is part of the Growth tier.', 'Reputación forma parte del plan Growth.')" />
+      <GrowthPageNotice v-else-if="resolved && !hasGrowth" kind="not-in-tier" :title="t('Reputation is part of Growth.', 'Reputación forma parte de Growth.')" />
 
       <GrowthPageNotice v-else-if="error" kind="error" :title="error" data-test="reputation-error" @retry="reload" />
 
@@ -153,8 +167,8 @@ function when(iso: string) {
             tone="soon"
             :title="t('Ratings and reviews', 'Valoraciones y reseñas')"
             :description="t(
-              'Your Google rating and recent reviews will appear here, with a reply drafted for you to approve. The review request funnel below is already running.',
-              'Tu valoración de Google y las reseñas recientes aparecerán aquí, con una respuesta redactada para que la apruebes. El embudo de solicitudes de abajo ya está funcionando.',
+              'Your Google rating and recent reviews will appear here, with a reply drafted for you to approve. Review requests your automations send are already counted under Review requests.',
+              'Tu valoración de Google y las reseñas recientes aparecerán aquí, con una respuesta redactada para que la apruebes. Las solicitudes de reseña que envían tus automatizaciones ya se cuentan en Solicitudes de reseña.',
             )"
           >
             <template #icon>
@@ -208,8 +222,8 @@ function when(iso: string) {
                   <polyline :points="trendPath" fill="none" class="stroke-brand" stroke-width="2" vector-effect="non-scaling-stroke" />
                 </svg>
                 <div class="flex justify-between text-[11px] text-ink-faint">
-                  <span>{{ visibleTrend[0]!.label }}</span>
-                  <span>{{ visibleTrend[visibleTrend.length - 1]!.label }}</span>
+                  <span>{{ monthLabel(visibleTrend[0]!.month, visibleTrend[0]!.label) }}</span>
+                  <span>{{ monthLabel(visibleTrend[visibleTrend.length - 1]!.month, visibleTrend[visibleTrend.length - 1]!.label) }}</span>
                 </div>
               </template>
               <p v-else class="py-4 text-[11.5px] text-ink-muted">{{ t('Not enough reviews in this period to draw a trend.', 'No hay reseñas suficientes en este periodo para dibujar una tendencia.') }}</p>
@@ -233,8 +247,8 @@ function when(iso: string) {
                 <div class="flex flex-wrap items-center gap-2">
                   <GrowthStarRating :rating="review.rating" />
                   <span class="text-[12.5px] font-semibold text-ink-900">{{ review.author }}</span>
-                  <span class="text-[11px] capitalize text-ink-muted">
-                    {{ review.platform }}<template v-if="review.location"> · {{ review.location }}</template>
+                  <span class="text-[11px] text-ink-muted">
+                    {{ platformName(review.platform) }}<template v-if="review.location"> · {{ review.location }}</template>
                   </span>
                   <span class="ml-auto text-[11px] text-ink-faint">{{ when(review.postedAt) }}</span>
                 </div>
@@ -315,11 +329,14 @@ function when(iso: string) {
           </div>
 
           <!-- The honest gap in the funnel, named. We can see the link open
-          because it goes through us; nobody can watch someone type on Google. -->
+          because it goes through us; nobody can watch someone type on Google.
+          It said the third row would fill in "once a platform is connected",
+          but nothing sets review_requests.review_id, Google connected or not,
+          so the row is empty for every clinic. -->
           <p class="border-t border-line-divider pt-3 text-[11px] leading-[1.5] text-ink-muted" data-test="funnel-caveat">
             {{ t(
-              'Sent and opened are counted here, because the link goes through QuiroFlow. Whether someone then left a review is only known once a platform is connected.',
-              'Enviadas y abiertas se cuentan aquí, porque el enlace pasa por QuiroFlow. Si luego dejaron reseña solo se sabe al conectar una plataforma.',
+              'Sent and opened are counted because the link goes through QuiroFlow. QuiroFlow does not yet match new reviews to the requests that asked for them, so “Left a review” stays empty.',
+              'Enviadas y abiertas se cuentan porque el enlace pasa por QuiroFlow. QuiroFlow aún no relaciona las reseñas nuevas con las solicitudes que las pidieron, así que «Dejaron reseña» queda vacío.',
             ) }}
           </p>
         </section>

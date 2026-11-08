@@ -84,7 +84,7 @@ onMounted(async () => {
       candidates[0]
     if (defaultMatch) selectTemplate(templateKey(defaultMatch))
   } catch (err: any) {
-    templatesError.value = err?.data?.statusMessage ?? t('Failed to load WhatsApp templates', 'No se han podido cargar las plantillas de WhatsApp')
+    templatesError.value = withServerDetail(t("Couldn't load the WhatsApp templates. Close this and try again.", 'No se han podido cargar las plantillas de WhatsApp. Cierra y vuelve a intentarlo.'), err, t('Details:', 'Detalle:'))
   } finally {
     loadingTemplates.value = false
   }
@@ -128,6 +128,28 @@ const canSend = computed(() => {
   return true
 })
 
+// The template's header, named: Meta's own word ('IMAGE') reached a Spanish
+// screen as "Adjuntar image".
+const headerFileName = computed(() => {
+  const format = selectedTemplate.value?.mediaHeaderFormat
+  if (format === 'IMAGE') return t('an image', 'una imagen')
+  if (format === 'VIDEO') return t('a video', 'un vídeo')
+  return t('a document', 'un documento')
+})
+
+// Why Send is greyed out, said under it rather than left to be guessed.
+const whyCannotSend = computed(() => {
+  if (!selectedTemplate.value || canSend.value || sending.value) return ''
+  if (variables.value.some((v) => !v.trim())) return t('Fill in every field to send it.', 'Rellena todos los campos para enviarla.')
+  if (isLocationTemplate.value) return t('Add the latitude and longitude to send it.', 'Añade la latitud y la longitud para enviarla.')
+  if (files.value.length === 0) {
+    return props.patientId
+      ? t("This template needs a file from the patient's record, and they have none yet.", 'Esta plantilla necesita un archivo de la ficha del paciente, y aún no tiene ninguno.')
+      : t('This template needs a file from a patient record. Link this number to a patient first.', 'Esta plantilla necesita un archivo de una ficha. Vincula antes este número a un paciente.')
+  }
+  return t('Choose the file to attach to send it.', 'Elige el archivo que adjuntar para enviarla.')
+})
+
 async function send() {
   error.value = ''
   if (!selectedTemplate.value || !canSend.value) return
@@ -159,7 +181,7 @@ async function send() {
     emit('sent')
     emit('close')
   } catch (err: any) {
-    error.value = err?.data?.statusMessage ?? t('Failed to send', 'No se ha podido enviar')
+    error.value = withServerDetail(t("Couldn't send the message.", 'No se ha podido enviar el mensaje.'), err, t('Details:', 'Detalle:'))
   } finally {
     sending.value = false
   }
@@ -178,7 +200,7 @@ const fieldId = useId()
       <div v-if="loadingTemplates" class="mt-3 text-[13px] text-ink-faint">{{ t('Loading templates…', 'Cargando plantillas…') }}</div>
       <p v-else-if="templatesError" class="mt-3 text-[13px] text-danger-text">{{ templatesError }}</p>
       <p v-else-if="!allowTemplateOverride && !selectedTemplate" class="mt-3 text-[13px] text-danger-text" data-cy="whatsapp-template-missing">
-        {{ missingTemplateMessage ?? t('No default template is configured. Set one in Settings > WhatsApp.', 'No hay ninguna plantilla predeterminada configurada. Configura una en Ajustes > WhatsApp.') }}
+        {{ missingTemplateMessage ?? t('No default template is set. Choose one in Settings → WhatsApp.', 'No hay ninguna plantilla predeterminada. Elige una en Ajustes → WhatsApp.') }}
       </p>
       <template v-else>
         <WhatsAppTemplatePicker
@@ -196,7 +218,7 @@ const fieldId = useId()
 
           <div v-if="variables.length > 0" class="mt-3 space-y-2">
             <div v-for="(v, i) in variables" :key="i">
-              <label :for="`${fieldId}-variable-${i}`" class="block text-xs font-medium text-ink-muted">{{ slot(i + 1) }}</label>
+              <label :for="`${fieldId}-variable-${i}`" class="block text-xs font-medium text-ink-muted">{{ t(`Text for ${slot(i + 1)}`, `Texto para ${slot(i + 1)}`) }}</label>
               <input :id="`${fieldId}-variable-${i}`"
                 v-model="variables[i]"
                 type="text"
@@ -206,38 +228,38 @@ const fieldId = useId()
           </div>
 
           <div v-if="isLocationTemplate" class="mt-3 space-y-2">
-            <label class="block text-xs font-medium text-ink-muted">{{ t('Location', 'Ubicación') }} {{ t('(required by template)', '(requerido por la plantilla)') }}</label>
+            <label class="block text-xs font-medium text-ink-muted">{{ t('Location (the template requires one)', 'Ubicación (la plantilla la pide)') }}</label>
             <div class="grid grid-cols-2 gap-2">
               <input
                 v-model="locationLatitude"
                 type="number"
                 step="any"
-                :placeholder="t('Latitude, e.g. 19.4326', 'Latitud, ej. 19.4326')"
+                :placeholder="t('Latitude, e.g. 40.4168', 'Latitud, p. ej. 40.4168')"
                 class="rounded-ctl border border-line-control bg-surface px-3 py-1.5 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
               />
               <input
                 v-model="locationLongitude"
                 type="number"
                 step="any"
-                :placeholder="t('Longitude, e.g. -99.1332', 'Longitud, ej. -99.1332')"
+                :placeholder="t('Longitude, e.g. -3.7038', 'Longitud, p. ej. -3.7038')"
                 class="rounded-ctl border border-line-control bg-surface px-3 py-1.5 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
               />
             </div>
             <input
               v-model="locationName"
               type="text"
-              :placeholder="t('Location name, e.g. Main Clinic', 'Nombre del lugar, ej. Clínica Principal')"
+              :placeholder="t('Place name, e.g. Clínica Demo', 'Nombre del lugar, p. ej. Clínica Demo')"
               class="w-full rounded-ctl border border-line-control bg-surface px-3 py-1.5 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
             />
             <input
               v-model="locationAddress"
               type="text"
-              :placeholder="t('Address, e.g. 123 Main St', 'Dirección, ej. Calle Principal 123')"
+              :placeholder="t('Address, e.g. Calle Mayor 12, Madrid', 'Dirección, p. ej. Calle Mayor 12, Madrid')"
               class="w-full rounded-ctl border border-line-control bg-surface px-3 py-1.5 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
             />
           </div>
           <div v-else-if="selectedTemplate.mediaHeaderFormat" class="mt-3">
-            <label :for="`${fieldId}-attachmentFileId`" class="block text-xs font-medium text-ink-muted">{{ t('Attach', 'Adjuntar') }} {{ selectedTemplate.mediaHeaderFormat.toLowerCase() }} {{ t('(required by template)', '(requerido por la plantilla)') }}</label>
+            <label :for="`${fieldId}-attachmentFileId`" class="block text-xs font-medium text-ink-muted">{{ t(`Attach ${headerFileName} (the template requires it)`, `Adjuntar ${headerFileName} (la plantilla lo pide)`) }}</label>
             <select :id="`${fieldId}-attachmentFileId`" v-model="attachmentFileId" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-1.5 text-[13px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20">
               <option value="">{{ t('No attachment', 'Sin adjunto') }}</option>
               <option v-for="f in files" :key="f.id" :value="f.id">{{ f.file_name }}</option>
@@ -247,6 +269,7 @@ const fieldId = useId()
       </template>
 
       <p v-if="error" class="mt-2 text-[13px] text-danger-text">{{ error }}</p>
+      <p v-else-if="whyCannotSend" class="mt-2 text-[12.5px] text-ink-muted" data-cy="whatsapp-send-why-disabled">{{ whyCannotSend }}</p>
 
       <div class="mt-4 flex justify-end gap-2">
         <UiBtn type="button" variant="secondary" @click="emit('close')">{{ t('Cancel', 'Cancelar') }}</UiBtn>

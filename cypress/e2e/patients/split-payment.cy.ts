@@ -32,8 +32,8 @@ describe('Splitting a payment across methods', () => {
           cy.contains('button', 'Take payment').scrollIntoView().should('be.visible')
           cy.contains('Outstanding').parent().should('contain', '0,00 €')
 
-          cy.contains('tr', 'Payment — cash').should('contain', '30,00 €')
-          cy.contains('tr', 'Payment — card').should('contain', '20,00 €')
+          cy.contains('tr', 'Payment — Cash').should('contain', '30,00 €')
+          cy.contains('tr', 'Payment — Card').should('contain', '20,00 €')
         })
       })
     })

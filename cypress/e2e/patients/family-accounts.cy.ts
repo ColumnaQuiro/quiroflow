@@ -158,7 +158,7 @@ describe('Family accounts', () => {
       openSwitcher()
       cy.get('[data-cy=family-switcher] [data-cy=family-person-Andrés]').click()
       cy.location('pathname').should('eq', '/portal')
-      cy.get('[data-cy=acting-banner]').should('contain', "You are viewing Andrés's account").and('contain', 'Visits, bookings and payments')
+      cy.get('[data-cy=acting-banner]').should('contain', "You are viewing Andrés's account").and('contain', 'Only visits, bookings and payments')
       cy.get('aside').contains('a', 'Documents').should('not.exist')
       cy.get('aside').contains('a', 'Appointments').click()
       cy.location('pathname').should('eq', '/portal/appointments')

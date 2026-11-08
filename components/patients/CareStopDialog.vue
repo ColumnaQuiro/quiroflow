@@ -20,7 +20,7 @@ async function save() {
   const { error } = await supabase.rpc('record_care_stop', { p_patient_ids: [props.patientId], p_reason_id: reasonId.value, p_note: note.value })
   busy.value = false
   if (error) {
-    showToast(error.message, 'error')
+    showToast(`${t('The reason was not recorded.', 'No se ha registrado el motivo.')} (${error.message})`, 'error')
     return
   }
   showToast(t('Reason recorded.', 'Motivo registrado.'))
@@ -32,7 +32,7 @@ async function clear() {
   const { error } = await supabase.from('patient_care_stops').delete().eq('id', props.current.id)
   busy.value = false
   if (error) {
-    showToast(error.message, 'error')
+    showToast(`${t('The reason was not cleared.', 'No se ha quitado el motivo.')} (${error.message})`, 'error')
     return
   }
   showToast(t('Reason cleared.', 'Motivo quitado.'))

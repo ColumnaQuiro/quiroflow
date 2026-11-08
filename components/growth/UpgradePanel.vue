@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { GROWTH_INCLUDED, useGrowthCatalogue } from '~/composables/useGrowthPlans'
+import { growthIncluded, useGrowthCatalogue } from '~/composables/useGrowthPlans'
 import { MONTHS_PER_YEAR, annualSavingPercent, formatEur } from '~/utils/billing'
 
 const t = useT()
@@ -36,6 +36,9 @@ const options = computed(() => {
 // The 55 and 1,005 are the illustrative clinic this card has always used.
 const INITIAL_VISIT_CENTS = 5500
 const CARE_PLAN_CENTS = 100500
+const included = computed(() => growthIncluded(t))
+const initialVisit = formatEur(INITIAL_VISIT_CENTS)
+const carePlan = formatEur(CARE_PLAN_CENTS)
 const patientsToCover = computed(() => (pricing.value ? Math.max(1, Math.ceil(pricing.value.monthlyPriceCents / INITIAL_VISIT_CENTS)) : 1))
 const monthsCovered = computed(() => (pricing.value ? Math.floor(CARE_PLAN_CENTS / pricing.value.monthlyPriceCents) : null))
 </script>
@@ -51,14 +54,14 @@ const monthsCovered = computed(() => (pricing.value ? Math.floor(CARE_PLAN_CENTS
       </h2>
       <p class="text-[12.5px] leading-[1.55] text-ink-muted">
         {{ t(
-          'Growth answers every enquiry in under a minute on WhatsApp, SMS and web chat, qualifies it against your own rules, and books it into the same calendar your front desk uses. Converting a lead opens a real patient record — nothing is re-typed.',
-          'Growth responde a cada consulta en menos de un minuto por WhatsApp, SMS y chat web, la cualifica según tus propias reglas y la reserva en el mismo calendario que usa tu recepción. Al convertir un contacto se abre una ficha de paciente real: no se reescribe nada.',
+          'Growth’s AI receptionist answers enquiries on WhatsApp, Messenger and your website chat within a couple of minutes, and drafts Instagram replies for you to approve. It qualifies each one against your own rules and books it into the same calendar your front desk uses. Converting a lead opens a real patient record, so nothing is typed twice.',
+          'La recepcionista IA de Growth responde las consultas de WhatsApp, Messenger y el chat de tu web en un par de minutos, y redacta las respuestas de Instagram para que las apruebes. Cualifica cada una según tus propias reglas y la reserva en el mismo calendario que usa tu recepción. Al convertir un lead se abre una ficha de paciente real: no se escribe nada dos veces.',
         ) }}
       </p>
     </div>
 
     <ul class="grid gap-x-4 gap-y-1.5 sm:grid-cols-2">
-      <li v-for="item in GROWTH_INCLUDED" :key="item" class="flex items-start gap-2 text-[12px] text-ink-700">
+      <li v-for="item in included" :key="item" class="flex items-start gap-2 text-[12px] text-ink-700">
         <svg viewBox="0 0 12 12" fill="none" aria-hidden="true" class="mt-[3px] h-3 w-3 shrink-0 text-success-text">
           <path d="M2.4 6.3L4.8 8.7L9.6 3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
@@ -89,13 +92,14 @@ const monthsCovered = computed(() => (pricing.value ? Math.floor(CARE_PLAN_CENTS
       the price does. At EUR 299 this said six extra conversions were needed
       to cover it; at EUR 39 one does, and claiming otherwise would be
       understating the product as badly as overstating it. -->
-      {{ t('Clinics of your size book', 'Las clínicas de tu tamaño consiguen') }}
-      <strong class="font-semibold text-ink-700">{{ t('18–24 extra new patients a month', '18–24 pacientes nuevos más al mes') }}</strong>
+      <!-- It opened with "Clinics of your size book 18-24 extra new patients
+      a month with Growth", a figure nothing in the product measures or
+      records. Only the arithmetic, which is the price's, stays. -->
       {{ patientsToCover === 1
-        ? t('with Growth. At an average initial visit of €55, a single extra new patient covers it', 'con Growth. Con una primera visita media de 55 €, un solo paciente nuevo lo cubre')
-        : t(`with Growth. At an average initial visit of €55, ${patientsToCover} extra new patients cover it`, `con Growth. Con una primera visita media de 55 €, ${patientsToCover} pacientes nuevos lo cubren`) }}<template v-if="monthsCovered">{{ t(
-        ` — and a 12-visit plan of €1,005 covers ${monthsCovered} months of it.`,
-        `, y un plan de 12 visitas de 1.005 € cubre ${monthsCovered} meses.`,
+        ? t(`At an initial visit of ${initialVisit}, one extra new patient a month covers it`, `Con una primera visita de ${initialVisit}, un paciente nuevo más al mes lo cubre`)
+        : t(`At an initial visit of ${initialVisit}, ${patientsToCover} extra new patients a month cover it`, `Con una primera visita de ${initialVisit}, ${patientsToCover} pacientes nuevos más al mes lo cubren`) }}<template v-if="monthsCovered">{{ t(
+        `, and a 12-visit plan of ${carePlan} covers ${monthsCovered} months of it.`,
+        `, y un plan de 12 visitas de ${carePlan} cubre ${monthsCovered} meses.`,
       ) }}</template><template v-else>.</template>
     </p>
 

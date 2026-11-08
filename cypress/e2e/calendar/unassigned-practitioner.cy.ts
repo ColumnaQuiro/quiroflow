@@ -45,7 +45,7 @@ describe('Appointments with no practitioner', () => {
         cy.visit('/calendar')
         cy.contains('select', 'Work week').select('day')
 
-        cy.clickUntil('button:contains("New Appointment")', '[data-cy=create-patient-search]')
+        cy.clickUntil('[data-cy=new-appointment]', '[data-cy=create-patient-search]')
 
         // The panel is open *and* the reference data is still in flight --
         // the precondition the bug needed, so assert it rather than hope for

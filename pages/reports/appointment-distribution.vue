@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Bar } from 'vue-chartjs'
-import '~/utils/chartSetup'
+import { chartColor } from '~/utils/chartSetup'
 import { computePresetRange, rangeBounds } from '~/composables/useDateRangePresets'
 import { fetchAllRows } from '~/composables/useFetchAllRows'
 
@@ -73,10 +73,10 @@ const shiftStats = computed(() => {
 const shiftChartData = computed(() => ({
   labels: SHIFTS.value.map((s) => s.label),
   datasets: [
-    { label: t('Completed', 'Completadas'), data: shiftStats.value.map((s) => s.completed), backgroundColor: '#4f46e5' },
-    { label: t('No-show', 'No presentado'), data: shiftStats.value.map((s) => s.noShow), backgroundColor: '#ef4444' },
-    { label: t('Cancelled', 'Canceladas'), data: shiftStats.value.map((s) => s.cancelled), backgroundColor: '#fca5a5' },
-    { label: t('Booked (upcoming)', 'Reservadas (próximas)'), data: shiftStats.value.map((s) => s.booked), backgroundColor: '#c7d2fe' },
+    { label: t('Completed', 'Completadas'), data: shiftStats.value.map((s) => s.completed), backgroundColor: chartColor('brand') },
+    { label: t('No-show', 'No presentado'), data: shiftStats.value.map((s) => s.noShow), backgroundColor: chartColor('danger-text') },
+    { label: t('Cancelled', 'Canceladas'), data: shiftStats.value.map((s) => s.cancelled), backgroundColor: chartColor('chart-cancelled') },
+    { label: t('Booked (upcoming)', 'Reservadas (próximas)'), data: shiftStats.value.map((s) => s.booked), backgroundColor: chartColor('chart-projected') },
   ],
 }))
 const shiftChartOptions = {
@@ -97,7 +97,7 @@ const byHour = computed(() => {
 })
 const hourChartData = computed(() => ({
   labels: hourLabels,
-  datasets: [{ label: t('Appointments', 'Citas'), data: byHour.value, backgroundColor: '#4f46e5' }],
+  datasets: [{ label: t('Appointments', 'Citas'), data: byHour.value, backgroundColor: chartColor('brand') }],
 }))
 const hourChartOptions = {
   responsive: true,
@@ -115,7 +115,7 @@ const pdfRoot = ref<HTMLElement | null>(null)
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Appointment Distribution', 'Distribución de citas')" :meta="t('Volume and show-up rate by shift and time of day', 'Volumen y tasa de asistencia por turno y hora del día')">
       <div class="flex items-center gap-3">
-        <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
+        <ReportsBackLink />
         <ReportsPdfButton :target="pdfRoot" :title="t('Appointment Distribution', 'Distribución de citas')" :range="range" :practitioner-id="practitionerFilter || null" :clinic-id="clinicFilter || null" />
       </div>
     </PageHeader>

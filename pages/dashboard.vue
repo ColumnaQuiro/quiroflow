@@ -118,6 +118,14 @@ function onCycleSize(id: string, currentSize: 'sm' | 'md' | 'lg') {
   save()
 }
 
+// The keyboard and touch way to do what a drag does; saved with "Done", as a
+// drag is.
+function onMove(index: number, delta: -1 | 1) {
+  const from = widgets.value.findIndex((w) => w.id === visibleWidgets.value[index]?.id)
+  const to = widgets.value.findIndex((w) => w.id === visibleWidgets.value[index + delta]?.id)
+  if (from >= 0 && to >= 0) reorder(from, to)
+}
+
 const widgetProps = computed(() => ({
   dateRange: range.value,
   practitionerId: practitionerFilter.value || undefined,
@@ -165,7 +173,9 @@ const dateLocale = computed(() => (lang.value === 'es' ? 'es-ES' : 'en-GB'))
 function formatToday(locale: string) {
   return new Date().toLocaleDateString(locale, { weekday: 'long', month: 'long', day: 'numeric' })
 }
-const todayLabel = useState('dashboard-today', () => formatToday('en-GB'))
+// In the viewer's language from the first render: en-GB here showed a Spanish
+// clinic "Sunday 8 November" until the page mounted.
+const todayLabel = useState('dashboard-today', () => formatToday(dateLocale.value))
 onMounted(() => {
   todayLabel.value = formatToday(dateLocale.value)
 })
@@ -183,7 +193,9 @@ function widgetMeta(type: string): string | undefined {
 </script>
 
 <template>
-  <div class="flex h-full flex-col">
+  <!-- On a phone the header scrolls away with the widgets: pinned, its title,
+       two filters and the edit button took a third of the screen for good. -->
+  <div class="flex h-full flex-col max-sm:overflow-y-auto">
     <header class="flex shrink-0 flex-col gap-2.5 border-b border-line bg-surface px-4 py-3 sm:h-14 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-0">
       <div>
         <h1 class="text-[18px] font-[640] tracking-tightTitle text-ink-900">{{ firstName ? `${greeting}, ${firstName}` : greeting }}</h1>
@@ -202,7 +214,7 @@ function widgetMeta(type: string): string | undefined {
         :description="t('Your role does not include the dashboard\'s figures. Everything else your role allows is in the menu.', 'Tu rol no incluye las cifras del panel. Todo lo demás que tu rol permite está en el menú.')"
       />
     </div>
-    <div v-else class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] sm:px-6">
+    <div v-else class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] max-sm:flex-none sm:px-6">
       <DashboardFirstSteps v-if="store.isOwner && !editing" />
       <DashboardSetupProgress v-if="store.isOwner && !editing" />
       <DashboardAddWidgetPicker v-if="editing" :existing-types="[...widgets.map((w) => w.type), ...hiddenTypes]" @add="onAddWidget" />
@@ -234,6 +246,9 @@ function widgetMeta(type: string): string | undefined {
           :size="w.size"
           :editing="editing"
           :index="i"
+          :is-first="i === 0"
+          :is-last="i === visibleWidgets.length - 1"
+          @move="onMove(i, $event)"
           @remove="onRemoveWidget(w.id)"
           @cycle-size="onCycleSize(w.id, w.size)"
           @drag-start="onDragStart"

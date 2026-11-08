@@ -226,14 +226,16 @@ const CHIP_TONE = { danger: 'bg-danger-bg text-danger-text', warning: 'bg-warnin
 
     <template v-else-if="patient">
       <!-- Who -->
-      <div class="flex items-center gap-3" :class="variant === 'bar' ? 'px-3 pt-3' : variant === 'wide' ? '' : 'px-4 pt-4'">
+      <!-- Wraps in the wide layout, so on a phone the next patient's actions
+      take a line of their own instead of cutting the name to its first word. -->
+      <div class="flex items-center gap-3" :class="variant === 'bar' ? 'px-3 pt-3' : variant === 'wide' ? 'flex-wrap gap-y-3' : 'px-4 pt-4'">
         <span class="flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-brand-tint font-[650] text-brand-text" :class="variant === 'bar' ? 'h-9 w-9 text-[12.5px]' : 'h-12 w-12 text-[15px]'">
           <img v-if="photoUrl" :src="photoUrl" alt="" class="h-full w-full object-cover" />
           <template v-else>{{ initials }}</template>
         </span>
-        <div class="min-w-0 flex-1">
+        <div class="min-w-0 flex-1" :class="variant === 'wide' ? 'basis-[14rem]' : ''">
           <p class="truncate font-[640] leading-tight tracking-tightTitle text-ink-900" :class="variant === 'bar' ? 'text-[15px]' : 'text-[15.5px]'" data-cy="rail-name">{{ fullName }}</p>
-          <p class="mt-0.5 truncate text-[12.5px] text-ink-muted2">
+          <p class="mt-0.5 text-[12.5px] text-ink-muted2" :class="variant === 'wide' ? '' : 'truncate'">
             <template v-if="ageSex">{{ ageSex }}</template>
             <template v-if="variant !== 'rail' && visitLine">{{ ageSex ? ' · ' : '' }}{{ t('Visit', 'Visita') }} <span class="font-mono">{{ visitNumber }}</span> · {{ visitLine }}</template>
           </p>
@@ -339,7 +341,7 @@ const CHIP_TONE = { danger: 'bg-danger-bg text-danger-text', warning: 'bg-warnin
               </dd>
             </template>
             <dt class="text-ink-muted2">{{ t('Last visit', 'Última visita') }}</dt>
-            <dd class="truncate text-right text-ink-700" data-cy="rail-last-visit">{{ lastVisitLine || '—' }}</dd>
+            <dd class="text-right text-ink-700" data-cy="rail-last-visit">{{ lastVisitLine || '—' }}</dd>
             <dt class="text-ink-muted2">{{ t('Next visit', 'Próxima visita') }}</dt>
             <dd class="flex justify-end" data-cy="rail-next-visit">
               <span v-if="nextVisit" class="truncate text-ink-700">{{ formatWeekdayDate(nextVisit.starts_at) }}</span>

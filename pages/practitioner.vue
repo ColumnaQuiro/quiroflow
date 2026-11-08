@@ -64,6 +64,7 @@ const selectedAppointment = ref<AppointmentRow | null>(null)
 const rooms = ref<Room[]>([])
 const appointmentTypes = ref<AppointmentType[]>([])
 const teamMembers = ref<TeamMember[]>([])
+const referenceLoaded = ref(false)
 const appointments = ref<AppointmentRow[]>([])
 const chartedAppointmentIds = ref<Set<string>>(new Set())
 const loading = ref(true)
@@ -110,6 +111,7 @@ async function loadReferenceData() {
   ])
   appointmentTypes.value = orderTypes(types ?? [])
   teamMembers.value = members ?? []
+  referenceLoaded.value = true
 }
 
 async function loadRooms() {
@@ -391,7 +393,8 @@ const flowStages = computed(() => {
 // "Thursday 5 Nov"), which Vue reported as a hydration mismatch on every load.
 const dayLabel = computed(() => anchorDate.value.toLocaleDateString(t('en-GB', 'es-ES'), { weekday: 'long', month: 'short', day: 'numeric' }))
 const headerMeta = computed(() => {
-  if (viewMode.value !== 'day') return dayLabel.value
+  // Not "0 visits" while the day is still loading: it says something false.
+  if (viewMode.value !== 'day' || loading.value) return dayLabel.value
   const total = appointments.value.length
   const charted = chartedAppointmentIds.value.size
   const visitWord = total === 1 ? t('visit', 'visita') : t('visits', 'visitas')
@@ -432,7 +435,10 @@ onMounted(() => warmChunks(() => [
           month-to="/jornada?tab=mine"
           inline
         />
-        <div v-if="canSeeAll" class="relative">
+        <!-- Holds its place until the names arrive, rather than showing an
+        empty select with only its chevron. -->
+        <UiSkeleton v-if="canSeeAll && !referenceLoaded" class="h-8 w-32 rounded-ctl touch:h-11" />
+        <div v-else-if="canSeeAll" class="relative">
           <select
             v-model="practitionerId"
             :aria-label="t('Practitioner', 'Profesional')"
@@ -532,7 +538,11 @@ onMounted(() => warmChunks(() => [
               <span class="font-mono text-[12.5px] font-medium leading-none text-ink-700">{{ stage.count }}</span>
             </div>
           </div>
-          <div v-if="appointments.length === 0" class="p-8 text-center text-[13px] text-ink-faint">{{ t('No appointments for this day.', 'No hay citas para este día.') }}</div>
+          <UiEmptyState v-if="appointments.length === 0" class="!px-3 !py-4" :title="t('No appointments for this day.', 'No hay citas para este día.')">
+            <template #icon>
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="3" y="4" width="14" height="13" rx="2" /><path d="M3 8h14M7 2.5v3M13 2.5v3" stroke-linecap="round" /></svg>
+            </template>
+          </UiEmptyState>
           <ul v-else class="flex flex-col gap-0.5 p-2">
             <li v-for="a in appointments" :key="a.id" class="group relative">
               <div
@@ -553,28 +563,32 @@ onMounted(() => warmChunks(() => [
                 <span class="mt-[3px] w-[40px] shrink-0 font-mono text-[12px]" :class="nextUp?.id === a.id && selectedAppointment?.id !== a.id ? 'font-semibold text-brand-text' : 'text-ink-muted2'">{{ formatTime(a.starts_at) }}</span>
                 <span class="min-w-0 flex-1 pr-7">
                   <!-- The name keeps the whole line: the status and the flags
-                  go on the line below, where they used to cut it to "Jor…". -->
+                  go on the line below, where they used to cut it to "Jor…".
+                  It wraps rather than truncates: beside the status pill a
+                  two-surname name lost its second surname at 372px, and the
+                  surname is what tells two Lucías apart. -->
                   <span class="flex items-start gap-2">
-                    <span class="min-w-0 flex-1 truncate text-[13.5px] font-[560] text-ink-900" :class="{ 'blur-sm select-none': privacyMode }">{{ patientName(a) }}</span>
-                    <UiPill v-if="nextUp?.id === a.id && selectedAppointment?.id !== a.id" tone="brand">{{ t('Next', 'Siguiente') }}</UiPill>
-                    <UiPill v-else :tone="statusTone(a.status)" dot>{{ stageIndex(a) >= 3 && a.status === 'booked' ? stageName(a) : statusLabel(a.status) }}</UiPill>
+                    <span class="min-w-0 flex-1 break-words text-[13.5px] font-[560] leading-snug text-ink-900" :class="{ 'blur-sm select-none': privacyMode }">{{ patientName(a) }}</span>
+                    <UiPill v-if="nextUp?.id === a.id && selectedAppointment?.id !== a.id" tone="brand" class="shrink-0 whitespace-nowrap">{{ t('Next', 'Siguiente') }}</UiPill>
+                    <UiPill v-else :tone="statusTone(a.status)" dot class="shrink-0 whitespace-nowrap">{{ stageIndex(a) >= 3 && a.status === 'booked' ? stageName(a) : statusLabel(a.status) }}</UiPill>
                   </span>
                   <span class="mt-1 flex flex-wrap items-center gap-1.5 text-[11.5px] text-ink-muted2">
                     <span class="inline-flex min-w-0 items-center gap-1.5">
-                      <span class="h-[6px] w-[6px] shrink-0 rounded-full" :style="{ backgroundColor: a.appointment_types?.color ?? '#9CA3AF' }" />
+                      <span class="h-[6px] w-[6px] shrink-0 rounded-full" :class="{ 'bg-ink-faint3': !a.appointment_types?.color }" :style="a.appointment_types?.color ? { backgroundColor: a.appointment_types.color } : undefined" />
                       <span class="truncate">{{ a.appointment_types?.name ?? t('No type', 'Sin tipo') }}</span>
                     </span>
                     <!-- Red flags on the record; the text on hover for clinical
                          roles only, as on the calendar. -->
-                    <span
+                    <UiPill
                       v-if="a.patients?.red_flags?.trim()"
-                      class="inline-flex h-5 items-center gap-1 rounded-pill bg-danger-bg px-1.5 text-[11px] font-semibold text-danger-text"
+                      tone="danger"
+                      class="whitespace-nowrap"
                       :title="can('visit_notes_access') ? `${t('Red flags', 'Señales rojas')}: ${a.patients.red_flags.trim()}` : t('Red flags on the record', 'Señales rojas en la ficha')"
                       data-cy="worklist-red-flags"
                     >
                       <CalendarRedFlagIcon :label="t('Red flags', 'Señales rojas')" />{{ t('Red flag', 'Alerta roja') }}
-                    </span>
-                    <span v-if="renewalPatients.has(a.patient_id)" class="inline-flex h-5 items-center rounded-pill bg-warning-bg px-2 text-[11px] font-semibold text-warning-text" data-cy="worklist-renewal">{{ t('Review', 'Revisión') }}</span>
+                    </UiPill>
+                    <UiPill v-if="renewalPatients.has(a.patient_id)" tone="warning" class="whitespace-nowrap" data-cy="worklist-renewal">{{ t('Review', 'Revisión') }}</UiPill>
                     <span
                       v-if="formsPending(a) > 0"
                       class="inline-flex h-5 w-5 items-center justify-center rounded-pill bg-warning-bg text-warning-text"
@@ -642,13 +656,14 @@ onMounted(() => warmChunks(() => [
                   :key="a.id"
                   type="button"
                   class="block w-full rounded-ctlSm border-l-[3px] px-1.5 py-1 text-left text-[11.5px]"
-                  :class="a.status === 'completed' ? 'border-success-accent bg-success-bg2' : 'border-warning-accent bg-warning-bg2'"
+                  :class="a.status === 'completed' ? 'border-success-accent bg-success-bg2' : a.status === 'no_show' ? 'border-danger-text bg-danger-bg' : 'border-warning-accent bg-warning-bg2'"
                   @click="openFromWeek(a)"
                 >
                   <p class="truncate font-medium text-ink-700" :class="{ 'blur-sm select-none': privacyMode }">
                     {{ formatTime(a.starts_at) }} {{ a.patients?.first_name }}
                   </p>
-                  <p v-if="a.checked_in_at" class="truncate text-success-text">{{ t('Arrived', 'Llegada') }}</p>
+                  <p v-if="a.status === 'no_show'" class="truncate text-danger-text">{{ t('No-show', 'No presentado') }}</p>
+                  <p v-else-if="a.checked_in_at" class="truncate text-success-text">{{ t('Arrived', 'Llegada') }}</p>
                 </button>
                 <p v-if="appointmentsForDay(day).length === 0" class="px-1 py-2 text-center text-[11.5px] text-ink-faint">—</p>
               </div>
@@ -700,9 +715,28 @@ onMounted(() => warmChunks(() => [
               </template>
             </PractitionerPatientRail>
           </section>
-          <div v-else-if="!loading && viewMode === 'day' && appointments.length > 0" class="rounded-card border border-dashed border-line-control p-8 text-center text-[13px] text-ink-faint">
-            {{ t('Everyone on today\'s list has been seen. Pick a visit to open its note.', 'Ya has visto a todos los de hoy. Elige una visita para abrir su nota.') }}
-          </div>
+          <!-- Holds the next patient's place while the day loads, so the
+          lists under it do not arrive first and then get pushed down. -->
+          <section v-else-if="loading && viewMode === 'day'" class="rounded-card border border-line bg-surface p-4 shadow-card sm:p-5" aria-busy="true">
+            <UiSkeleton class="mb-3 h-3 w-28 rounded-ctlSm" />
+            <div class="flex items-center gap-3">
+              <UiSkeleton class="h-12 w-12 shrink-0 rounded-full" />
+              <div class="flex-1 space-y-1.5"><UiSkeleton class="h-4 w-40 rounded-ctlSm" /><UiSkeleton class="h-3 w-56 max-w-full rounded-ctlSm" /></div>
+            </div>
+            <div class="mt-4 grid gap-3 lg:grid-cols-3">
+              <UiSkeleton v-for="i in 3" :key="i" class="h-24 rounded-card" />
+            </div>
+          </section>
+          <UiEmptyState
+            v-else-if="viewMode === 'day' && appointments.length > 0"
+            class="!p-0"
+            :title="t('Everyone on today\'s list has been seen.', 'Ya has visto a todos los de hoy.')"
+            :description="t('Pick a visit to open its note.', 'Elige una visita para abrir su nota.')"
+          >
+            <template #icon>
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M5 10.3l3.2 3.2L15 6.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+            </template>
+          </UiEmptyState>
           <!-- Who has not confirmed between now and tomorrow night, riskiest
           first. Not about the day shown. -->
           <PractitionerNeedsConfirming

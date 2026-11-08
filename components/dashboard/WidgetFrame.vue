@@ -11,6 +11,8 @@ const emit = defineEmits<{
 }>()
 
 const t = useT()
+// The width chip used to print the size key itself ("sm", "md", "lg").
+const sizeLabel = computed(() => ({ sm: t('Narrow', 'Estrecho'), md: t('Wide', 'Ancho'), lg: t('Full width', 'Ancho completo') })[props.size])
 </script>
 
 <template>
@@ -23,7 +25,7 @@ const t = useT()
   >
     <div class="flex items-center justify-between gap-2">
       <div class="flex min-w-0 items-center gap-1.5">
-        <span v-if="editing" class="shrink-0 cursor-move select-none text-[13px] leading-none text-ink-faint2" :title="t('Drag to reorder', 'Arrastra para reordenar')">⠿</span>
+        <span v-if="editing" class="shrink-0 cursor-move select-none text-[13px] leading-none text-ink-faint2" aria-hidden="true" :title="t('Drag to reorder', 'Arrastra para reordenar')">⠿</span>
         <h2 class="truncate text-[13px] font-semibold text-ink-900">{{ title }}</h2>
       </div>
       <div class="flex shrink-0 items-center gap-2">
@@ -32,12 +34,21 @@ const t = useT()
           <button
             type="button"
             class="rounded-ctlSm border border-line-control px-1.5 py-0.5 text-[11px] font-medium text-ink-muted2 hover:border-line-controlHover hover:text-ink-600"
-            :title="t('Cycle widget width', 'Cambiar el ancho del widget')"
+            :title="t('Change width', 'Cambiar el ancho')"
+            :aria-label="t(`Width: ${sizeLabel}. Change width of ${title}`, `Ancho: ${sizeLabel}. Cambiar el ancho de ${title}`)"
             @click="emit('cycleSize')"
           >
-            {{ size }}
+            {{ sizeLabel }}
           </button>
-          <button type="button" class="text-ink-faint2 hover:text-danger-text" :title="t('Remove widget', 'Eliminar widget')" @click="emit('remove')">✕</button>
+          <button
+            type="button"
+            class="text-ink-faint2 hover:text-danger-text"
+            :title="t('Remove from dashboard', 'Quitar del panel')"
+            :aria-label="t(`Remove ${title} from dashboard`, `Quitar ${title} del panel`)"
+            @click="emit('remove')"
+          >
+            <span aria-hidden="true">✕</span>
+          </button>
         </template>
       </div>
     </div>

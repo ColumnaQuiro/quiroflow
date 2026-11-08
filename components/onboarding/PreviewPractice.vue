@@ -51,8 +51,8 @@ const dial = computed(() => countryByCode(props.countryCode).dial || '+34')
     :title="t('This is how patients will find you', 'Así es como te encontrarán tus pacientes')"
     :body="
       t(
-        'Your practice name heads every screen, and the first clinic becomes your booking page.',
-        'El nombre de tu consulta encabeza cada pantalla, y la primera clínica se convierte en tu página de reservas.',
+        'Your practice name heads every screen and becomes the address of your booking page.',
+        'El nombre de tu consulta encabeza cada pantalla y da la dirección a tu página de reservas.',
       )
     "
   >
@@ -84,16 +84,15 @@ const dial = computed(() => countryByCode(props.countryCode).dial || '+34')
       </div>
     </OnboardingPreviewFragment>
 
-    <!-- The booking URL the two typed fields build between them. -->
+    <!-- The booking address the practice name builds: <account slug>.app.quiroflow.com,
+         the subdomain register-clinic-subdomain adds. The clinic is not in it. -->
     <OnboardingPreviewFragment>
       <div class="p-4">
         <p class="text-[12.5px] font-semibold text-ink-muted">{{ t('Online booking page', 'Página de reservas online') }}</p>
         <div class="mt-[9px] flex items-center gap-2.5">
           <div class="flex h-[38px] flex-1 items-center overflow-hidden rounded-ctl border border-line-control bg-surface-subtle px-[11px]">
-            <span class="shrink-0 text-[13.5px] text-ink-muted">quiroflow.app/</span>
             <span class="truncate rounded px-1 py-px text-[13.5px] font-semibold text-ink-900" :class="practice.trim() && 'bg-brand-tint'">{{ previewSlug(practiceLabel) }}</span>
-            <span class="shrink-0 text-[13.5px] text-ink-muted">/</span>
-            <span class="truncate rounded px-1 py-px text-[13.5px] font-semibold text-ink-900" :class="location.trim() && 'bg-brand-tint'">{{ previewSlug(locationLabel) }}</span>
+            <span class="shrink-0 text-[13.5px] text-ink-muted">.app.quiroflow.com</span>
           </div>
           <span class="flex h-[38px] shrink-0 items-center rounded-ctl border border-line-control px-3.5 text-[13.5px] font-semibold text-ink-700">{{ t('Copy link', 'Copiar enlace') }}</span>
         </div>

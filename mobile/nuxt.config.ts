@@ -64,6 +64,13 @@ export default defineNuxtConfig({
   // computes to an invalid rgb(var(--undefined)) value the browser silently
   // drops, rendering as plain black/white with no brand color at all.
   css: [`${root}/assets/css/theme.css`, '~/assets/css/main.css'],
+  // The reports' charts: vue-chartjs draws with this app's chart.js, while
+  // the shared utils/chartSetup.ts registers the scales from the file's own
+  // place in the repo, which locally finds the ROOT node_modules' copy. Two
+  // copies are two registries, and every chart threw '"linear" is not a
+  // registered scale'. Deduping resolves both to this app's copy (the only
+  // one a cloud build has anyway).
+  vite: { resolve: { dedupe: ['chart.js', 'vue-chartjs'] } },
   components: [`${root}/components`, '~/components'],
   imports: {
     dirs: [`${root}/composables`, `${root}/utils`],

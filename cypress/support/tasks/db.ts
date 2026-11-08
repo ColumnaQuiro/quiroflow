@@ -617,6 +617,24 @@ async function invoicesForAppointment(opts: { appointmentId: string }) {
   return data
 }
 
+/**
+ * Everything a booking with "Collect payment now" can leave behind for one
+ * patient: their visits, and each receipt with its lines and its payments --
+ * so a spec can say "no paid receipt without a payment behind it".
+ */
+async function bookingMoneyFor(opts: { patientId: string }) {
+  const appointments = unwrap(await admin.from('appointments').select('id, status, starts_at').eq('patient_id', opts.patientId)) as { id: string; status: string; starts_at: string }[]
+  const invoices = unwrap(
+    await admin
+      .from('invoices')
+      .select('id, invoice_number, status, total_cents, appointment_id, invoice_line_items(description, price_cents), payments!payments_invoice_id_fkey(id, amount_cents, method)')
+      .eq('patient_id', opts.patientId)
+      .order('created_at'),
+  ) as { id: string; invoice_number: string; status: string; total_cents: number; appointment_id: string | null; invoice_line_items: { description: string; price_cents: number }[]; payments: { id: string; amount_cents: number; method: string }[] }[]
+  const payments = unwrap(await admin.from('payments').select('id, amount_cents, method, invoice_id').eq('patient_id', opts.patientId)) as { id: string; amount_cents: number; method: string; invoice_id: string | null }[]
+  return { appointments, invoices, payments }
+}
+
 /** The balance the patient list shows: positive is credit. */
 async function liveBalance(opts: { patientId: string }) {
   const row = unwrap(await admin.from('patients').select('live_balance_cents').eq('id', opts.patientId).single()) as unknown as { live_balance_cents: number }
@@ -2639,9 +2657,9 @@ async function signWhatsappBody(opts: { body: string; appSecret: string }) {
 
 async function appointmentById(opts: { appointmentId: string }) {
   const row = unwrap(
-    await admin.from('appointments').select('id, status, confirmation_status, rescheduled, starts_at, ends_at, room_id, checked_in_at, practitioner_id, deleted_at').eq('id', opts.appointmentId).single(),
+    await admin.from('appointments').select('id, status, confirmation_status, rescheduled, starts_at, ends_at, room_id, checked_in_at, practitioner_id, deleted_at, note').eq('id', opts.appointmentId).single(),
   )
-  return row as { id: string; status: string; confirmation_status: string | null; rescheduled: boolean; starts_at: string; ends_at: string; room_id: string | null; checked_in_at: string | null; practitioner_id: string | null; deleted_at: string | null }
+  return row as { id: string; status: string; confirmation_status: string | null; rescheduled: boolean; starts_at: string; ends_at: string; room_id: string | null; checked_in_at: string | null; practitioner_id: string | null; deleted_at: string | null; note: string | null }
 }
 
 /**
@@ -4534,6 +4552,7 @@ export const dbTasks = {
   'db:chargeService': chargeService,
   'db:addInvoiceLine': addInvoiceLine,
   'db:invoicesForAppointment': invoicesForAppointment,
+  'db:bookingMoneyFor': bookingMoneyFor,
   'db:setInvoiceTotal': setInvoiceTotal,
   // Any signed-in user, staff included: the name is historical.
   'db:callRpcAs': callRpcAsPatient,

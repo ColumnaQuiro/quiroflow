@@ -216,7 +216,7 @@ describe('Growth AI receptionist', () => {
 
     // CI has no key. The panel says so instead of rendering a chat that
     // cannot answer -- and offers no scenarios to a chat that cannot run.
-    cy.get('[data-test="test-chat-unavailable"]').should('contain', 'needs an Anthropic API key')
+    cy.get('[data-test="test-chat-unavailable"]').should('contain', 'Test mode is not available right now')
     cy.get('[data-test="test-chat-input"]').should('not.exist')
     cy.get('[data-test="test-chat-scenarios"]').should('not.exist')
   })

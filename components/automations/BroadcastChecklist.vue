@@ -77,13 +77,13 @@ const TICK = 'mt-0.5 flex h-5 w-5 items-center justify-center rounded-full text-
   <div class="h-full overflow-y-auto px-4 py-6 pb-32 sm:px-6" data-test="broadcast-checklist">
     <div class="mx-auto flex max-w-[640px] flex-col gap-3">
       <div class="flex items-center justify-between gap-3">
-        <span class="text-[11px] font-bold uppercase tracking-[.06em] text-ink-faint">{{ t('One-off send', 'Envío puntual') }}</span>
+        <span class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('One-off send', 'Envío puntual') }}</span>
         <button type="button" class="text-[12.5px] font-semibold text-brand-text hover:underline touch:min-h-11" data-test="broadcast-show-flow" @click="emit('flow')">{{ t('Show as a flow', 'Ver como flujo') }}</button>
       </div>
 
       <!-- Who -->
       <section :class="CARD" data-test="broadcast-who">
-        <span :class="[TICK, done.who.value ? 'bg-success-bg text-success-text' : 'border border-line-control text-ink-faint']" aria-hidden="true">{{ done.who.value ? '✓' : '1' }}</span>
+        <span :class="[TICK, done.who.value ? 'bg-success-bg text-success-text' : 'border border-line-control text-ink-faint']" aria-hidden="true"><template v-if="done.who.value"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-6.5" /></svg></template><template v-else>1</template></span>
         <strong class="text-[14px] text-ink-900">{{ t('Who', 'A quién') }}</strong>
         <UiBtn size="sm" variant="ghost" data-test="broadcast-change-who" @click="b.selection.value = { kind: 'trigger' }">{{ done.who.value ? t('Change', 'Cambiar') : t('Choose', 'Elegir') }}</UiBtn>
         <span class="col-start-2 col-end-4 text-[12.5px] text-ink-muted">{{ who ?? t('Nobody chosen yet: a list, a segment, or filters.', 'Aún nadie: una lista, un segmento o unos filtros.') }}</span>
@@ -92,7 +92,7 @@ const TICK = 'mt-0.5 flex h-5 w-5 items-center justify-center rounded-full text-
 
       <!-- The message -->
       <section :class="CARD" data-test="broadcast-message">
-        <span :class="[TICK, done.message.value ? 'bg-success-bg text-success-text' : 'border border-line-control text-ink-faint']" aria-hidden="true">{{ done.message.value ? '✓' : '2' }}</span>
+        <span :class="[TICK, done.message.value ? 'bg-success-bg text-success-text' : 'border border-line-control text-ink-faint']" aria-hidden="true"><template v-if="done.message.value"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-6.5" /></svg></template><template v-else>2</template></span>
         <strong class="text-[14px] text-ink-900">{{ t('Message', 'Mensaje') }}</strong>
         <UiBtn v-if="message" size="sm" variant="ghost" data-test="broadcast-edit-message" @click="b.selection.value = { kind: 'step', id: message.id }">{{ t('Edit', 'Editar') }}</UiBtn>
         <span v-else />
@@ -105,7 +105,7 @@ const TICK = 'mt-0.5 flex h-5 w-5 items-center justify-center rounded-full text-
 
       <!-- When -->
       <section :class="CARD" data-test="broadcast-when">
-        <span :class="[TICK, 'bg-success-bg text-success-text']" aria-hidden="true">✓</span>
+        <span :class="[TICK, 'bg-success-bg text-success-text']" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-6.5" /></svg></span>
         <strong class="text-[14px] text-ink-900">{{ t('When', 'Cuándo') }}</strong>
         <UiBtn size="sm" variant="ghost" @click="b.selection.value = { kind: 'trigger' }">{{ t('Change', 'Cambiar') }}</UiBtn>
         <span class="col-start-2 col-end-4 text-[12.5px] text-ink-muted">{{ segment?.schedule?.starts_at ? when : t('As soon as it is switched on, within the sending hours in Settings.', 'En cuanto se active, dentro del horario de envío de Ajustes.') }}</span>
@@ -113,7 +113,7 @@ const TICK = 'mt-0.5 flex h-5 w-5 items-center justify-center rounded-full text-
 
       <!-- Goal -->
       <section :class="CARD" data-test="broadcast-goal">
-        <span :class="[TICK, 'bg-success-bg text-success-text']" aria-hidden="true">✓</span>
+        <span :class="[TICK, 'bg-success-bg text-success-text']" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-6.5" /></svg></span>
         <strong class="text-[14px] text-ink-900">{{ t('Goal', 'Objetivo') }}</strong>
         <span />
         <span class="col-start-2 col-end-4 text-[12.5px] text-ink-muted">{{ t('Counted as working for whoever books an appointment within 14 days of receiving it.', 'Cuenta como logrado para quien reserve una cita en los 14 días siguientes a recibirlo.') }}</span>

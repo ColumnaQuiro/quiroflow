@@ -167,7 +167,7 @@ function setLastVisit(value: number, unit = lastVisitUnit.value) {
           @update:model-value="set({ clinic_ids: $event })"
         />
       </div>
-      <button type="button" :class="REMOVE_BTN" :aria-label="t('Remove filter', 'Quitar filtro')" @click="remove(key)">✕</button>
+      <button type="button" :class="REMOVE_BTN" :aria-label="t('Remove filter', 'Quitar filtro')" @click="remove(key)"><UiCloseIcon /></button>
     </div>
 
     <label v-if="offered.length > 0" class="flex items-center gap-2">

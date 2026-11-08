@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { PLAN_COMPARISON, locationsLabel, monthlyLabel, useGrowthCatalogue } from '~/composables/useGrowthPlans'
+import { PLAN_COMPARISON, locationsLabel, monthlyLabel, useGrowthCatalogue, type PlanCell } from '~/composables/useGrowthPlans'
 
 const t = useT()
 const { growth, solo, bundled } = useGrowthCatalogue()
@@ -7,29 +7,48 @@ const { growth, solo, bundled } = useGrowthCatalogue()
 // `current` stays false on all three: which plan the account is on is not
 // something this table is told, and marking one as theirs was a guess.
 const columns = computed(() => [
-  { key: 'solo' as const, name: solo.value?.name ?? 'Solo', price: monthlyLabel(solo.value?.monthly_price_cents), current: false },
-  { key: 'clinic' as const, name: bundled.value?.name ?? 'Practice', price: monthlyLabel(bundled.value?.monthly_price_cents), current: false },
-  { key: 'growth' as const, name: 'Your plan + Growth', price: monthlyLabel(growth.value?.monthly_price_cents, '+'), current: false },
+  { key: 'solo' as const, name: solo.value?.name ?? 'Solo', price: monthlyLabel(solo.value?.monthly_price_cents, t), current: false },
+  { key: 'clinic' as const, name: bundled.value?.name ?? 'Practice', price: monthlyLabel(bundled.value?.monthly_price_cents, t), current: false },
+  { key: 'growth' as const, name: t('Your plan + Growth', 'Tu plan + Growth'), price: monthlyLabel(growth.value?.monthly_price_cents, t, '+'), current: false },
 ])
 
+const CELL: Record<PlanCell, [string, string]> = {
+  included: ['Included', 'Incluido'],
+  new: ['New', 'Nuevo'],
+  none: ['—', '—'],
+}
+
+// Every row worded in the reader's language. It was English whatever the
+// language, the one table on a Spanish screen that was not.
+//
 // Locations come from the plans, so they are the one row that is data rather
 // than copy. Growth adds none -- an add-on keeps whatever the plan has.
 const rows = computed(() => [
-  ...PLAN_COMPARISON,
+  ...PLAN_COMPARISON.map((row) => ({
+    feature: t(...row.feature),
+    note: row.note ? t(...row.note) : '',
+    cells: { solo: row.solo, clinic: row.clinic, growth: row.growth } as Record<'solo' | 'clinic' | 'growth', PlanCell | string>,
+  })),
   {
-    feature: 'Locations included',
+    feature: t('Locations included', 'Centros incluidos'),
     note: '',
-    solo: locationsLabel(solo.value?.included_clinics),
-    clinic: locationsLabel(bundled.value?.included_clinics),
-    growth: 'Same as your plan',
+    cells: {
+      solo: locationsLabel(solo.value?.included_clinics, t),
+      clinic: locationsLabel(bundled.value?.included_clinics, t),
+      growth: t('Same as your plan', 'Los de tu plan'),
+    } as Record<'solo' | 'clinic' | 'growth', PlanCell | string>,
   },
 ])
 
+function cellText(value: PlanCell | string) {
+  return value in CELL ? t(...CELL[value as PlanCell]) : value
+}
+
 // "Included" on a row the clinic already pays for should not read as a sales
 // point, and "New" should. Everything else is a plain dash.
-function cellClass(value: string) {
-  if (value === 'New') return 'font-semibold text-brand-text'
-  if (value === '—') return 'text-ink-faint'
+function cellClass(value: PlanCell | string) {
+  if (value === 'new') return 'font-semibold text-brand-text'
+  if (value === 'none') return 'text-ink-faint'
   return 'text-ink-muted'
 }
 </script>
@@ -80,8 +99,8 @@ function cellClass(value: string) {
                 <span v-if="row.note" class="text-[11px] text-ink-faint">{{ row.note }}</span>
               </span>
             </td>
-            <td v-for="col in columns" :key="col.key" class="px-3 py-2.5 text-[11.5px]" :class="cellClass(row[col.key])">
-              {{ row[col.key] }}
+            <td v-for="col in columns" :key="col.key" class="px-3 py-2.5 text-[11.5px]" :class="cellClass(row.cells[col.key])">
+              {{ cellText(row.cells[col.key]) }}
             </td>
           </tr>
         </tbody>

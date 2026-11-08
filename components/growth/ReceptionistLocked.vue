@@ -29,18 +29,18 @@ const t = useT()
         {{
           trialing
             ? t(
-                'It is not part of the free trial. Upgrade to add it on its own, or with Growth, and it starts answering WhatsApp, Instagram and web chat in your clinic’s name, booking straight into your calendar.',
-                'No está incluida en la prueba gratuita. Mejora tu plan para añadirla por sí sola, o con Growth, y empezará a responder WhatsApp, Instagram y el chat web en nombre de tu clínica, reservando directamente en tu agenda.',
+                'It is not part of the free trial. Upgrade to add it on its own, or with Growth, and it starts answering WhatsApp, Instagram, Messenger and your website chat in your clinic’s name, booking straight into your calendar.',
+                'No está incluida en la prueba gratuita. Mejora tu plan para añadirla por sí sola, o con Growth, y empezará a responder WhatsApp, Instagram, Messenger y el chat de tu web en nombre de tu clínica, reservando directamente en tu agenda.',
               )
             : t(
-                'Add the AI receptionist on its own, or get it with Growth. It answers WhatsApp, Instagram and web chat in your clinic’s name, booking straight into your calendar.',
-                'Añade la recepcionista IA por sí sola, o consíguela con Growth. Responde WhatsApp, Instagram y el chat web en nombre de tu clínica, reservando directamente en tu agenda.',
+                'Add the AI receptionist on its own, or get it with Growth. It answers WhatsApp, Instagram, Messenger and your website chat in your clinic’s name, booking straight into your calendar.',
+                'Añade la recepcionista IA por sí sola, o consíguela con Growth. Responde WhatsApp, Instagram, Messenger y el chat de tu web en nombre de tu clínica, reservando directamente en tu agenda.',
               )
         }}
       </p>
       <ul class="mt-4 flex flex-col gap-1.5">
         <li v-for="item in [
-          t('Replies in under a minute, day and night', 'Responde en menos de un minuto, de día y de noche'),
+          t('Replies within a couple of minutes, day and night', 'Responde en un par de minutos, de día y de noche'),
           t('Only offers the types and times you allow', 'Solo ofrece los tipos y horarios que permites'),
           t('Hands the conversation to you when it should', 'Te pasa la conversación cuando debe'),
         ]" :key="item" class="flex items-start gap-2 text-[13px] text-ink-700">

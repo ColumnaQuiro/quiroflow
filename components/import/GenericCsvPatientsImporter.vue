@@ -67,7 +67,7 @@ const TARGET_FIELDS: TargetField[] = [
   },
   {
     key: 'external_id',
-    label: t('Record ID (optional — enables safe re-import)', 'ID de registro (opcional — permite reimportar sin duplicar)'),
+    label: t('Record ID (optional: lets you import the file again without duplicates)', 'ID de registro (opcional: permite volver a importar el archivo sin duplicar)'),
     required: false,
     guesses: ['patient id', 'patient number', 'record id', 'external id', 'id'],
   },
@@ -270,8 +270,14 @@ function mappedValue(row: CsvRow, key: string): string {
   return (row[header] ?? '').trim()
 }
 function formatValue(value: unknown): string {
-  if (value === null || value === undefined || value === '') return '(blank)'
+  if (value === null || value === undefined || value === '') return t('(blank)', '(vacío)')
   return String(value)
+}
+// The changes preview names a field the way the mapping step does, not by
+// its database column.
+function fieldLabel(field: string): string {
+  if (field === 'external_reference') return t('Record ID', 'ID de registro')
+  return TARGET_FIELDS.find((f) => f.key === field)?.label ?? field
 }
 // fillOnly: a match made by phone is a good guess, not an identity -- the
 // file's spelling of a name ("Lucia") must not replace the record's
@@ -291,7 +297,7 @@ function buildPatientUpdate(existing: ExistingPatient, incoming: TablesInsert<'p
   }
   if (!existing.external_reference && externalRef) {
     updates.external_reference = externalRef
-    diff.push({ field: 'external_reference', from: '(blank)', to: externalRef })
+    diff.push({ field: 'external_reference', from: formatValue(null), to: externalRef })
   }
   return { updates, diff }
 }
@@ -475,7 +481,7 @@ async function insertContactNumbers(patientId: string, numbers: ContactNumber[],
   const { error } = await supabase.from('patient_contact_numbers').insert(
     numbers.map((n) => ({ account_id: store.accountId!, patient_id: patientId, country_code: n.country_code, number: n.number, is_whatsapp: n.is_whatsapp })),
   )
-  if (error) importErrors.value.push(`${t('Contact number for row', 'Número de contacto de la fila')} ${sourceRow}: ${error.message}`)
+  if (error) importErrors.value.push(t(`Phone numbers for row ${sourceRow} were not saved: ${error.message}`, `No se guardaron los teléfonos de la fila ${sourceRow}: ${error.message}`))
 }
 
 async function runImport() {
@@ -495,7 +501,7 @@ async function runImport() {
       const chunk = toImport.value.slice(i, i + CHUNK_SIZE)
       const { data: inserted, error } = await supabase.from('patients').insert(chunk.map((c) => c.patient)).select('id')
       if (error) {
-        importErrors.value.push(`${t('Rows', 'Filas')} ${chunk[0].sourceRow}-${chunk[chunk.length - 1].sourceRow}: ${error.message}`)
+        importErrors.value.push(t(`Rows ${chunk[0].sourceRow}-${chunk[chunk.length - 1].sourceRow} were not imported: ${error.message}`, `Las filas ${chunk[0].sourceRow}-${chunk[chunk.length - 1].sourceRow} no se importaron: ${error.message}`))
         continue
       }
       importedCount.value += inserted.length
@@ -505,7 +511,7 @@ async function runImport() {
       )
       if (numberRows.length > 0) {
         const { error: numbersError } = await supabase.from('patient_contact_numbers').insert(numberRows)
-        if (numbersError) importErrors.value.push(`${t('Contact numbers for rows near', 'Números de contacto de filas cerca de')} ${chunk[0].sourceRow}: ${numbersError.message}`)
+        if (numbersError) importErrors.value.push(t(`Phone numbers for rows ${chunk[0].sourceRow}-${chunk[chunk.length - 1].sourceRow} were not saved: ${numbersError.message}`, `No se guardaron los teléfonos de las filas ${chunk[0].sourceRow}-${chunk[chunk.length - 1].sourceRow}: ${numbersError.message}`))
       }
     }
 
@@ -516,7 +522,7 @@ async function runImport() {
       await runWithConcurrency(chunk, CONCURRENCY, async (row) => {
         const { error } = await supabase.from('patients').update(row.updates).eq('id', row.id)
         if (error) {
-          importErrors.value.push(`${t('Row', 'Fila')} ${row.sourceRow} (${row.label}): ${error.message}`)
+          importErrors.value.push(t(`Row ${row.sourceRow} (${row.label}) was not updated: ${error.message}`, `La fila ${row.sourceRow} (${row.label}) no se actualizó: ${error.message}`))
           return
         }
         updatedCount.value++
@@ -530,14 +536,14 @@ async function runImport() {
         listedCount.value = await addPatientsToList(listId, listedPatientIds, 'import', fileName.value.slice(0, 200))
         listedId.value = listId
       } catch (err) {
-        importErrors.value.push(`${t('Adding them to the list', 'Al añadirlos a la lista')}: ${(err as Error).message}`)
+        importErrors.value.push(t(`The patients were imported but not all were added to the list: ${(err as Error).message}`, `Los pacientes se importaron, pero no todos se añadieron a la lista: ${(err as Error).message}`))
       }
     }
 
     importing.value = false
     stage.value = 'done'
     showToast(
-      t(`Imported ${importedCount.value} patients. Updated ${updatedCount.value} existing patients.`, `Se importaron ${importedCount.value} pacientes. Se actualizaron ${updatedCount.value} pacientes existentes.`),
+      t(`${importedCount.value} new patients imported, ${updatedCount.value} existing patients updated.`, `${importedCount.value} pacientes nuevos importados, ${updatedCount.value} pacientes existentes actualizados.`),
       importErrors.value.length > 0 ? 'error' : 'success',
     )
   } catch (err) {
@@ -582,7 +588,7 @@ const fieldId = useId()
 <template>
   <div>
     <p class="text-sm text-ink-muted2">
-      {{ t('Export your patients as a CSV or Excel file from your current system, then drop it here — column names don\'t need to match, you\'ll map them next.', 'Exporta tus pacientes como CSV o Excel desde tu sistema actual y suéltalo aquí — los nombres de columna no tienen que coincidir, los mapearás a continuación.') }}
+      {{ t('Export your patients as a CSV or Excel file from the system you use now, then drop it here. The column names do not need to match: you choose which column is which in the next step, and nothing is written until you confirm.', 'Exporta tus pacientes como CSV o Excel desde el sistema que usas ahora y suéltalo aquí. Los nombres de columna no tienen que coincidir: en el paso siguiente eliges qué columna es cada cosa, y no se escribe nada hasta que lo confirmes.') }}
     </p>
 
     <div v-if="stage === 'pick'" class="mt-4">
@@ -627,7 +633,7 @@ const fieldId = useId()
                   v-model="mapping[field.key]"
                   class="w-full rounded-md border border-line-control bg-surface px-2 py-1.5 text-sm text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
                 >
-                  <option value="">{{ t('— Not in file —', '— No está en el archivo —') }}</option>
+                  <option value="">{{ t('Not in the file', 'No está en el archivo') }}</option>
                   <option v-for="h in headers" :key="h" :value="h">{{ h }}</option>
                 </select>
               </td>
@@ -635,7 +641,7 @@ const fieldId = useId()
           </tbody>
         </table>
       </div>
-      <p v-if="!mappingComplete" class="text-sm text-danger-text">{{ t('Map at least First name to continue.', 'Mapea al menos Nombre para continuar.') }}</p>
+      <p v-if="!mappingComplete" class="text-sm text-danger-text">{{ t('Choose the column that holds the first name to continue.', 'Elige la columna que tiene el nombre para continuar.') }}</p>
 
       <div>
         <label :for="`${fieldId}-targetClinicId`" class="block text-sm font-medium text-ink-700">{{ t('Import into clinic', 'Importar a la clínica') }}</label>
@@ -707,7 +713,7 @@ const fieldId = useId()
           <div><dt class="text-ink-muted2">{{ t('Total rows', 'Filas totales') }}</dt><dd class="font-medium text-ink-900">{{ totalRows }}</dd></div>
           <div><dt class="text-ink-muted2">{{ t('Will import', 'Se importarán') }}</dt><dd class="font-medium text-success-text">{{ toImport.length }}</dd></div>
           <div><dt class="text-ink-muted2">{{ t('Will update', 'Se actualizarán') }}</dt><dd class="font-medium text-brand-text">{{ toUpdate.length }}</dd></div>
-          <div><dt class="text-ink-muted2">{{ t('No changes / no name', 'Sin cambios / sin nombre') }}</dt><dd class="font-medium text-ink-900">{{ skippedDuplicate + skippedNoName }}</dd></div>
+          <div><dt class="text-ink-muted2">{{ t('Skipped (unchanged or no name)', 'Omitidos (sin cambios o sin nombre)') }}</dt><dd class="font-medium text-ink-900">{{ skippedDuplicate + skippedNoName }}</dd></div>
         </dl>
         <p v-if="listChoice" data-cy="import-list-summary" class="mt-3 text-sm text-ink-700">
           {{ t(`${toImport.length + matchedExistingIds.length} will be on the list “${targetListName}”: ${toImport.length} new and ${matchedExistingIds.length} already here.`, `${toImport.length + matchedExistingIds.length} estarán en la lista «${targetListName}»: ${toImport.length} nuevos y ${matchedExistingIds.length} que ya existían.`) }}
@@ -750,15 +756,15 @@ const fieldId = useId()
             <tr>
               <th class="px-3 py-2">{{ t('Patient', 'Paciente') }}</th>
               <th class="px-3 py-2">{{ t('Field', 'Campo') }}</th>
-              <th class="px-3 py-2">{{ t('Current', 'Actual') }}</th>
-              <th class="px-3 py-2">{{ t('New', 'Nuevo') }}</th>
+              <th class="px-3 py-2">{{ t('Now', 'Ahora') }}</th>
+              <th class="px-3 py-2">{{ t('After import', 'Tras importar') }}</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-line-divider">
             <template v-for="(row, i) in toUpdate.slice(0, 5)" :key="i">
               <tr v-for="(d, j) in row.diff" :key="j">
                 <td class="px-3 py-2 text-ink-900">{{ j === 0 ? row.label : '' }}</td>
-                <td class="px-3 py-2 text-ink-muted2">{{ d.field }}</td>
+                <td class="px-3 py-2 text-ink-muted2">{{ fieldLabel(d.field) }}</td>
                 <td class="px-3 py-2 text-ink-muted2">{{ d.from }}</td>
                 <td class="px-3 py-2 text-ink-900">{{ d.to }}</td>
               </tr>
@@ -766,7 +772,7 @@ const fieldId = useId()
           </tbody>
         </table>
         <p v-if="toUpdate.length > 5" class="border-t border-line-divider px-3 py-2 text-xs text-ink-faint">
-          + {{ toUpdate.length - 5 }} {{ t('more patients to update', 'pacientes más para actualizar') }}
+          + {{ toUpdate.length - 5 }} {{ t('more patients to update', 'pacientes más por actualizar') }}
         </p>
       </div>
 
@@ -797,8 +803,9 @@ const fieldId = useId()
 
     <div v-else-if="stage === 'error'" class="mt-4 space-y-4">
       <div class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
-        <p class="font-medium">{{ t('Import failed:', 'Error al importar:') }}</p>
-        <p class="mt-1">{{ runError }}</p>
+        <p class="font-medium">{{ t('The import stopped before it finished.', 'La importación se detuvo antes de terminar.') }}</p>
+        <p class="mt-1">{{ t('Patients written before it stopped are kept. Retry compares the file again and carries on without duplicating them.', 'Los pacientes escritos antes de detenerse se conservan. Reintentar vuelve a comparar el archivo y sigue sin duplicarlos.') }}</p>
+        <p class="mt-1 text-[12.5px] opacity-80">{{ runError }}</p>
       </div>
       <button type="button" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover" @click="retryImport">
         {{ t('Retry', 'Reintentar') }}
@@ -807,7 +814,7 @@ const fieldId = useId()
 
     <div v-else-if="stage === 'done'" class="mt-4 space-y-4">
       <div v-if="importErrors.length > 0" class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
-        <p class="font-medium">{{ t('Some rows failed:', 'Algunas filas fallaron:') }}</p>
+        <p class="font-medium">{{ t('Some rows were not saved:', 'Algunas filas no se guardaron:') }}</p>
         <ul class="mt-1 list-disc pl-5">
           <li v-for="(e, i) in importErrors" :key="i">{{ e }}</li>
         </ul>
@@ -820,7 +827,7 @@ const fieldId = useId()
           {{ t('Open the list', 'Abrir la lista') }}
         </NuxtLink>
         <NuxtLink v-else to="/patients" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover">
-          {{ t('View Patients', 'Ver pacientes') }}
+          {{ t('View patients', 'Ver pacientes') }}
         </NuxtLink>
         <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-ink-600 hover:bg-surface-subtle" @click="reset">
           {{ t('Import another file', 'Importar otro archivo') }}

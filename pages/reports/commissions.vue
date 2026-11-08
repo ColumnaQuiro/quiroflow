@@ -131,7 +131,7 @@ function exportCsv() {
   a.click()
   URL.revokeObjectURL(url)
 }
-const th = 'px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2'
+const th = 'px-3 py-2 text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2'
 const td = 'px-3 py-2.5 font-mono text-[13px] text-ink-800'
 </script>
 
@@ -139,7 +139,7 @@ const td = 'px-3 py-2.5 font-mono text-[13px] text-ink-800'
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Commissions', 'Comisiones')" :meta="t('What each person earned, from their pay plan', 'Lo que ha generado cada persona, según su retribución')">
       <div class="flex items-center gap-3">
-        <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
+        <ReportsBackLink />
         <UiBtn :disabled="loading" data-cy="commissions-csv" @click="exportCsv">{{ t('Export CSV', 'Exportar CSV') }}</UiBtn>
       </div>
     </PageHeader>
@@ -178,7 +178,7 @@ const td = 'px-3 py-2.5 font-mono text-[13px] text-ink-800'
                   <span v-else class="font-sans text-[12.5px] font-normal text-ink-faint">{{ t('No pay plan', 'Sin retribución') }}</span>
                 </td>
                 <td class="px-3 py-2.5 text-right">
-                  <button type="button" class="text-[12.5px] font-medium text-brand-text" data-cy="commissions-edit" @click.stop="editing = { id: r.member.id, name: r.member.full_name, plan: r.plan }">{{ r.plan ? t('Edit plan', 'Editar') : t('Set up', 'Configurar') }}</button>
+                  <button type="button" class="inline-flex h-8 items-center whitespace-nowrap rounded-ctl px-2 text-[12.5px] font-medium text-brand-text hover:bg-brand-tint touch:h-11" data-cy="commissions-edit" @click.stop="editing = { id: r.member.id, name: r.member.full_name, plan: r.plan }">{{ r.plan ? t('Edit plan', 'Editar') : t('Set up', 'Configurar') }}</button>
                 </td>
               </tr>
               <tr v-if="open === r.member.id && r.pay" class="bg-surface-subtle/60" data-cy="commissions-detail">

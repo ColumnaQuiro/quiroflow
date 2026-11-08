@@ -32,7 +32,7 @@ async function save() {
   saving.value = true
   saveError.value = ''
   const { data, error } = await supabase.from('patients').update({ sticky_note: stickyNote.value.trim() || null }).eq('id', props.patientId).select('id')
-  if (error || !data?.length) saveError.value = error?.message ?? t('The note was not saved: your role cannot edit this patient.', 'No se ha guardado la nota: tu rol no puede editar este paciente.')
+  if (error || !data?.length) saveError.value = error ? `${t('The note was not saved.', 'No se ha guardado la nota.')} (${error.message})` : t('The note was not saved: your role cannot edit this patient.', 'No se ha guardado la nota: tu rol no puede editar este paciente.')
   saving.value = false
 }
 
@@ -66,7 +66,7 @@ async function toggleEditing() {
       v-else
       v-model="stickyNote"
       rows="3"
-      :placeholder="t('Persistent note for this patient — also shows on the calendar when you hover an appointment.', 'Nota permanente para este paciente: también aparece en el calendario al pasar el ratón por una cita.')"
+      :placeholder="t('A note that stays on this patient. It also shows on the calendar when you hover over one of their appointments.', 'Una nota que se queda en este paciente. También aparece en el calendario al pasar el ratón por una de sus citas.')"
       class="mt-2.5 w-full rounded-ctl border border-warning-border bg-surface px-2.5 py-1.5 text-[12.5px] text-ink-700 focus:border-warning-accent focus:outline-none"
       @blur="save"
     ></textarea>

@@ -85,8 +85,8 @@ function state(s: SetupStep): 'done' | 'skipped' | 'open' {
             <p class="mt-2.5 text-[12.5px] text-ink-muted">
               {{
                 t(
-                  'Each step ticks itself off once it is done, from here or from anywhere else. Steps that do not apply to you can be skipped.',
-                  'Cada paso se marca solo cuando está hecho, desde aquí o desde cualquier otro sitio. Los que no van contigo se pueden saltar.',
+                  'Each step ticks itself off once it is done, from here or from anywhere else. Steps that do not apply to you can be skipped; a skip is remembered in this browser only.',
+                  'Cada paso se marca solo cuando está hecho, desde aquí o desde cualquier otro sitio. Los que no van contigo se pueden saltar; lo que saltes se recuerda solo en este navegador.',
                 )
               }}
             </p>

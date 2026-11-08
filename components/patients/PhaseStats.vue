@@ -117,7 +117,7 @@ function bookPlan() {
         </p>
         <template v-else>
           <p class="mt-0.5 text-[12px] text-ink-muted2" data-cy="care-plan-summary">
-            {{ completedInPlan }} {{ t('of', 'de') }} {{ plan.total_visits }} {{ t('visits', 'visitas') }} &middot; {{ frequencyLabel }}
+            {{ t(`${completedInPlan} of ${plan.total_visits} visits`, `${completedInPlan} de ${plan.total_visits} visitas`) }} &middot; {{ frequencyLabel }}
           </p>
 
           <div class="mt-2.5 h-[6px] w-full overflow-hidden rounded-full bg-line-faint">
@@ -125,7 +125,7 @@ function bookPlan() {
           </div>
 
           <p class="mt-2 text-[12px] text-ink-muted2">
-            <span class="font-medium text-ink-600">{{ completedInPlan }} {{ t('completed', 'completadas') }}</span> / {{ remaining }} {{ t('remaining', 'restantes') }}
+            <span class="font-medium text-ink-600">{{ t(`${completedInPlan} completed`, `${completedInPlan} completadas`) }}</span> / {{ t(`${remaining} remaining`, `${remaining} restantes`) }}
           </p>
         </template>
         <p v-if="openEnded && upcomingInPlan === 0" class="mt-2 rounded-ctl bg-warning-bg px-2.5 py-1.5 text-[12px] font-medium text-warning-text" data-cy="care-plan-no-next">

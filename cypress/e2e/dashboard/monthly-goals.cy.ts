@@ -13,7 +13,9 @@ describe('Monthly goals', () => {
       })
       cy.login(account.email, account.password)
       cy.visit('/dashboard')
-      cy.contains('button', 'Edit layout', { timeout: 20000 })
+      // Enabled once the saved layout has loaded: a widget added before that
+      // was replaced by the layout arriving behind it.
+      cy.contains('button', 'Edit layout', { timeout: 20000 }).should('not.be.disabled')
       cy.clickUntil('button:contains("Edit layout")', 'p:contains("Add a widget")')
       cy.contains('button', '+ Monthly goals').click()
       cy.contains('button', 'Done').click()
@@ -51,7 +53,7 @@ describe('Monthly goals', () => {
       })
       cy.login(email, password)
       cy.visit('/dashboard')
-      cy.contains('button', 'Edit layout', { timeout: 20000 })
+      cy.contains('button', 'Edit layout', { timeout: 20000 }).should('not.be.disabled')
       cy.clickUntil('button:contains("Edit layout")', 'p:contains("Add a widget")')
       cy.contains('Add a widget').should('be.visible')
       cy.contains('button', '+ Monthly goals').should('not.exist')

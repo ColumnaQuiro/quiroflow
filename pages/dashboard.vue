@@ -98,7 +98,13 @@ function onDragOver(index: number) {
   draggedIndex.value = index
 }
 
+// Not before the saved layout has arrived. On a first visit in this browser
+// (no cached copy) `widgets` is still empty while it loads, so a widget added
+// then went onto an empty layout -- and load() answering a moment later
+// replaced it with the stored or default one, taking the new widget with it.
+// The button is disabled until then too; this is the floor under that.
 async function toggleEditing() {
+  if (!loaded.value) return
   if (editing.value) await save()
   editing.value = !editing.value
 }
@@ -204,7 +210,7 @@ function widgetMeta(type: string): string | undefined {
       <div v-if="dashboardMode !== 'none'" class="flex flex-wrap items-center gap-2">
         <ReportsDateRangeSelect v-model="range" />
         <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" :locked-to="dashboardPractitionerId" :practitioners="practitioners" :clinics="[]" :show-clinic="false" />
-        <UiBtn :variant="editing ? 'primary' : 'secondary'" @click="toggleEditing">{{ editing ? t('Done', 'Hecho') : t('Edit layout', 'Editar diseño') }}</UiBtn>
+        <UiBtn :variant="editing ? 'primary' : 'secondary'" :disabled="!loaded" @click="toggleEditing">{{ editing ? t('Done', 'Hecho') : t('Edit layout', 'Editar diseño') }}</UiBtn>
       </div>
     </header>
 

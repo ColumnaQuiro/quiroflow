@@ -108,6 +108,10 @@ describe('Mi día tasks from automations', () => {
 
         // In Mi día: the title, the patient (a link to the record) and which
         // automation asked; ticking it off records who did.
+        // The tick is drawn before its PATCH lands, and cy.task reads the
+        // database once rather than retrying, so each read below waits for
+        // the write it is checking.
+        cy.intercept('PATCH', '**/rest/v1/staff_tasks*').as('tick')
         cy.visit('/practitioner')
         cy.get('[data-cy="my-day-tasks"]').should('be.visible')
         cy.get('[data-cy="my-day-task"]').should('have.length', 1).first().as('task')
@@ -116,7 +120,8 @@ describe('Mi día tasks from automations', () => {
         cy.get('@task').find('[data-cy="my-day-task-patient"]').should('have.attr', 'href', `/patients/${p.id}`).and('contain.text', 'Ana Tarea')
         cy.get('@task').find('[data-cy="my-day-task-toggle"]').click()
         cy.get('@task').find('[data-cy="my-day-task-title"]').should('have.class', 'line-through')
-        tasks(rule.id).should((rows) => {
+        cy.wait('@tick').its('response.statusCode').should('be.lessThan', 300)
+        tasks(rule.id).then((rows) => {
           expect(rows[0]!.done_at).to.be.a('string')
           expect(rows[0]!.done_by).to.eq(account.teamMemberId)
         })
@@ -125,6 +130,7 @@ describe('Mi día tasks from automations', () => {
         cy.reload()
         cy.get('[data-cy="my-day-task-title"]').should('have.class', 'line-through')
         cy.get('[data-cy="my-day-task-toggle"]').click()
+        cy.wait('@tick').its('response.statusCode').should('be.lessThan', 300)
         tasks(rule.id).its('0.done_at').should('be.null')
 
         cy.get('[data-cy="my-day-task-patient"]').click()

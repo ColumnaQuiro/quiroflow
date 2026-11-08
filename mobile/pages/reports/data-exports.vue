@@ -227,8 +227,10 @@ function logExport(detail: Record<string, string | number>) {
   })
 }
 
-// A file waiting for a fresh tap (see shareReportFile: the sheet only opens
-// within the tap that asked for it, and loading the balances outlives it).
+// A file waiting for a fresh tap. Only the app's web build gets here (see
+// shareReportFile: the browser's sheet opens only within the tap that asked
+// for it, and loading the balances outlives it); in the app it opens straight
+// away.
 const shareNote = ref<string | null>(null)
 const pendingShare = ref<{ blob: Blob; filename: string; onOk?: () => void } | null>(null)
 async function deliver(blob: Blob, filename: string, onOk?: () => void) {

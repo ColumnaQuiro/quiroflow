@@ -21,6 +21,7 @@ const overrides = ref<Map<string, ShiftRanges>>(new Map())
 const allowance = ref(DEFAULT_LEAVE_DAYS)
 const absences = ref<Absence[]>([])
 const closed = ref<Set<string>>(new Set())
+const loaded = ref(false)
 
 const today = computed(() => clinicDateOf(new Date(), props.timeZone))
 const year = computed(() => today.value.slice(0, 4))
@@ -56,6 +57,7 @@ async function load() {
     }
   }
   closed.value = shut
+  loaded.value = true
 }
 onMounted(load)
 
@@ -69,7 +71,8 @@ const dates = (a: Absence) => {
   if (isOpenEndedAbsence(a.ends_on)) return t(`From ${f(a.starts_on)}, no return date yet`, `Desde el ${f(a.starts_on)}, sin fecha de vuelta`)
   return a.starts_on === a.ends_on ? `${f(a.starts_on)}${a.half_day ? t(' (half day)', ' (medio día)') : ''}` : `${f(a.starts_on)} – ${f(a.ends_on)}`
 }
-const statusPill = (s: string) => (s === 'approved' ? { label: t('Approved', 'Aprobada'), cls: 'bg-success-bg text-success-text' } : s === 'rejected' ? { label: t('Rejected', 'Rechazada'), cls: 'bg-danger-bg text-danger-text' } : { label: t('Pending', 'Pendiente'), cls: 'bg-warning-bg text-warning-text' })
+const statusPill = (s: string): { label: string; tone: 'success' | 'danger' | 'warning' } => (s === 'approved' ? { label: t('Approved', 'Aprobada'), tone: 'success' } : s === 'rejected' ? { label: t('Rejected', 'Rechazada'), tone: 'danger' } : { label: t('Pending', 'Pendiente'), tone: 'warning' })
+const label = 'text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted'
 
 async function withdraw(a: Absence) {
   const { error: e } = await supabase.rpc('cancel_staff_absence', { p_absence_id: a.id })
@@ -114,39 +117,47 @@ const field = 'h-11 w-full rounded-ctl border border-line-control bg-surface px-
   <div class="flex flex-col gap-3" data-cy="my-leave">
     <div class="flex justify-between rounded-card border border-line bg-surface p-4">
       <div>
-        <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ t('Holiday', 'Vacaciones') }}</p>
-        <p class="mt-1 font-mono text-[20px] font-semibold text-ink-900" data-cy="my-leave-left">{{ left }} {{ t('days', 'días') }}</p>
-        <p class="text-[12px] text-ink-muted">{{ t(`left of ${allowance} this year`, `quedan de ${allowance} este año`) }}</p>
+        <p :class="label">{{ t('Holiday', 'Vacaciones') }}</p>
+        <!-- Until it loads this would read the default allowance as theirs. -->
+        <template v-if="!loaded">
+          <UiSkeleton class="mt-1.5 h-6 w-20 rounded-ctlSm" />
+          <UiSkeleton class="mt-1.5 h-3 w-32 rounded-ctlSm" />
+        </template>
+        <template v-else>
+          <p class="mt-1 text-[20px] font-semibold text-ink-900" data-cy="my-leave-left"><span class="font-mono">{{ left }}</span> {{ t('days', 'días') }}</p>
+          <p class="text-[12px] text-ink-muted">{{ t(`left of ${allowance} this year`, `quedan de ${allowance} este año`) }}</p>
+        </template>
       </div>
     </div>
 
     <div class="rounded-card border border-line bg-surface px-4 py-1">
-      <p class="pt-2.5 text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ t('My shifts this week', 'Mis turnos esta semana') }}</p>
+      <p class="pt-2.5" :class="label">{{ t('My shifts this week', 'Mis turnos esta semana') }}</p>
       <div v-for="d in week" :key="d" class="flex items-center justify-between gap-2 border-b border-line-divider py-2 text-[13.5px] last:border-b-0" data-cy="my-shift-day" :data-date="d">
         <span class="capitalize text-ink-900">{{ dayLabel(d) }}</span>
-        <span v-if="absenceOn(d)" class="inline-flex h-5 items-center rounded-pill bg-success-bg px-2 text-[11px] font-semibold text-success-text">{{ absenceKindLabel(absenceOn(d)!.kind, t) }}</span>
+        <UiPill v-if="absenceOn(d)" tone="success">{{ absenceKindLabel(absenceOn(d)!.kind, t) }}</UiPill>
+        <UiSkeleton v-else-if="!loaded" class="h-3.5 w-28 rounded-ctlSm" />
         <span v-else-if="shiftOn(d) === null" class="text-[12.5px] text-ink-faint">{{ t('No shift set', 'Sin turno') }}</span>
         <span v-else-if="!shiftOn(d)!.length" class="text-[12.5px] text-ink-faint">{{ t('Off', 'Libre') }}</span>
-        <span v-else class="font-mono text-[12.5px] text-ink-muted">{{ formatShift(shiftOn(d)!) }}</span>
+        <span v-else class="text-right font-mono text-[12.5px] text-ink-muted">{{ formatShift(shiftOn(d)!) }}</span>
       </div>
     </div>
 
     <p v-if="sent" role="status" class="rounded-ctl bg-success-bg px-3 py-2 text-[13px] text-success-text" data-cy="my-leave-sent">{{ sent }}</p>
 
     <div v-if="absences.length" class="rounded-card border border-line bg-surface px-4 py-1">
-      <p class="pt-2.5 text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ t('My requests', 'Mis solicitudes') }}</p>
+      <p class="pt-2.5" :class="label">{{ t('My requests', 'Mis solicitudes') }}</p>
       <div v-for="a in absences" :key="a.id" class="flex items-center justify-between gap-2 border-b border-line-divider py-2 text-[13.5px] last:border-b-0" data-cy="my-leave-request" :data-status="a.status">
         <span class="min-w-0 text-ink-900">{{ dates(a) }} · {{ absenceKindLabel(a.kind, t) }}</span>
         <span class="flex shrink-0 items-center gap-2">
-          <button v-if="a.status === 'pending'" type="button" class="text-[12px] font-semibold text-brand-text" data-cy="my-leave-withdraw" @click="withdraw(a)">{{ t('Withdraw', 'Retirar') }}</button>
-          <span class="inline-flex h-5 items-center rounded-pill px-2 text-[11px] font-semibold" :class="statusPill(a.status).cls">{{ statusPill(a.status).label }}</span>
+          <UiBtn v-if="a.status === 'pending'" variant="ghost" size="sm" data-cy="my-leave-withdraw" @click="withdraw(a)">{{ t('Withdraw', 'Retirar') }}</UiBtn>
+          <UiPill :tone="statusPill(a.status).tone">{{ statusPill(a.status).label }}</UiPill>
         </span>
       </div>
     </div>
 
     <UiBtn v-if="!asking" variant="primary" size="lg" data-cy="my-leave-ask" @click="asking = true; sent = ''">{{ t('Ask for holiday or leave', 'Pedir vacaciones o ausencia') }}</UiBtn>
     <form v-else class="flex flex-col gap-2.5 rounded-card border border-line bg-surface p-4" data-cy="my-leave-form" @submit.prevent="ask">
-      <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ t('Type', 'Tipo') }}</p>
+      <p :class="label">{{ t('Type', 'Tipo') }}</p>
       <div class="grid grid-cols-2 gap-1.5">
         <button v-for="k in ABSENCE_KINDS" :key="k" type="button" class="h-10 rounded-ctl border text-[13.5px] font-semibold" :class="form.kind === k ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control bg-surface text-ink-500'" :aria-pressed="form.kind === k" :data-cy="`my-leave-kind-${k}`" @click="form.kind = k">{{ absenceKindLabel(k, t) }}</button>
       </div>

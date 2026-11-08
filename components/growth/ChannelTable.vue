@@ -66,15 +66,15 @@ function percent(value: number | null) {
     </div>
 
     <div class="overflow-x-auto">
-      <table class="w-full min-w-[520px] border-collapse text-[12px]">
+      <table class="w-full min-w-[520px] border-collapse text-[12px] [&_td+td]:font-mono">
         <thead>
-          <tr class="border-b border-line-divider text-[11px] uppercase tracking-[.06em] text-ink-faint">
-            <th class="px-4 pb-[7px] text-left font-normal sm:pl-[18px]">{{ t('Channel', 'Canal') }}</th>
-            <th class="px-2 pb-[7px] text-right font-normal">{{ t('Spend', 'Gasto') }}</th>
-            <th class="px-2 pb-[7px] text-right font-normal">{{ t('Leads', 'Contactos') }}</th>
-            <th class="px-2 pb-[7px] text-right font-normal">{{ t('Booked', 'Reservas') }}</th>
-            <th class="px-2 pb-[7px] text-right font-normal">{{ t('Show', 'Asist.') }}</th>
-            <th class="px-4 pb-[7px] text-right font-normal sm:pr-[18px]" :title="t('Cost per new patient', 'Coste por paciente nuevo')">CPNP</th>
+          <tr class="border-b border-line-divider text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">
+            <th class="px-4 pb-[7px] text-left font-[640] sm:pl-[18px]">{{ t('Channel', 'Canal') }}</th>
+            <th class="px-2 pb-[7px] text-right font-[640]">{{ t('Spend', 'Gasto') }}</th>
+            <th class="px-2 pb-[7px] text-right font-[640]">{{ t('Leads', 'Contactos') }}</th>
+            <th class="px-2 pb-[7px] text-right font-[640]">{{ t('Booked', 'Reservas') }}</th>
+            <th class="px-2 pb-[7px] text-right font-[640]">{{ t('Show', 'Asist.') }}</th>
+            <th class="px-4 pb-[7px] text-right font-[640] sm:pr-[18px]" :title="t('Cost per new patient', 'Coste por paciente nuevo')">CPNP</th>
           </tr>
         </thead>
         <tbody>

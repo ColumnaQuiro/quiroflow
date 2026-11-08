@@ -59,7 +59,9 @@ const monthsCovered = computed(() => (pricing.value ? Math.floor(CARE_PLAN_CENTS
 
     <ul class="grid gap-x-4 gap-y-1.5 sm:grid-cols-2">
       <li v-for="item in GROWTH_INCLUDED" :key="item" class="flex items-start gap-2 text-[12px] text-ink-700">
-        <span class="mt-px text-[11px] font-semibold text-success-text">✓</span>
+        <svg viewBox="0 0 12 12" fill="none" aria-hidden="true" class="mt-[3px] h-3 w-3 shrink-0 text-success-text">
+          <path d="M2.4 6.3L4.8 8.7L9.6 3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
         <span>{{ item }}</span>
       </li>
     </ul>
@@ -71,11 +73,11 @@ const monthsCovered = computed(() => (pricing.value ? Math.floor(CARE_PLAN_CENTS
         class="flex flex-col gap-1.5 rounded-ctl border p-3"
         :class="option.featured ? 'border-brand-tintBorder bg-brand-tint' : 'border-line-control bg-surface'"
       >
-        <span class="text-[11px] font-semibold uppercase tracking-[.06em]" :class="option.featured ? 'text-brand-text' : 'text-ink-muted'">
+        <span class="text-[11px] font-[640] uppercase tracking-[.07em]" :class="option.featured ? 'text-brand-text' : 'text-ink-muted'">
           {{ option.label }}
         </span>
         <div class="flex items-baseline gap-1.5">
-          <span class="text-[24px] font-semibold leading-none tracking-tightTitle text-ink-900">{{ option.price }}</span>
+          <span class="font-mono text-[23px] font-semibold leading-none text-ink-900">{{ option.price }}</span>
           <span class="text-[11px] text-ink-muted">{{ t('/ month', '/ mes') }}</span>
         </div>
         <span class="text-[11px] text-ink-faint">{{ option.note }}</span>
@@ -107,11 +109,11 @@ const monthsCovered = computed(() => (pricing.value ? Math.floor(CARE_PLAN_CENTS
         <NuxtLink
           v-if="store.isOwner"
           to="/subscription"
-          class="flex h-9 items-center rounded-ctl bg-brand px-4 text-[12.5px] font-semibold text-brand-on hover:bg-brand-hover"
+          class="flex h-9 touch:h-11 items-center rounded-ctl bg-brand px-4 text-[12.5px] font-semibold text-brand-on hover:bg-brand-hover"
         >{{ t('Add Growth', 'Añadir Growth') }}</NuxtLink>
         <a
           href="mailto:hola@quiroflow.com?subject=QuiroFlow%20Growth"
-          class="flex h-9 items-center rounded-ctl border border-line-control bg-surface px-4 text-[12.5px] font-semibold text-ink-700 hover:bg-surface-subtle"
+          class="flex h-9 touch:h-11 items-center rounded-ctl border border-line-control bg-surface px-4 text-[12.5px] font-semibold text-ink-700 hover:bg-surface-subtle"
         >{{ t('Talk to us', 'Hablemos') }}</a>
       </div>
       <p class="text-[11px] text-ink-faint">

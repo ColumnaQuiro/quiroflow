@@ -76,7 +76,7 @@ function saveLimit() {
     </div>
 
     <div class="flex flex-col gap-1.5 border-t border-line-divider pt-3">
-      <span class="text-[11px] font-semibold uppercase tracking-[.06em] text-ink-faint">{{ t('Monthly limit', 'Límite mensual') }}</span>
+      <span class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Monthly limit', 'Límite mensual') }}</span>
       <div class="flex flex-wrap items-center gap-2">
         <input
           v-model="draft"
@@ -84,7 +84,7 @@ function saveLimit() {
           inputmode="numeric"
           :placeholder="t('No limit', 'Sin límite')"
           :aria-label="t('Monthly limit', 'Límite mensual')"
-          class="h-8 w-28 rounded-ctl border border-line-control bg-surface px-2.5 text-[12px] text-ink-700 focus:border-brand focus:outline-none"
+          class="h-8 touch:h-11 w-28 rounded-ctl border border-line-control bg-surface px-2.5 text-[12px] text-ink-700 focus:border-brand focus:outline-none"
           data-test="usage-limit"
           @keydown.enter="saveLimit"
         >

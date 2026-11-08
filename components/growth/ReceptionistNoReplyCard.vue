@@ -35,7 +35,13 @@ function remove(index: number) {
         data-test="no-reply-phrase"
       >
         {{ phrase }}
-        <button type="button" class="text-[11px] text-ink-muted hover:text-danger-text" :disabled="saving" :aria-label="t(`Remove ${phrase}`, `Quitar ${phrase}`)" @click="remove(i)">×</button>
+        <!-- Drawn, not the × character, which sat on the text baseline at
+        11px and was a 6px target. Same cross as UiCloseIcon, which is not on main yet. -->
+        <button type="button" class="-my-0.5 -mr-1 flex h-5 w-5 items-center justify-center rounded-full text-ink-muted hover:bg-danger-bg hover:text-danger-text touch:h-7 touch:w-7" :disabled="saving" :aria-label="t(`Remove ${phrase}`, `Quitar ${phrase}`)" @click="remove(i)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true" class="h-3 w-3 shrink-0">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
       </span>
     </div>
     <div class="flex flex-col gap-1.5 border-t border-line-divider pt-2.5">
@@ -44,7 +50,7 @@ function remove(index: number) {
           v-model="draft"
           type="text"
           :placeholder="t('e.g. Thanks', 'p. ej. Gracias')"
-          class="h-8 min-w-0 flex-1 rounded-ctl border border-line-control bg-surface px-2.5 text-[12px] text-ink-700 focus:border-brand focus:outline-none"
+          class="h-8 touch:h-11 min-w-0 flex-1 rounded-ctl border border-line-control bg-surface px-2.5 text-[12px] text-ink-700 focus:border-brand focus:outline-none"
           data-test="no-reply-text"
           @keyup.enter="add"
         />

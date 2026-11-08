@@ -95,41 +95,32 @@ async function onLeadChanged() {
       ? `${summary.openLeads} ${t('open leads', 'contactos abiertos')} · ${summary.estimatedValue} ${t('estimated value', 'de valor estimado')}`
       : undefined"
   >
-    <div v-if="!showEmpty" class="flex h-8 items-center rounded-ctl border border-line-control bg-surface p-0.5">
+    <div v-if="!showEmpty" class="flex h-8 touch:h-10 items-center rounded-ctl border border-line-control bg-surface p-0.5">
       <button
         v-for="opt in (['board', 'table'] as const)"
         :key="opt"
         type="button"
-        class="h-7 rounded-ctlSm px-2.5 text-[12px] font-medium"
+        class="h-7 rounded-ctlSm px-2.5 text-[12px] font-medium touch:h-[34px]"
+        :aria-pressed="view === opt"
         :class="view === opt ? 'bg-brand-tint text-brand-text' : 'text-ink-muted hover:text-ink-700'"
         @click="view = opt"
       >{{ opt === 'board' ? t('Board', 'Tablero') : t('Table', 'Tabla') }}</button>
     </div>
-    <button
-      type="button"
-      class="flex h-8 items-center rounded-ctl bg-brand px-3.5 text-[12.5px] font-semibold text-brand-on hover:bg-brand-hover"
-    >{{ t('Add lead', 'Añadir contacto') }}</button>
+    <UiBtn variant="primary" size="sm">{{ t('Add lead', 'Añadir contacto') }}</UiBtn>
   </PageHeader>
 
   <div class="flex flex-1 flex-col overflow-hidden">
-    <div v-if="!allowed" class="mx-auto max-w-sm py-16 text-center">
-      <p class="text-[13px] text-ink-muted">{{ t("You don't have access to Growth.", 'No tienes acceso a Crecimiento.') }}</p>
-    </div>
+    <GrowthPageNotice v-if="!allowed" kind="no-access" />
 
     <!-- Without the tier there is no pipeline to show, so this points at the
     upgrade screen rather than repeating it. -->
-    <div v-else-if="resolved && !hasGrowth" class="mx-auto max-w-sm py-16 text-center">
-      <p class="text-[13px] text-ink-muted">{{ t('Leads are part of the Growth tier.', 'Los contactos forman parte del plan Growth.') }}</p>
-      <NuxtLink to="/growth" class="mt-3 inline-flex h-9 items-center rounded-ctl bg-brand px-4 text-[12.5px] font-semibold text-brand-on hover:bg-brand-hover">
-        {{ t('See what Growth adds', 'Ver qué añade Growth') }}
-      </NuxtLink>
-    </div>
+    <GrowthPageNotice v-else-if="resolved && !hasGrowth" kind="not-in-tier" :title="t('Leads are part of the Growth tier.', 'Los contactos forman parte del plan Growth.')" />
 
     <GrowthLeadsEmptyState v-else-if="showEmpty" />
 
     <template v-else>
       <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-surface px-4 py-2.5 sm:px-6">
-        <label class="relative flex h-8 min-w-[210px] flex-1 items-center sm:max-w-[280px] sm:flex-none">
+        <label class="relative flex h-8 min-w-[210px] touch:h-11 flex-1 items-center sm:max-w-[280px] sm:flex-none">
           <span class="sr-only">{{ t('Search leads', 'Buscar contactos') }}</span>
           <!-- Disabled until the board is real. The filter bar is server-
           rendered, so without this there is a window where the box accepts
@@ -140,7 +131,7 @@ async function onLeadChanged() {
             v-model="search"
             type="search"
             :disabled="showLoading"
-            class="h-8 w-full rounded-ctl border border-line-control bg-surface px-2.5 text-[12px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+            class="h-8 touch:h-11 w-full rounded-ctl border border-line-control bg-surface px-2.5 text-[12px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
             :placeholder="t('Search name, phone or email', 'Buscar nombre, teléfono o email')"
           >
         </label>
@@ -148,15 +139,9 @@ async function onLeadChanged() {
         <!-- Presentational until the API lands: rendered as text, not as
         buttons or selects, so nothing here invites a click that does
         nothing. They become real filters alongside the leads endpoint. -->
-        <span class="rounded-pill border border-brand-tintBorder bg-brand-tint px-2.5 py-1 text-[11px] text-brand-text">
-          {{ t('Source', 'Origen') }}: Meta Ads, Google Ads
-        </span>
-        <span class="rounded-pill border border-chip-border bg-chip-bg px-2.5 py-1 text-[11px] text-ink-muted">
-          {{ t('Owner', 'Responsable') }}: {{ t('All', 'Todos') }}
-        </span>
-        <span class="rounded-pill border border-chip-border bg-chip-bg px-2.5 py-1 text-[11px] text-ink-muted">
-          {{ t('Created', 'Creado') }}: {{ t('Last 30 days', 'Últimos 30 días') }}
-        </span>
+        <UiPill tone="brand">{{ t('Source', 'Origen') }}: Meta Ads, Google Ads</UiPill>
+        <UiPill>{{ t('Owner', 'Responsable') }}: {{ t('All', 'Todos') }}</UiPill>
+        <UiPill>{{ t('Created', 'Creado') }}: {{ t('Last 30 days', 'Últimos 30 días') }}</UiPill>
 
         <span v-if="summary" class="ml-auto flex items-center gap-1.5 text-[11px] text-ink-muted">
           <span class="h-1.5 w-1.5 rounded-full bg-brand" />
@@ -164,11 +149,22 @@ async function onLeadChanged() {
         </span>
       </div>
 
-      <p v-if="error" class="px-4 py-10 text-center text-[13px] text-danger-text sm:px-6" data-test="leads-error">{{ error }}</p>
+      <div v-if="error" class="flex-1 overflow-y-auto">
+        <GrowthPageNotice kind="error" :title="error" data-test="leads-error" @retry="reload" />
+      </div>
 
-      <p v-else-if="nothingFound" class="px-4 py-10 text-center text-[13px] text-ink-muted sm:px-6" data-test="leads-no-match">
-        {{ t('No lead matches that name, phone or email.', 'Ningún contacto coincide con ese nombre, teléfono o email.') }}
-      </p>
+      <div v-else-if="nothingFound" class="flex-1 overflow-y-auto">
+        <UiEmptyState :title="t('No lead matches that name, phone or email.', 'Ningún contacto coincide con ese nombre, teléfono o email.')" data-test="leads-no-match">
+          <template #icon>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.2-5.2M10.5 17a6.5 6.5 0 100-13 6.5 6.5 0 000 13z" />
+            </svg>
+          </template>
+          <template #actions>
+            <UiBtn @click="search = ''">{{ t('Clear search', 'Borrar búsqueda') }}</UiBtn>
+          </template>
+        </UiEmptyState>
+      </div>
 
       <GrowthLeadsBoardSkeleton v-else-if="showLoading" class="pt-4" />
 
@@ -193,12 +189,12 @@ async function onLeadChanged() {
       <div v-else class="flex-1 overflow-auto px-4 pb-4 pt-4 sm:px-6">
         <table class="w-full min-w-[640px] border-collapse text-[12px]">
           <thead>
-            <tr class="border-b border-line text-[11px] uppercase tracking-[.06em] text-ink-faint">
-              <th class="px-2 pb-2 text-left font-normal">{{ t('Name', 'Nombre') }}</th>
-              <th class="px-2 pb-2 text-left font-normal">{{ t('Stage', 'Etapa') }}</th>
-              <th class="px-2 pb-2 text-left font-normal">{{ t('Source', 'Origen') }}</th>
-              <th class="px-2 pb-2 text-left font-normal">{{ t('Time in stage', 'Tiempo en etapa') }}</th>
-              <th class="px-2 pb-2 text-right font-normal">{{ t('Value', 'Valor') }}</th>
+            <tr class="border-b border-line text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">
+              <th class="px-2 pb-2 text-left font-[640]">{{ t('Name', 'Nombre') }}</th>
+              <th class="px-2 pb-2 text-left font-[640]">{{ t('Stage', 'Etapa') }}</th>
+              <th class="px-2 pb-2 text-left font-[640]">{{ t('Source', 'Origen') }}</th>
+              <th class="px-2 pb-2 text-left font-[640]">{{ t('Time in stage', 'Tiempo en etapa') }}</th>
+              <th class="px-2 pb-2 text-right font-[640]">{{ t('Value', 'Valor') }}</th>
             </tr>
           </thead>
           <tbody>

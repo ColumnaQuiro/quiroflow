@@ -2,7 +2,7 @@
 const t = useT()
 const { can } = usePermission()
 const { hasGrowth, resolved } = useGrowthTier()
-const { data, loading, error, busyId, draftReply, approve, discard, googleLocations, googleBusy, connectGoogle, loadGoogleLocations, chooseGoogleLocation, syncGoogle, disconnectGoogle } = useGrowthReputation()
+const { data, loading, error, reload, busyId, draftReply, approve, discard, googleLocations, googleBusy, connectGoogle, loadGoogleLocations, chooseGoogleLocation, syncGoogle, disconnectGoogle } = useGrowthReputation()
 const route = useRoute()
 const { showToast } = useToast()
 
@@ -87,18 +87,11 @@ function when(iso: string) {
 
   <div class="flex-1 overflow-y-auto">
     <div class="p-4 sm:p-6">
-      <div v-if="!allowed" class="mx-auto max-w-sm py-16 text-center">
-        <p class="text-[13px] text-ink-muted">{{ t("You don't have access to Growth.", 'No tienes acceso a Crecimiento.') }}</p>
-      </div>
+      <GrowthPageNotice v-if="!allowed" kind="no-access" />
 
-      <div v-else-if="resolved && !hasGrowth" class="mx-auto max-w-sm py-16 text-center">
-        <p class="text-[13px] text-ink-muted">{{ t('Reputation is part of the Growth tier.', 'Reputación forma parte del plan Growth.') }}</p>
-        <NuxtLink to="/growth" class="mt-3 inline-flex h-9 items-center rounded-ctl bg-brand px-4 text-[12.5px] font-semibold text-brand-on hover:bg-brand-hover">
-          {{ t('See what Growth adds', 'Ver qué añade Growth') }}
-        </NuxtLink>
-      </div>
+      <GrowthPageNotice v-else-if="resolved && !hasGrowth" kind="not-in-tier" :title="t('Reputation is part of the Growth tier.', 'Reputación forma parte del plan Growth.')" />
 
-      <p v-else-if="error" class="py-16 text-center text-[13px] text-danger-text" data-test="reputation-error">{{ error }}</p>
+      <GrowthPageNotice v-else-if="error" kind="error" :title="error" data-test="reputation-error" @retry="reload" />
 
       <div v-else-if="loading || !data" class="grid animate-pulse gap-4 xl:grid-cols-[minmax(0,1fr)_300px]" aria-hidden="true">
         <div class="h-[500px] rounded-card border border-line bg-surface shadow-card" />
@@ -175,7 +168,7 @@ function when(iso: string) {
             <div class="flex flex-col gap-1">
               <span class="text-[11px] text-ink-muted">{{ t('Average rating', 'Valoración media') }}</span>
               <div class="flex items-baseline gap-1">
-                <span class="text-[32px] font-semibold leading-none tracking-tightTitle text-ink-900" data-test="rating">{{ data.rating }}</span>
+                <span class="font-mono text-[30px] font-semibold leading-none text-ink-900" data-test="rating">{{ data.rating }}</span>
                 <span class="text-[13px] text-ink-muted">/ 5</span>
               </div>
               <GrowthStarRating v-if="data.rating" :rating="data.rating" :size="13" />
@@ -200,7 +193,7 @@ function when(iso: string) {
                     v-for="range in TREND_RANGES"
                     :key="range.key"
                     type="button"
-                    class="rounded-pill px-2 py-0.5 text-[11px] font-medium"
+                    class="rounded-pill px-2 py-0.5 text-[11px] font-medium touch:py-2"
                     :class="trendRange === range.key ? 'bg-brand-tint text-brand-text' : 'text-ink-muted hover:bg-surface-subtle'"
                     :aria-pressed="trendRange === range.key"
                     :data-test="`trend-range-${range.key}`"
@@ -226,9 +219,7 @@ function when(iso: string) {
           <section v-if="data.hasReviews" class="flex flex-col gap-3">
             <div class="flex flex-wrap items-center justify-between gap-2">
               <h2 class="text-[13.5px] font-semibold tracking-tightTitle text-ink-900">{{ t('Reviews', 'Reseñas') }}</h2>
-              <span v-if="data.pendingCount" class="rounded-pill border border-warning-border bg-warning-bg px-2 py-0.5 text-[11px] font-medium text-warning-text">
-                {{ t('Needs approval', 'Requiere aprobación') }} · {{ data.pendingCount }}
-              </span>
+              <UiPill v-if="data.pendingCount" tone="warning" dot>{{ t('Needs approval', 'Requiere aprobación') }} · {{ data.pendingCount }}</UiPill>
             </div>
 
             <article
@@ -250,7 +241,7 @@ function when(iso: string) {
                 <p v-if="review.body" class="text-[12.5px] leading-[1.5] text-ink-700">{{ review.body }}</p>
 
                 <div v-if="review.repliedAt" class="mt-1 rounded-ctl border border-line bg-surface-subtle px-3 py-2">
-                  <span class="text-[11px] font-semibold uppercase tracking-[.06em] text-ink-faint">
+                  <span class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">
                     {{ review.replyWasAiDrafted ? t('Replied · AI drafted, approved', 'Respondido · redactado por IA, aprobado') : t('Replied', 'Respondido') }}
                   </span>
                   <p class="mt-1 text-[12px] leading-[1.5] text-ink-700">{{ review.replyBody }}</p>
@@ -292,7 +283,7 @@ function when(iso: string) {
             <div class="flex flex-col gap-1">
               <div class="flex items-baseline justify-between gap-2">
                 <span class="text-[11.5px] text-ink-muted">{{ t('Sent', 'Enviadas') }}</span>
-                <span class="text-[12px] font-semibold text-ink-900">{{ data.funnel.sent }}</span>
+                <span class="font-mono text-[12px] font-semibold text-ink-900">{{ data.funnel.sent }}</span>
               </div>
               <span class="h-1.5 overflow-hidden rounded-pill bg-line-divider"><span class="block h-full rounded-pill bg-brand" style="width: 100%" /></span>
             </div>
@@ -300,7 +291,7 @@ function when(iso: string) {
             <div class="flex flex-col gap-1">
               <div class="flex items-baseline justify-between gap-2">
                 <span class="text-[11.5px] text-ink-muted">{{ t('Opened the link', 'Abrieron el enlace') }}</span>
-                <span class="text-[12px] font-semibold text-ink-900">
+                <span class="font-mono text-[12px] font-semibold text-ink-900">
                   {{ data.funnel.opened }}<span v-if="data.funnel.openedShare !== null" class="ml-1 text-[11px] font-normal text-ink-muted">{{ data.funnel.openedShare }}%</span>
                 </span>
               </div>
@@ -312,7 +303,7 @@ function when(iso: string) {
             <div class="flex flex-col gap-1">
               <div class="flex items-baseline justify-between gap-2">
                 <span class="text-[11.5px] text-ink-muted">{{ t('Left a review', 'Dejaron reseña') }}</span>
-                <span class="text-[12px] font-semibold" :class="data.funnel.convertedShare === null ? 'text-ink-faint' : 'text-ink-900'">
+                <span class="font-mono text-[12px] font-semibold" :class="data.funnel.convertedShare === null ? 'text-ink-faint' : 'text-ink-900'">
                   {{ data.funnel.convertedShare === null ? '—' : data.funnel.converted
                   }}<span v-if="data.funnel.convertedShare !== null" class="ml-1 text-[11px] font-normal text-ink-muted">{{ data.funnel.convertedShare }}%</span>
                 </span>

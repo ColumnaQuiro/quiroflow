@@ -7,9 +7,7 @@
 // total row; the downloads are buttons. The web sends the browser to the
 // ZIP's signed link; inside the app that link would only leave the app, so
 // the file is fetched and handed to the share sheet (utils/shareReportFile.ts)
-// -- save to Files or mail it to the gestoría straight from there. Because
-// the fetch takes a moment, the sheet can need a second tap (the "Share"
-// button that appears), which is the WebView's rule, not an error.
+// -- save to Files or mail it to the gestoría straight from there.
 import { formatEur } from '../../../utils/billing'
 import { quarterBounds, type IvaLine } from '../../../utils/gestoriaExport'
 import { shareReportFile, shareReportMessage } from '~/utils/shareReportFile'
@@ -72,8 +70,10 @@ function pickQuarter(q: number) {
   quarter.value = q
 }
 
-// A file waiting for a fresh tap (see shareReportFile: the sheet only opens
-// within the tap that asked for it, and fetching the ZIP outlives it).
+// A file waiting for a fresh tap. Only the app's web build gets here (see
+// shareReportFile: the browser's sheet opens only within the tap that asked
+// for it, and fetching the ZIP outlives it); in the app it opens straight
+// away.
 const shareNote = ref<string | null>(null)
 const pendingShare = ref<{ blob: Blob; filename: string; mime: string } | null>(null)
 async function deliver(blob: Blob, filename: string, mime: string) {

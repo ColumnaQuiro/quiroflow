@@ -39,7 +39,7 @@ async function load() {
   type Patient = { id: string; default_practitioner_id: string | null; clinic_id: string | null }
   type PaymentRow = { amount_cents: number; method: string; patient_id: string | null; invoices: { status: string; appointment_id: string | null; appointments: Who | null } | null; patients: Patient | null }
   type InvoiceRow = { id: string; appointment_id: string | null; patient_id: string | null; appointments: Who | null; patients: Patient | null; invoice_line_items: { price_cents: number; quantity: number }[] }
-  const [appointments, { data: paymentData }, { data: invoiceData }] = await Promise.all([
+  const [appointments, { data: paymentData, error: paymentError }, { data: invoiceData, error: invoiceError }] = await Promise.all([
     thisWeekAppointments(props.practitionerId, props.clinicId),
     supabase
       .from('payments')
@@ -54,6 +54,8 @@ async function load() {
       .lte('created_at', toDate.toISOString()),
   ])
   if (isStale()) return
+  // Read as no money at all otherwise: "0,00 €" taken, on a failed request.
+  if (paymentError || invoiceError) throw paymentError ?? invoiceError
 
   const typeCounts = new Map<string, number>()
   let remainingCount = 0
@@ -152,7 +154,7 @@ function euros(cents: number) {
       </li>
     </ul>
     <div v-if="byType.length > 0" class="mt-2 border-t border-line-row2 pt-2">
-      <p class="mb-1 text-[11px] font-semibold uppercase tracking-[.05em] text-ink-faint">{{ t('By type', 'Por tipo') }}</p>
+      <p class="mb-1 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('By type', 'Por tipo') }}</p>
       <div v-for="bt in byType" :key="bt.name" class="flex items-center justify-between py-0.5 text-[12.5px]">
         <span class="text-ink-muted2">{{ bt.name }}</span>
         <span class="font-mono text-ink-600">{{ bt.count }}</span>

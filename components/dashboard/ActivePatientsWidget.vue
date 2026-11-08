@@ -34,8 +34,9 @@ async function load() {
 
   // No head-only count beside the rows: it only let pages past the first go
   // out together, and a window of completed visits rarely needs a second.
-  const [{ count }, rows] = await Promise.all([totalQuery, fetchAllRows((f, t) => activeQuery.range(f, t))])
+  const [{ count, error }, rows] = await Promise.all([totalQuery, fetchAllRows((f, t) => activeQuery.range(f, t))])
   if (isStale()) return
+  if (error) throw error
 
   total.value = count ?? 0
   active.value = new Set(rows.map((r) => r.patient_id)).size
@@ -49,11 +50,11 @@ const pct = computed(() => (total.value === 0 ? 0 : Math.round((active.value / t
 
 <template>
   <div v-if="loading" class="space-y-1.5">
-    <UiSkeleton class="h-[27px] w-20 rounded-ctlSm" />
+    <UiSkeleton class="h-[23px] w-20 rounded-ctlSm" />
     <UiSkeleton class="h-3 w-32 rounded-ctlSm" />
   </div>
   <div v-else>
-    <p class="font-mono text-[27px] leading-none text-ink-900">
+    <p class="font-mono text-[23px] font-semibold leading-none text-ink-900">
       {{ active }} <span class="font-sans text-[14px] font-medium text-ink-muted2">({{ pct }}%)</span>
     </p>
     <p class="mt-1.5 text-[12px] text-ink-muted2">{{ t(`Seen in the last ${ACTIVE_WINDOW_DAYS} days`, `Atendidos en los últimos ${ACTIVE_WINDOW_DAYS} días`) }}</p>

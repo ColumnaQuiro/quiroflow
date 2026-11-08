@@ -41,14 +41,14 @@ watch(() => props.practitionerId, load)
 
 <template>
   <div v-if="loading" class="space-y-1.5">
-    <UiSkeleton class="h-[27px] w-10 rounded-ctlSm" />
+    <UiSkeleton class="h-[23px] w-10 rounded-ctlSm" />
     <UiSkeleton class="h-3 w-44 rounded-ctlSm" />
   </div>
   <div v-else>
-    <p class="font-mono text-[27px] leading-none text-ink-900">{{ count }}</p>
+    <p class="font-mono text-[23px] font-semibold leading-none text-ink-900">{{ count }}</p>
     <p class="mt-1.5 text-[12px] text-ink-muted2">
       {{ avgDays !== null ? t(`3+ weeks since their last visit · avg ${avgDays} days`, `3+ semanas desde su última visita · media ${avgDays} días`) : t('No patients overdue for recall', 'Ningún paciente pendiente de recuerdo') }}
     </p>
-    <NuxtLink to="/recalls" class="mt-1.5 inline-block text-[12px] font-medium text-brand-text hover:text-brand-hover">{{ t('View recalls →', 'Ver recuerdos →') }}</NuxtLink>
+    <NuxtLink to="/recalls" class="mt-1.5 inline-flex items-center gap-0.5 text-[12px] font-medium text-brand-text hover:text-brand-hover">{{ t('View recalls', 'Ver recuerdos') }}<UiChevron dir="right" /></NuxtLink>
   </div>
 </template>

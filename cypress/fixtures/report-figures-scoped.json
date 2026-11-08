@@ -13,7 +13,7 @@
       "Fri",
       "Sat",
       "Sun",
-      "Income this month",
+      "Income",
       "1 Jun – 17 Jun",
       "226,00 €",
       "-66% vs previous period",
@@ -48,7 +48,7 @@
       "1 Jun – 17 Jun",
       "[Average income per visit | 17,54 € ; Retention | 82% ; Visits | 13]",
       "Appointment volume trend",
-      "1 Jun – 17 Jun",
+      "This month",
       "[Daily average | 1.0 ; This month | 31 ; vs. last month | -21%]"
     ],
     "charts": []
@@ -233,7 +233,7 @@
       "Fri",
       "Sat",
       "Sun",
-      "Income this month",
+      "Income",
       "1 Jun – 17 Jun",
       "4524,00 €",
       "+189% vs previous period",
@@ -273,10 +273,9 @@
       "1 Jun – 17 Jun",
       "[Average income per visit | 102,82 € ; Retention | 100% ; Visits | 44]",
       "Memberships",
-      "1 Jun – 17 Jun",
       "[Active memberships | 5 ; Failed payments | 5 ; Revenue this month | 354,00 €]",
       "Appointment volume trend",
-      "1 Jun – 17 Jun",
+      "This month",
       "[Daily average | 3.7 ; This month | 110 ; vs. last month | +3%]"
     ],
     "charts": []

@@ -40,8 +40,9 @@ async function load() {
     currentQuery = currentQuery.eq('practitioner_id', props.practitionerId)
     prevQuery = prevQuery.eq('practitioner_id', props.practitionerId)
   }
-  const [{ count: current }, { count: prevCount }] = await Promise.all([currentQuery, prevQuery])
+  const [{ count: current, error }, { count: prevCount, error: prevError }] = await Promise.all([currentQuery, prevQuery])
   if (isStale()) return
+  if (error || prevError) throw error ?? prevError
 
   totalCount.value = current ?? 0
   changePct.value = !prevCount ? null : Math.round(((totalCount.value - prevCount) / prevCount) * 100)

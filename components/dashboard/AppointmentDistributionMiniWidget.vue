@@ -53,10 +53,12 @@ const shiftStats = computed(() =>
     </div>
   </div>
   <ul v-else class="divide-y divide-line-row2 text-[13px]">
-    <li v-for="s in shiftStats" :key="s.key" class="flex items-center justify-between py-1.5">
-      <span class="text-ink-700">{{ s.label }}</span>
-      <span class="text-ink-muted2">{{ t(`${s.total} visits`, `${s.total} visitas`) }}</span>
-      <span class="font-mono text-[12.5px] text-ink-900">{{ s.showRate === null ? '—' : `${s.showRate}%` }}</span>
+    <!-- A grid, not justify-between: spaced out, the middle column sat at a
+         different x on every row depending on how wide its neighbours were. -->
+    <li v-for="s in shiftStats" :key="s.key" class="grid grid-cols-[minmax(0,1fr)_auto_3rem] items-center gap-3 py-1.5">
+      <span class="truncate text-ink-700">{{ s.label }}</span>
+      <span class="text-right text-ink-muted2">{{ t(`${s.total} visits`, `${s.total} visitas`) }}</span>
+      <span class="text-right font-mono text-[12.5px] text-ink-900">{{ s.showRate === null ? '—' : `${s.showRate}%` }}</span>
     </li>
   </ul>
 </template>

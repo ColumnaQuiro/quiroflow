@@ -147,9 +147,9 @@ defineExpose({ reload: load })
           {{ rows.length }}<template v-if="atRisk > 0"> &middot; {{ t(`${atRisk} at risk`, `${atRisk} con riesgo`) }}</template>
         </span>
       </div>
-      <div v-if="canSeeAll && practitionerId" class="flex h-7 overflow-hidden rounded-ctlSm border border-line-control text-[12px]">
-        <button type="button" class="px-2.5" :class="!everyone ? 'bg-brand font-semibold text-brand-on' : 'text-ink-500 hover:bg-surface-subtle'" @click="everyone = false">{{ t('Mine', 'Mías') }}</button>
-        <button type="button" class="border-l border-line-control px-2.5" :class="everyone ? 'bg-brand font-semibold text-brand-on' : 'text-ink-500 hover:bg-surface-subtle'" data-cy="needs-confirming-everyone" @click="everyone = true">{{ t('Everyone', 'Todos') }}</button>
+      <div v-if="canSeeAll && practitionerId" class="flex h-7 overflow-hidden rounded-ctlSm border border-line-control text-[12px] touch:h-10">
+        <button type="button" class="px-2.5 touch:px-3.5" :class="!everyone ? 'bg-brand font-semibold text-brand-on' : 'text-ink-500 hover:bg-surface-subtle'" :aria-pressed="!everyone" @click="everyone = false">{{ t('Mine', 'Mías') }}</button>
+        <button type="button" class="border-l border-line-control px-2.5 touch:px-3.5" :class="everyone ? 'bg-brand font-semibold text-brand-on' : 'text-ink-500 hover:bg-surface-subtle'" :aria-pressed="everyone" data-cy="needs-confirming-everyone" @click="everyone = true">{{ t('Everyone', 'Todos') }}</button>
       </div>
     </header>
     <p v-if="error" role="alert" class="border-b border-line-row px-4 py-2 text-[12.5px] text-danger-text">{{ error }}</p>
@@ -161,8 +161,9 @@ defineExpose({ reload: load })
              their own line instead of squeezing it to a few letters under the
              risk pill. -->
         <span class="min-w-[150px] flex-1">
-          <span class="flex items-center gap-1.5">
-            <span class="truncate text-[13.5px] font-[560] text-ink-900" :class="{ 'blur-sm select-none': privacyMode }">{{ r.patients?.first_name }} {{ r.patients?.last_name }}</span>
+          <!-- The pill wraps under the name before the name is cut. -->
+          <span class="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+            <span class="min-w-0 break-words text-[13.5px] font-[560] text-ink-900" :class="{ 'blur-sm select-none': privacyMode }">{{ r.patients?.first_name }} {{ r.patients?.last_name }}</span>
             <PractitionerNoShowRiskPill :risk="risk.get(r.patient_id)" />
           </span>
           <span class="block truncate text-[11.5px] text-ink-muted2">
@@ -170,9 +171,11 @@ defineExpose({ reload: load })
           </span>
         </span>
         <span class="ml-auto flex shrink-0 items-center gap-1.5">
-          <a v-if="phones.get(r.patient_id)" :href="telHref(phones.get(r.patient_id)!)" class="flex h-8 items-center rounded-ctl border border-line-control px-2.5 text-[12.5px] font-medium text-ink-700 hover:bg-surface-subtle touch:h-10" data-cy="needs-confirming-call">{{ t('Call', 'Llamar') }}</a>
-          <button type="button" class="flex h-8 items-center rounded-ctl border border-line-control px-2.5 text-[12.5px] font-medium text-ink-700 hover:bg-surface-subtle touch:h-10" data-cy="needs-confirming-message" @click="emit('message', r.patient_id)">{{ t('Message', 'Escribir') }}</button>
-          <button type="button" class="flex h-8 items-center rounded-ctl bg-brand px-2.5 text-[12.5px] font-semibold text-brand-on disabled:opacity-50 touch:h-10" :disabled="confirmingId === r.id" data-cy="needs-confirming-confirm" @click="markConfirmed(r)">{{ t('Confirmed', 'Confirmada') }}</button>
+          <!-- A link, so UiBtn's own classes (secondary, sm) rather than the
+               component, which only renders a button. -->
+          <a v-if="phones.get(r.patient_id)" :href="telHref(phones.get(r.patient_id)!)" class="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-ctl border border-line-control bg-surface px-2.5 text-[12.5px] font-medium text-ink-500 hover:border-line-controlHover touch:h-10" data-cy="needs-confirming-call">{{ t('Call', 'Llamar') }}</a>
+          <UiBtn size="sm" data-cy="needs-confirming-message" @click="emit('message', r.patient_id)">{{ t('Message', 'Escribir') }}</UiBtn>
+          <UiBtn variant="primary" size="sm" :disabled="confirmingId === r.id" data-cy="needs-confirming-confirm" @click="markConfirmed(r)">{{ t('Confirmed', 'Confirmada') }}</UiBtn>
         </span>
       </li>
     </ul>

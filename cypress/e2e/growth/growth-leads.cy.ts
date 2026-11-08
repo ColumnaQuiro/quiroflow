@@ -182,7 +182,7 @@ describe('Growth leads pipeline', () => {
     // Back where it started, and the counts with it -- not stranded in a
     // stage the server never accepted. The board itself stays on screen:
     // one refused drag must not blank the whole pipeline.
-    cy.contains('Could not move that lead. It has been put back.').should('be.visible')
+    cy.contains('Could not move that lead. It is back in its stage.').should('be.visible')
     cy.get('[data-test="leads-error"]').should('not.exist')
     cy.get('[data-test="lead-column-new"]').contains('Doomed Move').should('exist')
     cy.get('[data-test="lead-column-new"] [data-test="lead-count"]').should('have.text', '1')
@@ -265,7 +265,7 @@ describe('Growth leads pipeline', () => {
   it('points an account without the tier at the upgrade screen', () => {
     cy.visit('/growth/leads?growth=0')
 
-    cy.contains('Leads are part of the Growth tier.').should('be.visible')
+    cy.contains('Leads are part of Growth.').should('be.visible')
     cy.get('[data-test="lead-column-new"]').should('not.exist')
   })
 })

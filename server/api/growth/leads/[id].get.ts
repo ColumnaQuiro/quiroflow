@@ -50,13 +50,15 @@ export default defineEventHandler(async (event) => {
   // not six "—" placeholders implying the data was looked for and missing.
   const attributionRows = attribution
     ? [
-        { label: 'Campaign', value: attribution.campaign },
-        { label: 'Ad', value: attribution.ad },
-        { label: 'Keyword / audience', value: attribution.audience },
-        { label: 'First touch', value: attribution.first_touch },
-        { label: 'Last touch', value: attribution.last_touch },
-        { label: 'Cost per lead', value: formatEuros(attribution.cost_cents) },
-      ].filter((row): row is { label: string; value: string } => Boolean(row.value))
+        // `key` lets the browser word the label in the reader's language;
+        // `label` stays for anything still reading the older shape.
+        { key: 'campaign', label: 'Campaign', value: attribution.campaign },
+        { key: 'ad', label: 'Ad', value: attribution.ad },
+        { key: 'audience', label: 'Keyword / audience', value: attribution.audience },
+        { key: 'first_touch', label: 'First touch', value: attribution.first_touch },
+        { key: 'last_touch', label: 'Last touch', value: attribution.last_touch },
+        { key: 'cost', label: 'Cost per lead', value: formatEuros(attribution.cost_cents) },
+      ].filter((row): row is { key: string; label: string; value: string } => Boolean(row.value))
     : []
 
   return {
@@ -65,6 +67,10 @@ export default defineEventHandler(async (event) => {
     name: lead.full_name,
     initials: initials || '?',
     createdAt: `created ${new Date(lead.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`,
+    // The raw values behind the English strings beside them, so the drawer
+    // can word them in the reader's language (useGrowthLeadDetail).
+    createdAtIso: lead.created_at,
+    ownerName: lead.team_members?.full_name ?? null,
     aiHandling: lead.ai_handling,
     stage: STAGE_TITLES[lead.stage as LeadStage] ?? lead.stage,
     stageKey: lead.stage,
@@ -83,6 +89,7 @@ export default defineEventHandler(async (event) => {
       kind: entry.kind,
       title: entry.title,
       time: new Date(entry.occurred_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }),
+      occurredAt: entry.occurred_at,
       detail: entry.detail,
       // Passed through as stored. Each kind's extra shape is the integration's
       // to define -- see the migration's note on lead_events.body.

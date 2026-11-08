@@ -14,6 +14,8 @@ const authedFetch = useAuthedFetch()
 async function signOut() {
   await unregisterPush()
   clearVisitNoteDrafts()
+  // A patient's habit reminders are local to the phone (useHabitReminders).
+  await useHabitReminders().clear()
   // This device only. The default, scope 'global', also signed the person
   // out of every other phone and browser; the web's Account page keeps a
   // separate "sign out of other devices".
@@ -57,6 +59,8 @@ async function deleteAccount() {
   }
   await unregisterPush()
   clearVisitNoteDrafts()
+  // A patient's habit reminders are local to the phone (useHabitReminders).
+  await useHabitReminders().clear()
   // Signing out forgets Face ID on this device (composables/useAppLock.ts).
   await useAppLock().forget()
   await useHomeWidget().clear()

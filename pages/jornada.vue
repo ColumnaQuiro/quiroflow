@@ -25,9 +25,9 @@ const exportUrl = (format: 'csv' | 'pdf') => `/api/time-records/export?month=${m
   <div class="flex h-full flex-col" data-cy="jornada-page">
     <PageHeader :title="t('Working time', 'Registro de jornada')" :meta="store.isOwner ? t('The team, month by month', 'El equipo, mes a mes') : t('Your days and hours', 'Tus días y tus horas')">
       <template v-if="store.isOwner && tab === 'team'">
-        <input v-model="month" type="month" class="h-9 rounded-ctl border border-line-control bg-surface px-2.5 text-[13px] text-ink-700" data-cy="jornada-month" />
-        <a :href="exportUrl('csv')" class="inline-flex h-9 items-center rounded-ctl border border-line-control bg-surface px-3.5 text-[13px] font-medium text-ink-500 hover:border-line-controlHover" data-cy="jornada-export-csv">{{ t('Export CSV', 'Exportar CSV') }}</a>
-        <a :href="exportUrl('pdf')" class="inline-flex h-9 items-center rounded-ctl border border-brand bg-brand px-3.5 text-[13px] font-semibold text-brand-on hover:bg-brand-hover" data-cy="jornada-export-pdf">{{ t('PDF to sign', 'PDF para firmar') }}</a>
+        <input v-model="month" type="month" :aria-label="t('Month', 'Mes')" class="h-9 rounded-ctl border border-line-control bg-surface px-2.5 text-[13px] text-ink-700 focus:border-brand focus:outline-none touch:h-11" data-cy="jornada-month" />
+        <a :href="exportUrl('csv')" class="inline-flex h-9 items-center whitespace-nowrap rounded-ctl border border-line-control bg-surface px-3.5 text-[13px] font-medium text-ink-500 hover:border-line-controlHover touch:h-11" data-cy="jornada-export-csv">{{ t('Export CSV', 'Exportar CSV') }}</a>
+        <a :href="exportUrl('pdf')" class="inline-flex h-9 items-center whitespace-nowrap rounded-ctl border border-brand bg-brand px-3.5 text-[13px] font-semibold text-brand-on hover:bg-brand-hover touch:h-11" data-cy="jornada-export-pdf">{{ t('PDF to sign', 'PDF para firmar') }}</a>
       </template>
     </PageHeader>
 
@@ -39,7 +39,7 @@ const exportUrl = (format: 'csv' | 'pdf') => `/api/time-records/export?month=${m
         role="tab"
         :aria-selected="tab === tb.key"
         :data-cy="`jornada-tab-${tb.key}`"
-        class="-mb-px flex h-12 shrink-0 items-center border-b-2 px-3 text-[14px] font-semibold"
+        class="-mb-px flex h-12 shrink-0 items-center whitespace-nowrap border-b-2 px-3 text-[14px] font-semibold"
         :class="tab === tb.key ? 'border-brand text-ink-900' : 'border-transparent text-ink-muted hover:text-ink-700'"
         @click="tab = tb.key"
       >

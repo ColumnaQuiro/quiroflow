@@ -91,6 +91,11 @@ function onKey(e: KeyboardEvent) {
   }
 }
 
+// Two letters, as the Inbox draws a person (pages/inbox.vue avatarInitials).
+function initials(name: string) {
+  return name.split(/\s+/).filter(Boolean).map((w) => w[0]).slice(0, 2).join('').toUpperCase()
+}
+
 function when(iso: string) {
   const d = new Date(iso)
   return d.toDateString() === new Date().toDateString() ? formatTime(iso) : `${formatShortDate(iso)} ${formatTime(iso)}`
@@ -109,18 +114,34 @@ onMounted(() => {
     </PageHeader>
     <div class="flex flex-1 overflow-hidden">
       <div class="w-full flex-col border-r border-line bg-surface md:flex md:w-[300px] md:shrink-0" :class="selected ? 'hidden md:flex' : 'flex'" data-cy="team-threads">
-        <ul class="flex-1 overflow-y-auto py-1">
+        <!-- Until the first load answers there is only "Whole team" to list,
+        and a colleague's thread would appear a moment later under it. -->
+        <div v-if="!chat.loaded.value" class="flex-1 py-1" aria-busy="true" :aria-label="t('Loading conversations', 'Cargando conversaciones')">
+          <div v-for="i in 3" :key="i" class="flex items-center gap-3 px-3.5 py-2.5">
+            <UiSkeleton class="h-10 w-10 shrink-0 rounded-full" />
+            <div class="min-w-0 flex-1 space-y-1.5">
+              <UiSkeleton class="h-3.5 w-28 rounded-ctlSm" />
+              <UiSkeleton class="h-3 w-44 rounded-ctlSm" />
+            </div>
+          </div>
+        </div>
+        <ul v-else class="flex-1 overflow-y-auto py-1">
           <li v-for="r in threads" :key="r.key">
             <button
               type="button"
-              class="flex w-full items-center gap-3 px-3.5 py-2.5 text-left hover:bg-surface-subtle"
-              :class="selected === r.key ? 'bg-brand-tint' : ''"
+              class="flex w-full items-center gap-3 px-3.5 py-2.5 text-left"
+              :class="selected === r.key ? 'bg-brand-tint' : 'hover:bg-surface-subtle'"
+              :aria-current="selected === r.key ? 'true' : undefined"
               :data-cy="`team-thread-${r.key === 'team' ? 'team' : 'member'}`"
               :data-key="r.key"
               @click="open(r.key)"
             >
-              <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[12px] font-bold" :class="r.key === 'team' ? 'bg-brand text-surface' : 'bg-chip-bg text-ink-700'">
-                {{ r.key === 'team' ? '#' : r.name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase() }}
+              <!-- The Inbox's avatar: indigo wash for the whole team, as it is
+              for a linked patient, and grey initials for one person. The
+              border keeps it visible on the selected row's own wash. -->
+              <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border text-[13px] font-bold" :class="r.key === 'team' ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-transparent bg-chip-bg text-ink-700'">
+                <svg v-if="r.key === 'team'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.25" /><path d="M3 19.5c.6-3.2 3-5 6-5s5.4 1.8 6 5" /><path d="M15.5 4.9a3.25 3.25 0 0 1 0 6.2M17.5 14.8c1.9.6 3.1 2.2 3.5 4.7" /></svg>
+                <template v-else>{{ initials(r.name) }}</template>
               </span>
               <span class="flex min-w-0 flex-1 flex-col">
                 <span class="flex items-center justify-between gap-2">
@@ -129,7 +150,7 @@ onMounted(() => {
                 </span>
                 <span class="flex items-center justify-between gap-2">
                   <span class="truncate text-[12.5px] text-ink-muted">{{ r.last ?? (r.key === 'team' ? t('Everyone who works here', 'Todas las personas de la clínica') : t('No messages yet', 'Sin mensajes todavía')) }}</span>
-                  <span v-if="r.unread" class="shrink-0 rounded-pill bg-brand px-1.5 py-px text-[11px] font-semibold text-surface" data-cy="team-thread-unread">{{ r.unread }}</span>
+                  <span v-if="r.unread" class="shrink-0 rounded-pill bg-brand px-1.5 py-px font-mono text-[11px] font-semibold text-brand-on" :aria-label="t(`${r.unread} unread`, `${r.unread} sin leer`)" data-cy="team-thread-unread">{{ r.unread }}</span>
                 </span>
               </span>
             </button>
@@ -138,48 +159,72 @@ onMounted(() => {
       </div>
 
       <div v-if="selected" class="flex min-w-0 flex-1 flex-col bg-surface-page" data-cy="team-thread">
-        <div class="flex h-12 shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
-          <button type="button" class="flex h-9 w-9 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle md:hidden" :aria-label="t('Back', 'Volver')" @click="selected = null">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3 5 8l5 5" /></svg>
+        <div class="flex min-h-16 shrink-0 items-center gap-2 border-b border-line bg-surface px-3 py-2.5 sm:px-4">
+          <button type="button" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle touch:h-11 touch:w-11 md:hidden" :aria-label="t('Back to conversations', 'Volver a conversaciones')" @click="selected = null">
+            <svg width="8" height="13" viewBox="0 0 8 13" fill="none" aria-hidden="true"><path d="M7 1L1 6.5L7 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
           </button>
-          <h2 class="truncate text-[15px] font-bold text-ink-900">{{ currentName }}</h2>
+          <template v-if="!currentName">
+            <UiSkeleton class="h-10 w-10 shrink-0 rounded-full" />
+            <UiSkeleton class="h-4 w-32 rounded-ctlSm" />
+          </template>
+          <template v-else>
+          <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border text-[13px] font-bold" :class="selected === 'team' ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-transparent bg-chip-bg text-ink-700'" aria-hidden="true">
+            <svg v-if="selected === 'team'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.25" /><path d="M3 19.5c.6-3.2 3-5 6-5s5.4 1.8 6 5" /><path d="M15.5 4.9a3.25 3.25 0 0 1 0 6.2M17.5 14.8c1.9.6 3.1 2.2 3.5 4.7" /></svg>
+            <template v-else>{{ initials(currentName) }}</template>
+          </span>
+          <h2 class="min-w-0 truncate text-[16px] font-semibold tracking-tightTitle text-ink-900">{{ currentName }}</h2>
+          </template>
         </div>
         <div ref="scroller" class="flex-1 overflow-y-auto px-4 py-3">
-          <p v-if="current.length === 0" class="py-10 text-center text-[13px] text-ink-faint">
-            {{ selected === 'team' ? t('Say something to the whole team.', 'Escribe algo a todo el equipo.') : t(`Start a conversation with ${currentName}.`, `Empieza una conversación con ${currentName}.`) }}
-          </p>
+          <div v-if="!chat.loaded.value" class="flex flex-col gap-3" aria-busy="true">
+            <UiSkeleton class="h-14 w-3/5 rounded-card" />
+            <UiSkeleton class="ml-auto h-10 w-2/5 rounded-card" />
+          </div>
+          <!-- An empty thread is the start of one, not a load that failed. -->
+          <UiEmptyState
+            v-else-if="current.length === 0"
+            :title="selected === 'team' ? t('Nothing said to the team yet', 'Aún no hay mensajes al equipo') : t(`No messages with ${currentName} yet`, `Aún no hay mensajes con ${currentName}`)"
+            :description="selected === 'team' ? t('Say something to the whole team.', 'Escribe algo a todo el equipo.') : t(`Start a conversation with ${currentName}.`, `Empieza una conversación con ${currentName}.`)"
+            class="!px-0 !py-6"
+            data-cy="team-thread-empty"
+          >
+            <template #icon>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z" /></svg>
+            </template>
+          </UiEmptyState>
           <div v-for="m in current" :key="m.id" class="mb-2 flex" :class="m.sender_id === me ? 'justify-end' : 'justify-start'" data-cy="team-message">
             <div
-              class="max-w-[75%] rounded-card px-3 py-2"
-              :class="m.kind === 'alert' ? 'border border-danger-border bg-danger-bg text-danger-text' : m.sender_id === me ? 'bg-brand text-surface' : 'border border-line bg-surface text-ink-900'"
+              class="min-w-0 max-w-[75%] rounded-card px-3 py-2 shadow-card [overflow-wrap:anywhere]"
+              :class="m.kind === 'alert' ? 'border border-danger-border bg-danger-bg text-danger-text' : m.sender_id === me ? 'bg-brand text-brand-on' : 'border border-line bg-surface text-ink-900'"
             >
-              <p v-if="m.sender_id !== me && selected === 'team'" class="mb-0.5 text-[11.5px] font-semibold" :class="m.kind === 'alert' ? '' : 'text-brand-text'">{{ chat.memberName(m.sender_id) }}</p>
-              <p v-if="m.kind === 'alert'" class="text-[11.5px] font-bold uppercase tracking-[.04em]">{{ t('Help needed', 'Piden ayuda') }}</p>
-              <p class="whitespace-pre-wrap break-words text-[14px] leading-snug">{{ m.body }}</p>
-              <p class="mt-0.5 text-right font-mono text-[11px] opacity-70">
+              <p v-if="m.sender_id !== me && selected === 'team'" class="mb-0.5 text-[11px] font-semibold" :class="m.kind === 'alert' ? '' : 'text-brand-text'">{{ chat.memberName(m.sender_id) }}</p>
+              <p v-if="m.kind === 'alert'" class="text-[11px] font-[640] uppercase tracking-[.07em]">{{ t('Help needed', 'Piden ayuda') }}</p>
+              <p class="whitespace-pre-wrap text-[14px] leading-snug">{{ m.body }}</p>
+              <p class="mt-0.5 text-right font-mono text-[11px] opacity-75">
                 {{ when(m.created_at) }}
                 <template v-if="m.kind === 'alert' && m.acknowledged_at"> · {{ t(`${chat.memberName(m.acknowledged_by)} answered`, `${chat.memberName(m.acknowledged_by)} respondió`) }}</template>
               </p>
             </div>
           </div>
         </div>
+        <p v-if="sendError" class="border-t border-danger-border bg-danger-bg px-3 py-2 text-[12.5px] text-danger-text" role="alert">{{ sendError }}</p>
         <form class="flex shrink-0 items-end gap-2 border-t border-line bg-surface p-3" @submit.prevent="send">
           <textarea
             v-model="draft"
             rows="1"
             maxlength="2000"
             data-cy="team-composer"
+            :aria-label="selected === 'team' ? t('Message the whole team', 'Mensaje a todo el equipo') : t(`Message ${currentName}`, `Mensaje a ${currentName}`)"
             :placeholder="selected === 'team' ? t('Message the whole team…', 'Mensaje a todo el equipo…') : t(`Message ${currentName}…`, `Mensaje a ${currentName}…`)"
-            class="max-h-40 min-h-[40px] flex-1 resize-none rounded-ctl border border-line-control bg-surface px-3 py-2 text-[14px] text-ink-900 focus:border-brand focus:outline-none"
+            class="max-h-40 min-h-9 min-w-0 flex-1 resize-none rounded-ctl border border-line-control bg-surface px-3 py-[7px] text-[14px] text-ink-900 placeholder:text-ink-faint2 focus:border-brand focus:outline-none touch:min-h-11 touch:py-[10px]"
             @keydown="onKey"
           />
-          <button type="submit" data-cy="team-send" :disabled="sending || !draft.trim()" class="h-10 shrink-0 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface hover:bg-brand-hover disabled:opacity-50">
+          <UiBtn type="submit" variant="primary" data-cy="team-send" :disabled="sending || !draft.trim()">
             {{ t('Send', 'Enviar') }}
-          </button>
+          </UiBtn>
         </form>
-        <p v-if="sendError" class="bg-surface px-3 pb-2 text-[12.5px] text-danger-text" role="alert">{{ sendError }}</p>
       </div>
-      <div v-else class="hidden flex-1 items-center justify-center text-[13.5px] text-ink-faint md:flex">
+      <div v-else class="hidden flex-1 items-center justify-center text-[13px] text-ink-faint md:flex">
         {{ t('Pick a conversation', 'Elige una conversación') }}
       </div>
     </div>

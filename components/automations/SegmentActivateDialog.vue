@@ -55,7 +55,7 @@ const when = computed(() => {
   <div class="fixed inset-0 z-50 flex items-end justify-center bg-scrim/40 p-4 sm:items-center" @click.self="emit('cancel')">
     <div ref="dialogPanel" role="dialog" aria-modal="true" aria-labelledby="seg-title" class="w-full max-w-[520px] rounded-card border border-line bg-surface shadow-popover" data-test="segment-activate">
       <div class="flex flex-col gap-3 px-6 pb-2 pt-6">
-        <h2 id="seg-title" class="text-[18px] font-bold text-ink-900">{{ t('Switch on a group', 'Activar un segmento') }}</h2>
+        <h2 id="seg-title" class="text-[18px] font-[640] tracking-tightTitle text-ink-900">{{ t('Switch on a group', 'Activar un segmento') }}</h2>
         <p class="text-[14px] leading-relaxed text-ink-500">
           <strong>{{ count === null ? '…' : t(`${count} patients`, `${count} pacientes`) }}</strong>
           {{ t(`match today and will enter ${when}.`, `coinciden hoy y entrarán ${when}.`) }}
@@ -73,7 +73,7 @@ const when = computed(() => {
       <div class="flex flex-wrap justify-end gap-2 px-6 pb-6 pt-4">
         <button type="button" class="h-9 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle touch:h-11" @click="emit('cancel')">{{ t('Cancel', 'Cancelar') }}</button>
         <button type="button" class="h-9 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle touch:h-11" :disabled="busy" data-test="segment-activate-test" @click="emit('activate', true)">{{ t('Try first (test mode)', 'Probar primero (modo prueba)') }}</button>
-        <button type="button" class="h-9 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface hover:bg-brand-hover touch:h-11" :disabled="busy" data-test="segment-activate-confirm" @click="emit('activate', false)">{{ t('Switch on', 'Activar') }}</button>
+        <button type="button" class="h-9 rounded-ctl bg-brand px-4 text-[13px] font-semibold text-brand-on hover:bg-brand-hover touch:h-11" :disabled="busy" data-test="segment-activate-confirm" @click="emit('activate', false)">{{ t('Switch on', 'Activar') }}</button>
       </div>
     </div>
   </div>

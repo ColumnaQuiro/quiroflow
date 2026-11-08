@@ -10,7 +10,7 @@ const t = useT()
   <div>
     <PatientPageHead
       :title="t('Your progress', 'Tu progreso')"
-      :lead="t('Your posture, assessment by assessment, as your chiropractor shares it.', 'Tu postura, valoración a valoración, tal y como te la comparte tu quiropráctico.')"
+      :lead="t('Your posture, assessment by assessment, as your clinic shares it with you.', 'Tu postura, valoración a valoración, tal y como te la comparte tu clínica.')"
     />
     <PatientPostureProgress />
   </div>

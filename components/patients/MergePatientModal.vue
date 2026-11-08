@@ -117,8 +117,8 @@ async function confirmMerge() {
   const losing = duplicate.value!
   const keeping = survivor.value!
   const warning = t(
-    `Merge ${fullName(losing)} into ${fullName(keeping)}? Every appointment, invoice, payment, bono and credit entry moves onto ${fullName(keeping)}, and the other record is deleted. This can't be undone.`,
-    `¿Fusionar ${fullName(losing)} en ${fullName(keeping)}? Todas las citas, facturas, pagos, bonos y créditos pasarán a ${fullName(keeping)}, y el otro registro se eliminará. Esta acción no se puede deshacer.`,
+    `Merge ${fullName(losing)} into ${fullName(keeping)}? Every appointment, receipt, factura, payment, bono and credit entry moves onto ${fullName(keeping)}, and the other record is deleted. This can't be undone.`,
+    `¿Fusionar ${fullName(losing)} en ${fullName(keeping)}? Todas las citas, recibos, facturas, pagos, bonos y créditos pasarán a ${fullName(keeping)}, y el otro registro se eliminará. Esta acción no se puede deshacer.`,
   )
   if (!confirm(warning)) return
 
@@ -130,7 +130,7 @@ async function confirmMerge() {
       p_duplicate_id: duplicateId,
     })
     if (rpcError) {
-      error.value = rpcError.message
+      error.value = `${t('The records were not merged. Nothing was moved or deleted.', 'No se han fusionado las fichas. No se ha movido ni eliminado nada.')} (${rpcError.message})`
       return
     }
     showToast(t('Patients merged', 'Pacientes fusionados'))
@@ -160,7 +160,7 @@ const money = (cents: number) => formatEur(cents)
       </p>
 
       <div class="mt-4">
-        <label class="block text-sm font-medium text-ink-700" for="merge-search">{{ t('Search by name, email or reference', 'Buscar por nombre, email o referencia') }}</label>
+        <label class="block text-sm font-medium text-ink-700" for="merge-search">{{ t('Search by name, email or reference', 'Buscar por nombre, correo o referencia') }}</label>
         <input
           id="merge-search"
           v-model="search"
@@ -198,7 +198,7 @@ const money = (cents: number) => formatEur(cents)
               :class="keep === 'current' ? 'bg-brand-bg' : 'hover:bg-surface-page'"
               @click="keep = 'current'"
             >
-              <span class="block text-[11px] uppercase tracking-wide text-ink-muted2">{{ keep === 'current' ? t('Keeps everything', 'Conserva todo') : t('Will be deleted', 'Se eliminará') }}</span>
+              <span class="block text-[11px] uppercase tracking-wide text-ink-muted2">{{ keep === 'current' ? t('Keeps everything', 'Conserva todo') : t('Moves across, then deleted', 'Se traslada y se elimina') }}</span>
               <span class="block text-[13px] font-medium text-ink-900">{{ fullName(patient) }}</span>
               <span class="block text-[12px] text-ink-muted2">{{ patient.external_reference || t('no reference', 'sin referencia') }}</span>
             </button>
@@ -208,7 +208,7 @@ const money = (cents: number) => formatEur(cents)
               :class="keep === 'other' ? 'bg-brand-bg' : 'hover:bg-surface-page'"
               @click="keep = 'other'"
             >
-              <span class="block text-[11px] uppercase tracking-wide text-ink-muted2">{{ keep === 'other' ? t('Keeps everything', 'Conserva todo') : t('Will be deleted', 'Se eliminará') }}</span>
+              <span class="block text-[11px] uppercase tracking-wide text-ink-muted2">{{ keep === 'other' ? t('Keeps everything', 'Conserva todo') : t('Moves across, then deleted', 'Se traslada y se elimina') }}</span>
               <span class="block text-[13px] font-medium text-ink-900">{{ fullName(selected) }}</span>
               <span class="block text-[12px] text-ink-muted2">{{ selected.external_reference || t('no reference', 'sin referencia') }}</span>
             </button>
@@ -217,9 +217,9 @@ const money = (cents: number) => formatEur(cents)
           <table class="w-full border-t border-line text-[13px]">
             <thead>
               <tr class="text-ink-muted2">
-                <th class="px-3 py-1.5 text-left font-medium">{{ t('Moving across', 'Se traslada') }}</th>
-                <th class="px-3 py-1.5 text-right font-medium">{{ t('Kept', 'Conservado') }}</th>
-                <th class="px-3 py-1.5 text-right font-medium">{{ t('Deleted', 'Eliminado') }}</th>
+                <th class="px-3 py-1.5 text-left font-medium">{{ t('On each record', 'En cada ficha') }}</th>
+                <th class="px-3 py-1.5 text-right font-medium">{{ t('Already kept', 'Ya en la que queda') }}</th>
+                <th class="px-3 py-1.5 text-right font-medium">{{ t('Moves across', 'Se traslada') }}</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-line">
@@ -229,7 +229,7 @@ const money = (cents: number) => formatEur(cents)
                 <td class="px-3 py-1.5 text-right font-medium">{{ duplicateHoldings?.appointments ?? '—' }}</td>
               </tr>
               <tr>
-                <td class="px-3 py-1.5">{{ t('Invoices', 'Facturas') }}</td>
+                <td class="px-3 py-1.5">{{ t('Receipts', 'Recibos') }}</td>
                 <td class="px-3 py-1.5 text-right">{{ survivorHoldings?.invoices ?? '—' }}</td>
                 <td class="px-3 py-1.5 text-right font-medium">{{ duplicateHoldings?.invoices ?? '—' }}</td>
               </tr>
@@ -256,7 +256,7 @@ const money = (cents: number) => formatEur(cents)
           {{ t('The kept record keeps its own details; only its blank fields are filled in from the other. Tags and contact numbers from both are kept.', 'El registro conservado mantiene sus datos; solo se rellenan sus campos vacíos con los del otro. Se conservan las etiquetas y los teléfonos de ambos.') }}
         </p>
 
-        <p v-if="error" class="mt-3 text-[13px] text-danger-text">{{ error }}</p>
+        <p v-if="error" role="alert" class="mt-3 text-[13px] text-danger-text">{{ error }}</p>
 
         <div class="mt-4 flex items-center gap-2">
           <UiBtn variant="primary" :disabled="merging" @click="confirmMerge">

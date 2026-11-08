@@ -19,14 +19,19 @@ async function onSubmit() {
   // patient follows that link back -- by which point this form is long
   // gone and the slug in localStorage is the only record of which clinic
   // they were signing up to.
+  if (!clinic.code.value.trim()) {
+    loading.value = false
+    error.value = t('Enter the code your clinic gave you.', 'Escribe el código que te dio tu clínica.')
+    return
+  }
   let slug: string
   try {
     slug = await clinic.resolve()
   } catch {
     loading.value = false
     error.value = t(
-      'Clinic code not found -- check the code your clinic gave you.',
-      'No encontramos ese código de clínica: revisa el que te dio tu clínica.',
+      "We couldn't find that clinic code. Check the code your clinic gave you.",
+      'No encontramos ese código de clínica. Revisa el que te dio tu clínica.',
     )
     return
   }
@@ -121,7 +126,7 @@ function useDifferentEmail() {
         <p class="mt-2 text-[14.5px] leading-[1.55] text-ink-muted lg:text-[15px]">
           {{
             t(
-              'Use the same email your clinic has on file for you -- that is how we find your record.',
+              'Use the same email your clinic has for you. That is how we find your record.',
               'Usa el mismo correo que tiene tu clínica: así encontramos tu ficha.',
             )
           }}

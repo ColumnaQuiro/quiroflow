@@ -11,7 +11,7 @@ describe('Patients', () => {
       cy.get('#dob').type('1990-05-15')
       cy.get('#email').type('jane.doe@example.test')
       cy.get('#tags').type('vip, referral')
-      cy.contains('button', 'Add Patient').click()
+      cy.contains('button', 'Add patient').click()
 
       cy.location('pathname', { timeout: 15000 }).should('match', /^\/patients\/[0-9a-f-]+$/)
       cy.contains('Jane Doe').should('be.visible')

@@ -114,7 +114,7 @@ describe('The out-of-hours question on a move', () => {
       cy.wrap(asked).its(0).should('contain', 'outside working hours')
       // Declining leaves reschedule mode running and the visit untouched: no
       // confirmation dialog, still at its original time.
-      cy.contains('h2', 'Rescheduling Appointment').should('not.exist')
+      cy.contains('h2', 'Reschedule appointment').should('not.exist')
       cy.contains('Lauren Movida').should('be.visible')
     })
   })
@@ -134,7 +134,7 @@ describe('The out-of-hours question on a move', () => {
       cy.get('[data-cal-col]').first().click(30, 60)
 
       // Straight to the move's own confirmation, nothing in the way.
-      cy.contains('h2', 'Rescheduling Appointment').should('be.visible')
+      cy.contains('h2', 'Reschedule appointment').should('be.visible')
       cy.wrap(asked).should('have.length', 0)
     })
   })

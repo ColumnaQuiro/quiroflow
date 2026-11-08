@@ -74,13 +74,13 @@ describe('The calendar when something fails', () => {
 
             // A second finger lifting is not the end of this drag.
             cy.window().trigger('pointerup', { pointerId: 8, clientX: x, clientY: y + px })
-            cy.contains('h2', 'Rescheduling Appointment').should('not.exist')
+            cy.contains('h2', 'Reschedule appointment').should('not.exist')
             block().should(($b) => expect($b[0].style.top).not.to.eq(top))
 
             // The browser takes the gesture for a scroll.
             cy.window().trigger('pointercancel', { pointerId: 7, clientX: x, clientY: y + px })
             block().should(($b) => expect($b[0].style.top).to.eq(top))
-            cy.contains('h2', 'Rescheduling Appointment').should('not.exist')
+            cy.contains('h2', 'Reschedule appointment').should('not.exist')
           })
         })
 

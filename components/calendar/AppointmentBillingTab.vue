@@ -109,7 +109,7 @@ const fieldId = useId()
         </p>
         <p v-else class="text-ink-faint">{{ t('No active membership', 'Sin membresía activa') }}</p>
         <div v-if="activePackages.length > 0" class="flex flex-wrap items-center gap-1">
-          <span class="text-ink-muted2">{{ t('Packages:', 'Bonos:') }}</span>
+          <span class="text-ink-muted2">{{ t('Bonos:', 'Bonos:') }}</span>
           <UiPill
             v-for="p in activePackages"
             :key="p.id"
@@ -228,7 +228,7 @@ const fieldId = useId()
               class="-my-1 -mr-1.5 flex h-7 w-7 items-center justify-center rounded-ctlSm text-ink-faint hover:bg-danger-bg hover:text-danger-text touch:h-11 touch:w-11"
               @click="removeLineItem(line)"
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true" class="h-3.5 w-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+              <UiCloseIcon />
             </button>
           </span>
         </li>
@@ -240,7 +240,7 @@ const fieldId = useId()
         class="mt-2 h-9 w-full rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none touch:h-11"
         @change="addLineItem"
       >
-        <option value="" disabled>{{ t('-- Add Service/Product --', '-- Añadir servicio/producto --') }}</option>
+        <option value="" disabled>{{ t('Add a service or product…', 'Añadir un servicio o producto…') }}</option>
         <option v-for="s in services" :key="s.id" :value="s.id">{{ s.name }} ({{ formatEur(s.price_cents) }})</option>
       </select>
 
@@ -285,7 +285,7 @@ const fieldId = useId()
         v-if="can('billing_access') && invoice.status !== 'paid' && activePackages.length > 0"
         class="mt-2 flex flex-wrap items-center gap-2 border-t border-line-divider pt-2"
       >
-        <span class="text-[12px] text-ink-muted2">{{ t('Or use a package session:', 'O usar una sesión de bono:') }}</span>
+        <span class="text-[12px] text-ink-muted2">{{ t('Or use a bono session:', 'O usar una sesión de bono:') }}</span>
         <button
           v-for="p in activePackages"
           :key="p.id"

@@ -28,8 +28,10 @@ const props = withDefaults(
      * at the very end.
      */
     media?: boolean
+    /** The channel the reply goes out on; it decides how long a message may be. */
+    channel?: string
   }>(),
-  { disabled: false, media: true },
+  { disabled: false, media: true, channel: 'whatsapp' },
 )
 
 const emit = defineEmits<{
@@ -70,9 +72,33 @@ function insertReply(reply: string) {
 // And "r" puts the cursor here (the Inbox's shortcuts).
 defineExpose({ insertReply, focus: () => textarea.value?.focus() })
 
+// What each channel accepts in one message. Meta refuses anything longer --
+// after the bubble has been drawn as sending -- with an error naming a
+// parameter nobody at the desk has heard of. Said here instead, while the
+// text can still be cut. Counted in characters (code points), as Meta does,
+// not in UTF-16 units, which count an emoji twice.
+const LIMITS: Record<string, { max: number; name: string }> = {
+  whatsapp: { max: 4096, name: 'WhatsApp' },
+  instagram: { max: 1000, name: 'Instagram' },
+  messenger: { max: 2000, name: 'Messenger' },
+}
+const limit = computed(() => LIMITS[props.channel] ?? LIMITS.whatsapp)
+const length = computed(() => [...text.value.trim()].length)
+const overBy = computed(() => Math.max(0, length.value - limit.value.max))
+// Only once it is worth knowing: most replies are a line or two.
+const showCount = computed(() => length.value >= limit.value.max * 0.85)
+
 function submit() {
-  if (props.sending || props.disabled || !text.value.trim()) return
+  if (props.sending || props.disabled || !text.value.trim() || overBy.value > 0) return
   emit('send')
+}
+
+// Enter while an input method is composing (Japanese, Chinese, Korean) is the
+// key that confirms the word, not a send.
+function onEnter(e: KeyboardEvent) {
+  if (e.isComposing || e.keyCode === 229) return
+  e.preventDefault()
+  submit()
 }
 
 const MAX_MEDIA_BYTES = 16 * 1024 * 1024
@@ -100,7 +126,13 @@ async function onFileChosen(e: Event) {
       emit('error', err?.message ?? t('Could not process this image.', 'No se pudo procesar esta imagen.'))
     }
   } else {
-    emit('media', { base64: await blobToBase64(file), mimeType: file.type, filename: file.name, kind })
+    // A file the browser cannot read (moved, on a disconnected drive, a
+    // cloud placeholder) rejected here with nothing said at all.
+    try {
+      emit('media', { base64: await blobToBase64(file), mimeType: file.type, filename: file.name, kind })
+    } catch {
+      emit('error', t("Couldn't read this file. Try choosing it again.", 'No se ha podido leer este archivo. Vuelve a elegirlo.'))
+    }
   }
 }
 
@@ -121,7 +153,7 @@ async function toggleRecording() {
   try {
     await startRecording()
   } catch {
-    emit('error', t('Could not access the microphone -- check your browser permissions.', 'No se pudo acceder al micrófono; comprueba los permisos del navegador.'))
+    emit('error', t("Couldn't use the microphone. Allow it in your browser's permissions for this site.", 'No se ha podido usar el micrófono. Permítelo en los permisos del navegador para este sitio.'))
   }
 }
 
@@ -142,7 +174,7 @@ function recordingLabel(secs: number) {
   <!-- On a phone the message box takes the full width on a row of its own,
   with attach, voice, saved replies and Send under it: inline it was left
   about 130px between them. -->
-  <div v-else class="flex flex-wrap items-end gap-2 sm:flex-nowrap">
+  <div v-else class="flex flex-wrap items-end gap-2" :class="showCount ? '' : 'sm:flex-nowrap'">
     <button
       v-if="media"
       type="button"
@@ -167,7 +199,7 @@ function recordingLabel(secs: number) {
       :aria-label="t('Record a voice note', 'Grabar una nota de voz')"
       @click="toggleRecording"
     >
-      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
         <rect x="5.5" y="1.5" width="5" height="8" rx="2.5" />
         <path d="M3 8a5 5 0 0 0 10 0M8 13v1.5" stroke-linecap="round" />
       </svg>
@@ -178,8 +210,12 @@ function recordingLabel(secs: number) {
       v-model="text"
       rows="1"
       :placeholder="t('Type a message…', 'Escribe un mensaje…')"
-      class="order-first max-h-32 min-h-9 w-full touch:min-h-11 resize-none rounded-ctl border border-line-control bg-surface px-3 py-[10px] text-[15px] text-ink-900 focus:border-brand focus:outline-none sm:order-none sm:w-auto sm:flex-1"
-      @keydown.enter.exact.prevent="submit"
+      :aria-label="t('Message', 'Mensaje')"
+      :aria-invalid="overBy > 0 || undefined"
+      :aria-describedby="showCount ? 'composer-count' : undefined"
+      class="order-first max-h-32 min-h-9 w-full touch:min-h-11 resize-none rounded-ctl border bg-surface px-3 py-[10px] text-[15px] text-ink-900 focus:outline-none sm:order-none sm:w-auto sm:flex-1"
+      :class="overBy > 0 ? 'border-danger-text focus:border-danger-text' : 'border-line-control focus:border-brand'"
+      @keydown.enter.exact="onEnter"
     />
     <!-- Anything a thread adds beside Send: a lead's "Draft a reply". -->
     <slot name="actions" />
@@ -187,8 +223,21 @@ function recordingLabel(secs: number) {
       type="button"
       data-cy="thread-send"
       class="ml-auto h-9 touch:h-11 shrink-0 rounded-ctl bg-brand sm:ml-0 px-4 text-[14px] font-bold text-surface hover:bg-brand-hover disabled:opacity-50"
-      :disabled="sending || !text.trim() || disabled"
+      :disabled="sending || !text.trim() || disabled || overBy > 0"
+      :aria-label="sending ? t('Sending…', 'Enviando…') : undefined"
       @click="submit"
     >{{ sending ? '…' : t('Send', 'Enviar') }}</button>
+    <!-- Under the row, full width, so it never squeezes the box. -->
+    <p
+      v-if="showCount"
+      id="composer-count"
+      class="w-full text-[12px]"
+      :class="overBy > 0 ? 'text-danger-text' : 'text-ink-muted'"
+      aria-live="polite"
+      data-cy="composer-count"
+    >
+      <template v-if="overBy > 0">{{ t(`Too long for ${limit.name}: remove ${overBy} characters, or send it in two messages.`, `Demasiado largo para ${limit.name}: quita ${overBy} caracteres o envíalo en dos mensajes.`) }}</template>
+      <span class="font-mono" :class="overBy > 0 ? 'ml-1' : ''">{{ length }} / {{ limit.max }}</span>
+    </p>
   </div>
 </template>

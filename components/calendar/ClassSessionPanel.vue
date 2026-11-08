@@ -288,7 +288,7 @@ const toggle = 'h-[30px] rounded-ctl border px-2.5 text-[12px] font-semibold dis
           <p class="mt-0.5 text-[12.5px] capitalize text-ink-muted">{{ when }}</p>
           <p class="text-[12.5px] text-ink-muted">{{ session?.team_members?.full_name }}<template v-if="session?.calendar_resources"> · {{ session.calendar_resources.name }}</template></p>
         </div>
-        <button type="button" :aria-label="t('Close', 'Cerrar')" class="flex items-center justify-center rounded-ctlSm -m-2 p-2 text-ink-faint hover:text-ink-600" @click="emit('close')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true" class="h-4 w-4"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
+        <button type="button" :aria-label="t('Close', 'Cerrar')" class="flex items-center justify-center rounded-ctlSm -m-2 p-2 text-ink-faint hover:text-ink-600" @click="emit('close')"><UiCloseIcon /></button>
       </div>
 
       <p v-if="session?.cancelled_at" class="rounded-ctl bg-danger-bg px-3 py-2 text-[13px] text-danger-text">{{ t('This class was cancelled.', 'Esta clase se canceló.') }}</p>

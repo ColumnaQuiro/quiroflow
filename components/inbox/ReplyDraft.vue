@@ -56,8 +56,8 @@ async function ask() {
   note.value = ''
   try {
     const r = await props.draftFor(props.patientId)
-    if (!r.available) note.value = t('Reply drafts are not set up on this deployment.', 'Los borradores de respuesta no están configurados en este despliegue.')
-    else if (r.refused || !r.draft) note.value = t("The receptionist didn't want to answer this one -- reply yourself.", 'La recepcionista no ha querido responder a este -- respóndele tú.')
+    if (!r.available) note.value = t("Reply drafts aren't available right now. Reply yourself.", 'Los borradores de respuesta no están disponibles ahora mismo. Responde tú.')
+    else if (r.refused || !r.draft) note.value = t("The receptionist didn't write a draft for this message. Reply yourself.", 'La recepcionista no ha redactado nada para este mensaje. Responde tú.')
     else {
       draft.value = r.draft
       draftAt.value = new Date().toISOString()

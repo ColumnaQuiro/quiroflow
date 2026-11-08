@@ -129,7 +129,7 @@ function askToBook() {
       </div>
       <p class="mt-1.5 text-[12.5px] text-ink-muted">
         <template v-if="progress.left === null">
-          {{ t('Maintenance, with no end', 'Mantenimiento, sin fin') }}
+          {{ t('Ongoing maintenance plan', 'Plan de mantenimiento, sin fecha de fin') }}
           <template v-if="cadence"> &middot; {{ cadence }}</template>
         </template>
         <template v-else-if="progress.left === 0">{{ t('Plan complete. Well done!', '¡Plan completado! Buen trabajo.') }}</template>

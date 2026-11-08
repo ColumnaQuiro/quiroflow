@@ -205,8 +205,8 @@ const navGroups = computed<{ id: string; label: string; tier?: string; items: Na
       // "Overview", not a second "Dashboard": collapsed, or read aloud, two
       // items with one name are indistinguishable.
       { label: t('Overview', 'Resumen'), to: '/growth', exact: true, perm: () => can('communication_config'), icon: 'M2 12.5V7m3.5 5.5V3.5M9 12.5V9m3.5 3.5V5.5' },
-      { label: t('Leads', 'Contactos'), to: '/growth/leads', perm: () => can('communication_config'), icon: 'M2.5 3.5h11v9h-11zM2.5 6.5h11M6 6.5v6' },
-      { label: t('AI Receptionist', 'Recepcionista IA'), to: '/growth/receptionist', perm: () => can('communication_config'), icon: 'M4 5.5h8v5h-3l-2 2v-2h-3zM6.2 8h.01M9.8 8h.01' },
+      { label: t('Leads', 'Leads'), to: '/growth/leads', perm: () => can('communication_config'), icon: 'M2.5 3.5h11v9h-11zM2.5 6.5h11M6 6.5v6' },
+      { label: t('AI receptionist', 'Recepcionista IA'), to: '/growth/receptionist', perm: () => can('communication_config'), icon: 'M4 5.5h8v5h-3l-2 2v-2h-3zM6.2 8h.01M9.8 8h.01' },
       { label: t('Reputation', 'Reputación'), to: '/growth/reputation', perm: () => can('communication_config'), icon: 'M8 1.8l1.8 3.7 4 .6-2.9 2.8.7 4L8 11l-3.6 1.9.7-4-2.9-2.8 4-.6z' },
     ],
   },

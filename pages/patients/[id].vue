@@ -256,7 +256,7 @@ async function toggleArchived() {
     const { data, error } = await supabase.from('patients').update({ status: nextStatus }).eq('id', patientId).select('id')
     if (error || !data?.length) {
       const what = nextStatus === 'inactive' ? t("Couldn't archive the patient", 'No se ha podido archivar al paciente') : t("Couldn't unarchive the patient", 'No se ha podido desarchivar al paciente')
-      showToast(error ? `${what}: ${error.message}` : `${what}. ${t("You don't have permission to change this record.", 'No tienes permiso para cambiar esta ficha.')}`, 'error')
+      showToast(error ? `${what}. (${error.message})` : `${what}. ${t("You don't have permission to change this record.", 'No tienes permiso para cambiar esta ficha.')}`, 'error')
       return
     }
     patient.value.status = nextStatus

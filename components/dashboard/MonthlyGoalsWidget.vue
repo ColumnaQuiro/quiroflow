@@ -44,8 +44,26 @@ function startEditing() {
 }
 
 async function save() {
-  saving.value = true
   error.value = ''
+  // Something typed that is not a number used to fall through to "no goal"
+  // and delete that goal without a word. Empty (or 0) still means no goal.
+  const unreadable = GOAL_METRICS.filter((k) => {
+    const raw = draft.value[k].trim()
+    if (!raw) return false
+    const n = k === 'collected_cents' ? parseEurosToCents(raw) : Number(raw)
+    return n === null || !Number.isFinite(n) || n < 0 || (k !== 'collected_cents' && !Number.isInteger(n))
+  })
+  if (unreadable.length) {
+    const fixes = unreadable.map((k) => {
+      const [en, es] = GOAL_LABELS[k]
+      return k === 'collected_cents'
+        ? t(`${en}: enter an amount in euros, such as 9000 or 9000,50.`, `${es}: escribe un importe en euros, como 9000 o 9000,50.`)
+        : t(`${en}: enter a whole number.`, `${es}: escribe un número entero.`)
+    })
+    error.value = [...fixes, t('Leave a field empty for no goal.', 'Deja un campo vacío para no tener objetivo.')].join(' ')
+    return
+  }
+  saving.value = true
   const day = `${month.value}-01`
   const upserts: { account_id: string; month: string; metric: GoalMetric; target: number; updated_at: string }[] = []
   const removed: GoalMetric[] = []

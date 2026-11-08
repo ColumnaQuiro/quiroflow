@@ -78,7 +78,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
       class="relative flex h-full w-full max-w-[720px] flex-col bg-surface shadow-drawer"
       role="dialog"
       aria-modal="true"
-      :aria-label="`${t('Lead', 'Contacto')} ${lead.name}`"
+      :aria-label="`${t('Lead', 'Lead')} ${lead.name}`"
     >
       <header class="flex shrink-0 flex-col gap-3 border-b border-line px-5 py-4">
         <div class="flex items-start justify-between gap-3">

@@ -532,7 +532,22 @@ function statusChangeText(from: string, to: string) {
     case 'booked':
       return from === 'completed' ? t('Visit undone', 'Visita deshecha') : t('Restored', 'Reactivada')
     default:
-      return t(`Status: ${from} → ${to}`, `Estado: ${from} → ${to}`)
+      return t(`Status: ${statusName(from)} → ${statusName(to)}`, `Estado: ${statusName(from)} → ${statusName(to)}`)
+  }
+}
+// The stored status, in words; anything unrecognised keeps its raw value.
+function statusName(status: string) {
+  switch (status) {
+    case 'booked':
+      return t('booked', 'reservada')
+    case 'completed':
+      return t('done', 'hecha')
+    case 'cancelled':
+      return t('cancelled', 'cancelada')
+    case 'no_show':
+      return t('no-show', 'no vino')
+    default:
+      return status
   }
 }
 function activityText(change: ActivityChange): string {
@@ -800,7 +815,7 @@ async function useExpectedType() {
       <div v-if="tab === 'summary'" class="flex flex-col gap-6">
         <!-- Where it stands: status + confirmation + flow, one track. -->
         <section>
-          <h3 class="mb-2.5 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted">{{ t('Where it stands', 'Dónde está') }}</h3>
+          <h3 class="mb-2.5 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted">{{ t('Where it stands', 'En qué punto está') }}</h3>
           <ol v-if="onTrack" class="grid grid-cols-5 gap-1.5" :aria-label="t('Appointment stage', 'Estado de la cita')" data-cy="stage-track">
             <li v-for="s in trackSteps" :key="s.key" class="flex min-w-0 flex-col gap-1" :data-state="s.state" :aria-current="s.state === 'current' ? 'step' : undefined">
               <span class="h-1.5 rounded-[3px]" :class="s.state === 'done' || s.state === 'current' ? 'bg-success-accent' : s.state === 'waiting' ? 'bg-warning-accent' : 'bg-line'" />
@@ -1003,7 +1018,7 @@ async function useExpectedType() {
     @confirm="remove"
     @cancel="deleteOpen = false"
   >
-    <p class="text-[14px] leading-relaxed text-ink-500">{{ t('It disappears from the calendar. To keep a record that the patient did not come, cancel it instead.', 'Desaparece del calendario. Para dejar constancia de que el paciente no vino, cancélala en su lugar.') }}</p>
+    <p class="text-[14px] leading-relaxed text-ink-500">{{ t('It disappears from the calendar. To keep a record of it, cancel it or mark it as a no-show instead.', 'Desaparece del calendario. Para que quede constancia, cancélala o márcala como «No vino».') }}</p>
   </UiConfirmDialog>
 
   <UiConfirmDialog

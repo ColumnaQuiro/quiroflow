@@ -7,7 +7,7 @@ defineProps<{ label: string; loading?: boolean }>()
 
 <template>
   <div class="rounded-card border border-line bg-surface p-4 shadow-card" :aria-busy="loading || undefined" data-pdf-kpi>
-    <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2" data-pdf-label>{{ label }}</p>
+    <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2" data-pdf-label>{{ label }}</p>
     <!-- Same font size as the value, so the line box -- and the tile -- is the
     same height with the placeholder as with the number. -->
     <div v-if="loading" class="mt-1.5 flex items-center font-mono text-[23px]" aria-hidden="true">

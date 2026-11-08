@@ -65,19 +65,24 @@ const markerRows = ref<MarkerMismatchRow[]>([])
 const markerError = ref('')
 const fixing = ref<string | null>(null)
 const loading = ref(true)
+// A failed read is said, with a way to try again. It used to land in the
+// empty branch: "No care plans behind schedule" on a list that never arrived.
+const loadError = ref(false)
 const messagingPatientId = ref<string | null>(null)
 
 // Silent after a message goes out: the list is already on screen, and
 // swapping it for skeleton rows to drop one patient was a jump for nothing.
 async function load(opts: { silent?: boolean } = {}) {
   if (!opts.silent) loading.value = true
-  const [{ data }, { data: exercises }] = await Promise.all([
+  const [{ data, error }, { data: exercises, error: exercisesError }] = await Promise.all([
     supabase.from('care_plan_continuity_alerts').select('*').order('days_overdue', { ascending: false }),
     supabase
       .from('exercise_adherence_alerts')
       .select('patient_id, first_name, last_name, preferred_language, active_exercises, last_done_on, days_without')
       .order('days_without', { ascending: false }),
   ])
+  loadError.value = !!(error || exercisesError)
+  if (loadError.value) console.error('[care-plan-alerts] load error', error ?? exercisesError)
   rows.value = (data as AlertRow[]) ?? []
   exerciseRows.value = (exercises as ExerciseAlertRow[] | null) ?? []
   await loadMarkerMismatches()
@@ -149,12 +154,15 @@ function onSent() {
   messagingPatientId.value = null
   load({ silent: true })
 }
+// The shared empty state, drawn inside each table's own card: its border and
+// shadow would otherwise put a card inside a card.
+const INSET_EMPTY = '!py-0 [&>div]:max-w-none [&>div]:gap-3 [&>div]:border-0 [&>div]:py-7 [&>div]:shadow-none'
 const messagingRow = computed(() => [...rows.value, ...exerciseRows.value].find((r) => r.patient_id === messagingPatientId.value) ?? null)
 </script>
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader :title="t('Care Plan Alerts', 'Alertas de plan de cuidados')" :meta="loading ? undefined : `${rows.length} ${t('behind schedule', 'con retraso')}`" />
+    <PageHeader :title="t('Care Plan Alerts', 'Alertas de plan de cuidados')" :meta="loading || loadError ? undefined : `${rows.length} ${t('behind schedule', 'con retraso')}`" />
 
     <div class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] sm:px-6">
       <p class="mb-4 text-[13px] text-ink-muted2">
@@ -167,8 +175,27 @@ const messagingRow = computed(() => [...rows.value, ...exerciseRows.value].find(
       </p>
 
       <div class="overflow-x-auto rounded-card border border-line bg-surface shadow-card">
-        <table class="w-full text-[13px]" :class="rows.length ? 'min-w-[640px]' : ''">
-          <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2">
+        <UiEmptyState
+          v-if="!loading && loadError"
+          :title="t(`Couldn't load the alerts`, 'No se han podido cargar las alertas')"
+          :description="t('The connection dropped or the server took too long to answer. Nothing has been changed.', 'Se ha cortado la conexión o el servidor ha tardado demasiado en responder. No se ha cambiado nada.')"
+          :class="INSET_EMPTY"
+          data-cy="care-plan-alerts-load-error"
+        >
+          <template #icon>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" /></svg>
+          </template>
+          <template #actions>
+            <UiBtn @click="load()">{{ t('Try again', 'Reintentar') }}</UiBtn>
+          </template>
+        </UiEmptyState>
+        <UiEmptyState v-else-if="!loading && rows.length === 0" :title="t('No care plans behind schedule', 'Ningún plan de cuidados retrasado')" :class="INSET_EMPTY" data-cy="care-plan-alerts-empty">
+          <template #icon>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          </template>
+        </UiEmptyState>
+        <table v-else class="w-full min-w-[640px] text-[13px]">
+          <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">
             <tr>
               <th class="px-3 py-2">{{ t('Patient', 'Paciente') }}</th>
               <th class="px-3 py-2">{{ t('Plan', 'Plan') }}</th>
@@ -191,24 +218,21 @@ const messagingRow = computed(() => [...rows.value, ...exerciseRows.value].find(
                 <td class="px-3 py-2.5" />
               </tr>
             </template>
-            <tr v-else-if="rows.length === 0">
-              <td colspan="7" class="px-3 py-6 text-center text-ink-faint">{{ t('No care plans behind schedule.', 'Ningún plan de cuidados retrasado.') }}</td>
-            </tr>
-            <tr v-for="row in rows" :key="row.patient_id">
+            <tr v-for="row in loading ? [] : rows" :key="row.patient_id">
               <td class="px-3 py-2">
-                <NuxtLink :to="`/patients/${row.patient_id}`" class="font-medium text-ink-900 hover:text-brand-text">{{ patientName(row) }}</NuxtLink>
+                <NuxtLink :to="`/patients/${row.patient_id}`" class="whitespace-nowrap font-medium text-ink-900 hover:text-brand-text">{{ patientName(row) }}</NuxtLink>
               </td>
               <td class="px-3 py-2 text-ink-muted2">{{ row.care_plan_name }} · {{ cadenceLabel(row) }}</td>
               <td class="px-3 py-2 text-ink-muted2">{{ row.total_visits === null ? t(`${row.completed_in_plan} · no end`, `${row.completed_in_plan} · sin fin`) : `${row.completed_in_plan} / ${row.total_visits}` }}</td>
               <td class="px-3 py-2 text-ink-muted2">{{ formatDate(row.last_appointment_at) }}</td>
               <td class="px-3 py-2 text-ink-muted2">{{ formatDate(row.due_date) }}</td>
+              <!-- Amber, as a long lapse is on Recalls: red is money there, and
+                   DESIGN.md keeps it for errors, debts and cancellations. -->
               <td class="px-3 py-2">
-                <UiPill tone="danger">{{ row.days_overdue }} {{ t('days', 'días') }}</UiPill>
+                <UiPill tone="warning" class="whitespace-nowrap">{{ row.days_overdue }} {{ t('days', 'días') }}</UiPill>
               </td>
               <td class="px-3 py-2 text-right">
-                <button type="button" class="text-[12px] font-medium text-brand-text hover:underline" @click="openMessage(row)">
-                  {{ t('Message', 'Mensaje') }}
-                </button>
+                <UiBtn size="sm" data-cy="care-plan-alert-message" @click="openMessage(row)">{{ t('Message', 'Mensaje') }}</UiBtn>
               </td>
             </tr>
           </tbody>
@@ -224,10 +248,15 @@ const messagingRow = computed(() => [...rows.value, ...exerciseRows.value].find(
           )
         }}
       </p>
-      <p v-if="markerError" class="mb-3 rounded-ctl bg-danger-bg px-3 py-2 text-[13px] text-danger-text">{{ markerError }}</p>
+      <p v-if="markerError" role="alert" class="mb-3 rounded-ctl bg-danger-bg px-3 py-2 text-[13px] text-danger-text">{{ markerError }}</p>
       <div class="overflow-x-auto rounded-card border border-line bg-surface shadow-card" data-cy="marker-mismatches">
-        <table class="w-full text-[13px]" :class="markerRows.length ? 'min-w-[640px]' : ''">
-          <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2">
+        <UiEmptyState v-if="!loading && markerRows.length === 0" :title="t('Every upcoming re-exam is booked as its plan says', 'Todas las próximas revisiones están reservadas como dice su plan')" :class="INSET_EMPTY">
+          <template #icon>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          </template>
+        </UiEmptyState>
+        <table v-else class="w-full min-w-[640px] text-[13px]">
+          <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">
             <tr>
               <th class="px-3 py-2">{{ t('Patient', 'Paciente') }}</th>
               <th class="px-3 py-2">{{ t('When', 'Cuándo') }}</th>
@@ -241,23 +270,20 @@ const messagingRow = computed(() => [...rows.value, ...exerciseRows.value].find(
             <tr v-if="loading">
               <td colspan="6" class="px-3 py-2.5"><UiSkeleton class="h-3.5 w-40 rounded-ctlSm" /></td>
             </tr>
-            <tr v-else-if="markerRows.length === 0">
-              <td colspan="6" class="px-3 py-6 text-center text-ink-faint">{{ t('Every upcoming re-exam is booked as its plan says.', 'Todas las próximas revisiones están reservadas como dice su plan.') }}</td>
-            </tr>
             <tr v-for="row in loading ? [] : markerRows" :key="row.appointment_id" data-cy="marker-mismatch-row">
               <td class="px-3 py-2">
-                <NuxtLink :to="`/patients/${row.patient_id}`" class="font-medium text-ink-900 hover:text-brand-text">{{ row.patient_name }}</NuxtLink>
+                <NuxtLink :to="`/patients/${row.patient_id}`" class="whitespace-nowrap font-medium text-ink-900 hover:text-brand-text">{{ row.patient_name }}</NuxtLink>
               </td>
               <td class="px-3 py-2 text-ink-muted2">{{ formatDateTime(row.starts_at) }}</td>
               <td class="px-3 py-2 text-ink-muted2">
                 <span class="inline-flex items-center gap-1"><CalendarVisitMarkerIcon class="text-brand-text" />{{ row.visit_number }} · {{ row.label }}</span>
               </td>
-              <td class="px-3 py-2"><UiPill tone="warning">{{ row.booked_type_name ?? t('No type', 'Sin tipo') }}</UiPill></td>
+              <td class="px-3 py-2"><UiPill tone="warning" class="whitespace-nowrap">{{ row.booked_type_name ?? t('No type', 'Sin tipo') }}</UiPill></td>
               <td class="px-3 py-2 text-ink-muted2">{{ row.expected_type_name }}</td>
               <td class="px-3 py-2 text-right">
-                <button type="button" :disabled="fixing === row.appointment_id" class="text-[12px] font-medium text-brand-text hover:underline disabled:opacity-50" data-cy="marker-mismatch-fix" @click="fixMarker(row)">
+                <UiBtn size="sm" :disabled="fixing === row.appointment_id" data-cy="marker-mismatch-fix" @click="fixMarker(row)">
                   {{ t(`Change to ${row.expected_type_name}`, `Cambiar a ${row.expected_type_name}`) }}
-                </button>
+                </UiBtn>
               </td>
             </tr>
           </tbody>
@@ -268,9 +294,16 @@ const messagingRow = computed(() => [...rows.value, ...exerciseRows.value].find(
       <p class="mb-4 text-[13px] text-ink-muted2">
         {{ t('Patients with the app and home exercises who have not ticked any for 5 days or more.', 'Pacientes con la app y ejercicios en casa que llevan 5 días o más sin marcar ninguno.') }}
       </p>
-      <div class="overflow-x-auto rounded-card border border-line bg-surface shadow-card" data-cy="exercise-alerts">
-        <table class="w-full text-[13px]" :class="exerciseRows.length ? 'min-w-[560px]' : ''">
-          <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2">
+      <!-- Not drawn on a failed read: the error above already says so, and an
+           empty table here would read as "nobody". -->
+      <div v-if="loading || !loadError" class="overflow-x-auto rounded-card border border-line bg-surface shadow-card" data-cy="exercise-alerts">
+        <UiEmptyState v-if="!loading && exerciseRows.length === 0" :title="t('Everyone with exercises is keeping up', 'Todos los que tienen ejercicios los están haciendo')" :class="INSET_EMPTY">
+          <template #icon>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          </template>
+        </UiEmptyState>
+        <table v-else class="w-full min-w-[560px] text-[13px]">
+          <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">
             <tr>
               <th class="px-3 py-2">{{ t('Patient', 'Paciente') }}</th>
               <th class="px-3 py-2">{{ t('Exercises', 'Ejercicios') }}</th>
@@ -283,22 +316,17 @@ const messagingRow = computed(() => [...rows.value, ...exerciseRows.value].find(
             <tr v-if="loading">
               <td colspan="5" class="px-3 py-2.5"><UiSkeleton class="h-3.5 w-40 rounded-ctlSm" /></td>
             </tr>
-            <tr v-else-if="exerciseRows.length === 0">
-              <td colspan="5" class="px-3 py-6 text-center text-ink-faint">{{ t('Everyone with exercises is keeping up.', 'Todos los que tienen ejercicios los están haciendo.') }}</td>
-            </tr>
             <tr v-for="row in loading ? [] : exerciseRows" :key="row.patient_id" data-cy="exercise-alert-row">
               <td class="px-3 py-2">
-                <NuxtLink :to="`/patients/${row.patient_id}?tab=clinical`" class="font-medium text-ink-900 hover:text-brand-text">{{ patientName(row) }}</NuxtLink>
+                <NuxtLink :to="`/patients/${row.patient_id}?tab=clinical`" class="whitespace-nowrap font-medium text-ink-900 hover:text-brand-text">{{ patientName(row) }}</NuxtLink>
               </td>
               <td class="px-3 py-2 text-ink-muted2">{{ row.active_exercises }}</td>
               <td class="px-3 py-2 text-ink-muted2">{{ row.last_done_on ? formatDate(`${row.last_done_on}T12:00:00Z`) : t('Never', 'Nunca') }}</td>
               <td class="px-3 py-2">
-                <UiPill tone="warning">{{ row.days_without }} {{ t('days', 'días') }}</UiPill>
+                <UiPill tone="warning" class="whitespace-nowrap">{{ row.days_without }} {{ t('days', 'días') }}</UiPill>
               </td>
               <td class="px-3 py-2 text-right">
-                <button type="button" class="text-[12px] font-medium text-brand-text hover:underline" data-cy="exercise-alert-message" @click="openMessage(row)">
-                  {{ t('Message', 'Mensaje') }}
-                </button>
+                <UiBtn size="sm" data-cy="exercise-alert-message" @click="openMessage(row)">{{ t('Message', 'Mensaje') }}</UiBtn>
               </td>
             </tr>
           </tbody>

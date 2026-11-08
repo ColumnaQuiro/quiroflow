@@ -58,6 +58,9 @@ const hasPhoneByPatient = ref<Record<string, boolean>>({})
 const balanceByPatient = ref<Record<string, number>>({})
 const onPlan = ref<Set<string>>(new Set())
 const loading = ref(true)
+// A failed read is said, with a way to try again; it used to fall through to
+// "Nobody matches these filters", which reads as an empty queue.
+const loadError = ref(false)
 // Contact history, phones, balances and care plans arrive after the rows: the
 // cells that read them show a skeleton meanwhile rather than "Not contacted
 // yet" or "—", which would be wrong for a second.
@@ -167,6 +170,7 @@ async function load() {
     const { data, error } = await query
     if (token !== loadToken) return
     if (error) console.error('[recalls] load error', error)
+    loadError.value = !!error
     const rows = (data ?? []) as Recall[]
     if (isPaginated.value) {
       hasNextPage.value = rows.length > PAGE_SIZE
@@ -186,6 +190,7 @@ async function load() {
     const { data, error } = await buildParkedQuery(tab.value).range(0, 499)
     if (token !== loadToken) return
     if (error) console.error('[recalls] parked load error', error)
+    loadError.value = !!error
     parked.value = (data ?? []) as Parked[]
     hasNextPage.value = false
     if (tab.value === 'dismissed') await loadStopReasonsFor(parked.value.map((p) => p.patient_id!), token)
@@ -374,8 +379,8 @@ function overdueLabel(days: number | null) {
   return w === 1 ? t('1 week overdue', '1 semana de retraso') : t(`${w} weeks overdue`, `${w} semanas de retraso`)
 }
 // Red is money on this page (and the calendar); a long lapse is amber.
-function overdueClass(days: number | null) {
-  return weeksOf(days) >= 8 ? 'border border-warning-border bg-warning-bg text-warning-text' : 'bg-chip-bg text-chip-text'
+function overdueTone(days: number | null) {
+  return weeksOf(days) >= 8 ? 'warning' : 'neutral'
 }
 // A no-show since the last attended visit: said, because the overdue clock
 // no longer counts it.
@@ -682,6 +687,15 @@ const tabs = computed(() => [
   { key: 'dismissed' as const, label: t('Dismissed', 'Descartados'), count: parkedCounts.value.dismissed },
 ])
 const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClinic?.name : null))
+
+// The shared empty state, drawn inside the list's own card: its border and
+// shadow would otherwise put a card inside a card.
+const INSET_EMPTY = '!py-0 [&>div]:max-w-none [&>div]:gap-3 [&>div]:border-0 [&>div]:py-7 [&>div]:shadow-none'
+// The queue's columns, from xl. Below that the row stacks: eight columns
+// beside a 236px sidebar left the patient's name ~30px at 1024 and wrapped
+// the overdue chip into two lines even at 1440. The practitioner now sits
+// under the name, as it already did on the Snoozed and Dismissed tabs.
+const QUEUE_COLUMNS = 'xl:grid-cols-[44px_minmax(0,2fr)_140px_144px_104px_minmax(0,1.4fr)_224px]'
 </script>
 
 <template>
@@ -690,7 +704,8 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
       <UiBtn v-if="tab === 'queue'" variant="secondary" :disabled="exporting" @click="exportCsv">{{ exporting ? t('Exporting…', 'Exportando…') : t('Export CSV', 'Exportar CSV') }}</UiBtn>
     </PageHeader>
 
-    <div role="tablist" class="flex shrink-0 gap-1 overflow-x-auto border-b border-line bg-surface px-4 sm:px-6">
+    <!-- Tighter on a phone, where the third tab used to run off the edge. -->
+    <div role="tablist" class="flex shrink-0 overflow-x-auto border-b border-line bg-surface px-2 sm:gap-1 sm:px-6">
       <button
         v-for="tb in tabs"
         :key="tb.key"
@@ -698,12 +713,12 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
         role="tab"
         :aria-selected="tab === tb.key"
         :data-cy="`recalls-tab-${tb.key}`"
-        class="-mb-px flex h-12 shrink-0 items-center gap-1.5 border-b-2 px-3 text-[14px] font-semibold"
+        class="-mb-px flex h-12 shrink-0 items-center gap-1.5 border-b-2 px-2 text-[14px] font-semibold sm:px-3"
         :class="tab === tb.key ? 'border-brand text-ink-900' : 'border-transparent text-ink-muted hover:text-ink-700'"
         @click="tab = tb.key"
       >
         {{ tb.label }}
-        <span v-if="tb.count !== null" class="rounded-full px-1.5 text-[11.5px] font-bold" :class="tab === tb.key ? 'bg-brand-tint text-brand-text' : 'bg-chip-bg text-chip-text'">{{ tb.count }}</span>
+        <UiPill v-if="tb.count !== null" :tone="tab === tb.key ? 'brand' : 'neutral'" class="font-mono">{{ tb.count }}</UiPill>
       </button>
     </div>
 
@@ -730,7 +745,7 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
             :disabled="!!dateFrom"
             data-cy="recalls-weeks"
             :aria-label="t('Overdue', 'Retraso')"
-            class="h-10 rounded-full border border-brand-tintBorder bg-brand-tint px-3 text-[13.5px] font-semibold text-brand-text focus:outline-none disabled:opacity-40"
+            class="h-9 touch:h-11 rounded-full border border-brand-tintBorder bg-brand-tint px-3 text-[13.5px] font-semibold text-brand-text focus:outline-none disabled:opacity-40"
           >
             <option v-for="w in WEEK_OPTIONS" :key="w" :value="w">{{ t(`Overdue: ${w}+ weeks`, `Retraso: ${w}+ semanas`) }}</option>
           </select>
@@ -740,7 +755,7 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
           v-model="assigneeFilter"
           data-cy="recalls-assignee-filter"
           :aria-label="t('Assigned to', 'Asignado a')"
-          class="h-10 rounded-full border px-3 text-[13.5px] font-semibold focus:outline-none"
+          class="h-9 touch:h-11 rounded-full border px-3 text-[13.5px] font-semibold focus:outline-none"
           :class="assigneeFilter ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control bg-surface text-ink-700'"
         >
           <option value="mine">{{ t('Assigned to me', 'Asignados a mí') }}</option>
@@ -751,7 +766,7 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
         <select
           v-model="practitionerFilter"
           :aria-label="t('Practitioner', 'Profesional')"
-          class="h-10 rounded-full border px-3 text-[13.5px] font-semibold focus:outline-none"
+          class="h-9 touch:h-11 rounded-full border px-3 text-[13.5px] font-semibold focus:outline-none"
           :class="practitionerFilter ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control bg-surface text-ink-700'"
         >
           <option value="">{{ t('Any practitioner', 'Cualquier profesional') }}</option>
@@ -762,7 +777,7 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
             type="button"
             data-cy="recalls-not-contacted"
             :aria-pressed="notContactedOnly"
-            class="h-10 rounded-full border px-3.5 text-[13.5px] font-semibold"
+            class="h-9 touch:h-11 rounded-full border px-3.5 text-[13.5px] font-semibold"
             :class="notContactedOnly ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control bg-surface text-ink-700'"
             @click="notContactedOnly = !notContactedOnly"
           >
@@ -772,7 +787,7 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
             type="button"
             data-cy="recalls-more-filters"
             :aria-expanded="moreFiltersOpen"
-            class="h-10 rounded-full border border-dashed border-line-control px-3.5 text-[13.5px] font-semibold text-ink-500"
+            class="h-9 touch:h-11 rounded-full border border-dashed border-line-control px-3.5 text-[13.5px] font-semibold text-ink-500"
             @click="moreFiltersOpen = !moreFiltersOpen"
           >
             {{ t('More filters', 'Más filtros') }}<span v-if="extraFilterCount"> · {{ extraFilterCount }}</span>
@@ -796,7 +811,7 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
           {{ t('Last visit since (instead of weeks)', 'Última visita desde (en vez de semanas)') }}
           <input v-model="dateFrom" type="date" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-2 text-[13.5px] font-normal text-ink-900" />
         </label>
-        <button v-if="extraFilterCount" type="button" class="h-10 px-2 text-[13px] font-semibold text-brand-text" @click="(dateFrom = ''), (balanceFilter = 'any'), (tagFilter = '')">{{ t('Clear', 'Borrar') }}</button>
+        <button v-if="extraFilterCount" type="button" class="h-9 touch:h-11 px-2 text-[13px] font-semibold text-brand-text" @click="(dateFrom = ''), (balanceFilter = 'any'), (tagFilter = '')">{{ t('Clear', 'Borrar') }}</button>
       </div>
 
       <!-- The list -->
@@ -804,74 +819,102 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
         <!-- Bulk bar -->
         <div v-if="tab === 'queue' && selectedIds.size > 0" class="flex flex-wrap items-center gap-2 rounded-t-card border-b border-brand-tintBorder bg-brand-tint px-4 py-2" data-cy="recalls-bulk">
           <strong class="text-[14px] text-brand-text">{{ t(`${selectedIds.size} selected`, `${selectedIds.size} seleccionados`) }}</strong>
-          <button type="button" data-cy="recalls-bulk-whatsapp" :disabled="reachableSelected.length === 0" class="h-9 touch:h-11 rounded-ctl bg-brand px-3 text-[13.5px] font-bold text-surface disabled:opacity-50" @click="bulkWhatsAppOpen = true">
+          <UiBtn variant="primary" data-cy="recalls-bulk-whatsapp" :disabled="reachableSelected.length === 0" @click="bulkWhatsAppOpen = true">
             {{ t(`WhatsApp to ${reachableSelected.length}`, `WhatsApp a ${reachableSelected.length}`) }}
-          </button>
+          </UiBtn>
           <span v-if="unreachableCount" class="text-[12.5px] text-ink-500" data-cy="recalls-bulk-skipped">{{ t(`${unreachableCount} without a phone, skipped`, `${unreachableCount} sin teléfono, se salta`) }}</span>
           <div class="relative" data-row-menu>
-            <button type="button" data-cy="recalls-bulk-assign" :disabled="assigning" class="h-10 px-3 text-[13.5px] font-semibold text-brand-text disabled:opacity-50" @click="assignToMenuOpen = !assignToMenuOpen">{{ t('Assign to…', 'Asignar a…') }}</button>
+            <button type="button" data-cy="recalls-bulk-assign" :disabled="assigning" class="h-9 touch:h-11 rounded-ctl px-3 text-[13.5px] font-semibold text-brand-text disabled:opacity-50" @click="assignToMenuOpen = !assignToMenuOpen">{{ t('Assign to…', 'Asignar a…') }}</button>
             <div v-if="assignToMenuOpen" role="menu" class="absolute left-0 top-full z-20 mt-1 w-52 rounded-ctl border border-line bg-surface py-1 shadow-popover" data-cy="recalls-bulk-assign-menu">
               <button type="button" role="menuitem" class="block min-h-9 touch:min-h-11 w-full px-3 text-left text-[13.5px] text-ink-500 hover:bg-surface-subtle" @click="assignRecalls(selectedRecalls.map((r) => r.patient_id!), null)">{{ t('Nobody', 'Nadie') }}</button>
               <button v-for="m in assignableMembers" :key="m.id" type="button" role="menuitem" class="block min-h-9 touch:min-h-11 w-full px-3 text-left text-[13.5px] text-ink-700 hover:bg-surface-subtle" @click="assignRecalls(selectedRecalls.map((r) => r.patient_id!), m.id)">{{ m.full_name }}</button>
             </div>
           </div>
           <div class="relative" data-row-menu>
-            <button type="button" class="h-10 px-3 text-[13.5px] font-semibold text-brand-text" @click="assignMenuOpen = !assignMenuOpen">{{ t('Assign practitioner', 'Asignar profesional') }}</button>
-            <div v-if="assignMenuOpen" class="absolute left-0 top-full z-20 mt-1 w-52 rounded-ctl border border-line bg-surface py-1 shadow-popover">
-              <button v-for="m in teamMembers" :key="m.id" type="button" class="block min-h-9 touch:min-h-11 w-full px-3 text-left text-[13.5px] text-ink-700 hover:bg-surface-subtle" @click="bulkAssignPractitioner(m.id)">{{ m.full_name }}</button>
+            <button type="button" class="h-9 touch:h-11 rounded-ctl px-3 text-[13.5px] font-semibold text-brand-text" @click="assignMenuOpen = !assignMenuOpen">{{ t('Assign practitioner', 'Asignar profesional') }}</button>
+            <div v-if="assignMenuOpen" role="menu" class="absolute left-0 top-full z-20 mt-1 w-52 rounded-ctl border border-line bg-surface py-1 shadow-popover">
+              <button v-for="m in teamMembers" :key="m.id" type="button" role="menuitem" class="block min-h-9 touch:min-h-11 w-full px-3 text-left text-[13.5px] text-ink-700 hover:bg-surface-subtle" @click="bulkAssignPractitioner(m.id)">{{ m.full_name }}</button>
             </div>
           </div>
-          <button type="button" data-cy="recalls-bulk-snooze" class="h-10 px-3 text-[13.5px] font-semibold text-brand-text" @click="openSnooze(selectedRecalls.map((r) => r.patient_id!), selectionName)">{{ t('Snooze…', 'Posponer…') }}</button>
-          <button type="button" data-cy="recalls-bulk-dismiss" class="h-10 px-3 text-[13.5px] font-semibold text-brand-text" @click="openDismiss(selectedRecalls.map((r) => r.patient_id!), selectionName)">{{ t('Dismiss…', 'Descartar…') }}</button>
-          <button type="button" class="ml-auto h-10 px-3 text-[13.5px] font-semibold text-ink-500" @click="selectedIds = new Set()">{{ t('Clear selection', 'Quitar selección') }}</button>
+          <button type="button" data-cy="recalls-bulk-snooze" class="h-9 touch:h-11 rounded-ctl px-3 text-[13.5px] font-semibold text-brand-text" @click="openSnooze(selectedRecalls.map((r) => r.patient_id!), selectionName)">{{ t('Snooze…', 'Posponer…') }}</button>
+          <button type="button" data-cy="recalls-bulk-dismiss" class="h-9 touch:h-11 rounded-ctl px-3 text-[13.5px] font-semibold text-brand-text" @click="openDismiss(selectedRecalls.map((r) => r.patient_id!), selectionName)">{{ t('Dismiss…', 'Descartar…') }}</button>
+          <button type="button" class="ml-auto h-9 touch:h-11 rounded-ctl px-3 text-[13.5px] font-semibold text-ink-500" @click="selectedIds = new Set()">{{ t('Clear selection', 'Quitar selección') }}</button>
         </div>
 
         <!-- Queue -->
         <template v-if="tab === 'queue'">
-          <div class="hidden h-10 items-center gap-3 border-b border-line bg-surface-subtle px-4 text-[11.5px] font-bold uppercase tracking-wide text-ink-muted lg:grid lg:grid-cols-[44px_minmax(0,2fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.1fr)_100px_minmax(0,1.4fr)_250px]">
+          <div
+            v-if="loading || (!loadError && filtered.length > 0)"
+            class="hidden h-10 items-center gap-3 border-b border-line bg-surface-subtle px-4 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted xl:grid"
+            :class="QUEUE_COLUMNS"
+          >
             <label class="flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center"><input type="checkbox" :checked="allVisibleSelected" :aria-label="t('Select all', 'Seleccionar todos')" class="h-[18px] w-[18px] accent-brand" @change="toggleSelectAll" /></label>
-            <span>{{ t('Patient', 'Paciente') }}</span><span>{{ t('Last visit', 'Última visita') }}</span><span>{{ t('Practitioner', 'Profesional') }}</span><span>{{ t('Assigned to', 'Asignado a') }}</span><span class="text-right">{{ t('Balance', 'Saldo') }}</span><span>{{ t('Last contact', 'Último contacto') }}</span><span></span>
+            <span>{{ t('Patient', 'Paciente') }}</span><span>{{ t('Last visit', 'Última visita') }}</span><span>{{ t('Assigned to', 'Asignado a') }}</span><span class="text-right">{{ t('Balance', 'Saldo') }}</span><span>{{ t('Last contact', 'Último contacto') }}</span><span></span>
           </div>
           <div v-if="loading" class="space-y-3 p-4"><UiSkeleton v-for="i in 6" :key="i" class="h-12 rounded-ctl" /></div>
-          <p v-else-if="filtered.length === 0" class="px-4 py-10 text-center text-[14px] text-ink-faint">{{ t('Nobody matches these filters.', 'Nadie coincide con estos filtros.') }}</p>
+          <UiEmptyState
+            v-else-if="loadError"
+            :title="t(`Couldn't load the list`, 'No se ha podido cargar la lista')"
+            :description="t('The connection dropped or the server took too long to answer. Nothing has been changed.', 'Se ha cortado la conexión o el servidor ha tardado demasiado en responder. No se ha cambiado nada.')"
+            :class="INSET_EMPTY"
+            data-cy="recalls-load-error"
+          >
+            <template #icon>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" /></svg>
+            </template>
+            <template #actions>
+              <UiBtn @click="load()">{{ t('Try again', 'Reintentar') }}</UiBtn>
+            </template>
+          </UiEmptyState>
+          <UiEmptyState v-else-if="filtered.length === 0" :title="t('Nobody matches these filters', 'Nadie coincide con estos filtros')" :class="INSET_EMPTY" data-cy="recalls-empty">
+            <template #icon>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            </template>
+          </UiEmptyState>
           <div
             v-for="r in filtered"
             v-else
             :key="r.patient_id!"
             data-cy="recall-row"
             :data-patient-id="r.patient_id"
-            class="grid grid-cols-[44px_minmax(0,1fr)] gap-x-3 gap-y-2 border-b border-line-row px-4 py-3 lg:grid-cols-[44px_minmax(0,2fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.1fr)_100px_minmax(0,1.4fr)_250px] lg:items-center"
-            :class="selectedIds.has(r.patient_id!) ? 'bg-brand-tint' : ''"
+            class="grid grid-cols-[44px_minmax(0,1fr)] gap-x-3 gap-y-2 border-b border-line-row px-4 py-3 xl:items-center"
+            :class="[QUEUE_COLUMNS, selectedIds.has(r.patient_id!) ? 'bg-brand-tint' : '']"
           >
-            <label class="row-span-4 flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center lg:row-span-1">
+            <!-- Stacked below xl: everything after the checkbox is pinned to
+                 the second column (col-start-2), so no line falls into the
+                 checkbox's 44px. The balance did, and showed as a stray dash. -->
+            <label class="flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center">
               <input type="checkbox" :checked="selectedIds.has(r.patient_id!)" :aria-label="t(`Select ${fullName(r)}`, `Seleccionar a ${fullName(r)}`)" class="h-[18px] w-[18px] accent-brand" @change="toggleSelect(r.patient_id!)" />
             </label>
-            <div class="flex min-w-0 items-center gap-2.5">
+            <div class="col-start-2 flex min-w-0 items-center gap-2.5 xl:col-start-auto">
               <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-tint text-[12.5px] font-bold text-brand-text">{{ initials(r) }}</span>
               <div class="min-w-0">
-                <NuxtLink :to="`/patients/${r.patient_id}`" class="block truncate text-[14.5px] font-semibold text-ink-900 hover:text-brand-text">{{ fullName(r) }}</NuxtLink>
-                <div v-if="r.recall_priority || onPlan.has(r.patient_id!) || (r.tags ?? []).length" class="mt-0.5 flex flex-wrap gap-1">
-                  <span v-if="r.recall_priority" data-cy="recall-priority" class="rounded-full border border-warning-border bg-warning-bg px-1.5 text-[11px] font-bold text-warning-text">{{ t('Priority', 'Prioridad') }}</span>
-                  <NuxtLink v-if="onPlan.has(r.patient_id!)" to="/care-plan-alerts" class="rounded-full border border-info-border bg-info-bg px-1.5 text-[11px] font-semibold text-info-text">{{ t('Care plan ›', 'Plan de cuidados ›') }}</NuxtLink>
-                  <span v-for="tag in r.tags" :key="tag" class="rounded-full bg-chip-bg px-1.5 text-[11px] text-chip-text">{{ tag }}</span>
+                <!-- Wraps rather than truncates: a cut-off surname is the one
+                     thing the front desk needs to read before ringing. -->
+                <NuxtLink :to="`/patients/${r.patient_id}`" class="block break-words text-[14.5px] font-semibold leading-snug text-ink-900 hover:text-brand-text">{{ fullName(r) }}</NuxtLink>
+                <span v-if="r.default_practitioner_id" class="block text-[12.5px] text-ink-muted" data-cy="recall-practitioner">{{ practitionerName(r.default_practitioner_id) }}</span>
+                <div v-if="r.recall_priority || onPlan.has(r.patient_id!) || (r.tags ?? []).length" class="mt-1 flex flex-wrap gap-1">
+                  <UiPill v-if="r.recall_priority" tone="warning" data-cy="recall-priority">{{ t('Priority', 'Prioridad') }}</UiPill>
+                  <NuxtLink v-if="onPlan.has(r.patient_id!)" to="/care-plan-alerts" class="rounded-pill hover:opacity-80">
+                    <UiPill tone="info">{{ t('Care plan', 'Plan de cuidados') }}<UiChevron dir="right" class="-ml-1 !h-3 !w-3" /></UiPill>
+                  </NuxtLink>
+                  <UiPill v-for="tag in r.tags" :key="tag">{{ tag }}</UiPill>
                 </div>
               </div>
             </div>
-            <div class="flex flex-col gap-0.5">
+            <div class="col-start-2 flex flex-col items-start gap-1 xl:col-start-auto">
               <span class="text-[13.5px] text-ink-700">{{ longDate(r.last_appointment_at) }}</span>
-              <span class="self-start rounded-full px-2 text-[11.5px] font-bold" :class="overdueClass(r.days_since_last_appointment)" data-cy="recall-overdue">{{ overdueLabel(r.days_since_last_appointment) }}</span>
-              <span v-if="noShowNote(r)" class="text-[11.5px] text-ink-muted" data-cy="recall-no-show">{{ noShowNote(r) }}</span>
+              <UiPill :tone="overdueTone(r.days_since_last_appointment)" class="whitespace-nowrap" data-cy="recall-overdue">{{ overdueLabel(r.days_since_last_appointment) }}</UiPill>
+              <span v-if="noShowNote(r)" class="text-[12px] text-ink-muted" data-cy="recall-no-show">{{ noShowNote(r) }}</span>
             </div>
-            <span class="text-[13.5px] text-ink-500">{{ practitionerName(r.default_practitioner_id) }}</span>
-            <!-- col-start-2 on a phone, for the reason given at the last contact below. -->
-            <label class="col-start-2 flex min-w-0 items-center gap-1.5 lg:col-start-auto">
-              <span class="text-[12.5px] text-ink-muted lg:sr-only">{{ t('Assigned to', 'Asignado a') }}</span>
+            <label class="col-start-2 flex min-w-0 items-center gap-1.5 xl:col-start-auto">
+              <span class="shrink-0 text-[12.5px] text-ink-muted xl:sr-only">{{ t('Assigned to', 'Asignado a') }}</span>
               <select
                 :value="r.assigned_to ?? ''"
                 :disabled="assigning"
                 data-cy="recall-assignee"
                 :aria-label="t(`Who follows up ${fullName(r)}`, `Quién hace el seguimiento de ${fullName(r)}`)"
-                class="h-9 touch:h-11 min-w-0 max-w-full truncate rounded-ctl border bg-surface px-2 text-[13px] focus:outline-none"
+                class="h-9 touch:h-11 min-w-0 max-w-full truncate rounded-ctl border bg-surface pl-2 text-[13px] focus:border-brand focus:outline-none xl:w-full"
                 :class="r.assigned_to ? 'border-line-control font-semibold text-ink-900' : 'border-dashed border-line-control text-ink-muted'"
                 @change="onRowAssign(r, $event)"
               >
@@ -879,19 +922,22 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
                 <option v-for="m in assignableMembers" :key="m.id" :value="m.id">{{ m.full_name }}</option>
               </select>
             </label>
-            <div v-if="contextPending" class="flex lg:justify-end"><UiSkeleton class="h-4 w-16 rounded" /></div>
-            <span v-else class="text-[13.5px] font-semibold lg:text-right" :class="balanceText(r.patient_id!).cls">{{ balanceText(r.patient_id!).text }}</span>
-            <!-- col-start-2: the checkbox spans four rows on a phone, so this
-                 fifth line otherwise fell into its 44px column and read one
-                 word per line. -->
-            <div class="col-start-2 min-w-0 lg:col-start-auto" data-cy="recall-last-contact">
+            <!-- A zero balance is a dash in the column, and nothing at all in
+                 the stacked row, where a lone dash said nothing. -->
+            <div v-if="contextPending" class="col-start-2 hidden xl:col-start-auto xl:flex xl:justify-end"><UiSkeleton class="h-4 w-16 rounded" /></div>
+            <span
+              v-else
+              class="col-start-2 text-[13.5px] font-semibold xl:col-start-auto xl:text-right"
+              :class="[balanceText(r.patient_id!).cls, balanceByPatient[r.patient_id!] ? '' : 'hidden xl:block']"
+            >{{ balanceText(r.patient_id!).text }}</span>
+            <div class="col-start-2 min-w-0 xl:col-start-auto" data-cy="recall-last-contact">
               <UiSkeleton v-if="contextPending" class="h-4 w-28 rounded" />
               <button v-else-if="actionCountByPatient[r.patient_id!]" type="button" class="text-left text-[13.5px] text-ink-900 hover:underline" @click="historyFor = r">{{ lastContact(r).text }}</button>
               <span v-else class="text-[13.5px]" :class="lastContact(r).tone === 'warn' ? 'font-semibold text-warning-text' : 'text-ink-muted'">{{ lastContact(r).text }}</span>
               <span v-if="!contextPending && lastContact(r).sub" class="block text-[12px] text-ink-muted">{{ lastContact(r).sub }}</span>
             </div>
             <!-- Row actions: each its own control -->
-            <div class="relative col-start-2 flex items-center gap-1.5 lg:col-start-auto lg:justify-end" data-row-menu>
+            <div class="relative col-start-2 flex items-center gap-1.5 xl:col-start-auto xl:justify-end" data-row-menu>
               <button
                 type="button"
                 data-cy="recall-whatsapp"
@@ -903,14 +949,15 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
               >
                 WhatsApp
               </button>
-              <button type="button" data-cy="recall-log" :aria-expanded="openMenu?.id === r.patient_id && openMenu?.kind === 'log'" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[13px] font-semibold text-ink-700" @click="toggleMenu(r.patient_id!, 'log')">
-                {{ t('Log call', 'Registrar') }} ▾
-              </button>
-              <button type="button" data-cy="recall-more" :aria-label="t(`More for ${fullName(r)}`, `Más acciones para ${fullName(r)}`)" class="flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center rounded-ctl border border-line-control bg-surface text-ink-500" @click="toggleMenu(r.patient_id!, 'more')">
+              <UiBtn data-cy="recall-log" aria-haspopup="menu" :aria-expanded="openMenu?.id === r.patient_id && openMenu?.kind === 'log'" class="!px-3" @click="toggleMenu(r.patient_id!, 'log')">
+                {{ t('Log call', 'Registrar') }}
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" class="-mr-0.5 h-3.5 w-3.5 shrink-0"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
+              </UiBtn>
+              <button type="button" data-cy="recall-more" :aria-label="t(`More for ${fullName(r)}`, `Más acciones para ${fullName(r)}`)" aria-haspopup="menu" :aria-expanded="openMenu?.id === r.patient_id && openMenu?.kind === 'more'" class="flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center rounded-ctl border border-line-control bg-surface text-ink-500 hover:border-line-controlHover" @click="toggleMenu(r.patient_id!, 'more')">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>
               </button>
               <div v-if="openMenu?.id === r.patient_id && openMenu?.kind === 'log'" role="menu" class="absolute right-0 top-full z-20 mt-1 flex w-60 flex-col rounded-card border border-line bg-surface p-1.5 shadow-popover" data-cy="recall-log-menu">
-                <span class="px-2.5 pb-1 pt-1.5 text-[11.5px] font-bold uppercase tracking-wide text-ink-muted">{{ t('Log a call', 'Registrar llamada') }}</span>
+                <span class="px-2.5 pb-1 pt-1.5 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted">{{ t('Log a call', 'Registrar llamada') }}</span>
                 <button type="button" role="menuitem" data-cy="recall-log-no-answer" class="min-h-9 touch:min-h-11 rounded-ctlSm px-2.5 text-left text-[14px] text-ink-900 hover:bg-surface-subtle" @click="logCall(r, 'called_no_answer')">{{ t('No answer', 'Sin respuesta') }}</button>
                 <button type="button" role="menuitem" data-cy="recall-log-message" class="min-h-9 touch:min-h-11 rounded-ctlSm px-2.5 text-left text-[14px] text-ink-900 hover:bg-surface-subtle" @click="logCall(r, 'called_left_message')">{{ t('Left a message', 'Dejé un mensaje') }}</button>
                 <button type="button" role="menuitem" data-cy="recall-log-booked" class="min-h-9 touch:min-h-11 rounded-ctlSm bg-success-bg px-2.5 text-left text-[14px] font-semibold text-success-text" @click="logCall(r, 'booked')">{{ t('Booked an appointment', 'Reservó cita') }}</button>
@@ -936,13 +983,35 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
         <!-- Snoozed / dismissed -->
         <template v-else>
           <div v-if="loading" class="space-y-3 p-4"><UiSkeleton v-for="i in 4" :key="i" class="h-12 rounded-ctl" /></div>
-          <p v-else-if="parked.length === 0" class="px-4 py-10 text-center text-[14px] text-ink-faint">
-            {{ tab === 'snoozed' ? t('Nobody is snoozed.', 'No hay nadie pospuesto.') : t('Nobody has been dismissed.', 'No hay nadie descartado.') }}
-          </p>
+          <UiEmptyState
+            v-else-if="loadError"
+            :title="t(`Couldn't load the list`, 'No se ha podido cargar la lista')"
+            :description="t('The connection dropped or the server took too long to answer. Nothing has been changed.', 'Se ha cortado la conexión o el servidor ha tardado demasiado en responder. No se ha cambiado nada.')"
+            :class="INSET_EMPTY"
+            data-cy="recalls-load-error"
+          >
+            <template #icon>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" /></svg>
+            </template>
+            <template #actions>
+              <UiBtn @click="load()">{{ t('Try again', 'Reintentar') }}</UiBtn>
+            </template>
+          </UiEmptyState>
+          <UiEmptyState
+            v-else-if="parked.length === 0"
+            :title="tab === 'snoozed' ? t('Nobody is snoozed', 'No hay nadie pospuesto') : t('Nobody has been dismissed', 'No hay nadie descartado')"
+            :class="INSET_EMPTY"
+            data-cy="recalls-parked-empty"
+          >
+            <template #icon>
+              <svg v-if="tab === 'snoozed'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" /></svg>
+            </template>
+          </UiEmptyState>
           <div v-for="p in parked" v-else :key="p.patient_id!" data-cy="parked-row" class="flex flex-wrap items-center gap-3 border-b border-line-row px-4 py-3">
             <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-chip-bg text-[12.5px] font-bold text-ink-500">{{ initials(p) }}</span>
             <div class="min-w-0 flex-1">
-              <NuxtLink :to="`/patients/${p.patient_id}`" class="block truncate text-[14.5px] font-semibold text-ink-900 hover:text-brand-text">{{ fullName(p) }}</NuxtLink>
+              <NuxtLink :to="`/patients/${p.patient_id}`" class="block break-words text-[14.5px] font-semibold leading-snug text-ink-900 hover:text-brand-text">{{ fullName(p) }}</NuxtLink>
               <span class="text-[12.5px] text-ink-muted">{{ t('Last visit', 'Última visita') }} {{ longDate(p.last_appointment_at) }} · {{ practitionerName(p.default_practitioner_id) }}</span>
             </div>
             <span class="text-[13.5px] text-ink-700" data-cy="parked-when">
@@ -961,9 +1030,9 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
             >
               {{ stopByPatient[p.patient_id!] ? stopReasonName(stopByPatient[p.patient_id!]!.reason_id) : t('Add reason', 'Añadir motivo') }}
             </button>
-            <button type="button" data-cy="parked-restore" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3.5 text-[13px] font-semibold text-ink-700" @click="restore(p)">
+            <UiBtn data-cy="parked-restore" @click="restore(p)">
               {{ p.parked_as === 'snoozed' ? t('Bring back now', 'Reactivar ya') : t('Restore', 'Restaurar') }}
-            </button>
+            </UiBtn>
           </div>
         </template>
       </div>
@@ -976,9 +1045,9 @@ const clinicName = computed(() => (store.clinics.length > 1 ? store.currentClini
         {{ t(`logged for ${followUp.name}. Try again later?`, `registrado para ${followUp.name}. ¿Lo volvemos a intentar más adelante?`) }}
       </span>
       <div class="flex flex-wrap gap-2">
-        <button type="button" data-cy="recall-follow-up-2d" class="h-9 touch:h-11 rounded-ctl bg-brand px-3 text-[13.5px] font-bold text-surface" @click="followUpSnooze(2)">{{ t('In 2 days', 'En 2 días') }}</button>
+        <button type="button" data-cy="recall-follow-up-2d" class="h-9 touch:h-11 rounded-ctl bg-brand px-3 text-[13.5px] font-semibold text-brand-on hover:bg-brand-hover" @click="followUpSnooze(2)">{{ t('In 2 days', 'En 2 días') }}</button>
         <button type="button" class="h-9 touch:h-11 rounded-ctl border border-surface-page/30 px-3 text-[13.5px] font-semibold" @click="followUpSnooze(7)">{{ t('In 1 week', 'En 1 semana') }}</button>
-        <button type="button" data-cy="recall-follow-up-keep" class="h-10 px-3 text-[13.5px] font-semibold opacity-80" @click="followUp = null">{{ t('Keep in the list', 'Dejarlo en la lista') }}</button>
+        <button type="button" data-cy="recall-follow-up-keep" class="h-9 touch:h-11 px-3 text-[13.5px] font-semibold opacity-80" @click="followUp = null">{{ t('Keep in the list', 'Dejarlo en la lista') }}</button>
       </div>
     </div>
 

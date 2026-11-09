@@ -65,9 +65,28 @@ final class HabitScheduler {
     }
 
     static void apply(Context c, JSONObject config) {
+        Set<String> gone = habitIds(config(c));
+        gone.removeAll(habitIds(config));
         prefs(c).edit().putString(KEY_CONFIG, config.toString()).apply();
         rescheduleAll(c);
         syncGeofences(c);
+        // A habit no longer configured -- deleted, or every one cleared
+        // because the phone is now used as staff or signed out
+        // (useHabitReminders().clear) -- leaves no banner behind. Its alarms
+        // went in rescheduleAll; a snooze still set finds no habit and shows
+        // nothing (HabitAlarmReceiver).
+        NotificationManagerCompat nm = NotificationManagerCompat.from(c);
+        for (String id : gone) nm.cancel(id.hashCode());
+    }
+
+    private static Set<String> habitIds(JSONObject config) {
+        Set<String> ids = new HashSet<>();
+        JSONArray habits = config.optJSONArray("habits");
+        for (int i = 0; habits != null && i < habits.length(); i++) {
+            JSONObject h = habits.optJSONObject(i);
+            if (h != null) ids.add(h.optString("id"));
+        }
+        return ids;
     }
 
     static boolean hasLocation(Context c) {

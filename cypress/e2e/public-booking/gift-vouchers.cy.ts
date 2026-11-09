@@ -16,7 +16,7 @@ function selectBookableDayWithSlots(attempt = 0) {
   cy.get('.grid.grid-cols-7 button:not([disabled])').eq(attempt).click()
   cy.contains('Cargando horarios').should('not.exist')
   cy.get('body').then(($body) => {
-    if ($body.text().includes('No hay horas disponibles')) {
+    if ($body.text().includes('Ya no quedan horas libres')) {
       if (attempt > 15) throw new Error('No bookable day within the visible range had available slots')
       selectBookableDayWithSlots(attempt + 1)
     }
@@ -157,7 +157,8 @@ describe('Gift vouchers', () => {
         selectBookableDayWithSlots()
         cy.contains('button', /^\d{2}:\d{2}$/).first().click()
         cy.contains('Introduzca sus datos').should('be.visible')
-        cy.get('[data-cy=booking-gift-ok]').should('contain', '50 € de saldo')
+        // The page's price format: a non-breaking space before the euro sign.
+        cy.get('[data-cy=booking-gift-ok]').invoke('text').should('match', /50,00\s€ de saldo/)
         cy.contains('label', 'Nombre *').parent().find('input').type('Nora')
         cy.contains('label', 'Correo electrónico *').parent().find('input').type(`nora.regalo.${stamp()}@example.test`)
         cy.contains('label', 'Número de móvil *').parent().find('input[type="tel"]').type('600111003')

@@ -175,8 +175,19 @@ final class HabitScheduler: NSObject, CLLocationManagerDelegate {
     // MARK: Scheduling
 
     private func rescheduleAll(completion: (() -> Void)? = nil) {
+        // A snooze ("En 15 min") survives a reschedule, unless its habit is
+        // gone: deleted, or every habit cleared because the phone is now
+        // used as staff or signed out (useHabitReminders().clear). Those, and
+        // their banners still in Notification Center, go too.
+        let kept = Set(config?.habits.map(\.id) ?? [])
+        let stale = { (request: UNNotificationRequest) in
+            request.identifier.hasPrefix(Self.prefix) && !kept.contains(request.content.userInfo["habitId"] as? String ?? "")
+        }
+        center.getDeliveredNotifications { delivered in
+            self.center.removeDeliveredNotifications(withIdentifiers: delivered.map(\.request).filter(stale).map(\.identifier))
+        }
         center.getPendingNotificationRequests { pending in
-            let ours = pending.map(\.identifier).filter { $0.hasPrefix(Self.prefix) && !$0.contains(".s.") }
+            let ours = pending.filter { $0.identifier.hasPrefix(Self.prefix) && (!$0.identifier.contains(".s.") || stale($0)) }.map(\.identifier)
             self.center.removePendingNotificationRequests(withIdentifiers: ours)
             guard let config = self.config else { completion?(); return }
             for habit in config.habits where habit.placeIds.isEmpty || !self.always {

@@ -577,10 +577,10 @@ const MARKETING_LABELS = computed<Record<string, string>>(() => ({
 function filterSummary(f: PatientFilters): string {
   const parts: string[] = []
   if (f.q) parts.push(`"${f.q}"`)
-  if (f.status) parts.push(f.status === 'inactive' ? t('Inactive', 'Inactivo') : t('Any status', 'Cualquier estado'))
+  if (f.status) parts.push(f.status === 'inactive' ? t('Archived', 'Archivado') : t('Any status', 'Cualquier estado'))
   for (const tag of f.tags ?? []) parts.push(`#${tag}`)
-  if (f.list) parts.push(`${t('On', 'En')} ${listName(f.list)}`)
-  if (f.notList) parts.push(`${t('Not on', 'No en')} ${listName(f.notList)}`)
+  if (f.list) parts.push(t(`On ${listName(f.list)}`, `En ${listName(f.list)}`))
+  if (f.notList) parts.push(t(`Not on ${listName(f.notList)}`, `No en ${listName(f.notList)}`))
   if (f.family) parts.push(FAMILY_LABELS.value[f.family]!)
   if (f.familyBono) parts.push(t('Shares a bono', 'Comparte bono'))
   if (f.marketing) parts.push(MARKETING_LABELS.value[f.marketing]!)
@@ -732,7 +732,7 @@ const activeFilters = computed<ActiveFilter[]>(() => {
     out.push({ key: 'search', label: `"${search.value.trim()}"`, clear: () => (search.value = '') })
   }
   if (form.status !== 'active') {
-    const label = form.status === 'inactive' ? t('Inactive', 'Inactivo') : t('Any status', 'Cualquier estado')
+    const label = form.status === 'inactive' ? t('Archived', 'Archivado') : t('Any status', 'Cualquier estado')
     out.push({ key: 'status', label, clear: () => (form.status = 'active') })
   }
   if (form.balance) {
@@ -777,7 +777,7 @@ const activeFilters = computed<ActiveFilter[]>(() => {
     const max = currentFilters.value.bonoSessionsMax
     const label = form.bono === 'none'
       ? t('No live bono', 'Sin bono activo')
-      : max === undefined ? t('Has a live bono', 'Con bono activo') : t(`Bono with ≤ ${max} sessions left`, `Bono con ≤ ${max} sesiones`)
+      : max === undefined ? t('Has a live bono', 'Con bono activo') : t(`Bono with ≤ ${max} sessions left`, `Bono con ≤ ${max} sesiones restantes`)
     out.push({ key: 'bono', label, clear: () => { form.bono = ''; form.bonoSessionsMax = '' } })
   }
   const created = rangeLabel(form.createdFrom, form.createdTo)
@@ -795,7 +795,7 @@ const activeFilters = computed<ActiveFilter[]>(() => {
     out.push({ key: 'list', label: `${t('List', 'Lista')}: ${listName(form.list)}`, clear: () => (form.list = '') })
   }
   if (form.notList) {
-    out.push({ key: 'notList', label: `${t('Not on', 'No en')} ${listName(form.notList)}`, clear: () => (form.notList = '') })
+    out.push({ key: 'notList', label: t(`Not on ${listName(form.notList)}`, `No en ${listName(form.notList)}`), clear: () => (form.notList = '') })
   }
   if (form.family) {
     out.push({ key: 'family', label: FAMILY_LABELS.value[form.family]!, clear: () => (form.family = '') })
@@ -869,7 +869,7 @@ function nextVisitInfo(patientId: string) {
   const diffDays = Math.round((startOfDay(visitDate).getTime() - startOfDay(new Date()).getTime()) / 86400000)
   if (diffDays === 0) return { date: `${dateText} · ${timeText}`, relative: t('Today', 'Hoy'), colorClass: 'text-brand-text' }
   if (diffDays === 1) return { date: `${dateText} · ${timeText}`, relative: t('Tomorrow', 'Mañana'), colorClass: 'text-ink-faint' }
-  if (diffDays > 1 && diffDays < 7) return { date: `${dateText} · ${timeText}`, relative: `${t('In', 'En')} ${diffDays} ${t('days', 'días')}`, colorClass: 'text-ink-faint' }
+  if (diffDays > 1 && diffDays < 7) return { date: `${dateText} · ${timeText}`, relative: t(`In ${diffDays} days`, `En ${diffDays} días`), colorClass: 'text-ink-faint' }
   return { date: `${dateText} · ${timeText}`, relative: visitDate.toLocaleDateString(undefined, { weekday: 'long' }), colorClass: 'text-ink-faint' }
 }
 
@@ -894,7 +894,7 @@ function tagTone(tag: string) {
   <div class="flex h-full flex-col">
     <PageHeader
       :title="t('Patients', 'Pacientes')"
-      :meta="loadedOnce ? `${totalCount} ${t('patients', 'pacientes')} · ${patients.length} ${t('shown', 'mostrados')}` : undefined"
+      :meta="loadedOnce ? (totalCount === 1 ? t('1 patient', '1 paciente') : t(`${totalCount} patients · ${patients.length} shown`, `${totalCount} pacientes · ${patients.length} en pantalla`)) : undefined"
     >
       <UiBtn variant="secondary" :disabled="exporting" @click="exportCsv">{{ exporting ? t('Exporting…', 'Exportando…') : t('Export', 'Exportar') }}</UiBtn>
       <UiBtn variant="secondary" @click="navigateTo('/settings/import')">{{ t('Import', 'Importar') }}</UiBtn>
@@ -1057,7 +1057,7 @@ function tagTone(tag: string) {
 
         <PatientsFilterSelect v-model="form.status" :label="t('Status', 'Estado')" :options="[
           { value: 'active', label: t('Active', 'Activo') },
-          { value: 'inactive', label: t('Inactive', 'Inactivo') },
+          { value: 'inactive', label: t('Archived', 'Archivado') },
           { value: 'any', label: t('Any status', 'Cualquier estado') },
         ]" />
 
@@ -1225,7 +1225,8 @@ function tagTone(tag: string) {
       <UiEmptyState
         v-else-if="loadedOnce && patients.length === 0"
         data-cy="patients-empty"
-        :title="activeFilters.length > 0 ? t('No patients match these filters.', 'Ningún paciente coincide con estos filtros.') : t('No patients found.', 'No se encontraron pacientes.')"
+        :title="activeFilters.length > 0 ? t('No patients match these filters.', 'Ningún paciente coincide con estos filtros.') : t('No active patients yet.', 'Aún no hay pacientes activos.')"
+        :description="activeFilters.length > 0 ? undefined : t('Add one with New patient, or bring your list in with Import.', 'Añade uno con Nuevo paciente o trae tu lista con Importar.')"
         class="mt-3.5 !px-0 !py-0 transition-opacity"
         :class="loading ? 'pointer-events-none opacity-60' : ''"
         :aria-busy="loading"
@@ -1237,7 +1238,10 @@ function tagTone(tag: string) {
         </template>
         <template #actions>
           <UiBtn v-if="activeFilters.length > 0" @click="clearAllFilters">{{ t('Clear all', 'Quitar todo') }}</UiBtn>
-          <UiBtn v-else variant="primary" @click="showAddPatient = true">{{ t('New patient', 'Nuevo paciente') }}</UiBtn>
+          <template v-else>
+            <UiBtn variant="primary" @click="showAddPatient = true">{{ t('New patient', 'Nuevo paciente') }}</UiBtn>
+            <UiBtn @click="navigateTo('/settings/import')">{{ t('Import', 'Importar') }}</UiBtn>
+          </template>
         </template>
       </UiEmptyState>
 
@@ -1344,7 +1348,7 @@ function tagTone(tag: string) {
                         <NuxtLink :to="`/patients/${patient.id}`" class="truncate outline-none hover:underline focus-visible:shadow-focus max-md:whitespace-normal max-md:break-words">
                           {{ patient.first_name }} {{ patient.last_name }}
                         </NuxtLink>
-                        <UiPill v-if="patient.status === 'inactive'" class="shrink-0">{{ t('Inactive', 'Inactivo') }}</UiPill>
+                        <UiPill v-if="patient.status === 'inactive'" class="shrink-0">{{ t('Archived', 'Archivado') }}</UiPill>
                         <UiPill v-if="patient.is_minor" tone="brand" class="shrink-0">{{ t('Minor', 'Menor') }}</UiPill>
                         <UiPill v-if="patient.do_not_contact" tone="danger" class="shrink-0">{{ t('Do not contact', 'No contactar') }}</UiPill>
                       </p>
@@ -1364,7 +1368,7 @@ function tagTone(tag: string) {
                   <div v-else class="flex flex-wrap items-center gap-1.5">
                   <span v-if="primaryPhoneByPatient[patient.id]" class="inline-flex items-center gap-1.5">
                     <span class="whitespace-nowrap font-mono text-[12.5px] text-ink-700">{{ primaryPhoneByPatient[patient.id] }}</span>
-                    <UiPill v-if="whatsappConsentByPatient[patient.id]" tone="success" :title="t('WhatsApp', 'WhatsApp')">WA</UiPill>
+                    <UiPill v-if="whatsappConsentByPatient[patient.id]" tone="success" :title="t('This number has WhatsApp', 'Este número tiene WhatsApp')">WA</UiPill>
                   </span>
                   <span v-else class="inline-flex items-center gap-1 text-[12.5px] text-warning-text">
                     <svg viewBox="0 0 12 12" aria-hidden="true" class="h-3 w-3 shrink-0">
@@ -1377,7 +1381,7 @@ function tagTone(tag: string) {
                   <UiPill
                     v-if="patient.invoice_email_enabled"
                     tone="brand"
-                    :title="t('Invoices are emailed to this patient', 'Las facturas se envían por correo')"
+                    :title="t('Receipts are emailed to this patient', 'A este paciente se le envían los recibos por correo')"
                   >{{ t('Email', 'Correo') }}</UiPill>
                   </div>
                 </td>
@@ -1452,7 +1456,7 @@ function tagTone(tag: string) {
           :visible-pages="visiblePages"
           :has-prev="page > 1"
           :has-next="page < totalPages"
-          :summary="`${t('Page', 'Página')} ${page} ${t('of', 'de')} ${totalPages} · ${totalCount} ${t('patients', 'pacientes')}`"
+          :summary="t(`Page ${page} of ${totalPages} · ${totalCount} patients`, `Página ${page} de ${totalPages} · ${totalCount} pacientes`)"
           @go-to-page="goToPage"
         />
       </div>

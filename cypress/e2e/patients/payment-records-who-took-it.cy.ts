@@ -33,7 +33,7 @@ describe('A payment records who took it', () => {
 
         // The ledger names the person, resolved through the embedded
         // team_members row rather than any client-side list.
-        cy.contains('tr', 'Payment — cash').click()
+        cy.contains('tr', 'Payment — Cash').click()
         cy.contains('Recorded by').should('be.visible')
         cy.contains('Recorded by').parent().should('contain.text', 'Test Owner')
 

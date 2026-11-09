@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Line } from 'vue-chartjs'
-import '~/utils/chartSetup'
+import { chartColor } from '~/utils/chartSetup'
 import { computePresetRange, rangeBounds } from '~/composables/useDateRangePresets'
 import { fetchAllRows } from '~/composables/useFetchAllRows'
 
@@ -412,8 +412,8 @@ const trendChartData = computed(() => ({
     {
       label: t('Conversion to 3rd visit', 'Conversión a 3ª visita'),
       data: trendRates.value.map((r) => r.conversion),
-      borderColor: '#6366f1',
-      backgroundColor: '#6366f1',
+      borderColor: chartColor('brand'),
+      backgroundColor: chartColor('brand'),
       tension: 0.3,
       yAxisID: 'pct',
       spanGaps: true,
@@ -421,8 +421,8 @@ const trendChartData = computed(() => ({
     {
       label: t('Retention post-revision', 'Retención tras revisión'),
       data: trendRates.value.map((r) => r.retention),
-      borderColor: '#22c55e',
-      backgroundColor: '#22c55e',
+      borderColor: chartColor('success-accent'),
+      backgroundColor: chartColor('success-accent'),
       tension: 0.3,
       yAxisID: 'pct',
       spanGaps: true,
@@ -430,8 +430,8 @@ const trendChartData = computed(() => ({
     {
       label: t('Overall retention', 'Retención global'),
       data: trendRates.value.map((r) => r.overall),
-      borderColor: '#0ea5e9',
-      backgroundColor: '#0ea5e9',
+      borderColor: chartColor('info-accent'),
+      backgroundColor: chartColor('info-accent'),
       tension: 0.3,
       yAxisID: 'pct',
       spanGaps: true,
@@ -439,8 +439,8 @@ const trendChartData = computed(() => ({
     {
       label: t('PVA (visits per new patient)', 'PVA (visitas por paciente nuevo)'),
       data: trendRates.value.map((r) => (r.pva === null ? null : Number(r.pva.toFixed(1)))),
-      borderColor: '#f59e0b',
-      backgroundColor: '#f59e0b',
+      borderColor: chartColor('warning-accent'),
+      backgroundColor: chartColor('warning-accent'),
       borderDash: [5, 4],
       tension: 0.3,
       yAxisID: 'pva',
@@ -481,7 +481,7 @@ const pdfRoot = ref<HTMLElement | null>(null)
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Statistics', 'Estadísticas')" :meta="t('Visit-type counts, conversion, and retention', 'Recuentos por tipo de visita, conversión y retención')">
       <div class="flex items-center gap-3">
-        <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
+        <ReportsBackLink />
         <ReportsPdfButton :target="pdfRoot" :title="t('Statistics', 'Estadísticas')" :range="range" :practitioner-id="practitionerFilter || null" :clinic-id="clinicFilter || null" />
       </div>
     </PageHeader>
@@ -495,7 +495,7 @@ const pdfRoot = ref<HTMLElement | null>(null)
         <NuxtLink to="/settings/appointment-types" class="font-medium underline">{{ t('Settings → Appointment Types', 'Ajustes → Tipos de cita') }}</NuxtLink>.
       </p>
 
-      <div class="mt-4 flex flex-wrap items-center gap-2">
+      <div class="mt-4 flex flex-wrap items-center gap-2 first:mt-0">
         <ReportsDateRangeSelect v-model="range" />
         <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" :locked-to="reportsPractitionerId" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
       </div>
@@ -516,8 +516,7 @@ const pdfRoot = ref<HTMLElement | null>(null)
             <p class="font-mono text-[23px] font-semibold text-ink-900">{{ tile.value }}</p>
             <p class="text-[12px] text-ink-muted2">{{ tile.label }}</p>
             <p v-if="delta(tile.value, tile.previous)" class="mt-1 text-[11.5px]" :class="delta(tile.value, tile.previous)!.up ? 'text-success-text' : 'text-danger-text'">
-              {{ delta(tile.value, tile.previous)!.up ? '▲' : '▼' }} {{ delta(tile.value, tile.previous)!.pct }}%
-              <span class="text-ink-faint2">{{ t(`vs ${tile.previous}`, `vs ${tile.previous}`) }}</span>
+              <ReportsTrendArrow :up="delta(tile.value, tile.previous)!.up" /> <span class="font-mono">{{ delta(tile.value, tile.previous)!.pct }}%</span> <span class="text-ink-faint2">{{ t(`vs ${tile.previous}`, `vs ${tile.previous}`) }}</span>
             </p>
             <p v-else class="mt-1 text-[11.5px] text-ink-faint2">{{ t(`vs ${tile.previous} before`, `vs ${tile.previous} antes`) }}</p>
             <p v-if="tile.booked || tile.missed" class="mt-1 text-[11px] text-ink-faint2">

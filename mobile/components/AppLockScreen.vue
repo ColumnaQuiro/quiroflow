@@ -28,6 +28,8 @@ watch(
 async function usePassword() {
   await lock.forget()
   clearVisitNoteDrafts()
+  // A patient's habit reminders are local to the phone (useHabitReminders).
+  await useHabitReminders().clear()
   await supabase.auth.signOut({ scope: 'local' })
   await navigateTo('/login')
 }

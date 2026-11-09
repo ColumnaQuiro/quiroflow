@@ -42,8 +42,12 @@ const WIDGET_COMPONENTS: Record<string, unknown> = {
 
 // Widgets scoped to "this week" (rather than the period filter below) get a
 // fixed header meta; period-filtered widgets get the formatted date range.
+// Only widgets that actually read the dateRange prop belong in the second
+// set: memberships_mini and upcoming_visits_mini count the calendar month
+// (and their rows say so), so a date range above them was a claim about
+// figures it did not describe.
 const THIS_WEEK_TYPES = new Set(['weekly_visits', 'visit_summary', 'no_show_rate'])
-const PERIOD_SCOPED_TYPES = new Set(['income_mini', 'appointment_distribution_mini', 'statistics_mini', 'memberships_mini', 'upcoming_visits_mini'])
+const PERIOD_SCOPED_TYPES = new Set(['income_mini', 'appointment_distribution_mini', 'statistics_mini'])
 
 const store = useAccountStore()
 const { practitioners, load: loadFilterOptions } = useReportFilterOptions()
@@ -94,7 +98,13 @@ function onDragOver(index: number) {
   draggedIndex.value = index
 }
 
+// Not before the saved layout has arrived. On a first visit in this browser
+// (no cached copy) `widgets` is still empty while it loads, so a widget added
+// then went onto an empty layout -- and load() answering a moment later
+// replaced it with the stored or default one, taking the new widget with it.
+// The button is disabled until then too; this is the floor under that.
 async function toggleEditing() {
+  if (!loaded.value) return
   if (editing.value) await save()
   editing.value = !editing.value
 }
@@ -112,6 +122,14 @@ function onRemoveWidget(id: string) {
 function onCycleSize(id: string, currentSize: 'sm' | 'md' | 'lg') {
   setSize(id, NEXT_SIZE[currentSize])
   save()
+}
+
+// The keyboard and touch way to do what a drag does; saved with "Done", as a
+// drag is.
+function onMove(index: number, delta: -1 | 1) {
+  const from = widgets.value.findIndex((w) => w.id === visibleWidgets.value[index]?.id)
+  const to = widgets.value.findIndex((w) => w.id === visibleWidgets.value[index + delta]?.id)
+  if (from >= 0 && to >= 0) reorder(from, to)
 }
 
 const widgetProps = computed(() => ({
@@ -161,7 +179,9 @@ const dateLocale = computed(() => (lang.value === 'es' ? 'es-ES' : 'en-GB'))
 function formatToday(locale: string) {
   return new Date().toLocaleDateString(locale, { weekday: 'long', month: 'long', day: 'numeric' })
 }
-const todayLabel = useState('dashboard-today', () => formatToday('en-GB'))
+// In the viewer's language from the first render: en-GB here showed a Spanish
+// clinic "Sunday 8 November" until the page mounted.
+const todayLabel = useState('dashboard-today', () => formatToday(dateLocale.value))
 onMounted(() => {
   todayLabel.value = formatToday(dateLocale.value)
 })
@@ -179,16 +199,18 @@ function widgetMeta(type: string): string | undefined {
 </script>
 
 <template>
-  <div class="flex h-full flex-col">
+  <!-- On a phone the header scrolls away with the widgets: pinned, its title,
+       two filters and the edit button took a third of the screen for good. -->
+  <div class="flex h-full flex-col max-sm:overflow-y-auto">
     <header class="flex shrink-0 flex-col gap-2.5 border-b border-line bg-surface px-4 py-3 sm:h-14 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-0">
       <div>
-        <h1 class="text-[18px] font-[640] tracking-tightTitle text-ink-900">{{ greeting }}, {{ firstName }}</h1>
+        <h1 class="text-[18px] font-[640] tracking-tightTitle text-ink-900">{{ firstName ? `${greeting}, ${firstName}` : greeting }}</h1>
         <p class="text-[12.5px] text-ink-muted2">{{ store.accountName }} · {{ todayLabel }}</p>
       </div>
       <div v-if="dashboardMode !== 'none'" class="flex flex-wrap items-center gap-2">
         <ReportsDateRangeSelect v-model="range" />
         <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" :locked-to="dashboardPractitionerId" :practitioners="practitioners" :clinics="[]" :show-clinic="false" />
-        <UiBtn :variant="editing ? 'primary' : 'secondary'" @click="toggleEditing">{{ editing ? t('Done', 'Hecho') : t('Edit layout', 'Editar diseño') }}</UiBtn>
+        <UiBtn :variant="editing ? 'primary' : 'secondary'" :disabled="!loaded" @click="toggleEditing">{{ editing ? t('Done', 'Hecho') : t('Edit layout', 'Editar diseño') }}</UiBtn>
       </div>
     </header>
 
@@ -198,7 +220,7 @@ function widgetMeta(type: string): string | undefined {
         :description="t('Your role does not include the dashboard\'s figures. Everything else your role allows is in the menu.', 'Tu rol no incluye las cifras del panel. Todo lo demás que tu rol permite está en el menú.')"
       />
     </div>
-    <div v-else class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] sm:px-6">
+    <div v-else class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] max-sm:flex-none sm:px-6">
       <DashboardFirstSteps v-if="store.isOwner && !editing" />
       <DashboardSetupProgress v-if="store.isOwner && !editing" />
       <DashboardAddWidgetPicker v-if="editing" :existing-types="[...widgets.map((w) => w.type), ...hiddenTypes]" @add="onAddWidget" />
@@ -230,6 +252,9 @@ function widgetMeta(type: string): string | undefined {
           :size="w.size"
           :editing="editing"
           :index="i"
+          :is-first="i === 0"
+          :is-last="i === visibleWidgets.length - 1"
+          @move="onMove(i, $event)"
           @remove="onRemoveWidget(w.id)"
           @cycle-size="onCycleSize(w.id, w.size)"
           @drag-start="onDragStart"

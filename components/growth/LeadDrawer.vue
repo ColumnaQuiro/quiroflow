@@ -78,23 +78,21 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
       class="relative flex h-full w-full max-w-[720px] flex-col bg-surface shadow-drawer"
       role="dialog"
       aria-modal="true"
-      :aria-label="`${t('Lead', 'Contacto')} ${lead.name}`"
+      :aria-label="`${t('Lead', 'Lead')} ${lead.name}`"
     >
       <header class="flex shrink-0 flex-col gap-3 border-b border-line px-5 py-4">
         <div class="flex items-start justify-between gap-3">
-          <div class="flex items-center gap-2.5">
-            <span class="flex h-9 w-9 items-center justify-center rounded-full border border-brand-tintBorder bg-brand-tint text-[12px] font-semibold text-brand-text">
+          <div class="flex min-w-0 items-center gap-2.5">
+            <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-brand-tintBorder bg-brand-tint text-[12px] font-semibold text-brand-text">
               {{ lead.initials }}
             </span>
-            <div class="flex flex-col">
-              <span class="text-[15px] font-semibold tracking-tightTitle text-ink-900">{{ lead.name }}</span>
+            <div class="flex min-w-0 flex-col">
+              <span class="break-words text-[15px] font-semibold tracking-tightTitle text-ink-900">{{ lead.name }}</span>
               <span class="font-mono text-[11px] text-ink-faint">{{ lead.reference }} · {{ lead.createdAt }}</span>
             </div>
           </div>
-          <div class="flex items-center gap-2">
-            <span v-if="lead.aiHandling" class="rounded-pill bg-brand px-2 py-0.5 text-[11px] font-semibold text-brand-on">
-              {{ t('AI handling', 'IA gestionando') }}
-            </span>
+          <div class="flex shrink-0 items-center gap-2">
+            <UiPill v-if="lead.aiHandling" tone="brand" dot>{{ t('AI handling', 'IA gestionando') }}</UiPill>
             <button
               type="button"
               class="flex h-7 w-7 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle touch:h-10 touch:w-10"
@@ -111,16 +109,16 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
             {{ t('Stage', 'Etapa') }}: {{ lead.stage }}
           </span>
           <div class="flex flex-col">
-            <span class="text-[11px] uppercase tracking-[.06em] text-ink-faint">{{ t('Source', 'Origen') }}</span>
+            <span class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Source', 'Origen') }}</span>
             <span class="text-[11.5px] text-ink-700">{{ lead.source }}</span>
           </div>
           <div class="flex flex-col">
-            <span class="text-[11px] uppercase tracking-[.06em] text-ink-faint">{{ t('Estimated value', 'Valor estimado') }}</span>
+            <span class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Estimated value', 'Valor estimado') }}</span>
             <form v-if="editingValue" class="flex items-center gap-1" data-test="lead-value-form" @submit.prevent="saveValue">
               <input
                 v-model="valueDraft"
                 inputmode="decimal"
-                class="h-6 w-20 rounded-ctlSm border border-line-control bg-surface px-1.5 font-mono text-[11.5px] text-ink-700"
+                class="h-7 w-20 rounded-ctlSm touch:h-10 border border-line-control bg-surface px-1.5 font-mono text-[11.5px] text-ink-700"
                 :placeholder="t('Default', 'Por defecto')"
                 :aria-label="t('Estimated value in euros', 'Valor estimado en euros')"
                 data-test="lead-value-input"
@@ -141,14 +139,18 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
             </button>
           </div>
           <div class="flex flex-col">
-            <span class="text-[11px] uppercase tracking-[.06em] text-ink-faint">{{ t('Owner', 'Responsable') }}</span>
+            <span class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Owner', 'Responsable') }}</span>
             <span class="text-[11.5px] text-ink-700">{{ lead.owner }}</span>
           </div>
         </div>
       </header>
 
-      <div class="flex flex-1 overflow-hidden">
-        <div class="flex-1 overflow-y-auto px-5 py-4">
+      <!-- One scrolling column below lg, with the contact rail under the
+      timeline. The rail used to be hidden there outright, so on the front
+      desk's iPad and on a phone the lead's phone number and email were
+      nowhere in the drawer. -->
+      <div class="flex min-h-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
+        <div class="px-5 py-4 lg:flex-1 lg:overflow-y-auto">
           <div class="mb-3 flex items-baseline justify-between">
             <h3 class="text-[12.5px] font-semibold tracking-tightTitle text-ink-900">{{ t('Timeline', 'Cronología') }}</h3>
             <span class="text-[11px] text-ink-faint">{{ t('Newest last', 'Lo más reciente al final') }}</span>
@@ -181,7 +183,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
                 </div>
 
                 <template v-else-if="entry.kind === 'qualification'">
-                  <span v-if="entry.body?.verdict" class="self-start rounded-pill border border-info-border bg-info-bg px-2 py-0.5 text-[11px] font-semibold text-info-text">{{ entry.body.verdict }}</span>
+                  <UiPill v-if="entry.body?.verdict" tone="info" class="self-start">{{ entry.body.verdict }}</UiPill>
                   <p class="text-[11.5px] leading-[1.5] text-ink-muted">{{ entry.detail }}</p>
                 </template>
 
@@ -204,14 +206,14 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
           </ol>
         </div>
 
-        <div class="hidden w-[232px] shrink-0 flex-col gap-4 overflow-y-auto border-l border-line px-4 py-4 lg:flex">
+        <div class="flex shrink-0 flex-col gap-4 border-t border-line px-5 py-4 lg:w-[232px] lg:overflow-y-auto lg:border-l lg:border-t-0 lg:px-4">
           <section class="flex flex-col gap-1.5">
-            <h3 class="text-[11px] font-semibold uppercase tracking-[.06em] text-ink-faint">{{ t('Contact', 'Contacto') }}</h3>
+            <h3 class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Contact', 'Contacto') }}</h3>
             <span v-for="line in lead.contact" :key="line" class="break-words text-[11.5px] text-ink-700">{{ line }}</span>
           </section>
 
           <section v-if="lead.attribution.length" class="flex flex-col gap-1.5 border-t border-line-divider pt-3.5">
-            <h3 class="text-[11px] font-semibold uppercase tracking-[.06em] text-ink-faint">{{ t('Attribution', 'Atribución') }}</h3>
+            <h3 class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Attribution', 'Atribución') }}</h3>
             <div v-for="row in lead.attribution" :key="row.label" class="flex flex-col">
               <span class="text-[11px] text-ink-faint">{{ row.label }}</span>
               <span class="text-[11.5px] text-ink-700">{{ row.value }}</span>
@@ -223,20 +225,20 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
           that says "accepted" when nothing recorded it would be the worst
           possible placeholder on this particular rail. -->
           <section v-if="lead.consent?.length" class="flex flex-col gap-1.5 border-t border-line-divider pt-3.5">
-            <h3 class="text-[11px] font-semibold uppercase tracking-[.06em] text-ink-faint">{{ t('Consent', 'Consentimiento') }}</h3>
+            <h3 class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Consent', 'Consentimiento') }}</h3>
             <span v-for="line in lead.consent" :key="line" class="text-[11.5px] text-ink-700">{{ line }}</span>
           </section>
         </div>
       </div>
 
       <footer class="flex shrink-0 flex-wrap items-center gap-2 border-t border-line bg-surface-subtle px-5 py-3">
-        <NuxtLink :to="inboxHref" class="flex h-9 items-center rounded-ctl border border-line-control bg-surface px-3.5 text-[12.5px] font-medium text-ink-700 hover:bg-surface-subtle" data-test="lead-message">
+        <NuxtLink :to="inboxHref" class="flex h-9 touch:h-11 items-center rounded-ctl border border-line-control bg-surface px-3.5 text-[12.5px] font-medium text-ink-700 hover:bg-surface-subtle" data-test="lead-message">
           {{ t('Message', 'Mensaje') }}
         </NuxtLink>
-        <a v-if="phoneHref" :href="phoneHref" class="flex h-9 items-center rounded-ctl border border-line-control bg-surface px-3.5 text-[12.5px] font-medium text-ink-700 hover:bg-surface-subtle" data-test="lead-call">
+        <a v-if="phoneHref" :href="phoneHref" class="flex h-9 touch:h-11 items-center rounded-ctl border border-line-control bg-surface px-3.5 text-[12.5px] font-medium text-ink-700 hover:bg-surface-subtle" data-test="lead-call">
           {{ t('Call', 'Llamar') }}
         </a>
-        <NuxtLink v-if="bookHref" :to="bookHref" class="flex h-9 items-center rounded-ctl border border-line-control bg-surface px-3.5 text-[12.5px] font-medium text-ink-700 hover:bg-surface-subtle" data-test="lead-book">
+        <NuxtLink v-if="bookHref" :to="bookHref" class="flex h-9 touch:h-11 items-center rounded-ctl border border-line-control bg-surface px-3.5 text-[12.5px] font-medium text-ink-700 hover:bg-surface-subtle" data-test="lead-book">
           {{ t('Book appointment', 'Reservar cita') }}
         </NuxtLink>
         <GrowthConvertLeadButton
@@ -244,7 +246,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
           :lead-id="lead.id"
           :lead-name="lead.name"
           then="book"
-          class="flex h-9 items-center rounded-ctl border border-line-control bg-surface px-3.5 text-[12.5px] font-medium text-ink-700 hover:bg-surface-subtle disabled:opacity-60"
+          class="flex h-9 touch:h-11 items-center rounded-ctl border border-line-control bg-surface px-3.5 text-[12.5px] font-medium text-ink-700 hover:bg-surface-subtle disabled:opacity-60"
           data-test="lead-book"
           @converted="(id: string) => emit('converted', id)"
         >
@@ -259,7 +261,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
             v-slot="{ converting }"
             :lead-id="lead.id"
             :lead-name="lead.name"
-            class="flex h-9 items-center gap-1.5 rounded-ctl bg-brand px-4 text-[12.5px] font-semibold text-brand-on hover:bg-brand-hover disabled:opacity-60"
+            class="flex h-9 touch:h-11 items-center gap-1.5 rounded-ctl bg-brand px-4 text-[12.5px] font-semibold text-brand-on hover:bg-brand-hover disabled:opacity-60"
             data-test="convert-lead"
             @converted="(id: string) => emit('converted', id)"
           >
@@ -269,7 +271,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
           <NuxtLink
             v-else
             :to="`/patients/${lead.patientId}`"
-            class="flex h-9 items-center gap-1.5 rounded-ctl border border-success-border bg-success-bg px-4 text-[12.5px] font-semibold text-success-text"
+            class="flex h-9 touch:h-11 items-center gap-1.5 rounded-ctl border border-success-border bg-success-bg px-4 text-[12.5px] font-semibold text-success-text"
             data-test="open-patient"
           >{{ t('Open patient record', 'Abrir ficha del paciente') }} →</NuxtLink>
           <!-- Says what it actually does. It used to promise it kept the

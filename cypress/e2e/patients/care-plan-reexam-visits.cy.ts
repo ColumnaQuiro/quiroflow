@@ -122,7 +122,7 @@ describe('Care plan re-exam visits', () => {
             cy.get('[data-cy=marker-mismatch-row]').should('have.length', 1)
             cy.contains('[data-cy=marker-mismatch-row]', 'Lucas Plan').should('contain', '3 · Revisión').and('contain', 'Ajuste')
             cy.contains('[data-cy=marker-mismatch-row]', 'Lucas Plan').find('[data-cy=marker-mismatch-fix]').click()
-            cy.get('[data-cy=marker-mismatches]').should('contain', 'Every upcoming re-exam is booked as its plan says.')
+            cy.get('[data-cy=marker-mismatches]').should('contain', 'Every upcoming re-exam is booked as its plan says')
             cy.task<{ appointment_type_id: string }[]>('db:selectRows', { table: 'appointments', columns: 'appointment_type_id, status', match: { patient_id: typed.id, status: 'booked' } })
               .its('0.appointment_type_id')
               .should('eq', revisionId)
@@ -141,7 +141,7 @@ describe('Care plan re-exam visits', () => {
           cy.visit(`/calendar?patient=${patient.id}&repeat=plan`)
           cy.get('[data-cy=booking-for]').should('contain.text', 'Nora Plan')
           cy.get('[data-testid="practitioner-tabs"]').contains('button', 'Test Owner').should('be.visible')
-          cy.clickUntil('button:contains("New Appointment")', '[data-cy=create-sheet]')
+          cy.clickUntil('[data-cy=new-appointment]', '[data-cy=create-sheet]')
           const first = nextWeekday(1, 10)
           cy.get('[data-cy=create-sheet]').within(() => {
             cy.contains('[data-cy=create-type]', 'Ajuste').click()

@@ -91,7 +91,7 @@ function detail(event: ReceptionistEvent) {
       </ul>
 
       <div class="flex flex-col gap-1.5 border-t border-line-divider pt-2.5">
-        <span class="text-[11px] font-semibold uppercase tracking-[.06em] text-ink-faint">{{ t('Most recent', 'Lo más reciente') }}</span>
+        <span class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Most recent', 'Lo más reciente') }}</span>
         <p v-if="!activity.recent.length" class="text-[11.5px] text-ink-muted" data-test="activity-empty">
           {{ t('Nothing yet. What it books, moves or hands over appears here, with a note in the conversation.', 'Nada todavía. Lo que reserve, mueva o pase a una persona aparece aquí, con una nota en la conversación.') }}
         </p>

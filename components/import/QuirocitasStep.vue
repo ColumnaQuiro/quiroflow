@@ -38,7 +38,7 @@ const INTRO: Record<QuirocitasStepKind, { lead: () => string; notes: () => { tit
   appointments: {
     lead: () => t('Past and upcoming visits, missed and cancelled ones included, with their type and chiropractor.', 'Visitas pasadas y futuras, faltas y anulaciones incluidas, con su tipo y quiropráctico.'),
     notes: () => [
-      { title: t('Calls are not visits.', 'Las llamadas no son visitas.'), body: t('Quirocitas books follow-up calls ("Charla") as appointments; they come in as calls in the patient\'s contact history, in the Clinical step.', 'Quirocitas apunta las llamadas de seguimiento ("Charla") como citas; llegan como llamadas en el historial de contacto, en el paso Clínico.') },
+      { title: t('Calls are not visits.', 'Las llamadas no son visitas.'), body: t('Quirocitas books follow-up calls ("Charla") as appointments; they come in as calls in the patient\'s contact history, with the "Clinical history and calls" step.', 'Quirocitas apunta las llamadas de seguimiento ("Charla") como citas; llegan como llamadas en el historial de contacto, con el paso "Historial clínico y llamadas".') },
       { title: t('QuiroFlow wins once it has acted.', 'Manda QuiroFlow si ya actuó.'), body: t('A visit moved, checked in or closed here is kept as it is on a re-run.', 'Una visita movida, registrada o cerrada aquí se mantiene al repetir.') },
     ],
   },
@@ -56,7 +56,7 @@ const INTRO: Record<QuirocitasStepKind, { lead: () => string; notes: () => { tit
   ledger: {
     lead: () => t('The cash ledger since it began: what each visit was worth, every payment by cash, card or transfer, and the invoices Quirocitas issued.', 'La caja desde su inicio: lo que valió cada visita, cada pago en efectivo, tarjeta o transferencia, y las facturas que emitió Quirocitas.'),
     notes: () => [
-      { title: t('Never sent to VeriFactu.', 'Nunca se envía a VeriFactu.'), body: t('Imported invoices are history, numbered "QC-…" as Quirocitas numbered them, all marked paid.', 'Las facturas importadas son historial, numeradas "QC-…" como en Quirocitas, todas pagadas.') },
+      { title: t('Never sent to VeriFactu.', 'Nunca se envía a VeriFactu.'), body: t('Imported invoices are history, numbered "QC-…" as Quirocitas numbered them. They come in paid, unless Quirocitas still shows money owed on the visit.', 'Las facturas importadas son historial, numeradas "QC-…" como en Quirocitas. Llegan pagadas, salvo que Quirocitas aún muestre dinero pendiente en la visita.') },
       { title: t('Needs Patients, Appointments and Bonos.', 'Requiere Pacientes, Citas y Bonos.'), body: t('Charges sit on their visit and bono payments on their bono.', 'Los cargos van en su visita y los pagos de bono en su bono.') },
     ],
   },
@@ -144,7 +144,7 @@ async function apply() {
 
     <div v-else-if="stage === 'done' && result" class="space-y-2" data-cy="qc-done">
       <p class="text-sm" :class="result.errors.length ? 'text-warning-text' : 'text-success-text'">
-        {{ stopping ? t(`Stopped after writing ${nf.format(result.written)}. Prepare again to carry on.`, `Parado tras escribir ${nf.format(result.written)}. Vuelve a preparar para seguir.`) : t(`Done: ${nf.format(result.written)} written.`, `Hecho: ${nf.format(result.written)} escritos.`) }}
+        {{ stopping ? t(`Stopped after saving ${nf.format(result.written)}. Prepare the preview again to carry on.`, `Parado tras guardar ${nf.format(result.written)}. Vuelve a preparar la vista previa para seguir.`) : result.errors.length ? t(`Finished: ${nf.format(result.written)} saved, with the problems below.`, `Terminado: ${nf.format(result.written)} guardados, con los problemas de abajo.`) : t(`Done: ${nf.format(result.written)} saved.`, `Hecho: ${nf.format(result.written)} guardados.`) }}
       </p>
       <ul v-if="result.errors.length" class="max-h-60 space-y-1 overflow-y-auto rounded-ctl border border-line-divider p-3 text-[12.5px] text-danger-text">
         <li v-for="(e, i) in result.errors.slice(0, 100)" :key="i">{{ e }}</li>

@@ -78,26 +78,26 @@ async function confirmRemove() {
     <div class="space-y-3 border-b border-line p-4">
       <div class="flex items-center justify-between">
         <h2 class="text-[15px] font-semibold text-ink-900">{{ t('Add a block', 'Añadir un bloque') }}</h2>
-        <button type="button" class="flex h-8 w-8 items-center justify-center rounded-ctlSm text-[18px] text-ink-muted2 hover:bg-surface-subtle touch:h-10 touch:w-10" :aria-label="t('Close', 'Cerrar')" @click="emit('close')">×</button>
+        <button type="button" class="flex h-8 w-8 items-center justify-center rounded-ctlSm text-ink-muted2 hover:bg-surface-subtle touch:h-11 touch:w-11" :aria-label="t('Close', 'Cerrar')" @click="emit('close')"><UiCloseIcon /></button>
       </div>
       <div class="flex gap-1 rounded-ctl bg-surface-subtle p-1 text-[12.5px]">
-        <button type="button" class="h-8 flex-1 rounded-ctlSm" :class="tab === 'reports' ? 'bg-surface font-semibold text-ink-900 shadow-card' : 'text-ink-muted2'" data-cy="report-add-tab-reports" @click="tab = 'reports'">{{ t('From reports', 'De los informes') }}</button>
-        <button type="button" class="h-8 flex-1 rounded-ctlSm" :class="tab === 'saved' ? 'bg-surface font-semibold text-ink-900 shadow-card' : 'text-ink-muted2'" data-cy="report-add-tab-saved" @click="tab = 'saved'">
+        <button type="button" class="h-8 flex-1 rounded-ctlSm touch:h-10" :class="tab === 'reports' ? 'bg-surface font-semibold text-ink-900 shadow-card' : 'text-ink-muted2'" data-cy="report-add-tab-reports" @click="tab = 'reports'">{{ t('From reports', 'De los informes') }}</button>
+        <button type="button" class="h-8 flex-1 rounded-ctlSm touch:h-10" :class="tab === 'saved' ? 'bg-surface font-semibold text-ink-900 shadow-card' : 'text-ink-muted2'" data-cy="report-add-tab-saved" @click="tab = 'saved'">
           {{ t('Saved', 'Guardados') }}<template v-if="!savedLoading"> · {{ savedBlocks.length }}</template>
         </button>
-        <button type="button" class="h-8 flex-1 rounded-ctlSm text-ink-muted2 hover:text-ink-900" data-cy="report-add-new" @click="emit('build')">{{ t('New report', 'Nuevo informe') }}</button>
+        <button type="button" class="h-8 flex-1 rounded-ctlSm text-ink-muted2 hover:text-ink-900 touch:h-10" data-cy="report-add-new" @click="emit('build')">{{ t('New report', 'Nuevo informe') }}</button>
       </div>
-      <input v-model="search" type="search" :placeholder="t('Search: income, retention, no-show…', 'Buscar: ingresos, retención, no presentados…')" class="h-9 w-full rounded-ctl border border-line-control px-3 text-[13px] focus:border-brand focus:outline-none" />
+      <input v-model="search" type="search" :placeholder="t('Search: income, retention, no-show…', 'Buscar: ingresos, retención, no presentados…')" class="h-9 w-full rounded-ctl border border-line-control bg-surface px-3 text-[13px] focus:border-brand focus:outline-none touch:h-11" />
     </div>
 
     <div class="flex-1 space-y-4 overflow-y-auto p-4">
       <template v-if="tab === 'reports'">
         <div v-for="g in library" :key="g.report" class="space-y-0.5">
-          <p class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-faint2">{{ g.report }}</p>
+          <p class="mb-1 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint2">{{ g.report }}</p>
           <div v-for="b in g.blocks" :key="b.title" class="flex items-center gap-2.5 rounded-ctlSm px-2 py-1.5 hover:bg-surface-subtle">
             <span class="w-14 shrink-0 rounded-ctlSm bg-chip-bg px-1.5 py-0.5 text-center text-[11px] font-semibold text-chip-text">{{ t(...KIND[b.config.chart]!) }}</span>
             <span class="min-w-0 flex-1 truncate text-[13px] text-ink-800">{{ b.title }}</span>
-            <span v-if="onPage(b.config.metric, b.config.split, b.config.chart)" class="shrink-0 rounded-ctlSm bg-success-bg px-1.5 py-0.5 text-[11px] font-semibold text-success-text">{{ t('On page', 'En la página') }}</span>
+            <UiPill v-if="onPage(b.config.metric, b.config.split, b.config.chart)" tone="success" class="shrink-0">{{ t('On page', 'En la página') }}</UiPill>
             <UiBtn size="sm" class="shrink-0" :data-cy="`report-add-${b.config.metric}-${b.config.split}`" @click="addPreset(b)">+ {{ t('Add', 'Añadir') }}</UiBtn>
           </div>
         </div>
@@ -112,7 +112,7 @@ async function confirmRemove() {
         <div v-for="s in savedBlocks" :key="s.saved.id" class="flex items-center gap-2.5 rounded-ctlSm px-2 py-1.5 hover:bg-surface-subtle" data-cy="report-saved-row">
           <span class="w-14 shrink-0 rounded-ctlSm bg-chip-bg px-1.5 py-0.5 text-center text-[11px] font-semibold text-chip-text">{{ t(...KIND[s.config.split === 'none' ? 'number' : s.config.chart]!) }}</span>
           <span class="min-w-0 flex-1 truncate text-[13px] text-ink-800">{{ s.saved.name }}</span>
-          <button type="button" class="shrink-0 rounded-ctlSm px-1.5 text-[12px] text-ink-faint2 hover:text-danger-text" :aria-label="t('Delete saved report', 'Eliminar informe guardado')" @click="removing = s.saved">✕</button>
+          <UiIconBtn icon="trash" tone="danger" :label="t('Delete saved report', 'Eliminar informe guardado')" @click="removing = s.saved" />
           <UiBtn size="sm" class="shrink-0" data-cy="report-add-saved" @click="addSaved(s)">+ {{ t('Add', 'Añadir') }}</UiBtn>
         </div>
       </template>

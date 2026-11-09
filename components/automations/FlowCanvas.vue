@@ -249,7 +249,7 @@ function pickStep(type: string) {
           :key="insertKey(p)"
           type="button"
           class="absolute flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border text-[14px] font-semibold leading-none shadow-card touch:h-9 touch:w-9"
-          :class="activeInsert && insertKey(activeInsert) === insertKey(p) ? 'border-brand bg-brand text-surface' : 'border-line-control bg-surface text-ink-muted hover:border-brand hover:text-brand-text'"
+          :class="activeInsert && insertKey(activeInsert) === insertKey(p) ? 'border-brand bg-brand text-brand-on' : 'border-line-control bg-surface text-ink-muted hover:border-brand hover:text-brand-text'"
           :style="{ left: `${p.x}px`, top: `${p.y}px` }"
           :aria-label="t('Add a step here', 'Añadir un paso aquí')"
           :data-test="`insert-${p.parentId ?? 'root'}-${p.branch ?? 'root'}-${p.index}`"

@@ -41,8 +41,10 @@ export default defineEventHandler(async (event) => {
   const caller = await serverSupabaseClient<Database>(event)
   const { data, error } = await caller.rpc('create_public_booking', body as BookingArgs)
   if (error) {
-    // The function's own refusals are written for the patient ("Esa hora ya
-    // no está disponible…"), and the page shows them as they are.
+    // The function's own refusals are English sentences ("That time is no
+    // longer available"); the page says each in the patient's language
+    // (BOOKING_REFUSALS in pages/book/[slug].vue), and anything it does not
+    // know as a plain "could not be completed".
     throw createError({ statusCode: 400, message: error.message, data: { message: error.message } })
   }
 
@@ -89,7 +91,7 @@ export default defineEventHandler(async (event) => {
       gift = await redeemGiftAtBooking(event, result.appointment_id, giftCode)
     } catch (err: any) {
       console.error('[public-booking] gift voucher redeem failed', result.appointment_id, err)
-      gift = { redeemed: false, message: err?.statusMessage ?? 'No se ha podido canjear el bono regalo. Dalo en recepción.' }
+      gift = { redeemed: false, message: err?.statusMessage ?? 'No se ha podido canjear el bono regalo. Preséntelo en recepción.' }
     }
   }
 
@@ -129,7 +131,7 @@ async function recordBookingLanguage(service: ReturnType<typeof serverSupabaseSe
 async function redeemGiftAtBooking(event: Parameters<typeof serverSupabaseServiceRole>[0], appointmentId: string, code: string) {
   const service = serverSupabaseServiceRole<Database>(event)
   const { data: appt } = await service.from('appointments').select('account_id, patient_id').eq('id', appointmentId).maybeSingle()
-  if (!appt?.patient_id) return { redeemed: false, message: 'No se ha podido canjear el bono regalo. Dalo en recepción.' }
+  if (!appt?.patient_id) return { redeemed: false, message: 'No se ha podido canjear el bono regalo. Preséntelo en recepción.' }
   const check = await giftVoucherFor(service, appt.account_id, code)
   if (!check.ok) return { redeemed: false, reason: check.reason, message: GIFT_REFUSAL[check.reason] }
   await redeemGiftVoucher(service, check.voucher, appt.patient_id, null)

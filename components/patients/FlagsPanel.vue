@@ -132,7 +132,7 @@ const fieldId = useId()
           <textarea :id="`${fieldId}-chiefComplaint`"
             v-model="chiefComplaint"
             rows="2"
-            :placeholder="t(`Enter patient's chief complaint here`, 'Introduce aquí el motivo de consulta del paciente')"
+            :placeholder="t('What brought them in', 'Qué le trae a consulta')"
             class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-2.5 py-1.5 text-[12.5px] text-ink-700 focus:border-brand focus:outline-none"
             @blur="saveChiefComplaint"
           ></textarea>
@@ -161,7 +161,7 @@ const fieldId = useId()
         </div>
 
         <div>
-          <label :for="`${fieldId}-redFlags`" class="block text-[11px] font-medium text-danger-text">{{ t('Red flags', 'Alertas rojas') }}</label>
+          <label :for="`${fieldId}-redFlags`" class="block text-[11px] font-medium text-danger-text">{{ t('Red flags', 'Señales rojas') }}</label>
           <textarea :id="`${fieldId}-redFlags`"
             v-model="redFlags"
             rows="2"
@@ -172,7 +172,7 @@ const fieldId = useId()
         </div>
 
         <div>
-          <label :for="`${fieldId}-yellowFlags`" class="block text-[11px] font-medium text-warning-accent">{{ t('Yellow flags', 'Alertas amarillas') }}</label>
+          <label :for="`${fieldId}-yellowFlags`" class="block text-[11px] font-medium text-warning-accent">{{ t('Yellow flags', 'Señales amarillas') }}</label>
           <textarea :id="`${fieldId}-yellowFlags`"
             v-model="yellowFlags"
             rows="2"

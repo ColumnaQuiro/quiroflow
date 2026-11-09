@@ -1781,6 +1781,9 @@ const { pulling, refreshing: pullRefreshing, pullDistance, onTouchStart, onTouch
     <!-- Conversation list: always mounted underneath the thread overlay. On a
          wide iPad (lg) it keeps a 340px column and the thread opens beside it. -->
     <div class="absolute inset-0 flex min-h-0 flex-col bg-surface lg:right-auto lg:w-[340px] lg:border-r lg:border-line">
+      <!-- Above the list only, so an open conversation still covers the whole
+           screen on a phone (pages/inbox.vue puts the Team switch here). -->
+      <slot v-if="!selectionMode" name="list-top" />
       <div v-if="!selectionMode" class="flex shrink-0 items-center gap-2 border-b border-line bg-surface px-3 py-2">
         <input
           v-model="search"

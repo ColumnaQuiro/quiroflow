@@ -19,6 +19,8 @@ export interface GrowthLead {
   /** Appointment line shown in green -- booked, attended, or converted. */
   appointment?: string
   timeInStage: string
+  /** When it entered the stage; the board words it as timeInStage. */
+  stageChangedAt?: string
   value: string
 }
 
@@ -28,6 +30,8 @@ export interface GrowthLeadColumn {
   /** Total in the stage, which can exceed cards.length -- see `more`. */
   count: number
   value: string
+  /** The stage's estimated value alone, "6030 €". */
+  amount?: string
   cards: GrowthLead[]
   /** "+16 more" footer where the stage holds more than the board renders. */
   more?: string
@@ -53,9 +57,10 @@ interface LeadsResponse {
 
 // The one stage that explains itself when empty, because an empty Lost column
 // is good news rather than missing data. Copy lives here rather than in the
-// API: it is presentation, and it needs translating.
-const EMPTY_STAGE_COPY: Record<string, { title: string; detail: string }> = {
-  lost: { title: 'No lost leads', detail: 'Nothing closed out in the last 30 days.' },
+// API: it is presentation, and it needs translating. It said "Nothing closed
+// out in the last 30 days", but the column holds every lost lead, of any age.
+const EMPTY_STAGE_COPY: Record<string, { title: [string, string]; detail: [string, string] }> = {
+  lost: { title: ['No lost leads', 'Ningún lead perdido'], detail: ['No lead has been marked as lost.', 'No se ha marcado ningún lead como perdido.'] },
 }
 
 export function useGrowthLeads() {
@@ -84,9 +89,20 @@ export function useGrowthLeads() {
       const data = await useStaffFetch<LeadsResponse>('/api/growth/leads', { query: params })
       // Typing fires a load per pause; only the newest answer is drawn.
       if (mine !== latest) return
+      const now = Date.now()
       columns.value = data.columns.map((column) => {
         const empty = EMPTY_STAGE_COPY[column.key]
-        return empty ? { ...column, emptyTitle: empty.title, emptyDetail: empty.detail } : column
+        const worded: GrowthLeadColumn = {
+          ...column,
+          title: growthLeadStageTitle(column.key, t, column.title),
+          value: column.amount ? `${column.amount} est.` : column.value,
+          cards: column.cards.map((card) => ({
+            ...card,
+            source: growthLeadSource(card.source, t),
+            timeInStage: card.stageChangedAt ? growthLeadTimeInStage(card.stageChangedAt, t, now) : card.timeInStage,
+          })),
+        }
+        return empty ? { ...worded, emptyTitle: t(...empty.title), emptyDetail: t(...empty.detail) } : worded
       })
       summary.value = data.summary
       error.value = null
@@ -95,7 +111,7 @@ export function useGrowthLeads() {
       // is '[GET] "/api/growth/leads": 500 Internal Server Error'. That
       // belongs in the console, which already has it, not on the screen of
       // someone trying to work a pipeline.
-      if (mine === latest) error.value = t('Could not load leads. Refresh to try again.', 'No se han podido cargar los contactos. Actualiza para reintentar.')
+      if (mine === latest) error.value = t('Could not load leads. Refresh the page to try again.', 'No se han podido cargar los leads. Actualiza la página para reintentarlo.')
     } finally {
       loading.value = false
     }
@@ -132,7 +148,7 @@ export function useGrowthLeads() {
     const [lead] = from.cards.splice(index, 1)
     if (!lead) return
 
-    to.cards.unshift({ ...lead, timeInStage: 'just now' })
+    to.cards.unshift({ ...lead, timeInStage: t('Just now', 'Ahora mismo'), stageChangedAt: new Date().toISOString() })
     from.count = Math.max(0, from.count - 1)
     to.count += 1
 
@@ -150,7 +166,7 @@ export function useGrowthLeads() {
       to.count = Math.max(0, to.count - 1)
       // A toast, not the page-level error: the board is still perfectly
       // usable, and the one thing that failed has already been undone.
-      showToast(t('Could not move that lead. It has been put back.', 'No se ha podido mover el contacto. Se ha devuelto a su sitio.'), 'error')
+      showToast(t('Could not move that lead. It is back in its stage.', 'No se ha podido mover el lead. Ha vuelto a su etapa.'), 'error')
     }
   }
 

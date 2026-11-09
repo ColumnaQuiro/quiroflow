@@ -17,7 +17,7 @@ describe('Booking from a patient page', () => {
         cy.get('[data-cy=booking-for]').should('contain.text', 'Booking for Lucía Marín')
 
         cy.get('[data-testid="practitioner-tabs"]').contains('button', 'Test Owner').should('be.visible')
-        cy.clickUntil('button:contains("New Appointment")', '[data-cy=create-sheet]')
+        cy.clickUntil('[data-cy=new-appointment]', '[data-cy=create-sheet]')
         cy.get('[data-cy=create-sheet]').within(() => {
           // Chosen, and described the way a search result would be.
           cy.get('[data-cy=create-patient-selected]').should('contain.text', 'Lucía Marín').and('contain.text', 'Bono 6/8')
@@ -30,7 +30,7 @@ describe('Booking from a patient page', () => {
         cy.get('[data-cy=booking-for-clear]').click()
         cy.get('[data-cy=booking-for]').should('not.exist')
         cy.location('search').should('not.include', 'patient=')
-        cy.clickUntil('button:contains("New Appointment")', '[data-cy=create-patient-search]')
+        cy.clickUntil('[data-cy=new-appointment]', '[data-cy=create-patient-search]')
         cy.get('[data-cy=create-patient-selected]').should('not.exist')
       })
     })

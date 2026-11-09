@@ -139,7 +139,7 @@ describe('A visit says how it was paid', () => {
         cy.login(account.email, account.password)
         cy.visit(`/patients/${patient.id}?tab=appointments`)
 
-        cy.contains('dt', 'Visits, 12 mo').parent().should('contain.text', '2')
+        cy.contains('dt', 'Visits, last 12 months').parent().should('contain.text', '2')
 
         // The booked one is upcoming; the three completed ones are past.
         cy.contains('h2', 'Upcoming').should('contain.text', '1')
@@ -177,7 +177,7 @@ describe('A visit says how it was paid', () => {
         for (const [width, height] of [[1440, 900], [390, 844]] as [number, number][]) {
           cy.viewport(width, height)
           cy.visit(`/patients/${patient.id}?tab=appointments`)
-          cy.contains('dt', 'Visits, 12 mo').should('be.visible')
+          cy.contains('dt', 'Visits, last 12 months').should('be.visible')
           cy.contains('dt', 'Cancelled').should('be.visible')
           cy.document().then((doc) => {
             expect(doc.documentElement.scrollWidth, `no sideways scroll at ${width}`).to.be.at.most(

@@ -59,10 +59,10 @@ describe('Reschedule mode (cross-week move)', () => {
         // initial viewport, no scrolling needed) to pick the new slot.
         cy.get('[data-cal-col]').first().click(30, 60)
 
-        cy.contains('h2', 'Rescheduling Appointment').should('be.visible')
+        cy.contains('h2', 'Reschedule appointment').should('be.visible')
         cy.contains('Alice Anderson').should('be.visible')
-        cy.contains('button', 'Confirm').click()
-        cy.contains('h2', 'Rescheduling Appointment').should('not.exist')
+        cy.contains('button', 'Move appointment').click()
+        cy.contains('h2', 'Reschedule appointment').should('not.exist')
         cy.contains('Rescheduling').should('not.exist') // banner gone, mode exited
 
         // It's now on this (one-week-later) day...

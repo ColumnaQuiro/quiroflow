@@ -64,3 +64,12 @@ private_keys/
 # nuxt.config.ts excludes the same path from Nuxt's and Vite's file
 # watchers, for a different reason (EMFILE) with the same root cause.
 .claude/worktrees/
+
+# Impeccable (design skill + hook). Only the shared config and the design
+# system sidecar are committed; everything else it writes here is per-machine
+# or per-session: hook consent (config.local.json), the hook's dedup cache,
+# mocks, review screenshots, live sessions and build state. Screenshots in
+# particular can show whatever data was on screen, so they never belong in git.
+.impeccable/*
+!.impeccable/config.json
+!.impeccable/design.json

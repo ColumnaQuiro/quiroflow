@@ -89,8 +89,8 @@ const areaClass = 'resize-none rounded-ctl border border-line-control bg-surface
   <GrowthSettingCard :title="t('Clinic knowledge', 'Lo que sabe de la clínica')">
     <p v-if="!config.knowledge.length" class="text-[11.5px] leading-[1.5] text-ink-muted" data-test="knowledge-empty">
       {{ t(
-        'Nothing yet. Prices, the address and the hours come from your settings; for anything else -- what you treat, what the first visit includes -- the receptionist says it will check with a colleague rather than guessing.',
-        'Nada todavía. Los precios, la dirección y el horario los saca de Ajustes; para todo lo demás (qué tratáis, qué incluye la primera visita), la recepcionista dirá que lo consultará con un compañero en lugar de inventar.',
+        'Nothing yet. Prices, the address and the hours come from your settings. For anything else (what you treat, what the first visit includes), the receptionist says it will check with a colleague rather than guessing.',
+        'Nada todavía. Los precios, la dirección y el horario los saca de Ajustes. Para todo lo demás (qué tratáis, qué incluye la primera visita), la recepcionista dirá que lo consultará con un compañero en lugar de inventar.',
       ) }}
     </p>
 
@@ -123,7 +123,7 @@ const areaClass = 'resize-none rounded-ctl border border-line-control bg-surface
           v-for="template in templates"
           :key="template.title"
           type="button"
-          class="rounded-pill border border-line-control bg-surface px-2.5 py-0.5 text-[11px] font-medium text-ink-700 hover:border-brand hover:text-brand-text"
+          class="rounded-pill border border-line-control bg-surface px-2.5 py-0.5 text-[11px] font-medium text-ink-700 hover:border-brand hover:text-brand-text touch:py-2"
           :data-test="`card-template-${template.title}`"
           @click="useTemplate(template)"
         >

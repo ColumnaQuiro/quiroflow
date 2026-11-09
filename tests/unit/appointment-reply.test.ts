@@ -33,4 +33,34 @@ describe('an appointment reply', () => {
     expect(appointmentReplyIntent('Cancelar')).toBe('cancelled')
     expect(appointmentReplyIntent('Gracias')).toBeNull()
   })
+
+  it('cancels from typed text only when the whole message is a cancellation', () => {
+    expect(appointmentReplyIntent('Cancelar la cita, por favor')).toBe('cancelled')
+    expect(appointmentReplyIntent('Cancelo mi cita gracias')).toBe('cancelled')
+    expect(appointmentReplyIntent('Annuler mon rendez-vous merci')).toBe('cancelled')
+    // Names a visit, which need not be the one the last reminder was about:
+    // the Tuesday one was cancelled for this.
+    expect(appointmentReplyIntent('Cancelar la del viernes, la del martes la mantengo')).toBeNull()
+    expect(appointmentReplyIntent('Cancelar la de mañana')).toBeNull()
+  })
+
+  it('reads a button by its title, as the template wrote it', () => {
+    expect(appointmentReplyIntent('Cancelar cita', { button: true })).toBe('cancelled')
+    expect(appointmentReplyIntent('Confirmar asistencia', { button: true })).toBe('confirmed')
+  })
+
+  it('does not take a conditional or a doubt for a yes', () => {
+    expect(appointmentReplyIntent('Si no puedo ir, ¿qué hago?')).toBeNull()
+    expect(appointmentReplyIntent('Si puedo ir os aviso')).toBeNull()
+    expect(appointmentReplyIntent('Sí, pero ¿la puedo cambiar?')).toBe('reschedule_requested')
+    expect(appointmentReplyIntent('Vale, aunque igual llego tarde')).toBeNull()
+  })
+
+  it('still takes a plain yes, accent or not', () => {
+    expect(appointmentReplyIntent('Si')).toBe('confirmed')
+    expect(appointmentReplyIntent('Si, gracias')).toBe('confirmed')
+    expect(appointmentReplyIntent('si gracias')).toBe('confirmed')
+    expect(appointmentReplyIntent('Sí allí estaré')).toBe('confirmed')
+    expect(appointmentReplyIntent('Confirmo, gracias')).toBe('confirmed')
+  })
 })

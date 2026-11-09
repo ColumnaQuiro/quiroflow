@@ -103,10 +103,19 @@ const fieldId = useId()
 </script>
 
 <template>
-  <div v-if="!loading" class="rounded-card border border-danger-border bg-danger-bg3 p-4 shadow-card">
+  <!-- While the record is read: the card's shape, not nothing. In the
+       Clinical tab's dialog an empty body read as a dialog that had failed. -->
+  <div v-if="loading" class="rounded-card border border-line bg-surface p-4 shadow-card" data-cy="flags-loading">
+    <UiSkeleton class="h-4 w-24 rounded-ctlSm" />
+    <div class="mt-3 space-y-2">
+      <UiSkeleton class="h-3.5 w-full rounded-ctlSm" />
+      <UiSkeleton class="h-3.5 w-2/3 rounded-ctlSm" />
+    </div>
+  </div>
+  <div v-else class="rounded-card border border-danger-border bg-danger-bg3 p-4 shadow-card">
     <div class="flex items-center justify-between gap-2">
       <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Flags', 'Alertas') }}</p>
-      <button type="button" class="text-[12px] font-medium text-brand-text hover:text-brand-hover" data-cy="flags-done" @click="toggleEditing">
+      <button type="button" class="-mr-1.5 inline-flex h-8 items-center rounded-ctlSm px-1.5 text-[12.5px] font-medium text-brand-text outline-none hover:text-brand-hover focus-visible:shadow-focus touch:h-11" data-cy="flags-done" @click="toggleEditing">
         {{ editing ? t('Done', 'Listo') : t('Edit', 'Editar') }}
       </button>
     </div>
@@ -192,10 +201,10 @@ const fieldId = useId()
                 type="button"
                 data-cy="patient-tag-remove"
                 :aria-label="t(`Remove tag ${tag}`, `Quitar la etiqueta ${tag}`)"
-                class="text-ink-faint hover:text-ink-600"
+                class="relative -mr-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full text-ink-faint outline-none hover:text-ink-600 focus-visible:shadow-focus touch:after:absolute touch:after:-inset-3 touch:after:content-['']"
                 @click="removeTag(tag)"
               >
-                ✕
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true" class="h-3 w-3"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
               <span v-else data-cy="patient-tag-locked" class="sr-only">{{ t('(your role cannot remove tags)', '(tu rol no puede quitar etiquetas)') }}</span>
             </span>
@@ -203,7 +212,7 @@ const fieldId = useId()
               v-model="newTag"
               type="text"
               :placeholder="t('+ Add tag', '+ Añadir etiqueta')"
-              class="w-24 rounded-ctlSm border border-line-control bg-surface px-1.5 py-0.5 text-[11px] focus:border-brand focus:outline-none"
+              class="h-7 w-32 rounded-ctlSm border border-line-control bg-surface px-2 text-[12px] text-ink-700 placeholder-ink-faint2 focus:border-brand focus:outline-none touch:h-10"
               @keydown.enter.prevent="addTag"
               @blur="addTag"
             />

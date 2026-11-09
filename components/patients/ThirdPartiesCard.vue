@@ -17,6 +17,7 @@ const supabase = useSupabaseClient()
 const store = useAccountStore()
 const { can } = usePermission()
 const t = useT()
+const { formatShortDateYear } = useDates()
 const { showToast } = useToast()
 
 interface Cover {
@@ -160,7 +161,7 @@ const label = 'block text-[12px] font-medium text-ink-700'
 <template>
   <section v-if="visible" aria-labelledby="third-parties-h" class="rounded-card border border-line bg-surface p-4 shadow-card" data-cy="patient-third-parties">
     <div class="flex items-center justify-between gap-2">
-      <h3 id="third-parties-h" class="text-[12px] font-semibold uppercase tracking-[.04em] text-ink-muted2">{{ t('Third parties', 'Terceros') }}</h3>
+      <h3 id="third-parties-h" class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">{{ t('Third parties', 'Terceros') }}</h3>
       <UiBtn v-if="canEdit && !draft && activeThirdParties.length" size="sm" data-cy="patient-tp-add" @click="edit(null)">{{ t('Add cover', 'Añadir cobertura') }}</UiBtn>
     </div>
 
@@ -177,7 +178,7 @@ const label = 'block text-[12px] font-medium text-ink-700'
           <span v-if="c.authorized_sessions != null" class="text-[12.5px] text-ink-muted" data-cy="patient-tp-sessions">
             {{ t(`${usedBy(c.id)} of ${c.authorized_sessions} sessions`, `${usedBy(c.id)} de ${c.authorized_sessions} sesiones`) }}
           </span>
-          <span v-if="c.valid_until" class="text-[12.5px] text-ink-muted">{{ t('until', 'hasta') }} {{ new Date(`${c.valid_until}T00:00:00`).toLocaleDateString() }}</span>
+          <span v-if="c.valid_until" class="text-[12.5px] text-ink-muted">{{ t('until', 'hasta') }} {{ formatShortDateYear(`${c.valid_until}T00:00:00`) }}</span>
           <span class="flex-1" />
           <template v-if="canEdit">
             <button type="button" class="text-[12px] font-medium text-brand-text hover:text-brand-hover" @click="edit(c)">{{ t('Edit', 'Editar') }}</button>

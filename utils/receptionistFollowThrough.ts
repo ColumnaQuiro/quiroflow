@@ -133,7 +133,25 @@ export function chosenTimeNote(o: OfferedTime, canBook: boolean): string {
 export function asksWhetherToCancel(text: string): boolean {
   const t = fold(text)
   if (!t.includes('?')) return false
-  return /\b(te\s+quito\s+(la|tu)\s+cita|te\s+la\s+quito|te\s+la\s+cancelo|la\s+cancelo|la\s+cancelamos|te\s+la\s+anulo|la\s+anulamos|quieres\s+que\s+(te\s+)?(la\s+)?(cancele|anule|quite))\b/.test(t)
+  return /\b(te\s+quito\s+(mientras\s+tanto\s+)?(la|tu)\s+(cita|del?)|te\s+la\s+quito|te\s+la\s+cancelo|la\s+cancelo|la\s+cancelamos|te\s+la\s+anulo|la\s+anulamos|quieres\s+que\s+(te\s+)?(la\s+)?(cancele|anule|quite))\b/.test(t)
+}
+
+/**
+ * Whether a message of theirs asks to change a visit or says they cannot
+ * come to it: the reminder's "Cambiar cita" button, "¿podemos mover la del
+ * martes?", "la semana que viene no puedo".
+ */
+export function asksToChangeVisit(text: string): boolean {
+  const t = fold(text)
+  return /\b(cambiar|cambio|cambiarla|mover|moverla|anular|cancelar|no\s+(puedo|podre|podria|voy\s+a\s+poder))\b/.test(t)
+}
+
+/**
+ * Whether the receptionist's message offers times and waits for an answer:
+ * "El miércoles 18 tengo las 16:30 o las 17:45, ¿te viene bien alguna?".
+ */
+export function offersTimes(text: string): boolean {
+  return text.includes('?') && offeredTimes(text).length > 0
 }
 
 /** How long they are given to answer before it goes to a person. */

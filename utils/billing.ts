@@ -69,6 +69,12 @@ export function formatRelativeDays(iso: string | Date, language: 'en' | 'es', no
   return new Intl.RelativeTimeFormat(language === 'es' ? 'es-ES' : 'en-GB', { numeric: 'auto' }).format(days, 'day')
 }
 
+/** "28 oct 2026" / "28 Oct 2026" -- a row date that may be from another year (a ledger, a list of facturas). */
+export function formatShortDateYear(iso: string | Date, lang: DateLanguage = 'es'): string {
+  const date = typeof iso === 'string' ? new Date(iso) : iso
+  return date.toLocaleDateString(dateLocale(lang), { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
 /** "13 sept" / "13 Sept" -- the compact form a date block or a row uses. */
 export function formatShortDate(iso: string | Date, lang: DateLanguage = 'es'): string {
   const date = typeof iso === 'string' ? new Date(iso) : iso

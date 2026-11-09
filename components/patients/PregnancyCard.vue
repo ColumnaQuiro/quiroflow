@@ -127,7 +127,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
   <button
     v-else-if="can('patients_edit') && !patient.is_minor && patient.gender !== 'male'"
     type="button"
-    class="self-start text-[12.5px] font-medium text-brand-text hover:underline"
+    class="-my-1.5 inline-flex h-8 items-center self-start rounded-ctlSm text-[12.5px] font-medium text-brand-text outline-none hover:underline focus-visible:shadow-focus touch:h-11"
     data-cy="pregnancy-record"
     @click="startEditing"
   >

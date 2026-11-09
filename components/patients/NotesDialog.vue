@@ -52,7 +52,7 @@ function toggleHistory() {
           <UiBtn size="sm" :variant="historyOpen ? 'primary' : 'secondary'" :aria-pressed="historyOpen" data-cy="notes-dialog-history" @click="toggleHistory">
             {{ t('History', 'Historial') }}
           </UiBtn>
-          <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="emit('close')">✕</button>
+          <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="emit('close')"><UiCloseIcon /></button>
         </div>
       </div>
       <!-- Each column scrolls on its own, so reading down a long form does

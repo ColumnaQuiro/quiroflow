@@ -156,9 +156,10 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
           <NuxtLink
             v-if="patient.is_minor && tutor"
             :to="`/patients/${tutor.id}`"
-            class="max-w-full break-words text-[12px] font-medium text-brand-text outline-none hover:underline focus-visible:shadow-focus"
+            class="inline-flex max-w-full items-center gap-0.5 break-words text-[12px] font-medium text-brand-text outline-none hover:underline focus-visible:shadow-focus"
           >
-            {{ t('Messages go to', 'Los mensajes van a') }} {{ [tutor.first_name, tutor.last_name].filter(Boolean).join(' ') }} ↗
+            <span class="min-w-0">{{ t('Messages go to', 'Los mensajes van a') }} {{ [tutor.first_name, tutor.last_name].filter(Boolean).join(' ') }}</span>
+            <UiChevron dir="right" class="!h-3 !w-3" />
           </NuxtLink>
           <span v-else-if="patient.is_minor" class="text-[12px] text-danger-text">
             {{ t('No tutor linked: their messages reach nobody', 'Sin tutor vinculado: sus mensajes no llegan a nadie') }}
@@ -199,7 +200,7 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
           type="button"
           :aria-label="t('More actions', 'Más acciones')"
           :aria-expanded="menuOpen"
-          class="flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center rounded-ctl border border-line-control bg-surface text-ink-muted outline-none hover:text-ink-700 focus-visible:shadow-focus lg:h-[34px] lg:w-[34px]"
+          class="flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center rounded-ctl border border-line-control bg-surface text-ink-muted outline-none hover:text-ink-700 focus-visible:shadow-focus"
           @click="menuOpen = !menuOpen"
         >
           <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" class="h-[18px] w-[18px]">
@@ -207,7 +208,7 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
           </svg>
         </button>
 
-        <div v-if="menuOpen" class="absolute right-0 top-12 z-20 w-[220px] lg:top-[38px] rounded-card border border-line bg-surface py-1 shadow-popover">
+        <div v-if="menuOpen" class="absolute right-0 top-full z-20 mt-1 w-[220px] rounded-card border border-line bg-surface py-1 shadow-popover">
           <!-- Taking a payment was a button in the rail; the rail is gone and
                this is where it went. Non-destructive, so it leads. -->
           <button
@@ -326,13 +327,27 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
         <span v-if="copied === 'email'" class="shrink-0 text-[11.5px] text-success-text">{{ t('Copied', 'Copiado') }}</span>
       </span>
 
+      <!-- Each with its own icon, as the phone and email have: below lg the
+           separators are hidden, and the clinic and the practitioner ran
+           together into one name ("Clínica Demo Sara Molina"). -->
       <template v-if="clinicName">
         <span aria-hidden="true" class="hidden h-3 w-px bg-line lg:block" />
-        <span class="min-w-0 max-w-full break-words text-[12.5px] text-ink-500">{{ clinicName }}</span>
+        <span class="inline-flex min-w-0 max-w-full items-center gap-1.5">
+          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" class="h-3.5 w-3.5 shrink-0 text-ink-faint">
+            <path d="M2.5 13.5h11M3.5 13.5V4.2l4.5-1.7 4.5 1.7v9.3M6.5 13.5v-3h3v3M6 6.5h.01M10 6.5h.01M6 8.8h.01M10 8.8h.01" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          <span class="min-w-0 break-words text-[12.5px] text-ink-500"><span class="sr-only">{{ t('Clinic', 'Clínica') }}: </span>{{ clinicName }}</span>
+        </span>
       </template>
       <template v-if="practitionerName">
         <span aria-hidden="true" class="hidden h-3 w-px bg-line lg:block" />
-        <span class="min-w-0 max-w-full break-words text-[12.5px] text-ink-500">{{ practitionerName }}</span>
+        <span class="inline-flex min-w-0 max-w-full items-center gap-1.5">
+          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true" class="h-3.5 w-3.5 shrink-0 text-ink-faint">
+            <circle cx="8" cy="5.5" r="2.5" stroke="currentColor" stroke-width="1.3" />
+            <path d="M3 13.5c.6-2.4 2.6-3.8 5-3.8s4.4 1.4 5 3.8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+          </svg>
+          <span class="min-w-0 break-words text-[12.5px] text-ink-500"><span class="sr-only">{{ t('Practitioner', 'Profesional') }}: </span>{{ practitionerName }}</span>
+        </span>
       </template>
       <!-- A minor's messages go to their tutor, so the tutor is who gets the
            app; their own state would only ever read "No app". -->

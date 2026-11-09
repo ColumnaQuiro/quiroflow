@@ -121,7 +121,8 @@ function paymentRefusedMessage(error: { message?: string } | null) {
 }
 const { fire } = useAutomations()
 const t = useT()
-const { formatShortDate } = useDates()
+const { formatShortDate, formatShortDateYear } = useDates()
+const { preference: lang } = useLang()
 
 // outstandingCents is what "Owed now" shows. It was computed here as
 // -balanceCents, which made this one card contradict itself: it printed
@@ -2373,7 +2374,7 @@ const fieldId = useId()
         class="rounded-card border p-4 shadow-card"
         :class="outstandingCents > 0 ? 'border-danger-border bg-danger-bg' : 'border-line bg-surface'"
       >
-        <h3 id="money-owed" class="text-[12px] font-semibold uppercase tracking-[.04em]" :class="outstandingCents > 0 ? 'text-danger-text' : 'text-ink-muted2'">
+        <h3 id="money-owed" class="text-[11px] font-[640] uppercase tracking-[.07em]" :class="outstandingCents > 0 ? 'text-danger-text' : 'text-ink-muted2'">
           {{ t('Owed now', 'Debe ahora') }}
         </h3>
         <p class="mt-1 font-mono text-[24px] font-semibold" :class="outstandingCents > 0 ? 'text-danger-text' : 'text-ink-700'">
@@ -2405,7 +2406,7 @@ const fieldId = useId()
 
       <!-- 2. What have they already got with us -->
       <section aria-labelledby="money-account" class="rounded-card border border-line bg-surface p-4 shadow-card">
-        <h3 id="money-account" class="text-[12px] font-semibold uppercase tracking-[.04em] text-ink-muted2">
+        <h3 id="money-account" class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">
           {{ t('On account', 'En cuenta') }}
         </h3>
         <!-- Named, not just shown. "Available" is what this figure is called
@@ -2474,10 +2475,11 @@ const fieldId = useId()
 
       <!-- 3. How do they pay -->
       <section aria-labelledby="money-how" class="rounded-card border border-line bg-surface p-4 shadow-card">
-        <h3 id="money-how" class="text-[12px] font-semibold uppercase tracking-[.04em] text-ink-muted2">
+        <h3 id="money-how" class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">
           {{ t('How they pay', 'Cómo paga') }}
         </h3>
-        <p class="mt-1 font-mono text-[15px] font-medium text-ink-900">
+        <!-- Mono for the card's digits only: "No card on file" is prose. -->
+        <p class="mt-1 text-[15px] font-medium text-ink-900" :class="cardLabel ? 'font-mono' : 'font-semibold'">
           {{ cardLabel ?? (hasCard ? t('Card on file', 'Tarjeta registrada') : t('No card on file', 'Sin tarjeta')) }}
         </p>
         <p class="mt-0.5 text-[12px] text-ink-muted2">
@@ -2756,7 +2758,7 @@ const fieldId = useId()
               <ul v-if="shares[p.id]?.length" class="space-y-1">
                 <li v-for="sp in shares[p.id]" :key="sp.id" class="flex items-center justify-between text-[11.5px] text-ink-600">
                   <span>{{ sp.first_name }} {{ sp.last_name }}</span>
-                  <button type="button" class="text-ink-faint hover:text-danger-text" @click="removeShare(p.id, sp.id)">✕</button>
+                  <button type="button" :aria-label="t(`Stop sharing with ${sp.first_name}`, `Dejar de compartir con ${sp.first_name}`)" class="flex h-6 w-6 shrink-0 items-center justify-center rounded-ctlSm text-ink-faint outline-none hover:text-danger-text focus-visible:shadow-focus touch:h-10 touch:w-10" @click="removeShare(p.id, sp.id)"><UiCloseIcon /></button>
                 </li>
               </ul>
               <div class="relative mt-1.5 max-w-sm">
@@ -2808,15 +2810,15 @@ const fieldId = useId()
             <div v-if="openLinkPaymentId === p.id" class="mt-2.5 rounded-ctl border border-line-divider bg-surface-subtle p-2.5">
               <ul v-if="linkedPaymentsFor(p).length" class="space-y-1">
                 <li v-for="pay in linkedPaymentsFor(p)" :key="pay.id" class="flex items-center justify-between text-[11.5px] text-ink-600">
-                  <span>{{ money(pay.amount_cents) }} &middot; {{ methodLabel(pay.method) }} &middot; {{ new Date(pay.paid_at).toLocaleDateString() }}<template v-if="paidByOtherPatient(pay)"> &middot; {{ t('paid by', 'pagado por') }} {{ paidByOtherPatient(pay) }}</template></span>
-                  <button type="button" class="text-ink-faint hover:text-danger-text" :aria-label="t('Unlink this payment from the bono', 'Desvincular este pago del bono')" :title="t('Unlink', 'Desvincular')" @click="unlinkPayment(pay.id)">✕</button>
+                  <span>{{ money(pay.amount_cents) }} &middot; {{ methodLabel(pay.method) }} &middot; {{ formatShortDateYear(pay.paid_at) }}<template v-if="paidByOtherPatient(pay)"> &middot; {{ t('paid by', 'pagado por') }} {{ paidByOtherPatient(pay) }}</template></span>
+                  <button type="button" class="flex h-6 w-6 shrink-0 items-center justify-center rounded-ctlSm text-ink-faint outline-none hover:text-danger-text focus-visible:shadow-focus touch:h-10 touch:w-10" :aria-label="t('Unlink this payment from the bono', 'Desvincular este pago del bono')" :title="t('Unlink', 'Desvincular')" @click="unlinkPayment(pay.id)"><UiCloseIcon /></button>
                 </li>
               </ul>
               <div v-if="candidatePaymentsFor(p).length" class="mt-1.5 flex flex-wrap items-center gap-1.5">
                 <select v-model="linkPaymentSelection" class="w-full max-w-sm rounded-ctlSm border border-line-control bg-surface px-2.5 py-1.5 text-[12px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand">
                   <option value="" disabled>{{ t('Select a payment…', 'Selecciona un pago…') }}</option>
                   <option v-for="pay in candidatePaymentsFor(p)" :key="pay.id" :value="pay.id">
-                    {{ money(pay.amount_cents) }} &middot; {{ methodLabel(pay.method) }} &middot; {{ new Date(pay.paid_at).toLocaleDateString() }} &middot; {{ invoiceNumberFor(pay.invoice_id) }}
+                    {{ money(pay.amount_cents) }} &middot; {{ methodLabel(pay.method) }} &middot; {{ formatShortDateYear(pay.paid_at) }} &middot; {{ invoiceNumberFor(pay.invoice_id) }}
                   </option>
                 </select>
                 <UiBtn size="sm" variant="primary" :disabled="!linkPaymentSelection || linkingPayment" @click="linkPaymentToPackage(p)">
@@ -2949,7 +2951,7 @@ const fieldId = useId()
               <p class="shrink-0 text-[11.5px] text-ink-muted2">
                 <span class="font-semibold text-ink-700">{{ money(m.price_cents) }}</span>/{{ t('period', 'periodo') }}
                 <span class="px-1 text-ink-faint3">&middot;</span>
-                {{ t('started', 'iniciada el') }} {{ new Date(m.started_at).toLocaleDateString() }}
+                {{ t('started', 'iniciada el') }} {{ formatShortDateYear(m.started_at) }}
               </p>
             </div>
             <div v-if="canManagePackages" class="mt-3 flex flex-wrap items-center gap-1.5 border-t border-line-divider pt-3">
@@ -2968,7 +2970,9 @@ const fieldId = useId()
 
             <div v-if="paymentsFor(m.id).length > 0" class="mt-2 flex flex-wrap gap-1.5">
               <UiPill v-for="pay in paymentsFor(m.id)" :key="pay.id" :tone="pay.status === 'paid' ? 'success' : 'danger'">
-                {{ new Date(pay.period_start).toLocaleDateString('default', { month: 'short', year: 'numeric' }) }}: {{ pay.status }}
+                <!-- The month in the staff member's language, and the status in
+                     words: this printed the raw column, "paid" / "failed". -->
+                {{ new Date(pay.period_start).toLocaleDateString(lang === 'en' ? 'en-GB' : 'es-ES', { month: 'short', year: 'numeric' }) }}: {{ pay.status === 'paid' ? t('paid', 'pagado') : t('failed', 'fallido') }}
               </UiPill>
             </div>
 
@@ -3057,9 +3061,10 @@ const fieldId = useId()
       </nav>
       <NuxtLink
         :to="`/billing?patient=${patientId}`"
-        class="shrink-0 pb-1 text-[12.5px] font-medium text-brand-text outline-none hover:underline focus-visible:shadow-focus"
+        class="inline-flex shrink-0 items-center gap-0.5 pb-1 text-[12.5px] font-medium text-brand-text outline-none hover:underline focus-visible:shadow-focus"
       >
-        {{ t('All paperwork in Billing', 'Toda la documentación en Facturación') }} ↗
+        {{ t('All paperwork in Billing', 'Toda la documentación en Facturación') }}
+        <UiChevron dir="right" class="!h-3 !w-3" />
       </NuxtLink>
     </div>
 
@@ -3200,7 +3205,7 @@ const fieldId = useId()
               </p>
               <p class="truncate text-[12.5px] text-ink-muted2">{{ f.description }}</p>
               <p v-if="f.recipient_patient_id && addresseeById.get(f.recipient_patient_id)" class="truncate text-[11.5px] text-ink-muted" data-cy="factura-addressee">{{ t('In the name of', 'A nombre de') }} {{ addresseeById.get(f.recipient_patient_id)!.name }}</p>
-              <p class="text-[11.5px] text-ink-faint">{{ new Date(f.issued_at).toLocaleDateString() }}</p>
+              <p class="text-[11.5px] text-ink-faint">{{ formatShortDateYear(f.issued_at) }}</p>
             </div>
             <div class="flex items-center gap-2">
               <span class="font-mono text-[13px]" :class="f.annulled_at ? 'text-ink-faint line-through' : 'text-ink-900'">{{ money(f.amount_cents) }}</span>

@@ -18,6 +18,7 @@ interface VisitNoteRow {
 const supabase = useSupabaseClient()
 const { can } = usePermission()
 const t = useT()
+const { formatShortDateYear } = useDates()
 const notes = ref<VisitNoteRow[]>([])
 const loading = ref(true)
 const deletingId = ref<string | null>(null)
@@ -127,7 +128,7 @@ async function deleteNote(note: VisitNoteRow) {
     <div v-for="note in notes" :key="note.id" class="group relative rounded-card border border-line bg-surface p-4 shadow-card">
       <div class="flex items-baseline justify-between gap-2">
         <p class="text-[13.5px] font-semibold text-ink-700">
-          {{ new Date(note.appointments?.starts_at ?? note.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) }}
+          {{ formatShortDateYear(note.appointments?.starts_at ?? note.created_at) }}
         </p>
         <p class="truncate text-[12px] text-ink-muted2">
           {{ note.appointments?.appointment_types?.name ?? t('Visit', 'Visita') }}
@@ -138,7 +139,7 @@ async function deleteNote(note: VisitNoteRow) {
         <span class="font-semibold">{{ t('Listing', 'Listado') }}:</span> {{ listingLine(note) }}
       </p>
       <div class="mt-2.5">
-        <p class="text-[11px] font-semibold uppercase tracking-wide text-ink-faint">{{ t('Note', 'Nota') }}</p>
+        <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Note', 'Nota') }}</p>
 
         <template v-if="editingId === note.id">
           <textarea

@@ -66,7 +66,7 @@ async function submit() {
     <div ref="dialogPanel" role="dialog" aria-modal="true" :aria-labelledby="dialogTitleId" class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-card bg-surface p-6 shadow-popover">
       <div class="flex items-center justify-between">
         <h2 :id="dialogTitleId" class="text-lg font-semibold text-ink-900">{{ t('Add card', 'Añadir tarjeta') }}</h2>
-        <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="emit('close')">✕</button>
+        <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="emit('close')"><UiCloseIcon /></button>
       </div>
 
       <UiSkeleton v-if="loading" class="mt-6 h-9 w-full rounded-ctl" />

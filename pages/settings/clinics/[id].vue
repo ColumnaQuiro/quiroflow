@@ -329,8 +329,8 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
       </nav>
       <div v-if="form" class="flex flex-wrap items-center gap-3">
         <span class="flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center rounded-ctl bg-brand-tint text-[14px] font-bold text-brand-text">{{ initials }}</span>
-        <h1 class="text-[20px] font-bold text-ink-900" data-cy="clinic-title">{{ form.name || t('Untitled', 'Sin nombre') }}</h1>
-        <span v-if="archivedAt" class="rounded-pill bg-chip-bg px-2.5 py-0.5 text-[12.5px] font-bold text-chip-text" data-cy="clinic-archived-chip">{{ t('Archived', 'Archivada') }}</span>
+        <h1 class="text-[18px] font-[640] tracking-tightTitle text-ink-900" data-cy="clinic-title">{{ form.name || t('Untitled', 'Sin nombre') }}</h1>
+        <UiPill tone="neutral" v-if="archivedAt" data-cy="clinic-archived-chip">{{ t('Archived', 'Archivada') }}</UiPill>
         <NuxtLink
           v-else
           to="/settings/online-booking"
@@ -345,10 +345,16 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
     <div class="flex-1 overflow-y-auto">
       <div class="flex gap-8 p-4 pb-32 sm:px-6 sm:pt-6">
         <SettingsNav />
-        <p v-if="loaded && missing" class="text-[14px] text-ink-muted" data-cy="clinic-missing">
-          {{ t('This clinic does not exist, or is not yours.', 'Esta clínica no existe o no es tuya.') }}
-          <NuxtLink to="/settings/clinics" class="text-brand-text hover:underline">{{ t('Back to clinics', 'Volver a clínicas') }}</NuxtLink>
-        </p>
+        <UiEmptyState v-if="loaded && missing" class="min-w-0 flex-1 !items-start !justify-start !px-0 !py-0" :title="t('This clinic does not exist, or is not yours.', 'Esta clínica no existe o no es tuya.')" data-cy="clinic-missing">
+          <template #actions>
+            <NuxtLink to="/settings/clinics" class="inline-flex h-9 items-center rounded-ctl border border-line-control bg-surface px-3.5 text-[13px] font-medium text-ink-500 hover:border-line-controlHover touch:h-11">{{ t('Back to clinics', 'Volver a clínicas') }}</NuxtLink>
+          </template>
+        </UiEmptyState>
+        <div v-else-if="!form" class="flex min-w-0 max-w-[720px] flex-1 flex-col gap-4" aria-hidden="true">
+          <UiSkeleton class="h-48 w-full rounded-card" />
+          <UiSkeleton class="h-32 w-full rounded-card" />
+          <UiSkeleton class="h-32 w-full rounded-card" />
+        </div>
         <template v-else-if="form">
           <nav :aria-label="t('Sections', 'Secciones')" class="sticky top-0 hidden w-[180px] shrink-0 flex-col gap-0.5 self-start 2xl:flex">
             <a
@@ -365,9 +371,9 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
           <main class="flex min-w-0 max-w-[720px] flex-1 flex-col gap-6" data-cy="clinic-page" :data-ready="loaded ? 'true' : undefined">
             <p v-if="archivedAt" class="flex flex-wrap items-center gap-3 rounded-card border border-line bg-surface-subtle px-4 py-3 text-[14px] text-ink-700">
               <span class="flex-1">{{ t('Archived: hidden from the clinic switcher, the calendar and online booking. Its history is kept.', 'Archivada: no aparece en el selector de clínica, el calendario ni la reserva online. Su historial se conserva.') }}</span>
-              <button type="button" data-cy="clinic-page-reactivate" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="reactivate">
+              <UiBtn data-cy="clinic-page-reactivate" @click="reactivate">
                 {{ t('Reactivate', 'Reactivar') }}
-              </button>
+              </UiBtn>
             </p>
 
             <!-- La sede -->
@@ -487,7 +493,7 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
                     {{ m }} min
                   </button>
                 </div>
-                <span :class="hint">{{ t('How finely the calendar grid is divided, and the steps when picking a time: 15 min shows 9:00, 9:15, 9:30… It does not change how long an appointment lasts -- appointment types decide that, and each practitioner can adjust them.', 'Cada cuánto se divide la cuadrícula del calendario y los pasos al elegir hora: con 15 min verás 9:00, 9:15, 9:30… No cambia lo que dura una cita: eso lo deciden los tipos de cita, que cada profesional puede ajustar.') }}</span>
+                <span :class="hint">{{ t('How finely the calendar grid is divided, and the steps when picking a time: 15 min shows 9:00, 9:15, 9:30… It does not change how long an appointment lasts — appointment types decide that, and each practitioner can adjust them.', 'Cada cuánto se divide la cuadrícula del calendario y los pasos al elegir hora: con 15 min verás 9:00, 9:15, 9:30… No cambia lo que dura una cita: eso lo deciden los tipos de cita, que cada profesional puede ajustar.') }}</span>
               </div>
             </section>
 
@@ -499,7 +505,7 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
                   <p v-if="isFiscal" class="text-[13px] text-ink-muted" data-cy="clinic-fiscal-issuer">{{ t('What a factura needs to be valid. Every factura carries this legal name and NIF, whichever location it is issued from.', 'Lo que exige una factura para ser válida. Todas las facturas llevan esta razón social y este NIF, sea cual sea la sede que la emite.') }}</p>
                   <p v-else class="text-[13px] text-ink-muted">{{ t('Printed on this location\'s facturas and receipts.', 'Se imprime en facturas y recibos de esta sede.') }}</p>
                 </div>
-                <span v-if="fiscalIncomplete" class="shrink-0 rounded-pill bg-warning-bg px-2.5 py-0.5 text-[12.5px] font-bold text-warning-text" data-cy="clinic-fiscal-incomplete">{{ t('Incomplete', 'Incompleto') }}</span>
+                <UiPill tone="warning" class="shrink-0" v-if="fiscalIncomplete" data-cy="clinic-fiscal-incomplete">{{ t('Incomplete', 'Incompleto') }}</UiPill>
               </div>
               <p v-if="!isFiscal && fiscalClinic" class="rounded-ctl border border-line bg-surface-subtle px-3.5 py-3 text-[13.5px] leading-snug text-ink-700" data-cy="clinic-fiscal-elsewhere">
                 {{ t('Facturas from this location are issued under', 'Las facturas de esta sede se emiten con la razón social y el NIF de') }}
@@ -553,9 +559,9 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
                   <strong class="text-[14px] text-ink-900">{{ t('Archive', 'Archivar') }}</strong>
                   <span class="text-[13px] leading-snug text-ink-500">{{ t('Leaves the clinic switcher, the calendar and online booking. Its appointments, patients and facturas are kept, and you can reactivate it whenever you like.', 'Desaparece del selector de clínica, del calendario y de la reserva online. Sus citas, pacientes y facturas se conservan, y puedes reactivarla cuando quieras.') }}</span>
                 </div>
-                <button type="button" data-cy="clinic-archive" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="archiveOpen = true">
+                <UiBtn data-cy="clinic-archive" @click="archiveOpen = true">
                   {{ t('Archive…', 'Archivar…') }}
-                </button>
+                </UiBtn>
               </div>
               <div class="flex flex-wrap items-center gap-4 rounded-ctl border border-line px-4 py-3.5">
                 <div class="flex min-w-[240px] flex-1 flex-col gap-0.5">
@@ -599,9 +605,9 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
       <button type="button" data-cy="clinic-discard" class="h-9 touch:h-11 rounded-ctl border border-surface-page/30 px-3.5 text-[14px] font-semibold" @click="discard">
         {{ t('Discard', 'Descartar') }}
       </button>
-      <button type="button" data-cy="clinic-save" :disabled="saving" class="h-9 touch:h-11 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface disabled:opacity-70" @click="save">
+      <UiBtn variant="primary" data-cy="clinic-save" :disabled="saving" @click="save">
         {{ saving ? t('Saving…', 'Guardando…') : t('Save changes', 'Guardar cambios') }}
-      </button>
+      </UiBtn>
     </div>
 
     <UiConfirmDialog

@@ -444,7 +444,7 @@ async function save() {
                     :class="[inputClass, 'w-full']"
                     @change="pickTemplate(u, ($event.target as HTMLSelectElement).value)"
                   >
-                    <option value="">{{ t('None -- not sent', 'Ninguna -- no se envía') }}</option>
+                    <option value="">{{ t('None — not sent', 'Ninguna — no se envía') }}</option>
                     <option v-if="u.name.value && !isKnownTemplate(u.name.value, u.lang.value)" :value="useKey(u.name.value, u.lang.value)">
                       {{ u.name.value }} · {{ u.lang.value }} · {{ t('not in Meta’s list', 'no está en Meta') }}
                     </option>

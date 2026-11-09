@@ -44,12 +44,15 @@ export function usePatientLists() {
   const lists = ref<PatientList[]>([])
   const counts = ref<Record<string, PatientListCount>>({})
   const loaded = ref(false)
+  // The read failed: a page can say so rather than wait on `loaded` forever.
+  const failed = ref(false)
   const counting = ref(false)
   let countToken = 0
 
   async function load() {
     if (!store.accountId) return
     const { data, error } = await supabase.from('patient_lists').select(COLUMNS).eq('account_id', store.accountId).order('name')
+    failed.value = !!error
     if (error) throw error
     lists.value = data ?? []
     loaded.value = true
@@ -148,5 +151,5 @@ export function usePatientLists() {
     return data ?? 0
   }
 
-  return { lists, counts, loaded, counting, refresh, refreshCounts, canManage, create, update, remove, addPatients, addMatching, removePatients, removeMatching }
+  return { lists, counts, loaded, failed, counting, refresh, refreshCounts, canManage, create, update, remove, addPatients, addMatching, removePatients, removeMatching }
 }

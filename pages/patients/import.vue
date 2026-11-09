@@ -6,6 +6,9 @@
 const route = useRoute()
 const t = useT()
 const listId = computed(() => (typeof route.query.list === 'string' ? route.query.list : null))
+// Its own tab title: utils/screenTitle.ts reads /patients/<anything> as a
+// patient's record, so this page was announced and listed as "Patient".
+useHead({ title: () => `${t('Import into a list', 'Importar a una lista')} · QuiroFlow` })
 </script>
 
 <template>

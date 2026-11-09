@@ -72,6 +72,7 @@ const {
   segments,
   counts: segmentCounts,
   loaded: segmentsLoaded,
+  failed: segmentsFailed,
   counting: segmentsCounting,
   refresh: refreshSegments,
   refreshCounts: refreshSegmentCounts,
@@ -89,6 +90,7 @@ const {
   lists,
   counts: listCounts,
   loaded: listsLoaded,
+  failed: listsFailed,
   counting: listsCounting,
   refresh: refreshLists,
   refreshCounts: refreshListCounts,
@@ -138,6 +140,12 @@ const loadedOnce = ref(false)
 // render as soon as the patients themselves are in and these cells fill in
 // after, rather than the whole page waiting on the slowest of the six.
 const enriching = ref(true)
+// A failed read is still thrown -- utils/supabaseFailures.ts reports it and
+// the layout says so -- but the page stops pretending to load. Before these,
+// a dropped connection left the skeletons shimmering for good and the rows
+// dimmed and unclickable, which reads as "nearly there", not "failed".
+const loadFailed = ref(false)
+const enrichFailed = ref(false)
 // A slower, older request can finish after a newer one -- typing "ana" then
 // "anabel" 300ms apart is enough -- and without this the older answer lands
 // last and stays, or its rows end up beside the newer request's balances.
@@ -175,12 +183,19 @@ async function loadPatients() {
     .order('last_name', { ascending })
     .order('id')
     .range(from, to)
-  // Thrown rather than shown as "no patients": the list keeps what it had (or
-  // its skeleton), utils/supabaseFailures.ts reports the query and the layout
-  // says so.
-  if (error) throw error
+  // Thrown rather than shown as "no patients": the list keeps what it had (or,
+  // on the first load, says it failed), utils/supabaseFailures.ts reports the
+  // query and the layout says so.
+  if (error) {
+    if (token === loadToken) {
+      loading.value = false
+      loadFailed.value = true
+    }
+    throw error
+  }
   if (token !== loadToken) return
 
+  loadFailed.value = false
   patients.value = (data ?? []) as Patient[]
   totalCount.value = count ?? 0
   // The open segment's count is this total, whatever the last count said.
@@ -193,6 +208,7 @@ async function loadPatients() {
   const ids = patients.value.map((p) => p.id)
   if (ids.length > 0) {
     enriching.value = true
+    enrichFailed.value = false
     const [visitSummary, plans, contactNumbers, balances] = await Promise.all([
       // Last visit, completed count and next booking, already reduced to one
       // row per patient. These used to come back as every visit of every
@@ -212,7 +228,15 @@ async function loadPatients() {
         .order('created_at')
         .then(dataOrThrow),
       supabase.from('patient_live_balances').select('patient_id, balance_cents').in('patient_id', ids).then(dataOrThrow),
-    ])
+    ]).catch((err: unknown) => {
+      // Unknown, not empty: these cells would otherwise claim "No phone",
+      // "Never" and 0,00 € for patients who have all three.
+      if (token === loadToken) {
+        enriching.value = false
+        enrichFailed.value = true
+      }
+      throw err
+    })
     if (token !== loadToken) return
 
     const balByPatient: Record<string, number> = {}
@@ -819,12 +843,15 @@ function clearAllFilters() {
   appliedSearch.value = ''
 }
 
+// The amount is a figure and set in mono; the word after it is prose and is
+// not (DESIGN.md, the Ledger Figures Rule). All in mono, "200,00 € a favor"
+// was 183px and pushed the column off the right of a 1440px screen.
 function balancePill(cents: number) {
   const amount = formatEur(Math.abs(cents))
-  if (cents < 0) return { text: `${amount} ${t('due', 'pendiente')}`, class: 'bg-danger-bg text-danger-text' }
-  if (cents > 0) return { text: `${amount} ${t('credit', 'a favor')}`, class: 'bg-success-bg text-success-text' }
+  if (cents < 0) return { amount, label: t('due', 'pendiente'), class: 'bg-danger-bg text-danger-text' }
+  if (cents > 0) return { amount, label: t('credit', 'a favor'), class: 'bg-success-bg text-success-text' }
   // ink-muted, not muted2: on this chip muted2 measured 4.1:1 in dark mode.
-  return { text: formatEur(0), class: 'bg-chip-bg2 text-ink-muted' }
+  return { amount: formatEur(0), label: '', class: 'bg-chip-bg2 text-ink-muted' }
 }
 
 function startOfDay(d: Date) {
@@ -833,14 +860,14 @@ function startOfDay(d: Date) {
 
 function nextVisitInfo(patientId: string) {
   const iso = nextAppointmentByPatient.value[patientId]
-  if (!iso) return { date: null as string | null, relative: t('No booking', 'Sin cita'), colorClass: 'text-warning-accent' }
+  if (!iso) return { date: null as string | null, relative: t('No booking', 'Sin cita'), colorClass: 'text-warning-text' }
 
   const visitDate = new Date(iso)
   const dateText = visitDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
   const timeText = visitDate.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
 
   const diffDays = Math.round((startOfDay(visitDate).getTime() - startOfDay(new Date()).getTime()) / 86400000)
-  if (diffDays === 0) return { date: `${dateText} · ${timeText}`, relative: t('Today', 'Hoy'), colorClass: 'text-brand' }
+  if (diffDays === 0) return { date: `${dateText} · ${timeText}`, relative: t('Today', 'Hoy'), colorClass: 'text-brand-text' }
   if (diffDays === 1) return { date: `${dateText} · ${timeText}`, relative: t('Tomorrow', 'Mañana'), colorClass: 'text-ink-faint' }
   if (diffDays > 1 && diffDays < 7) return { date: `${dateText} · ${timeText}`, relative: `${t('In', 'En')} ${diffDays} ${t('days', 'días')}`, colorClass: 'text-ink-faint' }
   return { date: `${dateText} · ${timeText}`, relative: visitDate.toLocaleDateString(undefined, { weekday: 'long' }), colorClass: 'text-ink-faint' }
@@ -850,16 +877,16 @@ function nextVisitInfo(patientId: string) {
 // spec's English names and the Spanish equivalents already seeded in this
 // app's demo data (e.g. "referido", "moroso"), falling back to a neutral
 // chip for anything else.
-const TAG_STYLES: Record<string, string> = {
-  vip: 'bg-warning-bg text-warning-text',
-  bono: 'bg-brand-tint text-brand-text2',
-  referred: 'bg-success-bg text-success-text',
-  referido: 'bg-success-bg text-success-text',
-  debtor: 'bg-danger-bg text-danger-text',
-  moroso: 'bg-danger-bg text-danger-text',
+const TAG_TONES: Record<string, 'warning' | 'brand' | 'success' | 'danger'> = {
+  vip: 'warning',
+  bono: 'brand',
+  referred: 'success',
+  referido: 'success',
+  debtor: 'danger',
+  moroso: 'danger',
 }
-function tagClass(tag: string) {
-  return TAG_STYLES[tag.toLowerCase()] ?? 'bg-chip-bg text-chip-text'
+function tagTone(tag: string) {
+  return TAG_TONES[tag.toLowerCase()] ?? 'neutral'
 }
 </script>
 
@@ -955,6 +982,7 @@ function tagClass(tag: string) {
         kind="list"
         :rows="listRows"
         :loaded="listsLoaded"
+        :failed="listsFailed"
         :counting="listsCounting"
         :can-import="canImport"
         @open="(id) => openList(lists.find((l) => l.id === id)!)"
@@ -962,6 +990,7 @@ function tagClass(tag: string) {
         @rename="(id) => (listDialog = { mode: 'rename', id })"
         @delete="(id) => (deletingListId = id)"
         @import="importIntoList"
+        @retry="refreshLists"
       />
 
       <PatientsAudienceTable
@@ -969,11 +998,13 @@ function tagClass(tag: string) {
         kind="segment"
         :rows="segmentRows"
         :loaded="segmentsLoaded"
+        :failed="segmentsFailed"
         :counting="segmentsCounting"
         @open="segmentFromRow"
         @create="startNewSegment"
         @rename="renameSegmentRow"
         @delete="deleteSegmentRow"
+        @retry="refreshSegments"
       />
 
       <div v-else class="mt-4 min-w-0">
@@ -985,7 +1016,7 @@ function tagClass(tag: string) {
       <div v-if="activeList" data-cy="list-header" class="mb-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <h2 class="text-[15px] font-[650] text-ink-900">{{ activeList.name }}</h2>
         <span class="text-[12px] text-ink-muted">{{ t('List', 'Lista') }}</span>
-        <span v-if="!activeList.shared" class="rounded-pill bg-chip-bg2 px-1.5 py-0.5 text-[11px] font-[600] text-chip-text">{{ t('Private', 'Privado') }}</span>
+        <UiPill v-if="!activeList.shared">{{ t('Private', 'Privado') }}</UiPill>
         <div v-if="canManageList(activeList)" class="flex items-center gap-1">
           <UiBtn v-if="canImport" variant="ghost" size="sm" data-cy="list-header-import" @click="importIntoList(activeList.id)">{{ t('Import into this list', 'Importar a esta lista') }}</UiBtn>
           <UiBtn variant="ghost" size="sm" data-cy="list-rename" @click="listDialog = { mode: 'rename', id: activeList.id }">{{ t('Rename', 'Renombrar') }}</UiBtn>
@@ -996,7 +1027,7 @@ function tagClass(tag: string) {
       <!-- The segment open, and what can be done with it. -->
       <div v-if="activeSegment" data-cy="segment-header" class="mb-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
         <h2 class="text-[15px] font-[650] text-ink-900">{{ activeSegment.name }}</h2>
-        <span v-if="!activeSegment.shared" class="rounded-pill bg-chip-bg2 px-1.5 py-0.5 text-[11px] font-[600] text-chip-text">{{ t('Private', 'Privado') }}</span>
+        <UiPill v-if="!activeSegment.shared">{{ t('Private', 'Privado') }}</UiPill>
         <span v-if="segmentModified" class="text-[12px] text-warning-text">{{ t('Filters changed', 'Filtros modificados') }}</span>
         <div v-if="canManage(activeSegment)" class="flex items-center gap-1">
           <UiBtn v-if="segmentModified" variant="primary" size="sm" :disabled="segmentBusy" data-cy="segment-save-changes" @click="saveSegmentChanges">
@@ -1010,7 +1041,7 @@ function tagClass(tag: string) {
       <!-- Toolbar. Search and the four dimensions you slice by, then the two
       states you scan for, then the panel with the rest. -->
       <div class="flex flex-wrap items-center gap-2">
-        <div class="relative w-[250px]">
+        <div class="relative w-full sm:w-[250px]">
           <svg width="13" height="13" viewBox="0 0 14 14" aria-hidden="true" class="pointer-events-none absolute left-[10px] top-1/2 -translate-y-1/2 text-ink-faint">
             <circle cx="6" cy="6" r="4.2" stroke="currentColor" stroke-width="1.4" fill="none" />
             <path d="M9.2 9.2L12 12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
@@ -1020,7 +1051,7 @@ function tagClass(tag: string) {
             type="search"
             :aria-label="t('Search patients', 'Buscar pacientes')"
             :placeholder="t('Name, phone, email or ID', 'Nombre, teléfono, correo o DNI')"
-            class="h-8 w-full rounded-ctl border border-line-control bg-surface pl-[30px] pr-3 text-[13px] text-ink-700 placeholder:text-ink-faint focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            class="h-8 w-full rounded-ctl border border-line-control bg-surface pl-[30px] pr-3 text-[13px] text-ink-700 placeholder:text-ink-faint2 touch:h-11 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
           />
         </div>
 
@@ -1057,7 +1088,7 @@ function tagClass(tag: string) {
         <button
           type="button"
           :aria-pressed="form.doNotContact"
-          class="flex h-8 items-center gap-1.5 rounded-pill border px-2.5 text-[12.5px] font-medium outline-none focus-visible:shadow-focus"
+          class="flex h-8 items-center gap-1.5 rounded-pill border px-2.5 text-[12.5px] font-medium outline-none focus-visible:shadow-focus touch:h-11"
           :class="
             form.doNotContact
               ? 'border-danger-border bg-danger-bg text-danger-text'
@@ -1072,7 +1103,7 @@ function tagClass(tag: string) {
         <button
           type="button"
           :aria-pressed="form.minors"
-          class="flex h-8 items-center gap-1.5 rounded-pill border px-2.5 text-[12.5px] font-medium outline-none focus-visible:shadow-focus"
+          class="flex h-8 items-center gap-1.5 rounded-pill border px-2.5 text-[12.5px] font-medium outline-none focus-visible:shadow-focus touch:h-11"
           :class="
             form.minors
               ? 'border-brand-tintBorder bg-brand-tint text-brand-text'
@@ -1088,7 +1119,7 @@ function tagClass(tag: string) {
           type="button"
           data-cy="more-filters-toggle"
           :aria-expanded="showMoreFilters"
-          class="flex h-8 items-center gap-1.5 rounded-pill border px-2.5 text-[12.5px] font-medium outline-none focus-visible:shadow-focus"
+          class="flex h-8 items-center gap-1.5 rounded-pill border px-2.5 text-[12.5px] font-medium outline-none focus-visible:shadow-focus touch:h-11"
           :class="moreFiltersCount > 0 ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control bg-surface text-ink-500 hover:border-line-controlHover'"
           @click="showMoreFilters = !showMoreFilters"
         >
@@ -1114,7 +1145,7 @@ function tagClass(tag: string) {
           <button
             type="button"
             :aria-label="`${t('Remove filter', 'Quitar filtro')}: ${filter.label}`"
-            class="flex h-4 w-4 items-center justify-center rounded-full text-ink-faint outline-none hover:bg-surface-subtle hover:text-ink-700 focus-visible:shadow-focus"
+            class="flex h-4 w-4 items-center justify-center rounded-full text-ink-faint outline-none hover:bg-surface-subtle hover:text-ink-700 focus-visible:shadow-focus touch:h-8 touch:w-8"
             @click="filter.clear()"
           >
             <svg viewBox="0 0 10 10" aria-hidden="true" class="h-2.5 w-2.5">
@@ -1124,7 +1155,7 @@ function tagClass(tag: string) {
         </span>
         <button
           type="button"
-          class="rounded-ctlSm px-1.5 py-0.5 text-[12px] font-medium text-ink-muted outline-none hover:text-ink-700 focus-visible:shadow-focus"
+          class="rounded-ctlSm px-1.5 py-0.5 text-[12px] font-medium text-ink-muted outline-none hover:text-ink-700 focus-visible:shadow-focus touch:min-h-11"
           @click="clearAllFilters"
         >
           {{ t('Clear all', 'Quitar todo') }}
@@ -1135,7 +1166,7 @@ function tagClass(tag: string) {
           v-if="!activeSegment || segmentModified"
           type="button"
           data-cy="save-segment"
-          class="ml-auto inline-flex items-center gap-1 rounded-ctlSm px-1.5 py-0.5 text-[12px] font-semibold text-brand outline-none hover:underline focus-visible:shadow-focus"
+          class="ml-auto inline-flex items-center gap-1 rounded-ctlSm px-1.5 py-0.5 text-[12px] font-semibold text-brand-text outline-none hover:underline focus-visible:shadow-focus touch:min-h-11"
           @click="segmentDialog = 'create'"
         >
           <svg viewBox="0 0 12 12" aria-hidden="true" class="h-3 w-3">
@@ -1168,31 +1199,78 @@ function tagClass(tag: string) {
         </div>
       </div>
 
+      <!-- The first load failed: there are no rows to keep, and a skeleton
+      that never resolves says "wait", which is the wrong advice. -->
+      <UiEmptyState
+        v-if="!loadedOnce && loadFailed"
+        data-cy="patients-load-failed"
+        :title="t('The patient list could not be loaded', 'No se ha podido cargar la lista de pacientes')"
+        :description="t('Check the connection and try again.', 'Comprueba la conexión y vuelve a intentarlo.')"
+        class="mt-3.5 !px-0 !py-0"
+        :aria-busy="loading"
+      >
+        <template #icon>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+          </svg>
+        </template>
+        <template #actions>
+          <UiBtn :disabled="loading" @click="loadPatients">{{ loading ? t('Trying again…', 'Reintentando…') : t('Try again', 'Reintentar') }}</UiBtn>
+        </template>
+      </UiEmptyState>
+
+      <!-- Nothing to show. Outside the table rather than a row in it: the
+      table is 940px wide and scrolls sideways on a phone, so a centred row
+      put the sentence, and the way out of it, off the right of the screen. -->
+      <UiEmptyState
+        v-else-if="loadedOnce && patients.length === 0"
+        data-cy="patients-empty"
+        :title="activeFilters.length > 0 ? t('No patients match these filters.', 'Ningún paciente coincide con estos filtros.') : t('No patients found.', 'No se encontraron pacientes.')"
+        class="mt-3.5 !px-0 !py-0 transition-opacity"
+        :class="loading ? 'pointer-events-none opacity-60' : ''"
+        :aria-busy="loading"
+      >
+        <template #icon>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+          </svg>
+        </template>
+        <template #actions>
+          <UiBtn v-if="activeFilters.length > 0" @click="clearAllFilters">{{ t('Clear all', 'Quitar todo') }}</UiBtn>
+          <UiBtn v-else variant="primary" @click="showAddPatient = true">{{ t('New patient', 'Nuevo paciente') }}</UiBtn>
+        </template>
+      </UiEmptyState>
+
       <!-- A real table, so a screen reader announces the column a cell belongs
       to. min-w below keeps it scrolling horizontally as one unit on a narrow
       screen rather than squeezing every column unreadably thin. -->
-      <div class="mt-3.5 overflow-hidden rounded-card border border-line bg-surface shadow-card" :aria-busy="loading || enriching">
+      <div v-else class="mt-3.5 overflow-hidden rounded-card border border-line bg-surface shadow-card" :aria-busy="loading || enriching">
         <div class="overflow-x-auto">
           <table class="w-full min-w-[940px] border-collapse text-[13px]">
             <caption class="sr-only">{{ t('Patients', 'Pacientes') }}</caption>
             <thead>
-              <tr class="border-b border-line-row bg-surface-subtle2 text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">
-                <th scope="col" class="w-[40px] py-2.5 pl-4 pr-0 text-left">
-                  <input
-                    type="checkbox"
-                    data-cy="select-page"
-                    class="h-4 w-4 accent-brand"
-                    :checked="pageAllSelected"
-                    :indeterminate="selectedIds.size > 0 && !pageAllSelected"
-                    :disabled="patients.length === 0"
-                    :aria-label="t('Select every patient on this page', 'Seleccionar todos los pacientes de esta página')"
-                    @change="togglePage"
-                  />
+              <tr class="border-b border-line-row bg-surface-subtle2 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">
+                <!-- The label around each checkbox is its hit area: a bare
+                16px box beside a row that opens the record on a click was a
+                near miss on the iPad, and a miss opened the record. -->
+                <th scope="col" class="w-[44px] py-0 pl-1.5 pr-0 text-left">
+                  <label class="flex h-9 w-9 cursor-pointer items-center justify-center touch:h-11 touch:w-11">
+                    <input
+                      type="checkbox"
+                      data-cy="select-page"
+                      class="h-4 w-4 cursor-pointer accent-brand disabled:cursor-default"
+                      :checked="pageAllSelected"
+                      :indeterminate="selectedIds.size > 0 && !pageAllSelected"
+                      :disabled="patients.length === 0"
+                      :aria-label="t('Select every patient on this page', 'Seleccionar todos los pacientes de esta página')"
+                      @change="togglePage"
+                    />
+                  </label>
                 </th>
                 <th scope="col" class="px-5 py-2.5 text-left max-md:sticky max-md:left-0 max-md:z-[1] max-md:bg-surface-subtle2 max-md:px-3" :aria-sort="sortDir === 'asc' ? 'ascending' : 'descending'">
                   <button
                     type="button"
-                    class="inline-flex items-center gap-1 uppercase tracking-[.04em] outline-none hover:text-ink-600 focus-visible:shadow-focus"
+                    class="inline-flex items-center gap-1 uppercase tracking-[.07em] outline-none hover:text-ink-600 focus-visible:shadow-focus"
                     @click="sortDir = sortDir === 'asc' ? 'desc' : 'asc'"
                   >
                     {{ t('Patient', 'Paciente') }}
@@ -1214,7 +1292,7 @@ function tagClass(tag: string) {
 
             <tbody v-if="!loadedOnce">
               <tr v-for="row in 8" :key="row" class="border-b border-line-row last:border-b-0">
-                <td class="py-2.5 pl-4 pr-0" />
+                <td class="py-2.5 pl-1.5 pr-0" />
                 <td class="px-5 py-2.5">
                   <div class="flex items-center gap-2.5">
                     <UiSkeleton class="h-[26px] w-[26px] shrink-0 rounded-full" />
@@ -1227,22 +1305,6 @@ function tagClass(tag: string) {
               </tr>
             </tbody>
 
-            <tbody v-else-if="patients.length === 0" :class="loading ? 'pointer-events-none opacity-60' : ''">
-              <tr>
-                <td colspan="9" class="px-5 py-10 text-center text-[13px] text-ink-faint">
-                  {{ activeFilters.length > 0 ? t('No patients match these filters.', 'Ningún paciente coincide con estos filtros.') : t('No patients found.', 'No se encontraron pacientes.') }}
-                  <button
-                    v-if="activeFilters.length > 0"
-                    type="button"
-                    class="ml-1 font-medium text-brand outline-none hover:underline focus-visible:shadow-focus"
-                    @click="clearAllFilters"
-                  >
-                    {{ t('Clear all', 'Quitar todo') }}
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-
             <tbody v-else class="transition-opacity" :class="loading ? 'pointer-events-none opacity-60' : ''">
               <tr
                 v-for="patient in patients"
@@ -1250,37 +1312,43 @@ function tagClass(tag: string) {
                 class="group cursor-pointer border-b border-line-row last:border-b-0 hover:bg-surface-subtle"
                 @click="onRowClick($event, patient.id)"
               >
-                <td class="py-2.5 pl-4 pr-0">
-                  <input
-                    type="checkbox"
-                    data-cy="select-row"
-                    class="h-4 w-4 accent-brand"
-                    :checked="allMatchingSelected || selectedIds.has(patient.id)"
-                    :aria-label="`${t('Select', 'Seleccionar')} ${patient.first_name} ${patient.last_name ?? ''}`"
-                    @change="toggleRow(patient.id)"
-                  />
+                <td class="py-0 pl-1.5 pr-0">
+                  <label class="flex h-9 w-9 cursor-pointer items-center justify-center touch:h-11 touch:w-11">
+                    <input
+                      type="checkbox"
+                      data-cy="select-row"
+                      class="h-4 w-4 cursor-pointer accent-brand"
+                      :checked="allMatchingSelected || selectedIds.has(patient.id)"
+                      :aria-label="`${t('Select', 'Seleccionar')} ${patient.first_name} ${patient.last_name ?? ''}`"
+                      @change="toggleRow(patient.id)"
+                    />
+                  </label>
                 </td>
                 <!-- Pinned on a phone, where the table scrolls sideways: the
                      columns to the right are no use without the name they
                      belong to. Capped there too, so one long name does not
                      widen the column past the screen. -->
-                <td class="px-5 py-2.5 max-md:sticky max-md:left-0 max-md:z-[1] max-md:max-w-[200px] max-md:bg-surface max-md:px-3 max-md:group-hover:bg-surface-subtle">
+                <td class="px-5 py-2.5 max-md:sticky max-md:left-0 max-md:z-[1] max-md:w-[200px] max-md:min-w-[200px] max-md:max-w-[200px] max-md:bg-surface max-md:px-3 max-md:group-hover:bg-surface-subtle">
                   <div class="flex min-w-0 items-center gap-2.5">
-                    <span aria-hidden="true" class="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full bg-brand-tint text-[11px] font-[650] text-brand">
+                    <span aria-hidden="true" class="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full bg-brand-tint text-[11px] font-[650] text-brand-text">
                       {{ initials(patient) }}
                     </span>
-                    <div class="min-w-0">
-                      <p class="flex items-center gap-1.5 text-[13.5px] font-[560] text-ink-900">
+                    <div class="min-w-0 flex-1">
+                      <!-- On a phone the name wraps rather than truncating,
+                      and the flags drop under it: the pinned column is only
+                      200px, and three flags beside a name left it four
+                      letters and an ellipsis. -->
+                      <p class="flex min-w-0 items-center gap-x-1.5 gap-y-0.5 text-[13.5px] font-[560] text-ink-900 max-md:flex-wrap">
                         <!-- A real link: openable in a new tab, and the thing
                         a screen reader announces as the row's subject. -->
-                        <NuxtLink :to="`/patients/${patient.id}`" class="truncate outline-none hover:underline focus-visible:shadow-focus">
+                        <NuxtLink :to="`/patients/${patient.id}`" class="truncate outline-none hover:underline focus-visible:shadow-focus max-md:whitespace-normal max-md:break-words">
                           {{ patient.first_name }} {{ patient.last_name }}
                         </NuxtLink>
-                        <span v-if="patient.status === 'inactive'" class="shrink-0 rounded-pill bg-chip-bg2 px-1.5 py-0.5 text-[11px] font-[600] text-chip-text">{{ t('Inactive', 'Inactivo') }}</span>
-                        <span v-if="patient.is_minor" class="shrink-0 rounded-pill bg-brand-tint px-1.5 py-0.5 text-[11px] font-[600] text-brand-text2">{{ t('Minor', 'Menor') }}</span>
-                        <span v-if="patient.do_not_contact" class="shrink-0 rounded-pill bg-danger-bg px-1.5 py-0.5 text-[11px] font-[600] text-danger-text">{{ t('Do not contact', 'No contactar') }}</span>
+                        <UiPill v-if="patient.status === 'inactive'" class="shrink-0">{{ t('Inactive', 'Inactivo') }}</UiPill>
+                        <UiPill v-if="patient.is_minor" tone="brand" class="shrink-0">{{ t('Minor', 'Menor') }}</UiPill>
+                        <UiPill v-if="patient.do_not_contact" tone="danger" class="shrink-0">{{ t('Do not contact', 'No contactar') }}</UiPill>
                       </p>
-                      <p class="truncate text-[11.5px] text-ink-muted2">{{ secondaryLine(patient) || '—' }}</p>
+                      <p class="w-0 min-w-full truncate text-[11.5px] text-ink-muted2">{{ secondaryLine(patient) || '—' }}</p>
                     </div>
                   </div>
                 </td>
@@ -1292,14 +1360,11 @@ function tagClass(tag: string) {
                 whether invoices go out by email. -->
                 <td class="px-3 py-2.5">
                   <UiSkeleton v-if="enriching" class="h-3 w-24 rounded-ctlSm" />
+                  <span v-else-if="enrichFailed" class="text-[12.5px] text-ink-faint2" :title="t('Could not be loaded', 'No se ha podido cargar')"><span aria-hidden="true">—</span><span class="sr-only">{{ t('Could not be loaded', 'No se ha podido cargar') }}</span></span>
                   <div v-else class="flex flex-wrap items-center gap-1.5">
                   <span v-if="primaryPhoneByPatient[patient.id]" class="inline-flex items-center gap-1.5">
-                    <span class="font-mono text-[12.5px] text-ink-700">{{ primaryPhoneByPatient[patient.id] }}</span>
-                    <span
-                      v-if="whatsappConsentByPatient[patient.id]"
-                      class="rounded-pill bg-success-bg px-1.5 py-0.5 text-[11px] font-[600] text-success-text"
-                      :title="t('WhatsApp', 'WhatsApp')"
-                    >WA</span>
+                    <span class="whitespace-nowrap font-mono text-[12.5px] text-ink-700">{{ primaryPhoneByPatient[patient.id] }}</span>
+                    <UiPill v-if="whatsappConsentByPatient[patient.id]" tone="success" :title="t('WhatsApp', 'WhatsApp')">WA</UiPill>
                   </span>
                   <span v-else class="inline-flex items-center gap-1 text-[12.5px] text-warning-text">
                     <svg viewBox="0 0 12 12" aria-hidden="true" class="h-3 w-3 shrink-0">
@@ -1309,24 +1374,26 @@ function tagClass(tag: string) {
                     </svg>
                     {{ t('No phone', 'Sin teléfono') }}
                   </span>
-                  <span
+                  <UiPill
                     v-if="patient.invoice_email_enabled"
-                    class="rounded-pill bg-brand-tint px-1.5 py-0.5 text-[11px] font-[600] text-brand-text2"
+                    tone="brand"
                     :title="t('Invoices are emailed to this patient', 'Las facturas se envían por correo')"
-                  >{{ t('Email', 'Correo') }}</span>
+                  >{{ t('Email', 'Correo') }}</UiPill>
                   </div>
                 </td>
 
                 <td class="px-3 py-2.5">
                   <UiSkeleton v-if="enriching" class="h-3 w-20 rounded-ctlSm" />
-                  <span v-else-if="lastVisitText(patient.id)" class="text-[13px] text-ink-700">{{ lastVisitText(patient.id) }}</span>
+                  <span v-else-if="enrichFailed" class="text-[12.5px] text-ink-faint2" :title="t('Could not be loaded', 'No se ha podido cargar')"><span aria-hidden="true">—</span><span class="sr-only">{{ t('Could not be loaded', 'No se ha podido cargar') }}</span></span>
+                  <span v-else-if="lastVisitText(patient.id)" class="whitespace-nowrap text-[13px] text-ink-700">{{ lastVisitText(patient.id) }}</span>
                   <span v-else class="text-[12.5px] text-ink-faint2">{{ t('Never', 'Nunca') }}</span>
                 </td>
 
                 <td class="px-3 py-2.5">
                   <UiSkeleton v-if="enriching" class="h-3 w-24 rounded-ctlSm" />
+                  <span v-else-if="enrichFailed" class="text-[12.5px] text-ink-faint2" :title="t('Could not be loaded', 'No se ha podido cargar')"><span aria-hidden="true">—</span><span class="sr-only">{{ t('Could not be loaded', 'No se ha podido cargar') }}</span></span>
                   <template v-else-if="nextVisitInfo(patient.id).date">
-                    <p class="text-[13px] text-ink-700">{{ nextVisitInfo(patient.id).date }}</p>
+                    <p class="whitespace-nowrap text-[13px] text-ink-700">{{ nextVisitInfo(patient.id).date }}</p>
                     <p class="text-[11.5px]" :class="nextVisitInfo(patient.id).colorClass">{{ nextVisitInfo(patient.id).relative }}</p>
                   </template>
                   <p v-else class="text-[13px]" :class="nextVisitInfo(patient.id).colorClass">{{ nextVisitInfo(patient.id).relative }}</p>
@@ -1334,9 +1401,10 @@ function tagClass(tag: string) {
 
                 <td class="px-3 py-2.5">
                   <UiSkeleton v-if="enriching" class="h-3 w-24 rounded-ctlSm" />
+                  <span v-else-if="enrichFailed" class="text-[12.5px] text-ink-faint2" :title="t('Could not be loaded', 'No se ha podido cargar')"><span aria-hidden="true">—</span><span class="sr-only">{{ t('Could not be loaded', 'No se ha podido cargar') }}</span></span>
                   <template v-else-if="carePlanByPatient[patient.id]">
                     <div class="flex items-center justify-between gap-2">
-                      <p class="min-w-0 truncate text-[12.5px] text-ink-700">{{ carePlanByPatient[patient.id].name }}</p>
+                      <p class="w-0 min-w-0 flex-1 truncate text-[12.5px] text-ink-700" :title="carePlanByPatient[patient.id].name">{{ carePlanByPatient[patient.id].name }}</p>
                       <p class="shrink-0 font-mono text-[11px] text-ink-muted2">
                         {{ carePlanByPatient[patient.id].completed }}/{{ carePlanByPatient[patient.id].totalVisits ?? '∞' }}
                       </p>
@@ -1353,16 +1421,16 @@ function tagClass(tag: string) {
 
                 <td class="hidden px-3 py-2.5 xl:table-cell">
                   <div class="flex flex-wrap items-center gap-1">
-                    <span v-for="tag in patient.tags" :key="tag" class="rounded-pill px-1.5 py-0.5 text-[11px] font-[560]" :class="tagClass(tag)">
-                      {{ tag }}
-                    </span>
+                    <UiPill v-for="tag in patient.tags" :key="tag" :tone="tagTone(tag)">{{ tag }}</UiPill>
                   </div>
                 </td>
 
                 <td class="px-3 py-2.5 text-right">
+                  <!-- A non-breaking space before the label: Vue drops a plain
+                  one at the edge of an element, which read "200,00 €a favor". -->
                   <UiSkeleton v-if="enriching" class="ml-auto h-4 w-16 rounded-[6px]" />
-                  <span v-else class="inline-flex rounded-[6px] px-2 py-0.5 font-mono text-[12.5px]" :class="balancePill(balanceByPatient[patient.id] ?? 0).class">
-                    {{ balancePill(balanceByPatient[patient.id] ?? 0).text }}
+                  <span v-else-if="enrichFailed" class="text-[12.5px] text-ink-faint2" :title="t('Could not be loaded', 'No se ha podido cargar')"><span aria-hidden="true">—</span><span class="sr-only">{{ t('Could not be loaded', 'No se ha podido cargar') }}</span></span>
+                  <span v-else class="inline-block whitespace-nowrap rounded-[6px] px-2 py-0.5 text-[12.5px]" :class="balancePill(balanceByPatient[patient.id] ?? 0).class"><span class="font-mono">{{ balancePill(balanceByPatient[patient.id] ?? 0).amount }}</span><span v-if="balancePill(balanceByPatient[patient.id] ?? 0).label" class="text-[12px] font-medium">&nbsp;{{ balancePill(balanceByPatient[patient.id] ?? 0).label }}</span>
                   </span>
                 </td>
 

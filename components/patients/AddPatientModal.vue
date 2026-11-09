@@ -178,10 +178,19 @@ async function onSubmit() {
 
 <template>
   <div class="fixed inset-0 z-50 flex justify-end bg-scrim/30" @click.self="emit('close')">
-    <div ref="dialogPanel" role="dialog" aria-modal="true" :aria-labelledby="dialogTitleId" class="flex h-full w-full max-w-lg flex-col overflow-y-auto border-l border-line bg-surface p-4 shadow-popover sm:p-6">
+    <div ref="dialogPanel" role="dialog" aria-modal="true" :aria-labelledby="dialogTitleId" class="flex h-full w-full max-w-lg flex-col overflow-y-auto border-l border-line bg-surface p-4 shadow-drawer sm:p-6">
       <div class="flex items-center justify-between">
         <h2 :id="dialogTitleId" class="text-[16px] font-[640] text-ink-900">{{ t('Add Patient', 'Añadir paciente') }}</h2>
-        <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="emit('close')">✕</button>
+        <button
+          type="button"
+          :aria-label="t('Close', 'Cerrar')"
+          class="-mr-1.5 inline-flex h-8 w-8 items-center justify-center rounded-ctlSm text-ink-faint outline-none hover:bg-surface-subtle hover:text-ink-700 focus-visible:shadow-focus touch:h-11 touch:w-11"
+          @click="emit('close')"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true" class="h-4 w-4">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
       </div>
 
       <form class="mt-4 space-y-4" @submit.prevent="onSubmit">
@@ -193,7 +202,7 @@ async function onSubmit() {
               v-model="firstName"
               type="text"
               required
-              class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              class="mt-1 w-full h-9 rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-900 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand touch:h-11"
             />
           </div>
           <div>
@@ -202,7 +211,7 @@ async function onSubmit() {
               id="last-name"
               v-model="lastName"
               type="text"
-              class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              class="mt-1 w-full h-9 rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-900 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand touch:h-11"
             />
           </div>
         </div>
@@ -214,7 +223,7 @@ async function onSubmit() {
             v-model="dateOfBirth"
             type="date"
             :required="isRequired('date_of_birth')"
-            class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            class="mt-1 w-full h-9 rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-900 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand touch:h-11"
           />
           <p v-if="typedAge !== null" class="mt-1 text-[12px] text-ink-muted2" data-cy="new-patient-age">{{ t(`${typedAge} years old`, `${typedAge} años`) }}</p>
         </div>
@@ -229,30 +238,32 @@ async function onSubmit() {
               v-model="email"
               type="email"
               :required="isRequired('email')"
-              class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              class="mt-1 w-full h-9 rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-900 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand touch:h-11"
             />
           </div>
           <div v-if="isVisible('phone')" class="min-w-0">
-            <label class="block text-sm font-medium text-ink-700">{{ t('Phone', 'Teléfono') }}</label>
+            <label class="block text-sm font-medium text-ink-700" for="phone">{{ t('Phone', 'Teléfono') }}</label>
             <div class="mt-1 flex gap-2">
               <!-- See NewAppointmentPanel: unpinned, this select is as wide as
               its longest country name and squeezes the number beside it. -->
               <select
                 v-model="phoneCountry"
-                class="w-[120px] shrink-0 rounded-ctl border border-line-control px-2 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                :aria-label="t('Country code', 'Prefijo del país')"
+                class="h-9 w-[120px] shrink-0 rounded-ctl border border-line-control bg-surface px-2 text-[14px] text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand touch:h-11"
               >
                 <option v-for="c in COUNTRIES_BY_NAME" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }} {{ c.name }}</option>
               </select>
               <input
+                id="phone"
                 v-model="phoneNumber"
                 type="tel"
                 placeholder="612 34 56 78"
                 :required="isRequired('phone')"
-                class="min-w-0 flex-1 rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                class="min-w-0 flex-1 h-9 rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-900 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand touch:h-11"
               />
             </div>
             <label class="mt-1.5 flex items-center gap-1.5 text-sm text-ink-muted">
-              <input v-model="phoneIsWhatsapp" type="checkbox" class="rounded border-line-control accent-brand focus:ring-brand" />
+              <input v-model="phoneIsWhatsapp" type="checkbox" class="h-4 w-4 accent-brand" />
               {{ t('This number has WhatsApp', 'Este número tiene WhatsApp') }}
             </label>
           </div>
@@ -265,7 +276,7 @@ async function onSubmit() {
               id="gender"
               v-model="gender"
               :required="isRequired('gender')"
-              class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              class="mt-1 w-full h-9 rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-900 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand touch:h-11"
             >
               <option value="">{{ t('Not set', 'Sin especificar') }}</option>
               <option value="female">{{ t('Female', 'Mujer') }}</option>
@@ -278,7 +289,7 @@ async function onSubmit() {
             <select
               id="referral-source"
               v-model="referralSource"
-              class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              class="mt-1 w-full h-9 rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-900 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand touch:h-11"
             >
               <option value="">{{ t('Not set', 'Sin especificar') }}</option>
               <option v-for="s in referralSources" :key="s.id" :value="s.name">{{ s.name }}</option>
@@ -294,7 +305,7 @@ async function onSubmit() {
               v-model="occupation"
               type="text"
               :required="isRequired('occupation')"
-              class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              class="mt-1 w-full h-9 rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-900 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand touch:h-11"
             />
           </div>
           <div v-if="isVisible('preferred_language')">
@@ -302,7 +313,7 @@ async function onSubmit() {
             <select
               id="preferred-language"
               v-model="preferredLanguage"
-              class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              class="mt-1 w-full h-9 rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-900 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand touch:h-11"
             >
               <option value="es">Español</option>
               <option value="en">English</option>
@@ -320,7 +331,7 @@ async function onSubmit() {
             type="text"
             :placeholder="t('For invoices', 'Para facturas')"
             :required="isRequired('address')"
-            class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            class="mt-1 w-full h-9 rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-900 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand touch:h-11"
           />
         </div>
 
@@ -331,7 +342,7 @@ async function onSubmit() {
               id="postal-code"
               v-model="postalCode"
               type="text"
-              class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              class="mt-1 w-full h-9 rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-900 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand touch:h-11"
             />
           </div>
           <div>
@@ -340,7 +351,7 @@ async function onSubmit() {
               id="city"
               v-model="city"
               type="text"
-              class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              class="mt-1 w-full h-9 rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-900 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand touch:h-11"
             />
           </div>
           <div>
@@ -349,7 +360,7 @@ async function onSubmit() {
               id="country"
               v-model="country"
               type="text"
-              class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              class="mt-1 w-full h-9 rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-900 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand touch:h-11"
             />
           </div>
         </div>
@@ -361,7 +372,7 @@ async function onSubmit() {
             v-model="notes"
             rows="2"
             :required="isRequired('notes')"
-            class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[14px] text-ink-900 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
           />
         </div>
 
@@ -375,7 +386,7 @@ async function onSubmit() {
           <select
             id="clinic"
             v-model="clinicId"
-            class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            class="mt-1 w-full h-9 rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-900 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand touch:h-11"
           >
             <option value="">{{ t('No primary clinic', 'Sin clínica principal') }}</option>
             <option v-for="clinic in store.clinics" :key="clinic.id" :value="clinic.id">
@@ -391,19 +402,17 @@ async function onSubmit() {
             v-model="tagsInput"
             type="text"
             :placeholder="t('comma, separated, tags', 'etiquetas, separadas, por, comas')"
-            class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-sm text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            class="mt-1 w-full h-9 rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-900 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand touch:h-11"
           />
         </div>
 
-        <p v-if="error" class="text-sm text-danger-text">{{ error }}</p>
+        <p v-if="error" role="alert" class="rounded-ctl border border-danger-border bg-danger-bg px-3 py-2 text-[13px] text-danger-text">{{ error }}</p>
 
         <div class="flex gap-3">
           <UiBtn type="submit" variant="primary" :disabled="saving">
             {{ saving ? t('Saving…', 'Guardando…') : t('Add Patient', 'Añadir paciente') }}
           </UiBtn>
-          <button type="button" class="rounded-ctl px-4 py-2 text-sm font-medium text-ink-muted hover:bg-surface-subtle" @click="emit('close')">
-            {{ t('Cancel', 'Cancelar') }}
-          </button>
+          <UiBtn variant="ghost" @click="emit('close')">{{ t('Cancel', 'Cancelar') }}</UiBtn>
         </div>
       </form>
     </div>

@@ -587,30 +587,32 @@ const fieldId = useId()
 
     <div v-if="stage === 'pick'" class="mt-4">
       <div
-        class="flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-12 text-center"
+        class="flex flex-col items-center justify-center rounded-card border border-dashed px-6 py-12 text-center"
         :class="dragOver ? 'border-brand bg-brand-tint' : 'border-line-control bg-surface'"
         @dragover.prevent="dragOver = true"
         @dragleave.prevent="dragOver = false"
         @drop.prevent="onDrop"
       >
         <p class="text-sm text-ink-600">{{ t('Drag and drop a CSV or Excel (.xlsx) file here, or', 'Arrastra y suelta un archivo CSV o Excel (.xlsx) aquí, o') }}</p>
-        <label class="mt-2 cursor-pointer text-sm font-medium text-brand-text hover:text-brand-text">
+        <!-- sr-only, not hidden: display:none took the input out of the tab
+        order, so a keyboard could not choose a file at all. -->
+        <label class="mt-3 inline-flex h-9 cursor-pointer items-center rounded-ctl border border-line-control bg-surface px-3.5 text-[13px] font-medium text-ink-500 focus-within:shadow-focus hover:border-line-controlHover touch:h-11">
           {{ t('browse for a file', 'busca un archivo') }}
-          <input type="file" accept=".csv,.xlsx,.xls" data-cy="import-file" class="hidden" @change="onFileInput" />
+          <input type="file" accept=".csv,.xlsx,.xls" data-cy="import-file" class="sr-only" @change="onFileInput" />
         </label>
       </div>
-      <p v-if="fileError" class="mt-2 text-sm text-danger-text">{{ fileError }}</p>
+      <p v-if="fileError" role="alert" class="mt-2 text-sm text-danger-text">{{ fileError }}</p>
     </div>
 
     <div v-else-if="stage === 'mapping'" class="mt-4 space-y-4">
-      <div class="rounded-lg border border-line bg-surface p-4">
+      <div class="rounded-card border border-line bg-surface p-4">
         <p class="text-sm font-medium text-ink-900">{{ fileName }}</p>
         <p class="mt-1 text-sm text-ink-muted2">{{ t(`${rawRows.length} rows detected.`, `${rawRows.length} filas detectadas.`) }}</p>
       </div>
 
-      <div class="overflow-hidden rounded-lg border border-line bg-surface">
+      <div class="overflow-hidden rounded-card border border-line bg-surface">
         <table class="w-full text-sm">
-          <thead class="border-b border-line bg-surface-subtle text-left text-xs font-medium uppercase tracking-wide text-ink-muted2">
+          <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">
             <tr>
               <th class="px-3 py-2">{{ t('QuiroFlow field', 'Campo de QuiroFlow') }}</th>
               <th class="px-3 py-2">{{ t('Column in your file', 'Columna en tu archivo') }}</th>
@@ -625,7 +627,7 @@ const fieldId = useId()
               <td class="px-3 py-2">
                 <select
                   v-model="mapping[field.key]"
-                  class="w-full rounded-md border border-line-control bg-surface px-2 py-1.5 text-sm text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                  class="h-9 w-full rounded-ctl border border-line-control bg-surface px-2 text-sm touch:h-11 text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
                 >
                   <option value="">{{ t('— Not in file —', '— No está en el archivo —') }}</option>
                   <option v-for="h in headers" :key="h" :value="h">{{ h }}</option>
@@ -635,13 +637,13 @@ const fieldId = useId()
           </tbody>
         </table>
       </div>
-      <p v-if="!mappingComplete" class="text-sm text-danger-text">{{ t('Map at least First name to continue.', 'Mapea al menos Nombre para continuar.') }}</p>
+      <p v-if="!mappingComplete" role="alert" class="text-sm text-danger-text">{{ t('Map at least First name to continue.', 'Mapea al menos Nombre para continuar.') }}</p>
 
       <div>
         <label :for="`${fieldId}-targetClinicId`" class="block text-sm font-medium text-ink-700">{{ t('Import into clinic', 'Importar a la clínica') }}</label>
         <select :id="`${fieldId}-targetClinicId`"
           v-model="targetClinicId"
-          class="mt-1 w-full max-w-xs rounded-md border border-line-control bg-surface px-3 py-2 text-sm text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+          class="mt-1 w-full max-w-xs h-9 rounded-ctl border border-line-control bg-surface px-3 text-sm text-ink-900 touch:h-11 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
           @change="clinicManuallySet = true"
         >
           <option value="">{{ t('No primary clinic', 'Sin clínica principal') }}</option>
@@ -654,7 +656,7 @@ const fieldId = useId()
         <select :id="`${fieldId}-list`"
           v-model="listChoice"
           data-cy="import-list"
-          class="mt-1 w-full max-w-xs rounded-md border border-line-control bg-surface px-3 py-2 text-sm text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+          class="mt-1 w-full max-w-xs h-9 rounded-ctl border border-line-control bg-surface px-3 text-sm text-ink-900 touch:h-11 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
         >
           <option value="">{{ t('No list', 'Ninguna lista') }}</option>
           <option v-for="l in manageableLists" :key="l.id" :value="l.id">{{ l.name }}</option>
@@ -667,12 +669,12 @@ const fieldId = useId()
           maxlength="80"
           :aria-label="t('Name of the new list', 'Nombre de la nueva lista')"
           :placeholder="t('Name of the new list', 'Nombre de la nueva lista')"
-          class="mt-2 w-full max-w-xs rounded-md border border-line-control bg-surface px-3 py-2 text-sm text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+          class="mt-2 w-full max-w-xs h-9 rounded-ctl border border-line-control bg-surface px-3 text-sm text-ink-900 touch:h-11 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
         />
         <p class="mt-1 text-xs text-ink-muted2">{{ t('Patients already here are matched, not duplicated, and go on the list too.', 'Los pacientes que ya existen se reconocen, no se duplican, y también entran en la lista.') }}</p>
       </div>
 
-      <fieldset class="rounded-lg border border-line bg-surface p-4">
+      <fieldset class="rounded-card border border-line bg-surface p-4">
         <legend class="px-1 text-sm font-medium text-ink-700">{{ t('Marketing consent', 'Consentimiento de publicidad') }}</legend>
         <p class="text-sm text-ink-muted2">
           {{ t('Tick only if the people in this file agreed to receive marketing from the clinic. It applies to the patients this import creates; anyone already here keeps their own choice.', 'Márcalo solo si las personas de este archivo aceptaron recibir publicidad de la clínica. Se aplica a los pacientes que cree esta importación; quien ya exista conserva su propia elección.') }}
@@ -684,24 +686,16 @@ const fieldId = useId()
         </div>
       </fieldset>
 
-      <div class="flex gap-3">
-        <button
-          type="button"
-          data-cy="import-continue"
-          :disabled="!mappingComplete || !listChoiceValid"
-          class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50"
-          @click="confirmMapping"
-        >
+      <div class="flex flex-wrap gap-2">
+        <UiBtn variant="primary" data-cy="import-continue" :disabled="!mappingComplete || !listChoiceValid" @click="confirmMapping">
           {{ t('Continue', 'Continuar') }}
-        </button>
-        <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-ink-600 hover:bg-surface-subtle" @click="reset">
-          {{ t('Cancel', 'Cancelar') }}
-        </button>
+        </UiBtn>
+        <UiBtn variant="ghost" @click="reset">{{ t('Cancel', 'Cancelar') }}</UiBtn>
       </div>
     </div>
 
     <div v-else-if="stage === 'preview'" class="mt-4 space-y-4">
-      <div class="rounded-lg border border-line bg-surface p-4">
+      <div class="rounded-card border border-line bg-surface p-4">
         <p class="text-sm font-medium text-ink-900">{{ fileName }}</p>
         <dl class="mt-2 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
           <div><dt class="text-ink-muted2">{{ t('Total rows', 'Filas totales') }}</dt><dd class="font-medium text-ink-900">{{ totalRows }}</dd></div>
@@ -717,9 +711,9 @@ const fieldId = useId()
         </p>
       </div>
 
-      <div class="overflow-hidden rounded-lg border border-line bg-surface">
+      <div class="overflow-hidden rounded-card border border-line bg-surface">
         <table class="w-full text-sm">
-          <thead class="border-b border-line bg-surface-subtle text-left text-xs font-medium uppercase tracking-wide text-ink-muted2">
+          <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">
             <tr>
               <th class="px-3 py-2">{{ t('Name', 'Nombre') }}</th>
               <th class="px-3 py-2">{{ t('Email', 'Correo electrónico') }}</th>
@@ -741,12 +735,12 @@ const fieldId = useId()
         </p>
       </div>
 
-      <div v-if="toUpdate.length > 0" class="overflow-hidden rounded-lg border border-line bg-surface">
-        <div class="border-b border-line-divider px-3 py-2 text-xs font-medium uppercase tracking-wide text-ink-muted2">
+      <div v-if="toUpdate.length > 0" class="overflow-hidden rounded-card border border-line bg-surface">
+        <div class="border-b border-line-divider px-3 py-2 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">
           {{ t('Sample of changes to existing patients', 'Muestra de cambios en pacientes existentes') }}
         </div>
         <table class="w-full text-sm">
-          <thead class="border-b border-line bg-surface-subtle text-left text-xs font-medium uppercase tracking-wide text-ink-muted2">
+          <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">
             <tr>
               <th class="px-3 py-2">{{ t('Patient', 'Paciente') }}</th>
               <th class="px-3 py-2">{{ t('Field', 'Campo') }}</th>
@@ -770,43 +764,40 @@ const fieldId = useId()
         </p>
       </div>
 
-      <div class="flex gap-3">
-        <button
-          type="button"
+      <div class="flex flex-wrap gap-2">
+        <UiBtn
+          variant="primary"
           data-cy="import-run"
           :disabled="toImport.length === 0 && toUpdate.length === 0 && !(listChoice && matchedExistingIds.length)"
-          class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover disabled:opacity-50"
           @click="runImport"
         >
           {{ t(`Import ${toImport.length}, update ${toUpdate.length}`, `Importar ${toImport.length}, actualizar ${toUpdate.length}`) }}
-        </button>
-        <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-ink-600 hover:bg-surface-subtle" @click="stage = 'mapping'">
-          {{ t('Back to mapping', 'Volver al mapeo') }}
-        </button>
-        <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-ink-600 hover:bg-surface-subtle" @click="reset">
-          {{ t('Cancel', 'Cancelar') }}
-        </button>
+        </UiBtn>
+        <UiBtn @click="stage = 'mapping'">{{ t('Back to mapping', 'Volver al mapeo') }}</UiBtn>
+        <UiBtn variant="ghost" @click="reset">{{ t('Cancel', 'Cancelar') }}</UiBtn>
       </div>
     </div>
 
-    <div v-else-if="stage === 'importing'" class="mt-4 rounded-lg border border-line bg-surface p-8 text-center">
-      <p class="text-sm text-ink-600">
+    <div v-else-if="stage === 'importing'" role="status" class="mt-4 flex flex-col items-center gap-3 rounded-card border border-line bg-surface p-8 text-center">
+      <svg class="h-5 w-5 animate-spin text-brand" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-opacity=".2" stroke-width="2.5" />
+        <path d="M21 12a9 9 0 00-9-9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
+      </svg>
+      <p class="text-sm tabular-nums text-ink-600">
         {{ t(`Importing… ${importedCount + updatedCount} / ${toImport.length + toUpdate.length}`, `Importando… ${importedCount + updatedCount} / ${toImport.length + toUpdate.length}`) }}
       </p>
     </div>
 
     <div v-else-if="stage === 'error'" class="mt-4 space-y-4">
-      <div class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
+      <div role="alert" class="rounded-card border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
         <p class="font-medium">{{ t('Import failed:', 'Error al importar:') }}</p>
         <p class="mt-1">{{ runError }}</p>
       </div>
-      <button type="button" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover" @click="retryImport">
-        {{ t('Retry', 'Reintentar') }}
-      </button>
+      <UiBtn variant="primary" @click="retryImport">{{ t('Retry', 'Reintentar') }}</UiBtn>
     </div>
 
     <div v-else-if="stage === 'done'" class="mt-4 space-y-4">
-      <div v-if="importErrors.length > 0" class="rounded-lg border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
+      <div v-if="importErrors.length > 0" class="rounded-card border border-danger-border bg-danger-bg p-4 text-sm text-danger-text">
         <p class="font-medium">{{ t('Some rows failed:', 'Algunas filas fallaron:') }}</p>
         <ul class="mt-1 list-disc pl-5">
           <li v-for="(e, i) in importErrors" :key="i">{{ e }}</li>
@@ -815,16 +806,12 @@ const fieldId = useId()
       <p v-if="listedId" data-cy="import-listed" class="text-sm text-ink-700">
         {{ t(`${listedCount} added to the list “${targetListName}” (anyone already on it stays as they were).`, `${listedCount} añadidos a la lista «${targetListName}» (quien ya estaba sigue igual).`) }}
       </p>
-      <div class="flex gap-3">
-        <NuxtLink v-if="listedId" :to="{ path: '/patients', query: { list: listedId, clinic: 'all' } }" data-cy="import-open-list" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover">
+      <div class="flex flex-wrap gap-2">
+        <UiBtn v-if="listedId" variant="primary" data-cy="import-open-list" @click="navigateTo({ path: '/patients', query: { list: listedId, clinic: 'all' } })">
           {{ t('Open the list', 'Abrir la lista') }}
-        </NuxtLink>
-        <NuxtLink v-else to="/patients" class="rounded-md bg-brand px-4 py-2 text-sm font-medium text-brand-on hover:bg-brand-hover">
-          {{ t('View Patients', 'Ver pacientes') }}
-        </NuxtLink>
-        <button type="button" class="rounded-md px-4 py-2 text-sm font-medium text-ink-600 hover:bg-surface-subtle" @click="reset">
-          {{ t('Import another file', 'Importar otro archivo') }}
-        </button>
+        </UiBtn>
+        <UiBtn v-else variant="primary" @click="navigateTo('/patients')">{{ t('View patients', 'Ver pacientes') }}</UiBtn>
+        <UiBtn @click="reset">{{ t('Import another file', 'Importar otro archivo') }}</UiBtn>
       </div>
     </div>
   </div>

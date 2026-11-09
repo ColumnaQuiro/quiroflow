@@ -86,7 +86,6 @@ const kpis = computed(() => {
 // its distance from aligned (utils/postureTrend.ts), so lower is better and
 // the green line is aligned for all of them. Measured again from each one's
 // points, so an older assessment has the knees too.
-const lang = computed(() => t('en', 'es') as 'en' | 'es')
 const measured = computed(() => list.value.map((a) => ({ takenAt: a.taken_at, metrics: remeasure({ takenAt: a.taken_at, heightCm: Number(a.height_cm), views: a.views, metrics: a.metrics }) })))
 // Only the numbers measured at least twice: one point is not a trend.
 const trendMetrics = computed(() => TREND_METRICS.filter((m) => trendSeries(measured.value, m.key).length > 1))
@@ -242,7 +241,7 @@ const num = (n: number | null | undefined) => (n === null || n === undefined ? '
               :aria-pressed="trendKey === m.key"
               :data-cy="`posture-trend-${m.key}`"
               @click="trendKey = m.key"
-            >{{ m.short[lang] }}</button>
+            >{{ t(m.short.en, m.short.es) }}</button>
           </div>
         </div>
         <div class="flex flex-wrap items-stretch gap-4">
@@ -262,7 +261,7 @@ const num = (n: number | null | undefined) => (n === null || n === undefined ? '
               </g>
               <path :d="chart.area" class="fill-brand" fill-opacity="0.07" />
               <line x1="44" :x2="W - 24" :y1="chart.idealY" :y2="chart.idealY" class="stroke-success-text" stroke-width="1.5" stroke-dasharray="6 5" />
-              <text :x="W - 24" :y="chart.idealY - 7" text-anchor="end" class="fill-success-text" font-size="11.5" font-weight="600">{{ trendMetric.idealLabel[lang] }}</text>
+              <text :x="W - 24" :y="chart.idealY - 7" text-anchor="end" class="fill-success-text" font-size="11.5" font-weight="600">{{ t(trendMetric.idealLabel.en, trendMetric.idealLabel.es) }}</text>
               <polyline :points="chart.line" fill="none" class="stroke-brand" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" />
               <g v-for="(p, i) in chart.points" :key="p.takenAt">
                 <circle :cx="p.x" :cy="p.y" r="5.5" class="fill-surface stroke-brand" stroke-width="2.5" />
@@ -287,7 +286,7 @@ const num = (n: number | null | undefined) => (n === null || n === undefined ? '
                 <template v-else>{{ t('About the same as at the start.', 'Más o menos igual que al empezar.') }}</template>
               </p>
             </div>
-            <p class="rounded-ctl border border-line p-3 text-[12.5px] leading-relaxed text-ink-700">{{ trendMetric.help[lang] }}</p>
+            <p class="rounded-ctl border border-line p-3 text-[12.5px] leading-relaxed text-ink-700">{{ t(trendMetric.help.en, trendMetric.help.es) }}</p>
             <p class="text-[12px] text-ink-muted">{{ t('The dashed green line is aligned. The closer to it, the better.', 'La línea verde discontinua es lo alineado. Más cerca de ella, mejor.') }}</p>
           </aside>
         </div>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { UiLanguage } from '~/utils/uiLanguage'
 import type { BusinessHours } from '~/utils/businessHours'
 import { hasBusinessHoursConfigured } from '~/utils/businessHours'
 import { CALENDAR_PALETTE, isPaletteColor } from '~/utils/calendarPalette'
@@ -228,12 +229,9 @@ const weekRows = computed(() =>
 const anyHours = computed(() => hasBusinessHoursConfigured(hoursSource.value))
 
 // --- Idioma: applies at once ------------------------------------------------
-const LANGUAGES = [
-  { value: 'es' as const, label: 'Español' },
-  { value: 'en' as const, label: 'English' },
-]
+const LANGUAGES = UI_LANGUAGES
 const savingLang = ref(false)
-async function chooseLanguage(value: 'en' | 'es') {
+async function chooseLanguage(value: UiLanguage) {
   if (!store.teamMember || langPreference.value === value) return
   const previous = langPreference.value
   setLangPreference(value)
@@ -528,7 +526,7 @@ const phoneSections = computed(() => sections.value.filter((s) => s.id !== 'acce
               <h2 id="h-idioma" class="text-[16px] font-bold text-ink-900">{{ t('Language', 'Idioma') }}</h2>
               <p class="mt-1 text-[13px] text-ink-muted">{{ t('Applies at once, and only to you.', 'Se aplica al momento y solo a ti.') }}</p>
             </div>
-            <div role="radiogroup" aria-labelledby="h-idioma" class="flex gap-0.5 rounded-ctl bg-chip-bg p-[3px] sm:w-[280px]" data-cy="account-language">
+            <div role="radiogroup" aria-labelledby="h-idioma" class="grid grid-cols-2 gap-0.5 rounded-ctl bg-chip-bg p-[3px] min-[480px]:flex sm:w-[360px]" data-cy="account-language">
               <button
                 v-for="opt in LANGUAGES"
                 :key="opt.value"

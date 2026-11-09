@@ -246,7 +246,7 @@ const holdersSentence = computed(() => {
   const names = members.value.map((m) => m.full_name)
   const people = names.length === 0 ? '' : names.length <= 3 ? names.join(', ') : `${names.slice(0, 3).join(', ')}…`
   const parts: string[] = []
-  if (names.length) parts.push(t(`${names.length === 1 ? '1 person' : `${names.length} people`}: ${people}`, `${names.length === 1 ? '1 persona' : `${names.length} personas`}: ${people}`))
+  if (names.length) parts.push(names.length === 1 ? t(`1 person: ${people}`, `1 persona: ${people}`) : t(`${names.length} people: ${people}`, `${names.length} personas: ${people}`))
   if (pendingInvites.value) parts.push(t(`${pendingInvites.value} pending invite${pendingInvites.value === 1 ? '' : 's'}`, `${pendingInvites.value} invitación${pendingInvites.value === 1 ? '' : 'es'} pendiente${pendingInvites.value === 1 ? '' : 's'}`))
   return parts.join(t(' and ', ' y '))
 })

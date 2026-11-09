@@ -83,7 +83,7 @@ onMounted(() => inputRef.value?.focus())
 function birthDate(dob: string | null) {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dob ?? '')
   if (!m) return null
-  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString(preference.value === 'es' ? 'es-ES' : 'en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString(uiLocaleTag(preference.value), { day: 'numeric', month: 'short', year: 'numeric' })
 }
 function detailOf(p: PatientResult) {
   return [birthDate(p.date_of_birth), p.phone, p.status === 'inactive' ? t('Inactive', 'Inactivo') : null].filter(Boolean).join(' · ')

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { UiLanguage } from '~/utils/uiLanguage'
 import { COUNTRIES, countryByCode } from '~/utils/countries'
 import { looksLikePhoneNumber, toE164Loose } from '~/utils/phone'
 import { previewSlug, type ImportSource } from '~/components/onboarding/previewFixtures'
@@ -302,7 +303,15 @@ async function chooseTheme(value: 'light' | 'dark' | 'system') {
   setThemePreference(value)
   await supabase.from('team_members').update({ theme_preference: value }).eq('id', store.teamMember!.id)
 }
-async function chooseLanguage(value: 'en' | 'es') {
+// Each language describes itself in its own words, so the tile is readable
+// to the person looking for it whatever the screen is in now.
+const MENUS_AND_SCREENS: Record<UiLanguage, string> = {
+  en: 'Your menus and screens',
+  es: 'Tus menús y pantallas',
+  pt: 'Os seus menus e ecrãs',
+  de: 'Ihre Menüs und Bildschirme',
+}
+async function chooseLanguage(value: UiLanguage) {
   setLangPreference(value)
   await supabase.from('team_members').update({ language_preference: value }).eq('id', store.teamMember!.id)
 }
@@ -602,20 +611,20 @@ const LAUNCH_CARDS = computed(() => [
           <p class="mb-2.5 text-[14px] font-semibold text-ink-700">{{ t('Language', 'Idioma') }}</p>
           <OnboardingTileGroup :label="t('Language', 'Idioma')" :columns="2">
             <OnboardingSelectTile
-              v-for="opt in (['en', 'es'] as const)"
-              :key="opt"
+              v-for="opt in UI_LANGUAGES"
+              :key="opt.value"
               layout="inline"
-              :selected="langPreference === opt"
-              @click="chooseLanguage(opt)"
+              :selected="langPreference === opt.value"
+              @click="chooseLanguage(opt.value)"
             >
-              <OnboardingCountryFlag :code="opt === 'en' ? 'GB' : 'ES'" :width="22" />
-              <span class="min-w-0 flex-1">
-                <span class="block text-[13.5px] font-semibold text-ink-700">{{ opt === 'en' ? 'English' : 'Español' }}</span>
+              <OnboardingCountryFlag :code="opt.flag" :width="22" />
+              <span class="min-w-0 flex-1" :lang="opt.value">
+                <span class="block text-[13.5px] font-semibold text-ink-700">{{ opt.label }}</span>
                 <span class="mt-0.5 block text-[12px] text-ink-muted">
-                  {{ opt === 'en' ? 'Your menus and screens' : 'Tus menús y pantallas' }}
+                  {{ MENUS_AND_SCREENS[opt.value] }}
                 </span>
               </span>
-              <OnboardingTileCheck :selected="langPreference === opt" />
+              <OnboardingTileCheck :selected="langPreference === opt.value" />
             </OnboardingSelectTile>
           </OnboardingTileGroup>
         </div>
@@ -752,7 +761,7 @@ const LAUNCH_CARDS = computed(() => [
         v-else-if="step === 'preferences'"
         :practice="accountName"
         :theme="themePreference"
-        :language="langPreference"
+        :language="langPreference === 'es' ? 'es' : 'en'"
       />
       <OnboardingPreviewImport v-else-if="step === 'import'" :source="importSource" />
       <OnboardingPreviewPatient v-else />

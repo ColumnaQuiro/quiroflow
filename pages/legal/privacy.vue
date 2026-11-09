@@ -6,9 +6,12 @@ definePageMeta({ layout: false })
 // The subprocessors come from utils/legalSubprocessors.ts, the same list
 // /legal/security shows, so the two pages cannot drift apart. The facts
 // behind it (regions, transfer safeguards) are recorded there.
-const t = useT()
 const { preference } = useLang()
-const lang = computed(() => preference.value)
+// English or Spanish only: the legal text is not machine-translated, so a
+// Portuguese or German reader gets the English (scripts/i18n-extract.mjs
+// leaves these pages out of the catalogs for the same reason).
+const lang = computed(() => (preference.value === 'es' ? 'es' : 'en'))
+const t = (en: string, es: string) => (lang.value === 'es' ? es : en)
 
 useHead({ title: () => t('Privacy policy — QuiroFlow', 'Política de privacidad — QuiroFlow') })
 </script>

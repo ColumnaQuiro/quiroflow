@@ -38,7 +38,7 @@ const fmt = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString(t('en-GB
       <section class="rounded-card border border-line bg-surface p-4 shadow-card">
         <div class="mb-3 flex items-baseline"><h2 class="flex-1 text-[15px] font-bold text-ink-900">{{ month.name }}</h2><span class="text-[12.5px] text-ink-muted">{{ t(`${month.done} of ${month.of} days`, `${month.done} de ${month.of} días`) }}</span></div>
         <div class="grid grid-cols-7 gap-1.5 text-center" :aria-label="month.name">
-          <span v-for="(l, i) in (lang === 'en' ? 'MTWTFSS' : 'LMXJVSD').split('')" :key="i" class="text-[11px] font-semibold text-ink-muted">{{ l }}</span>
+          <span v-for="(l, i) in weekdayInitials(lang).split('')" :key="i" class="text-[11px] font-semibold text-ink-muted">{{ l }}</span>
           <span
             v-for="(c, i) in month.cells"
             :key="i"
@@ -68,7 +68,7 @@ const fmt = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString(t('en-GB
             <svg v-if="a.done" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12l5 5L20 7" /></svg>
             <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="9" r="6" /><path d="M8.5 14l-1.5 8 5-3 5 3-1.5-8" /></svg>
           </span>
-          <span class="text-[13.5px] font-semibold leading-snug text-ink-900">{{ lang === 'en' ? a.title[0] : a.title[1] }}</span>
+          <span class="text-[13.5px] font-semibold leading-snug text-ink-900">{{ t(a.title[0], a.title[1]) }}</span>
           <span v-if="a.progress" class="h-1.5 overflow-hidden rounded-full bg-surface-subtle" aria-hidden="true"><span class="block h-1.5 bg-brand" :style="{ width: `${(a.progress[0] / a.progress[1]) * 100}%` }" /></span>
           <span class="text-[12px] text-ink-muted">{{ [detail(a), a.done && a.on ? fmt(a.on) : null].filter(Boolean).join(' · ') || (a.done ? t('Done', 'Conseguido') : '') }}</span>
         </li>

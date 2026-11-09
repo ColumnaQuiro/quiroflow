@@ -10,7 +10,7 @@ import { STAFF_DOCUMENTS_BUCKET, STAFF_DOCUMENT_CATEGORIES, staffDocumentCategor
 const props = defineProps<{ accountId: string; memberId: string; name: string; gone: boolean }>()
 const t = useT()
 const { preference: lang } = useLang()
-const locale = computed(() => (lang.value === 'es' ? 'es-ES' : 'en-GB'))
+const locale = computed(() => uiLocaleTag(lang.value))
 const supabase = useSupabaseClient()
 const logAccess = useAccessLog()
 const { upload, announce, problemWith } = useStaffDocumentUpload()

@@ -201,7 +201,7 @@ const confirmationAutofill = computed<Record<string, string>>(() => {
   if (!confirmingAppointment.value) return {} as Record<string, string>
   const starts = new Date(confirmingAppointment.value.starts_at)
   return {
-    appointment_date: starts.toLocaleDateString(langPreference.value === 'es' ? 'es-ES' : 'en-GB'),
+    appointment_date: starts.toLocaleDateString(uiLocaleTag(langPreference.value)),
     appointment_time: formatTime(starts),
   }
 })

@@ -170,7 +170,7 @@ const firstName = computed(() => store.teamMember?.full_name?.split(' ')[0] ?? '
 // server against "Monday 14 September" on the client, one hydration mismatch
 // per dashboard load. en-GB because it is the day-month order the rest of the
 // app writes dates in.
-const dateLocale = computed(() => (lang.value === 'es' ? 'es-ES' : 'en-GB'))
+const dateLocale = computed(() => uiLocaleTag(lang.value))
 
 // Same payload-then-correct treatment as the greeting. Worth stressing that
 // the timezone half of this is a correctness bug, not just a cosmetic one: a

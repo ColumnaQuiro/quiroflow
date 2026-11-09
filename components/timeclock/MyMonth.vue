@@ -63,10 +63,10 @@ function shiftMonth(by: number) {
 }
 // First letter only: `capitalize` made it "Noviembre De 2026".
 const monthLabel = computed(() => {
-  const s = new Date(`${month.value}-15T12:00:00Z`).toLocaleDateString(lang.value === 'es' ? 'es-ES' : 'en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+  const s = new Date(`${month.value}-15T12:00:00Z`).toLocaleDateString(uiLocaleTag(lang.value), { month: 'long', year: 'numeric', timeZone: 'UTC' })
   return s.charAt(0).toUpperCase() + s.slice(1)
 })
-const dayLabel = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString(lang.value === 'es' ? 'es-ES' : 'en-GB', { weekday: 'short', day: 'numeric', timeZone: 'UTC' })
+const dayLabel = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString(uiLocaleTag(lang.value), { weekday: 'short', day: 'numeric', timeZone: 'UTC' })
 const clock = (at: string) => workdayClock(at, props.timeZone)
 function span(d: WorkdaySummary) {
   if (!d.entries.length) return '—'

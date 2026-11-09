@@ -1,3 +1,4 @@
+import { uiLocaleTag, type UiLanguage } from './uiLanguage'
 // The dashboard as the components draw it: every figure already worded.
 
 export type GrowthTone = 'positive' | 'negative' | 'neutral'
@@ -153,8 +154,8 @@ function euros(cents: number | null) {
 }
 
 /** The payload, worded in the staff member's language. */
-export function growthDashboardView(p: GrowthDashboardPayload, t: T, lang: 'en' | 'es'): GrowthDashboardData {
-  const locale = lang === 'es' ? 'es-ES' : 'en-GB'
+export function growthDashboardView(p: GrowthDashboardPayload, t: T, lang: UiLanguage): GrowthDashboardData {
+  const locale = uiLocaleTag(lang)
   const spend = euros(p.spendCents)
 
   const kpis: GrowthKpi[] = [

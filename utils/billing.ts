@@ -1,3 +1,4 @@
+import { uiLocaleTag, type UiLanguage } from './uiLanguage'
 // Money and dates, for the whole app.
 //
 // Every screen that shows a euro amount comes through here. It did not use
@@ -47,8 +48,8 @@ export function formatEurFromAmount(euros: number): string {
 // takes the reader's language; Spanish when none is given, which is what the
 // server-side callers (documents, messages to patients) want. A component gets
 // them bound to the staff member's language from useDates().
-export type DateLanguage = 'en' | 'es'
-const dateLocale = (lang: DateLanguage) => (lang === 'en' ? 'en-GB' : LOCALE)
+export type DateLanguage = UiLanguage
+const dateLocale = (lang: DateLanguage) => uiLocaleTag(lang)
 
 /** "21 de octubre de 2026" / "21 October 2026". */
 export function formatLongDate(iso: string | Date, lang: DateLanguage = 'es'): string {
@@ -61,12 +62,12 @@ export function formatLongDate(iso: string | Date, lang: DateLanguage = 'es'): s
  * dates. Intl.RelativeTimeFormat rather than a hand-rolled table so the
  * Spanish reads correctly ("dentro de 21 días") when the UI is in Spanish.
  */
-export function formatRelativeDays(iso: string | Date, language: 'en' | 'es', now = new Date()): string {
+export function formatRelativeDays(iso: string | Date, language: DateLanguage, now = new Date()): string {
   const date = typeof iso === 'string' ? new Date(iso) : iso
   const startOfDay = (d: Date) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())
   const days = Math.round((startOfDay(date) - startOfDay(now)) / 86_400_000)
-  if (days === 0) return language === 'es' ? 'hoy' : 'today'
-  return new Intl.RelativeTimeFormat(language === 'es' ? 'es-ES' : 'en-GB', { numeric: 'auto' }).format(days, 'day')
+  if (days === 0) return language === 'es' ? 'hoy' : language === 'en' ? 'today' : new Intl.RelativeTimeFormat(uiLocaleTag(language), { numeric: 'auto' }).format(0, 'day')
+  return new Intl.RelativeTimeFormat(uiLocaleTag(language), { numeric: 'auto' }).format(days, 'day')
 }
 
 /** "28 oct 2026" / "28 Oct 2026" -- a row date that may be from another year (a ledger, a list of facturas). */

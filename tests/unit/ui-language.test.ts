@@ -6,9 +6,11 @@ import { languageFromAcceptLanguage, languageOfTag } from '../../utils/uiLanguag
 // same list, so for a page not to switch language as it hydrates, the header
 // has to come out the way its first entry would.
 describe('Interface language from the browser', () => {
-  it('is Spanish for any Spanish tag, English for anything else', () => {
+  it('is Spanish, Portuguese or German for any tag of those, English for anything else', () => {
     for (const tag of ['es', 'es-ES', 'ES-es', 'es-419']) expect(languageOfTag(tag), tag).to.eq('es')
-    for (const tag of ['en-GB', 'ca-ES', 'fr', 'pt-BR', '', undefined]) expect(languageOfTag(tag), String(tag)).to.eq('en')
+    for (const tag of ['pt', 'pt-PT', 'pt-BR', 'pt_PT']) expect(languageOfTag(tag), tag).to.eq('pt')
+    for (const tag of ['de', 'de-DE', 'de-AT', 'de-CH']) expect(languageOfTag(tag), tag).to.eq('de')
+    for (const tag of ['en-GB', 'ca-ES', 'fr', 'desi', 'esperanto', '', undefined]) expect(languageOfTag(tag), String(tag)).to.eq('en')
   })
 
   it("reads a browser's header the way navigator.languages[0] reads", () => {
@@ -17,6 +19,8 @@ describe('Interface language from the browser', () => {
     expect(languageFromAcceptLanguage('en-GB,en;q=0.9,es;q=0.8')).to.eq('en')
     // Catalan first: the client says English for it, so the server must too.
     expect(languageFromAcceptLanguage('ca-ES,ca;q=0.9,es;q=0.8')).to.eq('en')
+    expect(languageFromAcceptLanguage('pt-PT,pt;q=0.9,en;q=0.8')).to.eq('pt')
+    expect(languageFromAcceptLanguage('de-DE,de;q=0.9,en;q=0.8')).to.eq('de')
   })
 
   it('goes by q-value, not position, and earliest among equals', () => {

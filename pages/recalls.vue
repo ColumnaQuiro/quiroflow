@@ -369,7 +369,7 @@ function fullName(r: { first_name: string | null; last_name: string | null }) {
 }
 function longDate(iso: string | null) {
   if (!iso) return t('N/A', 'N/D')
-  return new Date(iso).toLocaleDateString(language.value === 'en' ? 'en-GB' : 'es-ES', { day: 'numeric', month: 'short', year: 'numeric' })
+  return new Date(iso).toLocaleDateString(uiLocaleTag(language.value), { day: 'numeric', month: 'short', year: 'numeric' })
 }
 function weeksOf(days: number | null) {
   return Math.floor((days ?? 0) / 7)

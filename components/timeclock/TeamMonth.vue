@@ -61,7 +61,7 @@ watch(() => props.month, load)
 
 const name = (id: string | null) => members.value.find((m) => m.id === id)?.full_name ?? '—'
 const clock = (at: string) => workdayClock(at, props.timeZone)
-const locale = computed(() => (lang.value === 'es' ? 'es-ES' : 'en-GB'))
+const locale = computed(() => uiLocaleTag(lang.value))
 // Only the first letter: `capitalize` raised the month too ("Vie, 6 Nov"),
 // and Spanish writes months in lower case.
 const dayLabel = (date: string) => {

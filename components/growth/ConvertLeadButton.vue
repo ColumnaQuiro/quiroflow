@@ -94,7 +94,7 @@ const onCreateAnyway = async () => done(await createAnyway(props.leadId))
           >{{ t('Cancel', 'Cancelar') }}</button>
           <button
             type="button"
-            class="flex h-8 items-center rounded-ctl border border-line-control bg-surface px-3 text-[11.5px] font-medium text-ink-700 hover:bg-surface-subtle disabled:opacity-60"
+            class="flex h-8 touch:h-11 items-center rounded-ctl border border-line-control bg-surface px-3 text-[11.5px] font-medium text-ink-700 hover:bg-surface-subtle disabled:opacity-60"
             :disabled="converting"
             data-test="create-anyway"
             @click="onCreateAnyway"

@@ -6,6 +6,12 @@ import { Capacitor, type PluginListenerHandle } from '@capacitor/core'
 // Patients/Inbox doesn't re-register a push token on every navigation.
 const { register: registerForPush } = usePushNotifications()
 onMounted(registerForPush)
+// A patient's "Mis hábitos" are local notifications on this phone, scheduled
+// by whoever used the patient side last -- the same person on a second login,
+// or the same login crossing over from Account. Nothing on the server can
+// stop them, so the staff side takes them off; layouts/patient.vue puts them
+// back when the phone is a patient's again.
+onMounted(() => useHabitReminders().clear())
 // The Inbox tab's unread count, kept current from here for the whole app.
 const { start: startInboxBadge } = useInboxUnread()
 onMounted(startInboxBadge)

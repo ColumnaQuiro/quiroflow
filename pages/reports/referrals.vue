@@ -83,14 +83,14 @@ async function setRewarded(r: Referred, rewarded: boolean) {
   }
   r.referral_rewarded_at = at
 }
-const th = 'px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2'
+const th = 'px-3 py-2 text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2'
 </script>
 
 <template>
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Referrals', 'Recomendaciones')" :meta="t('Who brought whom, and who is owed a thank-you', 'Quién trajo a quién, y a quién le debemos un detalle')">
       <div class="flex items-center gap-3">
-        <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
+        <ReportsBackLink />
         <NuxtLink to="/settings/online-booking#referrals" class="text-[13px] font-medium text-brand-text">{{ t('Programme settings', 'Ajustes del programa') }}</NuxtLink>
       </div>
     </PageHeader>
@@ -110,13 +110,23 @@ const th = 'px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wide 
 
       <p v-if="!loading && top.length" class="mt-4 text-[13px] text-ink-700" data-cy="referrals-top">
         <span class="font-semibold">{{ t('Top referrers:', 'Quién más recomienda:') }}</span>
-        <template v-for="(x, i) in top" :key="i"> {{ x.name }} ({{ x.count }})<template v-if="i < top.length - 1">,</template></template>
+        <template v-for="(x, i) in top" :key="i"> {{ x.name }} (<span class="font-mono">{{ x.count }}</span>)<template v-if="i < top.length - 1">,</template></template>
       </p>
       <p v-if="error" role="alert" class="mt-3 text-[12.5px] text-danger-text">{{ error }}</p>
 
-      <div class="mt-4 overflow-x-auto rounded-card border border-line bg-surface shadow-card">
+      <UiEmptyState
+        v-if="!loading && !rows.length"
+        class="mt-4"
+        :title="t('No referrals yet', 'Aún no hay recomendaciones')"
+        :description="t('Switch the programme on in Settings › Online Booking, or set “Referred by” on a patient.', 'Activa el programa en Ajustes › Reserva online, o indica «Recomendado por» en un paciente.')"
+        data-cy="referrals-empty"
+      >
+        <template #actions>
+          <NuxtLink to="/settings/online-booking#referrals" class="inline-flex h-9 items-center rounded-ctl border border-line-control bg-surface px-3.5 text-[13px] font-medium text-ink-500 hover:border-line-controlHover touch:h-11">{{ t('Programme settings', 'Ajustes del programa') }}</NuxtLink>
+        </template>
+      </UiEmptyState>
+      <div v-else class="mt-4 overflow-x-auto rounded-card border border-line bg-surface shadow-card">
         <div v-if="loading" class="space-y-2 p-4"><UiSkeleton v-for="i in 4" :key="i" class="h-10 w-full rounded-ctl" /></div>
-        <p v-else-if="!rows.length" class="p-6 text-center text-[13.5px] text-ink-muted" data-cy="referrals-empty">{{ t('No referrals yet. Switch the programme on in Settings › Online Booking, or set "Referred by" on a patient.', 'Aún no hay recomendaciones. Activa el programa en Ajustes › Reserva online, o indica «Recomendado por» en un paciente.') }}</p>
         <table v-else class="w-full min-w-[640px]">
           <thead class="border-b border-line bg-surface-subtle">
             <tr>
@@ -136,9 +146,9 @@ const th = 'px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wide 
               <td class="px-3 py-2.5 text-[13px]">
                 <span v-if="r.referral_rewarded_at" class="text-ink-700">
                   {{ t(`Given ${when(r.referral_rewarded_at)}`, `Dado el ${when(r.referral_rewarded_at)}`) }}
-                  <button type="button" class="ml-2 text-[12px] text-ink-muted hover:text-ink-700" :disabled="savingId === r.id" @click="setRewarded(r, false)">{{ t('Undo', 'Deshacer') }}</button>
+                  <UiBtn variant="ghost" size="sm" class="ml-1" :disabled="savingId === r.id" @click="setRewarded(r, false)">{{ t('Undo', 'Deshacer') }}</UiBtn>
                 </span>
-                <button v-else-if="firstVisit.get(r.id)" type="button" class="rounded-ctl border border-line-control px-2.5 py-1 text-[12.5px] font-medium text-ink-700 hover:bg-surface-subtle" :disabled="savingId === r.id" data-cy="referrals-mark" @click="setRewarded(r, true)">{{ t('Mark given', 'Marcar como dado') }}</button>
+                <UiBtn v-else-if="firstVisit.get(r.id)" size="sm" :disabled="savingId === r.id" data-cy="referrals-mark" @click="setRewarded(r, true)">{{ t('Mark given', 'Marcar como dado') }}</UiBtn>
                 <span v-else class="text-ink-faint">{{ t('After their first visit', 'Tras su primera visita') }}</span>
               </td>
             </tr>

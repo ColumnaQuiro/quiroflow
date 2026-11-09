@@ -308,7 +308,7 @@ function dismiss() {
           </div>
           <button
             type="button"
-            class="-mr-1.5 -mt-1 shrink-0 rounded-ctlSm px-1.5 py-1 text-[12px] font-medium text-ink-muted2 hover:bg-surface-subtle hover:text-ink-600"
+            class="-mr-1.5 -mt-1 inline-flex h-7 shrink-0 items-center rounded-ctlSm px-1.5 text-[12px] font-medium text-ink-muted2 hover:bg-surface-subtle hover:text-ink-600 touch:h-10"
             data-cy="first-steps-dismiss"
             @click="dismiss"
           >
@@ -337,7 +337,7 @@ function dismiss() {
                 step.done
                   ? 'border border-success-border bg-success-bg text-success-text'
                   : step.key === currentKey
-                    ? 'bg-brand text-white'
+                    ? 'bg-brand text-brand-on'
                     : 'border border-line-control bg-surface text-ink-muted2'
               "
             >
@@ -361,7 +361,7 @@ function dismiss() {
                   class="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-ctl px-3 text-[12.5px] touch:h-10"
                   :class="
                     step.key === currentKey
-                      ? 'border border-brand bg-brand font-semibold text-white hover:bg-brand-hover'
+                      ? 'border border-brand bg-brand font-semibold text-brand-on hover:bg-brand-hover'
                       : 'border border-line-control bg-surface font-medium text-ink-500 hover:border-line-controlHover'
                   "
                 >

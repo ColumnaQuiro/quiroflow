@@ -248,14 +248,14 @@ const meta = computed(() => {
 <template>
   <div class="flex h-full flex-col">
     <div v-if="notFound" class="p-6">
-      <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
-      <p class="mt-4 text-[14px] text-ink-700" data-cy="report-page-not-found">{{ t('This report page does not exist, or it is not shared with you.', 'Esta página de informes no existe o no está compartida contigo.') }}</p>
+      <ReportsBackLink />
+      <UiEmptyState :title="t('This report page does not exist, or it is not shared with you.', 'Esta página de informes no existe o no está compartida contigo.')" data-cy="report-page-not-found" />
     </div>
 
     <template v-else>
       <header class="flex shrink-0 flex-col gap-2.5 border-b border-line bg-surface px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <div class="min-w-0">
-          <NuxtLink to="/reports" class="text-[12.5px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
+          <NuxtLink to="/reports" class="-ml-1 inline-flex items-center gap-0.5 text-[12.5px] text-ink-muted2 hover:text-ink-600"><UiChevron dir="left" />{{ t('Reports', 'Informes') }}</NuxtLink>
           <div class="flex flex-wrap items-baseline gap-x-2.5">
             <input
               v-if="editing"
@@ -293,7 +293,9 @@ const meta = computed(() => {
               @busy="(on: boolean) => (pdfBusy = on)"
             />
             <div class="relative">
-              <UiBtn :aria-label="t('More', 'Más')" data-cy="report-page-menu" @click="menuOpen = !menuOpen">⋯</UiBtn>
+              <UiBtn :aria-label="t('More', 'Más')" data-cy="report-page-menu" @click="menuOpen = !menuOpen">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" /></svg>
+              </UiBtn>
               <div v-if="menuOpen" class="absolute right-0 z-30 mt-1 w-56 rounded-ctl border border-line bg-surface p-1 text-[13px] shadow-popover">
                 <button type="button" class="block w-full rounded-ctlSm px-2.5 py-1.5 text-left hover:bg-surface-subtle" data-cy="report-page-duplicate" @click="duplicatePage">{{ t('Duplicate', 'Duplicar') }}</button>
                 <button v-if="canEdit" type="button" class="block w-full rounded-ctlSm px-2.5 py-1.5 text-left hover:bg-surface-subtle" data-cy="report-page-visibility" @click="toggleVisibility">
@@ -310,7 +312,7 @@ const meta = computed(() => {
         <div class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] sm:px-6">
           <div class="flex flex-wrap items-center gap-2">
             <ReportsDateRangeSelect v-model="range" :presets="PERIODS.map((p) => p.preset)" />
-            <select v-model="compare" data-cy="report-page-compare" class="h-8 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-500 focus:border-brand focus:outline-none" :aria-label="t('Compare with', 'Comparar con')">
+            <select v-model="compare" data-cy="report-page-compare" class="h-8 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-500 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand touch:h-11" :aria-label="t('Compare with', 'Comparar con')">
               <option value="previous_period">{{ t('Compare: previous period', 'Comparar: periodo anterior') }}</option>
               <option value="previous_year">{{ t('Compare: a year before', 'Comparar: un año antes') }}</option>
               <option value="none">{{ t('No comparison', 'Sin comparación') }}</option>
@@ -355,10 +357,11 @@ const meta = computed(() => {
             >
               + {{ t('Add a block here', 'Añadir un bloque aquí') }}
             </button>
-            <div v-else-if="page && blocks.length === 0" class="col-span-12 rounded-card border border-dashed border-line-control p-10 text-center text-[13px] text-ink-muted2">
-              {{ t('This page has no blocks yet.', 'Esta página todavía no tiene bloques.') }}
-              <UiBtn v-if="canEdit" class="ml-2" size="sm" @click="editing = true; showPanel = true">+ {{ t('Add a block', 'Añadir un bloque') }}</UiBtn>
-            </div>
+            <UiEmptyState v-else-if="page && blocks.length === 0" class="col-span-12" :title="t('This page has no blocks yet.', 'Esta página todavía no tiene bloques.')">
+              <template v-if="canEdit" #actions>
+                <UiBtn variant="primary" @click="editing = true; showPanel = true">+ {{ t('Add a block', 'Añadir un bloque') }}</UiBtn>
+              </template>
+            </UiEmptyState>
           </div>
         </div>
 

@@ -177,19 +177,21 @@ const fieldId = useId()
             v-model="patientQuery"
             type="text"
             :placeholder="selectedPatientLabel || t('Search patients…', 'Buscar pacientes…')"
-            class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            class="mt-1 h-9 w-full rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-900 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand touch:h-11"
           />
-          <ul v-if="patientQuery" class="mt-1 max-h-40 overflow-y-auto rounded-ctl border border-line">
-            <li v-if="searchingPatients && patientResults.length === 0" class="px-3 py-1.5"><UiSkeleton class="h-4 w-40 rounded" /></li>
-            <li
-              v-for="p in patientResults"
-              :key="p.id"
-              class="cursor-pointer px-3 py-1.5 text-[13px] hover:bg-surface-subtle"
-              @click="pickPatient(p)"
-            >
-              {{ p.first_name }} {{ p.last_name }}
+          <!-- Buttons, so a patient can be picked from the keyboard as well. -->
+          <ul v-if="patientQuery" class="mt-1 max-h-48 overflow-y-auto rounded-ctl border border-line bg-surface">
+            <li v-if="searchingPatients && patientResults.length === 0" class="px-3 py-2"><UiSkeleton class="h-4 w-40 rounded-ctlSm" /></li>
+            <li v-for="p in patientResults" :key="p.id">
+              <button
+                type="button"
+                class="flex h-9 w-full min-w-0 items-center px-3 text-left text-[13px] text-ink-700 hover:bg-surface-subtle focus-visible:bg-surface-subtle focus-visible:outline-none touch:h-11"
+                @click="pickPatient(p)"
+              >
+                <span class="truncate">{{ p.first_name }} {{ p.last_name }}</span>
+              </button>
             </li>
-            <li v-if="!searchingPatients && patientResults.length === 0" class="px-3 py-1.5 text-[13px] text-ink-muted2">{{ t('No matches', 'Sin coincidencias') }}</li>
+            <li v-if="!searchingPatients && patientResults.length === 0" class="px-3 py-2 text-[13px] text-ink-muted2">{{ t('No matches', 'Sin coincidencias') }}</li>
           </ul>
           <p v-if="selectedPatientLabel && !patientQuery" class="mt-1 text-[13px] text-ink-muted">
             {{ t('Selected:', 'Seleccionado:') }} <span class="font-medium text-ink-900">{{ selectedPatientLabel }}</span>
@@ -197,7 +199,7 @@ const fieldId = useId()
         </div>
 
         <div class="rounded-card border border-line bg-surface p-4 shadow-card sm:p-6">
-          <label class="block text-[12.5px] font-medium text-ink-500">{{ t('Services & products', 'Servicios y productos') }}</label>
+          <p class="text-[12.5px] font-medium text-ink-500">{{ t('Services & products', 'Servicios y productos') }}</p>
           <div class="mt-2 space-y-2">
             <!-- One row on a desktop. On a phone the service and the
                  description take a line each and quantity and price share the
@@ -206,7 +208,8 @@ const fieldId = useId()
             <div v-for="(line, i) in lines" :key="i" class="flex flex-wrap items-center gap-2 border-b border-line-row2 pb-3 last:border-b-0 sm:flex-nowrap sm:border-b-0 sm:pb-0">
               <select
                 v-model="line.serviceId"
-                class="w-full shrink-0 rounded-ctl sm:w-40 border border-line-control px-2 py-1.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                :aria-label="t('Service', 'Servicio')"
+                class="h-9 w-full shrink-0 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand touch:h-11 sm:w-40"
                 @change="onServiceChange(line)"
               >
                 <option value="">{{ t('Custom', 'Personalizado') }}</option>
@@ -216,13 +219,15 @@ const fieldId = useId()
                 v-model="line.description"
                 type="text"
                 :placeholder="t('Description', 'Descripción')"
-                class="w-full min-w-0 rounded-ctl sm:w-auto sm:flex-1 border border-line-control px-3 py-1.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                :aria-label="t('Description', 'Descripción')"
+                class="h-9 w-full min-w-0 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-900 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand touch:h-11 sm:w-auto sm:flex-1"
               />
               <input
                 v-model.number="line.quantity"
                 type="number"
                 min="1"
-                class="w-16 rounded-ctl border border-line-control px-2 py-1.5 text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                :aria-label="t('Quantity', 'Cantidad')"
+                class="h-9 w-16 rounded-ctl border border-line-control bg-surface px-2 text-right font-mono text-[13px] text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand touch:h-11"
               />
               <input
                 v-model="line.priceEuros"
@@ -230,12 +235,21 @@ const fieldId = useId()
                 step="0.01"
                 min="0"
                 placeholder="0.00"
-                class="min-w-0 flex-1 rounded-ctl sm:w-24 sm:flex-none border border-line-control px-2 py-1.5 text-right font-mono text-[13px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+                :aria-label="t('Price (€)', 'Precio (€)')"
+                class="h-9 min-w-0 flex-1 rounded-ctl border border-line-control bg-surface px-2 text-right font-mono text-[13px] text-ink-900 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand touch:h-11 sm:w-24 sm:flex-none"
               />
-              <button type="button" class="shrink-0 text-ink-faint2 hover:text-danger-text touch:h-11 touch:w-11" :aria-label="t('Remove line', 'Quitar línea')" @click="removeLine(i)">✕</button>
+              <button
+                type="button"
+                class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-ctlSm text-ink-faint transition-colors hover:bg-danger-bg hover:text-danger-text touch:h-11 touch:w-11"
+                :aria-label="t('Remove line', 'Quitar línea')"
+                :title="t('Remove line', 'Quitar línea')"
+                @click="removeLine(i)"
+              >
+                <UiCloseIcon />
+              </button>
             </div>
           </div>
-          <button type="button" class="mt-2 text-[13px] font-medium text-brand-text hover:text-brand-hover" @click="addLine">
+          <button type="button" class="mt-2 inline-flex h-8 items-center text-[13px] font-medium text-brand-text hover:text-brand-hover touch:h-11" @click="addLine">
             + {{ t('Add line', 'Añadir línea') }}
           </button>
 
@@ -246,7 +260,7 @@ const fieldId = useId()
           </div>
         </div>
 
-        <p v-if="error" class="text-[13px] text-danger-text">{{ error }}</p>
+        <p v-if="error" role="alert" class="text-[13px] text-danger-text">{{ error }}</p>
       </div>
     </div>
   </div>

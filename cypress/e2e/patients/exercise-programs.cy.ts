@@ -22,6 +22,8 @@ describe('Exercise programmes', () => {
           cy.visit('/settings/exercises')
           cy.get('[data-cy="settings-list"][data-ready="true"]')
 
+          cy.get('[data-cy="exercises-tab-programs"]').click()
+          cy.location('search').should('eq', '?tab=programs')
           cy.get('[data-cy="program-new"]').click()
           cy.get('[data-cy="program-name"]').type('Lumbalgia básica')
           cy.get('[data-cy="program-item"]').eq(0).within(() => {
@@ -42,9 +44,11 @@ describe('Exercise programmes', () => {
           cy.contains('[data-cy="program-row"]', 'Lumbalgia básica').should('contain', '2 exercises').and('contain', '3 × 12').and('contain', 'Progressive · 2 veces al día')
 
           // In a programme, so the library will not offer to delete it even archived.
+          cy.get('[data-cy="exercises-tab-exercises"]').click()
           cy.contains('[data-cy="library-row"]', 'Gato-camello').find('[data-cy="library-archive"]').click()
           cy.contains('[data-cy="library-archived-row"]', 'Gato-camello').find('[data-cy="library-delete"]').should('not.exist')
           cy.contains('[data-cy="program-row"]', 'Lumbalgia básica').should('contain', 'archived')
+          cy.get('[data-cy="exercises-tab-archived"]').click()
           cy.contains('[data-cy="library-archived-row"]', 'Gato-camello').find('[data-cy="library-restore"]').click()
 
           // On the record: one is new, the other they already have.
@@ -64,7 +68,7 @@ describe('Exercise programmes', () => {
           cy.contains('[data-cy="exercise-row"]', 'Gato-camello').should('contain', 'Progressive · 2 veces al día').and('not.contain', '10')
 
           // Deleting the programme leaves the patient's exercises alone.
-          cy.visit('/settings/exercises')
+          cy.visit('/settings/exercises?tab=programs')
           cy.contains('[data-cy="program-row"]', 'Lumbalgia básica').find('[data-cy="program-delete"]').click()
           cy.get('[data-cy="confirm-dialog"]').contains('button', 'Delete programme').click()
           cy.get('[data-cy="program-row"]').should('not.exist')

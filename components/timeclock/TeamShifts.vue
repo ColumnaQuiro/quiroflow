@@ -40,6 +40,7 @@ const absences = ref<Absence[]>([])
 const allowances = ref<Map<string, number>>(new Map())
 const closed = ref<Set<string>>(new Set())
 const error = ref('')
+const loaded = ref(false)
 
 async function load() {
   const year = weekStart.value.slice(0, 4)
@@ -65,6 +66,7 @@ async function load() {
     for (let d = new Date(b.starts_at); d < new Date(b.ends_at); d.setUTCDate(d.getUTCDate() + 1)) shut.add(clinicDateOf(d, props.timeZone))
   }
   closed.value = shut
+  loaded.value = true
 }
 onMounted(load)
 watch(weekStart, load)
@@ -168,7 +170,9 @@ const weekLabel = computed(() => {
   return `${f(days.value[0]!)} – ${f(days.value[6]!)}`
 })
 const memberName = (id: string) => members.value.find((m) => m.id === id)?.full_name ?? ''
-const th = 'px-2.5 py-2 text-left text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted'
+// Under the name: the role in words. Someone on the desk showed "front_desk".
+const roleOf = (m: Member) => (m.is_practitioner ? t('Practitioner', 'Profesional') : m.role === 'owner' ? t('Owner', 'Propietario') : m.role === 'front_desk' ? t('Front Desk', 'Recepción') : m.role)
+const th = 'whitespace-nowrap px-2.5 py-2 text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted'
 const td = 'border-t border-line-row px-2.5 py-2 align-top text-[12.5px] text-ink-900'
 </script>
 
@@ -195,16 +199,23 @@ const td = 'border-t border-line-row px-2.5 py-2 align-top text-[12.5px] text-in
           <tr>
             <th :class="th" class="w-[170px]">{{ t('Person', 'Persona') }}</th>
             <th v-for="d in days" :key="d" :class="th" class="capitalize">{{ dayHead(d) }}</th>
-            <th :class="th" class="w-[140px]">{{ t('Shift / clocked', 'Previsto / fichado') }}</th>
+            <th :class="th" class="w-[140px] !whitespace-normal">{{ t('Shift / clocked', 'Previsto / fichado') }}</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody v-if="!loaded" aria-busy="true">
+          <tr v-for="i in 3" :key="i">
+            <td :class="td"><UiSkeleton class="h-3.5 w-24 rounded-ctlSm" /></td>
+            <td v-for="d in days" :key="d" :class="td"><UiSkeleton class="h-9 w-full rounded-ctlSm" /></td>
+            <td :class="td"><UiSkeleton class="h-3.5 w-20 rounded-ctlSm" /></td>
+          </tr>
+        </tbody>
+        <tbody v-else>
           <tr v-for="m in members" :key="m.id" data-cy="shifts-row" :data-name="m.full_name">
-            <td :class="td"><strong>{{ m.full_name }}</strong><div class="text-[11.5px] text-ink-muted">{{ m.is_practitioner ? t('Practitioner', 'Profesional') : m.role }}</div></td>
+            <td :class="td"><strong class="font-semibold">{{ m.full_name }}</strong><div class="text-[11.5px] text-ink-muted">{{ roleOf(m) }}</div></td>
             <td v-for="d in days" :key="d" :class="td">
               <span v-if="absenceOf(m, d)" class="block rounded-ctlSm bg-warning-bg px-1.5 py-1 text-[11.5px] font-semibold text-warning-text">{{ absenceKindLabel(absenceOf(m, d)!.kind, t) }}</span>
               <form v-else-if="editing && editing.memberId === m.id && editing.day === d" class="flex flex-col gap-1" @submit.prevent="saveDay">
-                <input v-model="editText" class="h-8 w-full rounded-ctlSm border border-line-control bg-surface px-1.5 font-mono text-[11.5px]" placeholder="09:00-14:00" :aria-label="t('Hours that day', 'Horas ese día')" data-cy="shift-edit-input" />
+                <input v-model="editText" class="h-8 w-full min-w-[6.5rem] rounded-ctlSm border border-line-control bg-surface px-1.5 font-mono text-[11.5px] text-ink-900 focus:border-brand focus:outline-none touch:h-11" placeholder="09:00-14:00" :aria-label="t('Hours that day', 'Horas ese día')" data-cy="shift-edit-input" />
                 <span class="flex gap-1">
                   <UiBtn size="sm" variant="primary" type="submit" data-cy="shift-edit-save">{{ t('Save', 'Guardar') }}</UiBtn>
                   <UiBtn v-if="changed(m, d)" size="sm" variant="ghost" data-cy="shift-edit-reset" @click="resetDay">{{ t('Usual', 'Habitual') }}</UiBtn>
@@ -215,12 +226,13 @@ const td = 'border-t border-line-row px-2.5 py-2 align-top text-[12.5px] text-in
                 <span v-if="shiftOf(m, d) === null" class="text-[12px] text-ink-faint">—</span>
                 <span v-else-if="!shiftOf(m, d)!.length" class="text-[12px] text-ink-faint">{{ t('Off', 'Libre') }}</span>
                 <span v-else class="block rounded-ctlSm px-1.5 py-1 font-mono text-[11.5px] leading-snug" :class="changed(m, d) ? 'bg-warning-bg2 text-ink-900 ring-1 ring-warning-border' : 'bg-brand-tint text-brand-text'">
-                  <template v-for="(r, i) in shiftOf(m, d)!" :key="i">{{ r[0] }}–{{ r[1] }}<br v-if="i < shiftOf(m, d)!.length - 1" /></template>
+                  <span v-for="(r, i) in shiftOf(m, d)!" :key="i" class="block">{{ r[0] }}–{{ r[1] }}</span>
                 </span>
               </button>
             </td>
             <td :class="td" class="font-mono" data-cy="shifts-hours">
-              {{ formatWorked(plannedMinutes(m)) }} / {{ exempt.has(m.id) ? '—' : formatWorked(clockedMinutes(m)) }}
+              <!-- Each figure whole: the cell used to break inside one ("41 h" / "00"). -->
+              <span class="whitespace-nowrap">{{ formatWorked(plannedMinutes(m)) }}</span> / <span class="whitespace-nowrap">{{ exempt.has(m.id) ? '—' : formatWorked(clockedMinutes(m)) }}</span>
               <div v-if="exempt.has(m.id)" class="font-sans text-[11.5px] text-ink-muted">{{ t("Doesn't clock", 'No ficha') }}</div>
             </td>
           </tr>
@@ -229,27 +241,36 @@ const td = 'border-t border-line-row px-2.5 py-2 align-top text-[12.5px] text-in
     </section>
     <p class="-mt-2 text-[12px] text-ink-muted">{{ t('Click a day to change that day only; its usual hours come back with “Usual”.', 'Pulsa un día para cambiar solo ese día; «Habitual» vuelve a su horario de siempre.') }}</p>
 
-    <div class="grid gap-4 md:grid-cols-2">
-      <section class="rounded-card border border-line bg-surface px-4 py-3" data-cy="leave-allowances">
+    <!-- Side by side only where the holiday table fits its half: at 1024 it
+    ran out of the card and cut "Left" off. -->
+    <div class="grid gap-4 xl:grid-cols-2">
+      <section class="min-w-0 rounded-card border border-line bg-surface px-4 py-3" data-cy="leave-allowances">
         <h2 class="text-[14.5px] font-bold text-ink-900">{{ t('Holiday this year', 'Vacaciones del año') }}</h2>
+        <div class="overflow-x-auto">
         <table class="mt-1.5 w-full border-collapse">
           <thead><tr><th :class="th">{{ t('Person', 'Persona') }}</th><th :class="th">{{ t('Has', 'Tiene') }}</th><th :class="th">{{ t('Taken', 'Usadas') }}</th><th :class="th">{{ t('Approved', 'Aprobadas') }}</th><th :class="th">{{ t('Left', 'Quedan') }}</th></tr></thead>
-          <tbody>
+          <tbody v-if="!loaded" aria-busy="true">
+            <tr v-for="i in 3" :key="i"><td v-for="j in 5" :key="j" :class="td"><UiSkeleton class="h-3.5 rounded-ctlSm" :class="j === 1 ? 'w-24' : 'w-8'" /></td></tr>
+          </tbody>
+          <tbody v-else>
             <tr v-for="m in members" :key="m.id" data-cy="leave-allowance-row" :data-name="m.full_name">
-              <td :class="td">{{ m.full_name }}</td>
-              <td :class="td"><input :value="leaveOf(m).allowance" type="number" min="0" step="0.5" class="h-8 w-16 rounded-ctlSm border border-line-control bg-surface px-1.5 text-right font-mono text-[12.5px]" :aria-label="t(`Days for ${m.full_name}`, `Días de ${m.full_name}`)" data-cy="leave-allowance-input" @change="setAllowance(m, ($event.target as HTMLInputElement).value)" /></td>
+              <td :class="td" class="whitespace-nowrap">{{ m.full_name }}</td>
+              <td :class="td"><input :value="leaveOf(m).allowance" type="number" min="0" step="0.5" class="h-8 w-16 rounded-ctlSm border border-line-control bg-surface px-1.5 text-right font-mono text-[12.5px] text-ink-900 focus:border-brand focus:outline-none touch:h-11" :aria-label="t(`Days for ${m.full_name}`, `Días de ${m.full_name}`)" data-cy="leave-allowance-input" @change="setAllowance(m, ($event.target as HTMLInputElement).value)" /></td>
               <td :class="td" class="font-mono">{{ leaveOf(m).taken }}</td>
               <td :class="td" class="font-mono">{{ leaveOf(m).coming }}</td>
               <td :class="td" class="font-mono"><strong>{{ leaveOf(m).left }}</strong></td>
             </tr>
           </tbody>
         </table>
+        </div>
         <p class="mt-2 text-[12px] text-ink-muted">{{ t('Working days, Monday to Friday. Days the whole clinic is closed do not count.', 'Días laborables, de lunes a viernes. Los días que cierra toda la clínica no cuentan.') }}</p>
       </section>
-      <section class="rounded-card border border-line bg-surface px-4 py-3" data-cy="shift-gaps">
+      <section class="min-w-0 rounded-card border border-line bg-surface px-4 py-3" data-cy="shift-gaps">
         <h2 class="text-[14.5px] font-bold text-ink-900">{{ t('Clocked against the shift', 'Fichado frente a turno') }}</h2>
-        <p v-if="!gaps.length" class="mt-2 text-[13px] text-ink-muted">{{ t('No differences this week.', 'Sin diferencias esta semana.') }}</p>
-        <div v-for="g in gaps" :key="`${g.member.id}${g.day}`" class="flex justify-between gap-2 border-b border-line-divider py-2 text-[13px] last:border-b-0" data-cy="shift-gap">
+        <!-- Not before the week has loaded: "no differences" is a finding. -->
+        <div v-if="!loaded" class="mt-2 flex flex-col gap-2" aria-busy="true"><UiSkeleton v-for="i in 3" :key="i" class="h-3.5 w-full rounded-ctlSm" /></div>
+        <p v-else-if="!gaps.length" class="mt-2 text-[13px] text-ink-muted">{{ t('No differences this week.', 'Sin diferencias esta semana.') }}</p>
+        <div v-for="g in gaps" :key="`${g.member.id}${g.day}`" class="flex flex-wrap justify-between gap-x-2 gap-y-0.5 border-b border-line-divider py-2 text-[13px] last:border-b-0" data-cy="shift-gap">
           <span class="capitalize">{{ g.member.full_name }} · {{ dayHead(g.day) }}</span><span class="font-mono text-[12.5px] text-ink-muted">{{ g.text }}</span>
         </div>
         <p class="mt-2 text-[12px] text-ink-muted">{{ t('More than 15 minutes either way. It only informs: what was clocked stays as it is.', 'Más de 15 minutos de diferencia. Solo informa: lo fichado no cambia.') }}</p>

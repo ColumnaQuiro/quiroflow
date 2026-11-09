@@ -41,6 +41,15 @@ export function useHabitReminders() {
     requestLocationAlways: () => (available ? HabitReminders.requestLocationAlways() : Promise.resolve({ location: 'denied' as LocationPermission })),
     currentPosition: () => HabitReminders.currentPosition(),
     takePendingCheckins: async () => (available ? (await HabitReminders.takePendingCheckins()).checkins : []),
+    /**
+     * Takes every reminder off the phone: the scheduled ones, a snoozed one
+     * and any still in Notification Center. They are a patient's, set on the
+     * phone itself, so nothing on the server can stop them: signing out and
+     * switching to the staff side have to (layouts/practitioner.vue). The
+     * habits stay saved per login (useHabits) and the patient layout puts
+     * them back (scheduleStoredHabits). Never fails a sign-out.
+     */
+    clear: () => (available ? HabitReminders.schedule({ habits: [], places: [] }).catch((e) => console.error('[habits] clear failed', e)) : Promise.resolve()),
     /** A habit notification was tapped (not its buttons). */
     onOpened: (cb: (habitId: string) => void) => (available ? HabitReminders.addListener('habitOpened', (d) => cb(d.habitId)) : Promise.resolve({ remove: async () => {} })),
   }

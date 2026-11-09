@@ -41,16 +41,16 @@ watch(() => props.practitionerId, load)
 
 <template>
   <div v-if="loading" class="space-y-1.5">
-    <UiSkeleton class="h-[27px] w-10 rounded-ctlSm" />
+    <UiSkeleton class="h-[23px] w-10 rounded-ctlSm" />
     <UiSkeleton class="h-3 w-44 rounded-ctlSm" />
   </div>
   <div v-else>
-    <p class="font-mono text-[27px] leading-none text-ink-900">{{ count }}</p>
+    <p class="font-mono text-[23px] font-semibold leading-none text-ink-900">{{ count }}</p>
     <p class="mt-1.5 text-[12px] text-ink-muted2">
       {{ avgDays !== null ? t(`3+ weeks since their last visit · ${avgDays} days on average`, `3+ semanas desde su última visita · ${avgDays} días de media`) : t('No patients due for a recall', 'Ningún paciente pendiente de recordatorio') }}
     </p>
     <!-- "Recordatorios", the name the sidebar and the page itself use; this
          link alone said "recuerdos". -->
-    <NuxtLink to="/recalls" class="mt-1.5 inline-block text-[12px] font-medium text-brand-text hover:text-brand-hover">{{ t('View recalls →', 'Ver recordatorios →') }}</NuxtLink>
+    <NuxtLink to="/recalls" class="mt-1.5 inline-flex items-center gap-0.5 text-[12px] font-medium text-brand-text hover:text-brand-hover">{{ t('View recalls', 'Ver recordatorios') }}<UiChevron dir="right" /></NuxtLink>
   </div>
 </template>

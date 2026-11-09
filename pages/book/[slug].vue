@@ -1132,6 +1132,13 @@ onMounted(async () => {
 // Ties each visible <label> to the field under it (for/id), so a screen
 // reader announces the field by its name.
 const fieldId = useId()
+
+// One field style for every input and select on the page. They had grown five
+// slightly different ones: selects with no white fill and no focus ring, the
+// waitlist's with no focus at all, none sized for a finger. 16px text below
+// sm keeps iOS from zooming into the field on focus.
+const FIELD_CLASS = 'mt-1 h-9 w-full rounded-ctl border border-line-control bg-surface px-3 text-base text-ink-900 placeholder:text-ink-faint2 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand touch:h-11 sm:text-sm'
+const LABEL_CLASS = 'block text-sm font-medium text-ink-700'
 </script>
 
 <template>
@@ -1139,9 +1146,11 @@ const fieldId = useId()
     <div class="mx-auto max-w-5xl">
       <div v-if="phase === 'loading'" class="py-24 text-center text-sm text-ink-faint">{{ say({ es: 'Cargando…', en: 'Loading…', fr: 'Chargement…' }) }}</div>
 
-      <div v-else-if="phase === 'not_found'" class="rounded-card border border-line bg-surface p-10 text-center">
-        <p class="text-ink-muted">{{ say({ es: 'La reserva online no está disponible para esta clínica.', en: 'Online booking is not available for this clinic.', fr: 'La réservation en ligne n’est pas disponible pour ce cabinet.' }) }}</p>
-      </div>
+      <UiEmptyState v-else-if="phase === 'not_found'" :title="say({ es: 'La reserva online no está disponible para esta clínica.', en: 'Online booking is not available for this clinic.', fr: 'La réservation en ligne n’est pas disponible pour ce cabinet.' })">
+        <template #icon>
+          <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" /></svg>
+        </template>
+      </UiEmptyState>
 
       <template v-else-if="info">
         <!-- The patient's language. Any choice is kept in the address
@@ -1182,25 +1191,29 @@ const fieldId = useId()
         <!-- Step 1: service / practitioner selection -->
         <div v-if="phase === 'select'">
           <div class="mt-6 flex flex-col items-center gap-2">
-            <p class="text-xs font-semibold uppercase tracking-wide text-warning-text">{{ say({ es: `Paso ${stepNumber} de 3`, en: `Step ${stepNumber} of 3`, fr: `Étape ${stepNumber} sur 3` }) }}</p>
-            <div class="flex gap-1.5">
-              <span v-for="n in 3" :key="n" class="h-1.5 w-1.5 rounded-full" :class="n === stepNumber ? 'bg-brand' : 'bg-line'"></span>
+            <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ say({ es: `Paso ${stepNumber} de 3`, en: `Step ${stepNumber} of 3`, fr: `Étape ${stepNumber} sur 3` }) }}</p>
+            <div class="flex gap-1.5" aria-hidden="true">
+              <span v-for="n in 3" :key="n" class="h-1.5 w-1.5 rounded-full" :class="n <= stepNumber ? 'bg-brand' : 'bg-ink-faint3'"></span>
             </div>
           </div>
-          <h2 class="mt-2 text-center text-2xl font-semibold text-ink-900">{{ stepTitle }}</h2>
+          <h2 class="mt-2 text-center text-xl font-semibold text-ink-900">{{ stepTitle }}</h2>
 
           <div class="mt-6 grid gap-6 sm:grid-cols-3">
             <div class="space-y-3 sm:col-span-2">
               <div v-if="info.clinics.length > 1 || (info.appointment_types.length > 1 && !typeLockedByQuery)" class="rounded-card border border-line bg-surface p-4 shadow-card">
                 <div v-if="info.clinics.length > 1">
-                  <label :for="`${fieldId}-clinicId`" class="block text-sm font-medium text-ink-700">{{ say({ es: 'Clínica', en: 'Clinic', fr: 'Cabinet' }) }}</label>
-                  <select :id="`${fieldId}-clinicId`" v-model="clinicId" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm" @change="onClinicChange">
+                  <label :for="`${fieldId}-clinicId`" :class="LABEL_CLASS">{{ say({ es: 'Clínica', en: 'Clinic', fr: 'Cabinet' }) }}</label>
+                  <select :id="`${fieldId}-clinicId`" v-model="clinicId" :class="FIELD_CLASS" @change="onClinicChange">
                     <option v-for="c in info.clinics" :key="c.id" :value="c.id">{{ c.name }}</option>
                   </select>
                 </div>
                 <div v-if="info.appointment_types.length > 1 && !typeLockedByQuery" :class="info.clinics.length > 1 ? 'mt-4' : ''">
-                  <label :for="`${fieldId}-appointmentTypeId`" class="block text-sm font-medium text-ink-700">{{ say({ es: 'Servicio', en: 'Service', fr: 'Prestation' }) }}</label>
-                  <select :id="`${fieldId}-appointmentTypeId`" v-model="appointmentTypeId" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm">
+                  <label :for="`${fieldId}-appointmentTypeId`" :class="LABEL_CLASS">{{ say({ es: 'Servicio', en: 'Service', fr: 'Prestation' }) }}</label>
+                  <select :id="`${fieldId}-appointmentTypeId`" v-model="appointmentTypeId" :class="FIELD_CLASS">
+                    <!-- Without it the browser shows the first service as if it
+                         were chosen when none is, and a practitioner tapped
+                         next opened a calendar with no times on any day. -->
+                    <option value="" disabled>{{ say({ es: 'Elija un servicio', en: 'Choose a service', fr: 'Choisissez une prestation' }) }}</option>
                     <option v-for="t in info.appointment_types" :key="t.id" :value="t.id">
                       {{ t.name }} — {{ t.duration_minutes }} min
                     </option>
@@ -1211,11 +1224,12 @@ const fieldId = useId()
               <template v-if="showPractitionerCards">
                 <button
                   type="button"
-                  class="flex w-full items-center justify-between rounded-card border border-line bg-surface p-4 text-left shadow-card transition hover:border-brand"
-                  :disabled="!hydrated"
+                  class="flex w-full items-center justify-between rounded-card border border-line bg-surface p-4 text-left shadow-card transition hover:border-brand focus-visible:border-brand focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand"
+                  :class="{ 'pointer-events-none opacity-50': !appointmentTypeId }"
+                  :disabled="!hydrated || !appointmentTypeId"
                   @click="chooseTeamMember(ANY_PRACTITIONER)"
                 >
-                  <div>
+                  <div class="min-w-0">
                     <p class="font-semibold text-ink-900">{{ t('any_practitioner_label', { es: 'Cualquier profesional', en: 'Any practitioner', fr: 'N’importe quel praticien' }) }}</p>
                     <p class="mt-1 text-sm text-ink-muted">
                       {{
@@ -1233,17 +1247,18 @@ const fieldId = useId()
                   v-for="m in availablePractitioners"
                   :key="m.id"
                   type="button"
-                  class="flex w-full items-center justify-between rounded-card border border-line bg-surface p-4 text-left shadow-card transition hover:border-brand"
-                  :disabled="!hydrated"
+                  class="flex w-full items-center justify-between rounded-card border border-line bg-surface p-4 text-left shadow-card transition hover:border-brand focus-visible:border-brand focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand"
+                  :class="{ 'pointer-events-none opacity-50': !appointmentTypeId }"
+                  :disabled="!hydrated || !appointmentTypeId"
                   @click="chooseTeamMember(m.id)"
                 >
-                  <div class="flex items-center gap-3">
+                  <div class="flex min-w-0 items-center gap-3">
                     <div class="flex h-9 touch:h-11 w-9 touch:w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-brand-tint text-sm font-semibold text-brand-text">
                       <img v-if="practitionerPhotoUrl(m)" :src="practitionerPhotoUrl(m)!" class="h-full w-full object-cover" alt="" />
                       <template v-else>{{ practitionerInitials(m.full_name) }}</template>
                     </div>
-                    <div>
-                      <p class="font-semibold text-ink-900">{{ m.full_name }}</p>
+                    <div class="min-w-0">
+                      <p class="break-words font-semibold text-ink-900">{{ m.full_name }}</p>
                       <p class="mt-0.5 text-sm text-ink-muted">{{ practitionerAvailabilityLabel(m) }}</p>
                     </div>
                   </div>
@@ -1251,11 +1266,17 @@ const fieldId = useId()
                 </button>
               </template>
 
+              <UiEmptyState
+                v-else-if="availablePractitioners.length === 0 && !isClass"
+                class="!px-0 !py-0"
+                :title="say({ es: 'No hay profesionales disponibles para reserva online en esta clínica.', en: 'No practitioners are available for online booking at this clinic.', fr: 'Aucun praticien n’est disponible pour la réservation en ligne dans ce cabinet.' })"
+              >
+                <template #icon>
+                  <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" /></svg>
+                </template>
+              </UiEmptyState>
               <div v-else class="rounded-card border border-line bg-surface p-6 shadow-card">
-                <p v-if="availablePractitioners.length === 0" class="text-sm text-danger-text">
-                  {{ say({ es: 'No hay profesionales disponibles para reserva online en esta clínica.', en: 'No practitioners are available for online booking at this clinic.', fr: 'Aucun praticien n’est disponible pour la réservation en ligne dans ce cabinet.' }) }}
-                </p>
-                <UiBtn type="button" variant="primary" class="w-full" :class="availablePractitioners.length === 0 ? 'mt-4' : ''" :disabled="!canContinueFromSelect" @click="proceedToDatetime">
+                <UiBtn type="button" variant="primary" class="w-full" :disabled="!canContinueFromSelect" @click="proceedToDatetime">
                   {{ say({ es: 'Continuar', en: 'Continue', fr: 'Continuer' }) }}
                 </UiBtn>
               </div>
@@ -1267,30 +1288,37 @@ const fieldId = useId()
 
         <!-- Step 2: date & time -->
         <div v-else-if="phase === 'datetime'">
-          <div class="mt-6 flex items-center justify-between">
+          <div class="mt-6 flex items-center justify-between gap-3">
             <div>
               <div class="flex items-center gap-2">
-                <p class="text-xs font-semibold uppercase tracking-wide text-warning-text">{{ say({ es: `Paso ${stepNumber} de 3`, en: `Step ${stepNumber} of 3`, fr: `Étape ${stepNumber} sur 3` }) }}</p>
-                <div class="flex gap-1.5">
-                  <span v-for="n in 3" :key="n" class="h-1.5 w-1.5 rounded-full" :class="n === stepNumber ? 'bg-brand' : 'bg-line'"></span>
+                <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ say({ es: `Paso ${stepNumber} de 3`, en: `Step ${stepNumber} of 3`, fr: `Étape ${stepNumber} sur 3` }) }}</p>
+                <div class="flex gap-1.5" aria-hidden="true">
+                  <span v-for="n in 3" :key="n" class="h-1.5 w-1.5 rounded-full" :class="n <= stepNumber ? 'bg-brand' : 'bg-ink-faint3'"></span>
                 </div>
               </div>
               <h2 class="mt-1 text-xl font-semibold text-ink-900">{{ stepTitle }}</h2>
             </div>
             <UiBtn type="button" variant="secondary" @click="backToSelect">
-              &larr; {{ say({ es: 'Atrás', en: 'Back', fr: 'Retour' }) }}
+              <UiChevron dir="left" />{{ say({ es: 'Atrás', en: 'Back', fr: 'Retour' }) }}
             </UiBtn>
           </div>
 
           <div v-if="isClass" class="mt-6 flex flex-col gap-2.5" data-cy="class-sessions">
-            <p v-if="!classInfo?.sessions.length" class="rounded-card border border-line bg-surface p-4 text-sm text-ink-muted">
-              {{ say({ es: 'No hay clases programadas por ahora. Llame a la clínica para apuntarse.', en: 'No classes are scheduled for now. Call the clinic to sign up.', fr: 'Aucun cours n’est programmé pour le moment. Appelez le cabinet pour vous inscrire.' }) }}
-            </p>
+            <UiEmptyState
+              v-if="!classInfo?.sessions.length"
+              class="!px-0 !py-0"
+              :title="say({ es: 'No hay clases programadas por ahora.', en: 'No classes are scheduled for now.', fr: 'Aucun cours n’est programmé pour le moment.' })"
+              :description="say({ es: 'Llame a la clínica para apuntarse.', en: 'Call the clinic to sign up.', fr: 'Appelez le cabinet pour vous inscrire.' })"
+            >
+              <template #icon>
+                <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" /></svg>
+              </template>
+            </UiEmptyState>
             <button
               v-for="session in classInfo?.sessions ?? []"
               :key="session.id"
               type="button"
-              class="flex items-center gap-3 rounded-card border p-3.5 text-left shadow-card"
+              class="flex items-center gap-3 rounded-card border p-3.5 text-left shadow-card focus-visible:border-brand focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand"
               :class="session.places_left > 0 ? 'border-line bg-surface hover:border-brand' : waitlistFor?.id === session.id ? 'border-brand bg-surface-subtle' : 'border-line bg-surface-subtle hover:border-warning-border'"
               data-cy="class-session-option"
               :data-places-left="session.places_left"
@@ -1301,31 +1329,28 @@ const fieldId = useId()
                 <span class="block text-[15px] font-semibold" :class="session.places_left > 0 ? 'text-ink-900' : 'text-ink-faint'">{{ classSessionLabel(session) }}</span>
                 <span class="block text-xs text-ink-muted">{{ session.practitioner_name }}<template v-if="session.room_name"> · {{ session.room_name }}</template></span>
               </span>
-              <span
-                class="inline-flex h-6 shrink-0 items-center rounded-pill px-2.5 text-xs font-semibold"
-                :class="session.places_left > 0 ? 'bg-brand-tint text-brand-text' : 'bg-warning-bg text-warning-text'"
-              >{{
+              <UiPill class="shrink-0" :tone="session.places_left > 0 ? 'brand' : 'warning'">{{
                 session.places_left > 0
                   ? session.places_left === 1
                     ? say({ es: 'Queda 1 plaza', en: '1 place left', fr: '1 place restante' })
                     : say({ es: `Quedan ${session.places_left}`, en: `${session.places_left} left`, fr: `${session.places_left} restantes` })
                   : say({ es: 'Completa · lista de espera', en: 'Full · waitlist', fr: 'Complet · liste d’attente' })
-              }}</span>
+              }}</UiPill>
             </button>
             <div v-if="waitlistFor" class="rounded-card border border-line bg-surface p-4 shadow-card" data-cy="class-waitlist-join">
               <template v-if="waitlistPosition === null">
                 <p class="text-base font-semibold text-ink-900">{{ say({ es: 'La clase está completa', en: 'The class is full', fr: 'Le cours est complet' }) }}</p>
                 <p class="mt-1 text-sm text-ink-muted">{{ say({ es: 'Apúntese y, si se libera una plaza, le enviaremos un enlace para quedársela.', en: 'Join the waitlist and, if a place comes free, we will send you a link to take it.', fr: 'Inscrivez-vous et, si une place se libère, nous vous enverrons un lien pour la réserver.' }) }}</p>
                 <div class="mt-3 grid gap-3 sm:grid-cols-2">
-                  <label class="block text-sm font-medium text-ink-700">{{ say(FIELD.firstName) }} *<input v-model="firstName" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm" data-cy="waitlist-first-name" /></label>
-                  <label class="block text-sm font-medium text-ink-700">{{ say(FIELD.lastName) }}<input v-model="lastName" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm" data-cy="waitlist-last-name" /></label>
-                  <label class="block text-sm font-medium text-ink-700">{{ say(FIELD.email) }} *<input v-model="email" type="email" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm" data-cy="waitlist-email" /></label>
-                  <label class="block text-sm font-medium text-ink-700">{{ say(FIELD.phone) }} *
-                    <span class="mt-1 flex gap-2">
-                      <select v-model="dialCode" class="shrink-0 rounded-ctl border border-line-control px-2 py-2 text-base sm:text-sm">
+                  <label :class="LABEL_CLASS">{{ say(FIELD.firstName) }} *<input v-model="firstName" :class="FIELD_CLASS" data-cy="waitlist-first-name" /></label>
+                  <label :class="LABEL_CLASS">{{ say(FIELD.lastName) }}<input v-model="lastName" :class="FIELD_CLASS" data-cy="waitlist-last-name" /></label>
+                  <label :class="LABEL_CLASS">{{ say(FIELD.email) }} *<input v-model="email" type="email" :class="FIELD_CLASS" data-cy="waitlist-email" /></label>
+                  <label :class="LABEL_CLASS">{{ say(FIELD.phone) }} *
+                    <span class="flex gap-2">
+                      <select v-model="dialCode" :aria-label="say({ es: 'Prefijo del país', en: 'Country code', fr: 'Indicatif du pays' })" :class="FIELD_CLASS" class="!w-auto shrink-0 !px-2">
                         <option v-for="c in COUNTRIES_BY_NAME" :key="c.code" :value="c.code">{{ c.flag }} {{ c.dial }}</option>
                       </select>
-                      <input v-model="phoneNumber" type="tel" class="min-w-0 flex-1 rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm" data-cy="waitlist-phone" />
+                      <input v-model="phoneNumber" type="tel" inputmode="tel" autocomplete="tel-national" :class="FIELD_CLASS" class="min-w-0 flex-1" data-cy="waitlist-phone" />
                     </span>
                   </label>
                 </div>
@@ -1334,19 +1359,19 @@ const fieldId = useId()
               </template>
               <template v-else>
                 <p class="text-sm text-ink-muted">{{ say({ es: 'Está en la lista de espera en el puesto', en: 'Your place on the waitlist', fr: 'Votre position sur la liste d’attente' }) }}</p>
-                <p class="text-3xl font-bold text-ink-900" data-cy="waitlist-position">{{ waitlistPosition }}</p>
+                <p class="mt-1 font-mono text-[23px] font-semibold text-ink-900" data-cy="waitlist-position">{{ waitlistPosition }}</p>
                 <p class="mt-1 text-sm text-ink-muted">{{ say({ es: 'Si se libera una plaza le avisaremos con un enlace para quedársela.', en: 'If a place comes free we will send you a link to take it.', fr: 'Si une place se libère, nous vous enverrons un lien pour la réserver.' }) }}</p>
               </template>
             </div>
           </div>
-          <div v-else class="mt-6 grid gap-6 sm:grid-cols-3">
+          <div v-else class="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             <div class="rounded-card border border-line bg-surface p-4 shadow-card">
               <div class="flex items-center justify-between">
-                <button type="button" class="rounded p-1 text-ink-faint hover:bg-surface-subtle" :disabled="!hydrated" :aria-label="say({ es: 'Mes anterior', en: 'Previous month', fr: 'Mois précédent' })" @click="prevMonth"><UiChevron dir="left" /></button>
+                <button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-ctlSm text-ink-muted hover:bg-surface-subtle hover:text-ink-900 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand touch:h-11 touch:w-11" :disabled="!hydrated" :aria-label="say({ es: 'Mes anterior', en: 'Previous month', fr: 'Mois précédent' })" @click="prevMonth"><UiChevron dir="left" /></button>
                 <span class="text-sm font-semibold text-ink-900">{{ monthLabel }}</span>
-                <button type="button" class="rounded p-1 text-ink-faint hover:bg-surface-subtle" :disabled="!hydrated" :aria-label="say({ es: 'Mes siguiente', en: 'Next month', fr: 'Mois suivant' })" @click="nextMonth"><UiChevron dir="right" /></button>
+                <button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-ctlSm text-ink-muted hover:bg-surface-subtle hover:text-ink-900 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand touch:h-11 touch:w-11" :disabled="!hydrated" :aria-label="say({ es: 'Mes siguiente', en: 'Next month', fr: 'Mois suivant' })" @click="nextMonth"><UiChevron dir="right" /></button>
               </div>
-              <div class="mt-3 grid grid-cols-7 gap-1 text-center text-xs font-medium text-ink-faint">
+              <div class="mt-3 grid grid-cols-7 gap-1 text-center text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint" aria-hidden="true">
                 <span v-for="(l, i) in WEEKDAY_LABELS[lang]" :key="i">{{ l }}</span>
               </div>
               <div class="mt-1 grid grid-cols-7 gap-1">
@@ -1355,12 +1380,14 @@ const fieldId = useId()
                   :key="i"
                   type="button"
                   :disabled="!day.bookable || !hydrated"
-                  class="aspect-square rounded-full text-sm font-medium"
+                  class="aspect-square rounded-full text-sm font-medium tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-1"
                   :class="[
-                    !day.inMonth || !day.bookable ? 'text-ink-faint' : '',
-                    day.bookable && !(selectedDate && isSameDay(day.date, selectedDate)) ? 'bg-brand text-brand-on hover:bg-brand-hover' : '',
-                    selectedDate && isSameDay(day.date, selectedDate) ? 'border-2 border-brand text-ink-900' : '',
+                    !day.bookable ? (day.inMonth ? 'text-ink-faint' : 'text-ink-faint opacity-60') : '',
+                    day.bookable && !(selectedDate && isSameDay(day.date, selectedDate)) ? 'bg-brand-tint text-brand-text hover:ring-1 hover:ring-inset hover:ring-brand' : '',
+                    selectedDate && isSameDay(day.date, selectedDate) ? 'bg-brand font-semibold text-brand-on' : '',
                   ]"
+                  :aria-pressed="!!(selectedDate && isSameDay(day.date, selectedDate))"
+                  :aria-label="day.date.toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long' })"
                   @click="selectDate(day)"
                 >
                   {{ day.date.getDate() }}
@@ -1369,22 +1396,30 @@ const fieldId = useId()
             </div>
 
             <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-              <p v-if="!selectedDate" class="text-sm text-ink-faint">{{ say({ es: 'Elija un día del calendario.', en: 'Choose a day on the calendar.', fr: 'Choisissez un jour dans le calendrier.' }) }}</p>
+              <p v-if="!selectedDate" class="text-sm text-ink-muted">{{ say({ es: 'Elija un día del calendario.', en: 'Choose a day on the calendar.', fr: 'Choisissez un jour dans le calendrier.' }) }}</p>
               <template v-else>
                 <p class="text-sm font-semibold text-ink-900">
                   {{ selectedDate.toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) }}
                 </p>
-                <div v-if="monthAvailabilityLoading" class="mt-3 text-sm text-ink-faint">{{ say({ es: 'Cargando horarios…', en: 'Loading times…', fr: 'Chargement des horaires…' }) }}</div>
+                <!-- The shape of the times about to appear, not a line of grey
+                     text where they will be. -->
+                <div v-if="monthAvailabilityLoading" class="mt-3" role="status">
+                  <span class="sr-only">{{ say({ es: 'Cargando horarios…', en: 'Loading times…', fr: 'Chargement des horaires…' }) }}</span>
+                  <UiSkeleton class="h-3 w-16 rounded" />
+                  <div class="mt-2 grid grid-cols-[repeat(auto-fill,minmax(4rem,1fr))] gap-2">
+                    <UiSkeleton v-for="n in 8" :key="n" class="h-9 rounded-ctl touch:h-11" />
+                  </div>
+                </div>
                 <template v-else>
-                  <div v-if="daySlots.length === 0" class="mt-3 text-sm text-ink-faint">{{ say({ es: 'No hay horas disponibles ese día.', en: 'No times available that day.', fr: 'Aucun horaire disponible ce jour-là.' }) }}</div>
+                  <div v-if="daySlots.length === 0" class="mt-3 text-sm text-ink-muted">{{ say({ es: 'No hay horas disponibles ese día.', en: 'No times available that day.', fr: 'Aucun horaire disponible ce jour-là.' }) }}</div>
                   <div v-if="morningSlots.length" class="mt-3">
-                    <p class="text-xs font-medium uppercase text-ink-faint">{{ say({ es: 'Mañana', en: 'Morning', fr: 'Matin' }) }}</p>
-                    <div class="mt-1.5 flex flex-wrap gap-2">
+                    <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ say({ es: 'Mañana', en: 'Morning', fr: 'Matin' }) }}</p>
+                    <div class="mt-1.5 grid grid-cols-[repeat(auto-fill,minmax(4rem,1fr))] gap-2">
                       <button
                         v-for="s in morningSlots"
                         :key="s.time.toISOString() + s.memberId"
                         type="button"
-                        class="rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-brand-on hover:bg-brand-hover"
+                        class="h-9 rounded-ctl bg-brand-tint px-2 font-mono text-[13px] font-medium text-brand-text hover:ring-1 hover:ring-inset hover:ring-brand active:bg-brand active:text-brand-on focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-1 touch:h-11"
                         @click="pickSlot(s)"
                       >
                         {{ clinicTimeLabel(s.time, clinicTimeZone) }}
@@ -1392,13 +1427,13 @@ const fieldId = useId()
                     </div>
                   </div>
                   <div v-if="afternoonSlots.length" class="mt-3">
-                    <p class="text-xs font-medium uppercase text-ink-faint">{{ say({ es: 'Tarde', en: 'Afternoon', fr: 'Après-midi' }) }}</p>
-                    <div class="mt-1.5 flex flex-wrap gap-2">
+                    <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ say({ es: 'Tarde', en: 'Afternoon', fr: 'Après-midi' }) }}</p>
+                    <div class="mt-1.5 grid grid-cols-[repeat(auto-fill,minmax(4rem,1fr))] gap-2">
                       <button
                         v-for="s in afternoonSlots"
                         :key="s.time.toISOString() + s.memberId"
                         type="button"
-                        class="rounded-ctl bg-brand px-3 py-1.5 text-sm font-medium text-brand-on hover:bg-brand-hover"
+                        class="h-9 rounded-ctl bg-brand-tint px-2 font-mono text-[13px] font-medium text-brand-text hover:ring-1 hover:ring-inset hover:ring-brand active:bg-brand active:text-brand-on focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-1 touch:h-11"
                         @click="pickSlot(s)"
                       >
                         {{ clinicTimeLabel(s.time, clinicTimeZone) }}
@@ -1409,46 +1444,46 @@ const fieldId = useId()
               </template>
             </div>
 
-            <BookingSummary :clinic="clinic" :appointment-type="appointmentType" :price-cents="effectivePrice" :team-member="teamMember" :slot="selectedSlot" :format-price="formatPrice" :online-payment-required="appointmentType?.online_payment_required" :deposit-cents="appointmentType?.online_deposit_cents" />
+            <BookingSummary class="sm:col-span-2 lg:col-span-1" :clinic="clinic" :appointment-type="appointmentType" :price-cents="effectivePrice" :team-member="teamMember" :slot="selectedSlot" :format-price="formatPrice" :online-payment-required="appointmentType?.online_payment_required" :deposit-cents="appointmentType?.online_deposit_cents" />
           </div>
         </div>
 
         <!-- Step 3: patient details -->
         <div v-else-if="phase === 'details'">
-          <div class="mt-6 flex items-center justify-between">
+          <div class="mt-6 flex items-center justify-between gap-3">
             <div>
               <div class="flex items-center gap-2">
-                <p class="text-xs font-semibold uppercase tracking-wide text-warning-text">{{ say({ es: `Paso ${stepNumber} de 3`, en: `Step ${stepNumber} of 3`, fr: `Étape ${stepNumber} sur 3` }) }}</p>
-                <div class="flex gap-1.5">
-                  <span v-for="n in 3" :key="n" class="h-1.5 w-1.5 rounded-full" :class="n === stepNumber ? 'bg-brand' : 'bg-line'"></span>
+                <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ say({ es: `Paso ${stepNumber} de 3`, en: `Step ${stepNumber} of 3`, fr: `Étape ${stepNumber} sur 3` }) }}</p>
+                <div class="flex gap-1.5" aria-hidden="true">
+                  <span v-for="n in 3" :key="n" class="h-1.5 w-1.5 rounded-full" :class="n <= stepNumber ? 'bg-brand' : 'bg-ink-faint3'"></span>
                 </div>
               </div>
               <h2 class="mt-1 text-xl font-semibold text-ink-900">{{ stepTitle }}</h2>
             </div>
             <UiBtn type="button" variant="secondary" @click="backToDatetime">
-              &larr; {{ say({ es: 'Atrás', en: 'Back', fr: 'Retour' }) }}
+              <UiChevron dir="left" />{{ say({ es: 'Atrás', en: 'Back', fr: 'Retour' }) }}
             </UiBtn>
           </div>
 
           <div class="mt-6 grid gap-6 sm:grid-cols-3">
-            <form class="rounded-card border border-line bg-surface p-6 shadow-card sm:col-span-2" @submit.prevent="submitBooking">
+            <form class="rounded-card border border-line bg-surface p-4 shadow-card sm:col-span-2 sm:p-6" @submit.prevent="submitBooking">
               <div class="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <label :for="`${fieldId}-firstName`" class="block text-sm font-medium text-ink-700">{{ say(FIELD.firstName) }} *</label>
-                  <input :id="`${fieldId}-firstName`" v-model="firstName" type="text" required :placeholder="say({ es: 'Su nombre', en: 'Your first name', fr: 'Votre prénom' })" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
+                  <label :for="`${fieldId}-firstName`" :class="LABEL_CLASS">{{ say(FIELD.firstName) }} *</label>
+                  <input :id="`${fieldId}-firstName`" v-model="firstName" type="text" required :placeholder="say({ es: 'Su nombre', en: 'Your first name', fr: 'Votre prénom' })" :class="FIELD_CLASS" />
                 </div>
                 <div>
-                  <label :for="`${fieldId}-lastName`" class="block text-sm font-medium text-ink-700">{{ say(FIELD.lastName) }}</label>
-                  <input :id="`${fieldId}-lastName`" v-model="lastName" type="text" :placeholder="say({ es: 'Sus apellidos', en: 'Your last name', fr: 'Votre nom' })" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
+                  <label :for="`${fieldId}-lastName`" :class="LABEL_CLASS">{{ say(FIELD.lastName) }}</label>
+                  <input :id="`${fieldId}-lastName`" v-model="lastName" type="text" :placeholder="say({ es: 'Sus apellidos', en: 'Your last name', fr: 'Votre nom' })" :class="FIELD_CLASS" />
                 </div>
                 <div>
-                  <label :for="`${fieldId}-email`" class="block text-sm font-medium text-ink-700">{{ say(FIELD.email) }} *</label>
-                  <input :id="`${fieldId}-email`" v-model="email" type="email" required :placeholder="say({ es: 'Su dirección de correo', en: 'Your email address', fr: 'Votre adresse e-mail' })" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
+                  <label :for="`${fieldId}-email`" :class="LABEL_CLASS">{{ say(FIELD.email) }} *</label>
+                  <input :id="`${fieldId}-email`" v-model="email" type="email" required :placeholder="say({ es: 'Su dirección de correo', en: 'Your email address', fr: 'Votre adresse e-mail' })" :class="FIELD_CLASS" />
                 </div>
                 <div>
-                  <label class="block text-sm font-medium text-ink-700">{{ say(FIELD.phone) }} *</label>
+                  <label :for="`${fieldId}-phone`" :class="LABEL_CLASS">{{ say(FIELD.phone) }} *</label>
                   <div class="mt-1 flex gap-2">
-                    <div class="relative flex shrink-0 items-center gap-1 rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm focus-within:border-brand focus-within:ring-1 focus-within:ring-brand">
+                    <div class="relative flex h-9 shrink-0 items-center gap-1 rounded-ctl border border-line-control bg-surface px-3 text-base text-ink-900 focus-within:border-brand focus-within:ring-1 focus-within:ring-brand touch:h-11 sm:text-sm">
                       <span aria-hidden="true">{{ selectedCountry?.flag }} {{ selectedCountry?.dial }}</span>
                       <svg class="h-3 w-3 text-ink-faint" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
                       <select v-model="dialCode" :aria-label="say({ es: 'Prefijo del país', en: 'Country code', fr: 'Indicatif du pays' })" class="absolute inset-0 h-full w-full cursor-pointer text-base opacity-0">
@@ -1456,39 +1491,45 @@ const fieldId = useId()
                       </select>
                     </div>
                     <input
+                      :id="`${fieldId}-phone`"
                       v-model="phoneNumber"
                       type="tel"
                       inputmode="tel"
                       autocomplete="tel-national"
                       required
                       :placeholder="say({ es: 'Su número de móvil', en: 'Your mobile number', fr: 'Votre numéro de portable' })"
-                      class="min-w-0 flex-1 rounded-ctl border px-3 py-2 text-base sm:text-sm focus:outline-none focus:ring-1"
-                      :class="phoneError ? 'border-danger-border focus:border-danger-border focus:ring-danger-border' : 'border-line-control focus:border-brand focus:ring-brand'"
+                      class="h-9 min-w-0 flex-1 rounded-ctl border bg-surface px-3 text-base text-ink-900 placeholder:text-ink-faint2 focus:outline-none focus:ring-1 touch:h-11 sm:text-sm"
+                      :class="phoneError ? 'border-danger-text focus:border-danger-text focus:ring-danger-text' : 'border-line-control focus:border-brand focus:ring-brand'"
+                      :aria-invalid="!!phoneError"
+                      :aria-describedby="phoneError ? `${fieldId}-phone-error` : undefined"
                       @blur="phoneChecked = true"
                     />
                   </div>
-                  <p v-if="phoneError" class="mt-1 text-sm text-danger-text">{{ phoneError }}</p>
+                  <p v-if="phoneError" :id="`${fieldId}-phone-error`" class="mt-1 text-sm text-danger-text">{{ phoneError }}</p>
                 </div>
               </div>
               <div class="mt-4">
-                <label :for="`${fieldId}-note`" class="block text-sm font-medium text-ink-700">{{ say({ es: 'Notas', en: 'Notes', fr: 'Remarques' }) }}</label>
-                <textarea :id="`${fieldId}-note`" v-model="note" rows="3" :placeholder="say({ es: '¿Algo que quiera que sepamos?', en: 'Anything you would like us to know?', fr: 'Quelque chose que vous souhaitez nous dire ?' })" class="mt-1 w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"></textarea>
+                <label :for="`${fieldId}-note`" :class="LABEL_CLASS">{{ say({ es: 'Notas', en: 'Notes', fr: 'Remarques' }) }}</label>
+                <textarea :id="`${fieldId}-note`" v-model="note" rows="3" :placeholder="say({ es: '¿Algo que quiera que sepamos?', en: 'Anything you would like us to know?', fr: 'Quelque chose que vous souhaitez nous dire ?' })" :class="FIELD_CLASS" class="!h-auto py-2"></textarea>
               </div>
               <div v-if="giftOffered" class="mt-4" data-cy="booking-gift">
-                <button v-if="!giftOpen" type="button" class="text-sm font-medium text-brand-text hover:underline" data-cy="booking-gift-open" @click="giftOpen = true">{{ say({ es: 'Tengo un bono regalo', en: 'I have a gift voucher', fr: 'J’ai un bon cadeau' }) }}</button>
+                <button v-if="!giftOpen" type="button" class="inline-flex items-center text-sm font-medium text-brand-text hover:underline touch:min-h-[44px]" data-cy="booking-gift-open" @click="giftOpen = true">{{ say({ es: 'Tengo un bono regalo', en: 'I have a gift voucher', fr: 'J’ai un bon cadeau' }) }}</button>
                 <template v-else>
-                  <label for="gift-code" class="block text-sm font-medium text-ink-700">{{ say({ es: 'Código del bono regalo', en: 'Gift voucher code', fr: 'Code du bon cadeau' }) }}</label>
-                  <div class="mt-1 flex max-w-[320px] gap-2">
-                    <input id="gift-code" v-model="giftCode" type="text" placeholder="REGALO-…" class="w-full rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm uppercase focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" data-cy="booking-gift-code" @input="giftChecked = null" />
+                  <label for="gift-code" :class="LABEL_CLASS">{{ say({ es: 'Código del bono regalo', en: 'Gift voucher code', fr: 'Code du bon cadeau' }) }}</label>
+                  <div class="mt-1 flex max-w-[320px] items-start gap-2">
+                    <input id="gift-code" v-model="giftCode" type="text" placeholder="REGALO-…" :class="FIELD_CLASS" class="!mt-0 min-w-0 uppercase" data-cy="booking-gift-code" @input="giftChecked = null" />
                     <UiBtn type="button" variant="secondary" :disabled="checkingGift || !giftCode.trim()" data-cy="booking-gift-check" @click="checkGift">{{ checkingGift ? say({ es: 'Comprobando…', en: 'Checking…', fr: 'Vérification…' }) : say({ es: 'Aplicar', en: 'Apply', fr: 'Appliquer' }) }}</UiBtn>
                   </div>
-                  <p v-if="giftChecked?.ok" class="mt-1.5 text-sm text-success-text" data-cy="booking-gift-ok">✓ {{ giftDescription(giftChecked) }}</p>
-                  <p v-else-if="giftChecked" class="mt-1.5 text-sm text-danger-text" data-cy="booking-gift-error">{{ giftRefusal(giftChecked) }}</p>
+                  <p v-if="giftChecked?.ok" class="mt-1.5 flex items-start gap-1.5 text-sm text-success-text" data-cy="booking-gift-ok">
+                    <svg class="mt-0.5 h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                    <span>{{ giftDescription(giftChecked) }}</span>
+                  </p>
+                  <p v-else-if="giftChecked" role="alert" class="mt-1.5 text-sm text-danger-text" data-cy="booking-gift-error">{{ giftRefusal(giftChecked) }}</p>
                 </template>
               </div>
               <div v-if="info.account.discount_codes_enabled" class="mt-4">
-                <label :for="`${fieldId}-discountCode`" class="block text-sm font-medium text-ink-700">{{ say({ es: 'Código de descuento', en: 'Discount code', fr: 'Code de réduction' }) }}</label>
-                <input :id="`${fieldId}-discountCode`" v-model="discountCode" type="text" :placeholder="say({ es: 'Opcional', en: 'Optional', fr: 'Facultatif' })" class="mt-1 w-full max-w-[200px] rounded-ctl border border-line-control px-3 py-2 text-base sm:text-sm uppercase focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand" />
+                <label :for="`${fieldId}-discountCode`" :class="LABEL_CLASS">{{ say({ es: 'Código de descuento', en: 'Discount code', fr: 'Code de réduction' }) }}</label>
+                <input :id="`${fieldId}-discountCode`" v-model="discountCode" type="text" :placeholder="say({ es: 'Opcional', en: 'Optional', fr: 'Facultatif' })" :class="FIELD_CLASS" class="max-w-[200px] uppercase" />
               </div>
               <!-- The clinic's cancellation and no-show fees, before they book. -->
               <p v-if="policy && (policy.cancellation_fee_cents || policy.missed_appointment_fee_cents || policy.card_on_file)" class="mt-4 rounded-ctl bg-surface-subtle px-3 py-2.5 text-[13px] leading-snug text-ink-700" data-cy="booking-policy">
@@ -1496,8 +1537,8 @@ const fieldId = useId()
                 <template v-if="policy.missed_appointment_fee_cents">{{ say({ es: `No presentarse a la cita: ${formatPrice(policy.missed_appointment_fee_cents)}.`, en: `Missing the appointment: ${formatPrice(policy.missed_appointment_fee_cents)}.`, fr: `Rendez-vous non honoré : ${formatPrice(policy.missed_appointment_fee_cents)}.` }) }} </template>
                 <template v-if="policy.card_on_file">{{ say({ es: 'Tras reservar te pediremos una tarjeta para garantizar la cita; ahora no se cobra nada.', en: 'After booking we will ask for a card to hold the appointment; nothing is charged now.', fr: 'Après la réservation, nous vous demanderons une carte pour garantir le rendez-vous ; rien n’est débité maintenant.' }) }}</template>
               </p>
-              <p v-if="submitError" class="mt-3 text-sm text-danger-text">{{ submitError }}</p>
-              <UiBtn type="submit" variant="primary" class="mt-5" :disabled="submitting">
+              <p v-if="submitError" role="alert" class="mt-3 text-sm text-danger-text">{{ submitError }}</p>
+              <UiBtn type="submit" variant="primary" class="mt-5 w-full sm:w-auto" :disabled="submitting">
                 {{ submitting ? say({ es: 'Reservando…', en: 'Booking…', fr: 'Réservation…' }) : t('confirm_button', { es: 'Reservar cita', en: 'Book appointment', fr: 'Réserver' }) }}
               </UiBtn>
             </form>
@@ -1520,45 +1561,43 @@ const fieldId = useId()
         </div>
 
         <!-- Step 3b: a card to hold the booking, when the clinic asks for one -->
-        <div v-else-if="phase === 'card'" class="mx-auto mt-10 max-w-md rounded-card border border-line bg-surface p-8 text-center shadow-card" data-cy="booking-card-step">
-          <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-success-bg text-2xl text-success-text">✓</div>
-          <h2 class="mt-4 text-lg font-semibold text-ink-900">{{ say({ es: 'Tu cita está reservada', en: 'Your appointment is booked', fr: 'Votre rendez-vous est réservé' }) }}</h2>
-          <p v-if="policy && (policy.cancellation_fee_cents || policy.missed_appointment_fee_cents)" class="mt-2 text-sm text-ink-muted">
+        <BookingResult v-else-if="phase === 'card'" class="mt-10" :title="say({ es: 'Tu cita está reservada', en: 'Your appointment is booked', fr: 'Votre rendez-vous est réservé' })" data-cy="booking-card-step">
+          <p v-if="policy && (policy.cancellation_fee_cents || policy.missed_appointment_fee_cents)">
             {{ say({ es: `Para garantizarla, añade una tarjeta. No se cobra nada ahora; solo se usaría si cancelas con menos de ${policy.notice_hours} h o no vienes.`, en: `To hold it, add a card. Nothing is charged now; it would only be used if you cancel less than ${policy.notice_hours} h ahead or do not come.`, fr: `Pour le garantir, ajoutez une carte. Rien n’est débité maintenant ; elle ne servirait que si vous annulez moins de ${policy.notice_hours} h à l’avance ou ne venez pas.` }) }}
           </p>
-          <p v-else class="mt-2 text-sm text-ink-muted">{{ say({ es: 'Para garantizarla, añade una tarjeta. No se cobra nada ahora.', en: 'To hold it, add a card. Nothing is charged now.', fr: 'Pour le garantir, ajoutez une carte. Rien n’est débité maintenant.' }) }}</p>
-          <UiBtn variant="primary" class="mt-5 w-full" data-cy="booking-add-card" @click="openCardPage">{{ say({ es: 'Añadir tarjeta', en: 'Add a card', fr: 'Ajouter une carte' }) }}</UiBtn>
-          <button type="button" class="mt-3 text-[13px] text-ink-muted hover:text-ink-700" data-cy="booking-skip-card" @click="goToSuccess">{{ say({ es: 'Ahora no', en: 'Not now', fr: 'Pas maintenant' }) }}</button>
-        </div>
+          <p v-else>{{ say({ es: 'Para garantizarla, añade una tarjeta. No se cobra nada ahora.', en: 'To hold it, add a card. Nothing is charged now.', fr: 'Pour le garantir, ajoutez une carte. Rien n’est débité maintenant.' }) }}</p>
+          <template #actions>
+            <UiBtn variant="primary" class="w-full" data-cy="booking-add-card" @click="openCardPage">{{ say({ es: 'Añadir tarjeta', en: 'Add a card', fr: 'Ajouter une carte' }) }}</UiBtn>
+            <UiBtn variant="ghost" class="w-full" data-cy="booking-skip-card" @click="goToSuccess">{{ say({ es: 'Ahora no', en: 'Not now', fr: 'Pas maintenant' }) }}</UiBtn>
+          </template>
+        </BookingResult>
 
         <!-- Success -->
-        <div v-else-if="phase === 'success'" class="mx-auto mt-10 max-w-md rounded-card border border-line bg-surface p-8 text-center shadow-card">
-          <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-success-bg text-2xl text-success-text">✓</div>
-          <h2 class="mt-4 text-lg font-semibold text-ink-900">{{ t('success_heading', { es: '¡Cita reservada!', en: 'Appointment booked!', fr: 'Rendez-vous réservé !' }) }}</h2>
-          <p class="mt-2 text-sm text-ink-muted">
+        <BookingResult v-else-if="phase === 'success'" class="mt-10" :title="t('success_heading', { es: '¡Cita reservada!', en: 'Appointment booked!', fr: 'Rendez-vous réservé !' })" data-cy="booking-success">
+          <p class="font-medium text-ink-900">
             {{ confirmation ? new Date(confirmation.starts_at).toLocaleString(locale, { dateStyle: 'full', timeStyle: 'short', hourCycle: 'h23', timeZone: clinicTimeZone }) : '' }}
           </p>
-          <p class="mt-1 text-sm text-ink-muted">{{ teamMember?.full_name }} · {{ clinic?.name }}</p>
+          <p class="mt-1">{{ teamMember?.full_name }} · {{ clinic?.name }}</p>
           <!-- How to reach this location if plans change -- its own phone
                and email from Settings -> Clinics, each only when set. -->
-          <div v-if="clinic?.address || clinic?.phone || clinic?.email" class="mt-3 flex flex-col gap-0.5 text-sm text-ink-muted" data-cy="booking-clinic-contact">
+          <div v-if="clinic?.address || clinic?.phone || clinic?.email" class="mt-3 flex flex-col gap-0.5 border-t border-line-divider pt-3" data-cy="booking-clinic-contact">
             <span v-if="clinic?.address" class="whitespace-pre-line">{{ clinic?.address }}</span>
-            <span v-if="clinic?.phone || clinic?.email">
+            <span v-if="clinic?.phone || clinic?.email" class="break-words">
               <a v-if="clinic?.phone" :href="`tel:${(clinic?.phone ?? '').replace(/\s+/g, '')}`" class="font-medium text-brand-text hover:underline">{{ clinic?.phone }}</a>
               <template v-if="clinic?.phone && clinic?.email"> · </template>
               <a v-if="clinic?.email" :href="`mailto:${clinic?.email ?? ''}`" class="font-medium text-brand-text hover:underline">{{ clinic?.email }}</a>
             </span>
           </div>
-          <p v-if="discountAppliedCents > 0" class="mt-1 text-sm text-success-text">{{ say({ es: 'Descuento aplicado', en: 'Discount applied', fr: 'Réduction appliquée' }) }}: {{ formatPrice(discountAppliedCents) }}</p>
-          <p v-if="giftResult?.redeemed" class="mt-1 text-sm text-success-text" data-cy="booking-gift-redeemed">{{ say({ es: `Bono regalo canjeado: ${giftResult.label}, ya en tu cuenta de la clínica.`, en: `Gift voucher redeemed: ${giftResult.label}, now on your account at the clinic.`, fr: `Bon cadeau utilisé : ${giftResult.label}, désormais sur votre compte au cabinet.` }) }}</p>
-          <p v-else-if="giftResult" class="mt-1 text-sm text-danger-text" data-cy="booking-gift-not-redeemed">{{ giftRefusal(giftResult) }}</p>
+          <p v-if="discountAppliedCents > 0" class="mt-3 text-success-text">{{ say({ es: 'Descuento aplicado', en: 'Discount applied', fr: 'Réduction appliquée' }) }}: {{ formatPrice(discountAppliedCents) }}</p>
+          <p v-if="giftResult?.redeemed" class="mt-1 text-success-text" data-cy="booking-gift-redeemed">{{ say({ es: `Bono regalo canjeado: ${giftResult.label}, ya en tu cuenta de la clínica.`, en: `Gift voucher redeemed: ${giftResult.label}, now on your account at the clinic.`, fr: `Bon cadeau utilisé : ${giftResult.label}, désormais sur votre compte au cabinet.` }) }}</p>
+          <p v-else-if="giftResult" class="mt-1 text-danger-text" data-cy="booking-gift-not-redeemed">{{ giftRefusal(giftResult) }}</p>
           <p
             v-if="info.account.appointment_confirmation_enabled && info.account.appointment_confirmation_channels.includes('email')"
-            class="mt-4 text-xs text-ink-faint"
+            class="mt-4 break-words text-xs text-ink-muted"
           >
             {{ say({ es: `Le hemos enviado los detalles a ${email}.`, en: `We have sent the details to ${email}.`, fr: `Nous avons envoyé les détails à ${email}.` }) }}
           </p>
-        </div>
+        </BookingResult>
 
         <!-- Straight after booking is the one moment a patient is certain to
              be holding their phone and already sold on the clinic, so this

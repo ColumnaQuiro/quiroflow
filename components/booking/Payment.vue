@@ -15,6 +15,9 @@ const emit = defineEmits<{ paid: [] }>()
 const { lang, say } = useBookingLang()
 
 const loading = ref(true)
+// Stripe's fields mounted. Until then, and for good if they failed to load,
+// there is nothing for "Pagar y confirmar" to submit.
+const ready = ref(false)
 const submitting = ref(false)
 const error = ref('')
 const mountEl = ref<HTMLElement | null>(null)
@@ -37,6 +40,7 @@ onMounted(async () => {
     elements = stripe.elements({ clientSecret, locale: lang.value })
     paymentElement = elements.create('payment')
     paymentElement.mount(mountEl.value)
+    ready.value = true
   } catch (err: any) {
     error.value = err?.data?.statusMessage ?? err?.message ?? say({ es: 'No se pudo iniciar el pago', en: 'The payment could not be started', fr: 'Le paiement n’a pas pu démarrer' })
   } finally {
@@ -62,14 +66,24 @@ async function submit() {
   <div class="rounded-card border border-line bg-surface p-6 shadow-card">
     <div class="flex items-center justify-between">
       <span class="text-sm text-ink-700">{{ say({ es: 'Importe a pagar ahora', en: 'Amount to pay now', fr: 'Montant à payer maintenant' }) }}</span>
-      <span class="text-lg font-semibold text-ink-900">{{ formatPrice(amountCents) }}</span>
+      <span class="font-mono text-lg font-semibold text-ink-900">{{ formatPrice(amountCents) }}</span>
     </div>
 
-    <div v-if="loading" class="mt-6 text-sm text-ink-faint">{{ say({ es: 'Cargando…', en: 'Loading…', fr: 'Chargement…' }) }}</div>
+    <!-- Roughly the card form Stripe is about to draw, so the panel does not
+         sit empty under a line of grey text while its script loads. -->
+    <div v-if="loading" class="mt-4 space-y-3" role="status">
+      <span class="sr-only">{{ say({ es: 'Cargando…', en: 'Loading…', fr: 'Chargement…' }) }}</span>
+      <UiSkeleton class="h-11 rounded-ctl" />
+      <div class="grid grid-cols-2 gap-3">
+        <UiSkeleton class="h-11 rounded-ctl" />
+        <UiSkeleton class="h-11 rounded-ctl" />
+      </div>
+      <UiSkeleton class="mt-2 h-9 rounded-ctl touch:h-11" />
+    </div>
     <form v-show="!loading" class="mt-4" @submit.prevent="submit">
       <div ref="mountEl"></div>
-      <p v-if="error" class="mt-3 text-sm text-danger-text">{{ error }}</p>
-      <UiBtn type="submit" variant="primary" class="mt-5 w-full" :disabled="submitting">
+      <p v-if="error" role="alert" class="mt-3 text-sm text-danger-text">{{ error }}</p>
+      <UiBtn v-if="ready" type="submit" variant="primary" class="mt-5 w-full" :disabled="submitting">
         {{ submitting ? say({ es: 'Procesando…', en: 'Processing…', fr: 'Traitement…' }) : say({ es: 'Pagar y confirmar', en: 'Pay and confirm', fr: 'Payer et confirmer' }) }}
       </UiBtn>
     </form>

@@ -45,13 +45,16 @@ const items = computed(() => [
 
 <template>
   <div ref="root" class="relative inline-flex">
+    <!-- Sized by pointer, not by width: it was lg:h-[26px], and a
+    breakpoint outranks touch:, so the iPad in landscape -- the front desk --
+    got a 26px target. -->
     <button
       ref="trigger"
       type="button"
       :aria-label="`${t('Actions for', 'Acciones para')} ${patientName}`"
       :aria-expanded="open"
       aria-haspopup="menu"
-      class="inline-flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center rounded-ctlSm text-ink-faint outline-none hover:bg-surface-subtle hover:text-ink-700 focus-visible:shadow-focus lg:h-[26px] lg:w-[26px]"
+      class="inline-flex h-7 w-7 items-center justify-center rounded-ctlSm text-ink-faint outline-none hover:bg-surface-subtle hover:text-ink-700 focus-visible:shadow-focus touch:h-11 touch:w-11"
       @click.stop="open = !open"
     >
       <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" class="h-[15px] w-[15px]">
@@ -59,13 +62,13 @@ const items = computed(() => [
       </svg>
     </button>
 
-    <div v-if="open" role="menu" class="absolute right-0 top-[30px] z-20 w-[190px] rounded-card border border-line bg-surface py-1 text-left shadow-popover">
+    <div v-if="open" role="menu" class="absolute right-0 top-full z-20 mt-1 w-[190px] rounded-card border border-line bg-surface py-1 text-left shadow-popover">
       <NuxtLink
         v-for="item in items"
         :key="item.key"
         role="menuitem"
         :to="item.to"
-        class="block px-3 py-3 text-[13px] text-ink-700 outline-none hover:bg-surface-subtle focus-visible:bg-surface-subtle lg:py-2"
+        class="block px-3 py-2 text-[13px] text-ink-700 outline-none hover:bg-surface-subtle focus-visible:bg-surface-subtle touch:py-3"
         @click="close(false)"
       >
         {{ item.label }}

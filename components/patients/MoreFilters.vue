@@ -29,8 +29,8 @@ function toggleTag(tag: string) {
 
 const currentClinicName = computed(() => store.currentClinic?.name ?? t('this clinic', 'esta clínica'))
 
-const fieldClass = 'h-8 rounded-ctl border border-line-control bg-surface px-2 text-[12.5px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand'
-const labelClass = 'text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint'
+const fieldClass = 'h-8 touch:h-11 rounded-ctl border border-line-control bg-surface px-2 text-[12.5px] text-ink-700 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand'
+const labelClass = 'text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint'
 </script>
 
 <template>
@@ -48,7 +48,7 @@ const labelClass = 'text-[11px] font-[640] uppercase tracking-[.04em] text-ink-f
           type="button"
           data-cy="tag-option"
           :aria-pressed="form.tags.includes(tag)"
-          class="h-7 rounded-pill border px-2.5 text-[12px] font-medium outline-none focus-visible:shadow-focus"
+          class="h-7 touch:h-11 rounded-pill border px-2.5 text-[12px] font-medium outline-none focus-visible:shadow-focus"
           :class="form.tags.includes(tag) ? 'border-brand-tintBorder bg-brand-tint text-brand-text' : 'border-line-control bg-surface text-ink-500 hover:border-line-controlHover'"
           @click="toggleTag(tag)"
         >

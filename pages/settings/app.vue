@@ -237,12 +237,12 @@ const activeLast30Days = computed(() => usage.value.active)
             <div class="flex flex-col gap-1 rounded-card border border-line bg-surface px-[18px] py-4">
               <span class="text-[12.5px] font-semibold text-ink-muted">{{ t('Devices installed', 'Dispositivos instalados') }}</span>
               <UiSkeleton v-if="usageLoading" class="mt-1 h-7 w-12 rounded-ctlSm" />
-              <strong v-else class="text-[28px] font-[640] tracking-tightTitle text-ink-900">{{ totalDevices }}</strong>
+              <strong v-else class="font-mono text-[23px] font-semibold text-ink-900">{{ totalDevices }}</strong>
             </div>
             <div class="flex flex-col gap-1 rounded-card border border-line bg-surface px-[18px] py-4">
               <span class="text-[12.5px] font-semibold text-ink-muted">{{ t('Active in the last 30 days', 'Activos en los últimos 30 días') }}</span>
               <UiSkeleton v-if="usageLoading" class="mt-1 h-7 w-12 rounded-ctlSm" />
-              <strong v-else class="text-[28px] font-[640] tracking-tightTitle text-ink-900">{{ activeLast30Days }}</strong>
+              <strong v-else class="font-mono text-[23px] font-semibold text-ink-900">{{ activeLast30Days }}</strong>
             </div>
             <div class="flex flex-col gap-2.5 rounded-card border border-line bg-surface px-[18px] py-4">
               <span class="text-[12.5px] font-semibold text-ink-muted">{{ t('By platform', 'Por plataforma') }}</span>

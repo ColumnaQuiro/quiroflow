@@ -144,7 +144,7 @@ const pdfRoot = ref<HTMLElement | null>(null)
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Scheduled Reminders', 'Recordatorios programados')" :meta="t('WhatsApp delivery and confirmation status', 'Estado de entrega y confirmación de WhatsApp')">
       <div class="flex items-center gap-3">
-        <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
+        <ReportsBackLink />
         <ReportsPdfButton :target="pdfRoot" :title="t('Scheduled Reminders', 'Recordatorios programados')" :range="range" />
       </div>
     </PageHeader>
@@ -189,14 +189,14 @@ const pdfRoot = ref<HTMLElement | null>(null)
         </div>
 
         <div v-if="failedMessages.length > 0" class="mt-4">
-          <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ t('Failed sends — bad number or no WhatsApp account', 'Envíos fallidos — número incorrecto o sin cuenta de WhatsApp') }}</p>
+          <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">{{ t('Failed sends — bad number or no WhatsApp account', 'Envíos fallidos — número incorrecto o sin cuenta de WhatsApp') }}</p>
           <ul class="mt-2 divide-y divide-line-row text-[13px]">
-            <li v-for="m in failedMessages" :key="m.id" class="flex items-center justify-between py-1.5">
+            <li v-for="m in failedMessages" :key="m.id" class="flex items-baseline justify-between gap-3 py-1.5">
               <NuxtLink v-if="m.patient_id" :to="`/patients/${m.patient_id}`" class="text-ink-600 hover:text-brand-text">
                 {{ patientById.get(m.patient_id) ?? t('Unknown patient', 'Paciente desconocido') }}
               </NuxtLink>
               <span v-else class="text-ink-faint2">{{ t('Unknown patient', 'Paciente desconocido') }}</span>
-              <span class="text-[12px] text-danger-text">{{ failureReason(m) }}</span>
+              <span class="text-right text-[12px] text-danger-text">{{ failureReason(m) }}</span>
             </li>
           </ul>
         </div>
@@ -219,7 +219,7 @@ const pdfRoot = ref<HTMLElement | null>(null)
         </template>
         <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div class="rounded-ctl bg-success-bg p-3">
-            <p class="text-[11px] font-medium uppercase tracking-wide text-success-text">{{ t(`Confirmed (${confirmed.length})`, `Confirmadas (${confirmed.length})`) }}</p>
+            <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-success-text">{{ t(`Confirmed (${confirmed.length})`, `Confirmadas (${confirmed.length})`) }}</p>
             <ul class="mt-1 max-h-40 space-y-1 overflow-y-auto text-[13px]">
               <li v-for="a in confirmed" :key="a.id">
                 <NuxtLink :to="`/patients/${a.patient_id}`" class="text-ink-600 hover:text-brand-text">{{ patientById.get(a.patient_id) }}</NuxtLink>
@@ -228,7 +228,7 @@ const pdfRoot = ref<HTMLElement | null>(null)
             </ul>
           </div>
           <div class="rounded-ctl bg-warning-bg p-3">
-            <p class="text-[11px] font-medium uppercase tracking-wide text-warning-text">{{ t(`Pending (${pending.length})`, `Pendientes (${pending.length})`) }}</p>
+            <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-warning-text">{{ t(`Pending (${pending.length})`, `Pendientes (${pending.length})`) }}</p>
             <ul class="mt-1 max-h-40 space-y-1 overflow-y-auto text-[13px]">
               <li v-for="a in pending" :key="a.id">
                 <NuxtLink :to="`/patients/${a.patient_id}`" class="text-ink-600 hover:text-brand-text">{{ patientById.get(a.patient_id) }}</NuxtLink>
@@ -237,7 +237,7 @@ const pdfRoot = ref<HTMLElement | null>(null)
             </ul>
           </div>
           <div class="rounded-ctl bg-info-bg p-3">
-            <p class="text-[11px] font-medium uppercase tracking-wide text-info-text">{{ t(`Wants to reschedule (${rescheduleRequested.length})`, `Quiere reprogramar (${rescheduleRequested.length})`) }}</p>
+            <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-info-text">{{ t(`Wants to reschedule (${rescheduleRequested.length})`, `Quiere reprogramar (${rescheduleRequested.length})`) }}</p>
             <ul class="mt-1 max-h-40 space-y-1 overflow-y-auto text-[13px]">
               <li v-for="a in rescheduleRequested" :key="a.id">
                 <NuxtLink :to="`/patients/${a.patient_id}`" class="text-ink-600 hover:text-brand-text">{{ patientById.get(a.patient_id) }}</NuxtLink>

@@ -62,7 +62,7 @@ const mayBook = computed(() => {
             step="1"
             :value="config[field.key]"
             :disabled="saving"
-            class="h-8 w-20 rounded-ctl border border-line-control bg-surface px-2 text-right text-[12px] text-ink-700 focus:border-brand focus:outline-none"
+            class="h-8 touch:h-11 w-20 rounded-ctl border border-line-control bg-surface px-2 text-right text-[12px] text-ink-700 focus:border-brand focus:outline-none"
             :data-test="field.test"
             @change="commit(field.key, $event)"
           >
@@ -74,7 +74,7 @@ const mayBook = computed(() => {
         <select
           :value="config.reactivationAppointmentTypeId ?? ''"
           :disabled="saving"
-          class="h-8 max-w-[12rem] shrink-0 rounded-ctl border border-line-control bg-surface px-2 text-[12px] text-ink-700 focus:border-brand focus:outline-none"
+          class="h-8 touch:h-11 max-w-[12rem] shrink-0 rounded-ctl border border-line-control bg-surface px-2 text-[12px] text-ink-700 focus:border-brand focus:outline-none"
           data-test="reactivation-type"
           @change="commitReactivation"
         >

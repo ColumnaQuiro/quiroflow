@@ -7,6 +7,7 @@ import { appointmentStage, matchesFilter, needsNextBookingFlag, pendingFormsFlag
 import { shortPatientName } from '~/utils/appointmentBlock'
 import { bonoForVisit, type VisitPayment } from '~/utils/visitPayment'
 import { visitMarkerLabel } from '~/utils/carePlanVisitMarkers'
+import { raiseInvoice } from '~/utils/raiseInvoice'
 import { effectivePriceCents } from '~/utils/appointmentOverrides'
 import { orderTypes } from '~/utils/appointmentTypes'
 import type { MoveClash } from '~/utils/moveClash'
@@ -224,6 +225,22 @@ const classPanelId = ref<string | null>(null)
 const newClassOpen = ref(false)
 const availabilityBlocks = ref<AvailabilityBlock[]>([])
 const loading = ref(true)
+// The range in view could not be read. `loading` stays true with it, so the
+// grid keeps its placeholders and its columns stay unclickable: an empty week
+// drawn over a failed read invites booking on top of visits that are there.
+// What used to say so was nothing -- the skeleton simply never resolved.
+const rangeFailed = ref(false)
+const retryingRange = ref(false)
+async function retryRange() {
+  if (retryingRange.value) return
+  retryingRange.value = true
+  try {
+    await loadRange()
+  } finally {
+    retryingRange.value = false
+  }
+}
+const { showToast } = useToast()
 
 const modalOpen = ref(false)
 const modalMode = ref<'create' | 'edit'>('create')
@@ -513,6 +530,7 @@ const APPOINTMENT_SELECT =
 async function loadAppointments(silent = false) {
   if (!store.currentClinicId) {
     appointments.value = []
+    rangeFailed.value = false
     loading.value = false // or "No clinic selected" sits behind the skeleton
     loadToday() // clears today's panels too
     return
@@ -541,10 +559,22 @@ async function loadAppointments(silent = false) {
     .lt('starts_at', rangeEnd.toISOString())
   if (practitionerFilter.value === UNASSIGNED_PRACTITIONER) classQuery = classQuery.is('practitioner_id', null)
   else if (practitionerFilter.value && practitionerFilter.value !== ALL_PRACTITIONERS) classQuery = classQuery.eq('practitioner_id', practitionerFilter.value)
-  // A failed read throws rather than drawing an empty week over the one on
-  // screen (utils/supabaseFailures.ts reports it and the layout says so).
-  const [data, sessions] = await Promise.all([query.then(dataOrThrow), classQuery.then(dataOrThrow)])
+  // A failed read never draws an empty week over the one on screen
+  // (utils/supabaseFailures.ts reports it and the layout's toast says so).
+  // A reload after a write leaves the grid as it was; a range being opened
+  // stays on its placeholders and says it failed, with a retry (rangeFailed).
+  let data: unknown
+  let sessions: unknown
+  try {
+    ;[data, sessions] = await Promise.all([query.then(dataOrThrow), classQuery.then(dataOrThrow)])
+  } catch (e) {
+    if (token !== loadToken) return
+    if (!silent) rangeFailed.value = true
+    console.error('calendar: appointments failed', e)
+    return
+  }
   if (token !== loadToken) return
+  rangeFailed.value = false
 
   classSessions.value = (sessions as unknown as ClassSessionRow[] | null) ?? []
   appointments.value = (data as unknown as AppointmentRow[]) ?? []
@@ -816,7 +846,7 @@ const glanceRows = computed(() => [
   { key: 'seen', label: t('Seen', 'Atendidas'), value: `${todayGlance.value.seen} (${glancePct(todayGlance.value.seen)})`, tone: 'text-success-text' },
   { key: 'rescheduled', label: t('Rescheduled', 'Reprogramadas'), value: `${todayGlance.value.rescheduled} (${glancePct(todayGlance.value.rescheduled)})`, tone: 'text-warning-text' },
   { key: 'cancelled', label: t('Cancelled', 'Canceladas'), value: `${todayGlance.value.cancelled} (${glancePct(todayGlance.value.cancelled)})`, tone: 'text-danger-text' },
-  { key: 'missed', label: t('Missed', 'Perdidas'), value: `${todayGlance.value.missed} (${glancePct(todayGlance.value.missed)})`, tone: 'text-ink-muted2' },
+  { key: 'missed', label: t('No-shows', 'No vinieron'), value: `${todayGlance.value.missed} (${glancePct(todayGlance.value.missed)})`, tone: 'text-ink-muted2' },
 ])
 
 const flowRows = computed<FlowRow[]>(() =>
@@ -1622,6 +1652,12 @@ function columnAtPoint(x: number, y: number) {
 
 function startAppointmentDrag(appt: AppointmentRow, mode: 'move' | 'resize', e: PointerEvent) {
   if (appt.status !== 'booked' || readOnly.value) return
+  // A right or middle click is not a drag, and a second finger landing while
+  // one block is being dragged does not take the drag over: it used to
+  // replace the drag state mid-move, leaving the first block drawn wherever
+  // it had got to, neither saved nor put back.
+  if (e.pointerType === 'mouse' && e.button !== 0) return
+  if (dragState.value) return
   // A slot click while reschedule-mode is active (see startReschedule below)
   // is what moves the appointment now -- starting an unrelated drag on some
   // other block mid-pick would just be confusing.
@@ -1641,7 +1677,45 @@ function startAppointmentDrag(appt: AppointmentRow, mode: 'move' | 'resize', e: 
   captureColumnRects()
   window.addEventListener('pointermove', onAppointmentDragMove)
   window.addEventListener('pointerup', onAppointmentDragEnd)
+  window.addEventListener('pointercancel', onAppointmentDragCancel)
+  window.addEventListener('blur', abortAppointmentDrag)
+  window.addEventListener('keydown', onAppointmentDragKeydown)
 }
+
+function stopListeningForDrag() {
+  window.removeEventListener('pointermove', onAppointmentDragMove)
+  window.removeEventListener('pointerup', onAppointmentDragEnd)
+  window.removeEventListener('pointercancel', onAppointmentDragCancel)
+  window.removeEventListener('blur', abortAppointmentDrag)
+  window.removeEventListener('keydown', onAppointmentDragKeydown)
+}
+
+// A drag that ends any way other than a release on the grid puts the block
+// back where it was. On the iPad the browser takes a finger that starts on a
+// block and moves as a scroll, and says so with pointercancel, never
+// pointerup: the block stayed drawn a slot or two away from its real time
+// until the next reload, and the stale "moved" flag swallowed the next tap
+// on any block. Switching apps mid-drag (blur) and Escape end it the same way.
+function abortAppointmentDrag() {
+  const s = dragState.value
+  stopListeningForDrag()
+  if (!s) return
+  dragState.value = null
+  const appt = appointments.value.find((a) => a.id === s.apptId)
+  if (appt) {
+    appt.starts_at = s.origStartsAt
+    appt.ends_at = s.origEndsAt
+    appt.room_id = s.origRoomId
+  }
+  dragMoved.value = false
+}
+function onAppointmentDragCancel(e: PointerEvent) {
+  if (dragState.value && e.pointerId === dragState.value.pointerId) abortAppointmentDrag()
+}
+function onAppointmentDragKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') abortAppointmentDrag()
+}
+onBeforeUnmount(stopListeningForDrag)
 
 function onAppointmentDragMove(e: PointerEvent) {
   const s = dragState.value
@@ -1710,11 +1784,22 @@ function onMoveClashCancel() {
 // another room -- is not a reschedule: the patient comes when they were told
 // to. It saves as it is, with no reason to give, no "moved" flag, no
 // appointment_reschedules row and no "your appointment has moved" message.
+// An update RLS refuses is not an error: it matches no rows and answers
+// success, so both saves read the row back and treat "none" as refused.
+function moveFailed(error: { message: string } | null) {
+  showToast(
+    error
+      ? t(`The appointment wasn't moved: ${error.message}`, `La cita no se ha movido: ${error.message}`)
+      : t("The appointment wasn't moved. You don't have permission to change it, or it was deleted meanwhile.", 'La cita no se ha movido. No tienes permiso para cambiarla, o se ha eliminado mientras tanto.'),
+    'error',
+  )
+}
+
 async function saveInPlace(appointmentId: string, values: { ends_at: string; room_id: string | null }, revert: () => void) {
-  const { error } = await supabase.from('appointments').update(values).eq('id', appointmentId)
-  if (error) {
+  const { data, error } = await supabase.from('appointments').update(values).eq('id', appointmentId).select('id')
+  if (error || !data?.length) {
     revert()
-    alert(error.message)
+    moveFailed(error)
     return
   }
   await reloadAfterChange()
@@ -1836,9 +1921,11 @@ function placeRescheduled(src: ReschedulingAppointment, newStartsAt: Date, newEn
 
 async function onAppointmentDragEnd(e: PointerEvent) {
   const s = dragState.value
-  window.removeEventListener('pointermove', onAppointmentDragMove)
-  window.removeEventListener('pointerup', onAppointmentDragEnd)
-  if (!s || e.pointerId !== s.pointerId) return
+  // Another finger lifting is not the end of this drag. The listeners used to
+  // come off first, so it ended the drag without saving or reverting it.
+  if (s && e.pointerId !== s.pointerId) return
+  stopListeningForDrag()
+  if (!s) return
   dragState.value = null
   if (!dragMoved.value) return
 
@@ -1905,13 +1992,14 @@ async function confirmReschedule(payload: { reasonId: string | null; note: strin
   const pending = pendingReschedule.value
   if (!pending) return
 
-  const { error } = await supabase
+  const { data: moved, error } = await supabase
     .from('appointments')
     .update({ starts_at: pending.newStartsAt, ends_at: pending.newEndsAt, room_id: pending.newRoomId, rescheduled: true })
     .eq('id', pending.appointmentId)
-  if (error) {
+    .select('id')
+  if (error || !moved?.length) {
     pending.revert()
-    alert(error.message)
+    moveFailed(error)
     pendingReschedule.value = null
     return
   }
@@ -1931,23 +2019,26 @@ async function confirmReschedule(payload: { reasonId: string | null; note: strin
   useStaffFetch('/api/waitlist/offer-next', { method: 'POST', body: { appointmentId: pending.appointmentId, movedFrom: pending.origStartsAt } }).catch(() => {})
 
   if (payload.applyFee && store.schedulingPolicyFeeCents) {
-    // No number, no invoice: an unnumbered fee is worse than an uncharged one.
-    const { data: invoiceNumber } = await supabase.rpc('next_invoice_number', { p_account_id: store.accountId! })
-    if (invoiceNumber) {
-      const { data: feeInvoice } = await supabase
-        .from('invoices')
-        .insert({ account_id: store.accountId!, patient_id: pending.patientId, invoice_number: invoiceNumber, status: 'unpaid', total_cents: store.schedulingPolicyFeeCents })
-        .select('id')
-        .single()
-      if (feeInvoice) {
-        await supabase.from('invoice_line_items').insert({
-          account_id: store.accountId!,
-          invoice_id: feeInvoice.id,
-          description: 'Scheduling policy fee',
-          quantity: 1,
-          price_cents: store.schedulingPolicyFeeCents,
-        })
-      }
+    // The fee's receipt and its line in one transaction (raise_invoice):
+    // written as two inserts, a refused line left a receipt with a total and
+    // nothing on it. Unpaid -- it goes on the patient's balance.
+    const { invoice: feeInvoice, error: feeError } = await raiseInvoice(supabase, {
+      patientId: pending.patientId,
+      description: 'Scheduling policy fee',
+      amountCents: store.schedulingPolicyFeeCents,
+    })
+    // The move itself stands; it is the fee that is missing, and nothing else
+    // on screen would say so.
+    if (!feeInvoice) {
+      console.error('[calendar] scheduling policy fee was not raised', feeError)
+      useToast().showToast(
+        t(
+          `The appointment was moved, but the fee was NOT added (${feeError}). Add it from the patient's Money tab.`,
+          `La cita se ha movido, pero el cargo NO se ha añadido (${feeError}). Añádelo desde la pestaña Dinero del paciente.`,
+        ),
+        'error',
+        20000,
+      )
     }
   }
 
@@ -2364,7 +2455,7 @@ function movedMarkerName(m: AppointmentRow) {
 function movedMarkerLabel(m: AppointmentRow) {
   const to = new Date(m._movedTo!)
   const sameDay = toDateKey(to) === toDateKey(new Date(m.starts_at))
-  const day = to.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
+  const day = to.toLocaleDateString(t('en-GB', 'es-ES'), { weekday: 'short', day: 'numeric', month: 'short' })
   const when = sameDay ? formatTime(m._movedTo!) : `${day} ${formatTime(m._movedTo!)}`
   return t(`Moved to ${when}`, `Movida al ${when}`)
 }
@@ -2479,7 +2570,7 @@ function showNowLineOn(day: Date) {
       <div v-if="bookingFor || readOnly" class="mt-2 flex">
         <span v-if="bookingFor && !readOnly" class="inline-flex h-8 max-w-full items-center gap-1.5 rounded-pill bg-brand-tint pl-3 pr-1.5 text-[12.5px] font-semibold text-brand-text">
           <span class="truncate">{{ t(`Booking for ${bookingFor.name} · pick a time`, `Reservando para ${bookingFor.name} · elige una hora`) }}</span>
-          <button type="button" class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-pill hover:bg-surface relative touch:after:absolute touch:after:-inset-3 touch:after:content-['']" :aria-label="t('Stop booking for this patient', 'Dejar de reservar para este paciente')" @click="stopBookingFor">&times;</button>
+          <button type="button" class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-pill hover:bg-surface relative touch:after:absolute touch:after:-inset-3 touch:after:content-['']" :aria-label="t('Stop booking for this patient', 'Dejar de reservar para este paciente')" @click="stopBookingFor"><UiCloseIcon /></button>
         </span>
         <span v-else-if="readOnly" class="inline-flex h-7 items-center rounded-pill bg-chip-bg px-3 text-[12.5px] font-semibold text-chip-text">{{ t('Read-only', 'Solo lectura') }}</span>
       </div>
@@ -2487,7 +2578,7 @@ function showNowLineOn(day: Date) {
       <template v-if="phoneMenuOpen">
         <div class="fixed inset-0 z-30" @click="phoneMenuOpen = false" />
         <div class="absolute right-3 top-[calc(100%-4px)] z-40 w-60 overflow-hidden rounded-card border border-line bg-surface py-1 shadow-popover" role="menu" data-cy="calendar-phone-menu">
-          <p class="px-3.5 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-[.05em] text-ink-faint">{{ t('View', 'Vista') }}</p>
+          <p class="px-3.5 pb-1 pt-2 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('View', 'Vista') }}</p>
           <button
             v-for="v in ([['day', t('Day', 'Día')], ['workweek', t('Work week', 'Semana laboral')], ['week', t('Week', 'Semana')], ['month', t('Month', 'Mes')]] as const)"
             :key="v[0]"
@@ -2511,7 +2602,7 @@ function showNowLineOn(day: Date) {
             {{ t('Cash shift', 'Turno de caja') }}
           </button>
           <button type="button" role="menuitem" class="flex h-10 w-full items-center px-3.5 text-left text-[14px] text-ink-900 active:bg-surface-subtle" @click="phoneMenu(() => (mobileInfoOpen = true))">
-            {{ t("Today's info", 'Información del día') }}
+            {{ t('Calendar info', 'Info del calendario') }}
           </button>
         </div>
       </template>
@@ -2530,6 +2621,19 @@ function showNowLineOn(day: Date) {
           </button>
         </div>
         <span class="text-[13.5px] font-[560] text-ink-700">{{ rangeLabel }}</span>
+        <!-- The mini-calendar/display panel is a fixed 238px column at lg+
+        (below), but that plus the optional flow-tracker column would eat
+        most of a phone's width -- so below lg it's an off-canvas drawer
+        instead, reached from here. On this row rather than at the end of the
+        actions, where on a tablet it wrapped onto a 44px row of its own. -->
+        <button
+          type="button"
+          class="ml-auto flex h-8 touch:h-11 items-center gap-1 rounded-ctlSm border border-line-control px-2.5 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover hover:bg-surface-subtle lg:hidden [@media(pointer:coarse)]:h-11"
+          @click="mobileInfoOpen = true"
+        >
+          <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="7" cy="7" r="5.3" /><path d="M7 6.3v3.4M7 4.3v.15" stroke-linecap="round" /></svg>
+          {{ t('Info', 'Info') }}
+        </button>
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <select v-model="viewMode" :aria-label="t('View', 'Vista')" class="h-8 touch:h-11 rounded-ctlSm border border-line-control bg-surface px-2 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover focus:border-brand focus:outline-none [@media(pointer:coarse)]:h-11">
@@ -2548,26 +2652,14 @@ function showNowLineOn(day: Date) {
               :aria-label="t('Stop booking for this patient', 'Dejar de reservar para este paciente')"
               data-cy="booking-for-clear"
               @click="stopBookingFor"
-            >&times;</button>
+            ><UiCloseIcon /></button>
           </span>
           <UiBtn variant="secondary" size="sm" @click="openBlockCreateModal()">{{ t('Block time', 'Bloquear horario') }}</UiBtn>
           <UiBtn variant="secondary" size="sm" data-cy="absence-open" @click="absenceOpen = true">{{ t('Unplanned absence', 'Ausencia imprevista') }}</UiBtn>
           <UiBtn variant="secondary" size="sm" data-cy="new-class-open" @click="newClassOpen = true">{{ t('New class', 'Nueva clase') }}</UiBtn>
-          <UiBtn variant="primary" size="sm" data-cy="new-appointment" @click="openCreateModal()">{{ t('+ New Appointment', '+ Nueva Cita') }}</UiBtn>
+          <UiBtn variant="primary" size="sm" data-cy="new-appointment" @click="openCreateModal()">{{ t('+ New appointment', '+ Nueva cita') }}</UiBtn>
         </template>
         <span v-else class="inline-flex h-8 items-center rounded-pill bg-chip-bg px-3 text-[12.5px] font-semibold text-chip-text" data-cy="calendar-read-only">{{ t('Read-only', 'Solo lectura') }}</span>
-        <!-- The mini-calendar/display panel is a fixed 238px column at lg+
-        (below), but that plus the optional flow-tracker column would eat
-        most of a phone's width -- so below lg it's an off-canvas drawer
-        instead, reached from here. -->
-        <button
-          type="button"
-          class="flex h-8 touch:h-11 items-center gap-1 rounded-ctlSm border border-line-control px-2.5 text-[12.5px] font-medium text-ink-600 hover:border-line-controlHover hover:bg-surface-subtle lg:hidden [@media(pointer:coarse)]:h-11"
-          @click="mobileInfoOpen = true"
-        >
-          <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="7" cy="7" r="5.3" /><path d="M7 6.3v3.4M7 4.3v.15" stroke-linecap="round" /></svg>
-          {{ t('Info', 'Info') }}
-        </button>
       </div>
     </header>
 
@@ -2613,7 +2705,7 @@ function showNowLineOn(day: Date) {
       </button>
     </div>
     <div v-else-if="!showAgenda" class="flex h-9 shrink-0 items-center border-b border-line bg-surface px-6 text-[12.5px] text-ink-faint">
-      No practitioners are assigned to this clinic yet.
+      {{ t('Nobody on the team works at this clinic yet. Add them to it in Settings › Team.', 'Todavía nadie del equipo trabaja en esta clínica. Añádelos a ella en Ajustes › Equipo.') }}
     </div>
 
     <div v-if="reschedulingAppointment" class="flex h-10 shrink-0 items-center justify-between gap-3 border-b border-line bg-brand-tint px-6">
@@ -2627,6 +2719,22 @@ function showNowLineOn(day: Date) {
       </button>
     </div>
 
+    <!-- The range could not be read. Above the grid and the phone agenda
+         alike, because both stay on their placeholders until it is. -->
+    <div
+      v-if="store.currentClinicId && rangeFailed && viewMode !== 'month'"
+      role="alert"
+      class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-danger-border bg-danger-bg px-4 py-2 lg:px-6"
+      data-cy="calendar-range-failed"
+    >
+      <p class="min-w-0 flex-1 text-[13px] text-danger-text">
+        <span class="font-semibold">{{ viewMode === 'day' ? t(`Couldn't load this day's appointments.`, 'No se han podido cargar las citas de este día.') : t(`Couldn't load this week's appointments.`, 'No se han podido cargar las citas de esta semana.') }}</span>
+        {{ t('Booking here is paused until they load, so nothing gets booked on top of a visit.', 'Reservar aquí queda en pausa hasta que carguen, para no reservar encima de otra visita.') }}
+      </p>
+      <UiBtn size="sm" :disabled="retryingRange" data-cy="calendar-range-retry" @click="retryRange">
+        {{ retryingRange ? t('Trying again…', 'Reintentando…') : t('Try again', 'Reintentar') }}
+      </UiBtn>
+    </div>
     <!-- The day, counted. Each chip is a filter: it dims every block that
          does not match, so the day keeps its shape while one kind stands out.
          This is what "Today at a glance" used to be, moved to where the eye
@@ -2663,7 +2771,7 @@ function showNowLineOn(day: Date) {
     </div>
 
     <div class="flex flex-1 overflow-hidden">
-      <div v-if="mobileInfoOpen" class="fixed inset-0 z-30 bg-black/40 lg:hidden" @click="mobileInfoOpen = false" />
+      <div v-if="mobileInfoOpen" class="fixed inset-0 z-30 bg-scrim/40 lg:hidden" @click="mobileInfoOpen = false" />
 
       <!-- Left panel: mini month, display toggles, stage key. Off-canvas
       below lg (see the Info button above); a permanent column at lg+. -->
@@ -2713,9 +2821,9 @@ function showNowLineOn(day: Date) {
         </div>
 
         <div data-cy="today-glance" class="mx-3 mb-3 rounded-card border border-line bg-surface p-3">
-          <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-faint">{{ t('Today at a glance', 'Hoy de un vistazo') }}</p>
+          <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Today at a glance', 'Hoy de un vistazo') }}</p>
           <!-- Money first, as a shift is closed: what came in, and what was charged. -->
-          <NuxtLink v-if="takingsRows.length" to="/reports/daily-transactions" class="mt-2 grid grid-cols-2 gap-2" data-cy="glance-takings" :title="t('Open the day sheet', 'Abrir las transacciones del día')">
+          <NuxtLink v-if="takingsRows.length" to="/reports/daily-transactions" class="mt-2 grid grid-cols-2 gap-2" data-cy="glance-takings" :title="t('Open Daily transactions', 'Abrir Transacciones del día')">
             <span v-for="row in takingsRows" :key="row.key" class="rounded-ctl bg-surface-subtle px-2.5 py-2" :data-cy="`glance-${row.key}`">
               <span class="block text-[11px] text-ink-muted">{{ row.label }}</span>
               <UiSkeleton v-if="!takings.loaded.value" class="mt-1 h-4 w-14 rounded-ctlSm" />
@@ -2732,7 +2840,7 @@ function showNowLineOn(day: Date) {
         </div>
 
         <div class="mx-3 rounded-card border border-line bg-surface p-3">
-          <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-faint">{{ t('Display', 'Visualización') }}</p>
+          <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Display', 'Visualización') }}</p>
           <div class="mt-2 space-y-2.5">
             <div v-for="toggle in displayToggles" :key="toggle.key" class="flex items-center justify-between gap-2">
               <span class="text-[12.5px] text-ink-600">{{ toggle.label }}</span>
@@ -2742,7 +2850,7 @@ function showNowLineOn(day: Date) {
                 :aria-checked="settings[toggle.key]"
                 :aria-label="toggle.label"
                 :data-cy="`display-${toggle.key}`"
-                class="relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors"
+                class="relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors touch:after:absolute touch:after:-inset-3 touch:after:content-['']"
                 :class="settings[toggle.key] ? 'bg-brand' : 'bg-toggle-off'"
                 @click="settings[toggle.key] = !settings[toggle.key]"
               >
@@ -2753,7 +2861,7 @@ function showNowLineOn(day: Date) {
         </div>
 
         <div class="m-3 rounded-card border border-line bg-surface p-3">
-          <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-faint">{{ t('Stage key', 'Leyenda de estados') }}</p>
+          <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('Stage key', 'Leyenda de estados') }}</p>
           <p class="mt-1 text-[11.5px] leading-snug text-ink-muted">{{ t('Dashed border: not confirmed yet. Red: money owed.', 'Borde discontinuo: sin confirmar. Rojo: dinero pendiente.') }}</p>
           <div class="mt-2 space-y-1.5">
             <div v-for="stage in STAGE_KEY" :key="stage" class="flex items-center gap-2 text-[12.5px] text-ink-600">
@@ -2864,7 +2972,7 @@ function showNowLineOn(day: Date) {
               <div class="relative flex" :style="{ height: `${dayGridHeight}px` }">
                 <div class="sticky left-0 z-[25] w-[58px] shrink-0 border-r border-line bg-surface">
                   <!-- In the gutter, which stays put when the rooms scroll sideways. -->
-                  <span v-if="showNowLine" class="pointer-events-none absolute left-1 z-10 -translate-y-1/2 rounded-full bg-danger-text px-1.5 py-px font-mono text-[11px] font-semibold leading-4 text-surface" data-cy="now-label" :style="{ top: `${nowLinePx}px` }">{{ formatTime(now) }}</span>
+                  <span v-if="showNowLine" class="pointer-events-none absolute left-1 z-10 -translate-y-1/2 rounded-full bg-danger-text px-1.5 py-px font-mono text-[11px] font-semibold leading-4 text-danger-on" data-cy="now-label" :style="{ top: `${nowLinePx}px` }">{{ formatTime(now) }}</span>
                   <span
                     v-for="h in hourMarks"
                     :key="h"
@@ -2937,7 +3045,7 @@ function showNowLineOn(day: Date) {
                     <div
                       v-if="isOverflowBlock(appt)"
                       class="absolute flex items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[11px] font-medium text-ink-muted2 shadow-card"
-                      :title="`${appt.count} ${appt.count === 1 ? t('more appointment', 'cita más') : t('more appointments', 'citas más')} ${t('at this time', 'a esta hora')}`"
+                      :title="appt.count === 1 ? t('1 more appointment at this time', '1 cita más a esta hora') : t(`${appt.count} more appointments at this time`, `${appt.count} citas más a esta hora`)"
                       :style="columnStyle(appt, timeToPx(appt.starts_at, DAY_HOUR_PX), OVERFLOW_CHIP_PX)"
                     >
                       +{{ appt.count }} {{ t('more', 'más') }}
@@ -2953,7 +3061,7 @@ function showNowLineOn(day: Date) {
                     >
                       <strong class="truncate font-semibold">{{ appt.appointment_types?.name }}</strong>
                       <span class="font-mono" data-cy="class-block-places">{{ appt._class.taken }}/{{ appt._class.capacity }}</span>
-                      <span class="truncate opacity-85">{{ appt._class.capacity - appt._class.taken > 0 ? t(`${appt._class.capacity - appt._class.taken} places left`, `${appt._class.capacity - appt._class.taken} plazas libres`) : t('Full', 'Completa') }}</span>
+                      <span class="truncate opacity-85">{{ appt._class.capacity - appt._class.taken > 1 ? t(`${appt._class.capacity - appt._class.taken} places left`, `${appt._class.capacity - appt._class.taken} plazas libres`) : appt._class.capacity - appt._class.taken === 1 ? t('1 place left', '1 plaza libre') : t('Full', 'Completa') }}</span>
                     </button>
                     <div
                       v-else-if="appt._movedFrom"
@@ -3013,7 +3121,7 @@ function showNowLineOn(day: Date) {
                     <div
                       v-if="g"
                       data-cy="create-ghost"
-                      class="pointer-events-none absolute left-1 right-1 z-[15] flex items-center rounded-ctl bg-brand px-2.5 text-[13px] font-semibold text-surface shadow-[0_0_0_3px_rgb(var(--color-brand-tint))]"
+                      class="pointer-events-none absolute left-1 right-1 z-[15] flex items-center rounded-ctl bg-brand px-2.5 text-[13px] font-semibold text-brand-on shadow-[0_0_0_3px_rgb(var(--color-brand-tint))]"
                       :style="{ top: `${(g.min / 60) * DAY_HOUR_PX + 1}px`, height: `${(SLOT_MIN / 60) * DAY_HOUR_PX - 3}px` }"
                     >
                       {{ t(`New appointment · ${g.label}`, `Nueva cita · ${g.label}`) }}
@@ -3039,7 +3147,7 @@ function showNowLineOn(day: Date) {
               <div class="sticky left-0 z-[25] w-[58px] shrink-0 bg-surface">
                 <div class="sticky top-0 z-30 border-b border-r border-line bg-surface" :style="{ height: `${WEEK_HEADER_PX}px` }"></div>
                 <div class="relative border-r border-line" :style="{ height: `${weekGridHeight}px` }">
-                  <span v-if="showWeekNowLabel" class="pointer-events-none absolute left-1 z-20 -translate-y-1/2 rounded-full bg-danger-text px-1.5 py-px font-mono text-[11px] font-semibold leading-4 text-surface" data-cy="now-label" :style="{ top: `${nowLineWeekPx}px` }">{{ formatTime(now) }}</span>
+                  <span v-if="showWeekNowLabel" class="pointer-events-none absolute left-1 z-20 -translate-y-1/2 rounded-full bg-danger-text px-1.5 py-px font-mono text-[11px] font-semibold leading-4 text-danger-on" data-cy="now-label" :style="{ top: `${nowLineWeekPx}px` }">{{ formatTime(now) }}</span>
                   <span
                     v-for="h in hourMarks"
                     :key="h"
@@ -3067,7 +3175,7 @@ function showNowLineOn(day: Date) {
                   >
                     <span class="text-[11px] font-semibold uppercase tracking-[.04em] text-ink-muted2">{{ formatWeekdayDate(day).split(' ')[0] }}</span>
                     <span class="text-[12.5px] font-medium" :class="isSameDate(day, new Date()) ? 'text-brand-text' : 'text-ink-900'">{{ day.getDate() }}</span>
-                    <button v-if="!readOnly" type="button" :aria-label="t('New appointment on this day', 'Nueva cita este día')" class="absolute right-1 top-0.5 text-[11px] text-ink-faint hover:text-brand-text" @click.stop="openCreateModalForDay(day)">+</button>
+                    <button v-if="!readOnly" type="button" :aria-label="t('New appointment on this day', 'Nueva cita este día')" :title="t('New appointment on this day', 'Nueva cita este día')" class="absolute right-0.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-ctlSm text-ink-faint hover:bg-surface-subtle hover:text-brand-text touch:after:absolute touch:after:-inset-2.5 touch:after:content-['']" @click.stop="openCreateModalForDay(day)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" class="h-3 w-3"><path stroke-linecap="round" d="M12 5v14M5 12h14" /></svg></button>
                   </div>
                   <!-- Per-day counts: the two that need someone to act. -->
                   <div class="flex h-[18px] items-center justify-center gap-2 border-b border-line text-[11px] text-ink-muted" data-cy="day-header-counts" :class="isSameDate(day, new Date()) ? 'bg-brand-tintDeep' : ''">
@@ -3157,7 +3265,7 @@ function showNowLineOn(day: Date) {
                         v-if="isOverflowBlock(appt)"
                         type="button"
                         class="absolute flex items-center justify-center overflow-hidden rounded-[7px] border border-line bg-surface text-[11px] font-medium text-ink-muted2 shadow-card hover:border-line-controlHover"
-                        :title="`${appt.count} ${appt.count === 1 ? t('more appointment', 'cita más') : t('more appointments', 'citas más')} ${t('at this time -- click to see them all in Day view', 'a esta hora -- haz clic para verlas todas en la vista Día')}`"
+                        :title="appt.count === 1 ? t('1 more appointment at this time. Click to see it in Day view.', '1 cita más a esta hora. Haz clic para verla en la vista Día.') : t(`${appt.count} more appointments at this time. Click to see them all in Day view.`, `${appt.count} citas más a esta hora. Haz clic para verlas todas en la vista Día.`)"
                         :style="columnStyle(appt, timeToPx(appt.starts_at, WEEK_HOUR_PX), OVERFLOW_CHIP_PX)"
                         @click.stop="showOverflowDay(day)"
                       >
@@ -3233,7 +3341,7 @@ function showNowLineOn(day: Date) {
                       <div
                         v-if="g"
                         data-cy="create-ghost"
-                        class="pointer-events-none absolute left-0.5 right-0.5 z-[15] flex items-center overflow-hidden whitespace-nowrap rounded-[6px] bg-brand px-1 text-[11px] font-semibold text-surface"
+                        class="pointer-events-none absolute left-0.5 right-0.5 z-[15] flex items-center overflow-hidden whitespace-nowrap rounded-[6px] bg-brand px-1 text-[11px] font-semibold text-brand-on"
                         :style="{ top: `${(g.min / 60) * WEEK_HOUR_PX}px`, height: `${(SLOT_MIN / 60) * WEEK_HOUR_PX - 2}px` }"
                       >
                         {{ g.label }}

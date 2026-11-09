@@ -376,22 +376,28 @@ const card = 'flex scroll-mt-4 flex-col gap-4 rounded-card border border-line bg
         <NuxtLink to="/settings/team" class="font-semibold text-brand-text hover:underline" data-cy="member-back">{{ t('Team', 'Equipo') }}</NuxtLink>
       </nav>
       <div v-if="form" class="flex flex-wrap items-center gap-3">
-        <span class="flex h-10 w-10 items-center justify-center rounded-full text-[14px] font-bold text-surface" :style="{ backgroundColor: form.color }">{{ initials }}</span>
-        <h1 class="text-[20px] font-bold text-ink-900" data-cy="member-title">{{ form.full_name || t('Untitled', 'Sin nombre') }}</h1>
-        <span v-if="isMe" class="rounded-pill bg-chip-bg px-2.5 py-0.5 text-[12.5px] font-bold text-chip-text">{{ t('You', 'Tú') }}</span>
-        <span v-if="isOwner" class="rounded-pill bg-brand-tint px-2.5 py-0.5 text-[12.5px] font-bold text-brand-text" data-cy="member-owner-chip">{{ t('Owner', 'Propietario') }}</span>
-        <span v-if="deletedAt" class="rounded-pill bg-chip-bg px-2.5 py-0.5 text-[12.5px] font-bold text-chip-text" data-cy="member-deactivated-chip">{{ t('Deactivated', 'Desactivado') }}</span>
-        <span v-if="away && !deletedAt" class="rounded-pill bg-warning-bg px-2.5 py-0.5 text-[12.5px] font-bold text-warning-text" data-cy="member-away-chip">{{ absenceKindLabel(away.kind, t) }}</span>
+        <span class="flex h-10 w-10 items-center justify-center rounded-full text-[14px] font-bold text-white" :style="{ backgroundColor: form.color }">{{ initials }}</span>
+        <h1 class="text-[18px] font-[640] tracking-tightTitle text-ink-900" data-cy="member-title">{{ form.full_name || t('Untitled', 'Sin nombre') }}</h1>
+        <UiPill tone="neutral" v-if="isMe">{{ t('You', 'Tú') }}</UiPill>
+        <UiPill tone="brand" v-if="isOwner" data-cy="member-owner-chip">{{ t('Owner', 'Propietario') }}</UiPill>
+        <UiPill tone="neutral" v-if="deletedAt" data-cy="member-deactivated-chip">{{ t('Deactivated', 'Desactivado') }}</UiPill>
+        <UiPill tone="warning" v-if="away && !deletedAt" data-cy="member-away-chip">{{ absenceKindLabel(away.kind, t) }}</UiPill>
       </div>
     </header>
 
     <div class="flex-1 overflow-y-auto">
       <div class="flex gap-8 p-4 pb-32 sm:px-6 sm:pt-6">
         <SettingsNav />
-        <p v-if="loaded && missing" class="text-[14px] text-ink-muted" data-cy="member-missing">
-          {{ t('This person is not on your team.', 'Esta persona no está en tu equipo.') }}
-          <NuxtLink to="/settings/team" class="text-brand-text hover:underline">{{ t('Back to the team', 'Volver al equipo') }}</NuxtLink>
-        </p>
+        <UiEmptyState v-if="loaded && missing" class="min-w-0 flex-1 !items-start !justify-start !px-0 !py-0" :title="t('This person is not on your team.', 'Esta persona no está en tu equipo.')" data-cy="member-missing">
+          <template #actions>
+            <NuxtLink to="/settings/team" class="inline-flex h-9 items-center rounded-ctl border border-line-control bg-surface px-3.5 text-[13px] font-medium text-ink-500 hover:border-line-controlHover touch:h-11">{{ t('Back to the team', 'Volver al equipo') }}</NuxtLink>
+          </template>
+        </UiEmptyState>
+        <div v-else-if="!form" class="flex min-w-0 max-w-[720px] flex-1 flex-col gap-4" aria-hidden="true">
+          <UiSkeleton class="h-48 w-full rounded-card" />
+          <UiSkeleton class="h-32 w-full rounded-card" />
+          <UiSkeleton class="h-32 w-full rounded-card" />
+        </div>
         <template v-else-if="form">
           <nav :aria-label="t('Sections', 'Secciones')" class="sticky top-0 hidden w-[180px] shrink-0 flex-col gap-0.5 self-start 2xl:flex">
             <a v-for="s in SECTIONS" :key="s.id" :href="`#${s.id}`" class="flex min-h-10 items-center rounded-ctlSm px-3 text-[14px] text-ink-700 hover:bg-surface-subtle">{{ s.label }}</a>
@@ -400,7 +406,7 @@ const card = 'flex scroll-mt-4 flex-col gap-4 rounded-card border border-line bg
           <main class="flex min-w-0 max-w-[720px] flex-1 flex-col gap-6" data-cy="member-page" :data-ready="loaded ? 'true' : undefined">
             <p v-if="deletedAt" class="flex flex-wrap items-center gap-3 rounded-card border border-line bg-surface-subtle px-4 py-3 text-[14px] text-ink-700">
               <span class="flex-1">{{ t(`Deactivated ${formatShortDate(deletedAt)}: cannot sign in and is off the calendar. Their appointments, notes and payments are kept.`, `Desactivado el ${formatShortDate(deletedAt)}: no puede entrar y no aparece en el calendario. Sus citas, notas y cobros se conservan.`) }}</span>
-              <button type="button" data-cy="member-reactivate" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="reactivate">{{ t('Reactivate', 'Reactivar') }}</button>
+              <UiBtn data-cy="member-reactivate" @click="reactivate">{{ t('Reactivate', 'Reactivar') }}</UiBtn>
             </p>
 
             <!-- Perfil -->
@@ -525,7 +531,7 @@ const card = 'flex scroll-mt-4 flex-col gap-4 rounded-card border border-line bg
                   />
                   <div v-else class="flex flex-wrap items-center gap-3 rounded-ctl border border-line bg-surface-subtle px-3.5 py-3" data-cy="member-hours-none">
                     <span class="min-w-[220px] flex-1 text-[13.5px] leading-snug text-ink-700">{{ t("No hours of their own: they can be booked whenever their clinic is open. Set their own only if they work less than that.", 'Sin horario propio: se le puede reservar siempre que su sede esté abierta. Pon uno propio solo si trabaja menos que eso.') }}</span>
-                    <button type="button" data-cy="member-hours-set" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="ownHoursOpen = true">{{ t('Set their own hours', 'Poner horario propio') }}</button>
+                    <UiBtn data-cy="member-hours-set" @click="ownHoursOpen = true">{{ t('Set their own hours', 'Poner horario propio') }}</UiBtn>
                   </div>
                 </div>
                 <div class="flex flex-col gap-2 border-t border-line-row pt-4" data-cy="member-overrides">
@@ -560,7 +566,7 @@ const card = 'flex scroll-mt-4 flex-col gap-4 rounded-card border border-line bg
                 />
                 <div v-else class="flex flex-wrap items-center gap-3 rounded-ctl border border-line bg-surface-subtle px-3.5 py-3">
                   <span class="min-w-[220px] flex-1 text-[13.5px] leading-snug text-ink-700">{{ t('No shift set: the Turnos tab shows nothing planned for them, and their clocking is not compared with anything.', 'Sin turno: la pestaña Turnos no muestra nada previsto para esta persona, ni compara su fichaje con nada.') }}</span>
-                  <button type="button" data-cy="member-shift-set" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="ownHoursOpen = true">{{ t('Set their shift', 'Poner su turno') }}</button>
+                  <UiBtn data-cy="member-shift-set" @click="ownHoursOpen = true">{{ t('Set their shift', 'Poner su turno') }}</UiBtn>
                 </div>
               </div>
             </section>
@@ -579,12 +585,12 @@ const card = 'flex scroll-mt-4 flex-col gap-4 rounded-card border border-line bg
                   {{ t('Two-factor authentication', 'Verificación en dos pasos') }}:
                   <strong data-cy="member-2fa" :class="twoFactor ? 'text-success-text' : 'text-warning-text'">{{ twoFactor ? t('set up', 'configurada') : t('not set up', 'sin configurar') }}</strong>
                 </span>
-                <button v-if="twoFactor && !isMe && (!isOwner || store.isOwner)" type="button" data-cy="member-reset-2fa" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="resetTwoFactorOpen = true">{{ t('Reset two-factor', 'Restablecer') }}</button>
+                <UiBtn v-if="twoFactor && !isMe && (!isOwner || store.isOwner)" data-cy="member-reset-2fa" @click="resetTwoFactorOpen = true">{{ t('Reset two-factor', 'Restablecer') }}</UiBtn>
               </div>
               <p v-if="isMe" :class="hint">{{ t('Your own password and two-factor are in', 'Tu contraseña y tu verificación están en') }} <NuxtLink to="/account" class="font-semibold text-brand-text hover:underline">{{ t('Account Settings', 'Ajustes de la Cuenta') }}</NuxtLink>.</p>
               <div v-else class="flex flex-wrap items-center gap-3 border-t border-line-row pt-4">
                 <span class="flex-1 text-[14px] text-ink-700">{{ t('Forgot their password? Send them an email to set a new one.', '¿Ha olvidado la contraseña? Envíale un email para crear una nueva.') }}</span>
-                <button type="button" data-cy="member-reset-password" :disabled="!!deletedAt" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:opacity-50" @click="resetPasswordOpen = true">{{ t('Send reset email', 'Enviar email') }}</button>
+                <UiBtn data-cy="member-reset-password" :disabled="!!deletedAt" @click="resetPasswordOpen = true">{{ t('Send reset email', 'Enviar email') }}</UiBtn>
               </div>
             </section>
 
@@ -608,7 +614,7 @@ const card = 'flex scroll-mt-4 flex-col gap-4 rounded-card border border-line bg
     >
       <span class="flex-1 text-[14px] font-semibold">{{ t('Unsaved changes', 'Cambios sin guardar') }}</span>
       <button type="button" data-cy="member-discard" class="h-9 touch:h-11 rounded-ctl border border-surface-page/30 px-3.5 text-[14px] font-semibold" @click="discard">{{ t('Discard', 'Descartar') }}</button>
-      <button type="button" data-cy="member-save" :disabled="saving" class="h-9 touch:h-11 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface disabled:opacity-70" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Save changes', 'Guardar cambios') }}</button>
+      <UiBtn variant="primary" data-cy="member-save" :disabled="saving" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Save changes', 'Guardar cambios') }}</UiBtn>
     </div>
 
     <UiConfirmDialog

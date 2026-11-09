@@ -90,13 +90,20 @@ function lastPayment(membershipId: string) {
 // What "Download PDF" reads: the sections below marked data-pdf-block,
 // and the figure tiles (components/reports/Stat.vue).
 const pdfRoot = ref<HTMLElement | null>(null)
+
+// Worded, not the database value: "active" in English to a Spanish desk.
+const MEMBERSHIP_TONE: Record<string, 'success' | 'warning' | 'neutral'> = { active: 'success', paused: 'warning', cancelled: 'neutral' }
+function membershipStatusLabel(status: string) {
+  const labels: Record<string, string> = { active: t('active', 'activa'), paused: t('paused', 'pausada'), cancelled: t('cancelled', 'cancelada') }
+  return labels[status] ?? status
+}
 </script>
 
 <template>
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Memberships', 'Membresías')" :meta="t('Active count, monthly revenue, and failed payments', 'Recuento activo, ingresos mensuales y pagos fallidos')">
       <div class="flex items-center gap-3">
-        <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
+        <ReportsBackLink />
         <ReportsPdfButton :target="pdfRoot" :title="t('Memberships', 'Membresías')" />
       </div>
     </PageHeader>
@@ -114,7 +121,7 @@ const pdfRoot = ref<HTMLElement | null>(null)
 
       <div class="mt-4 overflow-x-auto rounded-card border border-line bg-surface shadow-card" data-pdf-block="table" :data-pdf-title="t('Memberships', 'Membresías')">
         <table class="w-full min-w-[560px] text-[13px]">
-          <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2">
+          <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">
             <tr>
               <th class="px-4 py-2">{{ t('Patient', 'Paciente') }}</th>
               <th class="px-4 py-2">{{ t('Plan', 'Plan') }}</th>
@@ -134,17 +141,12 @@ const pdfRoot = ref<HTMLElement | null>(null)
               </td>
               <td class="px-4 py-2.5 text-ink-muted2">{{ m.membership_name }}</td>
               <td class="px-4 py-2.5">
-                <span
-                  class="rounded-pill px-1.5 py-0.5 text-[11px] font-medium"
-                  :class="{ active: 'bg-success-bg text-success-text', paused: 'bg-warning-bg text-warning-text', cancelled: 'bg-chip-bg text-chip-text' }[m.status]"
-                >
-                  {{ m.status }}
-                </span>
+                <UiPill :tone="MEMBERSHIP_TONE[m.status] ?? 'neutral'">{{ membershipStatusLabel(m.status) }}</UiPill>
               </td>
-              <td class="px-4 py-2.5 text-ink-muted2">{{ new Date(m.started_at).toLocaleDateString() }}</td>
+              <td class="whitespace-nowrap px-4 py-2.5 font-mono text-[12.5px] text-ink-muted2">{{ new Date(m.started_at).toLocaleDateString() }}</td>
               <td class="px-4 py-2.5">
-                <span v-if="lastPayment(m.id)" class="rounded-pill px-1.5 py-0.5 text-[11px] font-medium" :class="lastPayment(m.id)!.status === 'paid' ? 'bg-success-bg text-success-text' : 'bg-danger-bg text-danger-text'">
-                  {{ lastPayment(m.id)!.period_start }}: {{ lastPayment(m.id)!.status }}
+                <span v-if="lastPayment(m.id)" class="whitespace-nowrap">
+                  <span class="font-mono text-[12.5px] text-ink-muted2">{{ lastPayment(m.id)!.period_start }}</span> <UiPill :tone="lastPayment(m.id)!.status === 'paid' ? 'success' : 'danger'">{{ lastPayment(m.id)!.status === 'paid' ? t('paid', 'pagado') : lastPayment(m.id)!.status === 'failed' ? t('failed', 'fallido') : lastPayment(m.id)!.status }}</UiPill>
                 </span>
                 <span v-else class="text-[12px] text-ink-faint2">—</span>
               </td>

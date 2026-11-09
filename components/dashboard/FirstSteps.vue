@@ -141,11 +141,21 @@ const steps = computed<Step[]>(() => [
           key: 'import',
           done: hasImported.value,
           optional: !importSource.value,
-          title: importSource.value ? t(`Bring your records from ${importSourceName.value}`, `Trae tus datos desde ${importSourceName.value}`) : t('Coming from other software?', '¿Vienes de otro programa?'),
-          body: t(
-            'Patients first, then their visits, bonos, invoices and notes. Optional: skip it if you are starting fresh.',
-            'Primero los pacientes, luego sus visitas, bonos, facturas y notas. Opcional: sáltalo si empiezas de cero.',
-          ),
+          title:
+            importSource.value === 'other'
+              ? t('Bring your patients from a CSV or Excel file', 'Trae tus pacientes desde un archivo CSV o Excel')
+              : importSource.value
+                ? t(`Bring your records from ${importSourceName.value}`, `Trae tus datos desde ${importSourceName.value}`)
+                : t('Coming from other software?', '¿Vienes de otro programa?'),
+          // What each importer really brings (pages/settings/import.vue): a CSV
+          // or Excel file is patients only. The "Optional" pill and the "Starting fresh"
+          // link already say it can be skipped, so the body does not.
+          body:
+            importSource.value === 'other'
+              ? t('Patients only: a file does not bring visits or bonos.', 'Solo pacientes: un archivo no trae visitas ni bonos.')
+              : importSource.value
+                ? t('Patients first, then their visits, bonos, payments, notes and files.', 'Primero los pacientes, luego sus visitas, bonos, pagos, notas y archivos.')
+                : t('Everything from PracticeHub or Quirocitas, or your patients from a CSV or Excel file.', 'Todo desde PracticeHub o Quirocitas, o tus pacientes desde un archivo CSV o Excel.'),
           action: { label: t('Import', 'Importar'), to: `/settings/import${importSource.value ? `?source=${importSource.value}` : ''}` },
           alternative: { label: t('Starting fresh', 'Empiezo de cero'), onClick: startFresh },
         },
@@ -190,13 +200,16 @@ const steps = computed<Step[]>(() => [
     ),
     action: { label: t('New patient', 'Nuevo paciente'), to: '/patients?new=1' },
   },
+  // Not "the reminder goes out the day before": a new account has no WhatsApp
+  // connected and no reminder template chosen, and a reminder needs both
+  // (server/utils/appointmentNotifications.ts). Both are steps in /setup.
   {
     key: 'visit',
     done: hasAppointment.value,
     title: t('Book their first visit', 'Reserva su primera visita'),
     body: t(
-      'Pick a slot in the calendar. The reminder goes out the day before, on its own.',
-      'Elige un hueco en la agenda. El recordatorio sale el día antes, solo.',
+      'Pick a slot in the calendar. Reminders go out on their own once WhatsApp and the reminder message are set up.',
+      'Elige un hueco en la agenda. Los recordatorios salen solos en cuanto configures WhatsApp y el mensaje de recordatorio.',
     ),
     action: {
       label: t('Open the calendar', 'Abrir la agenda'),
@@ -269,7 +282,7 @@ function dismiss() {
             {{ t('Your first visit is booked', 'Tu primera visita está reservada') }}
           </h2>
           <p class="mt-0.5 text-[12.5px] leading-[1.5] text-ink-muted">
-            {{ t('Next, let patients book themselves: turn on online booking for a type and share your page.', 'Ahora, deja que los pacientes reserven solos: activa la reserva online en un tipo y comparte tu página.') }}
+            {{ t('Next, let patients book themselves: turn on online booking, choose the types they can book, and share your page.', 'Ahora, deja que los pacientes reserven solos: activa la reserva online, elige qué tipos pueden reservar y comparte tu página.') }}
           </p>
         </div>
         <div class="flex shrink-0 items-center gap-2">
@@ -295,7 +308,7 @@ function dismiss() {
           </div>
           <button
             type="button"
-            class="-mr-1.5 -mt-1 shrink-0 rounded-ctlSm px-1.5 py-1 text-[12px] font-medium text-ink-muted2 hover:bg-surface-subtle hover:text-ink-600"
+            class="-mr-1.5 -mt-1 inline-flex h-7 shrink-0 items-center rounded-ctlSm px-1.5 text-[12px] font-medium text-ink-muted2 hover:bg-surface-subtle hover:text-ink-600 touch:h-10"
             data-cy="first-steps-dismiss"
             @click="dismiss"
           >
@@ -324,7 +337,7 @@ function dismiss() {
                 step.done
                   ? 'border border-success-border bg-success-bg text-success-text'
                   : step.key === currentKey
-                    ? 'bg-brand text-white'
+                    ? 'bg-brand text-brand-on'
                     : 'border border-line-control bg-surface text-ink-muted2'
               "
             >
@@ -348,7 +361,7 @@ function dismiss() {
                   class="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-ctl px-3 text-[12.5px] touch:h-10"
                   :class="
                     step.key === currentKey
-                      ? 'border border-brand bg-brand font-semibold text-white hover:bg-brand-hover'
+                      ? 'border border-brand bg-brand font-semibold text-brand-on hover:bg-brand-hover'
                       : 'border border-line-control bg-surface font-medium text-ink-500 hover:border-line-controlHover'
                   "
                 >

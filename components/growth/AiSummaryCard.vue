@@ -35,15 +35,15 @@ const t = useT()
 
     <dl class="flex flex-wrap gap-[18px] border-t border-brand-tintBorder pt-[11px]">
       <div class="flex flex-col gap-0.5">
-        <dd class="text-[16px] font-semibold text-ink-900">{{ ai.sent }}</dd>
+        <dd class="font-mono text-[16px] font-semibold text-ink-900">{{ ai.sent }}</dd>
         <dt class="text-[11px] text-ink-muted">{{ t('Sent itself', 'Enviadas sola') }}</dt>
       </div>
       <div class="flex flex-col gap-0.5">
-        <dd class="text-[16px] font-semibold text-ink-900">{{ ai.drafted }}</dd>
+        <dd class="font-mono text-[16px] font-semibold text-ink-900">{{ ai.drafted }}</dd>
         <dt class="text-[11px] text-ink-muted">{{ t('Drafted', 'Borradores') }}</dt>
       </div>
       <div class="flex flex-col gap-0.5">
-        <dd class="text-[16px] font-semibold text-ink-900">{{ ai.handedOver }}</dd>
+        <dd class="font-mono text-[16px] font-semibold text-ink-900">{{ ai.handedOver }}</dd>
         <dt class="text-[11px] text-ink-muted">{{ t('Handed over', 'Pasadas a una persona') }}</dt>
       </div>
     </dl>

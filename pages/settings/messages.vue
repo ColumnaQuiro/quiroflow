@@ -207,7 +207,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
                   :aria-checked="m.key === 'confirmation' ? confirmationEnabled : reminderEnabled"
                   :aria-labelledby="`h-${m.key}`"
                   class="relative h-[26px] w-11 shrink-0 rounded-full"
-                  :class="(m.key === 'confirmation' ? confirmationEnabled : reminderEnabled) ? 'bg-brand' : 'bg-line-control'"
+                  :class="(m.key === 'confirmation' ? confirmationEnabled : reminderEnabled) ? 'bg-brand' : 'bg-toggle-off'"
                   @click="m.key === 'confirmation' ? (confirmationEnabled = !confirmationEnabled) : (reminderEnabled = !reminderEnabled)"
                 >
                   <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card left-[3px] transition-transform" :class="(m.key === 'confirmation' ? confirmationEnabled : reminderEnabled) ? 'translate-x-[18px]' : 'translate-x-0'" />

@@ -54,7 +54,12 @@ watch(() => props.month, load)
 const name = (id: string | null) => members.value.find((m) => m.id === id)?.full_name ?? '—'
 const clock = (at: string) => workdayClock(at, props.timeZone)
 const locale = computed(() => (lang.value === 'es' ? 'es-ES' : 'en-GB'))
-const dayLabel = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString(locale.value, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })
+// Only the first letter: `capitalize` raised the month too ("Vie, 6 Nov"),
+// and Spanish writes months in lower case.
+const dayLabel = (date: string) => {
+  const s = new Date(`${date}T12:00:00Z`).toLocaleDateString(locale.value, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
 
 const inForce = computed(() => entries.value.filter((e) => !e.superseded_by))
 function daysOf(memberId: string): WorkdaySummary[] {
@@ -83,10 +88,11 @@ function todaySpan(d: WorkdaySummary | null) {
   if (d.state === 'on_break') return `${start} – ${t('on a break', 'en pausa')}`
   return `${start} – ${d.lastOut ? clock(d.lastOut) : '?'}`
 }
-function statePill(d: WorkdaySummary | null) {
-  if (d?.state === 'working') return { label: t('Working', 'Trabajando'), cls: 'bg-success-bg text-success-text' }
-  if (d?.state === 'on_break') return { label: t('On a break', 'En pausa'), cls: 'bg-brand-tint text-brand-text' }
-  if (d && !d.open) return { label: t('Clocked out', 'Salida fichada'), cls: 'bg-surface-subtle text-ink-muted' }
+// The tones of the clock card on My Day: a break is amber there, not indigo.
+function statePill(d: WorkdaySummary | null): { label: string; tone: 'success' | 'warning' | 'neutral' } | null {
+  if (d?.state === 'working') return { label: t('Working', 'Trabajando'), tone: 'success' }
+  if (d?.state === 'on_break') return { label: t('On a break', 'En pausa'), tone: 'warning' }
+  if (d && !d.open) return { label: t('Clocked out', 'Salida fichada'), tone: 'neutral' }
   return null
 }
 
@@ -98,6 +104,11 @@ function notesFor(date: string) {
 function replacedAt(c: Correction) {
   const e = c.replaces_entry_id ? entries.value.find((x) => x.id === c.replaces_entry_id) : null
   return e ? clock(e.at) : null
+}
+// "Salida 18:00" or "Salida (sin fichar)": built here because the template
+// lost the space before the bracket.
+function correctionFrom(c: Correction) {
+  return `${workEntryLabel(c.kind, t)} ${replacedAt(c) ?? t('(missing)', '(sin fichar)')}`
 }
 function breaksOf(d: WorkdaySummary) {
   return d.breaks.map((b) => `${clock(b.start)}–${b.end ? clock(b.end) : '?'}`).join(', ')
@@ -122,7 +133,7 @@ async function setExempt(memberId: string, value: boolean) {
 }
 
 const selectedRow = computed(() => rows.value.find((r) => r.member.id === selected.value) ?? null)
-const th = 'px-3 py-2 text-left text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted'
+const th = 'whitespace-nowrap px-3 py-2 text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted'
 const td = 'border-t border-line-divider px-3 py-2.5 text-[13px] text-ink-900'
 </script>
 
@@ -132,16 +143,18 @@ const td = 'border-t border-line-divider px-3 py-2.5 text-[13px] text-ink-900'
 
     <section v-if="pending.length" class="rounded-card border border-warning-border bg-warning-bg2 px-4 py-3" data-cy="pending-corrections">
       <h2 class="text-[14.5px] font-bold text-ink-900">{{ t('Corrections waiting', 'Correcciones pendientes') }} · {{ pending.length }}</h2>
-      <div v-for="c in pending" :key="c.id" class="mt-2.5 flex flex-wrap items-center gap-3" data-cy="pending-correction">
+      <div v-for="c in pending" :key="c.id" class="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-2" data-cy="pending-correction">
         <span class="text-[13.5px] font-semibold text-ink-900">{{ name(c.team_member_id) }}</span>
-        <span class="text-[12.5px] text-ink-muted">
-          <span class="capitalize">{{ dayLabel(c.work_date) }}</span> ·
-          {{ workEntryLabel(c.kind, t) }}<template v-if="replacedAt(c)"> {{ replacedAt(c) }}</template><template v-else> {{ t('(missing)', '(sin fichar)') }}</template>
+        <span class="min-w-[14rem] flex-1 text-[12.5px] text-ink-muted">
+          {{ dayLabel(c.work_date) }} · {{ correctionFrom(c) }}
           → <strong class="font-mono text-ink-900">{{ clock(c.at) }}</strong> · «{{ c.reason }}»
         </span>
-        <span class="flex-grow" />
-        <UiBtn size="sm" :disabled="busy" data-cy="reject-correction" @click="decide(c, false)">{{ t('Reject', 'Rechazar') }}</UiBtn>
-        <UiBtn size="sm" variant="primary" :disabled="busy" data-cy="approve-correction" @click="decide(c, true)">{{ t('Approve', 'Aprobar') }}</UiBtn>
+        <!-- One group, so they wrap together: apart, Approve fell to a line
+        of its own under Reject. -->
+        <span class="flex gap-2">
+          <UiBtn size="sm" :disabled="busy" data-cy="reject-correction" @click="decide(c, false)">{{ t('Reject', 'Rechazar') }}</UiBtn>
+          <UiBtn size="sm" variant="primary" :disabled="busy" data-cy="approve-correction" @click="decide(c, true)">{{ t('Approve', 'Aprobar') }}</UiBtn>
+        </span>
       </div>
     </section>
 
@@ -157,7 +170,12 @@ const td = 'border-t border-line-divider px-3 py-2.5 text-[13px] text-ink-900'
             <th :class="th">{{ t('Status', 'Estado') }}</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody v-if="!loaded" aria-busy="true">
+          <tr v-for="i in 3" :key="i">
+            <td v-for="j in 6" :key="j" :class="td"><UiSkeleton class="h-3.5 rounded-ctlSm" :class="j === 1 ? 'w-28' : 'w-14'" /></td>
+          </tr>
+        </tbody>
+        <tbody v-else>
           <tr
             v-for="r in rows"
             :key="r.member.id"
@@ -167,17 +185,21 @@ const td = 'border-t border-line-divider px-3 py-2.5 text-[13px] text-ink-900'
             :data-member="r.member.full_name"
             @click="selected = r.member.id"
           >
-            <td :class="td"><strong>{{ r.member.full_name }}</strong></td>
+            <!-- The row is clickable for a mouse; the name is the button a
+            keyboard reaches. -->
+            <td :class="td">
+              <button type="button" class="whitespace-nowrap text-left font-semibold focus-visible:underline focus-visible:outline-none" :aria-pressed="selected === r.member.id" @click.stop="selected = r.member.id">{{ r.member.full_name }}</button>
+            </td>
             <template v-if="r.exempt">
               <td :class="td" colspan="4" class="text-ink-muted">{{ t("Doesn't clock (excluded)", 'No ficha (excluido)') }}</td>
               <td :class="td" />
             </template>
             <template v-else>
-              <td :class="td" class="font-mono">{{ todaySpan(r.today) }}</td>
-              <td :class="td" class="font-mono">{{ formatWorked(r.week) }}</td>
-              <td :class="td" class="font-mono" data-cy="team-month-total">{{ formatWorked(r.month) }}</td>
-              <td :class="td">{{ r.days }}</td>
-              <td :class="td"><span v-if="statePill(r.today)" class="inline-flex h-[22px] items-center rounded-pill px-2 text-[11.5px] font-semibold" :class="statePill(r.today)!.cls">{{ statePill(r.today)!.label }}</span></td>
+              <td :class="td" class="whitespace-nowrap font-mono">{{ todaySpan(r.today) }}</td>
+              <td :class="td" class="whitespace-nowrap font-mono">{{ formatWorked(r.week) }}</td>
+              <td :class="td" class="whitespace-nowrap font-mono" data-cy="team-month-total">{{ formatWorked(r.month) }}</td>
+              <td :class="td" class="font-mono">{{ r.days }}</td>
+              <td :class="td"><UiPill v-if="statePill(r.today)" :tone="statePill(r.today)!.tone" :dot="statePill(r.today)!.tone === 'success'" class="whitespace-nowrap">{{ statePill(r.today)!.label }}</UiPill></td>
             </template>
           </tr>
         </tbody>
@@ -205,15 +227,15 @@ const td = 'border-t border-line-divider px-3 py-2.5 text-[13px] text-ink-900'
         </thead>
         <tbody>
           <tr v-for="d in detailDays" :key="d.date" data-cy="team-month-day" :data-date="d.date">
-            <td :class="td" class="capitalize">{{ dayLabel(d.date) }}</td>
+            <td :class="td" class="whitespace-nowrap">{{ dayLabel(d.date) }}</td>
             <td :class="td" class="font-mono">{{ d.firstIn ? clock(d.firstIn) : '—' }}</td>
-            <td :class="td" class="font-mono">{{ breaksOf(d) || '—' }}</td>
+            <td :class="td" class="whitespace-nowrap font-mono">{{ breaksOf(d) || '—' }}</td>
             <td :class="td" class="font-mono">{{ d.lastOut ? clock(d.lastOut) : '—' }}</td>
-            <td :class="td" class="font-mono">{{ d.open ? '—' : formatWorked(d.workedMinutes) }}</td>
-            <td :class="td" class="text-[12.5px] text-ink-muted">
-              <span v-if="d.missingOut" class="mr-1 inline-flex h-[22px] items-center rounded-pill bg-warning-bg px-2 text-[11.5px] font-semibold text-warning-text">{{ t('No clock-out', 'Sin salida') }}</span>
+            <td :class="td" class="whitespace-nowrap font-mono">{{ d.open ? '—' : formatWorked(d.workedMinutes) }}</td>
+            <td :class="td" class="min-w-[12rem] text-[12.5px] text-ink-muted">
+              <UiPill v-if="d.missingOut" tone="warning" class="mb-1 mr-1">{{ t('No clock-out', 'Sin salida') }}</UiPill>
               <span v-for="c in notesFor(d.date)" :key="c.id" class="block" data-cy="team-month-note">
-                <template v-if="c.status === 'pending'"><span class="inline-flex h-[22px] items-center rounded-pill bg-warning-bg px-2 text-[11.5px] font-semibold text-warning-text">{{ t('Correction pending', 'Corrección pendiente') }}</span></template>
+                <template v-if="c.status === 'pending'"><UiPill tone="warning">{{ t('Correction pending', 'Corrección pendiente') }}</UiPill></template>
                 <template v-else>
                   {{ c.status === 'approved' ? t('Corrected', 'Corregida') : t('Correction rejected', 'Corrección rechazada') }}:
                   {{ workEntryLabel(c.kind, t).toLowerCase() }} {{ clock(c.at) }}<template v-if="replacedAt(c)"> ({{ t('was', 'antes') }} {{ replacedAt(c) }})</template>

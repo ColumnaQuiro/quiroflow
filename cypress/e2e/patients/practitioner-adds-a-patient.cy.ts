@@ -28,7 +28,7 @@ describe('A practitioner adding a patient', () => {
         cy.get('#first-name').type('Nueva')
         cy.get('#last-name').type('Propia')
         cy.get('input[type="tel"]').type('600123987')
-        cy.contains('button', 'Add Patient').click()
+        cy.contains('button', 'Add patient').click()
 
         cy.location('pathname', { timeout: 15000 }).should('match', /^\/patients\/[0-9a-f-]+$/)
         cy.contains('Nueva Propia').should('be.visible')

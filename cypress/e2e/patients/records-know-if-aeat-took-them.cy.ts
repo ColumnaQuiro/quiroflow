@@ -11,7 +11,7 @@
 // discover later.
 describe('Records that know whether the AEAT took them', () => {
   const sellBono = (label: string) => {
-    cy.contains('select', 'Sell a package', { timeout: 30000 }).should('exist').select(label)
+    cy.contains('select', 'Sell a bono', { timeout: 30000 }).should('exist').select(label)
     cy.contains('button', /^Sell$/).click()
     cy.contains('button', 'Selling…', { timeout: 30000 }).should('not.exist')
   }

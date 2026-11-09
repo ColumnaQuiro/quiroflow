@@ -131,7 +131,7 @@ const { formatShortDate } = useDates()
 const { balanceCents, outstandingCents, creditLedgerCents, bonoValueCents, lifetimeCents, refresh: refreshCreditSummary } =
   usePatientFinancialSummary(() => props.patientId)
 const { issueFactura, issueRectificativa, annulFactura } = useFacturas()
-const { methods: paymentMethods, ensureLoaded: ensurePaymentMethodsLoaded, defaultMethod } = usePaymentMethods()
+const { methods: paymentMethods, ensureLoaded: ensurePaymentMethodsLoaded, defaultMethod, labelFor: methodLabel } = usePaymentMethods()
 
 // The documents the patient has actually been given, as opposed to the charges
 // that drive their balance. Kept as its own list rather than mixed into the
@@ -371,7 +371,10 @@ async function applyCreditToInvoice() {
   if (!invoice) return
   const amountCents = Math.round((parseFloat(applyCreditAmount.value) || 0) * 100)
   if (amountCents <= 0 || amountCents > spendableCreditCents.value) {
-    creditError.value = t('Amount must be positive and not exceed available credit.', 'El importe debe ser positivo y no superar el crédito disponible.')
+    creditError.value = t(
+      `Enter an amount above 0, up to the ${formatEur(spendableCreditCents.value)} available.`,
+      `Escribe un importe mayor que 0 y de hasta ${formatEur(spendableCreditCents.value)}, lo disponible.`,
+    )
     return
   }
   creditError.value = ''
@@ -443,7 +446,7 @@ async function takePayment() {
   // here, which held the line but counted only account_credits rows and so
   // also refused genuine overpayments.
   if (paymentCreditCents.value > 0 && paymentCreditCents.value > spendableCreditCents.value) {
-    paymentError.value = t('Amount exceeds available credit.', 'El importe supera el crédito disponible.')
+    paymentError.value = t(`That is more than the ${formatEur(spendableCreditCents.value)} of credit available.`, `Supera los ${formatEur(spendableCreditCents.value)} de crédito disponibles.`)
     return
   }
   takingPayment.value = true
@@ -534,22 +537,22 @@ async function copyCardLink() {
   try {
     const { url } = await useStaffFetch<{ url: string }>('/api/stripe/create-card-link', { method: 'POST', body: { patientId: props.patientId } })
     await navigator.clipboard.writeText(url)
-    showToast('Card link copied -- send it to the patient')
+    showToast(t('Card link copied. Send it to the patient.', 'Enlace de tarjeta copiado. Envíaselo al paciente.'))
   } catch (err: any) {
-    showToast(err?.data?.statusMessage ?? 'Could not create card link', 'error')
+    showToast(err?.data?.statusMessage ?? t('The card link could not be created. Try again.', 'No se pudo crear el enlace de tarjeta. Inténtalo de nuevo.'), 'error')
   } finally {
     copyingCardLink.value = false
   }
 }
 async function removeCard() {
-  if (!confirm('Remove the saved card for this patient?')) return
+  if (!confirm(t('Remove this patient’s saved card? Card charges and autopay can’t run without one.', '¿Eliminar la tarjeta guardada de este paciente? Sin tarjeta no se pueden hacer cobros con tarjeta ni pagos automáticos.'))) return
   removingCard.value = true
   try {
     await useStaffFetch('/api/stripe/remove-card', { method: 'POST', body: { patientId: props.patientId } })
-    showToast('Card removed')
+    showToast(t('Card removed', 'Tarjeta eliminada'))
     await loadAll()
   } catch (err: any) {
-    showToast(err?.data?.statusMessage ?? 'Could not remove card', 'error')
+    showToast(err?.data?.statusMessage ?? t('The card could not be removed. Try again.', 'No se pudo eliminar la tarjeta. Inténtalo de nuevo.'), 'error')
   } finally {
     removingCard.value = false
   }
@@ -1084,7 +1087,7 @@ async function deleteInvoice(invoice: InvoiceRow) {
   // nothing rather than by erroring.
   const { data: deleted, error } = await supabase.from('invoices').delete().eq('id', invoice.id).select('id')
   if (error || !deleted?.length) {
-    showToast(error?.message ?? t('This receipt could not be deleted.', 'No se pudo eliminar este recibo.'), 'error')
+    showToast(t('This receipt was not deleted. Try again, or check your role allows deleting receipts.', 'No se ha eliminado este recibo. Inténtalo de nuevo, o comprueba que tu rol permite eliminar recibos.') + (error?.message ? ` (${error.message})` : ''), 'error')
     return
   }
   await Promise.all([loadAll(), refreshCreditSummary(), loadFacturas()])
@@ -1517,11 +1520,49 @@ async function setUpMembershipAutopay(m: PatientMembershipRow) {
 }
 
 async function cancelAutopay(scheduleId: string) {
-  if (!confirm(t('Cancel automatic Stripe billing for this?', '¿Cancelar la facturación automática de Stripe para esto?'))) return
-  await useStaffFetch('/api/stripe/cancel-schedule', { method: 'POST', body: { paymentScheduleId: scheduleId } })
+  if (
+    !confirm(
+      t(
+        'Stop autopay? No further payments are taken from the card. Payments already taken stay as they are.',
+        '¿Detener el pago automático? No se cobrarán más pagos a la tarjeta. Los pagos ya cobrados no cambian.',
+      ),
+    )
+  )
+    return
+  try {
+    await useStaffFetch('/api/stripe/cancel-schedule', { method: 'POST', body: { paymentScheduleId: scheduleId } })
+  } catch (err: any) {
+    // A refused cancel used to say nothing, so the desk could believe autopay
+    // had stopped while Stripe kept charging the card.
+    showToast(t('Autopay was not stopped. Try again.', 'No se ha detenido el pago automático. Inténtalo de nuevo.') + (err?.data?.statusMessage ? ` (${err.data.statusMessage})` : ''), 'error')
+    return
+  }
   await loadAll()
 }
 
+// The pill showed the raw status ("past_due") in either language.
+function scheduleStatusLabel(status: string) {
+  const labels: Record<string, [string, string]> = {
+    active: ['Active', 'Activo'],
+    completed: ['Completed', 'Completado'],
+    canceled: ['Stopped', 'Detenido'],
+    past_due: ['Payment failed', 'Pago fallido'],
+  }
+  const l = labels[status]
+  return l ? t(l[0], l[1]) : status
+}
+function intervalLabel(interval: string, count: number) {
+  const one = count === 1
+  const labels: Record<string, [string, string, string, string]> = {
+    day: ['day', 'days', 'día', 'días'],
+    week: ['week', 'weeks', 'semana', 'semanas'],
+    month: ['month', 'months', 'mes', 'meses'],
+    year: ['year', 'years', 'año', 'años'],
+  }
+  const l = labels[interval]
+  if (!l) return `${count} ${interval}`
+  return one ? t(l[0], l[2]) : `${count} ${t(l[1], l[3])}`
+}
 const scheduleTone: Record<string, 'success' | 'neutral' | 'danger'> = {
   active: 'success',
   completed: 'neutral',
@@ -1565,7 +1606,7 @@ async function sellPackage() {
   // EUR 50 of credit is a normal sale, with the rest taken later or put on
   // autopay.
   if (sellMethod.value === 'credit' && amountCents > spendableCreditCents.value) {
-    creditError.value = t('Amount exceeds available credit.', 'El importe supera el crédito disponible.')
+    creditError.value = t(`That is more than the ${formatEur(spendableCreditCents.value)} of credit available.`, `Supera los ${formatEur(spendableCreditCents.value)} de crédito disponibles.`)
     return
   }
   sellingPackage.value = true
@@ -1731,7 +1772,7 @@ async function submitPackageCollection(purchase: PackagePurchaseRow) {
   // Same cap the sale panel applies: credit can only spend credit the patient
   // actually holds, never the value of the bono they are paying for.
   if (collectMethod.value === 'credit' && amountCents > spendableCreditCents.value) {
-    collectError.value = t('Amount exceeds available credit.', 'El importe supera el crédito disponible.')
+    collectError.value = t(`That is more than the ${formatEur(spendableCreditCents.value)} of credit available.`, `Supera los ${formatEur(spendableCreditCents.value)} de crédito disponibles.`)
     return
   }
   collectError.value = ''
@@ -2161,7 +2202,7 @@ async function activateMembership() {
   const tpl = freshPlan ?? cachedPlan
   const amountCents = Math.round((parseFloat(activateAmountPaid.value) || 0) * 100)
   if (activateMethod.value === 'credit' && amountCents > spendableCreditCents.value) {
-    creditError.value = t('Amount exceeds available credit.', 'El importe supera el crédito disponible.')
+    creditError.value = t(`That is more than the ${formatEur(spendableCreditCents.value)} of credit available.`, `Supera los ${formatEur(spendableCreditCents.value)} de crédito disponibles.`)
     return
   }
   activatingMembership.value = true
@@ -2181,7 +2222,7 @@ async function activateMembership() {
   // ignored and the patient was charged anyway, with nothing to show for it.
   if (membershipError || !newMembership) {
     activatingMembership.value = false
-    showToast(membershipError?.message ?? t('The membership was not created.', 'No se ha creado la membresía.'), 'error')
+    showToast(t('The membership was not created, and nothing was charged. Try again.', 'No se ha creado la membresía y no se ha cobrado nada. Inténtalo de nuevo.') + (membershipError?.message ? ` (${membershipError.message})` : ''), 'error')
     return
   }
   fire('membership.new_member', { patientId: props.patientId, membershipId: newMembership.id })
@@ -2354,7 +2395,7 @@ const fieldId = useId()
         <p v-else-if="outstandingCents <= 0" class="mt-0.5 text-[12px] text-ink-muted2">{{ t('Nothing outstanding.', 'Nada pendiente.') }}</p>
         <div v-if="canTakePayments" class="mt-3 flex flex-wrap gap-2">
           <UiBtn variant="primary" size="sm" @click="activePanel === 'payment' ? (activePanel = null) : openTakePayment()">
-            {{ t('Take payment', 'Registrar pago') }}
+            {{ t('Take payment', 'Cobrar') }}
           </UiBtn>
           <UiBtn variant="secondary" size="sm" data-cy="sell-product-open" @click="activePanel = activePanel === 'product' ? null : 'product'">
             {{ t('Sell product', 'Vender producto') }}
@@ -2580,7 +2621,7 @@ const fieldId = useId()
     <div class="space-y-4">
       <!-- Packages / bonos -- always on screen, above the sub-nav. -->
       <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-        <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Packages / bonos', 'Bonos') }}</p>
+        <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Bonos', 'Bonos') }}</p>
         <div v-if="packagesLoading" class="mt-3 space-y-3">
           <div v-for="i in 2" :key="i" class="rounded-ctl border border-line-divider p-3.5">
             <div class="flex items-center justify-between gap-2">
@@ -2767,15 +2808,15 @@ const fieldId = useId()
             <div v-if="openLinkPaymentId === p.id" class="mt-2.5 rounded-ctl border border-line-divider bg-surface-subtle p-2.5">
               <ul v-if="linkedPaymentsFor(p).length" class="space-y-1">
                 <li v-for="pay in linkedPaymentsFor(p)" :key="pay.id" class="flex items-center justify-between text-[11.5px] text-ink-600">
-                  <span>{{ money(pay.amount_cents) }} &middot; {{ pay.method }} &middot; {{ new Date(pay.paid_at).toLocaleDateString() }}<template v-if="paidByOtherPatient(pay)"> &middot; {{ t('paid by', 'pagado por') }} {{ paidByOtherPatient(pay) }}</template></span>
-                  <button type="button" class="text-ink-faint hover:text-danger-text" @click="unlinkPayment(pay.id)">✕</button>
+                  <span>{{ money(pay.amount_cents) }} &middot; {{ methodLabel(pay.method) }} &middot; {{ new Date(pay.paid_at).toLocaleDateString() }}<template v-if="paidByOtherPatient(pay)"> &middot; {{ t('paid by', 'pagado por') }} {{ paidByOtherPatient(pay) }}</template></span>
+                  <button type="button" class="text-ink-faint hover:text-danger-text" :aria-label="t('Unlink this payment from the bono', 'Desvincular este pago del bono')" :title="t('Unlink', 'Desvincular')" @click="unlinkPayment(pay.id)">✕</button>
                 </li>
               </ul>
               <div v-if="candidatePaymentsFor(p).length" class="mt-1.5 flex flex-wrap items-center gap-1.5">
                 <select v-model="linkPaymentSelection" class="w-full max-w-sm rounded-ctlSm border border-line-control bg-surface px-2.5 py-1.5 text-[12px] focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand">
-                  <option value="" disabled>{{ t('-- Select a payment --', '-- Selecciona un pago --') }}</option>
+                  <option value="" disabled>{{ t('Select a payment…', 'Selecciona un pago…') }}</option>
                   <option v-for="pay in candidatePaymentsFor(p)" :key="pay.id" :value="pay.id">
-                    {{ money(pay.amount_cents) }} &middot; {{ pay.method }} &middot; {{ new Date(pay.paid_at).toLocaleDateString() }} &middot; {{ invoiceNumberFor(pay.invoice_id) }}
+                    {{ money(pay.amount_cents) }} &middot; {{ methodLabel(pay.method) }} &middot; {{ new Date(pay.paid_at).toLocaleDateString() }} &middot; {{ invoiceNumberFor(pay.invoice_id) }}
                   </option>
                 </select>
                 <UiBtn size="sm" variant="primary" :disabled="!linkPaymentSelection || linkingPayment" @click="linkPaymentToPackage(p)">
@@ -2794,7 +2835,7 @@ const fieldId = useId()
             <template v-if="!p.shared">
             <div v-if="scheduleForPackage(p.id)" class="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-ctl border border-line-divider bg-surface-subtle px-3 py-2">
               <span class="flex items-center gap-1.5 text-[11.5px] text-ink-600">
-                {{ t('Autopay', 'Pago automático') }} <UiPill :tone="scheduleTone[scheduleForPackage(p.id)!.status] ?? 'neutral'">{{ scheduleForPackage(p.id)!.status }}</UiPill>
+                {{ t('Autopay', 'Pago automático') }} <UiPill :tone="scheduleTone[scheduleForPackage(p.id)!.status] ?? 'neutral'">{{ scheduleStatusLabel(scheduleForPackage(p.id)!.status) }}</UiPill>
                 {{ scheduleForPackage(p.id)!.installments_paid }}/{{ scheduleForPackage(p.id)!.installments_total }}
               </span>
               <UiBtn v-if="scheduleForPackage(p.id)!.status === 'active'" size="sm" variant="ghost" class="hover:text-danger-text" @click="cancelAutopay(scheduleForPackage(p.id)!.id)">
@@ -2823,7 +2864,7 @@ const fieldId = useId()
               </form>
             </div>
             <div v-else class="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-ctl border border-line-divider bg-surface-subtle px-3 py-2">
-              <span class="text-[11.5px] text-ink-muted2">{{ t("No card on file -- add one to enable autopay for the remaining balance.", 'No hay tarjeta registrada; añade una para habilitar el pago automático del saldo restante.') }}</span>
+              <span class="text-[11.5px] text-ink-muted2">{{ t('No card on file. Add one to put the rest on autopay.', 'No hay tarjeta guardada. Añade una para pasar el resto a pago automático.') }}</span>
               <UiBtn size="sm" variant="secondary" @click="showCardModal = true">{{ t('Add card', 'Añadir tarjeta') }}</UiBtn>
             </div>
             </template>
@@ -2832,16 +2873,16 @@ const fieldId = useId()
           so "none purchased" would be a claim about the patient that is
           really a fact about the role. -->
           <p v-if="purchases.length === 0" class="rounded-ctl border border-dashed border-line-control p-4 text-center text-[12.5px] text-ink-faint" data-cy="packages-empty">
-            {{ canManagePackages ? t('No packages purchased.', 'No se ha comprado ningún bono.') : t('Your role does not include selling or editing bonos.', 'Tu rol no incluye vender ni editar bonos.') }}
+            {{ canManagePackages ? t('No bonos bought yet.', 'Aún no ha comprado ningún bono.') : t('Your role does not include selling or editing bonos.', 'Tu rol no incluye vender ni editar bonos.') }}
           </p>
         </div>
         <form v-if="canManagePackages" class="mt-3 flex flex-wrap items-end gap-2 border-t border-line-divider pt-3" data-cy="sell-package-form" @submit.prevent="sellPackage">
           <select v-model="sellPackageId" data-cy="sell-package-select" class="bg-surface w-full flex-1 rounded-ctl border border-line-control px-2.5 py-1.5 text-[12.5px] sm:max-w-xs">
-            <option value="" disabled>{{ t('Sell a package…', 'Vender un bono…') }}</option>
+            <option value="" disabled>{{ t('Sell a bono…', 'Vender un bono…') }}</option>
             <option v-for="t in packageTemplates" :key="t.id" :value="t.id">{{ t.name }} ({{ t.session_count }}, {{ money(t.price_cents) }})</option>
           </select>
           <div v-if="sellPackageId && sellOptions.length">
-            <label :for="`${fieldId}-sellInstallments`" class="block text-[11px] text-ink-muted">{{ t('Paid', 'Forma de pago') }}</label>
+            <label :for="`${fieldId}-sellInstallments`" class="block text-[11px] text-ink-muted">{{ t('How it is paid', 'Forma de pago') }}</label>
             <select :id="`${fieldId}-sellInstallments`" v-model.number="sellInstallments" data-cy="sell-package-installments" class="bg-surface mt-0.5 rounded-ctlSm border border-line-control px-2 py-1 text-[12.5px]">
               <option :value="1">{{ t(`At once · ${money(sellTemplate!.price_cents)}`, `En un pago · ${money(sellTemplate!.price_cents)}`) }}</option>
               <option v-for="o in sellOptions" :key="o.installments" :value="o.installments">
@@ -2913,7 +2954,7 @@ const fieldId = useId()
             </div>
             <div v-if="canManagePackages" class="mt-3 flex flex-wrap items-center gap-1.5 border-t border-line-divider pt-3">
               <UiBtn size="sm" variant="secondary" @click="logPayment(m, 'paid')">{{ t('Log payment', 'Registrar pago') }}</UiBtn>
-              <UiBtn size="sm" variant="secondary" class="hover:border-danger-border hover:text-danger-text" @click="logPayment(m, 'failed')">{{ t('Log failed', 'Registrar fallo') }}</UiBtn>
+              <UiBtn size="sm" variant="secondary" class="hover:border-danger-border hover:text-danger-text" @click="logPayment(m, 'failed')">{{ t('Log failed payment', 'Registrar pago fallido') }}</UiBtn>
               <select
                 :value="m.status"
                 class="ml-auto h-8 touch:h-11 rounded-ctl border border-line-control bg-surface px-2 text-[12.5px] text-ink-500 hover:border-line-controlHover focus:border-brand focus:outline-none"
@@ -2933,8 +2974,8 @@ const fieldId = useId()
 
             <div v-if="scheduleForMembership(m.id)" class="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-ctl border border-line-divider bg-surface-subtle px-3 py-2">
               <span class="flex flex-wrap items-center gap-1.5 text-[11.5px] text-ink-600">
-                {{ t('Autopay', 'Pago automático') }} <UiPill :tone="scheduleTone[scheduleForMembership(m.id)!.status] ?? 'neutral'">{{ scheduleForMembership(m.id)!.status }}</UiPill>
-                {{ t('every', 'cada') }} {{ scheduleForMembership(m.id)!.interval_count }} {{ scheduleForMembership(m.id)!.interval }}(s) &middot;
+                {{ t('Autopay', 'Pago automático') }} <UiPill :tone="scheduleTone[scheduleForMembership(m.id)!.status] ?? 'neutral'">{{ scheduleStatusLabel(scheduleForMembership(m.id)!.status) }}</UiPill>
+                {{ t('every', 'cada') }} {{ intervalLabel(scheduleForMembership(m.id)!.interval, scheduleForMembership(m.id)!.interval_count) }} &middot;
                 {{ eventsForSchedule(scheduleForMembership(m.id)!.id).length }} {{ t('charge(s)', 'cobro(s)') }}
               </span>
               <UiBtn v-if="scheduleForMembership(m.id)!.status === 'active'" size="sm" variant="ghost" class="hover:text-danger-text" @click="cancelAutopay(scheduleForMembership(m.id)!.id)">
@@ -2961,7 +3002,7 @@ const fieldId = useId()
               </form>
             </div>
             <div v-else class="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-ctl border border-line-divider bg-surface-subtle px-3 py-2">
-              <span class="text-[11.5px] text-ink-muted2">{{ t("No card on file -- add one to enable autopay for this membership.", 'No hay tarjeta registrada; añade una para habilitar el pago automático de esta membresía.') }}</span>
+              <span class="text-[11.5px] text-ink-muted2">{{ t('No card on file. Add one to put this membership on autopay.', 'No hay tarjeta guardada. Añade una para pasar esta membresía a pago automático.') }}</span>
               <UiBtn size="sm" variant="secondary" @click="showCardModal = true">{{ t('Add card', 'Añadir tarjeta') }}</UiBtn>
             </div>
           </div>
@@ -3055,10 +3096,10 @@ const fieldId = useId()
          is fine and loadAll() is what has to run again. -->
     <div v-else-if="ledgerError" class="rounded-card border border-line bg-surface shadow-card">
       <div class="flex items-center justify-between border-b border-line-divider px-4 py-3">
-        <h3 class="text-[13px] font-semibold text-ink-700">{{ t('Account Ledger', 'Extracto de cuenta') }}</h3>
+        <h3 class="text-[13px] font-semibold text-ink-700">{{ t('Account ledger', 'Libro de cuenta') }}</h3>
       </div>
       <div class="p-8 text-center">
-        <p class="text-[13px] text-danger-text">{{ t("Couldn't load this patient's transactions.", 'No se pudieron cargar las transacciones de este paciente.') }}</p>
+        <p class="text-[13px] text-danger-text">{{ t("This patient's account didn't load. Nothing has been lost.", 'La cuenta de este paciente no se ha cargado. No se ha perdido nada.') }}</p>
         <p class="mt-1 font-mono text-[11.5px] text-ink-faint">{{ ledgerError }}</p>
         <UiBtn variant="secondary" size="sm" class="mt-3" @click="loadAll({ silent: false })">{{ t('Try again', 'Reintentar') }}</UiBtn>
       </div>
@@ -3106,7 +3147,7 @@ const fieldId = useId()
       <div v-show="subTab === 'documents'" class="rounded-card border border-line bg-surface p-4 shadow-card">
         <p class="text-[13.5px] font-semibold text-ink-700">{{ t('Facturas', 'Facturas') }}</p>
         <p class="mt-0.5 text-[12px] text-ink-muted2">
-          {{ t('One per payment received. The charges above are what drives the balance.', 'Una por cada pago recibido. Los cargos de arriba son lo que mueve el saldo.') }}
+          {{ t('One for each payment received. The balance comes from the charges in the account ledger, not from these.', 'Una por cada pago recibido. El saldo sale de los cargos del libro de cuenta, no de estas.') }}
         </p>
 
         <p v-if="facturasMissingNif.length > 0" class="mt-2 rounded-ctl border border-amber-border bg-amber-bg px-2.5 py-1.5 text-[12px] text-amber-text">

@@ -29,8 +29,8 @@ async function onSubmit() {
     } catch {
       loading.value = false
       error.value = t(
-        'Clinic code not found -- check the code your clinic gave you.',
-        'No encontramos ese código de clínica: revisa el que te dio tu clínica.',
+        "We couldn't find that clinic code. Check the code your clinic gave you.",
+        'No encontramos ese código de clínica. Revisa el que te dio tu clínica.',
       )
       return
     }

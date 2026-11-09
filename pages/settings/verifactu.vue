@@ -276,7 +276,7 @@ const notSendingBecause = computed(() => {
     return null
   }
   if (!s.certificate) return t('no certificate has been uploaded', 'no se ha subido ningún certificado')
-  if (!s.certificate.hasPassphrase) return t('the certificate’s password is missing -- upload it again', 'falta la contraseña del certificado: vuelve a subirlo')
+  if (!s.certificate.hasPassphrase) return t('the certificate’s password is missing — upload it again', 'falta la contraseña del certificado: vuelve a subirlo')
   if (daysLeft.value !== null && daysLeft.value <= 0) return t('the certificate has expired', 'el certificado ha caducado')
   if (!s.platformKeyConfigured) return t('the platform key is not configured', 'la clave de la plataforma no está configurada')
   return null
@@ -416,7 +416,7 @@ const facts = computed(() => {
                 <svg v-else width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z" /><path v-if="status.tone !== 'neutral'" d="M9 12l2 2 4-4" /></svg>
               </span>
               <div class="flex min-w-[240px] flex-1 flex-col gap-1">
-                <h2 id="h-status" class="text-[19px] font-bold text-ink-900">{{ status.title }}</h2>
+                <h2 id="h-status" class="text-[18px] font-[640] tracking-tightTitle text-ink-900">{{ status.title }}</h2>
                 <p v-if="notSendingBecause" data-cy="verifactu-not-sending" class="text-[14px] text-warning-text">{{ t('Nothing is being sent yet:', 'Todavía no se envía nada:') }} {{ notSendingBecause }}.</p>
                 <p v-else class="text-[14px] text-ink-500">{{ status.detail }}</p>
               </div>
@@ -438,10 +438,10 @@ const facts = computed(() => {
                     <svg v-if="f.ok" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7" /></svg>
                     <svg v-else width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 7v6M12 17h.01" /></svg>
                   </span>
-                  <span class="text-[12px] font-bold uppercase tracking-[.04em] text-ink-muted">{{ f.label }}</span>
+                  <span class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted">{{ f.label }}</span>
                 </span>
-                <strong class="truncate text-[14px] text-ink-900">{{ f.value }}</strong>
-                <span v-if="f.sub" class="truncate text-[12.5px] text-ink-muted">{{ f.sub }}</span>
+                <strong class="break-words text-[14px] text-ink-900">{{ f.value }}</strong>
+                <span v-if="f.sub" class="break-words text-[12.5px] text-ink-muted">{{ f.sub }}</span>
               </component>
             </div>
 
@@ -552,7 +552,7 @@ const facts = computed(() => {
                     {{ settings.delegation.signedDocumentName }} · {{ formatDateTime(settings.delegation.signedDocumentUploadedAt) }}
                   </p>
                   <form class="mt-2 flex flex-wrap items-center gap-2" @submit.prevent="uploadSignedDocument">
-                    <input ref="docInput" type="file" accept="application/pdf,.pdf" data-cy="verifactu-signed-document-file" class="text-[12.5px]" @change="docFile = ($event.target as HTMLInputElement).files?.[0] ?? null" />
+                    <input ref="docInput" type="file" accept="application/pdf,.pdf" data-cy="verifactu-signed-document-file" class="max-w-full text-[12.5px] text-ink-muted file:mr-3 file:h-9 file:cursor-pointer file:rounded-ctl file:border file:border-solid file:border-line-control file:bg-surface file:px-3.5 file:text-[13px] file:font-medium file:text-ink-500 hover:file:border-line-controlHover touch:file:h-11" @change="docFile = ($event.target as HTMLInputElement).files?.[0] ?? null" />
                     <UiBtn type="submit" data-cy="verifactu-signed-document-upload" :disabled="!docFile || uploadingDoc">
                       {{ uploadingDoc ? t('Uploading…', 'Subiendo…') : settings.delegation?.signedDocumentUploadedAt ? t('Replace document', 'Sustituir documento') : t('Upload signed document', 'Subir documento firmado') }}
                     </UiBtn>
@@ -608,7 +608,7 @@ const facts = computed(() => {
                 </li>
                 <li class="flex gap-2.5" :class="settings.certificate.checks.expired ? 'text-danger-text' : 'text-ink-700'">
                   <VerifactuCheckMark :state="settings.certificate.checks.expired ? 'bad' : 'good'" />
-                  <span>{{ settings.certificate.checks.expired ? t('Expired.', 'Caducado.') : t(`In date${daysLeft !== null ? ` -- ${daysLeft} days left` : ''}.`, `Vigente${daysLeft !== null ? `: quedan ${daysLeft} días` : ''}.`) }}</span>
+                  <span>{{ settings.certificate.checks.expired ? t('Expired.', 'Caducado.') : t(`In date${daysLeft !== null ? ` — ${daysLeft} days left` : ''}.`, `Vigente${daysLeft !== null ? `: quedan ${daysLeft} días` : ''}.`) }}</span>
                 </li>
                 <li class="flex gap-2.5" :class="settings.certificate.checks.passwordOpens === false ? 'text-danger-text' : 'text-ink-700'">
                   <VerifactuCheckMark :state="settings.certificate.checks.passwordOpens === false ? 'bad' : settings.certificate.checks.passwordOpens ? 'good' : 'unknown'" />
@@ -663,7 +663,7 @@ const facts = computed(() => {
                   </label>
                   <label class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
                     {{ t('File (.p12 or .pfx)', 'Archivo (.p12 o .pfx)') }}
-                    <input ref="fileInput" type="file" accept=".p12,.pfx,application/x-pkcs12" data-cy="verifactu-cert-file" class="text-[13px] font-normal" @change="onFile" />
+                    <input ref="fileInput" type="file" accept=".p12,.pfx,application/x-pkcs12" data-cy="verifactu-cert-file" class="max-w-full text-[12.5px] font-normal text-ink-muted file:mr-3 file:h-9 file:cursor-pointer file:rounded-ctl file:border file:border-solid file:border-line-control file:bg-surface file:px-3.5 file:text-[13px] file:font-medium file:text-ink-500 hover:file:border-line-controlHover touch:file:h-11" @change="onFile" />
                   </label>
                   <label class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700 sm:col-span-2">
                     {{ t('Certificate password', 'Contraseña del certificado') }}
@@ -692,7 +692,7 @@ const facts = computed(() => {
                   { label: t('Real records', 'Registros reales'), value: settings.activity.productionRecords, bad: false },
                 ]" :key="stat.label" class="flex flex-col gap-1 rounded-ctl border border-line-row bg-surface-subtle px-3.5 py-3">
                   <dt class="text-[12.5px] text-ink-muted">{{ stat.label }}</dt>
-                  <dd class="text-[22px] font-[640]" :class="stat.bad ? 'text-danger-text' : 'text-ink-900'">{{ stat.value }}</dd>
+                  <dd class="font-mono text-[23px] font-semibold" :class="stat.bad ? 'text-danger-text' : 'text-ink-900'">{{ stat.value }}</dd>
                 </div>
               </dl>
               <p v-if="settings.activity.last" class="border-t border-line-row px-[18px] py-3 text-[13px] text-ink-500">
@@ -716,7 +716,7 @@ const facts = computed(() => {
             <!-- QuiroFlow's own account: the clinics it sends for ------------------------->
             <section v-if="settings.isPlatform" aria-labelledby="h-plat" class="overflow-hidden rounded-card border-[1.5px] border-dashed border-line-controlHover" data-cy="verifactu-delegations">
               <div class="px-[18px] pb-3 pt-4">
-                <span class="text-[12px] font-bold uppercase tracking-[.05em] text-ink-muted">{{ t('Only QuiroFlow sees this', 'Solo lo ve QuiroFlow') }}</span>
+                <span class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted">{{ t('Only QuiroFlow sees this', 'Solo lo ve QuiroFlow') }}</span>
                 <h2 id="h-plat" class="mt-1 text-[16px] font-bold text-ink-900">{{ t(`Clinics QuiroFlow sends for · ${delegations.length}`, `Clínicas por las que envía QuiroFlow · ${delegations.length}`) }}</h2>
                 <p class="mt-1 text-[13px] text-ink-muted">
                   {{ t('Confirm a clinic once its IZ860 has been accepted in the AEAT’s office, or its signed document has been checked. Its records then go with this account’s certificate.', 'Confirma una clínica cuando su IZ860 se haya aceptado en la sede de la AEAT, o se haya revisado su documento firmado. Sus registros se envían entonces con el certificado de esta cuenta.') }}

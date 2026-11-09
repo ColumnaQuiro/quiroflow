@@ -19,7 +19,7 @@ describe('Exercise schedules by visit', () => {
         cy.login(account.email, account.password)
 
         // The clinic's template: visit 1 one exercise, visit 3 another instead.
-        cy.visit('/settings/exercises')
+        cy.visit('/settings/exercises?tab=schedules')
         cy.get('[data-cy="schedule-new"]').click()
         cy.get('[data-cy="schedule-name"]').type('Lumbalgia por fases')
         cy.get('[data-cy="schedule-step"]').eq(0).within(() => {

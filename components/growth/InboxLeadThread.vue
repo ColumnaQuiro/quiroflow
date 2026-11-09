@@ -56,7 +56,7 @@ const channelBlocked = computed(() => props.thread.aiState === 'blocked')
 const canReply = computed(() => !aiIsAnswering.value && !channelBlocked.value)
 
 function time(at: string) {
-  return new Date(at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+  return new Date(at).toLocaleString(t('en-GB', 'es-ES'), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 
 /**
@@ -147,10 +147,11 @@ watch(
       <button
         type="button"
         class="flex h-9 touch:h-11 w-9 touch:w-11 shrink-0 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle md:hidden"
+        :aria-label="t('Back to conversations', 'Volver a conversaciones')"
         :title="t('Back to conversations', 'Volver a conversaciones')"
         @click="emit('back')"
       >
-        <svg width="8" height="13" viewBox="0 0 8 13" fill="none"><path d="M7 1L1 6.5L7 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        <svg width="8" height="13" viewBox="0 0 8 13" fill="none" aria-hidden="true"><path d="M7 1L1 6.5L7 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
       </button>
       <!-- min-w on a phone so the actions after it (convert, assign) wrap
       onto a second row, as on a patient thread, instead of squeezing the
@@ -260,7 +261,7 @@ watch(
     <template v-if="noteMode" />
     <div v-else-if="aiIsAnswering" class="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-line bg-surface p-3">
       <span class="text-[12px] text-ink-muted">
-        {{ t('Composer locked while the AI is replying. Take over to write yourself.', 'Redacción bloqueada mientras responde la IA. Toma el control para escribir tú.') }}
+        {{ t('The AI is answering this conversation. Take over to write the reply yourself.', 'La IA está respondiendo esta conversación. Toma el control para escribir tú la respuesta.') }}
       </span>
       <div class="flex items-center gap-2">
         <UiBtn
@@ -289,8 +290,8 @@ watch(
     <div v-else-if="!thread.canReplyFreeText" class="shrink-0 border-t border-line bg-surface p-3" data-test="window-closed">
       <div class="flex items-center justify-between gap-3 rounded-ctl border border-warning-border bg-warning-bg px-3 py-2">
         <p class="text-[12.5px] text-warning-text">
-          <template v-if="isWhatsApp">{{ t('More than 24h since', 'Han pasado más de 24h desde que') }} {{ thread.name }} {{ t('last messaged — free-form replies are blocked by WhatsApp. Send a template instead.', 'escribió por última vez — WhatsApp bloquea las respuestas libres. Envía una plantilla en su lugar.') }}</template>
-          <template v-else>{{ t('More than 24h since', 'Han pasado más de 24h desde que') }} {{ thread.name }} {{ t(`last messaged — ${platformName} blocks replies until they write again.`, `escribió por última vez — ${platformName} bloquea las respuestas hasta que vuelva a escribir.`) }}</template>
+          <template v-if="isWhatsApp">{{ t(`${thread.name} hasn't written in the last 24 hours, so WhatsApp only accepts an approved template.`, `${thread.name} no ha escrito en las últimas 24 horas, así que WhatsApp solo admite una plantilla aprobada.`) }}</template>
+          <template v-else>{{ t(`${thread.name} hasn't written in the last 24 hours. ${platformName} doesn't allow a reply until they write again.`, `${thread.name} no ha escrito en las últimas 24 horas. ${platformName} no permite responder hasta que vuelva a escribir.`) }}</template>
         </p>
         <!-- Instagram has no templates, and a lead with no number has nowhere
         for one to go. -->
@@ -307,6 +308,7 @@ watch(
         v-model="draft"
         :sending="sending"
         :media="isWhatsApp"
+        :channel="thread.channel"
         @send="submit"
         @media="(media) => emit('sendMedia', media)"
         @error="(message) => showToast(message, 'error')"

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatEur } from '~/utils/billing'
+import { formatEur, formatTime } from '~/utils/billing'
 import type { Tables } from '~/types/database.types'
 
 const props = defineProps<{
@@ -65,17 +65,11 @@ onMounted(async () => {
   nearbyAppointment.value = candidates[0] ?? null
 })
 
-function ordinal(n: number) {
-  const s = ['th', 'st', 'nd', 'rd']
-  const v = n % 100
-  return n + (s[(v - 20) % 10] || s[v] || s[0])
-}
+// "Thursday 1 October 2026, 10:00" / "jueves, 1 de octubre de 2026, 10:00",
+// in the staff member's language, with the clinic's 24-hour times.
 function formatFullDate(iso: string) {
-  const d = new Date(iso)
-  const weekday = d.toLocaleDateString('en-US', { weekday: 'long' })
-  const month = d.toLocaleDateString('en-US', { month: 'short' })
-  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).toLowerCase().replace(' ', '')
-  return `${weekday} ${month} ${ordinal(d.getDate())} ${d.getFullYear()} @ ${time}`
+  const day = new Date(iso).toLocaleDateString(t('en-GB', 'es-ES'), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+  return `${day}, ${formatTime(iso)}`
 }
 function relativeLabel(iso: string) {
   const diffMs = new Date(iso).getTime() - Date.now()
@@ -105,8 +99,8 @@ const nearbyLabel = computed(() => {
   const { future, text } = relativeLabel(nearbyAppointment.value.starts_at)
   const dateStr = formatFullDate(nearbyAppointment.value.starts_at)
   return future
-    ? t(`Next appointment - ${dateStr} (${text})`, `Próxima cita - ${dateStr} (${text})`)
-    : t(`Last appointment - ${dateStr} (${text})`, `Última cita - ${dateStr} (${text})`)
+    ? t(`Their next appointment: ${dateStr} (${text})`, `Su próxima cita: ${dateStr} (${text})`)
+    : t(`Their last appointment: ${dateStr} (${text})`, `Su última cita: ${dateStr} (${text})`)
 })
 
 async function confirmMove() {
@@ -123,14 +117,14 @@ const fieldId = useId()
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-scrim/30 p-4" @click.self="emit('close')">
     <div ref="dialogPanel" role="dialog" aria-modal="true" :aria-labelledby="dialogTitleId" class="max-h-full w-full overflow-y-auto max-w-md rounded-card border border-line bg-surface p-6 shadow-popover">
       <div class="flex items-center justify-between">
-        <h2 :id="dialogTitleId" class="text-[16px] font-[640] text-ink-900">{{ t('Rescheduling Appointment', 'Cambiar fecha de la cita') }}</h2>
-        <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="emit('close')">✕</button>
+        <h2 :id="dialogTitleId" class="text-[16px] font-[640] text-ink-900">{{ t('Reschedule appointment', 'Reprogramar la cita') }}</h2>
+        <button type="button" :aria-label="t('Close', 'Cerrar')" class="flex items-center justify-center rounded-ctlSm text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="emit('close')"><UiCloseIcon /></button>
       </div>
 
       <div class="mt-4 space-y-1 text-[13px]">
-        <p><span class="font-semibold text-ink-900">{{ t('Patient Name:', 'Nombre del paciente:') }}</span> {{ patientName }}</p>
-        <p><span class="font-semibold text-ink-900">{{ t('Appt Date:', 'Fecha de la cita:') }}</span> {{ formatFullDate(origStartsAt) }}</p>
-        <p v-if="appointmentTypeName"><span class="font-semibold text-ink-900">{{ t('Appt Type:', 'Tipo de cita:') }}</span> {{ appointmentTypeName }}</p>
+        <p><span class="font-semibold text-ink-900">{{ t('Patient:', 'Paciente:') }}</span> {{ patientName }}</p>
+        <p><span class="font-semibold text-ink-900">{{ t('Booked for:', 'Reservada para:') }}</span> {{ formatFullDate(origStartsAt) }}</p>
+        <p v-if="appointmentTypeName"><span class="font-semibold text-ink-900">{{ t('Type:', 'Tipo:') }}</span> {{ appointmentTypeName }}</p>
       </div>
 
       <div v-if="nearbyLabel" class="mt-4 rounded-ctl bg-success-bg px-3 py-2 text-[13px] font-medium text-success-text">
@@ -138,41 +132,41 @@ const fieldId = useId()
       </div>
 
       <p class="mt-4 text-[13px] text-ink-600">
-        {{ t('Please confirm you wish to move the appointment to', 'Confirma que quieres cambiar la cita a') }}<br />
+        {{ t('Move it to', 'Moverla a') }}<br />
         <span class="font-semibold text-ink-900">{{ formatFullDate(newStartsAt) }}</span>
       </p>
 
       <div class="mt-4">
-        <label :for="`${fieldId}-reasonId`" class="block text-[12.5px] font-medium text-ink-600">{{ t('Reason', 'Motivo') }}</label>
+        <label :for="`${fieldId}-reasonId`" class="block text-[12.5px] font-medium text-ink-600">{{ t('Reason (optional)', 'Motivo (opcional)') }}</label>
         <select :id="`${fieldId}-reasonId`" v-model="reasonId" class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none">
-          <option value="">{{ t('Select a reason', 'Selecciona un motivo') }}</option>
+          <option value="">{{ t('No reason given', 'Sin motivo') }}</option>
           <option v-for="r in reasons" :key="r.id" :value="r.id">{{ r.name }}</option>
         </select>
       </div>
 
       <div class="mt-4">
-        <label :for="`${fieldId}-note`" class="block text-[12.5px] font-medium text-ink-600">{{ t('Note', 'Nota') }}</label>
+        <label :for="`${fieldId}-note`" class="block text-[12.5px] font-medium text-ink-600">{{ t('Note (optional)', 'Nota (opcional)') }}</label>
         <textarea :id="`${fieldId}-note`"
           v-model="note"
           rows="2"
-          :placeholder="t('Optional note about the change…', 'Nota opcional sobre el cambio…')"
+          :placeholder="t('Anything worth remembering about the change…', 'Algo que convenga recordar del cambio…')"
           class="mt-1 w-full rounded-ctl border border-line-control bg-surface px-3 py-2 text-[13px] text-ink-700 focus:border-brand focus:outline-none"
         />
       </div>
 
       <label v-if="store.schedulingPolicyFeeCents" class="mt-4 flex items-center gap-2 text-[13px] text-ink-600">
         <input v-model="applyFee" type="checkbox" class="h-4 w-4 rounded border-line-control text-brand focus:ring-brand" />
-        {{ t('Apply a scheduling policy fee to patient file', 'Aplicar un cargo por política de citas al historial del paciente') }} ({{ formatEur(store.schedulingPolicyFeeCents) }})
+        {{ t('Add the reschedule fee to their balance', 'Añadir el cargo por reprogramación a su saldo') }} ({{ formatEur(store.schedulingPolicyFeeCents) }})
       </label>
 
       <label class="mt-2 flex items-center gap-2 text-[13px] text-ink-600">
         <input v-model="resendConfirmation" type="checkbox" class="h-4 w-4 rounded border-line-control text-brand focus:ring-brand" />
-        {{ t('Resend confirmation (if enabled)', 'Reenviar confirmación (si está activada)') }}
+        {{ t('Tell the patient the new time (your “Appointment rescheduled” automations)', 'Avisar al paciente de la nueva hora (tus automatizaciones de «Cita reprogramada»)') }}
       </label>
 
       <div class="mt-5 flex justify-end gap-2">
         <UiBtn variant="secondary" :disabled="confirming" @click="emit('close')">{{ t('Cancel', 'Cancelar') }}</UiBtn>
-        <UiBtn variant="primary" :disabled="confirming" @click="confirmMove">{{ confirming ? t('Confirming…', 'Confirmando…') : t('Confirm', 'Confirmar') }}</UiBtn>
+        <UiBtn variant="primary" :disabled="confirming" @click="confirmMove">{{ confirming ? t('Moving…', 'Moviendo…') : t('Move appointment', 'Mover la cita') }}</UiBtn>
       </div>
     </div>
   </div>

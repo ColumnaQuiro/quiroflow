@@ -42,10 +42,10 @@ export function useGrowthLeadConvert() {
       candidates.value = []
       showToast(
         result.alreadyConverted
-          ? t('That lead is already a patient.', 'Ese contacto ya es paciente.')
+          ? t('That lead is already a patient.', 'Ese lead ya es paciente.')
           : result.created
             ? t('Patient record created.', 'Ficha de paciente creada.')
-            : t('Lead linked to the existing patient.', 'Contacto vinculado al paciente existente.'),
+            : t('Lead linked to the existing patient.', 'Lead vinculado al paciente existente.'),
       )
       return result.patientId
     } catch (e) {
@@ -56,11 +56,7 @@ export function useGrowthLeadConvert() {
         candidates.value = found.data.data.candidates
         return null
       }
-      showToast(
-        serverMessage(e)
-          ?? t('Could not convert that lead.', 'No se ha podido convertir el contacto.'),
-        'error',
-      )
+      showToast(withServerDetail(t("Couldn't convert the lead.", 'No se ha podido convertir el lead.'), e, t('Details:', 'Detalle:')), 'error')
       return null
     } finally {
       converting.value = false

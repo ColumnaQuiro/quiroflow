@@ -175,7 +175,7 @@ if (expected !== req.headers['x-quiroflow-signature']) return res.status(401).en
               <fieldset class="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <legend class="mb-2 text-[13px] font-semibold text-ink-700">{{ t('Send when', 'Enviar cuando') }}</legend>
                 <div v-for="g in EVENT_GROUPS" :key="g.label" class="flex flex-col gap-2">
-                  <strong class="text-[11.5px] font-semibold uppercase tracking-[.05em] text-ink-faint">{{ g.label }}</strong>
+                  <strong class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ g.label }}</strong>
                   <label v-for="e in g.events" :key="e.value" class="flex items-center gap-2 text-[13.5px] text-ink-700">
                     <input v-model="selectedEvents" type="checkbox" :value="e.value" :data-event="e.value" class="h-4 w-4 rounded border-line-control text-brand focus:ring-brand/30" />
                     {{ e.label }}
@@ -214,7 +214,7 @@ if (expected !== req.headers['x-quiroflow-signature']) return res.status(401).en
                 :aria-checked="w.enabled"
                 :aria-label="t('Sending', 'Enviando')"
                 class="relative h-[26px] w-11 shrink-0 rounded-full"
-                :class="w.enabled ? 'bg-brand' : 'bg-line-control'"
+                :class="w.enabled ? 'bg-brand' : 'bg-toggle-off'"
                 @click="toggleEnabled(w)"
               >
                 <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card left-[3px] transition-transform" :class="w.enabled ? 'translate-x-[18px]' : 'translate-x-0'" />

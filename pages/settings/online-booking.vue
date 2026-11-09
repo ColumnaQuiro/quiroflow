@@ -320,12 +320,12 @@ const OVERRIDABLE_STRINGS = [
   { key: 'heading', default: 'Reservar una cita' },
   { key: 'select_heading', default: 'Elija un profesional' },
   { key: 'any_practitioner_label', default: 'Cualquier profesional' },
-  { key: 'any_practitioner_description', default: 'Esta opción le permite reservar una cita con cualquier profesional disponible en la especialidad y horario seleccionados.' },
+  { key: 'any_practitioner_description', default: 'Reserve con el profesional que tenga libre la hora que elija.' },
   { key: 'choose_datetime', default: 'Elija su fecha y hora' },
   { key: 'enter_details', default: 'Introduzca sus datos' },
   { key: 'confirm_button', default: 'Reservar cita' },
   { key: 'success_heading', default: '¡Cita reservada!' },
-  { key: 'app_promo_heading', default: 'Descarga la app de QuiroFlow' },
+  { key: 'app_promo_heading', default: 'Descargue la app de QuiroFlow' },
 ]
 
 function setOverride(key: string, value: string) {
@@ -437,7 +437,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
                 :aria-label="t(`Online booking at ${c.name}`, `Reserva online en ${c.name}`)"
                 :disabled="savingClinicId === c.id"
                 class="relative mt-0.5 h-[26px] w-11 shrink-0 rounded-full disabled:opacity-50"
-                :class="c.online_booking_enabled ? 'bg-brand' : 'bg-line-control'"
+                :class="c.online_booking_enabled ? 'bg-brand' : 'bg-toggle-off'"
                 @click="setBookingEnabled(c, !c.online_booking_enabled)"
               >
                 <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card left-[3px] transition-transform" :class="c.online_booking_enabled ? 'translate-x-[18px]' : 'translate-x-0'" />
@@ -570,7 +570,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
                       :aria-checked="s.shown"
                       :aria-labelledby="`${s.key}-label`"
                       class="relative h-[26px] w-11 shrink-0 rounded-full"
-                      :class="s.shown ? 'bg-brand' : 'bg-line-control'"
+                      :class="s.shown ? 'bg-brand' : 'bg-toggle-off'"
                       @click="s.toggle()"
                     >
                       <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card left-[3px] transition-transform" :class="s.shown ? 'translate-x-[18px]' : 'translate-x-0'" />
@@ -639,7 +639,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
                 :aria-checked="c.active"
                 :aria-label="t(`${c.code} active`, `${c.code} activo`)"
                 class="relative h-[26px] w-11 shrink-0 rounded-full"
-                :class="c.active ? 'bg-brand' : 'bg-line-control'"
+                :class="c.active ? 'bg-brand' : 'bg-toggle-off'"
                 @click="toggleCodeActive(c)"
               >
                 <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card left-[3px] transition-transform" :class="c.active ? 'translate-x-[18px]' : 'translate-x-0'" />
@@ -667,7 +667,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
                   <h2 id="h-referrals" class="text-[16px] font-bold text-ink-900">{{ t('Referral programme', 'Programa de recomendación') }}</h2>
                   <p class="mt-1 text-[13px] leading-snug text-ink-500">{{ t("Each patient gets their own link to this page in the app and the portal. Someone new who books through it is saved as referred by them, and the clinic's \"patient referred\" automations run.", 'Cada paciente tiene su propio enlace a esta página en la app y el portal. Quien reserve por primera vez con él queda guardado como recomendado por esa persona, y se lanzan las automatizaciones de «paciente recomendado».') }}</p>
                 </div>
-                <button type="button" role="switch" :aria-checked="referralsOn" aria-labelledby="h-referrals" class="relative h-[26px] w-11 shrink-0 rounded-full" :class="referralsOn ? 'bg-brand' : 'bg-line-control'" data-cy="settings-referrals-toggle" @click="referralsOn = !referralsOn">
+                <button type="button" role="switch" :aria-checked="referralsOn" aria-labelledby="h-referrals" class="relative h-[26px] w-11 shrink-0 rounded-full" :class="referralsOn ? 'bg-brand' : 'bg-toggle-off'" data-cy="settings-referrals-toggle" @click="referralsOn = !referralsOn">
                   <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card left-[3px] transition-transform" :class="referralsOn ? 'translate-x-[18px]' : 'translate-x-0'" />
                 </button>
               </div>

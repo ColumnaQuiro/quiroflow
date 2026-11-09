@@ -228,9 +228,18 @@ const label = 'block text-[12.5px] font-medium text-ink-700'
           <template v-if="loading">
             <UiSkeleton v-for="i in 3" :key="i" class="h-16 w-full rounded-card" />
           </template>
-          <p v-else-if="active.length === 0 && !draft" class="rounded-card border border-line bg-surface px-[18px] py-6 text-center text-[14px] text-ink-muted">
-            {{ t('No third parties yet.', 'Aún no hay terceros.') }}
-          </p>
+          <UiEmptyState
+            v-else-if="active.length === 0 && !draft"
+            class="!py-4"
+            :title="t('No third parties yet.', 'Aún no hay terceros.')"
+          >
+            <template #icon>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21h18M5 21V8l7-5 7 5v13M9 21v-6h6v6" /></svg>
+            </template>
+            <template #actions>
+              <UiBtn variant="primary" @click="edit(null)">{{ t('New third party', 'Nuevo tercero') }}</UiBtn>
+            </template>
+          </UiEmptyState>
 
           <section v-for="tp in active" :key="tp.id" class="overflow-hidden rounded-card border border-line bg-surface" data-cy="tp-row">
             <div class="flex flex-wrap items-center gap-3 px-[18px] py-3">
@@ -250,7 +259,7 @@ const label = 'block text-[12.5px] font-medium text-ink-700'
                   <span class="flex-1 text-ink-700">{{ typeName(r.appointment_type_id) }}</span>
                   <span class="text-ink-muted">{{ t('pays', 'paga') }} <span class="font-mono text-ink-900">{{ formatEur(r.pays_cents) }}</span></span>
                   <span class="text-ink-muted">· {{ t('copago', 'copago') }} <span class="font-mono text-ink-900">{{ formatEur(r.copay_cents) }}</span></span>
-                  <button type="button" class="text-ink-faint hover:text-danger-text" :aria-label="t('Remove rate', 'Quitar tarifa')" @click="removeRate(r)">✕</button>
+                  <button type="button" class="flex h-7 w-7 items-center justify-center rounded-ctlSm text-ink-faint hover:bg-danger-bg hover:text-danger-text touch:h-10 touch:w-10" :aria-label="t('Remove rate', 'Quitar tarifa')" @click="removeRate(r)"><UiCloseIcon class="!h-3 !w-3" /></button>
                 </li>
               </ul>
               <form class="mt-2 flex flex-wrap items-end gap-2" @submit.prevent="addRate(tp)">

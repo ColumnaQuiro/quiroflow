@@ -145,7 +145,7 @@ const feeOptions = computed(() => {
     {
       key: 'balance',
       title: t(`Add ${feeText.value} to their balance`, `Añadir ${feeText.value} a su saldo`),
-      sub: t('The clinic’s cancellation fee. Collected at the next visit or from Billing.', 'Tarifa de cancelación de la clínica. Se cobra en la próxima visita o desde Cobro.'),
+      sub: t('The clinic’s cancellation fee. Collected at the next visit or from their Money tab.', 'Tarifa de cancelación de la clínica. Se cobra en la próxima visita o desde su pestaña Dinero.'),
     },
   ]
   if (card.value) {
@@ -230,7 +230,7 @@ async function confirmCancel() {
     } catch {
       showToast(
         prepaid.value === 'refund'
-          ? t('Cancelled, but the payment could not be refunded. Refund it from their Billing tab.', 'Cancelada, pero no se ha podido devolver el pago. Devuélvelo desde su pestaña de Cobro.')
+          ? t('Cancelled, but the payment could not be refunded. Refund it from their Money tab.', 'Cancelada, pero no se ha podido devolver el pago. Devuélvelo desde su pestaña Dinero.')
           : t('Cancelled, but the payment could not be kept as credit.', 'Cancelada, pero el pago no ha podido quedar como saldo.'),
         'error',
         8000,
@@ -255,7 +255,7 @@ async function confirmCancel() {
       <button type="button" :aria-label="t('Back to the appointment', 'Volver a la cita')" class="flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center rounded-ctl text-ink-700 hover:bg-surface-subtle" data-cy="cancel-back" @click="emit('back')">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6" /></svg>
       </button>
-      <h2 id="cancel-title" class="flex-1 text-[18px] font-bold text-ink-900">{{ t('Cancel the appointment', 'Cancelar la cita') }}</h2>
+      <h2 id="cancel-title" class="flex-1 text-[18px] font-[640] tracking-tightTitle text-ink-900">{{ t('Cancel the appointment', 'Cancelar la cita') }}</h2>
       <button type="button" :aria-label="t('Close', 'Cerrar')" class="flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle" @click="emit('close')">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
       </button>
@@ -271,7 +271,7 @@ async function confirmCancel() {
             <template v-if="appointment.team_members"> · {{ appointment.team_members.full_name }}</template> · {{ roomName }}
           </span>
         </div>
-        <span class="shrink-0 rounded-full border border-warning-border bg-warning-bg px-2.5 py-1 text-[12px] font-bold text-warning-text" data-cy="cancel-notice">{{ startsIn }}</span>
+        <UiPill tone="warning" class="shrink-0 border border-warning-border" data-cy="cancel-notice">{{ startsIn }}</UiPill>
       </div>
 
       <div v-if="loading" class="mt-5 space-y-3">
@@ -325,7 +325,7 @@ async function confirmCancel() {
           <div v-if="matches.length" class="overflow-hidden rounded-card border border-line" data-cy="cancel-waitlist">
             <div class="border-b border-line-divider bg-surface-subtle px-3.5 py-2.5 text-[12.5px] text-ink-700">
               <strong>{{ t(`${matches.length} ${matches.length === 1 ? 'person' : 'people'}`, `${matches.length} ${matches.length === 1 ? 'persona' : 'personas'}`) }}</strong>
-              {{ t(`on the waitlist fit (${appointment.appointment_types?.name ?? 'any type'}, with ${practitionerFirst || 'anyone'} or with anyone)`, `en la lista de espera encajan (${appointment.appointment_types?.name ?? 'cualquier tipo'}, con ${practitionerFirst || 'cualquiera'} o con cualquiera)`) }}
+              {{ practitionerFirst ? t(`on the waitlist fit (${appointment.appointment_types?.name ?? 'any type'}, with ${practitionerFirst} or with anyone)`, `en la lista de espera encajan (${appointment.appointment_types?.name ?? 'cualquier tipo'}, con ${practitionerFirst} o con cualquiera)`) : t(`on the waitlist fit (${appointment.appointment_types?.name ?? 'any type'}, with anyone)`, `en la lista de espera encajan (${appointment.appointment_types?.name ?? 'cualquier tipo'}, con cualquiera)`) }}
             </div>
             <div v-for="(w, i) in matches.slice(0, 3)" :key="w.id" class="flex items-center gap-3 border-t border-line-divider px-3.5 py-2.5 first:border-t-0" data-cy="cancel-waitlist-entry">
               <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-chip-bg text-[12px] font-bold text-ink-500">{{ i + 1 }}</span>

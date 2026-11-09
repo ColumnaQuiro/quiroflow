@@ -163,7 +163,7 @@ const STAGES = computed(() => [
                   :aria-checked="autoConvert"
                   aria-labelledby="h-conv"
                   class="relative h-[26px] w-11 shrink-0 rounded-full"
-                  :class="autoConvert ? 'bg-brand' : 'bg-line-control'"
+                  :class="autoConvert ? 'bg-brand' : 'bg-toggle-off'"
                   @click="autoConvert = !autoConvert"
                 >
                   <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card left-[3px] transition-transform" :class="autoConvert ? 'translate-x-[18px]' : 'translate-x-0'" />
@@ -185,7 +185,7 @@ const STAGES = computed(() => [
               <div class="flex min-w-[240px] flex-1 flex-col gap-0.5">
                 <label for="lead-value" class="text-[16px] font-bold text-ink-900">{{ t('Default value', 'Valor por defecto') }}</label>
                 <span class="text-[13px] leading-snug text-ink-500">
-                  {{ t("What a lead is worth when it has no value of its own -- leads from Meta forms never do. Used on the board's totals and the dashboard; a value set on a lead always wins.", 'Lo que vale un lead sin valor propio -- los de formularios de Meta nunca lo tienen. Se usa en los totales del tablero y en el panel; el valor de un lead siempre prevalece.') }}
+                  {{ t("What a lead is worth when it has no value of its own — leads from Meta forms never do. Used on the board's totals and the dashboard; a value set on a lead always wins.", 'Lo que vale un lead sin valor propio — los de formularios de Meta nunca lo tienen. Se usa en los totales del tablero y en el panel; el valor de un lead siempre prevalece.') }}
                 </span>
               </div>
               <label class="flex items-center gap-2 text-[14px] text-ink-500">

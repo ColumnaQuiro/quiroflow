@@ -161,7 +161,7 @@ const telHref = computed(() => (phone.value ? `tel:${phone.value.replace(/[^\d+]
             {{ t('Messages go to', 'Los mensajes van a') }} {{ [tutor.first_name, tutor.last_name].filter(Boolean).join(' ') }} ↗
           </NuxtLink>
           <span v-else-if="patient.is_minor" class="text-[12px] text-danger-text">
-            {{ t('No tutor linked', 'Sin tutor vinculado') }}
+            {{ t('No tutor linked: their messages reach nobody', 'Sin tutor vinculado: sus mensajes no llegan a nadie') }}
           </span>
           <UiPill v-if="pregnancy" tone="neutral" data-cy="banner-pregnancy">{{ t('Pregnant', 'Embarazada') }} · {{ pregnancyWeeksLabel(pregnancy, t) }}</UiPill>
           <UiPill v-if="patient.do_not_contact" tone="danger">{{ t('Do not contact', 'No contactar') }}</UiPill>

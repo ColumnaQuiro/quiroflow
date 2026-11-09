@@ -54,7 +54,7 @@ describe('Deleted visits are not bookings', () => {
         cy.visit(`/calendar?patient=${patient.id}`)
         cy.get('[data-cy=booking-for]').should('contain.text', 'Lucía Marín')
         cy.get('[data-testid="practitioner-tabs"]').contains('button', 'Test Owner').should('be.visible')
-        cy.clickUntil('button:contains("New Appointment")', '[data-cy=create-sheet]')
+        cy.clickUntil('[data-cy=new-appointment]', '[data-cy=create-sheet]')
         cy.get('[data-cy=create-patient-selected]').should('contain.text', 'Lucía Marín')
         // 6 in the plan, 1 done, 1 booked: 4 to book. The deleted one is not
         // a booking.

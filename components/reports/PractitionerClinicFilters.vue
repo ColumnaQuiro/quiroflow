@@ -26,10 +26,10 @@ watch(
 </script>
 
 <template>
-  <span v-if="lockedTo" data-cy="report-own-only" class="inline-flex h-8 items-center rounded-pill bg-chip-bg px-3 text-[12.5px] font-semibold text-chip-text">
+  <span v-if="lockedTo" data-cy="report-own-only" class="inline-flex h-8 items-center rounded-pill touch:h-11 bg-chip-bg px-3 text-[12.5px] font-semibold text-chip-text">
     {{ t('Only your own figures', 'Solo tus datos') }}
   </span>
-  <select v-else v-model="practitionerId" data-cy="report-practitioner-filter" class="h-8 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-500 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand">
+  <select v-else v-model="practitionerId" data-cy="report-practitioner-filter" :aria-label="t('Practitioner', 'Profesional')" class="h-8 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-500 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand touch:h-11">
     <option value="">{{ t('All practitioners', 'Todos los profesionales') }}</option>
     <option v-for="p in practitioners" :key="p.id" :value="p.id">{{ p.name }}</option>
   </select>
@@ -38,7 +38,7 @@ watch(
     v-model="clinicId"
     data-cy="report-clinic-filter"
     :aria-label="t('Clinic', 'Clínica')"
-    class="h-8 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-500 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+    class="h-8 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-500 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand touch:h-11"
   >
     <option value="">{{ t('All clinics', 'Todas las clínicas') }}</option>
     <option v-for="c in clinics" :key="c.id" :value="c.id">{{ c.name }}</option>

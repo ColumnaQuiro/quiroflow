@@ -103,7 +103,7 @@ const input = 'h-9 rounded-ctl border border-line-control bg-surface px-2.5 text
         <SettingsNav />
         <div class="flex min-w-0 max-w-[880px] flex-1 flex-col gap-4" data-cy="gift-settings" :data-ready="loading ? undefined : 'true'">
           <p class="text-[13.5px] text-ink-muted">
-            {{ t('Sold on your public gift page, paid by card through your Stripe, emailed with a code. Redeemed when the person books online, or from their Money tab at the desk: an amount or a service becomes credit, a bono becomes that bono -- with its factura then, the way the desk records it.', 'Se venden en tu página pública de regalos, se pagan con tarjeta a través de tu Stripe y se envían por correo con un código. Se canjean al reservar online o desde la pestaña Dinero del paciente: un importe o un servicio se convierte en saldo, un bono en ese bono -- con su factura en ese momento, como lo registra recepción.') }}
+            {{ t('Sold on your public gift page, paid by card through your Stripe, emailed with a code. Redeemed when the person books online, or from their Money tab at the desk: an amount or a service becomes credit, a bono becomes that bono — with its factura then, the way the desk records it.', 'Se venden en tu página pública de regalos, se pagan con tarjeta a través de tu Stripe y se envían por correo con un código. Se canjean al reservar online o desde la pestaña Dinero del paciente: un importe o un servicio se convierte en saldo, un bono en ese bono — con su factura en ese momento, como lo registra recepción.') }}
           </p>
           <p v-if="!loading && !stripeReady" class="rounded-ctl bg-warning-bg px-3 py-2 text-[13px] text-warning-text">{{ t('Connect Stripe in Settings › Payments to sell them online.', 'Conecta Stripe en Ajustes › Pagos para venderlos online.') }}</p>
 
@@ -122,7 +122,7 @@ const input = 'h-9 rounded-ctl border border-line-control bg-surface px-2.5 text
               <div class="flex flex-wrap gap-1.5">
                 <span v-for="c in settings.amounts_cents" :key="c" class="inline-flex h-8 items-center gap-1.5 rounded-ctl border border-line-control px-2.5 text-[13px] font-semibold text-ink-900">
                   {{ formatEur(c) }}
-                  <button type="button" class="text-ink-faint hover:text-danger-text" :aria-label="t(`Remove ${formatEur(c)}`, `Quitar ${formatEur(c)}`)" @click="settings.amounts_cents = settings.amounts_cents.filter((x) => x !== c)">×</button>
+                  <button type="button" class="-mr-1.5 flex h-6 w-6 items-center justify-center rounded-ctlSm text-ink-faint hover:bg-danger-bg hover:text-danger-text touch:h-8 touch:w-8" :aria-label="t(`Remove ${formatEur(c)}`, `Quitar ${formatEur(c)}`)" @click="settings.amounts_cents = settings.amounts_cents.filter((x) => x !== c)"><UiCloseIcon class="!h-3 !w-3" /></button>
                 </span>
               </div>
               <form class="flex gap-2" @submit.prevent="addAmount">
@@ -166,7 +166,7 @@ const input = 'h-9 rounded-ctl border border-line-control bg-surface px-2.5 text
               <table class="w-full min-w-[720px]">
                 <thead class="bg-surface-subtle">
                   <tr>
-                    <th v-for="h in [t('Code', 'Código'), t('Voucher', 'Bono'), t('For', 'Para'), t('From', 'De parte de'), t('Status', 'Estado'), '']" :key="h" class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ h }}</th>
+                    <th v-for="h in [t('Code', 'Código'), t('Voucher', 'Bono'), t('For', 'Para'), t('From', 'De parte de'), t('Status', 'Estado'), '']" :key="h" class="px-3 py-2 text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">{{ h }}</th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-line-divider">

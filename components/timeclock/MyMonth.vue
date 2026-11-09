@@ -61,7 +61,11 @@ function shiftMonth(by: number) {
   editing.value = null
   missingDay.value = ''
 }
-const monthLabel = computed(() => new Date(`${month.value}-15T12:00:00Z`).toLocaleDateString(lang.value === 'es' ? 'es-ES' : 'en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }))
+// First letter only: `capitalize` made it "Noviembre De 2026".
+const monthLabel = computed(() => {
+  const s = new Date(`${month.value}-15T12:00:00Z`).toLocaleDateString(lang.value === 'es' ? 'es-ES' : 'en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
+  return s.charAt(0).toUpperCase() + s.slice(1)
+})
 const dayLabel = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString(lang.value === 'es' ? 'es-ES' : 'en-GB', { weekday: 'short', day: 'numeric', timeZone: 'UTC' })
 const clock = (at: string) => workdayClock(at, props.timeZone)
 function span(d: WorkdaySummary) {
@@ -150,6 +154,8 @@ async function send() {
 }
 
 const statusLabel = (s: string) => (s === 'pending' ? t('Pending', 'Pendiente') : s === 'approved' ? t('Approved', 'Aprobada') : t('Rejected', 'Rechazada'))
+const statusTone = (s: string) => (s === 'approved' ? 'success' : s === 'rejected' ? 'danger' : 'warning')
+const label = 'text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted'
 const field = 'h-11 rounded-ctl border border-line-control bg-surface px-3 text-[15px] text-ink-900'
 </script>
 
@@ -157,35 +163,40 @@ const field = 'h-11 rounded-ctl border border-line-control bg-surface px-3 text-
   <div class="flex flex-col gap-3" data-cy="my-month">
     <div class="flex items-center justify-between gap-2">
       <UiBtn variant="ghost" size="sm" :aria-label="t('Previous month', 'Mes anterior')" data-cy="my-month-prev" @click="shiftMonth(-1)"><UiChevron dir="left" /></UiBtn>
-      <p class="text-[14.5px] font-semibold capitalize text-ink-900">{{ monthLabel }}</p>
+      <p class="text-[14.5px] font-semibold text-ink-900">{{ monthLabel }}</p>
       <UiBtn variant="ghost" size="sm" :aria-label="t('Next month', 'Mes siguiente')" :disabled="month >= today.slice(0, 7)" @click="shiftMonth(1)"><UiChevron dir="right" /></UiBtn>
     </div>
 
     <div class="flex justify-between rounded-card border border-line bg-surface p-4">
       <div>
-        <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ t('This month', 'Este mes') }}</p>
-        <p class="mt-1 font-mono text-[20px] font-semibold text-ink-900" data-cy="my-month-total">{{ formatWorked(monthMinutes) }}</p>
+        <p :class="label">{{ t('This month', 'Este mes') }}</p>
+        <UiSkeleton v-if="!loaded" class="mt-1.5 h-6 w-20 rounded-ctlSm" />
+        <p v-else class="mt-1 font-mono text-[20px] font-semibold text-ink-900" data-cy="my-month-total">{{ formatWorked(monthMinutes) }}</p>
       </div>
       <div class="text-right">
-        <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ t('This week', 'Esta semana') }}</p>
-        <p class="mt-1 font-mono text-[20px] font-semibold text-ink-900" data-cy="my-month-week">{{ formatWorked(weekMinutes) }}</p>
+        <p :class="label">{{ t('This week', 'Esta semana') }}</p>
+        <UiSkeleton v-if="!loaded" class="ml-auto mt-1.5 h-6 w-20 rounded-ctlSm" />
+        <p v-else class="mt-1 font-mono text-[20px] font-semibold text-ink-900" data-cy="my-month-week">{{ formatWorked(weekMinutes) }}</p>
       </div>
     </div>
 
     <p v-if="sent" role="status" class="rounded-ctl bg-success-bg px-3 py-2 text-[13px] text-success-text" data-cy="correction-sent">{{ sent }}</p>
 
     <div class="rounded-card border border-line bg-surface px-4 py-1">
-      <p v-if="loaded && !days.length" class="py-3 text-[13px] text-ink-muted">{{ t('No days clocked this month.', 'Ningún día fichado este mes.') }}</p>
+      <div v-if="!loaded" class="flex flex-col gap-3 py-3" aria-busy="true">
+        <div v-for="i in 3" :key="i" class="flex justify-between gap-2"><UiSkeleton class="h-3.5 w-16 rounded-ctlSm" /><UiSkeleton class="h-3.5 w-32 rounded-ctlSm" /></div>
+      </div>
+      <p v-else-if="!days.length" class="py-3 text-[13px] text-ink-muted">{{ t('No days clocked this month.', 'Ningún día fichado este mes.') }}</p>
       <div v-for="d in days" :key="d.date" class="border-b border-line-divider last:border-b-0">
         <button type="button" class="flex w-full items-center justify-between gap-2 py-2.5 text-left" data-cy="my-month-day" :data-date="d.date" @click="open(d.date)">
           <span class="flex flex-wrap items-center gap-2 text-[13.5px] capitalize text-ink-900">
             {{ dayLabel(d.date) }}
-            <span v-if="pendingOn.has(d.date)" class="inline-flex h-5 items-center rounded-pill bg-warning-bg px-2 text-[11px] font-semibold normal-case text-warning-text">{{ t('Correction pending', 'Corrección pendiente') }}</span>
+            <UiPill v-if="pendingOn.has(d.date)" tone="warning" class="normal-case">{{ t('Correction pending', 'Corrección pendiente') }}</UiPill>
           </span>
-          <span class="font-mono text-[12.5px] text-ink-muted">{{ span(d) }}</span>
+          <span class="shrink-0 text-right font-mono text-[12.5px] text-ink-muted">{{ span(d) }}</span>
         </button>
         <div v-if="editing === d.date" class="flex flex-col gap-2 pb-3" data-cy="correction-form">
-          <p class="text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ t('Ask for a correction', 'Pedir una corrección') }}</p>
+          <p :class="label">{{ t('Ask for a correction', 'Pedir una corrección') }}</p>
           <label class="flex flex-col gap-1 text-[12.5px] text-ink-muted">{{ t('What to fix', 'Qué corregir') }}
             <select v-model="target" :class="field" data-cy="correction-target">
               <option v-for="e in d.entries" :key="e.id" :value="`fix:${e.id}`">{{ workEntryLabel(e.kind, t) }} {{ clock(e.at) }}</option>
@@ -200,14 +211,14 @@ const field = 'h-11 rounded-ctl border border-line-control bg-surface px-3 text-
       </div>
     </div>
     <label class="flex items-center justify-between gap-2 text-[12.5px] text-ink-muted">{{ t('A day with nothing clocked?', '¿Un día sin ningún fichaje?') }}
-      <input type="date" :max="today" class="h-9 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-900" data-cy="my-month-add-day" @change="addMissingDay(($event.target as HTMLInputElement).value)" />
+      <input type="date" :max="today" class="h-9 rounded-ctl border border-line-control bg-surface px-2 text-[13px] text-ink-900 focus:border-brand focus:outline-none touch:h-11" data-cy="my-month-add-day" @change="addMissingDay(($event.target as HTMLInputElement).value)" />
     </label>
 
     <div v-if="corrections.length" class="rounded-card border border-line bg-surface px-4 py-2">
-      <p class="py-1 text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted">{{ t('Your corrections', 'Tus correcciones') }}</p>
+      <p class="py-1" :class="label">{{ t('Your corrections', 'Tus correcciones') }}</p>
       <div v-for="c in corrections" :key="c.id" class="flex items-center justify-between gap-2 border-b border-line-divider py-2 text-[13px] last:border-b-0" data-cy="my-correction" :data-status="c.status">
         <span class="text-ink-900"><span class="capitalize">{{ dayLabel(c.work_date) }}</span> · {{ workEntryLabel(c.kind, t) }} <span class="font-mono">{{ clock(c.at) }}</span> <span class="text-ink-muted">· «{{ c.reason }}»</span></span>
-        <span class="shrink-0 text-[12px] font-semibold" :class="c.status === 'approved' ? 'text-success-text' : c.status === 'rejected' ? 'text-danger-text' : 'text-warning-text'">{{ statusLabel(c.status) }}</span>
+        <UiPill :tone="statusTone(c.status)" class="shrink-0">{{ statusLabel(c.status) }}</UiPill>
       </div>
     </div>
   </div>

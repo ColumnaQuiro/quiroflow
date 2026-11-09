@@ -149,14 +149,16 @@ const lastVisitFootnote = computed(() => {
   if (!lastVisit.value) return null
   const when = formatLongDate(lastVisit.value.starts_at)
   const payment = lastVisitPayment.value
-  const prefix = `${t('Last visit', 'Última visita')} ${when}`
-  if (!payment || payment.kind === 'none') return `${prefix}.`
-  if (payment.kind === 'bono') return `${prefix}, ${t('drawn from', 'con cargo a')} ${payment.packageName}.`
-  if (payment.kind === 'unpaid') return `${prefix}, ${t('still unpaid', 'aún sin pagar')} (${formatEur(payment.totalCents)}).`
-  if (payment.kind === 'void') return `${prefix}, ${t('charge voided', 'cargo anulado')}.`
-  if (payment.methods.length === 0) return `${prefix}, ${t('paid', 'pagada')}.`
+  if (!payment || payment.kind === 'none') return t(`Last visit ${when}.`, `Última visita ${when}.`)
+  if (payment.kind === 'bono') return t(`Last visit ${when}, drawn from ${payment.packageName}.`, `Última visita ${when}, con cargo a ${payment.packageName}.`)
+  if (payment.kind === 'unpaid') {
+    const amount = formatEur(payment.totalCents)
+    return t(`Last visit ${when}, still unpaid (${amount}).`, `Última visita ${when}, aún sin pagar (${amount}).`)
+  }
+  if (payment.kind === 'void') return t(`Last visit ${when}, charge voided.`, `Última visita ${when}, cargo anulado.`)
+  if (payment.methods.length === 0) return t(`Last visit ${when}, paid.`, `Última visita ${when}, pagada.`)
   const methods = payment.methods.map((m) => METHOD_LABELS.value[m] ?? m).join(' + ')
-  return `${prefix}, ${t('paid by', 'pagada con')} ${methods}.`
+  return t(`Last visit ${when}, paid by ${methods}.`, `Última visita ${when}, pagada con ${methods}.`)
 })
 
 function whereLine(appt: ApptRow) {
@@ -222,8 +224,11 @@ const attention = computed<AttentionRow[]>(() => {
       icon: 'money',
       sentence:
         unpaid.value.length === 1
-          ? `${formatEur(owed)} ${t('unpaid since', 'sin pagar desde el')} ${formatLongDate(oldest.created_at)}`
-          : `${formatEur(owed)} ${t('unpaid across', 'sin pagar en')} ${unpaid.value.length} ${t('charges, oldest', 'cargos, el más antiguo del')} ${formatLongDate(oldest.created_at)}`,
+          ? t(`${formatEur(owed)} unpaid since ${formatLongDate(oldest.created_at)}`, `${formatEur(owed)} sin pagar desde el ${formatLongDate(oldest.created_at)}`)
+          : t(
+              `${formatEur(owed)} unpaid across ${unpaid.value.length} charges, the oldest from ${formatLongDate(oldest.created_at)}`,
+              `${formatEur(owed)} sin pagar en ${unpaid.value.length} cargos, el más antiguo del ${formatLongDate(oldest.created_at)}`,
+            ),
       action: t('Take payment', 'Cobrar'),
       go: () => navigateTo(`/patients/${props.patient.id}?tab=money`),
     })
@@ -233,8 +238,8 @@ const attention = computed<AttentionRow[]>(() => {
       key: `doc-${doc.id}`,
       tone: 'warning',
       icon: 'form',
-      sentence: `${doc.title} ${t('sent', 'enviado el')} ${formatLongDate(doc.created_at)}, ${t('not returned yet', 'aún sin devolver')}`,
-      action: t('Resend', 'Reenviar'),
+      sentence: t(`${doc.title} sent ${formatLongDate(doc.created_at)}, not returned yet`, `${doc.title} enviado el ${formatLongDate(doc.created_at)}, aún sin devolver`),
+      action: t('Open forms', 'Ver formularios'),
       go: () => navigateTo(`/patients/${props.patient.id}?tab=attachments`),
     })
   }
@@ -362,7 +367,7 @@ const glanceFields = computed(() => [
     pending: !!props.patient.default_practitioner_id && !teamLoaded.value,
   },
   { key: 'clinic', label: t('Clinic', 'Clínica'), value: store.clinics.find((c) => c.id === props.patient.clinic_id)?.name ?? null },
-  { key: 'referral', label: t('Referred by', 'Origen'), value: props.patient.referral_source },
+  { key: 'referral', label: t('Referral source', 'Fuente de referencia'), value: props.patient.referral_source },
 ])
 
 // -- Activity: the timeline component loads its own, and reloads with the
@@ -549,9 +554,9 @@ function onDetailsUpdated() {
           </p>
           <template v-else>
             <p class="text-[12.5px] text-ink-muted2">
-              {{ t('Visit', 'Visita') }} {{ Math.min(planCompleted, plan.total_visits) }} {{ t('of', 'de') }} {{ plan.total_visits }}
+              {{ t(`Visit ${Math.min(planCompleted, plan.total_visits)} of ${plan.total_visits}`, `Visita ${Math.min(planCompleted, plan.total_visits)} de ${plan.total_visits}`) }}
               <template v-if="planCadence"> · {{ planCadence }}</template>
-              <template v-if="plan.started_at"> · {{ t('since', 'desde') }} {{ formatLongDate(plan.started_at) }}</template>
+              <template v-if="plan.started_at"> · {{ t(`since ${formatLongDate(plan.started_at)}`, `desde el ${formatLongDate(plan.started_at)}`) }}</template>
             </p>
             <div class="mt-2 h-[6px] w-full overflow-hidden rounded-full bg-chip-bg2">
               <div class="h-full rounded-full bg-brand" :style="{ width: `${planPercent}%` }" />

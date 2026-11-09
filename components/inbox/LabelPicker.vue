@@ -47,7 +47,7 @@ onUnmounted(() => document.removeEventListener('click', onClickOutside))
     </button>
 
     <div v-if="open" class="absolute right-0 top-[calc(100%+4px)] z-20 w-64 rounded-ctl border border-line bg-surface p-2 shadow-popover">
-      <p v-if="labels.length === 0" class="px-1 py-1 text-[12.5px] text-ink-faint">{{ t('No labels yet — add one below.', 'Aún no hay etiquetas: añade una abajo.') }}</p>
+      <p v-if="labels.length === 0" class="px-1 py-1 text-[12.5px] text-ink-faint">{{ t('No labels yet. Add one below.', 'Aún no hay etiquetas. Añade una abajo.') }}</p>
       <button
         v-for="l in labels"
         :key="l.id"

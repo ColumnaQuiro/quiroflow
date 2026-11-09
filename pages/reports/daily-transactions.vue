@@ -231,7 +231,7 @@ const pdfRoot = ref<HTMLElement | null>(null)
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Daily Transactions', 'Transacciones del día')" :meta="t('Every payment and refund recorded on a given day, for end-of-day cash reconciliation.', 'Todos los pagos y reembolsos registrados en un día, para el cuadre de caja.')">
       <div class="flex items-center gap-3">
-        <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
+        <ReportsBackLink />
         <ReportsPdfButton :target="pdfRoot" :title="t('Daily Transactions', 'Transacciones del día')" :day="dateStr" :practitioner-id="practitionerFilter || null" :clinic-id="clinicFilter || null" />
       </div>
     </PageHeader>
@@ -239,13 +239,11 @@ const pdfRoot = ref<HTMLElement | null>(null)
     <div ref="pdfRoot" class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] sm:px-6">
       <div class="flex flex-wrap items-center gap-2">
         <div class="flex items-center gap-1 rounded-ctl border border-line-control bg-surface">
-          <button type="button" class="flex h-8 w-8 items-center justify-center text-ink-muted2 hover:text-ink-700 touch:h-10 touch:w-10" :aria-label="t('Previous day', 'Día anterior')" @click="shiftDay(-1)"><UiChevron dir="left" /></button>
-          <input v-model="dateStr" type="date" class="h-8 border-0 bg-transparent px-1 text-[13px] text-ink-700 focus:outline-none" />
-          <button type="button" class="flex h-8 w-8 items-center justify-center text-ink-muted2 hover:text-ink-700 touch:h-10 touch:w-10" :aria-label="t('Next day', 'Día siguiente')" @click="shiftDay(1)"><UiChevron dir="right" /></button>
+          <button type="button" class="flex h-8 w-8 items-center justify-center text-ink-muted2 hover:text-ink-700 touch:h-11 touch:w-11" :aria-label="t('Previous day', 'Día anterior')" @click="shiftDay(-1)"><UiChevron dir="left" /></button>
+          <input v-model="dateStr" type="date" :aria-label="t('Day', 'Día')" class="h-8 border-0 bg-transparent px-1 font-mono text-[12.5px] text-ink-700 focus:outline-none touch:h-11" />
+          <button type="button" class="flex h-8 w-8 items-center justify-center text-ink-muted2 hover:text-ink-700 touch:h-11 touch:w-11" :aria-label="t('Next day', 'Día siguiente')" @click="shiftDay(1)"><UiChevron dir="right" /></button>
         </div>
-        <button type="button" class="h-8 rounded-ctl border border-line-control bg-surface px-3 text-[13px] text-ink-600 hover:bg-surface-subtle" @click="dateStr = todayISO()">
-          {{ t('Today', 'Hoy') }}
-        </button>
+        <UiBtn size="sm" class="touch:h-11" @click="dateStr = todayISO()">{{ t('Today', 'Hoy') }}</UiBtn>
         <ReportsPractitionerClinicFilters v-model:practitioner-id="practitionerFilter" :locked-to="reportsPractitionerId" v-model:clinic-id="clinicFilter" :practitioners="practitioners" :clinics="clinics" />
       </div>
 
@@ -255,14 +253,14 @@ const pdfRoot = ref<HTMLElement | null>(null)
         </ReportsStat>
         <template v-if="!loading">
           <div v-for="row in byMethod" :key="row.method" class="rounded-card border border-line bg-surface p-4 shadow-card">
-            <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ labelForMethod(row.method) }}</p>
+            <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">{{ labelForMethod(row.method) }}</p>
             <p class="mt-1.5 font-mono text-[23px] font-semibold text-ink-900">{{ eur(row.cents) }}</p>
           </div>
           <!-- Deliberately outside "Net collected": this money was collected
           on whatever day the patient paid it in, and counting it again here
           would make the day's takings disagree with the drawer. -->
           <div v-if="creditAppliedCents > 0" class="rounded-card border border-dashed border-line-control bg-surface p-4 shadow-card">
-            <p class="text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ t('Credit applied', 'Crédito aplicado') }}</p>
+            <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">{{ t('Credit applied', 'Crédito aplicado') }}</p>
             <p class="mt-1.5 font-mono text-[23px] font-semibold text-ink-muted2">{{ eur(creditAppliedCents) }}</p>
             <p class="mt-1 text-[11px] text-ink-faint2">{{ t('Not money in today', 'No es dinero que entra hoy') }}</p>
           </div>
@@ -271,7 +269,7 @@ const pdfRoot = ref<HTMLElement | null>(null)
 
       <div class="mt-4 overflow-x-auto rounded-card border border-line bg-surface shadow-card" data-pdf-block="table" :data-pdf-title="t('Transactions', 'Transacciones')">
         <table class="w-full min-w-[720px] text-[13px]">
-          <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2">
+          <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">
             <tr>
               <th class="px-4 py-2">{{ t('Time', 'Hora') }}</th>
               <th class="px-4 py-2">{{ t('Patient', 'Paciente') }}</th>
@@ -288,20 +286,18 @@ const pdfRoot = ref<HTMLElement | null>(null)
               <td colspan="7" class="px-4 py-6 text-center text-ink-faint2">{{ t('No transactions on this day.', 'Sin transacciones este día.') }}</td>
             </tr>
             <tr v-for="row in loading ? [] : filteredPayments" :key="row.id">
-              <td class="px-4 py-2.5 text-ink-muted2">{{ time(row.paid_at) }}</td>
+              <td class="px-4 py-2.5 font-mono text-[12.5px] text-ink-muted2">{{ time(row.paid_at) }}</td>
               <td class="px-4 py-2.5 text-ink-900">
                 <NuxtLink :to="`/patients/${row.patient_id}`" class="hover:text-brand-text">
                   {{ patientName(row.patient_id) }}
                 </NuxtLink>
               </td>
               <td class="px-4 py-2.5 text-ink-muted2">
-                <span>{{ invoiceFor(row)?.invoice_number ?? '—' }}</span>
-                <span v-if="invoiceFor(row)?.is_refund" class="ml-1.5 rounded-pill bg-danger-bg px-1.5 py-0.5 text-[11px] font-medium text-danger-text">{{ t('refund', 'reembolso') }}</span>
+                <span class="font-mono text-[12.5px]">{{ invoiceFor(row)?.invoice_number ?? '—' }}</span>
+                <UiPill v-if="invoiceFor(row)?.is_refund" tone="danger" class="ml-1.5">{{ t('refund', 'reembolso') }}</UiPill>
               </td>
               <td class="px-4 py-2.5 text-ink-muted2">
-                <span v-if="purposeLabelFor(row.purpose)" class="rounded-pill bg-chip-bg px-1.5 py-0.5 text-[11px] font-medium text-chip-text">
-                  {{ purposeLabelFor(row.purpose) }}
-                </span>
+                <UiPill v-if="purposeLabelFor(row.purpose)">{{ purposeLabelFor(row.purpose) }}</UiPill>
                 <span v-else>—</span>
               </td>
               <td class="px-4 py-2.5 text-ink-muted2">{{ practitionerName(row) }}</td>

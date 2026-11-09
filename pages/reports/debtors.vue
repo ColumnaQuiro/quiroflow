@@ -89,13 +89,21 @@ function patientName(id: string) {
 // What "Download PDF" reads: the sections below marked data-pdf-block,
 // and the figure tiles (components/reports/Stat.vue).
 const pdfRoot = ref<HTMLElement | null>(null)
+
+// The invoice's own status, worded: the pill showed the database value
+// ("unpaid") as it was, in English, to a Spanish front desk.
+function invoiceStatusLabel(status: string | undefined) {
+  if (!status) return t('unknown', 'desconocido')
+  const labels: Record<string, string> = { unpaid: t('unpaid', 'sin pagar'), paid: t('paid', 'pagado'), void: t('void', 'anulado') }
+  return labels[status] ?? status
+}
 </script>
 
 <template>
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Debtors', 'Deudores')" :meta="t('Package/bono purchases with no paid receipt', 'Compras de bonos/paquetes sin recibo pagado')">
       <div class="flex items-center gap-3">
-        <NuxtLink to="/reports" class="text-[13px] text-ink-muted2 hover:text-ink-600">&larr; {{ t('Reports', 'Informes') }}</NuxtLink>
+        <ReportsBackLink />
         <ReportsPdfButton :target="pdfRoot" :title="t('Debtors', 'Deudores')" />
       </div>
     </PageHeader>
@@ -116,7 +124,7 @@ const pdfRoot = ref<HTMLElement | null>(null)
 
       <div class="mt-4 overflow-x-auto rounded-card border border-line bg-surface shadow-card" data-pdf-block="table" :data-pdf-title="t('Package/bono purchases with no paid receipt', 'Compras de bonos/paquetes sin recibo pagado')">
         <table class="w-full min-w-[520px] text-[13px]">
-          <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2">
+          <thead class="border-b border-line bg-surface-subtle text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">
             <tr>
               <th class="px-4 py-2">{{ t('Patient', 'Paciente') }}</th>
               <th class="px-4 py-2">{{ t('Package', 'Paquete') }}</th>
@@ -135,13 +143,13 @@ const pdfRoot = ref<HTMLElement | null>(null)
                 <NuxtLink :to="`/patients/${p.patient_id}`" class="hover:text-brand-text">{{ patientName(p.patient_id) }}</NuxtLink>
               </td>
               <td class="px-4 py-2.5 text-ink-muted2">{{ p.package_name }}</td>
-              <td class="px-4 py-2.5 text-ink-muted2">{{ new Date(p.purchased_at).toLocaleDateString() }}</td>
-              <td class="px-4 py-2.5 font-mono text-ink-900">{{ formatEur(owedCentsFor(p)) }}</td>
+              <td class="whitespace-nowrap px-4 py-2.5 font-mono text-[12.5px] text-ink-muted2">{{ new Date(p.purchased_at).toLocaleDateString() }}</td>
+              <td class="whitespace-nowrap px-4 py-2.5 font-mono text-ink-900">{{ formatEur(owedCentsFor(p)) }}</td>
               <td class="px-4 py-2.5">
-                <span v-if="schedulesByPurchase.get(p.id)" class="rounded-pill bg-danger-bg px-1.5 py-0.5 text-[11px] font-medium text-danger-text">{{ t('stripe charge failed', 'cobro de stripe fallido') }}</span>
-                <span v-else class="rounded-pill px-1.5 py-0.5 text-[11px] font-medium" :class="p.invoice_id ? 'bg-danger-bg text-danger-text' : 'bg-chip-bg text-chip-text'">
-                  {{ p.invoice_id ? (invoicesById.get(p.invoice_id)?.status ?? t('unknown', 'desconocido')) : t('no receipt', 'sin recibo') }}
-                </span>
+                <UiPill v-if="schedulesByPurchase.get(p.id)" tone="danger" class="whitespace-nowrap">{{ t('stripe charge failed', 'cobro de stripe fallido') }}</UiPill>
+                <UiPill v-else :tone="p.invoice_id ? 'danger' : 'neutral'" class="whitespace-nowrap">
+                  {{ p.invoice_id ? invoiceStatusLabel(invoicesById.get(p.invoice_id)?.status) : t('no receipt', 'sin recibo') }}
+                </UiPill>
               </td>
             </tr>
           </tbody>

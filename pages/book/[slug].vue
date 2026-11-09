@@ -221,7 +221,13 @@ function chooseTeamMember(id: string) {
 
 const stepNumber = computed(() => (phase.value === 'select' ? 1 : phase.value === 'datetime' ? 2 : phase.value === 'details' ? 3 : 0))
 const stepTitle = computed(() => {
-  if (phase.value === 'select') return t('select_heading', { es: 'Elija un profesional', en: 'Choose a practitioner', fr: 'Choisissez un praticien' })
+  // The step shows practitioner cards only when there is a choice of them;
+  // otherwise all it asks for is the service (and the clinic, if several).
+  if (phase.value === 'select') {
+    return showPractitionerCards.value
+      ? t('select_heading', { es: 'Elija un profesional', en: 'Choose a practitioner', fr: 'Choisissez un praticien' })
+      : t('select_heading', { es: 'Elija el servicio', en: 'Choose a service', fr: 'Choisissez la prestation' })
+  }
   if (phase.value === 'datetime') return t('choose_datetime', { es: 'Elija su fecha y hora', en: 'Choose your date and time', fr: 'Choisissez la date et l’heure' })
   if (phase.value === 'details') return t('enter_details', { es: 'Introduzca sus datos', en: 'Enter your details', fr: 'Saisissez vos coordonnées' })
   return ''
@@ -290,26 +296,34 @@ const BOOKING_REFUSALS: Record<string, Record<BookingLanguage, string>> = {
   'First name required': { es: 'Indique su nombre.', en: 'Please enter your first name.', fr: 'Veuillez indiquer votre prénom.' },
   'That time is no longer available': { es: 'Esa hora ya no está disponible. Elija otra, por favor.', en: 'That time is no longer available. Please choose another.', fr: 'Ce créneau n’est plus disponible. Veuillez en choisir un autre.' },
   'Cannot book a time in the past': { es: 'Esa hora ya ha pasado. Elija otra, por favor.', en: 'That time has already passed. Please choose another.', fr: 'Ce créneau est déjà passé. Veuillez en choisir un autre.' },
-  'That date is too far in advance to book online': { es: 'Esa fecha está demasiado lejos para reservar online.', en: 'That date is too far ahead to book online.', fr: 'Cette date est trop éloignée pour réserver en ligne.' },
+  'That date is too far in advance to book online': { es: 'Esa fecha está demasiado lejos para reservar online. Elija una más cercana, por favor.', en: 'That date is too far ahead to book online. Please choose an earlier one.', fr: 'Cette date est trop éloignée pour réserver en ligne. Veuillez en choisir une plus proche.' },
   'That class is not on at that time': { es: 'Esa clase no se imparte a esa hora.', en: 'That class is not on at that time.', fr: 'Ce cours n’a pas lieu à cette heure-là.' },
+  // Raised by appointments_class_place when the last place went while the
+  // patient was filling in the form.
+  'That class is full': { es: 'Esa clase se acaba de completar. Elija otra sesión, por favor.', en: 'That class has just filled up. Please choose another session.', fr: 'Ce cours vient d’être complet. Veuillez choisir une autre séance.' },
+  'That class has been cancelled': { es: 'Esa clase se ha cancelado. Elija otra sesión, por favor.', en: 'That class has been cancelled. Please choose another session.', fr: 'Ce cours a été annulé. Veuillez choisir une autre séance.' },
   'This appointment type is only available to new patients': { es: 'Este servicio solo pueden reservarlo pacientes nuevos.', en: 'This service can only be booked by new patients.', fr: 'Ce service est réservé aux nouveaux patients.' },
-  'This appointment type is only available to existing patients': { es: 'Este servicio solo pueden reservarlo pacientes de la clínica. Llame a la clínica si ya es paciente.', en: 'This service can only be booked by existing patients. Please call the clinic if you already are one.', fr: 'Ce service est réservé aux patients du cabinet. Appelez le cabinet si vous l’êtes déjà.' },
+  // Refused when no record has this email, or the record has it but not this
+  // mobile number: both have to match what the clinic holds.
+  'This appointment type is only available to existing patients': { es: 'Este servicio es solo para pacientes de la clínica. Si ya lo es, use el correo y el móvil que tiene registrados en la clínica, o llame para reservar.', en: 'This service is only for existing patients. If you are one, use the email and mobile number the clinic has for you, or call to book.', fr: 'Ce service est réservé aux patients du cabinet. Si vous l’êtes, utilisez l’e-mail et le numéro de portable que le cabinet a enregistrés, ou appelez pour réserver.' },
   'Invalid or expired discount code': { es: 'El código de descuento no es válido o ha caducado.', en: 'That discount code is not valid or has expired.', fr: 'Ce code de réduction n’est pas valide ou a expiré.' },
   'This discount code has reached its usage limit': { es: 'Ese código de descuento ya no puede usarse más.', en: 'That discount code has reached its usage limit.', fr: 'Ce code de réduction a atteint sa limite d’utilisation.' },
   'Practitioner not available': { es: 'Ese profesional ya no está disponible. Elija otra hora, por favor.', en: 'That practitioner is no longer available. Please choose another time.', fr: 'Ce praticien n’est plus disponible. Veuillez choisir un autre créneau.' },
   'Appointment type not available': { es: 'Ese servicio ya no se puede reservar online.', en: 'That service can no longer be booked online.', fr: 'Ce service ne peut plus être réservé en ligne.' },
   'Clinic not available for online booking': { es: 'Esta clínica no acepta reservas online ahora mismo.', en: 'This clinic is not taking online bookings right now.', fr: 'Ce cabinet n’accepte pas de réservations en ligne pour le moment.' },
+  'Not found': { es: 'Esta clínica no acepta reservas online ahora mismo.', en: 'This clinic is not taking online bookings right now.', fr: 'Ce cabinet n’accepte pas de réservations en ligne pour le moment.' },
 }
+// Anything else (a refusal not listed above, a rate limit, a network failure)
+// is said as this, rather than as the function's English.
 function bookingRefusal(message: string | undefined) {
-  if (!message) return say({ es: 'No se ha podido completar la reserva. Inténtelo de nuevo, por favor.', en: 'The booking could not be completed. Please try again.', fr: 'La réservation n’a pas pu aboutir. Veuillez réessayer.' })
-  const known = BOOKING_REFUSALS[message] ?? Object.entries(BOOKING_REFUSALS).find(([english]) => message.startsWith(english))?.[1]
-  return known ? say(known) : message
+  const known = message ? (BOOKING_REFUSALS[message] ?? Object.entries(BOOKING_REFUSALS).find(([english]) => message.startsWith(english))?.[1]) : undefined
+  return say(known ?? { es: 'No se ha podido completar la reserva. Inténtelo de nuevo en unos minutos o llame a la clínica.', en: 'The booking could not be completed. Please try again in a few minutes or call the clinic.', fr: 'La réservation n’a pas pu aboutir. Veuillez réessayer dans quelques minutes ou appeler le cabinet.' })
 }
 
 // Gift vouchers: gift-check.post.ts and book.post.ts name why a code cannot be
 // used (GIFT_REFUSAL's reasons), and the page says it.
 const GIFT_REFUSALS: Record<string, Record<BookingLanguage, string>> = {
-  unknown: { es: 'Ese código no existe.', en: 'That code does not exist.', fr: 'Ce code n’existe pas.' },
+  unknown: { es: 'No hay ningún bono regalo con ese código. Revíselo, por favor.', en: 'There is no gift voucher with that code. Please check it.', fr: 'Aucun bon cadeau ne correspond à ce code. Veuillez le vérifier.' },
   unpaid: { es: 'Ese bono regalo aún no está pagado.', en: 'That gift voucher has not been paid for yet.', fr: 'Ce bon cadeau n’a pas encore été payé.' },
   redeemed: { es: 'Ese bono regalo ya se ha canjeado.', en: 'That gift voucher has already been redeemed.', fr: 'Ce bon cadeau a déjà été utilisé.' },
   expired: { es: 'Ese bono regalo ha caducado.', en: 'That gift voucher has expired.', fr: 'Ce bon cadeau a expiré.' },
@@ -319,15 +333,15 @@ function giftRefusal(gift: { reason?: string; message?: string }) {
   if (known) return say(known)
   return lang.value === 'es' && gift.message
     ? gift.message
-    : say({ es: 'No se ha podido canjear el bono regalo. Dalo en recepción.', en: 'The gift voucher could not be redeemed. Please hand it in at reception.', fr: 'Le bon cadeau n’a pas pu être utilisé. Présentez-le à l’accueil.' })
+    : say({ es: 'No se ha podido canjear el bono regalo. Preséntelo en recepción.', en: 'The gift voucher could not be redeemed. Please show it at reception.', fr: 'Le bon cadeau n’a pas pu être utilisé. Présentez-le à l’accueil.' })
 }
 function giftDescription(gift: GiftCheck) {
   if (gift.kind === 'package') {
-    return say({ es: `${gift.label}, para usar en tus próximas visitas`, en: `${gift.label}, to use on your next visits`, fr: `${gift.label}, à utiliser lors de vos prochaines visites` })
+    return say({ es: `${gift.label}, para usar en sus próximas visitas`, en: `${gift.label}, to use on your next visits`, fr: `${gift.label}, à utiliser lors de vos prochaines visites` })
   }
   const cents = gift.valueCents ?? 0
   return say({
-    es: `${(cents / 100).toLocaleString('es-ES')} € de saldo para usar en la clínica`,
+    es: `${formatPrice(cents)} de saldo para usar en la clínica`,
     en: `${formatPrice(cents)} of credit to use at the clinic`,
     fr: `${formatPrice(cents)} de crédit à utiliser au cabinet`,
   })
@@ -471,7 +485,9 @@ function pickClassSession(session: ClassSessionOption) {
 }
 // A full class: the patient's name and how to reach them, and they join its
 // waitlist (join_public_class_waitlist). If a place is cancelled the clinic's
-// waitlist automation sends them a link to take it.
+// waitlist automation sends them a link to take it -- when the clinic has one
+// switched on (waitlist_auto_offer and a waitlist.slot_offered rule), which is
+// why the page says the clinic "can" offer it rather than promising a link.
 const waitlistFor = ref<ClassSessionOption | null>(null)
 const waitlistPosition = ref<number | null>(null)
 const waitlistError = ref('')
@@ -582,6 +598,11 @@ const latestStart = computed(() => {
   return new Date(Date.now() + days * 86400000)
 })
 const lastBookableDate = computed(() => clinicDateOf(latestStart.value, clinicTimeZone.value))
+// "Hasta el 5 de febrero", for a month shown past the last bookable day.
+const lastBookableLabel = computed(() => {
+  const [year, month, day] = lastBookableDate.value.split('-').map(Number)
+  return new Date(year, month - 1, day).toLocaleDateString(locale.value, { day: 'numeric', month: 'long' })
+})
 
 const gridRange = computed(() => {
   const first = viewMonth.value
@@ -608,6 +629,14 @@ const calendarDays = computed(() => {
     })
   }
   return days
+})
+// The month on screen has no day to offer: said beside the calendar, so an
+// all-grey grid does not read as a page that failed to load. Only once the
+// busy times are in -- until then every day in range is shown as bookable --
+// so it is never in the server's (cached) HTML.
+const monthEmptyReason = computed<'after_last' | 'no_times' | null>(() => {
+  if (!monthAvailabilityLoaded.value || calendarDays.value.some((d) => d.inMonth && d.bookable)) return null
+  return calendarDateKey(viewMonth.value) > lastBookableDate.value ? 'after_last' : 'no_times'
 })
 
 function dayHasHours(date: Date) {
@@ -1146,7 +1175,15 @@ const LABEL_CLASS = 'block text-sm font-medium text-ink-700'
     <div class="mx-auto max-w-5xl">
       <div v-if="phase === 'loading'" class="py-24 text-center text-sm text-ink-faint">{{ say({ es: 'Cargando…', en: 'Loading…', fr: 'Chargement…' }) }}</div>
 
-      <UiEmptyState v-else-if="phase === 'not_found'" :title="say({ es: 'La reserva online no está disponible para esta clínica.', en: 'Online booking is not available for this clinic.', fr: 'La réservation en ligne n’est pas disponible pour ce cabinet.' })">
+      <!-- 'failed' is the clinic's data not loading at all (the server's
+           fetch and the browser's retry both failed), not a clinic without
+           online booking: it is never cached, so it says to try again. -->
+      <UiEmptyState
+        v-else-if="phase === 'not_found'"
+        :title="booking?.status === 'failed'
+          ? say({ es: 'No se ha podido cargar la página de reservas. Inténtelo de nuevo en unos minutos.', en: 'The booking page could not be loaded. Please try again in a few minutes.', fr: 'La page de réservation n’a pas pu être chargée. Veuillez réessayer dans quelques minutes.' })
+          : say({ es: 'La reserva online no está disponible para esta clínica.', en: 'Online booking is not available for this clinic.', fr: 'La réservation en ligne n’est pas disponible pour ce cabinet.' })"
+      >
         <template #icon>
           <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" /></svg>
         </template>
@@ -1215,7 +1252,7 @@ const LABEL_CLASS = 'block text-sm font-medium text-ink-700'
                          next opened a calendar with no times on any day. -->
                     <option value="" disabled>{{ say({ es: 'Elija un servicio', en: 'Choose a service', fr: 'Choisissez une prestation' }) }}</option>
                     <option v-for="t in info.appointment_types" :key="t.id" :value="t.id">
-                      {{ t.name }} — {{ t.duration_minutes }} min
+                      {{ t.name }} · {{ t.duration_minutes }} min
                     </option>
                   </select>
                 </div>
@@ -1234,9 +1271,9 @@ const LABEL_CLASS = 'block text-sm font-medium text-ink-700'
                     <p class="mt-1 text-sm text-ink-muted">
                       {{
                         t('any_practitioner_description', {
-                          es: 'Esta opción le permite reservar una cita con cualquier profesional disponible en la especialidad y horario seleccionados.',
-                          en: 'Book with whichever practitioner is available for the service and time you choose.',
-                          fr: 'Réservez avec le praticien disponible pour la prestation et l’horaire choisis.',
+                          es: 'Reserve con el profesional que tenga libre la hora que elija.',
+                          en: 'Book with whichever practitioner is free at the time you choose.',
+                          fr: 'Réservez avec le praticien libre à l’horaire que vous choisissez.',
                         })
                       }}
                     </p>
@@ -1269,7 +1306,8 @@ const LABEL_CLASS = 'block text-sm font-medium text-ink-700'
               <UiEmptyState
                 v-else-if="availablePractitioners.length === 0 && !isClass"
                 class="!px-0 !py-0"
-                :title="say({ es: 'No hay profesionales disponibles para reserva online en esta clínica.', en: 'No practitioners are available for online booking at this clinic.', fr: 'Aucun praticien n’est disponible pour la réservation en ligne dans ce cabinet.' })"
+                :title="say({ es: 'Ningún profesional de esta clínica tiene citas online para este servicio.', en: 'No practitioner at this clinic takes online bookings for this service.', fr: 'Aucun praticien de ce cabinet ne prend de réservations en ligne pour cette prestation.' })"
+                :description="say({ es: 'Llame a la clínica para reservar.', en: 'Please call the clinic to book.', fr: 'Appelez le cabinet pour réserver.' })"
               >
                 <template #icon>
                   <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" /></svg>
@@ -1333,14 +1371,14 @@ const LABEL_CLASS = 'block text-sm font-medium text-ink-700'
                 session.places_left > 0
                   ? session.places_left === 1
                     ? say({ es: 'Queda 1 plaza', en: '1 place left', fr: '1 place restante' })
-                    : say({ es: `Quedan ${session.places_left}`, en: `${session.places_left} left`, fr: `${session.places_left} restantes` })
+                    : say({ es: `Quedan ${session.places_left} plazas`, en: `${session.places_left} places left`, fr: `${session.places_left} places restantes` })
                   : say({ es: 'Completa · lista de espera', en: 'Full · waitlist', fr: 'Complet · liste d’attente' })
               }}</UiPill>
             </button>
             <div v-if="waitlistFor" class="rounded-card border border-line bg-surface p-4 shadow-card" data-cy="class-waitlist-join">
               <template v-if="waitlistPosition === null">
                 <p class="text-base font-semibold text-ink-900">{{ say({ es: 'La clase está completa', en: 'The class is full', fr: 'Le cours est complet' }) }}</p>
-                <p class="mt-1 text-sm text-ink-muted">{{ say({ es: 'Apúntese y, si se libera una plaza, le enviaremos un enlace para quedársela.', en: 'Join the waitlist and, if a place comes free, we will send you a link to take it.', fr: 'Inscrivez-vous et, si une place se libère, nous vous enverrons un lien pour la réserver.' }) }}</p>
+                <p class="mt-1 text-sm text-ink-muted">{{ say({ es: 'Apúntese a la lista de espera y, si se libera una plaza, la clínica podrá ofrecérsela.', en: 'Join the waitlist and, if a place comes free, the clinic can offer it to you.', fr: 'Inscrivez-vous sur la liste d’attente et, si une place se libère, le cabinet pourra vous la proposer.' }) }}</p>
                 <div class="mt-3 grid gap-3 sm:grid-cols-2">
                   <label :class="LABEL_CLASS">{{ say(FIELD.firstName) }} *<input v-model="firstName" :class="FIELD_CLASS" data-cy="waitlist-first-name" /></label>
                   <label :class="LABEL_CLASS">{{ say(FIELD.lastName) }}<input v-model="lastName" :class="FIELD_CLASS" data-cy="waitlist-last-name" /></label>
@@ -1358,9 +1396,9 @@ const LABEL_CLASS = 'block text-sm font-medium text-ink-700'
                 <UiBtn variant="primary" class="mt-3 w-full" :disabled="joiningWaitlist" data-cy="waitlist-join" @click="joinWaitlist">{{ say({ es: 'Apuntarme a la lista de espera', en: 'Join the waitlist', fr: 'M’inscrire sur la liste d’attente' }) }}</UiBtn>
               </template>
               <template v-else>
-                <p class="text-sm text-ink-muted">{{ say({ es: 'Está en la lista de espera en el puesto', en: 'Your place on the waitlist', fr: 'Votre position sur la liste d’attente' }) }}</p>
+                <p class="text-sm text-ink-muted">{{ say({ es: 'Su puesto en la lista de espera', en: 'Your place on the waitlist', fr: 'Votre position sur la liste d’attente' }) }}</p>
                 <p class="mt-1 font-mono text-[23px] font-semibold text-ink-900" data-cy="waitlist-position">{{ waitlistPosition }}</p>
-                <p class="mt-1 text-sm text-ink-muted">{{ say({ es: 'Si se libera una plaza le avisaremos con un enlace para quedársela.', en: 'If a place comes free we will send you a link to take it.', fr: 'Si une place se libère, nous vous enverrons un lien pour la réserver.' }) }}</p>
+                <p class="mt-1 text-sm text-ink-muted">{{ say({ es: 'Si se libera una plaza, la clínica podrá ofrecérsela por orden de lista.', en: 'If a place comes free, the clinic can offer it to you in waitlist order.', fr: 'Si une place se libère, le cabinet pourra vous la proposer dans l’ordre de la liste.' }) }}</p>
               </template>
             </div>
           </div>
@@ -1396,7 +1434,11 @@ const LABEL_CLASS = 'block text-sm font-medium text-ink-700'
             </div>
 
             <div class="rounded-card border border-line bg-surface p-4 shadow-card">
-              <p v-if="!selectedDate" class="text-sm text-ink-muted">{{ say({ es: 'Elija un día del calendario.', en: 'Choose a day on the calendar.', fr: 'Choisissez un jour dans le calendrier.' }) }}</p>
+              <template v-if="!selectedDate">
+                <p v-if="monthEmptyReason === 'after_last'" class="text-sm text-ink-muted" data-cy="booking-month-empty">{{ say({ es: `Online solo se puede reservar hasta el ${lastBookableLabel}.`, en: `Online booking is only open until ${lastBookableLabel}.`, fr: `La réservation en ligne n’est ouverte que jusqu’au ${lastBookableLabel}.` }) }}</p>
+                <p v-else-if="monthEmptyReason === 'no_times'" class="text-sm text-ink-muted" data-cy="booking-month-empty">{{ say({ es: 'No quedan horas libres este mes. Pruebe con el mes siguiente.', en: 'There are no free times left this month. Try the next month.', fr: 'Il n’y a plus de créneaux libres ce mois-ci. Essayez le mois suivant.' }) }}</p>
+                <p v-else class="text-sm text-ink-faint">{{ say({ es: 'Elija uno de los días marcados en el calendario.', en: 'Choose one of the highlighted days on the calendar.', fr: 'Choisissez l’un des jours en couleur dans le calendrier.' }) }}</p>
+              </template>
               <template v-else>
                 <p class="text-sm font-semibold text-ink-900">
                   {{ selectedDate.toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) }}
@@ -1411,7 +1453,7 @@ const LABEL_CLASS = 'block text-sm font-medium text-ink-700'
                   </div>
                 </div>
                 <template v-else>
-                  <div v-if="daySlots.length === 0" class="mt-3 text-sm text-ink-muted">{{ say({ es: 'No hay horas disponibles ese día.', en: 'No times available that day.', fr: 'Aucun horaire disponible ce jour-là.' }) }}</div>
+                  <div v-if="daySlots.length === 0" class="mt-3 text-sm text-ink-muted">{{ say({ es: 'Ya no quedan horas libres ese día. Elija otro, por favor.', en: 'There are no free times left that day. Please choose another.', fr: 'Il n’y a plus de créneaux libres ce jour-là. Veuillez en choisir un autre.' }) }}</div>
                   <div v-if="morningSlots.length" class="mt-3">
                     <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ say({ es: 'Mañana', en: 'Morning', fr: 'Matin' }) }}</p>
                     <div class="mt-1.5 grid grid-cols-[repeat(auto-fill,minmax(4rem,1fr))] gap-2">
@@ -1505,7 +1547,7 @@ const LABEL_CLASS = 'block text-sm font-medium text-ink-700'
                       @blur="phoneChecked = true"
                     />
                   </div>
-                  <p v-if="phoneError" :id="`${fieldId}-phone-error`" class="mt-1 text-sm text-danger-text">{{ phoneError }}</p>
+                  <p v-if="phoneError" :id="`${fieldId}-phone-error`" role="alert" class="mt-1 text-sm text-danger-text">{{ phoneError }}</p>
                 </div>
               </div>
               <div class="mt-4">
@@ -1535,7 +1577,7 @@ const LABEL_CLASS = 'block text-sm font-medium text-ink-700'
               <p v-if="policy && (policy.cancellation_fee_cents || policy.missed_appointment_fee_cents || policy.card_on_file)" class="mt-4 rounded-ctl bg-surface-subtle px-3 py-2.5 text-[13px] leading-snug text-ink-700" data-cy="booking-policy">
                 <template v-if="policy.cancellation_fee_cents">{{ say({ es: `Cancelar con menos de ${policy.notice_hours} h de antelación: ${formatPrice(policy.cancellation_fee_cents)}.`, en: `Cancelling less than ${policy.notice_hours} h ahead: ${formatPrice(policy.cancellation_fee_cents)}.`, fr: `Annulation moins de ${policy.notice_hours} h à l’avance : ${formatPrice(policy.cancellation_fee_cents)}.` }) }} </template>
                 <template v-if="policy.missed_appointment_fee_cents">{{ say({ es: `No presentarse a la cita: ${formatPrice(policy.missed_appointment_fee_cents)}.`, en: `Missing the appointment: ${formatPrice(policy.missed_appointment_fee_cents)}.`, fr: `Rendez-vous non honoré : ${formatPrice(policy.missed_appointment_fee_cents)}.` }) }} </template>
-                <template v-if="policy.card_on_file">{{ say({ es: 'Tras reservar te pediremos una tarjeta para garantizar la cita; ahora no se cobra nada.', en: 'After booking we will ask for a card to hold the appointment; nothing is charged now.', fr: 'Après la réservation, nous vous demanderons une carte pour garantir le rendez-vous ; rien n’est débité maintenant.' }) }}</template>
+                <template v-if="policy.card_on_file">{{ say({ es: 'Después de reservar le pediremos una tarjeta para garantizar la cita. Ahora no se cobra nada.', en: 'After booking we will ask for a card to hold the appointment. Nothing is charged now.', fr: 'Après la réservation, nous vous demanderons une carte pour garantir le rendez-vous. Rien n’est débité maintenant.' }) }}</template>
               </p>
               <p v-if="submitError" role="alert" class="mt-3 text-sm text-danger-text">{{ submitError }}</p>
               <UiBtn type="submit" variant="primary" class="mt-5 w-full sm:w-auto" :disabled="submitting">
@@ -1550,7 +1592,7 @@ const LABEL_CLASS = 'block text-sm font-medium text-ink-700'
         <!-- Step 3: payment (only when the appointment type requires it) -->
         <div v-else-if="phase === 'payment'" class="mx-auto mt-8 max-w-md">
           <h2 class="text-center text-xl font-semibold text-ink-900">{{ say({ es: 'Pago', en: 'Payment', fr: 'Paiement' }) }}</h2>
-          <p class="mt-1 text-center text-sm text-ink-muted">{{ say({ es: 'Su cita ya está reservada. Complete el pago para confirmarla.', en: 'Your appointment is booked. Complete the payment to confirm it.', fr: 'Votre rendez-vous est réservé. Effectuez le paiement pour le confirmer.' }) }}</p>
+          <p class="mt-1 text-center text-sm text-ink-muted">{{ say({ es: 'Su cita ya está reservada. Esta clínica pide pagar online al reservar.', en: 'Your appointment is booked. This clinic asks for payment online when you book.', fr: 'Votre rendez-vous est réservé. Ce cabinet demande le paiement en ligne à la réservation.' }) }}</p>
           <!-- Not Lazy: Payment imports Stripe itself, in onMounted, so Stripe
           already loads only here. As a lazy chunk it shared modules with this
           page (useBookingLang), which left the page's own chunk with no source
@@ -1561,11 +1603,11 @@ const LABEL_CLASS = 'block text-sm font-medium text-ink-700'
         </div>
 
         <!-- Step 3b: a card to hold the booking, when the clinic asks for one -->
-        <BookingResult v-else-if="phase === 'card'" class="mt-10" :title="say({ es: 'Tu cita está reservada', en: 'Your appointment is booked', fr: 'Votre rendez-vous est réservé' })" data-cy="booking-card-step">
+        <BookingResult v-else-if="phase === 'card'" class="mt-10" :title="say({ es: 'Su cita está reservada', en: 'Your appointment is booked', fr: 'Votre rendez-vous est réservé' })" data-cy="booking-card-step">
           <p v-if="policy && (policy.cancellation_fee_cents || policy.missed_appointment_fee_cents)">
-            {{ say({ es: `Para garantizarla, añade una tarjeta. No se cobra nada ahora; solo se usaría si cancelas con menos de ${policy.notice_hours} h o no vienes.`, en: `To hold it, add a card. Nothing is charged now; it would only be used if you cancel less than ${policy.notice_hours} h ahead or do not come.`, fr: `Pour le garantir, ajoutez une carte. Rien n’est débité maintenant ; elle ne servirait que si vous annulez moins de ${policy.notice_hours} h à l’avance ou ne venez pas.` }) }}
+            {{ say({ es: `Para garantizarla, añada una tarjeta. Ahora no se cobra nada: solo se usaría si cancela con menos de ${policy.notice_hours} h de antelación o no acude a la cita.`, en: `To hold it, add a card. Nothing is charged now: it would only be used if you cancel less than ${policy.notice_hours} h ahead or miss the appointment.`, fr: `Pour le garantir, ajoutez une carte. Rien n’est débité maintenant ; elle ne servirait que si vous annulez moins de ${policy.notice_hours} h à l’avance ou ne venez pas.` }) }}
           </p>
-          <p v-else>{{ say({ es: 'Para garantizarla, añade una tarjeta. No se cobra nada ahora.', en: 'To hold it, add a card. Nothing is charged now.', fr: 'Pour le garantir, ajoutez une carte. Rien n’est débité maintenant.' }) }}</p>
+          <p v-else>{{ say({ es: 'Para garantizarla, añada una tarjeta. Ahora no se cobra nada.', en: 'To hold it, add a card. Nothing is charged now.', fr: 'Pour le garantir, ajoutez une carte. Rien n’est débité maintenant.' }) }}</p>
           <template #actions>
             <UiBtn variant="primary" class="w-full" data-cy="booking-add-card" @click="openCardPage">{{ say({ es: 'Añadir tarjeta', en: 'Add a card', fr: 'Ajouter une carte' }) }}</UiBtn>
             <UiBtn variant="ghost" class="w-full" data-cy="booking-skip-card" @click="goToSuccess">{{ say({ es: 'Ahora no', en: 'Not now', fr: 'Pas maintenant' }) }}</UiBtn>
@@ -1589,13 +1631,13 @@ const LABEL_CLASS = 'block text-sm font-medium text-ink-700'
             </span>
           </div>
           <p v-if="discountAppliedCents > 0" class="mt-3 text-success-text">{{ say({ es: 'Descuento aplicado', en: 'Discount applied', fr: 'Réduction appliquée' }) }}: {{ formatPrice(discountAppliedCents) }}</p>
-          <p v-if="giftResult?.redeemed" class="mt-1 text-success-text" data-cy="booking-gift-redeemed">{{ say({ es: `Bono regalo canjeado: ${giftResult.label}, ya en tu cuenta de la clínica.`, en: `Gift voucher redeemed: ${giftResult.label}, now on your account at the clinic.`, fr: `Bon cadeau utilisé : ${giftResult.label}, désormais sur votre compte au cabinet.` }) }}</p>
+          <p v-if="giftResult?.redeemed" class="mt-1 text-success-text" data-cy="booking-gift-redeemed">{{ say({ es: `Bono regalo canjeado: ${giftResult.label}. Ya figura a su nombre en la clínica.`, en: `Gift voucher redeemed: ${giftResult.label}. It is now in your name at the clinic.`, fr: `Bon cadeau utilisé : ${giftResult.label}. Il est désormais à votre nom au cabinet.` }) }}</p>
           <p v-else-if="giftResult" class="mt-1 text-danger-text" data-cy="booking-gift-not-redeemed">{{ giftRefusal(giftResult) }}</p>
           <p
             v-if="info.account.appointment_confirmation_enabled && info.account.appointment_confirmation_channels.includes('email')"
             class="mt-4 break-words text-xs text-ink-muted"
           >
-            {{ say({ es: `Le hemos enviado los detalles a ${email}.`, en: `We have sent the details to ${email}.`, fr: `Nous avons envoyé les détails à ${email}.` }) }}
+            {{ say({ es: `Recibirá los detalles de la cita en ${email}.`, en: `You will receive the details at ${email}.`, fr: `Vous recevrez les détails à ${email}.` }) }}
           </p>
         </BookingResult>
 
@@ -1609,10 +1651,10 @@ const LABEL_CLASS = 'block text-sm font-medium text-ink-700'
           v-if="phase === 'success'"
           :lang="lang"
           class="mx-auto mt-4 max-w-md"
-          :heading="t('app_promo_heading', { es: 'Descarga la app de QuiroFlow', en: 'Get the QuiroFlow app', fr: 'Téléchargez l’app QuiroFlow' })"
+          :heading="t('app_promo_heading', { es: 'Descargue la app de QuiroFlow', en: 'Get the QuiroFlow app', fr: 'Téléchargez l’app QuiroFlow' })"
           :body="
             t('app_promo_body', {
-              es: 'Consulta tus citas, documentos y mensajes desde el móvil, y recibe un recordatorio antes de cada visita.',
+              es: 'Consulte sus citas, documentos y mensajes desde el móvil, y reciba un recordatorio antes de cada visita.',
               en: 'See your appointments, documents and messages on your phone, and get a reminder before every visit.',
               fr: 'Consultez vos rendez-vous, documents et messages sur votre téléphone, et recevez un rappel avant chaque visite.',
             })

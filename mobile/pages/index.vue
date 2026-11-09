@@ -40,6 +40,8 @@ const { unregister: unregisterPush } = usePushNotifications()
 async function signOut() {
   await unregisterPush()
   clearVisitNoteDrafts()
+  // A patient's habit reminders are local to the phone (useHabitReminders).
+  await useHabitReminders().clear()
   // Signing out forgets Face ID on this device (composables/useAppLock.ts).
   await useAppLock().forget()
   await supabase.auth.signOut({ scope: 'local' })

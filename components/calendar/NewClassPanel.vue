@@ -103,7 +103,7 @@ const field = 'mt-1 w-full rounded-ctl border border-line-control bg-surface px-
     <div class="max-h-full w-full max-w-lg overflow-y-auto rounded-card border border-line bg-surface p-6 shadow-popover" ref="dialogPanel" role="dialog" aria-modal="true" aria-labelledby="new-class-title" data-cy="new-class">
       <div class="flex items-center justify-between">
         <h2 id="new-class-title" class="text-[16px] font-[640] text-ink-900">{{ t('New class', 'Nueva clase') }}</h2>
-        <button type="button" :aria-label="t('Close', 'Cerrar')" class="-m-2 p-2 text-ink-faint hover:text-ink-600" @click="emit('close')">✕</button>
+        <button type="button" :aria-label="t('Close', 'Cerrar')" class="flex items-center justify-center rounded-ctlSm -m-2 p-2 text-ink-faint hover:text-ink-600" @click="emit('close')"><UiCloseIcon /></button>
       </div>
       <p v-if="loaded && !types.length" class="mt-3 text-[13px] text-ink-muted" data-cy="new-class-no-types">
         {{ t('No appointment type is a class yet. Give one places in Settings › Appointment types.', 'Ningún tipo de cita es una clase todavía. Dale plazas en Ajustes › Tipos de cita.') }}

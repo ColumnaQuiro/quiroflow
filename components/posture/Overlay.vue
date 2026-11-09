@@ -72,18 +72,46 @@ function toPhoto(e: PointerEvent): Pt | null {
   const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(ctm.inverse())
   return [p.x, p.y]
 }
-function down(name: string, e: PointerEvent) {
+// A press anywhere on the photo grabs the nearest point within reach, not
+// only one landing on its circle. The circle is sized to the photo: a
+// 1200 px-wide photo shown 560 px wide on an iPad draws it about 20 px
+// across, under half a fingertip, so most touches landed beside it (often on
+// its label) and moved nothing. Reach is in screen pixels: 30 for a finger
+// or pencil, a 60 px target, and 14 for a mouse, which is precise.
+const REACH_TOUCH = 30
+const REACH_MOUSE = 14
+function down(e: PointerEvent) {
   // Not while the previous photo is still up: its points are not these.
-  if (!props.editable || settled.value?.src !== props.src) return
+  if (!props.editable || !f.value || settled.value?.src !== props.src) return
   const at = toPhoto(e)
   const ctm = svg.value?.getScreenCTM()
   if (!at || !ctm) return
+  const k = 1 / ctm.a
+  const reach = Math.max(radius.value * 1.6, (e.pointerType === 'mouse' ? REACH_MOUSE : REACH_TOUCH) * k)
+  let name: string | null = null
+  let best = reach
+  for (const n of VIEW_POINTS[f.value.view]) {
+    const p = props.points[n]!
+    const d = Math.hypot(p[0] - at[0], p[1] - at[1])
+    if (d <= best) {
+      best = d
+      name = n
+    }
+  }
+  if (!name) return
+  e.preventDefault()
   const p = props.points[name]!
   grab.value = [p[0] - at[0], p[1] - at[1]]
-  perPx.value = 1 / ctm.a
+  perPx.value = k
   roomAbove.value = visibleAbove(svg.value!)
   dragging.value = name
-  ;(e.target as Element).setPointerCapture?.(e.pointerId)
+  svg.value!.setPointerCapture?.(e.pointerId)
+}
+// iPadOS's own long-press gestures (the text loupe on a label, the callout)
+// would otherwise take a press that is held a moment before moving, and with
+// it the drag. Only while editable: everywhere else the photo is a picture.
+function touchStart(e: TouchEvent) {
+  if (props.editable) e.preventDefault()
 }
 function move(e: PointerEvent) {
   if (!dragging.value) return
@@ -144,11 +172,13 @@ const loupe = computed(() => {
       ref="svg"
       :viewBox="`0 0 ${f?.width ?? width} ${f?.height ?? height}`"
       class="block h-auto w-full select-none rounded-card bg-ink-900"
-      :class="editable ? 'touch-none' : ''"
+      :class="editable ? 'touch-none [-webkit-touch-callout:none]' : ''"
       role="img"
       :aria-label="`Foto de postura (${view}) con la vertical y los puntos medidos`"
       data-cy="posture-overlay"
       :data-shown="f?.src === src ? 'true' : undefined"
+      @pointerdown="down"
+      @touchstart="touchStart"
       @pointermove="move"
       @pointerup="up"
       @pointercancel="up"
@@ -168,9 +198,8 @@ const loupe = computed(() => {
             :stroke-width="stroke"
             :class="editable ? 'cursor-grab' : ''"
             :data-cy="`posture-point-${name}`"
-            @pointerdown.prevent="down(name, $event)"
           />
-          <text v-if="labels" :x="f.points[name]![0] + radius * 2.2" :y="f.points[name]![1] + fontSize / 3" :font-size="fontSize" font-weight="600" fill="#fff" stroke="rgba(0,0,0,.55)" :stroke-width="fontSize / 6" paint-order="stroke">{{ POINT_LABELS[name] }}</text>
+          <text v-if="labels" class="pointer-events-none select-none" :x="f.points[name]![0] + radius * 2.2" :y="f.points[name]![1] + fontSize / 3" :font-size="fontSize" font-weight="600" fill="#fff" stroke="rgba(0,0,0,.55)" :stroke-width="fontSize / 6" paint-order="stroke">{{ POINT_LABELS[name] }}</text>
         </g>
       </template>
     </svg>

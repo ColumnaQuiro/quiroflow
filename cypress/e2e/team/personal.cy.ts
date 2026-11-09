@@ -1,4 +1,4 @@
-// Personal (pages/personal.vue), owners only: the team's people with where
+// Personal (pages/personal/index.vue), owners only: the team's people with where
 // each is today and the holidays they have left, and the whole year's leave
 // in one view -- a request decided from its cell, leave recorded by picking
 // days on someone's row, and a marker on the days two practitioners are away.
@@ -42,7 +42,7 @@ describe('Personal', () => {
       cy.get('[data-cy=staff-people][data-ready=true]', { timeout: 20000 })
       cy.get('[data-cy=staff-person][data-name="Lucía Fisio"]').within(() => {
         cy.get('[data-cy=staff-person-leave]').should('contain', '22').and('contain', '3')
-        cy.get('[data-cy=staff-person-link]').should('have.attr', 'href', `/settings/team/${lucia.id}`)
+        cy.get('[data-cy=staff-person-link]').should('have.attr', 'href', `/personal/${lucia.id}`)
       })
       cy.get('[data-cy=staff-waiting-leave]').should('contain', '1').click()
 

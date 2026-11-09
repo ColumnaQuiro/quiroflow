@@ -9,7 +9,10 @@ import { clinicDateOf } from '../../utils/clinicClock'
 //
 // Who does not have to clock (an autónomo renting a room) is excluded here,
 // per person: their clock disappears from My Day and they leave the export.
-const props = defineProps<{ accountId: string; timeZone: string; month: string }>()
+//
+// With `memberId` it is one person's month only (Personal › their file ›
+// Jornada): no team table, just their days and their own corrections.
+const props = defineProps<{ accountId: string; timeZone: string; month: string; memberId?: string }>()
 const t = useT()
 const { preference: lang } = useLang()
 const supabase = useSupabaseClient()
@@ -34,18 +37,23 @@ const bounds = computed(() => workdayMonthBounds(props.month))
 async function load() {
   const from = [bounds.value.first, workdayWeekStart(today.value)].sort()[0]!
   const [{ data: ms }, { data: ex }, { data: es }, { data: cs }, { data: ps }] = await Promise.all([
-    supabase.from('team_members').select('id, full_name, is_practitioner, role').is('deleted_at', null).order('full_name'),
+    // One person's file shows them after they have left too: their registro is kept.
+    props.memberId
+      ? supabase.from('team_members').select('id, full_name, is_practitioner, role').eq('id', props.memberId)
+      : supabase.from('team_members').select('id, full_name, is_practitioner, role').is('deleted_at', null).order('full_name'),
     supabase.from('time_clock_exemptions').select('team_member_id'),
     supabase.from('time_entries').select('id, team_member_id, kind, at, work_date, superseded_by, correction_id').gte('work_date', from).lte('work_date', bounds.value.last).order('at'),
     supabase.from('time_corrections').select('id, team_member_id, work_date, kind, at, reason, status, replaces_entry_id, requested_at, decided_by, decided_at').gte('work_date', bounds.value.first).lte('work_date', bounds.value.last),
     supabase.from('time_corrections').select('id, team_member_id, work_date, kind, at, reason, status, replaces_entry_id, requested_at, decided_by, decided_at').eq('status', 'pending').order('requested_at'),
   ])
-  members.value = (ms as Member[] | null) ?? []
+  const only = (id: string) => !props.memberId || id === props.memberId
+  members.value = ((ms as Member[] | null) ?? []).filter((m) => only(m.id))
   exempt.value = new Set(((ex as { team_member_id: string }[] | null) ?? []).map((r) => r.team_member_id))
   entries.value = (es as Entry[] | null) ?? []
   corrections.value = (cs as Correction[] | null) ?? []
-  pending.value = (ps as Correction[] | null) ?? []
-  if (!selected.value || !members.value.some((m) => m.id === selected.value)) selected.value = members.value.find((m) => !exempt.value.has(m.id))?.id ?? null
+  pending.value = ((ps as Correction[] | null) ?? []).filter((c) => only(c.team_member_id))
+  if (props.memberId) selected.value = props.memberId
+  else if (!selected.value || !members.value.some((m) => m.id === selected.value)) selected.value = members.value.find((m) => !exempt.value.has(m.id))?.id ?? null
   loaded.value = true
 }
 onMounted(load)

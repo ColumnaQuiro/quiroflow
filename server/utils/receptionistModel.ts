@@ -9,6 +9,7 @@ import { isNoReply } from '~/utils/receptionistAutoReply'
 import { FIXED_IN_CODE, fixStyle, styleNote, styleProblems } from '~/utils/receptionistStyle'
 import type { ReceptionistPrompt } from '~/utils/receptionistPrompt'
 import { ADD_TO_WAITLIST, BOOK_APPOINTMENT, CANCEL_APPOINTMENT, GIVE_VISIT_TO, STOP_FOLLOW_UPS } from '~/server/utils/receptionistBooking'
+import { findTypeByName } from '~/utils/receptionistTypes'
 import { cleanReply, clockTimes, offeredTimeCount, tooManyTimesNote, unbookedClaim, unbookedClaimNote } from '~/utils/receptionistHistory'
 
 // How the receptionist talks to the model, for all three of its callers --
@@ -98,7 +99,8 @@ export function freeTimesLookup(
       whose = found
     }
 
-    const chosen = query.typeName ? whose.types.filter((type) => type.name.toLowerCase() === query.typeName!.toLowerCase()) : whose.types
+    const named = query.typeName ? findTypeByName(whose.types, query.typeName) : null
+    const chosen = query.typeName ? (named ? [named] : []) : whose.types
     if (chosen.length === 0) {
       return { content: `"${query.typeName}" is not a type you can offer${forName ? ` ${forName}` : ''}. Use one of: ${whose.types.map((type) => type.name).join(', ')}.`, isError: true }
     }

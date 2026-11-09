@@ -456,6 +456,33 @@ export function matchReferrer<T extends { firstName: string; lastName: string | 
   return fits.length ? 'need_surname' : null
 }
 
+const foldTypeName = (name: string) => fold(name).replace(/[^a-z0-9]+/g, ' ').trim()
+
+/**
+ * The type a name the model wrote means, among the ones this person may
+ * have: the same name whatever its accents and case ("Ajuste Quiropráctico"
+ * for a type called "Ajuste Quiropractico"); failing that, the one type whose
+ * name contains it or is contained in it ("Primera visita" when the only
+ * first visit they may have is "Oferta Primera visita"); with no name, the
+ * only type there is. Undefined when it could be more than one, or none.
+ *
+ * Compared exactly, the name refused a booking a lead from the ad had just
+ * chosen: told "Primera visita" was the regular price beside the offer, the
+ * model booked it by that name, was refused, and handed the lead to a person
+ * instead of trying again (4 Nov 2026).
+ */
+export function findTypeByName<T extends { name: string }>(types: T[], name: unknown): T | undefined {
+  const wanted = typeof name === 'string' ? foldTypeName(name) : ''
+  if (!wanted) return types.length === 1 ? types[0] : undefined
+  const exact = types.filter((type) => foldTypeName(type.name) === wanted)
+  if (exact.length) return exact.length === 1 ? exact[0] : undefined
+  const partial = types.filter((type) => {
+    const own = foldTypeName(type.name)
+    return own.includes(wanted) || wanted.includes(own)
+  })
+  return partial.length === 1 ? partial[0] : undefined
+}
+
 /**
  * A pattern for PostgREST's ilike that finds a first name whatever its
  * accents: every vowel, and n, is "any one letter" (í, ñ). It only narrows

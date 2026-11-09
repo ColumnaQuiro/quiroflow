@@ -46,7 +46,9 @@ async function tryAccept(token: string) {
 
 async function startOwnPractice() {
   localStorage.removeItem('pending_invite_token')
-  await navigateTo('/onboarding')
+  // ?own: they have just turned this invite down, so onboarding does not
+  // offer it straight back (it looks open invites up by email).
+  await navigateTo('/onboarding?own=1')
 }
 
 onMounted(async () => {

@@ -49,6 +49,7 @@ interface PHPatient {
 
 type Phase = 'idle' | 'listing' | 'ready' | 'working' | 'done'
 const phase = ref<Phase>('idle')
+useImportWriting(() => phase.value === 'working')
 const error = ref('')
 
 const totalInPracticeHub = ref(0)

@@ -115,6 +115,7 @@ interface LocalBono {
 }
 
 const stage = ref<'connect' | 'loading' | 'preview' | 'applying' | 'done' | 'error'>('connect')
+useImportWriting(() => stage.value === 'applying')
 const phase = ref('')
 const progress = ref({ done: 0, total: 0 })
 const runError = ref('')

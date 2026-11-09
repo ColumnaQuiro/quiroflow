@@ -192,6 +192,7 @@ interface MappedUpdate {
 }
 
 const stage = ref<'pick' | 'preview' | 'importing' | 'done' | 'error'>('pick')
+useImportWriting(() => stage.value === 'importing')
 const dragOver = ref(false)
 const fileError = ref('')
 const fileName = ref('')

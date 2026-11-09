@@ -36,6 +36,7 @@ export interface RolePermissions {
   patients_edit: boolean
   patients_delete_merge: boolean
   patients_tags_remove: boolean
+  exercises_manage: boolean
   financials_edit_all: boolean
   financials_edit_same_day_only: boolean
   payments_allocate: boolean
@@ -81,6 +82,7 @@ export const EMPTY_PERMISSIONS: RolePermissions = {
   patients_edit: false,
   patients_delete_merge: false,
   patients_tags_remove: false,
+  exercises_manage: false,
   financials_edit_all: false,
   financials_edit_same_day_only: false,
   payments_allocate: false,
@@ -209,6 +211,16 @@ export function permissionGroups(t: T): PermissionGroup[] {
           label: t('Remove patient tags', 'Quitar etiquetas de pacientes'),
           short: t('Remove tags', 'Quitar etiquetas'),
           description: t('Take any tag off a patient. Adding tags only needs "Edit patient details".', 'Quitar cualquier etiqueta de un paciente. Para añadirlas basta con «Editar datos de pacientes».'),
+        },
+        {
+          kind: 'toggle',
+          key: 'exercises_manage',
+          label: t('Manage home exercises', 'Gestionar ejercicios'),
+          short: t('Manage exercises', 'Gestionar ejercicios'),
+          description: t(
+            'The Exercises section: the library, programmes and schedules, what each patient type brings, and assigning or ending exercises for many patients at once.',
+            'La sección Ejercicios: la biblioteca, los programas y pautas, lo que trae cada tipo de paciente, y asignar o finalizar ejercicios a muchos pacientes a la vez.',
+          ),
         },
         {
           kind: 'toggle',

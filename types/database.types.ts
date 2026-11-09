@@ -4011,6 +4011,7 @@ export type Database = {
           next_from_visit: number | null
           patient_id: string
           schedule_id: string | null
+          source_type_id: string | null
           steps: Json
         }
         Insert: {
@@ -4024,6 +4025,7 @@ export type Database = {
           next_from_visit?: number | null
           patient_id: string
           schedule_id?: string | null
+          source_type_id?: string | null
           steps: Json
         }
         Update: {
@@ -4037,6 +4039,7 @@ export type Database = {
           next_from_visit?: number | null
           patient_id?: string
           schedule_id?: string | null
+          source_type_id?: string | null
           steps?: Json
         }
         Relationships: [
@@ -4058,6 +4061,20 @@ export type Database = {
             foreignKeyName: "patient_exercise_schedules_patient_id_fkey"
             columns: ["patient_id"]
             isOneToOne: false
+            referencedRelation: "exercise_adherence_alerts"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "patient_exercise_schedules_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patient_live_balances"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "patient_exercise_schedules_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
             referencedRelation: "patients"
             referencedColumns: ["id"]
           },
@@ -4066,6 +4083,13 @@ export type Database = {
             columns: ["schedule_id"]
             isOneToOne: false
             referencedRelation: "exercise_schedules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_exercise_schedules_source_type_id_fkey"
+            columns: ["source_type_id"]
+            isOneToOne: false
+            referencedRelation: "patient_types"
             referencedColumns: ["id"]
           },
         ]
@@ -4085,6 +4109,7 @@ export type Database = {
           progressive: boolean
           reps: string | null
           sets: number | null
+          source_type_id: string | null
         }
         Insert: {
           account_id: string
@@ -4100,6 +4125,7 @@ export type Database = {
           progressive?: boolean
           reps?: string | null
           sets?: number | null
+          source_type_id?: string | null
         }
         Update: {
           account_id?: string
@@ -4115,6 +4141,7 @@ export type Database = {
           progressive?: boolean
           reps?: string | null
           sets?: number | null
+          source_type_id?: string | null
         }
         Relationships: [
           {
@@ -4142,6 +4169,13 @@ export type Database = {
             foreignKeyName: "patient_exercises_patient_id_fkey"
             columns: ["patient_id"]
             isOneToOne: false
+            referencedRelation: "exercise_adherence_alerts"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "patient_exercises_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
             referencedRelation: "patient_live_balances"
             referencedColumns: ["patient_id"]
           },
@@ -4150,6 +4184,20 @@ export type Database = {
             columns: ["patient_id"]
             isOneToOne: false
             referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_exercises_patient_schedule_id_fkey"
+            columns: ["patient_schedule_id"]
+            isOneToOne: false
+            referencedRelation: "patient_exercise_schedules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_exercises_source_type_id_fkey"
+            columns: ["source_type_id"]
+            isOneToOne: false
+            referencedRelation: "patient_types"
             referencedColumns: ["id"]
           },
         ]
@@ -6788,6 +6836,144 @@ export type Database = {
             columns: ["sent_by"]
             isOneToOne: false
             referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      patient_type_members: {
+        Row: {
+          account_id: string
+          added_at: string
+          added_by: string | null
+          id: string
+          patient_id: string
+          type_id: string
+        }
+        Insert: {
+          account_id: string
+          added_at?: string
+          added_by?: string | null
+          id?: string
+          patient_id: string
+          type_id: string
+        }
+        Update: {
+          account_id?: string
+          added_at?: string
+          added_by?: string | null
+          id?: string
+          patient_id?: string
+          type_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_type_members_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_type_members_added_by_fkey"
+            columns: ["added_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_type_members_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "exercise_adherence_alerts"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "patient_type_members_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patient_live_balances"
+            referencedColumns: ["patient_id"]
+          },
+          {
+            foreignKeyName: "patient_type_members_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_type_members_type_id_fkey"
+            columns: ["type_id"]
+            isOneToOne: false
+            referencedRelation: "patient_types"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      patient_types: {
+        Row: {
+          account_id: string
+          archived_at: string | null
+          color: string
+          created_at: string
+          created_by: string | null
+          exercise_program_id: string | null
+          exercise_schedule_id: string | null
+          id: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          archived_at?: string | null
+          color?: string
+          created_at?: string
+          created_by?: string | null
+          exercise_program_id?: string | null
+          exercise_schedule_id?: string | null
+          id?: string
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          archived_at?: string | null
+          color?: string
+          created_at?: string
+          created_by?: string | null
+          exercise_program_id?: string | null
+          exercise_schedule_id?: string | null
+          id?: string
+          name?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patient_types_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_types_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_types_exercise_program_id_fkey"
+            columns: ["exercise_program_id"]
+            isOneToOne: false
+            referencedRelation: "exercise_programs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patient_types_exercise_schedule_id_fkey"
+            columns: ["exercise_schedule_id"]
+            isOneToOne: false
+            referencedRelation: "exercise_schedules"
             referencedColumns: ["id"]
           },
         ]
@@ -10309,6 +10495,23 @@ export type Database = {
         Args: { p_id: string }
         Returns: string[]
       }
+      patient_exercise_overview: {
+        Args: { p_patient_ids: string[] }
+        Returns: {
+          active_count: number
+          done_days: string[]
+          exercise_names: string[]
+          has_app: boolean
+          last_visit: string
+          patient_id: string
+          schedule_name: string
+          type_ids: string[]
+        }[]
+      }
+      patient_exercise_overview_stats: {
+        Args: { p_clinic_id: string; p_filters: Json }
+        Returns: Json
+      }
       patient_exercise_schedule_visits: {
         Args: { p_id: string }
         Returns: number
@@ -10481,6 +10684,10 @@ export type Database = {
         Args: { p_attribute_id: string }
         Returns: boolean
       }
+      bulk_patient_ids: {
+        Args: { p_clinic_id: string; p_filters: Json; p_patient_ids: string[] }
+        Returns: string[]
+      }
       can_access_patient: {
         Args: { target_account_id: string; target_patient_id: string }
         Returns: boolean
@@ -10523,6 +10730,10 @@ export type Database = {
               clinic_id: string
             }[]
           }
+      convert_tag_to_patient_type: {
+        Args: { p_account_id: string; p_tag: string }
+        Returns: string
+      }
       create_patient_booking: {
         Args: {
           p_appointment_type_id: string
@@ -10638,6 +10849,27 @@ export type Database = {
         Args: { p_id: string; p_kind: string }
         Returns: { entered_at: string; patient_id: string }[]
       }
+      assign_exercises_preview: {
+        Args: {
+          p_account_id: string
+          p_clinic_id: string
+          p_exercise_ids: string[]
+          p_filters: Json
+          p_patient_ids: string[]
+        }
+        Returns: Json
+      }
+      assign_exercises_to_patients: {
+        Args: {
+          p_account_id: string
+          p_clinic_id: string
+          p_filters: Json
+          p_items: Json
+          p_patient_ids: string[]
+          p_schedule_id?: string
+        }
+        Returns: Json
+      }
       audience_entries_since: {
         Args: { p_id: string; p_kind: string; p_since: string }
         Returns: { entered_at: string; patient_id: string }[]
@@ -10650,6 +10882,16 @@ export type Database = {
         Args: { p_appointment_id: string }
         Returns: Json
       }
+      start_exercise_schedule_for: {
+        Args: {
+          p_account_id: string
+          p_patient_ids: string[]
+          p_schedule_id: string
+          p_source_type_id?: string
+        }
+        Returns: Json
+      }
+      sync_patient_type: { Args: { p_type_id: string }; Returns: Json }
       team_two_factor_status: {
         Args: { p_account_id: string }
         Returns: { team_member_id: string; enrolled: boolean }[]
@@ -10728,6 +10970,20 @@ export type Database = {
         }
         Returns: boolean
       }
+      end_exercises_for_patients: {
+        Args: {
+          p_account_id: string
+          p_clinic_id: string
+          p_exercise_ids?: string[]
+          p_filters: Json
+          p_patient_ids: string[]
+        }
+        Returns: number
+      }
+      exercise_program_item_list: {
+        Args: { p_program_id: string }
+        Returns: Json
+      }
       factura_records_awaiting_aeat: {
         Args: { p_account_id: string }
         Returns: {
@@ -10753,6 +11009,7 @@ export type Database = {
       }
       factura_submission_ready_at: { Args: { p_account_id: string }; Returns: string }
       sif_indicador_multiples_ot: { Args: Record<string, never>; Returns: string }
+      my_team_member_in: { Args: { p_account_id: string }; Returns: string }
       next_factura_number: { Args: { p_account_id: string; p_series?: string }; Returns: string }
       issue_factura: {
         Args: {
@@ -10777,6 +11034,18 @@ export type Database = {
       }
       get_factura_numbering: { Args: { p_account_id: string }; Returns: Json }
       get_receipt_numbering: { Args: { p_account_id: string }; Returns: Json }
+      set_patient_types: {
+        Args: {
+          p_account_id: string
+          p_add: string[]
+          p_clinic_id: string
+          p_end_type_exercises?: boolean
+          p_filters: Json
+          p_patient_ids: string[]
+          p_remove: string[]
+        }
+        Returns: Json
+      }
       set_receipt_numbering: { Args: { p_account_id: string; p_next_receipt: number }; Returns: Json }
       set_factura_numbering: {
         Args: {
@@ -10802,6 +11071,23 @@ export type Database = {
       get_public_patient_doc: { Args: { p_token: string }; Returns: Json }
       lead_for_attributed_booking: { Args: { p_appointment_id: string }; Returns: string | null }
       lead_catch_up_with_appointments: { Args: { p_lead_id: string }; Returns: string | null }
+      give_exercise_items: {
+        Args: {
+          p_account_id: string
+          p_items: Json
+          p_patient_ids: string[]
+          p_source_type_id?: string
+        }
+        Returns: Json
+      }
+      give_patient_type_defaults: {
+        Args: {
+          p_account_id: string
+          p_patient_ids: string[]
+          p_type_id: string
+        }
+        Returns: Json
+      }
       growth_lead_progress: {
         Args: { p_account_id: string; p_since: string; p_until?: string | null }
         Returns: { lead_id: string; contacted: boolean; booked: boolean; attended: boolean; appointment_due: boolean }[]

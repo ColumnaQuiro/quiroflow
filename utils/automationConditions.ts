@@ -42,6 +42,7 @@ export interface BranchConfig {
 export const CONDITION_FIELDS = [
   // Patient
   'tags',
+  'patient_type_ids',
   'marketing_channels',
   'has_future_appointment',
   'total_visits',
@@ -100,8 +101,11 @@ export function conditionHolds(actual: unknown, op: ConditionOp, expected: unkno
       if (actual === undefined || actual === null) return false
       return !conditionHolds(actual, 'contains', expected)
     case 'in':
+      // A list of facts (a patient's types) is in when any one of them is.
+      if (Array.isArray(actual)) return Array.isArray(expected) && actual.some((a) => expected.some((e) => lower(e) === lower(a)))
       return Array.isArray(expected) && actual !== undefined && actual !== null && expected.some((e) => lower(e) === lower(actual))
     case 'not_in':
+      if (Array.isArray(actual)) return Array.isArray(expected) && !actual.some((a) => expected.some((e) => lower(e) === lower(a)))
       return Array.isArray(expected) && actual !== undefined && actual !== null && !expected.some((e) => lower(e) === lower(actual))
     case 'gt':
     case 'gte':

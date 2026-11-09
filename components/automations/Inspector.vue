@@ -100,6 +100,8 @@ function pick(type: string) {
         <AutomationsPanelsWaitUntilPanel v-else-if="step.action_type === 'wait_until'" :key="`w-${step.id}`" :step-id="step.id" />
         <AutomationsPanelsBranchPanel v-else-if="step.action_type === 'branch'" :step-id="step.id" />
         <AutomationsPanelsTagPanel v-else-if="step.action_type === 'tag'" :step-id="step.id" />
+        <AutomationsPanelsPatientTypePanel v-else-if="step.action_type === 'patient_type'" :step-id="step.id" />
+        <AutomationsPanelsAssignExercisesPanel v-else-if="step.action_type === 'assign_exercises'" :step-id="step.id" />
         <AutomationsPanelsNotifyPanel v-else-if="step.action_type === 'notify'" :step-id="step.id" />
         <AutomationsPanelsLeadPanel v-else-if="step.action_type === 'lead_stage' || step.action_type === 'lead_assign'" :step-id="step.id" />
         <AutomationsMessageStats

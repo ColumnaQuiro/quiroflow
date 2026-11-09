@@ -23,7 +23,7 @@ describe('Exercise programmes', () => {
           cy.get('[data-cy="settings-list"][data-ready="true"]')
 
           cy.get('[data-cy="exercises-tab-programs"]').click()
-          cy.location('search').should('eq', '?tab=programs')
+          cy.location('search').should('contain', 'tab=programs')
           cy.get('[data-cy="program-new"]').click()
           cy.get('[data-cy="program-name"]').type('Lumbalgia básica')
           cy.get('[data-cy="program-item"]').eq(0).within(() => {

@@ -206,6 +206,25 @@ watch(
       <input :class="FIELD" :value="rule.filters.trigger_tag ?? ''" :placeholder="t('Any tag', 'Cualquier etiqueta')" data-test="trigger-tag" @input="setFilters({ ...rule.filters, trigger_tag: ($event.target as HTMLInputElement).value })" />
       <span :class="HINT">{{ t('Capitals do not matter. Left empty, any tag starts it.', 'Da igual mayúsculas o minúsculas. Si se deja vacía, la inicia cualquier etiqueta.') }}</span>
     </label>
+    <label v-if="rule.trigger_event === 'patient.type_added' || rule.trigger_event === 'patient.type_removed'" :class="LABEL">
+      {{ t('Which type', 'Qué tipo') }}
+      <select
+        :class="FIELD"
+        :value="rule.filters.trigger_type_id ?? ''"
+        data-test="trigger-patient-type"
+        @change="
+          setFilters({
+            ...rule.filters,
+            trigger_type_id: ($event.target as HTMLSelectElement).value || undefined,
+            trigger_type_name: (b.lookup.value.patientTypes ?? []).find((x) => x.id === ($event.target as HTMLSelectElement).value)?.name || undefined,
+          })
+        "
+      >
+        <option value="">{{ t('Any type', 'Cualquier tipo') }}</option>
+        <option v-for="ty in b.lookup.value.patientTypes ?? []" :key="ty.id" :value="ty.id">{{ ty.name }}</option>
+      </select>
+      <span :class="HINT">{{ t('Patient types are set up in Settings > Patient types.', 'Los tipos de paciente se crean en Ajustes › Tipos de paciente.') }}</span>
+    </label>
     <div v-if="rule.trigger_event === 'satisfaction.answered'" :class="LABEL">
       {{ t('With a score of', 'Con una nota de') }}
       <span :class="SEGMENT_WRAP" role="group" :aria-label="t('Score', 'Nota')">

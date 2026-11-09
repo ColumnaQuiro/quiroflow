@@ -2,6 +2,7 @@
 import type { BusinessHours } from '../../utils/businessHours'
 import { clinicDateOf } from '../../utils/clinicClock'
 import { workdayWeekStart, workdaysOf, workdayClock, formatWorked, type WorkEntry } from '../../utils/workday'
+import { currentContract, hoursOverContract } from '../../utils/staffContracts'
 import { DEFAULT_LEAVE_DAYS, absenceKindLabel, formatShift, leaveWorkingDays, parseShift, shiftForDay, shiftGaps, shiftMinutes, type ShiftRanges } from '../../utils/staffShifts'
 
 // Registro de jornada > Turnos, for owners (web). Design: TurnosWeb on the
@@ -39,12 +40,14 @@ const entries = ref<(WorkEntry & { team_member_id: string })[]>([])
 const absences = ref<Absence[]>([])
 const allowances = ref<Map<string, number>>(new Map())
 const closed = ref<Set<string>>(new Set())
+// Contracted hours a week, from each person's current contract (Personal).
+const contractHours = ref<Map<string, number>>(new Map())
 const error = ref('')
 const loaded = ref(false)
 
 async function load() {
   const year = weekStart.value.slice(0, 4)
-  const [{ data: ms }, { data: clinic }, { data: sd }, { data: ex }, { data: es }, { data: abs }, { data: allow }, { data: blocks }] = await Promise.all([
+  const [{ data: ms }, { data: clinic }, { data: sd }, { data: ex }, { data: es }, { data: abs }, { data: allow }, { data: blocks }, { data: contracts }] = await Promise.all([
     supabase.from('team_members').select('id, full_name, business_hours, is_practitioner, role').is('deleted_at', null).order('full_name'),
     supabase.from('clinics').select('business_hours').is('archived_at', null).order('created_at').limit(1).maybeSingle(),
     supabase.from('shift_days').select('team_member_id, day, ranges').gte('day', days.value[0]!).lte('day', days.value[6]!),
@@ -53,6 +56,7 @@ async function load() {
     supabase.from('staff_absences').select('id, team_member_id, kind, starts_on, ends_on, half_day').eq('account_id', props.accountId).eq('status', 'approved').lte('starts_on', `${year}-12-31`).gte('ends_on', `${year}-01-01`),
     supabase.from('staff_leave_allowances').select('team_member_id, days_per_year').eq('account_id', props.accountId),
     supabase.from('availability_blocks').select('starts_at, ends_at').is('practitioner_id', null).is('room_id', null).gte('ends_at', `${year}-01-01`).lte('starts_at', `${year}-12-31T23:59:59`),
+    supabase.from('staff_contracts').select('team_member_id, starts_on, created_at, weekly_hours').eq('account_id', props.accountId),
   ])
   members.value = (ms as unknown as Member[] | null) ?? []
   clinicHours.value = ((clinic as { business_hours: BusinessHours | null } | null)?.business_hours ?? null)
@@ -66,6 +70,12 @@ async function load() {
     for (let d = new Date(b.starts_at); d < new Date(b.ends_at); d.setUTCDate(d.getUTCDate() + 1)) shut.add(clinicDateOf(d, props.timeZone))
   }
   closed.value = shut
+  const byMember = new Map<string, { starts_on: string | null; created_at: string; weekly_hours: number | null }[]>()
+  for (const c of (contracts as { team_member_id: string; starts_on: string | null; created_at: string; weekly_hours: number | null }[] | null) ?? []) byMember.set(c.team_member_id, [...(byMember.get(c.team_member_id) ?? []), c])
+  contractHours.value = new Map([...byMember].flatMap(([id, cs]) => {
+    const h = currentContract(cs, days.value[0]!)?.weekly_hours
+    return h ? [[id, Number(h)] as [string, number]] : []
+  }))
   loaded.value = true
 }
 onMounted(load)
@@ -82,6 +92,11 @@ const clocked = computed(() => {
 })
 function plannedMinutes(m: Member) {
   return days.value.reduce((s, d) => s + (absenceOf(m, d) ? 0 : shiftMinutes(shiftOf(m, d) ?? [])), 0)
+}
+// The week as planned, leave included: a contract counts the hours a week
+// they are taken on for, whether or not they are away that week.
+function overContract(m: Member) {
+  return hoursOverContract(days.value.reduce((s, d) => s + shiftMinutes(shiftOf(m, d) ?? []), 0), contractHours.value.get(m.id))
 }
 function clockedMinutes(m: Member) {
   return (clocked.value.get(m.id) ?? []).reduce((s, d) => s + d.workedMinutes, 0)
@@ -234,6 +249,7 @@ const td = 'border-t border-line-row px-2.5 py-2 align-top text-[12.5px] text-in
               <!-- Each figure whole: the cell used to break inside one ("41 h" / "00"). -->
               <span class="whitespace-nowrap">{{ formatWorked(plannedMinutes(m)) }}</span> / <span class="whitespace-nowrap">{{ exempt.has(m.id) ? '—' : formatWorked(clockedMinutes(m)) }}</span>
               <div v-if="exempt.has(m.id)" class="font-sans text-[11.5px] text-ink-muted">{{ t("Doesn't clock", 'No ficha') }}</div>
+              <div v-if="overContract(m)" class="font-sans text-[11.5px] font-semibold text-warning-text" data-cy="shifts-over-contract">{{ t(`${formatWorked(overContract(m))} over their ${contractHours.get(m.id)} h contract`, `${formatWorked(overContract(m))} más que su contrato de ${contractHours.get(m.id)} h`) }}</div>
             </td>
           </tr>
         </tbody>

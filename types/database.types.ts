@@ -8280,6 +8280,73 @@ export type Database = {
           },
         ]
       }
+      staff_contracts: {
+        Row: {
+          account_id: string
+          convenio: string | null
+          created_at: string
+          created_by: string | null
+          employment_type: string
+          ends_on: string | null
+          id: string
+          job_title: string | null
+          modality: string | null
+          starts_on: string | null
+          team_member_id: string
+          weekly_hours: number | null
+        }
+        Insert: {
+          account_id: string
+          convenio?: string | null
+          created_at?: string
+          created_by?: string | null
+          employment_type: string
+          ends_on?: string | null
+          id?: string
+          job_title?: string | null
+          modality?: string | null
+          starts_on?: string | null
+          team_member_id: string
+          weekly_hours?: number | null
+        }
+        Update: {
+          account_id?: string
+          convenio?: string | null
+          created_at?: string
+          created_by?: string | null
+          employment_type?: string
+          ends_on?: string | null
+          id?: string
+          job_title?: string | null
+          modality?: string | null
+          starts_on?: string | null
+          team_member_id?: string
+          weekly_hours?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_contracts_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staff_contracts_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staff_contracts_team_member_id_fkey"
+            columns: ["team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       staff_leave_allowances: {
         Row: {
           account_id: string

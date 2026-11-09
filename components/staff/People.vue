@@ -4,12 +4,15 @@ import { clinicDateOf, nextDate } from '../../utils/clinicClock'
 import { workdaySummary, workdayClock, formatWorked, type WorkEntry } from '../../utils/workday'
 import { DEFAULT_LEAVE_DAYS, absenceKindLabel, isOpenEndedAbsence, shiftForDay, shiftMinutes, type ShiftRanges } from '../../utils/staffShifts'
 import { clinicClosedDays, teamLeaveBalance, type TeamAbsence } from '../../utils/teamLeave'
+import { CONTRACT_ENDING_SOON_DAYS, contractEnded, currentContract, daysUntilEnd, employmentTypeLabel, type StaffContract } from '../../utils/staffContracts'
 
 // Personal > Personas: one row per person on the team -- where they are today,
 // holiday left this year, and this month's hours so far against their shift
 // -- under what is waiting for the owner (leave to decide, clocking to
-// correct). Each person opens onto their page in Settings > Team until the
-// person file exists (phase 2 of the spec).
+// correct), how they work for the clinic and when their contract ends. Each
+// person opens onto their file (pages/personal/[id].vue). People who have
+// left are listed apart at the bottom: their contracts are labour records
+// kept after they go.
 const props = defineProps<{ accountId: string; timeZone: string }>()
 const emit = defineEmits<{ 'open-leave': [] }>()
 const t = useT()
@@ -32,12 +35,14 @@ const absences = ref<TeamAbsence[]>([])
 const allowances = ref<Map<string, number>>(new Map())
 const closed = ref<Set<string>>(new Set())
 const pendingCorrections = ref(0)
+const contracts = ref<StaffContract[]>([])
+const gone = ref<{ id: string; full_name: string; deleted_at: string }[]>([])
 const loaded = ref(false)
 const error = ref('')
 
 async function load() {
   const y = year.value
-  const [ms, clinic, sd, ex, es, abs, allow, blocks, corr] = await Promise.all([
+  const [ms, clinic, sd, ex, es, abs, allow, blocks, corr, con, left] = await Promise.all([
     supabase.from('team_members').select('id, full_name, role, is_practitioner, color, business_hours').eq('account_id', props.accountId).is('deleted_at', null).order('full_name'),
     supabase.from('clinics').select('business_hours').eq('account_id', props.accountId).is('archived_at', null).order('created_at').limit(1).maybeSingle(),
     supabase.from('shift_days').select('team_member_id, day, ranges').eq('account_id', props.accountId).gte('day', monthStart.value).lte('day', today.value),
@@ -47,6 +52,8 @@ async function load() {
     supabase.from('staff_leave_allowances').select('team_member_id, days_per_year').eq('account_id', props.accountId),
     supabase.from('availability_blocks').select('starts_at, ends_at').eq('account_id', props.accountId).is('practitioner_id', null).is('room_id', null).gte('ends_at', `${y}-01-01`).lte('starts_at', `${y}-12-31T23:59:59`),
     supabase.from('time_corrections').select('id', { count: 'exact', head: true }).eq('account_id', props.accountId).eq('status', 'pending'),
+    supabase.from('staff_contracts').select('id, team_member_id, employment_type, modality, starts_on, ends_on, weekly_hours, job_title, convenio, created_at').eq('account_id', props.accountId),
+    supabase.from('team_members').select('id, full_name, deleted_at').eq('account_id', props.accountId).not('deleted_at', 'is', null).order('full_name'),
   ])
   const failed = [ms, abs, es].find((r) => r.error)
   error.value = failed?.error ? t("Couldn't load the team.", 'No se ha podido cargar el equipo.') : ''
@@ -59,6 +66,8 @@ async function load() {
   allowances.value = new Map(((allow.data as { team_member_id: string; days_per_year: number }[] | null) ?? []).map((a) => [a.team_member_id, Number(a.days_per_year)]))
   closed.value = clinicClosedDays((blocks.data as { starts_at: string; ends_at: string }[] | null) ?? [], props.timeZone)
   pendingCorrections.value = corr.count ?? 0
+  contracts.value = (con.data as StaffContract[] | null) ?? []
+  gone.value = (left.data as { id: string; full_name: string; deleted_at: string }[] | null) ?? []
   loaded.value = true
 }
 onMounted(load)
@@ -113,6 +122,17 @@ function monthOf(m: Member) {
   return { planned, clocked }
 }
 
+const contractOf = (m: Member) => currentContract(contracts.value.filter((c) => c.team_member_id === m.id), today.value)
+/** Only an employee has a holiday allowance; an autónomo or socio arranges their own time off. */
+const hasAllowance = (m: Member) => (contractOf(m)?.employment_type ?? 'employee') === 'employee'
+function contractEndOf(m: Member): { text: string; tone: Tone } | null {
+  const c = contractOf(m)
+  if (!c?.ends_on) return null
+  if (contractEnded(c, today.value)) return { text: t(`Ended ${fmtDay(c.ends_on)}`, `Terminó el ${fmtDay(c.ends_on)}`), tone: 'warn' }
+  const days = daysUntilEnd(c, today.value)!
+  const text = days === 0 ? t('Ends today', 'Termina hoy') : t(`Ends ${fmtDay(c.ends_on)}`, `Termina el ${fmtDay(c.ends_on)}`)
+  return { text, tone: days <= CONTRACT_ENDING_SOON_DAYS ? 'away' : 'quiet' }
+}
 const roleOf = (m: Member) => (m.role === 'owner' ? t('Owner', 'Propietario') : m.is_practitioner ? t('Practitioner', 'Profesional') : m.role === 'front_desk' ? t('Front desk', 'Recepción') : t('Team', 'Equipo'))
 const toneClass: Record<Tone, string> = {
   ok: 'bg-success-bg text-success-text',
@@ -149,21 +169,22 @@ const td = 'border-t border-line-row px-3 py-2.5 align-middle text-[13px] text-i
             <th :class="th">{{ t('Today', 'Hoy') }}</th>
             <th :class="th">{{ t('Holidays left', 'Vacaciones') }}</th>
             <th :class="th">{{ t('This month', 'Este mes') }}</th>
+            <th :class="th">{{ t('Contract', 'Contrato') }}</th>
           </tr>
         </thead>
         <tbody v-if="!loaded" aria-busy="true">
           <tr v-for="i in 3" :key="i">
-            <td v-for="j in 4" :key="j" :class="td"><UiSkeleton class="h-3.5 rounded-ctlSm" :class="j === 1 ? 'w-32' : 'w-20'" /></td>
+            <td v-for="j in 5" :key="j" :class="td"><UiSkeleton class="h-3.5 rounded-ctlSm" :class="j === 1 ? 'w-32' : 'w-20'" /></td>
           </tr>
         </tbody>
         <tbody v-else>
           <tr v-for="m in members" :key="m.id" data-cy="staff-person" :data-name="m.full_name">
             <td :class="td">
-              <NuxtLink :to="`/settings/team/${m.id}`" class="flex items-center gap-2.5 hover:underline" data-cy="staff-person-link">
+              <NuxtLink :to="`/personal/${m.id}`" class="flex items-center gap-2.5 hover:underline" data-cy="staff-person-link">
                 <span class="h-2.5 w-2.5 shrink-0 rounded-full" :style="{ backgroundColor: m.color }" aria-hidden="true" />
                 <span>
                   <strong class="block font-semibold">{{ m.full_name }}</strong>
-                  <span class="block text-[12px] text-ink-muted">{{ roleOf(m) }}</span>
+                  <span class="block text-[12px] text-ink-muted" data-cy="staff-person-role">{{ roleOf(m) + (contractOf(m) ? ` · ${employmentTypeLabel(contractOf(m)!.employment_type, t)}` : '') }}</span>
                 </span>
               </NuxtLink>
             </td>
@@ -171,9 +192,12 @@ const td = 'border-t border-line-row px-3 py-2.5 align-middle text-[13px] text-i
               <span class="inline-block rounded-ctlSm px-2 py-0.5 text-[12.5px] font-semibold" :class="toneClass[todayOf(m).tone]">{{ todayOf(m).text }}</span>
             </td>
             <td :class="td" data-cy="staff-person-leave">
+              <span v-if="!hasAllowance(m)" class="text-ink-muted">—</span>
+              <template v-else>
               <strong class="font-mono">{{ fmtDays(leaveOf(m).left) }}</strong>
               <span class="text-ink-muted"> / {{ fmtDays(leaveOf(m).allowance) }} {{ t('days', 'días') }}</span>
               <span v-if="leaveOf(m).pending" class="block text-[12px] text-warning-text">{{ t(`${fmtDays(leaveOf(m).pending)} pending`, `${fmtDays(leaveOf(m).pending)} pendientes`) }}</span>
+              </template>
             </td>
             <td :class="td" class="font-mono" data-cy="staff-person-month">
               <template v-if="exempt.has(m.id)"><span class="font-sans text-ink-muted">{{ t("Doesn't clock", 'No ficha') }}</span></template>
@@ -182,10 +206,24 @@ const td = 'border-t border-line-row px-3 py-2.5 align-middle text-[13px] text-i
                 <span class="text-ink-muted"> / <span class="whitespace-nowrap">{{ formatWorked(monthOf(m).planned) }}</span></span>
               </template>
             </td>
+            <td :class="td" data-cy="staff-person-contract">
+              <span v-if="contractEndOf(m)" class="inline-block whitespace-nowrap rounded-ctlSm px-2 py-0.5 text-[12.5px] font-semibold" :class="toneClass[contractEndOf(m)!.tone]">{{ contractEndOf(m)!.text }}</span>
+              <span v-else-if="contractOf(m)" class="text-[12.5px] text-ink-muted">{{ t('No end date', 'Sin fecha de fin') }}</span>
+              <span v-else class="text-ink-muted">—</span>
+            </td>
           </tr>
         </tbody>
       </table>
     </section>
     <p class="-mt-2 text-[12px] text-ink-muted">{{ t('This month: clocked so far / their shift up to today, leaving out days away and days the clinic is closed. Holidays: working days left of this year’s allowance.', 'Este mes: fichado hasta hoy / su turno hasta hoy, sin contar ausencias ni días de cierre. Vacaciones: días laborables que le quedan este año.') }}</p>
+    <section v-if="loaded && gone.length" class="flex flex-col gap-1.5" data-cy="staff-gone">
+      <h2 class="text-[13px] font-bold text-ink-700">{{ t('No longer here', 'Ya no están') }}</h2>
+      <ul class="flex flex-wrap gap-x-4 gap-y-1">
+        <li v-for="g in gone" :key="g.id" class="text-[13px]">
+          <NuxtLink :to="`/personal/${g.id}`" class="font-semibold text-brand-text hover:underline" data-cy="staff-gone-link">{{ g.full_name }}</NuxtLink>
+          <span class="text-ink-muted"> · {{ t(`left ${fmtDay(clinicDateOf(new Date(g.deleted_at), timeZone))}`, `se fue el ${fmtDay(clinicDateOf(new Date(g.deleted_at), timeZone))}`) }}</span>
+        </li>
+      </ul>
+    </section>
   </div>
 </template>

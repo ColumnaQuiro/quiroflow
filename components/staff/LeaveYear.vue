@@ -11,7 +11,9 @@ import { absenceInYear, clinicClosedDays, daysOfYear, leaveOverlaps, teamLeaveBa
 // practitioners are away carries a marker that names them and counts the
 // visits booked with each. Dragging across a row records leave agreed in
 // person, already approved (record_staff_absence). Owners only, as the page.
-const props = defineProps<{ accountId: string; timeZone: string }>()
+// With `memberId` it is one person's year (Personal › their file › Ausencias):
+// their row only, no team-wide pending list, and the add form already knows who.
+const props = defineProps<{ accountId: string; timeZone: string; memberId?: string }>()
 const t = useT()
 const { preference: lang } = useLang()
 const supabase = useSupabaseClient()
@@ -34,8 +36,13 @@ const pendingList = ref<{ load: () => Promise<void> } | null>(null)
 async function load() {
   const y = year.value
   const [ms, abs, allow, blocks] = await Promise.all([
-    supabase.from('team_members').select('id, full_name, is_practitioner, color').eq('account_id', props.accountId).is('deleted_at', null).order('full_name'),
-    supabase.from('staff_absences').select('id, team_member_id, kind, starts_on, ends_on, half_day, status, note').eq('account_id', props.accountId).in('status', ['approved', 'pending']).lte('starts_on', `${y}-12-31`).gte('ends_on', `${y}-01-01`),
+    props.memberId
+      ? supabase.from('team_members').select('id, full_name, is_practitioner, color').eq('account_id', props.accountId).eq('id', props.memberId)
+      : supabase.from('team_members').select('id, full_name, is_practitioner, color').eq('account_id', props.accountId).is('deleted_at', null).order('full_name'),
+    (props.memberId
+      ? supabase.from('staff_absences').select('id, team_member_id, kind, starts_on, ends_on, half_day, status, note').eq('account_id', props.accountId).eq('team_member_id', props.memberId)
+      : supabase.from('staff_absences').select('id, team_member_id, kind, starts_on, ends_on, half_day, status, note').eq('account_id', props.accountId)
+    ).in('status', ['approved', 'pending']).lte('starts_on', `${y}-12-31`).gte('ends_on', `${y}-01-01`),
     supabase.from('staff_leave_allowances').select('team_member_id, days_per_year').eq('account_id', props.accountId),
     supabase.from('availability_blocks').select('starts_at, ends_at').eq('account_id', props.accountId).is('practitioner_id', null).is('room_id', null).gte('ends_at', `${y - 1}-12-31`).lte('starts_at', `${y}-12-31T23:59:59`),
   ])
@@ -198,7 +205,7 @@ const place = ref<string>('top')
 const form = reactive({ member: '', kind: 'vacation' as string, from: '', to: '', note: '' })
 const saving = ref(false)
 const addError = ref('')
-function openAdd(member = '', from = today.value, to = from, where = 'top') {
+function openAdd(member = props.memberId ?? '', from = today.value, to = from, where = 'top') {
   place.value = where
   Object.assign(form, { member, kind: 'vacation', from, to, note: '' })
   addError.value = ''
@@ -256,7 +263,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
     <p v-if="error" role="alert" class="text-[13px] text-danger-text">{{ error }}</p>
 
     <div id="leave-add-top" class="contents" />
-    <TimeclockLeavePending ref="pendingList" :account-id="accountId" @decided="afterDecided" />
+    <TimeclockLeavePending v-if="!memberId" ref="pendingList" :account-id="accountId" @decided="afterDecided" />
     <Teleport v-if="leftToMove" :to="`#leave-add-${place}`" defer>
     <div class="flex flex-wrap items-center gap-3 rounded-card border border-line bg-surface px-4 py-3" data-cy="leave-year-visits">
       <span class="flex-1 text-[13px] text-ink-700">{{ t(`${memberName(leftToMove.who)} has ${leftToMove.count} visits booked on those days. Their calendar is blocked; the visits still need moving.`, `${memberName(leftToMove.who)} tiene ${leftToMove.count} visitas esos días. Su agenda ya está bloqueada; falta mover las visitas.`) }}</span>
@@ -268,7 +275,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
     <form class="flex flex-col gap-3 rounded-card border border-line bg-surface px-4 py-4" data-cy="leave-add-form" @submit.prevent="record">
       <h2 class="text-[14.5px] font-bold text-ink-900">{{ t('Add leave', 'Añadir ausencia') }}</h2>
       <p class="-mt-2 text-[12.5px] text-ink-muted">{{ t('For leave agreed in person. It goes in approved, and their calendar is blocked those days.', 'Para ausencias ya acordadas. Queda aprobada y su agenda se bloquea esos días.') }}</p>
-      <label class="flex flex-col gap-1 text-[13px] font-semibold text-ink-700">
+      <label v-if="!memberId" class="flex flex-col gap-1 text-[13px] font-semibold text-ink-700">
         {{ t('Who', 'Quién') }}
         <select v-model="form.member" :class="inputClass" data-cy="leave-add-member">
           <option value="" disabled>{{ t('Choose…', 'Elige…') }}</option>
@@ -338,7 +345,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
       <span v-for="l in legend" :key="l.kind" class="flex items-center gap-1.5"><span class="h-3 w-3 rounded-[3px]" :style="l.style" aria-hidden="true" />{{ l.label }}</span>
       <span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded-[3px]" :style="pendingSwatch" aria-hidden="true" />{{ t('Pending', 'Pendiente') }}</span>
       <span class="flex items-center gap-1.5"><span class="h-3 w-3 rounded-[3px] bg-ink-faint/35" aria-hidden="true" />{{ t('Clinic closed', 'Clínica cerrada') }}</span>
-      <span class="flex items-center gap-1.5"><span class="h-1.5 w-1.5 rounded-full bg-danger-text" aria-hidden="true" />{{ t('Two or more practitioners away', 'Dos o más profesionales fuera') }}</span>
+      <span v-if="!memberId" class="flex items-center gap-1.5"><span class="h-1.5 w-1.5 rounded-full bg-danger-text" aria-hidden="true" />{{ t('Two or more practitioners away', 'Dos o más profesionales fuera') }}</span>
     </div>
     <p v-if="loaded && overlapList.length" class="-mt-2 text-[12.5px] text-ink-700" data-cy="leave-overlap-summary">
       {{ overlapList.length === 1 ? t('1 day with two or more practitioners away.', '1 día con dos o más profesionales fuera.') : t(`${overlapList.length} days with two or more practitioners away.`, `${overlapList.length} días con dos o más profesionales fuera.`) }}
@@ -412,7 +419,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
                 <UiBtn size="sm" variant="primary" :disabled="deciding" data-cy="leave-detail-approve" @click="decide(selected.absence, true)">{{ t('Approve', 'Aprobar') }}</UiBtn>
                 <UiBtn size="sm" :disabled="deciding" data-cy="leave-detail-reject" @click="decide(selected.absence, false)">{{ t('Reject', 'Rechazar') }}</UiBtn>
               </template>
-              <NuxtLink v-else :to="`/settings/team/${selected.absence.team_member_id}`" class="text-[12.5px] font-semibold text-brand-text">{{ t('Their page in Settings › Team →', 'Su ficha en Ajustes › Equipo →') }}</NuxtLink>
+              <NuxtLink v-else-if="!memberId" :to="`/personal/${selected.absence.team_member_id}?tab=leave`" class="text-[12.5px] font-semibold text-brand-text">{{ t('Their file →', 'Su ficha →') }}</NuxtLink>
               <UiBtn size="sm" variant="ghost" @click="selected = null">{{ t('Close', 'Cerrar') }}</UiBtn>
             </div>
           </template>
@@ -428,7 +435,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
         </div>
       </section>
     </div>
-    <p v-if="loaded && members.length" class="-mt-2 text-[12px] text-ink-muted">{{ t('Drag across someone’s row to add leave for those days. Click an absence to see it, or to decide one that is waiting.', 'Arrastra sobre la fila de alguien para añadir una ausencia esos días. Pulsa una ausencia para verla, o para decidir una pendiente.') }}</p>
+    <p v-if="loaded && members.length" class="-mt-2 text-[12px] text-ink-muted">{{ memberId ? t('Drag across the row to add leave for those days. Click an absence to see it, or to decide one that is waiting.', 'Arrastra sobre la fila para añadir una ausencia esos días. Pulsa una ausencia para verla, o para decidir una pendiente.') : t('Drag across someone’s row to add leave for those days. Click an absence to see it, or to decide one that is waiting.', 'Arrastra sobre la fila de alguien para añadir una ausencia esos días. Pulsa una ausencia para verla, o para decidir una pendiente.') }}</p>
 
     <LazyCalendarUnplannedAbsence v-if="moveOpen && leftToMove" :prefill="{ who: leftToMove.who, from: leftToMove.from, to: leftToMove.to, alreadyBlocked: true }" @close="moveOpen = false" @done="moveOpen = false; leftToMove = null" />
   </div>

@@ -314,9 +314,13 @@ async function confirmRemove() {
         {{ t('Files uploaded by the clinic', 'Archivos subidos por la clínica') }}
         <span v-if="!loading" class="ml-1 font-normal text-ink-faint">{{ files.length }}</span>
       </p>
-      <label class="inline-flex h-8 shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-ctl border border-brand bg-brand px-3.5 text-[13px] font-semibold text-brand-on hover:bg-brand-hover">
+      <!-- UiBtn's secondary sm, drawn on the label that opens the picker.
+           Secondary like Documents' and Letters' buttons above it: three
+           indigo buttons on one tab left none of them the next step. The
+           input is sr-only, not hidden, so the keyboard can reach it. -->
+      <label class="inline-flex h-8 shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-ctl border border-line-control bg-surface px-2.5 text-[12.5px] font-medium text-ink-500 focus-within:shadow-focus hover:border-line-controlHover touch:h-10">
         {{ uploading ? t('Uploading…', 'Subiendo…') : t('Upload file', 'Subir archivo') }}
-        <input ref="fileInput" type="file" multiple class="hidden" :disabled="uploading" @change="(e) => uploadFiles((e.target as HTMLInputElement).files!)" />
+        <input ref="fileInput" type="file" multiple class="sr-only" :disabled="uploading" @change="(e) => uploadFiles((e.target as HTMLInputElement).files!)" />
       </label>
     </div>
     <p v-if="error" class="px-4 pt-3 text-[13px] text-danger-text">{{ error }}</p>

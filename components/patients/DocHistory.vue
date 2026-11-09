@@ -72,10 +72,11 @@ watch(selected, (doc) => {
           <a
             :href="`/patients/docs/${selected.id}`"
             target="_blank"
-            class="text-[11.5px] font-medium text-brand-text hover:text-brand-hover"
+            class="inline-flex items-center gap-1 text-[11.5px] font-medium text-brand-text hover:text-brand-hover"
             :title="t('Open the answers in a new tab', 'Abrir las respuestas en una pestaña nueva')"
           >
-            {{ t('New tab', 'Pestaña nueva') }} ↗
+            {{ t('New tab', 'Pestaña nueva') }}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" class="h-3 w-3 shrink-0"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 19.5l15-15m0 0H8.25m11.25 0v11.25" /></svg>
           </a>
         </div>
         <PatientsDocAnswers :fields="Array.isArray(selected.fields) ? selected.fields : []" />

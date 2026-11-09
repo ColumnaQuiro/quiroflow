@@ -639,9 +639,12 @@ function onDetailsUpdated() {
           <div v-for="field in glanceFields" :key="field.key">
             <dt class="text-[11.5px] text-ink-muted2">{{ field.label }}</dt>
             <dd v-if="field.pending" class="mt-1"><UiSkeleton class="h-3.5 w-32 rounded-ctlSm" /></dd>
-            <dd v-else class="mt-0.5 truncate text-[13.5px] text-ink-700" :class="field.mono ? 'font-mono text-[12.5px]' : ''" :title="field.value || undefined">
-              {{ field.value || t('Not recorded', 'Sin registrar') }}
+            <!-- The placeholder reads as an absence: muted, and never in the
+                 mono face meant for the ID number it stands in for. -->
+            <dd v-else-if="field.value" class="mt-0.5 truncate text-[13.5px] text-ink-700" :class="field.mono ? 'font-mono text-[12.5px]' : ''" :title="field.value">
+              {{ field.value }}
             </dd>
+            <dd v-else class="mt-0.5 text-[13.5px] text-ink-faint">{{ t('Not recorded', 'Sin registrar') }}</dd>
           </div>
         </dl>
         <button

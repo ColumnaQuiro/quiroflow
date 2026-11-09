@@ -140,9 +140,10 @@ function bookPlan() {
 
       <div v-if="plan && editable && toBook > 0" class="mt-2.5 rounded-ctl px-3 py-2" :class="justSaved ? 'bg-brand-tint' : 'bg-surface-subtle'" data-cy="care-plan-book">
         <p v-if="justSaved" class="text-[12.5px] font-medium text-ink-900">{{ t('Plan saved. Book its visits now?', 'Plan guardado. ¿Reservas ya sus visitas?') }}</p>
-        <button type="button" class="text-[12.5px] font-semibold text-brand-text hover:underline" data-cy="care-plan-book-open" @click="bookPlan">
-          <template v-if="openEnded">{{ toBook === 1 ? t('Book the next visit →', 'Reservar la próxima visita →') : t(`Book the next ${toBook} visits →`, `Reservar las próximas ${toBook} visitas →`) }}</template>
-          <template v-else>{{ toBook === 1 ? t('Book the 1 visit left →', 'Reservar la visita que falta →') : t(`Book the ${toBook} visits left →`, `Reservar las ${toBook} visitas que faltan →`) }}</template>
+        <button type="button" class="inline-flex items-center gap-0.5 text-[12.5px] font-semibold text-brand-text outline-none hover:underline focus-visible:shadow-focus" data-cy="care-plan-book-open" @click="bookPlan">
+          <template v-if="openEnded">{{ toBook === 1 ? t('Book the next visit', 'Reservar la próxima visita') : t(`Book the next ${toBook} visits`, `Reservar las próximas ${toBook} visitas`) }}</template>
+          <template v-else>{{ toBook === 1 ? t('Book the 1 visit left', 'Reservar la visita que falta') : t(`Book the ${toBook} visits left`, `Reservar las ${toBook} visitas que faltan`) }}</template>
+          <UiChevron dir="right" class="!h-3.5 !w-3.5" />
         </button>
       </div>
     </template>

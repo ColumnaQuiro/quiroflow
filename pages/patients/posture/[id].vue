@@ -16,8 +16,14 @@ onMounted(async () => {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader :title="t(`Posture · ${patientName}`, `Postura · ${patientName}`)" :meta="t('Estimates from photos, to document and explain — not a diagnosis.', 'Estimaciones a partir de fotos, para documentar y explicar — no para diagnosticar.')">
-      <NuxtLink :to="`/patients/${patientId}?tab=progress`" class="text-[13px] text-ink-muted2 hover:text-ink-600">{{ t('Cancel', 'Cancelar') }}</NuxtLink>
+    <!-- "Postura · " with nothing after it until the name has loaded. -->
+    <PageHeader :title="patientName ? t(`Posture · ${patientName}`, `Postura · ${patientName}`) : t('Posture', 'Postura')" :meta="t('Estimates from photos, to document and explain — not a diagnosis.', 'Estimaciones a partir de fotos, para documentar y explicar — no para diagnosticar.')">
+      <NuxtLink
+        :to="`/patients/${patientId}?tab=progress`"
+        class="inline-flex h-9 items-center justify-center whitespace-nowrap rounded-ctl border border-transparent px-3.5 text-[13px] font-medium text-ink-muted2 outline-none hover:bg-surface-subtle focus-visible:shadow-focus touch:h-11"
+      >
+        {{ t('Cancel', 'Cancelar') }}
+      </NuxtLink>
     </PageHeader>
     <div class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-4 sm:px-6">
       <div class="mx-auto max-w-[1180px]">

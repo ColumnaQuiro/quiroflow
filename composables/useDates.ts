@@ -3,6 +3,7 @@ import {
   formatLongDate as formatLongDateIn,
   formatLongWeekdayDate as formatLongWeekdayDateIn,
   formatShortDate as formatShortDateIn,
+  formatShortDateYear as formatShortDateYearIn,
   formatWeekdayDate as formatWeekdayDateIn,
 } from '~/utils/billing'
 
@@ -20,6 +21,7 @@ export function useDates() {
   return {
     formatLongDate: (iso: string | Date) => formatLongDateIn(iso, preference.value),
     formatShortDate: (iso: string | Date) => formatShortDateIn(iso, preference.value),
+    formatShortDateYear: (iso: string | Date) => formatShortDateYearIn(iso, preference.value),
     formatWeekdayDate: (iso: string | Date) => formatWeekdayDateIn(iso, preference.value),
     formatLongWeekdayDate: (iso: string | Date) => formatLongWeekdayDateIn(iso, preference.value),
     dateBlock: (iso: string | Date) => dateBlockIn(iso, preference.value),

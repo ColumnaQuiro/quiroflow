@@ -31,33 +31,29 @@ const success = computed(() => (checking.value ? checked.value === 'paid' || che
 // From a reminder's pay link (server/api/pay/[token].get.ts): nothing to pay
 // any more, a link that is not ours, or no card payments at that clinic.
 const other = computed(() => {
-  if (route.query.status === 'already_paid') return { title: t('Already paid', 'Ya está pagada'), body: t('This invoice has already been paid. Nothing else to do.', 'Esta factura ya está pagada. No tienes que hacer nada más.') }
-  if (route.query.status === 'invalid') return { title: t('Link not valid', 'Enlace no válido'), body: t('This payment link is not valid. Ask the clinic for a new one.', 'Este enlace de pago no es válido. Pide uno nuevo a la clínica.') }
-  if (route.query.status === 'unavailable') return { title: t('Card payment unavailable', 'Pago con tarjeta no disponible'), body: t('This clinic does not take card payments online right now. Please contact them.', 'Esta clínica no acepta ahora pagos con tarjeta online. Ponte en contacto con ella.') }
+  if (route.query.status === 'already_paid') return { tone: 'success' as const, title: t('Already paid', 'Ya está pagada'), body: t('This invoice has already been paid. Nothing else to do.', 'Esta factura ya está pagada. No tienes que hacer nada más.') }
+  if (route.query.status === 'invalid') return { tone: 'danger' as const, title: t('Link not valid', 'Enlace no válido'), body: t('This payment link is not valid. Ask the clinic for a new one.', 'Este enlace de pago no es válido. Pide uno nuevo a la clínica.') }
+  if (route.query.status === 'unavailable') return { tone: 'neutral' as const, title: t('Card payment unavailable', 'Pago con tarjeta no disponible'), body: t('This clinic does not take card payments online right now. Please contact them.', 'Esta clínica no acepta ahora pagos con tarjeta online. Ponte en contacto con ella.') }
   // Could not be confirmed either way: say where to look rather than guess.
-  if (checking.value && checked.value === 'unknown') return { title: t('Payment pending confirmation', 'Pago pendiente de confirmar'), body: t('Go back to the app: it will show whether the payment went through.', 'Vuelve a la app: allí verás si el pago se ha completado.') }
+  if (checking.value && checked.value === 'unknown') return { tone: 'neutral' as const, title: t('Payment pending confirmation', 'Pago pendiente de confirmar'), body: t('Go back to the app: it will show whether the payment went through.', 'Vuelve a la app: allí verás si el pago se ha completado.') }
   return null
 })
 </script>
 
 <template>
-  <div class="flex min-h-screen items-center justify-center bg-surface-page px-4">
-    <div v-if="checking && checked === null" class="max-w-sm text-center" data-cy="payment-done" data-status="checking">
-      <p class="text-[15px] font-medium text-ink-900">{{ t('Checking the payment…', 'Comprobando el pago…') }}</p>
-    </div>
-    <div v-else-if="other" class="max-w-sm text-center" data-cy="payment-done" :data-status="checking ? checked : String(route.query.status)">
-      <p class="text-[15px] font-medium text-ink-900">{{ other.title }}</p>
-      <p class="mt-1.5 text-[13px] text-ink-muted2">{{ other.body }}</p>
-    </div>
-    <div v-else class="max-w-sm text-center" data-cy="payment-done" :data-status="success ? 'success' : 'failed'">
-      <p class="text-[15px] font-medium text-ink-900">{{ success ? t('Payment received', 'Pago recibido') : t('Payment not made', 'Pago no realizado') }}</p>
-      <p class="mt-1.5 text-[13px] text-ink-muted2">
+  <div class="flex min-h-screen items-center justify-center bg-surface-page px-4 py-10">
+    <BookingResult v-if="checking && checked === null" tone="pending" :title="t('Checking the payment…', 'Comprobando el pago…')" data-cy="payment-done" data-status="checking" />
+    <BookingResult v-else-if="other" :tone="other.tone" :title="other.title" data-cy="payment-done" :data-status="checking ? checked : String(route.query.status)">
+      <p>{{ other.body }}</p>
+    </BookingResult>
+    <BookingResult v-else :tone="success ? 'success' : 'danger'" :title="success ? t('Payment received', 'Pago recibido') : t('Payment not made', 'Pago no realizado')" data-cy="payment-done" :data-status="success ? 'success' : 'failed'">
+      <p>
         {{
           success
             ? t('Thank you. You can close this page and go back to the app or the portal: it will show as paid in a moment.', 'Gracias. Puedes cerrar esta página y volver a la app o al portal: en un momento aparecerá como pagado.')
             : t('Nothing was charged. You can close this page and try again from the app or the portal.', 'No se ha cobrado nada. Puedes cerrar esta página e intentarlo de nuevo desde la app o el portal.')
         }}
       </p>
-    </div>
+    </BookingResult>
   </div>
 </template>

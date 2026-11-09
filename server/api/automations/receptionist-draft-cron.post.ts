@@ -2,8 +2,8 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
 import { hasGrowth, hasReceptionist } from '~/server/utils/requireGrowth'
 import { overMonthlyLimit } from '~/server/utils/receptionistUsage'
-import { TYPING_PAUSE_SECONDS, autoReplyNow, clinicOpenAt, stillTyping } from '~/utils/receptionistAutoReply'
-import type { BusinessHours } from '~/utils/businessHours'
+import { TYPING_PAUSE_SECONDS, stillTyping } from '~/utils/receptionistAutoReply'
+import { accountsAnsweringNow } from '~/server/utils/receptionistHeld'
 
 // Drafts a reply for every lead waiting on one, so the draft is there before
 // anybody goes looking.
@@ -262,23 +262,4 @@ async function patientsDue(supabase: any, accountIds: string[], since: string, p
     .sort((a, b) => b[1].at.localeCompare(a[1].at))
     .slice(0, MAX_PER_TICK)
     .map(([id, m]) => ({ id, accountId: m.accountId }))
-}
-
-/** Accounts whose receptionist answers on its own at `now` (utils/receptionistAutoReply.ts). */
-async function accountsAnsweringNow(supabase: any, accountIds: string[], now: Date): Promise<Set<string>> {
-  const [{ data: configs }, { data: clinics }] = await Promise.all([
-    supabase.from('receptionist_config').select('account_id, after_hours, answer_during_hours').in('account_id', accountIds),
-    supabase.from('clinics').select('account_id, timezone, business_hours, created_at').in('account_id', accountIds).is('archived_at', null).order('created_at'),
-  ])
-  const firstClinic = new Map<string, { timezone: string | null; business_hours: BusinessHours | null }>()
-  for (const clinic of (clinics ?? []) as { account_id: string; timezone: string | null; business_hours: BusinessHours | null }[]) {
-    if (!firstClinic.has(clinic.account_id)) firstClinic.set(clinic.account_id, clinic)
-  }
-  const answering = new Set<string>()
-  for (const config of (configs ?? []) as { account_id: string; after_hours: boolean | null; answer_during_hours: boolean | null }[]) {
-    const clinic = firstClinic.get(config.account_id)
-    const open = clinicOpenAt(now, clinic?.timezone, clinic?.business_hours)
-    if (autoReplyNow({ afterHours: config.after_hours ?? false, answerDuringHours: config.answer_during_hours ?? false }, open)) answering.add(config.account_id)
-  }
-  return answering
 }

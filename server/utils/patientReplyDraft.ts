@@ -5,9 +5,10 @@ import { announceHandover, heldBackBeforeSending, noteInConversation, PAST_TIME_
 import { bookingTool, cancelTool, giveVisitTool, stopFollowUpsTool, waitlistTool, type BookingContext } from '~/server/utils/receptionistBooking'
 import { recentImages, withImages, type StoredImage } from '~/server/utils/receptionistImages'
 import { historyLine, standingClockTimes } from '~/utils/receptionistHistory'
-import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personRepliedSince, replyActed } from '~/utils/receptionistAutoReply'
+import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personActiveUntil, personRepliedSince, PERSON_ACTIVE_MINUTES, replyActed } from '~/utils/receptionistAutoReply'
+import { recordReply, type ReplyOutcome } from '~/server/utils/receptionistTrace'
 import { unmarkedPastVisits, loadBookedVisits, loadClinicDetails, loadFamilyAdults, loadPhoneSharers, loadOfferedTypes, loadTeamNames, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, toneWording, uniqueTypes, clinicTodayStart } from '~/server/utils/receptionist'
-import { freeTimesLookup, runReceptionistModel, type FreeTimesForWhom } from '~/server/utils/receptionistModel'
+import { freeTimesLookup, runReceptionistModel, type FreeTimesForWhom, type ReceptionistRun } from '~/server/utils/receptionistModel'
 import { matchChild, patientAudience, typesAfterFirstVisit, typesForAudience, typesForMinor, typesForSomeoneTheyBring } from '~/utils/receptionistTypes'
 import { internalNotes } from '~/utils/receptionistGuard'
 import { carePlanCadenceLabel } from '~/utils/carePlanCadence'
@@ -72,6 +73,7 @@ export async function draftPatientReply(
   // What everything below is read as of: anything the team does after this,
   // in the conversation or the diary, holds a sent reply back (heldBackBeforeSending).
   const readAt = new Date().toISOString()
+  const startedAt = Date.now()
   const { data: patient } = await supabase.from('patients').select('id, first_name, user_id, is_minor').eq('id', patientId).eq('account_id', accountId).maybeSingle()
   if (!patient) return { status: 'not_found' }
 
@@ -287,16 +289,30 @@ export async function draftPatientReply(
   // written to go out would fail at the last step and reach a person as an
   // error. It is a draft from the start, and a person is told why.
   const minorsRecord = Boolean(patient.is_minor) && channel === 'whatsapp'
-  const sends = Boolean(opts.send) && channel !== null && !handoverOpen && !minorsRecord && autoReplyHeldBack(asTurns, new Date()) === null
+  const mayAutoSend = Boolean(opts.send) && channel !== null && !handoverOpen && !minorsRecord
+  // Why it would not send although it may: somebody from the clinic is in
+  // the conversation, or the day's limit is reached.
+  const hold = mayAutoSend ? autoReplyHeldBack(asTurns, new Date()) : null
+  const sends = mayAutoSend && hold === null
+  // Its record (receptionist_replies), at whichever exit it leaves by. Only
+  // the tick's replies: one a person asked for in the Inbox is theirs.
+  const record = (outcome: ReplyOutcome, run: ReceptionistRun | null, extra: { handedOver?: boolean; heldUntil?: Date | null } = {}) =>
+    opts.store || opts.send
+      ? recordReply(service, { accountId, conversationKey: patientId, kind: 'patient', mode: mayAutoSend ? 'send' : 'draft', outcome, answersThrough: newestInboundAt, run, model: MODEL, startedAt, ...extra })
+      : Promise.resolve()
 
   // A voice note since the clinic last wrote: always a person's, decided
   // here rather than by the model (utils/receptionistFollowThrough.ts).
   if (turns.slice(lastOutbound + 1).some((m) => m.direction === 'inbound' && isVoiceNote(m.media_type)) && newestInboundAt && (opts.store || opts.send)) {
     const now = new Date().toISOString()
     await service.from('inbox_reply_drafts').upsert({ account_id: accountId, conversation_key: patientId, body: VOICE_NOTE_REPLY, drafted_through_at: newestInboundAt, dismissed_at: null, handed_over_at: sends ? now : null, created_at: now })
-    if (!sends || !opts.send || !channel) return { status: 'drafted', draft: VOICE_NOTE_REPLY }
+    if (!sends || !opts.send || !channel) {
+      await record('voice_note', null)
+      return { status: 'drafted', draft: VOICE_NOTE_REPLY }
+    }
     const target = { kind: 'patient' as const, patientId, channel }
     const name = patient.first_name ?? 'Paciente'
+    await record('voice_note', null, { handedOver: true })
     try {
       await sendAsReceptionist(opts.send.event, service, accountId, target, VOICE_NOTE_REPLY)
     } catch (err) {
@@ -349,7 +365,7 @@ export async function draftPatientReply(
   // asked, because the model call is what the ceiling is there to stop.
   if (await overMonthlyLimit(service, accountId, config.monthlyReplyLimit)) return { status: 'limit_reached' }
 
-  const { text: draft, refused, handedOver, toolUses } = await runReceptionistModel(await createAnthropicClient(apiKey, { feature: 'receptionist_patient', accountId }), {
+  const run = await runReceptionistModel(await createAnthropicClient(apiKey, { feature: 'receptionist_patient', accountId }), {
     model: MODEL,
     maxTokens: MAX_TOKENS,
     system: withChosenTime(buildPatientReplyPrompt({ ...config, toneLine: toneWording(config.tone) }, { facts, offeredTypes: types, adOnlyTypes: adOnly, regularFirstVisit: regular, audience, calendar, searchTool: Boolean(findFreeTimes), bookedVisits: booked.visits, sendsItself: sends, canBook: Boolean(book), canWaitlist: Boolean(waitlist), minors, family: { forNew: family.forNew, forReturning: family.forReturning, members: family.members }, bringsSomeone: { ...bringsSomeone, canGive: Boolean(give) }, laterPrices, clinicDetails, team, app: patientApp, reactivationType, canStopFollowUps: Boolean(stopFollowUps), phoneSharers })),
@@ -367,8 +383,12 @@ export async function draftPatientReply(
     teamNames: team,
     logLabel: `patient ${patientId}`,
   })
+  const { text: draft, refused, handedOver, toolUses } = run
   // The model judged that nothing needs saying (a thanks the list missed).
-  if (!refused && draft && isNoReply(draft)) return leaveAlone()
+  if (!refused && draft && isNoReply(draft)) {
+    await record('no_reply', run)
+    return leaveAlone()
+  }
 
   // Counted for the monthly allowance: every reply it writes, sent or left as
   // a draft -- writing it is what cost money, whatever happens to it next.
@@ -380,6 +400,7 @@ export async function draftPatientReply(
     // Nothing to send: their question goes to a person now, and the
     // receptionist stays quiet here until somebody has answered.
     if (refused || !draft) {
+      await record('refused', run, { handedOver: true })
       await service.from('inbox_reply_drafts').upsert({ account_id: accountId, conversation_key: patientId, body: '-', drafted_through_at: newestInboundAt, dismissed_at: now, handed_over_at: now })
       await announceHandover(service, accountId, target, name, 'La recepcionista no ha podido responder a su último mensaje.')
       return { status: 'refused' }
@@ -405,12 +426,19 @@ export async function draftPatientReply(
     // They wrote again meanwhile: answered whole on the next tick, which sees
     // a message newer than drafted_through_at; this draft is put away.
     if (heldBack === 'newer_message') {
+      await record('superseded', run)
       await service.from('inbox_reply_drafts').update({ dismissed_at: now }).eq('account_id', accountId).eq('conversation_key', patientId)
       return { status: 'nothing_to_answer' }
     }
     if (heldBack === 'past_time') {
+      await record('held_past_time', run, { handedOver: true })
       await service.from('inbox_reply_drafts').update({ handed_over_at: now }).eq('account_id', accountId).eq('conversation_key', patientId)
       await announceHandover(service, accountId, target, name, PAST_TIME_REASON)
+    }
+    // A person is on it ('person', 'diary'): a draft for them, picked up again
+    // once the hold ends if nobody has answered by then (resumeHeldReplies).
+    if (heldBack === 'person' || heldBack === 'diary') {
+      await record(heldBack === 'person' ? 'held_person' : 'held_diary', run, { heldUntil: new Date(Date.now() + PERSON_ACTIVE_MINUTES * 60_000) })
     }
     if (heldBack) return { status: 'drafted', draft }
     try {
@@ -421,17 +449,22 @@ export async function draftPatientReply(
       // so. A draft nobody was told about left a patient waiting nine hours
       // for a reply already written (6 Nov 2026).
       console.error(`[receptionist] could not send to patient ${patientId}:`, (err as Error)?.message ?? err)
+      await record('send_failed', run, { handedOver: true })
       await service.from('inbox_reply_drafts').update({ handed_over_at: new Date().toISOString() }).eq('account_id', accountId).eq('conversation_key', patientId)
       await announceHandover(service, accountId, target, name, sendFailedReason(err))
       return { status: 'drafted', draft }
     }
     // Sent: dealt with, so it no longer shows as a draft.
+    await record('sent', run)
     await service.from('inbox_reply_drafts').update({ dismissed_at: new Date().toISOString() }).eq('account_id', accountId).eq('conversation_key', patientId)
     if (handedOver) await announceHandover(service, accountId, target, name, handedOver)
     return { status: 'sent', text: draft, handedOver: Boolean(handedOver) }
   }
 
-  if (refused || !draft) return { status: 'refused' }
+  if (refused || !draft) {
+    await record('refused', run)
+    return { status: 'refused' }
+  }
   if ((opts.store || opts.send) && newestInboundAt) {
     const handOverMinor = Boolean(opts.send) && minorsRecord && channel !== null && !handoverOpen
     const { error } = await service
@@ -439,6 +472,12 @@ export async function draftPatientReply(
       .upsert({ account_id: accountId, conversation_key: patientId, body: draft.slice(0, 4000), drafted_through_at: newestInboundAt, dismissed_at: null, created_at: new Date().toISOString(), ...(handOverMinor ? { handed_over_at: new Date().toISOString() } : {}) })
     if (error) throw new Error(`could not store the draft: ${error.message}`)
     if (handOverMinor) await announceHandover(service, accountId, { kind: 'patient', patientId, channel: channel! }, patient.first_name ?? 'Paciente', MINOR_RECORD_REASON)
+    // Held back although it may send on its own: a person is in the
+    // conversation (picked up again once the hold ends), or the day's limit.
+    if (handOverMinor) await record('minor', run, { handedOver: true })
+    else if (hold === 'person') await record('held_person', run, { heldUntil: personActiveUntil(asTurns) })
+    else if (hold === 'limit') await record('held_limit', run)
+    else await record('drafted', run)
   }
   return { status: 'drafted', draft }
 }

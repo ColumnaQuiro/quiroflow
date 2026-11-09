@@ -17,6 +17,7 @@ const SCREENS: [prefix: string, title: (t: T) => string][] = [
   ['/practitioner', (t) => t('My Day', 'Mi día')],
   ['/calendar', (t) => t('Calendar', 'Calendario')],
   ['/jornada', (t) => t('Working time', 'Registro de jornada')],
+  ['/personal', (t) => t('Staff', 'Personal')],
   ['/team-chat', (t) => t('Team', 'Equipo')],
   ['/patients/posture', (t) => t('Posture', 'Postura')],
   ['/patients/', (t) => t('Patient', 'Paciente')],

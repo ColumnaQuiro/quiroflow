@@ -103,6 +103,9 @@ const rules: Rule[] = [
   // so they are not offered at all rather than shown whole.
   // What each person earns: between the clinic and them, so owners only (pay_plans' RLS agrees).
   { test: (p) => p === '/reports/commissions', check: (s) => s.isOwner },
+  // Owners only: the team's leave, hours and (later) contracts and pay are
+  // between the clinic and each person (pages/personal.vue).
+  { test: (p) => p === '/personal', check: (s) => s.isOwner },
   { test: (p) => CLINIC_WIDE_REPORTS.includes(p), check: (s) => can(s, 'reports_access') && !restrictedTo(s, 'reports_own_only') },
   { test: (p) => p.startsWith('/reports'), check: (s) => can(s, 'reports_access') },
 ]

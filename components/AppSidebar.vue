@@ -157,6 +157,9 @@ const navGroups = computed<{ id: string; label: string; tier?: string; items: Na
       { label: t('Calendar', 'Calendario'), to: '/calendar', perm: () => scope('calendar_scope') !== 'none', icon: 'M2.5 3.5h11v10h-11zM2.5 6.6h11M5.6 2v2M10.4 2v2' },
       // Registro de jornada: everyone clocks, so everyone has it.
       { label: t('Working time', 'Registro de jornada'), to: '/jornada', perm: () => true, icon: 'M8 1.8a6.2 6.2 0 100 12.4A6.2 6.2 0 008 1.8zM8 4.6V8l2.4 1.5' },
+      // Personal: the team's people, holidays and what waits for the owner
+      // (pages/personal.vue). Owners only, as Turnos and Comisiones are.
+      { label: t('Staff', 'Personal'), to: '/personal', perm: () => store.isOwner, icon: 'M2.5 3h11v10h-11zM6 6.6a1.4 1.4 0 102.8 0 1.4 1.4 0 00-2.8 0M4.6 11c.3-1.2 1.3-1.9 2.8-1.9s2.5.7 2.8 1.9M10.8 5.6h1.4M10.8 7.6h1.4' },
       // Messages between colleagues. Everyone, like Working time: the people
       // who most need it have no Inbox (pages/team-chat.vue).
       { label: t('Team', 'Equipo'), to: '/team-chat', perm: () => true, icon: 'M5.5 6.5a2 2 0 100-4 2 2 0 000 4zM11 7a1.7 1.7 0 100-3.4A1.7 1.7 0 0011 7zM1.8 13c0-2 1.6-3.3 3.7-3.3S9.2 11 9.2 13M9.6 9.9c.4-.2.9-.3 1.4-.3 1.8 0 3.2 1.1 3.2 2.9', badge: 'team' },

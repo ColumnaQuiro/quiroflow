@@ -180,7 +180,7 @@ const grid = 'grid grid-cols-[minmax(0,1fr)_110px] items-center gap-3 sm:grid-co
               </label>
             </div>
 
-            <div :class="grid" class="border-t border-line-row bg-surface-subtle px-[18px] py-2 text-[12px] font-bold uppercase tracking-[.04em] text-ink-muted max-sm:hidden">
+            <div :class="grid" class="border-t border-line-row bg-surface-subtle px-[18px] py-2 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted max-sm:hidden">
               <span>{{ t('Name', 'Nombre') }}</span>
               <span class="text-right">{{ t('Price', 'Precio') }}</span>
               <span class="text-right">{{ t('Charged', 'Cobrado') }}</span>

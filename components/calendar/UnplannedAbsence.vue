@@ -182,7 +182,7 @@ const field = 'mt-1 w-full rounded-ctl border border-line-control bg-surface px-
     <div class="max-h-full w-full max-w-lg overflow-y-auto rounded-card border border-line bg-surface p-6 shadow-popover" ref="dialogPanel" role="dialog" aria-modal="true" aria-labelledby="absence-title" data-cy="absence">
       <div class="flex items-center justify-between">
         <h2 id="absence-title" class="text-[16px] font-[640] text-ink-900">{{ t('Unplanned absence', 'Ausencia imprevista') }}</h2>
-        <button type="button" :aria-label="t('Close', 'Cerrar')" class="-m-2 p-2 text-ink-faint hover:text-ink-600" @click="emit('close')">✕</button>
+        <button type="button" :aria-label="t('Close', 'Cerrar')" class="flex items-center justify-center rounded-ctlSm -m-2 p-2 text-ink-faint hover:text-ink-600" @click="emit('close')"><UiCloseIcon /></button>
       </div>
 
       <template v-if="!result">

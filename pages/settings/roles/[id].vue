@@ -268,8 +268,8 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
         <NuxtLink to="/settings/roles" class="font-semibold text-brand-text hover:underline" data-cy="role-back">{{ t('Roles and permissions', 'Roles y permisos') }}</NuxtLink>
       </nav>
       <div v-if="form" class="flex flex-wrap items-center gap-3">
-        <h1 class="text-[20px] font-bold text-ink-900" data-cy="role-title">{{ shownTitle || t('Untitled', 'Sin nombre') }}</h1>
-        <span v-if="isSystem" class="rounded-pill bg-chip-bg px-2.5 py-0.5 text-[12.5px] font-bold text-chip-text">{{ t('Fixed', 'Fijo') }}</span>
+        <h1 class="text-[18px] font-[640] tracking-tightTitle text-ink-900" data-cy="role-title">{{ shownTitle || t('Untitled', 'Sin nombre') }}</h1>
+        <UiPill tone="neutral" v-if="isSystem">{{ t('Fixed', 'Fijo') }}</UiPill>
       </div>
       <span v-if="form" class="text-[13px] text-ink-muted" data-cy="role-people-count">{{ peopleLabel }}</span>
     </header>
@@ -277,10 +277,16 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
     <div class="flex-1 overflow-y-auto">
       <div class="flex gap-8 p-4 pb-32 sm:p-6 sm:pb-32">
         <SettingsNav />
-        <p v-if="loaded && missing" class="text-[14px] text-ink-muted" data-cy="role-missing">
-          {{ t('This role does not exist, or is not yours.', 'Este rol no existe o no es tuyo.') }}
-          <NuxtLink to="/settings/roles" class="text-brand-text hover:underline">{{ t('Back to roles', 'Volver a roles') }}</NuxtLink>
-        </p>
+        <UiEmptyState v-if="loaded && missing" class="min-w-0 flex-1 !items-start !justify-start !px-0 !py-0" :title="t('This role does not exist, or is not yours.', 'Este rol no existe o no es tuyo.')" data-cy="role-missing">
+          <template #actions>
+            <NuxtLink to="/settings/roles" class="inline-flex h-9 items-center rounded-ctl border border-line-control bg-surface px-3.5 text-[13px] font-medium text-ink-500 hover:border-line-controlHover touch:h-11">{{ t('Back to roles', 'Volver a roles') }}</NuxtLink>
+          </template>
+        </UiEmptyState>
+        <div v-else-if="!form" class="flex min-w-0 max-w-[720px] flex-1 flex-col gap-4" aria-hidden="true">
+          <UiSkeleton class="h-48 w-full rounded-card" />
+          <UiSkeleton class="h-32 w-full rounded-card" />
+          <UiSkeleton class="h-32 w-full rounded-card" />
+        </div>
         <template v-else-if="form">
           <nav :aria-label="t('Sections', 'Secciones')" class="sticky top-0 hidden w-[180px] shrink-0 flex-col gap-0.5 self-start 2xl:flex">
             <a href="#rol" class="flex min-h-10 items-center rounded-ctlSm px-3 text-[14px] text-ink-700 hover:bg-surface-subtle">{{ t('The role', 'El rol') }}</a>
@@ -290,7 +296,7 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
 
           <main class="flex min-w-0 max-w-[820px] flex-1 flex-col gap-5" data-cy="role-page" :data-ready="loaded ? 'true' : undefined">
             <p v-if="isSystem" class="rounded-ctl border border-line bg-surface-subtle px-3.5 py-3 text-[13.5px] leading-snug text-ink-700" data-cy="role-owner-note">
-              {{ t("This is the account owner's role and it cannot be edited. An owner can do everything whatever role they hold -- what decides it is being an owner, not the role -- so nobody, the owner included, can be locked out by mistake here. Owners are made from their page in Team.", 'Este es el rol del propietario de la cuenta y no se puede editar. Un propietario lo puede todo tenga el rol que tenga -- lo que lo decide es ser propietario, no el rol --, así que nadie, ni el propio propietario, puede quedarse sin acceso por error desde aquí. Los propietarios se nombran desde su ficha en Equipo.') }}
+              {{ t("This is the account owner's role and it cannot be edited. An owner can do everything whatever role they hold — what decides it is being an owner, not the role — so nobody, the owner included, can be locked out by mistake here. Owners are made from their page in Team.", 'Este es el rol del propietario de la cuenta y no se puede editar. Un propietario lo puede todo tenga el rol que tenga — lo que lo decide es ser propietario, no el rol --, así que nadie, ni el propio propietario, puede quedarse sin acceso por error desde aquí. Los propietarios se nombran desde su ficha en Equipo.') }}
             </p>
 
             <!-- El rol -->
@@ -410,9 +416,9 @@ const hint = 'text-[12.5px] font-normal leading-snug text-ink-muted'
       <button type="button" data-cy="role-discard" class="h-9 touch:h-11 rounded-ctl border border-surface-page/30 px-3.5 text-[14px] font-semibold" @click="discard">
         {{ t('Discard', 'Descartar') }}
       </button>
-      <button type="button" data-cy="role-save" :disabled="saving" class="h-9 touch:h-11 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface disabled:opacity-70" @click="save">
+      <UiBtn variant="primary" data-cy="role-save" :disabled="saving" @click="save">
         {{ saving ? t('Saving…', 'Guardando…') : t('Save changes', 'Guardar cambios') }}
-      </button>
+      </UiBtn>
     </div>
 
     <UiConfirmDialog

@@ -113,12 +113,12 @@ function chips(x: TypeRow) {
   if (n > 0) out.push({ text: n === 1 ? t('1 practitioner with own price', '1 profesional con precio propio') : t(`${n} practitioners with own price`, `${n} profesionales con precio propio`), tone: 'neutral' })
   return out
 }
-const TONES = {
-  neutral: 'bg-chip-bg text-chip-text',
-  ok: 'bg-success-bg text-success-text',
-  warn: 'bg-warning-bg text-warning-text',
-  info: 'bg-info-bg text-info-text',
-}
+const PILL_TONE = {
+  neutral: 'neutral',
+  ok: 'success',
+  warn: 'warning',
+  info: 'info',
+} as const
 
 function appointmentsLabel(id: string) {
   const n = usage.value[id]?.appointments ?? 0
@@ -256,9 +256,9 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border bg-surface px-3 text-[15px
 <template>
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Appointment Types', 'Tipos de cita')">
-      <button type="button" data-cy="type-add" class="h-9 touch:h-11 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface hover:bg-brand-hover" @click="openAdd">
+      <UiBtn variant="primary" data-cy="type-add" @click="openAdd">
         {{ t('New type', 'Nuevo tipo') }}
-      </button>
+      </UiBtn>
     </PageHeader>
     <div class="flex-1 overflow-y-auto">
       <div class="flex gap-8 p-4 pb-24 sm:px-6 sm:pt-6 lg:pb-6">
@@ -327,7 +327,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border bg-surface px-3 text-[15px
                       <span class="text-[13.5px] text-ink-500">{{ x.duration_minutes }} min · {{ formatEur(x.default_price_cents) }}</span>
                     </div>
                     <div class="flex flex-wrap gap-1.5">
-                      <span v-for="c in chips(x)" :key="c.text" class="inline-flex h-6 items-center whitespace-nowrap rounded-pill px-2.5 text-[12px] font-bold" :class="TONES[c.tone]">{{ c.text }}</span>
+                      <UiPill v-for="c in chips(x)" :key="c.text" class="whitespace-nowrap" :tone="PILL_TONE[c.tone]">{{ c.text }}</UiPill>
                     </div>
                   </div>
                   <span class="hidden whitespace-nowrap text-[13px] text-ink-muted sm:inline" data-cy="type-uses">{{ appointmentsLabel(x.id) }}</span>
@@ -370,15 +370,9 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border bg-surface px-3 text-[15px
                     {{ t(`Archived ${formatDay(x.archived_at!)} · still on its ${usage[x.id]?.appointments ?? 0} appointments and in reports`, `Archivado el ${formatDay(x.archived_at!)} · sigue en sus ${usage[x.id]?.appointments ?? 0} citas y en los informes`) }}
                   </span>
                 </NuxtLink>
-                <button
-                  type="button"
-                  data-cy="type-reactivate"
-                  :disabled="reactivating === x.id"
-                  class="h-9 touch:h-11 shrink-0 rounded-ctl border border-line-control bg-surface px-3.5 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:opacity-60"
-                  @click="reactivate(x)"
-                >
+                <UiBtn class="shrink-0" data-cy="type-reactivate" :disabled="reactivating === x.id" @click="reactivate(x)">
                   {{ t('Reactivate', 'Reactivar') }}
-                </button>
+                </UiBtn>
               </div>
             </details>
           </section>

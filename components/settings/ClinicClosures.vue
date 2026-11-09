@@ -159,14 +159,14 @@ async function confirmRemove() {
         {{ t(`${bookedInside} appointments are already booked in these days. Closing hides the free slots but moves nobody.`, `Ya hay ${bookedInside} citas en esos días. Cerrar oculta los huecos libres, pero no mueve a nadie.`) }}
       </p>
       <div class="flex gap-2">
-        <button type="button" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700" @click="adding = false">{{ t('Cancel', 'Cancelar') }}</button>
-        <button type="button" data-cy="closure-save" class="h-9 touch:h-11 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface disabled:opacity-60" :disabled="saving || !from || toBeforeFrom" @click="add">{{ t('Add closure', 'Añadir cierre') }}</button>
+        <UiBtn @click="adding = false">{{ t('Cancel', 'Cancelar') }}</UiBtn>
+        <UiBtn variant="primary" data-cy="closure-save" :disabled="saving || !from || toBeforeFrom" @click="add">{{ t('Add closure', 'Añadir cierre') }}</UiBtn>
       </div>
     </div>
     <div v-else>
-      <button type="button" data-cy="closure-add" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3.5 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="adding = true">
+      <UiBtn data-cy="closure-add" @click="adding = true">
         {{ t('Add a holiday or closure…', 'Añadir un día festivo o cierre…') }}
-      </button>
+      </UiBtn>
     </div>
 
     <UiConfirmDialog

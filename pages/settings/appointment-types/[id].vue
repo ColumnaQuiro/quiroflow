@@ -453,8 +453,8 @@ const errorText = 'text-[12.5px] font-semibold text-danger-text'
       </nav>
       <div v-if="saved" class="flex flex-wrap items-center gap-3">
         <span class="h-[18px] w-[18px] shrink-0 rounded-full" :style="{ background: saved.color }" aria-hidden="true" />
-        <h1 class="text-[20px] font-bold text-ink-900" data-cy="type-title">{{ saved.name }}</h1>
-        <span v-if="archivedAt" class="rounded-pill bg-chip-bg px-2.5 py-0.5 text-[12.5px] font-bold text-chip-text" data-cy="type-archived-chip">{{ t('Archived', 'Archivado') }}</span>
+        <h1 class="text-[18px] font-[640] tracking-tightTitle text-ink-900" data-cy="type-title">{{ saved.name }}</h1>
+        <UiPill tone="neutral" v-if="archivedAt" data-cy="type-archived-chip">{{ t('Archived', 'Archivado') }}</UiPill>
       </div>
       <span v-if="saved" class="text-[13px] text-ink-muted" data-cy="type-subtitle">{{ subtitle }}</span>
     </header>
@@ -462,10 +462,16 @@ const errorText = 'text-[12.5px] font-semibold text-danger-text'
     <div class="flex-1 overflow-y-auto">
       <div class="flex gap-8 p-4 pb-32 sm:px-6 sm:pt-6">
         <SettingsNav />
-        <p v-if="loaded && missing" class="text-[14px] text-ink-muted" data-cy="type-missing">
-          {{ t('This appointment type does not exist, or is not yours.', 'Este tipo de cita no existe o no es tuyo.') }}
-          <NuxtLink to="/settings/appointment-types" class="text-brand-text hover:underline">{{ t('Back to appointment types', 'Volver a tipos de cita') }}</NuxtLink>
-        </p>
+        <UiEmptyState v-if="loaded && missing" class="min-w-0 flex-1 !items-start !justify-start !px-0 !py-0" :title="t('This appointment type does not exist, or is not yours.', 'Este tipo de cita no existe o no es tuyo.')" data-cy="type-missing">
+          <template #actions>
+            <NuxtLink to="/settings/appointment-types" class="inline-flex h-9 items-center rounded-ctl border border-line-control bg-surface px-3.5 text-[13px] font-medium text-ink-500 hover:border-line-controlHover touch:h-11">{{ t('Back to appointment types', 'Volver a tipos de cita') }}</NuxtLink>
+          </template>
+        </UiEmptyState>
+        <div v-else-if="!form" class="flex min-w-0 max-w-[720px] flex-1 flex-col gap-4" aria-hidden="true">
+          <UiSkeleton class="h-48 w-full rounded-card" />
+          <UiSkeleton class="h-32 w-full rounded-card" />
+          <UiSkeleton class="h-32 w-full rounded-card" />
+        </div>
         <template v-else-if="form">
           <nav :aria-label="t('Sections', 'Secciones')" class="sticky top-0 hidden w-[180px] shrink-0 flex-col gap-0.5 self-start 2xl:flex">
             <a v-for="s in SECTIONS" :key="s.id" :href="`#${s.id}`" class="flex min-h-10 items-center rounded-ctlSm px-3 text-[14px] text-ink-700 hover:bg-surface-subtle">{{ s.label }}</a>
@@ -474,9 +480,9 @@ const errorText = 'text-[12.5px] font-semibold text-danger-text'
           <main class="flex min-w-0 max-w-[820px] flex-1 flex-col gap-5" data-cy="type-page" :data-ready="loaded ? 'true' : undefined">
             <p v-if="archivedAt" class="flex flex-wrap items-center gap-3 rounded-card border border-line bg-surface-subtle px-4 py-3 text-[14px] text-ink-700" data-cy="type-archived-banner">
               <span class="flex-1">{{ t('Archived: not offered in the calendar, online booking or any picker. It stays on its appointments, in reports and in billing.', 'Archivado: no se ofrece en el calendario, la reserva online ni los selectores. Sigue en sus citas, en los informes y en los cobros.') }}</span>
-              <button type="button" data-cy="type-page-reactivate" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="reactivate">
+              <UiBtn data-cy="type-page-reactivate" @click="reactivate">
                 {{ t('Reactivate', 'Reactivar') }}
-              </button>
+              </UiBtn>
             </p>
 
             <!-- El tipo de cita -->
@@ -667,7 +673,7 @@ const errorText = 'text-[12.5px] font-semibold text-danger-text'
                   : t('Nobody ticked: everyone does it.', 'Nadie marcado: lo hacen todos.') }}</span>
               </fieldset>
               <div v-if="practitioners.length > 0" class="overflow-hidden rounded-ctl border border-line">
-                <div class="hidden grid-cols-[1.6fr_1fr_1fr_60px] items-center bg-surface-subtle text-[12px] font-bold uppercase tracking-[.04em] text-ink-muted sm:grid">
+                <div class="hidden grid-cols-[1.6fr_1fr_1fr_60px] items-center bg-surface-subtle text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted sm:grid">
                   <span class="px-3.5 py-2.5">{{ t('Practitioner', 'Profesional') }}</span>
                   <span class="px-3.5 py-2.5">{{ t('Duration (min)', 'Duración (min)') }}</span>
                   <span class="px-3.5 py-2.5">{{ t('Price (€)', 'Precio (€)') }}</span>
@@ -714,10 +720,10 @@ const errorText = 'text-[12.5px] font-semibold text-danger-text'
                       type="button"
                       data-cy="type-override-clear"
                       :aria-label="t(`Remove ${p.full_name}'s own price`, `Quitar el precio propio de ${p.full_name}`)"
-                      class="flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center rounded-ctl text-[20px] text-ink-muted hover:bg-surface-subtle"
+                      class="flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle hover:text-ink-700"
                       @click="form.overrides[p.id] = { duration: '', price: '' }"
                     >
-                      ×
+                      <UiCloseIcon />
                     </button>
                   </span>
                 </div>
@@ -825,9 +831,9 @@ const errorText = 'text-[12.5px] font-semibold text-danger-text'
       <button type="button" data-cy="type-discard" class="h-9 touch:h-11 rounded-ctl border border-surface-page/30 px-3.5 text-[14px] font-semibold" @click="discard">
         {{ t('Discard', 'Descartar') }}
       </button>
-      <button type="button" data-cy="type-save" :disabled="saving" class="h-9 touch:h-11 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface disabled:opacity-70" @click="save">
+      <UiBtn variant="primary" data-cy="type-save" :disabled="saving" @click="save">
         {{ saving ? t('Saving…', 'Guardando…') : t('Save changes', 'Guardar cambios') }}
-      </button>
+      </UiBtn>
     </div>
 
     <UiConfirmDialog

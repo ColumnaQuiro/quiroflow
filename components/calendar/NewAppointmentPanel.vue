@@ -814,7 +814,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   >
     <div class="flex shrink-0 items-start justify-between gap-3 border-b border-line px-5 py-3.5 sm:px-6">
       <div class="flex min-w-0 flex-col">
-        <h2 id="new-title" class="text-[20px] font-bold text-ink-900">{{ t('New appointment', 'Nueva cita') }}</h2>
+        <h2 id="new-title" class="text-[18px] font-[640] tracking-tightTitle text-ink-900">{{ t('New appointment', 'Nueva cita') }}</h2>
         <span class="truncate text-[13px] text-ink-muted" data-cy="create-when">{{ whenLabel }}<template v-if="roomLabel"> · {{ roomLabel }}</template></span>
       </div>
       <button type="button" :aria-label="t('Close', 'Cerrar')" class="-mr-2.5 flex h-9 touch:h-11 w-9 touch:w-11 shrink-0 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle" @click="emit('close')">
@@ -823,7 +823,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
     </div>
 
     <div v-if="activeTab === 'availability'" class="min-h-0 flex-1 overflow-y-auto px-5 py-4 sm:px-6">
-      <button type="button" class="mb-3 text-[13px] font-semibold text-brand-text" @click="activeTab = 'create'">← {{ t('Back to the booking', 'Volver a la cita') }}</button>
+      <button type="button" class="-ml-2 mb-3 flex h-9 items-center gap-1 rounded-ctl px-2 text-[13px] font-semibold text-brand-text hover:bg-brand-tint touch:h-11" @click="activeTab = 'create'"><UiChevron dir="left" />{{ t('Back to the booking', 'Volver a la cita') }}</button>
       <CalendarAvailabilityBlockInline :rooms="rooms" :prefill-date="date" :prefill-time="time" :prefill-room-id="roomId" @close="emit('close')" @saved="emit('saved')" />
     </div>
 
@@ -831,7 +831,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
       <div class="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-4 sm:px-6">
         <!-- 1. Who -->
         <section>
-          <label for="patient-q" class="mb-2 block text-[11px] font-bold uppercase tracking-[.06em] text-ink-muted">{{ t('Patient', 'Paciente') }}</label>
+          <label for="patient-q" class="mb-2 block text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted">{{ t('Patient', 'Paciente') }}</label>
           <div v-if="selectedPatient && patientMode === 'existing'" class="flex items-center gap-3 rounded-card border-[1.5px] border-brand bg-brand-tint px-3 py-2.5" data-cy="create-patient-selected">
             <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface text-[13px] font-bold text-brand-text">{{ initials(selectedPatient) }}</span>
             <span class="flex min-w-0 flex-1 flex-col">
@@ -866,7 +866,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
                 <span class="truncate text-[14px] font-semibold text-ink-900">{{ p.first_name }} {{ p.last_name }}</span>
                 <span class="truncate text-[12px] text-ink-muted">{{ p.sub }}</span>
               </span>
-              <span v-for="f in p.flags" :key="f" class="shrink-0 rounded-full border border-brand-tintBorder bg-brand-tint px-2 py-0.5 text-[11.5px] font-semibold text-brand-text" data-cy="create-patient-flag">{{ f }}</span>
+              <UiPill v-for="f in p.flags" :key="f" tone="brand" class="shrink-0" data-cy="create-patient-flag">{{ f }}</UiPill>
             </button>
             <p v-if="patientQuery.trim() && !searching && searchResults.length === 0" class="px-2.5 text-[13px] text-ink-muted">{{ t('No matches', 'Sin resultados') }}</p>
             <button type="button" data-cy="create-new-patient" class="flex min-h-9 touch:min-h-11 items-center gap-2 rounded-ctl border border-dashed border-line-control px-3 text-[13.5px] font-semibold text-brand-text hover:bg-brand-tint" @click="startNewPatient">
@@ -900,7 +900,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
 
         <!-- 2. What for -->
         <section>
-          <span class="mb-2 block text-[11px] font-bold uppercase tracking-[.06em] text-ink-muted">{{ t('Type', 'Tipo') }}</span>
+          <span class="mb-2 block text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted">{{ t('Type', 'Tipo') }}</span>
           <div role="radiogroup" :aria-label="t('Appointment type', 'Tipo de cita')" class="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2">
             <button
               v-for="ty in appointmentTypes"
@@ -951,7 +951,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
 
         <!-- 3. With whom: working hours and bookings decide what is offered -->
         <section>
-          <span class="mb-2 block text-[11px] font-bold uppercase tracking-[.06em] text-ink-muted">{{ t('Practitioner', 'Profesional') }}</span>
+          <span class="mb-2 block text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted">{{ t('Practitioner', 'Profesional') }}</span>
           <div role="radiogroup" :aria-label="t('Practitioner', 'Profesional')" class="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2">
             <button
               v-for="p in practitionerCards"
@@ -990,7 +990,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
 
         <!-- 4. When: the answer to "can she come Thursday at six?" -->
         <section>
-          <span class="mb-2 block text-[11px] font-bold uppercase tracking-[.06em] text-ink-muted">{{ t(`Time · ${duration} min`, `Hora · ${duration} min`) }}</span>
+          <span class="mb-2 block text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted">{{ t(`Time · ${duration} min`, `Hora · ${duration} min`) }}</span>
           <div class="grid grid-cols-2 gap-2 min-[420px]:grid-cols-3">
             <label class="flex flex-col gap-1 text-[12px] font-medium text-ink-600">{{ t('Date', 'Fecha') }}<input v-model="date" type="date" required class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-2.5 text-[13.5px] text-ink-700" /></label>
             <label class="flex flex-col gap-1 text-[12px] font-medium text-ink-600">{{ t('Time', 'Hora') }}<input v-model="time" type="time" required class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-2.5 text-[13.5px] text-ink-700" /></label>
@@ -1098,7 +1098,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
             <button
               v-if="pendingKeepCount > 0"
               type="button"
-              class="h-9 touch:h-11 rounded-ctl bg-brand px-3 text-[13px] font-semibold text-surface hover:bg-brand-hover"
+              class="h-9 touch:h-11 rounded-ctl bg-brand px-3 text-[13px] font-semibold text-brand-on hover:bg-brand-hover"
               data-cy="create-series-skip"
               @click="resolveSeries('skip')"
             >
@@ -1118,7 +1118,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
           data-cy="create-submit"
           :disabled="!canBook"
           class="h-[52px] rounded-[11px] text-[15px] font-bold"
-          :class="canBook ? 'bg-brand text-surface hover:bg-brand-hover' : 'cursor-not-allowed bg-chip-bg text-ink-muted'"
+          :class="canBook ? 'bg-brand text-brand-on hover:bg-brand-hover' : 'cursor-not-allowed bg-chip-bg text-ink-muted'"
         >
           {{ cta }}
         </button>

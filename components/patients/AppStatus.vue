@@ -61,7 +61,7 @@ const PLATFORM: Record<string, string> = { ios: 'iPhone', android: 'Android', we
 
 const label = computed(() => {
   if (state.value === 'app' && device.value) {
-    const when = formatRelativeDays(device.value.last_seen_at, preference.value === 'es' ? 'es' : 'en')
+    const when = formatRelativeDays(device.value.last_seen_at, preference.value)
     const platform = PLATFORM[device.value.platform] ?? device.value.platform
     return t(`App · ${platform} · opened ${when}`, `App · ${platform} · abierta ${when}`)
   }

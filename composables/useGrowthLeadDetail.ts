@@ -79,7 +79,7 @@ export function useGrowthLeadDetail() {
   // (utils/growthLeadWords.ts). Older responses without the raw fields keep
   // what the server wrote.
   function worded(raw: GrowthLeadDetail): GrowthLeadDetail {
-    const locale = preference.value === 'es' ? 'es-ES' : 'en-GB'
+    const locale = uiLocaleTag(preference.value)
     return {
       ...raw,
       createdAt: raw.createdAtIso

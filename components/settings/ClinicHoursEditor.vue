@@ -69,7 +69,7 @@ function problemText(p: HoursProblem) {
         class="flex flex-wrap items-center gap-x-3.5 gap-y-2 px-3.5 py-2"
         :class="[i > 0 ? 'border-t border-line-row' : '', (modelValue[d.key] ?? []).length === 0 ? 'bg-surface-subtle' : '']"
       >
-        <span class="w-[92px] shrink-0 text-[14px] font-semibold text-ink-900">{{ preference === 'es' ? d.es : d.en }}</span>
+        <span class="w-[92px] shrink-0 text-[14px] font-semibold text-ink-900">{{ t(d.en, d.es) }}</span>
         <button
           type="button"
           role="switch"

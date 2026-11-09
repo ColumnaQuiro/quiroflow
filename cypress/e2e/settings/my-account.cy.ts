@@ -92,6 +92,25 @@ describe('My account', () => {
     })
   })
 
+  it('switches to Portuguese and German from their catalogs, and saves them', () => {
+    cy.seedStaffAccount().then((account) => {
+      openAccount(account)
+      for (const lang of ['pt', 'de'] as const) {
+        cy.readFile(`i18n/${lang}.json`).then((catalog: { s: Record<string, string> }) => {
+          cy.get(`[data-cy=account-language] [data-lang=${lang}]`).click()
+          cy.contains('h1', catalog.s['My account']!).should('be.visible')
+          cy.get(`[data-cy=account-language] [data-lang=${lang}]`).should('have.attr', 'aria-checked', 'true')
+          teamMember(account.teamMemberId).its('language_preference').should('equal', lang)
+        })
+      }
+      // Saved, it is what the next load opens in.
+      cy.reload()
+      cy.readFile('i18n/de.json').then((catalog: { s: Record<string, string> }) => {
+        cy.contains('h1', catalog.s['My account']!).should('be.visible')
+      })
+    })
+  })
+
   it('changes the password in its own form, and the new one signs in', () => {
     cy.seedStaffAccount().then((account) => {
       openAccount(account)

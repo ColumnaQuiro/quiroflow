@@ -1,3 +1,5 @@
+import { uiCatalogTranslate } from './uiCatalog'
+import type { UiLanguage } from './uiLanguage'
 // "Mis hábitos" in the patient app (Cuidarme): the reminders a patient sets
 // for themselves, and when exactly they go off. The phone keeps them and
 // schedules them (mobile/composables/useHabits.ts and the native
@@ -33,7 +35,7 @@ export interface HabitPlace {
   address: string
 }
 
-export type Lang = 'en' | 'es'
+export type Lang = UiLanguage
 
 /** Each kind's own name and reminder line, [English, Spanish]. */
 export const HABIT_KINDS: Record<HabitKind, { label: [string, string]; message: [string, string] }> = {
@@ -44,7 +46,9 @@ export const HABIT_KINDS: Record<HabitKind, { label: [string, string]; message: 
   levantarse: { label: ['Get up', 'Levantarme'], message: ['Get up and walk for a minute.', 'Levántate y camina un minuto.'] },
   otro: { label: ['My habit', 'Mi hábito'], message: ["It's time.", 'Es la hora.'] },
 }
-const pick = (pair: [string, string], lang: Lang) => (lang === 'en' ? pair[0] : pair[1])
+// English and Spanish are here; Portuguese and German come from the interface
+// catalog, which collects these pairs too (scripts/i18n-extract.mjs).
+const pick = (pair: [string, string], lang: Lang) => (lang === 'es' ? pair[1] : lang === 'en' ? pair[0] : uiCatalogTranslate(lang, pair[0]))
 
 /**
  * At most this many reminders a day, all habits together. Not a taste
@@ -104,11 +108,20 @@ export function remindersPerDay(habits: Habit[]): number {
 
 /** "5 al día · 9 a 19 h · lunes a viernes". */
 export function habitSummary(h: Habit, lang: Lang = 'es'): string {
-  const en = lang === 'en'
   const times = habitTimes(h)
   const hours = (s: string) => (s.endsWith(':00') ? String(Number(s.slice(0, 2))) : s.replace(/^0/, ''))
-  const when = times.length === 1 ? `${en ? 'at' : 'a las'} ${hours(times[0]!)}` : times.length === 2 ? `${times.map((t) => t.replace(/^0/, '')).join(en ? ' and ' : ' y ')}` : `${hours(h.from)} ${en ? 'to' : 'a'} ${hours(h.to)} h`
-  return `${times.length} ${en ? 'a day' : 'al día'} · ${when} · ${pick(DAYS_LABEL[h.days], lang)}`
+  const [a, b] = times.map((t) => t.replace(/^0/, ''))
+  const from = hours(h.from)
+  const to = hours(h.to)
+  const when =
+    times.length === 1
+      ? pick([`at ${hours(times[0]!)}`, `a las ${hours(times[0]!)}`], lang)
+      : times.length === 2
+        ? pick([`${a} and ${b}`, `${a} y ${b}`], lang)
+        : pick([`${from} to ${to} h`, `${from} a ${to} h`], lang)
+  const count = times.length
+  const days = pick(DAYS_LABEL[h.days], lang)
+  return pick([`${count} a day · ${when} · ${days}`, `${count} al día · ${when} · ${days}`], lang)
 }
 
 /**

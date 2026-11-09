@@ -67,7 +67,7 @@ const rows = computed(() => [
     description: props.comped
       ? t('Answers WhatsApp and books from your calendar.', 'Contesta WhatsApp y reserva desde tu agenda.')
       : t(
-          `Answers WhatsApp and books from your calendar. ${RECEPTIONIST_INCLUDED_REPLIES.toLocaleString('en-GB')} replies a month included; each further 1,000 is ${formatEur(RECEPTIONIST_BLOCK_PRICE_CENTS)} + IVA.`,
+          `Answers WhatsApp and books from your calendar. ${RECEPTIONIST_INCLUDED_REPLIES.toLocaleString(t('en-GB', 'es-ES'))} replies a month included; each further 1,000 is ${formatEur(RECEPTIONIST_BLOCK_PRICE_CENTS)} + IVA.`,
           `Contesta WhatsApp y reserva desde tu agenda. ${RECEPTIONIST_INCLUDED_REPLIES.toLocaleString('es-ES')} respuestas al mes incluidas; cada 1.000 más, ${formatEur(RECEPTIONIST_BLOCK_PRICE_CENTS)} + IVA.`,
         ),
     price: priceOf(props.receptionistPrices),

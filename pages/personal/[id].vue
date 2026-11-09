@@ -78,7 +78,7 @@ function roleLabel(name: string) {
   return name === 'Owner' ? t('Owner', 'Propietario') : name === 'Practitioner' ? t('Practitioner', 'Profesional') : name === 'Front Desk' ? t('Front Desk', 'Recepción') : name
 }
 const clinicNames = computed(() => store.clinics.filter((c) => clinicIds.value.includes(c.id)).map((c) => c.name))
-const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(lang.value === 'es' ? 'es-ES' : 'en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: timeZone.value })
+const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(uiLocaleTag(lang.value), { day: 'numeric', month: 'long', year: 'numeric', timeZone: timeZone.value })
 const dt = 'text-[12.5px] text-ink-muted'
 const dd = 'text-[14px] text-ink-900'
 </script>

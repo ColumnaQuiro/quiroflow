@@ -75,7 +75,7 @@ const TABS = computed(() => [
   { key: 'failed' as Tab, label: t('Failed', 'Con fallos'), count: counts.value.failed },
 ])
 
-const locale = computed(() => (preference.value === 'es' ? 'es-ES' : 'en-GB'))
+const locale = computed(() => uiLocaleTag(preference.value))
 function day(iso: string | null) {
   if (!iso) return '—'
   const d = new Date(iso)

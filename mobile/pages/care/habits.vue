@@ -46,7 +46,7 @@ const ICONS: Record<HabitKind, { path: string; tone: string }> = {
           <span class="block text-[12.5px] text-ink-muted">{{ h.enabled ? habitSummary(h, lang) : t('Paused', 'Pausado') }}</span>
           <span v-if="h.enabled && h.placeIds.length" class="flex items-center gap-1 text-[12.5px] text-brand-text">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z" /><circle cx="12" cy="9.5" r="2.5" /></svg>
-            {{ t(`Only at ${placeNames(h.placeIds, ' or ')}`, `Solo en ${placeNames(h.placeIds, ' o ')}`) }}
+            {{ t(`Only at ${placeNames(h.placeIds, t(' or ', ' o '))}`, `Solo en ${placeNames(h.placeIds, ' o ')}`) }}
           </span>
         </NuxtLink>
         <button

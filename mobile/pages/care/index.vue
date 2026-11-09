@@ -21,7 +21,7 @@ const { items: exercises, doneToday: exerciseDone, toggleToday, busyId } = usePa
 const { habits, doneToday: habitDone, tick } = useHabits(() => patientId.value)
 const { preference: lang } = useLang()
 
-const week = computed(() => thisWeek(today.value).map((d, i) => ({ day: d, letter: (lang.value === 'en' ? 'MTWTFSS' : 'LMXJVSD')[i]!, state: dayState(d, today.value, active.value, streak.value.free) })))
+const week = computed(() => thisWeek(today.value).map((d, i) => ({ day: d, letter: weekdayInitials(lang.value)[i]!, state: dayState(d, today.value, active.value, streak.value.free) })))
 const freeThisWeek = computed(() => week.value.find((d) => d.state === 'free'))
 const dayName = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString(t('en-GB', 'es-ES'), { weekday: 'long' })
 

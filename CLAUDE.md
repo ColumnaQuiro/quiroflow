@@ -441,7 +441,7 @@ model, and add a case for each new incident. It is not in CI -- it costs money
 and the model is not deterministic -- and it needs a non-production key in
 `~/.quiroflow-eval-anthropic-key` or `ANTHROPIC_API_KEY`.
 
-What each reply in production did is in `receptionist_replies`: its outcome
+What each reply in production did is in `receptionist_reply_traces`: its outcome
 (sent, drafted, held and why, refused, failed), the tools it called with
 their dates, times and types, which checks in code rewrote or withheld it,
 and its tokens. Count from there, not from impressions, when asking whether

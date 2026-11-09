@@ -56,7 +56,7 @@ export interface ReceptionistRun {
   refused: boolean
   handedOver: string | null
   toolUses: ReceptionistToolUse[]
-  /** The checks in code that fired, in order (receptionist_replies.checks). */
+  /** The checks in code that fired, in order (receptionist_reply_traces.checks). */
   checks: string[]
   usage: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; rounds: number }
 }
@@ -196,7 +196,7 @@ export async function runReceptionistModel(
 ): Promise<ReceptionistRun> {
   const messages: Anthropic.MessageParam[] = [...opts.messages]
   // What the checks in code did to this reply, and what it cost, for its
-  // record (receptionist_replies).
+  // record (receptionist_reply_traces).
   const checks: string[] = []
   const usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, rounds: 0 }
   const run = (text: string, refused: boolean): ReceptionistRun => ({ text, refused, handedOver, toolUses, checks, usage })

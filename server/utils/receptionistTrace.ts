@@ -1,7 +1,7 @@
 import type { ReceptionistRun, ReceptionistToolUse } from '~/server/utils/receptionistModel'
 
-// The record of one receptionist reply (receptionist_replies,
-// 20261109201730_receptionist_replies.sql): what it did, which checks fired,
+// The record of one receptionist reply (receptionist_reply_traces,
+// 20261109201730_receptionist_reply_traces.sql): what it did, which checks fired,
 // why it did or did not go out, and what it cost. Read by the daily review
 // and by whoever asks "is it better since the change?".
 //
@@ -57,7 +57,7 @@ export function traceToolUses(uses: ReceptionistToolUse[]): { name: string; ok: 
 export async function recordReply(service: any, record: ReplyRecord): Promise<void> {
   try {
     const run = record.run ?? null
-    const { error } = await service.from('receptionist_replies').insert({
+    const { error } = await service.from('receptionist_reply_traces').insert({
       account_id: record.accountId,
       conversation_key: record.conversationKey,
       kind: record.kind,

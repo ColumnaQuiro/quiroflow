@@ -16,7 +16,7 @@ import type { BusinessHours } from '~/utils/businessHours'
 // it never came back to it.
 //
 // Run from handover-reminder-cron, every 15 minutes. For each held reply
-// whose hold has ended (receptionist_replies.held_until):
+// whose hold has ended (receptionist_reply_traces.held_until):
 // - somebody has written since, they have written again, or a person has the
 //   conversation now: nothing to do;
 // - otherwise, if the receptionist answers on its own at this hour, it
@@ -36,7 +36,7 @@ export const UNANSWERED_AFTER_HOLD_REASON = 'Escribió cuando había alguien del
 export async function resumeHeldReplies(supabase: any, opts: { url: string; secret: string; now?: Date }): Promise<{ key: string; outcome: string }[]> {
   const now = opts.now ?? new Date()
   const { data: held, error } = await supabase
-    .from('receptionist_replies')
+    .from('receptionist_reply_traces')
     .select('id, account_id, conversation_key, kind, answers_through, created_at')
     .in('outcome', ['held_person', 'held_diary'])
     .is('resumed_at', null)
@@ -59,7 +59,7 @@ export async function resumeHeldReplies(supabase: any, opts: { url: string; secr
     if (!seen || row.created_at > seen.created_at) newest.set(row.conversation_key, row)
   }
   const older = rows.filter((row) => newest.get(row.conversation_key)!.id !== row.id).map((row) => row.id)
-  if (older.length) await supabase.from('receptionist_replies').update({ resumed_at: now.toISOString(), resume_outcome: 'superseded' }).in('id', older).is('resumed_at', null)
+  if (older.length) await supabase.from('receptionist_reply_traces').update({ resumed_at: now.toISOString(), resume_outcome: 'superseded' }).in('id', older).is('resumed_at', null)
 
   const answering = await accountsAnsweringNow(supabase, [...new Set(rows.map((r) => r.account_id))], now)
   const done: { key: string; outcome: string }[] = []
@@ -84,7 +84,7 @@ async function resumeOne(
   const patientId = row.kind === 'patient' ? row.conversation_key : null
   const settle = async (outcome: string) => {
     // Claimed: a second tick that read the same row finds it taken.
-    const { data } = await supabase.from('receptionist_replies').update({ resumed_at: new Date().toISOString(), resume_outcome: outcome }).eq('id', row.id).is('resumed_at', null).select('id')
+    const { data } = await supabase.from('receptionist_reply_traces').update({ resumed_at: new Date().toISOString(), resume_outcome: outcome }).eq('id', row.id).is('resumed_at', null).select('id')
     return (data ?? []).length > 0
   }
 
@@ -146,7 +146,7 @@ async function resumeOne(
     })
     if (error) {
       console.error(`[receptionist] could not dispatch the held reply in ${row.conversation_key}:`, error.message)
-      await supabase.from('receptionist_replies').update({ resumed_at: null, resume_outcome: null }).eq('id', row.id)
+      await supabase.from('receptionist_reply_traces').update({ resumed_at: null, resume_outcome: null }).eq('id', row.id)
       return null
     }
     return 'resent'

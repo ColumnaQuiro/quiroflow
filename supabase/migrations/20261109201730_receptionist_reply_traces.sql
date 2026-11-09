@@ -23,8 +23,12 @@
 -- itself already keeps. So nothing here needs moving by merge_patients or
 -- removing by anonymize_patient, and conversation_key is text like
 -- inbox_reply_drafts', not a foreign key.
+--
+-- Not "receptionist_replies": that name is the monthly allowance count
+-- (20261015051008_receptionist_reply_allowance.sql), which bills the add-on
+-- and must stay exactly what it is.
 
-create table public.receptionist_replies (
+create table public.receptionist_reply_traces (
   id uuid primary key default gen_random_uuid(),
   account_id uuid not null references public.accounts(id) on delete cascade,
   -- A patient's id, or lead:<id>: the Inbox's key for the conversation.
@@ -71,14 +75,14 @@ create table public.receptionist_replies (
   created_at timestamptz not null default now()
 );
 
-create index receptionist_replies_account_created on public.receptionist_replies (account_id, created_at desc);
-create index receptionist_replies_held on public.receptionist_replies (held_until) where held_until is not null and resumed_at is null;
+create index receptionist_reply_traces_account_created on public.receptionist_reply_traces (account_id, created_at desc);
+create index receptionist_reply_traces_held on public.receptionist_reply_traces (held_until) where held_until is not null and resumed_at is null;
 
-alter table public.receptionist_replies enable row level security;
+alter table public.receptionist_reply_traces enable row level security;
 -- Read by whoever configures the receptionist; written only by the service
 -- role, from the reply itself and the handover job.
-create policy "receptionist config staff read receptionist_replies" on public.receptionist_replies
+create policy "receptionist config staff read receptionist_reply_traces" on public.receptionist_reply_traces
   for select
   using (is_account_member(account_id) and has_permission(account_id, 'communication_config'));
-select public.require_two_factor_on('public.receptionist_replies');
-select public.grant_data_api('public.receptionist_replies');
+select public.require_two_factor_on('public.receptionist_reply_traces');
+select public.grant_data_api('public.receptionist_reply_traces');

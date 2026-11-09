@@ -251,7 +251,7 @@ export async function draftLeadReply(
   // the conversation, or the day's limit is reached.
   const hold = mayAutoSend ? autoReplyHeldBack(asTurns, new Date()) : null
   const sends = mayAutoSend && hold === null
-  // Its record (receptionist_replies), at whichever exit it leaves by.
+  // Its record (receptionist_reply_traces), at whichever exit it leaves by.
   const record = (outcome: ReplyOutcome, run: ReceptionistRun | null, extra: { handedOver?: boolean; heldUntil?: Date | null } = {}) =>
     recordReply(calendarClient, { accountId, conversationKey: `lead:${leadId}`, kind: 'lead', mode: mayAutoSend ? 'send' : 'draft', outcome, answersThrough: newestInboundAt, run, model: MODEL, startedAt, ...extra })
 

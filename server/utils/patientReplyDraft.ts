@@ -294,7 +294,7 @@ export async function draftPatientReply(
   // the conversation, or the day's limit is reached.
   const hold = mayAutoSend ? autoReplyHeldBack(asTurns, new Date()) : null
   const sends = mayAutoSend && hold === null
-  // Its record (receptionist_replies), at whichever exit it leaves by. Only
+  // Its record (receptionist_reply_traces), at whichever exit it leaves by. Only
   // the tick's replies: one a person asked for in the Inbox is theirs.
   const record = (outcome: ReplyOutcome, run: ReceptionistRun | null, extra: { handedOver?: boolean; heldUntil?: Date | null } = {}) =>
     opts.store || opts.send

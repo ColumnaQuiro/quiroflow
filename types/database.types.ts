@@ -10581,6 +10581,14 @@ export type Database = {
         }[]
       }
       get_my_bootstrap: { Args: never; Returns: Json }
+      get_my_open_invite: {
+        Args: never
+        Returns: {
+          account_name: string
+          role_name: string
+          token: string
+        }[]
+      }
       get_my_two_factor_gate: { Args: never; Returns: string }
       inbox_unread_count: { Args: never; Returns: number }
       inbox_counts: {

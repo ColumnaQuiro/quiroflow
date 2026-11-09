@@ -6,6 +6,7 @@ import { previewSlug, type ImportSource } from '~/components/onboarding/previewF
 definePageMeta({ layout: false })
 
 const supabase = useSupabaseClient()
+const route = useRoute()
 const store = useAccountStore()
 const t = useT()
 const { preference: themePreference, setPreference: setThemePreference } = useTheme()
@@ -123,6 +124,40 @@ watch(step, async () => {
 // 2 again therefore has to edit what is already there rather than call the
 // RPC, or Back would lead straight into an error nobody can clear.
 const alreadyCreated = computed(() => !!store.accountId)
+
+// A clinic that already invited this address. The invite link keeps its token
+// only in the browser that opened it, so anyone who signed up anywhere else --
+// the confirmation opened in a different browser, or no link at all -- landed
+// here and was asked to create a practice. Those who did ended up owning an
+// empty one, and the invite was refused from then on ("You already belong to
+// a practice"). get_my_open_invite finds it by the confirmed email instead,
+// and joining is offered before the form, which stays one click away. ?own is
+// /join's "set up my own practice instead", so it is not offered straight back.
+const inviteOffer = ref<{ token: string; account_name: string; role_name: string } | null>(null)
+const inviteDeclined = ref(false)
+const showInviteOffer = computed(
+  () => step.value === 'form' && !alreadyCreated.value && !!inviteOffer.value && !inviteDeclined.value,
+)
+
+onMounted(async () => {
+  if (alreadyCreated.value || route.query.own) return
+  const { data } = await supabase.rpc('get_my_open_invite')
+  inviteOffer.value = data?.[0] ?? null
+})
+
+async function joinInvitingPractice() {
+  if (!inviteOffer.value) return
+  // /join accepts whatever token is stored here for a signed-in person, with
+  // its own handling of a full practice and of the imported appointments.
+  localStorage.setItem('pending_invite_token', inviteOffer.value.token)
+  await navigateTo('/join')
+}
+
+async function declineInvite() {
+  inviteDeclined.value = true
+  await nextTick()
+  headingEl.value?.focus()
+}
 
 async function createPractice() {
   const { error: rpcError } = await supabase.rpc('create_account_with_owner', {
@@ -333,7 +368,21 @@ const LAUNCH_CARDS = computed(() => [
     </template>
 
     <!-- ============ Step 2 — practice setup ============ -->
-    <template v-if="step === 'form'" #heading>
+    <template v-if="showInviteOffer && inviteOffer" #heading>
+      <h1 ref="headingEl" tabindex="-1" class="text-[25px] font-semibold leading-[1.18] tracking-tightTitle text-ink-900 outline-none lg:text-[30px]">
+        {{ t(`You've been invited to ${inviteOffer.account_name}`, `${inviteOffer.account_name} te ha invitado`) }}
+      </h1>
+      <p class="mt-2 text-[14.5px] leading-[1.55] text-ink-muted lg:mt-[11px] lg:text-[15px]">
+        {{
+          t(
+            `${inviteOffer.account_name} has invited this email address to join their team as ${inviteOffer.role_name}. Join them to work in their calendar and with their patients.`,
+            `${inviteOffer.account_name} ha invitado a este email a unirse a su equipo como ${inviteOffer.role_name}. Únete para trabajar con su agenda y sus pacientes.`,
+          )
+        }}
+      </p>
+    </template>
+
+    <template v-else-if="step === 'form'" #heading>
       <h1 ref="headingEl" tabindex="-1" class="text-[25px] font-semibold leading-[1.18] tracking-tightTitle text-ink-900 outline-none lg:text-[30px]">
         {{ t('Set up your practice', 'Configura tu consulta') }}
       </h1>
@@ -391,7 +440,16 @@ const LAUNCH_CARDS = computed(() => [
 
     <template #form>
       <!-- Step 2 -->
-      <form v-if="step === 'form'" class="mt-5 flex flex-col gap-4 lg:mt-7" novalidate @submit.prevent="onSubmit">
+      <div v-if="showInviteOffer && inviteOffer" class="mt-5 flex flex-col gap-3 lg:mt-7" data-cy="onboarding-invite-offer">
+        <OnboardingPrimaryButton type="button" data-cy="onboarding-join-invite" @click="joinInvitingPractice">
+          {{ t(`Join ${inviteOffer.account_name}`, `Unirme a ${inviteOffer.account_name}`) }}
+        </OnboardingPrimaryButton>
+        <OnboardingSecondaryButton data-cy="onboarding-decline-invite" @click="declineInvite">
+          {{ t('Set up my own practice instead', 'Prefiero crear mi propia consulta') }}
+        </OnboardingSecondaryButton>
+      </div>
+
+      <form v-else-if="step === 'form'" class="mt-5 flex flex-col gap-4 lg:mt-7" novalidate @submit.prevent="onSubmit">
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-3">
           <OnboardingFormField id="owner-name" :label="t('Your name', 'Tu nombre')" :error="ownerNameError">
             <OnboardingTextInput

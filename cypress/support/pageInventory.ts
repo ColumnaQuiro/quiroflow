@@ -70,6 +70,7 @@ export const APP_PAGES = [
   '/patients/import',
   '/practitioner',
   '/jornada',
+  '/personal',
   '/team-chat',
   '/recalls',
   '/waitlist',

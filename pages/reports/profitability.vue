@@ -120,6 +120,8 @@ const inputClass = 'h-8 w-28 rounded-ctl border border-line-control bg-surface p
     </PageHeader>
 
     <div class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-[18px] sm:px-6" data-cy="profitability" :data-ready="loading ? undefined : 'true'">
+      <StaffPlanGate v-if="!store.hasStaffSection" class="mt-8" />
+      <template v-else>
       <div class="flex flex-wrap items-center gap-3">
         <input v-model="month" type="month" class="h-9 rounded-ctl border border-line-control bg-surface px-2.5 text-[14px] text-ink-900 touch:h-11" :aria-label="t('Month', 'Mes')" data-cy="profitability-month" />
         <span v-if="totals" class="ml-auto text-[13px] text-ink-700">{{ t('Margin', 'Margen') }}: <strong class="font-mono text-[15px]" :class="totals.margin < 0 ? 'text-danger-text' : 'text-ink-900'" data-cy="profitability-total-margin">{{ formatEur(totals.margin) }}</strong></span>
@@ -193,6 +195,7 @@ const inputClass = 'h-8 w-28 rounded-ctl border border-line-control bg-surface p
         </table>
       </div>
       <p class="mt-3 text-[12.5px] text-ink-muted">{{ t('Income: payments received, attributed as in Income and Commissions. Cost: the month’s cost to the clinic from the gestoría; without it, the pay plan, which leaves out Social Security. Per visit: income / cost. Per hour: income over the hours clocked.', 'Ingresos: cobros recibidos, atribuidos como en Ingresos y Comisiones. Coste: el coste empresa del mes según la gestoría; sin él, la retribución, que no incluye la Seguridad Social. Por visita: ingresos / coste. Por hora: ingresos entre las horas fichadas.') }}</p>
+      </template>
     </div>
   </div>
 </template>

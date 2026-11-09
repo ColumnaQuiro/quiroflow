@@ -2,6 +2,7 @@
 import { clinicDateOf, nextDate, startOfLocalDate } from '../../utils/clinicClock'
 import { ABSENCE_KINDS, DEFAULT_LEAVE_DAYS, absenceKindLabel, isOpenEndedAbsence, leaveWorkingDays } from '../../utils/staffShifts'
 import { absenceInYear, clinicClosedDays, daysOfYear, leaveOverlaps, teamLeaveBalance, type TeamAbsence } from '../../utils/teamLeave'
+import { loadLeaveCarryIn, type LeaveCarry } from '../../composables/useLeaveCarryIn'
 
 // Personal > Vacaciones: the whole team's leave across a year, month by month,
 // a row per person and a column per day -- the view Turnos (one week) could
@@ -31,11 +32,12 @@ const allowances = ref<Map<string, number>>(new Map())
 const closed = ref<Set<string>>(new Set())
 const loaded = ref(false)
 const error = ref('')
+const carry = ref<LeaveCarry>({ max: 0, of: () => 0 })
 const pendingList = ref<{ load: () => Promise<void> } | null>(null)
 
 async function load() {
   const y = year.value
-  const [ms, abs, allow, blocks] = await Promise.all([
+  const [ms, abs, allow, blocks, carried] = await Promise.all([
     props.memberId
       ? supabase.from('team_members').select('id, full_name, is_practitioner, color').eq('account_id', props.accountId).eq('id', props.memberId)
       : supabase.from('team_members').select('id, full_name, is_practitioner, color').eq('account_id', props.accountId).is('deleted_at', null).order('full_name'),
@@ -45,7 +47,9 @@ async function load() {
     ).in('status', ['approved', 'pending']).lte('starts_on', `${y}-12-31`).gte('ends_on', `${y}-01-01`),
     supabase.from('staff_leave_allowances').select('team_member_id, days_per_year').eq('account_id', props.accountId),
     supabase.from('availability_blocks').select('starts_at, ends_at').eq('account_id', props.accountId).is('practitioner_id', null).is('room_id', null).gte('ends_at', `${y - 1}-12-31`).lte('starts_at', `${y}-12-31T23:59:59`),
+    loadLeaveCarryIn(supabase, { accountId: props.accountId, year: y, timeZone: props.timeZone, memberId: props.memberId }),
   ])
+  carry.value = carried
   error.value = ms.error || abs.error ? t("Couldn't load the team's leave.", 'No se han podido cargar las ausencias del equipo.') : ''
   // Practitioners first: they are the ones whose absence empties a calendar.
   members.value = ((ms.data as Member[] | null) ?? []).sort((a, b) => Number(b.is_practitioner) - Number(a.is_practitioner) || a.full_name.localeCompare(b.full_name))
@@ -109,7 +113,7 @@ function cellTitle(m: Member, d: string) {
 }
 
 // ---- the year's figures, per person
-const balances = computed(() => new Map(members.value.map((m) => [m.id, teamLeaveBalance(absences.value.filter((a) => a.team_member_id === m.id), allowances.value.get(m.id) ?? DEFAULT_LEAVE_DAYS, year.value, today.value, closed.value)])))
+const balances = computed(() => new Map(members.value.map((m) => [m.id, teamLeaveBalance(absences.value.filter((a) => a.team_member_id === m.id), (allowances.value.get(m.id) ?? DEFAULT_LEAVE_DAYS) + carry.value.of(m.id), year.value, today.value, closed.value)])))
 const fmtDays = (n: number) => (Number.isInteger(n) ? String(n) : n.toLocaleString(locale.value))
 
 // ---- clicking: an absence, or an overlap marker, opens a card under its month
@@ -338,7 +342,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
           </tr>
         </tbody>
       </table>
-      <p class="mt-2 text-[12px] text-ink-muted">{{ t('Working days, Monday to Friday, less days the whole clinic is closed. The allowance is set on Registro de jornada › Turnos.', 'Días laborables, de lunes a viernes, sin los días que cierra toda la clínica. Los días de cada persona se cambian en Registro de jornada › Turnos.') }}</p>
+      <p class="mt-2 text-[12px] text-ink-muted">{{ t('Working days, Monday to Friday, less days the whole clinic is closed. The allowance is set on Registro de jornada › Turnos.', 'Días laborables, de lunes a viernes, sin los días que cierra toda la clínica. Los días de cada persona se cambian en Registro de jornada › Turnos.') }}<template v-if="carry.max"> {{ t(`“Has” includes up to ${fmtDays(carry.max)} unused days carried over from last year.`, `«Tiene» incluye hasta ${fmtDays(carry.max)} días sin usar del año pasado.`) }}</template></p>
     </section>
 
     <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12px] text-ink-muted" data-cy="leave-legend">

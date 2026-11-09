@@ -1321,6 +1321,7 @@ export type Database = {
       }
       accounts: {
         Row: {
+          leave_carry_over_days: number
           online_booking_card_on_file: boolean
           referral_program_enabled: boolean
           referral_reward_text: string | null
@@ -1441,6 +1442,7 @@ export type Database = {
           recall_assignee_member_id: string | null
         }
         Insert: {
+          leave_carry_over_days?: number
           online_booking_card_on_file?: boolean
           referral_program_enabled?: boolean
           referral_reward_text?: string | null
@@ -1560,6 +1562,7 @@ export type Database = {
           recall_assignee_member_id?: string | null
         }
         Update: {
+          leave_carry_over_days?: number
           online_booking_card_on_file?: boolean
           referral_program_enabled?: boolean
           referral_reward_text?: string | null

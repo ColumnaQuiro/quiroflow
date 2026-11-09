@@ -1,5 +1,6 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import type { Database } from '~/types/database.types'
+import { staffSectionIncluded } from '~/utils/growthPlans'
 import { sendPushToUsers } from '~/server/utils/pushNotifications'
 import { staffDocumentCategoryLabel, staffDocumentPeriodLabel, visibleToPerson } from '~/utils/staffDocuments'
 
@@ -11,7 +12,8 @@ import { staffDocumentCategoryLabel, staffDocumentPeriodLabel, visibleToPerson }
 const es = (en: string, spanish: string) => spanish
 
 export default defineEventHandler(async (event) => {
-  const { teamMember } = await requireActiveAccount(event)
+  const { teamMember, subscription } = await requireActiveAccount(event)
+  if (!staffSectionIncluded(subscription)) throw createError({ statusCode: 402, statusMessage: 'Personal comes with the Practice and Clinic plans.' })
   if (!teamMember.is_owner) throw createError({ statusCode: 403, statusMessage: 'Owners only' })
   const body = await readBody<{ ids?: string[] }>(event)
   const ids = (body?.ids ?? []).filter((x) => typeof x === 'string').slice(0, 200)

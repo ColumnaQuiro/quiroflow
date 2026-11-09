@@ -5,6 +5,7 @@ import { workdaySummary, workdayClock, formatWorked, type WorkEntry } from '../.
 import { DEFAULT_LEAVE_DAYS, absenceKindLabel, isOpenEndedAbsence, shiftForDay, shiftMinutes, type ShiftRanges } from '../../utils/staffShifts'
 import { clinicClosedDays, teamLeaveBalance, type TeamAbsence } from '../../utils/teamLeave'
 import { STAFF_DOCUMENT_UNOPENED_DAYS } from '../../utils/staffDocuments'
+import { loadLeaveCarryIn, type LeaveCarry } from '../../composables/useLeaveCarryIn'
 import { CONTRACT_ENDING_SOON_DAYS, contractEnded, currentContract, daysUntilEnd, employmentTypeLabel, type StaffContract } from '../../utils/staffContracts'
 
 // Personal > Personas: one row per person on the team -- where they are today,
@@ -41,13 +42,14 @@ const gone = ref<{ id: string; full_name: string; deleted_at: string }[]>([])
 // Documents the person has not opened a month after they were uploaded.
 const unopened = ref<Map<string, number>>(new Map())
 const bulkOpen = ref(false)
+const carry = ref<LeaveCarry>({ max: 0, of: () => 0 })
 const loaded = ref(false)
 const error = ref('')
 
 async function load() {
   const y = year.value
   const unopenedBefore = new Date(now.value.getTime() - STAFF_DOCUMENT_UNOPENED_DAYS * 86_400_000).toISOString()
-  const [ms, clinic, sd, ex, es, abs, allow, blocks, corr, con, left, docs] = await Promise.all([
+  const [ms, clinic, sd, ex, es, abs, allow, blocks, corr, con, left, docs, carried] = await Promise.all([
     supabase.from('team_members').select('id, full_name, role, is_practitioner, color, business_hours').eq('account_id', props.accountId).is('deleted_at', null).order('full_name'),
     supabase.from('clinics').select('business_hours').eq('account_id', props.accountId).is('archived_at', null).order('created_at').limit(1).maybeSingle(),
     supabase.from('shift_days').select('team_member_id, day, ranges').eq('account_id', props.accountId).gte('day', monthStart.value).lte('day', today.value),
@@ -60,7 +62,9 @@ async function load() {
     supabase.from('staff_contracts').select('id, team_member_id, employment_type, modality, starts_on, ends_on, weekly_hours, job_title, convenio, created_at').eq('account_id', props.accountId),
     supabase.from('team_members').select('id, full_name, deleted_at').eq('account_id', props.accountId).not('deleted_at', 'is', null).order('full_name'),
     supabase.from('staff_documents').select('team_member_id').eq('account_id', props.accountId).is('first_viewed_at', null).neq('category', 'sick_note').lt('uploaded_at', unopenedBefore),
+    loadLeaveCarryIn(supabase, { accountId: props.accountId, year: y, timeZone: props.timeZone }),
   ])
+  carry.value = carried
   const failed = [ms, abs, es].find((r) => r.error)
   error.value = failed?.error ? t("Couldn't load the team.", 'No se ha podido cargar el equipo.') : ''
   members.value = (ms.data as Member[] | null) ?? []
@@ -114,7 +118,7 @@ function todayOf(m: Member): { text: string; tone: Tone } {
 }
 
 function leaveOf(m: Member) {
-  return teamLeaveBalance(absences.value.filter((a) => a.team_member_id === m.id), allowances.value.get(m.id) ?? DEFAULT_LEAVE_DAYS, year.value, today.value, closed.value)
+  return teamLeaveBalance(absences.value.filter((a) => a.team_member_id === m.id), (allowances.value.get(m.id) ?? DEFAULT_LEAVE_DAYS) + carry.value.of(m.id), year.value, today.value, closed.value)
 }
 
 /** This month so far: the shift's hours (less days away or closed) against what was clocked. */

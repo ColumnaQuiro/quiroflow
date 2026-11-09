@@ -46,7 +46,8 @@ const tabs = computed(() => [
     </div>
 
     <div class="flex-1 overflow-y-auto bg-surface-page px-4 pb-24 pt-4 sm:px-6">
-      <template v-if="store.accountId">
+      <StaffPlanGate v-if="!store.hasStaffSection" class="mt-8" />
+      <template v-else-if="store.accountId">
         <StaffPeople v-if="tab === 'people'" :account-id="store.accountId" :time-zone="timeZone" @open-leave="tab = 'leave'" />
         <StaffGestoriaPack v-else-if="tab === 'gestoria'" />
         <StaffLeaveYear v-else :account-id="store.accountId" :time-zone="timeZone" />

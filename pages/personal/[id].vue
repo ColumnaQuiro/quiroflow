@@ -115,7 +115,8 @@ const dd = 'text-[14px] text-ink-900'
     </header>
 
     <div class="flex-1 overflow-y-auto bg-surface-page px-4 pb-24 pt-4 sm:px-6">
-      <UiEmptyState v-if="loaded && !person" :title="t('This person is not on your team.', 'Esta persona no está en tu equipo.')" data-cy="staff-file-missing">
+      <StaffPlanGate v-if="!store.hasStaffSection" class="mt-8" />
+      <UiEmptyState v-else-if="loaded && !person" :title="t('This person is not on your team.', 'Esta persona no está en tu equipo.')" data-cy="staff-file-missing">
         <template #actions>
           <NuxtLink to="/personal" class="inline-flex h-9 items-center rounded-ctl border border-line-control bg-surface px-3.5 text-[13px] font-medium text-ink-500 hover:border-line-controlHover touch:h-11">{{ t('Back to Staff', 'Volver a Personal') }}</NuxtLink>
         </template>

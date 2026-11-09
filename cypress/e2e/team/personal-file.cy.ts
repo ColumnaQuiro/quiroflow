@@ -124,4 +124,51 @@ describe('Personal: a person’s file', () => {
       cy.location('pathname', { timeout: 15000 }).should('not.eq', `/personal/${lucia.id}`)
     })
   })
+
+  it('carries unused holidays into the year when the clinic allows it', () => {
+    clinicWithLucia().then(({ account, lucia }) => {
+      const lastYear = new Date().getFullYear() - 1
+      // On the team since before last year, with ten working days taken then (two Monday-to-Friday weeks in March).
+      cy.task('db:updateRows', { table: 'team_members', match: { id: lucia.id }, values: { created_at: `${lastYear - 1}-06-01T00:00:00Z` } })
+      const firstMonday = (() => {
+        const d = new Date(Date.UTC(lastYear, 2, 1, 12))
+        while (d.getUTCDay() !== 1) d.setUTCDate(d.getUTCDate() + 1)
+        return d
+      })()
+      const twoWeeksOn = new Date(firstMonday)
+      twoWeeksOn.setUTCDate(twoWeeksOn.getUTCDate() + 11)
+      cy.task('db:insertRows', { table: 'staff_absences', rows: [{ account_id: account.accountId, team_member_id: lucia.id, kind: 'vacation', starts_on: firstMonday.toISOString().slice(0, 10), ends_on: twoWeeksOn.toISOString().slice(0, 10), status: 'approved' }] })
+
+      cy.login(account.email, account.password)
+      cy.visit('/jornada?tab=shifts')
+      cy.get('[data-cy=leave-allowance-row][data-name="Lucía Fisio"]', { timeout: 20000 }).find('[data-cy=leave-allowance-carried]').should('not.exist')
+      cy.get('[data-cy=leave-carry-max]').clear().type('5').blur()
+      cy.get('[data-cy=leave-allowance-row][data-name="Lucía Fisio"] [data-cy=leave-allowance-carried]', { timeout: 15000 }).should('have.text', '+5')
+      cy.task<{ leave_carry_over_days: number }[]>('db:selectRows', { table: 'accounts', columns: 'leave_carry_over_days', match: { id: account.accountId } }).then(([a]) => {
+        expect(Number(a!.leave_carry_over_days)).to.eq(5)
+      })
+      cy.visit('/personal')
+      cy.get('[data-cy=staff-person][data-name="Lucía Fisio"] [data-cy=staff-person-leave]', { timeout: 20000 }).should('contain', '27')
+
+      cy.login(lucia.email, 'valencia2026')
+      cy.visit('/jornada?tab=mine')
+      cy.get('[data-cy=my-leave-left]', { timeout: 20000 }).should('contain', '27')
+    })
+  })
+
+  it('shows a Solo clinic what Personal is instead of the section', () => {
+    clinicWithLucia().then(({ account, lucia }) => {
+      cy.task('db:setSubscriptionPlan', { accountId: account.accountId, planId: 'starter' })
+      cy.task('db:setSubscriptionStatus', { accountId: account.accountId, status: 'active' })
+      cy.login(account.email, account.password)
+      cy.visit('/personal')
+      cy.get('[data-cy=staff-plan-gate]', { timeout: 20000 }).should('be.visible')
+      cy.get('[data-cy=staff-people]').should('not.exist')
+      cy.visit(`/personal/${lucia.id}`)
+      cy.get('[data-cy=staff-plan-gate]', { timeout: 20000 }).should('be.visible')
+      cy.visit('/reports/profitability')
+      cy.get('[data-cy=staff-plan-gate]', { timeout: 20000 }).should('be.visible')
+      cy.request({ url: '/api/staff/gestoria-pack?month=2026-10&format=json', failOnStatusCode: false }).its('status').should('eq', 402)
+    })
+  })
 })

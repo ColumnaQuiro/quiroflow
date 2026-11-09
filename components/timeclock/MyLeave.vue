@@ -2,6 +2,7 @@
 import type { BusinessHours } from '../../utils/businessHours'
 import { clinicDateOf } from '../../utils/clinicClock'
 import { workdayWeekStart } from '../../utils/workday'
+import { loadLeaveCarryIn } from '../../composables/useLeaveCarryIn'
 import { ABSENCE_KINDS, DEFAULT_LEAVE_DAYS, absenceKindLabel, formatShift, isOpenEndedAbsence, leaveWorkingDays, shiftForDay, type ShiftRanges } from '../../utils/staffShifts'
 
 // "Mi jornada", the shifts and leave part (web /jornada and the app): this
@@ -19,6 +20,8 @@ const member = ref<{ business_hours: BusinessHours | null; is_practitioner: bool
 const clinicHours = ref<BusinessHours | null>(null)
 const overrides = ref<Map<string, ShiftRanges>>(new Map())
 const allowance = ref(DEFAULT_LEAVE_DAYS)
+// Of which carried over from last year, when the clinic allows it.
+const carried = ref(0)
 const absences = ref<Absence[]>([])
 const closed = ref<Set<string>>(new Set())
 const loaded = ref(false)
@@ -35,7 +38,7 @@ const week = computed(() => {
 })
 
 async function load() {
-  const [{ data: m }, { data: clinic }, { data: days }, { data: allow }, { data: abs }, { data: blocks }] = await Promise.all([
+  const [{ data: m }, { data: clinic }, { data: days }, { data: allow }, { data: abs }, { data: blocks }, carry] = await Promise.all([
     supabase.from('team_members').select('business_hours, is_practitioner').eq('id', props.teamMemberId).maybeSingle(),
     supabase.from('clinics').select('business_hours').is('archived_at', null).order('created_at').limit(1).maybeSingle(),
     supabase.from('shift_days').select('day, ranges').eq('team_member_id', props.teamMemberId).gte('day', week.value[0]!).lte('day', week.value[6]!),
@@ -43,11 +46,13 @@ async function load() {
     supabase.from('staff_absences').select('id, kind, starts_on, ends_on, half_day, status, note').eq('team_member_id', props.teamMemberId).neq('status', 'cancelled').gte('ends_on', `${year.value}-01-01`).order('starts_on', { ascending: false }),
     // Whole-clinic closures this year: they are not holiday days.
     supabase.from('availability_blocks').select('starts_at, ends_at').is('practitioner_id', null).is('room_id', null).gte('ends_at', `${year.value}-01-01`).lte('starts_at', `${year.value}-12-31T23:59:59`),
+    loadLeaveCarryIn(supabase, { accountId: props.accountId, year: Number(year.value), timeZone: props.timeZone, memberId: props.teamMemberId }),
   ])
   member.value = (m as { business_hours: BusinessHours | null; is_practitioner: boolean } | null) ?? null
   clinicHours.value = ((clinic as { business_hours: BusinessHours | null } | null)?.business_hours ?? null)
   overrides.value = new Map(((days as { day: string; ranges: ShiftRanges }[] | null) ?? []).map((d) => [d.day, d.ranges]))
-  allowance.value = allow ? Number((allow as { days_per_year: number }).days_per_year) : DEFAULT_LEAVE_DAYS
+  carried.value = carry.of(props.teamMemberId)
+  allowance.value = (allow ? Number((allow as { days_per_year: number }).days_per_year) : DEFAULT_LEAVE_DAYS) + carried.value
   absences.value = (abs as Absence[] | null) ?? []
   const shut = new Set<string>()
   for (const b of (blocks as { starts_at: string; ends_at: string }[] | null) ?? []) {
@@ -125,7 +130,7 @@ const field = 'h-11 w-full rounded-ctl border border-line-control bg-surface px-
         </template>
         <template v-else>
           <p class="mt-1 text-[20px] font-semibold text-ink-900" data-cy="my-leave-left"><span class="font-mono">{{ left }}</span> {{ t('days', 'días') }}</p>
-          <p class="text-[12px] text-ink-muted">{{ t(`left of ${allowance} this year`, `quedan de ${allowance} este año`) }}</p>
+          <p class="text-[12px] text-ink-muted">{{ t(`left of ${allowance} this year`, `quedan de ${allowance} este año`) }}<template v-if="carried">{{ t(` (${carried} from last year)`, ` (${carried} del año pasado)`) }}</template></p>
         </template>
       </div>
     </div>

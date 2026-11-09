@@ -141,7 +141,7 @@ const td = 'border-t border-line-row px-3 py-2.5 text-[13.5px] text-ink-900'
         </section>
 
         <!-- The team's month for the payslips: owners only, as Personal is. -->
-        <section v-if="store.isOwner" class="flex flex-col gap-3" data-cy="gestoria-staff">
+        <section v-if="store.isOwner && store.hasStaffSection" class="flex flex-col gap-3" data-cy="gestoria-staff">
           <h2 class="text-[15px] font-bold text-ink-900">{{ t('For the payslips', 'Para las nóminas') }}</h2>
           <StaffGestoriaPack />
         </section>

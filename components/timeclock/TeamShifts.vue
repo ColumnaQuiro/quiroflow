@@ -2,6 +2,8 @@
 import type { BusinessHours } from '../../utils/businessHours'
 import { clinicDateOf } from '../../utils/clinicClock'
 import { workdayWeekStart, workdaysOf, workdayClock, formatWorked, type WorkEntry } from '../../utils/workday'
+import { currentContract, hoursOverContract } from '../../utils/staffContracts'
+import { loadLeaveCarryIn, type LeaveCarry } from '../../composables/useLeaveCarryIn'
 import { DEFAULT_LEAVE_DAYS, absenceKindLabel, formatShift, leaveWorkingDays, parseShift, shiftForDay, shiftGaps, shiftMinutes, type ShiftRanges } from '../../utils/staffShifts'
 
 // Registro de jornada > Turnos, for owners (web). Design: TurnosWeb on the
@@ -39,12 +41,17 @@ const entries = ref<(WorkEntry & { team_member_id: string })[]>([])
 const absences = ref<Absence[]>([])
 const allowances = ref<Map<string, number>>(new Map())
 const closed = ref<Set<string>>(new Set())
+// Contracted hours a week, from each person's current contract (Personal).
+const contractHours = ref<Map<string, number>>(new Map())
+// Unused days carried in from last year, when the clinic allows it (set below the table).
+const carry = ref<LeaveCarry>({ max: 0, of: () => 0 })
+const carryMax = ref<string | number>('0')
 const error = ref('')
 const loaded = ref(false)
 
 async function load() {
   const year = weekStart.value.slice(0, 4)
-  const [{ data: ms }, { data: clinic }, { data: sd }, { data: ex }, { data: es }, { data: abs }, { data: allow }, { data: blocks }] = await Promise.all([
+  const [{ data: ms }, { data: clinic }, { data: sd }, { data: ex }, { data: es }, { data: abs }, { data: allow }, { data: blocks }, { data: contracts }] = await Promise.all([
     supabase.from('team_members').select('id, full_name, business_hours, is_practitioner, role').is('deleted_at', null).order('full_name'),
     supabase.from('clinics').select('business_hours').is('archived_at', null).order('created_at').limit(1).maybeSingle(),
     supabase.from('shift_days').select('team_member_id, day, ranges').gte('day', days.value[0]!).lte('day', days.value[6]!),
@@ -53,6 +60,7 @@ async function load() {
     supabase.from('staff_absences').select('id, team_member_id, kind, starts_on, ends_on, half_day').eq('account_id', props.accountId).eq('status', 'approved').lte('starts_on', `${year}-12-31`).gte('ends_on', `${year}-01-01`),
     supabase.from('staff_leave_allowances').select('team_member_id, days_per_year').eq('account_id', props.accountId),
     supabase.from('availability_blocks').select('starts_at, ends_at').is('practitioner_id', null).is('room_id', null).gte('ends_at', `${year}-01-01`).lte('starts_at', `${year}-12-31T23:59:59`),
+    supabase.from('staff_contracts').select('team_member_id, starts_on, created_at, weekly_hours').eq('account_id', props.accountId),
   ])
   members.value = (ms as unknown as Member[] | null) ?? []
   clinicHours.value = ((clinic as { business_hours: BusinessHours | null } | null)?.business_hours ?? null)
@@ -66,6 +74,14 @@ async function load() {
     for (let d = new Date(b.starts_at); d < new Date(b.ends_at); d.setUTCDate(d.getUTCDate() + 1)) shut.add(clinicDateOf(d, props.timeZone))
   }
   closed.value = shut
+  carry.value = await loadLeaveCarryIn(supabase, { accountId: props.accountId, year: Number(year), timeZone: props.timeZone })
+  carryMax.value = String(carry.value.max)
+  const byMember = new Map<string, { starts_on: string | null; created_at: string; weekly_hours: number | null }[]>()
+  for (const c of (contracts as { team_member_id: string; starts_on: string | null; created_at: string; weekly_hours: number | null }[] | null) ?? []) byMember.set(c.team_member_id, [...(byMember.get(c.team_member_id) ?? []), c])
+  contractHours.value = new Map([...byMember].flatMap(([id, cs]) => {
+    const h = currentContract(cs, days.value[0]!)?.weekly_hours
+    return h ? [[id, Number(h)] as [string, number]] : []
+  }))
   loaded.value = true
 }
 onMounted(load)
@@ -82,6 +98,11 @@ const clocked = computed(() => {
 })
 function plannedMinutes(m: Member) {
   return days.value.reduce((s, d) => s + (absenceOf(m, d) ? 0 : shiftMinutes(shiftOf(m, d) ?? [])), 0)
+}
+// The week as planned, leave included: a contract counts the hours a week
+// they are taken on for, whether or not they are away that week.
+function overContract(m: Member) {
+  return hoursOverContract(days.value.reduce((s, d) => s + shiftMinutes(shiftOf(m, d) ?? []), 0), contractHours.value.get(m.id))
 }
 function clockedMinutes(m: Member) {
   return (clocked.value.get(m.id) ?? []).reduce((s, d) => s + d.workedMinutes, 0)
@@ -112,8 +133,18 @@ function leaveOf(m: Member) {
   const mine = absences.value.filter((a) => a.team_member_id === m.id && a.kind === 'vacation')
   const taken = mine.filter((a) => a.ends_on < today.value).reduce((s, a) => s + leaveWorkingDays(a.starts_on, a.ends_on, a.half_day, closed.value), 0)
   const coming = mine.filter((a) => a.ends_on >= today.value).reduce((s, a) => s + leaveWorkingDays(a.starts_on, a.ends_on, a.half_day, closed.value), 0)
-  const allowance = allowances.value.get(m.id) ?? DEFAULT_LEAVE_DAYS
-  return { allowance, taken, coming, left: allowance - taken - coming }
+  const base = allowances.value.get(m.id) ?? DEFAULT_LEAVE_DAYS
+  const carried = carry.value.of(m.id)
+  const allowance = base + carried
+  return { base, carried, allowance, taken, coming, left: allowance - taken - coming }
+}
+// v-model on a number input hands back a number, so either may arrive.
+async function setCarryMax(value: string | number) {
+  const n = Number(String(value).replace(',', '.'))
+  if (!Number.isFinite(n) || n < 0 || n > 60) return
+  const { error: e } = await supabase.from('accounts').update({ leave_carry_over_days: n }).eq('id', props.accountId)
+  if (e) error.value = e.message
+  await load()
 }
 async function setAllowance(m: Member, value: string) {
   const n = Number(value)
@@ -234,6 +265,7 @@ const td = 'border-t border-line-row px-2.5 py-2 align-top text-[12.5px] text-in
               <!-- Each figure whole: the cell used to break inside one ("41 h" / "00"). -->
               <span class="whitespace-nowrap">{{ formatWorked(plannedMinutes(m)) }}</span> / <span class="whitespace-nowrap">{{ exempt.has(m.id) ? '—' : formatWorked(clockedMinutes(m)) }}</span>
               <div v-if="exempt.has(m.id)" class="font-sans text-[11.5px] text-ink-muted">{{ t("Doesn't clock", 'No ficha') }}</div>
+              <div v-if="overContract(m)" class="font-sans text-[11.5px] font-semibold text-warning-text" data-cy="shifts-over-contract">{{ t(`${formatWorked(overContract(m))} over their ${contractHours.get(m.id)} h contract`, `${formatWorked(overContract(m))} más que su contrato de ${contractHours.get(m.id)} h`) }}</div>
             </td>
           </tr>
         </tbody>
@@ -255,7 +287,7 @@ const td = 'border-t border-line-row px-2.5 py-2 align-top text-[12.5px] text-in
           <tbody v-else>
             <tr v-for="m in members" :key="m.id" data-cy="leave-allowance-row" :data-name="m.full_name">
               <td :class="td" class="whitespace-nowrap">{{ m.full_name }}</td>
-              <td :class="td"><input :value="leaveOf(m).allowance" type="number" min="0" step="0.5" class="h-8 w-16 rounded-ctlSm border border-line-control bg-surface px-1.5 text-right font-mono text-[12.5px] text-ink-900 focus:border-brand focus:outline-none touch:h-11" :aria-label="t(`Days for ${m.full_name}`, `Días de ${m.full_name}`)" data-cy="leave-allowance-input" @change="setAllowance(m, ($event.target as HTMLInputElement).value)" /></td>
+              <td :class="td" class="whitespace-nowrap"><input :value="leaveOf(m).base" type="number" min="0" step="0.5" class="h-8 w-16 rounded-ctlSm border border-line-control bg-surface px-1.5 text-right font-mono text-[12.5px] text-ink-900 focus:border-brand focus:outline-none touch:h-11" :aria-label="t(`Days for ${m.full_name}`, `Días de ${m.full_name}`)" data-cy="leave-allowance-input" @change="setAllowance(m, ($event.target as HTMLInputElement).value)" /><span v-if="leaveOf(m).carried" class="ml-1.5 font-mono text-[12px] text-ink-muted" :title="t('Carried over from last year', 'Pasan del año pasado')" data-cy="leave-allowance-carried">+{{ leaveOf(m).carried }}</span></td>
               <td :class="td" class="font-mono">{{ leaveOf(m).taken }}</td>
               <td :class="td" class="font-mono">{{ leaveOf(m).coming }}</td>
               <td :class="td" class="font-mono"><strong>{{ leaveOf(m).left }}</strong></td>
@@ -264,6 +296,11 @@ const td = 'border-t border-line-row px-2.5 py-2 align-top text-[12.5px] text-in
         </table>
         </div>
         <p class="mt-2 text-[12px] text-ink-muted">{{ t('Working days, Monday to Friday. Days the whole clinic is closed do not count.', 'Días laborables, de lunes a viernes. Los días que cierra toda la clínica no cuentan.') }}</p>
+        <label class="mt-3 flex flex-wrap items-center gap-2 border-t border-line-row pt-3 text-[13px] text-ink-700">
+          {{ t('Unused days that carry over to next year, up to', 'Días sin usar que pasan al año siguiente, hasta') }}
+          <input v-model="carryMax" type="number" min="0" max="60" step="0.5" class="h-8 w-16 rounded-ctlSm border border-line-control bg-surface px-1.5 text-right font-mono text-[12.5px] text-ink-900 focus:border-brand focus:outline-none touch:h-11" data-cy="leave-carry-max" @change="setCarryMax(carryMax)" />
+          <span class="w-full text-[12px] text-ink-muted">{{ t('0 means none carry over. Carried days come from last year’s own allowance and do not carry on again a year later.', '0 si no pasa ninguno. Los días que pasan salen de los del año anterior y no vuelven a pasar al siguiente.') }}</span>
+        </label>
       </section>
       <section class="min-w-0 rounded-card border border-line bg-surface px-4 py-3" data-cy="shift-gaps">
         <h2 class="text-[14.5px] font-bold text-ink-900">{{ t('Clocked against the shift', 'Fichado frente a turno') }}</h2>

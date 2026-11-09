@@ -1321,6 +1321,7 @@ export type Database = {
       }
       accounts: {
         Row: {
+          leave_carry_over_days: number
           online_booking_card_on_file: boolean
           referral_program_enabled: boolean
           referral_reward_text: string | null
@@ -1441,6 +1442,7 @@ export type Database = {
           recall_assignee_member_id: string | null
         }
         Insert: {
+          leave_carry_over_days?: number
           online_booking_card_on_file?: boolean
           referral_program_enabled?: boolean
           referral_reward_text?: string | null
@@ -1560,6 +1562,7 @@ export type Database = {
           recall_assignee_member_id?: string | null
         }
         Update: {
+          leave_carry_over_days?: number
           online_booking_card_on_file?: boolean
           referral_program_enabled?: boolean
           referral_reward_text?: string | null
@@ -8280,6 +8283,143 @@ export type Database = {
           },
         ]
       }
+      staff_contracts: {
+        Row: {
+          account_id: string
+          convenio: string | null
+          created_at: string
+          created_by: string | null
+          employment_type: string
+          ends_on: string | null
+          id: string
+          job_title: string | null
+          modality: string | null
+          starts_on: string | null
+          team_member_id: string
+          weekly_hours: number | null
+        }
+        Insert: {
+          account_id: string
+          convenio?: string | null
+          created_at?: string
+          created_by?: string | null
+          employment_type: string
+          ends_on?: string | null
+          id?: string
+          job_title?: string | null
+          modality?: string | null
+          starts_on?: string | null
+          team_member_id: string
+          weekly_hours?: number | null
+        }
+        Update: {
+          account_id?: string
+          convenio?: string | null
+          created_at?: string
+          created_by?: string | null
+          employment_type?: string
+          ends_on?: string | null
+          id?: string
+          job_title?: string | null
+          modality?: string | null
+          starts_on?: string | null
+          team_member_id?: string
+          weekly_hours?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_contracts_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staff_contracts_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staff_contracts_team_member_id_fkey"
+            columns: ["team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      staff_documents: {
+        Row: {
+          account_id: string
+          category: string
+          content_type: string | null
+          file_name: string
+          first_viewed_at: string | null
+          id: string
+          period: string | null
+          size_bytes: number | null
+          storage_path: string
+          team_member_id: string
+          title: string | null
+          uploaded_at: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          account_id: string
+          category: string
+          content_type?: string | null
+          file_name: string
+          first_viewed_at?: string | null
+          id?: string
+          period?: string | null
+          size_bytes?: number | null
+          storage_path: string
+          team_member_id: string
+          title?: string | null
+          uploaded_at?: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          account_id?: string
+          category?: string
+          content_type?: string | null
+          file_name?: string
+          first_viewed_at?: string | null
+          id?: string
+          period?: string | null
+          size_bytes?: number | null
+          storage_path?: string
+          team_member_id?: string
+          title?: string | null
+          uploaded_at?: string
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_documents_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staff_documents_team_member_id_fkey"
+            columns: ["team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staff_documents_uploaded_by_fkey"
+            columns: ["uploaded_by"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       staff_leave_allowances: {
         Row: {
           account_id: string
@@ -8306,6 +8446,45 @@ export type Database = {
           },
           {
             foreignKeyName: "staff_leave_allowances_team_member_id_fkey"
+            columns: ["team_member_id"]
+            isOneToOne: false
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      staff_monthly_costs: {
+        Row: {
+          account_id: string
+          cost_cents: number
+          month: string
+          team_member_id: string
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          cost_cents: number
+          month: string
+          team_member_id: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          cost_cents?: number
+          month?: string
+          team_member_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_monthly_costs_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "staff_monthly_costs_team_member_id_fkey"
             columns: ["team_member_id"]
             isOneToOne: false
             referencedRelation: "team_members"
@@ -10052,6 +10231,10 @@ export type Database = {
       }
       my_pain_trend: { Args: { p_patient_id?: string }; Returns: { first_score: number | null; latest_score: number | null; latest_on: string | null }[] }
       open_library_article: { Args: { p_article_id: string; p_patient_id?: string }; Returns: string }
+      mark_staff_document_viewed: {
+        Args: { p_document_id: string }
+        Returns: undefined
+      }
       platform_supabase_usage: {
         Args: never
         Returns: Json

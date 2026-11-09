@@ -105,3 +105,22 @@ export function leaveOverlaps(absences: TeamAbsence[], practitionerIds: Set<stri
   for (const [day, who] of byDay) if (who.size >= min) out.set(day, [...who])
   return out
 }
+
+/**
+ * Holiday days carried into `year` from the year before, when the clinic
+ * allows it (accounts.leave_carry_over_days, set in Turnos): what was left
+ * of last year's own allowance, up to `maxCarry`. It does not chain -- days
+ * carried into last year and not taken there do not move on again -- so
+ * only last year's absences are needed. `prevAbsences` may hold anything;
+ * only approved holiday inside `year - 1` counts.
+ */
+export function leaveCarryIn(prevAbsences: TeamAbsence[], allowance: number, year: number, closedPrev: Set<string>, maxCarry: number): number {
+  if (!maxCarry || maxCarry <= 0) return 0
+  let taken = 0
+  for (const a of prevAbsences) {
+    if (a.kind !== 'vacation' || a.status !== 'approved') continue
+    const span = absenceInYear(a, year - 1)
+    if (span) taken += leaveWorkingDays(span.from, span.to, a.half_day, closedPrev)
+  }
+  return Math.min(maxCarry, Math.max(0, allowance - taken))
+}

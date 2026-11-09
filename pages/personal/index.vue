@@ -3,8 +3,9 @@
 // spec, named Personal here because the sidebar's "Equipo" is the team chat --
 // who is in today, holidays left, the month's hours, and what is waiting for
 // the owner (Personas); and the whole team's leave across a year, with the
-// days two practitioners are off at once (Vacaciones). It reads what
-// Registro de jornada and Settings > Team already keep; nothing new is stored.
+// days two practitioners are off at once (Vacaciones); and the month's pack
+// for the gestoría (Gestoría). Each person opens onto their file
+// (pages/personal/[id].vue).
 // The route is owners only (utils/routePermissions.ts), as Turnos is.
 const store = useAccountStore()
 const route = useRoute()
@@ -12,14 +13,15 @@ const router = useRouter()
 const t = useT()
 const { timeZone } = useAccountTimeZone()
 
-type Tab = 'people' | 'leave'
+type Tab = 'people' | 'leave' | 'gestoria'
 const tab = computed<Tab>({
-  get: () => (route.query.tab === 'leave' ? 'leave' : 'people'),
+  get: () => (route.query.tab === 'leave' || route.query.tab === 'gestoria' ? route.query.tab : 'people'),
   set: (v) => router.replace({ query: { ...route.query, tab: v === 'people' ? undefined : v } }),
 })
 const tabs = computed(() => [
   { key: 'people' as const, label: t('People', 'Personas') },
   { key: 'leave' as const, label: t('Holidays', 'Vacaciones') },
+  { key: 'gestoria' as const, label: t('Accountant', 'Gestoría') },
 ])
 </script>
 
@@ -44,8 +46,10 @@ const tabs = computed(() => [
     </div>
 
     <div class="flex-1 overflow-y-auto bg-surface-page px-4 pb-24 pt-4 sm:px-6">
-      <template v-if="store.accountId">
+      <StaffPlanGate v-if="!store.hasStaffSection" class="mt-8" />
+      <template v-else-if="store.accountId">
         <StaffPeople v-if="tab === 'people'" :account-id="store.accountId" :time-zone="timeZone" @open-leave="tab = 'leave'" />
+        <StaffGestoriaPack v-else-if="tab === 'gestoria'" />
         <StaffLeaveYear v-else :account-id="store.accountId" :time-zone="timeZone" />
       </template>
     </div>

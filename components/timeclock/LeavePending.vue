@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { absenceKindLabel, leaveWorkingDays, DEFAULT_LEAVE_DAYS } from '../../utils/staffShifts'
+import { DEFAULT_CLINIC_TIMEZONE } from '../../utils/clinicClock'
+import { loadLeaveCarryIn } from '../../composables/useLeaveCarryIn'
 
 // Leave requests waiting for an owner, on the Turnos tab (web) and "Mi
 // jornada" (app): who, what, which days, how many holiday days they would
@@ -22,16 +24,17 @@ const error = ref('')
 
 async function load() {
   const year = new Date().getFullYear()
-  const [{ data: ps }, { data: approved }, { data: allowances }] = await Promise.all([
+  const [{ data: ps }, { data: approved }, { data: allowances }, carry] = await Promise.all([
     supabase.from('staff_absences').select('id, team_member_id, kind, starts_on, ends_on, half_day, note, team_members!staff_absences_team_member_id_fkey(full_name)').eq('account_id', props.accountId).eq('status', 'pending').order('starts_on'),
     supabase.from('staff_absences').select('team_member_id, starts_on, ends_on, half_day').eq('account_id', props.accountId).eq('status', 'approved').eq('kind', 'vacation').gte('starts_on', `${year}-01-01`).lte('starts_on', `${year}-12-31`),
     supabase.from('staff_leave_allowances').select('team_member_id, days_per_year').eq('account_id', props.accountId),
+    loadLeaveCarryIn(supabase, { accountId: props.accountId, year, timeZone: DEFAULT_CLINIC_TIMEZONE }),
   ])
   pending.value = (ps as unknown as Pending[] | null) ?? []
   const used = new Map<string, number>()
   for (const a of approved ?? []) used.set(a.team_member_id, (used.get(a.team_member_id) ?? 0) + leaveWorkingDays(a.starts_on, a.ends_on, a.half_day))
   const allowance = new Map((allowances ?? []).map((a) => [a.team_member_id, Number(a.days_per_year)]))
-  remaining.value = new Map(pending.value.map((p) => [p.team_member_id, (allowance.get(p.team_member_id) ?? DEFAULT_LEAVE_DAYS) - (used.get(p.team_member_id) ?? 0)]))
+  remaining.value = new Map(pending.value.map((p) => [p.team_member_id, (allowance.get(p.team_member_id) ?? DEFAULT_LEAVE_DAYS) + carry.of(p.team_member_id) - (used.get(p.team_member_id) ?? 0)]))
   // Visits each person has booked on the days asked for.
   const counts = await Promise.all(pending.value.map((p) => supabase.from('appointments').select('id', { count: 'exact', head: true }).eq('practitioner_id', p.team_member_id).eq('status', 'booked').is('deleted_at', null).gte('starts_at', `${p.starts_on}T00:00:00`).lt('starts_at', `${p.ends_on}T23:59:59`)))
   visits.value = new Map(pending.value.map((p, i) => [p.id, counts[i]!.count ?? 0]))

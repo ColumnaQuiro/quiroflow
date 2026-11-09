@@ -382,6 +382,8 @@ const card = 'flex scroll-mt-4 flex-col gap-4 rounded-card border border-line bg
         <UiPill tone="brand" v-if="isOwner" data-cy="member-owner-chip">{{ t('Owner', 'Propietario') }}</UiPill>
         <UiPill tone="neutral" v-if="deletedAt" data-cy="member-deactivated-chip">{{ t('Deactivated', 'Desactivado') }}</UiPill>
         <UiPill tone="warning" v-if="away && !deletedAt" data-cy="member-away-chip">{{ absenceKindLabel(away.kind, t) }}</UiPill>
+        <!-- Their contract, leave, hours and pay: the file in Personal (owners only). -->
+        <NuxtLink v-if="store.isOwner" :to="`/personal/${memberId}`" class="ml-auto text-[13px] font-semibold text-brand-text hover:underline" data-cy="member-staff-file">{{ t('Staff file →', 'Ficha en Personal →') }}</NuxtLink>
       </div>
     </header>
 

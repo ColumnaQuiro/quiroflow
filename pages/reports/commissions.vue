@@ -1,21 +1,13 @@
 <script setup lang="ts">
-import { fetchAllRows } from '~/composables/useFetchAllRows'
 import { formatEur } from '~/utils/billing'
-import { DEFAULT_CLINIC_TIMEZONE, startOfLocalDate } from '~/utils/clinicClock'
-import { practitionerForPayment } from '~/utils/incomeAttribution'
-import { isReceipt } from '~/utils/paymentReceipts'
-import { computePay, payFactsByMember, payPlanIsEmpty, type PayFacts, type PayPlan, type PayTierMode } from '~/utils/payPlan'
+import { DEFAULT_CLINIC_TIMEZONE } from '~/utils/clinicClock'
+import { computePay, payPlanIsEmpty, type PayFacts, type PayPlan } from '~/utils/payPlan'
+import { EMPTY_PAY_FACTS, PAY_LINE_LABELS, loadPayMonth, type PayMonthMember } from '~/composables/usePayMonth'
 
 // Commissions: what each team member earned in a month, from their pay plan
 // (pay_plans, set here) and the month's figures. Owners only -- the route
-// rule and pay_plans' RLS both say so.
-//
-// The figures are the reports' own: money is receipts on non-void invoices
-// (utils/paymentReceipts), attributed to a practitioner as Income attributes
-// it (visit's practitioner, else the patient's own); a visit is an attended
-// appointment and belongs to its practitioner; a new patient is one whose
-// first attended visit ever is in the month; a sale is a bono or membership,
-// to whoever recorded it. The month is the clinic's calendar month.
+// rule and pay_plans' RLS both say so. The figures come from loadPayMonth
+// (composables/usePayMonth.ts), shared with a person's file in Personal.
 const t = useT()
 const supabase = useSupabaseClient()
 const tz = DEFAULT_CLINIC_TIMEZONE
@@ -28,15 +20,8 @@ const lastMonth = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 const month = ref(lastMonth())
-const bounds = computed(() => {
-  const [y, m] = month.value.split('-').map(Number)
-  const next = m === 12 ? `${y! + 1}-01` : `${y}-${String(m! + 1).padStart(2, '0')}`
-  return { from: startOfLocalDate(`${month.value}-01`, tz), to: startOfLocalDate(`${next}-01`, tz) }
-})
 
-interface Member { id: string; full_name: string; is_practitioner: boolean }
-type PlanRow = PayPlan & { team_member_id: string }
-const members = ref<Member[]>([])
+const members = ref<PayMonthMember[]>([])
 const plans = ref<Map<string, PayPlan>>(new Map())
 const facts = ref<Map<string, PayFacts>>(new Map())
 const unattributedCents = ref(0)
@@ -46,53 +31,24 @@ let run = 0
 async function load() {
   const mine = ++run
   loading.value = true
-  const { from, to } = bounds.value
-  const f0 = from.toISOString()
-  const t0 = to.toISOString()
-  type Pay = { amount_cents: number; method: string; invoices: { status: string; appointments: { practitioner_id: string | null } | null } | null; patients: { default_practitioner_id: string | null } | null }
-  const [m, p, pays, visits, bonos, memberships] = await Promise.all([
-    supabase.from('team_members').select('id, full_name, is_practitioner').is('deleted_at', null).order('full_name'),
-    supabase.from('pay_plans').select('team_member_id, base_cents, payments_pct, visit_cents, tier_mode, tiers, new_patient_cents, sales_pct'),
-    fetchAllRows<Pay>((f, tt) => supabase.from('payments').select('amount_cents, method, invoices!payments_invoice_id_fkey(status, appointments!invoices_appointment_id_fkey(practitioner_id)), patients!payments_patient_id_fkey(default_practitioner_id)').gte('paid_at', f0).lt('paid_at', t0).range(f, tt) as never),
-    fetchAllRows<{ practitioner_id: string | null; patient_id: string | null }>((f, tt) => supabase.from('appointments').select('practitioner_id, patient_id').eq('status', 'completed').is('deleted_at', null).gte('starts_at', f0).lt('starts_at', t0).range(f, tt) as never),
-    fetchAllRows<{ price_cents: number; created_by: string | null }>((f, tt) => supabase.from('package_purchases').select('price_cents, created_by').gte('purchased_at', f0).lt('purchased_at', t0).range(f, tt) as never),
-    fetchAllRows<{ price_cents: number; created_by: string | null }>((f, tt) => supabase.from('patient_memberships').select('price_cents, created_by').gte('started_at', f0).lt('started_at', t0).range(f, tt) as never),
-  ])
-  // Who had been in before the month: their visit this month is not a first.
-  const patientIds = [...new Set(visits.map((v) => v.patient_id).filter((x): x is string => !!x))]
-  const seenBefore = new Set<string>()
-  for (let i = 0; i < patientIds.length; i += 200) {
-    const { data } = await supabase.from('appointments').select('patient_id').eq('status', 'completed').is('deleted_at', null).lt('starts_at', from.toISOString()).in('patient_id', patientIds.slice(i, i + 200))
-    for (const r of (data as { patient_id: string }[] | null) ?? []) seenBefore.add(r.patient_id)
-  }
+  const r = await loadPayMonth(supabase, month.value, tz)
   if (mine !== run) return
-  const receipts = pays.filter((x) => x.invoices?.status !== 'void' && isReceipt(x.method))
-  const attributed = receipts.map((x) => ({
-    cents: x.amount_cents,
-    practitionerId: practitionerForPayment({ appointment: x.invoices?.appointments ? { practitioner_id: x.invoices.appointments.practitioner_id, clinic_id: null } : null, patient: x.patients ? { default_practitioner_id: x.patients.default_practitioner_id, clinic_id: null } : null }),
-  }))
-  unattributedCents.value = attributed.filter((x) => !x.practitionerId).reduce((s, x) => s + x.cents, 0)
-  members.value = (m.data as Member[] | null) ?? []
-  plans.value = new Map(((p.data as unknown as PlanRow[] | null) ?? []).map((r) => [r.team_member_id, { ...r, payments_pct: Number(r.payments_pct), sales_pct: Number(r.sales_pct), tier_mode: r.tier_mode as PayTierMode, tiers: Array.isArray(r.tiers) ? r.tiers : [] }]))
-  facts.value = payFactsByMember({
-    payments: attributed,
-    visits: visits.map((v) => ({ practitionerId: v.practitioner_id, patientId: v.patient_id })),
-    seenBefore,
-    sales: [...bonos, ...memberships].map((s) => ({ cents: s.price_cents, soldBy: s.created_by })),
-  })
+  members.value = r.members
+  plans.value = r.plans
+  facts.value = r.facts
+  unattributedCents.value = r.unattributedCents
   loading.value = false
 }
 onMounted(load)
 watch(month, load)
 
-const EMPTY_FACTS: PayFacts = { paymentsCents: 0, visits: 0, newPatients: 0, salesCents: 0 }
 // Everyone with a plan, and every practitioner without one (to set it up).
 const rows = computed(() =>
   members.value
     .filter((mm) => plans.value.has(mm.id) || mm.is_practitioner)
     .map((mm) => {
       const plan = plans.value.get(mm.id) ?? null
-      const f = facts.value.get(mm.id) ?? EMPTY_FACTS
+      const f = facts.value.get(mm.id) ?? EMPTY_PAY_FACTS
       const pay = plan && !payPlanIsEmpty(plan) ? computePay(plan, f) : null
       return { member: mm, plan, facts: f, pay }
     }),
@@ -101,13 +57,7 @@ const totalCents = computed(() => rows.value.reduce((s, r) => s + (r.pay?.totalC
 const open = ref<string | null>(null)
 const editing = ref<{ id: string; name: string; plan: PayPlan | null } | null>(null)
 
-const LINE: Record<string, [string, string]> = {
-  base: ['Fixed', 'Fijo'],
-  payments: ['Share of payments', 'Parte de los cobros'],
-  visits: ['Visits', 'Visitas'],
-  new_patients: ['New patients', 'Pacientes nuevos'],
-  sales: ['Bonos and memberships sold', 'Bonos y membresías vendidos'],
-}
+const LINE = PAY_LINE_LABELS
 const monthLabel = computed(() => {
   const s = new Date(`${month.value}-15T12:00:00Z`).toLocaleDateString(t('en-GB', 'es-ES'), { month: 'long', year: 'numeric', timeZone: 'UTC' })
   return s.charAt(0).toUpperCase() + s.slice(1)

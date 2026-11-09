@@ -282,7 +282,7 @@ async function link() {
     return
   }
   if (moved === 0) {
-    showToast(t('Nothing was linked -- you may not have access to those appointments.', 'No se vinculó nada: puede que no tengas acceso a esas citas.'), 'error', 8000)
+    showToast(t('Nothing was linked — you may not have access to those appointments.', 'No se vinculó nada: puede que no tengas acceso a esas citas.'), 'error', 8000)
     return
   }
   showToast(t(`${moved} appointments linked.`, `${moved} citas vinculadas.`))
@@ -322,9 +322,9 @@ onMounted(() => {
 <template>
   <div class="flex h-full flex-col">
     <PageHeader :title="t('Team', 'Equipo')">
-      <button type="button" data-cy="team-invite" class="h-9 touch:h-11 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface hover:bg-brand-hover" @click="openInvite()">
+      <UiBtn variant="primary" data-cy="team-invite" @click="openInvite()">
         {{ t('Invite', 'Invitar') }}
-      </button>
+      </UiBtn>
     </PageHeader>
     <div class="flex-1 overflow-y-auto">
       <div class="flex gap-8 p-4 pb-24 sm:px-6 sm:pt-6 lg:pb-6">
@@ -376,25 +376,25 @@ onMounted(() => {
               :data-member-id="m.id"
               class="flex min-h-[72px] items-center gap-3.5 border-t border-line-row px-[18px] py-3 hover:bg-surface-subtle"
             >
-              <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[13px] font-bold text-surface" :style="{ backgroundColor: m.color }">{{ initials(m.full_name) }}</span>
+              <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[13px] font-bold text-white" :style="{ backgroundColor: m.color }">{{ initials(m.full_name) }}</span>
               <div class="flex min-w-0 flex-1 flex-col gap-1.5">
                 <div class="flex flex-wrap items-center gap-2">
                   <strong class="text-[15.5px] text-ink-900">{{ m.full_name }}</strong>
-                  <span v-if="m.id === store.teamMember?.id" class="rounded-pill bg-chip-bg px-2 py-0.5 text-[12px] font-bold text-chip-text">{{ t('You', 'Tú') }}</span>
-                  <span v-if="m.is_owner" class="rounded-pill bg-brand-tint px-2 py-0.5 text-[12px] font-bold text-brand-text" data-cy="team-row-owner">{{ t('Owner', 'Propietario') }}</span>
+                  <UiPill tone="neutral" v-if="m.id === store.teamMember?.id">{{ t('You', 'Tú') }}</UiPill>
+                  <UiPill tone="brand" v-if="m.is_owner" data-cy="team-row-owner">{{ t('Owner', 'Propietario') }}</UiPill>
                 </div>
                 <div class="flex flex-wrap items-center gap-1.5 text-[12px] font-bold">
-                  <span class="rounded-pill bg-chip-bg px-2 py-0.5 text-chip-text" data-cy="team-row-role">{{ roleName(m.role_id) }}</span>
-                  <span v-if="m.is_practitioner" class="rounded-pill bg-info-bg px-2 py-0.5 text-info-text" data-cy="team-row-practitioner">{{ t('Practitioner', 'Profesional') }}</span>
-                  <span v-else class="rounded-pill bg-chip-bg px-2 py-0.5 text-chip-text">{{ t('Does not see patients', 'No atiende pacientes') }}</span>
+                  <UiPill tone="neutral" data-cy="team-row-role">{{ roleName(m.role_id) }}</UiPill>
+                  <UiPill tone="info" v-if="m.is_practitioner" data-cy="team-row-practitioner">{{ t('Practitioner', 'Profesional') }}</UiPill>
+                  <UiPill tone="neutral" v-else>{{ t('Does not see patients', 'No atiende pacientes') }}</UiPill>
                   <template v-if="m.is_practitioner">
-                    <span v-if="m.online_booking_enabled" class="rounded-pill bg-success-bg px-2 py-0.5 text-success-text">{{ t('Online booking', 'Reserva online') }}</span>
-                    <span v-else class="rounded-pill bg-chip-bg px-2 py-0.5 text-chip-text">{{ t('Not bookable online', 'No se reserva online') }}</span>
-                    <span v-if="hasOwnHours(m)" class="rounded-pill bg-chip-bg px-2 py-0.5 text-chip-text">{{ t('Own hours', 'Horario propio') }}</span>
+                    <UiPill tone="success" v-if="m.online_booking_enabled">{{ t('Online booking', 'Reserva online') }}</UiPill>
+                    <UiPill tone="neutral" v-else>{{ t('Not bookable online', 'No se reserva online') }}</UiPill>
+                    <UiPill tone="neutral" v-if="hasOwnHours(m)">{{ t('Own hours', 'Horario propio') }}</UiPill>
                   </template>
-                  <span class="rounded-pill bg-chip-bg px-2 py-0.5 text-chip-text">{{ clinicsText(m.id) }}</span>
-                  <span v-if="twoFactorEnrolled.has(m.id)" class="rounded-pill bg-success-bg px-2 py-0.5 text-success-text">{{ t('Two-factor', 'Verificación en dos pasos') }}</span>
-                  <span v-else class="rounded-pill bg-warning-bg px-2 py-0.5 text-warning-text">{{ t('No two-factor', 'Sin verificación en dos pasos') }}</span>
+                  <UiPill tone="neutral">{{ clinicsText(m.id) }}</UiPill>
+                  <UiPill tone="success" v-if="twoFactorEnrolled.has(m.id)">{{ t('Two-factor', 'Verificación en dos pasos') }}</UiPill>
+                  <UiPill tone="warning" v-else>{{ t('No two-factor', 'Sin verificación en dos pasos') }}</UiPill>
                 </div>
               </div>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-ink-muted" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
@@ -408,7 +408,7 @@ onMounted(() => {
                   <strong class="text-[15px] text-ink-700">{{ m.full_name }}</strong>
                   <span class="text-[13px] text-ink-muted">{{ t(`Deactivated ${formatShortDate(m.deleted_at!)} · their appointments, notes and payments are kept`, `Desactivado el ${formatShortDate(m.deleted_at!)} · sus citas, notas y cobros se conservan`) }}</span>
                 </div>
-                <button type="button" data-cy="team-reactivate" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-4 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="reactivate(m)">{{ t('Reactivate', 'Reactivar') }}</button>
+                <UiBtn data-cy="team-reactivate" @click="reactivate(m)">{{ t('Reactivate', 'Reactivar') }}</UiBtn>
               </div>
             </details>
           </section>
@@ -424,8 +424,8 @@ onMounted(() => {
                 <strong class="text-[14.5px] text-ink-900">{{ inviteTitle(i) }}</strong>
                 <span class="text-[13px] text-ink-500">{{ inviteMeta(i) }}</span>
               </div>
-              <button type="button" data-cy="team-invite-copy" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3.5 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle" @click="copyInvite(i)">{{ t('Copy link', 'Copiar enlace') }}</button>
-              <button v-if="i.email" type="button" data-cy="team-invite-resend" :disabled="resending === i.id" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3.5 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:opacity-60" @click="resend(i)">{{ t('Resend email', 'Reenviar email') }}</button>
+              <UiBtn data-cy="team-invite-copy" @click="copyInvite(i)">{{ t('Copy link', 'Copiar enlace') }}</UiBtn>
+              <UiBtn v-if="i.email" data-cy="team-invite-resend" :disabled="resending === i.id" @click="resend(i)">{{ t('Resend email', 'Reenviar email') }}</UiBtn>
               <button type="button" data-cy="team-invite-revoke" class="h-9 touch:h-11 rounded-ctl px-3.5 text-[14px] font-semibold text-ink-500 hover:bg-surface-subtle hover:text-ink-700" @click="revokeFor = i">{{ t('Revoke', 'Revocar') }}</button>
             </div>
           </section>
@@ -445,7 +445,7 @@ onMounted(() => {
                 <option :value="undefined" disabled>{{ t('Link to…', 'Vincular a…') }}</option>
                 <option v-for="m in active" :key="m.id" :value="m.id">{{ m.full_name }}</option>
               </select>
-              <button type="button" data-cy="team-imported-link" :disabled="!linkTarget[n.name]" class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3.5 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle disabled:opacity-50" @click="askLink(n)">{{ t('Link', 'Vincular') }}</button>
+              <UiBtn data-cy="team-imported-link" :disabled="!linkTarget[n.name]" @click="askLink(n)">{{ t('Link', 'Vincular') }}</UiBtn>
               <button type="button" data-cy="team-imported-invite" class="h-9 touch:h-11 rounded-ctl px-3.5 text-[14px] font-semibold text-brand-text hover:bg-surface-subtle" @click="openInvite({ name: n.name, link: n.name })">{{ t('Invite as practitioner', 'Invitar como profesional') }}</button>
             </div>
           </section>

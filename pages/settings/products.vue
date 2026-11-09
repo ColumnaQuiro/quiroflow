@@ -190,7 +190,7 @@ async function adjust() {
 
 const input = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-900 focus:border-brand focus:outline-none'
 const label = 'flex flex-col gap-1 text-[12.5px] text-ink-muted'
-const th = 'px-3 py-2 text-left text-[11px] font-[640] uppercase tracking-[.05em] text-ink-muted'
+const th = 'px-3 py-2 text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted'
 const td = 'border-t border-line-row px-3 py-2.5 text-[13.5px] text-ink-900'
 const pill = 'inline-flex h-[22px] items-center rounded-pill px-2 text-[11.5px] font-semibold'
 </script>
@@ -206,7 +206,7 @@ const pill = 'inline-flex h-[22px] items-center rounded-pill px-2 text-[11.5px] 
         <SettingsNav />
         <div class="flex min-w-0 max-w-[980px] flex-1 flex-col gap-4" data-cy="products-settings" :data-ready="loading ? undefined : 'true'">
           <p class="text-[13.5px] text-ink-muted">
-            {{ t('What you sell over the counter. Sold from the patient\'s Money tab, which takes it from stock and issues the factura at the product\'s own IVA -- goods are taxed even when your services are exempt.', 'Lo que vendes en mostrador. Se vende desde la pestaña Dinero del paciente, que lo descuenta del stock y emite la factura con el IVA del producto: los productos llevan IVA aunque tus servicios estén exentos.') }}
+            {{ t('What you sell over the counter. Sold from the patient\'s Money tab, which takes it from stock and issues the factura at the product\'s own IVA — goods are taxed even when your services are exempt.', 'Lo que vendes en mostrador. Se vende desde la pestaña Dinero del paciente, que lo descuenta del stock y emite la factura con el IVA del producto: los productos llevan IVA aunque tus servicios estén exentos.') }}
           </p>
           <p v-if="error" role="alert" class="text-[12.5px] text-danger-text">{{ error }}</p>
 
@@ -240,7 +240,10 @@ const pill = 'inline-flex h-[22px] items-center rounded-pill px-2 text-[11.5px] 
                 </tr>
               </thead>
               <tbody>
-                <tr v-if="!loading && !products.length"><td :class="td" colspan="8" class="text-center text-ink-muted">{{ t('No products yet.', 'Todavía no hay productos.') }}</td></tr>
+                <template v-if="loading">
+                  <tr v-for="i in 3" :key="`sk-${i}`" aria-hidden="true"><td :class="td" colspan="8"><UiSkeleton class="h-4 w-full max-w-[420px] rounded-ctlSm" /></td></tr>
+                </template>
+                <tr v-else-if="!products.length"><td :class="td" colspan="8" class="text-center text-ink-muted">{{ t('No products yet.', 'Todavía no hay productos.') }}</td></tr>
                 <tr v-for="p in products" :key="p.id" class="cursor-pointer" :class="selected === p.id ? 'bg-brand-tint' : 'hover:bg-surface-subtle'" data-cy="product-row" :data-name="p.name" @click="selected = p.id">
                   <td :class="td"><strong>{{ p.name }}</strong></td>
                   <td :class="td" class="text-right font-mono">{{ formatEur(p.price_cents) }}</td>

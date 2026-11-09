@@ -169,12 +169,12 @@ const inputClass = 'h-9 touch:h-11 w-full rounded-ctl border border-line-control
             <div class="flex flex-col gap-1 rounded-card border border-line bg-surface px-[18px] py-4">
               <span class="text-[12.5px] font-semibold text-ink-muted">{{ t('Active members', 'Miembros activos') }}</span>
               <UiSkeleton v-if="loading" class="mt-1 h-7 w-12 rounded-ctlSm" />
-              <strong v-else class="text-[28px] font-[640] tracking-tightTitle text-ink-900" data-cy="membership-total-members">{{ totalMembers }}</strong>
+              <strong v-else class="font-mono text-[23px] font-semibold text-ink-900" data-cy="membership-total-members">{{ totalMembers }}</strong>
             </div>
             <div class="flex flex-col gap-1 rounded-card border border-line bg-surface px-[18px] py-4">
               <span class="text-[12.5px] font-semibold text-ink-muted">{{ t('Recurring each month', 'Ingresos recurrentes al mes') }}</span>
               <UiSkeleton v-if="loading" class="mt-1 h-7 w-24 rounded-ctlSm" />
-              <strong v-else class="text-[28px] font-[640] tracking-tightTitle text-ink-900" data-cy="membership-total-monthly">{{ formatEur(totalMonthly) }}</strong>
+              <strong v-else class="font-mono text-[23px] font-semibold text-ink-900" data-cy="membership-total-monthly">{{ formatEur(totalMonthly) }}</strong>
             </div>
           </div>
 

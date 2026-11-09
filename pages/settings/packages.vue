@@ -217,19 +217,29 @@ const inputClass = 'h-9 touch:h-11 w-full rounded-ctl border border-line-control
                 <UiSkeleton class="h-7 w-24 rounded-ctlSm" />
               </div>
             </template>
-            <p v-else-if="packages.length === 0 && editing !== 'new'" class="col-span-full rounded-card border border-line bg-surface px-[18px] py-6 text-center text-[14px] text-ink-muted">
-              {{ t('No bonos yet. Create the first one to sell it from a patient\'s Billing tab.', 'Todavía no hay bonos. Crea el primero para venderlo desde la pestaña Facturación del paciente.') }}
-            </p>
+            <UiEmptyState
+              v-else-if="packages.length === 0 && editing !== 'new'"
+              class="col-span-full !py-4"
+              :title="t('No bonos yet', 'Todavía no hay bonos')"
+              :description="t('Create the first one to sell it from a patient\'s Billing tab.', 'Crea el primero para venderlo desde la pestaña Facturación del paciente.')"
+            >
+              <template #icon>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4V8zM14 6v12" stroke-dasharray="0" /></svg>
+              </template>
+              <template #actions>
+                <UiBtn variant="primary" @click="openNew">{{ t('New bono', 'Nuevo bono') }}</UiBtn>
+              </template>
+            </UiEmptyState>
 
             <article v-for="p in packages" :key="p.id" data-cy="package-card" class="flex flex-col overflow-hidden rounded-card border border-line bg-surface" :class="editing !== 'new' && editing?.id === p.id ? 'ring-2 ring-brand' : ''">
               <div class="flex items-start gap-2 pb-3.5 pl-[18px] pr-2.5 pt-4">
                 <div class="flex min-w-0 flex-1 flex-col gap-2.5">
                   <strong class="text-[15.5px] text-ink-900" data-cy="package-name">{{ p.name }}</strong>
                   <div class="flex flex-wrap items-baseline gap-x-2.5">
-                    <span class="text-[26px] font-[640] tracking-tightTitle text-ink-900">{{ formatEur(p.price_cents) }}</span>
+                    <span class="font-mono text-[23px] font-semibold text-ink-900">{{ formatEur(p.price_cents) }}</span>
                     <span class="text-[13.5px] text-ink-500">{{ p.session_count === 1 ? t('1 session', '1 sesión') : t(`${p.session_count} sessions`, `${p.session_count} sesiones`) }}</span>
                   </div>
-                  <span class="inline-flex h-6 items-center self-start rounded-pill bg-brand-tint px-2.5 text-[12px] font-bold text-brand-text">{{ t(`${perSession(p)} per session`, `${perSession(p)} por sesión`) }}</span>
+                  <UiPill tone="brand" class="self-start">{{ t(`${perSession(p)} per session`, `${perSession(p)} por sesión`) }}</UiPill>
                   <ul v-if="optionsOf(p).length" class="flex flex-col gap-0.5 text-[13px] text-ink-700" data-cy="package-installment-options">
                     <li v-for="o in optionsOf(p)" :key="o.installments" data-cy="package-installment-option">
                       {{ t('or', 'o') }} <strong class="font-semibold text-ink-900">{{ optionLabel(o) }}</strong>

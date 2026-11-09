@@ -131,7 +131,8 @@ function formatDue(iso: string) {
   const d = new Date(iso)
   const today = new Date()
   const sameDay = d.toDateString() === today.toDateString()
-  return sameDay ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+  // In the staff member's language, as the rest of the page is, not the browser's.
+  return sameDay ? d.toLocaleTimeString(t('en-GB', 'es-ES'), { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString(t('en-GB', 'es-ES'), { day: 'numeric', month: 'short' })
 }
 </script>
 
@@ -166,7 +167,7 @@ function formatDue(iso: string) {
           :aria-label="task.done_at ? t('Mark as not done', 'Marcar como pendiente') : t('Mark as done', 'Marcar como hecha')"
           @click="toggle(task)"
         >
-          <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2.5 6.2l2.4 2.4 4.6-5.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+          <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2.5 6.2l2.4 2.4 4.6-5.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
         </button>
         <div class="min-w-0 flex-1">
           <p class="text-[13.5px] font-[560]" :class="task.done_at ? 'text-ink-faint line-through' : 'text-ink-900'" data-cy="my-day-task-title">{{ task.title }}</p>

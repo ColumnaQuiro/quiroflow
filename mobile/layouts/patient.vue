@@ -20,6 +20,18 @@ watch(tabsVisible, (on) => { if (on) registerForPush() }, { immediate: true })
 const habitOpened = useHabitReminders().onOpened(() => navigateTo('/care'))
 onBeforeUnmount(() => habitOpened.then((h) => h.remove()))
 
+// "Mis hábitos" ring only while the phone is a patient's: the staff layout
+// and every sign-out take them off it (useHabitReminders().clear), so they
+// go back on here, from what this login saved, each time the patient side
+// is entered with somebody signed in behind it.
+const user = useSupabaseUser()
+const { preference: lang } = useLang()
+watch(
+  () => [tabsVisible.value, user.value?.sub ?? user.value?.id ?? ''] as const,
+  ([on, userId]) => { if (on && userId) scheduleStoredHabits(userId, lang.value) },
+  { immediate: true },
+)
+
 // On an iPad the sections are a side menu instead of the tab bar (CSS, by
 // width), headed by the patient's clinic.
 const { items, isActive } = usePatientNav()

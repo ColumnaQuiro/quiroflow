@@ -1,4 +1,4 @@
-import { MAX_REMINDERS_PER_DAY, nativeHabits, remindersPerDay, type Habit, type HabitPlace } from '../../utils/habits'
+import { MAX_REMINDERS_PER_DAY, nativeHabits, remindersPerDay, type Habit, type HabitPlace, type Lang } from '../../utils/habits'
 import { dayOf } from '../../utils/careStreak'
 
 // "Mis hábitos" (Cuidarme): the patient's own reminders and places, kept on
@@ -26,6 +26,18 @@ function write(key: string, value: unknown) {
   } catch {
     // Storage full or unavailable: the reminders are still scheduled natively.
   }
+}
+
+/**
+ * Hands this login's saved habits to the phone's scheduler again. The
+ * reminders are cleared whenever the phone is used as staff or signed out
+ * (useHabitReminders().clear), so the patient side calls this each time it
+ * is entered (layouts/patient.vue); with nothing saved it clears.
+ */
+export function scheduleStoredHabits(userId: string, lang: Lang) {
+  const habits = read<Habit[]>(storeKey(userId, 'habits'), [])
+  const places = read<HabitPlace[]>(storeKey(userId, 'habit-places'), [])
+  return useHabitReminders().schedule(nativeHabits(habits, places, lang), places).catch((e) => console.error('[habits] schedule failed', e))
 }
 
 export function useHabits(patientId: () => string) {

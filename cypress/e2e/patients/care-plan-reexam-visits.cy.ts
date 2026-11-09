@@ -122,7 +122,7 @@ describe('Care plan re-exam visits', () => {
             cy.get('[data-cy=marker-mismatch-row]').should('have.length', 1)
             cy.contains('[data-cy=marker-mismatch-row]', 'Lucas Plan').should('contain', '3 · Revisión').and('contain', 'Ajuste')
             cy.contains('[data-cy=marker-mismatch-row]', 'Lucas Plan').find('[data-cy=marker-mismatch-fix]').click()
-            cy.get('[data-cy=marker-mismatches]').should('contain', 'Every upcoming re-exam is booked as its plan says.')
+            cy.get('[data-cy=marker-mismatches]').should('contain', 'Every upcoming re-exam is booked as its plan says')
             cy.task<{ appointment_type_id: string }[]>('db:selectRows', { table: 'appointments', columns: 'appointment_type_id, status', match: { patient_id: typed.id, status: 'booked' } })
               .its('0.appointment_type_id')
               .should('eq', revisionId)

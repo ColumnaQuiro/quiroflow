@@ -83,7 +83,7 @@ function cellClass(value: PlanCell | string) {
                   <span class="text-[12.5px] font-semibold text-ink-900">{{ col.name }}</span>
                   <span
                     v-if="col.current"
-                    class="rounded-pill border border-chip-border bg-chip-bg px-1.5 py-px text-[11px] font-semibold uppercase tracking-[.06em] text-chip-text"
+                    class="rounded-pill border border-chip-border bg-chip-bg px-1.5 py-px text-[11px] font-[640] uppercase tracking-[.07em] text-chip-text"
                   >{{ t('Current', 'Actual') }}</span>
                 </span>
                 <span class="text-[11px] font-normal text-ink-muted">{{ col.price }}</span>

@@ -5,12 +5,18 @@
 // or three things a row is about and puts the rest in `subtitle`.
 // `to` makes the row a link (a patient, an invoice); `tone` colours the value.
 defineProps<{ title: string; subtitle?: string | null; value?: string | null; valueNote?: string | null; to?: string; tone?: 'default' | 'danger' | 'warning' | 'success' | 'muted' }>()
-const TONES = { default: 'text-ink-900', danger: 'text-danger-text', warning: 'text-warning-text', success: 'text-success-text', muted: 'text-ink-muted' } as const
+// Resolved here, in the script, as AppButton does: Nuxt turns this call into
+// a direct import at build time. Written inside the template it was wrapped
+// by the auto-import first, escaped that rewrite, and resolved at runtime to
+// the bare string 'NuxtLink' (nothing is registered globally here), so every
+// row rendered as an inert <nuxtlink> element and no report opened.
+const NuxtLink = resolveComponent('NuxtLink')
+const TONES ={ default: 'text-ink-900', danger: 'text-danger-text', warning: 'text-warning-text', success: 'text-success-text', muted: 'text-ink-muted' } as const
 </script>
 
 <template>
   <li class="border-b border-line-divider last:border-b-0">
-    <component :is="to ? resolveComponent('NuxtLink') : 'div'" :to="to" class="flex min-h-[52px] items-center gap-3 py-2.5" :class="to ? 'active:bg-surface-subtle' : ''">
+    <component :is="to ? NuxtLink : 'div'" :to="to" class="flex min-h-[52px] items-center gap-3 py-2.5" :class="to ? 'active:bg-surface-subtle' : ''">
       <slot name="leading" />
       <span class="flex min-w-0 flex-1 flex-col gap-0.5">
         <span class="truncate text-[14.5px] font-medium text-ink-900">{{ title }}</span>

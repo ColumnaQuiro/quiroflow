@@ -424,7 +424,7 @@ const activeLast30Days = computed(() => usage.value.active)
                       <span class="sm:hidden"> · </span>
                       {{
                         t(
-                          `${b.patient_ids ? `${b.patient_ids.length} selected` : 'All patients'} · ${b.recipients_count} reached, ${b.delivered_count} device(s)`,
+                          `${b.patient_ids ? t(`${b.patient_ids.length} selected`, `${b.patient_ids.length} seleccionados`) : t('All patients', 'Todos los pacientes')} · ${b.recipients_count} reached, ${b.delivered_count} device(s)`,
                           `${b.patient_ids ? `${b.patient_ids.length} seleccionados` : 'Todos los pacientes'} · ${b.recipients_count} alcanzados, ${b.delivered_count} dispositivo(s)`,
                         )
                       }}

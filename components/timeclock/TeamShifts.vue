@@ -164,9 +164,9 @@ function onDecided(r: { absence: { team_member_id: string; starts_on: string; en
   load()
 }
 
-const dayHead = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString(lang.value === 'es' ? 'es-ES' : 'en-GB', { weekday: 'short', day: 'numeric', timeZone: 'UTC' })
+const dayHead = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString(uiLocaleTag(lang.value), { weekday: 'short', day: 'numeric', timeZone: 'UTC' })
 const weekLabel = computed(() => {
-  const f = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString(lang.value === 'es' ? 'es-ES' : 'en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })
+  const f = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString(uiLocaleTag(lang.value), { day: 'numeric', month: 'short', timeZone: 'UTC' })
   return `${f(days.value[0]!)} – ${f(days.value[6]!)}`
 })
 const memberName = (id: string) => members.value.find((m) => m.id === id)?.full_name ?? ''

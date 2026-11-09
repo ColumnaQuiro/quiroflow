@@ -164,6 +164,15 @@ const REMINDER_WINDOW_MINUTES = 20
  * the morning summary, rather than needing a pg_cron job of its own.
  * Best-effort: a failure here never stops the cron's other work.
  */
+
+// In the staff member's interface language (team_members.language_preference).
+const OPEN_DAY_REMINDER = {
+  en: { title: 'Your working day is still open', body: "If you've finished, clock out on My Day." },
+  es: { title: 'Tu jornada sigue abierta', body: 'Si ya has terminado, ficha la salida en Mi día.' },
+  pt: { title: 'O seu dia de trabalho continua aberto', body: 'Se já terminou, registe a saída em O meu dia.' },
+  de: { title: 'Ihr Arbeitstag ist noch offen', body: 'Wenn Sie fertig sind, stempeln Sie unter „Mein Tag“ aus.' },
+} as const
+
 export async function sendOpenDayReminders(service: Service, now = new Date()) {
   let sent = 0
   try {
@@ -199,12 +208,8 @@ export async function sendOpenDayReminders(service: Service, now = new Date()) {
         .upsert({ team_member_id: m.id, work_date: e.work_date, account_id: e.account_id }, { onConflict: 'team_member_id,work_date', ignoreDuplicates: true })
         .select('team_member_id')
       if (!claimed?.length) continue
-      const es = m.language_preference !== 'en'
-      await sendPushToUsers(service, [m.user_id], {
-        title: es ? 'Tu jornada sigue abierta' : 'Your working day is still open',
-        body: es ? 'Si ya has terminado, ficha la salida en Mi día.' : "If you've finished, clock out on My Day.",
-        data: { type: 'my_day' },
-      })
+      const text = OPEN_DAY_REMINDER[m.language_preference as keyof typeof OPEN_DAY_REMINDER] ?? OPEN_DAY_REMINDER.en
+      await sendPushToUsers(service, [m.user_id], { ...text, data: { type: 'my_day' } })
       sent++
     }
   } catch (err) {

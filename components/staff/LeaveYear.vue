@@ -16,7 +16,7 @@ const t = useT()
 const { preference: lang } = useLang()
 const supabase = useSupabaseClient()
 const authedFetch = useAuthedFetch()
-const locale = computed(() => (lang.value === 'es' ? 'es-ES' : 'en-GB'))
+const locale = computed(() => uiLocaleTag(lang.value))
 
 interface Member { id: string; full_name: string; is_practitioner: boolean; color: string }
 interface Absence extends TeamAbsence { note: string | null }

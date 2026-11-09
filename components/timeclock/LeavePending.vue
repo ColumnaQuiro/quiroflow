@@ -40,7 +40,7 @@ onMounted(load)
 defineExpose({ load })
 
 const dates = (p: Pending) => {
-  const f = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString(lang.value === 'es' ? 'es-ES' : 'en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })
+  const f = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString(uiLocaleTag(lang.value), { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })
   return p.starts_on === p.ends_on ? `${f(p.starts_on)}${p.half_day ? t(' (half day)', ' (medio día)') : ''}` : `${f(p.starts_on)} – ${f(p.ends_on)}`
 }
 

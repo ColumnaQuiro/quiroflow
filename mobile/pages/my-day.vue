@@ -98,7 +98,7 @@ const seesRecalls = computed(() => can('recalls_access'))
 // (ownDiaryOnly).
 
 const timeZone = computed(() => context.value?.timeZone || DEFAULT_CLINIC_TIMEZONE)
-const locale = computed(() => (lang.value === 'es' ? 'es-ES' : 'en-GB'))
+const locale = computed(() => uiLocaleTag(lang.value))
 
 function today() {
   return localDay(new Date(), timeZone.value)

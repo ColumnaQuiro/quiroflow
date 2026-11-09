@@ -41,7 +41,7 @@ async function load() {
 }
 onMounted(load)
 
-const when = (iso: string) => new Date(iso).toLocaleString(preference.value === 'es' ? 'es-ES' : 'en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+const when = (iso: string) => new Date(iso).toLocaleString(uiLocaleTag(preference.value), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 const TONE: Record<string, string> = {
   failed: 'bg-danger-text',
   bounced: 'bg-danger-text',

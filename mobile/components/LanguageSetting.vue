@@ -4,10 +4,7 @@
 // screens and everything before an account loads read it.
 const t = useT()
 const { preference, setPreference } = useLang()
-const options = [
-  { value: 'es', label: 'Español' },
-  { value: 'en', label: 'English' },
-] as const
+const options = UI_LANGUAGES
 </script>
 
 <template>

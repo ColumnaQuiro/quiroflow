@@ -40,7 +40,7 @@ const monthStart = (() => {
   const d = new Date()
   return new Date(d.getFullYear(), d.getMonth(), 1).toISOString()
 })()
-const monthName = new Date().toLocaleDateString(lang.value === 'es' ? 'es-ES' : 'en-GB', { month: 'short' })
+const monthName = new Date().toLocaleDateString(uiLocaleTag(lang.value), { month: 'short' })
 
 async function load() {
   const [{ data }, { data: sales }] = await Promise.all([
@@ -75,7 +75,7 @@ watch(selected, loadMovements)
 
 const lowCount = computed(() => products.value.filter((p) => ['low', 'out'].includes(stockStatus(p.stock_units, p.min_stock))).length)
 const selectedProduct = computed(() => products.value.find((p) => p.id === selected.value) ?? null)
-const dateLabel = (iso: string) => new Date(iso).toLocaleDateString(lang.value === 'es' ? 'es-ES' : 'en-GB', { day: 'numeric', month: 'short' })
+const dateLabel = (iso: string) => new Date(iso).toLocaleDateString(uiLocaleTag(lang.value), { day: 'numeric', month: 'short' })
 
 function movementLabel(m: Movement) {
   if (m.kind === 'sale') {

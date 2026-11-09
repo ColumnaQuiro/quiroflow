@@ -37,7 +37,7 @@ async function remove() {
   >
     <p class="text-[14px] leading-relaxed text-ink-500" data-test="delete-inside">
       <template v-if="inside > 0">
-        {{ t('There', 'Hay') }} <strong>{{ t(`${inside === 1 ? 'is 1 person' : `are ${inside} people`} inside`, `${inside} ${inside === 1 ? 'persona' : 'personas'} dentro`) }}</strong>.
+        {{ t('There', 'Hay') }} <strong>{{ inside === 1 ? t('is 1 person inside', '1 persona dentro') : t(`are ${inside} people inside`, `${inside} personas dentro`) }}</strong>.
         {{ t('They leave now and receive nothing more.', 'Salen ahora y no reciben nada más.') }}
       </template>
       {{ t('What was already sent stays in the Inbox and on their record.', 'Lo ya enviado queda en la Bandeja y en su ficha.') }}

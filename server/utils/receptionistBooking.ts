@@ -429,7 +429,7 @@ export function bookingTool(ctx: BookingContext): (input: unknown) => Promise<To
               status: 'booked',
               source: 'receptionist',
             },
-        { checkOverlap: true },
+        { checkOverlap: true, checkBlocks: true },
       )
     } catch (err) {
       used.delete(whom)

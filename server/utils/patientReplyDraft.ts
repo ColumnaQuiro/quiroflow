@@ -6,7 +6,7 @@ import { bookingTool, cancelTool, giveVisitTool, stopFollowUpsTool, waitlistTool
 import { recentImages, withImages, type StoredImage } from '~/server/utils/receptionistImages'
 import { historyLine, standingClockTimes } from '~/utils/receptionistHistory'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage, personRepliedSince, replyActed } from '~/utils/receptionistAutoReply'
-import { loadBookedVisits, loadClinicDetails, loadFamilyAdults, loadPhoneSharers, loadOfferedTypes, loadTeamNames, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, toneWording, uniqueTypes, clinicTodayStart } from '~/server/utils/receptionist'
+import { unmarkedPastVisits, loadBookedVisits, loadClinicDetails, loadFamilyAdults, loadPhoneSharers, loadOfferedTypes, loadTeamNames, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, toneWording, uniqueTypes, clinicTodayStart } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel, type FreeTimesForWhom } from '~/server/utils/receptionistModel'
 import { matchChild, patientAudience, typesAfterFirstVisit, typesForAudience, typesForMinor, typesForSomeoneTheyBring } from '~/utils/receptionistTypes'
 import { internalNotes } from '~/utils/receptionistGuard'
@@ -33,6 +33,9 @@ import { buildPatientReplyPrompt, type PatientAppFacts, openBono, summariseVisit
 const MODEL = 'claude-sonnet-5'
 const MAX_TOKENS = 1024
 const HISTORY_TURNS = 24
+
+/** Why a reply to a minor's record went to a person. */
+const MINOR_RECORD_REASON = 'Ha escrito desde un número que está en la ficha de un menor, y a un menor no le respondo yo. Te he dejado un borrador: mira quién escribe y contéstale tú.'
 
 export type PatientDraftOutcome =
   | { status: 'drafted'; draft: string }
@@ -69,7 +72,7 @@ export async function draftPatientReply(
   // What everything below is read as of: anything the team does after this,
   // in the conversation or the diary, holds a sent reply back (heldBackBeforeSending).
   const readAt = new Date().toISOString()
-  const { data: patient } = await supabase.from('patients').select('id, first_name, user_id').eq('id', patientId).eq('account_id', accountId).maybeSingle()
+  const { data: patient } = await supabase.from('patients').select('id, first_name, user_id, is_minor').eq('id', patientId).eq('account_id', accountId).maybeSingle()
   if (!patient) return { status: 'not_found' }
 
   // Both channels the Inbox shows as one conversation: WhatsApp and the app.
@@ -155,6 +158,10 @@ export async function draftPatientReply(
     // patient to a person instead of saying so (28 Oct 2026).
     supabase.from('appointments').select('starts_at, appointment_types(name)').eq('patient_id', patientId).eq('status', 'cancelled').is('deleted_at', null).gte('starts_at', todayStart).order('starts_at').limit(3),
   ])
+  // Visits had, for whether they are someone new: the completed ones, or at a
+  // clinic that does not mark them, the ones whose time is over
+  // (unmarkedPastVisits).
+  const visitsHad = (attended ?? 0) || await unmarkedPastVisits(supabase, accountId, patientId)
   const plan = (plans ?? [])[0] as { name: string; total_visits: number | null; started_at: string; frequency_value: number; frequency_unit: string; visits_per_period: number | null } | undefined
   let done = 0
   if (plan) {
@@ -194,7 +201,7 @@ export async function draftPatientReply(
   const offered = await loadOfferedTypes(supabase, accountId, config)
   const { data: leads } = await service.from('leads').select('channel, source, external_source, lead_attribution(campaign, ad)').eq('account_id', accountId).eq('patient_id', patientId)
   const audience = patientAudience({
-    attended: attended ?? 0,
+    attended: visitsHad,
     bonoSessionsLeft: facts.bono?.sessionsLeft ?? 0,
     leadOrigins: ((leads ?? []) as { channel: string | null; source: string | null; external_source: string | null; lead_attribution: { campaign: string | null; ad: string | null } | { campaign: string | null; ad: string | null }[] | null }[]).map((lead) => {
       // One-to-one on lead_id: an object, or an array, as receptionistDraft.ts reads it.
@@ -215,6 +222,8 @@ export async function draftPatientReply(
   // when the clinic has one (typesForSomeoneTheyBring) -- once they have
   // been to the clinic themselves: a record with only a booked first visit
   // refers nobody.
+  // Referring someone takes a visit they really came to: an unmarked one may
+  // be a no-show nobody recorded (unmarkedPastVisits is not enough here).
   const referred = Boolean(facts.lastVisitAt)
   const bringsSomeone = { types: typesForSomeoneTheyBring(offered, referred), referred }
   // What the visits and the clinic's bonos cost, from the types and Settings > Bonos.
@@ -247,7 +256,7 @@ export async function draftPatientReply(
   // the rest of the team's, and practitionerIds is what they are really with.
   // Moving a visit already booked keeps it with that visit's practitioner,
   // new or not, so the times offered for the move are hers.
-  const own = facts.lastVisitAt ? await loadPatientPractitioners(supabase, accountId, patientId, booked.practitionerIds) : booked.practitionerIds.length ? booked.practitionerIds : null
+  const own = visitsHad > 0 ? await loadPatientPractitioners(supabase, accountId, patientId, booked.practitionerIds) : booked.practitionerIds.length ? booked.practitionerIds : null
   const { calendar, practitionerIds } = await loadPatientCalendar(service, accountId, config, bookable, own)
   // A child's or a relative's times, by name: with their own practitioner,
   // for the types they may have.
@@ -274,7 +283,11 @@ export async function draftPatientReply(
     const { data: state } = await service.from('inbox_reply_drafts').select('handed_over_at').eq('account_id', accountId).eq('conversation_key', patientId).maybeSingle()
     handoverOpen = Boolean(state?.handed_over_at) && !personRepliedSince(asTurns, state.handed_over_at)
   }
-  const sends = Boolean(opts.send) && channel !== null && !handoverOpen && autoReplyHeldBack(asTurns, new Date()) === null
+  // A minor's record: nothing is sent to it (inboxSend refuses), so a reply
+  // written to go out would fail at the last step and reach a person as an
+  // error. It is a draft from the start, and a person is told why.
+  const minorsRecord = Boolean(patient.is_minor) && channel === 'whatsapp'
+  const sends = Boolean(opts.send) && channel !== null && !handoverOpen && !minorsRecord && autoReplyHeldBack(asTurns, new Date()) === null
 
   // A voice note since the clinic last wrote: always a person's, decided
   // here rather than by the model (utils/receptionistFollowThrough.ts).
@@ -420,10 +433,12 @@ export async function draftPatientReply(
 
   if (refused || !draft) return { status: 'refused' }
   if ((opts.store || opts.send) && newestInboundAt) {
+    const handOverMinor = Boolean(opts.send) && minorsRecord && channel !== null && !handoverOpen
     const { error } = await service
       .from('inbox_reply_drafts')
-      .upsert({ account_id: accountId, conversation_key: patientId, body: draft.slice(0, 4000), drafted_through_at: newestInboundAt, dismissed_at: null, created_at: new Date().toISOString() })
+      .upsert({ account_id: accountId, conversation_key: patientId, body: draft.slice(0, 4000), drafted_through_at: newestInboundAt, dismissed_at: null, created_at: new Date().toISOString(), ...(handOverMinor ? { handed_over_at: new Date().toISOString() } : {}) })
     if (error) throw new Error(`could not store the draft: ${error.message}`)
+    if (handOverMinor) await announceHandover(service, accountId, { kind: 'patient', patientId, channel: channel! }, patient.first_name ?? 'Paciente', MINOR_RECORD_REASON)
   }
   return { status: 'drafted', draft }
 }

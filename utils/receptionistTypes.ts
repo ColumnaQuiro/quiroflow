@@ -391,36 +391,69 @@ export function phoneSharersSection(sharers: PhoneSharer[], timeZone: string, op
 const fold = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
 
 /**
- * The child on file this name means: the first name has to match, and a
- * surname given has to match too when the record has one. null: none of
- * theirs, so a new record is made. 'ambiguous': more than one -- two
- * siblings with one first name and no surname given -- which is neither
- * booked over the wrong one nor made a third record for.
+ * How the words someone wrote fit a name on file: the first word has to be
+ * the first word of the first name, and every other word has to be another
+ * part of it -- a second first name ("Ana María") or a surname, either of
+ * the two ("Lucía Ruiz" for Lucía Gómez Ruiz). A surname may be given cut
+ * short ("Lucía Gó"). null when they do not fit; `surname` when one of the
+ * words was a surname.
+ *
+ * Only the first word of each used to be compared, and everything after it
+ * was taken for the surname: "Ana María" for a child on file as Ana María
+ * Gómez matched nobody, and the booking made her a second record.
+ */
+function nameFit(given: string[], person: { firstName: string; lastName: string | null }): { surname: boolean } | null {
+  const firsts = fold(person.firstName).split(/\s+/).filter(Boolean)
+  const lasts = fold(person.lastName ?? '').split(/\s+/).filter(Boolean)
+  const [first, ...rest] = given
+  if (!first || firsts[0] !== first) return null
+  let surname = false
+  for (const word of rest) {
+    if (firsts.slice(1).includes(word)) continue
+    if (lasts.some((last) => last === word || (word.length >= 2 && last.startsWith(word)))) {
+      surname = true
+      continue
+    }
+    return null
+  }
+  return { surname }
+}
+
+/**
+ * The child on file this name means: the first name has to match, and the
+ * rest of what was given has to fit the name on file (nameFit) -- unless the
+ * record has no surname, when a surname given cannot be checked and is let
+ * through. null: none of theirs, so a new record is made. 'ambiguous': more
+ * than one -- two siblings with one first name and no surname given -- which
+ * is neither booked over the wrong one nor made a third record for.
  */
 export function matchChild<T extends { firstName: string; lastName: string | null }>(children: T[], name: string): T | 'ambiguous' | null {
-  const [first, ...rest] = fold(name).split(/\s+/)
-  const surname = rest.join(' ')
-  const hits = children.filter((c) => fold(c.firstName).split(/\s+/)[0] === first && (!surname || !c.lastName || fold(c.lastName).startsWith(surname.split(' ')[0]!)))
+  const given = fold(name).split(/\s+/).filter(Boolean)
+  const hits = children.filter((c) => {
+    if (nameFit(given, c)) return true
+    // No surname on file: only the first name can be checked.
+    return !c.lastName && nameFit(given.slice(0, 1), c) !== null
+  })
   if (hits.length > 1) return 'ambiguous'
   return hits[0] ?? null
 }
 
 /**
- * The patient a referral names: their first name and every surname given
- * have to match (accents and case aside), and the name has to have a surname
- * at all -- "Ana" alone is half the clinic. Exactly one, or none: two
- * patients with that name is 'ambiguous', and the booking is a person's.
+ * The patient a referral names: their first name and every other word given
+ * have to fit the name on file (nameFit), and at least one of those words
+ * has to be a surname -- "Ana" alone is half the clinic, and so is "José
+ * Luis". Exactly one, or none: two patients with that name is 'ambiguous',
+ * and the booking is a person's.
  */
 export function matchReferrer<T extends { firstName: string; lastName: string | null }>(people: T[], name: string): T | 'ambiguous' | 'need_surname' | null {
-  const [first, ...surnames] = fold(name).split(/\s+/).filter(Boolean)
-  if (!first || !surnames.length) return 'need_surname'
-  const hits = people.filter((p) => {
-    if (fold(p.firstName).split(/\s+/)[0] !== first) return false
-    const theirs = fold(p.lastName ?? '').split(/\s+/).filter(Boolean)
-    return surnames.every((s) => theirs.includes(s))
-  })
+  const given = fold(name).split(/\s+/).filter(Boolean)
+  if (given.length < 2) return 'need_surname'
+  const fits = people.map((p) => ({ p, fit: nameFit(given, p) })).filter((x) => x.fit)
+  const hits = fits.filter((x) => x.fit!.surname).map((x) => x.p)
   if (hits.length > 1) return 'ambiguous'
-  return hits[0] ?? null
+  if (hits.length === 1) return hits[0]!
+  // Every word fitted a first name: they gave no surname yet.
+  return fits.length ? 'need_surname' : null
 }
 
 /**

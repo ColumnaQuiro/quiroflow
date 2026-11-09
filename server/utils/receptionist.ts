@@ -272,6 +272,28 @@ export async function clinicTodayStart(supabase: SupabaseClient<Database>, accou
   return startOfLocalDate(clinicDateOf(new Date(), timeZone), timeZone).toISOString()
 }
 
+/**
+ * Visits of this patient whose time is over but that nobody marked: still
+ * 'booked' an hour after they started. What says whether someone is new is
+ * their completed visits, and a clinic that never marks visits completed has
+ * none -- so every patient there, ten years of visits or not, was told they
+ * had not been yet and offered a first visit at its price. Counted only when
+ * there is no completed visit at all, so a clinic that marks them is read
+ * exactly as before.
+ */
+export async function unmarkedPastVisits(supabase: SupabaseClient<Database>, accountId: string, patientId: string | null): Promise<number> {
+  if (!patientId) return 0
+  const { count } = await supabase
+    .from('appointments')
+    .select('id', { count: 'exact', head: true })
+    .eq('account_id', accountId)
+    .eq('patient_id', patientId)
+    .eq('status', 'booked')
+    .is('deleted_at', null)
+    .lt('starts_at', new Date(Date.now() - 3600_000).toISOString())
+  return count ?? 0
+}
+
 /** A child of the person writing, as the receptionist books for them. */
 export interface TutorChild {
   id: string

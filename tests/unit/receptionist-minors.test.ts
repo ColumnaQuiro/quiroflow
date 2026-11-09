@@ -56,6 +56,16 @@ describe('Which child on file a name means', () => {
     expect(matchChild([lucia, other], 'Lucía')).toBe('ambiguous')
     expect(matchChild([lucia, other], 'Lucía Martín')).toBe(other)
   })
+
+  it('finds a child with two first names, or by their second surname', () => {
+    const anaMaria = { firstName: 'Ana María', lastName: 'Gómez Ruiz' }
+    // Used to read "María" as a surname, match nobody and make a second record.
+    expect(matchChild([anaMaria, pablo], 'Ana María')).toBe(anaMaria)
+    expect(matchChild([anaMaria, pablo], 'ana maria gomez')).toBe(anaMaria)
+    expect(matchChild([lucia, pablo], 'Lucía Ruiz')).toBe(lucia)
+    // A sibling called just Ana is not Ana María.
+    expect(matchChild([{ firstName: 'Ana', lastName: 'Gómez Ruiz' }, anaMaria], 'Ana María')).toBe(anaMaria)
+  })
 })
 
 describe('Prompt section for children', () => {

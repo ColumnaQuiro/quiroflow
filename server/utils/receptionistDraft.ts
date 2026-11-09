@@ -6,7 +6,7 @@ import { bookingTool, cancelTool, giveVisitTool, waitlistTool, type BookingConte
 import { recentImages, withImages } from '~/server/utils/receptionistImages'
 import { historyLine, standingClockTimes } from '~/utils/receptionistHistory'
 import { autoReplyHeldBack, isNoReply, isNoReplyMessage, replyActed } from '~/utils/receptionistAutoReply'
-import { buildSystemPrompt, loadBookedVisits, loadClinicDetails, loadOfferedTypes, loadTeamNames, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, uniqueTypes, type LeadOrigin } from '~/server/utils/receptionist'
+import { buildSystemPrompt, unmarkedPastVisits, loadBookedVisits, loadClinicDetails, loadOfferedTypes, loadTeamNames, loadPackagePrices, loadPatientCalendar, loadPatientPractitioners, loadTutorChildren, toConfig, uniqueTypes, type LeadOrigin } from '~/server/utils/receptionist'
 import { freeTimesLookup, runReceptionistModel } from '~/server/utils/receptionistModel'
 import { cameFromAd } from '~/utils/receptionistLeadOrigin'
 import { leadNameIsTheirs, typesForAudience, typesAfterFirstVisit, typesForMinor, typesForReferral, typesForSomeoneTheyBring, type ReceptionistAudience } from '~/utils/receptionistTypes'
@@ -190,7 +190,11 @@ export async function draftLeadReply(
   // Which appointment this person is after: a first visit -- the ad's offer
   // when they came from the ad -- unless the lead is somebody who has been
   // to the clinic before, who is never offered a first visit again.
-  const audience: ReceptionistAudience = (await hasBeenBefore(supabase, accountId, lead.patient_id))
+  // Came, for the referral rules: a completed visit. Had a visit, for who
+  // they are: a completed one, or at a clinic that does not mark them, one
+  // whose time is over (unmarkedPastVisits).
+  const cameBefore = await hasBeenBefore(supabase, accountId, lead.patient_id)
+  const audience: ReceptionistAudience = cameBefore || (await unmarkedPastVisits(supabase, accountId, lead.patient_id)) > 0
     ? 'existing'
     : cameFromAd(leadOrigin)
       ? 'new_from_ad'
@@ -207,7 +211,7 @@ export async function draftLeadReply(
   // and someone new may have the referral visit themselves, once they name
   // the patient who referred them (referralSection).
   // Only someone who has been to the clinic refers the person they bring.
-  const bringsSomeone = { types: typesForSomeoneTheyBring(offered, audience === 'existing'), referred: audience === 'existing' }
+  const bringsSomeone = { types: typesForSomeoneTheyBring(offered, cameBefore), referred: cameBefore }
   // What comes after a first visit, for "¿y luego cuánto?" -- from the types
   // and the clinic's bonos, not from a card kept in step by hand.
   const laterPrices = { sessions: typesAfterFirstVisit(offered), packages: await loadPackagePrices(supabase, accountId) }

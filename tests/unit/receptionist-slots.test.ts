@@ -32,12 +32,15 @@ describe('Receptionist free times', () => {
   const days = (q: ReceptionistSlotQuery) => receptionistSlotGroups(q)!.groups.map((g) => g.days)
 
   it("offers starts after the notice and inside the window, on the clinic's clock", () => {
-    // Notice ends 10:00 Monday (a start exactly then is not after it); the
-    // window ends 08:00 Wednesday, before Wednesday opens.
+    // Notice ends 10:00 Monday (a start exactly then is not after it). The
+    // window's last day, Wednesday, is listed whole: it used to stop at
+    // 08:00, this moment's clock time, and showed a day with nothing free
+    // that the prompt then said was taken.
     expect(days(base)).toEqual([
       [
         { date: '2026-10-05', times: ['11:00'] },
         { date: '2026-10-06', times: ['09:00', '10:00', '11:00'] },
+        { date: '2026-10-07', times: ['09:00', '10:00', '11:00'] },
       ],
     ])
   })
@@ -62,7 +65,17 @@ describe('Receptionist free times', () => {
 
     // A closure at this clinic closes it for everyone.
     const closed = { ...base, blocks: [{ clinicId: 'c1', practitionerId: null, starts_at: '2026-10-06T00:00:00Z', ends_at: '2026-10-07T00:00:00Z' }] }
-    expect(days(closed)[0]!.map((d) => d.date)).toEqual(['2026-10-05'])
+    expect(days(closed)[0]!.map((d) => d.date)).toEqual(['2026-10-05', '2026-10-07'])
+  })
+
+  it('lists a day looked up from its midnight as that day only, also when the clocks change', () => {
+    // find_free_times and the booking check ask for one day from its
+    // midnight. On 25 Oct 2026 Madrid's day is 25 hours long, so midnight
+    // plus 24 hours is still that date.
+    const everyDay = { ...weekdays, sat: [['09:00', '12:00']], sun: [['09:00', '12:00']] } as Record<string, [string, string][]>
+    // Sunday 25 Oct 00:00 in Madrid, still UTC+2 until 03:00.
+    const sunday = { ...base, clinics: [{ ...base.clinics[0]!, businessHours: everyDay }], now: new Date('2026-10-20T08:00:00Z'), from: new Date('2026-10-24T22:00:00Z'), bookingWindowDays: 1 }
+    expect(days(sunday)[0]).toEqual([{ date: '2026-10-25', times: ['09:00', '10:00', '11:00'] }])
   })
 
   it('merges practitioners, honours their hours and overrides, and ignores other clinics', () => {
@@ -303,4 +316,5 @@ describe("A returning patient's own practitioner", () => {
     expect(section).not.toContain('These times are only with')
     expect(section).not.toMatch(/\n\n\n/)
   })
+
 })

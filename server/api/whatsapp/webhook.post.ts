@@ -476,12 +476,12 @@ export default defineEventHandler(async (event) => {
             insert.media_storage_path = path
             insert.media_mime_type = mimeType
             insert.media_filename = media.filename ?? null
-            insert.body_preview = media.caption?.slice(0, 200) ?? null
+            insert.body_preview = media.caption?.slice(0, 2000) ?? null
           } catch {
             // Best-effort -- still record that a media message arrived even
             // if the download failed, rather than dropping it silently.
             insert.media_type = mediaKind
-            insert.body_preview = media.caption?.slice(0, 200) ?? '(media download failed)'
+            insert.body_preview = media.caption?.slice(0, 2000) ?? '(media download failed)'
           }
         } else {
           // Text and buttons; otherwise a reaction, a location, a contact or

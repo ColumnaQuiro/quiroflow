@@ -48,10 +48,15 @@ describe('Importing from PracticeHub without exporting anything', () => {
         cy.task('db:setPracticeHubConnection', { accountId: account.accountId, baseUrl })
         cy.login(account.email, account.password)
 
+        const patientsStatus = '[data-cy=import-step][data-step=patients] [data-cy=import-step-status]'
         cy.visit('/settings/import?source=practicehub&step=patients&type=patients')
+        cy.get('[data-cy=import-settings][data-ready=true]')
+        cy.get(patientsStatus).should('have.text', 'Nothing imported yet')
         cy.get('[data-cy=ph-patients-from-api]').should('not.be.disabled').click()
         cy.contains('button', /^(Import 1, update 0|Importar 1, actualizar 0)$/).click()
         cy.contains('a', /View patients|Ver pacientes/).should('exist')
+        // The step list catches up by itself: no reload.
+        cy.get(patientsStatus).should('have.text', '1 imported')
 
         cy.task<{ external_reference: string; created_at: string; marketing_channels: string[] }[]>('db:selectRows', {
           table: 'patients',
@@ -68,6 +73,7 @@ describe('Importing from PracticeHub without exporting anything', () => {
         cy.contains('button', /^(Continue|Continuar)$/).click()
         cy.contains('button', /^(Import 1, update 0|Importar 1, actualizar 0)$/).click()
         cy.contains('a', /View calendar|Ver calendario/).should('exist')
+        cy.get('[data-cy=import-step][data-step=appointments] [data-cy=import-step-status]').should('have.text', '1 imported')
 
         cy.task<{ starts_at: string; practitioner_name: string; status: string }[]>('db:selectRows', {
           table: 'appointments',

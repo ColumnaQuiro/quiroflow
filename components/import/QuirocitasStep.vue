@@ -14,6 +14,7 @@ const { plan: buildPlan } = useQuirocitasImport()
 const nf = new Intl.NumberFormat('es-ES')
 
 const stage = ref<'idle' | 'planning' | 'preview' | 'applying' | 'done' | 'error'>('idle')
+useImportWriting(() => stage.value === 'applying')
 const plan = shallowRef<QuirocitasPlan | null>(null)
 const error = ref('')
 const done = ref(0)

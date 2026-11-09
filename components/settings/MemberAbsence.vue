@@ -194,7 +194,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
         </label>
         <p v-if="formProblem && (form.from || form.returns)" class="text-[13px] text-danger-text">{{ formProblem }}</p>
         <div class="flex gap-2">
-          <button type="submit" :disabled="saving || !!formProblem" class="h-9 touch:h-11 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface disabled:opacity-60" data-cy="member-absence-save">{{ saving ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}</button>
+          <UiBtn variant="primary" type="submit" :disabled="saving || !!formProblem" data-cy="member-absence-save">{{ saving ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}</UiBtn>
           <button type="button" :class="button" @click="adding = false">{{ t('Cancel', 'Cancelar') }}</button>
         </div>
       </form>

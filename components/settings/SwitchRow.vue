@@ -42,7 +42,7 @@ function flip() {
       :aria-describedby="description || $slots.default ? `${id}-desc` : undefined"
       :disabled="disabled"
       class="relative my-[9px] h-[26px] w-11 shrink-0 rounded-full disabled:cursor-not-allowed disabled:opacity-50"
-      :class="modelValue ? 'bg-brand' : 'bg-line-control'"
+      :class="modelValue ? 'bg-brand' : 'bg-toggle-off'"
       @click="flip"
     >
       <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card left-[3px] transition-transform" :class="modelValue ? 'translate-x-[18px]' : 'translate-x-0'" />

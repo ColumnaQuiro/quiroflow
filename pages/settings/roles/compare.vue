@@ -45,7 +45,7 @@ function cell(r: RoleRow, row: Parameters<typeof rowValueLabel>[1]) {
         <span aria-hidden="true">›</span>
         <NuxtLink to="/settings/roles" class="font-semibold text-brand-text hover:underline">{{ t('Roles and permissions', 'Roles y permisos') }}</NuxtLink>
       </nav>
-      <h1 class="text-[20px] font-bold text-ink-900">{{ t('Compare roles', 'Comparar roles') }}</h1>
+      <h1 class="text-[18px] font-[640] tracking-tightTitle text-ink-900">{{ t('Compare roles', 'Comparar roles') }}</h1>
       <span class="text-[13px] text-ink-muted">{{ t('Every permission, role by role. Select a role to edit it.', 'Cada permiso, rol por rol. Pulsa un rol para editarlo.') }}</span>
     </header>
 
@@ -70,7 +70,7 @@ function cell(r: RoleRow, row: Parameters<typeof rowValueLabel>[1]) {
               </thead>
               <tbody v-for="g in groups" :key="g.id">
                 <tr>
-                  <th :colspan="roles.length + 1" scope="colgroup" class="px-4 pb-1.5 pt-3.5 text-left text-[12px] font-bold uppercase tracking-[.04em] text-ink-muted">{{ g.title }}</th>
+                  <th :colspan="roles.length + 1" scope="colgroup" class="px-4 pb-1.5 pt-3.5 text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted">{{ g.title }}</th>
                 </tr>
                 <tr v-for="row in g.rows" :key="row.key" data-cy="roles-compare-row" :data-key="row.key">
                   <th scope="row" class="sticky left-0 border-t border-line-row bg-surface px-4 py-2.5 text-left font-normal text-ink-900">{{ row.short ?? row.label }}</th>

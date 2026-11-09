@@ -55,7 +55,7 @@ function pick(id: string) {
         :placeholder="t('Search a city, country or zone', 'Busca una ciudad, país o zona')"
         class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3 text-[14px] text-ink-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
       />
-      <span class="px-2 pt-1.5 text-[11.5px] font-bold uppercase tracking-[.04em] text-ink-muted">
+      <span class="px-2 pt-1.5 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted">
         {{ query.trim() ? t('Results', 'Resultados') : t('Frequent · or search them all', 'Frecuentes · o busca entre todas') }}
       </span>
       <div :id="listId" role="listbox" :aria-label="t('Time zones', 'Zonas horarias')" class="flex max-h-64 flex-col overflow-y-auto">
@@ -76,7 +76,7 @@ function pick(id: string) {
         </button>
         <p v-if="shown.length === 0" class="px-2.5 py-3 text-[13.5px] text-ink-muted">{{ t('No zone matches.', 'Ninguna zona coincide.') }}</p>
         <p v-else-if="matches.length > LIMIT" class="px-2.5 py-2 text-[12.5px] text-ink-muted">
-          {{ t(`${matches.length - LIMIT} more -- keep typing to narrow it down.`, `${matches.length - LIMIT} más -- sigue escribiendo para acotar.`) }}
+          {{ t(`${matches.length - LIMIT} more — keep typing to narrow it down.`, `${matches.length - LIMIT} más — sigue escribiendo para acotar.`) }}
         </p>
       </div>
     </div>

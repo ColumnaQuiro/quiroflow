@@ -307,7 +307,10 @@ const inputClass = 'h-10 w-full rounded-ctl border border-line-control bg-surfac
 
           <section class="overflow-hidden rounded-card border border-line bg-surface">
             <div class="px-[18px] pb-2 pt-4"><h2 class="text-[16px] font-bold text-ink-900">{{ t(`In the library · ${active.length}`, `En la biblioteca · ${active.length}`) }}</h2></div>
-            <p v-if="!loading && !active.length" class="px-[18px] pb-4 text-[13.5px] text-ink-muted">{{ t('No articles here yet.', 'Aún no hay lecturas aquí.') }}</p>
+            <div v-if="loading" class="divide-y divide-line-row border-t border-line-row" aria-hidden="true">
+              <div v-for="i in 3" :key="i" class="flex items-center gap-3 px-[18px] py-3.5"><UiSkeleton class="h-4 w-48 rounded-ctlSm" /><UiSkeleton class="ml-auto h-4 w-20 rounded-ctlSm" /></div>
+            </div>
+            <p v-else-if="!active.length" class="px-[18px] pb-4 text-[13.5px] text-ink-muted">{{ t('No articles here yet.', 'Aún no hay lecturas aquí.') }}</p>
             <ul class="divide-y divide-line-row">
               <li v-for="a in active" :key="a.id" class="flex items-start gap-3 px-[18px] py-3" data-cy="learn-row">
                 <div class="min-w-0 flex-1">

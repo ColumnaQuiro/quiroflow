@@ -21,6 +21,8 @@ defineProps<{
   rows: AudienceRow[]
   loaded: boolean
   counting: boolean
+  /** The lists (or segments) themselves could not be read. */
+  failed?: boolean
   canImport?: boolean
 }>()
 const emit = defineEmits<{
@@ -29,6 +31,7 @@ const emit = defineEmits<{
   rename: [id: string]
   delete: [id: string]
   import: [id: string | null]
+  retry: []
 }>()
 const t = useT()
 </script>
@@ -52,12 +55,50 @@ const t = useT()
       </UiBtn>
     </div>
 
-    <div class="overflow-hidden rounded-card border border-line bg-surface shadow-card">
+    <!-- Outside the table, which is 640px and scrolls sideways on a phone:
+    a centred row put the sentence past the right edge of the screen. -->
+    <UiEmptyState
+      v-if="failed && !loaded"
+      :data-cy="`${kind}-load-failed`"
+      :title="kind === 'list' ? t('The lists could not be loaded', 'No se han podido cargar las listas') : t('The segments could not be loaded', 'No se han podido cargar los segmentos')"
+      :description="t('Check the connection and try again.', 'Comprueba la conexión y vuelve a intentarlo.')"
+      class="!px-0 !py-0"
+    >
+      <template #icon>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+        </svg>
+      </template>
+      <template #actions>
+        <UiBtn @click="emit('retry')">{{ t('Try again', 'Reintentar') }}</UiBtn>
+      </template>
+    </UiEmptyState>
+
+    <UiEmptyState
+      v-else-if="loaded && rows.length === 0"
+      :data-cy="`${kind}-empty`"
+      :title="kind === 'list' ? t('No lists yet', 'Todavía no hay listas') : t('No segments yet', 'Todavía no hay segmentos')"
+      :description="kind === 'list'
+        ? t('Create one, or select patients on the list and add them to a new one.', 'Crea una, o selecciona pacientes en la lista y añádelos a una nueva.')
+        : t('Filter the patient list and save it as a segment.', 'Filtra la lista de pacientes y guárdala como segmento.')"
+      class="!px-0 !py-0"
+    >
+      <template #icon>
+        <svg v-if="kind === 'list'" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm-.375 5.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+        </svg>
+        <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 00-.659-1.591L3.659 7.409A2.25 2.25 0 013 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0112 3z" />
+        </svg>
+      </template>
+    </UiEmptyState>
+
+    <div v-else class="overflow-hidden rounded-card border border-line bg-surface shadow-card" :aria-busy="!loaded">
       <div class="overflow-x-auto">
         <table class="w-full min-w-[640px] border-collapse text-[13px]">
           <caption class="sr-only">{{ kind === 'list' ? t('Lists', 'Listas') : t('Segments', 'Segmentos') }}</caption>
           <thead>
-            <tr class="border-b border-line-row bg-surface-subtle2 text-[11px] font-[640] uppercase tracking-[.04em] text-ink-faint">
+            <tr class="border-b border-line-row bg-surface-subtle2 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">
               <th scope="col" class="px-5 py-2.5 text-left">{{ t('Name', 'Nombre') }}</th>
               <th scope="col" class="w-[110px] px-3 py-2.5 text-right">{{ t('Patients', 'Pacientes') }}</th>
               <th v-if="kind === 'list'" scope="col" class="w-[190px] px-3 py-2.5 text-left">{{ t('Accept marketing', 'Aceptan publicidad') }}</th>
@@ -65,13 +106,16 @@ const t = useT()
             </tr>
           </thead>
           <tbody>
-            <tr v-if="loaded && rows.length === 0">
-              <td :colspan="kind === 'list' ? 4 : 3" class="px-5 py-10 text-center text-[13px] text-ink-faint">
-                {{ kind === 'list'
-                  ? t('No lists yet. Create one, or select patients on the list and add them to a new one.', 'Todavía no hay listas. Crea una, o selecciona pacientes en la lista y añádelos a una nueva.')
-                  : t('No segments yet. Filter the patient list and save it as a segment.', 'Todavía no hay segmentos. Filtra la lista de pacientes y guárdala como segmento.') }}
-              </td>
-            </tr>
+            <!-- Until the lists arrive: an empty table under its header read
+            as "there are none" for the second it took. -->
+            <template v-if="!loaded">
+              <tr v-for="row in 3" :key="`skeleton-${row}`" class="border-b border-line-row last:border-b-0">
+                <td class="px-5 py-3"><UiSkeleton class="h-3 w-40 rounded-ctlSm" /></td>
+                <td class="px-3 py-3"><UiSkeleton class="ml-auto h-3 w-8 rounded-ctlSm" /></td>
+                <td v-if="kind === 'list'" class="px-3 py-3"><UiSkeleton class="h-3 w-28 rounded-ctlSm" /></td>
+                <td class="px-3 py-3" />
+              </tr>
+            </template>
             <tr
               v-for="row in rows"
               :key="row.id"
@@ -84,7 +128,7 @@ const t = useT()
                   <button type="button" :data-cy="`${kind}-open`" class="truncate text-left outline-none hover:underline focus-visible:shadow-focus" @click.stop="emit('open', row.id)">
                     {{ row.name }}
                   </button>
-                  <span v-if="!row.shared" class="shrink-0 rounded-pill bg-chip-bg2 px-1.5 py-0.5 text-[11px] font-[600] text-chip-text">{{ t('Private', 'Privado') }}</span>
+                  <UiPill v-if="!row.shared" class="shrink-0">{{ t('Private', 'Privado') }}</UiPill>
                 </p>
                 <p v-if="row.detail" class="truncate text-[11.5px] text-ink-muted2">{{ row.detail }}</p>
               </td>

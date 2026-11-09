@@ -237,7 +237,7 @@ async function removeMethod(method: Tables<'payment_methods'>) {
   // then, and turning it off is the answer that keeps the history.
   if (deleteError) {
     methodError.value = t(
-      'This method has payments recorded against it, so it cannot be deleted. Turn it off instead -- it disappears from the payment forms and the history stays intact.',
+      'This method has payments recorded against it, so it cannot be deleted. Turn it off instead — it disappears from the payment forms and the history stays intact.',
       'Este método tiene pagos registrados, así que no se puede eliminar. Desactívalo en su lugar: desaparece de los formularios de pago y el historial se mantiene.',
     )
     await loadMethods()
@@ -312,7 +312,7 @@ const GENERIC_ICON = 'M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6'
                 :aria-checked="m.is_active"
                 :aria-label="t(`Offer ${methodLabel(m)}`, `Ofrecer ${methodLabel(m)}`)"
                 class="relative h-[26px] w-11 shrink-0 rounded-full"
-                :class="m.is_active ? 'bg-brand' : 'bg-line-control'"
+                :class="m.is_active ? 'bg-brand' : 'bg-toggle-off'"
                 @click="toggleActive(m, !m.is_active)"
               >
                 <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card left-[3px] transition-transform" :class="m.is_active ? 'translate-x-[18px]' : 'translate-x-0'" />
@@ -416,7 +416,7 @@ const GENERIC_ICON = 'M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6'
                   :aria-label="t('Patients pay their visits from the app', 'Los pacientes pagan sus visitas desde la app')"
                   :disabled="savingAppPayments"
                   class="relative h-[26px] w-11 shrink-0 rounded-full disabled:opacity-60"
-                  :class="appPayments ? 'bg-brand' : 'bg-line-control'"
+                  :class="appPayments ? 'bg-brand' : 'bg-toggle-off'"
                   @click="toggleAppPayments(!appPayments)"
                 >
                   <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card left-[3px] transition-transform" :class="appPayments ? 'translate-x-[18px]' : 'translate-x-0'" />

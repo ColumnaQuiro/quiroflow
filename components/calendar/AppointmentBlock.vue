@@ -268,7 +268,7 @@ const ariaLabel = computed(() =>
 
     <span
       v-if="ladder.owes === 'dot'"
-      class="absolute bottom-[3px] right-[3px] flex h-[13px] w-[13px] items-center justify-center rounded-full bg-danger-text text-[11px] font-bold text-surface"
+      class="absolute bottom-[3px] right-[3px] flex h-[13px] w-[13px] items-center justify-center rounded-full bg-danger-text text-[11px] font-bold text-danger-on"
       :title="owesText"
       data-cy="appt-block-owes"
     >€</span>

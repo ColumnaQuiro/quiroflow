@@ -194,7 +194,7 @@ const iconBtn = 'flex h-9 w-9 touch:h-11 touch:w-11 shrink-0 items-center justif
                 :aria-checked="feeOn[f.key]"
                 :aria-labelledby="`fee-${f.key}`"
                 class="relative h-[26px] w-11 shrink-0 rounded-full"
-                :class="feeOn[f.key] ? 'bg-brand' : 'bg-line-control'"
+                :class="feeOn[f.key] ? 'bg-brand' : 'bg-toggle-off'"
                 @click="feeOn[f.key] = !feeOn[f.key]"
               >
                 <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card left-[3px] transition-transform" :class="feeOn[f.key] ? 'translate-x-[18px]' : 'translate-x-0'" />
@@ -218,7 +218,7 @@ const iconBtn = 'flex h-9 w-9 touch:h-11 touch:w-11 shrink-0 items-center justif
                 aria-labelledby="card-on-file-title"
                 :disabled="!stripeReady"
                 class="relative h-[26px] w-11 shrink-0 rounded-full disabled:opacity-50"
-                :class="cardOnFile && stripeReady ? 'bg-brand' : 'bg-line-control'"
+                :class="cardOnFile && stripeReady ? 'bg-brand' : 'bg-toggle-off'"
                 data-cy="card-on-file-toggle"
                 @click="cardOnFile = !cardOnFile"
               >

@@ -77,7 +77,7 @@ function problemText(p: HoursProblem) {
           :aria-checked="(modelValue[d.key] ?? []).length > 0"
           :aria-label="t(`Open on ${d.en}`, `Abierto el ${d.es.toLowerCase()}`)"
           class="relative my-[9px] h-[26px] w-11 shrink-0 rounded-full"
-          :class="(modelValue[d.key] ?? []).length > 0 ? 'bg-brand' : 'bg-line-control'"
+          :class="(modelValue[d.key] ?? []).length > 0 ? 'bg-brand' : 'bg-toggle-off'"
           @click="toggle(d.key)"
         >
           <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card left-[3px] transition-transform" :class="(modelValue[d.key] ?? []).length > 0 ? 'translate-x-[18px]' : 'translate-x-0'" />
@@ -101,10 +101,10 @@ function problemText(p: HoursProblem) {
             />
             <button
               type="button"
-              class="flex h-9 w-9 items-center justify-center rounded-ctlSm text-[18px] text-ink-muted hover:bg-surface-subtle hover:text-ink-700"
+              class="flex h-9 w-9 items-center justify-center rounded-ctlSm text-ink-muted hover:bg-surface-subtle hover:text-ink-700 touch:h-11 touch:w-11"
               :aria-label="t(`Remove ${r[0]}–${r[1]}`, `Quitar ${r[0]}–${r[1]}`)"
               @click="removeRange(d.key, j)"
-            >×</button>
+            ><UiCloseIcon class="!h-3.5 !w-3.5" /></button>
           </span>
           <button
             type="button"
@@ -120,14 +120,9 @@ function problemText(p: HoursProblem) {
       </div>
     </div>
     <div>
-      <button
-        type="button"
-        data-cy="hours-copy-monday"
-        class="h-9 touch:h-11 rounded-ctl border border-line-control bg-surface px-3.5 text-[14px] font-semibold text-ink-700 hover:bg-surface-subtle"
-        @click="copyMonday"
-      >
+      <UiBtn data-cy="hours-copy-monday" @click="copyMonday">
         {{ t('Copy Monday to Tuesday–Friday', 'Copiar el lunes a martes–viernes') }}
-      </button>
+      </UiBtn>
     </div>
   </div>
 </template>

@@ -255,7 +255,7 @@ async function confirmCancel() {
       <button type="button" :aria-label="t('Back to the appointment', 'Volver a la cita')" class="flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center rounded-ctl text-ink-700 hover:bg-surface-subtle" data-cy="cancel-back" @click="emit('back')">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6" /></svg>
       </button>
-      <h2 id="cancel-title" class="flex-1 text-[18px] font-bold text-ink-900">{{ t('Cancel the appointment', 'Cancelar la cita') }}</h2>
+      <h2 id="cancel-title" class="flex-1 text-[18px] font-[640] tracking-tightTitle text-ink-900">{{ t('Cancel the appointment', 'Cancelar la cita') }}</h2>
       <button type="button" :aria-label="t('Close', 'Cerrar')" class="flex h-9 touch:h-11 w-9 touch:w-11 items-center justify-center rounded-ctl text-ink-muted hover:bg-surface-subtle" @click="emit('close')">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
       </button>
@@ -271,7 +271,7 @@ async function confirmCancel() {
             <template v-if="appointment.team_members"> · {{ appointment.team_members.full_name }}</template> · {{ roomName }}
           </span>
         </div>
-        <span class="shrink-0 rounded-full border border-warning-border bg-warning-bg px-2.5 py-1 text-[12px] font-bold text-warning-text" data-cy="cancel-notice">{{ startsIn }}</span>
+        <UiPill tone="warning" class="shrink-0 border border-warning-border" data-cy="cancel-notice">{{ startsIn }}</UiPill>
       </div>
 
       <div v-if="loading" class="mt-5 space-y-3">

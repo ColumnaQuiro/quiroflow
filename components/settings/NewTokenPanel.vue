@@ -112,7 +112,7 @@ const inputClass = 'h-9 touch:h-11 w-full rounded-ctl border border-line-control
           <legend class="mb-1 text-[13px] font-semibold text-ink-700">{{ t('What it can do', 'Qué puede hacer') }}</legend>
           <p class="-mt-1 text-[12.5px] leading-snug text-ink-muted">{{ t('Only what the integration needs. A token that cannot read receipts cannot leak them.', 'Solo lo que necesite la integración. Un token que no puede leer recibos no puede filtrarlos.') }}</p>
           <div v-for="[group, scopes] in scopeGroups" :key="group" class="flex flex-col gap-1.5 rounded-ctl border border-line-row px-3 py-2.5">
-            <strong class="text-[11.5px] font-semibold uppercase tracking-[.05em] text-ink-faint">{{ group }}</strong>
+            <strong class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ group }}</strong>
             <label v-for="scope in scopes" :key="scope.key" class="flex items-start gap-2 text-[13.5px] text-ink-700">
               <input v-model="selectedScopes" type="checkbox" :value="scope.key" data-cy="token-scope" class="mt-0.5 h-4 w-4 rounded border-line-control text-brand focus:ring-brand/30" />
               <span>{{ t(scope.en, scope.es) }} <code class="ml-1 font-mono text-[11.5px] text-ink-faint">{{ scope.key }}</code></span>

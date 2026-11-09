@@ -84,6 +84,23 @@ describe('Shifts and leave', () => {
       cy.get('[data-cy=leave-visits-move]').click()
       cy.get('[data-cy=absence]').should('be.visible')
       cy.get('[data-cy=absence-visit]').should('have.length', 1)
+
+      // And on the calendar it says what it is, on every day of it. It is one
+      // block from Monday's midnight to Saturday's, which used to be drawn
+      // whole in each day's column: "Bloqueado" and nothing else, its label
+      // somewhere below the column's end on most days.
+      cy.visit('/calendar')
+      cy.contains('select', 'Work week').should('have.value', 'workweek')
+      // weekAhead() is always two weeks after this one.
+      cy.get('button[aria-label="Next"]:visible').click()
+      cy.get('button[aria-label="Next"]:visible').click()
+      cy.contains('button', 'Lucía Fisio').click()
+      cy.get('[data-cy=cal-blocked]', { timeout: 15000 }).should('have.length.at.least', 5).each(($b) => {
+        expect($b.text()).to.contain('Vacaciones').and.contain('Lucía Fisio')
+        // Cut to the day: no taller than the column it is drawn in.
+        expect($b[0]!.offsetHeight).to.be.at.most($b.parent()[0]!.offsetHeight)
+      })
+      cy.get('[data-cy=cal-blocked]').first().contains('Vacaciones').should('be.visible')
     })
   })
 

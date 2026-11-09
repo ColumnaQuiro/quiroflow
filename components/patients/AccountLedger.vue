@@ -361,8 +361,11 @@ const rows = computed<LedgerRow[]>(() => {
 function toggleExpanded(key: string) {
   expandedKey.value = expandedKey.value === key ? null : key
 }
+// In the staff member's language. toLocaleDateString(undefined) took the
+// browser's, so a Spanish front desk on an English-language Mac read "28 Oct".
+const { formatShortDateYear } = useDates()
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+  return formatShortDateYear(iso)
 }
 function newInvoice() {
   menuOpen.value = false
@@ -691,9 +694,12 @@ const fieldId = useId()
     </div>
 
     <div v-if="rows.length === 0" class="p-8 text-center text-[13px] text-ink-faint">{{ t('Nothing on this account yet.', 'Aún no hay movimientos en esta cuenta.') }}</div>
-    <div v-else class="max-h-[420px] overflow-y-auto">
-      <table class="w-full text-[13px]">
-        <thead class="sticky top-0 border-b border-line-divider bg-surface text-left text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+    <!-- Scrolls sideways on a phone rather than squeezing every column:
+         squeezed, "PAY-11" broke after the hyphen and each date took two
+         lines. -->
+    <div v-else class="max-h-[420px] overflow-auto">
+      <table class="w-full min-w-[640px] text-[13px]">
+        <thead class="sticky top-0 border-b border-line-divider bg-surface text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">
           <tr>
             <th class="w-6 px-2 py-2"></th>
             <th class="px-2 py-2">{{ t('Ref', 'Ref.') }}</th>
@@ -715,26 +721,26 @@ const fieldId = useId()
                   <path d="M9 6l6 6-6 6" stroke-linecap="round" stroke-linejoin="round" />
                 </svg>
               </td>
-              <td class="px-2 font-mono text-[12px] text-ink-muted">{{ row.ref }}</td>
-              <td class="px-2 text-ink-muted">{{ formatDate(row.date) }}</td>
+              <td class="whitespace-nowrap px-2 font-mono text-[12px] text-ink-muted">{{ row.ref }}</td>
+              <td class="whitespace-nowrap px-2 text-ink-muted">{{ formatDate(row.date) }}</td>
               <td class="px-2 text-ink-700">
                 {{ row.description }}
                 <span v-if="row.note" class="block text-[11.5px] text-ink-faint">{{ row.note }}</span>
               </td>
-              <td class="px-2 text-right font-mono text-ink-700">
+              <td class="whitespace-nowrap px-2 text-right font-mono text-ink-700">
                 {{ row.noMoneyMoved ? '—' : row.debitCents > 0 ? money(row.debitCents) : '' }}
               </td>
-              <td class="px-2 text-right font-mono text-success-text">
+              <td class="whitespace-nowrap px-2 text-right font-mono text-success-text">
                 {{ row.noMoneyMoved ? '—' : row.creditCents > 0 ? money(row.creditCents) : '' }}
               </td>
-              <td class="px-4 text-right font-mono" :class="row.balanceTone === 'danger' ? 'text-danger-text' : 'text-ink-muted'">{{ row.balanceText }}</td>
+              <td class="whitespace-nowrap px-4 text-right font-mono" :class="row.balanceTone === 'danger' ? 'text-danger-text' : 'text-ink-muted'">{{ row.balanceText }}</td>
               <td class="px-2 text-right">
                 <!-- .stop, or the click toggles the row open underneath the
                      modal it just opened. -->
                 <button
                   v-if="canRefund && !row.isRefund && (row.refundableCents ?? 0) > 0"
                   type="button"
-                  class="text-[12px] text-ink-faint hover:text-danger-text"
+                  class="whitespace-nowrap text-[12px] text-ink-faint hover:text-danger-text"
                   @click.stop="openRefundModal(row.invoiceId!, row.refundableCents ?? 0)"
                 >
                   {{ t('Refund…', 'Reembolsar…') }}
@@ -847,7 +853,7 @@ const fieldId = useId()
         <label class="block text-[11px] text-ink-muted">{{ t('To patient', 'Al paciente') }}</label>
         <div v-if="transferTarget" class="mt-0.5 flex items-center justify-between rounded-ctlSm border border-line-control px-2 py-1.5 text-[13px]">
           <span>{{ transferTarget.first_name }} {{ transferTarget.last_name }}</span>
-          <button type="button" class="text-ink-faint hover:text-danger-text" @click="transferTarget = null">✕</button>
+          <button type="button" :aria-label="t('Choose another patient', 'Elegir otro paciente')" class="flex h-6 w-6 shrink-0 items-center justify-center rounded-ctlSm text-ink-faint outline-none hover:text-danger-text focus-visible:shadow-focus touch:h-10 touch:w-10" @click="transferTarget = null"><UiCloseIcon /></button>
         </div>
         <div v-else class="relative mt-0.5">
           <input

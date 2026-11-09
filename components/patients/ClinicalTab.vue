@@ -178,38 +178,36 @@ function closeNotes() {
       </div>
 
       <template v-else>
-        <div class="mb-3 flex items-center justify-end">
-          <UiBtn v-if="can('patients_edit')" variant="secondary" size="sm" @click="editingClinical = true">
+        <!-- The button beside the two fields rather than on a row of its own
+             above them, which pushed the band's content down by a line. -->
+        <div class="flex flex-col-reverse gap-3 sm:flex-row sm:items-start">
+          <dl class="grid min-w-0 flex-1 gap-4 sm:grid-cols-2">
+            <div>
+              <dt class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">{{ t('Chief complaint', 'Motivo de consulta') }}</dt>
+              <!-- No onset date: the schema keeps the complaint as one text
+                   column and has nowhere to put "since when". Recording it
+                   needs a migration, not a guess from the first visit date. -->
+              <dd class="mt-1 text-[15px] text-ink-900">{{ patient?.chief_complaint || t('Not recorded', 'Sin registrar') }}</dd>
+            </div>
+            <div>
+              <dt class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">{{ t('Working diagnosis', 'Diagnóstico de trabajo') }}</dt>
+              <!-- Likewise no since-date and no author: diagnosis is a single
+                   column with no history behind it. -->
+              <dd class="mt-1 text-[15px] text-ink-900">{{ patient?.diagnosis || t('Not recorded', 'Sin registrar') }}</dd>
+            </div>
+          </dl>
+          <UiBtn v-if="can('patients_edit')" variant="secondary" size="sm" class="self-end sm:self-start" @click="editingClinical = true">
             {{ t('Edit clinical details', 'Editar datos clínicos') }}
           </UiBtn>
         </div>
-        <dl class="grid gap-4 sm:grid-cols-2">
-          <div>
-            <dt class="text-[11.5px] uppercase tracking-[.04em] text-ink-muted2">{{ t('Chief complaint', 'Motivo de consulta') }}</dt>
-            <!-- No onset date: the schema keeps the complaint as one text
-                 column and has nowhere to put "since when". Recording it
-                 needs a migration, not a guess from the first visit date. -->
-            <dd class="mt-1 text-[15px] text-ink-900">{{ patient?.chief_complaint || t('Not recorded', 'Sin registrar') }}</dd>
-          </div>
-          <div>
-            <dt class="text-[11.5px] uppercase tracking-[.04em] text-ink-muted2">{{ t('Working diagnosis', 'Diagnóstico de trabajo') }}</dt>
-            <!-- Likewise no since-date and no author: diagnosis is a single
-                 column with no history behind it. -->
-            <dd class="mt-1 text-[15px] text-ink-900">{{ patient?.diagnosis || t('Not recorded', 'Sin registrar') }}</dd>
-          </div>
-        </dl>
 
         <div v-if="redFlags || yellowFlags" class="mt-3 flex flex-col gap-1.5 border-t border-line-divider pt-3">
           <p v-if="redFlags" class="flex items-start gap-2">
-            <span class="mt-px shrink-0 rounded-pill bg-danger-bg px-2 py-0.5 text-[11px] font-semibold text-danger-text">
-              {{ t('Red flag', 'Señal roja') }}
-            </span>
+            <UiPill tone="danger" dot class="mt-px shrink-0">{{ t('Red flag', 'Señal roja') }}</UiPill>
             <span class="text-[13.5px] text-ink-700">{{ redFlags }}</span>
           </p>
           <p v-if="yellowFlags" class="flex items-start gap-2">
-            <span class="mt-px shrink-0 rounded-pill bg-warning-bg px-2 py-0.5 text-[11px] font-semibold text-warning-text">
-              {{ t('Yellow flag', 'Señal amarilla') }}
-            </span>
+            <UiPill tone="warning" dot class="mt-px shrink-0">{{ t('Yellow flag', 'Señal amarilla') }}</UiPill>
             <span class="text-[13.5px] text-ink-700">{{ yellowFlags }}</span>
           </p>
         </div>
@@ -291,7 +289,7 @@ function closeNotes() {
                    never had. -->
               <dl v-if="parseVisitNote(note.body).sections.length > 0" class="space-y-2">
                 <div v-for="section in parseVisitNote(note.body).sections" :key="section.label">
-                  <dt class="text-[11px] uppercase tracking-[.04em] text-ink-muted2">{{ SECTION_LABELS[section.label] }}</dt>
+                  <dt class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">{{ SECTION_LABELS[section.label] }}</dt>
                   <dd class="mt-0.5 whitespace-pre-wrap text-[13.5px] text-ink-700">{{ section.text }}</dd>
                 </div>
               </dl>
@@ -364,10 +362,13 @@ function closeNotes() {
       <div ref="clinicalPanel" role="dialog" aria-modal="true" :aria-labelledby="clinicalTitleId" class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-card bg-surface p-5 shadow-drawer">
         <div class="flex items-center justify-between">
           <h2 :id="clinicalTitleId" class="text-[15px] font-semibold text-ink-900">{{ t('Clinical details', 'Datos clínicos') }}</h2>
-          <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="editingClinical = false; load({ silent: true })">✕</button>
+          <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="editingClinical = false; load({ silent: true })"><UiCloseIcon /></button>
         </div>
         <div class="mt-4">
-          <PatientsFlagsPanel :patient-id="patientId" />
+          <!-- Straight into the form: the button that opens this says "Edit",
+               and a read-only card with a second Edit link inside the dialog
+               made it two clicks. Done saves and closes. -->
+          <PatientsFlagsPanel :patient-id="patientId" start-editing @done="editingClinical = false; load({ silent: true })" />
         </div>
       </div>
     </div>

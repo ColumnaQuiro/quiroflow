@@ -243,7 +243,7 @@ onMounted(loadTemplates)
 
         <div v-else class="max-h-[560px] overflow-y-auto px-4 py-3">
           <template v-for="day in days" :key="day.key">
-            <p class="my-2 text-center text-[11px] uppercase tracking-[.04em] text-ink-faint">{{ day.label }}</p>
+            <p class="my-2 text-center text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ day.label }}</p>
 
             <div
               v-for="m in day.items"

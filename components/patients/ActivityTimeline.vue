@@ -71,7 +71,7 @@ const full = (iso: string) => new Date(iso).toLocaleString(t('en-GB', 'es-ES'), 
         type="button"
         role="tab"
         :aria-selected="filter === f.key"
-        class="h-7 rounded-pill border px-2.5 text-[12px] font-medium"
+        class="h-7 rounded-pill border px-2.5 text-[12px] font-medium outline-none focus-visible:shadow-focus touch:h-10 touch:px-3.5"
         :class="filter === f.key ? 'border-brand bg-brand-tint text-brand-text' : 'border-line-control text-ink-muted hover:bg-surface-subtle'"
         :data-cy="`timeline-filter-${f.key}`"
         @click="filter = f.key"

@@ -21,7 +21,7 @@ const model = defineModel<string>({ required: true })
     <select
       v-model="model"
       :aria-label="label"
-      class="h-8 appearance-none rounded-pill border border-line-control bg-surface px-2.5 pr-6 text-[12.5px] font-medium text-ink-500 outline-none hover:border-line-controlHover focus:border-brand focus-visible:shadow-focus"
+      class="h-8 max-w-full appearance-none truncate rounded-pill border border-line-control bg-surface px-2.5 pr-6 text-[12.5px] font-medium text-ink-500 outline-none hover:border-line-controlHover focus:border-brand focus-visible:shadow-focus touch:h-11"
     >
       <option v-for="option in options" :key="option.value" :value="option.value">{{ option.label }}</option>
     </select>

@@ -26,6 +26,23 @@ const title = ref('')
 const fields = ref<DocField[]>([])
 const saving = ref(false)
 const showNewMenu = ref(false)
+// Closes on a press outside it and on Escape, like the record's other menus
+// (Banner.vue). It stayed open over the list until its own button was hit again.
+const newMenuRoot = ref<HTMLElement | null>(null)
+function onNewMenuPointerDown(event: PointerEvent) {
+  if (showNewMenu.value && !newMenuRoot.value?.contains(event.target as Node)) showNewMenu.value = false
+}
+function onNewMenuKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') showNewMenu.value = false
+}
+onMounted(() => {
+  document.addEventListener('pointerdown', onNewMenuPointerDown)
+  document.addEventListener('keydown', onNewMenuKeydown)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', onNewMenuPointerDown)
+  document.removeEventListener('keydown', onNewMenuKeydown)
+})
 const patientPhoneDigits = ref<string | null>(null)
 const copiedId = ref<string | null>(null)
 
@@ -146,7 +163,9 @@ async function newFromTemplate(template: Template) {
     gender: patient?.gender ?? '',
     emergency_contact: patient?.emergency_contact ?? '',
     clinic_name: store.accountName,
-    today: new Date().toLocaleDateString(),
+    // Lands in the patient's document: Spanish like every other date the
+    // clinic sends, not whatever locale this browser happens to run in.
+    today: new Date().toLocaleDateString('es-ES'),
   })
   await createDoc(template.title, rendered, template.id)
 }
@@ -231,19 +250,19 @@ function metaFor(doc: Doc) {
           {{ t('Forms sent to the patient', 'Formularios enviados al paciente') }}
           <span v-if="!loading" class="ml-1 font-normal text-ink-faint" data-cy="docs-count">{{ docs.length }}</span>
         </p>
-        <div class="relative">
-          <UiBtn variant="primary" size="sm" @click="showNewMenu = !showNewMenu">{{ t('Send a form', 'Enviar un formulario') }}</UiBtn>
+        <div ref="newMenuRoot" class="relative">
+          <UiBtn size="sm" :aria-expanded="showNewMenu" @click="showNewMenu = !showNewMenu">{{ t('Send a form', 'Enviar un formulario') }}</UiBtn>
           <div v-if="showNewMenu" class="absolute right-0 z-10 mt-1 w-56 rounded-ctl border border-line bg-surface py-1 shadow-popover">
-            <button type="button" class="block w-full px-3 py-1.5 text-left text-[13px] text-ink-600 hover:bg-surface-subtle" @click="newBlankDoc">
+            <button type="button" class="block w-full px-3 py-1.5 touch:py-3 text-left text-[13px] text-ink-600 hover:bg-surface-subtle" @click="newBlankDoc">
               {{ t('Blank document', 'Documento en blanco') }}
             </button>
             <template v-if="templates.length > 0">
-              <p class="mt-1 border-t border-line-divider px-3 pt-1.5 text-[11px] font-medium uppercase text-ink-faint">{{ t('From template', 'Desde plantilla') }}</p>
+              <p class="mt-1 border-t border-line-divider px-3 pt-1.5 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('From template', 'Desde plantilla') }}</p>
               <button
                 v-for="t in templates"
                 :key="t.id"
                 type="button"
-                class="block w-full px-3 py-1.5 text-left text-[13px] text-ink-600 hover:bg-surface-subtle"
+                class="block w-full px-3 py-1.5 touch:py-3 text-left text-[13px] text-ink-600 hover:bg-surface-subtle"
                 @click="newFromTemplate(t)"
               >
                 {{ t.title }}
@@ -300,11 +319,12 @@ function metaFor(doc: Doc) {
               v-if="doc.completed_at"
               :href="answersPath(doc)"
               target="_blank"
-              class="inline-flex items-center text-[11.5px] font-medium text-brand-text hover:text-brand-hover touch:min-h-11"
+              class="inline-flex items-center gap-1 text-[11.5px] font-medium text-brand-text hover:text-brand-hover touch:min-h-11"
               :title="t('Open the answers in a new tab', 'Abrir las respuestas en una pestaña nueva')"
               data-cy="doc-view-answers"
             >
-              {{ t('View answers', 'Ver respuestas') }} ↗
+              {{ t('View answers', 'Ver respuestas') }}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" class="h-3 w-3 shrink-0"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 19.5l15-15m0 0H8.25m11.25 0v11.25" /></svg>
             </a>
             <button v-else type="button" class="text-[11.5px] font-medium text-brand-text hover:text-brand-hover touch:min-h-11" :title="t('Open patient link in a new tab', 'Abrir el enlace del paciente en una pestaña nueva')" @click="openLink(doc)">
               {{ t('Open', 'Abrir') }}
@@ -330,10 +350,11 @@ function metaFor(doc: Doc) {
 
     <template v-else>
       <div class="flex items-center justify-between border-b border-line-divider px-4 py-3">
-        <button type="button" class="text-[13px] text-ink-muted hover:text-ink-700" @click="backToList">&larr; {{ t('Documents', 'Documentos') }}</button>
+        <button type="button" class="-ml-1 inline-flex h-8 items-center gap-1 rounded-ctlSm pl-0.5 pr-1.5 text-[13px] text-ink-muted outline-none hover:text-ink-700 focus-visible:shadow-focus touch:h-11" @click="backToList"><UiChevron />{{ t('Documents', 'Documentos') }}</button>
         <div class="flex items-center gap-3">
-          <UiBtn :variant="activeDoc?.completed_at ? 'primary' : 'secondary'" size="sm" @click="toggleComplete">
-            {{ activeDoc?.completed_at ? t('✓ Completed', '✓ Completado') : t('Mark as completed', 'Marcar como completado') }}
+          <UiBtn size="sm" :aria-pressed="!!activeDoc?.completed_at" :class="activeDoc?.completed_at ? '!border-success-border !bg-success-bg !text-success-text' : ''" @click="toggleComplete">
+            <svg v-if="activeDoc?.completed_at" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true" class="h-3.5 w-3.5 shrink-0"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+            {{ activeDoc?.completed_at ? t('Completed', 'Completado') : t('Mark as completed', 'Marcar como completado') }}
           </UiBtn>
           <UiBtn variant="primary" size="sm" :disabled="saving" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}</UiBtn>
         </div>

@@ -141,7 +141,7 @@ const fieldId = useId()
     <div ref="dialogPanel" role="dialog" aria-modal="true" :aria-labelledby="dialogTitleId" class="max-h-full w-full overflow-y-auto max-w-sm rounded-card bg-surface p-6 shadow-popover">
       <div class="flex items-center justify-between">
         <h2 :id="dialogTitleId" class="text-lg font-semibold text-ink-900">{{ plan ? t('Edit plan', 'Editar plan') : t('New care plan', 'Nuevo plan de cuidados') }}</h2>
-        <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="emit('close')">✕</button>
+        <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="emit('close')"><UiCloseIcon /></button>
       </div>
 
       <form class="mt-4 space-y-4" @submit.prevent="save">
@@ -190,7 +190,7 @@ const fieldId = useId()
               </label>
               <input v-if="m.repeat" v-model.number="m.every" type="number" min="1" max="999" :aria-label="t('Every how many visits', 'Cada cuántas visitas')" class="w-16 rounded-ctl border border-line-control px-2 py-1 text-sm bg-surface text-ink-900" data-cy="plan-marker-every" />
               <span v-if="m.repeat">{{ t('visits', 'visitas') }}</span>
-              <button type="button" :aria-label="t('Remove', 'Quitar')" class="ml-auto text-ink-faint hover:text-ink-600" data-cy="plan-marker-remove" @click="markers.splice(i, 1)">✕</button>
+              <button type="button" :aria-label="t('Remove', 'Quitar')" class="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-ctlSm text-ink-faint outline-none hover:text-ink-600 focus-visible:shadow-focus touch:h-10 touch:w-10" data-cy="plan-marker-remove" @click="markers.splice(i, 1)"><UiCloseIcon /></button>
             </div>
             <div class="flex gap-1.5">
               <select v-model="m.appointment_type_id" :aria-label="t('Booked as', 'Se reserva como')" class="min-w-0 flex-1 rounded-ctl border border-line-control px-2 py-1 text-sm bg-surface text-ink-900" data-cy="plan-marker-type">

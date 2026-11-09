@@ -14,7 +14,10 @@ const t = useT()
 </script>
 
 <template>
-  <div role="tablist" :aria-label="t('Patients, lists and segments', 'Pacientes, listas y segmentos')" data-cy="audience-tabs" class="flex gap-1 border-b border-line">
+  <!-- Scrolls sideways rather than wrapping a label onto two lines on a
+  phone. The rule under the tabs is an inset shadow, not a border, because
+  a scrolling box clips the -1px overlap the active underline used to sit on. -->
+  <div role="tablist" :aria-label="t('Patients, lists and segments', 'Pacientes, listas y segmentos')" data-cy="audience-tabs" class="flex gap-1 overflow-x-auto shadow-[inset_0_-1px_0_rgb(var(--color-line))] [scrollbar-width:none]">
     <button
       v-for="tab in ([
         { key: 'patients', label: t('All patients', 'Todos los pacientes'), count: null },
@@ -26,7 +29,7 @@ const t = useT()
       role="tab"
       :data-cy="`audience-tab-${tab.key}`"
       :aria-selected="view === tab.key"
-      class="-mb-px flex h-9 items-center gap-1.5 border-b-2 px-3 text-[13px] font-medium outline-none focus-visible:shadow-focus"
+      class="flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 touch:h-11 text-[13px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand/40"
       :class="view === tab.key ? 'border-brand text-brand-text' : 'border-transparent text-ink-muted hover:text-ink-700'"
       @click="emit('update:view', tab.key)"
     >

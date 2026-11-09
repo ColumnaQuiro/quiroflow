@@ -123,7 +123,7 @@ const isPractitioner = computed(() => !!me.value?.is_practitioner)
 // Custom roles have their own names; the three built-in ones read as the
 // account menu reads them.
 const roleLabel = computed(() => {
-  if (roleName.value) return roleName.value
+  if (roleName.value) return displayRoleName(roleName.value, t)
   const tm = store.teamMember
   if (tm?.is_owner) return t('Owner', 'Propietario')
   if (tm?.role === 'front_desk') return t('Front Desk', 'Recepción')
@@ -434,12 +434,12 @@ const phoneSections = computed(() => sections.value.filter((s) => s.id !== 'acce
             <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div class="flex flex-col gap-1.5">
                 <span class="text-[13px] font-semibold text-ink-700">{{ t('Role', 'Rol') }}</span>
-                <span data-cy="account-role" class="self-start rounded-full border border-brand-tintBorder bg-brand-tint px-2.5 py-1 text-[13px] font-semibold text-brand-text">{{ roleLabel }}</span>
+                <UiPill tone="brand" class="self-start" data-cy="account-role">{{ roleLabel }}</UiPill>
               </div>
               <div class="flex flex-col gap-1.5">
                 <span class="text-[13px] font-semibold text-ink-700">{{ clinicNames.length === 1 ? t('Clinic', 'Clínica') : t('Clinics', 'Clínicas') }}</span>
                 <span class="flex flex-wrap gap-1.5" data-cy="account-clinics">
-                  <span v-for="c in clinicNames" :key="c" class="rounded-full border border-chip-border bg-chip-bg px-2.5 py-1 text-[13px] text-ink-700">{{ c }}</span>
+                  <UiPill v-for="c in clinicNames" :key="c">{{ c }}</UiPill>
                 </span>
               </div>
             </div>
@@ -504,7 +504,7 @@ const phoneSections = computed(() => sections.value.filter((s) => s.id !== 'acce
                   <span v-if="r.ranges.length" class="flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-[12.5px] text-ink-700">
                     <span v-for="range in r.ranges" :key="range" class="whitespace-nowrap">{{ range }}</span>
                   </span>
-                  <span v-else class="font-mono text-[12.5px] text-ink-faint">{{ t('Not working', 'No trabaja') }}</span>
+                  <span v-else class="text-[13px] text-ink-faint">{{ t('Not working', 'No trabaja') }}</span>
                 </div>
               </div>
             </div>
@@ -563,7 +563,7 @@ const phoneSections = computed(() => sections.value.filter((s) => s.id !== 'acce
               aria-labelledby="h-resumen"
               :disabled="digestLoading"
               class="relative h-[26px] w-11 shrink-0 rounded-full disabled:opacity-50"
-              :class="weeklyDigest ? 'bg-brand' : 'bg-line-control'"
+              :class="weeklyDigest ? 'bg-brand' : 'bg-toggle-off'"
               @click="toggleDigest"
             >
               <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card left-[3px] transition-transform" :class="weeklyDigest ? 'translate-x-[18px]' : 'translate-x-0'" />
@@ -584,15 +584,9 @@ const phoneSections = computed(() => sections.value.filter((s) => s.id !== 'acce
                   <p class="text-[14px] font-semibold text-ink-900">{{ t('Password', 'Contraseña') }}</p>
                   <p class="text-[12.5px] text-ink-muted">{{ t('At least 8 characters, and not one that has appeared in known breaches.', 'Al menos 8 caracteres, y que no aparezca en filtraciones conocidas.') }}</p>
                 </div>
-                <button
-                  v-if="!passwordOpen"
-                  type="button"
-                  data-cy="account-password-open"
-                  class="h-9 touch:h-11 shrink-0 rounded-ctl border border-line-control bg-surface px-3.5 text-[13.5px] font-semibold text-ink-700 hover:bg-surface-subtle"
-                  @click="passwordOpen = true"
-                >
+                <UiBtn class="shrink-0" v-if="!passwordOpen" data-cy="account-password-open" @click="passwordOpen = true">
                   {{ t('Change…', 'Cambiar…') }}
-                </button>
+                </UiBtn>
               </div>
               <form v-if="passwordOpen" class="grid grid-cols-1 gap-3 sm:grid-cols-2" data-cy="account-password-form" @submit.prevent="changePassword">
                 <label class="flex flex-col gap-1.5 text-[13px] font-semibold text-ink-700">
@@ -621,7 +615,9 @@ const phoneSections = computed(() => sections.value.filter((s) => s.id !== 'acce
                     {{ t('Two-factor authentication', 'Verificación en dos pasos') }}
                     <UiPill v-if="twoFactorEnabled" tone="success">{{ t('On', 'Activada') }}</UiPill>
                     <UiPill v-else-if="twoFactorEnabled === false" tone="neutral">{{ t('Off', 'Desactivada') }}</UiPill>
+                    <UiSkeleton v-else class="h-5 w-20 rounded-pill" />
                   </p>
+                  <UiSkeleton v-if="twoFactorEnabled === null" class="mt-1.5 h-3.5 w-full max-w-[360px] rounded-ctlSm" />
                   <p v-if="twoFactorEnabled && twoFactorSince" class="text-[12.5px] text-ink-muted">
                     {{ t(`With an authenticator app since ${formatLongDate(twoFactorSince)}.`, `Con una app de autenticación desde el ${formatLongDate(twoFactorSince)}.`) }}
                   </p>
@@ -632,15 +628,14 @@ const phoneSections = computed(() => sections.value.filter((s) => s.id !== 'acce
                     {{ t('Your clinic requires two-factor authentication, so it stays on.', 'Tu clínica exige la verificación en dos pasos, así que permanece activada.') }}
                   </p>
                 </div>
-                <button
+                <UiBtn
                   v-if="twoFactorEnabled && !store.requireTwoFactor && !settingUpTwoFactor"
-                  type="button"
                   data-cy="account-two-factor-off"
-                  class="h-9 touch:h-11 shrink-0 rounded-ctl border border-line-control bg-surface px-3.5 text-[13.5px] font-semibold text-ink-700 hover:bg-surface-subtle"
+                  class="shrink-0"
                   @click="confirmingTwoFactorOff = true"
                 >
                   {{ t('Turn off…', 'Desactivar…') }}
-                </button>
+                </UiBtn>
                 <UiBtn v-else-if="twoFactorEnabled === false && !settingUpTwoFactor" type="button" variant="primary" class="shrink-0" @click="settingUpTwoFactor = true">
                   {{ t('Set up two-factor', 'Configurar verificación en dos pasos') }}
                 </UiBtn>
@@ -705,9 +700,9 @@ const phoneSections = computed(() => sections.value.filter((s) => s.id !== 'acce
     <div v-if="dirty" role="status" data-cy="account-unsaved" class="fixed inset-x-4 bottom-4 z-40 mx-auto flex max-w-[720px] items-center gap-3 rounded-card bg-ink-900 py-3 pl-5 pr-3 text-surface-page shadow-popover">
       <span class="flex-1 text-[14px] font-semibold">{{ t('You have unsaved changes', 'Tienes cambios sin guardar') }}</span>
       <button type="button" data-cy="account-discard" class="h-9 touch:h-11 rounded-ctl px-3.5 text-[14px] font-semibold text-surface-page hover:opacity-80" @click="discardProfile">{{ t('Discard', 'Descartar') }}</button>
-      <button type="button" data-cy="account-save" :disabled="savingProfile" class="h-9 touch:h-11 rounded-ctl bg-brand px-4 text-[14px] font-bold text-surface disabled:opacity-60" @click="saveProfile">
+      <UiBtn variant="primary" data-cy="account-save" :disabled="savingProfile" @click="saveProfile">
         {{ savingProfile ? t('Saving…', 'Guardando…') : t('Save', 'Guardar') }}
-      </button>
+      </UiBtn>
     </div>
 
     <UiConfirmDialog

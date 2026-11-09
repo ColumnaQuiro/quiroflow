@@ -152,7 +152,7 @@ const money = (cents: number) => formatEur(cents)
     <div ref="dialogPanel" role="dialog" aria-modal="true" :aria-labelledby="dialogTitleId" class="flex h-full w-full max-w-lg flex-col overflow-y-auto border-l border-line bg-surface p-4 shadow-popover sm:p-6">
       <div class="flex items-center justify-between">
         <h2 :id="dialogTitleId" class="text-[16px] font-[640] text-ink-900">{{ t('Merge patient', 'Fusionar paciente') }}</h2>
-        <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="emit('close')">✕</button>
+        <button type="button" :aria-label="t('Close', 'Cerrar')" class="text-ink-faint hover:text-ink-600 -m-2 p-2 touch:-m-3 touch:p-3" @click="emit('close')"><UiCloseIcon /></button>
       </div>
 
       <p class="mt-2 text-[13px] text-ink-muted2">
@@ -198,7 +198,7 @@ const money = (cents: number) => formatEur(cents)
               :class="keep === 'current' ? 'bg-brand-bg' : 'hover:bg-surface-page'"
               @click="keep = 'current'"
             >
-              <span class="block text-[11px] uppercase tracking-wide text-ink-muted2">{{ keep === 'current' ? t('Keeps everything', 'Conserva todo') : t('Moves across, then deleted', 'Se traslada y se elimina') }}</span>
+              <span class="block text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">{{ keep === 'current' ? t('Keeps everything', 'Conserva todo') : t('Moves across, then deleted', 'Se traslada y se elimina') }}</span>
               <span class="block text-[13px] font-medium text-ink-900">{{ fullName(patient) }}</span>
               <span class="block text-[12px] text-ink-muted2">{{ patient.external_reference || t('no reference', 'sin referencia') }}</span>
             </button>
@@ -208,7 +208,7 @@ const money = (cents: number) => formatEur(cents)
               :class="keep === 'other' ? 'bg-brand-bg' : 'hover:bg-surface-page'"
               @click="keep = 'other'"
             >
-              <span class="block text-[11px] uppercase tracking-wide text-ink-muted2">{{ keep === 'other' ? t('Keeps everything', 'Conserva todo') : t('Moves across, then deleted', 'Se traslada y se elimina') }}</span>
+              <span class="block text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">{{ keep === 'other' ? t('Keeps everything', 'Conserva todo') : t('Moves across, then deleted', 'Se traslada y se elimina') }}</span>
               <span class="block text-[13px] font-medium text-ink-900">{{ fullName(selected) }}</span>
               <span class="block text-[12px] text-ink-muted2">{{ selected.external_reference || t('no reference', 'sin referencia') }}</span>
             </button>

@@ -35,6 +35,23 @@ const letters = ref<Letter[]>([])
 const templates = ref<{ id: string; name: string }[]>([])
 const loading = ref(true)
 const showNewMenu = ref(false)
+// Closes on a press outside it and on Escape, like the record's other menus
+// (Banner.vue). It stayed open over the list until its own button was hit again.
+const newMenuRoot = ref<HTMLElement | null>(null)
+function onNewMenuPointerDown(event: PointerEvent) {
+  if (showNewMenu.value && !newMenuRoot.value?.contains(event.target as Node)) showNewMenu.value = false
+}
+function onNewMenuKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') showNewMenu.value = false
+}
+onMounted(() => {
+  document.addEventListener('pointerdown', onNewMenuPointerDown)
+  document.addEventListener('keydown', onNewMenuKeydown)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', onNewMenuPointerDown)
+  document.removeEventListener('keydown', onNewMenuKeydown)
+})
 
 async function load() {
   loading.value = true
@@ -200,12 +217,12 @@ function metaFor(letter: Letter) {
           {{ t('Letters', 'Cartas') }}
           <span v-if="!loading" class="ml-1 font-normal text-ink-faint" data-cy="letters-count">{{ letters.length }}</span>
         </p>
-        <div v-if="can('patients_edit')" class="relative">
-          <UiBtn variant="primary" size="sm" :disabled="drafting" data-cy="letter-new" @click="showNewMenu = !showNewMenu">{{ drafting ? t('Preparing…', 'Preparando…') : t('New letter', 'Nueva carta') }}</UiBtn>
+        <div v-if="can('patients_edit')" ref="newMenuRoot" class="relative">
+          <UiBtn size="sm" :disabled="drafting" :aria-expanded="showNewMenu" data-cy="letter-new" @click="showNewMenu = !showNewMenu">{{ drafting ? t('Preparing…', 'Preparando…') : t('New letter', 'Nueva carta') }}</UiBtn>
           <div v-if="showNewMenu" class="absolute right-0 z-10 mt-1 w-64 rounded-ctl border border-line bg-surface py-1 shadow-popover" data-cy="letter-new-menu">
             <template v-if="templates.length > 0">
-              <p class="px-3 pt-1 text-[11px] font-medium uppercase text-ink-faint">{{ t('From template', 'Desde plantilla') }}</p>
-              <button v-for="tpl in templates" :key="tpl.id" type="button" class="block w-full px-3 py-1.5 text-left text-[13px] text-ink-600 hover:bg-surface-subtle" @click="newLetter(tpl.id)">
+              <p class="px-3 pt-1 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">{{ t('From template', 'Desde plantilla') }}</p>
+              <button v-for="tpl in templates" :key="tpl.id" type="button" class="block w-full px-3 py-1.5 touch:py-3 text-left text-[13px] text-ink-600 hover:bg-surface-subtle" @click="newLetter(tpl.id)">
                 {{ tpl.name }}
               </button>
             </template>
@@ -252,7 +269,7 @@ function metaFor(letter: Letter) {
 
     <template v-else>
       <div class="flex flex-wrap items-center justify-between gap-2 border-b border-line-divider px-4 py-3">
-        <button type="button" class="text-[13px] text-ink-muted hover:text-ink-700" @click="closeEditor">&larr; {{ t('Letters', 'Cartas') }}</button>
+        <button type="button" class="-ml-1 inline-flex h-8 items-center gap-1 rounded-ctlSm pl-0.5 pr-1.5 text-[13px] text-ink-muted outline-none hover:text-ink-700 focus-visible:shadow-focus touch:h-11" @click="closeEditor"><UiChevron />{{ t('Letters', 'Cartas') }}</button>
         <UiBtn v-if="!readOnly" variant="primary" size="sm" :disabled="saving" data-cy="letter-save" @click="save">{{ saving ? t('Saving…', 'Guardando…') : t('Save letter', 'Guardar carta') }}</UiBtn>
       </div>
       <div class="flex flex-col gap-3 p-4" data-cy="letter-editor">

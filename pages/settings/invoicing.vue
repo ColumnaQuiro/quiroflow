@@ -441,10 +441,10 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
               <div class="px-[18px] pb-3 pt-4">
                 <h2 id="h-num" class="text-[16px] font-bold text-ink-900">{{ t('Numbering', 'Numeración') }}</h2>
                 <p class="mt-1 text-[13px] leading-snug text-ink-muted">
-                  {{ t('Facturas are numbered PREFIX-YEAR-NUMBER and start again at 1 every year. A number can move forward -- for example to continue your previous system’s series -- never back: those numbers are already on facturas.', 'Las facturas se numeran PREFIJO-AÑO-NÚMERO y vuelven a empezar en 1 cada año. Un número puede avanzar -- por ejemplo para continuar la serie de tu sistema anterior -- nunca retroceder: esos números ya están en facturas.') }}
+                  {{ t('Facturas are numbered PREFIX-YEAR-NUMBER and start again at 1 every year. A number can move forward — for example to continue your previous system’s series — never back: those numbers are already on facturas.', 'Las facturas se numeran PREFIJO-AÑO-NÚMERO y vuelven a empezar en 1 cada año. Un número puede avanzar — por ejemplo para continuar la serie de tu sistema anterior — nunca retroceder: esos números ya están en facturas.') }}
                 </p>
               </div>
-              <div class="hidden grid-cols-[1.2fr_110px_150px_1fr] items-center gap-3 border-t border-line-row bg-surface-subtle px-[18px] py-2 text-[12px] font-bold uppercase tracking-[.04em] text-ink-muted sm:grid">
+              <div class="hidden grid-cols-[1.2fr_110px_150px_1fr] items-center gap-3 border-t border-line-row bg-surface-subtle px-[18px] py-2 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted sm:grid">
                 <span>{{ t('Series', 'Serie') }}</span><span>{{ t('Prefix', 'Prefijo') }}</span><span>{{ numbering ? t(`Next (${numbering.year})`, `Próximo (${numbering.year})`) : t('Next', 'Próximo') }}</span><span>{{ t('Next document', 'Próximo documento') }}</span>
               </div>
               <template v-if="numbering">
@@ -479,7 +479,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
               <div class="flex flex-col gap-6 px-[18px] pb-[18px] pt-2 md:flex-row">
                 <div class="flex min-w-0 flex-1 flex-col">
                   <div v-for="g in receiptGroups" :key="g.label" class="flex flex-col pt-2.5">
-                    <span class="pb-0.5 text-[12px] font-bold uppercase tracking-[.04em] text-ink-muted">{{ g.label }}</span>
+                    <span class="pb-0.5 text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted">{{ g.label }}</span>
                     <div v-for="o in g.options" :key="o.key" class="flex min-h-[46px] items-center gap-3 border-b border-line-row">
                       <span :id="`receipt-${o.key}`" class="flex-1 text-[14px] text-ink-900">{{ o.label }}</span>
                       <button
@@ -489,7 +489,7 @@ const inputClass = 'h-9 touch:h-11 rounded-ctl border border-line-control bg-sur
                         :aria-checked="o.on"
                         :aria-labelledby="`receipt-${o.key}`"
                         class="relative h-[26px] w-11 shrink-0 rounded-full"
-                        :class="o.on ? 'bg-brand' : 'bg-line-control'"
+                        :class="o.on ? 'bg-brand' : 'bg-toggle-off'"
                         @click="o.set(!o.on)"
                       >
                         <span class="absolute top-[3px] h-5 w-5 rounded-full bg-surface shadow-card left-[3px] transition-transform" :class="o.on ? 'translate-x-[18px]' : 'translate-x-0'" />

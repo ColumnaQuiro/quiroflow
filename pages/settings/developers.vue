@@ -125,7 +125,7 @@ const curlExample = `curl "${API_BASE_URL}/appointments?starts_at=gte:2026-03-01
             <div v-else class="overflow-x-auto">
               <table class="w-full min-w-[640px] border-collapse">
                 <thead>
-                  <tr class="border-y border-line text-left text-[11.5px] font-semibold uppercase tracking-[.05em] text-ink-faint">
+                  <tr class="border-y border-line text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">
                     <th class="py-2 pl-[18px] pr-3.5 font-semibold">{{ t('Name', 'Nombre') }}</th>
                     <th class="px-3.5 py-2 font-semibold">{{ t('Can', 'Puede') }}</th>
                     <th class="px-3.5 py-2 font-semibold">{{ t('Last used', 'Último uso') }}</th>
@@ -176,7 +176,7 @@ const curlExample = `curl "${API_BASE_URL}/appointments?starts_at=gte:2026-03-01
             <div v-else class="overflow-x-auto">
               <table class="w-full min-w-[640px] border-collapse">
                 <thead>
-                  <tr class="border-y border-line text-left text-[11.5px] font-semibold uppercase tracking-[.05em] text-ink-faint">
+                  <tr class="border-y border-line text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-faint">
                     <th class="py-2 pl-[18px] pr-3.5 font-semibold">{{ t('When', 'Cuándo') }}</th>
                     <th class="px-3.5 py-2 font-semibold">{{ t('Request', 'Solicitud') }}</th>
                     <th class="px-3.5 py-2 font-semibold">{{ t('Result', 'Resultado') }}</th>

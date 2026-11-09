@@ -61,9 +61,9 @@ const label = (start: string) => {
         {{ t(`This period: ${current.completed} of ${current.expected}`, `Este periodo: ${current.completed} de ${current.expected}`) }}
         <span v-if="current.booked" class="text-ink-muted">{{ t(`(${current.booked} booked)`, `(${current.booked} reservada${current.booked === 1 ? '' : 's'})`) }}</span>
       </p>
-      <span v-if="!loading" class="ml-auto rounded-pill px-2 py-0.5 text-[11px] font-semibold" :class="onTrack ? 'bg-success-bg text-success-text' : 'bg-danger-bg text-danger-text'" data-cy="plan-on-track">
+      <UiPill v-if="!loading" class="ml-auto" :tone="onTrack ? 'success' : 'danger'" data-cy="plan-on-track">
         {{ onTrack ? t('On track', 'Al día') : t('Behind', 'Con retraso') }}
-      </span>
+      </UiPill>
     </div>
     <UiSkeleton v-if="loading" class="mt-2 h-12 w-full rounded-ctl" />
     <ol v-else class="mt-2 flex flex-wrap gap-2.5" :aria-label="t('Periods of the plan', 'Periodos del plan')">

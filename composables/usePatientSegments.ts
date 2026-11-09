@@ -26,6 +26,8 @@ export function usePatientSegments() {
   const segments = ref<PatientSegment[]>([])
   const counts = ref<Record<string, number>>({})
   const loaded = ref(false)
+  // The read failed: a page can say so rather than wait on `loaded` forever.
+  const failed = ref(false)
   const counting = ref(false)
   let countToken = 0
 
@@ -36,6 +38,7 @@ export function usePatientSegments() {
       .select('id, name, filters, shared, created_by')
       .eq('account_id', store.accountId)
       .order('name')
+    failed.value = !!error
     if (error) throw error
     segments.value = (data ?? []).map((s) => ({ ...s, filters: normalizeFilters((s.filters ?? {}) as Record<string, unknown>) }))
     loaded.value = true
@@ -95,5 +98,5 @@ export function usePatientSegments() {
     await refresh()
   }
 
-  return { segments, counts, loaded, counting, refresh, refreshCounts, canManage, create, update, remove }
+  return { segments, counts, loaded, failed, counting, refresh, refreshCounts, canManage, create, update, remove }
 }

@@ -170,8 +170,8 @@ describe('Permissions that are enforced', () => {
           cy.task('db:setPatientTags', { patientId: p.id, tags: ['2X3 1X6', 'VIP'] })
           cy.login(me.email, PASSWORD)
           cy.visit(`/patients/${p.id}?tab=clinical`)
+          // Opens straight into the form: the tags are editable at once.
           cy.contains('button', 'Edit clinical details', { timeout: 20000 }).click()
-          cy.contains('p', 'Flags').parent().contains('button', /^Edit$/).click()
           cy.get('[data-cy=patient-tag][data-tag="VIP"] [data-cy=patient-tag-remove]').should('not.exist')
           cy.get('[data-cy=patient-tag][data-tag="VIP"] [data-cy=patient-tag-locked]').should('exist')
           cy.get('[data-cy=patient-tag][data-tag="2X3 1X6"] [data-cy=patient-tag-remove]').should('not.exist')

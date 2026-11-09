@@ -105,24 +105,35 @@ const labelEvery = computed(() => Math.max(1, Math.ceil(points.value.length / (c
 
     <div v-if="loading" class="space-y-3"><UiSkeleton class="h-20 w-full rounded-card" /><UiSkeleton class="h-56 w-full rounded-card" /></div>
 
-    <div v-else-if="!scored.length" class="rounded-card border border-dashed border-line-control p-8 text-center text-[13.5px] text-ink-muted" data-cy="progress-empty">
-      {{ t('No pain scores yet. They are tapped beside the visit note on My Day, or given by the patient when they check in.', 'Aún no hay dolor registrado. Se marca junto a la nota en Mi día, o lo da el paciente al registrar su llegada.') }}
-    </div>
+    <UiEmptyState
+      v-else-if="!scored.length"
+      class="!px-0 !py-0"
+      :title="t('No pain scores yet', 'Aún no hay dolor registrado')"
+      :description="t('They are tapped beside the visit note on My Day, or given by the patient when they check in.', 'Se marca junto a la nota en Mi día, o lo da el paciente al registrar su llegada.')"
+      data-cy="progress-empty"
+    >
+      <template #icon>
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <path d="M3 15.5l4-4.5 3 2.5 6-7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M3 3v14h14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+        </svg>
+      </template>
+    </UiEmptyState>
 
     <template v-else>
       <div class="grid gap-3" :class="compact ? 'grid-cols-3 gap-2' : 'grid-cols-1 sm:grid-cols-3'" data-pdf-block="kpis">
         <div class="rounded-card border border-line bg-surface shadow-card" :class="compact ? 'p-2.5' : 'p-4'" data-pdf-kpi>
-          <p class="text-[11px] font-[640] uppercase tracking-[.04em] text-ink-muted" data-pdf-label>{{ t('Pain now', 'Dolor ahora') }}</p>
+          <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted" data-pdf-label>{{ t('Pain now', 'Dolor ahora') }}</p>
           <p class="mt-1.5 font-mono text-[24px] font-semibold text-ink-900" data-pdf-value data-cy="progress-latest">{{ latest }}<span class="text-[13px] font-normal text-ink-muted">/10</span></p>
           <p class="text-[12px] text-ink-muted" data-pdf-note>{{ day(scored[scored.length - 1]!.startsAt) }}</p>
         </div>
         <div class="rounded-card border border-line bg-surface shadow-card" :class="compact ? 'p-2.5' : 'p-4'" data-pdf-kpi>
-          <p class="text-[11px] font-[640] uppercase tracking-[.04em] text-ink-muted" data-pdf-label>{{ t('When they started', 'Al empezar') }}</p>
+          <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted" data-pdf-label>{{ t('When they started', 'Al empezar') }}</p>
           <p class="mt-1.5 font-mono text-[24px] font-semibold text-ink-900" data-pdf-value>{{ first }}<span class="text-[13px] font-normal text-ink-muted">/10</span></p>
           <p class="text-[12px] text-ink-muted" data-pdf-note>{{ day(scored[0]!.startsAt) }}</p>
         </div>
         <div class="rounded-card border border-line bg-surface shadow-card" :class="compact ? 'p-2.5' : 'p-4'" data-pdf-kpi>
-          <p class="text-[11px] font-[640] uppercase tracking-[.04em] text-ink-muted" data-pdf-label>{{ t('Change', 'Cambio') }}</p>
+          <p class="text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted" data-pdf-label>{{ t('Change', 'Cambio') }}</p>
           <p class="mt-1.5 font-mono text-[24px] font-semibold" :class="change === null ? 'text-ink-900' : change < 0 ? 'text-success-text' : change > 0 ? 'text-danger-text' : 'text-ink-900'" data-pdf-value data-cy="progress-change">
             {{ change === null ? '—' : change > 0 ? `+${change}` : change }}
           </p>
@@ -149,11 +160,11 @@ const labelEvery = computed(() => Math.max(1, Math.ceil(points.value.length / (c
         <table class="w-full min-w-[560px]">
           <thead class="border-b border-line bg-surface-subtle">
             <tr>
-              <th class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ t('Date', 'Fecha') }}</th>
-              <th class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ t('Visit', 'Visita') }}</th>
-              <th class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ t('Pain', 'Dolor') }}</th>
-              <th class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ t('Adjusted', 'Ajustado') }}</th>
-              <th class="px-3 py-2 text-left text-[11px] font-medium uppercase tracking-wide text-ink-muted2">{{ t('Scored by', 'Marcado por') }}</th>
+              <th class="px-3 py-2 text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">{{ t('Date', 'Fecha') }}</th>
+              <th class="px-3 py-2 text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">{{ t('Visit', 'Visita') }}</th>
+              <th class="px-3 py-2 text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">{{ t('Pain', 'Dolor') }}</th>
+              <th class="px-3 py-2 text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">{{ t('Adjusted', 'Ajustado') }}</th>
+              <th class="px-3 py-2 text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted2">{{ t('Scored by', 'Marcado por') }}</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-line-divider">

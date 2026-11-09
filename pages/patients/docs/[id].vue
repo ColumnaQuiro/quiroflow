@@ -55,21 +55,40 @@ const meta = computed(() => {
 <template>
   <div class="flex h-full flex-col">
     <PageHeader :title="doc?.title ?? t('Form', 'Formulario')" :meta="meta">
-      <NuxtLink v-if="doc" :to="`/patients/${doc.patient_id}?tab=attachments`" class="text-[13px] text-ink-muted2 hover:text-ink-600">
-        {{ t('Patient record', 'Ficha del paciente') }}
+      <!-- A link (it goes somewhere, and opens in a new tab on request),
+           drawn as UiBtn's secondary button like the header actions elsewhere. -->
+      <NuxtLink
+        v-if="doc"
+        :to="`/patients/${doc.patient_id}?tab=attachments`"
+        class="inline-flex h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-ctl border border-line-control bg-surface px-3.5 text-[13px] font-medium text-ink-500 outline-none hover:border-line-controlHover focus-visible:shadow-focus touch:h-11"
+      >
+        <UiChevron />{{ t('Patient record', 'Ficha del paciente') }}
       </NuxtLink>
     </PageHeader>
     <div class="flex-1 overflow-y-auto bg-surface-page px-4 pb-10 pt-4 sm:px-6">
-      <div class="mx-auto max-w-2xl rounded-card border border-line bg-surface p-5 shadow-card sm:p-6">
+      <UiEmptyState
+        v-if="!loading && !doc"
+        :title="t('Form not found', 'Formulario no encontrado')"
+        :description="t('This form does not exist, or your role cannot see it.', 'Este formulario no existe o tu rol no puede verlo.')"
+        data-cy="doc-not-found"
+      >
+        <template #icon>
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <path d="M5 2.75h6.5l3.5 3.5v11H5z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+            <path d="M11.5 2.75v3.5H15M7.5 10.5h5M7.5 13.5h3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+          </svg>
+        </template>
+        <template #actions>
+          <UiBtn @click="navigateTo('/patients')"><UiChevron />{{ t('Back to patients', 'Volver a pacientes') }}</UiBtn>
+        </template>
+      </UiEmptyState>
+      <div v-else class="mx-auto max-w-2xl rounded-card border border-line bg-surface p-5 shadow-card sm:p-6">
         <div v-if="loading" class="space-y-3">
           <UiSkeleton class="h-4 w-1/3 rounded-ctlSm" />
           <UiSkeleton class="h-3 w-full rounded-ctlSm" />
           <UiSkeleton class="h-3 w-2/3 rounded-ctlSm" />
         </div>
-        <p v-else-if="!doc" class="py-6 text-center text-[13px] text-ink-muted">
-          {{ t('This form does not exist, or your role cannot see it.', 'Este formulario no existe o tu rol no puede verlo.') }}
-        </p>
-        <PatientsDocAnswers v-else :fields="Array.isArray(doc.fields) ? doc.fields : []" />
+        <PatientsDocAnswers v-else-if="doc" :fields="Array.isArray(doc.fields) ? doc.fields : []" />
       </div>
     </div>
   </div>

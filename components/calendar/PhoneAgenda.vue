@@ -70,7 +70,7 @@ const heightFor = (i: AgendaItem) => {
           role="tab"
           data-cy="agenda-scope-mine"
           :aria-selected="scope === 'mine'"
-          class="h-9 rounded-ctlSm text-[13.5px] font-semibold"
+          class="h-9 rounded-ctlSm text-[13.5px] font-semibold touch:h-10"
           :class="scope === 'mine' ? 'bg-surface text-ink-900 shadow-card' : 'text-ink-muted'"
           @click="emit('scope', 'mine')"
         >
@@ -81,7 +81,7 @@ const heightFor = (i: AgendaItem) => {
           role="tab"
           data-cy="agenda-scope-all"
           :aria-selected="scope === 'all'"
-          class="h-9 rounded-ctlSm text-[13.5px] font-semibold"
+          class="h-9 rounded-ctlSm text-[13.5px] font-semibold touch:h-10"
           :class="scope === 'all' ? 'bg-surface text-ink-900 shadow-card' : 'text-ink-muted'"
           @click="emit('scope', 'all')"
         >
@@ -132,7 +132,13 @@ const heightFor = (i: AgendaItem) => {
         <span class="w-11 shrink-0 font-mono text-[12px] font-semibold text-danger-text">{{ formatTime(now) }}</span>
         <span class="h-0.5 flex-1 rounded bg-danger-text" />
       </li>
-      <li v-if="!items.length" class="py-10 text-center text-[14px] text-ink-muted">{{ t('Nothing booked this day.', 'No hay citas este día.') }}</li>
+      <li v-if="!items.length" data-cy="agenda-empty">
+        <UiEmptyState :title="t('Nothing booked this day.', 'No hay citas este día.')" class="!px-0 !py-6">
+          <template #icon>
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="3" y="4.5" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.4" /><path d="M3 8.5h14M7 2.75v3.5M13 2.75v3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /></svg>
+          </template>
+        </UiEmptyState>
+      </li>
     </ol>
 
     <!-- Above the corner, not in it: the app's help launcher already sits there. -->
@@ -141,7 +147,7 @@ const heightFor = (i: AgendaItem) => {
       type="button"
       :aria-label="t('New appointment', 'Nueva cita')"
       data-cy="agenda-new"
-      class="absolute bottom-24 right-4 flex h-14 w-14 items-center justify-center rounded-full bg-brand text-surface shadow-popover"
+      class="absolute bottom-24 right-4 flex h-14 w-14 items-center justify-center rounded-full bg-brand text-brand-on shadow-popover"
       style="margin-bottom: env(safe-area-inset-bottom)"
       @click="emit('create')"
     >

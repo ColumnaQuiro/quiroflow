@@ -24,9 +24,9 @@ const t = useT()
 const columns = computed(() => {
   const of = (stage: AppointmentStage) => props.rows.filter((r) => r.stage === stage)
   return [
-    { key: 'arrived' as const, title: t('Arrived', 'Llegados'), rows: of('arrived'), action: t('Into session', 'Pasa a consulta'), glyph: '→' },
-    { key: 'withp' as const, title: t('In session', 'En consulta'), rows: of('withp'), action: t('To checkout', 'Pasar a cobro'), glyph: '→' },
-    { key: 'checkout' as const, title: t('To pay', 'Por cobrar'), rows: of('checkout'), action: t('Charge', 'Cobrar'), glyph: null },
+    { key: 'arrived' as const, title: t('Arrived', 'Llegados'), rows: of('arrived'), action: t('Into session', 'Pasa a consulta'), arrow: true },
+    { key: 'withp' as const, title: t('In session', 'En consulta'), rows: of('withp'), action: t('To checkout', 'Pasar a cobro'), arrow: true },
+    { key: 'checkout' as const, title: t('To pay', 'Por cobrar'), rows: of('checkout'), action: t('Charge', 'Cobrar'), arrow: false },
   ]
 })
 </script>
@@ -38,7 +38,7 @@ const columns = computed(() => {
         <span class="h-2 w-2 shrink-0 rounded-full" :class="FILTER_DOT_CLASS[col.key]" aria-hidden="true" />
         <h2 class="grow text-[12.5px] font-[640] text-ink-700">{{ col.title }}</h2>
         <UiSkeleton v-if="loading" class="h-[18px] w-5 rounded-pill" />
-        <span v-else data-cy="flow-count" class="rounded-pill bg-chip-bg px-1.5 py-0.5 text-[11px] font-medium text-chip-text">{{ col.rows.length }}</span>
+        <UiPill v-else data-cy="flow-count" class="font-mono">{{ col.rows.length }}</UiPill>
       </div>
       <UiSkeleton v-if="loading" class="mt-2 h-3.5 w-2/3 rounded-ctlSm" />
       <ul v-else class="mt-2 space-y-1.5">
@@ -53,10 +53,11 @@ const columns = computed(() => {
             :aria-label="`${col.action}: ${privacy ? '' : r.name}`"
             :title="col.action"
             class="flex min-h-9 touch:min-h-11 min-w-9 touch:min-w-11 shrink-0 items-center justify-center border-l border-line-row px-2 text-[12.5px] font-semibold hover:bg-surface-subtle"
-            :class="col.glyph ? 'text-brand-text' : 'text-success-text'"
+            :class="col.arrow ? 'text-brand-text' : 'text-success-text'"
             @click="emit('advance', r.id)"
           >
-            {{ col.glyph ?? col.action }}
+            <svg v-if="col.arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" class="h-4 w-4"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M13 6l6 6-6 6" /></svg>
+            <template v-else>{{ col.action }}</template>
           </button>
         </li>
       </ul>

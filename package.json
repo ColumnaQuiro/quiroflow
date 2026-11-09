@@ -32,6 +32,7 @@
     "prepare": "husky",
     "apply:migrations": "./scripts/with-node.sh node scripts/apply-migrations.mjs",
     "test:unit": "./scripts/with-node.sh vitest run",
+    "eval:receptionist": "./scripts/with-node.sh vitest run --config vitest.evals.config.ts",
     "lint": "./scripts/with-node.sh eslint ."
   },
   "dependencies": {

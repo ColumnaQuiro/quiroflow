@@ -1236,12 +1236,11 @@ function tagTone(tag: string) {
             <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
           </svg>
         </template>
-        <template #actions>
-          <UiBtn v-if="activeFilters.length > 0" @click="clearAllFilters">{{ t('Clear all', 'Quitar todo') }}</UiBtn>
-          <template v-else>
-            <UiBtn variant="primary" @click="showAddPatient = true">{{ t('New patient', 'Nuevo paciente') }}</UiBtn>
-            <UiBtn @click="navigateTo('/settings/import')">{{ t('Import', 'Importar') }}</UiBtn>
-          </template>
+        <!-- Only "Clear all": with no filters the sentence names the header's
+        New patient and Import, and repeating them here put two indigo "New
+        patient" buttons on one screen. -->
+        <template v-if="activeFilters.length > 0" #actions>
+          <UiBtn @click="clearAllFilters">{{ t('Clear all', 'Quitar todo') }}</UiBtn>
         </template>
       </UiEmptyState>
 

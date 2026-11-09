@@ -103,6 +103,8 @@ const rules: Rule[] = [
   // so they are not offered at all rather than shown whole.
   // What each person earns: between the clinic and them, so owners only (pay_plans' RLS agrees).
   { test: (p) => p === '/reports/commissions', check: (s) => s.isOwner },
+  // What each practitioner costs against what they bring in: owners only, as pay is.
+  { test: (p) => p === '/reports/profitability', check: (s) => s.isOwner },
   // Owners only: the team's leave, hours, contracts and pay are between the
   // clinic and each person (pages/personal/, the list and each person's file).
   { test: (p) => p === '/personal' || p.startsWith('/personal/'), check: (s) => s.isOwner },

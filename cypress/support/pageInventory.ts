@@ -92,6 +92,7 @@ export const APP_PAGES = [
   '/reports/facturas',
   '/reports/referrals',
   '/reports/commissions',
+  '/reports/profitability',
   '/reports/gestoria',
   '/reports/scheduled-reminders',
   '/reports/statistics',

@@ -4,6 +4,7 @@ import { clinicDateOf, nextDate } from '../../utils/clinicClock'
 import { workdaySummary, workdayClock, formatWorked, type WorkEntry } from '../../utils/workday'
 import { DEFAULT_LEAVE_DAYS, absenceKindLabel, isOpenEndedAbsence, shiftForDay, shiftMinutes, type ShiftRanges } from '../../utils/staffShifts'
 import { clinicClosedDays, teamLeaveBalance, type TeamAbsence } from '../../utils/teamLeave'
+import { STAFF_DOCUMENT_UNOPENED_DAYS } from '../../utils/staffDocuments'
 import { CONTRACT_ENDING_SOON_DAYS, contractEnded, currentContract, daysUntilEnd, employmentTypeLabel, type StaffContract } from '../../utils/staffContracts'
 
 // Personal > Personas: one row per person on the team -- where they are today,
@@ -37,12 +38,16 @@ const closed = ref<Set<string>>(new Set())
 const pendingCorrections = ref(0)
 const contracts = ref<StaffContract[]>([])
 const gone = ref<{ id: string; full_name: string; deleted_at: string }[]>([])
+// Documents the person has not opened a month after they were uploaded.
+const unopened = ref<Map<string, number>>(new Map())
+const bulkOpen = ref(false)
 const loaded = ref(false)
 const error = ref('')
 
 async function load() {
   const y = year.value
-  const [ms, clinic, sd, ex, es, abs, allow, blocks, corr, con, left] = await Promise.all([
+  const unopenedBefore = new Date(now.value.getTime() - STAFF_DOCUMENT_UNOPENED_DAYS * 86_400_000).toISOString()
+  const [ms, clinic, sd, ex, es, abs, allow, blocks, corr, con, left, docs] = await Promise.all([
     supabase.from('team_members').select('id, full_name, role, is_practitioner, color, business_hours').eq('account_id', props.accountId).is('deleted_at', null).order('full_name'),
     supabase.from('clinics').select('business_hours').eq('account_id', props.accountId).is('archived_at', null).order('created_at').limit(1).maybeSingle(),
     supabase.from('shift_days').select('team_member_id, day, ranges').eq('account_id', props.accountId).gte('day', monthStart.value).lte('day', today.value),
@@ -54,6 +59,7 @@ async function load() {
     supabase.from('time_corrections').select('id', { count: 'exact', head: true }).eq('account_id', props.accountId).eq('status', 'pending'),
     supabase.from('staff_contracts').select('id, team_member_id, employment_type, modality, starts_on, ends_on, weekly_hours, job_title, convenio, created_at').eq('account_id', props.accountId),
     supabase.from('team_members').select('id, full_name, deleted_at').eq('account_id', props.accountId).not('deleted_at', 'is', null).order('full_name'),
+    supabase.from('staff_documents').select('team_member_id').eq('account_id', props.accountId).is('first_viewed_at', null).neq('category', 'sick_note').lt('uploaded_at', unopenedBefore),
   ])
   const failed = [ms, abs, es].find((r) => r.error)
   error.value = failed?.error ? t("Couldn't load the team.", 'No se ha podido cargar el equipo.') : ''
@@ -68,10 +74,14 @@ async function load() {
   pendingCorrections.value = corr.count ?? 0
   contracts.value = (con.data as StaffContract[] | null) ?? []
   gone.value = (left.data as { id: string; full_name: string; deleted_at: string }[] | null) ?? []
+  const counts = new Map<string, number>()
+  for (const d of (docs.data as { team_member_id: string }[] | null) ?? []) counts.set(d.team_member_id, (counts.get(d.team_member_id) ?? 0) + 1)
+  unopened.value = counts
   loaded.value = true
 }
 onMounted(load)
 
+const unopenedList = computed(() => members.value.filter((m) => unopened.value.has(m.id)).map((m) => ({ id: m.id, name: m.full_name, count: unopened.value.get(m.id)! })))
 const pendingLeave = computed(() => absences.value.filter((a) => a.status === 'pending').length)
 
 const shiftOf = (m: Member, day: string) => shiftForDay(day, m, clinicHours.value, overrides.value.get(`${m.id}|${day}`))
@@ -149,7 +159,12 @@ const td = 'border-t border-line-row px-3 py-2.5 align-middle text-[13px] text-i
   <div class="flex flex-col gap-4" data-cy="staff-people" :data-ready="loaded ? 'true' : undefined">
     <p v-if="error" role="alert" class="text-[13px] text-danger-text">{{ error }}</p>
 
-    <section v-if="loaded && (pendingLeave || pendingCorrections)" class="flex flex-col gap-2 rounded-card border border-warning-border bg-warning-bg2 px-4 py-3" data-cy="staff-waiting">
+    <div class="flex flex-wrap items-center justify-end gap-2">
+      <UiBtn v-if="!bulkOpen" size="sm" data-cy="staff-bulk-payslips" :disabled="!loaded" @click="bulkOpen = true">{{ t('Upload payslips', 'Subir nóminas') }}</UiBtn>
+    </div>
+    <StaffBulkPayslips v-if="bulkOpen" :account-id="accountId" :members="members" @close="bulkOpen = false" @done="bulkOpen = false; load()" />
+
+    <section v-if="loaded && (pendingLeave || pendingCorrections || unopenedList.length)" class="flex flex-col gap-2 rounded-card border border-warning-border bg-warning-bg2 px-4 py-3" data-cy="staff-waiting">
       <h2 class="text-[14px] font-bold text-ink-900">{{ t('Waiting for you', 'Te esperan') }}</h2>
       <div class="flex flex-wrap gap-2">
         <button v-if="pendingLeave" type="button" class="rounded-ctl border border-line-control bg-surface px-3 py-1.5 text-[13px] font-semibold text-ink-700 hover:border-line-controlHover" data-cy="staff-waiting-leave" @click="emit('open-leave')">
@@ -157,6 +172,9 @@ const td = 'border-t border-line-row px-3 py-2.5 align-middle text-[13px] text-i
         </button>
         <NuxtLink v-if="pendingCorrections" to="/jornada" class="rounded-ctl border border-line-control bg-surface px-3 py-1.5 text-[13px] font-semibold text-ink-700 hover:border-line-controlHover" data-cy="staff-waiting-corrections">
           {{ pendingCorrections === 1 ? t('1 clocking correction to review', '1 corrección de fichaje por revisar') : t(`${pendingCorrections} clocking corrections to review`, `${pendingCorrections} correcciones de fichaje por revisar`) }} →
+        </NuxtLink>
+        <NuxtLink v-for="u in unopenedList" :key="u.id" :to="`/personal/${u.id}?tab=documents`" class="rounded-ctl border border-line-control bg-surface px-3 py-1.5 text-[13px] font-semibold text-ink-700 hover:border-line-controlHover" data-cy="staff-waiting-documents">
+          {{ u.count === 1 ? t(`${u.name}: 1 document unopened for a month`, `${u.name}: 1 documento sin abrir desde hace un mes`) : t(`${u.name}: ${u.count} documents unopened for a month`, `${u.name}: ${u.count} documentos sin abrir desde hace un mes`) }} →
         </NuxtLink>
       </div>
     </section>

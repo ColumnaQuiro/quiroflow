@@ -1,10 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Database } from '~/types/database.types'
-import { fetchAllRows } from '~/composables/useFetchAllRows'
-import { startOfLocalDate } from '~/utils/clinicClock'
-import { practitionerForPayment } from '~/utils/incomeAttribution'
-import { isReceipt } from '~/utils/paymentReceipts'
-import { payFactsByMember, type PayFacts, type PayPlan, type PayTierMode } from '~/utils/payPlan'
+import type { Database } from '../types/database.types'
+import { fetchAllRows } from './useFetchAllRows'
+import { startOfLocalDate } from '../utils/clinicClock'
+import { practitionerForPayment } from '../utils/incomeAttribution'
+import { isReceipt } from '../utils/paymentReceipts'
+import { payFactsByMember, type PayFacts, type PayPlan, type PayTierMode } from '../utils/payPlan'
 
 // One month's pay figures for the team: everyone's pay plan and the facts it
 // is worked out from. Shared by Reports › Commissions and the Retribución tab

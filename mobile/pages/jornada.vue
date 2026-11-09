@@ -3,7 +3,9 @@
 // owner for a correction -- and their shifts and leave (asking for days
 // off), opened from the clock on My Day. The same
 // component as the web's /jornada "Mine" tab (components/timeclock/MyMonth.vue);
-// the team's month and the export are on the web.
+// the team's month and the export are on the web. Below them, Mis documentos
+// (components/staff/MyDocuments.vue): payslips and contract, where the push
+// about a new one lands.
 definePageMeta({ layout: 'practitioner' })
 
 const user = useSupabaseUser()
@@ -24,6 +26,8 @@ const { context } = usePractitionerContext()
           <TimeclockLeavePending v-if="context.isOwner" :account-id="context.accountId" />
           <TimeclockMyMonth :account-id="context.accountId" :team-member-id="context.teamMemberId" :time-zone="context.timeZone || DEFAULT_CLINIC_TIMEZONE" />
           <TimeclockMyLeave :account-id="context.accountId" :team-member-id="context.teamMemberId" :time-zone="context.timeZone || DEFAULT_CLINIC_TIMEZONE" />
+          <!-- Mis documentos: the same component as the web's Mi jornada. -->
+          <StaffMyDocuments :account-id="context.accountId" :team-member-id="context.teamMemberId" />
         </div>
       </div>
     </div>

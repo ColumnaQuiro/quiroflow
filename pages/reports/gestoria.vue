@@ -8,6 +8,7 @@ import { quarterBounds, type IvaLine } from '~/utils/gestoriaExport'
 // the money in by payment method, and optionally every factura's PDF.
 // The figures on screen are the ZIP's (server/api/reports/gestoria-export).
 const t = useT()
+const store = useAccountStore()
 const authedFetch = useAuthedFetch()
 const { labelFor, ensureLoaded } = usePaymentMethods()
 
@@ -137,6 +138,12 @@ const td = 'border-t border-line-row px-3 py-2.5 text-[13.5px] text-ink-900'
             <span class="text-[13px] text-ink-700">{{ t('The facturas as PDF', 'Las facturas en PDF') }}<template v-if="preview.pdfParts > 1"> · {{ t(`in ${preview.pdfParts} parts`, `en ${preview.pdfParts} partes`) }}</template></span>
             <UiBtn v-for="n in preview.pdfParts" :key="n" size="sm" :disabled="downloading !== null" :data-cy="`gestoria-pdfs-${n}`" @click="download(n - 1)">{{ downloading === n - 1 ? t('Preparing…', 'Preparando…') : preview.pdfParts > 1 ? t(`Part ${n}`, `Parte ${n}`) : t('Download PDFs', 'Descargar PDF') }}</UiBtn>
           </div>
+        </section>
+
+        <!-- The team's month for the payslips: owners only, as Personal is. -->
+        <section v-if="store.isOwner" class="flex flex-col gap-3" data-cy="gestoria-staff">
+          <h2 class="text-[15px] font-bold text-ink-900">{{ t('For the payslips', 'Para las nóminas') }}</h2>
+          <StaffGestoriaPack />
         </section>
       </div>
     </div>

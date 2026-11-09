@@ -5,7 +5,7 @@ import { currentContract, employmentTypeLabel, type StaffContract } from '~/util
 // Personal › one person's file (owners only, utils/routePermissions.ts):
 // everything about someone who works at the clinic, in tabs. Perfil sums up
 // their access and links to Settings › Team, which stays the one place it is
-// edited; Contrato is new (staff_contracts); Ausencias, Jornada and
+// edited; Contrato (staff_contracts) and Documentos (staff_documents) are new; Ausencias, Jornada and
 // Retribución are the existing screens narrowed to this person, so a figure
 // here is the same figure there. People who have left keep their file: their
 // contracts and registro de jornada are records the clinic has to hold.
@@ -57,8 +57,8 @@ async function load() {
 }
 onMounted(load)
 
-type Tab = 'profile' | 'contract' | 'leave' | 'time' | 'pay'
-const TAB_KEYS: Tab[] = ['profile', 'contract', 'leave', 'time', 'pay']
+type Tab = 'profile' | 'contract' | 'leave' | 'time' | 'pay' | 'documents'
+const TAB_KEYS: Tab[] = ['profile', 'contract', 'leave', 'time', 'pay', 'documents']
 const tab = computed<Tab>({
   get: () => (TAB_KEYS.includes(route.query.tab as Tab) ? (route.query.tab as Tab) : 'profile'),
   set: (v) => router.replace({ query: { ...route.query, tab: v === 'profile' ? undefined : v } }),
@@ -69,6 +69,7 @@ const tabs = computed(() => [
   { key: 'leave' as const, label: t('Leave', 'Ausencias') },
   { key: 'time' as const, label: t('Working time', 'Jornada') },
   { key: 'pay' as const, label: t('Pay', 'Retribución') },
+  { key: 'documents' as const, label: t('Documents', 'Documentos') },
 ])
 const month = ref(clinicDateOf(new Date(), timeZone.value).slice(0, 7))
 
@@ -158,6 +159,8 @@ const dd = 'text-[14px] text-ink-900'
           </div>
           <TimeclockTeamMonth :account-id="store.accountId" :time-zone="timeZone" :month="month" :member-id="person.id" />
         </template>
+
+        <StaffFileDocuments v-else-if="tab === 'documents'" class="max-w-[720px]" :account-id="store.accountId" :member-id="person.id" :name="person.full_name" :gone="!!person.deleted_at" />
 
         <StaffFilePay v-else class="max-w-[720px]" :member-id="person.id" :name="person.full_name" :time-zone="timeZone" :self-employed="contract?.employment_type === 'self_employed'" />
       </div>

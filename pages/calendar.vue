@@ -1583,6 +1583,32 @@ function blocksForRoomOnDay(day: Date, roomId: string) {
       new Date(b.ends_at).getTime() > dayStart,
   )
 }
+// Where a block sits in one day's column, cut to that day's grid hours. An
+// approved holiday is ONE block from its first midnight to the midnight after
+// its last day, so drawn whole it filled each day from the top and ran on for
+// days below the column's end -- and its label, centred in all of it, landed
+// wherever that clipping left it, or nowhere. Cut to the day, the label sits
+// in the middle of what is visible.
+function blockBoxOnDay(block: AvailabilityBlock, day: Date, hourPx: number, minFloor: number) {
+  const gridStart = startOfDay(day)
+  gridStart.setHours(START_HOUR)
+  const gridEnd = startOfDay(day)
+  gridEnd.setHours(END_HOUR)
+  const s = Math.max(new Date(block.starts_at).getTime(), gridStart.getTime())
+  const e = Math.min(new Date(block.ends_at).getTime(), gridEnd.getTime())
+  return {
+    top: ((s - gridStart.getTime()) / 3_600_000) * hourPx,
+    height: Math.max(minFloor, ((e - s) / 3_600_000) * hourPx),
+  }
+}
+// The week column is too narrow for "Vacaciones · Lucía Fisio" on one line,
+// so the note is split where decide_staff_absence joined it: what it is, then
+// whose. A block with no note still says "Blocked".
+function blockLabelLines(block: AvailabilityBlock): [string, string] {
+  if (!block.note) return [blockLabel(block), '']
+  const [what, ...rest] = block.note.split(' · ')
+  return [what ?? block.note, rest.join(' · ')]
+}
 function showOverflowDay(day: Date) {
   anchorDate.value = day
   viewMode.value = 'day'
@@ -3021,10 +3047,11 @@ function showNowLineOn(day: Date) {
                     v-for="block in blocksForRoom(col.id)"
                     :key="block.id"
                     class="cal-blocked absolute left-1 right-1 z-0 flex cursor-pointer items-center justify-center gap-1.5 overflow-hidden rounded-ctl border border-line text-[12px] text-ink-muted"
-                    :style="{ top: `${timeToPx(block.starts_at, DAY_HOUR_PX) + 1}px`, height: `${durationToPx(block.starts_at, block.ends_at, DAY_HOUR_PX, DAY_MIN_AVAILABILITY_PX) - 3}px` }"
+                    :style="{ top: `${blockBoxOnDay(block, anchorDate, DAY_HOUR_PX, DAY_MIN_AVAILABILITY_PX).top + 1}px`, height: `${blockBoxOnDay(block, anchorDate, DAY_HOUR_PX, DAY_MIN_AVAILABILITY_PX).height - 3}px` }"
+                    data-cy="cal-blocked"
                     @click.stop="openBlockEditModal(block)"
                   >
-                    <strong class="font-semibold text-ink-700">{{ blockLabel(block) }}</strong>
+                    <strong class="rounded-[4px] bg-surface px-1.5 font-semibold text-ink-700">{{ blockLabel(block) }}</strong>
                   </div>
 
                   <div
@@ -3239,12 +3266,17 @@ function showNowLineOn(day: Date) {
                     <div
                       v-for="block in blocksForRoomOnDay(day, col.id)"
                       :key="block.id"
-                      class="cal-blocked absolute left-0.5 right-0.5 z-0 flex cursor-pointer items-center justify-center overflow-hidden rounded-[6px] border border-line font-mono text-[11px] text-ink-muted2"
-                      :style="{ top: `${timeToPx(block.starts_at, WEEK_HOUR_PX)}px`, height: `${durationToPx(block.starts_at, block.ends_at, WEEK_HOUR_PX, WEEK_MIN_AVAILABILITY_PX)}px` }"
+                      class="cal-blocked absolute left-0.5 right-0.5 z-0 flex cursor-pointer items-center justify-center overflow-hidden rounded-[6px] border border-line px-0.5 text-[11px] text-ink-muted2"
+                      :style="{ top: `${blockBoxOnDay(block, day, WEEK_HOUR_PX, WEEK_MIN_AVAILABILITY_PX).top}px`, height: `${blockBoxOnDay(block, day, WEEK_HOUR_PX, WEEK_MIN_AVAILABILITY_PX).height}px` }"
                       :title="blockLabel(block)"
+                      data-cy="cal-blocked"
                       @click.stop="openBlockEditModal(block)"
                     >
-                      {{ t('Blocked', 'Bloqueado') }}
+                      <span v-if="block.note" class="flex max-w-full flex-col items-center rounded-[4px] bg-surface px-1 py-px text-center leading-tight">
+                        <span class="max-w-full truncate font-semibold text-ink-700">{{ blockLabelLines(block)[0] }}</span>
+                        <span v-if="blockLabelLines(block)[1]" class="max-w-full truncate">{{ blockLabelLines(block)[1] }}</span>
+                      </span>
+                      <span v-else class="font-mono">{{ t('Blocked', 'Bloqueado') }}</span>
                     </div>
 
                     <div

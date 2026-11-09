@@ -38,3 +38,21 @@ export function planIncludesGrowth(planId: string | null | undefined): boolean {
 export function receptionistLineWanted(order: { receptionist?: boolean; growth: boolean; planId: string }): boolean {
   return order.receptionist === true && !order.growth && !planIncludesGrowth(order.planId)
 }
+
+/**
+ * Personal -- the team's files, contracts, documents, the gestoría pack and
+ * Rentabilidad por profesional -- comes with Practice and Clinic, not Solo.
+ * Decided in the Personal spec's open questions (9 Nov 2026). Here beside
+ * Growth for the same reason: the account store's hasStaffSection getter and
+ * the server routes that make the pack must give the same answer. A trial
+ * includes it, as it includes Growth, and so does a comped account.
+ */
+export const PLANS_INCLUDING_STAFF = new Set(['pro', 'clinic'])
+
+export function staffSectionIncluded(subscription: { plan_id?: string | null; status?: string | null; comped?: boolean | null } | null): boolean {
+  if (!subscription) return false
+  if (subscription.comped) return true
+  if (subscription.status === 'trialing') return true
+  if (!PLANS_INCLUDING_STAFF.has(subscription.plan_id ?? '')) return false
+  return subscription.status !== 'locked' && subscription.status !== 'canceled'
+}

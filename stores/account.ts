@@ -107,6 +107,10 @@ export const useAccountStore = defineStore('account', {
       state.comped ||
       ((state.growthAddon || planIncludesGrowth(state.planId) || state.receptionistAddon)
         && state.subscriptionStatus !== 'locked' && state.subscriptionStatus !== 'canceled'),
+    // Personal (staff files, documents, the gestoría pack, profitability):
+    // Practice and Clinic, a trial, or comped -- staffSectionIncluded, which
+    // the server routes for the pack apply too.
+    hasStaffSection: (state) => staffSectionIncluded({ plan_id: state.planId, status: state.subscriptionStatus, comped: state.comped }),
     // Only meaningful while still trialing -- null once on a real plan (no
     // trial_ends_at) or already past it (negative), so the banner can just
     // check `!== null`.

@@ -55,6 +55,8 @@ const exportUrl = (format: 'csv' | 'pdf') => `/api/time-records/export?month=${m
           <TimeclockClockCard :account-id="store.accountId" :team-member-id="store.teamMember.id" :time-zone="timeZone" month-to="/jornada?tab=mine" />
           <TimeclockMyMonth :key="timeZone" :account-id="store.accountId" :team-member-id="store.teamMember.id" :time-zone="timeZone" />
           <TimeclockMyLeave :key="`leave-${timeZone}`" :account-id="store.accountId" :team-member-id="store.teamMember.id" :time-zone="timeZone" />
+          <!-- Their payslips and contract, uploaded by an owner in Personal. -->
+          <StaffMyDocuments :account-id="store.accountId" :team-member-id="store.teamMember.id" />
         </div>
       </template>
     </div>

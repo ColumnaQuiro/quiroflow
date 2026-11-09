@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import type { UiLanguage } from '../utils/uiLanguage'
 
 export interface TeamMember {
   id: string
@@ -8,7 +9,7 @@ export interface TeamMember {
   color: string
   is_owner: boolean
   theme_preference: 'light' | 'dark' | 'system'
-  language_preference: 'en' | 'es'
+  language_preference: UiLanguage
   photo_storage_path: string | null
 }
 
@@ -202,7 +203,7 @@ export const useAccountStore = defineStore('account', {
       // localStorage before this resolved -- this reconciles it with the
       // user's real saved preference (e.g. first login on a new device).
       theme.setPreference(teamMember.theme_preference as 'light' | 'dark' | 'system')
-      lang.setPreference(teamMember.language_preference as 'en' | 'es')
+      lang.setPreference(teamMember.language_preference as UiLanguage)
 
       const account = bootstrap.account
       const clinics = bootstrap.clinics

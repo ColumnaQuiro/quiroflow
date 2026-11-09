@@ -32,8 +32,8 @@ async function load() {
 onMounted(load)
 
 const current = computed(() => currentContract(contracts.value, today.value))
-const fmt = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString(lang.value === 'es' ? 'es-ES' : 'en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
-const fmtHours = (h: number) => (Number.isInteger(h) ? String(h) : h.toLocaleString(lang.value === 'es' ? 'es-ES' : 'en-GB'))
+const fmt = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString(uiLocaleTag(lang.value), { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
+const fmtHours = (h: number) => (Number.isInteger(h) ? String(h) : h.toLocaleString(uiLocaleTag(lang.value)))
 function spanOf(c: StaffContract) {
   if (c.starts_on && c.ends_on) return `${fmt(c.starts_on)} – ${fmt(c.ends_on)}`
   if (c.starts_on) return t(`from ${fmt(c.starts_on)}`, `desde el ${fmt(c.starts_on)}`)

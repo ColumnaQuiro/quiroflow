@@ -191,7 +191,7 @@ async function renew(withBono: boolean) {
     const habits = await sendHabits()
     busy.value = false
     finished.value =
-      t(`Discharged: back in Recalls from ${until.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}.`, `Alta: vuelve a Recordatorios el ${until.toLocaleDateString('es-ES', { day: 'numeric', month: 'long' })}.`) + habits
+      t(`Discharged: back in Recalls from ${until.toLocaleDateString(t('en-GB', 'es-ES'), { day: 'numeric', month: 'long' })}.`, `Alta: vuelve a Recordatorios el ${until.toLocaleDateString('es-ES', { day: 'numeric', month: 'long' })}.`) + habits
     emit('renewed')
     return
   }

@@ -91,7 +91,7 @@ const pendingLeave = computed(() => absences.value.filter((a) => a.status === 'p
 const shiftOf = (m: Member, day: string) => shiftForDay(day, m, clinicHours.value, overrides.value.get(`${m.id}|${day}`))
 const awayOn = (m: Member, day: string) => absences.value.find((a) => a.team_member_id === m.id && a.status === 'approved' && !a.half_day && a.starts_on <= day && a.ends_on >= day) ?? null
 
-const fmtDay = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString(lang.value === 'es' ? 'es-ES' : 'en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })
+const fmtDay = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString(uiLocaleTag(lang.value), { day: 'numeric', month: 'short', timeZone: 'UTC' })
 
 type Tone = 'ok' | 'away' | 'warn' | 'quiet'
 /** Where someone is today, in words, and how loudly to say it. */
@@ -154,7 +154,7 @@ const toneClass: Record<Tone, string> = {
   warn: 'bg-danger-bg text-danger-text',
   quiet: 'text-ink-muted',
 }
-const fmtDays = (n: number) => (Number.isInteger(n) ? String(n) : n.toLocaleString(lang.value === 'es' ? 'es-ES' : 'en-GB'))
+const fmtDays = (n: number) => (Number.isInteger(n) ? String(n) : n.toLocaleString(uiLocaleTag(lang.value)))
 const th = 'whitespace-nowrap px-3 py-2 text-left text-[11px] font-[640] uppercase tracking-[.07em] text-ink-muted'
 const td = 'border-t border-line-row px-3 py-2.5 align-middle text-[13px] text-ink-900'
 </script>

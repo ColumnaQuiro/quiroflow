@@ -2972,7 +2972,7 @@ const fieldId = useId()
               <UiPill v-for="pay in paymentsFor(m.id)" :key="pay.id" :tone="pay.status === 'paid' ? 'success' : 'danger'">
                 <!-- The month in the staff member's language, and the status in
                      words: this printed the raw column, "paid" / "failed". -->
-                {{ new Date(pay.period_start).toLocaleDateString(lang === 'en' ? 'en-GB' : 'es-ES', { month: 'short', year: 'numeric' }) }}: {{ pay.status === 'paid' ? t('paid', 'pagado') : t('failed', 'fallido') }}
+                {{ new Date(pay.period_start).toLocaleDateString(uiLocaleTag(lang), { month: 'short', year: 'numeric' }) }}: {{ pay.status === 'paid' ? t('paid', 'pagado') : t('failed', 'fallido') }}
               </UiPill>
             </div>
 

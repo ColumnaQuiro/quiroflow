@@ -16,6 +16,7 @@ const emit = defineEmits<{ close: []; confirm: [payload: { reasonId: string | nu
 const supabase = useSupabaseClient()
 const store = useAccountStore()
 const t = useT()
+const { preference: langPreference } = useLang()
 
 // A modal dialog: focus stays inside it, Escape closes it, and focus goes
 // back to whatever opened it (useFocusTrap).
@@ -89,6 +90,12 @@ function relativeLabel(iso: string) {
   } else {
     magEn = `${days} day${days === 1 ? '' : 's'}`
     magEs = `${days} ${days === 1 ? 'día' : 'días'}`
+  }
+  // Portuguese and German have no inline copy here: Intl words it for them.
+  const lang = langPreference.value
+  if (lang === 'pt' || lang === 'de') {
+    const [n, unit] = minutes < 60 ? [minutes, 'minute' as const] : hours < 24 ? [hours, 'hour' as const] : [days, 'day' as const]
+    return { future, text: new Intl.RelativeTimeFormat(uiLocaleTag(lang), { numeric: 'always' }).format(future ? n : -n, unit) }
   }
   const text = future ? t(`in ${magEn}`, `en ${magEs}`) : t(`${magEn} ago`, `hace ${magEs}`)
   return { future, text }

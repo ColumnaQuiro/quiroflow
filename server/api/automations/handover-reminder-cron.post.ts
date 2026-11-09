@@ -39,8 +39,9 @@ export default defineEventHandler(async (event) => {
   const supabase = serverSupabaseServiceRole<Database>(event)
   const now = new Date()
 
-  // "¿Te quito la cita?" left unanswered with the visit within a day: to a
-  // person, before the time is lost (receptionistPendingCancel.ts).
+  // "¿Te quito la cita?", or other times offered for a visit they asked to
+  // change, left unanswered with the visit within a day: to a person, before
+  // the time is lost (receptionistPendingCancel.ts).
   const cancelQuestions = await handOverUnansweredCancelQuestions(supabase, now).catch((err) => {
     console.error('[handover-reminder-cron] could not check unanswered cancel questions:', (err as Error)?.message ?? err)
     return [] as string[]
